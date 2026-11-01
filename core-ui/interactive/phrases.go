@@ -8,4 +8,5 @@ var (
 	filterLabel   = i18n.Define("interactive.filter", "Filter")
 	noMatches     = i18n.Define("interactive.no_matches", "No matches")
 	closeLabel    = i18n.Define("interactive.close", "Close")
+	menuLabel     = i18n.Define("interactive.menu", "Menu")
 )

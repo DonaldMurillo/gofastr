@@ -258,9 +258,18 @@
   // an open modal widget first. Tab is trapped inside the topmost open
   // pane while in overlay mode — the same containment technique the
   // disclosure module spells, over the kernel's focus selector, never
-  // touching the widgets module's private modal stack.
+  // touching the widgets module's private modal stack. The keys act on
+  // the overlay host holding focus, else on the only one on the page:
+  // with two open drawers and focus in neither, they leave both alone.
+  function keyHost() {
+    const a = document.activeElement;
+    const inner = a && a.closest && a.closest('[data-hui-pane-mode="overlay"]');
+    if (inner) return inner;
+    const all = document.querySelectorAll('[data-hui-pane-mode="overlay"]');
+    return all.length === 1 ? all[0] : null;
+  }
   document.addEventListener('keydown', function (e) {
-    const host = document.querySelector('[data-hui-pane-mode="overlay"]');
+    const host = keyHost();
     if (!host) return;
     if (e.key === 'Escape') {
       if (NS._modalStack && NS._modalStack.length > 0) return;

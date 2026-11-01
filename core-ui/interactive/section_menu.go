@@ -84,7 +84,8 @@ type SectionMenuConfig struct {
 	AriaLabel string
 	// TriggerLabel names the mobile pill and titles the sheet. The pill
 	// shows the current page and its group instead when there is one,
-	// and keeps this as the start of its accessible name. Default "Menu".
+	// and keeps this as the start of its accessible name. Default: the
+	// interactive.menu phrase ("Menu") in the locale Ctx carries.
 	TriggerLabel string
 	// DrawerName is the widget name shared by the trigger pill
 	// (data-cui-open) and SectionMenuDrawer. Required for the mobile sheet;
@@ -176,9 +177,11 @@ func sectionMenuTrigger(cfg SectionMenuConfig) render.HTML {
 	return SheetPill(pill)
 }
 
+// triggerLabel names the pill and the sheet: the caller's label, or the
+// interactive.menu phrase in the reader's locale.
 func triggerLabel(cfg SectionMenuConfig) string {
 	if cfg.TriggerLabel == "" {
-		return "Menu"
+		return menuLabel.Text(cfg.Ctx)
 	}
 	return cfg.TriggerLabel
 }

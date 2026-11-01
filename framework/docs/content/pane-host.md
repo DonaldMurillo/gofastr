@@ -191,6 +191,10 @@ the module applies:
   light-dismiss for the OVERLAY drawer only; an open inline column at
   desktop width is page content and survives both.
 
+With two hosts on a page, Tab and ESC act on the overlay host that
+holds focus, or on the only overlay host when focus is in none. With
+two open drawers and focus in neither, the keys leave both alone.
+
 Widening the viewport or closing the pane clears overlay mode and
 releases the lock. Pane widths and the drawer width are themeable via
 the `--fui-pane-host-secondary-w` / `--fui-pane-host-tertiary-w` /
