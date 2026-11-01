@@ -685,6 +685,94 @@ func TestJWKSRefreshDoesNotBlockStaleReaders(t *testing.T) {
 	unblock()
 }
 
+// During a key rotation two logins carry the same new kid. The first spends
+// the kid's refetch slot and fetches; the second, finding the slot spent,
+// failed at once instead of waiting for that fetch (2026-11-01 review).
+func TestJWKSConcurrentRotatedKidWaitsForInFlightFetch(t *testing.T) {
+	keyA := mustRSAKey(t, 2048)
+	keyB := mustRSAKey(t, 2048)
+	var hits atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		keys := []map[string]any{rsaJWKMap("kid-a", &keyA.PublicKey)}
+		if hits.Add(1) > 1 {
+			close(entered)
+			<-release
+			keys = append(keys, rsaJWKMap("kid-b", &keyB.PublicKey))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+	}))
+	t.Cleanup(srv.Close)
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	c := &jwksCache{httpClient: srv.Client(), ttl: time.Hour}
+	ctx := context.Background()
+	if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil {
+		t.Fatal(err)
+	}
+	first := make(chan error, 1)
+	go func() {
+		_, err := c.getKey(ctx, srv.URL, "kid-b")
+		first <- err
+	}()
+	<-entered
+	second := make(chan error, 1)
+	go func() {
+		_, err := c.getKey(ctx, srv.URL, "kid-b")
+		second <- err
+	}()
+	time.Sleep(20 * time.Millisecond) // let the second login reach the spent slot
+	unblock()
+	for i, ch := range []chan error{first, second} {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Errorf("login %d during the rotation: %v", i+1, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("login %d never returned", i+1)
+		}
+	}
+	if got := hits.Load(); got != 2 {
+		t.Errorf("JWKS fetched %d times, want 2 (warm-up + one rotation refetch)", got)
+	}
+}
+
+// A refresh that fails on the caller's own deadline (a request timeout
+// shorter than the HTTP client's) still backs off: a hanging IdP only ever
+// fails that way, and without the backoff one login per stale period paid
+// its whole deadline.
+func TestJWKSDeadlineFailureBacksOff(t *testing.T) {
+	keyA := mustRSAKey(t, 2048)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) > 1 {
+			<-r.Context().Done() // hang until the caller gives up
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]any{rsaJWKMap("kid-a", &keyA.PublicKey)}})
+	}))
+	t.Cleanup(srv.Close)
+	c := &jwksCache{httpClient: srv.Client(), ttl: time.Millisecond}
+	if _, err := c.getKey(context.Background(), srv.URL, "kid-a"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	for range 3 {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		_, err := c.getKey(ctx, srv.URL, "kid-a")
+		cancel()
+		if err != nil {
+			t.Fatalf("stale key not served: %v", err)
+		}
+	}
+	if got := hits.Load(); got != 2 {
+		t.Errorf("JWKS fetched %d times while the IdP hung, want 2 (warm-up + one timed-out refresh)", got)
+	}
+}
+
 // A caller's own deadline bounds its wait for discovery, even while
 // another caller's fetch is in flight.
 func TestOIDCDiscoveryWaitHonoursCallerDeadline(t *testing.T) {
