@@ -41,10 +41,14 @@
     const r = el.getBoundingClientRect();
     return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
   };
+  // The observed set is in memory, not an attribute: a cached screen
+  // replays a copy of the markup, and a copy carrying an "observed"
+  // attribute would never be observed again and stay hidden.
+  const observed = new WeakSet();
   const setupOne = (el, painted) => {
     if (el.classList.contains(REVEALED_CLASS)) return; // already revealed
-    if (el.dataset._cuiRevealObserved) return;         // idempotent
-    el.dataset._cuiRevealObserved = '1';
+    if (observed.has(el)) return;                      // idempotent
+    observed.add(el);
     if (painted && onScreen(el)) {
       el.classList.add(REVEALED_CLASS);
       return;

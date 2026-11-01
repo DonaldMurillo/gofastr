@@ -75,7 +75,9 @@ var (
 	// scriptInertTypeRe matches a type= attribute whose value marks the
 	// script as a non-JS "data block" (HTML spec). Browsers never execute
 	// these so CSP doesn't block them and the linter shouldn't either.
-	scriptInertTypeRe = regexp.MustCompile(`(?si)\stype\s*=\s*["']?(application/json|application/ld\+json|text/plain|importmap|module-shim/json)\b`)
+	// importmap is not one: CSP's script-src governs an inline import
+	// map, so default-src 'self' refuses it like any inline script.
+	scriptInertTypeRe = regexp.MustCompile(`(?si)\stype\s*=\s*["']?(application/json|application/ld\+json|text/plain|module-shim/json)\b`)
 	// scriptCloseRe matches a closing </script> tag. Used as a
 	// secondary signal, a string literal containing both opening
 	// (without src) AND closing tags is almost certainly an inline
@@ -91,7 +93,10 @@ var (
 // A file can opt out by starting a comment line with the directive
 // `//check-csp:ignore-file` (typically near the top of the file). Use
 // only when the file inherently references <script> in non-emitting
-// contexts, the linter itself, regex patterns, or CLI scaffolding.
+// contexts, the linter itself, regex patterns, or CLI scaffolding. One
+// deliberate site carries `//gofastr:allow(GOFASTR1805) <why>` trailing
+// its line or alone on the line above (allowmarker.go), the marker
+// gofastr verify reads for the same rule.
 // ScanInlineScriptsIn reports inline <script> bodies in an already-parsed
 // file. It exists for callers that have read and parsed the source
 // already, the contracts pass caches both, so the check does not repeat
@@ -111,7 +116,22 @@ func ScanInlineScriptsIn(fset *token.FileSet, file *ast.File, filename string, r
 }
 
 func LintNoInlineScripts(dir string) (*Result, error) {
-	return lintGoDir(dir, scanInlineScripts)
+	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
+		// One deliberate inline script (the first-paint bootstrap the CSP
+		// allows by its sha256) carries the marker gofastr verify already
+		// honours for this rule, GOFASTR1805, rather than opting the whole
+		// file out. ScanInlineScriptsIn leaves the marker alone: the
+		// contracts pass applies it, and reports it stale when it matches
+		// nothing.
+		allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1805")
+		sub := &Result{}
+		scanInlineScripts(fset, file, filename, sub)
+		for _, v := range sub.Violations {
+			if !allowed[v.Line] {
+				result.Violations = append(result.Violations, v)
+			}
+		}
+	})
 }
 
 // lintGoDir walks the non-test .go files in dir, skips files carrying
@@ -122,7 +142,7 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 // the shared body of LintNoInlineScripts and LintNoInlineStyles, which
 // were verbatim copies of this walk differing only in the AST scan
 // they ran.
-func lintGoDir(dir string, scan func(fset *token.FileSet, file *ast.File, filename string, result *Result)) (*Result, error) {
+func lintGoDir(dir string, scan func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result)) (*Result, error) {
 	result := &Result{}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -150,7 +170,7 @@ func lintGoDir(dir string, scan func(fset *token.FileSet, file *ast.File, filena
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", filename, err)
 		}
-		scan(fset, file, filename, result)
+		scan(fset, file, filename, raw, result)
 	}
 	return result, nil
 }
@@ -285,22 +305,22 @@ func checkInlineScriptInString(s string, line int, filename string, result *Resu
 					"Serve from an external URL via <script src=\"/your-script.js\"> instead.")
 			continue
 		}
-		// Open tag with no close in the same literal, still suspicious
-		// (e.g. someone building the script via concatenation).
-		if strings.TrimSpace(s[loc[1]:]) != "" {
-			result.add(filename, line,
-				"<script> open tag without src= forbidden: framework strict-CSP blocks inline JS. "+
-					"Use <script src=\"…\"> for external scripts.")
-		}
+		// Open tag with no close in the same literal: the body arrives by
+		// concatenation, "<script>" + js + "</script>", so the open tag
+		// may end its literal with nothing after it.
+		result.add(filename, line,
+			"<script> open tag without src= forbidden: framework strict-CSP blocks inline JS. "+
+				"Use <script src=\"…\"> for external scripts.")
 	}
 }
 
 // isInertScriptType reports whether a <script type="…"> value marks
 // the contents as a non-executable data block per the HTML spec,
-// browsers never run these and CSP does not block them.
+// browsers never run these and CSP does not block them. An import map
+// is not on the list: CSP applies to it.
 func isInertScriptType(t string) bool {
 	switch strings.ToLower(strings.TrimSpace(t)) {
-	case "application/json", "application/ld+json", "text/plain", "importmap", "module-shim/json":
+	case "application/json", "application/ld+json", "text/plain", "module-shim/json":
 		return true
 	}
 	return false

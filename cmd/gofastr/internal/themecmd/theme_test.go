@@ -31,14 +31,14 @@ func TestThemeStarterBoots(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles and runs a temp Go module")
 	}
-	bootThemeModule(t, themeStarterSource())
+	bootThemeModule(t, themeStarterSource("theme"))
 }
 
 // The starter's header named the old indigo primary as the value of
 // Primary while the same file set the neutral one (caught in review).
 // The header quotes the primary the file sets.
 func TestThemeStarterDocQuotesPrimary(t *testing.T) {
-	src := themeStarterSource()
+	src := themeStarterSource("theme")
 	want := uitheme.Default().Colors.Primary.Value
 	if !strings.Contains(src, fmt.Sprintf("Primary.Value  → %q (literal)", want)) {
 		t.Errorf("starter header does not quote the primary it sets (%s):\n%s", want, src[:cli.Min(len(src), 900)])

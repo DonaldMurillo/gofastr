@@ -169,3 +169,29 @@ func TestAppSpecKeepsBigIntegers(t *testing.T) {
 		t.Errorf("flow list item did not round-trip as int64 %d\n%s", exact, buf)
 	}
 }
+
+// core/yaml refuses a flow map, so an empty JSON object froze as
+// `settings: {}` made the whole app spec unparseable. A bare `settings:`
+// with nothing indented under it is the empty map core/yaml reads back.
+func TestAppSpecEmptyMapRoundTrips(t *testing.T) {
+	w := seedWorld(map[string]any{
+		"title":    "Ship",
+		"settings": map[string]any{},
+		"tags":     map[string]any{"inner": map[string]any{}},
+	})
+	buf, err := freeze.AppSpecYAML(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := parseSeedRow(t, buf)
+	if s := row.Map["settings"]; s == nil || s.Kind != coreyaml.Map || len(s.Map) != 0 {
+		t.Fatalf("settings did not round-trip as an empty map: %#v\n%s", s, buf)
+	}
+	tags := row.Map["tags"]
+	if tags == nil || tags.Kind != coreyaml.Map {
+		t.Fatalf("tags did not round-trip as a map:\n%s", buf)
+	}
+	if in := tags.Map["inner"]; in == nil || in.Kind != coreyaml.Map || len(in.Map) != 0 {
+		t.Fatalf("nested empty map did not round-trip: %#v\n%s", in, buf)
+	}
+}

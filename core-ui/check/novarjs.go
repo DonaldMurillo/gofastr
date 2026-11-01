@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -20,8 +21,9 @@ import (
 //   - Flags any line containing the `var ` keyword that isn't inside
 //     a string literal, a // line comment, or a /* */ block comment.
 //
-// A file can opt out via the `//check-novar:ignore-file` directive
-// (kept for emergency only, the codebase has zero exemptions today).
+// A file can opt out via the `//check-novar:ignore-file` directive, a
+// comment line of its own (kept for emergency only, the codebase has
+// zero exemptions today).
 //
 // Run from a test:
 //
@@ -61,12 +63,18 @@ func LintNoVarJSRecursive(root string) (*Result, error) {
 	return lintRecursive(root, LintNoVarJS)
 }
 
+// reNoVarIgnoreDirective is the opt-out, anchored the way
+// reCSPIgnoreDirective is: a comment line holding the directive and
+// nothing else. It was a whole-file strings.Contains, so a file quoting
+// the directive in a string or in prose opted out of the lint.
+var reNoVarIgnoreDirective = regexp.MustCompile(`(?m)^[ \t]*//[ \t]*check-novar:ignore-file[ \t]*\r?$`)
+
 func scanJSFileForVar(path string, result *Result) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	if strings.Contains(string(raw), "//check-novar:ignore-file") {
+	if reNoVarIgnoreDirective.Match(raw) {
 		return nil
 	}
 

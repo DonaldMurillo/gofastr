@@ -304,6 +304,12 @@ func (p *parser) parseList(indent int) (*Node, error) {
 		}
 		item := strings.TrimSpace(strings.TrimPrefix(line.text, "-"))
 		p.pos++
+		if strings.HasPrefix(item, "- ") || item == "-" {
+			// A compact nested sequence ("- - a") is outside the subset.
+			// Read as a scalar it became the string "- a", or a map key
+			// "- name", with no error.
+			return nil, fmt.Errorf("yaml:%d:%d: a nested list on the same line as its parent dash is not supported; put the inner list on its own indented lines", line.line, line.indent+3)
+		}
 		if strings.HasPrefix(item, "{") {
 			return nil, flowMapError(line.line, line.indent+3)
 		}
@@ -504,7 +510,18 @@ func splitInline(body string) ([]string, error) {
 	if q.quote != 0 {
 		return nil, fmt.Errorf("unterminated quoted scalar")
 	}
-	out = append(out, strings.TrimSpace(body[start:]))
+	// A trailing comma ends the list (YAML 1.2 allows it) and adds no
+	// item: appended, the empty last part became a "" value that an
+	// app-spec enum then accepted. Any other empty part ([a,,b], [,a])
+	// is refused; an empty item is spelled "".
+	if last := strings.TrimSpace(body[start:]); last != "" || len(out) == 0 {
+		out = append(out, last)
+	}
+	for _, part := range out {
+		if part == "" {
+			return nil, fmt.Errorf("empty inline list item; write \"\" for an empty string")
+		}
+	}
 	return out, nil
 }
 

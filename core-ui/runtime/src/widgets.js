@@ -112,7 +112,7 @@
       //
       // Removing it cannot flash, but NOT because a visible widget
       // "returned above" — nothing orders those. A deep-link arrival is
-      // mounted by the synchronous tryMount block before any pointer
+      // mounted by the catalog boot pass (widgets-boot) before any pointer
       // event can run, and this path is reached only from a trigger
       // click on a catalog-gated widget. So whatever is still in the DOM
       // here is un-mounted chrome nobody is looking at.

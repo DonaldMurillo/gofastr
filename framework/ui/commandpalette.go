@@ -447,8 +447,11 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		NoScriptAction: s.fallbackHref,
 		DebounceMS:     s.debounceMs,
 		Options:        opts,
-		Parts:          parts,
-		Strings:        s.words,
+		// The result list is the dialog's body, so one Escape
+		// closes the palette.
+		Inline:  true,
+		Parts:   parts,
+		Strings: s.words,
 	}, headless.Classes{
 		headless.PartRoot:            "fui-cmd-palette__field",
 		headless.PartLabel:           "fui-visually-hidden",

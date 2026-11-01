@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -393,5 +394,55 @@ func TestDevLoopAddrRefusesNonLoopback(t *testing.T) {
 		if err == nil {
 			t.Errorf("--addr %s accepted", addr)
 		}
+	}
+}
+
+// A requested stop exits 0 even when the drain fails: under launchd's
+// KeepAlive SuccessfulExit=false an exit 1 restarts the daemon that
+// `service stop` just stopped. The failure is logged instead.
+func TestStopExitsCleanWhenDrainFails(t *testing.T) {
+	t.Setenv("GOFASTR_ISOLATION", "off")
+	t.Setenv("GOFASTR_ROLE", "")
+	t.Setenv("GOFASTR_SETUP", "")
+	b, _, _ := testBattery(t, runtime.GOOS, Config{})
+	build := func(rt Runtime) (*framework.App, error) {
+		opts, err := rt.AppOptions()
+		if err != nil {
+			return nil, err
+		}
+		app := framework.NewApp(append(opts, framework.WithConfig(framework.AppConfig{Name: "svctest"}))...)
+		app.OnStop(func() error { return errors.New("flush failed") })
+		return app, nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- b.Run(context.Background(), []string{"service", "run"}, build) }()
+	l, err := b.layoutFor(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		if _, err := callControl(l.socketPath(), "status"); err == nil {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("run exited before ready: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("run never answered status")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, err := callControl(l.socketPath(), "stop"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("requested stop with a failed drain returned %v; want nil (exit 0)", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("control stop did not end the run")
 	}
 }

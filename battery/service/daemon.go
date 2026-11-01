@@ -211,9 +211,13 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	// after the drain, not before: a stop waiting on it then sees
 	// "gone" only once the App has let go of the port and the database.
 	cs.endMCP(time.Now().Add(mcpStopWait))
-	if err := b.drainUntil(app, log, deadline); err != nil && runErr == nil {
-		runErr = err
-	}
+	// A drain that overruns or an OnStop error is logged and does not
+	// change the exit code of a requested stop: under
+	// launchd's KeepAlive SuccessfulExit=false (and systemd's
+	// Restart=on-failure) an exit 1 would restart the daemon that
+	// `service stop` just stopped. Only a server that ended on its own
+	// exits non-zero.
+	b.drainUntil(app, log, deadline)
 	cs.closeUntil(deadline)
 	t := time.NewTimer(time.Until(deadline))
 	defer t.Stop()
@@ -225,19 +229,18 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 }
 
 // drain shuts the App down with a bounded context.
-func (b *Battery) drain(app *framework.App, log *slog.Logger) error {
-	return b.drainUntil(app, log, time.Now().Add(stopTimeout))
+func (b *Battery) drain(app *framework.App, log *slog.Logger) {
+	b.drainUntil(app, log, time.Now().Add(stopTimeout))
 }
 
-// drainUntil is drain with a deadline the caller shares.
-func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time.Time) error {
+// drainUntil is drain with a deadline the caller shares. An incomplete
+// drain is logged, not returned: see the stop path in serveLocked.
+func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time.Time) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	if err := app.Shutdown(ctx); err != nil {
 		log.Error("service: graceful shutdown incomplete", "error", err)
-		return fmt.Errorf("service: shutdown: %w", err)
 	}
-	return nil
 }
 
 // controlHandler answers the control channel's ops.

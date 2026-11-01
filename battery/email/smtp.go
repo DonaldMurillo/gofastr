@@ -96,7 +96,7 @@ func (c SMTPConfig) addr() string {
 }
 
 // Send implements the Sender interface using SMTP.
-func (s *SMTPSender) Send(ctx context.Context, email Email) error {
+func (s *SMTPSender) Send(ctx context.Context, email Email) (sendErr error) {
 	if err := s.config.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
@@ -155,6 +155,18 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	if err != nil {
 		return fmt.Errorf("%w: smtp dial failed: %v", ErrSendFailed, err)
 	}
+	// net/smtp takes no context, so cancellation closes the connection:
+	// the exchange in flight fails at once instead of waiting out the
+	// deadline below, and a relay that resumes after the cancel cannot
+	// take the message. A send that fails once ctx is done reports ctx's
+	// error, so a caller can tell a cancel from a relay refusal.
+	stopOnCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer func() {
+		stopOnCancel()
+		if sendErr != nil && ctx.Err() != nil {
+			sendErr = fmt.Errorf("%w: %w", ErrSendFailed, ctx.Err())
+		}
+	}()
 	// The deadline covers the WHOLE SMTP exchange, not only the dial:
 	// net/smtp has no timeouts of its own, so a server that accepts the
 	// connection and then stalls (never sends the 220 greeting, wedges

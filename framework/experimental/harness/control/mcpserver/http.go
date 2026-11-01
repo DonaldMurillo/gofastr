@@ -26,12 +26,13 @@ import (
 // Per the MCP spec (2024-11-05), streamable HTTP uses a single
 // endpoint that accepts POST for request/notification + GET for
 // server-initiated events. Mcp-Session-Id header binds a logical MCP
-// session across requests; Last-Event-ID enables stream resumption.
+// session across requests.
 //
-// v0.1 supports the POST + GET split with in-memory session tracking;
-// resumption replays only events from the active connection's buffer
-// (full historical replay against the session log is on the agenda
-// once mcpserver formally subscribes to engine buses).
+// The GET stream carries keepalives only: engine events do not flow
+// over it. A client catches up on a session's events by POSTing
+// resources/read for harness/v1://session/{id}/events?since=<id>,
+// which replays from the bus window and the session log (see
+// Server.readEvents).
 type HTTPHandler struct {
 	Server *Server
 
@@ -299,10 +300,9 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 		flusher.Flush()
 		_ = rc.SetWriteDeadline(time.Time{})
 	}
-	// Park until ctx done; mcpserver currently doesn't publish
-	// notifications to the HTTP GET stream itself, the resource
-	// subscriptions land that way in a follow-up. For v0.1 we keep the
-	// stream open as a keep-alive heartbeat every 15s.
+	// Park until ctx done. Engine events do not flow over this stream
+	// (clients read the events resource instead), so it carries a
+	// keepalive every 15s.
 	ticker := keepaliveTicker()
 	defer ticker.Stop()
 	for {

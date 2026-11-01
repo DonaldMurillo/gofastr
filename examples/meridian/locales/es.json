@@ -615,6 +615,12 @@
       "signOut": "Cerrar sesión",
       "signup": "Crear cuenta"
     },
+    "avatar": {
+      "statusAway": "Ausente",
+      "statusBusy": "Ocupado",
+      "statusOffline": "Desconectado",
+      "statusOnline": "En línea"
+    },
     "avatarGroup": {
       "label": "Avatares",
       "more": "{{count}} más"

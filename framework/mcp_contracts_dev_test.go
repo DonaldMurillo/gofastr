@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
@@ -577,10 +578,15 @@ func TestContractsFixAdmitsPartialWritesOnFailure(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "b.go"), 0o644) })
 
 	app := NewApp()
-	_, err := app.toolContractsFix(context.Background(), map[string]any{"rule": "GOFASTR1005"})
-	if err == nil {
-		t.Fatal("a failing write did not error")
+	got, err := app.toolContractsFix(context.Background(), map[string]any{"rule": "GOFASTR1005"})
+	if err != nil {
+		t.Fatalf("a failing write returned %v; want a tool error result the agent can read", err)
 	}
+	res, ok := got.(mcp.ToolResult)
+	if !ok || !res.IsError || len(res.Content) != 1 {
+		t.Fatalf("a failing write answered %#v; want an IsError tool result", got)
+	}
+	msg := res.Content[0].Text
 	body, readErr := os.ReadFile(filepath.Join(dir, "a.go"))
 	if readErr != nil {
 		t.Fatal(readErr)
@@ -588,8 +594,8 @@ func TestContractsFixAdmitsPartialWritesOnFailure(t *testing.T) {
 	if !strings.Contains(string(body), `"POST"`) {
 		t.Fatal("test premise: a.go was not rewritten before the failure")
 	}
-	if !strings.Contains(err.Error(), "a.go") || !strings.Contains(err.Error(), "already written") {
-		t.Errorf("the error does not admit a.go was rewritten: %v", err)
+	if !strings.Contains(msg, "a.go") || !strings.Contains(msg, "already written") {
+		t.Errorf("the result does not admit a.go was rewritten: %s", msg)
 	}
 }
 

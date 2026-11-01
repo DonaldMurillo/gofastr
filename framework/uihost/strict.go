@@ -317,7 +317,10 @@ func (ds *UIHost) enforceFindings(findings []strictFinding) {
 func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 	var out []strictFinding
 	for _, path := range ds.App.Router.Paths() {
-		screen, _, ok := ds.App.Router.Resolve(path)
+		// ScreenByPattern, not Resolve: Paths() yields patterns, and a
+		// constrained pattern's own text ("/notes/:id:int") fails its
+		// constraint, which skipped the screen.
+		screen, ok := ds.App.Router.ScreenByPattern(path)
 		if !ok || screen.Type != app.ScreenPage || cfg.exempt(screen.Path) {
 			continue
 		}
@@ -629,7 +632,10 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	}
 	var pageRoutes, invisible []string
 	for _, path := range ds.App.Router.Paths() {
-		screen, _, ok := ds.App.Router.Resolve(path)
+		// ScreenByPattern, not Resolve: Paths() yields patterns, and a
+		// constrained pattern's own text ("/notes/:id:int") fails its
+		// constraint, which skipped the screen.
+		screen, ok := ds.App.Router.ScreenByPattern(path)
 		if !ok || screen.Type != app.ScreenPage || cfg.exempt(screen.Path) {
 			continue
 		}

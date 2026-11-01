@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
@@ -85,6 +86,14 @@ func (a *App) registerContractTools() error {
 	return nil
 }
 
+// contractRefusal is a refusal of the caller's arguments: an unknown
+// rule or capability, a rule with no autofix. It answers as invalid
+// params carrying its message, because the server redacts any other
+// error to "internal tool error" and the agent could not act on that.
+func contractRefusal(format string, args ...any) error {
+	return &mcp.RPCError{Code: mcp.ErrInvalidParams, Message: fmt.Sprintf(format, args...)}
+}
+
 // contractRuleView is the wire shape of a rule over MCP. It flattens the
 // derived fields (doc URL, suppression syntax) so a consumer never has to
 // know how to build them.
@@ -131,7 +140,7 @@ func (a *App) toolContractsList(_ context.Context, params map[string]any) (any, 
 	if strings.TrimSpace(filter) != "" {
 		capability, err := contracts.ParseCapability(filter)
 		if err != nil {
-			return nil, err
+			return nil, contractRefusal("%v; call contracts_capabilities for the list", err)
 		}
 		rules = contracts.RulesFor(capability)
 	}
@@ -150,7 +159,7 @@ func (a *App) toolContractsList(_ context.Context, params map[string]any) (any, 
 func (a *App) toolContractsExplain(_ context.Context, params map[string]any) (any, error) {
 	name, _ := params["rule"].(string)
 	if strings.TrimSpace(name) == "" {
-		return nil, fmt.Errorf("rule is required: pass an ID (GOFASTR1002) or a slug (routing/colon-path-parameter)")
+		return nil, contractRefusal("rule is required: pass an ID (GOFASTR1002) or a slug (routing/colon-path-parameter)")
 	}
 	rule, ok := contracts.LookupRule(name)
 	if !ok {
@@ -158,7 +167,7 @@ func (a *App) toolContractsExplain(_ context.Context, params map[string]any) (an
 		if near := contracts.SuggestRules(name); len(near) > 0 {
 			msg += ": did you mean " + strings.Join(near, ", ") + "?"
 		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, contractRefusal("%s", msg)
 	}
 	return fullView(rule), nil
 }

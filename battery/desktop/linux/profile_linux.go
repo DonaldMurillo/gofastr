@@ -219,9 +219,23 @@ func openPrivateProfileFile(path string) (*os.File, error) {
 	}
 	return f, nil
 }
+
+// A regular file may carry more than one hard link only when every link is
+// inside the profile: WebKit's network cache stores a body once under
+// Blobs/ and links it into each record. The walk counts the names it finds
+// for each such inode and refuses one whose link count is higher, a name
+// outside the profile the browser would write through. Cookie, origin and
+// lock files keep a single name.
 func inspectProfileTree(dir string) error {
+	type inode struct{ dev, ino uint64 }
+	type linked struct {
+		rel         string
+		nlink, seen uint64
+	}
+	var order []inode
+	links := map[inode]*linked{}
 	count := 0
-	return filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -238,15 +252,34 @@ func inspectProfileTree(dir string) error {
 			return err
 		}
 		st, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || st.Uid != uint32(os.Geteuid()) || !(info.IsDir() || info.Mode().IsRegular()) || info.Mode().Perm()&0o022 != 0 || (info.Mode().IsRegular() && st.Nlink != 1) {
+		if !ok || st.Uid != uint32(os.Geteuid()) || !(info.IsDir() || info.Mode().IsRegular()) || info.Mode().Perm()&0o022 != 0 {
 			return fmt.Errorf("desktop/linux: unsafe file in browser profile: %s", rel)
 		}
 		//gofastr:allow(routing/prefix-without-segment-boundary) cookie filename family, not a route/tree: SQLite sidecars and any backup suffix must all remain owner-only
-		if (strings.HasPrefix(rel, "cookies.sqlite") || rel == "origin.json" || rel == "profile.lock") && (!info.Mode().IsRegular() || info.Mode().Perm() != 0o600) {
+		if (strings.HasPrefix(rel, "cookies.sqlite") || rel == "origin.json" || rel == "profile.lock") && (!info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || st.Nlink != 1) {
 			return fmt.Errorf("desktop/linux: browser profile metadata/cookie file is not private: %s", rel)
+		}
+		if info.Mode().IsRegular() && st.Nlink != 1 {
+			key := inode{dev: uint64(st.Dev), ino: st.Ino}
+			l := links[key]
+			if l == nil {
+				l = &linked{rel: rel, nlink: uint64(st.Nlink)}
+				links[key] = l
+				order = append(order, key)
+			}
+			l.seen++
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	for _, key := range order {
+		if l := links[key]; l.seen != l.nlink {
+			return fmt.Errorf("desktop/linux: browser profile file is linked outside the browser profile: %s", l.rel)
+		}
+	}
+	return nil
 }
 
 type profileOrigin struct {

@@ -19,8 +19,8 @@ package check
 // as does a mention in a comment. A site that names the prefix on
 // purpose — a refusal filter that bars data-fui-* from extra attrs, the
 // lightbox Wiring that renders the framework module's family by
-// explicit prop — carries `//gofastr:allow(layerprefix) <reason>` on
-// its line or the line above; a bare marker with no reason silences
+// explicit prop — carries `//gofastr:allow(layerprefix) <reason>`
+// trailing its line or alone on the line above; a bare marker with no reason silences
 // nothing, the same discipline as every analyzer in internal/analyzers.
 
 import (
@@ -44,23 +44,8 @@ import (
 //gofastr:allow(layerprefix) the rule's own pattern names what it hunts
 var reLayerPrefix = regexp.MustCompile(`(?:^|[^-A-Za-z0-9_])fui-[a-z]|data-fui-`)
 
-const layerPrefixMarker = "gofastr:allow(layerprefix)"
-
-// layerPrefixAllowed reports whether line (1-based) of a source, or the
-// line above it, carries the marker WITH a reason.
-func layerPrefixAllowed(lines []string, line int) bool {
-	for _, n := range []int{line, line - 1} {
-		if n < 1 || n > len(lines) {
-			continue
-		}
-		if i := strings.Index(lines[n-1], layerPrefixMarker); i >= 0 {
-			if strings.TrimSpace(lines[n-1][i+len(layerPrefixMarker):]) != "" {
-				return true
-			}
-		}
-	}
-	return false
-}
+// layerPrefixMarker is the marker name; allowmarker.go reads the grammar.
+const layerPrefixMarker = "layerprefix"
 
 func layerPrefixMessage(lit string) string {
 	if len(lit) > 60 {
@@ -119,13 +104,13 @@ func LintLayerPrefixJS(roots ...string) (*Result, error) {
 		return nil, err
 	}
 	for _, f := range files {
-		lines := strings.Split(f.Src, "\n")
+		allowed := allowedLines(jsComments(f), layerPrefixMarker)
 		for _, lit := range jsStringLiterals(f.Code) {
 			if !reLayerPrefix.MatchString(lit.text) {
 				continue
 			}
 			line := f.lineOf(lit.pos)
-			if layerPrefixAllowed(lines, line) {
+			if allowed[line] {
 				continue
 			}
 			res.add(f.Path, line, layerPrefixMessage(lit.text))
@@ -173,7 +158,7 @@ func LintLayerPrefixGo(roots ...string) (*Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("layer-prefix lint: %w", err)
 		}
-		lines := strings.Split(string(src), "\n")
+		allowed := allowedLines(goComments(fset, af, src), layerPrefixMarker)
 		ast.Inspect(af, func(n ast.Node) bool {
 			lit, ok := n.(*ast.BasicLit)
 			if !ok || lit.Kind != token.STRING {
@@ -184,7 +169,7 @@ func LintLayerPrefixGo(roots ...string) (*Result, error) {
 				return true
 			}
 			line := fset.Position(lit.Pos()).Line
-			if layerPrefixAllowed(lines, line) {
+			if allowed[line] {
 				return true
 			}
 			res.add(path, line, layerPrefixMessage(s))

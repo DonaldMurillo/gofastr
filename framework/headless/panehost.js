@@ -228,8 +228,27 @@
     }
   });
 
-  function scrollOwner(host) {
-    return 'panehost:' + (host.id || '');
+  // The hosts holding the kernel's scroll lock, each under its own
+  // owner key: two id-less hosts must not share one, or closing either
+  // drawer frees the page while the other is still open. The Map also
+  // keeps a host the page swapped out reachable, so its lock can be
+  // released after it left the document.
+  const held = new Map();
+  let lockSeq = 0;
+  function lock(host) {
+    const owner = 'panehost:' + (++lockSeq);
+    held.set(host, owner);
+    if (NS.doc) NS.doc.lockScroll(owner);
+  }
+  function unlock(host) {
+    host.removeAttribute('data-hui-pane-mode');
+    const owner = held.get(host);
+    held.delete(host);
+    if (owner && NS.doc) NS.doc.unlockScroll(owner);
+  }
+  // A host that left the document holds no drawer anyone can close.
+  function releaseDetached() {
+    for (const host of [...held.keys()]) if (!host.isConnected) unlock(host);
   }
 
   // The pane's tabbables, over the kernel's shared focus selector.
@@ -258,14 +277,13 @@
     if (wantOverlay === isOverlay) return;
     if (wantOverlay) {
       host.setAttribute('data-hui-pane-mode', 'overlay');
-      if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
+      lock(host);
       const pane = paneOf(host, topmost(host));
       // An open modal keeps focus: the drawer is behind it.
       const modal = NS._modalStack && NS._modalStack.length > 0;
       if (pane && !modal && !pane.contains(document.activeElement)) focusIn(pane, false);
     } else {
-      host.removeAttribute('data-hui-pane-mode');
-      if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
+      unlock(host);
     }
   }
 
@@ -354,18 +372,17 @@
   });
 
   // Release every overlay lock and clear the mode on a client-side
-  // navigation, so the next page is not left scroll-locked by a host
-  // that is now detached.
+  // navigation, so the next page is not left scroll-locked. The event
+  // fires after the swap took the old page out of the document, so the
+  // walk is over the hosts holding a lock, never a document query that
+  // can no longer see them.
   window.addEventListener('gofastr:navigate', function () {
-    for (const host of document.querySelectorAll('[data-hui-panehost]')) {
-      if (host.getAttribute('data-hui-pane-mode') === 'overlay') {
-        host.removeAttribute('data-hui-pane-mode');
-        if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
-      }
-    }
+    for (const host of [...held.keys()]) unlock(host);
   });
 
   function scan(root) {
+    // An island swap can drop a host with no navigation event.
+    releaseDetached();
     const scope = root && root.querySelectorAll ? root : document;
     for (const host of within(scope, '[data-hui-panehost]')) {
       syncMode(host);

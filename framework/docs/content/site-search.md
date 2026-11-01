@@ -88,7 +88,8 @@ Left out:
 - Anything `hidden`, `inert`, `popover`, `aria-hidden="true"`, or with role
   `dialog`, `alertdialog` or `navigation`.
 - Anything marked `data-search-ignore`, such as a live demo's output.
-- Pages that set their own robots `noindex`: `ScreenRobots`, `SEO.Robots`, or
+- Pages that set their own robots `noindex` (or `none`, which means
+  noindex plus nofollow): `ScreenRobots`, `SEO.Robots`, or
   a `<meta name="robots" content="noindex">` in the page body, outside any
   `data-search-ignore` element (sample markup in a docs page does not drop
   the page). A sitewide

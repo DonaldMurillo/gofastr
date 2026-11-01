@@ -68,10 +68,15 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		} else if !noLinks && !b.top {
 			footer = b.rowActions(ctx, s, row, i)
 		}
+		// Card's Header replaces its Description block, so the subtitle
+		// rides inside the header, under the title row.
+		head := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, header...)
+		if desc != "" {
+			head = ui.Stack(ui.StackConfig{Gap: ui.GapXS}, head, ui.Muted(render.Text(desc)))
+		}
 		cards = append(cards, ui.Card(ui.CardConfig{
-			Header:      ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, header...),
-			Description: desc,
-			Footer:      footer,
+			Header: head,
+			Footer: footer,
 		}, html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, body)))
 	}
 	out := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapMD}, cards...)

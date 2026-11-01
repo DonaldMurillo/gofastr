@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -372,14 +373,22 @@ func (p *Plugin) Init(app *framework.App) error {
 type fanoutHandler struct {
 	sinks []Sink
 	opts  *slog.HandlerOptions
-	// attrs and group are accumulated state for With/WithGroup chains.
-	attrs []slog.Attr
-	group string
+	// steps is the With/WithGroup chain in call order. Handle replays it
+	// onto slog's JSONHandler step by step, so an attr added after a
+	// group lands inside it and nested groups nest, as they do on
+	// slog's own handler. Never mutated: derived handlers copy it.
+	steps []handlerStep
 
 	mu sync.Mutex
 	// metrics is shared across derived handlers so counters on a
 	// WithAttrs/WithGroup chain roll up to the original.
 	metrics *fanoutMetrics
+}
+
+// handlerStep is one WithAttrs (attrs set) or WithGroup (group set) call.
+type handlerStep struct {
+	attrs []slog.Attr
+	group string
 }
 
 // fanoutMetrics is shared between the root handler and every derived
@@ -432,13 +441,15 @@ func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 	// AddSource, ReplaceAttr, etc.) without re-implementing it.
 	var buf bytes.Buffer
 	enc := slog.NewJSONHandler(&buf, h.opts)
-	// Replay accumulated attrs/group so With chains work.
+	// Replay the With/WithGroup chain in order so attrs and groups nest
+	// the way the caller built them.
 	var attached slog.Handler = enc
-	if len(h.attrs) > 0 {
-		attached = attached.WithAttrs(h.attrs)
-	}
-	if h.group != "" {
-		attached = attached.WithGroup(h.group)
+	for _, st := range h.steps {
+		if st.group != "" {
+			attached = attached.WithGroup(st.group)
+		} else {
+			attached = attached.WithAttrs(st.attrs)
+		}
 	}
 	if err := attached.Handle(ctx, r); err != nil {
 		return err
@@ -510,34 +521,27 @@ func (h *fanoutHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(attrs) == 0 {
 		return h
 	}
-	combined := make([]slog.Attr, 0, len(h.attrs)+len(attrs))
-	combined = append(combined, h.attrs...)
-	combined = append(combined, attrs...)
-	return &fanoutHandler{
-		sinks:   h.sinks,
-		opts:    h.opts,
-		attrs:   combined,
-		group:   h.group,
-		metrics: h.metrics, // shared pointer so counters aggregate
-	}
+	return h.with(handlerStep{attrs: slices.Clone(attrs)})
 }
 
 func (h *fanoutHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
 	}
-	g := h.group
-	if g == "" {
-		g = name
-	} else {
-		g = g + "." + name
-	}
+	return h.with(handlerStep{group: name})
+}
+
+// with derives a handler whose chain ends in st. The chain is copied so
+// siblings derived from one parent never share a backing array.
+func (h *fanoutHandler) with(st handlerStep) *fanoutHandler {
+	steps := make([]handlerStep, 0, len(h.steps)+1)
+	steps = append(steps, h.steps...)
+	steps = append(steps, st)
 	return &fanoutHandler{
 		sinks:   h.sinks,
 		opts:    h.opts,
-		attrs:   h.attrs,
-		group:   g,
-		metrics: h.metrics,
+		steps:   steps,
+		metrics: h.metrics, // shared pointer so counters aggregate
 	}
 }
 

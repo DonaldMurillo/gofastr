@@ -511,6 +511,16 @@ page answer says whether the page redirects. When the two disagree
 (session expired, a guard redirected), the part answers 409 and the
 runtime reloads the URL as a whole document, once.
 
+A part request that fails in transport (a proxy's 502, 503 or 429, a
+dropped connection) is sent once more after a short pause. When the
+retry fails too, the region stops showing its loading content: the
+runtime writes its `runtime.part_failed` phrase ("This section could
+not load.") in its place and marks the region
+`data-cui-loadstate="error"`, so the region's own registered style can
+key on the state. A loader that returns an error is a different case:
+the server renders that outlet's fallback into the part, which lands
+like any other fill.
+
 ## Loading content
 
 **Use `Loading` when** a navigation is slow enough that the old content

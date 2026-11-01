@@ -75,6 +75,13 @@ one base64 part per attachment.
 
 `SMTPConfig.Validate()` checks the required fields.
 
+`Send` honours its context for the whole exchange, not only the dial:
+cancelling it closes the connection, and the send returns an error
+wrapping both `ErrSendFailed` and the context's error
+(`context.Canceled` or `context.DeadlineExceeded`). Once the relay has
+accepted the message (its reply to the end of `DATA`), a later cancel
+does not turn the send into a failure.
+
 The sender refuses to serialize an `Email` whose header fields (`From`,
 `To`, `Cc`, `Bcc`, `Subject`, custom headers, attachment filename and
 content type) contain any C0 control byte (including CR, LF, NUL) or DEL.

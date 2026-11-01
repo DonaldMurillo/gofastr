@@ -3,8 +3,10 @@ package crud
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -46,6 +48,10 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 	orig, _ := http.NewRequest(http.MethodPost, "/mcp", nil)
 	ctx := handler.SetUser(mcp.WithRequest(context.Background(), orig), &testUser{id: "alice"})
 
+	// An argument refusal is the agent's to act on: invalid params with
+	// its message, never redacted to "internal tool error" and never
+	// logged at Error as a server fault.
+	errorLogs := countErrorLogs(t)
 	// call answers the ids the list returned, or ok=false for a refusal.
 	call := func(rawArgs string) (ids []string, ok bool) {
 		t.Helper()
@@ -55,6 +61,9 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 		}
 		resp := srv.HandleRequest(ctx, mcp.Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: p})
 		if resp.Error != nil {
+			if resp.Error.Code != mcp.ErrInvalidParams || resp.Error.Message == "internal tool error" {
+				t.Errorf("%s refused as %d %q; want invalid params with the reason", rawArgs, resp.Error.Code, resp.Error.Message)
+			}
 			return nil, false
 		}
 		out, err := json.Marshal(resp.Result)
@@ -97,7 +106,40 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 	refuse(`{"name_in": ["Doe, Jane"]}`)
 	refuse(`{"name": ["Doe", "Jane"]}`)
 	refuse(`{"name": {"x": 1}}`)
+
+	// The get tool's record key, sent empty, is an argument refusal too.
+	p, _ := json.Marshal(map[string]any{"name": "mcp_docs_get", "arguments": map[string]any{"id": ""}})
+	resp := srv.HandleRequest(ctx, mcp.Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: p})
+	if resp.Error == nil || resp.Error.Code != mcp.ErrInvalidParams || !strings.Contains(resp.Error.Message, "must not be empty") {
+		t.Errorf("get with an empty id answered %+v; want invalid params naming the empty id", resp.Error)
+	}
+	if n := errorLogs.Load(); n != 0 {
+		t.Errorf("argument refusals logged %d records at Error", n)
+	}
 }
+
+// countErrorLogs counts records logged at Error or above on the default
+// logger until the test ends.
+func countErrorLogs(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	prev := slog.Default()
+	slog.SetDefault(slog.New(errorCounter{n: &n}))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &n
+}
+
+type errorCounter struct{ n *atomic.Int32 }
+
+func (errorCounter) Enabled(context.Context, slog.Level) bool { return true }
+func (c errorCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelError {
+		c.n.Add(1)
+	}
+	return nil
+}
+func (c errorCounter) WithAttrs([]slog.Attr) slog.Handler { return c }
+func (c errorCounter) WithGroup(string) slog.Handler      { return c }
 
 // The tools/call validator refuses a list or object for a string filter
 // and a scalar for an _in key before the tool runs, so these shapes
