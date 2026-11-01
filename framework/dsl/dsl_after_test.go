@@ -81,6 +81,8 @@ func TestBuildDSLAfterUsesCursorField(t *testing.T) {
 			c.Pagination = &entity.PaginationConfig{}
 		}
 		c.Pagination.CursorField = "seq"
+		// after() keysets on the one column, so it must be unique.
+		c.Fields[1].Unique = true
 	})
 	qb, err := BuildDSLQuery(reg, `posts.after("42")`)
 	if err != nil {
@@ -135,5 +137,19 @@ func TestBuildDSLAfterCompositeRejected(t *testing.T) {
 	})
 	if _, err := BuildDSLQuery(reg, `posts.after("x")`); err == nil {
 		t.Fatal("after() on composite cursor should error")
+	}
+}
+
+// after() keysets on CursorField alone, so a non-unique one would skip
+// every row tied with the value it resumes after (two posts with one
+// created_at). It is refused with the fix named, not run (bug hunt r7
+// R7-002); the HTTP cursor API appends the key as a tiebreak.
+func TestDSLAfterRefusesNonUniqueCursor(t *testing.T) {
+	reg := postsRegistry(t, func(c *entity.EntityConfig) {
+		c.Pagination = &entity.PaginationConfig{CursorField: "seq"}
+	})
+	_, err := BuildDSLQuery(reg, `posts.order(seq).after("42").limit(1)`)
+	if err == nil || !strings.Contains(err.Error(), "not unique") {
+		t.Fatalf("after() on a non-unique CursorField: err = %v, want a not-unique refusal", err)
 	}
 }

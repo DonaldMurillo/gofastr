@@ -40,7 +40,17 @@ package webbotauth
 //     on the next successful refetch.
 //   - Failures are negative-cached for a short TTL (<= 5 min, draft
 //     C.5) so a flood of unresolvable agent URLs cannot force a fetch
-//     per request.
+//     per request. A failed refresh of a held entry backs off the same
+//     way: the stale keys serve without a refetch until the negative
+//     TTL has passed, so an outage costs one fetch per TTL, not one per
+//     request.
+//   - Fetch slots are bounded twice: at most maxConcurrentFetches
+//     overall and maxFetchesPerSite per registrable domain, so one slow
+//     origin named through many query-varied jwks_uri identifiers (which
+//     defeat coalescing and the negative cache) cannot hold every slot.
+//     A fetch that finds no slot waits at most fetchSlotWait and then
+//     reports ErrResolverBusy, which verification turns into a
+//     retryable unverified outcome, never a refusal.
 //   - Positive and negative entries live in separate bounded LRU maps:
 //     an attacker spraying junk URLs can only churn the negative map,
 //     never evict a real agent's keys.
@@ -61,6 +71,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
@@ -77,6 +89,8 @@ const (
 	dnsLookupTimeout         = 2 * time.Second // attacker-chosen hostname
 	maxConcurrentFetches     = 8               // across all identifiers
 	maxConcurrentLookups     = 8               // across all hostnames
+	maxFetchesPerSite        = 2               // per registrable domain
+	fetchSlotWait            = 2 * time.Second // wait for a free fetch slot
 	acceptDirectory          = "application/http-message-signatures-directory+json, application/json;q=0.9"
 )
 
@@ -247,13 +261,14 @@ func guardedTransport(allowPrivate bool) *http.Transport {
 	return tr
 }
 
-// cacheEntry is one cached directory resolution.
+// cacheEntry is one cached directory resolution. Entries are replaced,
+// never changed in place: a reader may hold one.
 type cacheEntry struct {
 	keys      []jwk
 	expiresAt time.Time
-	// stale is set on the positive entry that a failed refresh left
-	// behind; the entry keeps serving past expiresAt (draft 6.10).
-	stale bool
+	// retryAt is set when a refresh past expiresAt failed: the entry
+	// keeps serving (draft 6.10) and is not refetched before retryAt.
+	retryAt time.Time
 }
 
 // negativeEntry is a cached failure.
@@ -341,6 +356,12 @@ type directoryResolver struct {
 	// an attacker naming many distinct resolvable hosts is not
 	// duplicating anything, so that map bounds nothing for them.
 	sem chan struct{}
+	// slotWait bounds the wait for a free slot in sem.
+	slotWait time.Duration
+	// siteFetches counts in-flight fetches per registrable domain
+	// (guarded by mu); perSite caps it.
+	siteFetches map[string]int
+	perSite     int
 }
 
 type fetchCall struct {
@@ -370,6 +391,9 @@ func newDirectoryResolver(log *slog.Logger) *directoryResolver {
 		inflight:    make(map[string]*fetchCall),
 		now:         time.Now,
 		sem:         make(chan struct{}, maxConcurrentFetches),
+		slotWait:    fetchSlotWait,
+		siteFetches: make(map[string]int),
+		perSite:     maxFetchesPerSite,
 	}
 }
 
@@ -380,15 +404,15 @@ func (d *directoryResolver) resolve(ctx context.Context, ref *agentRef) (*jwkSet
 	now := d.now()
 	if v, ok := d.pos.get(ref.identifier); ok {
 		e := v.(*cacheEntry)
-		if now.Before(e.expiresAt) {
+		if now.Before(e.expiresAt) || now.Before(e.retryAt) {
 			return &jwkSet{keys: e.keys}, nil
 		}
-		// TTL lapsed: refresh (blocking, bounded by the fetch timeout).
-		// A successful fetch replaces the entry wholesale - the
-		// rotation path. A failed fetch is not evidence (draft 6.10)
-		// and the cached keys keep serving, however old: an operator's
-		// directory outage must not revoke its keys at every verifier
-		// at once.
+		// TTL lapsed: refresh (blocking, bounded by the slot wait and
+		// the fetch timeout). A successful fetch replaces the entry
+		// wholesale - the rotation path. A failed fetch is not evidence
+		// (draft 6.10) and the cached keys keep serving, however old: an
+		// operator's directory outage must not revoke its keys at every
+		// verifier at once.
 		set, err := d.fetchCoalesced(ctx, ref)
 		if err != nil {
 			return &jwkSet{keys: e.keys}, nil
@@ -408,15 +432,56 @@ func (d *directoryResolver) resolve(ctx context.Context, ref *agentRef) (*jwkSet
 	return set, nil
 }
 
-// fetchBounded acquires the global fetch slot, then runs the fetch
-// detached from the calling request's cancellation under its own
+// fetchSite is the key the per-site fetch cap counts under: the
+// registrable domain of the fetch host, so a.evil.example and
+// b.evil.example share one budget. An IP literal, or a host the
+// public suffix list cannot place, counts as itself.
+func fetchSite(fetchURL string) string {
+	u, err := url.Parse(fetchURL)
+	if err != nil {
+		return fetchURL
+	}
+	host := strings.ToLower(u.Hostname())
+	if net.ParseIP(host) != nil {
+		return host
+	}
+	if site, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return site
+	}
+	return host
+}
+
+// fetchBounded takes a per-site and a global fetch slot, then runs the
+// fetch detached from the calling request's cancellation under its own
 // deadline. Detaching matters because other verifiers join this call:
 // if it inherited the leader's context, one client disconnecting would
 // fail every request waiting on the same directory.
 func (d *directoryResolver) fetchBounded(ctx context.Context, ref *agentRef) (*jwkSet, error) {
+	site := fetchSite(ref.fetchURL)
+	d.mu.Lock()
+	if d.siteFetches[site] >= d.perSite {
+		d.mu.Unlock()
+		return nil, fmt.Errorf("directory fetch for %q not attempted, %d already in flight: %w", site, d.perSite, ErrResolverBusy)
+	}
+	d.siteFetches[site]++
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		if d.siteFetches[site]--; d.siteFetches[site] <= 0 {
+			delete(d.siteFetches, site)
+		}
+		d.mu.Unlock()
+	}()
+	// The global slot wait is bounded: a burst of slow directories must
+	// not hold every other verification for as long as its request
+	// lives.
+	wait := time.NewTimer(d.slotWait)
+	defer wait.Stop()
 	select {
 	case d.sem <- struct{}{}:
 		defer func() { <-d.sem }()
+	case <-wait.C:
+		return nil, fmt.Errorf("directory fetch for %q not attempted: %w", site, ErrResolverBusy)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -462,19 +527,23 @@ func (d *directoryResolver) fetchCoalesced(ctx context.Context, ref *agentRef) (
 
 	if err != nil {
 		// A failed resolution is not evidence (draft 6.10): keep any
-		// positive entry (marking it stale-serving) and only write the
-		// negative cache when nothing positive is held.
+		// positive entry, serving it until the negative TTL has passed
+		// before the next refetch, and only write the negative cache
+		// when nothing positive is held. The caller leaving says nothing
+		// about the directory, so it sets no backoff.
 		if v, ok := d.pos.get(ref.identifier); ok {
 			e := v.(*cacheEntry)
-			e.stale = true
-			d.pos.put(ref.identifier, e)
+			if ctx.Err() == nil {
+				d.pos.put(ref.identifier, &cacheEntry{keys: e.keys, expiresAt: e.expiresAt, retryAt: d.now().Add(d.negativeTTL)})
+			}
 			return nil, err
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			// The caller went away (or ran out of budget). That is not
-			// evidence about the directory, and caching it would let a
-			// client that aborts repeatedly keep a real agent refused
-			// for the whole negative TTL.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrResolverBusy) {
+			// The caller went away (or ran out of budget), or our own
+			// fetch budget was full. Neither is evidence about the
+			// directory, and caching it would let a client that aborts
+			// repeatedly keep a real agent refused for the whole
+			// negative TTL.
 			return nil, err
 		}
 		d.neg.put(ref.identifier, &negativeEntry{reason: err.Error(), expiresAt: d.now().Add(d.negativeTTL)})

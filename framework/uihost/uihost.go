@@ -1579,7 +1579,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// where they forge log lines and header values downstream. Percent-
 	// encode them, the same contract sanitizeHeaderValue pins elsewhere.
 	if target, ok := ds.App.ResolveRedirect(path); ok {
-		http.Redirect(w, r, scrubCtl(target), http.StatusPermanentRedirect)
+		http.Redirect(w, r, scrubCtl(carryQuery(target, r.URL.RawQuery)), http.StatusPermanentRedirect)
 		return
 	}
 	// Agent content negotiation: when WithMarkdownNegotiation (or the
@@ -2422,6 +2422,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	colorTag := `<script src="/__gofastr/color-scheme.js"></script>`
 	switch {
 	case inlined != nil:
+		//gofastr:allow(GOFASTR1805) hashed first-paint script: the CSP carries its sha256
 		colorTag = "<script>" + inlined.scheme.body + "</script>"
 	case bundle:
 		colorTag = `<script src="/__gofastr/color-scheme.js?v=` + colorSchemeHash() + `"></script>`
@@ -3076,11 +3077,12 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// via X-Gofastr-Location so it pushState's and loads the partial
 	// there (same mechanism as a policy redirect). The client manifest
 	// usually rewrites before the request; this covers first load and a
-	// stale manifest so a redirect never 404s. The target is percent-
+	// stale manifest so a redirect never 404s. The request's query rides
+	// along (carryQuery), as on the full-load 308. The target is percent-
 	// encoded like http.Redirect's Location: fetch reads header bytes as
 	// Latin-1.
 	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
-		w.Header().Set("X-Gofastr-Location", escapeNonASCII(target))
+		w.Header().Set("X-Gofastr-Location", escapeNonASCII(scrubCtl(carryQuery(target, r.URL.RawQuery))))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -4102,8 +4104,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 
 	// Top-level page index
 	r.Get("/llm-pages.md", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setPageMarkdownHeaders(w)
 		// Request-scoped: policy-gated screens list metadata-free for
 		// anonymous agents; an authenticated request sees the full index.
 		w.Write([]byte(app.AppLLMMDCtx(app.WithRequest(req.Context(), req), coreApp)))
@@ -4134,13 +4135,11 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 					ds.handlePage(w, req)
 					return
 				}
-				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-				w.Header().Set("Cache-Control", "no-cache")
+				setPageMarkdownHeaders(w)
 				w.Write([]byte(md))
 				return
 			}
-			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-cache")
+			setPageMarkdownHeaders(w)
 			// A screen whose policy phase doesn't Allow this request gets
 			// the metadata-free withheld doc: the pattern doc's title,
 			// description, SEO front matter, AND content are all
@@ -4434,8 +4433,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// Serve the per-instance doc when the base path resolves to a screen.
 	// Mirrored in resolvesStaticOrScreen. Keep the two in sync.
 	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setPageMarkdownHeaders(w)
 		w.Write([]byte(md))
 		return
 	}

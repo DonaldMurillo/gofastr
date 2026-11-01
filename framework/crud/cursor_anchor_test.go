@@ -296,3 +296,31 @@ func TestCursorSurvivesMovedAnchor(t *testing.T) {
 		}
 	})
 }
+
+// A key-only cursor's anchor row is looked up under the caller's scopes
+// only, never the client's own ?where= or ?q=: the anchor fixes where the
+// page starts, and a row that stopped matching the search still names
+// that position (bug hunt r7 R7-001). The same search spelled as a plain
+// ?body= filter never reached the lookup and paged on.
+func TestCursorAnchorIgnoresClientWhere(t *testing.T) {
+	anchorDialects(t, func(t *testing.T, ch *CrudHandler, db *sql.DB, ph func(int) string) {
+		anchorSeed(t, db, ph, "n1", "alice", "a")
+		anchorSeed(t, db, ph, "n2", "alice", "b")
+		anchorSeed(t, db, ph, "n3", "alice", "c")
+		where := url.QueryEscape(`{"field":"body","op":"in","values":["b","c"]}`)
+		cur := url.QueryEscape(pagination.EncodeCursor("id", "n1"))
+		req := withTestUser(httptest.NewRequest(http.MethodGet, "/anotes?limit=1&where="+where+"&cursor="+cur, nil), "alice")
+		rec := httptest.NewRecorder()
+		ch.List()(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("key-only cursor with ?where= = %d %.300s, want 200", rec.Code, rec.Body.String())
+		}
+		var page pagination.CursorPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Data) != 1 || page.Data[0]["id"] != "n2" {
+			t.Errorf("page = %v, want n2", page.Data)
+		}
+	})
+}

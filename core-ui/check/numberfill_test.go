@@ -69,3 +69,27 @@ func TestLintNumberFill_Repo(t *testing.T) {
 		t.Errorf("a {{n}} fill skips NS.formatNumber:\n%s", res.Error())
 	}
 }
+
+// say() fills {{n}} from its params object: intercept.js's panel-limit
+// toast passed { n: MAX_LAYERS } and wrote ASCII digits on every locale.
+const sayFillFixture = `(() => {
+  NS.say('runtime.panel_limit', '{{n}} panels is the limit', { n: MAX_LAYERS });
+  say('k.left', '{{n}} left', { n });
+  G.say('k.of', '{{n}} of {{t}}', { t: G.formatNumber(total), 'n': String(count) });
+  say('k.ok', '{{n}} saved', { n: NS.formatNumber(x) });
+  say('k.name', 'Hi {{name}}', { name: user });
+  say('k.lit', '{{n}} max', { n: 3 });
+  say('k.var', '{{n}} max', opts);
+  say('k.q', 'for {{q}}', { q: n });
+  say('k.none', 'Plain words');
+})();
+`
+
+func TestNumberFillReadsSayParams(t *testing.T) {
+	dir := writeRuntimeFixture(t, "say.js", sayFillFixture)
+	res, err := LintNumberFill(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLines(t, res, []int{2, 3, 4})
+}

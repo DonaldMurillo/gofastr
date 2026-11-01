@@ -177,6 +177,9 @@ func (s *darwinShell) OpenFile(ctx context.Context, opts desktop.OpenOptions) ([
 	if err := ctx.Err(); err != nil {
 		return nil, desktop.ErrCancelled
 	}
+	if _, err := desktop.CheckFileDialog(opts, ""); err != nil {
+		return nil, err
+	}
 	var paths []string
 	if err := s.onMainWithTimeout(modalTimeout, func() {
 		panel := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSOpenPanel"), objc.Sel("alloc"))), objc.Sel("init")))
@@ -211,6 +214,9 @@ func (s *darwinShell) OpenFile(ctx context.Context, opts desktop.OpenOptions) ([
 func (s *darwinShell) SaveFile(ctx context.Context, opts desktop.SaveOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", desktop.ErrCancelled
+	}
+	if _, err := desktop.CheckFileDialog(desktop.OpenOptions{}, opts.DefaultName); err != nil {
+		return "", err
 	}
 	var path string
 	ok := false

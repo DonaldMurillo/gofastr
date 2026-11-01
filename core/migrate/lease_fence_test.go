@@ -150,7 +150,7 @@ func TestStaleReleaseKeepsNewerRow(t *testing.T) {
 // connection between migrations.
 func TestPoolOneRunKeepsLease(t *testing.T) {
 	prevLease := migrateLease
-	migrateLease = 2 * time.Second
+	migrateLease = 3 * time.Second
 	t.Cleanup(func() { migrateLease = prevLease })
 
 	path := filepath.Join(t.TempDir(), "pool1.db")
@@ -162,17 +162,21 @@ func TestPoolOneRunKeepsLease(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Each migration stands for 800ms of work: the run outlasts the
-	// two-second lease. During the last one another process tries.
+	// Each migration stands for a second of work: the four-second run
+	// outlasts the three-second lease. During the last one another
+	// process tries for 400ms. The lease counts whole seconds, so a
+	// renewal can expire up to a second early: the widest gap the steal
+	// sees, 1s + 400ms + 1s of rounding, stays inside the lease, and a
+	// run that never renews loses it every time.
 	var stolen bool
 	testHookAfterMigration = func(mig Migration) {
-		time.Sleep(800 * time.Millisecond)
+		time.Sleep(time.Second)
 		if mig.Version != 4 {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 		defer cancel()
-		if release, err := AcquireSQLiteLease(ctx, other, "_gofastr_migrate_lock", 2*time.Second, "other"); err == nil {
+		if release, err := AcquireSQLiteLease(ctx, other, "_gofastr_migrate_lock", 3*time.Second, "other"); err == nil {
 			stolen = true
 			release()
 		}

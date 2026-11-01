@@ -21,6 +21,7 @@ var (
 	reasonAfterComposite         = i18n.Define("dsl.after_composite", "dsl: after() is unsupported on {{entity}} (composite cursor); use the HTTP cursor API")
 	reasonAfterFieldNotFound     = i18n.Define("dsl.after_field_not_found", "dsl: after() cursor field {{field}} not found on {{entity}}")
 	reasonAfterFieldNotQueryable = i18n.Define("dsl.after_field_not_queryable", "dsl: after() cursor field {{field}} on {{entity}} cannot be queried")
+	reasonAfterNotUnique         = i18n.Define("dsl.after_not_unique", "dsl: after() cursor field {{field}} on {{entity}} is not unique, so rows tied on it would be skipped; mark the field Unique, cursor on the key, or use the HTTP cursor API")
 	reasonExpectedCall           = i18n.Define("dsl.expected_call", "dsl: expected call in {{input}}")
 	reasonUnclosedCall           = i18n.Define("dsl.unclosed_call", "dsl: unclosed call {{name}}")
 	reasonInvalidFilter          = i18n.Define("dsl.invalid_filter", "dsl: invalid filter {{input}}")

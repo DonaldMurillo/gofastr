@@ -60,15 +60,22 @@ Lookup order for `${NAME}`:
 2. `os.Environ`.
 3. Empty string (no error, matching shell behaviour).
 
-Hardening:
+Each value is substituted as stored and never expanded a second time,
+the way a shell substitutes a variable. A single-quoted literal or an
+escaped `\${...}` stays literal when another line references it, and an
+environment value holding `${x}` goes in as the text `${x}`:
 
-- **Cycle detection.** `A=${A}` or any mutual chain `A=${B}` /
-  `B=${A}` resolves to empty rather than looping.
-- **Depth cap** (16 levels). Deeper chains stop expanding rather
-  than blow the stack.
-- **`\${...}` escape.** A backslash before `${` is preserved by the
-  string-unescape phase so the expander sees `\$` and emits a
-  literal `$` without triggering a lookup.
+```
+PW='a${b}c'
+DSN="postgres://u:${PW}@h/db"   # postgres://u:a${b}c@h/db
+```
+
+- **No cycles.** `A=${A}` reads A before this line sets it (empty the
+  first time). Since a looked-up value is never re-expanded, no chain
+  can loop or compound through lookups.
+- **`\${...}` escape.** Escapes and `${...}` are read in one pass, so
+  `\$` is a literal `$` that starts no lookup, and `\\${DIR}` is a
+  literal backslash followed by DIR's value.
 - **Malformed `${...` (no closing brace)** is left verbatim. The
   parser never silently drops bytes.
 

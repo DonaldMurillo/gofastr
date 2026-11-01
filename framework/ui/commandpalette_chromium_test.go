@@ -656,7 +656,9 @@ func TestPaletteHoldsItsHeightWhileTyping(t *testing.T) {
 	srv := paletteTestServer(t)
 	ctx := paletteChromeCtx(t, 1280, 800)
 	openPalette(t, ctx, srv.URL, 1280, 800)
-	const height = `document.querySelector('[data-cui-comp="ui-cmd-palette"]').getBoundingClientRect().height`
+	// offsetHeight, not getBoundingClientRect: the overlay scales in from
+	// 0.96, and a rect read mid-animation (a slow CI runner) reads 461 of 480.
+	const height = `document.querySelector('[data-cui-comp="ui-cmd-palette"]').offsetHeight`
 	var full, one, none float64
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(height, &full),
@@ -671,5 +673,41 @@ func TestPaletteHoldsItsHeightWhileTyping(t *testing.T) {
 	}
 	if one != full || none != full {
 		t.Errorf("panel height %.0f with every command, %.0f with one, %.0f with none; want one height", full, one, none)
+	}
+}
+
+// The palette's result list is the dialog's own content, not a popup
+// over it: one Escape closes the palette even while the list is shown.
+// A combobox inside some other dialog keeps Escape for its popup list.
+func TestPaletteEscapeClosesInOnePress(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 1280, 800)
+	var loaded bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.EmulateViewport(1280, 800),
+		chromedp.WaitVisible(`#open`, chromedp.ByID),
+		chromedp.Click(`#open`, chromedp.ByID),
+		chromedp.WaitVisible(`[data-cui-comp="ui-cmd-palette"]`),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-combobox'])`, &loaded,
+			chromedp.WithPollingTimeout(15*time.Second)),
+		chromedp.Poll(`document.getElementById('command-palette-input').getAttribute('aria-expanded') === 'true'`, &loaded,
+			chromedp.WithPollingTimeout(5*time.Second)),
+	); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+	var closed bool
+	if err := chromedp.Run(ctx,
+		chromedp.KeyEvent(kb.Escape),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`(() => {
+			const w = document.querySelector('[data-cui-widget="command-palette"]');
+			return !w || w.hidden || getComputedStyle(w).display === 'none';
+		})()`, &closed),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Error("one Escape with the result list shown left the palette open")
 	}
 }

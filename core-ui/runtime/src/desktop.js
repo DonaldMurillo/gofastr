@@ -92,11 +92,17 @@
 
   // Mousedown on an element carrying data-cui-window-drag, or inside
   // one, starts a window drag: the drag-handle pattern for borderless
-  // windows. Delegated, so runtime-swapped islands keep working.
+  // windows. Delegated, so runtime-swapped islands keep working. Only a
+  // primary press drags, and never one on a control inside the region
+  // (or a data-cui-window-no-drag subtree): the native host takes the
+  // mouse once the drag starts, so the control would never get its click.
+  const NO_DRAG = 'button,input,select,textarea,a[href],[contenteditable]:not([contenteditable="false"]),[data-cui-window-no-drag]';
   if (typeof document !== 'undefined' && document.addEventListener) {
     document.addEventListener('mousedown', (e) => {
       const t = e.target;
-      if (t && t.closest && t.closest('[data-cui-window-drag]')) startDrag();
+      const r = e.button === 0 && t && t.closest && t.closest('[data-cui-window-drag]');
+      const c = r && t.closest(NO_DRAG);
+      if (r && !(c && r.contains(c))) startDrag();
     });
   }
 

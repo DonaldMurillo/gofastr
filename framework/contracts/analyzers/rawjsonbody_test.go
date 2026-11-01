@@ -826,3 +826,58 @@ func (s *Server) ServeStdio(in io.Reader) error {
 	assertNot(t, ds, contracts.RuleRawJSONBodyDecode,
 		"a local scanner over an io.Reader parameter reads what the caller declared; only a scanner ferried into a field is a framing source")
 }
+
+// jsonexact.Unmarshal and Decode keep every number exact, and nothing
+// else: underneath they are a json.Decoder, so the last duplicate key
+// still wins and key case still folds. The floatnum analyzer points at
+// them, and they used to clear this rule.
+func TestJSONExactBodyDecodeIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"hook/handler.go": `package hook
+
+import (
+	"io"
+	"net/http"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
+)
+
+func receive(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return
+	}
+	var event map[string]any
+	_ = jsonexact.Unmarshal(body, &event)
+	var again map[string]any
+	_ = jsonexact.Decode(body, &again, jsonexact.Lossless)
+}
+`,
+	})
+	if got := rules(ds)[contracts.RuleRawJSONBodyDecode]; got != 2 {
+		t.Errorf("want both jsonexact decodes reported, got %d (%v)", got, rules(ds))
+	}
+}
+
+func TestJSONExactFileDecodeIsQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"cfg/load.go": `package cfg
+
+import (
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
+)
+
+func load(path string) (map[string]any, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	return m, jsonexact.Unmarshal(b, &m)
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleRawJSONBodyDecode, "a file's bytes are not a request body")
+}

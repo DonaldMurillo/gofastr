@@ -300,12 +300,27 @@
     if (m.mod && !(e.metaKey || e.ctrlKey)) return false;
     if (m.shift && !e.shiftKey) return false;
     if (m.alt && !e.altKey) return false;
-    // Don't intercept while typing into a text-like input, except
-    // when the chord includes a modifier (then it's an intentional
-    // hotkey, not a typed character).
-    const inField = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-    if (inField && !m.mod && !m.alt) return false;
+    // A modifier the chord does not name makes it a different chord:
+    // Ctrl+K is the browser's, not "k". Shift is the exception for a
+    // non-letter character, because Shift is how "?" is typed at all;
+    // on a letter or a named key it still refuses (Shift+K is not "k").
+    if (!m.mod && (e.metaKey || e.ctrlKey)) return false;
+    if (!m.alt && e.altKey) return false;
+    if (!m.shift && e.shiftKey && (m.key.length > 1 || m.key.toUpperCase() !== m.key)) return false;
+    // Don't intercept while typing, except when the chord includes a
+    // modifier (then it's an intentional hotkey, not a typed
+    // character). Typing covers a rich-text editor too: a
+    // contenteditable region or a role="textbox" widget takes "/" as
+    // a character the same way an input does.
+    if (!m.mod && !m.alt && inTextField(document.activeElement)) return false;
     return true;
+  }
+
+  function inTextField(el) {
+    if (!el) return false;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
+    if (el.isContentEditable) return true;
+    return !!(el.closest && el.closest('[role="textbox"],[role="searchbox"],[role="combobox"]'));
   }
 
   function shortcutTarget(el) {

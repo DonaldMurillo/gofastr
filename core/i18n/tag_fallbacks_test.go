@@ -22,7 +22,9 @@ func TestRegionTagFindsScriptCatalog(t *testing.T) {
 	if got := tr.T(WithContext(context.Background(), Locale{Tag: "zh-hant-hk"}), "hi"); got != "你好" {
 		t.Errorf("T under zh-hant-hk = %q, want the zh-hant text", got)
 	}
-	want := []string{"zh-hant-hk", "zh-hant", "zh"}
+	// zh-Hant's CLDR parent is root: the chain never reaches the
+	// Simplified "zh".
+	want := []string{"zh-hant-hk", "zh-hant"}
 	if got := tagFallbacks("zh-Hant-HK"); !slices.Equal(got, want) {
 		t.Errorf("tagFallbacks = %q, want %q", got, want)
 	}

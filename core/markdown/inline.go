@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
@@ -143,12 +144,22 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 			}
 			sb.WriteString("[")
 			i++
+		case ch == '_' && wordByteBefore(input, i):
+			// Intraword underscore (CommonMark): XDG_DATA_HOME and
+			// many_to_many are text. The whole run goes out at once, or
+			// its second underscore, preceded by the first, would open.
+			j := i
+			for j < len(input) && input[j] == '_' {
+				j++
+			}
+			sb.WriteString(input[i:j])
+			i = j
 		case ch == '*' || ch == '_':
 			delim, run := scanRun(input, i, ch)
 			key := int(delim)<<2 | run
 			closeIdx := -1
 			if noCloser == nil || !noCloser[key] {
-				closeIdx = findClosingDelim(runs, input, i+run, delim, run)
+				closeIdx = findClosingDelim(runs, links, input, base, i+run, delim, run)
 				if closeIdx < 0 {
 					if noCloser == nil {
 						noCloser = make(map[int]bool, 4)
@@ -209,10 +220,23 @@ func scanRun(s string, i int, delim byte) (byte, int) {
 
 // findClosingDelim looks for a matching delimiter run after position start.
 // CommonMark has a more complex flanking rule; we use a simple "next run of
-// the same length" search which works for everyday docs.
-func findClosingDelim(runs *backtickRuns, s string, start int, delim byte, run int) int {
+// the same length" search which works for everyday docs, plus two of its
+// rules: an underscore run followed by a letter or digit is intraword and
+// closes nothing, and a link binds tighter than emphasis, so the search
+// steps over a parsed [text](url) whole (a '*' or '_' in its URL closed
+// the emphasis and broke the link). s is the window at offset base of the
+// block links was built for.
+func findClosingDelim(runs *backtickRuns, links *linkIndex, s string, base, start int, delim byte, run int) int {
 	i := start
 	for i < len(s) {
+		if s[i] == '[' {
+			if _, _, end, ok := links.parseLink(s, base, i); ok {
+				i = end
+				continue
+			}
+			i++
+			continue
+		}
 		if s[i] == '`' {
 			end, open := runs.findCodeEnd(i)
 			if end >= 0 {
@@ -234,7 +258,7 @@ func findClosingDelim(runs *backtickRuns, s string, start int, delim byte, run i
 			for i+n < len(s) && s[i+n] == delim {
 				n++
 			}
-			if n == run {
+			if n == run && (delim != '_' || !wordByteAt(s, i+n)) {
 				return i
 			}
 			i += n
@@ -380,6 +404,26 @@ func (l *linkIndex) parseLink(s string, base, i int) (text, url string, end int,
 	k := l.parens[p] - base
 	url = strings.TrimSpace(s[urlStart:k])
 	return text, url, k + 1, true
+}
+
+// wordByteBefore reports whether the character before s[i] is a letter
+// or digit. The start of the window counts as a boundary: a nested window
+// opens just after a delimiter or '['.
+func wordByteBefore(s string, i int) bool {
+	if i == 0 {
+		return false
+	}
+	r, _ := utf8.DecodeLastRuneInString(s[:i])
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// wordByteAt reports whether the character at s[i] is a letter or digit.
+func wordByteAt(s string, i int) bool {
+	if i >= len(s) {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(s[i:])
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func isPunct(b byte) bool {
