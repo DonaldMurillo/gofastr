@@ -49,3 +49,35 @@ func TestReadCappedSkipsSwappedFIFO(t *testing.T) {
 		t.Fatal("the open blocked on a FIFO until a writer appeared")
 	}
 }
+
+// The root itself, Lstat'd as a directory and then swapped for a FIFO
+// before os.OpenRoot, blocked the open the same way: OpenRoot opens
+// without O_DIRECTORY or O_NONBLOCK and checks the type afterwards.
+// openDirRoot refuses a non-directory during the open.
+func TestOpenDirRootRefusesFIFO(t *testing.T) {
+	pipe := filepath.Join(t.TempDir(), "root")
+	if err := syscall.Mkfifo(pipe, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		r, err := openDirRoot(pipe)
+		if r != nil {
+			r.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("openDirRoot accepted a FIFO as a root")
+		}
+	case <-time.After(2 * time.Second):
+		// Release the blocked open so the goroutine ends.
+		if f, err := os.OpenFile(pipe, os.O_WRONLY, 0); err == nil {
+			_ = f.Close()
+		}
+		<-done
+		t.Fatal("opening the root blocked on a FIFO until a writer appeared")
+	}
+}

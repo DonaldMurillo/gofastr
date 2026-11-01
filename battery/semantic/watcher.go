@@ -219,13 +219,15 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 //
 // A root that names a file (ScanOnce(ctx, "README.md")) is confined to
 // its parent directory, since os.OpenRoot opens only a directory; the
-// walk still visits that one file.
+// walk still visits that one file. The directory is opened as one
+// (openDirRoot), so a root swapped for a FIFO after the Lstat fails the
+// open instead of blocking it.
 func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]struct{}) error {
 	dir := abs
 	if fi, lerr := os.Lstat(abs); lerr == nil && !fi.IsDir() {
 		dir = filepath.Dir(abs)
 	}
-	root, err := os.OpenRoot(dir)
+	root, err := openDirRoot(dir)
 	if err != nil {
 		return fmt.Errorf("semantic: open root %q: %w", abs, err)
 	}
