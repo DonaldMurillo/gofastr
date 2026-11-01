@@ -247,3 +247,15 @@ func TestReserveIDTakesTokenLookalike(t *testing.T) {
 		t.Errorf("a placeholder was reserved as an id: %q", got)
 	}
 }
+
+// Only an element's own id attribute is read: a comment, another
+// attribute's value and script text are not.
+func TestWrittenIDsReadElementsOnly(t *testing.T) {
+	h := `<!-- a > b <i id="a"> --><p title=' id="b" ' data-x=" id=&quot;c&quot;"></p>` +
+		`<script>x = '<i id="d">'</script><style>/* <i id="e"> */</style>` +
+		`<i class=x id="f"></i><input id=g><br ID='h'/>`
+	got := strings.Join(writtenIDs(h), " ")
+	if got != "f g h" {
+		t.Errorf("writtenIDs = %q, want \"f g h\"", got)
+	}
+}

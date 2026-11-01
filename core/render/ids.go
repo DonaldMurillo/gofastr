@@ -434,33 +434,145 @@ func (b *RegionBatch) ReserveRendered(i int, hs ...HTML) {
 	}
 }
 
-// writtenIDs returns the values of the id attributes in s that hold no
-// placeholder token (those are derived ids Settle fills). An attribute
-// is matched only after whitespace, so data-id and aria-*id are not
-// read, and only double-quoted, the way render writes every attribute.
+// writtenIDs returns the values of the id attributes on the elements of
+// s that hold no placeholder token (those are derived ids Settle
+// fills), decoded. It reads tags only: a comment, another attribute's
+// value, and the text of a script, style, textarea or title element
+// are not elements, so an id="..." inside them is not read. Tag and
+// attribute names match in ASCII case, as an HTML parser does.
 func writtenIDs(s string) []string {
 	var out []string
-	for i := 0; ; {
-		k := strings.Index(s[i:], `id="`)
-		if k < 0 {
+	for i := 0; i < len(s); {
+		lt := strings.IndexByte(s[i:], '<')
+		if lt < 0 {
 			return out
 		}
-		at := i + k
-		i = at + len(`id="`)
-		if at == 0 || !isAttrSpace(s[at-1]) {
-			continue
+		i += lt
+		switch {
+		case strings.HasPrefix(s[i:], "<!--"):
+			end := strings.Index(s[i+4:], "-->")
+			if end < 0 {
+				return out
+			}
+			i += 4 + end + 3
+		case i+1 < len(s) && isASCIILetter(s[i+1]):
+			j := i + 1
+			for j < len(s) && !isAttrSpace(s[j]) && s[j] != '>' && s[j] != '/' {
+				j++
+			}
+			name := s[i+1 : j]
+			var ids []string
+			i, ids = readAttrs(s, j)
+			out = append(out, ids...)
+			for _, raw := range []string{"script", "style", "textarea", "title"} {
+				if asciiEqualFold(name, raw) {
+					i = skipRawText(s, i, raw)
+					break
+				}
+			}
+		default:
+			// An end tag, a doctype, or a "<" in text.
+			gt := strings.IndexByte(s[i+1:], '>')
+			if gt < 0 {
+				return out
+			}
+			i += 1 + gt + 1
 		}
-		end := strings.IndexByte(s[i:], '"')
-		if end < 0 {
-			return out
-		}
-		v := s[i : i+end]
-		i += end + 1
-		if v == "" || containsToken(v) {
-			continue
-		}
-		out = append(out, html.UnescapeString(v))
 	}
+	return out
+}
+
+// readAttrs reads a start tag's attributes from s[k:] up to its ">",
+// and returns the index past it and the tag's id values.
+func readAttrs(s string, k int) (int, []string) {
+	var ids []string
+	for k < len(s) {
+		for k < len(s) && isAttrSpace(s[k]) {
+			k++
+		}
+		if k >= len(s) {
+			break
+		}
+		if s[k] == '>' {
+			return k + 1, ids
+		}
+		if s[k] == '/' {
+			k++
+			continue
+		}
+		start := k
+		for k < len(s) && !isAttrSpace(s[k]) && s[k] != '=' && s[k] != '>' && s[k] != '/' {
+			k++
+		}
+		name := s[start:k]
+		for k < len(s) && isAttrSpace(s[k]) {
+			k++
+		}
+		val, has := "", false
+		if k < len(s) && s[k] == '=' {
+			k++
+			for k < len(s) && isAttrSpace(s[k]) {
+				k++
+			}
+			has = true
+			if k < len(s) && (s[k] == '"' || s[k] == '\'') {
+				q := s[k]
+				end := strings.IndexByte(s[k+1:], q)
+				if end < 0 {
+					return len(s), ids
+				}
+				val, k = s[k+1:k+1+end], k+1+end+1
+			} else {
+				v := k
+				for k < len(s) && !isAttrSpace(s[k]) && s[k] != '>' {
+					k++
+				}
+				val = s[v:k]
+			}
+		}
+		if has && asciiEqualFold(name, "id") && val != "" && !containsToken(val) {
+			ids = append(ids, html.UnescapeString(val))
+		}
+	}
+	return len(s), ids
+}
+
+// skipRawText returns the index of the end tag closing a raw-text
+// element named name, searched from i, or len(s).
+func skipRawText(s string, i int, name string) int {
+	for {
+		k := strings.Index(s[i:], "</")
+		if k < 0 {
+			return len(s)
+		}
+		at := i + k + 2
+		if at+len(name) <= len(s) && asciiEqualFold(s[at:at+len(name)], name) {
+			return i + k
+		}
+		i = at
+	}
+}
+
+func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
+
+// asciiEqualFold compares a and b ignoring ASCII case only.
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		x, y := a[i], b[i]
+		if x >= 'A' && x <= 'Z' {
+			x += 'a' - 'A'
+		}
+		if y >= 'A' && y <= 'Z' {
+			y += 'a' - 'A'
+		}
+		if x != y {
+			return false
+		}
+	}
+	return true
 }
 
 // containsToken reports whether s holds a placeholder a region issued:
