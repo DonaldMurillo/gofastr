@@ -57,6 +57,10 @@
       const s = document.createElement('script');
       s.src = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];
       s.onload = () => fireMounts(root, id);
+      // A failed load (a 5xx, a dropped connection) must not mark the
+      // component loaded for the session: drop the id and the dead
+      // element so the next navigation that shows it tries again.
+      s.onerror = () => { loaded.delete(id); s.remove(); };
       document.head.appendChild(s);
     }
   };

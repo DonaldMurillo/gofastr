@@ -247,9 +247,10 @@
 
   // The commit seam's module twin: same shape as core's _swapCommit
   // (the transition module wraps it when the document declares one).
-  const swapCommit = (epoch, from, to, apply, pickSrc) => {
+  // markup: the incoming page, whose vocabulary gates the pick.
+  const swapCommit = (epoch, from, to, apply, pickSrc, markup) => {
     const T = NS._navHooks.transition;
-    if (T) return T.commit(epoch, from, to, apply, pickSrc);
+    if (T) return T.commit(epoch, from, to, apply, pickSrc, markup);
     if (NS._navLive(epoch)) apply();
   };
 
@@ -854,7 +855,7 @@
               P.flush(parts);
             }
             _done(path, prevPath, true, slot, ps);
-          }, cached);
+          }, cached, cached.html);
           return;
         }
         if (slot) {
@@ -869,7 +870,7 @@
             applySeedEl(cached.seed);
             if (load) load.sweep();
             _done(path, prevPath, true, root, ps);
-          }, cached);
+          }, cached, cached.html);
           return;
         }
       }
@@ -1063,7 +1064,7 @@
             snap.fills, snap.seed,
             parts ? parts.addrs : null, parts ? parts.parts : null);
           _done(path, prevPath, false, envSlot, ps, notOk);
-        }, resp);
+        }, resp, html);
         return;
       }
 
@@ -1136,7 +1137,7 @@
         if (P) P.land(parts, notOk);
         if (!notOk) cacheScreen(path, body, title, swapKey);
         _done(path, prevPath, false, root, ps, notOk);
-      }, resp);
+      }, resp, body);
     } catch (err) {
       if (!NS._navLive(myEpoch)) return;
       // Hard rule 4, no location.href fallback. Surface a toast and
