@@ -4100,6 +4100,21 @@ func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 }
 
+// setPageMarkdownHeaders writes the headers every page-markdown answer
+// carries: /llm-pages.md, /<page>/llm.md (exact, pattern and concrete
+// dynamic URLs) and the Accept: text/markdown twin of a page. Each one
+// ran the policy chain with the live request, and the per-URL ones ran
+// the page's Load, so the body is per caller: a signed-in reader gets
+// the content a policy withholds from everyone else. no-store + Vary:
+// Cookie, exactly as finishPageDocument answers the HTML twin, so a
+// shared cache never replays one caller's markdown to another. /llms.txt
+// and /llms-full.txt run nothing per caller and keep no-cache.
+func setPageMarkdownHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Cookie")
+}
+
 // mountPageLLMMD registers LLM-friendly documentation routes for every
 // screen in the app. Two route types are added:
 //   - GET /llm-pages.md: top-level index listing all screens
@@ -4118,8 +4133,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 
 	// Top-level page index
 	r.Get("/llm-pages.md", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setPageMarkdownHeaders(w)
 		// Request-scoped: policy-gated screens list metadata-free for
 		// anonymous agents; an authenticated request sees the full index.
 		w.Write([]byte(app.AppLLMMDCtx(app.WithRequest(req.Context(), req), coreApp)))
@@ -4150,13 +4164,11 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 					ds.handlePage(w, req)
 					return
 				}
-				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-				w.Header().Set("Cache-Control", "no-cache")
+				setPageMarkdownHeaders(w)
 				w.Write([]byte(md))
 				return
 			}
-			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-cache")
+			setPageMarkdownHeaders(w)
 			// A screen whose policy phase doesn't Allow this request gets
 			// the metadata-free withheld doc: the pattern doc's title,
 			// description, SEO front matter, AND content are all
@@ -4450,8 +4462,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// Serve the per-instance doc when the base path resolves to a screen.
 	// Mirrored in resolvesStaticOrScreen. Keep the two in sync.
 	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setPageMarkdownHeaders(w)
 		w.Write([]byte(md))
 		return
 	}
