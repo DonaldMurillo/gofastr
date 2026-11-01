@@ -337,6 +337,12 @@ and HTML-form bodies. The handler branches on `Content-Type`:
 | `application/x-www-form-urlencoded` (HTML)    | `303 See Other` with `Location` to `?next=` or `/`     |
 | `multipart/form-data`                         | Same as form-urlencoded                                |
 
+Both form encodings are capped at 1 MiB and read the same fields
+(`email`, `password`, `next`). A body that names `email` or `password`
+twice answers 400 rather than letting the parser pick one, and a
+multipart body with a file part answers 400: no auth form takes a file.
+The magic-link confirmation POST reads either encoding too.
+
 **`/auth/register` answers one uniform response for a free and a taken
 address**: `202 Accepted` with `{"accepted":true}` on the JSON surface,
 a `303` redirect on the form surface, and **no session cookie on either

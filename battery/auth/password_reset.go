@@ -181,6 +181,12 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		}
 		body.Email = ce
 	}
+	// The length bound answers 400 for the same reason and must run
+	// before the defer for the same reason: run after it, an over-long
+	// address answered 400 {...} followed by {"sent":true} in one body.
+	if !emailWithinLimit(w, r, body.Email) {
+		return
+	}
 
 	// ALWAYS return 200, even when email is empty or unknown, so the
 	// response can't be used to enumerate registered accounts.
@@ -193,9 +199,6 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		_ = json.NewEncoder(w).Encode(map[string]any{"sent": true})
 	}()
 
-	if !emailWithinLimit(w, r, body.Email) {
-		return
-	}
 	store := p.mgr.UserStore()
 	if store == nil {
 		return

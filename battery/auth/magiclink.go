@@ -690,13 +690,8 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	// Cap the body before any form parse: FormValue/ParseForm would
 	// otherwise read up to the stdlib's 10 MiB floor into memory.
-	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-	if err := r.ParseForm(); err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return
-		}
-		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
+	// parseAuthForm reads a multipart confirmation form too.
+	if !parseAuthFormOrRefuse(w, r) {
 		return
 	}
 	token := r.PostFormValue("token")
