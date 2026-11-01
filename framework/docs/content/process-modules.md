@@ -78,8 +78,10 @@ replicas through the SQL-backed `ProcessModuleStore`.
 module's effective set, keeps the rest and bumps the generation; it
 refuses an empty `grants`. The store writes it as a compare-and-swap on
 the generation it read (`ProcessModuleStore.RemoveEffectiveGrants`), so
-two revokes at once both stick. A request body over
-the module's limit answers 413 rather than reaching the child truncated.
+two revokes at once both stick. A request body over 1 MiB, or one whose
+base64-encoded `module.http` frame would not fit the module's
+`Limits.FrameBytes` (about three quarters of it), answers 413 rather than
+reaching the child truncated or failing as a retryable 503.
 
 Every boot calls `RegisterProcessModule` again, and so does every
 replica sharing the store. It compares the descriptor with the stored
@@ -153,7 +155,9 @@ handler. Upgrades exploit it: a module stays Enabled (no 404) but not-Ready
 A disable or upgrade drain runs the same steps as the shutdown drain below,
 under the same `DrainPerModule` budget, and closes the module's peer once
 the `module.drain` call is done, which cancels its in-flight reverse
-calls.
+calls. A drain also cancels a spawn still starting for the old state: that
+child is killed instead of installed, so a revoke or disable that lands
+mid-start never leaves a second child serving under the old grants.
 
 ## Shutdown
 
@@ -187,6 +191,15 @@ on macOS, network-egress denial on Windows. So: **an untrusted module may
 be unrunnable on stock macOS/Windows/some-Linux until the operator installs
 a conforming backend or provisions the missing rule.** Fail-closed refusal
 is the correct, honest enforcement, not a gap to paper over.
+
+A probe passes only when it proves the property, never because a test
+could not run. P3 looks for the planted fd by device and inode, so the
+child's own descriptors do not count. P4 dials loopback and LAN listeners
+the runner opened and reached itself before the spawn, and with no such
+control it reports unreachable. P6 holds every fd and process open at
+once and counts only `EMFILE` and `EAGAIN` as the cap (a missing binary
+or a timeout is unreachable), and an allocating sub-child must be killed
+or refused short of twice the memory limit. CPU throttling is not probed.
 
 Probe output replayed to the operator (a `ProbeResult.Detail`, e.g.
 inside the conformance report `NewSandboxRunner` embeds in
@@ -367,6 +380,10 @@ host's `Call` assigned to the frame it is cancelling, formatted with no
 padding or sign. Exactly one spelling is accepted: `"7"` cancels frame 7,
 while `"07"`, `" 7"` and `"notes-7"` are silently ignored, so a
 near-miss can never abort a neighbouring request.
+
+The host sends it for both forwarded call kinds: a proxied `module.http`
+request and an MCP `module.tool.call`, once the caller's context ends
+(client gone or the module's call deadline passed).
 
 Note that this is *not* `HTTPRequestParams.RequestID`, which is a
 diagnostics-only `<module>-<counter>` label and cancels nothing. The two

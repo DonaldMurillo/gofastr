@@ -351,6 +351,34 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 	}
 }
 
+// linkSessionHolds reports whether the request still carries a stored,
+// fully-authenticated session of userID: re-read from the session store, so
+// a purge since the callback's first check reads as gone.
+func (p *OAuth2Plugin) linkSessionHolds(r *http.Request, userID string) bool {
+	sess, err := p.mgr.requestSession(r, false)
+	return err == nil && !sess.PendingTwoFactor && sess.UserID == userID
+}
+
+// undoLink removes the provider link a fenced link callback just wrote. It
+// runs detached from the request (undoContext), so a client that hangs up
+// cannot leave the link in place. False means the link may still be there.
+func (p *OAuth2Plugin) undoLink(ctx context.Context, store UserStore, userID, provider string) bool {
+	unlinker, ok := store.(AccountUnlinker)
+	if !ok {
+		slog.Error("auth: a link written across a credential change cannot be undone: the user store does not implement AccountUnlinker",
+			"user_hash", hashedIdentifier(userID))
+		return false
+	}
+	undo, cancel := undoContext(ctx)
+	defer cancel()
+	if err := unlinker.UnlinkOAuth(undo, userID, provider); err != nil {
+		slog.Error("auth: removing a link written across a credential change failed",
+			"user_hash", hashedIdentifier(userID), "err", err)
+		return false
+	}
+	return true
+}
+
 // requireSessionUserID resolves the current authenticated user's id from the
 // session cookie, mirroring AccountsPlugin.requireUserID. Returns ("", false)
 // (after writing the error) when there is no valid, fully-authenticated
@@ -474,6 +502,15 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, r, http.StatusForbidden, reasonLinkSessionMismatch)
 				return
 			}
+			// Taken before the link is written, as token creation and
+			// passkey registration do, so a reset, change or account claim
+			// that lands while this callback runs is caught after the
+			// upsert below.
+			snap, err := p.mgr.snapshotCredential(r.Context(), linkUserID)
+			if err != nil {
+				writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
+				return
+			}
 			linker, ok := userStore.(OAuthLinker)
 			if !ok {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoLinking)
@@ -498,6 +535,21 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			}
 			if err := linkOAuthPreferEnriched(r.Context(), userStore, linker, linkUserID, info); err != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonLinkFailed)
+				return
+			}
+			// An account claim removes every link and then every session;
+			// a reset or change moves the hash first. A claim that overtook
+			// this callback between its session check and the upsert has
+			// already run its unlink, so the link just written would
+			// outlive it and sign the squatter back into the claimed
+			// account. Re-check the session and the credential now the link
+			// is stored, and take the link back when either moved.
+			if !p.linkSessionHolds(r, linkUserID) || snap.moved(r.Context(), p.mgr) {
+				if !p.undoLink(r.Context(), userStore, linkUserID, info.Provider) {
+					writeAuthError(w, r, http.StatusInternalServerError, reasonLinkFailed)
+					return
+				}
+				writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
 				return
 			}
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{

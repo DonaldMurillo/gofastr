@@ -160,6 +160,12 @@
   document.addEventListener('keydown', function (e) {
     const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
     if (!input) return;
+    // IME composition (CJK input): the keys belong to the candidate
+    // window. The Enter that confirms a conversion would otherwise
+    // pick the highlighted option and its preventDefault would kill
+    // the composition; the arrows move through candidates, and Escape
+    // cancels the conversion, not the query.
+    if (e.isComposing) return;
     const lbId = input.getAttribute('aria-controls');
     if (!lbId) return;
     const lb = document.getElementById(lbId);

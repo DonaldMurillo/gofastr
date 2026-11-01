@@ -278,3 +278,92 @@ func claimSqlite(db *sql.DB) error {
 		t.Errorf("finding must name the missing predicate: %q", found[0].Message)
 	}
 }
+
+// A prose literal ahead of the query (an error prefix that says
+// "with" or "select", or SQL-shaped words mid-sentence) is not the
+// query: the SQL that follows is what each side compares.
+func TestDialectDriftSkipsLeadingProse(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"claim.go": `package jobs
+
+import "database/sql"
+
+func claimJobsPostgres(db *sql.DB) error {
+	what := "claim with postgres: select the oldest free row"
+	q := "SELECT id FROM jobs WHERE status = 'pending' AND (next_at IS NULL OR next_at <= $1)"
+	_, err := db.Query(q, what)
+	return err
+}
+
+func claimJobsSQLite(db *sql.DB) error {
+	what := "claim with sqlite: delete from jobs runs on ack"
+	q := "SELECT id FROM jobs WHERE status = 'pending'"
+	_, err := db.Query(q, what)
+	return err
+}
+`,
+	})
+	found := countRule(t, ds, contracts.RuleDialectDrift)
+	if len(found) != 1 || !strings.Contains(found[0].Message, "next_at") {
+		t.Fatalf("want 1 finding naming next_at on the SQLite side, got %v", found)
+	}
+}
+
+// SQLite3 and PostgreSQL are the same dialect tokens as SQLite and
+// Postgres: the twins pair.
+func TestDialectDriftSQLite3NamesPair(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"claim.go": `package jobs
+
+const claimJobsPostgreSQL = "SELECT id FROM jobs WHERE status = 'pending' AND (next_at IS NULL OR next_at <= $1)"
+
+const claimJobsSQLite3 = "SELECT id FROM jobs WHERE status = 'pending'"
+`,
+	})
+	found := countRule(t, ds, contracts.RuleDialectDrift)
+	if len(found) != 1 || !strings.Contains(found[0].Message, "claimJobsSQLite3") {
+		t.Fatalf("want 1 finding on claimJobsSQLite3, got %v", found)
+	}
+}
+
+// An aliased UPDATE (`UPDATE t AS p SET`, the outbox spelling) is still
+// SQL to the rule (2026-11-01 review): the verb-shape check read only
+// `UPDATE t SET`, so an aliased twin pair was never compared.
+func TestDialectDriftAliasedUpdate(t *testing.T) {
+	for name, alias := range map[string]string{"as alias": "AS p", "bare alias": "p", "only": "ONLY"} {
+		t.Run(name, func(t *testing.T) {
+			// SQLite has no ONLY, so the ONLY case pairs it with the bare
+			// table: the target must read as deliveries on both sides.
+			table := "deliveries " + alias
+			sqliteTable := table
+			if alias == "ONLY" {
+				table, sqliteTable = "ONLY deliveries", "deliveries"
+			}
+			ds := fixture(t, map[string]string{
+				"delivery.go": `package outbox
+
+import (
+	"context"
+	"database/sql"
+)
+
+func (o *Outbox) settlePostgres(ctx context.Context, db *sql.DB) error {
+	_, err := db.Exec(` + "`" + `UPDATE ` + table + ` SET status = 'claimed'
+		WHERE status = 'pending' AND lease_until <= $1` + "`" + `)
+	return err
+}
+
+func (o *Outbox) settleSQLite(ctx context.Context, db *sql.DB) error {
+	_, err := db.Exec(` + "`" + `UPDATE ` + sqliteTable + ` SET status = 'claimed'
+		WHERE status = 'pending'` + "`" + `)
+	return err
+}
+`,
+			})
+			found := countRule(t, ds, contracts.RuleDialectDrift)
+			if len(found) != 1 || !strings.Contains(found[0].Message, "lease_until") {
+				t.Fatalf("want 1 finding naming lease_until, got %d: %v", len(found), found)
+			}
+		})
+	}
+}

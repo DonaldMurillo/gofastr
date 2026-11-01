@@ -3,6 +3,7 @@ package analyzers
 import (
 	"go/ast"
 	"go/token"
+	"path"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -16,7 +17,7 @@ import (
 // Bug class: a Save/Put/Write on a type backed by a local filesystem
 // root (a BaseDir/Root/Dir field) that NAMES the stored object in its
 // signature (a key/name parameter) and reaches a disk write with no
-// folded-key refusal anywhere in the file. On a case-insensitive or
+// folded-key refusal on its path. On a case-insensitive or
 // Unicode-normalization-insensitive filesystem (macOS's default APFS,
 // most CIFS mounts), "tenanta/report.txt" and "TenantA/report.txt"
 // resolve to ONE file: each key's save silently overwrites the other's
@@ -33,28 +34,44 @@ import (
 // why the gate is the presence of a fold-named refusal, not the
 // presence of a sanitizer.
 //
+// The type, its Save and the refusal may sit in different files of the
+// package: the root-field types and the package's functions are
+// collected per package directory (memoized, the GOFASTR1414/1415
+// shape), and the refusal is followed from the method through the
+// package-local functions it calls.
+//
 // Deliberately silent on:
-//   - files that already refuse folds: any call whose name carries
-//     Fold (refuseFoldedKey, foldedEntryName) in the same file is the
-//     documented fix posture, wherever in the file it lives — the
-//     refusal must only precede the write, which the backend's own
-//     control flow guarantees;
+//   - methods that refuse folds: a call whose name carries Fold
+//     (upload.RefuseFoldedKey, CommitUnfolded, a local
+//     refuseFoldedKey) in the method body, or in a package-local
+//     function or method the body calls (transitively), is the
+//     documented fix posture — the refusal must only precede the
+//     write, which the backend's own control flow guarantees.
+//     strings/bytes.EqualFold and unicode.SimpleFold are comparisons,
+//     not the refusal, and a refusal in a function the method never
+//     reaches credits nothing;
 //   - writers that compute their own file name with no key parameter
 //     (harness logging's DailyFileWriter.Write: the name is a
 //     formatted date) — there is no caller key to fold;
 //   - Save/Put/Write on types with no local-filesystem root field (a
 //     database or in-memory backend has no on-disk spelling to fold);
-//   - methods that never reach os.OpenFile / os.Create / os.Rename:
-//     nothing lands on disk from this method;
+//   - methods that never reach a create, write or rename: os.OpenFile /
+//     Create / WriteFile / Rename, the *os.Root (or fs-shaped) methods
+//     of the same names on any non-package receiver (os.Root confines
+//     the write to the root but folds keys like any other path), and
+//     the repo's write helpers atomicfile.WriteFile / Rewrite / Replace
+//     and fileperm.WriteOwnerOnly / ReplaceOwnerOnly / CreateOwnerOnly;
+//     os.CreateTemp mints its own fresh name, so it is not one;
 //   - _test.go and generated files (AppFiles already excludes both).
 func ruleFoldedKey(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
-	rootTypes := localStorageTypes(file)
-	if len(rootTypes) == 0 {
+	dir := path.Dir(rel)
+	pkg, _ := p.Memo("keyfold.package:"+dir, func() any {
+		return keyFoldPackage(p, dir)
+	}).(*keyFoldPkg)
+	if pkg == nil || len(pkg.rootTypes) == 0 {
 		return nil
 	}
-	if mentionsFold(file) {
-		return nil
-	}
+	aliases := importAliases(file)
 	var out []contracts.Diagnostic
 	for _, d := range file.Decls {
 		fn, ok := d.(*ast.FuncDecl)
@@ -66,16 +83,97 @@ func ruleFoldedKey(p *contracts.Pass, rel string, file *ast.File) []contracts.Di
 		default:
 			continue
 		}
-		if !rootTypes[recvBaseName(fn)] || !namesStoredObject(fn) {
+		if !pkg.rootTypes[recvBaseName(fn)] || !namesStoredObject(fn) {
 			continue
 		}
-		if sink := firstDiskWrite(fn.Body); sink != nil {
-			out = append(out, diag(p, contracts.RuleFoldedKey, rel, sink.Pos(),
-				"Save on a local-filesystem backend with no folded-key refusal: on a case- or normalization-insensitive filesystem (macOS APFS, CIFS) two keys differing only by case or Unicode normalization are one file, so this save silently overwrites the other key's object; refuse the fold before creating anything (battery/storage refuseFoldedKey is the model)"))
+		sink := firstDiskWrite(fn.Body, aliases)
+		if sink == nil || pkg.reachesFold(fn.Body, map[*ast.FuncDecl]bool{fn: true}) {
+			continue
 		}
+		out = append(out, diag(p, contracts.RuleFoldedKey, rel, sink.Pos(),
+			"Save on a local-filesystem backend with no folded-key refusal: on a case- or normalization-insensitive filesystem (macOS APFS, CIFS) two keys differing only by case or Unicode normalization are one file, so this save silently overwrites the other key's object; refuse the fold before creating anything (battery/storage refuseFoldedKey is the model)"))
 	}
 	return out
 }
+
+// keyFoldPkg is one package directory's view: the struct types that
+// carry a local-filesystem root, and every function and method by name
+// (methods of different types share a name; the fold walk follows all
+// of them, which can only credit, never report).
+type keyFoldPkg struct {
+	rootTypes map[string]bool
+	funcs     map[string][]*ast.FuncDecl
+}
+
+func keyFoldPackage(p *contracts.Pass, dir string) *keyFoldPkg {
+	pkg := &keyFoldPkg{rootTypes: map[string]bool{}, funcs: map[string][]*ast.FuncDecl{}}
+	for _, f := range p.AppFiles() {
+		if path.Dir(f.Rel) != dir {
+			continue
+		}
+		file, ok := p.AST(f.Rel)
+		if !ok {
+			continue
+		}
+		for name := range localStorageTypes(file) {
+			pkg.rootTypes[name] = true
+		}
+		for _, d := range file.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil && fn.Name != nil {
+				pkg.funcs[fn.Name.Name] = append(pkg.funcs[fn.Name.Name], fn)
+			}
+		}
+	}
+	return pkg
+}
+
+// reachesFold reports whether body calls a fold-named refusal, directly
+// or through a package-local function it calls.
+func (pkg *keyFoldPkg) reachesFold(body ast.Node, seen map[*ast.FuncDecl]bool) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		var name string
+		switch fn := call.Fun.(type) {
+		case *ast.Ident:
+			name = fn.Name
+		case *ast.SelectorExpr:
+			name = fn.Sel.Name
+			if q, ok := fn.X.(*ast.Ident); ok && foldComparePkgs[q.Name] {
+				return true // strings.EqualFold compares, it refuses nothing
+			}
+		}
+		if name == "" {
+			return true
+		}
+		if strings.Contains(strings.ToLower(name), "fold") {
+			found = true
+			return false
+		}
+		for _, decl := range pkg.funcs[name] {
+			if seen[decl] {
+				continue
+			}
+			seen[decl] = true
+			if pkg.reachesFold(decl.Body, seen) {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// foldComparePkgs are the stdlib packages whose Fold-named functions
+// (EqualFold, SimpleFold) compare spellings rather than refuse one.
+var foldComparePkgs = map[string]bool{"strings": true, "bytes": true, "unicode": true}
 
 // namesStoredObject reports whether the method's signature names the
 // object it stores: a parameter whose name says key (key, objectKey)
@@ -132,41 +230,24 @@ func localStorageTypes(file *ast.File) map[string]bool {
 	return out
 }
 
-// mentionsFold reports whether the file calls anything whose name
-// carries Fold — the refusal the fix posture spells, in any casing.
-func mentionsFold(file *ast.File) bool {
-	found := false
-	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		var name string
-		switch fn := call.Fun.(type) {
-		case *ast.Ident:
-			name = fn.Name
-		case *ast.SelectorExpr:
-			name = fn.Sel.Name
-		}
-		if name != "" && strings.Contains(strings.ToLower(name), "fold") {
-			found = true
-		}
-		return !found
-	})
-	return found
+// diskWriteSinks are the package-qualified creates, writes and renames
+// a folded-key refusal must precede, keyed by import-path suffix.
+// os.CreateTemp mints its own fresh name, so it is not one.
+var diskWriteSinks = map[string]map[string]bool{
+	"os":                  {"OpenFile": true, "Create": true, "Rename": true, "WriteFile": true},
+	"internal/atomicfile": {"WriteFile": true, "Rewrite": true, "Replace": true},
+	"internal/fileperm":   {"WriteOwnerOnly": true, "ReplaceOwnerOnly": true, "CreateOwnerOnly": true},
 }
 
-// diskWriteSinks are the creates and renames a folded-key refusal must
-// precede. os.CreateTemp mints its own fresh name, so it is not one.
-var diskWriteSinks = map[string]bool{
-	"os.OpenFile": true,
-	"os.Create":   true,
-	"os.Rename":   true,
-}
+// rootWriteMethods are the *os.Root (and fs-shaped) methods that
+// create or replace a caller-named file.
+var rootWriteMethods = map[string]bool{"OpenFile": true, "Create": true, "Rename": true, "WriteFile": true}
 
-// firstDiskWrite returns the first os.OpenFile / os.Create / os.Rename
-// call in body — the write the fold check must sit in front of.
-func firstDiskWrite(body *ast.BlockStmt) *ast.CallExpr {
+// firstDiskWrite returns the first create/write/rename call in body —
+// the write the fold check must sit in front of: a diskWriteSinks
+// package function, or a rootWriteMethods method on a receiver that is
+// not a package (s.Root.Create(key), rt.Rename(tmp, key)).
+func firstDiskWrite(body *ast.BlockStmt, aliases map[string]string) *ast.CallExpr {
 	var hit *ast.CallExpr
 	ast.Inspect(body, func(n ast.Node) bool {
 		if hit != nil {
@@ -180,7 +261,18 @@ func firstDiskWrite(body *ast.BlockStmt) *ast.CallExpr {
 		if !ok {
 			return true
 		}
-		if xid, ok := sel.X.(*ast.Ident); ok && xid.Name == "os" && diskWriteSinks["os."+sel.Sel.Name] {
+		if xid, ok := sel.X.(*ast.Ident); ok {
+			if imp, isPkg := aliases[xid.Name]; isPkg {
+				for suffix, names := range diskWriteSinks {
+					if (imp == suffix || strings.HasSuffix(imp, "/"+suffix)) && names[sel.Sel.Name] {
+						hit = call
+						return false
+					}
+				}
+				return true
+			}
+		}
+		if rootWriteMethods[sel.Sel.Name] {
 			hit = call
 			return false
 		}

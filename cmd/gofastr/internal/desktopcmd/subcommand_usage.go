@@ -77,7 +77,8 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         --archive=<zip> --url=<https://...> [--notes=<text>] [-o=<dir>]
         Writes manifest.json and manifest.json.sig (ed25519 over the
         manifest bytes) with the archive's sha256 and size, the feed
-        the battery's updater verifies.
+        the battery's updater verifies. --version must equal the
+        bundle's CFBundleShortVersionString.
   types [--pkg=<path>] [--out=desktop.d.ts]
         Builds the package, runs it once with
         GOFASTR_DESKTOP_MANIFEST=1 (the app prints its frozen manifest

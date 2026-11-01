@@ -65,7 +65,10 @@ type SessionLoader interface {
 type Options struct {
 	// AuthMethods are advertised in the initialize response. Empty
 	// means the agent requires no authentication and authenticate
-	// rejects every methodId.
+	// rejects every methodId. Non-empty means it is required:
+	// session/new, session/load and session/prompt answer
+	// ErrAuthRequired until one authenticate call on the connection
+	// succeeds.
 	AuthMethods []AuthMethod
 
 	// Authenticate runs one protocol-driven authentication attempt for
@@ -430,6 +433,10 @@ type serverState struct {
 	// by mu.
 	draining map[string]*session
 	ready    bool
+	// authenticated is set by a successful authenticate; guarded by mu.
+	// It gates the session methods only when the agent advertises
+	// AuthMethods (see sessionGate).
+	authenticated bool
 }
 
 // Serve reads newline-delimited JSON-RPC 2.0 frames from in and writes
@@ -831,6 +838,26 @@ func (st *serverState) requireReady() bool {
 	return st.ready
 }
 
+// sessionGate refuses a session method (session/new, session/load,
+// session/prompt) on a connection that has not finished the handshake:
+// initialize first, then, when the agent advertises AuthMethods, a
+// successful authenticate. A skipped or failed authenticate answers
+// ErrAuthRequired, the code the ACP spec gives session/new for an agent
+// that requires authentication. Without it the AuthMethods an embedder
+// set were advertised and never enforced. nil means the method may run.
+func (st *serverState) sessionGate(method string) *wireRespError {
+	st.mu.Lock()
+	ready, authed := st.ready, st.authenticated
+	st.mu.Unlock()
+	if !ready {
+		return &wireRespError{Code: ErrInvalidRequest, Message: method + " before initialize: initialize the connection first"}
+	}
+	if len(st.srv.opts.AuthMethods) > 0 && !authed {
+		return &wireRespError{Code: ErrAuthRequired, Message: method + ": authentication required: call authenticate with one of the advertised authMethods first"}
+	}
+	return nil
+}
+
 // runAuthenticate invokes the app-supplied auth callback under a
 // recover guard: the transport loop that reaches here has no
 // per-request net, so a panicking authenticator must become a protocol
@@ -904,6 +931,9 @@ func (st *serverState) handleAuthenticate(ctx context.Context, frame wireRequest
 			if err := st.runAuthenticate(ctx, p.MethodID); err != nil {
 				return st.errResp(ErrAuthRequired, "authenticate %q: %v", p.MethodID, err)
 			}
+			st.mu.Lock()
+			st.authenticated = true
+			st.mu.Unlock()
 			return wireResponse{Result: map[string]any{}}
 		}
 	}
@@ -955,8 +985,8 @@ type sessionSetupParams struct {
 }
 
 func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) wireResponse {
-	if !st.requireReady() {
-		return st.errResp(ErrInvalidRequest, "session/new before initialize: initialize the connection first")
+	if e := st.sessionGate("session/new"); e != nil {
+		return wireResponse{Error: e}
 	}
 	p, e := st.decodeSessionParams(frame, "session/new")
 	if e != nil {
@@ -986,8 +1016,8 @@ func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) 
 }
 
 func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest) wireResponse {
-	if !st.requireReady() {
-		return st.errResp(ErrInvalidRequest, "session/load before initialize: initialize the connection first")
+	if e := st.sessionGate("session/load"); e != nil {
+		return wireResponse{Error: e}
 	}
 	if st.srv.loader == nil {
 		return st.errResp(ErrMethodNotFound, "session/load: this agent does not advertise the loadSession capability")
@@ -1039,8 +1069,8 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 // own goroutine. The reader loop must stay free while the turn runs so
 // session/cancel notifications and permission responses keep flowing.
 func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
-	if !st.requireReady() {
-		st.respond(frame.ID, st.errResp(ErrInvalidRequest, "session/prompt before initialize: initialize the connection first"))
+	if e := st.sessionGate("session/prompt"); e != nil {
+		st.respond(frame.ID, wireResponse{Error: e})
 		return
 	}
 	var p struct {

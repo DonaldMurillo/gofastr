@@ -15,6 +15,9 @@ func DefaultPlatform(onMain func(func()) error, runner CommandRunner) Platform {
 // Version implements Platform: no bundle to read.
 func (unsupportedPlatform) Version() string { return "" }
 
+// Identifier implements Platform: no bundle to read.
+func (unsupportedPlatform) Identifier() string { return "" }
+
 // Bundle implements Platform: never bundled.
 func (unsupportedPlatform) Bundle() (string, string, bool) { return "", "", false }
 

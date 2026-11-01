@@ -213,11 +213,11 @@ type nopWriteCloser struct{}
 func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopWriteCloser) Close() error                { return nil }
 
-// ---- cleanupPrepPipes closes real pipes ----
+// ---- releasePrepFDs closes real pipes ----
 
-func TestCleanupPrepPipes_closesRealPipes(t *testing.T) {
+func TestReleasePrepFDs_closesRealPipes(t *testing.T) {
 	// Build a childPrep with three real os.Pipe pairs and assert each is
-	// closed after cleanupPrepPipes runs.
+	// closed after releasePrepFDs runs.
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
@@ -231,13 +231,13 @@ func TestCleanupPrepPipes_closesRealPipes(t *testing.T) {
 		t.Fatalf("pipe: %v", err)
 	}
 	prep := &childPrep{Stdin: inW, Stdout: outR, StderrPipe: errR}
-	cleanupPrepPipes(prep)
+	releasePrepFDs(prep)
 	// A write to the read-end's now-closed writer should fail; and a read
 	// from the write-end's now-closed reader should return EOF/error.
 	if _, err := inW.Write([]byte("x")); err == nil {
-		t.Error("Stdin not closed after cleanupPrepPipes")
+		t.Error("Stdin not closed after releasePrepFDs")
 	}
-	// Close the other halves (the ones cleanupPrepPipes did NOT own) so the
+	// Close the other halves (the ones releasePrepFDs did NOT own) so the
 	// test does not leak fds.
 	_ = inR.Close()
 	_ = outW.Close()

@@ -722,7 +722,7 @@ func securityRules() []Rule {
 		ID: RuleAbsoluteAttempts, Slug: "security/absolute-attempts-counter",
 		Title:      "Retry counter written from a host value, not `attempts = attempts + 1`",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "An UPDATE's SET assigns the attempts/retries/tries/failures counter from a placeholder (`$n`, `?`, `%s`) instead of the column's relative form.",
+		Summary: "An UPDATE's SET assigns the attempts/retries/tries/failures counter (bare or double-quoted) a value built from a placeholder (`$n`, `?`, `%s`, also wrapped: `CAST($1 AS INTEGER)`, `COALESCE($1, 0)`, `LEAST($1, max_attempts)`, `$1::int`) that never reads the column itself, instead of the column's relative form.",
 		Why: "The host value is a count computed in Go from a row read before the write, and the write is not the only writer: a lease-expiry " +
 			"re-claimant and the stale worker it replaced both read N and both write N+1, and a crash between claim and settle writes nothing " +
 			"at all — so the row's attempt budget under-counts and a poison delivery re-runs past it (2026-09-04 red probes " +
@@ -739,7 +739,7 @@ func securityRules() []Rule {
 		ID: RuleUnfencedClaim, Slug: "security/unfenced-claim-write",
 		Title:      "Claim-state write on a token-fenced queue table with no fence of its own",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "In a file whose other UPDATE/DELETE on the same table matches `claim_token = $n`, another UPDATE/DELETE touching claim state (claimed_at, a token column, attempts, or `status='claimed'`) carries no token predicate, no claimed_at staleness bound, and no terminal status guard.",
+		Summary: "In a package where some UPDATE/DELETE matches `claim_token = $n`, another UPDATE/DELETE touching claim state (claimed_at, a token column, attempts, or `status='claimed'`) carries no token predicate (`claim_token IS NOT NULL` is none), no claimed_at staleness bound in either operand order, and no terminal status guard; clearing the token is not the claim minting it.",
 		Why: "The claim's lease-expiry clause deliberately re-claims rows whose worker may still be running, so a stale claimant is a designed " +
 			"state — and its unfenced write by bare row id mutates the re-claimant's live row (probe TestDBReleaseCannotTouchReclaimant, " +
 			"2026-09-04 red round: battery/queue's v0.66 Ack/Nack fencing never reached release, so a stale worker released the " +
@@ -755,7 +755,7 @@ func securityRules() []Rule {
 		ID: RuleFetchMetadata, Slug: "security/fetch-metadata-copy",
 		Title:      "A private copy of the Sec-Fetch-Site cross-site predicate",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "A file outside `core/handler` reads the `Sec-Fetch-Site` header itself (`Header.Get(\"Sec-Fetch-Site\")` or the canonical-key map form).",
+		Summary: "A file outside `core/handler` reads the `Sec-Fetch-Site` header itself (`Header.Get` or `Header.Values` with the name in any case, or the canonical-key map form).",
 		Why:     "The cross-site predicate is security-critical and exists in exactly one place, `core/handler.IsCrossSiteRequest` (Sec-Fetch-Site first, the Origin-host comparison as the fallback). Every private copy so far has diverged: the setup and kiln copies early-allowed `same-site` — and a sibling subdomain IS same-site, so the Strict cookie rides the attack while only the Origin compare can refuse it — while other copies disagreed about which values are trusted. A tenth copy is a tenth divergence waiting for its own probe.",
 		Fix:     "Call `handler.IsCrossSiteRequest(r)` and keep only the response shape local. A transport that genuinely must read the header itself carries `//gofastr:allow(GOFASTR1411) <why>`.",
 		Doc:     "security",
@@ -767,7 +767,7 @@ func securityRules() []Rule {
 		ID: RuleURLAttrEscape, Slug: "security/url-attr-html-escape",
 		Title:      "HTML-escaped value in a URL attribute slot",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`render.Escape`/`html.EscapeString` feeds an `href`/`src`/`action`/`formaction`/`poster`/`data` attribute.",
+		Summary: "`render.Escape`/`html.EscapeString` feeds an `href`/`src`/`action`/`formaction`/`poster`/`data` attribute, double- or single-quoted, directly or through a variable that holds the escape.",
 		Why:     "HTML escaping is scheme-blind: `javascript:alert(1)` escapes to itself, so the escaped value becomes a live URL the moment a user clicks the link, the form submits, or the poster loads (2026-09-06/07 probes: battery/print renderShell's stylesheet href and auto-print script src, core-ui infinitescroll's noscript form action, framework/ui menu.go's MenuAction Path). Escaping proves the value cannot break OUT of the attribute; it says nothing about what the attribute then executes.",
 		Fix:     "Run the value through the scheme allow-list first — `core/urlsafe.Clean(v, urlsafe.Anchor)` or `urlsafe.CleanAnchor(v)` — and escape the cleaned result, the spelling menu.go's Href branch and `core-ui/html` setURLAttr already use. A rejected value degrades to an inert `\"#\"`.",
 		Doc:     "security",
@@ -779,7 +779,7 @@ func securityRules() []Rule {
 		ID: RuleVarySet, Slug: "security/vary-set-overwrites",
 		Title:      "`Vary` written with Set in a middleware chain",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`Header().Set(\"Vary\", …)` replaces the Vary entries earlier middlewares added.",
+		Summary: "`Header().Set(\"Vary\", …)`, in any case, replaces the Vary entries earlier middlewares added.",
 		Why:     "Vary is append-only in a middleware chain: a response crosses CORS (which Adds `Vary: Origin`), an idempotency layer, a cache layer, and a later Set replaces every earlier entry — a shared cache then serves one principal's variant to another. The 2026-09-07 probe TestIdempotencyVaryEatsCors pinned it live: CORS(...)(Idempotency(...)) on an over-cap POST produced ACAO with Vary listing ONLY Idempotency-Key.",
 		Fix:     "Use `.Add(\"Vary\", …)`, the spelling core/middleware/cors.go, wellknown.go, embed, uihost, and the auth BFF all already use. Set is for headers one layer owns end to end; Vary is never one of them.",
 		Doc:     "security",
@@ -791,7 +791,7 @@ func securityRules() []Rule {
 		ID: RuleDialectDrift, Slug: "security/dialect-twin-where-drift",
 		Title:      "Dialect twin queries whose WHERE predicates diverge",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "Sibling Postgres/SQLite queries — paired by name (claimDeliveriesPostgres/claimDeliveriesSQLite) or by a dialect if/switch arm — whose WHERE clauses differ by a predicate atom after normalization, and whose table sets match: a pair over different tables (pg_tables vs sqlite_master) is shaped by different catalogs and owes no predicate parity, so it stays quiet.",
+		Summary: "Sibling Postgres/SQLite queries — paired by name (claimDeliveriesPostgres/claimDeliveriesSQLite, PostgreSQL and SQLite3 spellings included) or by a dialect if/switch arm — whose WHERE clauses differ by a predicate atom after normalization, and whose table sets match: a pair over different tables (pg_tables vs sqlite_master) is shaped by different catalogs and owes no predicate parity, so it stays quiet.",
 		Why:     "A dialect twin is written twice because the SPELLING differs ($n vs ?, SKIP LOCKED vs a tx); the predicates are supposed to be copies. Nothing else reviews the two against each other, so an atom one side lacks ships silently and the two dialects select different rows: framework/outbox claimDeliveriesSQLite shipped without the `next_attempt_at IS NULL OR next_attempt_at <= $` backoff its Postgres twin has, so deliveries past their retry deadline were re-claimed on SQLite only and a poison delivery looped past its backoff on every SQLite app. The rule compares only twins over the same table set (a subset counts — the Postgres side may wrap its twin's SELECT in an UPDATE on the same table); twins over different system catalogs are quiet by design.",
 		Fix:     "Decide which side is right and copy the predicate across verbatim. When the difference is a real dialect capability (a partial index, a RETURNING clause, a different system catalog), annotate the poorer statement `//gofastr:allow(GOFASTR1414) <why>` naming the capability.",
 		Doc:     "security",
@@ -803,7 +803,7 @@ func securityRules() []Rule {
 		ID: RuleEraseCover, Slug: "security/erase-export-coverage",
 		Title:      "A user-data table the erase and export planes never reach",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "A CREATE TABLE in core/, framework/ or battery/ declares a user-identifying column (user_id, owner, actor_id, subject, email, creator, principal, users, …) or a record-payload column (payload, body, snapshot, diff, task_json, config_json, an index document's text/fields/meta), and the same package has no `datexport.DataEraser` or no `datexport.DataExporter` whose Table resolves to that table.",
+		Summary: "A CREATE TABLE (or an ALTER TABLE … ADD COLUMN) in core/, framework/ or battery/ declares a user-identifying column (user_id, uid, owner, member_id, actor_id, subject, email, creator, principal, users, …) or a record-payload column (payload, body, data, content, snapshot, diff, task_json, config_json, an index document's text/fields/meta), and the same package has no `datexport.DataEraser` or no `datexport.DataExporter` whose Table (literal key or later field assignment) resolves to that table.",
 		Why:     "App.EraseUserData and App.ExportData reach the entity graph plus the tables registered in core/datexport, and nothing else. The 2026-10-27 bug bash found fourteen stores that create their own table and register neither (S9, S10, S20, S22–S32): battery/auth's OAuth token table keeps a live provider token for an erased user while every other auth table is erased; the outbox, webhook deliveries, search and semantic indexes, A2A tasks, idempotency bodies and fanout spill rows keep full copies of the user's records; the audit log is anonymized but never exported. Outside datexport itself only battery/auth and battery/queue declared anything.",
 		Fix:     "Declare the table to both planes from the package that creates it, the battery/auth erase.go + export.go pattern: a `datexport.DataEraser` keyed by the right identity (Column user_id, IdentityEmail for an email-keyed table, EraseAnonymize for a row that must be retained) and a `datexport.DataExporter`, re-registered against the configured table name when the store is built. When a short TTL or a non-user meaning is the reason not to, say so: `//gofastr:allow(GOFASTR1415) <why>`.",
 		Doc:     "security",
@@ -815,7 +815,7 @@ func securityRules() []Rule {
 		ID: RuleFoldedKey, Slug: "security/folded-key-save",
 		Title:      "Local-filesystem Save with no folded-key refusal",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "A Save/Put/Write naming its stored object (a key/name parameter) on a type with a BaseDir/Root/Dir field reaches os.OpenFile/os.Create/os.Rename with no call whose name carries Fold in the file.",
+		Summary: "A Save/Put/Write naming its stored object (a key/name parameter) on a type in the package with a BaseDir/Root/Dir field reaches a create, write or rename (os.OpenFile/Create/WriteFile/Rename, the same *os.Root methods, the atomicfile and fileperm write helpers) with no Fold-named refusal reachable from the method (strings.EqualFold is a comparison, not one).",
 		Why:     "On a case-insensitive or Unicode-normalization-insensitive filesystem (macOS APFS, most CIFS mounts), `tenanta/report.txt` and `TenantA/report.txt` are one file: the second save silently overwrites the first and each key's read returns the other writer's bytes (2026-09-05 red probe TestFoldedKeysDoNotAlias: battery/storage's local backend refuses the fold, core/upload's Save does not). A lexical key check cannot see the fold — only the filesystem's own resolution can.",
 		Fix:     "Refuse the folded key before anything is created or written, the battery/storage spelling: walk every path component, Lstat it as spelled, and os.SameFile-match the entry the parent directory actually holds; a byte-different name that matches is a fold, refuse it with ErrInvalidKey.",
 		Doc:     "security",

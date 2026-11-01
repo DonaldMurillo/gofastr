@@ -95,7 +95,9 @@
             }).catch(() => {});
           }
         } else if (mode === 'attr') {
-          const attr = node.getAttribute('data-cui-signal-attr') || 'value';
+          // Folded: the Go allow-list matches names case-insensitively,
+          // and the property writes below need the DOM's spelling.
+          const attr = (node.getAttribute('data-cui-signal-attr') || 'value').toLowerCase();
           // The attribute NAME is developer-supplied and server-
           // rendered, so the allow-list that keeps a signal out of
           // `srcdoc` / `style` / `on*` lives in Go, at the emitters
@@ -111,7 +113,21 @@
           // executing arbitrary JS when an attacker controls the
           // signal value via a query-string deeplink param.
           if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
-          node.setAttribute(attr, v);
+          // A boolean attribute is on whenever it is present, so
+          // disabled="false" disables: false, null, '', 0 and 'false'
+          // remove it. disabled, hidden and open reflect the attribute;
+          // checked, selected and value also live as properties that
+          // stop following it once the reader clicks or types, so the
+          // property is written too, by name (no computed-key write).
+          if (/^(disabled|hidden|checked|open|selected)$/.test(attr)) {
+            const on = !!value && value !== 'false';
+            node.toggleAttribute(attr, on);
+            if (attr === 'checked') node.checked = on;
+            if (attr === 'selected') node.selected = on;
+          } else {
+            node.setAttribute(attr, v);
+            if (attr === 'value' && 'value' in node) node.value = v;
+          }
           // Tabs (framework/ui.Tabs): when the wrapper's data-active
           // index changes, mirror it into aria-selected on the strip's
           // role=tab buttons, CSS keys the visual highlight off

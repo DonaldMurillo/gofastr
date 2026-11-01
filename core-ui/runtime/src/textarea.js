@@ -27,9 +27,13 @@
     Promise.resolve().then(grow);
   }
 
+  // The kernel hands the scanner each inserted node, and a node that IS
+  // the textarea is wired like one inside a wrapper.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('textarea[data-cui-autogrow]').forEach(wire);
+    const sel = 'textarea[data-cui-autogrow]';
+    if (scope.matches && scope.matches(sel)) wire(scope);
+    scope.querySelectorAll(sel).forEach(wire);
   }
   scan(document);
 

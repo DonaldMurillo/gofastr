@@ -462,6 +462,14 @@ level, like every phrase. Each item is exactly one of:
   with a 30 s deadline; errors are logged with the item id.
 - `Role`: `quit`, `about`, or `separator`, implemented by the shell.
 
+`Key` is the item's accelerator: modifiers (`cmd`/`command`/`meta`,
+`ctrl`/`control`, `alt`/`option`/`opt`, `shift`) joined by `+`, then
+one key, as in `cmd+n` or `ctrl+shift+t`. Command maps to Control on
+Windows and Linux. At least one modifier other than `shift` is
+required, and `New` panics on a bare key such as `n` or `shift+n`:
+every shell matches accelerators before the page sees the keystroke,
+so that character could never be typed into the page.
+
 <!-- gofastr:compile
 import (
 	"context"
@@ -1466,8 +1474,11 @@ __gofastr.desktop.on("update_available", ({ version, notes }) => {
 ```
 
 Failures are logged (Warn) and retried next interval; an unbundled or
-unsupported host logs once and stops. Log lines never carry the feed
-URL or a path.
+unsupported host logs once and stops. So does a bundle whose
+`CFBundleShortVersionString` is not semver (`1.0`): the check answers
+`unsupported` with "this app's version is not major.minor.patch"
+instead of blaming the feed. Log lines never carry the feed URL or a
+path.
 
 ### The updates capability
 
@@ -1495,14 +1506,25 @@ the decision persists in `desktop_grants` like every other grant.
    `<Name>.app` directory matching the running bundle's name; every
    zip entry is path-cleaned and refused if it could escape the
    extraction root; symlinks and devices are refused outright.
-5. Run `codesign --verify --deep --strict` on the extracted bundle and
+5. Read the extracted bundle's `Contents/Info.plist` (XML, the format
+   `gofastr desktop build` writes) and refuse unless its
+   `CFBundleShortVersionString` is exactly the feed's version and its
+   `CFBundleIdentifier` is the running app's. A mislabelled archive
+   would otherwise reinstall on every check or downgrade silently.
+6. Run `codesign --verify --deep --strict` on the extracted bundle and
    refuse on failure.
-6. Swap: move the current bundle to `<Name>.app.old`, move the new one
+7. Swap: move the current bundle to `<Name>.app.old`, move the new one
    into place, `open -n` the new bundle, and quit. The next launch
    removes a leftover `.old`.
 
 Every failure surfaces as one of the bridge's closed error codes with
 a fixed message; no path or URL ever reaches the page.
+
+One install runs at a time. A second `install` while one is running
+(a double-clicked button) is refused with `invalid_input` ("an update
+install is already running"), and once the swap has happened every
+later call is refused too ("the update is installed; the app is
+restarting"), so two runs never share `<Name>.app.new` or `.old`.
 
 From Go, the same two steps are `d.CheckForUpdates(ctx)` and
 `d.InstallUpdate(ctx)` (the latter is what a File menu
@@ -1515,7 +1537,8 @@ The CLI mints the signing pair and writes the feed:
 ```
 gofastr desktop keygen -o path
     writes path (private, 0600, hex seed + hex public key)
-    and path.pub (hex public key)
+    and path.pub (hex public key); refuses when either exists,
+    and never writes through a symlink
 
 gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     --platform darwin-arm64 --archive Notes.zip \
@@ -1525,8 +1548,11 @@ gofastr desktop feed --key path --version 1.2.0 --notes "..." \
 ```
 
 `feed` refuses a version that is not semver, a platform key outside
-the `GOOS-GOARCH` grammar, a non-https archive URL, and an archive
-that is not a zip with exactly one top-level `.app` directory. The
+the `GOOS-GOARCH` grammar, a non-https archive URL, an archive
+that is not a zip with exactly one top-level `.app` directory, and an
+archive whose `Contents/Info.plist` does not declare `--version` as its
+`CFBundleShortVersionString` (build with the same `--version` you
+publish). The
 writer and the updater's verifier share one implementation
 (`desktop.SignUpdateFeed`), so the format cannot drift between them.
 
@@ -1538,8 +1564,8 @@ reason) and ship only the `.pub` contents in the app's
 
 `battery/desktop/update_harness_test.go` is the reference: an
 `httptest.Server` serves the signed feed on 127.0.0.1, the battery's
-update platform (the OS seam: running version, bundle location,
-codesign, relaunch) is replaced through a test seam before `Run`, and
+update platform (the OS seam: running version and identifier, bundle
+location, codesign, relaunch) is replaced through a test seam before `Run`, and
 the harness drives the page side (`updates.check`, the permission
 gate on `updates.install`) and observes the apply step without any
 native code.
@@ -2116,12 +2142,15 @@ WKWebView through `desktoptest.NativeMain`.
 | `install --bundle=<extracted-directory>` on Linux | Validates and installs a bundle for the current user, including a desktop entry and any embedded URL handler. No default-handler or autostart preference changes. |
 | `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
 | `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
-| `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. |
-| `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies. |
+| `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. Refuses when either path already exists, a symlink included, and leaves no half pair behind. |
+| `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies; refuses a `--version` that differs from the bundle's `CFBundleShortVersionString`. |
 
 `--id` must be reverse-DNS (`[A-Za-z0-9.-]+` with a dot), `--name`
 printable with no path separator and at most 64 characters, and every
-plist value is XML-escaped.
+plist value is XML-escaped. On macOS `--version` must be semver
+(`major.minor.patch` with an optional `-pre-release`, no build metadata,
+no leading zeros, at most 64 characters), the form the updater compares;
+`desktop.ValidateAppVersion` is the same check.
 
 ## Linux runtime and native tests
 

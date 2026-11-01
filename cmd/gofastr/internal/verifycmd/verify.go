@@ -624,13 +624,20 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		// Accept both `--flag value` and `--flag=value`; the docs use the
-		// space form and people type both.
+		// space form and people type both. In the space form a next token
+		// that looks like a flag is a missing value, not the value:
+		// `--sarif --json` once wrote a SARIF file named `--json`. A value
+		// that really starts with "-" goes in the `=` form.
 		for _, valued := range []string{"--config", "--explain", "--sarif", "--analyzer", "--rule", "--root", "--baseline"} {
-			if arg == valued && i+1 < len(args) {
-				arg = valued + "=" + args[i+1]
-				i++
-				break
+			if arg != valued {
+				continue
 			}
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return opts, fmt.Errorf("%s needs a value (`%s <value>` or `%s=<value>`)", valued, valued, valued)
+			}
+			arg = valued + "=" + args[i+1]
+			i++
+			break
 		}
 		switch {
 		case arg == "--help" || arg == "-h":

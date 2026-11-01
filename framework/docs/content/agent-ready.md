@@ -408,6 +408,14 @@ framework.NewApp(
 )
 ```
 
+An API token carries its owner's roles, so `MCPRequireRole` narrows a
+scope-restricted caller (an API token or embed grant) to the roles its
+scopes name: it passes only with `access.RoleScope(role)`
+(`"role:admin"`; `"role:*"` and `"*:*"` cover every role) for a role
+that admits it. A `customers:read` token an admin minted for a
+reporting job does not reach the control tools. Sessions and JWTs carry
+no scopes and are unaffected.
+
 `framework.MCPRequireUser()` and `MCPRequireRole` both consult the
 `Decider` the way battery/auth's `MCPUser` and `MCPRole` do: the caller's
 roles, `access.RoleGateCapability` and the zero `Ref`, so

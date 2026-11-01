@@ -10,7 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
-// the SelectRunner branches + cleanupPrepPipes in processmodule_sandbox.go
+// the SelectRunner branches + releasePrepFDs in processmodule_sandbox.go
 // that are reachable WITHOUT spawning or running the real conformance suite.
 
 // ---- nil-safe accessors ----
@@ -62,13 +62,13 @@ func TestSandboxRunner_ReportAndBackendNonNil(t *testing.T) {
 	}
 }
 
-// ---- cleanupPrepPipes (nil-safe + closes real pipes) ----
+// ---- releasePrepFDs (nil-safe + closes real pipes) ----
 
-func TestCleanupPrepPipes_nilPointerIsNoOp(t *testing.T) {
+func TestReleasePrepFDs_nilIsNoOp(t *testing.T) {
 	// The function is nil-safe only on the pointer; a zero childPrep{} has
 	// nil interface pipe fields whose .Close() would panic, so callers
 	// always pass either nil or a fully-populated prep.
-	cleanupPrepPipes(nil)
+	releasePrepFDs(nil)
 }
 
 // ---- SelectRunner: trusted with nil trusted errors ----

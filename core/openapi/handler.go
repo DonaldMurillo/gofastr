@@ -5,6 +5,7 @@ import (
 	"html"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
@@ -115,8 +116,15 @@ func DocsHandler(spec *Spec, basePath string, public bool) http.Handler {
 	}
 	// basePath is developer-supplied config but flows into href + visible
 	// text; escape it so a CR/LF/quote/angle can't break out of the
-	// attribute or inject script content.
+	// attribute or inject script content. Escaping keeps the value inside
+	// the attribute and does nothing about its scheme, so the href also
+	// passes the shared anchor allow-list: a "javascript:" base links to
+	// the root-relative spec instead.
 	safeBase := html.EscapeString(basePath)
+	hrefBase := html.EscapeString(urlsafe.Clean(basePath+"/openapi.json", urlsafe.Anchor))
+	if hrefBase == "" {
+		hrefBase = "/openapi.json"
+	}
 	uiHTML := `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -130,7 +138,7 @@ func DocsHandler(spec *Spec, basePath string, public bool) http.Handler {
 </head>
 <body>
   <h1>API specification</h1>
-  <p>This service exposes an OpenAPI 3 document at <a href="` + safeBase + `/openapi.json"><code>` + safeBase + `/openapi.json</code></a>.</p>
+  <p>This service exposes an OpenAPI 3 document at <a href="` + hrefBase + `"><code>` + safeBase + `/openapi.json</code></a>.</p>
   <p>Load it in your preferred viewer (Swagger UI, Insomnia, Stoplight, Postman, …) to browse the endpoints interactively.</p>
 </body>
 </html>`

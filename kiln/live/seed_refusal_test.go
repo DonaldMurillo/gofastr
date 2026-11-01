@@ -85,10 +85,12 @@ func TestFailedSeedKeepsLiveRows(t *testing.T) {
 }
 
 // Dropping a field takes its column out of the entity's seed rows and
-// weights in the same edit, and a row left with no column goes too. Left
-// behind, every rederive (boot, undo, reset) skipped the whole seed on
-// "no such column" and the generator refused the frozen spec. Undo cuts
-// the entry, so replay brings the column back.
+// weights in the same edit. Left behind, every rederive (boot, undo,
+// reset) skipped the whole seed on "no such column" and the generator
+// refused the frozen spec. A row whose only field goes keeps the id it
+// was journaled with, as the live table keeps the row (2026-10-31 S52):
+// another seed may name that id. Undo cuts the entry, so replay brings
+// the column back.
 func TestDropFieldStripsSeedRows(t *testing.T) {
 	cases := []struct {
 		op   string
@@ -141,29 +143,31 @@ func TestDropFieldStripsSeedRows(t *testing.T) {
 			if got := snap.Seeds[0].Rows[0]["body"]; got != "b" {
 				t.Fatalf("snapshot taken before %s lost its seed body: %v", tc.op, got)
 			}
-			seed := func() (rows int, cols, weights []string) {
+			seed := func() (rows int, cols, last, weights []string) {
 				l.ReadSession(func(s *journal.Session) {
 					sd := s.World.Seeds[0]
 					rows = len(sd.Rows)
 					cols = slices.Sorted(maps.Keys(sd.Rows[0]))
+					last = slices.Sorted(maps.Keys(sd.Rows[len(sd.Rows)-1]))
 					weights = slices.Sorted(maps.Keys(sd.Weights))
 				})
-				return rows, cols, weights
+				return rows, cols, last, weights
 			}
-			if rows, cols, weights := seed(); rows != 1 || !slices.Equal(cols, []string{"id", "title"}) || !slices.Equal(weights, []string{"title"}) {
-				t.Fatalf("seed after %s: %d rows, columns %v, weights %v; want 1 row of id and title, weights on title", tc.op, rows, cols, weights)
+			if rows, cols, last, weights := seed(); rows != 2 || !slices.Equal(cols, []string{"id", "title"}) || !slices.Equal(last, []string{"id"}) || !slices.Equal(weights, []string{"title"}) {
+				t.Fatalf("seed after %s: %d rows, columns %v and %v, weights %v; want a row of id and title, a row of its id, weights on title", tc.op, rows, cols, last, weights)
 			}
 			if err := l.Reload(); err != nil {
 				t.Fatalf("reload: %v", err)
 			}
-			if got := postTitles(t, db); !slices.Equal(got, []string{"a"}) {
-				t.Fatalf("posts after rederive = %v, want the seed row", got)
+			var titled, all int
+			if err := db.QueryRow(`SELECT count(*), count(title) FROM posts`).Scan(&all, &titled); err != nil || all != 2 || titled != 1 {
+				t.Fatalf("posts after rederive: %d rows, %d titled (%v); want both seed rows, one titled", all, titled, err)
 			}
 			if r := tools.Undo(ctx, protocol.UndoArgs{}); !r.OK {
 				t.Fatalf("undo: %+v", r)
 			}
-			if rows, cols, weights := seed(); rows != 2 || !slices.Equal(cols, []string{"body", "id", "title"}) || !slices.Equal(weights, []string{"body", "title"}) {
-				t.Fatalf("seed after undo: %d rows, columns %v, weights %v; want both rows back with body", rows, cols, weights)
+			if rows, cols, last, weights := seed(); rows != 2 || !slices.Equal(cols, []string{"body", "id", "title"}) || !slices.Equal(last, []string{"body", "id"}) || !slices.Equal(weights, []string{"body", "title"}) {
+				t.Fatalf("seed after undo: %d rows, columns %v and %v, weights %v; want both rows back with body", rows, cols, last, weights)
 			}
 		})
 	}

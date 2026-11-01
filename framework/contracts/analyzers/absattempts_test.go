@@ -158,3 +158,45 @@ func migrate() {}
 	})
 	assertNot(t, ds, contracts.RuleAbsoluteAttempts, "a comment is not a string literal")
 }
+
+// A placeholder wrapped in a cast or a scalar function, and a quoted
+// column name, are the same host snapshot written over the counter.
+func TestAbsoluteAttemptsWrappedIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"settle.go": `package outbox
+
+func q() []string {
+	return []string{
+		"UPDATE jobs SET attempts = CAST($1 AS INTEGER) WHERE id = $2",
+		"UPDATE jobs SET attempts = COALESCE($1, 0), status = $2 WHERE id = $3",
+		"UPDATE jobs SET status = $1, attempts = LEAST($2, max_attempts) WHERE id = $3",
+		` + "`" + `UPDATE jobs SET "attempts" = $1 WHERE id = $2` + "`" + `,
+		"UPDATE jobs SET attempts = $1::int WHERE id = $2",
+	}
+}
+`,
+	})
+	if got := countRule(t, ds, contracts.RuleAbsoluteAttempts); len(got) != 5 {
+		t.Fatalf("want 5 findings (CAST, COALESCE, LEAST, quoted, ::int), got %d: %v", len(got), got)
+	}
+}
+
+// A wrapper whose expression reads the counter itself is still the
+// relative form: the column computes itself in SQL.
+func TestAbsoluteAttemptsWrappedRelativeQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"claim.go": `package queue
+
+func q() []string {
+	return []string{
+		"UPDATE jobs SET attempts = LEAST(attempts + 1, $1) WHERE id = $2",
+		"UPDATE jobs SET attempts = COALESCE(attempts, 0) + 1, claimed_at = $1 WHERE id = $2",
+		` + "`" + `UPDATE jobs SET "attempts" = "attempts" + 1, status = $1 WHERE id = $2` + "`" + `,
+		"UPDATE jobs SET max_attempts = $1 WHERE id = $2",
+	}
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleAbsoluteAttempts,
+		"a counter expression that reads its own column is relative, and max_attempts is not the counter")
+}

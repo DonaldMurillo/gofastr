@@ -62,7 +62,8 @@ battery renders panic-safely. Return `print.ErrNotFound` /
 **Access is safe-by-default:** `DefaultAccess` is `RequireAuth`, so a
 per-user document (`/print/invoice/42`) is **never world-readable** unless
 you set `Access: print.Public`. Use `print.RequireOwner` for ownership
-checks. The gate runs BEFORE `Build`, so unauthorized callers never hit
+checks. Both refuse an API token without `print.Scope` (`"print:read"`).
+The gate runs BEFORE `Build`, so unauthorized callers never hit
 the DB.
 
 **PDF is opt-in and dependency-isolated:** only `battery/print/chromepdf`

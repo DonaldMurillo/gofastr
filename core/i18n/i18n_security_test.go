@@ -237,3 +237,49 @@ func TestNilSurfacesReturnBareKey(t *testing.T) {
 		t.Errorf("missing-locale lookup should fall through to the bare key with no fallback configured")
 	}
 }
+
+// TestAcceptLangTagLengthBounded pins the catalog path's tag bound.
+// The nil-translator branch ran each Accept-Language entry through
+// sanitizeTag, but the catalog branch handed the raw entry to
+// tagFallbacks: one ~800 KB "en-x-x-…" range built ~400k fallback
+// strings per request, and with nine or more catalog locales every map
+// probe hashed its whole prefix (quadratic CPU).
+func TestAcceptLangTagLengthBounded(t *testing.T) {
+	tags, refused := parseAcceptLanguage("fr-CA, *;q=0.5, " + strings.Repeat("x-", 40) + "en, de;q=0, ../x")
+	for _, tag := range append(append([]string{}, tags...), refused...) {
+		if tag != "*" && sanitizeTag(tag) != tag {
+			t.Errorf("SECURITY: [i18n] parseAcceptLanguage kept unbounded tag %q", tag)
+		}
+	}
+	if len(tags) != 2 || tags[0] != "fr-ca" || tags[1] != "*" {
+		t.Errorf("[i18n] bounded parse lost real entries: %v", tags)
+	}
+
+	cat := NewMapCatalog()
+	for _, l := range []string{"en", "fr", "de", "es", "it", "pt", "ja", "ko", "zh", "nl"} {
+		cat.Set(l, "k", Message{Text: l})
+	}
+	tr := NewTranslator(cat, "en")
+	negotiate := func(header string) Locale {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Accept-Language", header)
+		return Negotiate(tr, r)
+	}
+	bytesFor := func(header string) int64 {
+		return testing.Benchmark(func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				negotiate(header)
+			}
+		}).AllocedBytesPerOp()
+	}
+	normal := bytesFor("fr-CA,fr;q=0.8")
+	hostile := "en" + strings.Repeat("-x", 400000)
+	if got, budget := bytesFor(hostile), normal*8+4096; got > budget {
+		t.Errorf("SECURITY: [i18n] an %d-byte Accept-Language tag allocated %d B/op "+
+			"against %d B/op for a normal header (budget %d)", len(hostile), got, normal, budget)
+	}
+	if got := negotiate("fr-CA,fr;q=0.8").Tag; got != "fr" {
+		t.Errorf("[i18n] fr-CA negotiated to %q, want fr", got)
+	}
+}

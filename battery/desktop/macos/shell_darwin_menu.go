@@ -347,6 +347,7 @@ func bridgeWindowShouldClose(a *ffi.Args) uintptr {
 	s.forgetWindow(w)
 	_, wv := w.ids()
 	killPage(wv)
+	releaseSecondaryWindow(w)
 	if onClosed := s.onWindowClosedLocked(); onClosed != nil {
 		go onClosed(w.id)
 	}

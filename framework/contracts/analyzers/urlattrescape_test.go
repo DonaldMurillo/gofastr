@@ -126,3 +126,134 @@ func title(b *strings.Builder, name string) {
 	assertNot(t, ds, contracts.RuleURLAttrEscape,
 		"cleaned, guarded, root-relative, and non-slot values are all outside the rule")
 }
+
+// A single-quoted slot is the same live URL, and an escaped value held
+// in a variable before it reaches the slot is the same scheme-blind
+// escape.
+func TestURLAttrEscapeQuoteAndVarReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"link.go": `package ui
+
+import (
+	"fmt"
+	"html"
+	"strings"
+
+	"example.com/app/core/render"
+)
+
+func single(b *strings.Builder, u string) {
+	b.WriteString("<a href='" + render.Escape(u) + "'>")
+}
+
+func singleSprintf(u string) string {
+	return fmt.Sprintf("<img src='%s'>", html.EscapeString(u))
+}
+
+func viaVar(b *strings.Builder, u string) {
+	esc := render.Escape(u)
+	b.WriteString("<a href=\"" + esc + "\">")
+}
+
+func viaVarSprintf(u string) string {
+	safe := html.EscapeString(u)
+	return fmt.Sprintf("<form action=\"%s\">", safe)
+}
+`,
+	})
+	if found := countRule(t, ds, contracts.RuleURLAttrEscape); len(found) != 4 {
+		t.Fatalf("want 4 findings (two single-quoted, two via a variable), got %d: %v", len(found), found)
+	}
+}
+
+// A variable holding the escape of a cleaned value is credited, a
+// variable holding an escape that lands in a non-URL slot is escaping's
+// right job, and a variable reassigned to something else is no longer
+// provably the escape.
+func TestURLAttrEscapeCleanVarIsQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"quiet.go": `package ui
+
+import (
+	"strings"
+
+	"example.com/app/core/render"
+	"example.com/app/core/urlsafe"
+)
+
+func cleaned(b *strings.Builder, raw string) {
+	esc := render.Escape(urlsafe.CleanAnchor(raw))
+	b.WriteString("<a href=\"" + esc + "\">")
+}
+
+func titled(b *strings.Builder, name string) {
+	esc := render.Escape(name)
+	b.WriteString("<span title=\"" + esc + "\">")
+}
+
+func reassigned(b *strings.Builder, raw string) {
+	v := render.Escape(raw)
+	b.WriteString("<span title=\"" + v + "\">")
+	v = "/home"
+	b.WriteString("<a href=\"" + v + "\">")
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleURLAttrEscape,
+		"a cleaned escape in a variable and an escape in a non-URL slot are quiet")
+}
+
+// uihost's markup-skew page, reduced: the target passed
+// handler.IsSafeRelativePath (a value that starts "/" cannot carry a
+// scheme), and the escape reads a literal-for-literal ReplaceAll of it.
+func TestURLAttrEscapeSafeRelativeIsQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"skew.go": `package uihost
+
+import (
+	"fmt"
+	"html"
+	"io"
+	"strings"
+
+	"example.com/app/core/handler"
+)
+
+func skew(w io.Writer, target string) {
+	if !handler.IsSafeRelativePath(target) {
+		return
+	}
+	esc := html.EscapeString(strings.ReplaceAll(target, "'", "%27"))
+	fmt.Fprintf(w, ` + "`" + `<a href="%s">reload</a>` + "`" + `, esc)
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleURLAttrEscape,
+		"a safe-relative-path guard vets the target and a literal ReplaceAll keeps it vetted")
+}
+
+// A ReplaceAll whose replacement is not a literal can put a scheme back,
+// so it carries no credit from the guarded value.
+func TestURLAttrEscapeComputedReplaceReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"skew.go": `package uihost
+
+import (
+	"fmt"
+	"html"
+	"io"
+	"strings"
+
+	"example.com/app/core/handler"
+)
+
+func skew(w io.Writer, target, with string) {
+	if !handler.IsSafeRelativePath(target) {
+		return
+	}
+	fmt.Fprintf(w, ` + "`" + `<a href="%s">reload</a>` + "`" + `, html.EscapeString(strings.ReplaceAll(target, "/", with)))
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleURLAttrEscape)
+}

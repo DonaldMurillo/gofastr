@@ -33,16 +33,13 @@ var (
 	// inside a list item, and entity properties, which is a nested map).
 	mustRefuseBreaking = []string{
 		"", "a\nb", "a\rb", "a[b", "a]b", "a{b", "a}b", "- a", "a\tb",
-		" a", "a ", `"status`, "'status", "it's", `"quoted"`, "'quoted'",
+		" a", "a ", `"status`, "'status", `"quoted"`, "'quoted'",
 		// Leading '#' is the load-bearing one: the comment eats the line
 		// and the entry is SILENTLY DROPPED — the row re-parses as {}.
 		// pack.go contemplates relaxing '#' to a position-exact check;
 		// that relaxation must not be allowed to accept these.
 		"#a", "a #b",
 		"{a", "[a",
-		// Quote family: the value is quoted correctly and the key's quote
-		// still desyncs the comment scanner against it.
-		`a"b`, "a'b",
 		// A colon followed by a space is still a mapping separator.
 		"a: b",
 		// Comment family, mirroring the #a/a #b pair already listed.
@@ -52,7 +49,12 @@ var (
 	// today, but the guard rejects them anyway because the predicate is
 	// simpler than the parser's real rule. Listed separately so the
 	// comment above stays true of the list above it.
-	mustRefuseConservatively = []string{"a#b", "a:b", ":", ":a", "a:"}
+	mustRefuseConservatively = []string{"a#b", "a:b", ":", ":a", "a:",
+		// Quote family: core/yaml reads a quote inside a plain scalar as
+		// text, so the comment scanner stays in step and raw emission
+		// survives. Pack still refuses them.
+		"it's", `a"b`, "a'b",
+	}
 
 	// Must survive untouched. Refusing any of these breaks real packs,
 	// which is the failure mode that matters more than the injection.

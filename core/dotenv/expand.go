@@ -19,25 +19,63 @@ import "strings"
 //
 // envFn may be nil. In that case the only lookup source is local.
 func Expand(s string, local map[string]string, envFn func(string) (string, bool)) string {
-	return expandWithDepth(s, local, envFn, map[string]struct{}{}, 0)
+	out, _ := expandLimited(s, local, envFn, -1)
+	return out
+}
+
+// expandLimited is Expand with an output cap: it stops writing as soon
+// as the value would pass limit bytes and reports ok=false. A negative
+// limit means no cap. Parse uses it so its expansion budget refuses a
+// value while it is being built, not after a single line of many
+// references to a large key has already allocated gigabytes.
+func expandLimited(s string, local map[string]string, envFn func(string) (string, bool), limit int) (string, bool) {
+	e := &expander{local: local, envFn: envFn, visited: map[string]struct{}{}, limit: limit}
+	e.expand(s, 0)
+	if e.over {
+		return "", false
+	}
+	return e.b.String(), true
 }
 
 const maxExpandDepth = 16
 
-func expandWithDepth(s string, local map[string]string, envFn func(string) (string, bool), visited map[string]struct{}, depth int) string {
-	if depth >= maxExpandDepth {
-		return s
+// expander writes every level of a nested expansion into one builder, so
+// the cap counts each output byte once, at the point it is written.
+type expander struct {
+	local   map[string]string
+	envFn   func(string) (string, bool)
+	visited map[string]struct{}
+	limit   int
+	over    bool
+	b       strings.Builder
+}
+
+func (e *expander) write(s string) {
+	if e.over {
+		return
 	}
-	var b strings.Builder
-	b.Grow(len(s))
-	i := 0
-	for i < len(s) {
+	if e.limit >= 0 && e.b.Len()+len(s) > e.limit {
+		e.over = true
+		return
+	}
+	e.b.WriteString(s)
+}
+
+func (e *expander) expand(s string, depth int) {
+	if depth >= maxExpandDepth {
+		e.write(s)
+		return
+	}
+	i, lit := 0, 0
+	for i < len(s) && !e.over {
 		// `\$` is an escape: emit a literal $ and DO NOT treat the
 		// next char as part of an expansion marker. Order matters:
 		// check this before the ${ probe below.
 		if i+1 < len(s) && s[i] == '\\' && s[i+1] == '$' {
-			b.WriteByte('$')
+			e.write(s[lit:i])
+			e.write("$")
 			i += 2
+			lit = i
 			continue
 		}
 		// Look for the next ${
@@ -45,43 +83,44 @@ func expandWithDepth(s string, local map[string]string, envFn func(string) (stri
 			end := strings.IndexByte(s[i+2:], '}')
 			if end < 0 {
 				// No closing brace: emit the rest verbatim.
-				b.WriteString(s[i:])
-				return b.String()
+				break
 			}
+			e.write(s[lit:i])
 			name := s[i+2 : i+2+end]
 			if name == "" {
 				// Empty ${}: keep literal.
-				b.WriteString("${}")
+				e.write("${}")
 			} else {
-				b.WriteString(lookup(name, local, envFn, visited, depth))
+				e.lookup(name, depth)
 			}
 			i = i + 2 + end + 1 // past the '}'
+			lit = i
 			continue
 		}
-		b.WriteByte(s[i])
 		i++
 	}
-	return b.String()
+	e.write(s[lit:])
 }
 
-func lookup(name string, local map[string]string, envFn func(string) (string, bool), visited map[string]struct{}, depth int) string {
-	if _, cycle := visited[name]; cycle {
-		return ""
+func (e *expander) lookup(name string, depth int) {
+	if _, cycle := e.visited[name]; cycle {
+		return
 	}
-	visited[name] = struct{}{}
-	defer delete(visited, name)
+	e.visited[name] = struct{}{}
+	defer delete(e.visited, name)
 
-	if v, ok := local[name]; ok {
+	if v, ok := e.local[name]; ok {
 		// Local values may themselves contain ${...} that wasn't
 		// recursively expanded at parse-time (e.g. forward refs in
 		// preceding lines). Expand again with the visited set so
 		// cycles don't loop forever.
-		return expandWithDepth(v, local, envFn, visited, depth+1)
+		e.expand(v, depth+1)
+		return
 	}
-	if envFn != nil {
-		if v, ok := envFn(name); ok {
-			return expandWithDepth(v, local, envFn, visited, depth+1)
+	if e.envFn != nil {
+		//gofastr:allow(recovercallback) envFn is Expand/Parse's caller-supplied lookup (os.LookupEnv in practice), called synchronously on the caller's goroutine exactly as it was as a parameter; no dispatch loop runs it
+		if v, ok := e.envFn(name); ok {
+			e.expand(v, depth+1)
 		}
 	}
-	return ""
 }

@@ -42,6 +42,16 @@ func HeldScopes(ctx context.Context) ([]Permission, bool) {
 	return h.grants, true
 }
 
+// RoleScope is the scope a scope-restricted caller needs to act on role at a
+// role gate: "role:<role>" ("role:*" and "*:*" cover every role). A token
+// carries its owner's roles, so without it a token an admin minted for
+// "customers:read" would pass every gate that asks for "admin". The
+// framework's role gates (framework.MCPRequireRole, /.debug) count a role
+// for a scoped caller only when ScopeAllows(ctx, RoleScope(role)); sessions
+// and JWTs carry no scopes and are unaffected. A role name outside the scope
+// vocabulary ([a-z0-9_-]) cannot be minted by name; "role:*" still covers it.
+func RoleScope(role string) Permission { return Permission("role:" + role) }
+
 // ScopeAllows reports whether ctx may exercise required under the scope
 // model. An unscoped ctx is allowed: scopes only ever narrow. A scoped ctx is
 // allowed when ScopeMatch finds a granting scope.

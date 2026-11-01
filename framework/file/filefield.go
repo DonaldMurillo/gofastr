@@ -565,7 +565,7 @@ func rejectUnsafeContent(data []byte) error {
 	// NOT sniff as a confirmed-inert binary. SVG, HTML, XML, plain text, and
 	// unknown (application/octet-stream) all still go through this scan.
 	if !isConfirmedInertBinary(head) {
-		trim := bytes.TrimLeft(stripBOM(head), " \t\r\n\f\v")
+		trim := trimLeadingSpace(stripBOM(head))
 		for _, tok := range softActiveTokens {
 			if containsTokenFold(trim, tok) {
 				return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
@@ -575,15 +575,31 @@ func rejectUnsafeContent(data []byte) error {
 
 	// Final fallback: trust http.DetectContentType for cases it gets
 	// right (real HTML with <html> tag elsewhere, etc.).
-	switch ct := http.DetectContentType(head); {
-	case strings.HasPrefix(ct, "text/html"),
-		strings.HasPrefix(ct, "image/svg"),
-		strings.HasPrefix(ct, "text/xml"),
-		strings.HasPrefix(ct, "application/xml"):
+	if ct := mimeBase(http.DetectContentType(head)); isMarkupMIME(ct) {
 		return fmt.Errorf("%w: %s", ErrFileFieldUnsafeContent, ct)
 	}
 
-	return nil
+	// UTF-16/32 text: the scans above read raw bytes, where a wide
+	// body's markup is NUL-interleaved and matches no token. An XML
+	// parser decodes it from the BOM (or a BOM-less leading "<"), so
+	// scan its characters too. See wideText.
+	return rejectWideText(data)
+}
+
+// trimLeadingSpace drops the ASCII whitespace an HTML/XML parser skips
+// before the first token.
+func trimLeadingSpace(b []byte) []byte {
+	return bytes.TrimLeft(b, " \t\r\n\f\v")
+}
+
+// isMarkupMIME reports whether a parameter-free sniffed type is one a
+// browser renders as active markup.
+func isMarkupMIME(ct string) bool {
+	switch ct {
+	case "text/html", "image/svg+xml", "text/xml", "application/xml":
+		return true
+	}
+	return false
 }
 
 // isConfirmedInertBinary reports whether http.DetectContentType
@@ -622,9 +638,9 @@ func isConfirmedInertBinary(head []byte) bool {
 
 // stripBOM removes a single leading byte-order mark (UTF-8, UTF-16 LE/BE,
 // UTF-32 LE/BE) so a BOM prefix can't push a dangerous markup token off
-// offset 0 and out of the sniff path. Only the BOM bytes are stripped;
-// for UTF-16/32 the following ASCII bytes (e.g. "<svg") remain matchable
-// because they sit interleaved-or-adjacent in the trimmed window.
+// offset 0 and out of the sniff path. Only the BOM bytes are stripped:
+// a UTF-16/32 body's markup stays NUL-interleaved here, and
+// rejectWideText scans its decoded characters instead.
 func stripBOM(b []byte) []byte {
 	switch {
 	case len(b) >= 4 && b[0] == 0x00 && b[1] == 0x00 && b[2] == 0xFE && b[3] == 0xFF:

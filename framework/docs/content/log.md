@@ -90,7 +90,10 @@ Outside the dev loop every log tool needs a caller holding the `admin`
 role (`framework.MCPRequireRole("admin")`): the read tools hand out every
 caller's request paths, remote IPs and request ids, so a signed-in user
 is not enough. An embed grant and a caller an access `Decider` denies are
-refused too. `Config.MCPGate` replaces the gate for an app whose
+refused too, and so is an API token without the `role:admin` scope
+(`access.RoleScope`; `"role:*"` and `"*:*"` cover it): the token carries
+its owner's roles, so an admin's token minted for another job would
+otherwise read every caller's logs. `Config.MCPGate` replaces the gate for an app whose
 operators hold another role:
 
 ```go

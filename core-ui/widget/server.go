@@ -538,13 +538,24 @@ func (s *server) safeSkeleton(slots map[string]render.HTML) (out render.HTML) {
 	return s.def.Skeleton(slots)
 }
 
+// paintsOwnPanel lists the positions whose chrome paints a panel of
+// its own (the drawer and sheet containers, the centered .cui-panel),
+// where Definition.Surface adds nothing. The centered root is the whole
+// viewport, so painting it would cover the page.
+var paintsOwnPanel = map[Position]bool{Center: true, Edge: true, EdgeRight: true, Bottom: true}
+
 // defaultSkeleton is the framework-built chrome for each Position.
 // It writes a <div class="cui-widget cui-pos-<pos>"> with the slot
 // contents inserted by name. Hosts that want bespoke chrome supply
 // their own Skeleton func.
 func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	var b strings.Builder
-	b.WriteString(`<div class="cui-widget cui-pos-` + render.Escape(string(def.Position)) + `" data-cui-widget="` + render.Escape(def.Name) + `"`)
+	cls := "cui-widget cui-pos-" + render.Escape(string(def.Position))
+	if def.Surface && !paintsOwnPanel[def.Position] {
+		// The root is the panel: see the surface rule in widgetCSS.
+		cls += " cui-surface"
+	}
+	b.WriteString(`<div class="` + cls + `" data-cui-widget="` + render.Escape(def.Name) + `"`)
 	if def.Role != "" {
 		b.WriteString(` role="` + render.Escape(def.Role) + `"`)
 	}
@@ -873,7 +884,12 @@ func widgetCSS(def Definition) string {
 	// outside the root's box, half the arrow past the border) renders.
 	// The scroll cap moves to the inner .cui-slot below, a tall slot
 	// scrolls inside the popover, the arrow stays visible.
-	ss.Rule("[data-cui-widget][data-cui-popover-side]").
+	// .cui-surface (Definition.Surface: preset.Popover, preset.FloatingPanel)
+	// paints the same panel at a corner or banner position, where the
+	// runtime sets no side: an unanchored popover, or an anchored one
+	// opened without its trigger (a deep link), would otherwise float
+	// its slot content bare over the page. The arrow stays side-only.
+	ss.Rule("[data-cui-widget][data-cui-popover-side], .cui-widget.cui-surface").
 		Set("border-radius", "{radii.md}",
 			"box-shadow", "{shadows.lg}",
 			"background", "{colors.surface}",
@@ -887,7 +903,7 @@ func widgetCSS(def Definition) string {
 	// max-block-size. flex: 1 1 auto + min-block-size: 0 lets the
 	// slot consume whatever the parent allows; overflow-y: auto then
 	// engages on tall content. Keeps the arrow on the root visible.
-	ss.Rule(`[data-cui-widget][data-cui-popover-side] > .cui-slot`).
+	ss.Rule(`[data-cui-widget][data-cui-popover-side] > .cui-slot, .cui-widget.cui-surface > .cui-slot`).
 		Set("flex", "1 1 auto",
 			"min-block-size", "0",
 			"max-block-size", "100%",

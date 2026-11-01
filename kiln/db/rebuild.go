@@ -12,9 +12,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// ErrTableRestored marks a RebuildTable failure that put the table back
-// as it was, rows and indexes included: the database still holds what
-// it held before the edit.
+// ErrTableRestored marks a table change that failed and left the table
+// as it was, rows and indexes included: a RebuildTable that put the
+// table back, or a DropTable SQLite refused. The database still holds
+// what it held before the edit.
 var ErrTableRestored = errors.New("kiln/db: the table was put back as it was")
 
 // DropColumns removes columns an edit took off an entity. Migrate only

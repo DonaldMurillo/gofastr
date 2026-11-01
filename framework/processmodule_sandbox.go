@@ -123,7 +123,7 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 	// fail-closed spawn error (module quarantined/restarted) rather than
 	// escaping the spawn goroutine.
 	if err := r.wrapSafely(prep.Cmd, opts); err != nil {
-		cleanupPrepPipes(prep)
+		releasePrepFDs(prep)
 		prep.removeOwnedScratch()
 		return nil, fmt.Errorf("processmodule: sandbox %s wrap: %w", r.backend.Name(), err)
 	}
@@ -182,16 +182,24 @@ func (r *SandboxRunner) allowlist() []string {
 	return r.EnvAllowlist
 }
 
-// cleanupPrepPipes closes the three stdio pipes prepareChildForSpawn
-// opened, used on the Wrap-error fail-closed path so the parent does not
-// leak pipe fds across a failed spawn.
-func cleanupPrepPipes(prep *childPrep) {
+// releasePrepFDs closes every descriptor prepareChildForSpawn opened
+// (both ends of the three stdio pipes and, on exec-by-fd platforms, the
+// verified artifact fd). It runs on each path that abandons a prepared spawn
+// (a Wrap error, a re-hash failure, a failed exec) so the parent leaks
+// no fd across a failed spawn.
+func releasePrepFDs(prep *childPrep) {
 	if prep == nil {
 		return
 	}
 	_ = prep.Stdin.Close()
 	_ = prep.Stdout.Close()
 	_ = prep.StderrPipe.Close()
+	if prep.Artifact != nil {
+		_ = prep.Artifact.Close()
+	}
+	for _, f := range prep.ChildEnds {
+		_ = f.Close()
+	}
 }
 
 // SelectRunner maps a descriptor's TrustTier to the Runner the supervisor

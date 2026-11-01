@@ -53,9 +53,34 @@ func bundleZip(t *testing.T) []byte {
 		"Notes.app/Contents/":            {nil, 0o755 | fs.ModeDir},
 		"Notes.app/Contents/MacOS/":      {nil, 0o755 | fs.ModeDir},
 		"Notes.app/Contents/MacOS/Notes": {[]byte("#!binary\n"), 0o755},
-		"Notes.app/Contents/Info.plist":  {[]byte(`<?xml version="1.0"?><plist/>`), 0o644},
+		"Notes.app/Contents/Info.plist":  {testInfoPlist("dev.gofastr.notes", "1.2.0"), 0o644},
 		"Notes.app/Contents/Resources/":  {nil, 0o755 | fs.ModeDir},
 	})
+}
+
+// testInfoPlist is the identity part of the Info.plist gofastr desktop
+// build writes.
+func testInfoPlist(id, version string) []byte {
+	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Notes</string>
+	<key>CFBundleIdentifier</key>
+	<string>` + id + `</string>
+	<key>CFBundleShortVersionString</key>
+	<string>` + version + `</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>CFBundleIdentifier</key>
+		<string>nested.is.ignored</string>
+	</dict>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
+`)
 }
 
 func TestExtractZipWritesBundle(t *testing.T) {

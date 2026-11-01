@@ -267,10 +267,24 @@ func (s *winShell) receiveDeepLink(hwnd, lparam uintptr) uintptr {
 	return 1
 }
 
+// activateExistingWindow brings the main window forward for a second
+// launch or a forwarded deep link. Only a minimized window is restored:
+// SW_RESTORE on a maximized window returns it to its normal size, so
+// any other window is shown in the state it already has.
 func (s *winShell) activateExistingWindow(hwnd uintptr) {
-	win32.ShowWindowCmd(hwnd, win32.SW_RESTORE)
+	win32.ShowWindowCmd(hwnd, activationShowCmd(win32.IsIconic(hwnd)))
 	win32.BringWindowToTop(hwnd)
 	win32.SetForegroundWindow(hwnd)
+}
+
+// activationShowCmd is the ShowWindow command activateExistingWindow
+// uses: SW_RESTORE for a minimized window, SW_SHOW (which keeps a
+// maximized window maximized and shows a hidden one) otherwise.
+func activationShowCmd(iconic bool) int {
+	if iconic {
+		return win32.SW_RESTORE
+	}
+	return win32.SW_SHOW
 }
 
 func (s *winShell) releaseActivationMutex() {

@@ -52,3 +52,22 @@ func cors(w http.ResponseWriter, origin string) {
 	assertNot(t, ds, contracts.RuleVarySet,
 		"Add is the append-only spelling and other headers are not Vary")
 }
+
+// Header.Set canonicalizes its key, so a lowercase or mixed-case
+// "vary" is the same clobbering write.
+func TestVarySetAnyCaseIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"cache.go": `package middleware
+
+import "net/http"
+
+func mark(w http.ResponseWriter, h http.Header) {
+	w.Header().Set("vary", "Accept")
+	h.Set("VARY", "Cookie")
+}
+`,
+	})
+	if found := countRule(t, ds, contracts.RuleVarySet); len(found) != 2 {
+		t.Fatalf("want 2 findings (lower + upper case), got %d: %v", len(found), found)
+	}
+}

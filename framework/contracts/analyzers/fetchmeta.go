@@ -2,6 +2,7 @@ package analyzers
 
 import (
 	"go/ast"
+	"net/textproto"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -26,9 +27,12 @@ import (
 // keep the tenth copy from appearing: the predicate is
 // security-critical and lives in exactly one place.
 //
-// The read is Get("Sec-Fetch-Site") on a receiver ending in .Header or
-// on a bare identifier (h http.Header handed to a helper), or the
-// canonical-key map form Header["Sec-Fetch-Site"]. Prose mentioning
+// The read is Get("Sec-Fetch-Site") or Values("Sec-Fetch-Site") on a
+// receiver ending in .Header or on a bare identifier (h http.Header
+// handed to a helper), with the name in any case (both methods
+// canonicalize it), or the canonical-key map form
+// Header["Sec-Fetch-Site"] (a map index does not canonicalize, so only
+// that spelling reads the header). Prose mentioning
 // the header (a ticket body in examples/site) is a string literal in
 // another position and cannot match.
 //
@@ -52,14 +56,16 @@ func ruleFetchMetadata(p *contracts.Pass, rel string, file *ast.File) []contract
 		switch v := n.(type) {
 		case *ast.CallExpr:
 			sel, ok := v.Fun.(*ast.SelectorExpr)
-			if !ok || sel.Sel == nil || sel.Sel.Name != "Get" || len(v.Args) != 1 {
+			if !ok || sel.Sel == nil || (sel.Sel.Name != "Get" && sel.Sel.Name != "Values") || len(v.Args) != 1 {
 				return true
 			}
 			if !headerish(sel.X) {
 				return true
 			}
+			// Get and Values canonicalize their key, so the
+			// lowercase spelling reads the same header.
 			name, ok := stringLit(v.Args[0])
-			if !ok || name != "Sec-Fetch-Site" {
+			if !ok || textproto.CanonicalMIMEHeaderKey(name) != "Sec-Fetch-Site" {
 				return true
 			}
 			out = append(out, diag(p, contracts.RuleFetchMetadata, rel, v.Pos(),

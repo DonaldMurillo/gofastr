@@ -2,6 +2,7 @@ package sdkdocs
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -56,6 +57,9 @@ func testRegistry() *fakeRegistry {
 	return &fakeRegistry{entities: []*entity.Entity{invoices, posts}}
 }
 
+// sdkSum is the manifest's SHA256 spelling for a fixture file.
+func sdkSum(data string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(data))) }
+
 // testArtifacts builds a dist FS whose manifest matches (or mismatches) the
 // live posts entity.
 func testArtifacts(t *testing.T, reg *fakeRegistry, matchLive bool) fstest.MapFS {
@@ -73,9 +77,9 @@ func testArtifacts(t *testing.T, reg *fakeRegistry, matchLive bool) fstest.MapFS
 		Entities:       []string{"posts"},
 		SchemaHash:     hash,
 		Artifacts: map[string]sdk.Artifact{
-			"go":       {File: sdk.GoArtifact, SHA256: "aa11", Bytes: 3, Module: "local/testapp-sdk"},
-			"js":       {File: sdk.JSArtifact, SHA256: "bb22", Bytes: 5},
-			"js-types": {File: sdk.JSTypesArtifact, SHA256: "cc33", Bytes: 4},
+			"go":       {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/testapp-sdk"},
+			"js":       {File: sdk.JSArtifact, SHA256: sdkSum("//js\n"), Bytes: 5},
+			"js-types": {File: sdk.JSTypesArtifact, SHA256: sdkSum("//ts"), Bytes: 4},
 		},
 	}
 	raw, err := json.Marshal(m)
@@ -219,7 +223,7 @@ func TestArtifactDownloadHeaders(t *testing.T) {
 	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "attachment") || !strings.Contains(cd, "1.0.0") {
 		t.Errorf("go.zip content-disposition %q", cd)
 	}
-	if resp.Header.Get("ETag") != `"aa11"` {
+	if resp.Header.Get("ETag") != `"`+sdkSum("zip")+`"` {
 		t.Errorf("go.zip etag %q", resp.Header.Get("ETag"))
 	}
 
@@ -234,7 +238,7 @@ func TestArtifactDownloadHeaders(t *testing.T) {
 
 	// ETag revalidation → 304.
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/docs/api/sdk/go.zip", nil)
-	req.Header.Set("If-None-Match", `"stale", "aa11"`)
+	req.Header.Set("If-None-Match", `"stale", "`+sdkSum("zip")+`"`)
 	resp304, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

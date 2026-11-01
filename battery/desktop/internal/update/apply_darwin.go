@@ -58,6 +58,25 @@ func (p *darwinPlatform) Version() string {
 	return v
 }
 
+// Identifier implements Platform: mainBundle's bundleIdentifier (the
+// CFBundleIdentifier the running Info.plist declares), "" when
+// unbundled.
+func (p *darwinPlatform) Identifier() string {
+	var id string
+	_ = p.hop(func() {
+		bundle := objc.ID(objc.Send(objc.Class("NSBundle"), objc.Sel("mainBundle")))
+		if bundle == 0 {
+			return
+		}
+		val := objc.ID(objc.Send(bundle, objc.Sel("bundleIdentifier")))
+		if val == 0 {
+			return
+		}
+		id = objc.GoString(val)
+	})
+	return id
+}
+
 // Bundle implements Platform: mainBundle's bundlePath when it is a
 // .app directory, ok=false for an unbundled binary.
 func (p *darwinPlatform) Bundle() (string, string, bool) {

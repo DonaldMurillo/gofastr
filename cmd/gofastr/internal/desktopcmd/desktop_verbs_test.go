@@ -47,7 +47,11 @@ func buildFeedArchive(t *testing.T, dir string) string {
 		"Notes.app/Contents/":            {nil, 0o755 | fs.ModeDir},
 		"Notes.app/Contents/MacOS/":      {nil, 0o755 | fs.ModeDir},
 		"Notes.app/Contents/MacOS/Notes": {[]byte("#!binary"), 0o755},
-		"Notes.app/Contents/Info.plist":  {[]byte(`<?xml version="1.0"?><plist/>`), 0o644},
+		// The plist the build writes: feed reads its version back.
+		"Notes.app/Contents/Info.plist": {renderInfoPlist(infoPlistValues{
+			Name: "Notes", DisplayName: "Notes", Identifier: "dev.gofastr.notes",
+			Executable: "Notes", ShortVersion: "1.2.0", Version: "1.2.0",
+		}), 0o644},
 	}
 	for name, e := range entries {
 		hdr := &zip.FileHeader{Name: name, Method: zip.Deflate}
@@ -233,7 +237,8 @@ func TestDesktopFeedRefusesBadInputs(t *testing.T) {
 	cases := map[string][]string{
 		"non-semver version": append(append([]string{}, base...), "--version", "1.2"),
 		"bad platform":       append(append([]string{}, base[:2]...), "--version", "1.2.0", "--platform", "darwin arm64", "--archive", archive, "--url", "https://e.com/a.zip", "-o", out),
-		"plain http url":     append(append([]string{}, base...), "--version", "1.0.0", "--url", "http://example.com/Notes.zip"),
+		"plain http url":     append(append([]string{}, base...), "--version", "1.2.0", "--url", "http://example.com/Notes.zip"),
+		"version mismatch":   append(append([]string{}, base...), "--version", "1.3.0"),
 	}
 	for name, args := range cases {
 		_, code := verbOutput(t, func() { runDesktopFeed(args) })

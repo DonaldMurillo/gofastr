@@ -118,11 +118,13 @@ Entities and data:
 - `add_entity`, `update_entity`, `delete_entity`: an entity whose CRUD
   mount (`/<api_prefix>/<table>`) is an existing page's path is refused
   with `kind: "conflict"`; `delete_entity` removes the entity's seeds
-  and hooks in the same edit, and `undo` brings them back
+  and hooks in the same edit, and `undo` brings them back; a
+  `delete_entity` whose drop SQLite refuses (another table's rows still
+  point at it) fails and leaves every table and row as it was
 - `add_field`, `delete_field`: deleting a field, or an `update_entity`
   that leaves one out, removes that column from the entity's seed rows
-  and weights in the same edit, drops a row left with no column, and
-  `undo` brings them back. The column also leaves the live table. A
+  and weights in the same edit, keeps a row left with only its `id`
+  (another seed may name it), and `undo` brings them back. The column also leaves the live table. A
   UNIQUE, key, indexed or foreign-key column, which SQLite's
   `DROP COLUMN` refuses, and an `update_entity` that makes a field
   optional or no longer unique, rebuild the table from the declared
@@ -137,9 +139,10 @@ Entities and data:
   freeze merges them into one block. A row that leaves out `id` (or sets
   it to null) gets a generated UUID, and one that leaves out `created_at`
   or `updated_at` on an entity with timestamps gets the current time, as a
-  CRUD create would. A generated id changes each time Kiln rebuilds the
-  database from the journal (boot, reset, undo), so give an `id` to a row
-  another seed or a saved link refers to. A `json` field's object, array,
+  CRUD create would. A generated id is journaled with the seed, so boot,
+  reset and undo rebuild the row with the same id and another seed can
+  refer to it; the implicit `created_at`/`updated_at` are stamped again on
+  each rebuild. A `json` field's object, array,
   number or boolean is stored as its JSON text, as a CRUD create stores
   it; a string is stored as written, so it must be JSON text already
 

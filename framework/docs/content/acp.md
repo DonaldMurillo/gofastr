@@ -17,7 +17,7 @@ Methods the server accepts from the client:
 | Method | Behavior |
 |---|---|
 | `initialize` | Version + capability negotiation. Responds with the agent's info, `loadSession` (true only if the agent implements `SessionLoader`), explicit `promptCapabilities` and `mcpCapabilities` (all false), and the configured `authMethods`. |
-| `authenticate` | Runs the configured `Options.Authenticate` hook for an advertised method ID. Requires `initialize` first, exactly like the session methods. With no methods advertised (the default), every `methodId` is rejected with `-32602`. |
+| `authenticate` | Runs the configured `Options.Authenticate` hook for an advertised method ID. Requires `initialize` first, exactly like the session methods. With no methods advertised (the default), every `methodId` is rejected with `-32602`. With methods advertised, authentication is required: `session/new`, `session/load` and `session/prompt` answer `-32000` (auth required) until one `authenticate` call on the connection succeeds; a failed attempt leaves them closed. |
 | `session/new` | Creates a session via `Agent.NewSession(cwd)`. Returns `{sessionId}`. An agent that returns an ID this connection already holds, live or draining, gets `-32603` and the held session is kept. |
 | `session/load` | Only when `loadSession` was advertised. Replays the conversation as `user_message_chunk` / `agent_message_chunk` updates, then returns. Unknown IDs answer `-32002`; a session whose prompt turn is still running answers `-32600` (reloading it mid-turn would let a second prompt run beside the first and lose the turn's cancel handle). A loader that returns a session with a different ID answers `-32603`. |
 | `session/prompt` | Runs one turn via `Session.Prompt`. The response carries the stop reason (`end_turn`, `refusal`, `cancelled`, …). The next prompt on a session waits until the previous turn's response is written, so a client that stops reading holds at most one parked response per session. |
@@ -123,7 +123,8 @@ which tells the client the plan is now empty.
 
 `Options` has four fields: `AuthMethods` (advertised in `initialize`) and
 `Authenticate` (the hook run for `authenticate`; the connection must have
-sent `initialize` first) — the zero value advertises no auth, which is right
+sent `initialize` first, and while `AuthMethods` is non-empty the session
+methods stay refused with `-32000` until it succeeds) — the zero value advertises no auth, which is right
 for local, unauthenticated agents like Kiln — plus the session bounds
 `MaxSessions` (live sessions one connection may hold; 0 = 1024, negative =
 unlimited) and `SessionOverflow`

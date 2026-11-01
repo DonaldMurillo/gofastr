@@ -202,6 +202,12 @@ type childPrep struct {
 	// RE-VERIFIES the digest right before exec (best-effort, see its
 	// doc).
 	Artifact *os.File
+	// ChildEnds are the child-side stdio pipe ends exec.Cmd holds until
+	// cmd.Start hands them to the child (and closes the parent's copy).
+	// A spawn abandoned before Start closes them through
+	// [releasePrepFDs]; once Start ran they are already closed and the
+	// second Close is a harmless os.ErrClosed.
+	ChildEnds []*os.File
 }
 
 // fdExecSupported reports whether exec'ing through the child-side
@@ -342,6 +348,13 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		return nil, fmt.Errorf("processmodule: stderr pipe: %w", err)
 	}
 
+	var childEnds []*os.File
+	for _, end := range []any{cmd.Stdin, cmd.Stdout, cmd.Stderr} {
+		if f, ok := end.(*os.File); ok {
+			childEnds = append(childEnds, f)
+		}
+	}
+
 	prepared = true
 	return &childPrep{
 		Cmd:        cmd,
@@ -353,6 +366,7 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		Stderr:     stderr,
 		Spec:       spec,
 		Artifact:   execFD,
+		ChildEnds:  childEnds,
 	}, nil
 }
 
@@ -388,27 +402,18 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		d := prep.Spec.Descriptor
 		got, err := sha256OfFile(d.ArtifactPath)
 		if err != nil {
-			_ = prep.Stdin.Close()
-			_ = prep.Stdout.Close()
-			_ = prep.StderrPipe.Close()
+			releasePrepFDs(prep)
 			return nil, fmt.Errorf("processmodule: re-hash %s: %w", d.ArtifactPath, err)
 		}
 		if got != d.ArtifactSHA256 {
-			_ = prep.Stdin.Close()
-			_ = prep.Stdout.Close()
-			_ = prep.StderrPipe.Close()
+			releasePrepFDs(prep)
 			return nil, &ExecutableSHAMismatchError{
 				Path: d.ArtifactPath, Expected: d.ArtifactSHA256, Actual: got,
 			}
 		}
 	}
 	if err := cmd.Start(); err != nil {
-		_ = prep.Stdin.Close()
-		_ = prep.Stdout.Close()
-		_ = prep.StderrPipe.Close()
-		if prep.Artifact != nil {
-			_ = prep.Artifact.Close()
-		}
+		releasePrepFDs(prep)
 		return nil, fmt.Errorf("processmodule: exec %s: %w", execName(cmd), err)
 	}
 	if prep.Artifact != nil {
@@ -416,9 +421,12 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		// done its job (the exec already resolved it).
 		_ = prep.Artifact.Close()
 	}
+	// From here a failure kills and reaps the child, then closes the
+	// parent-side pipe ends prepare opened: no spawnedChild owns them.
 	if ctx.Err() != nil {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
+		releasePrepFDs(prep)
 		return nil, ctx.Err()
 	}
 
@@ -434,6 +442,7 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
+		releasePrepFDs(prep)
 		return nil, fmt.Errorf("processmodule: codec: %w", err)
 	}
 

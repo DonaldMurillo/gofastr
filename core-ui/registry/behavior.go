@@ -79,7 +79,8 @@ type BehaviorEntry struct {
 // (e.key values) and the Scope, a selector that must match somewhere
 // in the document — the retention is armed only while the scope
 // exists, so a key that belongs to an open surface is not eaten while
-// that surface is closed. The JSON tags are the wire shape: the
+// that surface is closed. A key held with Alt, Ctrl, Meta or Shift is
+// never retained: it is a browser or OS shortcut. The JSON tags are the wire shape: the
 // behaviours block carries these verbatim under "x", so the kernel
 // reads the array without translating it.
 type Interaction struct {

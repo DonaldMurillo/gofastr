@@ -306,6 +306,11 @@ reaching the screen. There is deliberately no `string` constraint: every
 param is a string already, so it would be an unconstrained no-op under a
 misleading name.
 
+A constraint tests the percent-decoded segment, so `/orders/%31` matches
+`{id:int}`; a segment that is not valid percent-encoding is tested as
+written. The client router looks a link up with the same tests on the same
+decoded value, so a click resolves to the route the server will serve.
+
 The constraint suffix is stripped from the parameter name: `SetParams`
 receives `id`, not `id:int`. A constraint on a catch-all segment, or an
 unknown constraint name, panics at registration.

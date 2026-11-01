@@ -42,6 +42,8 @@ type harnessUpdatePlatform struct {
 
 func (f *harnessUpdatePlatform) Version() string { return f.version }
 
+func (f *harnessUpdatePlatform) Identifier() string { return "dev.gofastr.notes" }
+
 func (f *harnessUpdatePlatform) Bundle() (string, string, bool) {
 	return f.name, f.dir, f.name != ""
 }
@@ -73,7 +75,9 @@ func harnessAppZip(t *testing.T, marker string) []byte {
 		"Notes.app/Contents/":            {nil, 0o755 | fs.ModeDir},
 		"Notes.app/Contents/MacOS/":      {nil, 0o755 | fs.ModeDir},
 		"Notes.app/Contents/MacOS/Notes": {[]byte("#!new binary " + marker), 0o755},
-		"Notes.app/Contents/Info.plist":  {[]byte(`<?xml version="1.0"?><plist/>`), 0o644},
+		"Notes.app/Contents/Info.plist": {[]byte(`<?xml version="1.0"?><plist version="1.0"><dict>` +
+			`<key>CFBundleIdentifier</key><string>dev.gofastr.notes</string>` +
+			`<key>CFBundleShortVersionString</key><string>1.2.0</string></dict></plist>`), 0o644},
 	}
 	for name, f := range files {
 		hdr := &zip.FileHeader{Name: name, Method: zip.Deflate}

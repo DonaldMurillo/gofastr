@@ -10,7 +10,18 @@ import (
 	"testing"
 
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/win32"
 )
+
+func TestActivationKeepsMaximizedWindow(t *testing.T) {
+	if got := activationShowCmd(false); got != win32.SW_SHOW {
+		t.Fatalf("a maximized or normal window gets ShowWindow(%d), want SW_SHOW", got)
+	}
+	if got := activationShowCmd(true); got != win32.SW_RESTORE {
+		t.Fatalf("a minimized window gets ShowWindow(%d), want SW_RESTORE", got)
+	}
+}
 
 func TestProtocolURLsFiltersSchemeAndLength(t *testing.T) {
 	longURL := "notes://host/" + strings.Repeat("x", maxProtocolURL)

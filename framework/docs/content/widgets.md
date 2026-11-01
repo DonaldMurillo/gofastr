@@ -79,6 +79,7 @@ type Definition struct {
     Skeleton  func(slots) render.HTML      // optional custom chrome
     Backdrop  bool                         // dim the page behind
     CloseOnEscape, CloseOnClickOutside bool
+    Surface   bool                         // paint the root as a panel (corner/banner positions)
 }
 ```
 
@@ -120,6 +121,15 @@ component owns only its internal content and layout. Per position:
   drag handle sits above it).
 - **Anchored popovers**: the widget root paints the surface, border,
   radius, shadow, size caps, and the directional arrow.
+- **Corner and banner panels** (`BottomRight`, `TopRight`, `Top`, …):
+  a widget with `Definition.Surface` (the `Surface()` builder method)
+  gets the same root surface as an anchored popover, without the
+  arrow, and its slots scroll inside the size caps. `preset.Popover`
+  and `preset.FloatingPanel` set it, so a popover opened without an
+  anchor still reads as a panel. `preset.ToastStack` leaves it off:
+  its items are the cards. Positions that paint their own panel
+  (`Center`, `Edge`, `EdgeRight`, `Bottom`) and custom skeletons
+  ignore it.
 - **Centered modals** (`Center`): the chrome groups every slot inside
   a single `.cui-panel` element and paints the default panel on it:
   `var(--color-surface)` background, border, radius, padding, shadow,

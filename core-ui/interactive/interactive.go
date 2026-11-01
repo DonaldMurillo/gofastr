@@ -912,6 +912,11 @@ func BindText(html render.HTML, signal string) render.HTML {
 // Injects data-cui-signal, data-cui-signal-mode="attr", and
 // data-cui-signal-attr="<attr>". Use when a signal should drive a single
 // attribute (e.g. aria-expanded, data-active) rather than text content.
+// The boolean attributes disabled, hidden, checked, open and selected are
+// removed for a false value (false, null, "", 0, "false") rather than
+// written as "false", and the runtime writes the live checked, selected
+// and value properties, so a field the reader already edited still
+// follows.
 func BindAttr(html render.HTML, signal, attr string) render.HTML {
 	// An attribute outside the allow-list executes regardless of the
 	// value bound to it (srcdoc, style, data-behavior, on*, the

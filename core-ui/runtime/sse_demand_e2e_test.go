@@ -263,3 +263,37 @@ func TestSSEClosesAndReopensAcrossNavigation(t *testing.T) {
 		t.Fatalf("reopened stream does not carry the current session id (want sess-2 from the X-Gofastr-Session rollover): %v", log.opened)
 	}
 }
+
+// TestSSEClosesWhenLastIslandRemoved: removing the page's only island
+// with no navigation and no insertion (a dismissed widget, an emptied
+// region) closes the stream. The kernel's MutationObserver only hands
+// added nodes to the module scanners, so a removal-only change never
+// asked the module whether a push target was left.
+func TestSSEClosesWhenLastIslandRemoved(t *testing.T) {
+	srv := sseDemandServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	log := newSSENetLog()
+	log.listen(ctx)
+
+	if err := chromedp.Run(ctx,
+		network.Enable(),
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#home`, chromedp.ByID),
+		chromedp.Poll(`window.__gofastr && window.__gofastr.sseStatus && window.__gofastr.sseStatus.connected === true`,
+			nil, chromedp.WithPollingTimeout(15*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+		chromedp.Evaluate(`document.querySelector('[data-island]').remove(); true`, nil),
+		chromedp.Poll(`window.__gofastr.sseStatus.connected === false`,
+			nil, chromedp.WithPollingTimeout(5*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+	); err != nil {
+		t.Fatalf("chromedp: %v (the stream stayed open after its last island left)", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for log.finishedCount() < 1 && time.Now().Before(deadline) {
+		if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := log.finishedCount(); got != 1 || log.count() != 1 {
+		t.Fatalf("opened %d, finished %d /__gofastr/sse request(s), want 1 and 1", log.count(), got)
+	}
+}

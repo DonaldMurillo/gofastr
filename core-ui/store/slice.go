@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Slice is a typed handle to one declared shared-state value. It is a
@@ -116,8 +118,60 @@ func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs ma
 	a["data-cui-signal"] = sl.name
 	a["data-cui-signal-mode"] = "attr"
 	a["data-cui-signal-attr"] = htmlAttr
-	a[htmlAttr] = sanitizeSignalURL(htmlAttr, valueString(any(sl.resolve(ctx))))
+	v := any(sl.resolve(ctx))
+	if booleanSignalAttrs[asciicase.Lower(htmlAttr)] {
+		// A boolean attribute is on whenever it is present, so
+		// disabled="false" would ship a disabled control until the
+		// runtime ran. Omit it when off, write it empty when on: the
+		// runtime's attr mode (core-ui/runtime/frag/signals.js) does the
+		// same on every update.
+		if booleanAttrOn(v) {
+			a[htmlAttr] = ""
+		} else {
+			delete(a, htmlAttr)
+		}
+		return renderEl(tag, a)
+	}
+	a[htmlAttr] = sanitizeSignalURL(htmlAttr, valueString(v))
 	return renderEl(tag, a)
+}
+
+// booleanSignalAttrs are the HTML boolean attributes on the signal
+// allow-list (interactive.SignalAttrAllowed). They mirror the runtime's
+// attr-mode list exactly so SSR and client updates agree.
+var booleanSignalAttrs = map[string]bool{
+	"disabled": true, "hidden": true, "checked": true, "open": true, "selected": true,
+}
+
+// booleanAttrOn is the runtime's `!!value && value !== 'false'` in Go,
+// decided on the JSON the client receives for v: null, false, "",
+// "false" and a zero number are off; anything else, an empty array or
+// object included, is on. Reading the encoding instead of switching on
+// Go types covers every integer and float width, named types and
+// json.Number. A value that does not encode (NaN) never reaches the
+// client as a value, and is off.
+func booleanAttrOn(v any) bool {
+	b, err := json.Marshal(v)
+	if err != nil || len(b) == 0 {
+		return false
+	}
+	switch b[0] {
+	case 'n', 'f':
+		return false
+	case 't', '[', '{':
+		return true
+	case '"':
+		var str string
+		if json.Unmarshal(b, &str) != nil {
+			return false
+		}
+		return str != "" && str != "false"
+	default:
+		// A number past float64 range (1e400) parses to ±Inf with
+		// ErrRange; the client reads Infinity, which is on.
+		f, err := strconv.ParseFloat(string(b), 64)
+		return (err == nil || errors.Is(err, strconv.ErrRange)) && f != 0
+	}
 }
 
 // urlBearingAttrs are the HTML attributes whose value is a URL the

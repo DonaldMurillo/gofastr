@@ -241,6 +241,59 @@ func TestProfileCookieSchema(t *testing.T) {
 	}
 }
 
+// A crash mid-write leaves a hot rollback journal. A read-only check cannot
+// roll it back (SQLITE_READONLY_ROLLBACK) and would block every later launch.
+func TestCookieCheckRollsBackHotJournal(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "cookies.sqlite")
+	db, err := sql.Open("sqlite3", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	for _, q := range []string{"PRAGMA journal_mode=DELETE", nativeCookieSchema, "INSERT INTO moz_cookies(name) VALUES ('kept')", "PRAGMA cache_size=1"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A tiny cache spills the uncommitted pages to the file, so a copy taken
+	// now is the state a crash leaves behind: a half-written file plus a hot
+	// journal holding the original pages.
+	if _, err := tx.Exec("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<5000) INSERT INTO moz_cookies(name, value) SELECT 'torn', hex(randomblob(200)) FROM n"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "cookies.sqlite")
+	for _, suffix := range []string{"", "-journal"} {
+		data, err := os.ReadFile(src + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path+suffix, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = tx.Rollback()
+	if err := checkCookieDatabase(path); err != nil {
+		t.Fatal("hot journal blocked the cookie check: ", err)
+	}
+	if _, err := os.Stat(path + "-journal"); !os.IsNotExist(err) {
+		t.Fatal("hot journal was not rolled back: ", err)
+	}
+	check, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer check.Close()
+	var torn int
+	if err := check.QueryRow("SELECT count(*) FROM moz_cookies WHERE name = 'torn'").Scan(&torn); err != nil || torn != 0 {
+		t.Fatalf("rollback left torn rows: %d %v", torn, err)
+	}
+}
+
 // An abrupt process exit releases the kernel lock without deleting its file.
 // There is no manual unlock or stale-PID guess.
 func TestProfileCrashReleasesLock(t *testing.T) {

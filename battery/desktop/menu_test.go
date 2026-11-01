@@ -237,3 +237,22 @@ func TestTrayMenuHandlerPanicIsContained(t *testing.T) {
 		t.Fatal("tray handler panic was not reported")
 	}
 }
+
+// A menu accelerator with no command modifier fires on a plain
+// keystroke: every shell matches menu keys before the page sees them,
+// so the page could never type that character. An unknown modifier
+// token is dropped by the planner and leaves the same bare key.
+func TestMenuKeyNeedsCommandModifier(t *testing.T) {
+	for _, key := range []string{"n", "N", "5", "shift+n", "hyper+n", "cmd", "cmd+shift", "f5", "cmd+n+x"} {
+		m := &Menu{Items: []MenuItem{{Title: testPhrase("x"), Key: key, Navigate: "/a"}}}
+		if _, err := validateMenu(m); err == nil || !strings.Contains(err.Error(), "modifier") {
+			t.Errorf("Key %q: err = %v, want a modifier refusal", key, err)
+		}
+	}
+	for _, key := range []string{"cmd+n", "CTRL+Shift+T", "alt+5", "command+option+k", "meta+f5", "control+opt+x"} {
+		m := &Menu{Items: []MenuItem{{Title: testPhrase("x"), Key: key, Navigate: "/a"}}}
+		if _, err := validateMenu(m); err != nil {
+			t.Errorf("Key %q refused: %v", key, err)
+		}
+	}
+}

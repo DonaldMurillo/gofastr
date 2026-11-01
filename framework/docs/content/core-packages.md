@@ -329,7 +329,8 @@ pluggable `Source`s (default `EnvSource`; `MapSource` for tests),
 recursing into nested structs with a `SCREAMING_SNAKE` prefix (value or
 pointer form: a pointer is allocated and bound when any nested key is
 present, left nil otherwise) and redacting `sensitive` values from
-errors. `validate:"min=1,max=65535"` enforces numeric bounds (string bounds
+errors, including a `Validate` error that quotes one with `%q` or
+JSON-encodes or URL-escapes it. `validate:"min=1,max=65535"` enforces numeric bounds (string bounds
 count characters; a `time.Duration` takes duration bounds such as
 `min=1s,max=5m`); `validate:"oneof=debug info warn error"` restricts string
 choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)

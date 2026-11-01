@@ -124,3 +124,25 @@ func agent(r *http.Request) string {
 	assertNot(t, ds, contracts.RuleFetchMetadata,
 		"a display string and another header's Get are not the predicate")
 }
+
+// Header.Get and Header.Values canonicalize their key, so a lowercase
+// name and the Values read are the same private copy.
+func TestFetchMetadataCaseAndValuesReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"guard.go": `package guard
+
+import "net/http"
+
+func lower(r *http.Request) bool {
+	return r.Header.Get("sec-fetch-site") == "cross-site"
+}
+
+func all(r *http.Request) []string {
+	return r.Header.Values("Sec-Fetch-Site")
+}
+`,
+	})
+	if found := countRule(t, ds, contracts.RuleFetchMetadata); len(found) != 2 {
+		t.Fatalf("want 2 findings (lowercase Get + Values), got %d: %v", len(found), found)
+	}
+}

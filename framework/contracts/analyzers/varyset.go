@@ -2,6 +2,7 @@ package analyzers
 
 import (
 	"go/ast"
+	"net/textproto"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
@@ -23,6 +24,9 @@ import (
 // rule (core/middleware/cors.go) and every other Vary writer already
 // spell Add; this rule keeps the one Set from coming back.
 //
+// The header name is compared the way Header.Set canonicalizes it, so
+// Set("vary", …) and Set("VARY", …) are the same finding.
+//
 // Deliberately silent on:
 //   - .Add("Vary", …), the append-only spelling every correct site
 //     uses (cors.go, wellknown.go, embed/middleware.go, uihost, bff);
@@ -41,7 +45,9 @@ func ruleVarySet(p *contracts.Pass, rel string, file *ast.File) []contracts.Diag
 			return true
 		}
 		name, ok := stringLit(call.Args[0])
-		if !ok || name != "Vary" {
+		// Header.Set canonicalizes its key: "vary" and "VARY" are the
+		// same clobbering write.
+		if !ok || textproto.CanonicalMIMEHeaderKey(name) != "Vary" {
 			return true
 		}
 		out = append(out, diag(p, contracts.RuleVarySet, rel, call.Pos(),

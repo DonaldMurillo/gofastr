@@ -114,6 +114,13 @@ per-notification overrides don't need a custom Channel. A templated
 override is a spoofing vector, so the channel's configured from-address
 is the only legitimate source.
 
+The channel checks the recipient and the from-address with
+`email.ValidateAddress`, the rule the SMTP sender applies: one mailbox,
+no control bytes or invisible codepoints. Any address the SMTP sender
+takes passes (`o'brien@example.com`, `App <noreply@example.com>`), and
+anything else fails with `notify.ErrUnsafeRecipient` before the sender
+runs, a comma list of two addresses included.
+
 ## Translated notifications
 
 `MapTemplater` text is fixed. For a message in the recipient's

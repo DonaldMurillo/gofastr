@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/toolargs"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
@@ -117,8 +117,9 @@ func dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Re
 	// ambiguity, not data. A plain json.Unmarshal folds them last-wins
 	// (map marshalling sorts keys, so the fold is even deterministic),
 	// which redirected the journaled edit to whatever spelling happened
-	// to sort last. Strict decode refuses them as validation errors.
-	dec := func(out any) error { return handler.UnmarshalStrict(buf, out) }
+	// to sort last. Strict decode refuses them as validation errors, and
+	// the exact decode keeps an integer past 2^53 in an `any` slot.
+	dec := func(out any) error { return toolargs.Decode(buf, out) }
 
 	switch call.Name {
 	case "world_get":

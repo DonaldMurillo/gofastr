@@ -79,9 +79,20 @@
   // "/:param" route must resolve to that route's chain, not to "no
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
+  // Typed segment constraints, the same tests core-ui/app/constraints.go
+  // runs at resolve. The manifest lists dynamic routes in the server's
+  // registration order, so with these the first match here is the route
+  // the server serves: /orders/help skips /orders/:id:int for
+  // /orders/:slug, and reads that route's layouts and docScripts.
+  const _segTest = { int: /^\d+$/, uuid: /^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i, alpha: /^[a-z]+$/i, alnum: /^[a-z\d]+$/i };
+  // A segment in the server's routing form (app.RoutePath): percent-
+  // decoded, so /orders/%31 is the :id:int route there and here, with a
+  // decoded "%" or "/" kept escaped so it stays one segment; a segment
+  // that does not decode (%E0%A4) is taken literally, never thrown.
+  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (c) => encodeURIComponent(c)); };
   const routeEntry = (path) => {
     // Routes register unprefixed: /es/pricing looks up /pricing.
-    const clean = _unlocalize(path.split('?')[0].split('#')[0]);
+    const clean = _unlocalize(path.split('?')[0].split('#')[0]).split('/').map(_routeSeg).join('/');
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
@@ -95,11 +106,10 @@
       const pp = pattern.split('/').filter(Boolean);
       // Catch-all patterns ("*") accept >= prefix length; others exact.
       if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
-      // Each literal segment must align; dynamic segments (":name",
-      // incl. the catch-all ":name*") match anything. Typed constraints
-      // (":id:int" / ":id:uuid") are enforced server-side at resolve; a
-      // non-conforming value falls through to a normal request there.
-      if (pp.every((seg, i) => seg.startsWith(':') || seg === parts[i])) return entry;
+      // Each literal segment must align; a dynamic segment (":name",
+      // incl. the catch-all ":name*") matches any value its constraint
+      // (":id:int", ":id:uuid", ":id:alpha", ":id:alnum") accepts.
+      if (pp.every((seg, i) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(parts[i]) : seg === parts[i])) return entry;
     }
     return null;
   };
@@ -347,12 +357,16 @@
   // fragment or no matching element. Reads location.hash (set by the
   // click handler's pushState / by the browser on popstate) so back /
   // forward and in-link fragments all land on the right section instead
-  // of always jumping to the top.
+  // of always jumping to the top. location.hash keeps the fragment
+  // percent-encoded (#caf%C3%A9 for id="café"), so the decoded id is
+  // tried after the raw one, the order the browser's own fragment
+  // scroll uses; a fragment that does not decode (#100%) stays raw.
   const scrollToHash = () => {
     const id = (location.hash || '').replace(/^#/, '');
     _settleScroll(() => {
       if (id) {
-        const el = document.getElementById(id);
+        let el = document.getElementById(id);
+        if (!el) try { el = document.getElementById(decodeURIComponent(id)); } catch (_) {}
         if (el) {
           el.scrollIntoView({ block: 'start' });
           return;

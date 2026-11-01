@@ -25,6 +25,13 @@ func readJPEGOrientation(data []byte) int {
 			return 0
 		}
 		marker := data[i+1]
+		if marker == 0xFF {
+			// A fill byte (ITU T.81 B.1.1.2): any number of 0xFF may
+			// precede a marker, and image/jpeg skips them. Step one
+			// byte so the last 0xFF is read as the marker prefix.
+			i++
+			continue
+		}
 		i += 2
 		// Stand-alone markers without a length field.
 		if marker == 0x00 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD9) {

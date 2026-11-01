@@ -10,9 +10,10 @@ import (
 )
 
 // ErrUnsafeRecipient is returned by EmailChannel.Send when the
-// recipient address contains characters that would let a caller smuggle
-// extra headers (CR / LF / NUL) or that fails a sanity-check on shape
-// (must contain "@" and no embedded HTML / control bytes).
+// recipient or from address is one the SMTP battery refuses
+// (email.ValidateAddress): a control byte that would let a caller
+// smuggle extra headers (CR / LF / NUL), an invisible codepoint, or a
+// value that is not exactly one mailbox.
 var ErrUnsafeRecipient = errors.New("notify: unsafe recipient address")
 
 // EmailChannel adapts a battery/email Sender to the notify Channel
@@ -154,20 +155,15 @@ func validateCustomHeaders(h map[string]string) error {
 	return nil
 }
 
-// assertSafeAddress applies a fast shape check that catches the
-// failure modes the downstream SMTP layer also enforces (CR / LF / NUL)
-// plus a few obviously-not-an-email shapes (HTML, missing @). It is
-// intentionally permissive otherwise. RFC 5321 addresses are richer
-// than any short regex can capture.
+// assertSafeAddress refuses an address the SMTP battery would refuse,
+// through the battery's own rule (email.ValidateAddress): a CR/LF/NUL or
+// other control byte, an invisible codepoint, or anything that is not
+// exactly one mailbox. Its own character list used to refuse an
+// apostrophe (o'brien@example.com) and a display-named From that the
+// sender accepts, and let a comma list through.
 func assertSafeAddress(field, addr string) error {
-	if strings.ContainsAny(addr, "\r\n\x00") {
-		return fmt.Errorf("%w: %s contains CR/LF/NUL", ErrUnsafeRecipient, field)
-	}
-	if strings.ContainsAny(addr, "<>\"'") {
-		return fmt.Errorf("%w: %s contains HTML tag characters: %q", ErrUnsafeRecipient, field, addr)
-	}
-	if !strings.Contains(addr, "@") {
-		return fmt.Errorf("%w: %s missing '@': %q", ErrUnsafeRecipient, field, addr)
+	if err := email.ValidateAddress(addr); err != nil {
+		return fmt.Errorf("%w: %s: %v", ErrUnsafeRecipient, field, err)
 	}
 	return nil
 }

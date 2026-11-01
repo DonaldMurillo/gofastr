@@ -123,3 +123,9 @@ func hostUIDString() string {
 	}
 	return "unknown-windows-user"
 }
+
+// probeFileIdentity has no Windows shape: P3 identifies the planted fd by
+// device + inode, and the Windows P3 body is UNREACHABLE (see above), so
+// setup reports the probe unreachable rather than plant an fd nothing
+// reads.
+func probeFileIdentity(*os.File) (dev, ino uint64, ok bool) { return 0, 0, false }

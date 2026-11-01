@@ -195,7 +195,10 @@ func withProbeEnv(t *testing.T, p ProbeID, scratch string, fn func()) {
 	case ProbeNoInheritedFD:
 		t.Setenv("GOFASTR_PROBE_FD_SECRET", scratch+"/fd-secret")
 		t.Setenv("GOFASTR_PROBE_HOST_FD_NUM", "3")
+		t.Setenv("GOFASTR_PROBE_FD_DEV", "1")
+		t.Setenv("GOFASTR_PROBE_FD_INO", "1")
 	case ProbeNoNetworkEgress:
+		t.Setenv("GOFASTR_PROBE_NET_CONTROLS", "127.0.0.1:1")
 		t.Setenv("GOFASTR_PROBE_NET_TARGETS", "127.0.0.1:1,1.1.1.1:53,169.254.169.254:80")
 	case ProbeFilesystemConfinement:
 		t.Setenv("GOFASTR_PROBE_SCRATCH", scratch)
@@ -203,7 +206,11 @@ func withProbeEnv(t *testing.T, p ProbeID, scratch string, fn func()) {
 			t.Setenv("GOFASTR_PROBE_HOME", home)
 		}
 	case ProbeResourceLimits:
-		t.Setenv("GOFASTR_PROBE_FORK_COUNT", "8")
+		// Small caps: unconfined, the fd sub-probe breaches after a
+		// dozen dups and the body returns before the slower ones.
+		t.Setenv("GOFASTR_PROBE_PID_LIMIT", "2")
+		t.Setenv("GOFASTR_PROBE_FD_LIMIT", "2")
+		t.Setenv("GOFASTR_PROBE_MEM_LIMIT", "1048576")
 	}
 	fn()
 }

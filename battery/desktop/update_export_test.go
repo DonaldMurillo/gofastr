@@ -17,6 +17,9 @@ import "context"
 type TestPlatform interface {
 	// Version is the running app's version; "" never updates.
 	Version() string
+	// Identifier is the running app's CFBundleIdentifier; an update
+	// bundle must declare the same one.
+	Identifier() string
 	// Bundle returns the running bundle's file name and its parent
 	// directory; ok false when unbundled.
 	Bundle() (name, dir string, ok bool)
@@ -30,6 +33,8 @@ type TestPlatform interface {
 type platformAdapter struct{ inner TestPlatform }
 
 func (a platformAdapter) Version() string { return a.inner.Version() }
+
+func (a platformAdapter) Identifier() string { return a.inner.Identifier() }
 
 func (a platformAdapter) Bundle() (string, string, bool) { return a.inner.Bundle() }
 

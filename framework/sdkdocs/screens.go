@@ -198,6 +198,13 @@ func (s *site) downloads(m *sdk.Manifest) []render.HTML {
 				text("gofastr generate sdk")),
 		}
 	}
+	if !s.artifactsDocumented(m) {
+		return []render.HTML{
+			para(text("Downloads are withheld on this deployment: the generated SDKs cover entities this reference does not document. Regenerate them for the documented entities:")),
+			ui.TerminalBlock(ui.TerminalBlockConfig{Label: "$ generate"},
+				text("gofastr generate sdk --only=<entities>")),
+		}
+	}
 	stamp := fmt.Sprintf("Version %s · generated with gofastr %s", m.SDKVersion, m.GofastrVersion)
 	if !m.GeneratedAt.IsZero() {
 		stamp += " · " + m.GeneratedAt.UTC().Format("2006-01-02")

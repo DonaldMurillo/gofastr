@@ -306,9 +306,12 @@
   // A local form posts nowhere. enctype="application/json" is the
   // runtime's mark for a form script handles: the embed frame's
   // navigation guard passes it instead of reporting a blocked submit.
+  // The kernel hands the scanner each inserted node, and a node that IS
+  // the <form> is marked like one inside the wrapper.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll(FORM + ' form').forEach((f) => f.setAttribute('enctype', 'application/json'));
+    const sel = FORM + ' form';
+    [scope, ...scope.querySelectorAll(sel)].forEach((f) => f.matches?.(sel) && f.setAttribute('enctype', 'application/json'));
   }
   scan(document);
   NS._moduleScanners = NS._moduleScanners || {};

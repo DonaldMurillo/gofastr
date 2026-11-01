@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	corestatic "github.com/DonaldMurillo/gofastr/core/static"
@@ -813,7 +814,15 @@ func redirectPage(ctx context.Context, href, policy string) string {
 	if lang == "" {
 		lang = "en"
 	}
-	h := stdhtml.EscapeString(href)
+	// The target lands in a meta refresh, a canonical link and an
+	// anchor. HTML escaping leaves javascript: and data: intact, so the
+	// scheme goes through the anchor allow-list first; a refused target
+	// degrades to an inert "#".
+	safe := urlsafe.CleanAnchor(href)
+	if safe == "" {
+		safe = "#"
+	}
+	h := stdhtml.EscapeString(safe)
 	page := "<!doctype html>\n" +
 		"<html lang=\"" + stdhtml.EscapeString(lang) + "\">\n" +
 		"<head>\n" +
