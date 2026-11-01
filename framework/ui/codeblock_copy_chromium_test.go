@@ -80,7 +80,7 @@ func TestCodeBlockCopyKeepsBlankLines(t *testing.T) {
 			chromedp.Navigate(srv.URL),
 			chromedp.WaitVisible(sel+` [data-hui-copy] button`, chromedp.ByQuery),
 			chromedp.Evaluate(stub, nil),
-			chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-feedback'])`,
+			chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-copy'])`,
 				nil, chromedp.WithPollingTimeout(15*time.Second)),
 			chromedp.Click(sel+` [data-hui-copy] button`, chromedp.ByQuery),
 			chromedp.Poll(`typeof window.__copied === 'string'`, nil, chromedp.WithPollingTimeout(5*time.Second)),

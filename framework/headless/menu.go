@@ -106,7 +106,7 @@ type MenuItem struct {
 	RPCAttrs map[string]string
 
 	// Copy renders the row as a copy-to-clipboard command over another
-	// element's text, the headless-feedback copy contract CopyButton
+	// element's text, the headless-copy contract CopyButton
 	// uses. Mutually exclusive with Href, RPC, RPCAttrs, Action, Radio
 	// and Children.
 	Copy *MenuCopy
