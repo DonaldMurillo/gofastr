@@ -22,6 +22,7 @@ import (
 	"runtime/pprof"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1067,12 +1068,20 @@ func WithLogger(l *slog.Logger) AppOption {
 // Defaults Tenant to the resolved tenant id (tenant.GetTenantID), so a
 // credential that switches tenants and resends the same key runs the
 // write in the new tenant.
+//
+// Defaults Scope to the scopes a scope-restricted API token or embed grant
+// holds (access.HeldScopes), so a narrow token resending a key its user's
+// session or a broader token used runs its own request instead of being
+// served a response its scopes would not allow.
 func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 	if cfg.Principal == nil {
 		cfg.Principal = ownerPrincipal
 	}
 	if cfg.Tenant == nil {
 		cfg.Tenant = requestTenantID
+	}
+	if cfg.Scope == nil {
+		cfg.Scope = heldScopeKey
 	}
 	return func(a *App) {
 		a.idempotency = &cfg
@@ -1083,6 +1092,31 @@ func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 // app's tenant middleware resolved, "" when there is none.
 func requestTenantID(r *http.Request) string {
 	return handler.GetTenantID(r.Context())
+}
+
+// heldScopeKey is WithIdempotency's default Scope: "" for a request no
+// scope narrows (a session, a JWT), otherwise "scoped:" and the held
+// scopes sorted, deduplicated and length-prefixed, so a token holding no
+// scopes, one scope, or two in any order each get one stable namespace.
+func heldScopeKey(r *http.Request) string {
+	held, scoped := access.HeldScopes(r.Context())
+	if !scoped {
+		return ""
+	}
+	names := make([]string, len(held))
+	for i, p := range held {
+		names[i] = string(p)
+	}
+	slices.Sort(names)
+	names = slices.Compact(names)
+	var b strings.Builder
+	b.WriteString("scoped:")
+	for _, n := range names {
+		b.WriteString(strconv.Itoa(len(n)))
+		b.WriteByte(':')
+		b.WriteString(n)
+	}
+	return b.String()
 }
 
 // ownerPrincipal keys idempotency entries by the request's owner. An

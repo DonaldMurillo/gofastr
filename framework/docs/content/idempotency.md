@@ -31,11 +31,18 @@ The default `Tenant` is the resolved tenant id (`tenant.GetTenantID`),
 so one credential that switches its active tenant and resends the same
 key, path and body runs the write in the new tenant instead of getting
 the old tenant's response. A request with no tenant keys on the
-principal alone.
+principal alone. The default `Scope` is the scopes a scope-restricted
+API token or embed grant holds (`access.HeldScopes`), sorted, so a
+narrow token that resends a key its user's session or a broader token
+used runs its own request instead of being served a response its scopes
+would not allow. A session or JWT holds no scopes and keys on the
+principal and tenant alone; a retry under the same scopes, in any order,
+replays.
 
 To mount it yourself, add it with `app.Router().UseInner` (or
 `app.Use` after the middleware that resolves the user) and set
-`Principal`, plus `Tenant` when the app is multi-tenant:
+`Principal`, plus `Tenant` when the app is multi-tenant and `Scope`
+when some credentials hold narrower scopes than their user:
 
 ```go
 import "github.com/DonaldMurillo/gofastr/core/middleware"
@@ -57,6 +64,18 @@ app.Use(router.Middleware(middleware.Idempotency(middleware.IdempotencyConfig{
     },
     Tenant: func(r *http.Request) string {
         return framework.GetTenantID(r.Context())
+    },
+    Scope: func(r *http.Request) string {
+        held, scoped := access.HeldScopes(r.Context())
+        if !scoped {
+            return "" // a session or JWT: the user's full authority
+        }
+        names := make([]string, len(held))
+        for i, p := range held {
+            names[i] = string(p)
+        }
+        slices.Sort(names)
+        return "scoped:" + strings.Join(names, "\x00")
     },
 })))
 ```
@@ -140,9 +159,9 @@ yourself before returning.
 | Store backend failure (FailOpen=true)             | Pass through, fail open (legacy availability) |
 | Cached row is corrupt (unparseable stored headers)| `503 Service Unavailable`, fail closed — a corrupt cached response is never replayed with silently-dropped headers |
 
-The cache is keyed by `(principal, tenant, Idempotency-Key)`, each part
-length-prefixed; the tenant is `""` when `Tenant` is unset or returns
-nothing. The
+The cache is keyed by `(principal, tenant, scope, Idempotency-Key)`,
+each part length-prefixed; the tenant and scope are `""` when `Tenant`
+or `Scope` is unset or returns nothing. The
 **fingerprint** that guards against accidental key reuse is
 `sha256(principal ∥ method ∥ path ∥ raw query ∥ Content-Type ∥ body)`,
 where the path is the escaped one, so `/items/a%2Fb` and `/items/a/b`

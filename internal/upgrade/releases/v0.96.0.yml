@@ -565,10 +565,10 @@ notes:
       uses:
         - gofastr/framework/db.WithTx
         - gofastr/framework/crud.CrudHandler.DB
-  - change: "BREAKING - WithIdempotency mounts its middleware innermost, after the app's own middleware, and keys a replay on the resolved user and tenant; it is no longer part of DefaultMiddleware and works with WithoutDefaultMiddleware"
+  - change: "BREAKING - WithIdempotency mounts its middleware innermost, after the app's own middleware, and keys a replay on the resolved user, tenant and held scopes; it is no longer part of DefaultMiddleware and works with WithoutDefaultMiddleware"
     breaking: true
     hits: review
-    guidance: "A replay is now keyed on the user your auth middleware resolved and the tenant your tenant middleware resolved, not on a hash of the credential headers. A key cached before the upgrade is not found after it, so a retry that straddles the deploy runs the handler once more. Middleware you add with Use now runs before the replay check, on replays too. Code that ranged over DefaultMiddleware(app) expecting the idempotency entry mounts it with app.Router().UseInner instead. A custom Principal keeps working; set IdempotencyConfig.Tenant when you mount the middleware yourself in a multi-tenant app."
+    guidance: "A replay is now keyed on the user your auth middleware resolved and the tenant your tenant middleware resolved, not on a hash of the credential headers. A key cached before the upgrade is not found after it, so a retry that straddles the deploy runs the handler once more. Middleware you add with Use now runs before the replay check, on replays too. Code that ranged over DefaultMiddleware(app) expecting the idempotency entry mounts it with app.Router().UseInner instead. A scope-restricted API token or embed grant gets its own replays, apart from its user's session and from tokens holding other scopes. A custom Principal keeps working; set IdempotencyConfig.Tenant when you mount the middleware yourself in a multi-tenant app, and IdempotencyConfig.Scope when some credentials hold narrower scopes than their user."
     find:
       uses:
         - gofastr/framework.WithIdempotency
