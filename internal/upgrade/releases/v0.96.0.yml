@@ -549,3 +549,7 @@ notes:
     breaking: true
     nodetect: "cursors are opaque tokens a client echoes; nothing in an app's source spells their contents"
     guidance: "A cursor minted before the upgrade on an entity cursored on anything but its key answers 400 once; the client starts again from the first page (?cursor=). A client that walks a feed while rows are deleted handles the 400 cursor_anchor_gone the same way. An entity cursored on its own key keeps paging past a deleted anchor. See gofastr docs cursor-pagination."
+  - change: "BREAKING - the SDK schema hash includes each entity's primary-key columns in declared order, so every app's SchemaHash changes once and the SDK docs site reports drift for SDKs generated before the upgrade"
+    breaking: true
+    nodetect: "the hash is computed from the live registry; nothing in an app's source spells it"
+    guidance: "Run gofastr generate sdk once after upgrading to record the new hash in the manifest; the drift banner then clears. From now on, reordering a composite PrimaryKey reports drift, because generated clients take the key as positional arguments in that order."

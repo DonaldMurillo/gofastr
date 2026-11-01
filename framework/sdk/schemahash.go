@@ -47,7 +47,8 @@ type NamedConfig struct {
 // for this purpose.
 //
 // The projection covers exactly what changes a generated client's surface:
-// name, table (route path), Public, SoftDelete (trashed listing), sorted
+// name, table (route path), the ordered primary-key columns (positional
+// key arguments), Public, SoftDelete (trashed listing), sorted
 // SearchFields (?q=), relations (?include=), the states block (guarded
 // columns and one call per move), the endpoints gofastr.settings.yml
 // declares (one typed call each), and every non-Hidden field's
@@ -113,10 +114,16 @@ func SchemaHash(named []NamedConfig) string {
 		Returns string      `json:"returns,omitempty"`
 	}
 	type hashEntity struct {
-		Name         string         `json:"name"`
-		Table        string         `json:"table"`
-		Public       bool           `json:"public"`
-		SoftDelete   bool           `json:"softDelete"`
+		Name       string `json:"name"`
+		Table      string `json:"table"`
+		Public     bool   `json:"public"`
+		SoftDelete bool   `json:"softDelete"`
+		// PrimaryKey is the key columns in declared order, unsorted: a
+		// generated client takes the key as positional arguments in this
+		// order, and Fields below is sorted by name, so reordering a
+		// composite key would otherwise leave the hash unchanged while
+		// every keyed call's arguments swap meaning.
+		PrimaryKey   []string       `json:"primaryKey"`
 		SearchFields []string       `json:"searchFields,omitempty"`
 		Fields       []hashField    `json:"fields"`
 		Relations    []hashRelation `json:"relations,omitempty"`
@@ -135,13 +142,15 @@ func SchemaHash(named []NamedConfig) string {
 
 	entities := make([]hashEntity, 0, len(named))
 	for _, n := range named {
-		cfg := entity.Define(n.Name, n.Config).Config
+		ent := entity.Define(n.Name, n.Config)
+		cfg := ent.Config
 
 		he := hashEntity{
 			Name:       cfg.Name,
 			Table:      cfg.Table,
 			Public:     cfg.Exposure.Public,
 			SoftDelete: cfg.Scope.SoftDelete,
+			PrimaryKey: ent.KeyColumns(),
 		}
 		he.SearchFields = append(he.SearchFields, cfg.SearchFields...)
 		sort.Strings(he.SearchFields)

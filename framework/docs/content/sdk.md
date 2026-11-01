@@ -316,6 +316,13 @@ SDK beats none), and re-running `gofastr generate sdk` clears it. A
 manifest from a different gofastr version downgrades the check to an
 "unknown provenance" note instead of a false stale warning.
 
+The hash covers what changes a generated client: each entity's name,
+table, primary-key columns in their declared order (keyed calls take the
+key as positional arguments in that order), exposure, soft delete,
+search fields, relations, states, settings-declared endpoints and every
+non-hidden field. Reordering a composite key therefore reports drift,
+since an old SDK would pass the key arguments the wrong way round.
+
 The manifest must list the entities it covers: `ReadManifest` refuses an
 empty (or omitted) `entities` list the same way it refuses a missing
 artifact, because a zero-entity manifest makes this check vacuous — the
