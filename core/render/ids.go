@@ -44,6 +44,11 @@ type idScope struct {
 	// and answered with placeholder tokens that Settle swaps for the
 	// final ids.
 	rec *regionLog
+	// ns is set on a namespace scope (WithIDNamespace): derived ids are
+	// "<ns>--<id>", and every id handed out or reserved is also
+	// reserved in outer, the scope the namespace was opened in.
+	ns    string
+	outer context.Context
 }
 
 func newIDScope() *idScope {
@@ -87,6 +92,22 @@ func WithIDScope(ctx context.Context) context.Context {
 	return context.WithValue(ctx, idScopeKey{}, newIDScope())
 }
 
+// WithIDNamespace returns a context carrying a fresh id scope for a
+// part of the page that also renders on its own (an island an RPC
+// handler re-renders, a deferred outlet a part request fills). A
+// derived id in it is "<ns>--<id>" ("cart--features"), suffixed within
+// the namespace only, so the part's ids are the same whether it renders
+// inside the page or alone: render it under the same ns both times.
+// A slug never holds "--", so a namespaced id does not meet a derived
+// id of the page around it, and each id the namespace hands out or
+// reserves is reserved in ctx's scope as well. Explicit ids are kept as
+// they are. An empty ns gives a plain fresh scope.
+func WithIDNamespace(ctx context.Context, ns string) context.Context {
+	s := newIDScope()
+	s.ns, s.outer = ns, ctx
+	return context.WithValue(ctx, idScopeKey{}, s)
+}
+
 // UniqueID returns id the first time ctx's scope sees it and id-2,
 // id-3, … on each repeat, skipping a suffixed id already taken. children
 // are the suffixes of the ids the caller builds from the result
@@ -113,7 +134,14 @@ func UniqueID(ctx context.Context, id string, children ...string) string {
 		s.rec.ops = append(s.rec.ops, idOp{id: id, children: children})
 		return s.rec.prefix + strconv.Itoa(len(s.rec.ops)-1) + "z"
 	}
-	return s.next(id, children)
+	if s.ns != "" {
+		id = s.ns + "--" + id
+	}
+	final := s.next(id, children)
+	if s.outer != nil {
+		ReserveID(s.outer, final, children...)
+	}
+	return final
 }
 
 func (s *idScope) free(id string, children []string) bool {
@@ -169,7 +197,11 @@ func ReserveID(ctx context.Context, id string, children ...string) {
 	if s.rec != nil {
 		s.rec.ops = append(s.rec.ops, idOp{id: id, children: children, reserve: true})
 	}
+	outer := s.outer
 	s.mu.Unlock()
+	if outer != nil {
+		ReserveID(outer, id, children...)
+	}
 }
 
 func scopeOf(ctx context.Context) *idScope {

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -530,15 +531,41 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 
 // resolveDeferredSlot resolves a deferred outlet's fill with element ids
 // of its own. A deferred outlet also renders alone, as a part request
-// (RenderPartResult), where nothing else on the page has rendered: it
-// gets a fresh id scope on the full page too, so the part answer
-// carries the ids the full page gave the same content. Its ids are
-// unique within the outlet, not against the rest of the page.
+// (RenderPartResult), where nothing else on the page has rendered, so
+// on the full page as in the part its derived ids come from the
+// outlet's namespace (render.WithIDNamespace, named after the outlet's
+// address): "l-shell-aside--features", the same in both answers and
+// apart from every other id on the page.
 func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[string]string, slot fillSlot, guards regionGuards) fillSlotResult {
-	ids := render.NewRegionBatch(render.WithIDScope(ctx), 1)
+	ids := render.NewRegionBatch(render.WithIDNamespace(ctx, idNamespace(slot.addr)), 1)
 	res := a.resolveFillSlot(ids.Context(0), path, params, slot, guards)
 	res.html = ids.Settle(0)(res.html)
 	return res
+}
+
+// idNamespace folds a wire address ("l:shell#aside") into an id
+// namespace ("l-shell-aside"): ASCII letters and digits kept, every
+// other run one hyphen.
+func idNamespace(addr string) string {
+	var b strings.Builder
+	dash := false
+	for i := 0; i < len(addr); i++ {
+		c := addr[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			b.WriteByte(c)
+			dash = false
+		case c >= 'A' && c <= 'Z':
+			b.WriteByte(c + 'a' - 'A')
+			dash = false
+		default:
+			if !dash && b.Len() > 0 {
+				b.WriteByte('-')
+				dash = true
+			}
+		}
+	}
+	return strings.TrimSuffix(b.String(), "-")
 }
 
 // withPageIDs renders one page answer (a document, a partial, an

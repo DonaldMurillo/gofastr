@@ -148,6 +148,22 @@ changes is an island. **Inline content that never changes** (a static
 heading, a piece of marketing copy, a footer) is **not** an island. It's
 just rendered HTML.
 
+**Element ids in an island.** A component that derives an id from its
+content (a section slugged from its heading) gets it from the render
+context's id scope, which suffixes repeats on the page (`features`,
+`features-2`). An island renders twice: inside the page, where earlier
+sections have taken ids, and alone in its RPC handler, where nothing has.
+So an island renders under its own id namespace in both places:
+`island.NewIsland(id, c).RenderCtx(ctx)` renders `c` under
+`render.WithIDNamespace(ctx, id)`, and a section titled "Features" in
+island `cart` is `cart--features` on the page and in the RPC answer
+alike, with repeats suffixed inside the namespace only. A slug never
+holds `--`, so the namespace never meets a page id, and the page scope
+reserves every id the island hands out. A deferred layout outlet is the
+same shape (it renders inline on a first load and alone as a part
+request) and gets the namespace of its address (`l-shell-aside--features`).
+Explicit ids are never namespaced or changed.
+
 The framework primitives live in:
 
 - `core-ui/widget`: the builder API (`widget.New(name).Mount(...).Slot(...).Signal(...).RPC(...).RPCWithSignal(...)`)

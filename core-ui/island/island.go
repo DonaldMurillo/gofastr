@@ -1,6 +1,7 @@
 package island
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"runtime/debug"
@@ -48,5 +49,29 @@ func (is *Island) Render() (out render.HTML) {
 		return render.Raw(fmt.Sprintf(`<div data-island="%s"></div>`, render.Escape(is.ID)))
 	}
 	inner := is.Component.Render()
+	return render.Raw(fmt.Sprintf(`<div data-island="%s">%s</div>`, render.Escape(is.ID), string(inner)))
+}
+
+// RenderCtx is Render with a render context, for a component that
+// reads one (component.ContextComponent). The component renders under
+// the island's id namespace (render.WithIDNamespace with the island's
+// ID), so an id it derives ("cart--features" for a section titled
+// "Features" in island "cart") is the same on the page and in the RPC
+// handler that re-renders the island, and apart from the page's own
+// ids. Render the island with RenderCtx in both places. A panicking
+// component gives the empty shell, as Render does.
+func (is *Island) RenderCtx(ctx context.Context) render.HTML {
+	if is == nil {
+		return ""
+	}
+	shell := render.Raw(fmt.Sprintf(`<div data-island="%s"></div>`, render.Escape(is.ID)))
+	if is.Component == nil {
+		return shell
+	}
+	inner, err := component.SafeRenderCtx(render.WithIDNamespace(ctx, is.ID), is.Component)
+	if err != nil {
+		log.Printf("island: render failed for %q: %s", is.ID, textsafe.Recovered(err.Error()))
+		return shell
+	}
 	return render.Raw(fmt.Sprintf(`<div data-island="%s">%s</div>`, render.Escape(is.ID), string(inner)))
 }

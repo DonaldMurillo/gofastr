@@ -28,7 +28,7 @@ func (c *idFill) RenderCtx(ctx context.Context) render.HTML {
 	return render.Raw(`<h2 id="` + render.UniqueID(ctx, "features") + `"></h2>`)
 }
 
-var idAttr = regexp.MustCompile(`id="(features[^"]*)"`)
+var idAttr = regexp.MustCompile(`id="([^"]*features[^"]*)"`)
 
 func featureIDs(s string) []string {
 	var out []string
@@ -89,6 +89,10 @@ func TestDeferredPartMatchesPageIDs(t *testing.T) {
 	part := featureIDs(string(fill.HTML))
 	if len(page) != 1 || len(part) != 1 || page[0] != part[0] {
 		t.Errorf("deferred outlet ids: page %v, part %v; the part must carry the page's ids", page, part)
+	}
+	// The outlet's namespace keeps it apart from the screen's own id.
+	if got := featureIDs(string(res.HTML)); strings.Join(got, " ") != "features l-shell-aside--features" {
+		t.Errorf("page ids = %v, want [features l-shell-aside--features]", got)
 	}
 }
 
