@@ -3755,7 +3755,8 @@ few lines, and link the PR or the docs page for the rest.
   row is gone answers 400 with reason `cursor_anchor_gone`; a key too
   long for the cap answers 500 with `cursor_key_too_long`. Define refuses
   a Hidden or NoQuery key behind a `CursorField`. A cursor minted before
-  the upgrade on a single `CursorField` is refused once. See
+  the upgrade on a single `CursorField` other than the key is refused
+  once. See
   [cursor pagination](framework/docs/content/cursor-pagination.md).
 - **BREAKING: `pagination.NewCursorPage` returns `(CursorPage, error)`.**
   It refuses, with `pagination.ErrCursorTooLong`, a row whose cursor

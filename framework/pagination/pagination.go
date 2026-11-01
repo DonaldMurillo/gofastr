@@ -195,11 +195,23 @@ func EncodeCursor(field string, value any) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// CursorFits reports whether cursor is within the size DecodeCursor and
-// DecodeMultiCursor accept. A server that mints a cursor checks it here
+// CursorFits reports whether cursor is within the caps DecodeCursor and
+// DecodeMultiCursor accept: its encoded size, and for a multi-field
+// cursor its field count. A server that mints a cursor checks it here
 // first, so it never hands out a token its own decoder refuses.
 func CursorFits(cursor string) bool {
-	return len(cursor) <= maxCursorEncodedSize
+	if len(cursor) > maxCursorEncodedSize {
+		return false
+	}
+	b, err := base64.StdEncoding.DecodeString(cursor)
+	if err != nil {
+		return true // not a token this package minted; the decoder judges it
+	}
+	var tok multiCursorToken
+	if json.Unmarshal(b, &tok) != nil {
+		return true
+	}
+	return len(tok.Fields) <= maxCursorFields
 }
 
 // DecodeCursor decodes a base64 cursor string into its field and value components.

@@ -48,7 +48,8 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
   than 64 fields, is rejected as invalid (400 on the list routes).
   Cursors are client-echoed input, so decode work is bounded by these
   fixed caps, never by the payload size the client chose. A cursor the
-  server mints carries only the last row's key, so a long sort value
+  server mints carries the last row's sort values and key when they fit
+  both caps, and the key alone when they do not, so a long sort value
   (a Text column) never pushes it past the cap. A key that does not fit
   (a key value of more than about 12 KiB, which only a Text or unbounded
   String key on SQLite can hold) answers 500 with reason
@@ -192,7 +193,8 @@ first-read intermediary parsed differently.
   signal.
 - **Caching cursors across schema changes.** A cursor is tied to the
   entity's key columns. Changing the key invalidates every outstanding
-  cursor; changing `CursorField(s)` makes an outstanding cursor page
-  from its anchor under the new order.
+  cursor. After a change to `CursorField(s)`, a cursor that carries
+  sort values answers 400 (start again with `cursor=`), and a key-only
+  one pages from its anchor under the new order.
 - **Trying to "jump to page N" with cursor mode.** You can't. Cursors
   are sequential by design.

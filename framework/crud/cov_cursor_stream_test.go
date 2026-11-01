@@ -3,12 +3,14 @@ package crud
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // covItems builds an N-row "items" table with the given cursor config.
@@ -253,5 +255,25 @@ func TestCursorPageRefusesNullKeyset(t *testing.T) {
 	page, err := buildCursorPage(rows[:1:1], []string{"seq"}, []string{"seq"}, same, nil, 2)
 	if err != nil || page.HasMore {
 		t.Fatalf("a short last page: %+v, %v", page, err)
+	}
+}
+
+// More cursor fields than a token may carry mint a key-only cursor,
+// which the next request reads back by its anchor row.
+func TestCursorPastFieldCapCarriesKey(t *testing.T) {
+	same := func(s string) string { return s }
+	fields := make([]string, 65)
+	row := map[string]any{"id": "r1"}
+	for i := range 64 {
+		fields[i] = fmt.Sprintf("f%02d", i)
+		row[fields[i]] = 1
+	}
+	fields[64] = "id"
+	page, err := buildCursorPage([]map[string]any{row, row}, fields, []string{"id"}, same, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name, val, err := pagination.DecodeCursor(page.Cursor); err != nil || name != "id" || val != "r1" {
+		t.Fatalf("cursor decodes to %q=%q, %v; want the key id=r1", name, val, err)
 	}
 }
