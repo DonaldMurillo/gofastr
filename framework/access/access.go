@@ -485,11 +485,19 @@ func GetPermissions(ctx context.Context) []Permission {
 // permission, the deny DeciderMiddleware's doc comment promises. With no
 // decider installed the answer is exactly the role policy's, byte-identical
 // to the previous policy-only check.
+//
+// A scope-restricted caller (an API token or embed grant, WithHeldScopes)
+// must also hold a scope granting permission (ScopeAllows). The credential
+// carries its owner's roles, so without this a token minted for
+// "customers:read" passes RequirePermission("posts:write") on an admin's
+// roles. A Decider's Allow does not lift it: scopes only narrow. A
+// permission that is not "resource:verb" cannot be named by a scope, so a
+// scoped caller never passes it.
 func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			granted := requireResource(ctx, permission, Ref{})
+			granted := ScopeAllows(ctx, permission) && requireResource(ctx, permission, Ref{})
 			if !observe(ctx, permission, granted, "require-permission") {
 				handler.WriteError(w, r, handler.Fail(http.StatusForbidden, handler.ReasonMissingPermission, map[string]any{"permission": string(permission)}))
 				return

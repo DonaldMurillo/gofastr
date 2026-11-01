@@ -1149,7 +1149,11 @@ func WithMetrics() AppOption {
 // the "admin" role, read from the user's GetRoles() []string or from the
 // roles access middleware put on the context. A request carrying an embed
 // grant is refused either way, and so is a caller an access Decider denies
-// on access.RoleGateCapability.
+// on access.RoleGateCapability. A scope-restricted caller (an API token)
+// must also hold access.RoleScope("admin") ("role:admin", "role:*" or
+// "*:*") before fn runs: a token carries its owner's identity, and one
+// minted for another surface must not read process internals because fn
+// admits its owner.
 func WithDebugAuthorize(fn func(ctx context.Context) bool) AppOption {
 	return func(a *App) {
 		a.debugAuthorize = fn
@@ -4128,8 +4132,8 @@ func (a *App) NoteAuthenticator() { a.authenticatorNoted.Store(true) }
 func (a *App) AuthenticatorNoted() bool { return a.authenticatorNoted.Load() }
 
 // debugAllowed gates /.debug/*: 401 without a user, 403 for an embed grant,
-// a Decider deny, or a caller WithDebugAuthorize (default: the "admin"
-// role) refuses. A
+// a Decider deny, a scope-restricted caller without access.RoleScope("admin"),
+// or a caller WithDebugAuthorize (default: the "admin" role) refuses. A
 // signed-in user is not enough. These endpoints carry the pid, the memory
 // layout and every leaked goroutine's stack, and on most apps anyone can
 // sign up.
@@ -4142,7 +4146,11 @@ func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
 	allowed := false
 	if _, embedded := fembed.GrantFromContext(ctx); !embedded && !deciderDenies(ctx) {
 		if a.debugAuthorize != nil {
-			allowed = a.debugAuthorize(ctx)
+			// A token carries its owner's identity, so a predicate that
+			// admits the owner would admit a token minted for any other
+			// surface. A scoped caller needs "role:admin" (or "role:*",
+			// "*:*") first, as the default gate's callerRoles demands.
+			allowed = access.ScopeAllows(ctx, access.RoleScope("admin")) && a.debugAuthorize(ctx)
 		} else {
 			allowed = hasDebugAdminRole(ctx)
 		}

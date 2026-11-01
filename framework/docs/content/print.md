@@ -142,6 +142,15 @@ pb.Document(print.Document{Name: "invoice", Path: "/invoice/{id}",
     Build: /* ... */})
 ```
 
+An API token carries its owner's user, so both built-in gates
+(`RequireAuth`, `RequireOwner`) also refuse a scope-restricted caller (an
+API token or embed grant) that does not hold `print.Scope`
+(`"print:read"`; `"print:*"`, `"*:read"` and `"*:*"` cover it) with
+`403`. A token an admin minted for `customers:read` does not print their
+documents. Sessions and JWTs carry no scopes and are unaffected. A custom
+`AccessPolicy` decides for itself; `access.ScopeAllows(r.Context(),
+print.Scope)` is the same check.
+
 The access policy runs **before** `Build`, so an unauthorized caller never
 triggers a data load. The PDF route enforces the same gate; there's no
 way to fetch the PDF of a document you can't see. Per-user pages are served

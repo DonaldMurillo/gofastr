@@ -66,7 +66,8 @@ const (
 	// sustained heartbeats refresh every entry past any TTL, so the
 	// allocation is durable. Once the cap is reached, announcements for NEW
 	// topics are dropped (lossy), the same forged-peer bound as
-	// maxRemoteReplicasPerTopic.
+	// maxRemoteReplicasPerTopic; a topic whose every entry is past its TTL
+	// gives up its slot first. A live topic is never evicted for a new one.
 	maxRemoteRosterTopics = 1024
 	// maxRemoteMembersPerReplica bounds one announcement's member count per
 	// (topic, replica) entry: a legitimate replica cannot announce more
@@ -105,19 +106,26 @@ type remoteRosterEntry struct {
 // topic over the presence lane. Called on local join/leave so peers learn
 // the new state promptly; the heartbeat re-broadcasts all topics as the
 // lossy reconvergence backstop. No-op when no presence fanout is attached.
+//
+// The roster is queued under the same lock it was read under, as
+// battery/rtc's announceRoom does. Queued after unlocking, a heartbeat's
+// snapshot could land behind a newer roster on the FIFO lane: a last
+// member's leave, then the stale roster that still held them, and a topic
+// with no local connections is never re-sent. Every roster change takes
+// the write lock, so readers holding mu queue identical state and a
+// change's roster always queues after every earlier snapshot. The send is
+// a non-blocking enqueue.
 func (m *Manager) broadcastLocalTopic(topic string) {
 	if topic == "" {
 		return
 	}
 	m.mu.RLock()
+	defer m.mu.RUnlock()
 	send, nodeID, done := m.presenceSend, m.nodeID, m.presenceDone
 	if send == nil || done == nil {
-		m.mu.RUnlock()
 		return
 	}
-	members := localRosterLocked(m, topic)
-	m.mu.RUnlock()
-	m.publishPresence(send, nodeID, topic, members)
+	m.publishPresence(send, nodeID, topic, localRosterLocked(m, topic))
 }
 
 // publishPresence marshals and stamps one announcement through the (async,
@@ -134,21 +142,17 @@ func (m *Manager) publishPresence(send func([]byte), nodeID, topic string, membe
 
 // broadcastAllLocalTopics re-publishes every active local topic's roster,
 // the periodic heartbeat that reconverges after any dropped announcement.
+// Each roster is queued under the lock it was read under, for the ordering
+// broadcastLocalTopic documents.
 func (m *Manager) broadcastAllLocalTopics() {
 	m.mu.RLock()
+	defer m.mu.RUnlock()
 	send, nodeID, done := m.presenceSend, m.nodeID, m.presenceDone
 	if send == nil || done == nil {
-		m.mu.RUnlock()
 		return
 	}
-	topics := localTopicsLocked(m)
-	snapshots := make(map[string][]PresenceMember, len(topics))
-	for _, t := range topics {
-		snapshots[t] = localRosterLocked(m, t)
-	}
-	m.mu.RUnlock()
-	for _, t := range topics {
-		m.publishPresence(send, nodeID, t, snapshots[t])
+	for _, t := range localTopicsLocked(m) {
+		m.publishPresence(send, nodeID, t, localRosterLocked(m, t))
 	}
 }
 
@@ -201,13 +205,16 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	reps := m.remoteRosters[msg.Topic]
 	evicted := ""
 	if reps == nil && len(m.remoteRosters) >= maxRemoteRosterTopics {
-		// Table full and this topic is NEW: evict the least-recently-
-		// refreshed topic (lossy) and admit the newcomer. A live legit
-		// topic is refreshed by every heartbeat, so it is never the
-		// stalest; a forging peer's flood cannot grow the table past the
-		// cap no matter how sustained it is.
-		evicted = m.evictStalestRemoteTopicLocked(now)
-		if evicted == "" && len(m.remoteRosters) >= maxRemoteRosterTopics {
+		// Table full and this topic is NEW. Only a topic every replica has
+		// stopped refreshing (all its entries past TTL) gives up its slot;
+		// otherwise the announcement is dropped (lossy). Evicting the
+		// least recently refreshed LIVE topic let a flood of one-member
+		// topics, each re-announced every heartbeat, cycle every live
+		// topic out of the table. A dropped topic is admitted on a later
+		// beat once a slot expires.
+		var ok bool
+		evicted, ok = m.reclaimExpiredRemoteTopicLocked(now)
+		if !ok {
 			m.mu.Unlock()
 			return
 		}
@@ -250,21 +257,26 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	firePresenceChange(cb, changed)
 }
 
-// evictStalestRemoteTopicLocked drops the remote-roster topic whose last
-// refresh is oldest (LRU-by-heartbeat) to make room under
-// maxRemoteRosterTopics. Returns the evicted topic when its merged roster
-// shrank ("" when it held nothing worth reporting), so the caller can fire
-// OnPresenceChange for it OUTSIDE the lock. Caller holds mu.
-func (m *Manager) evictStalestRemoteTopicLocked(now time.Time) string {
+// reclaimExpiredRemoteTopicLocked frees one remote-roster slot under
+// maxRemoteRosterTopics by dropping a topic whose every entry is past its
+// TTL (the least recently refreshed such topic). ok is false when every
+// topic still has a live entry: nothing is dropped, and the caller refuses
+// the new topic. evicted names the dropped topic when viewers still held
+// its members ("" when it held nothing worth reporting), so the caller can
+// fire OnPresenceChange for it OUTSIDE the lock. Caller holds mu.
+func (m *Manager) reclaimExpiredRemoteTopicLocked(now time.Time) (evicted string, ok bool) {
 	stalest := ""
 	var stalestAt time.Time
 	for topic, touched := range m.remoteRosterTouch {
+		if !remoteTopicExpiredLocked(m, topic, now) {
+			continue
+		}
 		if stalest == "" || touched.Before(stalestAt) {
 			stalest, stalestAt = topic, touched
 		}
 	}
 	if stalest == "" {
-		return ""
+		return "", false
 	}
 	before := shownRosterLocked(m, stalest)
 	delete(m.remoteRosters, stalest)
@@ -272,9 +284,20 @@ func (m *Manager) evictStalestRemoteTopicLocked(now time.Time) string {
 	// No entry remains, so the merged roster after is empty by definition;
 	// report the eviction only if local viewers actually lost someone.
 	if len(before) == 0 {
-		return ""
+		return "", true
 	}
-	return stalest
+	return stalest, true
+}
+
+// remoteTopicExpiredLocked reports whether every remote entry of topic is
+// past its TTL. Caller holds mu.
+func remoteTopicExpiredLocked(m *Manager, topic string, now time.Time) bool {
+	for _, entry := range m.remoteRosters[topic] {
+		if !now.After(entry.expiresAt) {
+			return false
+		}
+	}
+	return true
 }
 
 // sweepExpiredRemote drops remote-roster entries past their TTL and returns

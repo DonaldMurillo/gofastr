@@ -499,11 +499,16 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// earlier one is caught by the revoke.
 	// One added from a stolen session signs in again after the reset
 	// otherwise.
+	//
+	// A failed purge does not stop the ones after it: returning on the
+	// passkey error left every session, magic link and API token live
+	// behind a reset that answered 500. Each purge runs, and any failure
+	// answers 500 once they all have; a fresh reset link retries safely.
+	incomplete := false
 	if n, err := p.mgr.purgeUserPasskeys(r.Context(), userID); err != nil {
 		slog.Warn("password-reset passkey removal failed",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
-		return
+		incomplete = true
 	} else if n > 0 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "passkey.deleted",
@@ -513,29 +518,22 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		})
 	}
 	// A failed purge left the attacker's live cookie working behind a
-	// reset that answered success. It answers 500 like the purges below.
+	// reset that answered success.
 	if err := p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r)); err != nil {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
-		return
+		incomplete = true
 	}
 	// A magic link mailed before the reset signs in like a session does.
-	// A failed purge answers 500, as the API token and passkey purges
-	// below do: a fresh reset link retries safely.
 	if err := p.mgr.dropMagicLinks(r.Context(), userID, "password_reset", remoteHost(r)); err != nil {
 		slog.Warn("password-reset magic-link purge failed",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
-		return
+		incomplete = true
 	}
 	// API tokens are credentials too: one minted by whoever held the
 	// account before the reset kept working after it.
-	// A failure answers 500 rather than a reset that looks complete; the
-	// sessions are already gone, so a fresh link retries safely.
 	if n, supported, err := p.mgr.revokeUserAPITokens(r.Context(), userID); err != nil {
 		slog.Warn("password-reset API token revocation failed",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
-		return
+		incomplete = true
 	} else if supported && n > 0 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "token.revoked",
@@ -543,6 +541,10 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 			Remote: remoteHost(r),
 			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
 		})
+	}
+	if incomplete {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
+		return
 	}
 	// The reset link reached the mailbox, so it is the owner's proof. On an
 	// account nobody had proven, someone else may have attached an IdP

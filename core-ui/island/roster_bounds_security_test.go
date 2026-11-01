@@ -87,6 +87,15 @@ func TestRosterRedBoundsForgedPeer(t *testing.T) {
 	}
 
 	// Positive control: a legit small roster still merges and is visible.
+	// A fresh manager, because the flood above filled the topic table with
+	// live topics, and a full table admits a new topic only in place of an
+	// expired one (TestTopicCapKeepsLiveTopics).
+	m = NewManager()
+	stop2, err := m.SetFanout(fanout.NewInProcess())
+	if err != nil {
+		t.Fatal("setup broken: SetFanout: " + err.Error())
+	}
+	defer stop2()
 	m.mergeRemotePresence("legit-1", presenceFanoutMsg{
 		Topic:   "doc:1",
 		Members: []PresenceMember{{UserID: "u1", DisplayName: "Alice"}},

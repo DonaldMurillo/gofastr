@@ -32,12 +32,21 @@ type PasswordClearer interface {
 // up. Whatever that person attached to the account is evicted here, in an
 // order that closes their routes back in before the sessions go:
 //
-//  1. every OAuth link is removed (AccountLister + AccountUnlinker);
-//  2. with clearPassword, the password is removed (PasswordClearer, or
+//  1. every session is deleted (SessionUserPurger), so a request that
+//     attaches a credential under one (an OAuth link callback, a token or
+//     passkey registration) finds its session gone when it re-checks after
+//     writing, even when its write lands after the steps below read the
+//     account;
+//  2. every OAuth link is removed (AccountLister + AccountUnlinker);
+//  3. with clearPassword, the password is removed (PasswordClearer, or
 //     PasswordSetter with the placeholder hash);
-//  3. every API token issued through TokensPlugin is revoked;
-//  4. every session is deleted (SessionUserPurger);
-//  5. the account is marked verified (EmailVerifier), last, so a failure
+//  4. every passkey is removed and every API token issued through
+//     TokensPlugin is revoked;
+//  5. every session is deleted again: a sign-in through a credential
+//     steps 2-4 removed may have minted one since step 1. Steps 4 and 5
+//     run even when one of them fails, and any failure ends the claim
+//     here with the joined error;
+//  6. the account is marked verified (EmailVerifier), last, so a failure
 //     at any earlier step leaves it unverified and the next proof retries
 //     the whole claim.
 //
@@ -54,6 +63,11 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 	purger, ok := m.SessionStore().(SessionUserPurger)
 	if !ok {
 		return errors.New("session store does not implement SessionUserPurger")
+	}
+
+	early, err := purger.DeleteByUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("revoke sessions: %w", err)
 	}
 
 	unlinked := 0
@@ -93,18 +107,26 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 		}
 	}
 
+	// Steps 4 and 5 all run even when one fails: a failed passkey purge
+	// must not leave the tokens live, nor a session minted since step 1.
+	// Any failure still stops the claim before step 6.
+	var failed []error
 	passkeys, err := m.purgeUserPasskeys(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("remove passkeys: %w", err)
+		failed = append(failed, fmt.Errorf("remove passkeys: %w", err))
 	}
 	tokens, _, err := m.revokeUserAPITokens(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("revoke API tokens: %w", err)
+		failed = append(failed, fmt.Errorf("revoke API tokens: %w", err))
 	}
-	sessions, err := purger.DeleteByUser(ctx, userID)
+	late, err := purger.DeleteByUser(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("revoke sessions: %w", err)
+		failed = append(failed, fmt.Errorf("revoke sessions: %w", err))
 	}
+	if len(failed) > 0 {
+		return errors.Join(failed...)
+	}
+	sessions := early + late
 	if err := verifier.MarkEmailVerified(ctx, userID); err != nil {
 		return fmt.Errorf("mark verified: %w", err)
 	}
