@@ -104,6 +104,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A revoked process-module grant stops working when the drain starts.**
+  A revoke or disable drains the child for up to `DrainPerModule` (30 s by
+  default), and the broker kept answering its `host.*` reverse calls under
+  the old grant until the child exited. Those drains now refuse reverse
+  calls at once; an upgrade that takes no grant away and the shutdown drain
+  keep them open. `moduleproto.WithServeGate` is the new peer option behind
+  it.
 - **BREAKING: an rtc join with no user is refused unless the app opts
   in.** Every caller whose `Join.User` was empty shared one seat bucket,
   so one anonymous caller opening sockets displaced every other anonymous

@@ -305,6 +305,16 @@ type moduleSlot struct {
 	leaseFailing bool // fail-closed: lease expired, drain in progress
 	loopStarted  bool // the supervise + heartbeat goroutines are running
 
+	// liveGrants is the grant set the running child's broker view was
+	// built with. reverseClosed is that child's serve gate: once set, its
+	// host peer refuses every host.* reverse call. A disable drain sets
+	// it, and so does an upgrade drain whose new grant set no longer
+	// covers liveGrants (a revoke): the draining child keeps the time to
+	// finish its work but loses the revoked capability at once. Upgrade
+	// and shutdown drains that take nothing away leave it open.
+	liveGrants    []access.Permission
+	reverseClosed *atomic.Bool
+
 	// spawnSeq names the one spawn allowed to install into this slot.
 	// spawnAsync bumps it and keeps the spawn's cancel in spawnCancel; a
 	// drain bumps it again and cancels, so a spawn still starting when
@@ -989,7 +999,7 @@ func (sl *moduleSlot) reconcile() {
 		if state == StateReady || state == StateStarting ||
 			state == StateHandshaking || state == StateCrashed ||
 			state == StateBackoff {
-			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration)
+			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration, nil)
 		} else if state == StateDrainingDisable || state == StateInstalledDisabled ||
 			state == StateAbsent || state == StateFailed {
 			// Already drained or never started.
@@ -1011,7 +1021,7 @@ func (sl *moduleSlot) reconcile() {
 		if state == StateReady || state == StateStarting ||
 			state == StateHandshaking || state == StateCrashed ||
 			state == StateBackoff {
-			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration)
+			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration, nil)
 		} else if state != StateInstalledDisabled {
 			sl.setState(StateInstalledDisabled)
 		}
@@ -1025,7 +1035,7 @@ func (sl *moduleSlot) reconcile() {
 			state == StateHandshaking || state == StateCrashed ||
 			state == StateBackoff {
 			sl.sup.logf("processmodule: %s row names artifact %s, this replica runs %s: holding", sl.name, shortHash(desired.ArtifactSHA256), shortHash(sl.desc.ArtifactSHA256))
-			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration)
+			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration, nil)
 		} else if state != StateInstalledDisabled {
 			sl.setState(StateInstalledDisabled)
 		}
@@ -1035,7 +1045,7 @@ func (sl *moduleSlot) reconcile() {
 	case desired.Enabled && genAdvanced &&
 		(state == StateReady || state == StateStarting || state == StateHandshaking):
 		// Upgrade: drain then spawn.
-		sl.transitionDrain(StateDrainingUpgrade, desired.DesiredGeneration)
+		sl.transitionDrain(StateDrainingUpgrade, desired.DesiredGeneration, desired.EffectiveGrants)
 	case desired.Enabled && state == StateReady && !childLive:
 		// Recovery from a lease-expired drain: handleLeaseExpired nils
 		// the child but keeps state=Ready, so the plain Ready arm below
@@ -1168,7 +1178,7 @@ func (sl *moduleSlot) setState(next ProcessState) {
 // synchronously inside reconcile (acceptable: the proxy has already
 // snapshot the peer for in-flight calls; new proxies see state != Ready and
 // return 503). On completion it transitions to targetAfterDrain.
-func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64) {
+func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64, next []access.Permission) {
 	sl.setState(drainState)
 	sl.mu.Lock()
 	// A spawn still starting belongs to the state being drained: cancel
@@ -1176,6 +1186,9 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64) {
 	sl.supersedeSpawnLocked()
 	child := sl.child
 	peer := sl.peer
+	if sl.reverseClosed != nil && (drainState == StateDrainingDisable || !grantsCover(next, sl.liveGrants)) {
+		sl.reverseClosed.Store(true)
+	}
 	sl.mu.Unlock()
 	if child == nil {
 		// Nothing running.
@@ -1191,6 +1204,41 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64) {
 	sl.lastExit = drainState.String()
 	sl.mu.Unlock()
 	sl.finishDrain(drainState, gen)
+}
+
+// grantsCover reports whether every grant in held is still granted by
+// next. A grant next widens (x:read to x:*) stays covered; one it drops or
+// narrows does not.
+func grantsCover(next, held []access.Permission) bool {
+	for _, g := range held {
+		if !access.ScopeMatch(next, g) {
+			return false
+		}
+	}
+	return true
+}
+
+// newHostPeer builds the host side of a child's connection, with the
+// serve gate a revoke or disable drain closes.
+func (sl *moduleSlot) newHostPeer(codec *moduleproto.Codec) (*moduleproto.Peer, *atomic.Bool) {
+	closed := new(atomic.Bool)
+	return moduleproto.NewPeer(codec, moduleproto.RoleHost,
+		moduleproto.WithMaxInflight(sl.maxInflight()),
+		moduleproto.WithMaxServeInflight(sl.maxInflight()),
+		moduleproto.WithServeGate(reverseGate(closed)),
+	), closed
+}
+
+// reverseGate is the host peer's serve gate: once closed is set it refuses
+// every host.* reverse call with CodeCapabilityDenied. Protocol methods
+// (module.*) still pass, so the drain itself completes.
+func reverseGate(closed *atomic.Bool) func(string) *moduleproto.Error {
+	return func(method string) *moduleproto.Error {
+		if closed.Load() && strings.HasPrefix(method, "host.") {
+			return &moduleproto.Error{Code: moduleproto.CodeCapabilityDenied, Message: "moduleproto broker: module is draining after a revoke or disable"}
+		}
+		return nil
+	}
 }
 
 // finishDrain transitions to the post-drain state. On an upgrade drain it
@@ -1376,10 +1424,7 @@ func (sl *moduleSlot) spawnOnce(ctx context.Context, seq uint64, desired Desired
 	// Build the host-side Peer over the child's codec. Install reverse
 	// broker handlers BEFORE Start so the child's reverse calls are
 	// served from the first frame.
-	hostPeer := moduleproto.NewPeer(child.Codec(), moduleproto.RoleHost,
-		moduleproto.WithMaxInflight(sl.maxInflight()),
-		moduleproto.WithMaxServeInflight(sl.maxInflight()),
-	)
+	hostPeer, reverseClosed := sl.newHostPeer(child.Codec())
 	view := ModuleGrantView{
 		Name:       sl.name,
 		Grants:     desired.EffectiveGrants,
@@ -1401,6 +1446,8 @@ func (sl *moduleSlot) spawnOnce(ctx context.Context, seq uint64, desired Desired
 		return errSpawnSuperseded
 	}
 	sl.peer = hostPeer
+	sl.liveGrants = desired.EffectiveGrants
+	sl.reverseClosed = reverseClosed
 	sl.mu.Unlock()
 
 	// Handshake (moduleproto.Handshake: cross-check identity + digests +

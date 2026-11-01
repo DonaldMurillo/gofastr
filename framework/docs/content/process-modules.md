@@ -159,6 +159,14 @@ calls. A drain also cancels a spawn still starting for the old state: that
 child is killed instead of installed, so a revoke or disable that lands
 mid-start never leaves a second child serving under the old grants.
 
+A drain caused by a disable, or by a revoke (an upgrade whose new grant
+set no longer covers one the child holds), refuses the child's `host.*`
+reverse calls from the moment it starts, with `CodeCapabilityDenied`. The
+child still gets its drain budget to wind down, but a revoked grant is
+gone at once rather than when the child exits. An upgrade that takes no
+grant away, a widening (`orders:read` to `orders:*`), and the shutdown
+drain keep reverse calls open so the child can finish queued work.
+
 ## Shutdown
 
 `App.Shutdown` drains process modules after the HTTP server has drained

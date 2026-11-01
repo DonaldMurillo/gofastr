@@ -171,7 +171,7 @@ func TestDisableDrainKillsStalledChild(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		sl.transitionDrain(StateDrainingDisable, 1)
+		sl.transitionDrain(StateDrainingDisable, 1, nil)
 		close(done)
 	}()
 	select {
@@ -206,7 +206,7 @@ func TestDisableDrainClosesPeer(t *testing.T) {
 	sup.cfg.DrainPerModule = 2 * time.Second
 	sl := &moduleSlot{name: "m", sup: sup, child: child, peer: peer, state: StateReady}
 
-	sl.transitionDrain(StateDrainingDisable, 1)
+	sl.transitionDrain(StateDrainingDisable, 1, nil)
 	select {
 	case <-child.killed:
 		t.Fatal("a child that exited at EOF was killed")
