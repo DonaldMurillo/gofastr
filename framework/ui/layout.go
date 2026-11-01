@@ -265,7 +265,7 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 type CenterConfig struct {
 	// MinHeight maps to a class: "viewport" (100vh), "screen" (100dvh
 	// where supported), or "" (auto). Used for empty-state landing /
-	// onboarding panels.
+	// onboarding panels. Any other value panics.
 	MinHeight string
 	ID        string
 	Class     string
@@ -281,8 +281,12 @@ type CenterConfig struct {
 // layout fact with no accessibility contract: it stays a styled div.
 func Center(cfg CenterConfig, children ...render.HTML) render.HTML {
 	cls := "fui-layout fui-center"
-	if cfg.MinHeight != "" {
+	switch cfg.MinHeight {
+	case "":
+	case "viewport", "screen":
 		cls += " fui-center--" + cfg.MinHeight
+	default:
+		panic("ui: Center MinHeight must be \"\", \"viewport\" or \"screen\", got " + strconv.Quote(cfg.MinHeight))
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -345,8 +349,12 @@ type BoxConfig struct {
 // slots.
 func Box(cfg BoxConfig, children ...render.HTML) render.HTML {
 	cls := "fui-layout fui-box"
-	if cfg.Pad != BoxPadNone {
+	switch cfg.Pad {
+	case BoxPadNone:
+	case BoxPadSM, BoxPadMD, BoxPadLG, BoxPadXL:
 		cls += " fui-box--pad-" + string(cfg.Pad)
+	default:
+		panic("ui: Box Pad must be one of \"\"/sm/md/lg/xl, got " + strconv.Quote(string(cfg.Pad)))
 	}
 	if cfg.Surface {
 		cls += " fui-box--surface"
@@ -441,6 +449,16 @@ func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	if offset == "" {
 		offset = StickyOffsetNone
 	}
+	switch edge {
+	case StickyTop, StickyBottom:
+	default:
+		panic("ui: Sticky Edge must be top or bottom, got " + strconv.Quote(string(edge)))
+	}
+	switch offset {
+	case StickyOffsetNone, StickyOffsetSm, StickyOffsetMd, StickyOffsetLg, StickyOffsetXl:
+	default:
+		panic("ui: Sticky Offset must be one of 0/sm/md/lg/xl, got " + strconv.Quote(string(offset)))
+	}
 	tier := cfg.ZIndexTier
 	if tier == "" {
 		tier = "sticky"
@@ -490,7 +508,7 @@ const (
 // AspectRatioConfig configures an aspect-ratio wrapper.
 type AspectRatioConfig struct {
 	// Ratio is the aspect-ratio bucket (required). Use one of the
-	// AspectRatio* constants.
+	// AspectRatio* constants; an empty or unknown value panics.
 	Ratio AspectRatio
 
 	// Class adds extra CSS classes.
@@ -513,6 +531,14 @@ type AspectRatioConfig struct {
 // with known proportions, or any content whose intrinsic size is
 // unknown at SSR time.
 func AspectRatioComponent(cfg AspectRatioConfig, child render.HTML) render.HTML {
+	switch cfg.Ratio {
+	case AspectRatio1_1, AspectRatio4_3, AspectRatio16_9, AspectRatio21_9,
+		AspectRatio3_4, AspectRatio3_2, AspectRatio2_3, AspectRatioAuto:
+	default:
+		// An unknown bucket has no aspect-ratio rule, so the absolutely
+		// positioned child fills a 0px box and the media is invisible.
+		panic("ui: AspectRatio Ratio must be one of the AspectRatio* constants, got " + strconv.Quote(string(cfg.Ratio)))
+	}
 	cls := "fui-ar--" + string(cfg.Ratio)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class

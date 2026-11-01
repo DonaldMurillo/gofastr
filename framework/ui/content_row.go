@@ -285,6 +285,14 @@ func contentRowCSS(_ style.Theme) string {
   padding: clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10));
   --ui-page-header-inset: 0;
 }
+/* One padded content area per frame: a nested layer's layout-content
+   inside it (a screen group's layer under the app layout) pads and
+   gaps nothing more. */
+.fui-content-row--has-nav main .layout-content,
+.fui-content-row--has-nav .layout-content .layout-content {
+  padding: 0;
+  gap: 0;
+}
 ` + md.viewportCSS() + md.stickyCSS() + md.stackCSS() + lg.viewportCSS() + lg.stickyCSS() + lg.stackCSS()
 }
 

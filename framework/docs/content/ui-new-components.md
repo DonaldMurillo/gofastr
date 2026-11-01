@@ -181,8 +181,8 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 - **workbench**: `framework/ui.Workbench`, viewport-height inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest (an `<iframe>` in the pane fills it edge to edge); stacks below 720px
 - **card**: `framework/ui.Card`, a surface with header/body/footer over `headless.Card`; `Href` makes the whole card one link; `Action` puts a control at the header's end, level with the heading (a feed's "View all" link), and panics beside `Href`; a card with an `ID` names its heading `<ID>-title`, so a chart in the card can pass that as `LabelledBy`
   An interactive card with `aria-current="page"` receives the active surface treatment, including marks applied by the runtime's navigation sweep.
-- **sticky**: `framework/ui.Sticky`, theme-token sticky wrapper for top or bottom edge pinning
-- **aspectratio**: `framework/ui.AspectRatio`, CLS-safe aspect-ratio wrapper for media and embeds
+- **sticky**: `framework/ui.Sticky`, theme-token sticky wrapper for top or bottom edge pinning; `Offset` measures from the pinned edge (a bottom bar sits that far above the viewport's bottom), and a top-edge wrapper draws its hairline only while stuck, in browsers that report the stuck state (`container-type: scroll-state`). An unknown `Edge` or `Offset` panics
+- **aspectratio**: `framework/ui.AspectRatio`, CLS-safe aspect-ratio wrapper for media and embeds; `Ratio` is required and an empty or unknown bucket panics, since a box with no ratio collapses its child to 0px
 - **image**: `framework/ui.OptimizedImage`, responsive `<picture>` with CLS-safe Width/Height
 - **pipelineimage**: `framework/ui.PipelineImage`, multi-format `<picture>` consuming `framework/image` VariantSet output (typed sources + LQIP/BlurHash)
 - **divider**: `framework/ui.Divider`, semantic separator (horizontal, vertical, labelled)
@@ -254,7 +254,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 ### Marketing & page sections
 
 - **hero**: `framework/ui.Hero`, centered landing hero (eyebrow + title + subtitle + actions + optional media); `Lede` takes inline markup in place of `Subtitle`, `Footer` holds content under the actions (an install line, a byline, stats)
-- **herosplit**: `framework/ui.HeroSplit`, two-column hero (copy + media) with equal / copy-wide / media-wide ratios
+- **herosplit**: `framework/ui.HeroSplit`, two-column hero (copy + media) with equal / copy-wide / media-wide ratios; name the section with `AriaLabel`, or with `HeadingID` (the id of the h1 in Copy, wired as `aria-labelledby`): a heading inside a section does not name it
 - **pricingcard**: `framework/ui.PricingCard`, plan tile (price + period + feature list + CTA), optional featured highlight; cards placed directly in a `ui.Grid` that holds only plans share their row lines, so prices and feature lists start level across a row; a card in a wrapper cell or a mixed grid keeps its own rows
 - **authcard**: `framework/ui.AuthCard`, centered card shell for login / register / reset forms (title + alert + notice + body + footer)
 
@@ -361,7 +361,9 @@ Three more knobs round out the contract surface:
   current on first paint, and the runtime's active-link sweep keeps it
   lit across client navigations into the section — without it the
   exact-href sweep clears the highlight the moment the URL grows a
-  deeper segment inside a kept shell.
+  deeper segment inside a kept shell. Both sides compare the bare path
+  (`/customers/` and `/customers` are one section), and `MatchPath: "/"`
+  lights only the root page, never every page.
 - `SuppressDrawerTrigger: true` plus `ui.SidebarDrawerTrigger(cfg)`
   moves the hamburger into your own chrome (the page header, left of
   the brand): the standalone button is the same trigger — same class,

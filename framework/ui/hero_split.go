@@ -40,16 +40,22 @@ type HeroSplitConfig struct {
 	// Ratio picks the column split. Defaults to HeroSplitEqual.
 	Ratio HeroSplitRatio
 	// AriaLabel labels the <section> for screen readers (the hero is
-	// almost always the page-opening landmark). Required unless an
-	// h1 inside Copy provides the accessible name.
+	// almost always the page-opening landmark). Set it or HeadingID: a
+	// heading inside a <section> does not name it on its own, and an
+	// unnamed section is not a landmark.
 	AriaLabel string
+	// HeadingID is the id of the heading inside Copy (usually the
+	// page's h1) that names the section, wired as aria-labelledby.
+	// AriaLabel wins when both are set.
+	HeadingID string
 	// Class is appended to the ui-hero-split wrapper.
 	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the hero's root <section>.
 	// Keys the component owns are dropped: class and id (use Class),
-	// data-cui-*, and aria-label (use AriaLabel).
+	// data-cui-*, aria-label (use AriaLabel) and aria-labelledby (use
+	// HeadingID).
 	ExtraAttrs html.Attrs
 }
 
@@ -70,13 +76,15 @@ func HeroSplit(cfg HeroSplitConfig) render.HTML {
 		cls = cls + " " + cfg.Class
 	}
 
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label")
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label", "aria-labelledby")
 	if attrs == nil {
 		attrs = map[string]string{}
 	}
 	attrs["class"] = cls
 	if cfg.AriaLabel != "" {
 		attrs["aria-label"] = cfg.AriaLabel
+	} else if cfg.HeadingID != "" {
+		attrs["aria-labelledby"] = cfg.HeadingID
 	}
 	// Copy/Media are slots; empty renders a div with none of a
 	// caller's markup in it, so that div is this component's own.

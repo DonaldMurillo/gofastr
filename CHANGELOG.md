@@ -104,6 +104,26 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Layout primitives (`framework/ui`).** A bottom-edge `ui.Sticky` with
+  an `Offset` takes it from the bottom instead of also pinning to the top,
+  and a top Sticky draws its hairline only while stuck (browsers that
+  report `scroll-state`), not at rest mid-page. `AspectRatio`, `Sticky`
+  `Edge`/`Offset`, `Box` `Pad` and `Center` `MinHeight` panic on an
+  unknown value, as `ZIndexTier` already did: an empty Ratio collapsed
+  its media to 0px, and a spaced value added classes. A side-only
+  `FormFrame` takes the full width. `Container{Start: true}` on the page
+  measure keeps the band's measure. A nested layer's `.layout-content`
+  inside a has-nav `ContentRow` is not padded a second time. The Sidebar
+  marks `MatchPath: "/"` current on the root page only, compares a
+  trailing-slash `MatchPath` in its bare form the way the runtime does,
+  keeps `RaisedCurrent` on `SidebarBody`, the drawer and the NativeMobile
+  body, and mirrors the compact guide line and the closed section chevron
+  in right-to-left pages. New `HeroSplitConfig.HeadingID` names the hero
+  through its h1 (`aria-labelledby`).
+- **Slugs keep every script's letters.** `ui.Section` anchors and the
+  headless Section, Table and Fieldset ids keep Unicode letters and
+  digits, so a Japanese or Cyrillic heading keeps its anchor and two
+  different ones no longer share `section--title`.
 - **Images.** `StripMetadata` keeps the Adobe colour marker, so a
   stripped CMYK JPEG still decodes. Image-field renditions and
   placeholders follow the upload's EXIF orientation. A long upload name

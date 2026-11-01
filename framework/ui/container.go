@@ -194,8 +194,9 @@ func containerCSS(_ style.Theme) string {
 }
 /* Start: pinned to the inline start inside a frame that owns the
    gutter. Later than the breakpoint padding rules at the same weight,
-   so it wins at every width. */
-:where([data-cui-comp="ui-container"]).fui-container--start { margin-inline: 0 auto; padding-inline: 0; }
+   so it wins at every width. It pads nothing, so the page measure's
+   cap drops the gutters too, the has-nav rule's reasoning. */
+:where([data-cui-comp="ui-container"]).fui-container--start { --ui-layout-gutter: 0px; margin-inline: 0 auto; padding-inline: 0; }
 [data-cui-comp="ui-container"].fui-container--pad-page { padding-block: var(--ui-container-pad-start, clamp(40px, 6vw, 64px)) var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }
 [data-cui-comp="ui-container"].fui-container--pad-end { padding-block-end: var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }`
 }

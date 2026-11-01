@@ -395,7 +395,7 @@ func (f *sentinelFiller) stringFor(field string) string {
 	switch field {
 	case "Tone", "Direction", "State", "Type", "Align", "Method", "TitleTag", "ZIndexTier",
 		"GroupMarkup", "Machine", "Variant", "Radio", "Mode", "Collapse", "Attr",
-		"DismissMethod", "DismissBody":
+		"DismissMethod", "DismissBody", "MinHeight":
 		return ""
 	}
 	f.texts++
@@ -642,7 +642,7 @@ var kitComponents = []kitComponent{
 	{name: "ActionList", fn: ActionList, prep: prepSet("Items", []ActionListItem{{Label: "Account", Href: "/account"}})},
 	{name: "AnchoredRail", fn: AnchoredRail},
 	{name: "AnimatedCounter", fn: AnimatedCounter},
-	{name: "AspectRatioComponent", fn: AspectRatioComponent},
+	{name: "AspectRatioComponent", fn: AspectRatioComponent, prep: prepSet("Ratio", AspectRatio16_9)},
 	{name: "AuthCard", fn: AuthCard},
 	{name: "Avatar", fn: Avatar},
 	{name: "AvatarGroup", fn: AvatarGroup},
