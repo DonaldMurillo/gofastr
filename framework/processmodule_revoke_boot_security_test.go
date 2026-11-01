@@ -52,6 +52,30 @@ func TestSetGrantsTracksRevokes(t *testing.T) {
 	}
 }
 
+// A give-back narrower than its revoke survives a reboot: orders:* was
+// revoked and orders:read handed back, and the boot's pattern subtraction
+// used to drop orders:read with the revoke it still matched.
+func TestNarrowGiveBackSurvivesBoot(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	bootRow(t, store, "orders:*")
+	if _, err := store.RemoveEffectiveGrants(ctx, "demo", []access.Permission{"orders:*"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetEffectiveGrants(ctx, "demo", []access.Permission{"orders:read"}); err != nil {
+		t.Fatal(err)
+	}
+	res := bootRow(t, store, "orders:*")
+	if res.Outcome != InstallUnchanged || !slices.Equal(res.Row.EffectiveGrants, []access.Permission{"orders:read"}) {
+		t.Errorf("boot = %v %v, want unchanged [orders:read]", res.Outcome, res.Row.EffectiveGrants)
+	}
+	// A descriptor that no longer covers it drops it.
+	res = bootRow(t, store, "invoices:read")
+	if slices.Contains(res.Row.EffectiveGrants, "orders:read") {
+		t.Errorf("SECURITY: a grant the descriptor dropped survived boot: %v", res.Row.EffectiveGrants)
+	}
+}
+
 // SetEffectiveGrants on a module with no row reports it, as before.
 func TestSetGrantsUnknownModule(t *testing.T) {
 	store := newTestStore(t)

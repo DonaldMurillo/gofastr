@@ -447,6 +447,15 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 		unstamp = ", migrations_applied_at = NULL"
 	}
 	target := withoutRevoked(d.EffectiveGrants, prev.RevokedGrants)
+	// A grant given back narrower than its revoke (orders:read after
+	// orders:* was revoked) is still a pattern match for the revoke, so
+	// the subtraction drops it. The stored row holds it and the descriptor
+	// still covers it: keep it.
+	for _, g := range prev.EffectiveGrants {
+		if !slices.Contains(target, g) && access.ScopeMatch(d.EffectiveGrants, g) {
+			target = append(target, g)
+		}
+	}
 	if grantsJSON, err = marshalGrants(target); err != nil {
 		return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: %w", d.Module, err)
 	}
