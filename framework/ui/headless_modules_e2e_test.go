@@ -89,6 +89,10 @@ func evalString(ctx context.Context, js string) string {
 	return s
 }
 
+// clipboardOK stubs a clipboard whose write succeeds: the copy says
+// "Copied" and toasts only once the write resolves.
+const clipboardOK = `Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: () => Promise.resolve()}})`
+
 func moduleLoaded(name string) string {
 	return `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['` + name + `'])`
 }
@@ -103,7 +107,9 @@ func TestCopyButtonToastOnCopyShowsAToast(t *testing.T) {
 	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
 		t.Fatal("the copy marker never loaded headless-feedback")
 	}
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('[data-hui-copy] button').click()`, nil)); err != nil {
+	// The toast is the clipboard's answer, so the write is stubbed to
+	// succeed: a headless page's real clipboard refuses a scripted click.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(clipboardOK+`; document.querySelector('[data-hui-copy] button').click()`, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if !pollJS(ctx, `(function(){var t=document.querySelector('[data-cui-toast-stack] [data-hui-toast-id] [data-hui-toast-title]');`+
@@ -128,7 +134,7 @@ func TestMenuCopyRowShowsAToast(t *testing.T) {
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-menu"] > summary').click()`, nil),
-		chromedp.Evaluate(`document.querySelector('[data-hui-copy]').click()`, nil),
+		chromedp.Evaluate(clipboardOK+`; document.querySelector('[data-hui-copy]').click()`, nil),
 	); err != nil {
 		t.Fatal(err)
 	}

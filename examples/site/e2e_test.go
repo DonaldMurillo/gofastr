@@ -1103,9 +1103,11 @@ func TestE2E_CopyButtonWorks(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// Click the copy button.
+	// Click the copy button. The copied state is the clipboard's answer,
+	// so the write is stubbed to succeed: headless Chrome refuses a
+	// scripted click's real clipboard write.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-copy-btn').click()`, nil),
+		chromedp.Evaluate(`Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: () => Promise.resolve()}}); document.querySelector('.fui-copy-btn').click()`, nil),
 		waitFor(`document.querySelector('.fui-copy-btn').closest('[data-hui-copy]').getAttribute('data-hui-copy-state') === 'done'`),
 	); err != nil {
 		t.Fatalf("click copy: %v", err)

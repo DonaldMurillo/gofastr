@@ -112,8 +112,11 @@ ui.Collapsible(ui.CollapsibleConfig{Summary: "Security", Name: "faq"}, security)
 `framework/ui.CopyButton` renders a button that copies text to the
 clipboard via `navigator.clipboard.writeText()`. The feedback module
 (`headless-feedback`, through the `data-hui-copy*` hooks) shows a
-brief "Copied!" state and announces it to screen readers. Without
-script the page promises nothing about the clipboard.
+brief "Copied!" state and announces it to screen readers once the
+clipboard has taken the text. A write the browser refuses (a declined
+permission, an insecure origin with no clipboard) announces the
+`ui.copy.failed` sentence instead, with no copied state and no toast.
+Without script the page promises nothing about the clipboard.
 
 `CopyButtonConfig.Target` is the source element's id, with or without
 a leading `#` (`"code-1"` and `"#code-1"` are the same). It is not a

@@ -403,7 +403,10 @@
       const f = box.closest('form');
       if (!f || !sel.contains(f)) n++;
     }
-    for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = String(n);
+    // Written the page's way, like the server's i18n.Number "0" it
+    // replaces: "٣" on an Egyptian Arabic page.
+    const text = NS.formatNumber(n);
+    for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = text;
   }
 
   // ─── delegated listeners ────────────────────────────────────────

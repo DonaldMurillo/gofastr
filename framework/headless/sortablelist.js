@@ -1,9 +1,11 @@
 // headless-sortablelist: the behaviour module for this package's
 // sortable lists — drag-and-drop reorder plus the keyboard model
 // (Space grabs, Arrow Up/Down moves within the column, Arrow
-// Left/Right crosses to an adjacent column of the same group, Space
-// drops, Escape cancels) — and the server round trip the pattern
-// shipped, with the server authoritative: non-2xx reverts the DOM.
+// Left/Right crosses to an adjacent column of the same group, the one
+// on screen to that side in RTL, Space drops, Escape or focus leaving
+// the row cancels) — and the server round trip the pattern shipped,
+// with the server authoritative: non-2xx reverts the DOM unless a
+// newer commit on the list has gone out since.
 //
 // The commit contract:
 //   - a same-container reorder POSTs order=<comma-separated keys>,
@@ -73,43 +75,19 @@
     return headers;
   }
 
-  function keysOf(list) {
-    return rowsOf(list).map(function (r) {
-      return r.getAttribute('data-hui-sort-key') || '';
-    });
-  }
-
-  function versionField(list) {
-    const v = attr(list, 'data-hui-sortable-version');
-    return v ? '&version=' + encodeURIComponent(v) : '';
-  }
-
-  // containerField: the per-column id, sent on EVERY commit when the
-  // list carries it, same-container reorders included, so the server
-  // can route the write without inferring the column from the keys.
-  function containerField(list) {
-    const c = attr(list, 'data-hui-sortable-container');
-    return c ? '&container=' + encodeURIComponent(c) : '';
-  }
-
-  function postOrder(list) {
+  // post sends the list's order. The per-column id rides EVERY commit
+  // when the list carries it, same-container reorders included, so the
+  // server can route the write without inferring the column from the
+  // keys; a cross-container landing adds moved=<key> and ALWAYS
+  // carries container= (empty when the list has no configured id).
+  function post(list, moved) {
     const rpc = attr(list, 'data-hui-sortable-rpc');
     if (!rpc || !window.__gofastr?._originOK?.(rpc)) return Promise.resolve();
-    return fetch(rpc, {
-      method: 'POST', credentials: 'same-origin', headers: csrfHeaders(),
-      body: 'order=' + encodeURIComponent(keysOf(list).join(',')) + versionField(list) + containerField(list),
-    });
-  }
-
-  function postCross(dest, movedKey) {
-    const rpc = attr(dest, 'data-hui-sortable-rpc');
-    if (!rpc || !window.__gofastr?._originOK?.(rpc)) return Promise.resolve();
-    let body = 'order=' + encodeURIComponent(keysOf(dest).join(','));
-    body += '&moved=' + encodeURIComponent(movedKey);
-    // Cross-container commits ALWAYS carry container= (empty when the
-    // list has no configured id).
-    body += '&container=' + encodeURIComponent(attr(dest, 'data-hui-sortable-container'));
-    body += versionField(dest);
+    const c = attr(list, 'data-hui-sortable-container'), v = attr(list, 'data-hui-sortable-version');
+    let body = 'order=' + encodeURIComponent(rowsOf(list).map(function (r) { return attr(r, 'data-hui-sort-key'); }).join(','));
+    if (v) body += '&version=' + encodeURIComponent(v);
+    if (moved !== undefined) body += '&moved=' + encodeURIComponent(moved);
+    if (c || moved !== undefined) body += '&container=' + encodeURIComponent(c);
     return fetch(rpc, {
       method: 'POST', credentials: 'same-origin', headers: csrfHeaders(), body: body,
     });
@@ -193,9 +171,20 @@
   function commit(dest, prevOrder, srcList, srcSnap, movedItem) {
     const isCross = srcList && srcList !== dest;
     const p = isCross
-      ? postCross(dest, movedItem.getAttribute('data-hui-sort-key'))
-      : postOrder(dest);
-    const restoreFn = function () { restore(dest, prevOrder, srcList, srcSnap, movedItem); };
+      ? post(dest, movedItem.getAttribute('data-hui-sort-key'))
+      : post(dest);
+    // Two drops in quick succession are two commits in flight, settling
+    // in any order. A commit sends the list's whole order, so once a
+    // newer commit has gone out the newer one owns the list: an older
+    // commit's late failure reverts nothing (it would paint an order
+    // older than the one the newer commit saved) and says nothing.
+    const lists = isCross ? [dest, srcList] : [dest];
+    const mine = lists.map(function (l) { return (l.__huiSeq = (l.__huiSeq || 0) + 1); });
+    const restoreFn = function () {
+      const newest = lists.every(function (l, i) { return l.__huiSeq === mine[i]; });
+      if (newest) restore(dest, prevOrder, srcList, srcSnap, movedItem);
+      return newest;
+    };
     p.then(function (res) {
       // A followed 3xx (an expired session sent the commit to the
       // sign-in page) is another URL's 200, not this commit's: the
@@ -232,21 +221,19 @@
                     srcSnap.forEach(function (r) { srcList.appendChild(r); });
                   if (!msg) announce(dest, 'data-hui-sortable-s-conflict-refreshed');
                 })
-                .catch(function () { restoreFn(); if (!msg) announce(dest, 'data-hui-sortable-s-conflict-reverted'); });
+                .catch(function () { if (restoreFn() && !msg) announce(dest, 'data-hui-sortable-s-conflict-reverted'); });
               return;
             }
-            restoreFn();
-            if (!msg) announce(dest, 'data-hui-sortable-s-conflict-reverted');
+            if (restoreFn() && !msg) announce(dest, 'data-hui-sortable-s-conflict-reverted');
           });
           return;
         }
-        restoreFn();
-        announce(dest, is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
+        if (restoreFn()) announce(dest, is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
       } else {
         window.__gofastr._inval?.(res);
         announce(dest, 'data-hui-sortable-s-saved');
       }
-    }).catch(function () { restoreFn(); announce(dest, 'data-hui-sortable-s-reverted'); });
+    }).catch(function () { if (restoreFn()) announce(dest, 'data-hui-sortable-s-reverted'); });
   }
 
   // announceRaw says a server-provided message through the live
@@ -317,27 +304,21 @@
     }
   });
 
+  // drop commits a finished move, drag or keyboard, when it changed
+  // anything: a landing in another list always, a reorder when the
+  // order moved.
+  function drop(item, srcList, prev) {
+    const dest = listOf(item);
+    if (!dest) return;
+    const after = rowsOf(dest);
+    if (dest !== srcList) commit(dest, null, srcList, prev, item);
+    else if (prev.length !== after.length || prev.some(function (r, i) { return r !== after[i]; })) commit(dest, prev, null, null, null);
+  }
+
   document.addEventListener('dragend', function () {
     if (!dragSrc) return;
     dragSrc.classList.remove('is-dragging');
-    const srcList = dragSrcList;
-    const destList = listOf(dragSrc);
-    const crossed = destList !== srcList;
-    const before = dragPrev || [];
-    const after = destList ? rowsOf(destList) : [];
-    let changed = crossed;
-    if (!changed) {
-      changed = before.length !== after.length;
-      if (!changed) {
-        for (let i = 0; i < before.length; i++) {
-          if (before[i] !== after[i]) { changed = true; break; }
-        }
-      }
-    }
-    if (changed && destList) {
-      if (crossed) commit(destList, null, srcList, dragPrev, dragSrc);
-      else commit(destList, before, null, null, null);
-    }
+    drop(dragSrc, dragSrcList, dragPrev || []);
     dragSrc = null;
     dragPrev = null;
     dragSrcList = null;
@@ -348,6 +329,32 @@
   let kbPrev = null;       // source list snapshot at grab
   let kbSrcList = null;
 
+  // endGrab lets go of the grabbed row; cancelGrab first puts it back
+  // where the grab found it. Escape cancels, and so does focus leaving
+  // the row (a click elsewhere, Tab), which would otherwise leave an
+  // unsaved move on screen with the row still grabbed. refocus is
+  // Escape's: focus stays on the row; a blur leaves it where the
+  // reader sent it.
+  function endGrab(t) {
+    t.classList.remove('is-grabbed');
+    t.removeAttribute('aria-grabbed');
+    kbGrab = kbPrev = kbSrcList = null;
+  }
+  function cancelGrab(t, refocus) {
+    kbPrev.forEach(function (r) { kbSrcList.appendChild(r); });
+    endGrab(t);
+    if (refocus) t.focus();
+    announce(listOf(t), 'data-hui-sortable-s-cancelled');
+  }
+
+  // A move re-inserts the focused row, and the engine may blur it on
+  // the way (the move calls focus() straight back): the check waits a
+  // task, and a grab whose row has focus again is still a grab.
+  document.addEventListener('focusout', function (ev) {
+    const t = ev.target;
+    if (t === kbGrab) setTimeout(function () { if (kbGrab === t && document.activeElement !== t) cancelGrab(t); }, 0);
+  });
+
   document.addEventListener('keydown', function (ev) {
     const t = ev.target;
     if (!t || !t.matches || !t.matches('[data-hui-sortable-item]')) return;
@@ -356,30 +363,9 @@
       ev.preventDefault();
       if (kbGrab === t) {
         // Release & commit if changed.
-        t.classList.remove('is-grabbed');
-        t.removeAttribute('aria-grabbed');
-        const destList = listOf(t);
-        const crossed = destList !== kbSrcList;
-        const after = destList ? rowsOf(destList) : [];
-        let changed = crossed;
-        if (!changed) {
-          changed = kbPrev && kbPrev.length === after.length;
-          if (changed) {
-            changed = false;
-            for (let i = 0; i < kbPrev.length; i++) {
-              if (kbPrev[i] !== after[i]) { changed = true; break; }
-            }
-          } else {
-            changed = true;
-          }
-        }
-        if (changed && destList) {
-          if (crossed) commit(destList, null, kbSrcList, kbPrev, t);
-          else commit(destList, kbPrev || [], null, null, null);
-        }
-        kbGrab = null;
-        kbPrev = null;
-        kbSrcList = null;
+        const src = kbSrcList, prev = kbPrev;
+        endGrab(t);
+        drop(t, src, prev);
         return;
       }
       // Grab.
@@ -394,14 +380,7 @@
 
     if (ev.key === 'Escape' && kbGrab === t) {
       ev.preventDefault();
-      if (kbSrcList && kbPrev) kbPrev.forEach(function (r) { kbSrcList.appendChild(r); });
-      t.classList.remove('is-grabbed');
-      t.removeAttribute('aria-grabbed');
-      t.focus();
-      kbGrab = null;
-      kbPrev = null;
-      kbSrcList = null;
-      announce(listOf(t), 'data-hui-sortable-s-cancelled');
+      cancelGrab(t, true);
       return;
     }
 
@@ -426,7 +405,10 @@
       const cols = Array.from(document.querySelectorAll('[data-hui-sortable-group="' + CSS.escape(g) + '"]'));
       const idx = cols.indexOf(list);
       if (idx < 0) return;
-      const target = cols[ev.key === 'ArrowLeft' ? idx - 1 : idx + 1];
+      // The columns run in document order along the inline axis: in a
+      // right-to-left board the next column sits on the left, so the
+      // arrows follow the screen, as the tabs and the carousel do.
+      const target = cols[idx + ((ev.key === 'ArrowRight') === (getComputedStyle(list).direction !== 'rtl') ? 1 : -1)];
       if (!target) return;
       target.appendChild(t);
       t.focus();
