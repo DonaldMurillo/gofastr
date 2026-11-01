@@ -229,7 +229,7 @@ func datePickerCSS(_ style.Theme) string {
 .fui-datepicker__calendar {
   padding: var(--spacing-md, 8px);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
+  border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
 }
@@ -259,7 +259,7 @@ func datePickerCSS(_ style.Theme) string {
   transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 .fui-datepicker__nav:hover { background: var(--color-surface-soft, #F4F4F5); color: var(--color-text, #09090B); }
-.fui-datepicker__nav[aria-disabled="true"] { opacity: var(--opacity-disabled, 0.4); pointer-events: none; }
+.fui-datepicker__nav[aria-disabled="true"] { opacity: var(--opacity-disabled, 0.5); pointer-events: none; }
 /* The glyphs point the way the page reads. */
 .fui-datepicker__nav:dir(rtl) > span { display: inline-block; transform: scaleX(-1); }
 .fui-datepicker__nav:focus-visible,
@@ -289,7 +289,7 @@ func datePickerCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   font-variant-numeric: tabular-nums;
-  line-height: var(--leading-snug, 1.25);
+  line-height: var(--leading-snug, 1.4);
   cursor: pointer;
   transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
