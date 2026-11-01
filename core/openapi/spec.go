@@ -41,6 +41,30 @@ func NewSpec(title, version string) *Spec {
 	}
 }
 
+// SetDescription sets info.description: what the API is for, in
+// CommonMark (OpenAPI 3.1). An empty string removes it.
+func (s *Spec) SetDescription(description string) {
+	if description == "" {
+		delete(s.info, "description")
+		return
+	}
+	s.info["description"] = description
+}
+
+// inheritInfo copies every info field base set that s did not, so a
+// per-request view (RequestView) keeps the description and anything
+// else the host set on the spec it serves.
+func (s *Spec) inheritInfo(base *Spec) {
+	if s == base || s.info == nil {
+		return
+	}
+	for k, v := range base.info {
+		if _, ok := s.info[k]; !ok {
+			s.info[k] = v
+		}
+	}
+}
+
 // AddServer registers a server URL with an optional description. URLs
 // that don't begin with a relative path ("/", "./") or one of http(s)/
 // ws(s) are dropped: a `javascript:`/`data:`/`file:` entry in a publicly

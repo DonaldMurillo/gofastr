@@ -37,7 +37,9 @@ const (
 	// EnvDir overrides the registry directory.
 	EnvDir = "GOFASTR_RUNS_DIR"
 	// EnvOff set to "off" (or 0/false/no) stops this process from
-	// registering. Listing is unaffected.
+	// registering; "on" (or 1/true/yes) makes it register wherever it
+	// binds. Unset, the App decides (see App.Start). Listing is
+	// unaffected.
 	EnvOff = "GOFASTR_RUNS"
 
 	// recordVersion is the Record layout this package writes.
@@ -135,6 +137,18 @@ func Disabled() bool {
 	}
 	underTest := testing.Testing() || os.Getenv(envUnderTest) != ""
 	return underTest && os.Getenv(EnvDir) == ""
+}
+
+// Forced reports whether the environment asks this process to
+// register regardless of where it binds: EnvOff says "on" (or
+// 1/true/yes), or EnvDir names a registry directory. Disabled still
+// wins.
+func Forced() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvOff))) {
+	case "on", "1", "true", "yes":
+		return true
+	}
+	return os.Getenv(EnvDir) != ""
 }
 
 // Register writes rec and returns the func that removes it. It fills

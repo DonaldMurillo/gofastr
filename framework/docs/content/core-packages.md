@@ -204,6 +204,8 @@ mount the handler behind your auth middleware; the agent card in
 
 An OpenAPI 3.1 builder plus serving handlers. A `Spec` accumulates
 paths, schemas, and security schemes and `Build()` emits the doc;
+`SetDescription` fills `info.description`, which a per-request
+`RequestView` copy keeps;
 `Handler` serves it (auth-gated by default) and `DocsHandler` serves a
 landing page whose `public` flag gates both the page and its nested
 spec route (the framework passes its `PublicOpenAPI` setting, so a

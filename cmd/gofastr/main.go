@@ -221,6 +221,7 @@ func dispatch(args []string) {
 
 	cmd := args[0]
 	cmdArgs := args[1:]
+	warnVersionMismatch(cmd)
 
 	switch cmd {
 	case "init":
@@ -278,6 +279,29 @@ func dispatch(args []string) {
 		}
 		printHelp()
 		cli.OsExit(1)
+	}
+}
+
+// skipVersionCheck lists the commands the project version check stays
+// out of: ones that run outside a project, or that manage the version
+// themselves.
+var skipVersionCheck = map[string]bool{
+	"init": true, "version": true, "docs": true, "doc": true, "upgrade": true,
+}
+
+// warnVersionMismatch prints, on stderr, a warning when the project in
+// the working directory requires a different GoFastr release than this
+// CLI (project.VersionMismatch). It never stops the command.
+func warnVersionMismatch(cmd string) {
+	if skipVersionCheck[cmd] {
+		return
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	if w := project.VersionMismatch(wd); w != "" {
+		fmt.Fprintf(os.Stderr, "%s %s\n", cli.Yellow("warning:"), w)
 	}
 }
 
