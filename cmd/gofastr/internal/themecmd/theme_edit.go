@@ -618,8 +618,12 @@ func (f *frameFriendlyWriter) strip() {
 	f.flushed = true
 	h := f.rw.Header()
 	h.Del("X-Frame-Options")
-	if csp := h.Get("Content-Security-Policy"); csp != "" {
-		h.Set("Content-Security-Policy", strings.Replace(csp, "frame-ancestors 'none'", "frame-ancestors 'self'", 1))
+	// Every field and every comma-joined policy is enforced, so each is
+	// widened in place and none is dropped.
+	fields := slices.Clone(h.Values("Content-Security-Policy"))
+	h.Del("Content-Security-Policy")
+	for _, csp := range fields {
+		h.Add("Content-Security-Policy", strings.ReplaceAll(csp, "frame-ancestors 'none'", "frame-ancestors 'self'"))
 	}
 }
 

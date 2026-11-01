@@ -298,8 +298,11 @@ would leak into every host's CSS bundle).
 Visibility is fail-closed: by default only `Public` entities are
 documented; a gated entity's reference URL 404s exactly like a
 nonexistent one. Opt in with an explicit `Entities` allow-list or
-`IncludeGated: true`, and gate the whole site (screens AND downloads)
-with `Policy`. Hidden fields never render.
+`IncludeGated: true`, and gate the whole site (screens, downloads and
+the mobile section-menu drawer's `/chrome` and `/state` routes) with
+`Policy`. A redirecting policy refuses the drawer's fetches with 403;
+the runtime fetches them, so a redirect has nowhere to land. Hidden
+fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
