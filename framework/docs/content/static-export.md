@@ -53,9 +53,14 @@ case, fails the build, and so does a contributor file, rail script,
 static-dir or `ExtraDirs` file whose path holds a backslash (a separator
 on Windows). A build that writes two files differing only in case (a
 contributor's `/_HEADERS` beside the generated `_headers`, a rail script
-`/REDUCERS.js` beside a static `reducers.js`) fails and names both: a
+`/REDUCERS.js` beside a static `reducers.js`, a static `ABOUT/logo.png`
+beside the page `about/index.html`) fails and names both: a
 case-insensitive filesystem keeps one spelling, and a case-sensitive
-host then answers 404 for the other. Exports are reproducible: two runs over the
+host then answers 404 for the other. A static file that replaces a
+generated one (`manifest.webmanifest`, `robots.txt`) must match its
+spelling exactly. A rebuild into the same directory renames whatever an
+earlier build left in another case to this build's spelling, so an
+export built on macOS deploys to a case-sensitive host unchanged. Exports are reproducible: two runs over the
 same content write the same bytes (a page that shows live data aside).
 
 The example site also wires a `--export <dir>` flag so the same binary

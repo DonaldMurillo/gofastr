@@ -3865,9 +3865,13 @@ few lines, and link the PR or the docs page for the rest.
   static-source or `ExtraDirs` copy (`_HEADERS` included), a contributor
   file and a rail script are checked the same way. A build that writes
   any two such spellings, an asset and a rail script or a contributor
-  file and the generated `_headers` among them, fails and names both. A
-  static-source or `ExtraDirs` file name holding `\` is refused. A
-  rebuild after a case-only rename keeps the page.
+  file and the generated `_headers` among them, or two directories on
+  their paths, fails and names both. A static file replaces a generated
+  one only when spelled the same. A static-source, static-dir or
+  `ExtraDirs` name holding `\`, and an `ExtraDirs` mount holding one, is
+  refused. A rebuild after a case-only rename keeps the page, and every
+  file and directory the build writes is renamed to its spelling when an
+  earlier build left it in another case.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.

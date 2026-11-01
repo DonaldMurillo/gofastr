@@ -104,6 +104,9 @@ func TestRebuildKeepsCaseRenamedPage(t *testing.T) {
 			t.Errorf("the rebuilt page's %s is gone: %v", f, err)
 		}
 	}
+	if !dirHas(t, out, "about") {
+		t.Error("the rebuilt page's directory is not spelled about")
+	}
 }
 
 // nfcProducts exports "café" precomposed and with a combining accent.
@@ -268,5 +271,109 @@ func TestContributorRefusesCaseTwin(t *testing.T) {
 		if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "differ only in case") {
 			t.Errorf("%s: Build error = %v, want a case refusal", p, err)
 		}
+	}
+}
+
+// An ExtraDirs mount holding a backslash, and a static-dir file named
+// with one, are refused like an fs.FS name: on Windows /about\ is
+// /about/.
+func TestCopyRefusesBackslashMount(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/about", &homeScreen{}, nil)
+	b := &Builder{Host: uihost.New(a), OutDir: t.TempDir(),
+		ExtraDirs: map[string]fs.FS{`/about\`: fstest.MapFS{"index.html": {Data: []byte("ASSET")}}}}
+	if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "backslash") {
+		t.Errorf("mount: Build error = %v, want a backslash refusal", err)
+	}
+	if filepath.Separator == '\\' {
+		return // no file name holds a backslash there
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, `about\index.html`), []byte("ASSET"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b = &Builder{Host: uihost.New(a, uihost.WithStaticDir(dir)), OutDir: t.TempDir()}
+	if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "backslash") {
+		t.Errorf("static dir: Build error = %v, want a backslash refusal", err)
+	}
+}
+
+// Two written files whose directories differ only in case share one
+// directory on a case-insensitive filesystem, spelled the first way: a
+// static OFFLINE/ left the worker's offline/ URL missing on a
+// case-sensitive host. A static file in another case than a generated
+// PWA file is refused too, rather than taken as the user's copy.
+func TestPWARefusesCaseTwin(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"offline dir": {"__gofastr/pwa/OFFLINE/index.html": "X"},
+		"manifest":    {"MANIFEST.webmanifest": "{}"},
+	} {
+		dir := t.TempDir()
+		for p, body := range files {
+			full := filepath.Join(dir, filepath.FromSlash(p))
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		a := coreapp.NewApp("t")
+		a.Register("/", &homeScreen{}, nil)
+		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}), uihost.WithStaticDir(dir))
+		if _, err := (&Builder{Host: host, OutDir: t.TempDir()}).Build(context.Background()); err == nil || !strings.Contains(err.Error(), "differ only in case") {
+			t.Errorf("%s: Build error = %v, want a case refusal", name, err)
+		}
+	}
+}
+
+// A build into an OutDir writes its own spelling of every file and
+// directory, whatever an earlier build left: a refused build's _HEADERS
+// was truncated in place by the next build's _headers and kept its name
+// on APFS.
+func TestRebuildRespellsLeftovers(t *testing.T) {
+	out := t.TempDir()
+	a := coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	b := &Builder{Host: uihost.New(a), OutDir: out, Contributors: []Contributor{fileContributor{"/_HEADERS"}}}
+	if _, err := b.Build(context.Background()); err == nil {
+		t.Fatal("the contributor's _HEADERS was not refused")
+	}
+	a = coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	if _, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !dirHas(t, out, "_headers") {
+		t.Error("the rebuilt export has no entry spelled _headers")
+	}
+}
+
+// dirHas reports whether dir lists an entry spelled exactly name.
+func dirHas(t *testing.T, dir, name string) bool {
+	t.Helper()
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if e.Name() == name {
+			return true
+		}
+	}
+	return false
+}
+
+// A static file under ABOUT/ beside the page about/index.html shares the
+// page's directory on a case-insensitive filesystem, so one of the two
+// spellings is lost; the export refuses them.
+func TestExportRefusesCaseTwinDir(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/about", &homeScreen{}, nil)
+	host := uihost.New(a)
+	host.SetStaticFS(fstest.MapFS{"ABOUT/logo.png": {Data: []byte("PNG")}})
+	_, err := (&Builder{Host: host, OutDir: t.TempDir()}).Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "differ only in case") {
+		t.Fatalf("Build error = %v, want a case refusal", err)
 	}
 }

@@ -428,6 +428,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if err := b.pruneStalePages(res, rendered, docs); err != nil {
 		return res, err
 	}
+	// Before the worker hashes the tree, so a rebuild over leftovers
+	// hashes the same names a fresh build does.
+	if err := respell(b.OutDir, writtenPaths(&res, rendered, docs)); err != nil {
+		return res, err
+	}
 
 	// PWA surface: manifest, service worker, registration script, and
 	// offline fallback, mirroring the live WithPWA routes. Runs LAST so
@@ -437,11 +442,15 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// (manifest start_url/scope/id, worker precache list, and
 	// registration target must all resolve under the mount path), so
 	// none of these go through rewriteJSAsset.
-	if err := b.dumpPWAAssets(&res, frameworkAssetCount); err != nil {
+	if err := b.dumpPWAAssets(&res, frameworkAssetCount, rendered); err != nil {
 		return res, err
 	}
-	// Last, once every file is written: no two spellings of one file.
+	// Last, once every file is written: no two spellings of one file or
+	// directory, and each one on disk under the build's spelling.
 	if err := checkCaseTwins(&res, rendered, docs); err != nil {
+		return res, err
+	}
+	if err := respell(b.OutDir, writtenPaths(&res, rendered, docs)); err != nil {
 		return res, err
 	}
 
@@ -1421,7 +1430,9 @@ func (b *Builder) dumpAppIcons(res *Result) error {
 // the offline fallback page (as offline/index.html so a plain static
 // server resolves the extension-less precache URL). No-op when the host
 // did not opt into WithPWA.
-func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
+// Each file it writes is added to written under its file path (the
+// offline page's URL is a directory).
+func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *fileSet) error {
 	if !b.Host.PWAEnabled() {
 		return nil
 	}
@@ -1510,6 +1521,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 			return err
 		}
 		res.Assets = append(res.Assets, f.urlPath)
+		written.add(filepath.ToSlash(f.relFile))
 		b.log("wrote %s", f.urlPath)
 	}
 	return nil
@@ -1531,20 +1543,33 @@ const pwaRegisterJS = "/__gofastr/pwa/register.js"
 
 // staticSourceHas reports whether the host's static asset source (dir or
 // embedded FS) provides rel, meaning the user shipped their own copy.
+//
+// The spelling must match: on a case-insensitive filesystem a static
+// MANIFEST.webmanifest opened as manifest.webmanifest, the generated
+// file was skipped, and a case-sensitive host had no manifest. The other
+// spelling is copied as itself and refused as a case twin.
 func (b *Builder) staticSourceHas(rel string) bool {
 	if dir := b.Host.StaticDir(); dir != "" {
-		if _, err := os.Stat(filepath.Join(dir, rel)); err == nil {
-			return true
-		}
-		return false
+		return spelledIn(os.DirFS(dir), filepath.ToSlash(rel))
 	}
 	if fsys := b.Host.StaticFS(); fsys != nil {
-		if f, err := fsys.Open(filepath.ToSlash(rel)); err == nil {
-			_ = f.Close()
-			return true
-		}
+		return spelledIn(fsys, filepath.ToSlash(rel))
 	}
 	return false
+}
+
+// spelledIn reports whether fsys holds rel, a slash path, under exactly
+// that spelling: each directory listing names each segment.
+func spelledIn(fsys fs.FS, rel string) bool {
+	dir := "."
+	for _, name := range strings.Split(rel, "/") {
+		ents, err := fs.ReadDir(fsys, dir)
+		if err != nil || !slices.ContainsFunc(ents, func(e fs.DirEntry) bool { return e.Name() == name }) {
+			return false
+		}
+		dir = path.Join(dir, name)
+	}
+	return true
 }
 
 // hashExportTree fingerprints every file already written to outDir
@@ -1775,6 +1800,9 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 		if fsys == nil {
 			continue
 		}
+		if err := refuseSeparatorName(mount); err != nil {
+			return fmt.Errorf("static: extra dir: %w", err)
+		}
 		cleanMount := "/" + strings.Trim(mount, "/")
 		err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
@@ -1937,6 +1965,10 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
+			return err
+		}
+		// ToSlash first: on Windows the separators are the path's own.
+		if err := refuseSeparatorName(filepath.ToSlash(rel)); err != nil {
 			return err
 		}
 		if !publishable(filepath.ToSlash(rel)) {
