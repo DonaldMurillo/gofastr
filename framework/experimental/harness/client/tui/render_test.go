@@ -213,8 +213,8 @@ func TestRenderEventPermissionRequestedSurfaces(t *testing.T) {
 	if len(tui.scrollback) == 0 || !strings.Contains(tui.scrollback[0], "Bash") {
 		t.Errorf("permission prompt not surfaced: %v", tui.scrollback)
 	}
-	if tui.pendingPermission == nil {
-		t.Error("pendingPermission not set after PermissionRequested")
+	if len(tui.pendingPermissions) != 1 {
+		t.Error("prompt not queued after PermissionRequested")
 	}
 }
 
@@ -250,14 +250,14 @@ func TestDecodePermissionAnswer(t *testing.T) {
 func TestSubmitAnswersPendingPermission(t *testing.T) {
 	tui := &TUI{Session: ids.NewSessionID(), out: &bytes.Buffer{}}
 	callID := ids.NewCallID()
-	tui.pendingPermission = &control.PermissionRequested{
+	tui.pendingPermissions = []control.PermissionRequested{{
 		CallID: callID, Tool: "Bash",
 		Args: json.RawMessage(`{"cmd":"ls"}`),
-	}
+	}}
 	tui.input = []rune("y")
 	tui.submit()
-	if tui.pendingPermission != nil {
-		t.Error("pendingPermission not cleared after submit")
+	if len(tui.pendingPermissions) != 0 {
+		t.Error("prompt not dropped after submit")
 	}
 	if len(tui.scrollback) == 0 || !strings.Contains(tui.scrollback[0], "allow once") {
 		t.Errorf("answer label not echoed: %v", tui.scrollback)

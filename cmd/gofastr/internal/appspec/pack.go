@@ -57,11 +57,27 @@ func astPtrCallBool(e ast.Expr) (bool, bool) {
 }
 
 func astFloat(e ast.Expr) (float64, bool) {
-	if lit, ok := e.(*ast.BasicLit); ok && (lit.Kind == token.FLOAT || lit.Kind == token.INT) {
-		f, err := strconv.ParseFloat(lit.Value, 64)
+	if text, kind, ok := numberLit(e); ok && (kind == token.FLOAT || kind == token.INT) {
+		f, err := strconv.ParseFloat(text, 64)
 		return f, err == nil
 	}
 	return 0, false
+}
+
+// numberLit returns the text of a number literal with its sign. The
+// generator writes a negative value as -1, which Go parses as a unary
+// minus over the literal 1, not as one literal. The sign is joined to
+// the digits before parsing so math.MinInt64 still fits.
+func numberLit(e ast.Expr) (string, token.Token, bool) {
+	sign := ""
+	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.SUB {
+		sign, e = "-", u.X
+	}
+	lit, ok := e.(*ast.BasicLit)
+	if !ok || (lit.Kind != token.INT && lit.Kind != token.FLOAT) {
+		return "", token.ILLEGAL, false
+	}
+	return sign + lit.Value, lit.Kind, true
 }
 
 func AstStringSlice(e ast.Expr) []string {
@@ -79,20 +95,21 @@ func AstStringSlice(e ast.Expr) []string {
 // AstAny mirrors the YAML parser's native types: string, int64, float64, bool,
 // nil, map[string]any, []any. Used for field Default, Properties, and seed rows.
 func AstAny(e ast.Expr) any {
-	switch t := e.(type) {
-	case *ast.BasicLit:
-		switch t.Kind {
-		case token.STRING:
-			if s, err := strconv.Unquote(t.Value); err == nil {
-				return s
-			}
-		case token.INT:
-			if i, err := strconv.ParseInt(t.Value, 10, 64); err == nil {
+	if text, kind, ok := numberLit(e); ok {
+		if kind == token.INT {
+			if i, err := strconv.ParseInt(text, 10, 64); err == nil {
 				return i
 			}
-		case token.FLOAT:
-			if f, err := strconv.ParseFloat(t.Value, 64); err == nil {
-				return f
+		} else if f, err := strconv.ParseFloat(text, 64); err == nil {
+			return f
+		}
+		return text
+	}
+	switch t := e.(type) {
+	case *ast.BasicLit:
+		if t.Kind == token.STRING {
+			if s, err := strconv.Unquote(t.Value); err == nil {
+				return s
 			}
 		}
 		return t.Value
@@ -647,8 +664,8 @@ func packReadRelations(e ast.Expr) ([]framework.Relation, error) {
 }
 
 func AstInt(e ast.Expr) (int, bool) {
-	if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.INT {
-		if n, err := strconv.Atoi(lit.Value); err == nil {
+	if text, kind, ok := numberLit(e); ok && kind == token.INT {
+		if n, err := strconv.Atoi(text); err == nil {
 			return n, true
 		}
 	}

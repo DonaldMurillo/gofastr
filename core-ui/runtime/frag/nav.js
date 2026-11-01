@@ -558,14 +558,15 @@
   // the pre-layout behaviour, behind the supersede rule's check.
   // css: the incoming markup. Its component sheets load while the old
   // page is still on screen (kernel _cssReady), before the title, the
-  // route announcement or the swap move to the new page.
+  // route announcement or the swap move to the new page; the
+  // transition module reads the incoming vocabulary off it.
   const _swapCommit = async (epoch, from, to, apply, pickSrc, css, title) => {
     await window.__gofastr._cssReady(css);
     if (!_navLive(epoch)) return;
     document.title = title;
     announceRoute(title);
     const T = window.__gofastr._navHooks.transition;
-    if (T) return T.commit(epoch, from, to, apply, pickSrc);
+    if (T) return T.commit(epoch, from, to, apply, pickSrc, css);
     apply();
   };
 
@@ -611,7 +612,8 @@
     // Dedup in-flight nav (10 clicks → 1 fetch), but only while the
     // pending one is the live navigation: on A→B→A the pending A holds
     // a stale epoch, and returning here left B live, committing under
-    // the URL /a.
+    // the URL /a. A replay (cache or prefetch) drops its entry, so a
+    // forced fetch never joins the copy the force exists to replace.
     if (_pendingNav.get(path) === window.__gofastr._navEpoch) return;
     const myEpoch = ++window.__gofastr._navEpoch;
     _pendingNav.set(path, myEpoch);
@@ -659,6 +661,7 @@
           ? findSlot(layer)
           : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
         if (slot) {
+          _pendingNav.delete(path);
           await _swapCommit(myEpoch, prevPath, path, () => {
             finishNav(path, prevPath, true, swapAtSlot(slot, html), ps);
           }, cached, html, cached.title);
@@ -677,6 +680,7 @@
           // is layout-less too, as for the screen cache above.
           const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
           if (slot) {
+            _pendingNav.delete(path);
             await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
               finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
@@ -899,21 +903,23 @@
     // then notifies once — a computed over two page signals observes
     // one page's state on every evaluation, never a mid-merge mix.
     const changed = [];
+    // own(), never a truthy store[k]: a key like valueOf names an
+    // Object.prototype member, not a signal.
     for (const k in page) {
-      if (!Object.prototype.hasOwnProperty.call(page, k)) continue;
+      if (!own(page, k)) continue;
       if (isReservedSignalKey(k)) continue;
       const v = page[k];
-      if (Object.prototype.hasOwnProperty.call(store, k) && store[k].value === v) continue;
-      if (store[k]) store[k].value = v;
+      if (own(store, k) && store[k].value === v) continue;
+      if (own(store, k)) store[k].value = v;
       else store[k] = { value: v, listeners: [] };
       changed.push([k, v]);
     }
     for (const [k, v] of changed) G.setSignal(k, v);
     const glob = data.g || {};
     for (const k in glob) {
-      if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
+      if (!own(glob, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      if (!store[k]) store[k] = { value: glob[k], listeners: [] };
+      if (!own(store, k)) store[k] = { value: glob[k], listeners: [] };
     }
   };
   // The intercept module's pane swap applies its answer's seed too.
@@ -929,6 +935,10 @@
   // Cmd/Ctrl/Shift/Alt-click, target=_blank, external links, and
   // unknown routes fall through to default browser navigation.
   document.addEventListener('click', (e) => {
+    // A page listener that ran first (on the anchor or an ancestor)
+    // and prevented the click owns it, as it would without the router.
+    // The signal delegate's own prevent (_cuiSig) is not one of those.
+    if (e.defaultPrevented && !e._cuiSig) return;
     const anchor = e.target.closest('a[href]');
     if (!anchor) return;
     const href = anchor.getAttribute('href');
@@ -969,10 +979,6 @@
     if (anchor.getAttribute('data-cui-nav') === 'off') return;
 
     const fullPath = resolvePath(href);
-    if (fullPath === currentPath) {
-      // Already there, let the browser handle the click (focus, scroll, etc.).
-      return;
-    }
     // A document-lifetime script's scope edge is a document boundary.
     // Stand down BEFORE preventDefault so the browser performs a real
     // navigation with ordinary link semantics (history, focus, target),
@@ -984,6 +990,13 @@
     // pushState must carry the fragment.
     let navHash = '';
     try { navHash = new URL(href, location.href).hash; } catch (_) { /* malformed href */ }
+    if (fullPath === currentPath) {
+      // Already there (or on the way: a repeat click while the page
+      // loads). A fragment is the browser's own in-page jump; anything
+      // else no-ops, the browser would reload the whole document.
+      if (!navHash) e.preventDefault();
+      return;
+    }
     // Suppress the browser default up front: with or without a
     // cancellation below, an intercepted click never becomes a hard
     // page load.
@@ -1078,7 +1091,15 @@
       try { history.replaceState({ __fui: _entryId }, '', location.href); } catch (_) {}
     }
     const path = location.pathname + location.search;
-    if (path !== currentPath && currentPath !== '') {
+    if (path === currentPath) {
+      // Same page, another entry (Back across an in-page #anchor jump):
+      // manual restoration left the viewport where it was, so put back
+      // the position the entry recorded. A fresh fragment entry (the
+      // browser's own jump fires popstate too) has none: the browser
+      // scrolls it.
+      const p = _scrollStore[_entryId];
+      if (p) _settleScroll(() => window.scrollTo(p[0], p[1]));
+    } else if (currentPath !== '') {
       if (_onlyStatefulDiff(currentPath, path)) {
         currentPath = path;
       } else if (crossesDocBoundary(path)) {

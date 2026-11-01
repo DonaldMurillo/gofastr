@@ -523,7 +523,7 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	return ui.Dropdown(ui.DropdownConfig{
 		Ctx:     ctx,
 		Label:   i18nui.AdminAccount.Text(ctx),
-		Avatar:  &ui.AvatarConfig{Name: name},
+		Avatar:  &ui.AvatarConfig{Ctx: ctx, Name: name},
 		Align:   ui.DropdownEnd,
 		Content: ui.Stack(ui.StackConfig{Gap: ui.GapMD}, parts...),
 	})

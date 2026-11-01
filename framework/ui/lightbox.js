@@ -162,6 +162,10 @@
       return; // at end, no-loop, silently no-op.
     }
     state.index = i;
+    // The modal stays open and its <img> only takes a new src, so the
+    // close-time reset never runs: put the zoom and pan back here, or
+    // the next picture opens magnified where the last one was left.
+    if (resetZoom) resetZoom(state.modal);
     // Instead of synthesizing a click on the sibling anchor (which can
     // bubble into the default <a target="_blank"> navigation path on
     // some browsers and is generally indirect), call the runtime's
@@ -452,13 +456,15 @@
     document.addEventListener('pointerup', (e) => endPointer(e, false), true);
     document.addEventListener('pointercancel', (e) => endPointer(e, true), true);
 
-    // Reset zoom whenever the lightbox modal closes.
-    function resetAllOnClose(modal) {
-      if (isOpen(modal)) return;
+    // Reset zoom whenever the lightbox modal closes or steps.
+    resetZoom = function (modal) {
       modal.querySelectorAll('[data-fui-lightbox-image]').forEach((img) => {
         const st = zoomStates.get(img);
         if (st) reset(img, st);
       });
+    };
+    function resetAllOnClose(modal) {
+      if (!isOpen(modal)) resetZoom(modal);
     }
     // Watch the lightbox modal for hidden-attr changes (open/close)
     // so we reset zoom on close. Runs whenever the main `scan()` finds
@@ -478,6 +484,7 @@
     };
   }
   let pinchScannerHook = null;
+  let resetZoom = null;
   _installPinchZoom();
 
   NS.lightbox = { rescan: scan };

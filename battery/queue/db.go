@@ -1344,3 +1344,20 @@ func scanJob(row interface {
 	}
 	return job, nil
 }
+
+// sweepUserJobs deletes every job row whose user_id is userID, whatever
+// its status, the same rows the queue_jobs eraser deletes, and returns how
+// many. The in-memory Scheduler calls it from its store eraser, which runs
+// after App.EraseUserData's SQL plan committed: a tick in between could
+// have enqueued the user's job again.
+func (q *DBQueue) sweepUserJobs(ctx context.Context, userID string) (int, error) {
+	res, err := q.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE user_id = $1`, q.qt()), userID)
+	if err != nil {
+		return 0, fmt.Errorf("queue: erase %s jobs: %w", q.table, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("queue: erase %s jobs: %w", q.table, err)
+	}
+	return int(n), nil
+}

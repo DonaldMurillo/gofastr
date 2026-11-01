@@ -301,15 +301,18 @@ func (b *Battery) copySelf() (string, error) {
 
 func (b *Battery) uninstall(purge bool) error {
 	daemon, err := b.runningDaemon()
-	if err != nil {
+	starting := errors.Is(err, errStarting)
+	if err != nil && !starting {
 		return err
 	}
 	if err := b.mgr.uninstall(b); err != nil {
 		return err
 	}
 	// Whatever the manager reported, nothing is deleted while the
-	// daemon is still alive: it holds the database and the binary.
-	if daemon.PID > 0 {
+	// daemon is still alive: it holds the database and the binary. A
+	// starting daemon named no pid, so the wait is on its control
+	// channel going away.
+	if daemon.PID > 0 || starting {
 		if err := b.waitExit(daemon); err != nil {
 			return fmt.Errorf("%w; nothing was deleted", err)
 		}
@@ -432,18 +435,32 @@ func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 	}
 }
 
+// errStarting reports a daemon whose control socket accepts but does
+// not answer: it binds the socket before its builder runs and serves
+// it only once the app is ready. A builder that never returns looks
+// the same. There is a process, but no reply names its pid.
+var errStarting = errors.New("starting")
+
 // runningDaemon is the installed daemon's process, pid 0 when nothing
-// answers on its control channel, as the daemon reports it.
+// answers on its control channel, as the daemon reports it. A daemon
+// that dials but stays silent gets up to startingWait to answer; past
+// that the result is pid 0 with errStarting, and the caller still has a
+// process to stop.
 func (b *Battery) runningDaemon() (procalive.Identity, error) {
 	inst, err := b.layoutFor(false)
 	if err != nil {
 		return procalive.Identity{}, err
 	}
 	resp, err := callControl(inst.socketPath(), "status")
-	if errors.Is(err, errNotRunning) {
-		return procalive.Identity{}, nil
+	for deadline := time.Now().Add(startingWait); errors.Is(err, os.ErrDeadlineExceeded) && time.Now().Before(deadline); {
+		resp, err = callControl(inst.socketPath(), "status")
 	}
-	if err != nil {
+	switch {
+	case errors.Is(err, errNotRunning):
+		return procalive.Identity{}, nil
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		return procalive.Identity{}, errStarting
+	case err != nil:
 		return procalive.Identity{}, err
 	}
 	return resp.identity(), nil

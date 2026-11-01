@@ -189,7 +189,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 - **gallery**: `framework/ui.Gallery`, Grid / Strip / Masonry thumbnail surface
 - **lightbox**: `framework/ui.Lightbox`, zoom-overlay modal; pairs with Gallery
 - **carousel**: `framework/ui.Carousel`, horizontal scroll-snap slider
-- **sortablelist**: `framework/ui.SortableList`, drag-and-drop + keyboard reorderable list on the headless primitive (Space grabs, arrows move, Space drops, Esc cancels); the commit is the pattern's server round trip — 2xx confirms, non-2xx reverts, linked columns share `Group`, a versioned 409 refetches fresh rows (`SortableListItems` is that fragment)
+- **sortablelist**: `framework/ui.SortableList`, drag-and-drop + keyboard reorderable list on the headless primitive (Space grabs, arrows move, Space drops, Esc or moving focus away cancels; a drag released off the list puts the row back); the commit is the pattern's server round trip — 2xx confirms, non-2xx reverts, linked columns share `Group`, a versioned 409 refetches fresh rows (`SortableListItems` is that fragment)
 - **optimisticaction**: `framework/ui.OptimisticAction`, button that flips to its SSR-declared success state on click; the RPC fires underneath and rolls back with a shake on non-2xx
 - **toggleaction**: `framework/ui.ToggleAction`, OptimisticAction's three-state cousin: idle ↔ committed with optional untoggle endpoint and `Group` mutex (committing one reverts its siblings)
 - **networkretrybanner**: `framework/ui.NetworkRetryBanner`, persistent banner that shows on RPC-failure threshold or SSE silence; retry button pings a health endpoint to recover

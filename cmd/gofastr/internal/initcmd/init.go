@@ -127,6 +127,25 @@ func RunInit(args []string) {
 			cli.OsExit(1)
 		}
 		projName = filepath.Base(wd)
+		// A go.mod already here names the module every generated import
+		// must use; go mod init cannot replace it, so a local/<dir>
+		// default would leave main.go importing a module that does not
+		// exist.
+		existingModule, err := existingModulePath(".")
+		if err != nil {
+			cli.Fail("Could not read the existing go.mod: %v", err)
+			cli.OsExit(1)
+			return
+		}
+		if existingModule != "" {
+			if modulePath != "" && modulePath != existingModule {
+				cli.Fail("--module=%s does not match this directory's go.mod, which declares module %s.", modulePath, existingModule)
+				cli.Info("This invocation has not written any files. Drop --module, or change the module line in go.mod first.")
+				cli.OsExit(1)
+				return
+			}
+			modulePath = existingModule
+		}
 		if modulePath != "" && validateProjectName(projName) != nil {
 			projName = path.Base(modulePath)
 		}
@@ -311,14 +330,19 @@ bin/
 		cli.OsExit(1)
 		return
 	}
-	cmd := exec.Command("go", "mod", "init", modulePath)
-	cmd.Dir = name
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	modInit := cmd.Run()
-	if modInit != nil {
-		cli.Info("Could not run 'go mod init': %v", modInit)
-		cli.Info("You may need to run 'go mod init %s' manually.", modulePath)
+	// An existing go.mod (init .) already declares modulePath; go mod
+	// init would only refuse to overwrite it.
+	if _, err := os.Stat(filepath.Join(name, "go.mod")); os.IsNotExist(err) {
+		cmd := exec.Command("go", "mod", "init", modulePath)
+		cmd.Dir = name
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			cli.Fail("Could not run 'go mod init %s': %v", modulePath, err)
+			cli.Info("The other project files are written; run 'go mod init %s' by hand.", modulePath)
+			cli.OsExit(1)
+			return
+		}
 	}
 	// go mod init wrote the local toolchain's go line; state the
 	// framework's instead, and pin the release matching this CLI. A
@@ -395,6 +419,27 @@ bin/
 	fmt.Println()
 }
 
+// existingModulePath returns the module path of dir/go.mod, or "" when
+// there is no go.mod.
+func existingModulePath(dir string) (string, error) {
+	path := filepath.Join(dir, "go.mod")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	mod, err := modfile.ParseLax(path, data, nil)
+	if err != nil {
+		return "", err
+	}
+	if mod.Module == nil || mod.Module.Mod.Path == "" {
+		return "", fmt.Errorf("%s has no module line", path)
+	}
+	return mod.Module.Mod.Path, nil
+}
+
 // scaffoldGoRequirements reads an existing module before go mod init runs.
 // Fresh modules use the release defaults; init . must not lower a project's
 // existing Go or toolchain requirement.
@@ -455,8 +500,8 @@ Usage:
   gofastr init . --reinit [--force]
 
 Flags:
-  --module=<path>  Go module path (default: local/<name>, or
-                   local/<directory name> for init .)
+  --module=<path>  Go module path (default: local/<name>; for init .,
+                   the existing go.mod's module, else local/<directory name>)
   --db=<driver>    sqlite (default) or postgres (aliases: sqlite3, postgresql)
   --no-entity      Omit the sample entity and database wiring
   --reinit         Refresh AI onboarding files in an existing project
@@ -1294,19 +1339,27 @@ func runReinit(dir string, force bool) {
 		cli.Info("  ✓ AGENTS.md created")
 	} else {
 		refreshed, changed, err := agentscmd.RefreshAgentsMD(existing)
-		if err != nil {
+		switch {
+		case err != nil && force:
+			// --force overwrites customized onboarding files; an AGENTS.md
+			// whose markers are gone is one.
+			if err := writeScaffoldFile(agentsPath, agentscmd.BuildAgentsMD()); err != nil {
+				cli.Fail("Failed to write AGENTS.md: %v", err)
+				cli.OsExit(1)
+			}
+			cli.Warn("  ⚠ AGENTS.md overwritten (--force): its markers were missing, so your changes were replaced")
+		case err != nil:
 			cli.Fail("AGENTS.md sync failed: %v", err)
 			cli.Info("  The file may have been edited without preserving the auto-generated markers.")
-			cli.Info("  Run `gofastr agents init --force` to overwrite, or fix the markers manually.")
+			cli.Info("  Run `gofastr init %s --reinit --force` to overwrite it, or fix the markers by hand.", dir)
 			cli.OsExit(1)
-		}
-		if changed {
+		case changed:
 			if err := writeScaffoldFile(agentsPath, refreshed); err != nil {
 				cli.Fail("Failed to write AGENTS.md: %v", err)
 				cli.OsExit(1)
 			}
 			cli.Info("  ✓ AGENTS.md synced (auto section updated, your changes preserved)")
-		} else {
+		default:
 			cli.Info("  ✓ AGENTS.md already up to date")
 		}
 	}

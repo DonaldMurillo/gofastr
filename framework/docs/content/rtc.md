@@ -390,7 +390,11 @@ delivered by the owning replica. A signal the lane loses, because the
 backend refused or timed out the publish or the publish queue dropped
 it on overflow, closes the sending peer's socket, as a local overflow
 does: the client reconnects and renegotiates instead of waiting on an
-answer that never comes. A crashed replica's peers vanish from
+answer that never comes. The receiving side gets the same treatment:
+each socket numbers the signals it sends to each remote peer, and when
+the owning replica sees a number skipped (its fanout subscriber queue
+dropped one on overflow), it closes the target's socket. A loss is seen
+when the next signal of the pair arrives. A crashed replica's peers vanish from
 rosters within the TTL. `Close` stops the heartbeat, waits for a
 roster already being published, then publishes empty rosters as the
 replica's last messages, so a rolling restart converges promptly. Without a fanout, nothing runs and

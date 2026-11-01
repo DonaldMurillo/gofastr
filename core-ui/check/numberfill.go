@@ -22,7 +22,11 @@ import (
 //     regex naming {{n}}, and whose replacement is computed and never
 //     mentions formatNumber; for a regex that also fills other keys
 //     ({{q}}), only a replacement that spells String( fires;
-//   - .split('{{n}}').join(v) with v computed and no formatNumber.
+//   - .split('{{n}}').join(v) with v computed and no formatNumber;
+//   - say(key, english, { n: v }) (NS.say, G.say), the runtime's own
+//     filler: say() puts p.n into {{n}} as given, so v needs
+//     formatNumber as much as a .replace does. A params object that is
+//     not a literal is not read.
 //
 // Silent on a literal replacement (an author-written pattern), on any
 // replacement that mentions formatNumber, and on other placeholders.
@@ -74,8 +78,43 @@ func LintNumberFill(roots ...string) (*Result, error) {
 				res.add(f.Path, f.lineOf(loc[0]), numberFillMessage(arg))
 			}
 		}
+		for _, loc := range reSayCall.FindAllStringIndex(f.Blank, -1) {
+			open := loc[1] - 1
+			close := matchDelimForward(f.Blank, open)
+			if close < 0 {
+				continue
+			}
+			params := strings.TrimSpace(nthArgument(f.Code, f.Blank, open, close, 2))
+			if v, ok := sayParamN(params); ok && numberFillBad(v, true) {
+				res.add(f.Path, f.lineOf(loc[0]), numberFillMessage(v))
+			}
+		}
 	}
 	return res, nil
+}
+
+// reSayCall matches a say( call, bare or as a member (NS.say, G.say).
+var reSayCall = regexp.MustCompile(`\bsay\s*\(`)
+
+// reParamN matches the n key of an object literal property, quoted or
+// not, and captures its value.
+var reParamN = regexp.MustCompile(`^(?:n|'n'|"n")\s*:\s*([\s\S]+)$`)
+
+// sayParamN returns the value an object-literal params argument gives
+// n. The shorthand { n } is the variable n.
+func sayParamN(params string) (string, bool) {
+	if len(params) < 2 || params[0] != '{' || params[len(params)-1] != '}' {
+		return "", false
+	}
+	for _, prop := range splitTopLevel(params[1:len(params)-1], ',') {
+		if prop == "n" {
+			return "n", true
+		}
+		if m := reParamN.FindStringSubmatch(prop); m != nil {
+			return strings.TrimSpace(m[1]), true
+		}
+	}
+	return "", false
 }
 
 // reNRegex matches a regex literal pattern that names {{n}}: /\{\{n\}\}/

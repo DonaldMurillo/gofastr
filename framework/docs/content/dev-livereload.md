@@ -173,7 +173,11 @@ On each save `gofastr dev` sends the running app `SIGTERM` and gives it
 up to five seconds to exit before `SIGKILL`, so shutdown hooks, the
 process-module drain and outbox flushes finish. It moves on as soon as
 the app exits, which with livereload's streams ended at the start of
-the drain is usually at once. A `SIGINT` or `SIGTERM` to `gofastr dev`
+the drain is usually at once. Windows has no `SIGTERM`, so there the app
+is killed at once, and `gofastr dev` and `gofastr desktop` still wait
+up to the five seconds for it to exit before going on, so shutdown can
+remove the temp directory holding the binary (a running `.exe` cannot
+be deleted). A `SIGINT` or `SIGTERM` to `gofastr dev`
 during a build kills the build and exits; it does not wait for the build
 and the app it would start. The build runs in a process group of its
 own, so the kill reaches the compiler, the linker and cgo's C toolchain
@@ -192,8 +196,11 @@ environment (`gofastr desktop` builds with `CGO_ENABLED=0`, and so does
 its query), read at start and again after each rebuild. A query that
 succeeds replaces the graph, so an import you remove stops keeping its
 directory walked; one that fails, because a save left the tree
-mid-edit, keeps the last graph. Ctrl-C ends a query still waiting on a
-module proxy.
+mid-edit, keeps the last graph. A directory a new graph brings into
+the walk, or takes out of it, is not itself a change: the save that
+added the first import of `gen/` restarts the app once, and a later
+save inside `gen/` restarts it again. Ctrl-C ends a query still waiting
+on a module proxy.
 
 A build that runs longer than ten seconds prints a progress line every
 ten seconds (`Building <dir> (20s)...`). `go build` itself is silent

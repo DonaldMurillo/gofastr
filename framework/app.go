@@ -2800,8 +2800,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 // so an endpoint on an entity whose CRUD answered 401 served anyone.
 func endpointRoute(ep entity.Endpoint) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
-			handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
+		if handler.IsForgedCrossSiteWrite(r) {
 			handler.WriteError(w, r, handler.Fail(http.StatusForbidden, handler.ReasonCrossSiteRefused))
 			return
 		}
@@ -3342,8 +3341,12 @@ func (a *App) shutdown(ctx context.Context) error {
 	}
 	if srv != nil {
 		// A connection that never sent a request would hold the drain
-		// for five seconds; it carries no work, so it goes first.
-		a.closeNewConns()
+		// for five seconds. srv.Shutdown closes those through the
+		// closeNewConns hook Start registered, once its listener is
+		// closed: the stream end below can take two seconds, and a
+		// connection accepted during it would be missed by a close run
+		// here.
+		//
 		// An event stream never goes idle and a WebSocket is outside the
 		// drain: end each one now rather than wait out the deadline on
 		// it or leave it serving past Shutdown (shutdown_streams.go).
@@ -3916,6 +3919,10 @@ func (a *App) Start(addr string) error {
 		WriteTimeout:      defaultServerWriteTimeout,
 		IdleTimeout:       defaultServerIdleTimeout,
 	}
+	// net/http runs this right after Shutdown closes the listener, so it
+	// also closes a connection accepted while Shutdown ended the streams.
+	// The server is new on every Start, so the hook is registered once.
+	srv.RegisterOnShutdown(a.closeNewConns)
 	// Apply host overrides (AppConfig.HTTPServerTimeouts / WithHTTPServerTimeouts).
 	// Each field is *time.Duration: nil keeps the default above; an explicit
 	// pointer, including one to 0, wins. net/http treats a zero duration as

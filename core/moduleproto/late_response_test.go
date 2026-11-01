@@ -1,10 +1,10 @@
 package moduleproto
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"testing"
 	"time"
@@ -99,18 +99,9 @@ func TestUnsolicitedResponseStillFatalAfterAbandonment(t *testing.T) {
 		_ = connX.Close()
 		_ = connY.Close()
 	}()
-	// Drain the host's outbound writes (net.Pipe is synchronous; nothing
-	// else is reading connY).
-	go func() { _, _ = io.Copy(io.Discard, connY) }()
-
-	// Abandon id 1: originate a call whose ctx is already expired. The
-	// frame is written (and drained above), Call returns ctx.Err, and the
+	// Abandon id 1: the frame is written, then the Call gives up, and the
 	// id is tombstoned as abandoned.
-	expiredCtx, expCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer expCancel()
-	if _, err := h.Call(expiredCtx, "anything", nil); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("expired-ctx call: err = %v, want DeadlineExceeded", err)
-	}
+	abandonCalls(t, h, connY, 1)
 
 	// A response for an id that was never originated must still fault.
 	unsolicited := NewSuccessResponse(999, json.RawMessage(`{}`))
@@ -125,5 +116,44 @@ func TestUnsolicitedResponseStillFatalAfterAbandonment(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("unsolicited response for a never-originated id must stay fatal even while an abandonment tombstone exists")
+	}
+}
+
+// abandonCalls makes n Calls on h that each give up after their request
+// frame was written and before any response, so each id is tombstoned as
+// abandoned. It reads h's outbound frames off raw (the counterparty end of
+// a net.Pipe) and keeps draining raw afterwards. A Call whose ctx ended
+// before it began writes nothing and allocates no id, so it abandons
+// nothing.
+func abandonCalls(t *testing.T, h *Peer, raw net.Conn, n int) {
+	t.Helper()
+	frames := make(chan struct{})
+	go func() {
+		sc := bufio.NewScanner(raw)
+		for seen := 0; sc.Scan(); seen++ {
+			if seen < n {
+				frames <- struct{}{}
+			}
+		}
+		// The pipe closing at cleanup ends the scan; that error is the
+		// expected end, not a failure.
+		_ = sc.Err()
+	}()
+	for range n {
+		ctx, cancel := context.WithCancel(context.Background())
+		res := make(chan error, 1)
+		go func() {
+			_, err := h.Call(ctx, "anything", nil)
+			res <- err
+		}()
+		select {
+		case <-frames:
+		case <-time.After(2 * time.Second):
+			t.Fatal("abandonCalls: request frame never written")
+		}
+		cancel()
+		if err := <-res; !errors.Is(err, context.Canceled) {
+			t.Fatalf("abandoned call: err = %v, want context.Canceled", err)
+		}
 	}
 }

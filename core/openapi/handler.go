@@ -2,10 +2,8 @@ package openapi
 
 import (
 	"encoding/json"
-	"html"
 	"net/http"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
@@ -42,7 +40,7 @@ func serveSpec(w http.ResponseWriter, r *http.Request, spec *Spec) {
 	s := spec
 	if spec.RequestView != nil {
 		if v := spec.RequestView(r); v != nil {
-			s = v
+			s = v.withInheritedInfo(spec)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -95,76 +93,12 @@ func GatedHandler(spec *Spec, allow func(*http.Request) bool) http.Handler {
 	})
 }
 
-// DocsHandler returns an http.Handler that serves a minimal,
-// self-contained API spec landing page. The page links to the OpenAPI
-// JSON; viewers like Swagger UI / Insomnia / Stoplight / Postman can
-// load it. Earlier revisions embedded swagger-ui-dist via a public CDN.
-// That pulled the docs page's supply chain into a third-party host
-// (and broke offline / air-gapped deploys), so the CDN reference was
-// removed. Hosts that want the interactive UI can vendor swagger-ui
-// themselves and mount their own handler.
-//
-// public controls the gate for BOTH the landing page and the nested
+// DocsHandler serves the API reference page at basePath + "/" and the
+// spec at basePath + "/openapi.json": DocsHandlerWith with those
+// defaults. public controls the gate for BOTH the page and the nested
 // spec route: an app that published its spec (framework's
-// WithPublicOpenAPI) gets a browsable docs page to match, and an app
-// that kept the spec private keeps the page private too. Splitting the
-// two was the old behavior and it made the public spec unbrowsable.
+// WithPublicOpenAPI) gets a browsable page to match, and an app that
+// kept the spec private keeps the page private too.
 func DocsHandler(spec *Spec, basePath string, public bool) http.Handler {
-	specHandler := Handler(spec)
-	if public {
-		specHandler = PublicHandler(spec)
-	}
-	// basePath is developer-supplied config but flows into href + visible
-	// text; escape it so a CR/LF/quote/angle can't break out of the
-	// attribute or inject script content. Escaping keeps the value inside
-	// the attribute and does nothing about its scheme, so the href also
-	// passes the shared anchor allow-list: a "javascript:" base links to
-	// the root-relative spec instead.
-	safeBase := html.EscapeString(basePath)
-	hrefBase := html.EscapeString(urlsafe.Clean(basePath+"/openapi.json", urlsafe.Anchor))
-	if hrefBase == "" {
-		hrefBase = "/openapi.json"
-	}
-	uiHTML := `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>API spec</title>
-  <style>
-    body { font-family: -apple-system, system-ui, sans-serif; max-width: 48rem; margin: 3rem auto; padding: 0 1.5rem; line-height: 1.5; color: #111827; }
-    code { background: rgba(0,0,0,0.05); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.95em; }
-    a { color: #1d4ed8; }
-  </style>
-</head>
-<body>
-  <h1>API specification</h1>
-  <p>This service exposes an OpenAPI 3 document at <a href="` + hrefBase + `"><code>` + safeBase + `/openapi.json</code></a>.</p>
-  <p>Load it in your preferred viewer (Swagger UI, Insomnia, Stoplight, Postman, …) to browse the endpoints interactively.</p>
-</body>
-</html>`
-
-	csp := "default-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'"
-
-	mux := http.NewServeMux()
-	mux.Handle("/openapi.json", specHandler)
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Set security headers first so even the 401 response carries them.
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", csp)
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		if !public {
-			if _, ok := handler.GetUser(r.Context()); !ok {
-				i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
-				return
-			}
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(uiHTML))
-	})
-
-	// Strip the basePath prefix so internal routes (/openapi.json, /) match
-	// when mounted at a sub-path like /docs/
-	return http.StripPrefix(basePath, mux)
+	return DocsHandlerWith(spec, DocsConfig{BasePath: basePath, Public: public})
 }

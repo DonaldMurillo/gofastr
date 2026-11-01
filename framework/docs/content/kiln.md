@@ -94,6 +94,9 @@ Each turn's adapter runs in its own process group on Unix. Cancelling,
 superseding or switching away from a turn kills the whole group, and so does
 the turn ending: a shell the adapter left in the background does not keep
 calling Kiln. On Windows only the adapter process itself is killed.
+Stopping `kiln serve` (Ctrl-C or SIGTERM) cancels a running turn the same
+way and waits, up to a few seconds, for the adapter to be killed before the
+process exits.
 
 ## Tools
 
@@ -330,6 +333,10 @@ cd app
 go test ./...
 ```
 
+Freeze only reads the journal, so it is safe to run while `kiln serve` is
+still running: it opens the file read-only, skips a last line that has no
+newline yet (an append in flight), and never truncates anything.
+
 Freeze writes exactly:
 
 - `build/gofastr.yml`: deterministic current app spec, ready for the
@@ -369,7 +376,9 @@ Freeze fails loudly, naming the offending key, when world data cannot
 round-trip through the app spec's YAML subset: a seed row whose every value
 is a nested object, or a props/row key containing a colon, comment marker, or
 brackets. Reshape the data (or drop the row) and re-run; a freeze that
-succeeded is guaranteed to re-parse into the same values.
+succeeded is guaranteed to re-parse into the same values. An empty object
+(a JSON column holding `{}`) freezes as a bare `key:` line, the block-style
+empty map the YAML subset reads back.
 
 `FreezeAndGenerate(ctx, world, dir, out)` performs the freeze and invokes
 `gofastr generate app gofastr.yml` when `gofastr` is on `PATH`. The

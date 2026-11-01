@@ -740,12 +740,16 @@ func TestBackToEntryWithUnlandedParts(t *testing.T) {
 // returning to the page re-requests it.
 func TestFailedPartNotCached(t *testing.T) {
 	s := newPartsSite(t, 10000)
+	// Two failures: the request and its one retry. The region ends in
+	// the error state; the third request (Back) answers.
 	var failMu sync.Mutex
-	failNext := true
+	failures := 0
 	s.setPartResp("/a|aside", func(w http.ResponseWriter, _ *http.Request) {
 		failMu.Lock()
-		fail := failNext
-		failNext = false
+		fail := failures < 2
+		if fail {
+			failures++
+		}
 		failMu.Unlock()
 		if fail {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -765,12 +769,9 @@ func TestFailedPartNotCached(t *testing.T) {
 	}
 	jsClick(t, ctx, `#goA`)
 	waitContains(t, ctx, `#main`, "A-PRIMARY")
-	// The failed part's region keeps its loading content; the page and
-	// the other part stand.
-	time.Sleep(250 * time.Millisecond)
-	if got := readText(t, ctx, `#aside`); strings.Contains(got, "PART-A-ASIDE") {
-		t.Fatalf("aside after a failed part = %q; a failure must not apply", got)
-	}
+	// The failed part's region shows the error state; the page and the
+	// other part stand.
+	waitContains(t, ctx, `#aside`, "This section could not load.")
 	waitContains(t, ctx, `#rail`, "PART-A-RAIL")
 
 	jsClick(t, ctx, `#goB`)
@@ -780,8 +781,8 @@ func TestFailedPartNotCached(t *testing.T) {
 	}
 	waitContains(t, ctx, `#main`, "A-PRIMARY")
 	waitContains(t, ctx, `#aside`, "PART-A-ASIDE")
-	if n := s.count("part", "/a|aside"); n != 2 {
-		t.Errorf("aside part requests = %d, want 2 (a failed part is not cached)", n)
+	if n := s.count("part", "/a|aside"); n != 3 {
+		t.Errorf("aside part requests = %d, want 3 (a failed part is not cached)", n)
 	}
 }
 

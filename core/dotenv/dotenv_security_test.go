@@ -62,8 +62,7 @@ func TestParseErrorNamesShapeNotContent(t *testing.T) {
 
 // bombEnv builds A=a followed by k lines where each key's double-quoted
 // value references the PREVIOUS key three times. Each ${PREV} lookup is
-// depth <= 2 (the stored value is already fully expanded), so neither
-// maxExpandDepth nor the cycle detector in expand.go applies; only the
+// one stored, already-expanded value written verbatim; only the
 // cross-line compounding grows the output: 3^k.
 func bombEnv(k int) string {
 	lines := make([]string, 0, k+1)
@@ -120,13 +119,10 @@ func TestParseLinearChainStillExpands(t *testing.T) {
 	}
 }
 
-// Property: recursion through the ENV fallback (envFn) is bounded at every
-// cycle shape. The visited-set in expand.go guards local-map cycles, but
-// lookup also re-expands envFn-supplied values (expand.go:83), so the same
-// cycle detector must hold when the loop runs entirely through the
-// environment — a self-referential export, a mutual pair, a local↔env
-// cycle, and a chain deeper than maxExpandDepth must all terminate with
-// bounded output rather than hanging app boot.
+// Property: a value read through the ENV fallback (envFn) goes in
+// verbatim, so no cycle shape (a self-referential export, a mutual
+// pair, a local<->env loop) can recurse or compound: each lookup writes
+// one stored value and stops.
 func TestExpandEnvRecursionBounded(t *testing.T) {
 	env := func(k string) (string, bool) {
 		switch k {
@@ -141,31 +137,24 @@ func TestExpandEnvRecursionBounded(t *testing.T) {
 		}
 		return "", false
 	}
-	if got := Expand("${SELF}", nil, env); got != "" {
-		t.Errorf("env self-reference = %q, want \"\" (cycle detected)", got)
+	if got := Expand("${SELF}", nil, env); got != "${SELF}" {
+		t.Errorf("env self-reference = %q, want the stored text", got)
 	}
-	if got := Expand("${A}", nil, env); got != "" {
-		t.Errorf("env mutual cycle = %q, want \"\"", got)
+	if got := Expand("${A}", nil, env); got != "${B}" {
+		t.Errorf("env mutual cycle = %q, want the stored text", got)
 	}
-	// Local key referencing an env key that references the local key back.
 	local := map[string]string{"LOCAL_LOOP": "${LOOP}"}
-	if got := Expand("${LOCAL_LOOP}", local, env); got != "" {
-		t.Errorf("local↔env cycle = %q, want \"\"", got)
+	if got := Expand("${LOCAL_LOOP}", local, env); got != "${LOOP}" {
+		t.Errorf("local<->env cycle = %q, want the stored text", got)
 	}
 
-	// A chain deeper than the depth cap: terminates, and the output is no
-	// larger than the input text (the cap returns the remaining literal
-	// instead of compounding). 40 links of ${V<i>} each.
+	// A 40-link chain resolves one link: output is the first value.
 	chain := map[string]string{}
 	for i := 0; i < 40; i++ {
 		chain[fmt.Sprintf("V%d", i)] = fmt.Sprintf("${V%d}", i+1)
 	}
-	chain["V40"] = "END"
-	in := "${V0}"
-	got := Expand(in, chain, nil)
-	if len(got) > len(in)+len("V40")*2+8 {
-		t.Errorf("SECURITY: [dotenv] depth-capped chain expanded %d bytes from a %d-byte input (%q); "+
-			"the cap must bound work and output, not compound it.", len(got), len(in), got)
+	if got := Expand("${V0}", chain, nil); got != "${V1}" {
+		t.Errorf("SECURITY: [dotenv] chain expanded past one link: %q", got)
 	}
 }
 

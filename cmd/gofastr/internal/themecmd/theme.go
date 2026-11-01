@@ -77,26 +77,44 @@ func runThemeInit(args []string) {
 		cli.OsExit(1)
 	}
 
+	// The file joins whatever package already lives in its directory
+	// (--out=theme.go beside main.go is package main), the way
+	// `theme edit` writes back; a new directory takes its own name.
+	pkg := packageNameForPath(dest)
+	src := themeStarter
+	if pkg != "theme" {
+		src = themeStarterSource(pkg)
+	}
 	// --force replaces an existing theme through a temporary file, so a
 	// crash mid-write leaves the old one, not an empty one.
-	if err := atomicfile.Rewrite(dest, []byte(themeStarter), 0o644); err != nil {
+	if err := atomicfile.Rewrite(dest, []byte(src), 0o644); err != nil {
 		fmt.Printf("%s write %s: %v\n", cli.Red("✗"), dest, err)
 		cli.OsExit(1)
 	}
 
 	fmt.Printf("%s wrote %s: edit values to customize your theme.\n", cli.Green("✓"), dest)
 	fmt.Println()
+	if pkg == "main" {
+		fmt.Println("Next: the theme is in package main, so main.go uses App directly:")
+		fmt.Println()
+		fmt.Println("    site := app.NewApp(\"MyApp\").WithTheme(App)")
+		return
+	}
+	importDir := filepath.ToSlash(filepath.Dir(dest))
+	if filepath.IsAbs(dest) {
+		importDir = pkg // an absolute --out says nothing about the module layout
+	}
 	fmt.Println("Next: wire it into main.go:")
 	fmt.Println()
 	fmt.Println("    import (")
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/core-ui/app\"")
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework\"")
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework/uihost\"")
-	fmt.Println("        \"<your-module>/theme\"")
+	fmt.Println("        \"<your-module>/" + importDir + "\"")
 	fmt.Println("    )")
 	fmt.Println()
 	fmt.Println("    func main() {")
-	fmt.Println("        site := app.NewApp(\"MyApp\").WithTheme(theme.App)")
+	fmt.Println("        site := app.NewApp(\"MyApp\").WithTheme(" + pkg + ".App)")
 	fmt.Println("        site.Register(\"/\", &HomeScreen{}, nil) // HomeScreen implements component.Component + ScreenSpec")
 	fmt.Println()
 	fmt.Println("        host := uihost.New(site)")
@@ -119,7 +137,7 @@ func runThemeInit(args []string) {
 // writes only Values. The previous hand-maintained template omitted
 // required fields (Colors.CodeSurface, the overlay/toast/dropdown
 // durations, the easings) and a fresh scaffold panicked at boot.
-var themeStarter = themeStarterSource()
+var themeStarter = themeStarterSource("theme")
 
 // starterDoc is the explanatory header `gofastr theme init` writes
 // above the emitted theme.
@@ -139,7 +157,7 @@ var starterDoc = []string{
 	"(Colors.PrimaryFg → --color-primary-fg) so you only write Value.",
 }
 
-func themeStarterSource() string {
+func themeStarterSource(pkg string) string {
 	t := uitheme.Default()
 	// The app's own name, and no component options: the framework's
 	// complete default set is compiled into :root anyway, so a host
@@ -152,7 +170,7 @@ func themeStarterSource() string {
 	for i, line := range starterDoc {
 		doc[i] = strings.ReplaceAll(line, "{{primary}}", strconv.Quote(t.Colors.Primary.Value))
 	}
-	src, err := emitThemeGoSourceWithDoc(t, "theme", doc)
+	src, err := emitThemeGoSourceWithDoc(t, pkg, doc)
 	if err != nil {
 		panic("gofastr: theme starter does not parse: " + err.Error())
 	}

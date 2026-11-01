@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -57,6 +58,10 @@ const (
 
 // RatingConfig configures a RatingInput.
 type RatingConfig struct {
+	// Ctx carries the per-request context the component's own words
+	// (each choice's "3 out of 5" name) are written in. When nil, English applies.
+	Ctx context.Context
+
 	// Name is the form-field name (required).
 	Name string
 	// Label is the accessible label (required, used as the
@@ -175,7 +180,7 @@ func RatingInput(cfg RatingConfig) render.HTML {
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
 		Parts:      parts,
-		Strings:    StringsFor(nil),
+		Strings:    StringsFor(cfg.Ctx),
 	}, ratingClasses))
 }
 

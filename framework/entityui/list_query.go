@@ -298,6 +298,17 @@ func (s *listState) readFields() []string {
 	if s.m.states != nil {
 		add(s.m.states.Field)
 	}
+	// Cards draw Display.Card's fields, which need not be shown columns:
+	// unread, a card's meta and subtitle would come out empty.
+	if s.as == "cards" {
+		card := cardFieldsOf(s)
+		add(card.title)
+		add(card.subtitle)
+		add(card.badge)
+		for _, name := range card.meta {
+			add(name)
+		}
+	}
 	return out
 }
 

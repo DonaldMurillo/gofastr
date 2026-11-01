@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -18,6 +20,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/win32"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const (
@@ -229,16 +232,41 @@ func sendDeepLinkMessage(hwnd uintptr, rawURL string) error {
 	return nil
 }
 
+// ownsWindowLocked reports whether hwnd is one of this shell's open
+// windows. Every window the shell creates (main, Settings, OpenWindow,
+// Config.Widgets) shares one class, and the second instance finds its
+// target with FindWindow, which returns the first match in Z-order: a
+// Settings window in front or a topmost widget is found as often as
+// the main window. Each one accepts the forwarded URL; the battery
+// navigates the main window either way. s.mu must be held.
+func (s *winShell) ownsWindowLocked(hwnd uintptr) bool {
+	if hwnd == 0 {
+		return false
+	}
+	return hwnd == s.hwnd || s.windowsHWND[hwnd] != nil
+}
+
+// activationTarget is the window a second launch brings forward: the
+// main window once it exists, else the window the message reached.
+func (s *winShell) activationTarget(hwnd uintptr) uintptr {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.hwnd != 0 {
+		return s.hwnd
+	}
+	return hwnd
+}
+
 func (s *winShell) receiveDeepLink(hwnd, lparam uintptr) uintptr {
 	if lparam == 0 {
 		return 0
 	}
 	s.mu.RLock()
-	mainHwnd := s.hwnd
+	owned := s.ownsWindowLocked(hwnd)
 	scheme := s.deepLinkScheme
 	callback := s.onDeepLink
 	s.mu.RUnlock()
-	if hwnd != mainHwnd || scheme == "" || callback == nil {
+	if !owned || scheme == "" || callback == nil {
 		return 0
 	}
 	message := (*copyDataMessage)(unsafe.Pointer(lparam))
@@ -263,15 +291,75 @@ func (s *winShell) receiveDeepLink(hwnd, lparam uintptr) uintptr {
 	if err != nil || !strings.EqualFold(u.Scheme, scheme) {
 		return 0
 	}
-	go callback(rawURL)
+	s.deepLinks.push(rawURL, callback)
 	return 1
 }
 
+// maxPendingDeepLinks bounds the URLs waiting for the battery. The
+// battery bounds its own queues the same way; this one only has to stop
+// a stalled host callback from growing memory.
+const maxPendingDeepLinks = 16
+
+// deepLinkLine hands received URLs to the battery's OnDeepLink from one
+// goroutine, in the order the messages arrived, off the UI thread. A
+// second instance forwards two URLs as two WM_COPYDATA messages; with a
+// goroutine per message the second could reach the battery first.
+type deepLinkLine struct {
+	mu       sync.Mutex
+	pending  []string
+	draining bool
+}
+
+// push queues rawURL for deliver and starts the drain when none runs.
+// It never blocks, so the UI thread returns to its message loop at once.
+// Past the bound the oldest URL is dropped.
+func (l *deepLinkLine) push(rawURL string, deliver func(string)) {
+	l.mu.Lock()
+	if len(l.pending) == maxPendingDeepLinks {
+		l.pending = l.pending[1:]
+	}
+	l.pending = append(l.pending, rawURL)
+	start := !l.draining
+	l.draining = true
+	l.mu.Unlock()
+	if start {
+		go l.drain(deliver)
+	}
+}
+
+func (l *deepLinkLine) drain(deliver func(string)) {
+	for {
+		l.mu.Lock()
+		if len(l.pending) == 0 {
+			l.draining = false
+			l.mu.Unlock()
+			return
+		}
+		rawURL := l.pending[0]
+		l.pending = l.pending[1:]
+		l.mu.Unlock()
+		deliverDeepLink(rawURL, deliver)
+	}
+}
+
+// deliverDeepLink runs the host callback with a recover, so a panic
+// drops that one URL instead of the process.
+func deliverDeepLink(rawURL string, deliver func(string)) {
+	defer func() {
+		if v := recover(); v != nil {
+			slog.Default().Error("desktop/windows: deep-link callback panicked", "panic", textsafe.Recovered(v))
+		}
+	}()
+	deliver(rawURL)
+}
+
 // activateExistingWindow brings the main window forward for a second
-// launch or a forwarded deep link. Only a minimized window is restored:
+// launch or a forwarded deep link, whichever of the app's windows the
+// message reached. Only a minimized window is restored:
 // SW_RESTORE on a maximized window returns it to its normal size, so
 // any other window is shown in the state it already has.
 func (s *winShell) activateExistingWindow(hwnd uintptr) {
+	hwnd = s.activationTarget(hwnd)
 	win32.ShowWindowCmd(hwnd, activationShowCmd(win32.IsIconic(hwnd)))
 	win32.BringWindowToTop(hwnd)
 	win32.SetForegroundWindow(hwnd)

@@ -137,13 +137,15 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	// Shared framework runtime: single URL across all widgets.
+	// Shared framework runtime: single URL across all widgets. The boot
+	// mounts through _mountByName; mountWidget lives in the split
+	// widgets module.
 	resp, err := http.Get(srv.URL + "/__gofastr/runtime.js")
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("runtime status: %v code=%d", err, resp.StatusCode)
 	}
 	rtBody := readAll(t, resp)
-	for _, want := range []string{"window.__gofastr", "mountWidget", "/__gofastr/widgets"} {
+	for _, want := range []string{"window.__gofastr", "_mountByName", "/__gofastr/widgets"} {
 		if !strings.Contains(rtBody, want) {
 			t.Errorf("runtime missing %q", want)
 		}

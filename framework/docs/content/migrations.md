@@ -26,6 +26,10 @@ GoFastr has two migration paths:
    files. Best when you need to express data backfills, complex
    constraints, or anything the entity declaration can't.
 
+Neither copies rows in from another database; see [Data export &
+import](data-export.md#what-this-does-not-do) for how to write that
+one-time job.
+
 Both are production-hardened (see [Production safety](#production-safety)):
 auto-migrate runs under an advisory lock inside a single transaction; the
 versioned runner adds checksums, dirty-state tracking, and a

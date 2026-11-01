@@ -137,3 +137,76 @@ func TestInitReinitExistingDir(t *testing.T) {
 		t.Errorf("reinit wrote no AGENTS.md: %v", err)
 	}
 }
+
+// init . over a module that already exists wrote imports for
+// local/<dir>/entities while go.mod kept its own module line, and the
+// app did not build.
+func TestInitDotUsesExistingModule(t *testing.T) {
+	inPlaceDir(t, "foo")
+	if err := os.WriteFile("go.mod", []byte("module github.com/me/foo\n\ngo 1.27\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := runInitCode(t, "."); code != -1 {
+		t.Fatalf("init . exited %d", code)
+	}
+	main, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(main), `"github.com/me/foo/entities"`) || strings.Contains(string(main), "local/foo") {
+		t.Fatalf("main.go does not import the existing module's entities:\n%s", main)
+	}
+	data, _ := os.ReadFile("go.mod")
+	mod, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.Module.Mod.Path != "github.com/me/foo" {
+		t.Fatalf("module = %q, want github.com/me/foo", mod.Module.Mod.Path)
+	}
+}
+
+// A --module that disagrees with the existing go.mod is refused before
+// any file is written.
+func TestInitDotRefusesOtherModule(t *testing.T) {
+	inPlaceDir(t, "foo")
+	if err := os.WriteFile("go.mod", []byte("module github.com/me/foo\n\ngo 1.27\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := runInitCode(t, ".", "--module=github.com/me/bar"); code != 1 {
+		t.Fatalf("init . --module=<other> exited %d, want 1", code)
+	}
+	if _, err := os.Stat("main.go"); err == nil {
+		t.Error("a refused init . still wrote main.go")
+	}
+}
+
+// Reinit over an AGENTS.md whose markers were edited away advised
+// `gofastr agents init --force`, a flag agents init does not have. The
+// advice names reinit's own --force, and that run replaces the file.
+func TestReinitBrokenAgentsMDAdvice(t *testing.T) {
+	inPlaceDir(t, "work")
+	if err := os.Mkdir("myapp", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	agents := filepath.Join("myapp", "AGENTS.md")
+	if err := os.WriteFile(agents, []byte("# my notes, no markers\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var code int
+	out := clitest.CovT_capStdout(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunInit([]string{"myapp", "--reinit"}) })
+	})
+	if code != 1 {
+		t.Fatalf("reinit over broken markers exited %d, want 1", code)
+	}
+	if strings.Contains(out, "agents init --force") || !strings.Contains(out, "gofastr init myapp --reinit --force") {
+		t.Fatalf("reinit advice does not name a command that works:\n%s", out)
+	}
+	if code := runInitCode(t, "myapp", "--reinit", "--force"); code != -1 {
+		t.Fatalf("reinit --force exited %d", code)
+	}
+	if got, _ := os.ReadFile(agents); strings.Contains(string(got), "no markers") {
+		t.Fatalf("reinit --force kept the broken AGENTS.md:\n%s", got)
+	}
+}

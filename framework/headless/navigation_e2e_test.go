@@ -57,3 +57,54 @@ func TestE2E_ThemeToggleArrivingAsASwapRootIsInitialised(t *testing.T) {
 			"the arrival pass must match the subtree's root, not only its descendants")
 	}
 }
+
+// A single-key chord is a typed character inside a contenteditable
+// editor or a role="textbox" widget, the same as inside an input: "/"
+// must not pull focus out of the editor. A chord fires with Shift only
+// when it names Shift or Shift is how its character is typed ("?").
+func TestE2E_ChordSkipsRichTextEditors(t *testing.T) {
+	page := `<div data-hui-shortcut-focus="/" data-hui-shortcut-target="#q"><input id="q" name="q"></div>` +
+		`<button type="button" data-hui-shortcut-click="k" onclick="window.__k=(window.__k||0)+1">K</button>` +
+		`<button type="button" data-hui-shortcut-click="?" onclick="window.__help=(window.__help||0)+1">Help</button>` +
+		`<div id="ed" contenteditable="true">draft</div>` +
+		`<div id="tb" role="textbox" tabindex="0">draft</div>`
+	b := startBehaviorServer(t, page)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(NavigationBehaviorName)) {
+		t.Fatal("the chord marker never loaded headless-navigation")
+	}
+	press := func(target, init string) string {
+		return `document.getElementById('` + target + `').focus();` +
+			`document.getElementById('` + target + `').dispatchEvent(new KeyboardEvent('keydown',{` + init + `,bubbles:true,cancelable:true}));`
+	}
+	var got struct {
+		Ed   bool `json:"ed"`
+		Tb   bool `json:"tb"`
+		K    int  `json:"k"`
+		Help int  `json:"help"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(press("ed", `key:'/'`), nil),
+		chromedp.Evaluate(`window.__ed = document.activeElement === document.getElementById('ed')`, nil),
+		chromedp.Evaluate(press("tb", `key:'/'`), nil),
+		chromedp.Evaluate(`window.__tb = document.activeElement === document.getElementById('tb')`, nil),
+		chromedp.Evaluate(`document.body.focus(); document.activeElement.blur && document.activeElement.blur();`+
+			`document.dispatchEvent(new KeyboardEvent('keydown',{key:'K',shiftKey:true,bubbles:true,cancelable:true}));`+
+			`document.dispatchEvent(new KeyboardEvent('keydown',{key:'?',shiftKey:true,bubbles:true,cancelable:true}));`, nil),
+		chromedp.Evaluate(`({ed: window.__ed, tb: window.__tb, k: window.__k||0, help: window.__help||0})`, &got),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Ed {
+		t.Error(`"/" typed in a contenteditable editor moved focus to the search box`)
+	}
+	if !got.Tb {
+		t.Error(`"/" typed in a role="textbox" widget moved focus to the search box`)
+	}
+	if got.K != 0 {
+		t.Error(`Shift+K fired the unshifted "k" chord`)
+	}
+	if got.Help != 1 {
+		t.Errorf(`"?" (typed with Shift) fired %d times, want 1`, got.Help)
+	}
+}

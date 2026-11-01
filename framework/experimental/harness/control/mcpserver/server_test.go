@@ -86,6 +86,32 @@ func TestMCPInitialize(t *testing.T) {
 	}
 }
 
+// The server has no resources/subscribe handler (route answers it
+// -32601), so initialize must not tell a client it can subscribe: a
+// client that trusts the flag waits for updates that never come.
+func TestInitializeClaimsNoSubscribe(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	resp := runMCPRequest(t, s, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+	})
+	result, _ := resp["result"].(map[string]any)
+	caps, _ := result["capabilities"].(map[string]any)
+	res, ok := caps["resources"].(map[string]any)
+	if !ok {
+		t.Fatalf("no resources capability: %v", resp)
+	}
+	if _, claimed := res["subscribe"]; claimed {
+		t.Errorf("resources capability claims subscribe: %v", res)
+	}
+	sub := runMCPRequest(t, s, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "resources/subscribe",
+		"params": map[string]any{"uri": "harness/v1://sessions"},
+	})
+	if sub["error"] == nil {
+		t.Errorf("resources/subscribe answered %v; the test's premise is gone", sub)
+	}
+}
+
 func TestMCPToolsListIncludesHonestlyNamedTool(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	resp := runMCPRequest(t, s, map[string]any{

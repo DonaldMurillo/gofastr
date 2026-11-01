@@ -60,16 +60,21 @@
         : undefined;
       if (typeof fn !== 'function') return; // missing reducer → no-op
       const vals = {};
+      // A result derived from an untrusted value (one seeded from the
+      // URL) is untrusted too, or the reducer would launder it into
+      // markup for an html-mode binding.
+      let untrusted = false;
       for (const d of deps) {
         // Reserved keys never key the vals object handed to the reducer:
         // "__proto__" re-parents it via the setter. The kernel's
         // isReservedSignalKey guard, spelled inline (demand module).
         if (d === '__proto__' || d === 'constructor' || d === 'prototype') continue;
         vals[d] = G.getSignal(d);
+        if (Object.prototype.hasOwnProperty.call(G._signals, d) && G._signals[d] && G._signals[d].untrusted) untrusted = true;
       }
       let out;
       try { out = fn(vals); } catch (_) { return; } // a throwing reducer never breaks the page
-      G.setSignal(ownName, out);
+      G.setSignal(ownName, out, untrusted ? { untrusted } : undefined);
     };
 
     // Subscribe to every dependency. Ensure the slot exists so a

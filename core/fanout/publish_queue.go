@@ -73,9 +73,7 @@ func PublishQueueReporting(f Fanout, topic string, depth int) (send func(payload
 		inflight.Add(1)
 		mu.Unlock()
 		defer inflight.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
-		defer cancel()
-		if err := f.Publish(ctx, topic, it.payload); err != nil {
+		if err := publishSafely(f, topic, it.payload); err != nil {
 			slog.Default().Debug("fanout: publish failed; message dropped (lossy lane)",
 				"topic", topic, "err", err)
 			reportFailed(it.failed, err)
@@ -94,6 +92,28 @@ func PublishQueueReporting(f Fanout, topic string, depth int) (send func(payload
 		inflight.Wait()
 	}
 	return send, stop
+}
+
+// errPublishPanicked is what a failed callback receives when the backend's
+// Publish panicked.
+var errPublishPanicked = errors.New("fanout: publish panicked; message dropped")
+
+// publishSafely runs one backend Publish under the queue's deadline with
+// panic isolation. The drainer is a goroutine the framework owns, so a
+// panicking backend (a host Fanout bug, a closed client) would otherwise
+// take the whole replica down on the next mirrored message. The payload is
+// dropped and reported like any other failed publish.
+func publishSafely(f Fanout, topic string, payload []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("fanout: publish panicked; message dropped",
+				"topic", topic, slog.Any("panic", textsafe.Recovered(r)))
+			err = errPublishPanicked
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
+	defer cancel()
+	return f.Publish(ctx, topic, payload)
 }
 
 // reportFailed runs a caller's failed callback with panic isolation: it

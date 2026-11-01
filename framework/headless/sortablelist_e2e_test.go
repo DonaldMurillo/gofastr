@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
 
@@ -265,7 +266,7 @@ func TestE2E_SortablePlainListWithoutScript(t *testing.T) {
 // which died with the module: these are the browser proofs of the
 // hard bounds on the 409 body (JSON content-type, ~4 KB read, the
 // {"error":{"message"}} shape), the conflict refresh that replaces a
-// column with the server's own rows, and the DragEvent triple the
+// column with the server's own rows, and the DragEvent sequence the
 // pointer path runs — none of which the keyboard tests above touch.
 
 // sortableColumn renders one linked column against /rpc.
@@ -391,8 +392,8 @@ func kbReorder(key string) chromedp.Action {
 	})()`, key), nil)
 }
 
-// dispatchDrag dispatches synthetic dragstart → dragover → dragend
-// moving the row with srcKey so it lands after the row with destKey.
+// dispatchDrag dispatches synthetic dragstart → dragover → drop →
+// dragend (the order a browser fires them in on a real drop), moving the row with srcKey so it lands after the row with destKey.
 func dispatchDrag(srcKey, destKey string) chromedp.Action {
 	return chromedp.Evaluate(fmt.Sprintf(`(function(){
 		var src = document.querySelector('[data-hui-sort-key=%q]');
@@ -402,12 +403,13 @@ func dispatchDrag(srcKey, destKey string) chromedp.Action {
 		src.dispatchEvent(new DragEvent('dragstart', {bubbles:true, cancelable:true, dataTransfer:dt}));
 		var rect = dest.getBoundingClientRect();
 		dest.dispatchEvent(new DragEvent('dragover', {bubbles:true, cancelable:true, dataTransfer:dt, clientY:rect.bottom}));
+		dest.dispatchEvent(new DragEvent('drop', {bubbles:true, cancelable:true, dataTransfer:dt}));
 		src.dispatchEvent(new DragEvent('dragend', {bubbles:true, cancelable:true}));
 		return 'ok';
 	})()`, srcKey, destKey), nil)
 }
 
-// dispatchDragToColumn dispatches the drag triple landing the srcKey
+// dispatchDragToColumn dispatches the same drag sequence, landing the srcKey
 // row on the empty list of the given container: with no row to
 // hit-test, the list element itself is the drop target.
 func dispatchDragToColumn(srcKey, container string) chromedp.Action {
@@ -419,6 +421,7 @@ func dispatchDragToColumn(srcKey, container string) chromedp.Action {
 		src.dispatchEvent(new DragEvent('dragstart', {bubbles:true, cancelable:true, dataTransfer:dt}));
 		var rect = col.getBoundingClientRect();
 		col.dispatchEvent(new DragEvent('dragover', {bubbles:true, cancelable:true, dataTransfer:dt, clientY:rect.top + rect.height/2}));
+		col.dispatchEvent(new DragEvent('drop', {bubbles:true, cancelable:true, dataTransfer:dt}));
 		src.dispatchEvent(new DragEvent('dragend', {bubbles:true, cancelable:true}));
 		return 'ok';
 	})()`, srcKey, container), nil)
@@ -914,5 +917,147 @@ func TestE2E_SortableDataShapedKeysReorderAndCommit(t *testing.T) {
 	}
 	if got := (*commits)[len(*commits)-1]; got != `x"y,a b` {
 		t.Fatalf("the commit sent order=%q, want %q", got, `x"y,a b`)
+	}
+}
+
+// sortOrder reads the page's row keys in document order.
+const sortOrder = `Array.from(document.querySelectorAll('[data-hui-sortable-item]')).map(function (li) { return li.getAttribute('data-hui-sort-key'); }).join(',')`
+
+// A keyboard grab whose row loses focus (Tab away, a click elsewhere)
+// reverts the way Escape does: the row goes back, aria-grabbed goes,
+// nothing is POSTed, and a later grab-and-drop of another row commits
+// only its own move.
+func TestE2E_SortableGrabRevertsOnBlur(t *testing.T) {
+	b, commits := sortableServer(t, sortablePage(
+		SortableItem{Key: "a", Label: "Alpha"},
+		SortableItem{Key: "b", Label: "Beta"},
+		SortableItem{Key: "c", Label: "Gamma"},
+	)+`<button type="button" id="away">Away</button>`, false)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, sortableLoaded) {
+		t.Fatal("the sortable marker never loaded headless-sortablelist")
+	}
+	var mid, order, grabbed string
+	if err := chromedp.Run(ctx,
+		// Focus events fire only in a focused page; the shared test
+		// browser's windows are not, so emulate it.
+		emulation.SetFocusEmulationEnabled(true),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="a"]').focus()`, nil),
+		sortKey(" "),
+		sortKey("ArrowDown"),
+		sortKey("ArrowDown"),
+		chromedp.Sleep(50*time.Millisecond),
+		chromedp.Evaluate(sortOrder+` + (document.querySelector('[data-hui-sort-key="a"]').getAttribute('aria-grabbed') || '')`, &mid),
+		chromedp.Evaluate(`document.getElementById('away').focus()`, nil),
+		chromedp.Sleep(50*time.Millisecond),
+		chromedp.Evaluate(sortOrder, &order),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="a"]').getAttribute('aria-grabbed') || ''`, &grabbed),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if mid != "b,c,atrue" {
+		t.Fatalf("the arrow moves should keep the grab while focus stays; mid-grab state %q, want b,c,a grabbed", mid)
+	}
+	if order != "a,b,c" {
+		t.Fatalf("a grab that lost focus left the order %q, want a,b,c", order)
+	}
+	if grabbed != "" {
+		t.Fatalf("a grab that lost focus left aria-grabbed=%q", grabbed)
+	}
+	if err := chromedp.Run(ctx, kbReorder("b")); err != nil {
+		t.Fatal(err)
+	}
+	for range 10 {
+		if len(*commits) > 0 {
+			break
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(*commits) != 1 || (*commits)[0] != "a,c,b" {
+		t.Fatalf("the later drop of b committed %q, want exactly [a,c,b]", *commits)
+	}
+}
+
+// A drag that ends with no drop on the list (Escape mid-drag, or the
+// pointer released outside it) puts the row back and POSTs nothing,
+// even though dragover already moved the row live.
+func TestE2E_SortableCancelledDragReverts(t *testing.T) {
+	b, commits := sortableServer(t, sortablePage(
+		SortableItem{Key: "a", Label: "Alpha"},
+		SortableItem{Key: "b", Label: "Beta"},
+	), false)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, sortableLoaded) {
+		t.Fatal("the sortable marker never loaded headless-sortablelist")
+	}
+	var moved, order string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(function(){
+			var src = document.querySelector('[data-hui-sort-key="a"]');
+			var dest = document.querySelector('[data-hui-sort-key="b"]');
+			var dt = new DataTransfer();
+			src.dispatchEvent(new DragEvent('dragstart', {bubbles:true, cancelable:true, dataTransfer:dt}));
+			var rect = dest.getBoundingClientRect();
+			dest.dispatchEvent(new DragEvent('dragover', {bubbles:true, cancelable:true, dataTransfer:dt, clientY:rect.bottom}));
+			window.__mid = `+sortOrder+`;
+			document.body.dispatchEvent(new DragEvent('drop', {bubbles:true, cancelable:true, dataTransfer:dt}));
+			src.dispatchEvent(new DragEvent('dragend', {bubbles:true, cancelable:true, dataTransfer:dt}));
+		})()`, nil),
+		chromedp.Evaluate(`window.__mid`, &moved),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(sortOrder, &order),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if moved != "b,a" {
+		t.Fatalf("dragover should move the row live; mid-drag order %q", moved)
+	}
+	if order != "a,b" {
+		t.Fatalf("a cancelled drag left the order %q, want a,b", order)
+	}
+	if len(*commits) != 0 {
+		t.Fatalf("a cancelled drag POSTed %q", *commits)
+	}
+}
+
+// Space on a second row while the first is still grabbed (no focus
+// event between them, as on an unfocused page) cancels the first grab
+// before taking the new one, so the drop commits only the new move.
+func TestE2E_SortableNewGrabCancelsTheOld(t *testing.T) {
+	b, commits := sortableServer(t, sortablePage(
+		SortableItem{Key: "a", Label: "Alpha"},
+		SortableItem{Key: "b", Label: "Beta"},
+		SortableItem{Key: "c", Label: "Gamma"},
+	), false)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, sortableLoaded) {
+		t.Fatal("the sortable marker never loaded headless-sortablelist")
+	}
+	on := func(key, k string) chromedp.Action {
+		return chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="`+key+`"]').dispatchEvent(new KeyboardEvent('keydown',{key:'`+k+`',bubbles:true,cancelable:true}))`, nil)
+	}
+	var grabbed string
+	if err := chromedp.Run(ctx,
+		on("a", " "), on("a", "ArrowDown"),
+		on("b", " "), on("b", "ArrowDown"), on("b", " "),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="a"]').getAttribute('aria-grabbed') || ''`, &grabbed),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if grabbed != "" {
+		t.Fatalf("the first grab survived the second: aria-grabbed=%q", grabbed)
+	}
+	for range 10 {
+		if len(*commits) > 0 {
+			break
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(*commits) != 1 || (*commits)[0] != "a,c,b" {
+		t.Fatalf("the drop of b committed %q, want exactly [a,c,b]", *commits)
 	}
 }

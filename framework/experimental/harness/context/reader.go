@@ -15,6 +15,7 @@ package context
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,7 +46,9 @@ type Reader struct {
 // first → root last, so child rules apply atop parent rules).
 //
 // Missing files are silently skipped, readers don't error on the
-// happy "no AGENTS.md in this repo" path.
+// happy "no AGENTS.md in this repo" path. So are files the reader
+// refuses: a symlink that leaves the file's directory, anything that
+// is not a regular file, and a file over maxContextFileBytes.
 func (r *Reader) Read() ([]Section, error) {
 	if r.WorkingDir == "" {
 		wd, err := os.Getwd()
@@ -67,9 +70,13 @@ func (r *Reader) Read() ([]Section, error) {
 				return nil, err
 			}
 			for _, f := range files {
-				body, sum, err := readFile(f)
+				body, sum, err := readFile(filepath.Dir(f), "AGENTS.md")
 				if err != nil {
-					return nil, err
+					// A refused file (a symlink out of its directory,
+					// a FIFO or device, an oversized file) is skipped
+					// like a missing one: one bad file must not drop
+					// the rest of the context.
+					continue
 				}
 				sections = append(sections, Section{
 					Source: "agents-md",
@@ -121,21 +128,70 @@ func walkUpward(workingDir, basename string) ([]string, error) {
 
 func readSingle(workingDir, rel, sourceName string) (Section, bool) {
 	p := filepath.Join(workingDir, rel)
-	body, sum, err := readFile(p)
+	body, sum, err := readFile(workingDir, rel)
 	if err != nil {
 		return Section{}, false
 	}
 	return Section{Source: sourceName, Path: p, Body: body, SHA256: sum}, true
 }
 
-func readFile(path string) (string, string, error) {
-	data, err := os.ReadFile(path)
+// maxContextFileBytes caps one context file. The body goes into every
+// system prompt, and an unbounded read of a /dev/zero symlink would
+// exhaust memory.
+const maxContextFileBytes = 256 << 10
+
+// errNotRegular refuses a context path that is not a regular file.
+var errNotRegular = errors.New("context: not a regular file")
+
+// readFile reads name through an *os.Root over dir, so a context file
+// that is a symlink pointing out of dir (a repo's AGENTS.md ->
+// ~/.ssh/id_ed25519, or a .github directory linked elsewhere) is
+// refused instead of sent to the provider. Only regular files are read, checked before the open
+// so a FIFO cannot block it, and the read stops at maxContextFileBytes.
+func readFile(dir, name string) (string, string, error) {
+	data, err := readRooted(dir, name)
 	if err != nil {
 		return "", "", err
 	}
 	body := normalizeNewlines(string(data))
 	sum := sha256Hex(data)
 	return body, sum, nil
+}
+
+func readRooted(dir, name string) ([]byte, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	info, err := root.Stat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: %w", name, errNotRegular)
+	}
+	f, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	// Check the handle too: the path may have been swapped between the
+	// stat and the open.
+	if info, err = f.Stat(); err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: %w", name, errNotRegular)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxContextFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxContextFileBytes {
+		return nil, fmt.Errorf("context: %s is over %d bytes", name, maxContextFileBytes)
+	}
+	return data, nil
 }
 
 func normalizeNewlines(s string) string {

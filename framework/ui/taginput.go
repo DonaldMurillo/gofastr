@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -26,6 +27,10 @@ import (
 
 // TagInputConfig configures a TagInput.
 type TagInputConfig struct {
+	// Ctx carries the per-request context the component's own words
+	// (the add and remove names and the status lines) are written in. When nil, English applies.
+	Ctx context.Context
+
 	// Name is the form-field name (required). Each tag is submitted
 	// under this name (repeated key).
 	Name string
@@ -94,7 +99,7 @@ func TagInput(cfg TagInputConfig) render.HTML {
 		ID:          cfg.ID,
 		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
 		Parts:       parts,
-		Strings:     StringsFor(nil),
+		Strings:     StringsFor(cfg.Ctx),
 	}, tagInputClasses))
 }
 

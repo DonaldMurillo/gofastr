@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -113,13 +114,43 @@ func twoPlaces(ctx context.Context, val string) (string, bool) {
 	return i18n.Decimal(ctx, val, i18n.MinFraction(2), i18n.MaxFraction(2))
 }
 
-// decimal prints a Decimal or Float value with two places in the
-// reader's locale. Text that is not a number prints as stored.
-func decimal(ctx context.Context, val string) string {
-	if s, ok := twoPlaces(ctx, val); ok {
+// decimal prints a Decimal or Float value in the reader's locale, with
+// at least two places and at most the column's scale (fractionDigits),
+// so 0.0049 in a DECIMAL(19,4) column does not read 0.00. Text that is
+// not a number prints as stored.
+func decimal(ctx context.Context, f schema.Field, val string) string {
+	scale := fractionDigits(f)
+	if s, ok := i18n.Decimal(ctx, val, i18n.MinFraction(min(2, scale)), i18n.MaxFraction(scale)); ok {
 		return s
 	}
 	return val
+}
+
+// defaultScale is the fraction digits of the column AutoMigrate creates
+// for a Decimal, DECIMAL(19,4); a Float shows as many.
+const defaultScale = 4
+
+// fractionDigits is a numeric column's scale: the s of a RawType
+// NUMERIC(p,s) or DECIMAL(p,s), else defaultScale.
+func fractionDigits(f schema.Field) int {
+	t := strings.ToLower(strings.ReplaceAll(f.RawType, " ", ""))
+	for _, name := range []string{"numeric(", "decimal("} {
+		args, ok := strings.CutPrefix(t, name)
+		if !ok {
+			continue
+		}
+		args, ok = strings.CutSuffix(args, ")")
+		if !ok {
+			break
+		}
+		if _, sc, ok := strings.Cut(args, ","); ok {
+			if n, err := strconv.Atoi(sc); err == nil && n >= 0 && n <= 15 {
+				return n
+			}
+		}
+		break
+	}
+	return defaultScale
 }
 
 // integer writes an integer column's value in the reader's digits with

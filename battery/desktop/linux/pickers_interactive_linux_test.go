@@ -14,8 +14,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 )
 
-// This is operator-driven QA, not an unattended graphical CI test. Run it in
-// its own process: GTK currently permits only one shell lifetime per process.
+// This is operator-driven QA on a real desktop session and its own GTK
+// theme, portal and window manager. CI runs the same sequence unattended
+// under Xvfb in TestNativePickersAutomated. Run this one on its own so the
+// operator sees one picker sequence at a time.
 // No UI automation or production behavior is substituted for the native picker.
 func TestNativeInteractivePickers(t *testing.T) {
 	if !interactivePickersEnabled(os.Getenv("GOFASTR_LINUX_NATIVE"), os.Getenv("GOFASTR_LINUX_INTERACTIVE")) {

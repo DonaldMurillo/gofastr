@@ -336,7 +336,9 @@ site.RedirectPattern("/legacy/{id}", "/orders/{id}") // param passthrough
 ```
 
 A hard GET of the `from` path is 308-redirected to the resolved `to` path;
-on client-side navigation the runtime follows the redirect. Chains
+on client-side navigation the runtime follows the redirect. The
+request's query string rides along (`/old-pricing?plan=pro` →
+`/pricing?plan=pro`); a key the target sets itself wins. Chains
 (`/a → /b → /c`) collapse to one hop; a cycle fails closed to a 404. The
 target must be a relative same-app path (an absolute URL panics;
 open-redirect guard), and every parameter referenced in `to` must be

@@ -689,19 +689,21 @@ func (q *MemoryQueue) takeInflight(jobID string) (Job, bool) {
 	return job, ok
 }
 
-// deferGated re-enqueues a gate-deferred job after gateDeferDelay. Because the
-// pending store is unbounded the push always succeeds, so there is no
-// re-arm-on-full dance; the only failure mode is Close racing the timer,
-// which the closed-check under pmu handles cleanly (no panic).
+// deferGated puts a gate-deferred job back on the pending heap, not due
+// until gateDeferDelay from now, the way DBQueue pushes scheduled_at
+// forward. The heap already holds jobs that are not yet due, so a worker
+// arms its wake for it, and an erasure that sweeps the heap finds it. A
+// job held in a timer closure instead was out of every store eraseUser
+// reads, and ran for an erased user once its module came back. After
+// Close the job is dropped, the same as everything else on the heap.
 func (q *MemoryQueue) deferGated(job Job) {
-	time.AfterFunc(gateDeferDelay, func() {
-		q.pmu.Lock()
-		defer q.pmu.Unlock()
-		if q.closed {
-			return
-		}
-		q.pushLocked(job)
-	})
+	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	if q.closed {
+		return
+	}
+	job.ScheduledAt = q.now().Add(gateDeferDelay)
+	q.pushLocked(job)
 }
 
 // randomID generates a 16-byte hex string ID.

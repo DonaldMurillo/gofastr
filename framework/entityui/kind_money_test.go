@@ -125,8 +125,8 @@ func TestFormatsFollowLocale(t *testing.T) {
 	en := context.Background()
 	at := time.Date(2026, 3, 5, 14, 5, 0, 0, time.UTC)
 	for _, tc := range []struct{ got, want string }{
-		{decimal(fr, "1234.5"), "1 234,50"},
-		{decimal(en, "12345678901234567.891"), "12,345,678,901,234,567.89"},
+		{decimal(fr, schema.Field{Type: schema.Decimal}, "1234.5"), "1 234,50"},
+		{decimal(en, schema.Field{Type: schema.Decimal}, "12345678901234567.891"), "12,345,678,901,234,567.891"},
 		{money(fr, "-1234"), "-$1 234,00"},
 		{formatDate(en, at, false), "Mar 5, 2026"},
 		{formatDate(fr, at, false), "5 mars 2026"},

@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -213,5 +215,71 @@ func TestAppendAuditEventDefaultsAndRefusals(t *testing.T) {
 	}
 	if err := AppendAuditEvent(ctx, db, "", "notes", "bulk", "", "alice", map[string]any{"bad": make(chan int)}); err == nil || !strings.Contains(err.Error(), "marshal diff") {
 		t.Fatalf("unencodable diff = %v, want a marshal error", err)
+	}
+}
+
+// putAuditRow writes one audit row at a fixed time, as the hooks would.
+func putAuditRow(t *testing.T, db *sql.DB, id, ent, op, recordID string, at time.Time) {
+	t.Helper()
+	if _, err := db.Exec(`INSERT INTO audit_log (id, entity, op, record_id, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		id, ent, op, recordID, at.UTC()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A key reused after the first record's hard delete starts a new
+// trail: the Activity tab does not show the earlier record's rows.
+// The bound is the last end a later row follows, so a deleted key
+// still reads its own last life.
+func TestAuditTrailStartsAfterDelete(t *testing.T) {
+	db := memDB(t)
+	app := entityUIAuditApp(t, db, "notes", false)
+	t0 := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	for i, op := range []string{"create", "update", "delete", "create", "update"} {
+		putAuditRow(t, db, fmt.Sprintf("aud_%d", i), "notes", op, "x", t0.Add(time.Duration(i)*time.Minute))
+	}
+	got, err := entityUIHost{a: app}.Audit().Trail(context.Background(), "notes", "x", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Operation != "update" || got[1].Operation != "create" {
+		t.Fatalf("trail = %+v, want the second record's update and create", got)
+	}
+	// Once the second record is deleted too, its own life stays readable.
+	putAuditRow(t, db, "aud_5", "notes", "delete", "x", t0.Add(5*time.Minute))
+	got, err = entityUIHost{a: app}.Audit().Trail(context.Background(), "notes", "x", 10)
+	if err != nil || len(got) != 3 || got[0].Operation != "delete" || got[2].Operation != "create" {
+		t.Fatalf("trail after the second delete = %+v, %v; want its delete, update and create", got, err)
+	}
+}
+
+// On a soft-delete entity a delete is undone by restore, so the trail
+// keeps the rows before it; a purge ends the record.
+func TestAuditTrailSoftDeleteKeepsHistory(t *testing.T) {
+	db := memDB(t)
+	cfg := entity.EntityConfig{
+		Table:    "notes",
+		Fields:   []schema.Field{{Name: "title", Type: schema.String, Required: true}},
+		Exposure: &entity.ExposureConfig{Public: true},
+		Scope:    &entity.ScopeConfig{SoftDelete: true},
+	}.WithTimestamps(false)
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	app.Entity("notes", cfg)
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatal(err)
+	}
+	app.WithAuditLog(AuditConfig{})
+	t0 := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	for i, op := range []string{"create", "delete", "restore", "update"} {
+		putAuditRow(t, db, fmt.Sprintf("aud_%d", i), "notes", op, "x", t0.Add(time.Duration(i)*time.Minute))
+	}
+	trail := entityUIHost{a: app}.Audit()
+	if got, err := trail.Trail(context.Background(), "notes", "x", 10); err != nil || len(got) != 4 {
+		t.Fatalf("trail = %d entries, %v; want all 4 across the restore", len(got), err)
+	}
+	putAuditRow(t, db, "aud_p", "notes", "purge", "x", t0.Add(10*time.Minute))
+	putAuditRow(t, db, "aud_c", "notes", "create", "x", t0.Add(11*time.Minute))
+	if got, err := trail.Trail(context.Background(), "notes", "x", 10); err != nil || len(got) != 1 || got[0].Operation != "create" {
+		t.Fatalf("trail after purge = %+v, %v; want only the new record's create", got, err)
 	}
 }

@@ -197,6 +197,16 @@ type auditTrail struct {
 	reg   *Registry
 }
 
+// softDeletes reports whether the entity soft-deletes, so a delete row
+// is not the end of its record.
+func (t auditTrail) softDeletes(ent string) bool {
+	if t.reg == nil {
+		return false
+	}
+	e, err := t.reg.Get(ent)
+	return err == nil && e.Config.Scope != nil && e.Config.Scope.SoftDelete
+}
+
 func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) ([]entityui.AuditEntry, error) {
 	safe, err := query.SafeIdent(t.table)
 	if err != nil {
@@ -205,16 +215,32 @@ func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) 
 	if limit <= 0 || limit > 200 {
 		limit = 200
 	}
-	q := fmt.Sprintf("SELECT op, actor_id, created_at, diff, reason FROM %s WHERE entity = $1 AND record_id = $2", query.QuoteFolded(safe))
+	table := query.QuoteFolded(safe)
 	if t.cfg != nil {
 		recordID = t.cfg.keyID(auditKeyOf(t.reg, ent), recordID)
 	}
 	args := []any{ent, recordID}
+	inTenant, endTenant, nextTenant := "", "", ""
 	if tid := tenant.GetTenantID(ctx); tid != "" {
-		q += " AND tenant_id = $3"
+		inTenant, endTenant, nextTenant = " AND a.tenant_id = $3", " AND e.tenant_id = $3", " AND n.tenant_id = $3"
 		args = append(args, tid)
 	}
-	q += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d", limit)
+	// A hand-assigned key can be reused once its record is gone, so the
+	// trail starts after the key's last end that a later row follows: a
+	// purge, or a delete where the entity has no soft delete (there a
+	// restore undoes it). Without the bound a new record showed the old
+	// one's history. A key whose last row is its end keeps that life's
+	// rows, the end included.
+	ends := "'purge', 'delete'"
+	if t.softDeletes(ent) {
+		ends = "'purge'"
+	}
+	q := fmt.Sprintf("SELECT a.op, a.actor_id, a.created_at, a.diff, a.reason FROM %[1]s a"+
+		" WHERE a.entity = $1 AND a.record_id = $2%[2]s"+
+		" AND NOT EXISTS (SELECT 1 FROM %[1]s e WHERE e.entity = $1 AND e.record_id = $2%[3]s"+
+		" AND e.op IN (%[4]s) AND e.created_at >= a.created_at"+
+		" AND EXISTS (SELECT 1 FROM %[1]s n WHERE n.entity = $1 AND n.record_id = $2%[5]s AND n.created_at > e.created_at))"+
+		" ORDER BY a.created_at DESC LIMIT %[6]d", table, inTenant, endTenant, ends, nextTenant, limit)
 	rows, err := t.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err

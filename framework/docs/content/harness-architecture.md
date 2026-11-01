@@ -202,6 +202,12 @@ design intent without presenting it as shipped behavior):
 - **Copilot provider and failover.** Only OpenRouter and ZAI ship.
   There is no Copilot adapter and no pre-wired Copilot→OpenRouter
   failover (that machinery was removed).
+- **MCP live event push.** MCP clients replay a session's events with
+  `resources/read` of `harness/v1://session/{id}/events?since=<id>`,
+  but there is no `resources/subscribe` handler (`initialize` does not
+  advertise `subscribe`) and the GET `/mcp`
+  stream sends keepalives only. A client polls the read to follow a
+  turn.
 - **`--framework` default model.** The default profile targets
   `zai:glm-5.1` (GLM-5.1 is the flagship and first in the ZAI catalog).
 
@@ -686,13 +692,45 @@ Typed pub/sub. Every interesting state change emits an event:
 | `PermissionRequested` | tool middleware needs ask-mode answer |
 | `Cancelled` | user or budget aborted the turn |
 | `Error` | provider, tool, or middleware error |
-| `StreamGap` | stream resume crossed a TTL boundary; events between `from` and `to` are unavailable. |
+| `StreamGap` | a stream resume reached ids that neither the bus window nor the session log holds; events between `from` and `to` are unavailable (`reason: "unavailable"`). It carries id 0, so it never moves a client's resume point. |
 | `TokenExpiring` | 5 min before token `exp`; clients refresh. |
 | `HookTimeout` / `HookError` | a configured hook missed its deadline or exited non-zero. |
 | `MCPServerDown` | an MCP server gave up after exhausting restart budget; its tools entered degraded state. |
 | `SessionEnded` | engine shutdown reason (`idle`, `user`, `error`, `binary-shutdown`). |
 
 Clients, hooks, plugins, and the cost dashboard all subscribe.
+
+The bus API in `engine`:
+
+- `Subscribe(ctx)` delivers the session's own events, live from the
+  moment of the call.
+- `SubscribeSince(ctx, since)` first replays every event with an id
+  above `since`, then goes live, with nothing lost or repeated
+  between the two. The replay reads the bus's in-memory window (the
+  last 1024 events, up to 8 MiB) and, for older ids, the log set
+  with `SetLog`.
+- `Backlog(ctx, since, limit)` returns the same replay as a slice,
+  with no live part.
+- `SetLog(log)` names the `EventLog` (any type with the session
+  store's `EventsSince`) that replay reads past the window. The
+  harness sets the session store when it creates a session.
+- `SubscribeAll(ctx)` also delivers the events of sub-agents spawned
+  under the bus. Persistence and audit use it; client streams do not.
+  It never drops: when its buffer is full, `Publish` waits for the
+  reader, until the subscription's context ends or `Close` starts.
+  `Subscribe` drops for a slow reader, which recovers what it missed
+  with `SubscribeSince`.
+- `NewSubBus(parent, subAgent)` builds a sub-agent's bus. Its ids
+  come from the parent's sequence, so one session has one id order,
+  and every event it publishes carries `subAgent` and is forwarded
+  to the parent's `SubscribeAll` subscribers.
+
+**Sub-agent events.** `Engine.Spawn` gives each sub-agent its own
+sub-bus. The sub-agent's turns, tool calls and results land on the
+parent session's log tagged with `subAgent` (the sub-agent's client
+id) in the envelope, so the audit log and `sessions export` show what
+a sub-agent ran. They stay off the parent's client streams (SSE, WS,
+MCP, TUI): those carry the parent session's own conversation.
 
 ### 4. Pluggable backends
 
@@ -880,6 +918,12 @@ Read by `context/agentsmd`. Spec-compliant:
   upward from the working directory and concatenates in path order
 - Plain markdown, no schema
 - Content injected into the system prompt via a request middleware
+- Every context file (AGENTS.md and the fallbacks below) is read
+  through an `os.Root` over its directory (the working directory for
+  `.github/copilot-instructions.md`), so a symlink that leaves it, such
+  as `AGENTS.md -> ~/.ssh/id_ed25519`, is skipped. Only regular files
+  up to 256 KiB are read; a FIFO, a device or a larger file is skipped
+  like a missing one
 
 Vendor fallback readers in `context/fallback/`:
 
@@ -1141,11 +1185,24 @@ runs a shell-capable agent. Permission and identity-class rules
 from § Multi-client semantics apply: `mcpserver` clients have
 `IdentityClass = agent`, so they cannot self-approve.
 
+The server runs each request on its own goroutine (up to 32 at once
+per connection), so a `harness.cancel_turn` sent while a `wait: "turn"`
+call is blocked is read and answered. `notifications/cancelled` naming
+a running request cancels it; for a `wait: "turn"` call that also
+cancels the turn it waits on, and the request gets no response, per
+MCP. A request id already in flight is refused with -32600. That is
+stdio, where one server reads the whole connection. Streamable HTTP
+serves each POST on its own, so a `notifications/cancelled` POSTed
+separately finds nothing to cancel, and the in-flight id check and the
+32-request cap count within one POST. Over HTTP, end a turn with
+`harness.cancel_turn`; closing a `wait: "turn"` request stops the wait
+and leaves the turn running.
+
 `run_agent_with_shell_access` has two modes mirroring REST:
 synchronous (`wait: "turn"` blocks until the next `TurnEnded` and
 returns the final assistant message + tool-call summary) and async
-(`wait: "none"` returns immediately; events flow via resource
-subscription).
+(`wait: "none"` returns immediately; the client reads the events
+resource with `?since=` to follow the turn).
 
 #### Resources exposed (URI-addressable, subscribable per MCP)
 
@@ -1153,7 +1210,7 @@ subscription).
 |---|---|
 | `harness/v1://sessions` | List of sessions (JSON) |
 | `harness/v1://session/{id}` | Session metadata + last N events |
-| `harness/v1://session/{id}/events` | Live event stream (MCP subscription) |
+| `harness/v1://session/{id}/events?since=<id>` | Events after `since` (see § Stream resume) |
 | `harness/v1://session/{id}/log` | Full append-only log dump |
 | `harness/v1://profiles` | Available profiles |
 | `harness/v1://profile/{name}` | Profile spec (skills, MCP servers, tools, permissions) |
@@ -1536,16 +1593,23 @@ semantics:
 - Client provides last seen sequence ID via:
   - SSE: `Last-Event-ID` header (HTTP standard)
   - WS: `lastEventId` query param on reconnect
-  - MCP: resource subscription `?since=<id>` query param on the
-    `harness/v1://session/{id}/events` URI
+  - MCP: `resources/read` of `harness/v1://session/{id}/events?since=<id>`
+    (stdio and POST `/mcp`). The read returns a JSON array of
+    envelopes, at most 1000; a client that gets a full page reads
+    again with `since` set to the last id. MCP has no live event
+    stream yet: the GET `/mcp` stream carries keepalives only.
 - Server replies with all events with `id > since` in order, then
-  continues live.
-- If `since` is **older than the TTL window** (event content has
-  expired), server emits a `StreamGap{from, to, reason: "ttl"}`
-  event first, then the available range, never silently skip.
-- If the `EngineRun` has shut down, re-attach to the `LogID`
-  spawns a new `EngineRun`; events with `id > since` replay from
-  the log; live stream begins once the new run accepts input.
+  continues live. A missing value means "live only"; a value that is
+  not an unsigned integer is refused (400 on SSE and WS, a -32602
+  error on MCP), never read as zero.
+- Replay reads the bus window first and the session log for older
+  ids (`Bus.SubscribeSince`). A range neither holds comes back as one
+  `StreamGap{from, to, reason: "unavailable"}` envelope with id 0,
+  in its place in the order, never a silent skip. SSE writes it with
+  no `id:` line.
+- Events past their retention TTL stay in the log with their payload
+  replaced by the `«ttl-expired»` marker, so they replay in order
+  with the marker as their content.
 
 ### Canonical message form versioning
 
@@ -1563,7 +1627,7 @@ The on-disk SQLite schema is **private**. External consumers MUST
 NOT read `sessions.db` directly. The public path for replay,
 export, and external tooling is:
 
-- Live: `GET /v1/sessions/{id}/events` (SSE) or `harness/v1://session/{id}/events` (MCP)
+- Live: `GET /v1/sessions/{id}/events` (SSE) or `/v1/ws`; replay by id through either, or `harness/v1://session/{id}/events?since=<id>` (MCP)
 - Offline: `harness sessions export --session <id> --format jsonl` produces a stable JSONL contract whose shape matches the canonical envelope.
 
 The schema may change between any two minor releases (with a
@@ -1813,7 +1877,12 @@ keys (`AKIA…`), GitHub PATs (`ghp_…`, `github_pat_…`),
 `-----BEGIN .* KEY-----`, `Bearer [A-Za-z0-9-_\.]+`, JWT-shaped
 tokens, common cloud-provider key prefixes. Matched substrings are
 replaced with `«redacted:KIND»` markers and the original is
-discarded, not stored anywhere.
+discarded, not stored anywhere. The patterns run on each decoded
+string of the event payload, never on the serialized JSON, so a
+match next to a quote or an escape cannot leave an event that no
+longer parses. The export bundle's maintainer pass works the same
+way, and `bundle.json` counts any stored event it could not write
+in `skipped_events`.
 
 **TTL.** Full-content events (`TextDelta`, `ToolResult` body,
 `ToolCallStarted.Args`) are retained for 30 days by default. After

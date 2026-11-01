@@ -30,7 +30,11 @@ and waits for the worker goroutine to drain. Pass a tight context if
 shutdown speed matters more than letting a hung receiver complete.
 On a `LeasedStore`, the deliveries of the claimed batch that had not
 started go back with their attempt refunded, so the next process
-sends them at once instead of after the lease.
+sends them at once instead of after the lease. So does the POST that
+`Stop` cancelled mid-flight: a shutdown is not a failed attempt, and a
+delivery on its last attempt is retried by the next process rather than
+dead-lettered. The receiver may have seen that POST, so it can arrive
+twice; dedupe on `X-GoFastr-Delivery-ID`.
 
 Register a subscriber and publish:
 
@@ -43,6 +47,52 @@ sub, err := mgr.Subscribe(ctx, webhook.Subscriber{
 // ...
 queued, err := mgr.Publish(ctx, "orders.created", []byte(`{"id":42}`))
 ```
+
+### Authenticating to the receiver
+
+Many receivers check their own credential before they look at a
+signature. Set `Subscriber.Auth` and every delivery sends it beside
+the signature:
+
+```go
+sub, err := mgr.Subscribe(ctx, webhook.Subscriber{
+    URL:    "https://customer.example.com/hooks",
+    Secret: "share-this-with-the-customer",
+    Auth:   webhook.Auth{Kind: webhook.AuthAPIKey, Token: apiKey}, // X-API-Key: <apiKey>
+})
+```
+
+| `Kind`        | Header sent                                          |
+|---------------|------------------------------------------------------|
+| `AuthNone`    | none (the default)                                   |
+| `AuthBearer`  | `Authorization: Bearer <Token>`                      |
+| `AuthAPIKey`  | `<Header>: <Token>`; `Header` defaults to `X-API-Key` |
+| `AuthBasic`   | `Authorization: Basic <base64(Username:Password)>`   |
+
+`Subscribe` refuses a malformed credential: an unknown kind, a missing
+token, a value holding a control byte, or an API key header the
+delivery sets itself (`Host`, `Content-Type`, `User-Agent`, any
+`X-GoFastr-*`). Its errors never repeat the credential.
+
+A credential needs an `https://` URL. `Subscribe` refuses `Auth` on an
+`http://` URL, and a subscriber that reached the store with one anyway
+fails each attempt without sending: the token or password would cross
+the network in clear text. A receiver on loopback or a trusted LAN
+segment can opt in with `Options.AllowPlaintextAuth = true`.
+
+A delivery that carries a credential never follows a redirect, even
+through a caller-supplied `HTTPClient` that does. Go drops
+`Authorization` on a cross-host redirect but not `X-API-Key` or any
+other header, so a receiver that answers 3xx would otherwise hand the
+key to whatever host it names. The 3xx is recorded as a failed
+attempt.
+
+The `SQLStore` seals `Auth` with the same codec as `Secret` (see
+[Secret encryption at rest](#secret-encryption-at-rest)). `Subscribe`
+replaces the whole subscriber, so re-subscribing an ID with a zero
+`Auth` clears its credential; read the subscriber first when you change
+only its URL. A `Store` of your own must persist `Auth`, or deliveries
+go out without it.
 
 `Publish` returns the number of subscribers the event was queued for.
 The actual HTTP POST happens on the manager's worker goroutine.
@@ -101,6 +151,17 @@ true`. This disables both the subscribe-time and the dial-time IP
 checks. The scheme guard still applies: `file://`, `gopher://`, etc.
 are always refused.
 
+### Receivers on the same LAN or machine
+
+A receiver at `192.168.1.20`, `10.0.0.5`, `localhost` or a
+`*.internal` name is refused unless the manager opts out with
+`Options.AllowPrivateNetworks = true`. The setting covers the whole
+manager, not one subscriber: once it is on, any subscriber URL may name
+an internal address, the cloud metadata endpoint included. Turn it on
+only when the people who can register subscribers are trusted with
+your network. When subscribers come from untrusted tenants, run a
+separate manager with the guard on for them.
+
 ## Delivered request shape
 
 | Header                   | Meaning                                                                    |
@@ -151,9 +212,29 @@ if !ok {
 ## Response handling
 
 Each attempt reads at most `Options.MaxResponseBodyBytes` of the
-receiver's response body (default 64 KiB), then discards it. A
-malicious or buggy receiver cannot exhaust the manager's memory by
-returning a multi-gigabyte body.
+receiver's response body (default 64 KiB). A malicious or buggy
+receiver cannot exhaust the manager's memory by returning a
+multi-gigabyte body.
+
+The delivery keeps what the receiver said, so a refusal can be
+diagnosed without a packet capture:
+
+- `Delivery.ResponseStatus`: the status of the last attempt that got a
+  response; 0 when it got none (a dial error, a timeout).
+- `Delivery.ResponseBody`: the first `Options.ResponseBodyLimit` bytes
+  of that body (default 1024; negative keeps none). Invalid UTF-8 is
+  replaced and control bytes are percent-encoded, so printing it cannot
+  drive a terminal.
+
+`LastError` stays short (`http 401`). A subscriber's own credential is
+replaced with `[redacted]` wherever the receiver echoes it back (an
+error page that prints the `Authorization` or API key header), since
+the body column is not sealed like the auth column. The body is stored
+with the delivery, so a receiver that echoes the payload or a secret back puts
+it in the store; keep the limit at what an error message needs. The
+`SQLStore` keeps both in `response_status` and `response_body`, which
+the data exporter includes and `App.EraseUserData` deletes with the
+row.
 
 ## Event matching
 
@@ -328,8 +409,9 @@ zone until it is upgraded.
 
 ## Secret encryption at rest
 
-The SQL store can encrypt `webhook_subscribers.secret` so a DB
-snapshot doesn't hand out HMAC keys:
+The SQL store can encrypt `webhook_subscribers.secret`, and the
+`auth` column holding `Subscriber.Auth`, so a DB snapshot doesn't hand
+out HMAC keys or receiver credentials:
 
 ```go
 key := mustReadFromKMS() // 32 bytes for AES-256

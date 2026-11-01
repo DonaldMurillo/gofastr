@@ -340,7 +340,9 @@
           let msg = '';
           try {
             const d = JSON.parse(txt);
-            if (d && typeof d.error === 'string') msg = d.error.slice(0, 300);
+            // CRUD's flat {error: "..."} or core/handler's {error: {message}}.
+            const m = d?.error?.message ?? d?.error;
+            if (typeof m === 'string') msg = m.slice(0, 300);
           } catch (_) {}
           NS._toastOrFallback?.({ variant: 'error', title: errToast || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status: r.status }), body: msg, ttl: 6000 });
         }
@@ -480,13 +482,17 @@
 
   async function dispatchRPC(node, source, opts) {
     if (!node) return;
+    // Any dispatch drops the node's pending input timer: an input
+    // re-arms it below, and a submit or click sends the newest value
+    // now, so the timer would only POST the same form a second time.
+    clearTimeout(_idt.get(node));
     if (source === 'input') {
       const ms = parseInt(node.getAttribute('data-cui-rpc-debounce-ms') || '250', 10) || 250;
-      const prev = _idt.get(node);
-      clearTimeout(prev);
       _idt.set(node, setTimeout(() => {
-        _idt.delete(node);
-        _dispatchRPC(node);
+        // A form that left the page (a navigation, a swap) is gone
+        // with what the reader typed: its stale value must not land
+        // on the next page.
+        if (node.isConnected) _dispatchRPC(node);
       }, ms));
       return;
     }

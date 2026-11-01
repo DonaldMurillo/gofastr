@@ -386,6 +386,13 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	// admitted stream parks a handler goroutine, a bus subscription,
 	// and a revocation ticker for the life of the request, so the
 	// 17th same-token GET must not be as cheap as the 1st.
+	// A reconnecting client names the last id it saw. A malformed one
+	// is refused: reading it as zero would replay the whole window.
+	since, resume, ok := lastEventID(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "InvalidLastEventID", "")
+		return
+	}
 	claims, _ := claimsFrom(r)
 	seat, ok := s.seatTable().AcquireSeat(string(claims.JTI), 0, stream.SeatOverflowRefuse)
 	if !ok {
@@ -403,7 +410,14 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	// subscribe-before-dispatch rule).
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	ch := eng.Bus.Subscribe(ctx)
+	// With Last-Event-ID the stream first replays what came after it
+	// (the bus window, then the session log), then goes live.
+	var ch <-chan control.EventEnvelope
+	if resume {
+		ch = eng.Bus.SubscribeSince(ctx, since)
+	} else {
+		ch = eng.Bus.Subscribe(ctx)
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -443,12 +457,30 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 			if err != nil {
 				continue
 			}
-			sse.SetID(strconv.FormatUint(env.ID, 10))
+			// A StreamGap carries id 0. It names no position, so it
+			// must not move the client's Last-Event-ID.
+			if env.ID != 0 {
+				sse.SetID(strconv.FormatUint(env.ID, 10))
+			}
 			if err := sse.WriteEvent(env.Kind, string(body)); err != nil {
 				return
 			}
 		}
 	}
+}
+
+// lastEventID reads the SSE Last-Event-ID header. resume is false
+// when the header is absent; ok is false when it is not a number.
+func lastEventID(r *http.Request) (since uint64, resume, ok bool) {
+	raw := r.Header.Get("Last-Event-ID")
+	if raw == "" {
+		return 0, false, true
+	}
+	n, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, false, false
+	}
+	return n, true, true
 }
 
 // Catalog endpoints, read-only.

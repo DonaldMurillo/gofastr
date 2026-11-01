@@ -101,6 +101,11 @@
     if (s.onVisible) document.removeEventListener('visibilitychange', s.onVisible);
     stateByEl.delete(el);
     active.delete(el);
+    // A region reclaimed because it left the page is unmarked, so the
+    // same element polls again if it is re-inserted (wireOne skips a
+    // marked one). One the server stopped (#192) is still on the page
+    // and stays marked: a later rescan must not restart it.
+    if (!el.isConnected) el.__fuiPollWired = false;
   }
 
   function wireOne(el) {

@@ -191,10 +191,12 @@ func BehaviorsJSON() []byte {
 // check runs when the block is first built — the first render (or
 // first /__gofastr/manifest.js request), not process startup: the
 // registry is only complete once every package's init has run, and
-// this is the first reader of the whole graph. On a host whose chain
-// carries the framework's recovery middleware (framework.App wires
-// core/middleware.RecoveryFn) the panic surfaces as a 500 carrying
-// the cycle path in the log line. A requirement must be an embedded
+// this is the first reader of the whole graph. A framework.App builds
+// the block in uihost's ValidateBoot, before the listener binds, so
+// there the refusal stops the boot. A host mounted outside an App
+// meets it on its first request instead: with the framework's
+// recovery middleware (core/middleware.RecoveryFn) every request then
+// answers 500 carrying the cycle path in the log line. A requirement must be an embedded
 // module (embedded modules declare no requirements of their own, so
 // they are the graph's leaves) or another registered behaviour; a
 // cycle among registered behaviours is refused with its path.

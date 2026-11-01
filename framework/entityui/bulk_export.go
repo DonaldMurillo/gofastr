@@ -85,7 +85,7 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		rec := make([]string, len(fields))
 		for _, row := range rows {
 			for i, f := range fields {
-				rec[i] = csvSafe(cell(m.rowValue(row, f)))
+				rec[i] = csvCell(m, f, cell(m.rowValue(row, f)))
 			}
 			if err := cw.Write(rec); err != nil {
 				slog.Debug("entityui: export write", "error", err)
@@ -121,6 +121,44 @@ func csvSafe(v string) string {
 		return "'" + v
 	}
 	return v
+}
+
+// csvCell is one exported cell. A number in an Int, Float or Decimal
+// column is written as it is, so a spreadsheet can sum and sort "-12.5";
+// every other cell, a numeric column's non-number among them, goes
+// through csvSafe.
+func csvCell(m *meta, name, v string) string {
+	if f, ok := m.field(name); ok && (f.Type == schema.Int || f.Type == schema.Float || f.Type == schema.Decimal) && plainNumber(v) {
+		return v
+	}
+	return csvSafe(v)
+}
+
+// plainNumber reports whether v is a decimal number and nothing else: an
+// optional minus, digits with at most one point, an optional exponent.
+func plainNumber(v string) bool {
+	v = strings.TrimPrefix(v, "-")
+	mant, exp, hasExp := strings.Cut(strings.ToLower(v), "e")
+	whole, frac, _ := strings.Cut(mant, ".")
+	if whole == "" && frac == "" || !allDigits(whole) || !allDigits(frac) {
+		return false
+	}
+	if !hasExp {
+		return true
+	}
+	if exp != "" && (exp[0] == '+' || exp[0] == '-') {
+		exp = exp[1:]
+	}
+	return exp != "" && allDigits(exp)
+}
+
+func allDigits(s string) bool {
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // exportFilename keeps a table name to filename-safe bytes.

@@ -42,6 +42,11 @@ type SourceFile struct {
 	// that assumes Go source ever sees one. AST parsing is refused
 	// rather than attempted (and recorded as a parse failure).
 	IsCSS bool
+	// IsScript is true for JavaScript files (.js, .mjs, .cjs). Like a
+	// stylesheet it is never handed to a Go analyzer: ScriptFiles returns
+	// it, the text rules that match client code (GOFASTR1802/1803) read
+	// it, and AST parsing is refused.
+	IsScript bool
 	// IsGenerated is true when the file carries a `Code generated … DO NOT
 	// EDIT` header. Analyzers skip these by default: the developer cannot
 	// fix a finding there, only the generator can.
@@ -143,7 +148,8 @@ func (p *Pass) discover() error {
 		}
 		isGo := strings.HasSuffix(path, ".go")
 		isCSS := strings.HasSuffix(path, ".css")
-		if !isGo && !isCSS {
+		isScript := IsScriptPath(path)
+		if !isGo && !isCSS && !isScript {
 			return nil
 		}
 		rel, relErr := filepath.Rel(p.Root, path)
@@ -165,6 +171,7 @@ func (p *Pass) discover() error {
 			Abs:         path,
 			IsTest:      isGo && strings.HasSuffix(rel, "_test.go"),
 			IsCSS:       isCSS,
+			IsScript:    isScript,
 			IsGenerated: IsGeneratedSource(body),
 			Package:     pkg,
 		})
@@ -183,7 +190,7 @@ func (p *Pass) discover() error {
 func (p *Pass) Files() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
-		if f.IsCSS {
+		if f.IsCSS || f.IsScript {
 			continue
 		}
 		out = append(out, f)
@@ -196,7 +203,7 @@ func (p *Pass) Files() []SourceFile {
 func (p *Pass) AppFiles() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
-		if f.IsCSS || f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
+		if f.IsCSS || f.IsScript || f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
 			continue
 		}
 		out = append(out, f)
@@ -209,7 +216,7 @@ func (p *Pass) AppFiles() []SourceFile {
 func (p *Pass) TestFiles() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
-		if f.IsCSS || !f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
+		if f.IsCSS || f.IsScript || !f.IsTest || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
 			continue
 		}
 		out = append(out, f)
@@ -232,6 +239,45 @@ func (p *Pass) StyleFiles() []SourceFile {
 		out = append(out, f)
 	}
 	return out
+}
+
+// ScriptFiles returns the JavaScript files configuration has not
+// exempted, minus generated and minified ones: a hit inside a vendored
+// bundle points at code the app did not write and cannot act on. A
+// script is minified when its name says so (.min.js) or a line runs past
+// maxScriptLine bytes, the same test the upgrade scanner's text matchers
+// use (internal/upgrade/scan).
+func (p *Pass) ScriptFiles() []SourceFile {
+	var out []SourceFile
+	for _, f := range p.files {
+		if !f.IsScript || f.IsGenerated || p.Config.ExemptPath(f.Rel) || isMinifiedScript(f.Rel, p.sources[f.Rel]) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// IsScriptPath reports whether a path names a JavaScript source file.
+func IsScriptPath(path string) bool {
+	return strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".mjs") || strings.HasSuffix(path, ".cjs")
+}
+
+// maxScriptLine is the line length past which a script counts as minified.
+const maxScriptLine = 1000
+
+func isMinifiedScript(rel string, body []byte) bool {
+	for _, ext := range []string{".min.js", ".min.mjs", ".min.cjs"} {
+		if strings.HasSuffix(rel, ext) {
+			return true
+		}
+	}
+	for line := range strings.SplitSeq(string(body), "\n") {
+		if len(line) > maxScriptLine {
+			return true
+		}
+	}
+	return false
 }
 
 // Source returns the bytes of a discovered file. The returned slice is
@@ -281,7 +327,7 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 	if f, ok := p.asts[rel]; ok {
 		return f, f != nil
 	}
-	if strings.HasSuffix(rel, ".css") {
+	if strings.HasSuffix(rel, ".css") || IsScriptPath(rel) {
 		p.asts[rel] = nil
 		return nil, false
 	}

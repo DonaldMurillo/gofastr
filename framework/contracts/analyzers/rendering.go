@@ -141,8 +141,19 @@ var (
 	reInlineStyleAttr = regexp.MustCompile(`(?i)style\s*=\s*\\?["']\s*(?:` +
 		inlineStyleLead + `(?:` + cssHyphenProps + `)\s*:|` +
 		inlineStyleLead + `(?:` + cssPlainProps + `)\s*:\s*[^"']*` + cssValueShape + `)`)
-	// Hard navigation: assigning location, or reloading.
-	reHardNav = regexp.MustCompile(`\b(?:window\.)?location(?:\.href|\.assign|\.replace)?\s*=\s*["'\x60]|\blocation\.(?:reload|assign|replace)\s*\(`)
+	// Hard navigation: assigning location, or reloading. Assigning
+	// href, search or pathname, or window.location itself, loads a new
+	// document whatever the right-hand side is, so a variable counts as
+	// much as a literal. `[^.\w$]` keeps `init.location = e.location` (a
+	// property that happens to be named location) out, and `(?:[^=]|$)`
+	// keeps comparisons out. A bare `location =` needs a quoted string
+	// in a Go file, where `location` is as likely a Go variable; a script
+	// adds reHardNavBare.
+	reHardNav = regexp.MustCompile(navLead + `(?:(?:window|document|self|top)\.)?location\.(?:href|search|pathname)\s*=(?:[^=]|$)` +
+		`|` + navLead + `(?:window|document|self|top)\.location\s*=(?:[^=]|$)` +
+		`|\blocation\s*=\s*["'\x60]|\blocation\.(?:reload|assign|replace)\s*\(`)
+	// In a script, `location` is the global: any assignment navigates.
+	reHardNavBare = regexp.MustCompile(navLead + `location\s*=(?:[^=]|$)`)
 	// A bespoke server-sent-event stream.
 	reEventSource = regexp.MustCompile(`\bnew\s+EventSource\s*\(`)
 )
@@ -193,6 +204,18 @@ var designSystemPrefixes = []string{
 // carves out for livereload, applied here rather than left to every
 // project's config.
 var devOnlyPrefixes = []string{"framework/dev/", "kiln/"}
+
+// navOwnerScriptPrefixes are the script trees that implement navigation
+// and the SSE bus: the runtime's router falls back to a full load when a
+// path crosses a document boundary, and it opens the one /__gofastr/sse
+// stream. The headless behaviours call that router and fall back to a
+// plain load when it is absent. GOFASTR1802/1803 guard what an app
+// writes beside them, so these scripts are not judged by them.
+var navOwnerScriptPrefixes = []string{"core-ui/runtime/", "framework/headless/"}
+
+// navLead is the character before a location reference: line start or
+// anything that cannot end a property access or an identifier.
+const navLead = `(?:^|[^.\w$])`
 
 func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	var out []contracts.Diagnostic
@@ -303,6 +326,36 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			if !devSurface && reEventSource.MatchString(line) {
 				out = append(out, contracts.Diagnostic{
 					RuleID: contracts.RuleBespokeEventSource, File: f.Rel, Line: lineNo,
+					Message: "bespoke EventSource: server pushes belong on the shared /__gofastr/sse bus",
+					Snippet: strings.TrimSpace(lines[i]),
+				})
+			}
+		}
+	}
+	// GOFASTR1802/1803 in an app's own scripts: static/app.js does the
+	// same hard navigation and opens the same bespoke stream as a script
+	// emitted from a Go string. The CSS and inline-style rules stay on Go
+	// source: a script that builds markup is the inline-style gate's job.
+	for _, f := range p.ScriptFiles() {
+		if hasPrefixAny(f.Rel, devOnlyPrefixes) || hasPrefixAny(f.Rel, navOwnerScriptPrefixes) {
+			continue
+		}
+		body, ok := p.Source(f.Rel)
+		if !ok {
+			continue
+		}
+		lines := strings.Split(string(body), "\n")
+		for i, line := range strings.Split(stripScriptComments(string(body)), "\n") {
+			if reHardNav.MatchString(line) || reHardNavBare.MatchString(line) {
+				out = append(out, contracts.Diagnostic{
+					RuleID: contracts.RuleHardNavigation, File: f.Rel, Line: i + 1,
+					Message: "full page load used to navigate: scroll position, focus, and every open island are discarded",
+					Snippet: strings.TrimSpace(lines[i]),
+				})
+			}
+			if reEventSource.MatchString(line) {
+				out = append(out, contracts.Diagnostic{
+					RuleID: contracts.RuleBespokeEventSource, File: f.Rel, Line: i + 1,
 					Message: "bespoke EventSource: server pushes belong on the shared /__gofastr/sse bus",
 					Snippet: strings.TrimSpace(lines[i]),
 				})

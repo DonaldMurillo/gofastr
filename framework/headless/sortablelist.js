@@ -84,34 +84,17 @@
     return v ? '&version=' + encodeURIComponent(v) : '';
   }
 
-  // containerField: the per-column id, sent on EVERY commit when the
-  // list carries it, same-container reorders included, so the server
-  // can route the write without inferring the column from the keys.
-  function containerField(list) {
-    const c = attr(list, 'data-hui-sortable-container');
-    return c ? '&container=' + encodeURIComponent(c) : '';
-  }
-
-  function postOrder(list) {
+  // post sends the list's order plus the commit's own fields. A
+  // same-container reorder adds container=<id> when the list carries
+  // one, so the server can route the write without inferring the
+  // column from the keys; a crossing adds moved= and ALWAYS carries
+  // container= (empty when the list has no configured id).
+  function post(list, fields) {
     const rpc = attr(list, 'data-hui-sortable-rpc');
-    if (!rpc || !window.__gofastr?._originOK?.(rpc)) return Promise.resolve();
+    if (!rpc || !NS._originOK?.(rpc)) return Promise.resolve();
     return fetch(rpc, {
       method: 'POST', credentials: 'same-origin', headers: csrfHeaders(),
-      body: 'order=' + encodeURIComponent(keysOf(list).join(',')) + versionField(list) + containerField(list),
-    });
-  }
-
-  function postCross(dest, movedKey) {
-    const rpc = attr(dest, 'data-hui-sortable-rpc');
-    if (!rpc || !window.__gofastr?._originOK?.(rpc)) return Promise.resolve();
-    let body = 'order=' + encodeURIComponent(keysOf(dest).join(','));
-    body += '&moved=' + encodeURIComponent(movedKey);
-    // Cross-container commits ALWAYS carry container= (empty when the
-    // list has no configured id).
-    body += '&container=' + encodeURIComponent(attr(dest, 'data-hui-sortable-container'));
-    body += versionField(dest);
-    return fetch(rpc, {
-      method: 'POST', credentials: 'same-origin', headers: csrfHeaders(), body: body,
+      body: 'order=' + encodeURIComponent(keysOf(list).join(',')) + fields + versionField(list),
     });
   }
 
@@ -192,9 +175,10 @@
 
   function commit(dest, prevOrder, srcList, srcSnap, movedItem) {
     const isCross = srcList && srcList !== dest;
-    const p = isCross
-      ? postCross(dest, movedItem.getAttribute('data-hui-sort-key'))
-      : postOrder(dest);
+    const c = attr(dest, 'data-hui-sortable-container');
+    const p = post(dest, isCross
+      ? '&moved=' + encodeURIComponent(attr(movedItem, 'data-hui-sort-key')) + '&container=' + encodeURIComponent(c)
+      : c ? '&container=' + encodeURIComponent(c) : '');
     const restoreFn = function () { restore(dest, prevOrder, srcList, srcSnap, movedItem); };
     p.then(function (res) {
       // A followed 3xx (an expired session sent the commit to the
@@ -215,7 +199,7 @@
             // message replaces them the way the retired module's
             // finishConflict did.
             if (msg) { announceRaw(msg); fireToast(msg); }
-            if (crpc && window.__gofastr?._originOK?.(crpc)) {
+            if (crpc && NS._originOK?.(crpc)) {
               fetch(crpc, { credentials: 'same-origin' })
                 .then(function (r) {
                   // Same convention as poll.js/rpc.js: an HTTP error must
@@ -243,7 +227,7 @@
         restoreFn();
         announce(dest, is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
       } else {
-        window.__gofastr._inval?.(res);
+        NS._inval?.(res);
         announce(dest, 'data-hui-sortable-s-saved');
       }
     }).catch(function () { restoreFn(); announce(dest, 'data-hui-sortable-s-reverted'); });
@@ -273,10 +257,28 @@
     }).catch(function () {});
   }
 
+  // settle commits a finished move when it changed anything: item is
+  // the moved row, src the list it left, prev that list's rows before.
+  function settle(item, src, prev) {
+    const dest = listOf(item);
+    if (!dest) return;
+    const after = rowsOf(dest);
+    if (dest !== src) commit(dest, null, src, prev, item);
+    else if (!prev || prev.length !== after.length || prev.some(function (r, i) { return r !== after[i]; }))
+      commit(dest, prev || [], null, null, null);
+  }
+
+  // putBack undoes a live move: every row of the source list returns
+  // to its old place, the moved row included wherever it went.
+  function putBack(src, prev) {
+    if (src && prev) prev.forEach(function (r) { src.appendChild(r); });
+  }
+
   // ── Drag and drop ──────────────────────────────────────────────────
   let dragSrc = null;
   let dragPrev = null;     // source list snapshot at dragstart
   let dragSrcList = null;
+  let dropped = false;     // a drop landed on a list this drag
 
   document.addEventListener('dragstart', function (ev) {
     const item = ev.target && ev.target.closest && ev.target.closest('[data-hui-sortable-item]');
@@ -284,6 +286,7 @@
     dragSrc = item;
     dragSrcList = listOf(item);
     dragPrev = rowsOf(dragSrcList).slice();
+    dropped = false;
     item.classList.add('is-dragging');
     if (ev.dataTransfer) {
       ev.dataTransfer.effectAllowed = 'move';
@@ -291,56 +294,45 @@
     }
   });
 
+  // dropTarget: the list a drag over ev.target may land in, or null.
+  function dropTarget(ev) {
+    const t = ev.target && ev.target.closest && ev.target.closest('[data-hui-sortable]');
+    const src = listOf(dragSrc);
+    return t && (t === src || canCross(t, src)) ? t : null;
+  }
+
   document.addEventListener('dragover', function (ev) {
     if (!dragSrc) return;
-    const over = ev.target && ev.target.closest && ev.target.closest('[data-hui-sortable-item]');
-    let overList;
-    if (over) {
-      overList = listOf(over);
-    } else {
-      // Empty list: no item to hit-test, so accept the list element
-      // itself as the drop target (dropping into an empty column).
-      overList = ev.target && ev.target.closest && ev.target.closest('[data-hui-sortable]');
-    }
+    const overList = dropTarget(ev);
     if (!overList) return;
-    const srcList = listOf(dragSrc);
-    if (overList !== srcList && !canCross(overList, srcList)) return;
     ev.preventDefault();
+    const over = ev.target.closest('[data-hui-sortable-item]');
     if (over === dragSrc) return;
     if (over) {
       const rect = over.getBoundingClientRect();
       const after = (ev.clientY - rect.top) > rect.height / 2;
       over.parentNode.insertBefore(dragSrc, after ? over.nextSibling : over);
     } else {
-      // Empty column: append.
+      // Empty column: no row to hit-test, the list itself takes it.
       overList.appendChild(dragSrc);
     }
+  });
+
+  // dragover moves the row live, so only a drop on a list keeps the
+  // move. Escape mid-drag, or a release anywhere else, fires dragend
+  // with no drop first, and the row goes back uncommitted.
+  document.addEventListener('drop', function (ev) {
+    if (!dragSrc || !dropTarget(ev)) return;
+    ev.preventDefault();
+    dropped = true;
   });
 
   document.addEventListener('dragend', function () {
     if (!dragSrc) return;
     dragSrc.classList.remove('is-dragging');
-    const srcList = dragSrcList;
-    const destList = listOf(dragSrc);
-    const crossed = destList !== srcList;
-    const before = dragPrev || [];
-    const after = destList ? rowsOf(destList) : [];
-    let changed = crossed;
-    if (!changed) {
-      changed = before.length !== after.length;
-      if (!changed) {
-        for (let i = 0; i < before.length; i++) {
-          if (before[i] !== after[i]) { changed = true; break; }
-        }
-      }
-    }
-    if (changed && destList) {
-      if (crossed) commit(destList, null, srcList, dragPrev, dragSrc);
-      else commit(destList, before, null, null, null);
-    }
-    dragSrc = null;
-    dragPrev = null;
-    dragSrcList = null;
+    if (dropped) settle(dragSrc, dragSrcList, dragPrev);
+    else putBack(dragSrcList, dragPrev);
+    dragSrc = dragPrev = dragSrcList = null;
   });
 
   // ── Keyboard ───────────────────────────────────────────────────────
@@ -348,41 +340,39 @@
   let kbPrev = null;       // source list snapshot at grab
   let kbSrcList = null;
 
+  // kbEnd ends the grab: commit keeps the move, else it reverts.
+  function kbEnd(commitIt) {
+    const t = kbGrab;
+    t.classList.remove('is-grabbed');
+    t.removeAttribute('aria-grabbed');
+    if (commitIt) settle(t, kbSrcList, kbPrev);
+    else putBack(kbSrcList, kbPrev);
+    kbGrab = kbPrev = kbSrcList = null;
+    if (!commitIt) announce(listOf(t), 'data-hui-sortable-s-cancelled');
+    return t;
+  }
+
+  // A grabbed row that loses focus (Tab away, a click elsewhere) is
+  // cancelled the way Escape cancels it. The check waits a microtask:
+  // an arrow move re-inserts the row, which can blur it, and the
+  // handler focuses it again straight after.
+  document.addEventListener('focusout', function (ev) {
+    if (!kbGrab || ev.target !== kbGrab) return;
+    queueMicrotask(function () {
+      if (kbGrab && document.activeElement !== kbGrab) kbEnd(false);
+    });
+  });
+
   document.addEventListener('keydown', function (ev) {
     const t = ev.target;
     if (!t || !t.matches || !t.matches('[data-hui-sortable-item]')) return;
 
     if (ev.key === ' ' || ev.key === 'Spacebar') {
       ev.preventDefault();
-      if (kbGrab === t) {
-        // Release & commit if changed.
-        t.classList.remove('is-grabbed');
-        t.removeAttribute('aria-grabbed');
-        const destList = listOf(t);
-        const crossed = destList !== kbSrcList;
-        const after = destList ? rowsOf(destList) : [];
-        let changed = crossed;
-        if (!changed) {
-          changed = kbPrev && kbPrev.length === after.length;
-          if (changed) {
-            changed = false;
-            for (let i = 0; i < kbPrev.length; i++) {
-              if (kbPrev[i] !== after[i]) { changed = true; break; }
-            }
-          } else {
-            changed = true;
-          }
-        }
-        if (changed && destList) {
-          if (crossed) commit(destList, null, kbSrcList, kbPrev, t);
-          else commit(destList, kbPrev || [], null, null, null);
-        }
-        kbGrab = null;
-        kbPrev = null;
-        kbSrcList = null;
-        return;
-      }
-      // Grab.
+      if (kbGrab === t) { kbEnd(true); return; }
+      // A grab still held on another row is cancelled first, so the
+      // next drop commits only its own move.
+      if (kbGrab) kbEnd(false);
       kbGrab = t;
       kbSrcList = listOf(t);
       kbPrev = rowsOf(kbSrcList).slice();
@@ -394,14 +384,7 @@
 
     if (ev.key === 'Escape' && kbGrab === t) {
       ev.preventDefault();
-      if (kbSrcList && kbPrev) kbPrev.forEach(function (r) { kbSrcList.appendChild(r); });
-      t.classList.remove('is-grabbed');
-      t.removeAttribute('aria-grabbed');
-      t.focus();
-      kbGrab = null;
-      kbPrev = null;
-      kbSrcList = null;
-      announce(listOf(t), 'data-hui-sortable-s-cancelled');
+      kbEnd(false).focus();
       return;
     }
 

@@ -718,6 +718,17 @@ func (s *winShell) OpenFolder(ctx context.Context) (string, error) {
 type fileFilterSpec struct{ Name, Pattern *uint16 }
 
 func showFileDialog(s *winShell, op *modalOperation, opts desktop.OpenOptions, save *desktop.SaveOptions, folder bool) ([]string, error) {
+	// The check every shell runs: Linux refused a filter extension such
+	// as "txt;*.exe" that this shell joined into a second pattern under
+	// a filter labelled as text.
+	defaultNameText := ""
+	if save != nil {
+		defaultNameText = save.DefaultName
+	}
+	patterns, err := desktop.CheckFileDialog(opts, defaultNameText)
+	if err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	hwnd := s.hwnd
 	s.mu.RUnlock()
@@ -757,26 +768,33 @@ func showFileDialog(s *winShell, op *modalOperation, opts desktop.OpenOptions, s
 	if _, err := win32.COMCall(dlg, 9, uintptr(flags)); err != nil {
 		return nil, err
 	}
-	var filterValues []fileFilterSpec
-	for _, filter := range opts.Filters {
-		name, _ := win32.UTF16Ptr(filter.Name)
-		parts := make([]string, 0, len(filter.Extensions))
-		for _, ext := range filter.Extensions {
-			ext = strings.TrimPrefix(ext, ".")
-			if ext != "" {
-				parts = append(parts, "*."+ext)
-			}
+	// A conversion or setter that fails answers the call: the dialog
+	// must not open without the filter or name the page asked for.
+	filterValues := make([]fileFilterSpec, 0, len(opts.Filters))
+	for i, filter := range opts.Filters {
+		name, err := win32.UTF16Ptr(filter.Name)
+		if err != nil {
+			return nil, err
 		}
-		pattern, _ := win32.UTF16Ptr(strings.Join(parts, ";"))
+		pattern, err := win32.UTF16Ptr(strings.Join(patterns[i], ";"))
+		if err != nil {
+			return nil, err
+		}
 		filterValues = append(filterValues, fileFilterSpec{Name: name, Pattern: pattern})
 	}
 	if len(filterValues) != 0 {
-		_, _ = win32.COMCall(dlg, 4, uintptr(len(filterValues)), uintptr(unsafe.Pointer(&filterValues[0])))
+		if _, err := win32.COMCall(dlg, 4 /* IFileDialog.SetFileTypes */, uintptr(len(filterValues)), uintptr(unsafe.Pointer(&filterValues[0]))); err != nil {
+			return nil, err
+		}
 	}
 	var defaultName *uint16
-	if save != nil && save.DefaultName != "" {
-		defaultName, _ = win32.UTF16Ptr(save.DefaultName)
-		_, _ = win32.COMCall(dlg, 15, uintptr(unsafe.Pointer(defaultName)))
+	if defaultNameText != "" {
+		if defaultName, err = win32.UTF16Ptr(defaultNameText); err != nil {
+			return nil, err
+		}
+		if _, err := win32.COMCall(dlg, 15 /* IFileDialog.SetFileName */, uintptr(unsafe.Pointer(defaultName))); err != nil {
+			return nil, err
+		}
 	}
 	if op.cancelled.Load() {
 		return nil, desktop.ErrCancelled

@@ -190,8 +190,7 @@ func Banner(name string) *widget.Builder {
 // closes the sheet when the user drags past ~80px or releases with
 // a downward velocity above ~0.5 px/ms. Snaps back otherwise.
 //
-// Slide-from-bottom animation; on small viewports the sheet rises
-// ~75vh; on larger viewports it caps to a more conservative ~50vh.
+// Slide-from-bottom animation; the sheet rises at most ~75vh.
 //
 // Use for mobile detail panels, share sheets, action menus, any
 // content surface that on small screens makes more sense rising

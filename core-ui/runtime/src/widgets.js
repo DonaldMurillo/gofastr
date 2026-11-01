@@ -69,7 +69,9 @@
     // opaque to the runtime: forwarded on the chrome fetch and keyed in
     // the client cache, never parsed. The chrome render authorises it
     // server-side.
-    const ctx = (o.btn && o.btn.getAttribute('data-cui-ctx')) || '';
+    // No trigger, no opinion: a programmatic or deep-link open keeps
+    // whatever context is mounted (undefined), a trigger names its own.
+    const ctx = o.btn && (o.btn.getAttribute('data-cui-ctx') || '');
     const cfg = entry.cfg;
     // A navigate while the chrome loads swaps NS._chromeCache: the
     // reader left the page this open belongs to, so its deep link
@@ -88,7 +90,17 @@
   NS._mountByName = async function (name, ctx) {
     const entry = catalogEntry(name);
     if (!entry) return;
-    if (Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name]) return; // already mounted
+    const m = Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name];
+    if (m) {
+      // Already mounted. A trigger for another entity (#321 ctx: row
+      // 2's while row 1's chrome is open) replaces it; the outside-click
+      // handler leaves every trigger of the widget to this path.
+      if (ctx == null || ctx === m.ctx) return;
+      m.dismiss();
+    }
+    // The newest open of this widget, marked on its catalog entry: an
+    // earlier open whose chrome lands later mounts nothing.
+    const tok = entry.tok = {};
     const cfg = entry.cfg;
     const existing = document.querySelector('[data-cui-widget="' + CSS.escape(name) + '"]');
     if (existing) {
@@ -100,7 +112,7 @@
       //
       // Removing it cannot flash, but NOT because a visible widget
       // "returned above" — nothing orders those. A deep-link arrival is
-      // mounted by the synchronous tryMount block before any pointer
+      // mounted by the catalog boot pass (widgets-boot) before any pointer
       // event can run, and this path is reached only from a trigger
       // click on a catalog-gated widget. So whatever is still in the DOM
       // here is un-mounted chrome nobody is looking at.
@@ -178,7 +190,7 @@
     // on. The cached branch awaits a promise too, so both are covered.
     const page = NS._chromeCache;
     try { html = await page[key]; } catch (_) {}
-    if (html && page === NS._chromeCache) NS.mountWidget(cfg, html);
+    if (html && page === NS._chromeCache && entry.tok === tok) NS.mountWidget(cfg, html, null, ctx);
   };
 
   NS.closeWidget = function (name) {
@@ -213,9 +225,10 @@
     }
   };
 
-  NS.mountWidget = function (cfg, html, existing) {
+  NS.mountWidget = function (cfg, html, existing, ctx) {
     if (NS._widgets[cfg.name]) return; // already mounted
-    NS._widgets[cfg.name] = { cfg };
+    // ctx: the data-cui-ctx this chrome was rendered for ('' for none).
+    NS._widgets[cfg.name] = { cfg, ctx: ctx || '' };
 
     // Stylesheet
     if (!document.querySelector('link[data-cui-style="' + CSS.escape(cfg.name) + '"]')) {
@@ -223,7 +236,9 @@
       link.rel = 'stylesheet';
       link.href = cfg.stylePath;
       link.setAttribute('data-cui-style', cfg.name);
-      document.head.appendChild(link);
+      // Before the app stylesheet (the kernel's helper), so a host
+      // override wins ties; appended last where the helper is absent.
+      NS._insertSheet ? NS._insertSheet(link) : document.head.appendChild(link);
     }
 
     // Backdrop + chrome.
@@ -306,6 +321,7 @@
       // spent: only the live mount closes.
       if (NS._widgets[cfg.name] !== reg) return;
       ac.abort();
+      w.__fuiW = 0;
       // #409: the close twin of fui:widget-open, dispatched before any
       // teardown so a listener can match detail.root against what it
       // bound. Every close path funnels through here (closeWidget, the
@@ -314,12 +330,10 @@
       _wEv('fui:widget-close', { name: cfg.name, root: w });
       const st = NS._widgets[cfg.name] || {};
       const hydrated = st.hydrated;
-      const oh = st.outsideHandler;
       const ar = st.anchorResize;
       const as = st.anchorScroll;
       const at = st.anchorTrigger;
       const stop = st.pollStop;
-      if (oh) document.removeEventListener('click', oh);
       if (ar) window.removeEventListener('resize', ar);
       if (as) window.removeEventListener('scroll', as, { capture: true });
       if (at) {
@@ -414,7 +428,9 @@
     // single dispatchRPC implementation. This keeps a cold-cache click from
     // racing module registration without adding a second document listener.
 
-    // Widget-scoped click + submit.
+    // Widget-scoped click + submit. __fuiW tells the document bridge
+    // (frag/boot.js) this root's listener is live; dismiss clears it.
+    w.__fuiW = 1;
     w.addEventListener('click', async (e) => {
       // A signal mutation wins over data-cui-rpc on the same click, as on
       // the document bridge; the document signal delegate applies it.
@@ -470,8 +486,11 @@
           if (trigger) return;
           dismiss();
         };
-        NS._widgets[cfg.name].outsideHandler = oh;
-        setTimeout(() => document.addEventListener('click', oh), 0);
+        // Added after the opening click finishes bubbling, under this
+        // mount's signal: dismiss's abort removes it, and a dismiss
+        // that ran first (in the same task as the mount) makes the
+        // late add a no-op instead of a listener nobody removes.
+        setTimeout(() => document.addEventListener('click', oh, on), 0);
       }
     }
 
