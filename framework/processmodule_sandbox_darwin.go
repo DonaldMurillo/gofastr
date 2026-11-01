@@ -191,8 +191,8 @@ func generateDarwinProfile(childPath string, opts SandboxOpts) string {
 	// "Operation not permitted"): mapping the binary and its libraries
 	// executable (the same trees file-read* allows, plus the child),
 	// stat-ing path components on the way (dyld and the runtime walk
-	// them), and reading sysctls (the Go runtime asks for the CPU count
-	// and page size before main).
+	// them), reading the root directory's entries, and reading sysctls
+	// (the Go runtime asks for the CPU count and page size before main).
 	b.WriteString("(allow file-map-executable\n")
 	b.WriteString(fmt.Sprintf("  (subpath %q)\n", childReal))
 	for _, dir := range []string{"/usr", "/System", "/Library"} {
@@ -203,6 +203,10 @@ func generateDarwinProfile(childPath string, opts SandboxOpts) string {
 	}
 	b.WriteString(")\n")
 	b.WriteString("(allow file-read-metadata)\n")
+	// The root directory itself (its entry names, nothing below it): the
+	// child reads "/" on startup and dies without a word when refused
+	// (CI on macOS 26: "deny(1) file-read-data /").
+	b.WriteString("(allow file-read-data (literal \"/\"))\n")
 	b.WriteString("(allow sysctl-read)\n")
 	// Scratch writable (the child's own work).
 	if scratchReal != "" {
