@@ -1484,9 +1484,14 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 	}
 	// An alias of a generated file (a symlink or hard link under any
 	// name) would hash the last build's copy, and change with every
-	// build: it is left out like the file it names.
+	// build: it is left out like the file it names. A file the static
+	// source supplies is the user's, not generated, and its aliases
+	// stay in the hash.
 	var genFiles []fs.FileInfo
 	for _, g := range genPaths {
+		if b.staticSourceHas(g) {
+			continue
+		}
 		if fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(g))); err == nil {
 			genFiles = append(genFiles, fi)
 		}

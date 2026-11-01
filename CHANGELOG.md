@@ -3873,14 +3873,16 @@ few lines, and link the PR or the docs page for the rest.
   rebuild after a case-only rename keeps the page, and every file and
   directory the build writes is renamed to its spelling when an earlier
   build left it in another case. One behind a symlink in the output
-  directory is not renamed; the build fails and names it.
+  directory is not renamed; the build fails and names it, as it does
+  for a symlink whose target names a directory in an old spelling.
 - **A rebuilt static export writes the same PWA worker.** The worker's
   tree hash read a locale tree's `manifest.webmanifest` only once an
   earlier build had written it, so a second build over unchanged
   content rotated the worker's cache and every installed client
   re-downloaded the site. The hash leaves out the files the PWA surface
   writes, under their exact names, after renaming a leftover in another
-  case that is the same file, and any symlink or hard link to one. On a
+  case that is the same file, and any symlink or hard link to one the
+  build generates (an alias of a static-dir manifest stays). On a
   case-sensitive disk a file such as `MANIFEST.webmanifest` is a file
   of its own and stays in the hash.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding

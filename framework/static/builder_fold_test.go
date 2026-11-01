@@ -587,3 +587,47 @@ func TestRespellLinkedAfterRename(t *testing.T) {
 		t.Fatalf("a directory the build respells through its real name was refused: %v", err)
 	}
 }
+
+// The hash left out every alias of a PWA path, a user's own manifest
+// among them: a precached alias of a static manifest kept the old
+// worker when the manifest changed.
+func TestPWAHashKeepsUserManifestAlias(t *testing.T) {
+	out := t.TempDir()
+	if err := os.Symlink("manifest.webmanifest", filepath.Join(out, "legacy.json")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	build := func(name string) string {
+		t.Helper()
+		a := coreapp.NewApp("t")
+		a.Register("/", &helloScreen{}, nil)
+		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+		host.SetStaticFS(fstest.MapFS{"manifest.webmanifest": {Data: []byte(`{"name":"` + name + `"}`)}})
+		if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return readOut(t, out, "service-worker.js")
+	}
+	if build("v1") == build("v2") {
+		t.Error("a changed static manifest behind an alias kept the old worker")
+	}
+}
+
+// A symlink whose target the build respelled kept naming the old
+// spelling: APFS still resolved it, and a case-sensitive host found
+// public dangling.
+func TestRespellRefusesStaleLinkTarget(t *testing.T) {
+	out := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(out, "shared", "DOCS", "SECTIONS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("shared", "DOCS"), filepath.Join(out, "public")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "shared", "docs")); err != nil {
+		t.Skip("case-sensitive disk: shared/docs is not shared/DOCS here")
+	}
+	err := respell(out, []string{"public/sections/a/index.html", "shared/docs/sections/b/index.html"})
+	if err == nil || !strings.Contains(err.Error(), "/public") {
+		t.Errorf("a symlink naming a respelled directory passed: %v", err)
+	}
+}

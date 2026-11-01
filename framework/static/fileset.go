@@ -120,9 +120,11 @@ func writtenPaths(res *Result, rendered *fileSet, docs map[string]bool) []string
 // past a symlink, so nothing outside the build's own directories moves,
 // but the walk goes on through it (os.Root keeps it inside outDir): an
 // entry there in another spelling fails the build, since the export
-// would not serve that path on a case-sensitive host. That check runs
-// after every rename, on a fresh listing, so a directory another path
-// renames through its real name passes whatever the path order.
+// would not serve that path on a case-sensitive host, and so does a
+// symlink on the paths whose target names a directory in a spelling
+// the disk no longer has. Both checks run after every rename, on fresh
+// listings, so a directory another path renames through its real name
+// passes whatever the path order.
 func respell(outDir string, paths []string) error {
 	root, err := os.OpenRoot(outDir)
 	if err != nil {
@@ -134,6 +136,7 @@ func respell(outDir string, paths []string) error {
 	linked := map[string]bool{} // a path at or below a symlink
 	done := map[string]bool{}
 	var behindLink [][2]string // parent, name: judged once every rename ran
+	var links []string         // symlinks on the paths, their targets judged likewise
 	for _, p := range paths {
 		parent := "."
 		for _, name := range strings.Split(p, "/") {
@@ -152,7 +155,11 @@ func respell(outDir string, paths []string) error {
 				}
 				fi, err := root.Lstat(filepath.FromSlash(cur))
 				stop[cur] = err != nil
-				linked[cur] = linked[parent] || (err == nil && fi.Mode()&fs.ModeSymlink != 0)
+				isLink := err == nil && fi.Mode()&fs.ModeSymlink != 0
+				if isLink {
+					links = append(links, cur)
+				}
+				linked[cur] = linked[parent] || isLink
 			}
 			if stop[cur] {
 				break
@@ -160,10 +167,38 @@ func respell(outDir string, paths []string) error {
 			parent = cur
 		}
 	}
+	// Listed afresh once every rename ran, each directory once.
+	fresh := map[string]*dirNames{}
+	listing := func(dir string) *dirNames {
+		if fresh[dir] == nil {
+			fresh[dir] = listNames(root, dir)
+		}
+		return fresh[dir]
+	}
 	for _, e := range behindLink {
 		parent, name := e[0], e[1]
-		if old, ok := listNames(root, parent).sameFileAs(root, parent, name); ok {
+		if old, ok := listing(parent).sameFileAs(root, parent, name); ok {
 			return fmt.Errorf("static: /%s is spelled /%s on disk, behind a symlink the export does not rename through; remove the stale entry", path.Join(parent, name), path.Join(parent, old))
+		}
+	}
+	// A symlink's target is text: one naming a directory in a spelling
+	// the disk no longer has still resolves on a case-insensitive disk
+	// and dangles on a case-sensitive host.
+	for _, link := range links {
+		target, err := root.Readlink(filepath.FromSlash(link))
+		if err != nil || filepath.IsAbs(target) {
+			continue
+		}
+		t := path.Join(path.Dir(link), filepath.ToSlash(target))
+		if t == ".." || strings.HasPrefix(t, "../") {
+			continue
+		}
+		parent := "."
+		for _, name := range strings.Split(t, "/") {
+			if old, ok := listing(parent).sameFileAs(root, parent, name); ok {
+				return fmt.Errorf("static: the symlink /%s names /%s, which is spelled /%s on disk; point it at that spelling", link, path.Join(parent, name), path.Join(parent, old))
+			}
+			parent = path.Join(parent, name)
 		}
 	}
 	return nil
