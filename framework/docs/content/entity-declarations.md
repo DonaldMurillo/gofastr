@@ -200,6 +200,14 @@ the same treatment. A `Timestamp` field also takes what
 `<input type=datetime-local>` sends, `YYYY-MM-DDTHH:MM` with optional
 seconds and fraction, read as UTC like the filter reads it.
 
+Before hooks see the body after this cleanup, so a typed
+`OnBeforeCreate[T]` or `OnBeforeUpdate[T]` decodes a form post: a blank
+optional `Int` is absent (nil on update), `"2"` is the integer 2, and a
+checkbox's `"true"` is the boolean. A value the cleanup cannot read
+reaches the hook as sent, and validation refuses it after the hooks run
+unless a hook replaced it. The same cleanup runs again after the hooks,
+for any value they set.
+
 ## `Entity` vs `TryEntity`
 
 `app.Entity(name, config)` **panics** on a misconfiguration: fail-fast,

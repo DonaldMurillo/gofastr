@@ -18,7 +18,7 @@ func TestLinuxDesktopRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail", "dunst-minimum", "dunst-current", "dunst-future", "dunst-1.5", "dunst-1.6", "dunst-malformed", "dunst-unrelated-version", "dunst-version-fail", "dunst-v-minimum", "dunst-v-current", "dunst-v-old", "dunst-v-malformed"} {
+	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail", "lifetimes-skip", "lifetimes-missing", "lifetimes-fail", "effects-skip", "effects-missing", "effects-fail", "pickers-skip", "pickers-missing", "pickers-fail", "dunst-minimum", "dunst-current", "dunst-future", "dunst-1.5", "dunst-1.6", "dunst-malformed", "dunst-unrelated-version", "dunst-version-fail", "dunst-v-minimum", "dunst-v-current", "dunst-v-old", "dunst-v-malformed"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			writeTestFile(t, dir, "scripts/test-linux-desktop.sh", string(src))
@@ -32,12 +32,13 @@ esac
 printf 'go %s\n' "$*" >> "$TRACE"
 [[ $CGO_ENABLED = 0 && $GOFASTR_LINUX_NATIVE = 1 && $GDK_BACKEND = x11 ]]
 [[ $GOFASTR_LINUX_ACTIVATION = 1 && $GOFASTR_LINUX_PROFILE = 1 && $GOFASTR_LINUX_TRAY = 1 && $GOFASTR_LINUX_NOTIFICATIONS = 1 ]]
+[[ $GOFASTR_LINUX_COMPOSITOR = 1 && $GOFASTR_LINUX_PICKERS = 1 ]]
 [[ $GOOS = linux && $GOARCH = amd64 && $LC_ALL = C.UTF-8 && $LANGUAGE = en ]]
 [[ $GOFASTR_LINUX_TEST_OUTPUT = "$PWD/dist/ci/linux-native" ]]
 [[ $1 = test && $2 = ./battery/desktop/linux && $3 = -run && $5 = -count=1 && $7 = -v ]]
 name=${4#^}; name=${name%$}
 case "$name" in
-  TestNativeGTKWebKit|TestNativeGoFastrBridge|TestNativeNotifications|TestNativeNotificationGraphical) [[ $# = 7 && $6 = -timeout=90s ]] ;;
+  TestNativeGTKWebKit|TestNativeGTKLifetimes|TestNativeWindowEffects|TestNativeGoFastrBridge|TestNativeNotifications|TestNativeNotificationGraphical|TestNativePickersAutomated) [[ $# = 7 && $6 = -timeout=90s ]] ;;
   TestNativeProfile) [[ $# = 7 && $6 = -timeout=240s ]] ;;
   TestNativeTray) [[ $# = 7 && $6 = -timeout=120s ]] ;;
   TestNativeTrayGraphical) [[ $# = 7 && $6 = -timeout=180s ]] ;;
@@ -61,6 +62,9 @@ case "$MODE:$name" in
   notifications-skip:TestNativeNotifications|notification-graphical-skip:TestNativeNotificationGraphical) mode=skip ;;
   notifications-missing:TestNativeNotifications|notification-graphical-missing:TestNativeNotificationGraphical) mode=missing ;;
   notifications-fail:TestNativeNotifications|notification-graphical-fail:TestNativeNotificationGraphical) mode=fail ;;
+  lifetimes-skip:TestNativeGTKLifetimes|effects-skip:TestNativeWindowEffects|pickers-skip:TestNativePickersAutomated) mode=skip ;;
+  lifetimes-missing:TestNativeGTKLifetimes|effects-missing:TestNativeWindowEffects|pickers-missing:TestNativePickersAutomated) mode=missing ;;
+  lifetimes-fail:TestNativeGTKLifetimes|effects-fail:TestNativeWindowEffects|pickers-fail:TestNativePickersAutomated) mode=fail ;;
 esac
 case "$mode" in
   skip) printf -- '--- SKIP: %s (0.00s)\nPASS\n' "$name" ;;
@@ -106,6 +110,7 @@ esac
 `,
 				"dunstctl": "#!/usr/bin/env bash\nexit 0\n",
 				"xdotool":  "#!/usr/bin/env bash\nexit 0\n",
+				"xcompmgr": "#!/usr/bin/env bash\nexit 0\n",
 			}
 			for name, body := range stubs {
 				path := filepath.Join("bin", name)
@@ -115,7 +120,7 @@ esac
 				}
 			}
 			// A stale successful log must not satisfy a skipped/missing test.
-			for _, name := range []string{"TestNativeGTKWebKit", "TestNativeGoFastrBridge", "TestNativeActivation", "TestNativeActivationGraphical", "TestNativeProfile", "TestNativeTray", "TestNativeTrayGraphical", "TestNativeNotifications", "TestNativeNotificationGraphical"} {
+			for _, name := range []string{"TestNativeGTKWebKit", "TestNativeGTKLifetimes", "TestNativeWindowEffects", "TestNativeGoFastrBridge", "TestNativeActivation", "TestNativeActivationGraphical", "TestNativeProfile", "TestNativeTray", "TestNativeTrayGraphical", "TestNativeNotifications", "TestNativeNotificationGraphical", "TestNativePickersAutomated"} {
 				writeTestFile(t, dir, "dist/ci/linux-native/"+name+".log", "--- PASS: "+name+" (0.00s)\n")
 			}
 			trace := filepath.Join(dir, "trace")
@@ -128,7 +133,7 @@ esac
 				}
 			}
 			cmd.Env = append(cmd.Env, "PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
-				"TRACE="+trace, "MODE="+mode, "CGO_ENABLED=1", "GOFASTR_LINUX_NATIVE=0", "GOFASTR_LINUX_ACTIVATION=0", "GOFASTR_LINUX_PROFILE=0", "GOFASTR_LINUX_TRAY=0", "GOFASTR_LINUX_NOTIFICATIONS=0", "GOOS=windows", "GOARCH=arm64",
+				"TRACE="+trace, "MODE="+mode, "CGO_ENABLED=1", "GOFASTR_LINUX_NATIVE=0", "GOFASTR_LINUX_ACTIVATION=0", "GOFASTR_LINUX_PROFILE=0", "GOFASTR_LINUX_TRAY=0", "GOFASTR_LINUX_NOTIFICATIONS=0", "GOFASTR_LINUX_COMPOSITOR=0", "GOFASTR_LINUX_PICKERS=0", "GOOS=windows", "GOARCH=arm64",
 				"LC_ALL=C", "LANGUAGE=es")
 			switch mode {
 			case "unsafe-sandbox":
@@ -148,6 +153,8 @@ esac
 					t.Fatal(err)
 				}
 				want := "dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeGTKWebKit$ -count=1 -timeout=90s -v\n" +
+					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeGTKLifetimes$ -count=1 -timeout=90s -v\n" +
+					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeWindowEffects$ -count=1 -timeout=90s -v\n" +
 					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeGoFastrBridge$ -count=1 -timeout=90s -v\n" +
 					"dbus\ngo test ./battery/desktop/linux -run ^TestNativeActivation$ -count=1 -timeout=120s -v -ldflags -X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=gofastr605test\n" +
 					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeActivationGraphical$ -count=1 -timeout=150s -v -ldflags -X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=gofastr605test\n" +
@@ -155,7 +162,8 @@ esac
 					"dbus\ngo test ./battery/desktop/linux -run ^TestNativeTray$ -count=1 -timeout=120s -v\n" +
 					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeTrayGraphical$ -count=1 -timeout=180s -v\n" +
 					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeNotifications$ -count=1 -timeout=90s -v\n" +
-					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeNotificationGraphical$ -count=1 -timeout=90s -v\n"
+					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeNotificationGraphical$ -count=1 -timeout=90s -v\n" +
+					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativePickersAutomated$ -count=1 -timeout=90s -v\n"
 				if string(got) != want {
 					t.Errorf("invocations = %q, want %q", got, want)
 				}

@@ -3,10 +3,13 @@
 package macos
 
 import (
+	"log/slog"
+	"sync"
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // The darwin deep-link seam: macOS hands an app a URL on its custom
@@ -65,9 +68,10 @@ func installDeepLinkHandler(bridge objc.ID, onOpen func(rawURL string)) {
 
 // bridgeGetURLEvent is the handleGetURLEvent:withReplyEvent: IMP.
 // Args: self, _cmd, event, replyEvent. The URL is the event's direct
-// object; the reply event is unused for GetURL. Delivery hops to a
-// goroutine so the main thread returns to the run loop at once (the
-// battery navigates and emits through desktop.Window methods that hop back).
+// object; the reply event is unused for GetURL. Delivery goes through
+// deepLinks, so the main thread returns to the run loop at once (the
+// battery navigates and emits through desktop.Window methods that hop
+// back) and two URLs reach the battery in the order macOS sent them.
 func bridgeGetURLEvent(a *ffi.Args) uintptr {
 	var raw string
 	if event := objc.ID(a.Int[2]); event != 0 {
@@ -78,8 +82,70 @@ func bridgeGetURLEvent(a *ffi.Args) uintptr {
 	if raw == "" {
 		return 0
 	}
-	if fn := deepLinkOpen.Load(); fn != nil {
-		go (*fn)(raw)
+	if deepLinkOpen.Load() != nil {
+		deepLinks.push(raw)
 	}
 	return 0
+}
+
+// maxPendingDeepLinks bounds the URLs waiting for the battery, so a
+// stalled host callback cannot grow memory. The oldest is dropped.
+const maxPendingDeepLinks = 16
+
+// deepLinks is the process's one GetURL delivery line.
+var deepLinks deepLinkLine
+
+// deepLinkLine hands URLs to the installed OnDeepLink from one
+// goroutine, in arrival order, off the main thread. Opening two links
+// at once sends two GetURL events; a goroutine per event would let the
+// second reach the battery first.
+type deepLinkLine struct {
+	mu       sync.Mutex
+	pending  []string
+	draining bool
+}
+
+// push queues raw and starts the drain when none runs. It never blocks.
+func (l *deepLinkLine) push(raw string) {
+	l.mu.Lock()
+	if len(l.pending) == maxPendingDeepLinks {
+		l.pending = l.pending[1:]
+	}
+	l.pending = append(l.pending, raw)
+	start := !l.draining
+	l.draining = true
+	l.mu.Unlock()
+	if start {
+		go l.drain()
+	}
+}
+
+// drain delivers until the line is empty. The callback is read per
+// URL, so a URL waiting through a new Run goes to that Run's battery.
+func (l *deepLinkLine) drain() {
+	for {
+		l.mu.Lock()
+		if len(l.pending) == 0 {
+			l.draining = false
+			l.mu.Unlock()
+			return
+		}
+		raw := l.pending[0]
+		l.pending = l.pending[1:]
+		l.mu.Unlock()
+		if fn := deepLinkOpen.Load(); fn != nil {
+			deliverDeepLink(raw, *fn)
+		}
+	}
+}
+
+// deliverDeepLink runs the host callback with a recover, so a panic
+// drops that one URL instead of the process.
+func deliverDeepLink(raw string, fn func(string)) {
+	defer func() {
+		if v := recover(); v != nil {
+			slog.Default().Error("desktop/macos: deep-link callback panicked", "panic", textsafe.Recovered(v))
+		}
+	}()
+	fn(raw)
 }

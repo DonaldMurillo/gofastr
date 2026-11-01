@@ -74,7 +74,7 @@ func TestEveryRequiredSymbolResolves(t *testing.T) {
 func TestTableCoversEverySymbolsField(t *testing.T) {
 	covered := map[string]bool{}
 	base := reflect.ValueOf(&Sym).Pointer()
-	for _, s := range table() {
+	for _, s := range append(table(), optionalSymbols()...) {
 		off := reflect.ValueOf(s.target).Pointer() - base
 		covered[fieldNameAt(t, off)] = true
 	}

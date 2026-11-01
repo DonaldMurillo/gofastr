@@ -63,7 +63,7 @@ or over plain HTTP.
 ## The macOS look
 
 The app opts into the phase 13 desktop theme and layout:
-`site.WithTheme(desktopui.Theme())` and every screen but the widget
+`site.WithTheme(desktopui.ThemeFor(runtime.GOOS))` and every screen but the widget
 mounts on `desktopui.Layout(sidebar)` with a `SourceList` sidebar (Dashboard,
 Tasks, History, Settings; the active row follows the path). The timer
 controls float in a `FloatingToolbar`, the task detail shows its facts

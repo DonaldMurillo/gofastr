@@ -4,6 +4,7 @@ package desktop_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/win32"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -317,6 +319,21 @@ func runWindowsE2E(h *desktoptest.NativeHarness) bool {
 
 func phaseWindowsDeepLinkActivation(h *desktoptest.NativeHarness, log *windowsPhaseLog) {
 	h.RecordEvents(log, "deep_link")
+	// Every window the app opens shares one class, and the second
+	// instance forwards to the first of them FindWindow returns in
+	// Z-order. Put a secondary window in front, prove it is the one
+	// found, and the forward must still land and navigate main.
+	front, ok := openFrontWindow(h, log)
+	if !ok {
+		return
+	}
+	defer func() {
+		if closed := h.Call("windows", "close", map[string]any{"id": front}); !closed.OK {
+			log.Fatalf("windows.close: %s %s", closed.Code, closed.Message)
+			return
+		}
+		h.Wait("the front window to close", func() bool { return h.Window(front) == nil })
+	}()
 	exe, err := os.Executable()
 	if err != nil {
 		log.Fatalf("locate the e2e executable: %v", err)
@@ -341,4 +358,26 @@ func phaseWindowsDeepLinkActivation(h *desktoptest.NativeHarness, log *windowsPh
 		return
 	}
 	h.Navigate("/")
+}
+
+// openFrontWindow opens a secondary window and checks that FindWindow
+// on the app's window class now returns it rather than the main window.
+func openFrontWindow(h *desktoptest.NativeHarness, log *windowsPhaseLog) (string, bool) {
+	var opened struct {
+		ID string `json:"id"`
+	}
+	result := h.Call("windows", "open", map[string]any{"path": "/two", "title": "Front window", "width": 420, "height": 300})
+	if !result.OK || json.Unmarshal(result.Result, &opened) != nil || opened.ID == "" {
+		log.Fatalf("windows.open for the front window = %+v", result)
+		return "", false
+	}
+	h.Wait("the front window", func() bool { return h.Window(opened.ID) != nil })
+	sum := sha256.Sum256([]byte(windowsE2EAppID))
+	className := fmt.Sprintf("GofastrDesktopWebView2-%x", sum[:16])
+	found := win32.FindWindow(className, "")
+	if title := win32.GetWindowText(found); title != "Front window" {
+		log.Fatalf("FindWindow(%s) found the window titled %q, want \"Front window\"; the forward would not exercise a secondary window", className, title)
+		return opened.ID, false
+	}
+	return opened.ID, true
 }

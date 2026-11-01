@@ -23,8 +23,12 @@ import (
 
 const mainTimeout = 15 * time.Second
 
-// GTK has one process-global default main context. Only one shell can own it.
+// GTK has one process-global default main context, so one shell runs at a
+// time. A shell holds this from Run's start until its cleanup finishes; the
+// next shell lifetime can then run on the same toolkit thread.
 var toolkitOwner atomic.Pointer[linuxShell]
+
+var errToolkitBusy = errors.New("desktop/linux: another GTK shell is running in this process")
 var nativeWindows sync.Map // GtkWindow pointer -> *linuxWindow
 var workSequence atomic.Uint64
 var mainJobs sync.Map // integer token -> *mainJob; no Go pointers escape to C
@@ -158,6 +162,8 @@ type linuxWindow struct {
 	titleMu    sync.RWMutex
 	title      string
 	menuTokens []uintptr // UI thread only
+	effect     windowEffect
+	press      buttonPress // UI thread only
 }
 
 // New constructs a lazy, CGO-free GTK shell. No libraries are loaded here.
@@ -174,6 +180,14 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	s.started = true
 	s.cfg = cfg
 	s.mu.Unlock()
+	// Registered first so it runs last: ownership passes to the next shell
+	// only after this one's profile, launch and done channel are released.
+	owned := false
+	defer func() {
+		if owned {
+			toolkitOwner.CompareAndSwap(s, nil)
+		}
+	}()
 	defer close(s.done)
 	defer s.ReleaseLaunch()
 	defer s.ReleaseProfile()
@@ -189,12 +203,20 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 		return nil
 	}
 	if !toolkitOwner.CompareAndSwap(nil, s) {
-		return errors.New("desktop/linux: another GTK shell already owns this process")
+		return errToolkitBusy
 	}
-	// GTK remains tied to this OS thread for the process lifetime. Retaining
-	// ownership after shutdown avoids reinitializing GTK from a different thread.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	owned = true
+	var err error
+	if terr := onToolkitThread(func() { err = s.runToolkit(ctx, cfg, ready) }); terr != nil {
+		return terr
+	}
+	return err
+}
+
+// runToolkit is one shell lifetime on the toolkit thread: GTK init (a no-op
+// after the first lifetime), a fresh web context, the main window, the main
+// loop, and teardown of everything this lifetime created.
+func (s *linuxShell) runToolkit(ctx context.Context, cfg desktop.WindowConfig, ready func(desktop.Window)) error {
 	s.uiThread.Store(int64(syscall.Gettid()))
 	defer s.uiThread.Store(0)
 	if err := gtk.Load(); err != nil {
@@ -225,6 +247,7 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 		}
 		s.running.Store(false)
 		cancelShellJobs(s)
+		drainToolkitEvents()
 	}()
 	w, err := s.createWindow(desktop.MainWindowID, desktop.WindowSpec{Title: cfg.Title, Width: cfg.Width, Height: cfg.Height, Style: cfg.Style, Frame: cfg.Frame})
 	if err != nil {
@@ -252,6 +275,17 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 		s.inLoop = false
 	}
 	return nil
+}
+
+// drainToolkitEvents dispatches what is already pending on the default main
+// context after a lifetime's windows are destroyed: unmap and destroy events,
+// cancelled idle jobs, and WebKit's own teardown sources. It never blocks, so
+// the next lifetime starts from a quiet context instead of inheriting this
+// one's backlog.
+func drainToolkitEvents() {
+	for i := 0; i < 1000 && call(gtk.Sym.GtkEventsPending)&0xff != 0; i++ {
+		call(gtk.Sym.GtkMainIterationDo, 0)
+	}
 }
 
 func cancelShellJobs(s *linuxShell) {
@@ -436,7 +470,10 @@ func (s *linuxShell) createWindow(id string, spec desktop.WindowSpec) (*linuxWin
 	connect(handle, "focus-in-event", focusCallback, 0)
 	connect(handle, "focus-out-event", focusCallback, 1)
 	connect(webview, "decide-policy", decidePolicyCallback, 0)
+	w.installDragHandler()
+	w.applyEffectBeforeShow(spec.Style)
 	call(gtk.Sym.GtkWidgetShowAll, handle)
+	w.applyEffectAfterShow()
 	return w, nil
 }
 

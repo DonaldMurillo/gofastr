@@ -325,10 +325,20 @@ func valueHasNUL(v any) bool {
 
 // bridgeDenyMessage is the fixed message for a refused permission.
 func bridgeDenyMessage(code string) string {
-	if code == CodeDenied {
+	switch code {
+	case CodeDenied:
 		return "permission denied"
+	case CodeCancelled:
+		return ErrCancelled.Message
 	}
 	return InternalErrorMsg
+}
+
+// promptSlot returns the one-slot prompt semaphore, made on first use so
+// a Battery literal (the tests build some) needs no constructor.
+func (b *Battery) promptSlot() chan struct{} {
+	b.promptOnce.Do(func() { b.promptSem = make(chan struct{}, 1) })
+	return b.promptSem
 }
 
 // grantWriteTimeout bounds the detached write that persists a decision.
@@ -369,8 +379,16 @@ func (b *Battery) authorizeCall(ctx context.Context, cap Capability, m Method) (
 		return decision == grantAllow, denyCode(decision)
 	}
 
-	b.promptMu.Lock()
-	defer b.promptMu.Unlock()
+	// One alert at a time. The alert can stay up for minutes, so a call
+	// waiting behind it gives up when its own request ends: a page that
+	// aborted its fetch must not keep a queued call alive, and a queued
+	// call must not reach the grant store or the shell on a dead context.
+	select {
+	case b.promptSlot() <- struct{}{}:
+	case <-ctx.Done():
+		return false, CodeCancelled
+	}
+	defer func() { <-b.promptSlot() }()
 	// Re-check under the lock: the request that held the mutex first
 	// may have persisted the decision already.
 	decision, found, err = b.grants.Get(ctx, cap.Name, m.Permission)

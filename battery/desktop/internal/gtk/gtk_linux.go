@@ -137,6 +137,8 @@ type Symbols struct {
 	GtkInitCheck            uintptr // gtk_init_check
 	GtkMain                 uintptr // gtk_main
 	GtkMainQuit             uintptr // gtk_main_quit
+	GtkEventsPending        uintptr // gtk_events_pending
+	GtkMainIterationDo      uintptr // gtk_main_iteration_do
 	GtkWindowNew            uintptr // gtk_window_new
 	GtkWindowSetTitle       uintptr // gtk_window_set_title
 	GtkWindowSetDefaultSize uintptr // gtk_window_set_default_size
@@ -190,10 +192,36 @@ type Symbols struct {
 	JscValueIsString uintptr // jsc_value_is_string
 	JscValueToString uintptr // jsc_value_to_string
 
+	// Window effects (#605): transparency, materials and page drags.
+	GtkWidgetGetScreen              uintptr // gtk_widget_get_screen
+	GtkWidgetSetVisual              uintptr // gtk_widget_set_visual
+	GtkWidgetGetWindow              uintptr // gtk_widget_get_window
+	GtkWidgetGetStyleContext        uintptr // gtk_widget_get_style_context
+	GtkStyleContextAddProvider      uintptr // gtk_style_context_add_provider
+	GtkCSSProviderNew               uintptr // gtk_css_provider_new
+	GtkCSSProviderLoadFromData      uintptr // gtk_css_provider_load_from_data
+	GtkWindowBeginMoveDrag          uintptr // gtk_window_begin_move_drag
+	GdkScreenGetRGBAVisual          uintptr // gdk_screen_get_rgba_visual
+	GdkScreenIsComposited           uintptr // gdk_screen_is_composited
+	GdkEventGetEventType            uintptr // gdk_event_get_event_type
+	GdkEventGetButton               uintptr // gdk_event_get_button
+	GdkEventGetRootCoords           uintptr // gdk_event_get_root_coords
+	GdkEventGetTime                 uintptr // gdk_event_get_time
+	GdkAtomInternStaticString       uintptr // gdk_atom_intern_static_string
+	GdkPropertyChange               uintptr // gdk_property_change
+	WebkitWebViewSetBackgroundColor uintptr // webkit_web_view_set_background_color
+
+	// Optional per symbol: the X11 backend's entry points. A GDK built
+	// without X11 lacks them, and they must never be called on a Wayland
+	// display, so the shell checks the display type first.
+	GdkX11DisplayGetType          uintptr // gdk_x11_display_get_type
+	GdkX11ScreenSupportsNetWMHint uintptr // gdk_x11_screen_supports_net_wm_hint
+
 	// Optional: gdk-pixbuf turns a snapshot's cairo surface into PNG
 	// bytes; libnotify carries notifications.
 	GdkPixbufSaveToBufferv uintptr // gdk_pixbuf_save_to_bufferv
 	NotifyInit             uintptr // notify_init
+	NotifySetAppName       uintptr // notify_set_app_name
 	NotifyGetServerCaps    uintptr // notify_get_server_caps
 	NotifyNotificationNew  uintptr // notify_notification_new
 	NotifyNotificationShow uintptr // notify_notification_show
@@ -292,6 +320,8 @@ func table() []symbol {
 		{&Sym.GtkInitCheck, libGtk, "gtk_init_check"},
 		{&Sym.GtkMain, libGtk, "gtk_main"},
 		{&Sym.GtkMainQuit, libGtk, "gtk_main_quit"},
+		{&Sym.GtkEventsPending, libGtk, "gtk_events_pending"},
+		{&Sym.GtkMainIterationDo, libGtk, "gtk_main_iteration_do"},
 		{&Sym.GtkWindowNew, libGtk, "gtk_window_new"},
 		{&Sym.GtkWindowSetTitle, libGtk, "gtk_window_set_title"},
 		{&Sym.GtkWindowSetDefaultSize, libGtk, "gtk_window_set_default_size"},
@@ -339,11 +369,40 @@ func table() []symbol {
 		{&Sym.JscValueIsString, libJSC, "jsc_value_is_string"},
 		{&Sym.JscValueToString, libJSC, "jsc_value_to_string"},
 
+		{&Sym.GtkWidgetGetScreen, libGtk, "gtk_widget_get_screen"},
+		{&Sym.GtkWidgetSetVisual, libGtk, "gtk_widget_set_visual"},
+		{&Sym.GtkWidgetGetWindow, libGtk, "gtk_widget_get_window"},
+		{&Sym.GtkWidgetGetStyleContext, libGtk, "gtk_widget_get_style_context"},
+		{&Sym.GtkStyleContextAddProvider, libGtk, "gtk_style_context_add_provider"},
+		{&Sym.GtkCSSProviderNew, libGtk, "gtk_css_provider_new"},
+		{&Sym.GtkCSSProviderLoadFromData, libGtk, "gtk_css_provider_load_from_data"},
+		{&Sym.GtkWindowBeginMoveDrag, libGtk, "gtk_window_begin_move_drag"},
+		{&Sym.GdkScreenGetRGBAVisual, libGdk, "gdk_screen_get_rgba_visual"},
+		{&Sym.GdkScreenIsComposited, libGdk, "gdk_screen_is_composited"},
+		{&Sym.GdkEventGetEventType, libGdk, "gdk_event_get_event_type"},
+		{&Sym.GdkEventGetButton, libGdk, "gdk_event_get_button"},
+		{&Sym.GdkEventGetRootCoords, libGdk, "gdk_event_get_root_coords"},
+		{&Sym.GdkEventGetTime, libGdk, "gdk_event_get_time"},
+		{&Sym.GdkAtomInternStaticString, libGdk, "gdk_atom_intern_static_string"},
+		{&Sym.GdkPropertyChange, libGdk, "gdk_property_change"},
+		{&Sym.WebkitWebViewSetBackgroundColor, libWebKit, "webkit_web_view_set_background_color"},
+
 		{&Sym.GdkPixbufSaveToBufferv, libPixbuf, "gdk_pixbuf_save_to_bufferv"},
 		{&Sym.NotifyInit, libNotify, "notify_init"},
+		{&Sym.NotifySetAppName, libNotify, "notify_set_app_name"},
 		{&Sym.NotifyGetServerCaps, libNotify, "notify_get_server_caps"},
 		{&Sym.NotifyNotificationNew, libNotify, "notify_notification_new"},
 		{&Sym.NotifyNotificationShow, libNotify, "notify_notification_show"},
+	}
+}
+
+// optionalSymbols may be missing from a library that is present: the GDK
+// X11 backend's entry points, absent from a GDK built without X11. Load
+// leaves a missing one zero instead of failing.
+func optionalSymbols() []symbol {
+	return []symbol{
+		{&Sym.GdkX11DisplayGetType, libGdk, "gdk_x11_display_get_type"},
+		{&Sym.GdkX11ScreenSupportsNetWMHint, libGdk, "gdk_x11_screen_supports_net_wm_hint"},
 	}
 }
 
@@ -401,6 +460,14 @@ func load() {
 			continue
 		}
 		*s.target = addr
+	}
+	for _, s := range optionalSymbols() {
+		if s.lib.handle == 0 {
+			continue
+		}
+		if addr, err := Dlsym(s.lib.handle, s.name); err == nil {
+			*s.target = addr
+		}
 	}
 	if len(missing) > 0 {
 		loadErr = fmt.Errorf("desktop: %d entry point(s) missing from the installed GTK/WebKitGTK: %s",

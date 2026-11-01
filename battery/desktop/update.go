@@ -120,6 +120,9 @@ type updater struct {
 	// platform is the test seam: set before the first check to
 	// observe the apply step. nil selects the OS default.
 	platform update.Platform
+	// rename is the swap's rename, a test seam for failing the second
+	// rename and its rollback. nil selects os.Rename.
+	rename func(oldpath, newpath string) error
 
 	mu       sync.Mutex
 	notified string // last version an update_available event named
@@ -153,6 +156,14 @@ func (b *Battery) updaterFor() *updater {
 
 // platformOrNil returns the test-injected platform, or nil.
 func (u *updater) platformOverride() update.Platform { return u.platform }
+
+// renameFile is the swap's rename: the injected one, or os.Rename.
+func (u *updater) renameFile(oldpath, newpath string) error {
+	if u.rename != nil {
+		return u.rename(oldpath, newpath)
+	}
+	return os.Rename(oldpath, newpath)
+}
 
 // platformOrDefault returns the injected platform or the OS default
 // (NSBundle-backed on darwin through objc.Main, refusing elsewhere).
@@ -299,7 +310,7 @@ func (u *updater) install(ctx context.Context) error {
 	// bundle out first; failure leaves nothing behind).
 	stage, err := u.stageDir()
 	if err != nil {
-		u.b.logger.Error("desktop: update staging directory failed", "error", err.Error())
+		u.b.logger.Error("desktop: update staging directory failed", "error", update.LogDetail(err))
 		return errUpdateApply
 	}
 	defer os.RemoveAll(stage)
@@ -351,35 +362,44 @@ func (u *updater) install(ctx context.Context) error {
 	// <Name>.app.new beside it: the app cannot start to repair that,
 	// so the user renames one back. After a completed swap the next
 	// launch's startUpdater removes <Name>.app.old.
+	current := filepath.Join(bundleDir, name)
+	old := current + ".old"
+	// A rollback that failed leaves <Name>.app.old as the only copy of
+	// the app. The RemoveAll(old) below would delete it, so a swap with
+	// no current bundle refuses before touching anything.
+	if _, err := os.Lstat(current); err != nil {
+		u.b.logger.Error("desktop: the app bundle is missing, so the update was not applied; rename the .app.old bundle beside it back to .app", "error", update.LogDetail(err))
+		return errUpdateApply
+	}
 	beside := filepath.Join(bundleDir, name+".new")
 	if err := os.RemoveAll(beside); err != nil {
-		u.b.logger.Error("desktop: clearing the previous staged bundle failed", "error", err.Error())
+		u.b.logger.Error("desktop: clearing the previous staged bundle failed", "error", update.LogDetail(err))
 		return errUpdateApply
 	}
 	if err := update.MoveTree(newApp, beside); err != nil {
-		u.b.logger.Error("desktop: moving the new bundle into place failed", "error", err.Error())
+		u.b.logger.Error("desktop: moving the new bundle into place failed", "error", update.LogDetail(err))
 		return errUpdateApply
 	}
-	current := filepath.Join(bundleDir, name)
-	old := current + ".old"
 	if err := os.RemoveAll(old); err != nil {
-		u.b.logger.Error("desktop: clearing the leftover old bundle failed", "error", err.Error())
+		u.b.logger.Error("desktop: clearing the leftover old bundle failed", "error", update.LogDetail(err))
 		return errUpdateApply
 	}
-	if err := os.Rename(current, old); err != nil {
-		u.b.logger.Error("desktop: moving the current bundle aside failed", "error", err.Error())
+	if err := u.renameFile(current, old); err != nil {
+		u.b.logger.Error("desktop: moving the current bundle aside failed", "error", update.LogDetail(err))
 		return errUpdateApply
 	}
-	if err := os.Rename(beside, current); err != nil {
-		u.b.logger.Error("desktop: moving the new bundle into place failed", "error", err.Error())
-		if rb := os.Rename(old, current); rb != nil {
-			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, restore it from "+name+".old", "error", rb.Error())
+	if err := u.renameFile(beside, current); err != nil {
+		u.b.logger.Error("desktop: moving the new bundle into place failed", "error", update.LogDetail(err))
+		if rb := u.renameFile(old, current); rb != nil {
+			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the .app.old bundle beside it back to .app", "error", update.LogDetail(rb))
 		}
 		return errUpdateApply
 	}
 	// The new bundle is in place: from here a second install would
 	// swap over it, relaunched or not.
 	u.installed = true
+	// Relaunch errors are runner output, which update.ExecRunner has
+	// already rewritten to name the bundle, not its path.
 	if err := platform.Relaunch(current); err != nil {
 		u.b.logger.Error("desktop: relaunching the updated bundle failed", "error", err.Error())
 		return errUpdateApply
@@ -437,7 +457,7 @@ func (u *updater) removeStaleOld() {
 		return
 	}
 	if err := os.RemoveAll(old); err != nil {
-		u.b.logger.Warn("desktop: removing the previous update's leftover bundle failed", "error", err.Error())
+		u.b.logger.Warn("desktop: removing the previous update's leftover bundle failed", "error", update.LogDetail(err))
 		return
 	}
 	u.b.logger.Info("desktop: removed the previous update's leftover bundle")

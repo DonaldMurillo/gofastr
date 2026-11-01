@@ -49,7 +49,7 @@ func (s *demoScreen) Render() render.HTML {
 func demoApp(t *testing.T) *framework.TestApp {
 	t.Helper()
 	site := appui.NewApp("desktop-ui-demo")
-	site.WithTheme(desktopui.Theme())
+	site.WithTheme(desktopui.ThemeFor("darwin"))
 	sidebar := appui.NewStaticComponent(desktopui.SourceList(desktopui.SourceListConfig{
 		Sections: []desktopui.SourceSection{{
 			Title: "Views",

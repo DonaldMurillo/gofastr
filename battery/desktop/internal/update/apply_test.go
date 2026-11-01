@@ -2,9 +2,12 @@ package update
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
@@ -89,5 +92,56 @@ func TestUnsupportedPlatformRefusesEverywhere(t *testing.T) {
 	}
 	if err := p.Relaunch("/x"); !errors.Is(err, ErrUnsupportedApply) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLogDetailDropsPaths(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Notes.app")
+	_, statErr := os.Lstat(dir) // a real *fs.PathError naming dir
+	renameErr := os.Rename(dir, dir+".old")
+	var pe *fs.PathError
+	if !errors.As(statErr, &pe) {
+		t.Fatalf("the premise: Lstat of a missing path should be a *fs.PathError, got %v", statErr)
+	}
+	statOp := pe.Op // "lstat"; Windows names the API call
+	for name, tc := range map[string]struct {
+		err  error
+		want string
+	}{
+		"path error":         {statErr, statOp},
+		"link error":         {renameErr, "rename"},
+		"wrapped path error": {fmt.Errorf("desktop: create data dir %s: %w", dir, statErr), statOp},
+		"MoveTree fixed":     {errMoveDestExists, errMoveDestExists.Error()},
+		"other error":        {fmt.Errorf("must be absolute, got %q", dir), "not a file-system error"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if tc.err == nil {
+				t.Fatal("the premise: the call should have failed")
+			}
+			got := LogDetail(tc.err)
+			if strings.Contains(got, dir) || strings.Contains(got, filepath.Dir(dir)) || strings.Contains(got, "Notes.app") {
+				t.Fatalf("LogDetail(%v) = %q names the path", tc.err, got)
+			}
+			if !strings.HasPrefix(got, tc.want) {
+				t.Fatalf("LogDetail = %q, want it to start with %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRelativeToArgsRewritesAbsolutePaths(t *testing.T) {
+	app := filepath.Join(t.TempDir(), "update-123", "Notes.app")
+	out := app + ": invalid signature (code or signature have been modified)\n" +
+		"In subcomponent: " + filepath.Join(app, "Contents", "MacOS", "Notes") + "\n" +
+		app + ": --verify failed\n"
+	got := relativeToArgs(out, []string{"--verify", "--deep", "--strict", app})
+	if strings.Contains(got, filepath.Dir(app)) {
+		t.Fatalf("the command output still names the staging path:\n%s", got)
+	}
+	want := "Notes.app: invalid signature (code or signature have been modified)\n" +
+		"In subcomponent: " + filepath.Join("Notes.app", "Contents", "MacOS", "Notes") + "\n" +
+		"Notes.app: --verify failed\n"
+	if got != want {
+		t.Fatalf("relativeToArgs =\n%s\nwant\n%s", got, want)
 	}
 }

@@ -99,8 +99,9 @@ var rePlatformKey = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // outDir. It refuses a non-semver version, a platform key outside the
 // grammar, an archive URL outside the https rule, an archive that
 // is not a zip with exactly one top-level directory whose name ends in
-// .app, and an archive whose Contents/Info.plist does not declare
-// version as its CFBundleShortVersionString.
+// .app, an archive the updater's own ExtractZip refuses, and an archive
+// whose Contents/Info.plist does not declare version as its
+// CFBundleShortVersionString.
 func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
 	if _, err := ParseVersion(version); err != nil {
 		return fmt.Errorf("version %q: %w", version, err)
@@ -124,6 +125,13 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	}
 	root, err := zipRootName(data)
 	if err != nil {
+		return err
+	}
+	// Every client runs ExtractZip on the download, so the feed runs it
+	// too: an archive the updater refuses (a stray top-level README.txt
+	// or .DS_Store, no directory entry for the bundle root, a symlink,
+	// an oversized entry) is never signed.
+	if err := extractCheck(data, root); err != nil {
 		return err
 	}
 	// The label must be the bundle's own version: a feed calling a 0.1.0
@@ -164,9 +172,10 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	return fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json.sig"), sigFile)
 }
 
-// zipRootName reports the single top-level directory of a zip archive
-// and requires its name to end in .app. It shares the entry-cleaning
-// guard with ExtractZip.
+// zipRootName names the archive's top-level directory and requires it
+// to end in .app. It shares the entry-cleaning guard with ExtractZip;
+// the full shape check (no top-level files, a directory entry for the
+// root) is ExtractZip's, which extractCheck runs.
 func zipRootName(data []byte) (string, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -195,4 +204,17 @@ func zipRootName(data []byte) (string, error) {
 		return "", fmt.Errorf("%w: no top-level .app directory", ErrBadArchive)
 	}
 	return root, nil
+}
+
+// extractCheck extracts the archive into a throwaway 0700 directory with
+// the same ExtractZip every client runs, so the release side and the
+// install side cannot disagree on what a valid archive is.
+func extractCheck(data []byte, root string) error {
+	tmp, err := os.MkdirTemp("", "gofastr-feed-check-")
+	if err != nil {
+		return fmt.Errorf("archive check: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+	_, err = ExtractZip(data, tmp, root)
+	return err
 }

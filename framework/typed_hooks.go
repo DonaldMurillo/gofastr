@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
@@ -38,7 +39,7 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 	app.HookRegistry(name).RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
-			return err
+			return &hookBodyError{err: err}
 		}
 		before := snapshotDeepCopy(v)
 		if err := fn(ctx, &v); err != nil {
@@ -80,7 +81,7 @@ func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, v
 	app.HookRegistry(name).RegisterHook(hook.BeforeUpdate, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
-			return err
+			return &hookBodyError{err: err}
 		}
 		before := snapshotDeepCopy(v)
 		if err := fn(ctx, &v); err != nil {
@@ -183,6 +184,23 @@ func registerIDHook(app *App, name string, ht hook.HookType, label string, fn fu
 		return fn(ctx, id)
 	})
 }
+
+// hookBodyPhrase is what a client reads when a typed Before hook cannot
+// decode the write body into its struct.
+var hookBodyPhrase = i18n.Define("framework.hook_body_type", "a value in the request body does not match its field's type")
+
+// hookBodyError is a typed Before hook's failure to decode the body. The
+// crud layer answers a Before hook's error with a 400 carrying its text,
+// and encoding/json's text names the hook's Go struct and field types.
+// The response carries the phrase; Error and Unwrap keep the detail for
+// logs and errors.As.
+type hookBodyError struct{ err error }
+
+func (e *hookBodyError) Error() string { return e.err.Error() }
+func (e *hookBodyError) Unwrap() error { return e.err }
+
+// Phrased implements i18n.Phrased.
+func (e *hookBodyError) Phrased() (i18n.Phrase, map[string]any) { return hookBodyPhrase, nil }
 
 // unmarshalHookPayload converts the framework's hook payload (snake-cased
 // map[string]any for create/update, string for delete) into a typed value.

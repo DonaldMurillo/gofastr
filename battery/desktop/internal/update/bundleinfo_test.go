@@ -88,7 +88,14 @@ func TestWriteFeedRefusesVersionMismatch(t *testing.T) {
 	data := buildZip(t, map[string]struct {
 		content []byte
 		mode    fs.FileMode
-	}{"Notes.app/Contents/MacOS/Notes": {[]byte("x"), 0o755}})
+	}{
+		// The directory entries keep the archive one the extractor
+		// accepts, so the refusal under test is the missing plist.
+		"Notes.app/":                     {nil, 0o755 | fs.ModeDir},
+		"Notes.app/Contents/":            {nil, 0o755 | fs.ModeDir},
+		"Notes.app/Contents/MacOS/":      {nil, 0o755 | fs.ModeDir},
+		"Notes.app/Contents/MacOS/Notes": {[]byte("x"), 0o755},
+	})
 	if err := os.WriteFile(noPlist, data, 0o600); err != nil {
 		t.Fatal(err)
 	}

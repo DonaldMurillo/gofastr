@@ -46,6 +46,9 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
+		// A typed hook decodes the body into its struct: a form's
+		// strings must be the values they spell first.
+		ch.coerceBeforeHooks(ch.entitySchema(), body, false)
 		if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
@@ -60,7 +63,9 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		return nil, err
 	}
 	// Blank form values go first: a "" for a number must read as "not
-	// provided" before the integer coercion sees it.
+	// provided" before the integer coercion sees it. The hooks already
+	// saw the body through coerceBeforeHooks; this pass covers what they
+	// added.
 	dropEmptyFormValues(ch.entitySchema(), body, false)
 	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
@@ -228,6 +233,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 
 	if ch.Hooks != nil {
+		// As on create: the typed hook's decode sees a form's values, not
+		// its strings.
+		ch.coerceBeforeHooks(ch.entitySchema(), body, true)
 		if err := runHooks(ch.Hooks, ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
@@ -247,7 +255,8 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// existing row already satisfies them; the UPDATE only touches the
 	// columns present in the body.
 	// Blank form values go first: a "" for a number must read as "not
-	// provided" before the integer coercion sees it.
+	// provided" before the integer coercion sees it. As on create, this
+	// pass covers what the hooks added.
 	dropEmptyFormValues(ch.entitySchema(), body, true)
 	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
