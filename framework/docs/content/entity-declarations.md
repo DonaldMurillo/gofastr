@@ -94,14 +94,16 @@ SDK form adds the wire-format notes (decimal arrives as a string, image
 and file fields as URLs), and an unknown type labels as `string`.
 
 The skip side of pagination is bounded the same way the limit side is:
-an explicit `?offset=` beyond the handler's ceiling is refused with
-`400` instead of being handed raw to `OFFSET` (a per-request deep-skip
-scan). The ceiling is `CrudHandler.MaxOffset` when set, otherwise the
-page cap × 1000 — 100,000 at the default `Pagination.MaxListLimit` —
-and it can be moved per handler with `WithMaxOffset`, never removed.
-Page-derived offsets keep their own pinned behaviour: a huge `?page=`
-serves the empty window (200), with the arithmetic overflow guarded in
-`pagination.OffsetForPage`.
+an explicit `?offset=`, or a `?page=` whose `(page-1) × limit` skip lies
+beyond the handler's ceiling, is refused with `400 offset_too_large`
+instead of being handed to `OFFSET` (a per-request deep-skip scan). The
+skip is reckoned exactly, so a page or offset too large for an `int`
+(`?page=9223372036854775807`) is refused too, on the buffered and the
+`?stream=true` path alike, rather than served as page 1. The ceiling is
+`CrudHandler.MaxOffset` when set, otherwise the page cap × 1000 — 100,000
+at the default `Pagination.MaxListLimit` — and it can be moved per handler
+with `WithMaxOffset`, never removed. A page within the ceiling past the
+last row answers 200 with no data.
 
 MCP tools are the opposite. They are **off by default** and need
 `Exposure: &framework.ExposureConfig{MCP: true}`. The one exception is the dev
@@ -189,7 +191,10 @@ column to null on update, and a blank required field fails with
 `File` on update keeps the stored file, since a file input cannot
 carry it back. An upsert reads a blank as a create does when no row
 holds the key and as an update does when one does. A blank in a key
-column is never dropped, so an `Int` key part still refuses it. Empty
+column is never dropped, so an `Int` key part still refuses it, and a
+`""` in any caller-chosen key column, a one-column key included, is
+refused with `400` (`is required`): no route could name that row again.
+Empty
 text stays an
 empty string, since that is a value a user can mean. A filled number
 input arrives as text too: an `Int` field takes `"42"` and a `Float`
@@ -500,6 +505,7 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 - **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
 - **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. Inside a caller's transaction (`App.InTx`, a handler bound to a `*sql.Tx`) they wait until the whole operation succeeds, so a failed cascade announces no child. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
 - **Child keys**: A nested child's keys are read the way its parent's are. Over HTTP that is the child's wire keys; two keys naming one column (`bodyText` and `body_text` on a camel-case handler) answer 400 `validation.keys_fold` on the child's path, as the parent's own keys do. In process (`CreateOne`, a typed repo) the key `MarshalEntity` derives counts too, so a `Line2` field's `line2` writes `line_2`.
+- **Read scope**: A cascade reaches the child entity's rows the way `?include=` does, so it honours the child's read scope: its `ReadScope`, and the clauses its own `BeforeList` hooks append (plus `BeforeGet` for `has_one` and `belongs_to`). An item that names an existing child the scope hides, by a bare id or with fields to update, answers **404**, the same as a child that is not there, and writes nothing; a `has_one` update with no id treats a hidden existing child as absent. A child the write creates, or moves, out of that scope comes back as its id alone.
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
 `owner_field` mirrors `Scope.OwnerField`: set it to the column

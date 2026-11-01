@@ -198,7 +198,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			ch.createWrite(ctx, body),
 			{body: body, sets: func(f schema.Field) bool { return ch.upsertSets(ctx, f) }, holds: ch.scopedHeld(ctx)},
 		} {
-			if err := ch.checkBelongsToScope(ctx, w); err != nil {
+			if err := ch.checkBelongsToScope(ctx, req, w); err != nil {
 				return err
 			}
 		}

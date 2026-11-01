@@ -30,7 +30,7 @@ func TestPartialForeignKeyServerWrite(t *testing.T) {
 		"one column null": {"order_store": nil, "order_no": 7},
 	} {
 		var ve *ValidationError
-		if err := ch.checkBelongsToScope(ctx, ch.createWrite(ctx, body)); !errors.As(err, &ve) || len(ve.Fields()["order_store"]) == 0 {
+		if err := ch.checkBelongsToScope(ctx, nil, ch.createWrite(ctx, body)); !errors.As(err, &ve) || len(ve.Fields()["order_store"]) == 0 {
 			t.Errorf("%s: err = %v; want a validation error on order_store", name, err)
 		}
 	}
@@ -39,7 +39,7 @@ func TestPartialForeignKeyServerWrite(t *testing.T) {
 		"both":      {"order_store": "s1", "order_no": 7},
 		"both null": {"order_store": nil, "order_no": nil},
 	} {
-		if err := ch.checkBelongsToScope(ctx, ch.createWrite(ctx, body)); err != nil {
+		if err := ch.checkBelongsToScope(ctx, nil, ch.createWrite(ctx, body)); err != nil {
 			t.Errorf("%s: err = %v; want nil", name, err)
 		}
 	}
@@ -57,7 +57,7 @@ func TestAutoIncrementForeignKeyColumn(t *testing.T) {
 	})
 	ch := &CrudHandler{Entity: e}
 	var ve *ValidationError
-	err := ch.checkBelongsToScope(context.Background(), ch.createWrite(context.Background(), map[string]any{"order_no": 7}))
+	err := ch.checkBelongsToScope(context.Background(), nil, ch.createWrite(context.Background(), map[string]any{"order_no": 7}))
 	if !errors.As(err, &ve) || len(ve.Fields()["order_no"]) == 0 {
 		t.Errorf("err = %v; want order_no refused", err)
 	}

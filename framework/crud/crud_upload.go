@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -261,7 +263,7 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 		if errors.As(err, &mbe) || strings.Contains(err.Error(), "request body too large") {
 			return nil, nil, errBodyTooLarge
 		}
-		return nil, nil, fmt.Errorf("parse multipart: %w", err)
+		return nil, nil, &i18n.Error{Reason: reasonBadMultipart, Err: err}
 	}
 
 	body := make(map[string]any)
@@ -300,7 +302,11 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 		// one array, mirroring ?field_in= multi-value semantics. Every
 		// scalar field keeps the strict refusal: silently keeping
 		// vals[0] dropped the rest of what a legitimate client sent.
-		for key, vals := range r.MultipartForm.Value {
+		//
+		// Keys go in sorted order, so a body with two refusable keys
+		// names the same one on every request.
+		for _, key := range slices.Sorted(maps.Keys(r.MultipartForm.Value)) {
+			vals := r.MultipartForm.Value[key]
 			if len(vals) == 0 {
 				continue
 			}
@@ -323,14 +329,15 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 				body[key] = list
 				continue
 			}
-			return nil, rec.saved(), fmt.Errorf("duplicate form key %q for a single-valued field", key)
+			return nil, rec.saved(), i18n.NewError(reasonDupFormKey, map[string]any{"key": strconv.Quote(key)})
 		}
 
 		// File parts override values when the same key is present. Two
 		// file parts under one key are the file-side smuggling shape:
 		// the column holds ONE URL, so keep-first silently drops the
 		// second part a proxy may have inspected. Refuse.
-		for key, headers := range r.MultipartForm.File {
+		for _, key := range slices.Sorted(maps.Keys(r.MultipartForm.File)) {
+			headers := r.MultipartForm.File[key]
 			if _, isFileField := fileFieldNames[key]; !isFileField {
 				continue
 			}
@@ -338,7 +345,7 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 				continue
 			}
 			if len(headers) > 1 {
-				return nil, rec.saved(), fmt.Errorf("duplicate file part %q: an Image/File field holds one upload", key)
+				return nil, rec.saved(), i18n.NewError(reasonDupFilePart, map[string]any{"key": strconv.Quote(key)})
 			}
 			if ch.Storage == nil {
 				return nil, rec.saved(), errStorageNotConfigured
