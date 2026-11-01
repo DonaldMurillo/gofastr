@@ -1247,7 +1247,7 @@ func (a *App) RenderPartResult(ctx context.Context, path, addr string) (Fill, Pa
 	// never runs).
 	markChainArea(ctx, chain)
 	seedRouteValues(ctx, path, screen.Path, registeredTitle(screen, decision.Kind), params, requestQuery(ctx))
-	res := a.resolveFillSlot(ctx, path, params, *slot, guards)
+	res := a.resolveFillSlot(fillIDContext(ctx, ctx, *slot), path, params, *slot, guards)
 	if res.notFound {
 		// The 404-outlet outcome is a WHOLE-PAGE outcome: the page this
 		// part belongs to answers the not-found page with status 404, so

@@ -501,6 +501,11 @@ func (a *App) rebuildFillsFromDefaults(ctx context.Context, path string, params 
 // concurrency — so which goroutine finished first is unobservable.
 func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params map[string]string, slots []fillSlot, guards regionGuards) []fillSlotResult {
 	results := make([]fillSlotResult, len(slots))
+	// Element ids the slots derive (render.UniqueID) are settled in slot
+	// order once every slot has rendered, so a second slot's repeat of
+	// the first slot's "features" is "features-2" whichever goroutine
+	// finished first.
+	ids := render.NewRegionBatch(ctx, len(slots))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxConcurrentFills)
 	for i, slot := range slots {
@@ -509,13 +514,27 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			// Each slot hands out ids from its own copy of the page's
-			// scope, so the suffixes do not depend on finish order.
-			results[i] = a.resolveFillSlot(render.ForkIDScope(ctx), path, params, slot, guards)
+			results[i] = a.resolveFillSlot(fillIDContext(ids.Context(i), ctx, slot), path, params, slot, guards)
 		}(i, slot)
 	}
 	wg.Wait()
+	for i := range results {
+		results[i].html = ids.Settle(i, results[i].html)
+	}
 	return results
+}
+
+// fillIDContext is the render context a slot's fill hands element ids
+// out from. A deferred outlet also renders alone, as a part request
+// (RenderPartResult), where nothing else on the page has rendered: it
+// gets a fresh id scope on the page too, so the part answer carries the
+// ids the full page gave the same content. Its ids are unique within
+// the outlet, not against the rest of the page.
+func fillIDContext(region, page context.Context, slot fillSlot) context.Context {
+	if slot.spec.Deferred {
+		return render.WithIDScope(page)
+	}
+	return region
 }
 
 // containedFillError renders the degraded outlet of a contained fill
