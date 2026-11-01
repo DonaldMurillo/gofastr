@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // ParsePredicate parses the filter text the admin's filter chips, query
@@ -135,9 +136,11 @@ func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) 
 		}
 		desc := false
 		if len(toks) == 2 {
-			switch strings.ToUpper(toks[1]) {
-			case "ASC":
-			case "DESC":
+			// ASCII folding only (asciicase): strings.ToUpper maps ſ
+			// (U+017F) onto S, so "deſc" sorted descending.
+			switch asciicase.Lower(toks[1]) {
+			case "asc":
+			case "desc":
 				desc = true
 			default:
 				return nil, i18n.NewError(reasonSortBadDirection, map[string]any{"dir": strconv.Quote(textsafe.SanitizeControlBytes(toks[1]))})
@@ -369,7 +372,7 @@ func (p *predParser) parseValue() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		switch strings.ToLower(tok) {
+		switch asciicase.Lower(tok) {
 		case "true":
 			return "true", nil
 		case "false":

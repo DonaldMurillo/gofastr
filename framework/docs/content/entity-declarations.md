@@ -1182,7 +1182,16 @@ contract" above): `?status_like=OPEN` matches `open` on both dialects,
 where a bare `LIKE` was case-sensitive on Postgres only.
 
 Every key is its own predicate, ANDed: `?score=5&score_gt=3` keeps both,
-and the same query string always compiles to the same SQL. A field whose
+and the same query string always compiles to the same SQL. Two `_in`
+keys that name one column, its name and its `WireName`
+(`?author_id_in=1,2&writer_in=3`), are two lists ANDed, not one union.
+
+**A filter key is sent once.** A key other than `_in` repeated in one
+query string (`?price_lt=100&price_lt=5`) is a **400** naming the key,
+`LenientFilters` included. Before, the first value ran and the rest were
+dropped without a word, so the result was wider than asked and a proxy
+that reads the last value saw a different query from the one the
+database ran. Only `_in` reads every occurrence (below). A field whose
 name ends in a suffix but whose name before it is no field (`opt_in`,
 `check_in`) filters as itself, at the top level, in `?rel.field=` and in
 `include=rel(…)`.
@@ -1202,7 +1211,8 @@ so `content` would write whichever field publishes as `content`.
 `CrudHandler.WireKey(column)` returns the key a column's value sits under
 in the rows `ListAll` and `GetOne` return.
 
-**Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
+**Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three
+(the same key repeated; a different key on the same column ANDs, above).
 Every occurrence of the key contributes; the 1000-entry cap
 (`filter.MaxINListEntries`) counts the union, and the same cap applies to
 relation-scoped lists like `?author.name_in=` (which are refused when the
@@ -1272,8 +1282,18 @@ GET /api/tickets?where={"or":[
 
 compiles to `WHERE ((status = $1) OR ((priority = $2) AND (assignee =
 $3)))`. A node is either a **leaf** (`{"field","op","value"}`, `op`
-defaults to `eq`; use `"values":[...]` or a comma string with
-`op:"in"`) or a **group** (`{"and":[...]}` / `{"or":[...]}`).
+defaults to `eq`; use `"values":[...]` or a comma string in `"value"`
+with `op:"in"`, not both) or a **group** (`{"and":[...]}` /
+`{"or":[...]}`, non-empty, with no leaf member beside it).
+
+The tree decodes strictly, the rule every client-borne JSON body
+follows (a `?cursor=` token included): a key repeated in one object, two
+keys that differ only in case (`"value"` and `"VALUE"`), an unknown
+member (`"vaule"`), a member name in another case (`"Field"`), and a
+member the node's op does not read (`"values"` on an `eq` leaf) are each
+a **400**. Plain JSON decoding kept the last duplicate and dropped the
+rest, so the tree that ran was not the one a proxy reading the first key
+saw, and a typo compared the field with the empty string.
 
 Operators are the same set as the flat params: `eq, ne, gt, lt, gte, lte,
 like, in` — `ne` is the `!=` twin of `_ne` above, NULL semantics included.
@@ -1319,7 +1339,14 @@ String, Text, Enum, UUID and other Relation columns take any text. A value of
 another type (`?n=abc` on an Int, `?active=yes` on a Bool) is a 400
 naming the field and the type on both dialects. `LenientFilters` does not lift it:
 lenient mode drops unknown keys, not mistyped values. A `like` value is
-a substring and is not checked.
+a substring and is not type-checked.
+
+Every value, a `like` substring included, must also be one Postgres can
+bind, or it is the same 400: text that is valid UTF-8 with no NUL byte
+(`?title=a%FFb` and `%00` are refused), a Decimal exponent within ±1000
+(`1e1001` is refused), and a Timestamp or Date in year 1 or later (in
+UTC for a Timestamp; Postgres has no year 0). Postgres refused each at
+bind time with a 500 while SQLite compared the bytes and answered 200.
 
 **Safety.** Every field is validated against the entity's schema
 (Hidden fields rejected; the same value-disclosure-oracle rationale as

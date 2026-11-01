@@ -92,7 +92,9 @@ func TestParseSort_ValuesEquiv(t *testing.T) {
 // every helper instead of N re-parses.
 func TestParseFiltersValues_ParsesExactlyOnce(t *testing.T) {
 	fields := []schema.Field{{Name: "status", Type: schema.String}}
-	raw := "status=active&status=pending"
+	// A repeated _in key (read whole) beside a scalar key; a repeated
+	// scalar key is refused (TestRepeatedScalarFilterKeyRefused).
+	raw := "status_in=active&status_in=pending&status_ne=archived"
 	q, err := url.ParseQuery(raw)
 	if err != nil {
 		t.Fatalf("ParseQuery: %v", err)

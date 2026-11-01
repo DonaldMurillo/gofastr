@@ -145,6 +145,14 @@ type ParsedFilter struct {
 	// Unexported on purpose: only a parse that knows the field's schema
 	// type sets it (ParseFiltersValues, Typed, Coerced).
 	typed any
+
+	// inKey is the query key an OpIn filter was parsed from
+	// (ParseFiltersValues). collectInRun merges a run of OpIn filters
+	// into one IN list only while this matches, so ?author_id_in=1,2
+	// and its wire alias ?writer_in=3 stay two ANDed predicates, the
+	// rule every other key follows, instead of one union. Filters built
+	// by hand leave it empty and merge with each other as before.
+	inKey string
 }
 
 // BindValue returns what a query binder should bind for this filter:
@@ -172,6 +180,11 @@ func (f ParsedFilter) Typed(t schema.FieldType) (ParsedFilter, error) {
 func (f ParsedFilter) typedAs(sent string, t schema.FieldType) (ParsedFilter, error) {
 	f.typed = nil
 	if f.Op == OpLike {
+		// A substring, never coerced, but still a text bind: invalid
+		// UTF-8 or a NUL is Postgres's 22021 here too.
+		if !storableText(f.Value) {
+			return f, valueTypeError(sent, t)
+		}
 		return f, nil
 	}
 	v, err := CoerceValue(sent, t, f.Value)
@@ -421,7 +434,28 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			recordMistyped(key, err)
 			return
 		}
+		if op == OpIn {
+			pf.inKey = key
+		}
 		filters = append(filters, pf)
+	}
+
+	// repeated records the lexically-smallest scalar key sent more than
+	// once. Only _in reads every occurrence (SplitINValues); a scalar
+	// operator has one value, and keeping values[0] while dropping the
+	// rest ran a different query from the one a proxy reading the last
+	// occurrence saw (?price_lt=100&price_lt=5 ran price < 100). The
+	// ambiguity is refused, even under Lenient: Lenient drops unknown
+	// keys, never a known key's values.
+	repeated, repeatedCount := "", 0
+	single := func(key string, values []string) (string, bool) {
+		if len(values) > 1 {
+			if repeated == "" || key < repeated {
+				repeated, repeatedCount = key, len(values)
+			}
+			return "", false
+		}
+		return values[0], true
 	}
 
 	// Keys are walked in sorted order so the same query string always
@@ -494,8 +528,8 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 						add(key, fieldName, col, OpIn, p)
 					}
 				}
-			} else {
-				add(key, fieldName, col, s.Op, values[0])
+			} else if v, ok := single(key, values); ok {
+				add(key, fieldName, col, s.Op, v)
 			}
 			matched = true
 			break
@@ -514,12 +548,16 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			continue
 		}
 		if fieldSet[key] {
-			add(key, key, key, OpEq, values[0])
+			if v, ok := single(key, values); ok {
+				add(key, key, key, OpEq, v)
+			}
 			continue
 		}
 		// WireName override on a plain key (no suffix): resolve to column.
 		if col, ok := wireAlias[key]; ok {
-			add(key, key, col, OpEq, values[0])
+			if v, ok := single(key, values); ok {
+				add(key, key, col, OpEq, v)
+			}
 			continue
 		}
 
@@ -543,6 +581,9 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	}
 	if unknown != "" {
 		return nil, unknownFilterError(unknown, names)
+	}
+	if repeated != "" {
+		return nil, i18n.NewError(reasonRepeatedFilter, map[string]any{"key": strconv.Quote(repeated), "count": repeatedCount})
 	}
 	if mistypedErr != nil {
 		return nil, mistypedErr
@@ -806,14 +847,16 @@ func applyFilters[B interface{ Where(string, ...any) B }](b B, filters []ParsedF
 }
 
 // collectInRun gathers the contiguous run of OpIn filters on the same
-// field starting at index start (ParseFilters emits one ParsedFilter per
-// comma-separated value, all adjacent). It returns the collected values
-// and the run length so the caller can advance past them and emit a
-// single IN clause.
+// field from the same query key starting at index start (ParseFilters
+// emits one ParsedFilter per comma-separated value, all adjacent). It
+// returns the collected values and the run length so the caller can
+// advance past them and emit a single IN clause. Two keys naming one
+// column (author_id_in and its wire alias writer_in) are two lists,
+// ANDed like every other pair of keys: merging them answered the union.
 func collectInRun(filters []ParsedFilter, start int) (values []any, n int) {
-	field := filters[start].Field
+	field, key := filters[start].Field, filters[start].inKey
 	for j := start; j < len(filters); j++ {
-		if filters[j].Op != OpIn || filters[j].Field != field {
+		if filters[j].Op != OpIn || filters[j].Field != field || filters[j].inKey != key {
 			break
 		}
 		values = append(values, filters[j].BindValue())

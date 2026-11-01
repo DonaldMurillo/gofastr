@@ -156,6 +156,18 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 	// sorts ASC, backward (id < $1) sorts DESC. A bare ASC here would make
 	// a backward page return the lowest ids in the table instead of the
 	// rows immediately before the cursor.
+	//
+	// A builder that already orders by field gets no second key for it:
+	// ORDER BY id ASC, id ASC is the same order spelled twice. Keeping
+	// that order's direction in step with dir, and ordering by no other
+	// column first, is the caller's to check (the DSL's after() refuses
+	// both): a keyset cut on one column over rows sorted by another skips
+	// and repeats rows.
+	for _, o := range qb.orderBy {
+		if o.column == field {
+			return qb
+		}
+	}
 	qb.orderBy = append(qb.orderBy, orderClause{column: field, dir: orderDir})
 	return qb
 }

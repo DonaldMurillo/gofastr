@@ -36,3 +36,28 @@ func FuzzParseFilters(f *testing.F) {
 		_, _ = ParseFilters(req, fields)
 	})
 }
+
+// FuzzParseWhere: ParseWhere returns, never panics, on any ?where= text,
+// and a tree it accepts compiles.
+func FuzzParseWhere(f *testing.F) {
+	fields := []schema.Field{
+		{Name: "status", Type: schema.String},
+		{Name: "count", Type: schema.Int},
+	}
+	for _, s := range []string{
+		`{"field":"status","value":"a"}`,
+		`{"or":[{"field":"count","op":"gte","value":"3"},{"and":[{"field":"status","op":"in","values":["a","b"]}]}]}`,
+		`{"field":"status","value":"a","VALUE":"b"}`,
+		`{"and":[],"field":"status"}`,
+		`{"field":null,"op":null,"values":null}`,
+		`{"or":null}`,
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		p, err := ParseWhere(raw, fields)
+		if err == nil && p != nil {
+			_ = BuildPredicate(p)
+		}
+	})
+}
