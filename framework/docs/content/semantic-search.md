@@ -145,6 +145,8 @@ w.ScanOnce(ctx, "./src")          // one-shot
 
 A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
 
+Only regular files are indexed. Symlinks, devices, sockets and pipes under a root are skipped, so a link to `~/.ssh/id_ed25519` or `/dev/zero` is never read, and a link inside the root to another file there is not indexed twice. Each file is opened through an `os.Root` on its root, so a path swapped for a link out of the root between the walk and the read is refused, not followed. The read stops at `MaxFileSize`: a file that grew past it since the walk measured it is skipped, and the version indexed before is removed.
+
 A deleted file's document is removed on the next scan; if `Remove` fails, the scan returns the error and the scan after it tries again.
 
 The first scan after a watcher starts also removes the documents it indexed in an earlier run for files under its roots that are gone, so a file deleted while the app was down leaves the index. Only documents whose ID is the watcher's own for that path are touched; documents the app added itself, and files under another watcher's roots, stay. An index that is not the one `Open` returns is not reconciled.

@@ -313,12 +313,18 @@ func (a *assistApp) sweepExpired() {
 	for _, s := range expired {
 		a.dropLocked(s)
 	}
+	// An expired support credential takes its sockets with it: they
+	// were admitted on it, and the per-frame and idle re-checks would
+	// otherwise keep them reading the session until a frame or a tick.
+	var conns []*stream.WebSocketConn
 	for v, exp := range a.supporters {
 		if now.After(exp) {
 			delete(a.supporters, v)
+			conns = append(conns, a.takeCredentialConnsLocked(v)...)
 		}
 	}
 	a.mu.Unlock()
+	closeConns(conns)
 }
 
 // janitor sweeps expired sessions and support credentials in the
@@ -411,15 +417,20 @@ func (a *assistApp) dropLocked(s *assistSession) {
 		s.lru = nil
 	}
 	delete(a.byToken, s.joinToken)
+	var owned []*stream.WebSocketConn
 	for tok, sid := range a.operators {
 		if sid == s.id {
 			delete(a.operators, tok)
+			owned = append(owned, a.takeCredentialConnsLocked(tok)...)
 		}
 	}
 	conns := s.conns
 	s.conns = map[role]*stream.WebSocketConn{}
 	go func() {
 		for _, c := range conns {
+			c.Close()
+		}
+		for _, c := range owned {
 			c.Close()
 		}
 		s.channel.Stop()
@@ -793,6 +804,36 @@ const wsSeatsPerCredential = 16
 // a refused caller never reaches the socket at all.
 type wsSeat struct {
 	credential string
+	// conn is the admitted socket, set under assistApp.mu once the
+	// upgrade succeeds, so the credential's expiry can close it.
+	conn *stream.WebSocketConn
+}
+
+// takeCredentialConnsLocked returns the live sockets admitted on
+// credential, for the caller to close outside mu. Caller holds mu. The
+// seats themselves are released by their handlers' deferred unseat.
+func (a *assistApp) takeCredentialConnsLocked(credential string) []*stream.WebSocketConn {
+	var out []*stream.WebSocketConn
+	for _, seat := range a.wsSeats[credential] {
+		if seat.conn != nil {
+			out = append(out, seat.conn)
+			seat.conn = nil
+		}
+	}
+	return out
+}
+
+// closeConns closes sockets off the caller's goroutine: Close waits on
+// the socket's pumps, which must never run under mu.
+func closeConns(conns []*stream.WebSocketConn) {
+	if len(conns) == 0 {
+		return
+	}
+	go func() {
+		for _, c := range conns {
+			c.Close()
+		}
+	}()
 }
 
 // reserveWSSeat takes one seat for credential under
@@ -906,6 +947,7 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		}
 		prev := s.conns[r]
 		s.conns[r] = conn
+		seat.conn = conn
 		a.mu.Unlock()
 		// A role reconnect supplants the tracked transport; closing the one
 		// it replaces frees its channel registration and its pumps instead
@@ -948,9 +990,21 @@ func (a *assistApp) handleWS(r role) http.Handler {
 				}
 			}
 		}()
+		// A credential that expired between the upgrade's check and the
+		// seat taking its socket was swept before the sweep could see it.
+		if !held() {
+			return
+		}
+		// Every frame takes the shared mutex and most fan out an event,
+		// so frames pass a per-socket token bucket first; a socket over
+		// it is closed, battery/rtc's posture.
+		limiter := newFrameLimiter(wsFramesPerSecond)
 		for {
 			data, rerr := conn.Read()
 			if rerr != nil {
+				return
+			}
+			if !limiter.allow(time.Now()) {
 				return
 			}
 			if !held() {
@@ -977,6 +1031,42 @@ func (a *assistApp) handleWS(r role) http.Handler {
 
 // wsRecheckEvery paces the idle re-check of an assist socket's role.
 var wsRecheckEvery = 30 * time.Second
+
+// wsFramesPerSecond caps inbound frames per assist socket (burst twice
+// that). A page sends a handful of signaling frames per call and a media
+// report on each path change; 64 a second leaves ICE bursts room.
+const wsFramesPerSecond = 64
+
+// frameLimiter is a per-socket token bucket: rate tokens per second,
+// burst 2x rate, no initial leniency beyond the burst. It is
+// battery/rtc's frameLimiter, which that package does not export.
+type frameLimiter struct {
+	rate   float64
+	burst  float64
+	tokens float64
+	last   time.Time
+}
+
+func newFrameLimiter(perSecond int) frameLimiter {
+	burst := 2 * float64(perSecond)
+	return frameLimiter{rate: float64(perSecond), burst: burst, tokens: burst}
+}
+
+func (f *frameLimiter) allow(now time.Time) bool {
+	if !f.last.IsZero() {
+		if elapsed := now.Sub(f.last).Seconds(); elapsed > 0 {
+			f.tokens = min(f.burst, f.tokens+elapsed*f.rate)
+			f.last = now
+		}
+	} else {
+		f.last = now
+	}
+	if f.tokens >= 1 {
+		f.tokens--
+		return true
+	}
+	return false
+}
 
 // operatorCookie pulls the operator credential without leaking the
 // error shape into handlers.
