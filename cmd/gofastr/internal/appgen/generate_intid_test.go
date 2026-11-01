@@ -55,7 +55,7 @@ func TestClientTypesIntID(t *testing.T) {
 			dts = f.Content
 		}
 	}
-	for _, want := range []string{"  id: number;\n", "Resource<Counters, CountersInput, CountersPatch, number, { id: number }>"} {
+	for _, want := range []string{"  id: number | string;\n", "Resource<Counters, CountersInput, CountersPatch, number | string, { id: number | string }>"} {
 		if !strings.Contains(dts, want) {
 			t.Errorf("client.d.ts lacks %q", want)
 		}

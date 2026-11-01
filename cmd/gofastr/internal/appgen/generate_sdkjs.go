@@ -125,7 +125,7 @@ func tsKeyType(decl framework.EntityDeclaration) string {
 // empty for the generated string id (the defaults).
 func tsKeyArgs(decl framework.EntityDeclaration) string {
 	if intID(decl) {
-		return ", number, { id: number }"
+		return ", number | string, { id: number | string }"
 	}
 	if appspec.DeclKeyIsID(decl) {
 		return ""
@@ -352,10 +352,14 @@ func stampNote(stamp string) string {
 
 // tsTypeForField mirrors goTypeForField for TypeScript. Decimal stays a
 // string (the wire truth), timestamps/dates are RFC 3339 strings, enums
-// become literal unions.
+// become literal unions. An integer is number | string: the client's
+// parseJSON hands one past 2^53 over as its exact decimal string, and the
+// server takes that string back for an integer column.
 func tsTypeForField(declType string, values []string) string {
 	switch strings.ToLower(declType) {
-	case "int", "integer", "float", "number":
+	case "int", "integer":
+		return "number | string"
+	case "float", "number":
 		return "number"
 	case "bool", "boolean":
 		return "boolean"
@@ -405,6 +409,40 @@ func renderSDKJSReadme(spec sdkSpec) string {
 // Kept as one literal so the emitted file reads top-to-bottom like
 // handwritten code.
 const jsRuntimePrelude = `/**
+ * parseJSON is JSON.parse that keeps an integer past 2^53 exact: it
+ * arrives as its decimal string, the digits the server sent, where
+ * JSON.parse would round it (a snowflake id, a big counter). client.d.ts
+ * types every integer field number | string for this reason. Every other
+ * value parses as JSON.parse would.
+ */
+function parseJSON(text) {
+  // An unsafe integer has at least 16 digits; most bodies have no such run.
+  if (!/\d{16}/.test(text)) return JSON.parse(text);
+  const numChar = (c) => (c >= 48 && c <= 57) || c === 46 || c === 101 || c === 69 || c === 43 || c === 45;
+  let out = "";
+  let last = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 34) {
+      // A string: skip to its closing quote, past escaped characters.
+      for (i++; i < text.length && text.charCodeAt(i) !== 34; i++) {
+        if (text.charCodeAt(i) === 92) i++;
+      }
+    } else if (c === 45 || (c >= 48 && c <= 57)) {
+      let j = i + 1;
+      while (j < text.length && numChar(text.charCodeAt(j))) j++;
+      const tok = text.slice(i, j);
+      if (/^-?\d+$/.test(tok) && !Number.isSafeInteger(Number(tok))) {
+        out += text.slice(last, i) + '"' + tok + '"';
+        last = j;
+      }
+      i = j - 1;
+    }
+  }
+  return JSON.parse(out + text.slice(last));
+}
+
+/**
  * ApiError is thrown for non-2xx responses. The message is in the
  * request's locale; reason is its stable code (unique_taken,
  * unknown_filter), the thing to branch on. fields (when present) maps
@@ -421,7 +459,7 @@ export class ApiError extends Error {
     let fieldReasons = null;
     let parsed = null;
     if (typeof body === "string" && body) {
-      try { parsed = JSON.parse(body); } catch { /* non-JSON error body */ }
+      try { parsed = parseJSON(body); } catch { /* non-JSON error body */ }
     }
     if (parsed && typeof parsed === "object") {
       if (parsed.error) message = "api: " + status + ": " + parsed.error;
@@ -719,7 +757,7 @@ const jsClientMethods = `  async do(method, path, body) {
       throw new ApiError(resp.status, text);
     }
     if (resp.status === 204 || text === "") return null;
-    return JSON.parse(text);
+    return parseJSON(text);
   }
 
   /**
@@ -782,7 +820,7 @@ const jsClientMethods = `  async do(method, path, body) {
         if (line === "") {
           if (data !== "") {
             let parsed = data;
-            try { parsed = JSON.parse(data); } catch { /* keep raw */ }
+            try { parsed = parseJSON(data); } catch { /* keep raw */ }
             await onEvent(event, parsed);
           }
           event = "";

@@ -149,10 +149,17 @@ before any request is sent.
 `watch` uses fetch streaming (not `EventSource`: it can't send the
 Authorization header). Batch rollbacks (HTTP 400 with a decodable
 envelope) resolve normally with `committed: false`. Every response body
-the client buffers — the `JSON.parse` in `do()` and the `ApiError`
+the client buffers — the parse in `do()` and the `ApiError`
 snapshot on the error path — goes through a capped read (`_readBody`,
 1 MiB, the same `maxBodyBytes` the Go client enforces): a bigger body
-throws instead of buffering. The exported
+throws instead of buffering.
+
+Bodies and `watch` events parse with the client's `parseJSON`, not bare
+`JSON.parse`: an integer past 2^53 (a snowflake id, a big counter)
+arrives as its exact decimal string where `JSON.parse` would round it.
+Every other value parses the same. `client.d.ts` types each integer
+field `number | string` for that reason, and the server takes the string
+back for an integer column, so a value read this way round-trips. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
 
@@ -201,7 +208,8 @@ await api.enrollments.batchDelete([[studentId, courseId]]);
 
 Each value goes into its own path segment, escaped the way the server's
 `entity.JoinKey` escapes it, so the id the request names is the one the
-server stores. An entity with an integer `id` types it `number`.
+server stores. An entity with an integer `id` types it `number | string`,
+like every integer field (see below).
 
 ## The casing contract both SDKs encode
 

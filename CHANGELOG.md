@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: the JS SDK keeps integers past 2^53.** `client.js` parsed
+  with `JSON.parse`, so a big id or counter lost digits. It now hands such
+  an integer over as its exact decimal string, and `client.d.ts` types
+  every integer field, and an integer `id`, `number | string`. TypeScript
+  code that does arithmetic on one narrows it first. See
+  [SDK](framework/docs/content/sdk.md).
 - **The harness MCP server cancels a request from another POST.** Over
   Streamable HTTP each POST had its own in-flight table, so the
   `notifications/cancelled` an MCP client sends as a separate POST found

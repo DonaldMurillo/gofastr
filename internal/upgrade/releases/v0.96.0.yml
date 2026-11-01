@@ -706,3 +706,7 @@ notes:
         - gofastr/core-ui/island.ParsePresenceTopics
       strings:
         match: '[?&]presence='
+  - change: "BREAKING - the generated JS SDK types integer fields and integer ids number | string, and hands an integer past 2^53 over as its decimal string"
+    breaking: true
+    guidance: "client.js used JSON.parse, which rounds an integer past 2^53. Regenerate the JS SDK (gofastr sdk). TypeScript that treats an integer field as a number narrows it first (typeof v === \"number\"), or converts with Number(v) when the value is known to stay under 2^53, or BigInt(v) when it may not."
+    nodetect: "the change lands in regenerated SDK files; caller code that reads an integer field as number has no fixed spelling to search for"
