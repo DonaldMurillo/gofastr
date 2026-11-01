@@ -128,8 +128,10 @@ under a window title. Even apps that explicitly share a `DataDir` have separate
 browser profiles by ID. The data directory and profile root must be owned by
 the current user with mode `0700`; missing directories are created privately,
 but existing permissions are not changed. Symlinked paths, foreign-owned or
-unsafe writable ancestors, non-regular profile files, hard links, malformed
-origin metadata and invalid cookie databases are refused, not reset. Startup
+unsafe writable ancestors, non-regular profile files, malformed origin metadata
+and invalid cookie databases are refused, not reset. So is a hard link to a file
+outside the profile, or a second name for the cookie, origin or lock files.
+WebKit's own cache links inside the profile are accepted. Startup
 inspects a bounded profile tree (100,000 entries, depth32); these checks are not
 a defense against a hostile process running as the same user.
 

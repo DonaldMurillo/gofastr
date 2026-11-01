@@ -182,7 +182,9 @@ few lines, and link the PR or the docs page for the rest.
 - **The mobile sidebar drawer is announced as "Navigation"**
   (`ui.sidebar.drawer`).
 - **Desktop.** Linux apps start after a crash left the cookie database's
-  rollback journal behind. A double-clicked Install no longer runs two
+  rollback journal behind, and a persistent profile relaunches after
+  WebKit caches a body of 16 KiB or more: the cache hard-links it inside
+  the profile, and startup refused every hard link. A double-clicked Install no longer runs two
   updates at once. Closing a secondary macOS window frees its web view,
   and a call on a closed window reports it closed. On Windows, a
   forwarded deep link keeps a maximized window maximized, and window
