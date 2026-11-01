@@ -604,6 +604,21 @@ id="gofastr-behaviors">` block in static exports and the embed frame.
 The kernel scans those markers after its own table, so the module loads
 once when a marker appears, at boot, on DOM insertion, or after a
 client navigation, and `data-cui-prefetch="<name>"` warms it on hover.
+Register at package init: the host builds the behaviours block once, so
+`RegisterBehavior` panics after the host has frozen the registry (its
+first manifest), the same rule `RegisterStyle` keeps. A requirement
+graph the loader cannot satisfy (a cycle, an unknown module) stops a
+`framework.App` at boot (`ValidateBoot`); a host mounted without an App
+answers every request with a 500 naming the cycle, never an empty
+manifest.
+
+The module route (`/__gofastr/runtime/<name>.js`) and the compute asset
+route (`/__gofastr/compute/<name>.js|.wasm`) cache `immutable` only when
+`?v=` names the bytes the process serves. Any other `?v=` (a page from
+another replica mid-deploy, no version at all) is `no-cache` with the
+content hash as its `ETag`, so a browser or CDN never pins one build's
+bytes under another build's URL. A static export writes every registered
+compute asset to `/__gofastr/compute/` beside the runtime modules.
 A malformed block (a `window.__gofastr_behaviors` that is not a
 descriptor map, an inline `#gofastr-behaviors` that is not JSON) is
 ignored: the kernel registers no behaviours and boots on its own

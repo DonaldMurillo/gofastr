@@ -82,6 +82,12 @@ type perLocale[T any] struct {
 type perLocaleEntry[T any] struct {
 	once sync.Once
 	v    T
+	// panicked holds a build's panic value. sync.Once counts a
+	// panicking call as done, so without it every later get returned
+	// the zero value: a refused behaviour graph answered 500 once and
+	// then served an empty manifest.js, every page linked ?v= with no
+	// hash, and nothing was logged again.
+	panicked any
 }
 
 func (p *perLocale[T]) get(key string, build func() T) T {
@@ -95,6 +101,16 @@ func (p *perLocale[T]) get(key string, build func() T) T {
 		p.m[key] = e
 	}
 	p.mu.Unlock()
-	e.once.Do(func() { e.v = build() })
+	e.once.Do(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				e.panicked = r
+			}
+		}()
+		e.v = build()
+	})
+	if e.panicked != nil {
+		panic(e.panicked)
+	}
 	return e.v
 }
