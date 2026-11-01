@@ -278,3 +278,50 @@ func claimSqlite(db *sql.DB) error {
 		t.Errorf("finding must name the missing predicate: %q", found[0].Message)
 	}
 }
+
+// A prose literal ahead of the query (an error prefix that says
+// "with" or "select", or SQL-shaped words mid-sentence) is not the
+// query: the SQL that follows is what each side compares.
+func TestDialectDriftSkipsLeadingProse(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"claim.go": `package jobs
+
+import "database/sql"
+
+func claimJobsPostgres(db *sql.DB) error {
+	what := "claim with postgres: select the oldest free row"
+	q := "SELECT id FROM jobs WHERE status = 'pending' AND (next_at IS NULL OR next_at <= $1)"
+	_, err := db.Query(q, what)
+	return err
+}
+
+func claimJobsSQLite(db *sql.DB) error {
+	what := "claim with sqlite: delete from jobs runs on ack"
+	q := "SELECT id FROM jobs WHERE status = 'pending'"
+	_, err := db.Query(q, what)
+	return err
+}
+`,
+	})
+	found := countRule(t, ds, contracts.RuleDialectDrift)
+	if len(found) != 1 || !strings.Contains(found[0].Message, "next_at") {
+		t.Fatalf("want 1 finding naming next_at on the SQLite side, got %v", found)
+	}
+}
+
+// SQLite3 and PostgreSQL are the same dialect tokens as SQLite and
+// Postgres: the twins pair.
+func TestDialectDriftSQLite3NamesPair(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"claim.go": `package jobs
+
+const claimJobsPostgreSQL = "SELECT id FROM jobs WHERE status = 'pending' AND (next_at IS NULL OR next_at <= $1)"
+
+const claimJobsSQLite3 = "SELECT id FROM jobs WHERE status = 'pending'"
+`,
+	})
+	found := countRule(t, ds, contracts.RuleDialectDrift)
+	if len(found) != 1 || !strings.Contains(found[0].Message, "claimJobsSQLite3") {
+		t.Fatalf("want 1 finding on claimJobsSQLite3, got %v", found)
+	}
+}

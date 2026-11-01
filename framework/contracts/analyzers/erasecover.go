@@ -40,12 +40,17 @@ import (
 //
 // Shape, per package under core/, framework/ and battery/: a CREATE
 // TABLE (or CREATE VIRTUAL TABLE) string whose column list names a
-// user-identifying column (user_id, owner, owner_id, actor_id, subject,
-// email, creator, principal, users, …) or a record-payload column
-// (payload, body, snapshot, diff, task_json, config_json, and the
-// text/fields/meta of an index document), with no DataEraser or no
-// DataExporter literal in the same package whose Table resolves to the
-// same table. The finding names which plane is missing.
+// user-identifying column (user_id, uid, owner, owner_id, member_id,
+// actor_id, subject, email, creator, principal, users, …) or a
+// record-payload column (payload, body, data, content, snapshot, diff,
+// task_json, config_json, and the text/fields/meta of an index
+// document), or an ALTER TABLE … ADD [COLUMN] adding one, with no
+// DataEraser or no DataExporter in the same package whose Table
+// resolves to the same table. A registration's Table counts whether it
+// is the literal's Table key or a later field assignment on a variable
+// holding one (e := datexport.DataEraser{…}; e.Table = s.table). The
+// finding names which plane is missing; an ALTER reports only when no
+// CREATE of the same table already does.
 //
 // Table identity is resolved syntactically, both sides the same way: a
 // literal name, a package constant, a receiver or type-asserted field
@@ -107,7 +112,7 @@ func ruleEraseCover(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diag
 	}
 	var out []contracts.Diagnostic
 	for _, t := range pk.tables {
-		if t.rel != rel {
+		if t.rel != rel || (t.alter && pk.createdWithEvidence(t)) {
 			continue
 		}
 		erased := ecCovered(t.refs, pk.erasers)
@@ -129,6 +134,18 @@ func ruleEraseCover(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diag
 	return out
 }
 
+// createdWithEvidence reports whether a CREATE TABLE of the same table
+// already carries user-data evidence: that site is the finding, and the
+// ALTER that adds another such column would only repeat it.
+func (pk *ecPkg) createdWithEvidence(alter *ecTable) bool {
+	for _, t := range pk.tables {
+		if !t.alter && ecCovered(alter.refs, [][]ecRef{t.refs}) {
+			return true
+		}
+	}
+	return false
+}
+
 // eraseCoverScope keeps the rule to the framework's own store code.
 func eraseCoverScope(rel string) bool {
 	for _, root := range []string{"core", "framework", "battery"} {
@@ -145,6 +162,7 @@ var ecIdentityColumns = map[string]bool{
 	"actor_id": true, "actor": true, "subject": true, "subject_id": true,
 	"email": true, "creator": true, "created_by": true, "principal": true,
 	"principal_id": true, "account_id": true, "users": true,
+	"uid": true, "member_id": true,
 }
 
 // ecPayloadColumns carry a copy of record data: an event or job
@@ -153,7 +171,7 @@ var ecIdentityColumns = map[string]bool{
 var ecPayloadColumns = map[string]bool{
 	"payload": true, "body": true, "snapshot": true, "diff": true,
 	"task_json": true, "config_json": true, "text": true, "fields": true,
-	"meta": true,
+	"meta": true, "data": true, "content": true,
 }
 
 // ecRef is one possible identity of a table name expression: a
@@ -171,6 +189,9 @@ type ecTable struct {
 	display  string
 	refs     []ecRef
 	evidence []string
+	// alter marks a table seen through ALTER TABLE … ADD COLUMN; it
+	// reports only when no CREATE TABLE of the same table already does.
+	alter bool
 }
 
 type ecSite struct {
@@ -313,6 +334,17 @@ func (pk *ecPkg) indexGenDecl(g *ast.GenDecl) {
 func (pk *ecPkg) walkDecl(d ast.Decl, fn *ast.FuncDecl, datexportAlias string) {
 	var lits []*ast.FuncType
 	var stack []ast.Node
+	// locals maps a variable of this declaration to the datexport type
+	// it holds (e := datexport.DataEraser{…}, var x datexport.DataExporter),
+	// so a later e.Table = … registers like the literal's Table key.
+	locals := map[string]string{}
+	pending := func(kind string, value ast.Expr) {
+		if kind == "DataEraser" {
+			pk.pendingErasers = append(pk.pendingErasers, ecSite{value, fn})
+		} else {
+			pk.pendingExporters = append(pk.pendingExporters, ecSite{value, fn})
+		}
+	}
 	ast.Inspect(d, func(n ast.Node) bool {
 		if n == nil {
 			top := stack[len(stack)-1]
@@ -333,17 +365,40 @@ func (pk *ecPkg) walkDecl(d ast.Decl, fn *ast.FuncDecl, datexportAlias string) {
 			case *ast.SelectorExpr:
 				pk.calls[f.Sel.Name] = append(pk.calls[f.Sel.Name], ecCallSite{v, fn})
 			}
+		case *ast.ValueSpec:
+			if kind := ecDatexportKind(v.Type, datexportAlias); kind != "" {
+				for _, name := range v.Names {
+					locals[name.Name] = kind
+				}
+			}
+			for i, name := range v.Names {
+				if i < len(v.Values) {
+					if kind := ecDatexportKind(v.Values[i], datexportAlias); kind != "" {
+						locals[name.Name] = kind
+					}
+				}
+			}
 		case *ast.AssignStmt:
 			if len(v.Lhs) != len(v.Rhs) {
 				break
 			}
 			for i, l := range v.Lhs {
+				if id, ok := l.(*ast.Ident); ok {
+					if kind := ecDatexportKind(v.Rhs[i], datexportAlias); kind != "" {
+						locals[id.Name] = kind
+					}
+					continue
+				}
 				sel, ok := l.(*ast.SelectorExpr)
 				if !ok {
 					continue
 				}
 				x, ok := sel.X.(*ast.Ident)
 				if !ok {
+					continue
+				}
+				if kind := locals[x.Name]; kind != "" && sel.Sel.Name == "Table" {
+					pending(kind, v.Rhs[i])
 					continue
 				}
 				t := pk.typeOfIdent(x.Name, fn)
@@ -382,16 +437,35 @@ func (pk *ecPkg) walkDecl(d ast.Decl, fn *ast.FuncDecl, datexportAlias string) {
 					if k, ok := kv.Key.(*ast.Ident); !ok || k.Name != "Table" {
 						continue
 					}
-					if ty.Sel.Name == "DataEraser" {
-						pk.pendingErasers = append(pk.pendingErasers, ecSite{kv.Value, fn})
-					} else {
-						pk.pendingExporters = append(pk.pendingExporters, ecSite{kv.Value, fn})
-					}
+					pending(ty.Sel.Name, kv.Value)
 				}
 			}
 		}
 		return true
 	})
+}
+
+// ecDatexportKind reports which datexport registration type an
+// expression or type spells: datexport.DataEraser / DataExporter, a
+// composite literal of one, or its address.
+func ecDatexportKind(e ast.Expr, datexportAlias string) string {
+	if datexportAlias == "" {
+		return ""
+	}
+	switch v := e.(type) {
+	case *ast.UnaryExpr:
+		return ecDatexportKind(v.X, datexportAlias)
+	case *ast.StarExpr:
+		return ecDatexportKind(v.X, datexportAlias)
+	case *ast.CompositeLit:
+		return ecDatexportKind(v.Type, datexportAlias)
+	case *ast.SelectorExpr:
+		x, ok := v.X.(*ast.Ident)
+		if ok && x.Name == datexportAlias && (v.Sel.Name == "DataEraser" || v.Sel.Name == "DataExporter") {
+			return v.Sel.Name
+		}
+	}
+	return ""
 }
 
 var reCreateTable = regexp.MustCompile(`(?is)\bCREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`)
@@ -473,47 +547,16 @@ func ecHolesText(e ast.Expr) (string, []ast.Expr, bool) {
 }
 
 func (pk *ecPkg) parseDDL(rel string, root ast.Expr, text string, holes, args []ast.Expr, fn *ast.FuncDecl) {
-	for _, m := range reCreateTable.FindAllStringIndex(text, -1) {
-		at := m[1]
-		var nameExpr ast.Expr
-		display := ""
-		var refs []ecRef
-		rest := text[at:]
-		switch {
-		case strings.HasPrefix(rest, "%"):
-			// A verb slot with no Sprintf argument behind it is a string
-			// that never runs as written: a quoted example, a doc string.
-			idx, n := ecVerbIndex(text, at)
-			if idx < 0 || idx >= len(args) {
-				continue
-			}
-			nameExpr = args[idx]
-			at += n
-		case strings.HasPrefix(rest, ecHole):
-			end := strings.Index(rest[1:], ecHole)
-			if end < 0 {
-				continue
-			}
-			if i, err := strconv.Atoi(rest[1 : 1+end]); err == nil && i < len(holes) {
-				nameExpr = holes[i]
-			}
-			at += end + 2
-		default:
-			j := 0
-			for j < len(rest) && (ecIdentByte(rest[j]) || rest[j] == '"' || rest[j] == '`' || rest[j] == '.') {
-				j++
-			}
-			name := strings.Trim(rest[:j], "\"`")
-			if name == "" {
-				continue
-			}
-			display = name
-			refs = []ecRef{{key: "lit:" + name, names: []string{name}}}
-			at += j
+	pos := func(off int) token.Pos {
+		if lit, ok := root.(*ast.BasicLit); ok && strings.HasPrefix(lit.Value, "`") {
+			return lit.Pos() + 1 + token.Pos(off)
 		}
-		if nameExpr != nil {
-			display = ecExprText(nameExpr)
-			refs = pk.resolve(nameExpr, ecCtx{fn: fn}, 0)
+		return root.Pos()
+	}
+	for _, m := range reCreateTable.FindAllStringIndex(text, -1) {
+		display, refs, at, ok := pk.tableNameAt(text, m[1], holes, args, fn)
+		if !ok {
+			continue
 		}
 		body, ok := ecColumnList(text, at)
 		if !ok {
@@ -523,12 +566,90 @@ func (pk *ecPkg) parseDDL(rel string, root ast.Expr, text string, holes, args []
 		if len(evidence) == 0 {
 			continue
 		}
-		pos := root.Pos()
-		if lit, ok := root.(*ast.BasicLit); ok && strings.HasPrefix(lit.Value, "`") {
-			pos = lit.Pos() + 1 + token.Pos(m[0])
-		}
-		pk.tables = append(pk.tables, &ecTable{rel: rel, pos: pos, display: display, refs: refs, evidence: evidence})
+		pk.tables = append(pk.tables, &ecTable{rel: rel, pos: pos(m[0]), display: display, refs: refs, evidence: evidence})
 	}
+	// ALTER TABLE … ADD [COLUMN] adds a column after the CREATE: a
+	// user or payload column added that way puts user data in the
+	// table as surely as one in the column list.
+	for _, m := range reAlterTable.FindAllStringIndex(text, -1) {
+		display, refs, at, ok := pk.tableNameAt(text, m[1], holes, args, fn)
+		if !ok {
+			continue
+		}
+		evidence := ecAddedColumns(text[at:])
+		if len(evidence) == 0 {
+			continue
+		}
+		pk.tables = append(pk.tables, &ecTable{rel: rel, pos: pos(m[0]), display: display, refs: refs, evidence: evidence, alter: true})
+	}
+}
+
+// tableNameAt reads the table name that starts at text[at] — a Sprintf
+// verb slot, a concatenation hole, or a literal (optionally quoted or
+// schema-qualified) name — and returns its display, its resolved
+// identities and the offset just past it.
+func (pk *ecPkg) tableNameAt(text string, at int, holes, args []ast.Expr, fn *ast.FuncDecl) (string, []ecRef, int, bool) {
+	var nameExpr ast.Expr
+	rest := text[at:]
+	switch {
+	case strings.HasPrefix(rest, "%"):
+		// A verb slot with no Sprintf argument behind it is a string
+		// that never runs as written: a quoted example, a doc string.
+		idx, n := ecVerbIndex(text, at)
+		if idx < 0 || idx >= len(args) {
+			return "", nil, 0, false
+		}
+		nameExpr = args[idx]
+		at += n
+	case strings.HasPrefix(rest, ecHole):
+		end := strings.Index(rest[1:], ecHole)
+		if end < 0 {
+			return "", nil, 0, false
+		}
+		if i, err := strconv.Atoi(rest[1 : 1+end]); err == nil && i < len(holes) {
+			nameExpr = holes[i]
+		}
+		at += end + 2
+	default:
+		j := 0
+		for j < len(rest) && (ecIdentByte(rest[j]) || rest[j] == '"' || rest[j] == '`' || rest[j] == '.') {
+			j++
+		}
+		name := strings.Trim(rest[:j], "\"`")
+		if name == "" {
+			return "", nil, 0, false
+		}
+		return name, []ecRef{{key: "lit:" + name, names: []string{name}}}, at + j, true
+	}
+	if nameExpr == nil {
+		return "", nil, at, true
+	}
+	return ecExprText(nameExpr), pk.resolve(nameExpr, ecCtx{fn: fn}, 0), at, true
+}
+
+var (
+	reAlterTable = regexp.MustCompile(`(?is)\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?`)
+	// reAddColumn is one ADD [COLUMN] [IF NOT EXISTS] <name> action of
+	// an ALTER TABLE; Postgres chains several with commas. ADD
+	// CONSTRAINT / PRIMARY KEY / UNIQUE / FOREIGN KEY / CHECK add no
+	// column and are skipped by name.
+	reAddColumn = regexp.MustCompile(`(?is)(?:^|,)\s*ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?["` + "`" + `]?(\w+)`)
+)
+
+// ecAddedColumns returns the user-identifying and payload columns an
+// ALTER TABLE's ADD actions name, reading up to the statement's end.
+func ecAddedColumns(rest string) []string {
+	if i := strings.IndexByte(rest, ';'); i >= 0 {
+		rest = rest[:i]
+	}
+	var out []string
+	for _, m := range reAddColumn.FindAllStringSubmatch(strings.TrimLeft(rest, " \t\r\n"), -1) {
+		col := strings.ToLower(m[1])
+		if ecIdentityColumns[col] || ecPayloadColumns[col] {
+			out = append(out, col)
+		}
+	}
+	return out
 }
 
 // ecVerbIndex returns the Sprintf argument index of the verb at text[at]

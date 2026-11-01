@@ -30,21 +30,29 @@ import (
 //
 // The rule reads two spellings:
 //   - a concatenation whose previous operand is a string literal
-//     ending in ` href="` (et al.), optionally with one punctuation
-//     glue literal between, and whose next operand is the escape call;
-//   - a fmt.Sprintf/Fprintf format whose ` href="` slot is filled by
-//     the very next verb and whose argument at that index is the
-//     escape call.
+//     ending in ` href="` or ` href='` (et al.), optionally with one
+//     punctuation glue literal between, and whose next operand is the
+//     escape call;
+//   - a fmt.Sprintf/Fprintf format whose ` href="` (or single-quoted)
+//     slot is filled by the very next verb and whose argument at that
+//     index is the escape call.
+//
+// In both, the operand may also be an identifier the function assigns
+// from the escape call and nothing else (esc := render.Escape(u)): the
+// variable carries the same scheme-blind value into the slot.
 //
 // The escaped value is CREDITED (stays quiet) when it has already
 // been scheme-vetted in any of the repo's three spellings:
 //   - urlsafe.Clean/CleanAnchor/CleanResource itself, or an identifier
 //     an assignment in the function holds from one (menu.go's Href
 //     branch: href := urlsafe.CleanAnchor(it.Href); render.Escape(href));
-//   - a scheme guard in an if-condition vetted it — urlsafe.OK or a
+//   - a scheme guard in an if-condition vetted it — urlsafe.OK, a
 //     local allow-list helper whose name says what it does
 //     (uihost's isSafeHeadURL wraps urlsafe.OK and guards all five of
-//     its head-tag sites);
+//     its head-tag sites), or handler.IsSafeRelativePath (a value that
+//     must start with one "/" cannot carry a scheme); a
+//     literal-for-literal strings.ReplaceAll of a vetted value stays
+//     vetted;
 //   - the value is rooted at a root-relative path literal and can only
 //     be appended to — a value that STARTS "/" cannot carry a scheme
 //     (embed.go's appCSS := "/__gofastr/app.css" … += "?t=" + key).
@@ -63,14 +71,45 @@ func ruleURLAttrEscape(p *contracts.Pass, rel string, file *ast.File) []contract
 		cleaned := cleanedIdents(fn.body)
 		rooted := rootedIdents(fn.body)
 		guarded := guardedExprs(fn.body)
-		credited := func(e ast.Expr) bool {
+		var credited func(e ast.Expr) bool
+		credited = func(e ast.Expr) bool {
 			if isCleanedValue(e, cleaned) {
 				return true
 			}
 			if id, ok := e.(*ast.Ident); ok && rooted[id.Name] {
 				return true
 			}
-			return guarded[exprText(e)]
+			if guarded[exprText(e)] {
+				return true
+			}
+			// A literal-for-literal strings.Replace/ReplaceAll keeps a
+			// vetted value vetted (uihost's "'" → "%27" before the
+			// single-quoted refresh URL); a computed replacement could
+			// put a scheme back.
+			if src, ok := literalReplace(e); ok {
+				return credited(src)
+			}
+			return false
+		}
+		escaped := escapedIdents(fn.body, aliases)
+		// slotValue resolves the operand that fills a URL slot to the
+		// escape call behind it: the call itself, or an identifier the
+		// function assigns from one (esc := render.Escape(u)). The
+		// finding lands on the operand, where the URL becomes live.
+		slotValue := func(e ast.Expr) (*ast.CallExpr, bool) {
+			if esc, ok := escapeCallExpr(e, aliases); ok {
+				return esc, true
+			}
+			if id, ok := e.(*ast.Ident); ok {
+				esc, ok := escaped[id.Name]
+				return esc, ok
+			}
+			return nil, false
+		}
+		report := func(e ast.Expr) {
+			if esc, ok := slotValue(e); ok && !credited(esc.Args[0]) {
+				out = append(out, urlAttrDiag(p, rel, e.Pos()))
+			}
 		}
 		ast.Inspect(fn.body, func(n ast.Node) bool {
 			switch v := n.(type) {
@@ -84,14 +123,12 @@ func ruleURLAttrEscape(p *contracts.Pass, rel string, file *ast.File) []contract
 					next := operands[i+1]
 					// One punctuation glue literal may sit between the
 					// slot and the escaped value.
-					if !escapeCall(next, aliases) && i+2 < len(operands) {
+					if _, ok := slotValue(next); !ok && i+2 < len(operands) {
 						if glue, ok := operandLiteral(next); ok && isGlue(glue) {
 							next = operands[i+2]
 						}
 					}
-					if esc, ok := escapeCallExpr(next, aliases); ok && !credited(esc.Args[0]) {
-						out = append(out, urlAttrDiag(p, rel, esc))
-					}
+					report(next)
 				}
 			case *ast.CallExpr:
 				name, ok := callFunName(v)
@@ -122,9 +159,7 @@ func ruleURLAttrEscape(p *contracts.Pass, rel string, file *ast.File) []contract
 					if idx >= len(v.Args) {
 						continue
 					}
-					if esc, ok := escapeCallExpr(v.Args[idx], aliases); ok && !credited(esc.Args[0]) {
-						out = append(out, urlAttrDiag(p, rel, esc))
-					}
+					report(v.Args[idx])
 				}
 			}
 			return true
@@ -134,11 +169,15 @@ func ruleURLAttrEscape(p *contracts.Pass, rel string, file *ast.File) []contract
 }
 
 // urlAttrSlots are the URL-typed attribute openings, leading space
-// included so data-*/aria-* cannot match.
-var urlAttrSlots = []string{` href="`, ` src="`, ` action="`, ` formaction="`, ` poster="`, ` data="`}
+// included so data-*/aria-* cannot match, in both quote styles: a
+// single-quoted href is the same live URL.
+var urlAttrSlots = []string{
+	` href="`, ` src="`, ` action="`, ` formaction="`, ` poster="`, ` data="`,
+	` href='`, ` src='`, ` action='`, ` formaction='`, ` poster='`, ` data='`,
+}
 
-func urlAttrDiag(p *contracts.Pass, rel string, esc *ast.CallExpr) contracts.Diagnostic {
-	return diag(p, contracts.RuleURLAttrEscape, rel, esc.Pos(),
+func urlAttrDiag(p *contracts.Pass, rel string, pos token.Pos) contracts.Diagnostic {
+	return diag(p, contracts.RuleURLAttrEscape, rel, pos,
 		"render.Escape/html.EscapeString is HTML escaping and scheme-blind: javascript:, vbscript:, data:, and protocol-relative URLs survive it verbatim and this slot makes them live — run the value through core/urlsafe.Clean/CleanAnchor (the scheme allow-list menu.go's Href branch and html.setURLAttr already apply) and escape the cleaned result")
 }
 
@@ -177,11 +216,46 @@ func isGlue(lit string) bool {
 	})
 }
 
-// escapeCall reports whether e is a render.Escape / html.EscapeString
-// call in this file's imports.
-func escapeCall(e ast.Expr, aliases map[string]string) bool {
-	_, ok := escapeCallExpr(e, aliases)
-	return ok
+// escapedIdents returns the identifiers this body assigns from a
+// render.Escape / html.EscapeString call, keyed to that call, so a slot
+// filled by `esc` is judged by the escape it holds. A name assigned
+// anything else anywhere in the body is dropped: its value at the slot
+// is not provably the escape.
+func escapedIdents(body ast.Node, aliases map[string]string) map[string]*ast.CallExpr {
+	out := map[string]*ast.CallExpr{}
+	dropped := map[string]bool{}
+	bind := func(lhs []ast.Expr, rhs []ast.Expr) {
+		for i, l := range lhs {
+			id, ok := l.(*ast.Ident)
+			if !ok || id.Name == "_" {
+				continue
+			}
+			var esc *ast.CallExpr
+			if len(lhs) == len(rhs) {
+				esc, _ = escapeCallExpr(rhs[i], aliases)
+			}
+			if esc == nil || dropped[id.Name] || out[id.Name] != nil {
+				delete(out, id.Name)
+				dropped[id.Name] = true
+				continue
+			}
+			out[id.Name] = esc
+		}
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.AssignStmt:
+			bind(v.Lhs, v.Rhs)
+		case *ast.ValueSpec:
+			lhs := make([]ast.Expr, len(v.Names))
+			for i, name := range v.Names {
+				lhs[i] = name
+			}
+			bind(lhs, v.Values)
+		}
+		return true
+	})
+	return out
 }
 
 // escapeCallExpr is escapeCall returning the call node.
@@ -283,7 +357,8 @@ func guardedExprs(body ast.Node) map[string]bool {
 			}
 			name := guardName(call)
 			lower := strings.ToLower(name)
-			if strings.Contains(lower, "urlsafe") || (strings.Contains(lower, "safe") && strings.Contains(lower, "url")) {
+			if strings.Contains(lower, "urlsafe") || strings.Contains(lower, "saferelative") ||
+				(strings.Contains(lower, "safe") && strings.Contains(lower, "url")) {
 				for _, a := range call.Args {
 					out[exprText(a)] = true
 				}
@@ -293,6 +368,29 @@ func guardedExprs(body ast.Node) map[string]bool {
 		return true
 	})
 	return out
+}
+
+// literalReplace returns the source of a strings.Replace/ReplaceAll
+// call whose old and new arguments are both string literals.
+func literalReplace(e ast.Expr) (ast.Expr, bool) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) < 3 {
+		return nil, false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil || (sel.Sel.Name != "ReplaceAll" && sel.Sel.Name != "Replace") {
+		return nil, false
+	}
+	if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "strings" {
+		return nil, false
+	}
+	if _, ok := operandLiteral(call.Args[1]); !ok {
+		return nil, false
+	}
+	if _, ok := operandLiteral(call.Args[2]); !ok {
+		return nil, false
+	}
+	return call.Args[0], true
 }
 
 // guardName renders a guard call's callee as qualifier.Name.

@@ -324,10 +324,13 @@ expose them to agents connected to a live app.**
   SQL comparison rather than a range guard carry the allow marker),
   and the contracts rule `GOFASTR1410 keyfold` (a local-filesystem
   `Save`/`Put`/`Write` naming its stored object on a type with a
-  `BaseDir`/`Root`/`Dir` field reaches `os.OpenFile`/`os.Create`/
-  `os.Rename` with no fold-refusal call in the file — `TenantA/x` and
-  `tenanta/x` alias on a case-insensitive filesystem; share the
-  `battery/storage` refuseFoldedKey walk).
+  `BaseDir`/`Root`/`Dir` field (declared anywhere in the package)
+  reaches a create, write or rename (`os.OpenFile`/`Create`/`WriteFile`/
+  `Rename`, the same `*os.Root` methods, the atomicfile and fileperm
+  writers) with no fold refusal reachable from the method —
+  `strings.EqualFold` is not one — `TenantA/x` and `tenanta/x` alias on
+  a case-insensitive filesystem; share the `battery/storage`
+  refuseFoldedKey walk).
   The 2026-09-04 red-probe round grew the browser-runtime lint family
   in `core-ui/check/runtimeshapes.go` to eight: `storagekeyraw` fires
   when a Web-storage key (`localStorage`/`sessionStorage`

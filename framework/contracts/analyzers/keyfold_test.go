@@ -186,3 +186,132 @@ func (w *dailyWriter) Write(p []byte) (int, error) {
 	})
 	assertNot(t, ds, contracts.RuleFoldedKey, "no key parameter: the file name is self-computed, nothing caller-named can fold")
 }
+
+// os.Root confines a write to the root but folds keys like any other
+// path: root.Create / OpenFile / WriteFile / Rename and os.WriteFile
+// are the same unguarded sinks.
+func TestFoldedKeyRootAndWriteFileSinks(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"rooted.go": `package rooted
+
+import "os"
+
+type rootStore struct {
+	Root *os.Root
+}
+
+func (s *rootStore) Save(key string, payload []byte) error {
+	f, err := s.Root.Create(key)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(payload)
+	return err
+}
+
+func (s *rootStore) Put(key string, payload []byte) error {
+	return s.Root.WriteFile(key, payload, 0o600)
+}
+
+type dirStore struct {
+	Dir string
+}
+
+func (d *dirStore) Write(name string, payload []byte) error {
+	return os.WriteFile(d.Dir+"/"+name, payload, 0o600)
+}
+`,
+	})
+	if got := countRule(t, ds, contracts.RuleFoldedKey); len(got) != 3 {
+		t.Fatalf("want 3 findings (root.Create, root.WriteFile, os.WriteFile), got %d: %v", len(got), got)
+	}
+}
+
+// The root type lives in one file and its Save in another, and a
+// strings.EqualFold the Save reaches is a comparison, not the refusal:
+// neither hides the unguarded write.
+func TestFoldedKeyCrossFileAndEqualFold(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"store/types.go": `package store
+
+type blobStore struct {
+	BaseDir string
+}
+`,
+		"store/save.go": `package store
+
+import (
+	"os"
+	"strings"
+)
+
+func sameTenant(a, b string) bool { return strings.EqualFold(a, b) }
+
+func (s *blobStore) Save(key string, payload []byte) error {
+	if sameTenant(key, "reserved") {
+		return os.ErrExist
+	}
+	return os.WriteFile(s.BaseDir+"/"+key, payload, 0o600)
+}
+`,
+	})
+	got := countRule(t, ds, contracts.RuleFoldedKey)
+	if len(got) != 1 || got[0].File != "store/save.go" {
+		t.Fatalf("want 1 finding on store/save.go, got %v", got)
+	}
+}
+
+// The refusal reached through a package-local helper in a sibling file
+// is the fix posture; a refusal in a function the Save never calls is
+// not.
+func TestFoldedKeyHelperRefusalReach(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"box/box.go": `package box
+
+import "os"
+
+type boxStore struct {
+	BaseDir string
+}
+
+func (s *boxStore) Save(key string, payload []byte) error {
+	if err := s.check(key); err != nil {
+		return err
+	}
+	return os.WriteFile(s.BaseDir+"/"+key, payload, 0o600)
+}
+`,
+		"box/check.go": `package box
+
+func (s *boxStore) check(key string) error { return refuseFoldedKey(s.BaseDir, key) }
+
+func refuseFoldedKey(root, key string) error { return nil }
+`,
+		"tin/tin.go": `package tin
+
+import "os"
+
+type tinStore struct {
+	BaseDir string
+}
+
+func (s *tinStore) Save(key string, payload []byte) error {
+	return os.WriteFile(s.BaseDir+"/"+key, payload, 0o600)
+}
+
+func (s *tinStore) Delete(key string) error {
+	if err := refuseFoldedKey(s.BaseDir, key); err != nil {
+		return err
+	}
+	return os.Remove(s.BaseDir + "/" + key)
+}
+
+func refuseFoldedKey(root, key string) error { return nil }
+`,
+	})
+	got := countRule(t, ds, contracts.RuleFoldedKey)
+	if len(got) != 1 || got[0].File != "tin/tin.go" {
+		t.Fatalf("want 1 finding on tin/tin.go (box reaches the refusal through check), got %v", got)
+	}
+}

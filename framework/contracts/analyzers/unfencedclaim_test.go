@@ -175,3 +175,101 @@ func rename(db *sql.DB, t, id, name string) error {
 	})
 	assertNot(t, ds, contracts.RuleUnfencedClaim, "display_name carries no claim semantics")
 }
+
+// claim_token IS NOT NULL proves somebody owns the row, not that the
+// caller does: it is no fence, and it does not arm the rule either.
+func TestUnfencedClaimNotNullIsNoFence(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"dbq.go": `package queue
+
+func q() []string {
+	return []string{
+		"DELETE FROM jobs WHERE id = $1 AND claim_token = $2",
+		"UPDATE jobs SET status='pending', claimed_at = NULL WHERE id = $1 AND claim_token IS NOT NULL",
+	}
+}
+`,
+		"other/lone.go": `package other
+
+const release = "UPDATE jobs SET status='pending', claimed_at = NULL WHERE id = $1 AND claim_token IS NOT NULL"
+`,
+	})
+	got := countRule(t, ds, contracts.RuleUnfencedClaim)
+	if len(got) != 1 || got[0].File != "dbq.go" {
+		t.Fatalf("want 1 finding on dbq.go's IS NOT NULL release (the lone file is unarmed), got %v", got)
+	}
+}
+
+// The fence lives in one file and the unfenced release in a sibling
+// file of the same package: the package is armed, not the file. An
+// upsert's DO UPDATE arm is an INSERT, outside the rule.
+func TestUnfencedClaimArmsPerPackage(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"queue/ack.go": `package queue
+
+const ackSQL = "DELETE FROM jobs WHERE id = $1 AND status='claimed' AND claim_token = $2"
+`,
+		"queue/release.go": `package queue
+
+const releaseSQL = "UPDATE jobs SET status='pending', claimed_at = NULL WHERE id = $1"
+`,
+		"queue/schedule.go": `package queue
+
+const upsertSQL = "INSERT INTO schedules (id, max_attempts) VALUES ($1, $2) ON CONFLICT(id) DO UPDATE SET max_attempts = excluded.max_attempts"
+`,
+		"other/release.go": `package other
+
+const releaseSQL = "UPDATE jobs SET status='pending', claimed_at = NULL WHERE id = $1"
+`,
+	})
+	got := countRule(t, ds, contracts.RuleUnfencedClaim)
+	if len(got) != 1 || got[0].File != "queue/release.go" {
+		t.Fatalf("want 1 finding on queue/release.go (other/ has no fenced sibling), got %v", got)
+	}
+}
+
+// A lease bound spelled with the clock on the left (now() > lease_until)
+// is the same staleness fence, cancelled/canceled/expired are terminal
+// statuses no live claim holds, and claim_token IS NULL selects rows
+// nobody holds.
+func TestUnfencedClaimReversedAndTerminalQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"pool.go": `package pool
+
+func q() []string {
+	return []string{
+		"DELETE FROM jobs WHERE id = $1 AND claim_token = $2",
+		"UPDATE jobs SET status='pending', claim_token = NULL WHERE id = $1 AND now() > lease_until",
+		"UPDATE jobs SET status='failed' WHERE id = $1 AND $2 >= claimed_at AND attempts >= max_attempts",
+		"DELETE FROM jobs WHERE status = 'cancelled' AND claimed_at IS NOT NULL",
+		"DELETE FROM jobs WHERE status = 'canceled' AND attempts > 0",
+		"UPDATE jobs SET attempts = 0 WHERE id = $1 AND status = 'expired'",
+		"UPDATE jobs SET claimed_at = NULL WHERE id = $1 AND claim_token IS NULL",
+	}
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleUnfencedClaim,
+		"a reversed staleness bound and a cancelled/expired status cannot touch a live claim")
+}
+
+// Clearing the token (to NULL or the empty string) is not the claim
+// minting its fence: a release that clears it by bare id hands the
+// re-claimant's live row back to pending.
+func TestUnfencedClaimTokenClearIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"dbq.go": `package queue
+
+func q() []string {
+	return []string{
+		"DELETE FROM jobs WHERE id = $1 AND claim_token = $2",
+		"UPDATE jobs SET status='pending', claim_token = NULL WHERE id = $1",
+		"UPDATE jobs SET status='pending', claim_token = '' WHERE id = $1",
+	}
+}
+`,
+	})
+	if got := countRule(t, ds, contracts.RuleUnfencedClaim); len(got) != 2 {
+		t.Fatalf("want 2 findings (NULL and '' token clears by bare id), got %d: %v", len(got), got)
+	}
+}

@@ -371,3 +371,81 @@ func init() {
 		t.Fatalf("want one finding naming only the eraser plane, got %v", hs)
 	}
 }
+
+// A registration whose Table is set by field assignment after the
+// literal (or on a zero value) covers the table the same way.
+func TestFieldAssignedTableCovers(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"battery/notes/notes.go": `package notes
+
+` + ecImports + `
+const notesTable = "notes"
+
+func ensure(db interface{ Exec(string, ...any) }) {
+	db.Exec("CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL)")
+}
+
+func init() {
+	var e datexport.DataEraser
+	e.Name = "notes"
+	e.Table = notesTable
+	datexport.RegisterEraser(e)
+	x := &datexport.DataExporter{Name: "notes"}
+	x.Table = notesTable
+	datexport.Register(*x)
+}
+`,
+	})
+	if hs := hits1415(ds); len(hs) != 0 {
+		t.Fatalf("both planes are declared through field assignment, got %v", hs)
+	}
+}
+
+// uid, member_id, data and content name a user or carry record data
+// like the columns the rule already reads.
+func TestEraseCoverWiderColumns(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"core/wide/wide.go": `package wide
+
+func ensure(db interface{ Exec(string, ...any) }) {
+	db.Exec("CREATE TABLE IF NOT EXISTS a (id TEXT PRIMARY KEY, uid TEXT)")
+	db.Exec("CREATE TABLE IF NOT EXISTS b (id TEXT PRIMARY KEY, member_id TEXT)")
+	db.Exec("CREATE TABLE IF NOT EXISTS c (id TEXT PRIMARY KEY, data BLOB)")
+	db.Exec("CREATE TABLE IF NOT EXISTS d (id TEXT PRIMARY KEY, content TEXT)")
+}
+`,
+	})
+	if hs := hits1415(ds); len(hs) != 4 {
+		t.Fatalf("want 4 findings (uid, member_id, data, content), got %d: %v", len(hs), hs)
+	}
+}
+
+// A user column added by ALTER TABLE ADD COLUMN makes the table hold
+// user data as surely as one in the CREATE; a non-user column added the
+// same way does not, a covered table stays quiet, and an ALTER on a
+// table whose CREATE already reports does not report twice.
+func TestAlterAddColumnIsSeen(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"framework/widgets/widgets.go": `package widgets
+
+` + ecImports + `
+func migrate(db interface{ Exec(string, ...any) }) {
+	db.Exec("CREATE TABLE IF NOT EXISTS widgets (id TEXT PRIMARY KEY)")
+	db.Exec("ALTER TABLE widgets ADD COLUMN IF NOT EXISTS owner_id TEXT")
+	db.Exec("ALTER TABLE widgets ADD COLUMN color TEXT")
+	db.Exec("ALTER TABLE gadgets ADD COLUMN payload TEXT, ADD COLUMN size INT")
+	db.Exec("CREATE TABLE IF NOT EXISTS gizmos (id TEXT PRIMARY KEY, user_id TEXT)")
+	db.Exec("ALTER TABLE gizmos ADD COLUMN email TEXT")
+}
+
+func init() {
+	datexport.RegisterEraser(datexport.DataEraser{Name: "gadgets", Table: "gadgets", Column: "id"})
+	datexport.Register(datexport.DataExporter{Name: "gadgets", Table: "gadgets"})
+}
+`,
+	})
+	hs := hits1415(ds)
+	if len(hs) != 2 || hs[0].Line != 14 || !strings.Contains(hs[0].Message, "owner_id") || hs[1].Line != 17 {
+		t.Fatalf("want 2 findings: the owner_id ALTER (line 14) and the gizmos CREATE (line 17), not its ALTER; got %v", hs)
+	}
+}
