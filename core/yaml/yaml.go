@@ -71,33 +71,68 @@ func lexLines(input string) ([]line, error) {
 }
 
 func stripComment(line string) string {
-	inQuote := rune(0)
-	escaped := false
-	for i, r := range line {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if inQuote == '"' && r == '\\' {
-			escaped = true
-			continue
-		}
-		if inQuote != 0 {
-			if r == inQuote {
-				inQuote = 0
-			}
-			continue
-		}
-		if r == '"' || r == '\'' {
-			inQuote = r
-			continue
-		}
+	var q quoteScanner
+	for i := 0; i < len(line); {
+		n, unquoted := q.next(line, i, false)
 		// A comment follows whitespace, a tab as much as a space.
-		if r == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
+		if unquoted && line[i] == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
 			return strings.TrimRight(line[:i], " ")
 		}
+		i += n
 	}
 	return line
+}
+
+// quoteScanner walks one line and tracks where quoted scalars are.
+//
+// A quote opens a quoted scalar only where a scalar BEGINS: at the start
+// of the line, after a "key: " or "- " indicator, or after a flow '[',
+// '{' or ','. Inside a plain scalar a quote is an ordinary character, so
+// "O'Reilly # note" ends at the comment and "[O'Reilly, Jane]" splits on
+// its comma. Treating every quote as an opener made both swallow the
+// rest of the line.
+type quoteScanner struct {
+	quote byte // the open quote, 0 outside a quoted scalar
+	plain bool // inside a plain (or just-closed quoted) scalar
+	flow  int  // depth of unquoted '[' / '{'
+}
+
+// next consumes the byte at s[i] and returns how many bytes it took and
+// whether that byte is syntax outside any quoted scalar. flow says s is
+// already the inside of a flow collection, where ',' separates entries.
+func (q *quoteScanner) next(s string, i int, flow bool) (n int, unquoted bool) {
+	c := s[i]
+	sepAfter := i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t'
+	if q.quote != 0 {
+		switch {
+		case q.quote == '"' && c == '\\' && i+1 < len(s):
+			return 2, false
+		case c == q.quote && c == '\'' && i+1 < len(s) && s[i+1] == '\'':
+			return 2, false // '' is an escaped quote
+		case c == q.quote:
+			q.quote, q.plain = 0, true
+		}
+		return 1, false
+	}
+	switch {
+	case c == ' ' || c == '\t':
+	case (c == '"' || c == '\'') && !q.plain:
+		q.quote = c
+		return 1, false
+	case c == ':' && sepAfter:
+		q.plain = false
+	case c == '-' && sepAfter && !q.plain:
+	case c == ',' && (flow || q.flow > 0):
+		q.plain = false
+	case (c == '[' || c == '{') && !q.plain:
+		q.flow++
+	case (c == ']' || c == '}') && q.flow > 0:
+		q.flow--
+		q.plain = true
+	default:
+		q.plain = true
+	}
+	return 1, true
 }
 
 // maxNestingDepth bounds parser recursion. Each indentation level recurses
@@ -456,34 +491,17 @@ func parseInlineList(raw string, line, column, depth int) ([]*Node, error) {
 
 func splitInline(body string) ([]string, error) {
 	var out []string
+	var q quoteScanner
 	start := 0
-	inQuote := rune(0)
-	escaped := false
-	for i, r := range body {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if inQuote == '"' && r == '\\' {
-			escaped = true
-			continue
-		}
-		if inQuote != 0 {
-			if r == inQuote {
-				inQuote = 0
-			}
-			continue
-		}
-		if r == '"' || r == '\'' {
-			inQuote = r
-			continue
-		}
-		if r == ',' {
+	for i := 0; i < len(body); {
+		n, unquoted := q.next(body, i, true)
+		if unquoted && body[i] == ',' {
 			out = append(out, strings.TrimSpace(body[start:i]))
 			start = i + 1
 		}
+		i += n
 	}
-	if inQuote != 0 {
+	if q.quote != 0 {
 		return nil, fmt.Errorf("unterminated quoted scalar")
 	}
 	out = append(out, strings.TrimSpace(body[start:]))

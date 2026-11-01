@@ -2,6 +2,8 @@ package style
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -146,14 +148,24 @@ type Duration struct {
 func (d Duration) CSS() string    { return varRef("duration", d.Name) }
 func (d Duration) String() string { return d.CSS() }
 
-// FormattedValue returns the duration formatted for CSS (e.g. "150ms",
-// "1s"). Used by CSSCustomProperties when emitting the :root block.
+// FormattedValue returns the duration as a CSS <time> in milliseconds,
+// at full precision ("150ms", "2.5ms", "0.5ms"). CSS has no microsecond
+// unit, so a sub-millisecond value is a fraction of a millisecond. Used
+// by CSSCustomProperties when emitting the :root block.
 func (d Duration) FormattedValue() string {
-	ms := d.Value.Milliseconds()
-	if ms == 0 && d.Value > 0 {
-		return fmt.Sprintf("%dus", d.Value.Microseconds())
+	ms := d.Value / time.Millisecond
+	ns := d.Value % time.Millisecond
+	if ns == 0 {
+		return strconv.FormatInt(int64(ms), 10) + "ms"
 	}
-	return fmt.Sprintf("%dms", ms)
+	// Integer arithmetic keeps every digit: a float64 of the nanosecond
+	// count rounds past 2^53.
+	sign := ""
+	if d.Value < 0 {
+		sign, ms, ns = "-", -ms, -ns
+	}
+	frac := strings.TrimRight(fmt.Sprintf("%06d", int64(ns)), "0")
+	return sign + strconv.FormatInt(int64(ms), 10) + "." + frac + "ms"
 }
 
 // Easing is a CSS timing-function token (e.g. "cubic-bezier(...)",

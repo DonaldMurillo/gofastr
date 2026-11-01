@@ -26,10 +26,15 @@ package dotenv
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 )
+
+// errExpansionBudget reports a double-quoted value whose ${...}
+// expansion would pass Parse's output budget.
+var errExpansionBudget = errors.New("dotenv: expansion budget exceeded")
 
 // Parse reads .env content from r and returns the parsed key/value
 // map. Variable expansion is performed on double-quoted values using
@@ -86,16 +91,20 @@ func Parse(r io.Reader) (map[string]string, error) {
 			return nil, fmt.Errorf("dotenv: line %d: invalid key (want [A-Za-z_][A-Za-z0-9_]*)", lineNum)
 		}
 		valRaw := strings.TrimSpace(trimmed[eq+1:])
-		val, err := parseValue(valRaw, out)
+		// The budget caps the value while it is built: checked only
+		// afterwards, one line of 65536 ${A} references to a 64 KiB A
+		// allocated 4 GiB before the comparison ran.
+		budget := expansionFactor*consumed - expanded
+		val, err := parseValue(valRaw, out, budget)
+		if errors.Is(err, errExpansionBudget) || err == nil && len(val) > budget {
+			return nil, fmt.Errorf("dotenv: line %d: ${...} expansion exceeded %dx the input size (over %d bytes of values from %d bytes read); a reference chain is multiplying",
+				lineNum, expansionFactor, expansionFactor*consumed, consumed)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("dotenv: line %d: %w", lineNum, err)
 		}
 		out[key] = val
 		expanded += len(val)
-		if expanded > expansionFactor*consumed {
-			return nil, fmt.Errorf("dotenv: line %d: ${...} expansion exceeded %dx the input size (%d bytes of values from %d bytes read); a reference chain is multiplying",
-				lineNum, expansionFactor, expanded, consumed)
-		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("dotenv: scanner: %w", err)
@@ -124,7 +133,10 @@ func isValidKey(k string) bool {
 // parseValue interprets a value clause based on its leading quote (if
 // any) and applies ${VAR} expansion in double-quoted strings. seen is
 // the running map of previously-parsed keys from the same file.
-func parseValue(v string, seen map[string]string) (string, error) {
+//
+// budget caps the expanded length of a double-quoted value; past it
+// parseValue stops building and returns errExpansionBudget.
+func parseValue(v string, seen map[string]string, budget int) (string, error) {
 	if v == "" {
 		return "", nil
 	}
@@ -137,7 +149,11 @@ func parseValue(v string, seen map[string]string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return Expand(inner, seen, nil), nil
+		out, ok := expandLimited(inner, seen, nil, max(budget, 0))
+		if !ok {
+			return "", errExpansionBudget
+		}
+		return out, nil
 	case '\'':
 		if len(v) < 2 || v[len(v)-1] != '\'' {
 			return "", fmt.Errorf("unterminated single-quoted value")

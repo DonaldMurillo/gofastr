@@ -360,3 +360,43 @@ func TestMarkdown_UnclosedCommentsLinear(t *testing.T) {
 	renderWithin(t, "openers with text", strings.Repeat("<!-- a\n", 40000)+"b --> c\n", 1500*time.Millisecond)
 	renderWithin(t, "long close line", strings.Repeat("<!--\n", 40000)+"--> x"+strings.Repeat(" ", 1<<20)+"\n", 1500*time.Millisecond)
 }
+
+// TestMarkdown_UnclosedLinkLinear pins linear cost for link and image
+// openers that never close. parseLink scanned to the end of the block for
+// the matching ']' (or the ')' after "](") and failed, the caller advanced
+// one byte, and the next '[' rescanned the same tail: quadratic. The
+// shapes cover an unclosed '[', a '](' with no ')', balanced brackets
+// with no "(" after them, and the '![' image spelling of each.
+func TestMarkdown_UnclosedLinkLinear(t *testing.T) {
+	// Happy paths: links and images still render, nested ones too.
+	for in, want := range map[string]string{
+		"[a](u)":         `<a href="u">a</a>`,
+		"![a](i.png)":    `<img src="i.png" alt="a">`,
+		"[a [b] c](u)":   `<a href="u">a [b] c</a>`,
+		"[[a](u)":        `[<a href="u">a</a>`,
+		"[a] [b](u)":     `[a] <a href="u">b</a>`,
+		"[a](u) [b](v)":  `<a href="u">a</a> <a href="v">b</a>`,
+		"[a](u [b](v)":   `<a href="u [b](v">a</a>`,
+		"x ] [a](u) ]":   `x ] <a href="u">a</a> ]`,
+		"[a]](u)":        `[a]](u)`,
+		"[*b*](u) [c](w": `<a href="u"><em>b</em></a> [c](w`,
+	} {
+		if got := string(RenderHTML(in)); !strings.Contains(got, want) {
+			t.Errorf("RenderHTML(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+	n := 100000
+	for name, attack := range map[string]string{
+		"unclosed [":          strings.Repeat("[", 2*n),
+		"unclosed ](":         strings.Repeat("[x](", n),
+		"brackets no paren":   strings.Repeat("[", n) + strings.Repeat("]", n),
+		"unclosed ![":         strings.Repeat("![", n),
+		"unclosed image ](":   strings.Repeat("![x](", n),
+		"bracket then text":   strings.Repeat("[", n) + strings.Repeat("x", n),
+		"closed text no (":    strings.Repeat("[x]", n),
+		"paren far after ](":  strings.Repeat("[x](", n) + ")",
+		"one ]( many openers": strings.Repeat("[", n) + "](" + strings.Repeat("x", n),
+	} {
+		renderWithin(t, name, attack, 1500*time.Millisecond)
+	}
+}

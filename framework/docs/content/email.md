@@ -95,6 +95,20 @@ encoded and is sent as written; it needs a relay that offers SMTPUTF8,
 which `Send` requests when the relay advertises it. Custom `Headers`
 values are written as given.
 
+`email.ValidateAddress(addr)` returns nil when `Send` takes `addr` as one
+mailbox (a bare address or `Name <addr>`, any local part RFC 5322 allows,
+an apostrophe included) and an error for a control byte, an invisible
+codepoint, an unparsable value or a comma list. Code that hands addresses
+to a `Sender` checks them with it rather than with a rule of its own.
+
+A long header is folded (RFC 5322) so no line passes 998 octets: the
+line breaks in front of a space and a reader joins it back unchanged. A
+`Subject` word too long for one line goes out as encoded words, split
+between characters, and a long attachment filename as RFC 2231
+continuations (`filename*0*=`, `filename*1*=`, ...). `Send` refuses a
+custom header or address with a single word over 998 octets, which no
+fold can carry.
+
 Both bodies go out quoted-printable (RFC 2045): CR, LF and CRLF line
 endings all become CRLF, no line passes 76 octets, and non-ASCII text is
 escaped, so a template saved with Unix line endings or a minified

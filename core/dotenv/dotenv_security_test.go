@@ -2,6 +2,7 @@ package dotenv
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -183,5 +184,27 @@ func TestParseBudgetErrorEchoesNoValues(t *testing.T) {
 	}
 	if !strings.Contains(msg, "expansion") {
 		t.Errorf("budget error lost its diagnostic shape: %s", msg)
+	}
+}
+
+// Property: the expansion budget stops a value WHILE it is being built.
+// Parse checked the 10x budget only after parseValue returned, so one
+// line of many ${A} references to a large A built the whole value
+// first: 65536 refs to a 64 KiB A is 4 GiB before the check runs. The
+// fixture is scaled down (16384 refs to 8 KiB, 128 MiB unguarded) so a
+// regression fails on bytes allocated instead of killing the run.
+func TestParseBudgetStopsWhileBuilding(t *testing.T) {
+	in := "A=" + strings.Repeat("a", 8<<10) + "\nB=\"" + strings.Repeat("${A}", 16384) + "\"\n"
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err := Parse(strings.NewReader(in))
+	runtime.ReadMemStats(&after)
+	if err == nil || !strings.Contains(err.Error(), "expansion") {
+		t.Fatalf("one-line ${A} flood parsed without a budget error: %v", err)
+	}
+	if got, limit := after.TotalAlloc-before.TotalAlloc, uint64(16<<20); got > limit {
+		t.Errorf("SECURITY: [dotenv] Parse allocated %d bytes on a %d-byte file before refusing it (limit %d); "+
+			"the budget must cap the value as it is built", got, len(in), limit)
 	}
 }

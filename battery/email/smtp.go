@@ -301,12 +301,23 @@ func buildMessage(email Email) ([]byte, error) {
 	// no C0/DEL byte can reach a header line even if a future code
 	// path skips assertNoHeaderInjection (defense in depth; the assert
 	// is the fail-closed gate, the scrub is the wire guarantee).
-	buf.WriteString("From: " + scrubHeaderValue(encodeAddrHeader(email.From)) + "\r\n")
-	buf.WriteString("To: " + scrubHeaderValue(encodeAddrHeader(strings.Join(email.To, ", "))) + "\r\n")
-	if len(email.CC) > 0 {
-		buf.WriteString("Cc: " + scrubHeaderValue(encodeAddrHeader(strings.Join(email.CC, ", "))) + "\r\n")
+	//
+	// Each goes through writeHeader, which folds a long field so no line
+	// passes RFC 5322's 998-octet limit.
+	if err := writeHeader(&buf, "From", scrubHeaderValue(encodeAddrHeader(email.From))); err != nil {
+		return nil, err
 	}
-	buf.WriteString("Subject: " + scrubHeaderValue(encodeTextHeader(email.Subject)) + "\r\n")
+	if err := writeHeader(&buf, "To", scrubHeaderValue(encodeAddrHeader(strings.Join(email.To, ", ")))); err != nil {
+		return nil, err
+	}
+	if len(email.CC) > 0 {
+		if err := writeHeader(&buf, "Cc", scrubHeaderValue(encodeAddrHeader(strings.Join(email.CC, ", ")))); err != nil {
+			return nil, err
+		}
+	}
+	if err := writeHeader(&buf, "Subject", scrubHeaderValue(encodeTextHeader(email.Subject))); err != nil {
+		return nil, err
+	}
 
 	// Date and Message-ID (RFC 5322 3.6.1, 3.6.4). A submission relay
 	// adds both, but direct delivery, threading and dedupe need them
@@ -319,12 +330,16 @@ func buildMessage(email Email) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrSendFailed, err)
 		}
-		buf.WriteString("Message-ID: " + scrubHeaderValue(id) + "\r\n")
+		if err := writeHeader(&buf, "Message-ID", scrubHeaderValue(id)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Custom headers, sorted so the wire message is byte-stable per send.
 	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
-		buf.WriteString(scrubHeaderValue(k) + ": " + scrubHeaderValue(email.Headers[k]) + "\r\n")
+		if err := writeHeader(&buf, scrubHeaderValue(k), scrubHeaderValue(email.Headers[k])); err != nil {
+			return nil, err
+		}
 	}
 
 	// Determine if we need MIME multipart. Text plus HTML are two
@@ -401,9 +416,13 @@ func buildMessage(email Email) ([]byte, error) {
 				return nil, fmt.Errorf("%w: invalid attachment content-type: %v", ErrSendFailed, err)
 			}
 			buf.WriteString("--" + boundary + "\r\n")
-			buf.WriteString("Content-Type: " + scrubHeaderValue(baseCT) + "; " + scrubHeaderValue(encodeParam("name", att.Filename)) + "\r\n")
+			if err := writeHeader(&buf, "Content-Type", scrubHeaderValue(baseCT)+"; "+scrubHeaderValue(encodeParam("name", att.Filename))); err != nil {
+				return nil, err
+			}
 			buf.WriteString("Content-Transfer-Encoding: base64\r\n")
-			buf.WriteString("Content-Disposition: attachment; " + scrubHeaderValue(encodeParam("filename", att.Filename)) + "\r\n")
+			if err := writeHeader(&buf, "Content-Disposition", "attachment; "+scrubHeaderValue(encodeParam("filename", att.Filename))); err != nil {
+				return nil, err
+			}
 			buf.WriteString("\r\n")
 			buf.WriteString(encodeBase64(att.Content))
 			buf.WriteString("\r\n")
@@ -622,8 +641,115 @@ func isASCII(s string) bool {
 // raw UTF-8 in a header, and an encoded word is valid where it did. The
 // encoder leaves printable ASCII as it is, and the scrub leaves nothing
 // else that is ASCII, so an ASCII value keeps its bytes.
+//
+// A word too long to fit a folded line (foldWidth) is written as encoded
+// words too, which the encoder splits at character boundaries: a
+// 1500-character run with no space otherwise had nowhere to fold, and
+// passed the 998-octet line limit. A reader joins adjacent encoded words
+// without the space between them, so the run reads back whole.
 func encodeTextHeader(s string) string {
-	return mime.QEncoding.Encode("utf-8", scrubHeaderValue(s))
+	s = scrubHeaderValue(s)
+	enc := mime.QEncoding.Encode("utf-8", s)
+	if enc == s {
+		words := strings.Split(enc, " ")
+		changed := false
+		for i, w := range words {
+			if len(w) > foldWidth-1 {
+				words[i], changed = qWords(w), true
+			}
+		}
+		if changed {
+			enc = strings.Join(words, " ")
+		}
+	}
+	return enc
+}
+
+// qWords writes s as RFC 2047 Q encoded words of at most 75 octets
+// each, separated by spaces. A word ends only between characters, never
+// inside a UTF-8 sequence. Only letters, digits and !*+-/ go unencoded,
+// the set RFC 2047 5(3) allows anywhere a word can sit.
+func qWords(s string) string {
+	const prefix, suffix = "=?utf-8?q?", "?="
+	const maxBody = 75 - len(prefix) - len(suffix)
+	var out, cur strings.Builder
+	flush := func() {
+		if cur.Len() == 0 {
+			return
+		}
+		if out.Len() > 0 {
+			out.WriteByte(' ')
+		}
+		out.WriteString(prefix + cur.String() + suffix)
+		cur.Reset()
+	}
+	for i := 0; i < len(s); {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		var unit strings.Builder
+		for _, c := range []byte(s[i : i+size]) {
+			if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("!*+-/", c) >= 0 {
+				unit.WriteByte(c)
+			} else {
+				fmt.Fprintf(&unit, "=%02X", c)
+			}
+		}
+		if cur.Len()+unit.Len() > maxBody {
+			flush()
+		}
+		cur.WriteString(unit.String())
+		i += size
+	}
+	flush()
+	return out.String()
+}
+
+// RFC 5322 2.1.1 line limits: a header line SHOULD stay within 78
+// octets and MUST stay within 998, CRLF excluded.
+const (
+	foldWidth     = 78
+	maxLineOctets = 998
+)
+
+// writeHeader writes "name: value" folded per RFC 5322 2.2.3: a CRLF
+// goes in front of a space or tab, so a reader that unfolds (drops the
+// CRLF) gets the value back byte for byte. It folds at the last
+// whitespace that keeps a line within foldWidth, and refuses a field
+// with a word it cannot fit within maxLineOctets. Folding never splits a
+// word, so an encoded word stays whole.
+func writeHeader(buf *strings.Builder, name, value string) error {
+	isWSP := func(c byte) bool { return c == ' ' || c == '\t' }
+	line := name + ": "
+	start := 0
+	emit := func(chunk string) error {
+		if len(line) > len(name)+2 && len(line)+len(chunk) > foldWidth {
+			if len(line) > maxLineOctets {
+				return fmt.Errorf("%w: header %s has a word too long to fold within %d octets", ErrSendFailed, name, maxLineOctets)
+			}
+			buf.WriteString(line + "\r\n")
+			line = ""
+		}
+		line += chunk
+		return nil
+	}
+	// A fold point is whitespace followed by a non-space byte: folding
+	// in front of the last space of a run would leave a line of only
+	// whitespace.
+	for i := 1; i < len(value)-1; i++ {
+		if isWSP(value[i]) && !isWSP(value[i+1]) {
+			if err := emit(value[start:i]); err != nil {
+				return err
+			}
+			start = i
+		}
+	}
+	if err := emit(value[start:]); err != nil {
+		return err
+	}
+	if len(line) > maxLineOctets {
+		return fmt.Errorf("%w: header %s has a word too long to fold within %d octets", ErrSendFailed, name, maxLineOctets)
+	}
+	buf.WriteString(line + "\r\n")
+	return nil
 }
 
 // encodeAddrHeader renders an address-list header (From, To, Cc). A
@@ -655,27 +781,65 @@ func encodeAddrHeader(s string) string {
 // percent-encoded, so no quote, semicolon or control byte can end the
 // parameter. The strip quoteParamValue
 // applies (C0, DEL, C1, the invisible set) runs first.
+//
+// A value whose parameter would not fit a folded line is split into
+// RFC 2231 continuations (key*0*=, key*1*=, …), each short enough
+// for writeHeader to fold onto its own line; a long filename otherwise
+// passed the 998-octet line limit. A section ends only between
+// characters, never inside a %XX escape or a UTF-8 sequence.
 func encodeParam(key, v string) string {
 	if isASCII(v) {
-		return key + "=" + quoteParamValue(v)
+		if q := key + "=" + quoteParamValue(v); len(q) <= maxParamOctets {
+			return q
+		}
 	}
-	var raw []byte
+	var units []string
 	for _, r := range textsafe.StripInvisible(v) {
-		if r >= 0x20 && r != 0x7f && !textsafe.IsC1(r) {
-			raw = utf8.AppendRune(raw, r)
+		if r < 0x20 || r == 0x7f || textsafe.IsC1(r) {
+			continue
 		}
-	}
-	var b strings.Builder
-	b.WriteString(key + "*=utf-8''")
-	for _, c := range raw {
-		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("!#$&+-.^_`|~", c) >= 0 {
-			b.WriteByte(c)
-		} else {
-			fmt.Fprintf(&b, "%%%02X", c)
+		var u strings.Builder
+		for _, c := range utf8.AppendRune(nil, r) {
+			if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("!#$&+-.^_`|~", c) >= 0 {
+				u.WriteByte(c)
+			} else {
+				fmt.Fprintf(&u, "%%%02X", c)
+			}
 		}
+		units = append(units, u.String())
 	}
-	return b.String()
+	if single := key + "*=utf-8''" + strings.Join(units, ""); len(single) <= maxParamOctets {
+		return single
+	}
+	var sections []string
+	var cur strings.Builder
+	for _, u := range units {
+		if cur.Len() > 0 && cur.Len()+len(u) > paramSectionOctets {
+			sections = append(sections, cur.String())
+			cur.Reset()
+		}
+		if cur.Len() == 0 {
+			if len(sections) == 0 {
+				cur.WriteString(key + "*0*=utf-8''")
+			} else {
+				fmt.Fprintf(&cur, "%s*%d*=", key, len(sections))
+			}
+		}
+		cur.WriteString(u)
+	}
+	if cur.Len() > 0 {
+		sections = append(sections, cur.String())
+	}
+	return strings.Join(sections, "; ")
 }
+
+// maxParamOctets is the longest single parameter encodeParam writes
+// before it splits into RFC 2231 continuations; paramSectionOctets is
+// the length of one continuation, so " key*N*=…;" fits a folded line.
+const (
+	maxParamOctets     = 900
+	paramSectionOctets = foldWidth - 4
+)
 
 // scrubHeaderValue guarantees the wire: it strips the C1 control block
 // and the zero-width/bidi invisible set (core/textsafe) and
@@ -776,6 +940,29 @@ func scrubEnvelopeAddrs(field, raw string) ([]string, error) {
 		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// ValidateAddress reports whether addr is one mailbox [SMTPSender]
+// sends to or from: free of control bytes and invisible codepoints
+// (the header check Send applies), parsed by net/mail as exactly one
+// address, with a local part a relay reads as one path (the envelope
+// check). A display name is accepted ("Ada <ada@example.com>"), and so
+// is any local part RFC 5322 allows, an apostrophe included
+// (o'brien@example.com). A comma list is refused: it is more than one
+// mailbox. Channels that hand addresses to a Sender (battery/notify)
+// call this rather than keep a second, drifting rule.
+func ValidateAddress(addr string) error {
+	if err := assertNoHeaderInjection("address", addr); err != nil {
+		return err
+	}
+	specs, err := scrubEnvelopeAddrs("address", addr)
+	if err != nil {
+		return err
+	}
+	if len(specs) != 1 {
+		return fmt.Errorf("address %q is %d mailboxes, want one", addr, len(specs))
+	}
+	return nil
 }
 
 // envelopeSpec turns a parsed address back into SMTP mailbox syntax.

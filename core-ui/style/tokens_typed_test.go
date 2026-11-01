@@ -26,6 +26,9 @@ func TestTypedTokensCSSShape(t *testing.T) {
 	}
 }
 
+// A duration emits a valid CSS <time> at its full precision. "500us"
+// is not a CSS unit (the animation using the token silently did
+// nothing) and 2.5ms used to truncate to 2ms.
 func TestDurationFormattedValue(t *testing.T) {
 	cases := []struct {
 		d    time.Duration
@@ -33,7 +36,10 @@ func TestDurationFormattedValue(t *testing.T) {
 	}{
 		{150 * time.Millisecond, "150ms"},
 		{1 * time.Second, "1000ms"},
-		{500 * time.Microsecond, "500us"},
+		{500 * time.Microsecond, "0.5ms"},
+		{2500 * time.Microsecond, "2.5ms"},
+		{1 * time.Nanosecond, "0.000001ms"},
+		{1500*time.Millisecond + 250*time.Microsecond, "1500.25ms"},
 	}
 	for _, c := range cases {
 		got := Duration{Name: "x", Value: c.d}.FormattedValue()
