@@ -76,7 +76,7 @@ func (c fileContributor) ExportFiles(context.Context) (map[string][]byte, error)
 // A contributor file on a page's file, in any case, is refused: it
 // replaced the page.
 func TestContributorRefusesPageFile(t *testing.T) {
-	for _, p := range []string{"/about/index.html", "/ABOUT/index.html"} {
+	for _, p := range []string{"/about/index.html", "/ABOUT/index.html", "/about/./index.html", "/x/../about/index.html"} {
 		a := coreapp.NewApp("t")
 		a.Register("/about", &homeScreen{}, nil)
 		b := &Builder{Host: uihost.New(a), OutDir: t.TempDir(), Contributors: []Contributor{fileContributor{p}}}
@@ -98,8 +98,10 @@ func TestRebuildKeepsCaseRenamedPage(t *testing.T) {
 			t.Fatalf("Build %s: %v", route, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(out, "about", "index.html")); err != nil {
-		t.Errorf("the rebuilt page is gone: %v", err)
+	for _, f := range []string{"index.html", "llm.md"} {
+		if _, err := os.Stat(filepath.Join(out, "about", f)); err != nil {
+			t.Errorf("the rebuilt page's %s is gone: %v", f, err)
+		}
 	}
 }
 
@@ -118,5 +120,20 @@ func TestExportRefusesNormalizedTwin(t *testing.T) {
 	_, err := (&Builder{Host: uihost.New(a), OutDir: t.TempDir()}).Build(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "both export to") {
 		t.Fatalf("Build error = %v, want a refusal of the two spellings", err)
+	}
+}
+
+// An ExtraDirs file never replaces a framework asset the build wrote.
+func TestExtraDirKeepsFrameworkAsset(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	out := t.TempDir()
+	b := &Builder{Host: uihost.New(a), OutDir: out,
+		ExtraDirs: map[string]fs.FS{"/__gofastr": fstest.MapFS{"runtime.js": {Data: []byte("BAD")}}}}
+	if _, err := b.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(out, "__gofastr", "runtime.js")); string(got) == "BAD" {
+		t.Error("an extra dir replaced the generated runtime.js")
 	}
 }

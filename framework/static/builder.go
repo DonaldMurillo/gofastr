@@ -228,7 +228,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			}
 			// A contributor file on a page's file, in any case, would
 			// replace the page; a redirect written later checks it too.
-			rel := strings.TrimPrefix(urlPath, "/")
+			// The key is the cleaned path, the file the write lands on:
+			// /about/./index.html is about/index.html.
+			rel := strings.TrimPrefix(path.Clean(urlPath), "/")
 			if prev, dup := pageOwner[foldPath(rel)]; dup {
 				return res, fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, urlPath, rel)
 			}
@@ -1739,9 +1741,10 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 // into the same directory, and the previous build's copy of an extra
 // file must not keep the new one out.
 func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
+	// Keyed folded, like every lookup below.
 	written := make(map[string]bool, len(res.Assets))
 	for _, p := range res.Assets {
-		written[p] = true
+		written[foldPath(p)] = true
 	}
 	mounts := make([]string, 0, len(b.ExtraDirs))
 	for m := range b.ExtraDirs {

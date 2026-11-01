@@ -37,8 +37,17 @@ func (b *Builder) pruneStalePages(res Result, rendered *fileSet, docs map[string
 	}
 	defer root.Close()
 	written := map[string]bool{}
+	// Every file this build wrote, for the same-file check below.
+	current := newFileSet()
+	for _, p := range rendered.paths() {
+		current.add(p)
+	}
 	for _, a := range res.Assets {
 		written[strings.TrimPrefix(a, "/")] = true
+		current.add(strings.TrimPrefix(a, "/"))
+	}
+	for p := range docs {
+		current.add(p)
 	}
 	prev, err := root.ReadFile(pageManifestName)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -49,10 +58,11 @@ func (b *Builder) pruneStalePages(res Result, rendered *fileSet, docs map[string
 			continue
 		}
 		// A page renamed by case only ("About" to "about") was rewritten
-		// in place on a case-insensitive filesystem: the old spelling
-		// names the new page, which stays. On a case-sensitive one the
-		// two are different files and the old one goes.
-		if cur, ok := rendered.spelling(rel); ok && sameFile(root, rel, cur) {
+		// in place on a case-insensitive filesystem, with its doc: the
+		// old spelling names the new file, which stays. On a
+		// case-sensitive one the two are different files and the old one
+		// goes.
+		if cur, ok := current.spelling(rel); ok && sameFile(root, rel, cur) {
 			continue
 		}
 		if err := root.Remove(filepath.FromSlash(rel)); err != nil && !errors.Is(err, fs.ErrNotExist) {
