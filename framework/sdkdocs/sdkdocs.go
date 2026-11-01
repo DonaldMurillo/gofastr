@@ -23,6 +23,7 @@ package sdkdocs
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -109,6 +110,8 @@ type site struct {
 	manifest     *sdk.Manifest
 	drift        bool
 	provenance   bool // true = manifest schema version unknown → "unknown provenance", not "stale"
+
+	undocumentedOnce sync.Once
 }
 
 // Mount registers the docs screens on the core-ui app and the artifact
@@ -334,23 +337,34 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKNotGenerated)
 			return
 		}
+		m, _, _ := s.resolved()
+		if !s.artifactsDocumented(m) {
+			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKUndocumented)
+			return
+		}
 		data, err := fs.ReadFile(s.cfg.Artifacts, file)
 		if err != nil {
 			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKArtifactMissing)
 			return
 		}
 
-		// ETag from the manifest's recorded hash when available (free
-		// revalidation on a stable URL); fall back to no validator.
-		m, _, _ := s.resolved()
-		if m != nil && key != "" {
-			if a, ok := m.Artifacts[key]; ok && a.SHA256 != "" {
-				etag := `"` + a.SHA256 + `"`
-				w.Header().Set("ETag", etag)
-				if corestatic.IfNoneMatch(r, etag) {
-					w.WriteHeader(http.StatusNotModified)
-					return
-				}
+		if key != "" {
+			// The file must be the one the manifest records. A run
+			// with fewer targets rewrites the manifest but leaves an
+			// older artifact in dist, and that file can cover entities
+			// the manifest no longer names.
+			a, ok := m.Artifacts[key]
+			if !ok || a.SHA256 == "" || fmt.Sprintf("%x", sha256.Sum256(data)) != a.SHA256 {
+				i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKArtifactMissing)
+				return
+			}
+			// The recorded hash is the ETag: free revalidation on a
+			// stable URL.
+			etag := `"` + a.SHA256 + `"`
+			w.Header().Set("ETag", etag)
+			if corestatic.IfNoneMatch(r, etag) {
+				w.WriteHeader(http.StatusNotModified)
+				return
 			}
 		}
 		w.Header().Set("Content-Type", contentType)
@@ -370,6 +384,40 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 		}
 		_, _ = w.Write(data)
 	}))
+}
+
+// artifactsDocumented reports whether the downloads may be served: the
+// manifest must name only entities this site documents. `gofastr generate
+// sdk` covers every entity unless --only/--exclude narrow it, while the
+// site documents Public entities by default, so serving whole artifacts
+// handed anonymous callers the tables, fields and transitions of gated
+// entities the reference pages 404. A missing or unreadable manifest
+// declares no scope at all, so it refuses too. The site's own visibility
+// rules (Entities, IncludeGated) decide; Policy gates who reaches the
+// routes, not what they cover.
+func (s *site) artifactsDocumented(m *sdk.Manifest) bool {
+	if m == nil {
+		return false
+	}
+	documented := map[string]bool{}
+	for _, e := range s.includedEntities() {
+		documented[e.Config.Name] = true
+	}
+	var undocumented []string
+	for _, name := range m.Entities {
+		if !documented[name] {
+			undocumented = append(undocumented, name)
+		}
+	}
+	if len(undocumented) == 0 {
+		return true
+	}
+	s.undocumentedOnce.Do(func() {
+		slog.Warn("sdkdocs: SDK downloads withheld: the artifacts cover entities this site does not document; "+
+			"regenerate with `gofastr generate sdk --only=<documented entities>`, or widen Config.Entities / IncludeGated",
+			"entities", textsafe.StripUnsafe(strings.Join(undocumented, ",")))
+	})
+	return false
 }
 
 // policyGate runs Config.Policy in front of next, the gate the screens

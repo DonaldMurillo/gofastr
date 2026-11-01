@@ -4030,6 +4030,19 @@ few lines, and link the PR or the docs page for the rest.
 - **examples/site's status pill keeps its wording through hydration.**
 
 ### Security
+- **sdkdocs no longer serves SDK downloads that cover gated entities.**
+  `gofastr generate sdk` covers every entity unless `--only` or
+  `--exclude` narrows it, while the docs site documents only `Public` entities by default.
+  The `/sdk/` routes served the artifacts whole, so an anonymous caller
+  read a gated entity's table, fields and transitions from
+  `client.d.ts` while its reference page answered 404. The four
+  download routes now answer 404 unless every entity the manifest names
+  is one the site documents. The same applies when the manifest is
+  missing. A file must also match the SHA-256 the manifest records for
+  it, so a `sdk-go.zip` left in dist by an earlier run with more targets
+  no longer serves beside a narrower manifest. The overview page says the downloads are withheld and shows
+  the `--only` command. Generate for the documented entities, or widen
+  `Config.Entities` or set `IncludeGated`.
 - **A scoped API token no longer passes a permission or role gate on its
   owner's roles.** `RequirePermission` now also needs a scope granting
   the permission, so a `customers:read` token minted by an admin no
