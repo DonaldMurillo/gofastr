@@ -24,7 +24,7 @@ func TestAvatarStatusRendersDot(t *testing.T) {
 		t.Errorf("expected has-status modifier, got: %s", out)
 	}
 	// Bare aria-label on a span is axe-rejected; the dot uses role=img.
-	if !strings.Contains(out, `role="img"`) || !strings.Contains(out, `aria-label="online"`) {
+	if !strings.Contains(out, `role="img"`) || !strings.Contains(out, `aria-label="Online"`) {
 		t.Errorf("expected role=img + aria-label default, got: %s", out)
 	}
 }

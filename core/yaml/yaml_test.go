@@ -206,3 +206,40 @@ func TestParseCommentAfterTab(t *testing.T) {
 		t.Fatalf("name = %#v, want demo", got)
 	}
 }
+
+// A trailing comma ends a flow list (YAML 1.2); it adds no "" item, which
+// an app-spec enum would then accept as a value.
+func TestInlineListTrailingComma(t *testing.T) {
+	node, err := Parse("values: [draft, published,]\nquoted: [\"\", a]\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := node.Map["values"].List; len(got) != 2 || got[1].Value != "published" {
+		t.Fatalf("values = %d items, want [draft published]", len(got))
+	}
+	if got := node.Map["quoted"].List; len(got) != 2 || got[0].Value != "" {
+		t.Fatalf("quoted empty item lost: %d items", len(got))
+	}
+	for _, in := range []string{"v: [a,,b]\n", "v: [,]\n", "v: [,a]\n", "v: [a,,]\n"} {
+		if _, err := Parse(in); err == nil {
+			t.Errorf("Parse(%q) accepted an empty flow item", in)
+		}
+	}
+}
+
+// A compact nested sequence ("- - a") is outside the subset: it was read
+// as the string "- a", or a map key "- name", without a word.
+func TestCompactNestedListRefused(t *testing.T) {
+	for _, in := range []string{"- - a\n", "items:\n  - - name: x\n", "- -\n", "-   - a\n"} {
+		if _, err := Parse(in); err == nil {
+			t.Errorf("Parse(%q) accepted a compact nested sequence", in)
+		}
+	}
+	node, err := Parse("- -5\n- \"- a\"\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := node.List; len(got) != 2 || got[0].Value != int64(-5) || got[1].Value != "- a" {
+		t.Fatalf("list = %v", got)
+	}
+}

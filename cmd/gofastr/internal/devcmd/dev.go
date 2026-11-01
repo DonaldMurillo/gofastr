@@ -168,7 +168,7 @@ func RunDev(args []string) {
 	// graph is read after the first build, which fetched the modules.
 	watch := NewWatch(watchCtx, dir, pkg, nil)
 	go func() {
-		prev := FirstSnapshot(before, watch.Scan(), since)
+		poll := watch.Poller(before, since)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -177,9 +177,7 @@ func RunDev(args []string) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				curr := watch.Scan()
-				if Changed(prev, curr) {
-					prev = curr
+				if poll.Changed() {
 					select {
 					case reload <- struct{}{}:
 					default: // already queued
@@ -540,23 +538,38 @@ func KillServer(mu *sync.Mutex, cmd **exec.Cmd) {
 	}
 }
 
+// noSIGTERM is true where the OS has no SIGTERM to send (Windows); a
+// test sets it to run that branch on this OS.
+var noSIGTERM = runtime.GOOS == "windows"
+
 // stopProcess sends SIGTERM and waits up to grace for p to exit before
-// it kills it. Windows has no SIGTERM to send, so p is killed at once.
+// it kills it. Windows has no SIGTERM to send, so p is killed at once,
+// and stopProcess still waits up to grace for the exit: TerminateProcess
+// returns before the process is gone, and shutdown removes the binary
+// dir next, which fails on an .exe still running.
 func stopProcess(p *os.Process, grace time.Duration) {
-	if runtime.GOOS == "windows" || p.Signal(syscall.SIGTERM) != nil {
+	if noSIGTERM || p.Signal(syscall.SIGTERM) != nil {
 		_ = p.Kill()
+		waitExit(p, grace)
 		return
 	}
+	if !waitExit(p, grace) {
+		_ = p.Kill()
+	}
+}
+
+// waitExit reports whether p exited within grace. Signal 0 delivers
+// nothing; once the waiter has reaped p it answers os.ErrProcessDone,
+// on Windows as on Unix.
+func waitExit(p *os.Process, grace time.Duration) bool {
 	deadline := time.Now().Add(grace)
 	for time.Now().Before(deadline) {
-		// Signal 0 delivers nothing; once the waiter has reaped p it
-		// answers os.ErrProcessDone.
 		if errors.Is(p.Signal(syscall.Signal(0)), os.ErrProcessDone) {
-			return
+			return true
 		}
 		time.Sleep(exitPoll)
 	}
-	_ = p.Kill()
+	return false
 }
 
 // Watch is the dev watcher's view of a project: the directory it walks
@@ -578,6 +591,9 @@ type Watch struct {
 	// keep holds slash paths relative to dir: each package directory in
 	// the target's graph and every directory above it. Nil keeps none.
 	keep atomic.Pointer[map[string]bool]
+	// graph counts the keep sets stored that differ from the one before,
+	// so a Poller can tell a graph change from a save.
+	graph atomic.Uint64
 }
 
 // NewWatch reads pkg's package graph (go list, run in dir with env, the
@@ -661,7 +677,9 @@ func (w *Watch) Refresh() {
 	for _, d := range dirs {
 		add(d)
 	}
-	w.keep.Store(&keep)
+	if was := w.keep.Swap(&keep); was == nil || !maps.Equal(*was, keep) {
+		w.graph.Add(1)
+	}
 }
 
 // skipDir reports a directory the watcher does not walk: dependencies
@@ -740,6 +758,68 @@ func FirstSnapshot(before, after map[string]time.Time, since time.Time) map[stri
 		}
 	}
 	return first
+}
+
+// Poller is a poll loop's view of a watch: the last snapshot, the time
+// the scan behind it began, and the graph it was taken under.
+type Poller struct {
+	w     *Watch
+	prev  map[string]time.Time
+	since time.Time
+	graph uint64
+}
+
+// Poller starts a poll loop from before, the scan taken at since before
+// the first build (FirstSnapshot).
+func (w *Watch) Poller(before map[string]time.Time, since time.Time) *Poller {
+	graph := w.graph.Load()
+	return &Poller{w: w, prev: FirstSnapshot(before, w.Scan(), since), since: since, graph: graph}
+}
+
+// Changed scans the watch and reports whether the tree changed since the
+// last scan that did. A graph change in between (a Refresh after a save
+// added or dropped an import) moves files into or out of the walk, which
+// is not a save: a file it brings in that is no newer than the last
+// change's scan joins the snapshot, and one it drops that still exists
+// leaves it, the way FirstSnapshot treats the first graph. Without that
+// the first import of a root gen/ package restarted the app twice.
+func (p *Poller) Changed() bool {
+	graph := p.w.graph.Load()
+	at := time.Now()
+	curr := p.w.Scan()
+	if p.w.graph.Load() != graph {
+		return false // the graph moved mid-walk: the next tick rescans
+	}
+	if graph != p.graph {
+		p.prev = rebase(p.prev, curr, p.since)
+		p.graph = graph
+	}
+	if !Changed(p.prev, curr) {
+		return false
+	}
+	p.prev, p.since = curr, at
+	return true
+}
+
+// rebase folds a graph change into prev: a file only in curr whose time
+// is not after since is baseline, and a file only in prev that is still
+// on disk left the walk. A file only in curr that is newer, or one only
+// in prev that is gone, stays a change.
+func rebase(prev, curr map[string]time.Time, since time.Time) map[string]time.Time {
+	next := maps.Clone(prev)
+	for p, t := range curr {
+		if _, ok := prev[p]; !ok && !t.After(since) {
+			next[p] = t
+		}
+	}
+	for p := range prev {
+		if _, ok := curr[p]; !ok {
+			if _, err := os.Lstat(p); err == nil {
+				delete(next, p)
+			}
+		}
+	}
+	return next
 }
 
 // Changed compares two mod-time maps and returns true if any file was added, removed, or modified.

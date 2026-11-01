@@ -315,3 +315,34 @@ func TestGateDeferNoStrand(t *testing.T) {
 		}
 	})
 }
+
+// A gate-deferred job lived only in a timer closure, where the erasure
+// sweep never looked, so a disabled module's job for an erased user ran
+// once the module came back (bug hunt r7 R7-003). It waits on the pending
+// heap now, not due until gateDeferDelay, where eraseUser finds it.
+func TestMemGateDeferredJobIsErased(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := NewMemoryQueue(1)
+		q.SetGate(func(string) bool { return false })
+		var ran atomic.Int32
+		q.RegisterHandler("mail", func(_ context.Context, _ Job) error {
+			ran.Add(1)
+			return nil
+		})
+		q.Start()
+		defer q.Close()
+		if err := q.Enqueue(context.Background(), userJob("g1", "u1")); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(150 * time.Millisecond)
+		n, err := q.eraseUser(context.Background(), "u1", false)
+		if err != nil || n != 1 {
+			t.Fatalf("eraseUser = %d, %v; want the gated job erased", n, err)
+		}
+		q.SetGate(func(string) bool { return true })
+		time.Sleep(300 * time.Millisecond)
+		if c := ran.Load(); c != 0 {
+			t.Fatalf("the erased user's gated job ran %d times", c)
+		}
+	})
+}

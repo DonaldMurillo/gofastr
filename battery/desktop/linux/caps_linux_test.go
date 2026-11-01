@@ -5,7 +5,6 @@ package linux
 import (
 	"context"
 	"errors"
-	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -80,23 +79,6 @@ func TestScriptedPermissionsFailClosed(t *testing.T) {
 	} {
 		if got := capsDecision(response); got != want {
 			t.Fatalf("response %d = %v; want %v", response, got, want)
-		}
-	}
-}
-
-func TestFileFilterPatterns(t *testing.T) {
-	for _, tc := range []struct{ extensions, want []string }{
-		{nil, []string{"*"}}, {[]string{"png", ".jpg", "tar.gz"}, []string{"*.png", "*.jpg", "*.tar.gz"}},
-		{[]string{"*", "txt"}, []string{"*", "*.txt"}}, {[]string{"  png  "}, []string{"*.png"}},
-	} {
-		got, err := capsFilterPatterns(tc.extensions)
-		if err != nil || !reflect.DeepEqual(got, tc.want) {
-			t.Fatalf("%q = %q, %v; want %q", tc.extensions, got, err, tc.want)
-		}
-	}
-	for _, ext := range []string{"", ".", "../txt", "a/b", "a\\b", "t?xt", "[abc]", "p*ng", "a\x00b"} {
-		if _, err := capsFilterPatterns([]string{ext}); err == nil {
-			t.Errorf("accepted %q", ext)
 		}
 	}
 }

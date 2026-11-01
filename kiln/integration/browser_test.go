@@ -936,7 +936,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 	rtBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	for _, want := range []string{"window.__gofastr", "mountWidget", "/__gofastr/widgets"} {
+	for _, want := range []string{"window.__gofastr", "_mountByName", "/__gofastr/widgets"} {
 		if !strings.Contains(string(rtBody), want) {
 			t.Errorf("runtime missing %q", want)
 		}

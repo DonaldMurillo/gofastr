@@ -582,6 +582,10 @@ entity in production) dispatch through the same router + middleware chain
 as REST, so they inherit this session requirement automatically: no
 separate MCP-level auth wiring is needed. An anonymous MCP `posts_create`
 call against a non-public entity is refused exactly like the REST route.
+A tool call whose own arguments are wrong (an empty record id, a filter
+on a JSON field, an empty or comma-holding `_in` list) answers as
+JSON-RPC invalid params with the reason, not "internal tool error", and
+is not logged as a server error.
 
 ```yaml
 entities:
@@ -1313,8 +1317,8 @@ value with `filter.CoerceValue` and binds it as that type:
 | Float | a decimal literal (`1`, `-2.5`, `1e3`); no hex, `_`, `NaN` or `Inf` | `float64` |
 | Decimal | a decimal literal | the text sent, every digit kept |
 | Bool | exactly what `strconv.ParseBool` accepts: `1 t T TRUE true True` and `0 f F FALSE false False` | `bool` |
-| Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
-| Date | `YYYY-MM-DD` | the text sent |
+| Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC. The UTC year must be 1 or later: Postgres refuses year 0000 | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
+| Date | `YYYY-MM-DD`, year 0001 or later | the text sent |
 
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).

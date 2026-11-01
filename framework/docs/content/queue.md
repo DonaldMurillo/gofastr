@@ -171,7 +171,7 @@ store eraser (see
 that removes every job whose `UserID` is the erased user after the SQL
 erasure commits. For `RedisQueue` that is the main, delayed and dead lists
 and the pop and processing hashes; for `MemoryQueue`, the pending jobs
-(delayed ones included), the jobs `Dequeue` handed out, and the dead list,
+(delayed ones included, and jobs a disabled module's gate holds back), the jobs `Dequeue` handed out, and the dead list,
 with the unique keys they held freed. The Redis erasure is one Lua script,
 so it needs an adapter that implements
 [`ScriptRunner`](#optional-scriptrunner); with one that does not, the
@@ -179,7 +179,12 @@ erasure fails with an error and removes nothing. The `MemoryQueue` erasure
 holds the queue still while it runs: a `Dequeue`, `Nack` or `Replay` waits
 for it, so none carries a job from a store the erasure has not read yet
 into one it already has. The in-memory `Scheduler` is erased before the
-queues it feeds, so a tick cannot enqueue the user's job again. A worker still
+store-erased queues it feeds, so a tick cannot enqueue the user's job into
+them again. A `DBQueue`'s rows go in the SQL erasure, which commits before
+any store eraser runs, so a tick in between can write the user's job back;
+the scheduler's eraser therefore deletes the user's rows from every
+`DBQueue` it feeds once its schedules are gone, and counts them in its
+report line. A worker still
 running an erased job finds nothing to settle, and its `Ack` or `Nack`
 does nothing. The
 registration stays until `Close`, and it keeps the queue from being

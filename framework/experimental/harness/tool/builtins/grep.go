@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -61,6 +62,11 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	var out strings.Builder
 	matched := 0
 	walk := func(path string, d fs.DirEntry, walkErr error) error {
+		// A cancelled turn (CancelTurn, shutdown) ends the walk: Grep
+		// over "/" otherwise keeps the turn busy until it finishes.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if walkErr != nil {
 			return nil
 		}
@@ -73,23 +79,30 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 				return nil
 			}
 		}
-		f, err := os.Open(path)
-		if err != nil {
+		f, ok := openRegular(path, d)
+		if !ok {
 			return nil
 		}
 		defer f.Close()
-		scanner := bufio.NewScanner(f)
+		scanner := bufio.NewScanner(io.LimitReader(f, maxGrepFileBytes))
 		scanner.Buffer(make([]byte, 1024*64), 1024*1024)
 		lineNo := 0
+		var read int64
 		defer func() {
 			// Scan stops on a line past the buffer cap and reports it
 			// only through Err. Silently returning the matches found so
 			// far tells the caller this file held nothing more.
 			if err := scanner.Err(); err != nil {
 				fmt.Fprintf(&out, "%s: results truncated: %v\n", path, err)
+			} else if read >= maxGrepFileBytes {
+				fmt.Fprintf(&out, "%s: results truncated: read the first %d bytes\n", path, int64(maxGrepFileBytes))
 			}
 		}()
 		for scanner.Scan() {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			read += int64(len(scanner.Bytes())) + 1
 			lineNo++
 			if re.MatchString(scanner.Text()) {
 				fmt.Fprintf(&out, "%s:%d: %s\n", path, lineNo, scanner.Text())
@@ -106,13 +119,51 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	if err != nil {
 		return errorResult(fmt.Sprintf("Grep: stat %s: %v", root, err)), nil
 	}
-	if info.IsDir() {
+	switch {
+	case info.IsDir():
 		_ = filepath.WalkDir(root, walk)
-	} else {
+	case info.Mode().IsRegular():
 		_ = walk(root, fs.FileInfoToDirEntry(info), nil)
+	default:
+		return errorResult(fmt.Sprintf("Grep: %s is not a regular file or directory", root)), nil
 	}
-	if matched == 0 {
+	if ctx.Err() != nil {
+		return errorResult(fmt.Sprintf("Grep: cancelled.\nPartial output:\n%s", out.String())), nil
+	}
+	if out.Len() == 0 {
 		return textResult("(no matches)"), nil
 	}
 	return textResult(out.String()), nil
+}
+
+// maxGrepFileBytes caps how much of one file Grep reads, so a huge log
+// or a sparse file cannot hold the turn.
+const maxGrepFileBytes = 8 << 20
+
+// openRegular opens path only when it is a regular file. FIFOs, devices
+// and sockets are skipped: opening a FIFO blocks until a writer appears,
+// and /dev/tty or /dev/urandom never end. A symlink counts when its
+// target is a regular file. The open handle is checked again so a path
+// swapped after the first check is still refused.
+func openRegular(path string, d fs.DirEntry) (*os.File, bool) {
+	mode := d.Type()
+	if mode&fs.ModeSymlink != 0 {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, false
+		}
+		mode = info.Mode().Type()
+	}
+	if !mode.IsRegular() {
+		return nil, false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, false
+	}
+	return f, true
 }

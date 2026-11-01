@@ -68,11 +68,39 @@ func TestDefaultLabelsSpeakCtx(t *testing.T) {
 		{"sidebar trigger", i18nui.SidebarOpenDrawer, "Ouvrir la navigation", "Open navigation", func(ctx context.Context) render.HTML {
 			return SidebarDrawerTrigger(SidebarConfig{Ctx: ctx, DrawerName: "nav-drawer"})
 		}},
+		// 2026-11-01 R7-015: these handed headless StringsFor(nil), so
+		// their kit words read English on every locale.
+		{"network retry tone", i18nui.ToneWarning, "Attention", "Warning", func(ctx context.Context) render.HTML {
+			return NetworkRetryBanner(NetworkRetryBannerConfig{Ctx: ctx, HealthEndpoint: "/healthz"})
+		}},
+		{"rating choice", i18nui.HuiRatingChoice, "{{n}} sur {{max}}", "3 out of 5", func(ctx context.Context) render.HTML {
+			return RatingInput(RatingConfig{Ctx: ctx, Name: "r", Label: "Note", Max: 5})
+		}},
+		{"tag input remove", i18nui.TagRemoveLabelled, "Retirer {{label}}", "Remove go", func(ctx context.Context) render.HTML {
+			return TagInput(TagInputConfig{Ctx: ctx, Name: "tags", Label: "Tags", Values: []string{"go"}})
+		}},
+		{"range slider thumb", i18nui.HuiRangeLow, "{{label}} minimum", "Minimum Prix", func(ctx context.Context) render.HTML {
+			return RangeSlider(RangeSliderConfig{Ctx: ctx, Name: "p", Label: "Prix"})
+		}},
+		{"back to top", i18nui.HuiBackToTop, "Retour en haut", "Back to top", func(ctx context.Context) render.HTML {
+			return BackToTop(BackToTopConfig{Ctx: ctx})
+		}},
+		// The presence dot named itself with the raw status value
+		// ("online") on every locale.
+		{"avatar status", i18nui.AvatarStatusOnline, "En ligne", `aria-label="Online"`, func(ctx context.Context) render.HTML {
+			return Avatar(AvatarConfig{Ctx: ctx, Name: "Ada", Status: AvatarOnline})
+		}},
+		{"avatar group status", i18nui.AvatarStatusBusy, "Occupé", `aria-label="Busy"`, func(ctx context.Context) render.HTML {
+			return AvatarGroup(AvatarGroupConfig{Ctx: ctx, Avatars: []AvatarConfig{{Name: "Ada", Status: AvatarBusy}}})
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			fr := string(c.render(frenchWords(map[i18n.Phrase]string{c.phrase: c.french})))
-			want := strings.ReplaceAll(c.french, "{{count}}", "1")
+			want := strings.NewReplacer("{{count}}", "1", "{{n}}", "3", "{{max}}", "5", "{{label}}", "Prix").Replace(c.french)
+			if c.phrase == i18nui.TagRemoveLabelled {
+				want = strings.ReplaceAll(c.french, "{{label}}", "go")
+			}
 			if !strings.Contains(fr, render.Escape(want)) {
 				t.Errorf("French ctx: %q missing from\n%s", want, fr)
 			}

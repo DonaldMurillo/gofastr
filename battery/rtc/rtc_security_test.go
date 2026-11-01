@@ -218,7 +218,15 @@ func TestOversizeSignalClosesSocket(t *testing.T) {
 			t.Fatal("oversize sender never closed")
 		}
 	}
-	// The room carries no trace of the frame.
+	// The room carries no trace of the frame. pA's leave does arrive,
+	// about a second later once the close handshake gives up, so the
+	// check is that the leave is the first and only thing pB hears: a
+	// relayed frame would reach pB before it.
+	le := b.expectEnv(t, "leave")
+	var lp leavePayload
+	if json.Unmarshal(le.Payload, &lp) != nil || lp.ID != "pA" {
+		t.Fatalf("leave envelope = %s", le.Payload)
+	}
 	b.expectSilence(t, 300*time.Millisecond)
 }
 

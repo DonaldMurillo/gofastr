@@ -117,3 +117,34 @@ func TestInMemoryScheduleCarriesUserID(t *testing.T) {
 		t.Fatalf("fired jobs = %+v, want one with UserID u1", jobs)
 	}
 }
+
+// App.EraseUserData deletes the queue_jobs rows in its SQL plan and runs
+// the in-memory Scheduler's eraser only after the commit, so a tick in
+// between put the erased user's job back in queue_jobs (bug hunt r7
+// R7-004). The scheduler's eraser now sweeps the DBQueues it feeds once
+// its schedules are gone. The tick here stands in for one in that window.
+func TestSchedulerEraseSweepsFedDBQueue(t *testing.T) {
+	ctx := context.Background()
+	db, q := openDBQueue(t, 0)
+	sched := NewScheduler(q)
+	t.Cleanup(func() { _ = sched.Close() })
+	base := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	for _, u := range []string{"u1", "u2"} {
+		if err := sched.Every(time.Minute).Job("digest", map[string]string{"to": u}).UserID(u).RegisterAt(base); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sched.dispatchDue(ctx, base.Add(time.Minute))
+	if _, err := sched.eraseUser(ctx, "u1", false); err != nil {
+		t.Fatalf("eraseUser: %v", err)
+	}
+	var u1, u2 int
+	if err := db.QueryRow(`SELECT
+		COALESCE(SUM(CASE WHEN user_id = 'u1' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN user_id = 'u2' THEN 1 ELSE 0 END), 0) FROM queue_jobs`).Scan(&u1, &u2); err != nil {
+		t.Fatal(err)
+	}
+	if u1 != 0 || u2 != 1 {
+		t.Fatalf("queue_jobs holds %d u1 and %d u2 jobs after erasing u1, want 0 and 1", u1, u2)
+	}
+}

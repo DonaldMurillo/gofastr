@@ -234,7 +234,14 @@ While negotiation is enabled, **both variants of a page URL — the markdown
 response *and* the HTML one — carry `Vary: Accept`**, so a shared cache keys
 on the Accept header and never replays the markdown body to a browser (or
 the HTML body to an agent). Pages on hosts without the opt-in carry no
-`Vary`, since the URL has a single representation.
+`Vary: Accept`, since the URL has a single representation.
+
+Page markdown is rendered for the caller, the way the HTML is: policy,
+`Load` and the signed-in session decide what it holds. So the negotiated
+markdown, `/llm-pages.md` and every screen's `llm.md` answer
+`Cache-Control: private, no-store` with `Vary: Cookie`, the headers the
+HTML page carries, and no shared cache stores one reader's doc for the
+next.
 
 The markdown answers with the status the HTML would: a page that draws
 its not-found state answers 404 in either, a page whose policy blocks

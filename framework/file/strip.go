@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -18,9 +19,10 @@ import (
 // serials, embedded thumbnails), XMP, and equivalent segments — JPEG
 // APPn (bar the Adobe APP14 colour marker) and COM segments, PNG tEXt/zTXt/iTXt/eXIf chunks, and WebP EXIF
 // and XMP chunks. A non-trivial EXIF orientation is applied first, so
-// the stripped original still displays upright: JPEG and PNG re-encode
-// with the orientation baked into the pixels, WebP (no encoder at this
-// layer) keeps an orientation-only EXIF chunk instead.
+// the stripped original still displays upright: JPEG and still PNG
+// re-encode with the orientation baked into the pixels; WebP (no encoder
+// at this layer) and animated PNG (no APNG encoder) are spliced, every
+// frame kept, with an orientation-only EXIF chunk instead.
 //
 // It is OFF by default: originals are stored byte-for-byte, metadata
 // included. That default is deliberate and pinned by
@@ -221,6 +223,10 @@ func stripJPEG(data []byte) ([]byte, error) {
 // metadata chunk is returned unchanged, byte-for-byte. An eXIf
 // orientation of 2..8 is baked into the pixels before re-encoding.
 //
+// An animated PNG (an acTL chunk) is spliced instead, see
+// spliceAPNG: image/png decodes only the default image, so a re-encode
+// would store one still frame.
+//
 // The re-encode decode is pixel-capped (checkStripPixelCap) on the
 // header alone: the strip path must not materialise a raster the image
 // pipeline's DefaultMaxPixels guard would refuse.
@@ -228,7 +234,7 @@ func stripPNG(data []byte) ([]byte, error) {
 	if len(data) < 8 || !bytes.Equal(data[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'}) {
 		return nil, errors.New("png: bad signature")
 	}
-	orient, hasMeta := 0, false
+	orient, hasMeta, animated := 0, false, false
 	pos := 8
 	for pos+8 <= len(data) {
 		length := binary.BigEndian.Uint32(data[pos : pos+4])
@@ -246,6 +252,8 @@ func stripPNG(data []byte) ([]byte, error) {
 				tiff = bytes.TrimPrefix(tiff, []byte("Exif\x00\x00"))
 				orient = exif.ParseTIFFOrientation(tiff)
 			}
+		case "acTL":
+			animated = true
 		case "IEND":
 			// Stop like the decoder does; bytes after IEND only
 			// survive when there is nothing to strip.
@@ -256,6 +264,9 @@ func stripPNG(data []byte) ([]byte, error) {
 	}
 	if !hasMeta {
 		return data, nil
+	}
+	if animated {
+		return spliceAPNG(data, orient), nil
 	}
 	cfg, err := png.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
@@ -273,6 +284,51 @@ func stripPNG(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("png: re-encoding: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// spliceAPNG copies an animated PNG's chunks verbatim minus the
+// metadata ones (tEXt/zTXt/iTXt/eXIf) and anything after IEND, the way
+// stripWebP treats its container: every frame chunk (acTL, fcTL, IDAT,
+// fdAT) is kept and nothing is re-encoded. There is no APNG encoder to
+// bake an orientation of 2..8 into every frame, so the eXIf chunk is
+// rewritten as an orientation-only payload instead, in place of the
+// first one (before the image data, where the format puts it). data
+// has already been walked by stripPNG, so every chunk is in bounds.
+func spliceAPNG(data []byte, orient int) []byte {
+	out := append(make([]byte, 0, len(data)), data[:8]...)
+	keptOrient := false
+	for pos := 8; pos+8 <= len(data); {
+		length := int(binary.BigEndian.Uint32(data[pos : pos+4]))
+		typ := string(data[pos+4 : pos+8])
+		end := pos + 12 + length
+		switch typ {
+		case "tEXt", "zTXt", "iTXt":
+		case "eXIf":
+			if orient >= 2 && orient <= 8 && !keptOrient {
+				out = appendPNGChunk(out, "eXIf", minimalOrientationTIFF(orient))
+				keptOrient = true
+			}
+		default:
+			out = append(out, data[pos:end]...)
+		}
+		if typ == "IEND" {
+			break
+		}
+		pos = end
+	}
+	return out
+}
+
+// appendPNGChunk appends one chunk: length, type, payload, CRC-32 of
+// type and payload.
+func appendPNGChunk(out []byte, typ string, payload []byte) []byte {
+	out = binary.BigEndian.AppendUint32(out, uint32(len(payload)))
+	out = append(out, typ...)
+	out = append(out, payload...)
+	crc := crc32.NewIEEE()
+	crc.Write([]byte(typ))
+	crc.Write(payload)
+	return binary.BigEndian.AppendUint32(out, crc.Sum32())
 }
 
 // webpChunk is one chunk of a WebP's RIFF container.

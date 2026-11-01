@@ -246,19 +246,42 @@ func LoadAppSpecPath(path string, validate bool) (AppSpec, error) {
 		}
 		var merged AppSpec
 		foundAppSpec := false
+		// The app: blocks merge as YAML, key by key, before one decode.
+		// A decoded AppSpecApp cannot tell an unset key from its default
+		// (api_prefix "api", auth.dev_mode true), so merging decoded
+		// structs would let a file that only sets the theme re-apply
+		// those defaults over another file's choice.
+		appNode := &coreyaml.Node{Kind: coreyaml.Map, Map: map[string]*coreyaml.Node{}}
+		appKeyFile := map[string]string{}
 		for _, entry := range entries {
 			if entry.IsDir() || !isAppSpecFile(entry.Name()) {
 				continue
 			}
 			foundAppSpec = true
-			next, err := LoadAppSpecPath(filepath.Join(path, entry.Name()), false)
+			node, err := parseAppSpecFile(filepath.Join(path, entry.Name()))
 			if err != nil {
 				return AppSpec{}, err
+			}
+			next, err := DecodeAppSpec(node)
+			if err != nil {
+				return AppSpec{}, err
+			}
+			if node.Kind == coreyaml.Map && node.Map["app"] != nil {
+				if err := mergeAppNode(appNode, node.Map["app"], "app", entry.Name(), appKeyFile); err != nil {
+					return AppSpec{}, fmt.Errorf("app spec directory %q: %w", path, err)
+				}
 			}
 			merged = MergeAppSpecs(merged, next)
 		}
 		if !foundAppSpec {
 			return AppSpec{}, fmt.Errorf("app spec directory %q does not contain any app spec files", path)
+		}
+		if len(appKeyFile) > 0 {
+			app, err := decodeAppSpecApp(appNode)
+			if err != nil {
+				return AppSpec{}, fmt.Errorf("app spec directory %q: %w", path, err)
+			}
+			merged.App = app
 		}
 		if validate {
 			if err := ValidateAppSpec(merged); err != nil {
@@ -280,31 +303,68 @@ func LoadAppSpecPath(path string, validate bool) (AppSpec, error) {
 }
 
 func DecodeAppSpecFile(path string) (AppSpec, error) {
+	node, err := parseAppSpecFile(path)
+	if err != nil {
+		return AppSpec{}, err
+	}
+	return DecodeAppSpec(node)
+}
+
+// parseAppSpecFile reads one .yml/.yaml/.json app spec into a YAML node.
+func parseAppSpecFile(path string) (*coreyaml.Node, error) {
 	if !isAppSpecFile(path) {
-		return AppSpec{}, fmt.Errorf("app spec %q must be .yml, .yaml, or .json", path)
+		return nil, fmt.Errorf("app spec %q must be .yml, .yaml, or .json", path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return AppSpec{}, err
+		return nil, err
 	}
-	var node *coreyaml.Node
 	if strings.EqualFold(filepath.Ext(path), ".json") {
 		raw, err := strictJSONValue(data)
 		if err != nil {
-			return AppSpec{}, fmt.Errorf("parse %s: %w", path, err)
+			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
-		node = yamlNodeFromJSON(raw)
-	} else {
-		node, err = coreyaml.Parse(string(data))
-		if err != nil {
-			return AppSpec{}, err
+		return yamlNodeFromJSON(raw), nil
+	}
+	return coreyaml.Parse(string(data))
+}
+
+// mergeAppNode folds one file's app: block into dst. Maps merge key by
+// key (auth in one file, theme in another); a key that two files both
+// set is an error naming both, the same way a duplicate entity or
+// screen name is refused rather than one silently winning. seen maps a
+// dotted key path to the file that set it.
+func mergeAppNode(dst, src *coreyaml.Node, keyPath, file string, seen map[string]string) error {
+	if src.Kind != coreyaml.Map {
+		return fmt.Errorf("%s: %s must be a map at line %d", file, keyPath, src.Line)
+	}
+	for _, key := range slices.Sorted(maps.Keys(src.Map)) {
+		child := src.Map[key]
+		childPath := keyPath + "." + key
+		existing, ok := dst.Map[key]
+		if !ok {
+			if child != nil && child.Kind == coreyaml.Map {
+				existing = &coreyaml.Node{Kind: coreyaml.Map, Map: map[string]*coreyaml.Node{}, Line: child.Line, Column: child.Column}
+				dst.Map[key] = existing
+				seen[childPath] = file
+				if err := mergeAppNode(existing, child, childPath, file, seen); err != nil {
+					return err
+				}
+				continue
+			}
+			dst.Map[key] = child
+			seen[childPath] = file
+			continue
 		}
+		if existing != nil && existing.Kind == coreyaml.Map && child != nil && child.Kind == coreyaml.Map {
+			if err := mergeAppNode(existing, child, childPath, file, seen); err != nil {
+				return err
+			}
+			continue
+		}
+		return fmt.Errorf("%s is set in both %s and %s; set it in one file", childPath, seen[childPath], file)
 	}
-	bp, err := DecodeAppSpec(node)
-	if err != nil {
-		return AppSpec{}, err
-	}
-	return bp, nil
+	return nil
 }
 
 func yamlNodeFromJSON(value any) *coreyaml.Node {
@@ -416,8 +476,13 @@ func isAppSpecFile(path string) bool {
 	return ext == ".yml" || ext == ".yaml" || ext == ".json"
 }
 
+// MergeAppSpecs appends b's list sections to a's. It keeps a.App, or
+// takes b.App when a has none: a decoded AppSpecApp cannot tell an unset
+// key from a default, so a directory spec merges its app: blocks as YAML
+// in LoadAppSpecPath instead. TestMergeAppSpecsAppendsEverySlice fails
+// when a new list section is not appended here.
 func MergeAppSpecs(a, b AppSpec) AppSpec {
-	if b.App.Name != "" || b.App.Module != "" || b.App.DBDriver != "" || b.App.DBURL != "" || b.App.StaticDir != "" || b.App.OutputDir != "" || AppSpecHasTheme(b.App) {
+	if reflect.ValueOf(a.App).IsZero() {
 		a.App = b.App
 	}
 	a.Entities = append(a.Entities, b.Entities...)
@@ -425,6 +490,7 @@ func MergeAppSpecs(a, b AppSpec) AppSpec {
 	a.Nav = append(a.Nav, b.Nav...)
 	a.Seed = append(a.Seed, b.Seed...)
 	a.Endpoints = append(a.Endpoints, b.Endpoints...)
+	a.Hooks = append(a.Hooks, b.Hooks...)
 	a.Middleware = append(a.Middleware, b.Middleware...)
 	a.Plugins = append(a.Plugins, b.Plugins...)
 	a.Helpers = append(a.Helpers, b.Helpers...)
@@ -2657,6 +2723,7 @@ func ValidateAppSpec(bp AppSpec) error {
 	errs.add(validateAppSpecSeedTypes(bp, entitiesByName))
 	errs.add(ValidateAppSpecSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
+	routeShapes := map[string]string{} // routeShape → the first route with it
 	screenFiles := map[string]string{} // file name → what writes it
 	screenTypes := map[string]string{} // generated type name → screen name
 	routesOf := map[string]string{}    // screen name → its route, for the error
@@ -2697,6 +2764,15 @@ func ValidateAppSpec(bp AppSpec) error {
 			continue
 		}
 		routes[screen.Route] = true
+		// The router tries dynamic screens in registration order, so
+		// /posts/{id} and /posts/{slug} (or /posts/:id) match the same
+		// URLs and the second never renders.
+		shape := routeShape(screen.Route)
+		if prev, dup := routeShapes[shape]; dup {
+			errs.add(fmt.Errorf("app spec: screen routes %q and %q differ only in parameter names, so the router always matches the first and screen %q never renders; give one a literal segment or remove it", prev, screen.Route, screen.Name))
+			continue
+		}
+		routeShapes[shape] = screen.Route
 		claimFile(screen)
 		// Every screen declares <Name>Screen and mount<Name>Screen in one
 		// package, whichever file it lands in, so the name is the app's.
@@ -3927,6 +4003,37 @@ func RouteParamNames(route string) []string {
 		}
 	}
 	return names
+}
+
+// routeShape rewrites every param segment of a route to what the router
+// matches on: ":" plus its constraint and a catch-all marker, without the
+// name. Two routes with one shape match the same URLs.
+func routeShape(route string) string {
+	parts := strings.Split(route, "/")
+	for i, seg := range parts {
+		if _, ok := RouteSegParam(seg); !ok {
+			continue
+		}
+		inner := seg[1:]
+		if seg[0] == '{' {
+			inner = seg[1 : len(seg)-1]
+		}
+		catchAll := false
+		if rest, ok := strings.CutSuffix(inner, "..."); ok {
+			inner, catchAll = rest, true
+		} else if rest, ok := strings.CutSuffix(inner, "*"); ok {
+			inner, catchAll = rest, true
+		}
+		shape := ":"
+		if _, constraint, ok := strings.Cut(inner, ":"); ok {
+			shape += ":" + constraint
+		}
+		if catchAll {
+			shape += "*"
+		}
+		parts[i] = shape
+	}
+	return strings.Join(parts, "/")
 }
 
 // RouteSegParam returns the param a route segment declares, in either

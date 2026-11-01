@@ -70,9 +70,13 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// Indian English page, and filling an edit with the same
 		// decimal mark) took it past the goal. It is one unit: coerce
 		// and fill share the marks, and the module is loaded only on a
-		// page with a local form. Marking a form that arrives as the
-		// swapped root itself (scan reads the root as well as its
-		// descendants) adds 22.
+		// page with a local form. 3295 at landing; #630 and #631 each
+		// fit alone and merged to 3328. Marking a form that arrives as
+		// the swapped root itself (scan reads the root as well as its
+		// descendants) added 22, and R7-072 (only a text control the
+		// reader types into is read and filled the local way; a range,
+		// select, radio or hidden input stays dot-decimal) added 28,
+		// paid back by trims inside the module and a shorter scan.
 		"framework/localentity/localform.js": 3319,
 	}
 	sources, err := check.RegisteredBehaviorSources(repoRoot)

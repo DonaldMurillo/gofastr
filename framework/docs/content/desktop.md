@@ -128,8 +128,10 @@ under a window title. Even apps that explicitly share a `DataDir` have separate
 browser profiles by ID. The data directory and profile root must be owned by
 the current user with mode `0700`; missing directories are created privately,
 but existing permissions are not changed. Symlinked paths, foreign-owned or
-unsafe writable ancestors, non-regular profile files, hard links, malformed
-origin metadata and invalid cookie databases are refused, not reset. Startup
+unsafe writable ancestors, non-regular profile files, malformed origin metadata
+and invalid cookie databases are refused, not reset. So is a hard link to a file
+outside the profile, or a second name for the cookie, origin or lock files.
+WebKit's own cache links inside the profile are accepted. Startup
 inspects a bounded profile tree (100,000 entries, depth32); these checks are not
 a defense against a hostile process running as the same user.
 
@@ -328,6 +330,14 @@ The core capabilities:
 | `tray` | `setTitle` | none (the tray label is the app's own) |
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
+
+The macOS, Linux and Windows shells check a dialog's input the same way
+(`desktop.CheckFileDialog`) and answer `invalid_input` instead of
+opening a dialog it was not asked for: a filter extension (`png` or
+`.png`; `*` alone matches every file) may not be empty or hold `/`,
+`\`, `*`, `?`, `[`, `]` or `;`, so a filter named Text cannot also
+match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
+`/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
 (`Battery.AllowPath` for in-process grants). The path must arrive in
@@ -695,6 +705,22 @@ current event on the UI thread, and by the time an HTTP round-trip
 came back it no longer would be. In a plain browser (`--serve`) there
 is no message handler and the call is a no-op, so screens carrying the
 attribute render unchanged there.
+
+Only a primary-button press starts the drag, and a press on a control
+inside the handle keeps its click: `button`, `input`, `select`,
+`textarea`, `a[href]` and editable `[contenteditable]` elements never
+drag, because once the native drag starts the host owns the mouse and
+the click never lands. Mark any other clickable element inside the
+handle (a menu trigger, a `role="button"` div) with
+`data-cui-window-no-drag`:
+
+```go
+html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-drag": ""}},
+    render.Text("Quick note"),
+    html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-no-drag": "", "role": "button"}},
+        render.Text("More")),
+),
+```
 
 ### The desktop-notes widget
 

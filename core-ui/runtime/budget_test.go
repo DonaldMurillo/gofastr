@@ -1403,12 +1403,16 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// navigator has swapped the DOM keys no capture on the served
 		// URL (2026-10-29 bug bash R29,
 		// TestLateEnvelopeKeepsTheBootPage).
-		// 8091 measured (8089 + 2) after a leave capture with no entry
+		// 8037 measured (8035 + 2) after its commit seam hands the
+		// incoming markup to the transition module, which gates the pick
+		// on that page's vocabulary (2026-11-01 bug hunt R7-093,
+		// TestTransitionPickUsesIncomingVocab).
+		// 8103 measured (8101 + 2) after a leave capture with no entry
 		// to carry forward falls back to the page's whole page-scoped
 		// seed, not its route.* keys, and a deferred part's seed adds to
 		// it (#614, TestInvalidatedPageKeepsSeed,
 		// TestPartSeedKeepsPageSeed). The dead routeFold seam went.
-		"envelope": 8091,
+		"envelope": 8103,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1492,7 +1496,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestInterceptGoneRefetchWithHash).
 		// 3520 measured (3518 + 2) after a pane applies its answer's
 		// signal seed (2026-10-27, TestInterceptPaneAppliesSeed).
-		"intercept": 3520,
+		// 3568 measured (3566 + 2) after the panel-limit toast writes
+		// its count through formatNumber (R7-045,
+		// TestInterceptLimitToastFormatsCount) and a page link walks
+		// back over every entry the layers wrote before the page is
+		// pushed (R7-095, TestInterceptPageLinkDropsPaneEntries).
+		"intercept": 3568,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1519,7 +1528,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 2121 measured (2119 + 2) after a part fetch that followed a
 		// redirect restores the slot instead of applying the target's
 		// fills (#577, TestRedirectedPartAppliesNothing).
-		"parts": 2121,
+		// 2387 measured (2385 + 2) after a part that fails in transport
+		// is retried once and a second failure puts its region in the
+		// data-cui-loadstate="error" state with the runtime.part_failed
+		// phrase, cleared once a later navigation refills the region
+		// (2026-11-01 bug hunt R7-094, TestPartFailureRetriesThenErrors).
+		"parts": 2387,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion
@@ -1535,7 +1549,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 1 — the pointer shape — instead of el.click()'s detail 0
 		// plus the core-side hint channel. Before that: 1183 measured
 		// after the re-delivery's pointer-modality hint.
-		"transition": 1395,
+		// 1440 measured (1438 + 2) after an answer's pick is gated by
+		// the INCOMING page's data-cui-vt-kinds, read off the markup the
+		// commit seam now passes, instead of the outgoing page's copy on
+		// <html> (2026-11-01 bug hunt R7-093,
+		// TestTransitionPickUsesIncomingVocab).
+		"transition": 1440,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's

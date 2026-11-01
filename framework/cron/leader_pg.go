@@ -19,15 +19,18 @@ const cronTicksTable = "gofastr_cron_ticks"
 // Acquire pins a dedicated connection for the lock's lifetime and unlock reuses
 // that same connection before returning it to the pool.
 //
-// Pool sizing: each tick pins one connection for the lock's duration (held
-// until the tick's jobs finish), so the DB pool should allow at least 2 open
-// connections when the scheduled jobs themselves use the database, otherwise
-// the leader holds the only connection and the jobs deadlock on it.
-//
 // The lease also implements [TickLeaderElection]: AcquireTick records the
 // tick minute it fired in the gofastr_cron_ticks table (created on first
 // use), so a replica whose timer fires for the same minute after the leader
-// released the lock skips it instead of running the jobs a second time.
+// released the lock skips it instead of running the jobs a second time. The
+// scheduler uses AcquireTick and releases the lock as soon as the claim is
+// made, so the pinned connection is held for the lock and the claim only,
+// never while the jobs run.
+//
+// Pool sizing: through plain Acquire, the lock's connection stays pinned
+// for as long as the caller holds the lease, so the DB pool should allow at
+// least 2 open connections when the work done under it uses the database,
+// otherwise the holder has the only connection and that work deadlocks.
 type PostgresAdvisoryLease struct {
 	db  *sql.DB
 	key int64

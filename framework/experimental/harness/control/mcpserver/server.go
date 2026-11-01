@@ -10,13 +10,16 @@ package mcpserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -63,7 +66,22 @@ type Server struct {
 	in  io.Reader
 	out io.Writer
 	mu  sync.Mutex
+
+	// inflight maps a running request's JSON-RPC id (compacted raw
+	// JSON) to the cancel func of its context, so a
+	// notifications/cancelled naming it can reach it.
+	inflightMu sync.Mutex
+	inflight   map[string]context.CancelCauseFunc
 }
+
+// maxInFlight bounds the requests one connection runs at once. The read
+// loop waits for a free slot past it, which pushes back on the client
+// instead of spawning without limit.
+const maxInFlight = 32
+
+// errClientCancelled is the cancel cause for a request the client
+// withdrew with notifications/cancelled.
+var errClientCancelled = errors.New("mcpserver: request cancelled by the client")
 
 // New constructs a Server.
 func New(mux *multiplex.Mux, catalog *resources.Catalog) *Server {
@@ -94,6 +112,13 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 	scanner := bufio.NewScanner(s.in)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	// Each request runs on its own goroutine. Handling them inline let
+	// one wait=turn call hold the read loop for the whole turn, so the
+	// harness.cancel_turn or notifications/cancelled meant to stop it
+	// was never read. Serve returns once every request has answered.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	slots := make(chan struct{}, maxInFlight)
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -102,9 +127,91 @@ func (s *Server) Serve(ctx context.Context) error {
 		if len(line) == 0 {
 			continue
 		}
-		s.handle(ctx, line)
+		req, ok := s.decodeRequest(line)
+		if !ok {
+			continue
+		}
+		// Notifications (no ID) run inline: they are quick and carry
+		// no response, and a cancel must not wait behind a full slot
+		// table.
+		if len(req.ID) == 0 {
+			s.handleNotification(req)
+			continue
+		}
+		reqCtx, release, ok := s.track(ctx, req.ID)
+		if !ok {
+			s.writeErr(req.ID, -32600, "request id already in flight")
+			continue
+		}
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			release()
+			return ctx.Err()
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			defer release()
+			s.route(reqCtx, req)
+		}()
 	}
 	return scanner.Err()
+}
+
+// track registers a request's cancel func under its id. ok is false when
+// a request with the same id is still running.
+func (s *Server) track(ctx context.Context, id json.RawMessage) (context.Context, func(), bool) {
+	key := requestKey(id)
+	s.inflightMu.Lock()
+	defer s.inflightMu.Unlock()
+	if _, busy := s.inflight[key]; busy {
+		return nil, nil, false
+	}
+	if s.inflight == nil {
+		s.inflight = make(map[string]context.CancelCauseFunc)
+	}
+	reqCtx, cancel := context.WithCancelCause(ctx)
+	s.inflight[key] = cancel
+	return reqCtx, func() {
+		s.inflightMu.Lock()
+		delete(s.inflight, key)
+		s.inflightMu.Unlock()
+		cancel(nil)
+	}, true
+}
+
+// requestKey canonicalises a JSON-RPC id so `1` and ` 1` name the same
+// request.
+func requestKey(id json.RawMessage) string {
+	var b bytes.Buffer
+	if err := json.Compact(&b, id); err != nil {
+		return string(id)
+	}
+	return b.String()
+}
+
+// handleNotification runs one ID-less message. notifications/cancelled
+// cancels the named in-flight request; everything else
+// (notifications/initialized, …) needs no action.
+func (s *Server) handleNotification(req rpcRequest) {
+	if req.Method != "notifications/cancelled" {
+		return
+	}
+	var params struct {
+		RequestID json.RawMessage `json:"requestId"`
+	}
+	if err := unmarshalMCPObject(req.Params, &params); err != nil || len(params.RequestID) == 0 {
+		return
+	}
+	s.inflightMu.Lock()
+	cancel := s.inflight[requestKey(params.RequestID)]
+	s.inflightMu.Unlock()
+	if cancel != nil {
+		//gofastr:allow(recovercallback) the map holds only cancel funcs this server made with context.WithCancelCause in track; they do not panic and no host code is stored there
+		cancel(errClientCancelled)
+	}
 }
 
 // ---------- JSON-RPC plumbing ----------
@@ -143,10 +250,13 @@ func unmarshalMCPObject(data []byte, dst any) error {
 	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return err
 	}
+	//gofastr:allow(GOFASTR1407) CheckObjectKeys above refused duplicate and case-folded keys at every depth; the plain decode keeps MCP's unknown-field tolerance
 	return json.Unmarshal(data, dst)
 }
 
-func (s *Server) handle(ctx context.Context, line []byte) {
+// decodeRequest parses one line. A line that does not decode is answered
+// with an error and ok is false.
+func (s *Server) decodeRequest(line []byte) (rpcRequest, bool) {
 	var req rpcRequest
 	// The envelope is framing, not an evolution surface: every key must
 	// exactly match a json tag and no key may repeat (UnmarshalStrict,
@@ -162,12 +272,13 @@ func (s *Server) handle(ctx context.Context, line []byte) {
 			JSONRPC: "2.0",
 			Error:   &rpcError{Code: -32602, Message: "invalid JSON: " + err.Error()},
 		})
-		return
+		return rpcRequest{}, false
 	}
-	// Notifications (no ID), handle "notifications/initialized" silently.
-	if len(req.ID) == 0 {
-		return
-	}
+	return req, true
+}
+
+// route answers one request that carries an id.
+func (s *Server) route(ctx context.Context, req rpcRequest) {
 	switch req.Method {
 	case "initialize":
 		s.handleInitialize(req)
@@ -178,7 +289,7 @@ func (s *Server) handle(ctx context.Context, line []byte) {
 	case "resources/list":
 		s.handleResourcesList(req)
 	case "resources/read":
-		s.handleResourcesRead(req)
+		s.handleResourcesRead(ctx, req)
 	case "prompts/list":
 		s.handlePromptsList(req)
 	default:
@@ -207,7 +318,7 @@ func (s *Server) handleInitialize(req rpcRequest) {
 			"protocolVersion": "2024-11-05",
 			"capabilities": map[string]any{
 				"tools":     map[string]any{},
-				"resources": map[string]any{"subscribe": true},
+				"resources": map[string]any{},
 				"prompts":   map[string]any{},
 			},
 			"serverInfo": map[string]any{
@@ -351,8 +462,15 @@ func (s *Server) runAgentWithShellAccess(ctx context.Context, reqID json.RawMess
 		case <-deadline:
 			s.writeErr(reqID, -32603, "turn timed out after 5 minutes")
 			return
+		case <-ctx.Done():
+			s.abandonTurn(ctx, cli, sess)
+			return
 		case env, ok := <-sub:
 			if !ok {
+				if ctx.Err() != nil {
+					s.abandonTurn(ctx, cli, sess)
+					return
+				}
 				goto done
 			}
 			ev, _ := control.DecodeEvent(env)
@@ -381,6 +499,19 @@ done:
 			"toolCalls": toolCalls,
 		},
 	}})
+}
+
+// abandonTurn runs when a wait=turn call's context ends before the turn
+// does. A call the client withdrew with notifications/cancelled takes its
+// turn down with it, the way an interrupted tool call stops its work;
+// the MCP spec has the server send no response for it. A context that
+// ended for any other reason (the connection closed) leaves the turn
+// running, as before.
+func (s *Server) abandonTurn(ctx context.Context, cli control.Client, sess ids.SessionID) {
+	if !errors.Is(context.Cause(ctx), errClientCancelled) {
+		return
+	}
+	_ = s.Mux.Dispatch(context.WithoutCancel(ctx), cli, control.CancelTurn{SessionID: sess})
 }
 
 // dispatchCommand handles simple Command verbs by unmarshalling the
@@ -528,12 +659,20 @@ func (s *Server) handleResourcesList(req rpcRequest) {
 	}})
 }
 
-func (s *Server) handleResourcesRead(req rpcRequest) {
+func (s *Server) handleResourcesRead(ctx context.Context, req rpcRequest) {
 	var params struct {
 		URI string `json:"uri"`
 	}
 	if err := unmarshalMCPObject(req.Params, &params); err != nil {
 		s.writeErr(req.ID, -32602, err.Error())
+		return
+	}
+	if sess, since, ok, err := parseEventsURI(params.URI); ok {
+		if err != nil {
+			s.writeErr(req.ID, -32602, err.Error())
+			return
+		}
+		s.readEvents(ctx, req, params.URI, sess, since)
 		return
 	}
 	var body any
@@ -553,6 +692,63 @@ func (s *Server) handleResourcesRead(req rpcRequest) {
 	s.write(rpcResponse{ID: req.ID, Result: map[string]any{
 		"contents": []map[string]any{
 			{"uri": params.URI, "mimeType": "application/json", "text": jsonString(body)},
+		},
+	}})
+}
+
+// maxEventsPerRead caps one read of the events resource. A client
+// that gets a full page reads again with since set to the last id.
+const maxEventsPerRead = 1000
+
+// parseEventsURI matches harness/v1://session/{id}/events[?since=N].
+// ok reports whether the URI names the events resource at all; err is
+// set when it does but the id or since is malformed.
+func parseEventsURI(uri string) (sess ids.SessionID, since uint64, ok bool, err error) {
+	rest, found := strings.CutPrefix(uri, "harness/v1://session/")
+	if !found {
+		return "", 0, false, nil
+	}
+	path, query, _ := strings.Cut(rest, "?")
+	idPart, found := strings.CutSuffix(path, "/events")
+	if !found {
+		return "", 0, false, nil
+	}
+	if sess, err = ids.ParseSession(idPart); err != nil {
+		return "", 0, true, fmt.Errorf("invalid session id in %s", uri)
+	}
+	if query == "" {
+		return sess, 0, true, nil
+	}
+	vals, err := url.ParseQuery(query)
+	if err != nil || len(vals) != 1 || len(vals["since"]) != 1 {
+		return "", 0, true, fmt.Errorf("events URI takes one since=<id> parameter")
+	}
+	if since, err = strconv.ParseUint(vals["since"][0], 10, 64); err != nil {
+		return "", 0, true, fmt.Errorf("since must be an event id")
+	}
+	return sess, since, true, nil
+}
+
+// readEvents answers a read of a session's events resource with every
+// event after since, from the bus window and the session log, in
+// order. A range neither holds comes back as a StreamGap.
+func (s *Server) readEvents(ctx context.Context, req rpcRequest, uri string, sess ids.SessionID, since uint64) {
+	if s.Claims != nil && !s.Claims.AllowsSession(sess) {
+		s.writeErr(req.ID, -32602, "token is not scoped for session "+string(sess))
+		return
+	}
+	eng := s.Mux.EngineFor(sess)
+	if eng == nil {
+		s.writeErr(req.ID, -32602, "unknown session: "+string(sess))
+		return
+	}
+	events := eng.Bus.Backlog(ctx, since, maxEventsPerRead)
+	if events == nil {
+		events = []control.EventEnvelope{}
+	}
+	s.write(rpcResponse{ID: req.ID, Result: map[string]any{
+		"contents": []map[string]any{
+			{"uri": uri, "mimeType": "application/json", "text": jsonString(events)},
 		},
 	}})
 }
@@ -596,8 +792,8 @@ type mcpClient struct {
 func (c *mcpClient) ID() ids.ClientID                     { return c.id }
 func (c *mcpClient) IdentityClass() control.IdentityClass { return c.class }
 func (c *mcpClient) Subscribe(_ context.Context) <-chan control.EventEnvelope {
-	// MCP clients consume via the resource subscription, not via
-	// Client.Subscribe; return a closed channel.
+	// MCP clients read events through the events resource
+	// (readEvents), not via Client.Subscribe; return a closed channel.
 	ch := make(chan control.EventEnvelope)
 	close(ch)
 	return ch
