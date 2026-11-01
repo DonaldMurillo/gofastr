@@ -71,7 +71,7 @@ func readScopeFilters(ctx context.Context, ent *entity.Entity) []filter.ParsedFi
 		types[f.Name] = f.Type
 	}
 	var out []filter.ParsedFilter
-	for _, p := range rs.Filter {
+	for pi, p := range rs.Filter {
 		ft := types[p.Field]
 		switch p.Op {
 		case "", "eq":
@@ -81,8 +81,11 @@ func readScopeFilters(ctx context.Context, ent *entity.Entity) []filter.ParsedFi
 		case "in":
 			// One OpIn filter per value; renderReadScope coalesces the
 			// adjacent run back into a single IN (...).
+			// Each value is tagged with its predicate, so two declared
+			// `in` predicates on one column never coalesce into a union
+			// even if the entity.Define guard is ever loosened.
 			for _, v := range p.Values {
-				out = append(out, filter.ParsedFilter{Field: p.Field, Op: filter.OpIn, Value: v}.Coerced(ft))
+				out = append(out, filter.ParsedFilter{Field: p.Field, Op: filter.OpIn, Value: v}.Coerced(ft).InList("scope."+strconv.Itoa(pi)))
 			}
 		case "not_in":
 			// Emitted per value and ANDed: `col NOT IN (a) AND col NOT IN (b)`
@@ -171,16 +174,13 @@ func renderReadScope(preds []filter.ParsedFilter, qualifier string, startIdx int
 			// Coalesce the adjacent same-field run the builder emitted for
 			// one declared `in` predicate into a single IN (...).
 			//
-			// This is only safe because entity.Define refuses two `in`
-			// predicates on one column: without that, the builder emits two
-			// adjacent runs on the same field, this merges them, and the
-			// declared AND becomes an OR that serves every row. The guard
-			// lives at definition rather than here because the widening is
-			// invisible at this layer, which sees a flat list either way.
+			// The builder tags each declared predicate's values (InList),
+			// so two `in` predicates on one column stay two ANDed lists;
+			// entity.Define also refuses that declaration outright.
 			phs := []string{fmt.Sprintf("$%d", idx)}
 			args = append(args, f.BindValue())
 			idx++
-			for i+1 < len(preds) && preds[i+1].Op == filter.OpIn && preds[i+1].Field == f.Field {
+			for i+1 < len(preds) && f.SameINList(preds[i+1]) {
 				i++
 				phs = append(phs, fmt.Sprintf("$%d", idx))
 				args = append(args, preds[i].BindValue())

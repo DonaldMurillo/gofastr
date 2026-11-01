@@ -268,11 +268,14 @@ func splitFieldOp(target *entity.Entity, raw string) (string, filter.FilterOp) {
 // checkNestedValues refuses a value that is not of the target column's
 // type, the same filter.CoerceValue check the top-level parser runs, so
 // ?author.age=abc answers 400 on both dialects instead of a Postgres 500
-// and an empty SQLite 200. A like value is a substring and is not checked.
+// and an empty SQLite 200. A like value is a substring and is not coerced,
+// but it is still a text bind: invalid UTF-8 or a NUL is Postgres's 22021,
+// so it gets the text check every value gets (CoerceValue as String).
 func checkNestedValues(sent string, nf nestedFilter) error {
 	switch nf.Op {
 	case filter.OpLike:
-		return nil
+		_, err := filter.CoerceValue(sent, schema.String, nf.Value)
+		return err
 	case filter.OpIn:
 		for _, v := range nf.Values {
 			if _, err := filter.CoerceValue(sent, nf.colType, v); err != nil {

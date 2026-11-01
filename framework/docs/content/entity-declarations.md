@@ -1190,7 +1190,12 @@ where a bare `LIKE` was case-sensitive on Postgres only.
 Every key is its own predicate, ANDed: `?score=5&score_gt=3` keeps both,
 and the same query string always compiles to the same SQL. Two `_in`
 keys that name one column, its name and its `WireName`
-(`?author_id_in=1,2&writer_in=3`), are two lists ANDed, not one union.
+(`?author_id_in=1,2&writer_in=3`), are two lists ANDed, not one union;
+so are the same two terms in a scoped include filter
+(`include=comments(author_id_in=1|2,writer_in=3)`). Code that builds its
+own one-filter-per-value `filter.ParsedFilter` lists tags each value with
+its key (`pf.InList(key)`), and a renderer merges adjacent values into
+one `IN (...)` only while `f.SameINList(next)` holds.
 
 **A filter key is sent once.** A key other than `_in` repeated in one
 query string (`?price_lt=100&price_lt=5`) is a **400** naming the key,

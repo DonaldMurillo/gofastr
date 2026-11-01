@@ -474,7 +474,9 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 				if err != nil {
 					return nil, err
 				}
-				out = append(out, pf)
+				// Tag each value with its term, so author_id_in=1|2 and
+				// its alias writer_in=3 render as two ANDed IN lists.
+				out = append(out, pf.InList(sent))
 			}
 		} else {
 			pf, err := scopedTyped(filter.ParsedFilter{Field: sent, Op: op, Value: value}, field, colType[field], pathForErrors)

@@ -511,7 +511,7 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 			phs := []string{fmt.Sprintf("$%d", idx)}
 			args = append(args, f.BindValue())
 			idx++
-			for i+1 < len(filters) && filters[i+1].Op == filter.OpIn && filters[i+1].Field == f.Field {
+			for i+1 < len(filters) && f.SameINList(filters[i+1]) {
 				i++
 				phs = append(phs, fmt.Sprintf("$%d", idx))
 				args = append(args, filters[i].BindValue())

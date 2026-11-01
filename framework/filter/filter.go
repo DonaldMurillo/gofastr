@@ -155,6 +155,23 @@ type ParsedFilter struct {
 	inKey string
 }
 
+// InList returns f tagged with the query key whose IN list it belongs
+// to. A parser that emits one OpIn filter per value (ParseFiltersValues
+// does this itself) tags each value with its key, so a renderer merging
+// adjacent values into one IN clause stops at the next key: two keys on
+// one column (a column and its wire alias) stay two ANDed lists.
+func (f ParsedFilter) InList(key string) ParsedFilter {
+	f.inKey = key
+	return f
+}
+
+// SameINList reports whether g continues f's IN list: both OpIn, on the
+// same field, from the same query key (see InList). A renderer merges
+// adjacent OpIn filters into one IN clause only while this holds.
+func (f ParsedFilter) SameINList(g ParsedFilter) bool {
+	return f.Op == OpIn && g.Op == OpIn && f.Field == g.Field && f.inKey == g.inKey
+}
+
 // BindValue returns what a query binder should bind for this filter:
 // the schema-coerced value when the filter carries one (set by
 // ParseFiltersValues, Typed or Coerced), the raw string otherwise. Every
@@ -854,9 +871,8 @@ func applyFilters[B interface{ Where(string, ...any) B }](b B, filters []ParsedF
 // column (author_id_in and its wire alias writer_in) are two lists,
 // ANDed like every other pair of keys: merging them answered the union.
 func collectInRun(filters []ParsedFilter, start int) (values []any, n int) {
-	field, key := filters[start].Field, filters[start].inKey
 	for j := start; j < len(filters); j++ {
-		if filters[j].Op != OpIn || filters[j].Field != field || filters[j].inKey != key {
+		if !filters[start].SameINList(filters[j]) {
 			break
 		}
 		values = append(values, filters[j].BindValue())
