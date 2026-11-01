@@ -4793,11 +4793,6 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 // pageSheetNames returns the sorted component sheets a page's first
 // paint needs (rendered markers plus every LoadAlways entry) and the
 // sheets only its <template> content needs.
-func pageSheetNames(page string) (names, held []string) {
-	used, held := registry.ScanSplit(page)
-	eager := registry.EagerNames()
-	seen := setOf(used)
-	for _, n := range eager {
 //
 // Only registered, path-safe names are kept. A marker can name nothing
 // (host markup, a typo, a CMS field, a component this replica does not
@@ -4805,6 +4800,11 @@ func pageSheetNames(page string) (names, held []string) {
 // its data-cui-bundle list: an unknown one made the bundle answer 404
 // while the runtime, seeded from the list, never fetched the real
 // sheets on its own, so the whole page stayed unstyled.
+func pageSheetNames(page string) (names, held []string) {
+	used, held := registry.ScanSplit(page)
+	eager := registry.EagerNames()
+	seen := setOf(used)
+	for _, n := range eager {
 		seen[n] = struct{}{}
 	}
 	names = make([]string, 0, len(seen))
@@ -5465,15 +5465,15 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		versions = append(versions, e.VersionForHash(theme, th))
 		bodies = append(bodies, e.ServedCSSForHash(theme, th))
 	}
+	if len(bodies) == 0 {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	wantV := hashStrings(versions...)
 	if v := r.URL.Query().Get("v"); v != "" && v == wantV {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
-	if len(bodies) == 0 {
-		http.NotFound(w, r)
-		return
-	}
 		w.Header().Set("Cache-Control", "no-cache")
 	}
 	for _, body := range bodies {

@@ -677,15 +677,15 @@
     // from the URL: a <link> to the bundle, or the <style> a page
     // whose head fits the first round trip carries it in.
     document.head.querySelectorAll('[data-cui-bundle]').forEach((l) => {
-      const names = (l.getAttribute('data-cui-bundle') || '').split(',');
-      for (const n of names) if (n) G._pendingLinks.add(n);
-    });
-    G.scanAndLoadCSS(docEl);
       // A bundle link that failed (head sheets have settled by the time
       // this runs) covers nothing: leave its names to the scanner. A
       // failed sheet is an empty one (the browser still gives it a
       // CSSStyleSheet), and a bundle is never empty.
       if (l.tagName === 'LINK') try { if (!l.sheet || !l.sheet.cssRules.length) return; } catch (_) {}
+      const names = (l.getAttribute('data-cui-bundle') || '').split(',');
+      for (const n of names) if (n) G._pendingLinks.add(n);
+    });
+    G.scanAndLoadCSS(docEl);
     G.scheduleIdleLoads();
   };
 
