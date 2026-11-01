@@ -364,7 +364,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-dropdown-open` | Runtime-written marker on a `data-cui-dropdown-wrap` while its dropdown is open. CSS keys the open state off it; the runtime uses it to find and close open dropdowns. |
 | `data-cui-animate-signal="<name>"` | On an element wired by the `animate` runtime module: names the signal to watch. When the signal becomes truthy the runtime adds `data-cui-animate-class`; falsy removes it. Initial state is applied on wire. |
 | `data-cui-animate-class="<class>"` | The CSS class the `animate` module toggles on the element as its `data-cui-animate-signal` value flips between truthy and falsy. |
-| `data-cui-reveal="<type>"` | Marks an element for the `reveal` runtime module's scroll-into-view animation. The element gets `cui-hidden` immediately; when it enters the viewport the runtime swaps in `cui-revealed` + `cui-reveal-<type>` (e.g. `data-cui-reveal="fade-up"` → `cui-reveal-fade-up`). One-shot. |
+| `data-cui-reveal="<type>"` | Marks an element for the `reveal` runtime module's scroll-into-view animation. The element gets `cui-hidden` immediately; when it enters the viewport the runtime swaps in `cui-revealed` + `cui-reveal-<type>` (e.g. `data-cui-reveal="fade-up"` → `cui-reveal-fade-up`). One-shot. The module loads after first paint, so an element already on screen at its first scan has been painted visible: it is marked `cui-revealed` and never hidden (hiding it to fade it back was a blink on every load). Content scanned later (a navigation, an island swap) is hidden before it paints and keeps the entrance. |
 | `data-fui-dropzone-preview` | On a `<input type="file">` inside a `framework/ui.FileDropzone`: opt the input into image-preview rendering. After each `change`, the `filedropzone` module (framework/ui's own) FileReader-reads each selected image and renders `<img>` tags into the sibling `[data-fui-dropzone-preview-for="<input-id>"]` container; the drop itself, the chosen-names list and the pick announcement are the headless module's `data-hui-drop` hooks. |
 | `data-fui-dropzone-preview-for="<input-id>"` | On the previews strip element: links it to the input it should display previews for. |
 | `data-hui-back-to-top-visible` | Runtime-written BackToTop visibility marker (`headless-navigation` owns it; no component renders it). CSS uses it to reveal the control once the threshold is crossed. |
@@ -2091,9 +2091,35 @@ showed a phone on a slow link every new page unstyled for a moment.
 
 All three converge on `loadComponentCSS(name)`. The function is
 **synchronous**: no `await` between the existence check and
-`appendChild`, plus a `_pendingLinks` guard, so promoting a
+inserting the link, plus a `_pendingLinks` guard, so promoting a
 component across modes or having two scans race never produces a
 duplicate request.
+
+The runtime inserts each sheet it loads **before** `app.css`, the
+element carrying `id="cui-app-css"` (the host puts that id on the
+linked and the inlined `app.css` alike, and on the embed shell's link),
+so a component whose sheet arrives after first paint keeps the order
+the server head gives every other one and the host's override still
+wins a tie. A sheet whose fetch fails (a 503 mid-deploy, a dropped
+connection) gives its name back: the link is removed and the next scan
+of that marker requests it again. The boot seeding from
+`data-cui-bundle` skips a bundle link that failed (its sheet is empty),
+so its components fall to the scanner instead of staying unstyled.
+Boot's mutation observer runs the same scan over every inserted subtree
+(its root included), so markup written by a path that does not scan
+for itself (a compiled action's `updateHTML` or `fetchPage`, a module's
+own `innerHTML`) still loads its components' sheets.
+
+The server keeps only registered names in a page's sheet list. A
+`data-cui-comp` marker that names nothing (host markup, a typo, a
+component this replica lacks mid-deploy) never reaches the bundle URL or
+its `data-cui-bundle` list, and the bundle endpoint skips a name it does
+not know instead of refusing the whole bundle; such an answer cannot
+match its `?v=`, so it is served `no-cache`.
+
+An embed frame's shell links no component sheet. The frame starts the
+fetched content's sheets and waits for them (bounded like every sheet
+wait) before it writes the markup, so the content paints styled.
 
 Navigation's hash and history scroll writes wait for newly requested
 component stylesheets to load or fail before measuring the page — and

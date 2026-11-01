@@ -2315,7 +2315,10 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 			_, cssHash := ds.appCSSCached()
 			href += "?v=" + cssHash
 		}
-		headClose.WriteString(`<link rel="stylesheet" href="` + href + `">`)
+		// The id is the cascade anchor: the runtime inserts every
+		// lazily loaded component sheet before it, so app.css keeps
+		// winning ties against the kit (the inline form carries it too).
+		headClose.WriteString(`<link rel="stylesheet" href="` + href + `" id="cui-app-css">`)
 		headClose.WriteByte('\n')
 	}
 	if bundle {
@@ -4795,11 +4798,20 @@ func pageSheetNames(page string) (names, held []string) {
 	eager := registry.EagerNames()
 	seen := setOf(used)
 	for _, n := range eager {
+//
+// Only registered, path-safe names are kept. A marker can name nothing
+// (host markup, a typo, a CMS field, a component this replica does not
+// have mid-deploy), and every name here goes into the bundle URL and
+// its data-cui-bundle list: an unknown one made the bundle answer 404
+// while the runtime, seeded from the list, never fetched the real
+// sheets on its own, so the whole page stayed unstyled.
 		seen[n] = struct{}{}
 	}
 	names = make([]string, 0, len(seen))
 	for n := range seen {
-		names = append(names, n)
+		if _, ok := registry.Lookup(n); ok && safeComponentName(n) {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
 	return names, held
@@ -5444,8 +5456,11 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		seen[n] = struct{}{}
 		e, ok := registry.Lookup(n)
 		if !ok {
-			http.NotFound(w, r)
-			return
+			// Skip, don't refuse: a page another replica rendered can
+			// name a component this one lacks mid-deploy, and a 404
+			// would drop every other sheet in the bundle. The version
+			// then cannot match ?v=, so the answer is no-cache.
+			continue
 		}
 		versions = append(versions, e.VersionForHash(theme, th))
 		bodies = append(bodies, e.ServedCSSForHash(theme, th))
@@ -5455,6 +5470,10 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("v"); v != "" && v == wantV {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
+	if len(bodies) == 0 {
+		http.NotFound(w, r)
+		return
+	}
 		w.Header().Set("Cache-Control", "no-cache")
 	}
 	for _, body := range bodies {

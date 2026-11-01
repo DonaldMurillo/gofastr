@@ -111,6 +111,14 @@
       // And re-run scanners of modules that ARE loaded so they wire
       // any newly-inserted elements (toast TTL, drop zones).
       const G = window.__gofastr;
+      // Component sheets for every insertion path, not only the swaps
+      // that scan for themselves: compiled actions (updateHTML,
+      // fetchPage) and module-written markup left theirs unloaded.
+      if (G?.scanAndLoadCSS) {
+        G.scanAndLoadCSS(node);
+        G.loadComponentCSS(node.dataset.cuiComp);
+        G.loadComponentCSS(node.dataset.cuiScope);
+      }
       if (G && G._moduleScanners) {
         for (const name in G._moduleScanners) {
           if (G.loadedModules && G.loadedModules[name]) {
@@ -673,6 +681,11 @@
       for (const n of names) if (n) G._pendingLinks.add(n);
     });
     G.scanAndLoadCSS(docEl);
+      // A bundle link that failed (head sheets have settled by the time
+      // this runs) covers nothing: leave its names to the scanner. A
+      // failed sheet is an empty one (the browser still gives it a
+      // CSSStyleSheet), and a bundle is never empty.
+      if (l.tagName === 'LINK') try { if (!l.sheet || !l.sheet.cssRules.length) return; } catch (_) {}
     G.scheduleIdleLoads();
   };
 

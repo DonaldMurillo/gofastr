@@ -498,7 +498,16 @@
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-cui-style', name);
       link.id = 'cui-css-' + name;
-      document.head.appendChild(link);
+      // A failed fetch (a deploy's 503, a blip) must not pin the name:
+      // drop the link and the claim so the next scan asks again.
+      link.onerror = () => { link.remove(); this._pendingLinks.delete(name); };
+      this._insertSheet(link);
+    },
+    // Component sheets go before app.css (#cui-app-css), the order the
+    // server's head keeps, so the host's own rules win cascade ties.
+    _insertSheet(link) {
+      const app = document.getElementById('cui-app-css');
+      app ? app.before(link) : document.head.appendChild(link);
     },
     // Loads the sheet each kit root (data-cui-comp) and owned-style
     // root (data-cui-scope) under root names. Descendants only: a
