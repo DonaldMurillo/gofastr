@@ -427,7 +427,13 @@ The parts the navigation members draw beyond the shared vocabulary:
   (with a `--sub` variant), `sidebar-nav`, `sidebar-prepend`,
   `sidebar-group`, `sidebar-group-toggle` (the button dialect),
   `sidebar-group-list`, and `icon` with a `--fallback` variant (the
-  label's initial, for rail states). `Gallery` takes a
+  label's initial, for rail states). The drawer trigger (the shell's
+  `sidebar-drawer` and the standalone `SidebarDrawerTrigger`) is named
+  by `DrawerLabel`; an empty or blank one takes
+  `Strings.SidebarOpenDrawer` ("Open navigation", the
+  `ui.sidebar.openDrawer` phrase `ui.Sidebar` names its own trigger
+  with), so the phone's only way into the navigation is never an
+  unnamed button. `Gallery` takes a
   `GalleryLightbox` wiring: the typed prop that renders the widget
   runtime's `data-cui-open` / `data-cui-deeplink` /
   `data-fui-lightbox-group` trigger family on every item anchor. Each

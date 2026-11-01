@@ -298,6 +298,14 @@ type Strings struct {
 	PaneSecondary string
 	PaneTertiary  string
 
+	// ─── Sidebar ──────────────────────────────────────────────────────
+
+	// SidebarOpenDrawer names the phone drawer's hamburger when its own
+	// DrawerLabel is empty ("Open navigation"): the button is the only
+	// way into the navigation there, and an unnamed one is a button a
+	// screen reader calls "button".
+	SidebarOpenDrawer string
+
 	// ─── JSONTree ──────────────────────────────────────────────────────
 
 	// JSONObject names an object node in a JSON tree. One word.
@@ -486,6 +494,8 @@ var defaultStrings = Strings{
 
 	PaneSecondary: "Secondary",
 	PaneTertiary:  "Tertiary",
+
+	SidebarOpenDrawer: "Open navigation",
 
 	ComboboxLoading:      "Loading…",
 	ComboboxNoResults:    "No matches",

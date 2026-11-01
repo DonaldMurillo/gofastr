@@ -582,9 +582,9 @@ the collapsed state ships in the SSR bytes and the module never writes storage f
 the standalone trigger is the SAME button and widget contract as the shell's own — a host that relocates it into its header opens the same drawer, and the button is the component's root so the host's overrides land on it
 <button aria-label="Open navigation" data-cui-open="nav-drawer" type="button"><span aria-hidden="true" data-cui-internal="">☰</span></button>
 
-=== SidebarDrawerTrigger / a quiet label-free copy ===
-without a label the button still opens the drawer — the name is the host's to add, and the contract does not depend on it
-<button data-cui-open="nav-drawer" type="button"><span aria-hidden="true" data-cui-internal="">☰</span></button>
+=== SidebarDrawerTrigger / an unlabelled copy ===
+with no DrawerLabel the button is named from Strings (Open navigation): it is the phone's only way into the navigation, and an unnamed hamburger is one a screen reader calls button
+<button aria-label="Open navigation" data-cui-open="nav-drawer" type="button"><span aria-hidden="true" data-cui-internal="">☰</span></button>
 
 === SidebarRegion / a region slotted into a host's chrome ===
 no shell hooks render, so the module never treats the host's chrome as a sidebar root

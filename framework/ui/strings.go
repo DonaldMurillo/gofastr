@@ -151,6 +151,9 @@ var stringsKeys = map[string]i18n.Phrase{
 	"CarouselSlideRole": i18nui.HuiCarouselSlideRole,
 	"PaneSecondary":     i18nui.HuiPaneSecondary,
 	"PaneTertiary":      i18nui.HuiPaneTertiary,
+	// The phone drawer's hamburger when its DrawerLabel is empty: the
+	// phrase ui.Sidebar already names its own trigger with.
+	"SidebarOpenDrawer": i18nui.SidebarOpenDrawer,
 
 	"ComboboxLoading":      i18nui.HuiComboboxLoading,
 	"ComboboxNoResults":    i18nui.HuiComboboxNoResults,
