@@ -403,3 +403,48 @@ func TestE2E_ComboboxSkipsComposingKeys(t *testing.T) {
 		t.Fatal("a plain Enter after the composition did not pick the active option")
 	}
 }
+
+// Escape on an open listbox closes the listbox and nothing else: the
+// disclosure, modal or intercept overlay around the combobox stays
+// open, because those close on a document-level Escape that would
+// otherwise see the same key. A second Escape (listbox closed) still
+// reaches them.
+func TestE2E_ComboboxEscapeStaysInListbox(t *testing.T) {
+	box := Combobox(ComboboxProps{ID: "esc", Name: "q", Label: "Search", Options: []ComboboxOption{
+		{Label: "Alpha"},
+		{Label: "Beta"},
+	}}, nil)
+	page := string(Disclosure(DisclosureProps{ID: "wrap", Summary: "Filters", Content: box, Open: true}, nil))
+	b := startBehaviorServer(t, page)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, comboboxLoaded) || !pollTrue(ctx, controlsLoadedExpr(DisclosureBehaviorName)) {
+		t.Fatal("the combobox or disclosure module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#esc`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('esc').getAttribute('aria-expanded') === 'true'`) {
+		t.Fatal("focus did not open the listbox")
+	}
+	escape := chromedp.Evaluate(`document.getElementById('esc').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`, nil)
+	var st struct {
+		Expanded string `json:"expanded"`
+		Open     bool   `json:"open"`
+	}
+	read := chromedp.Evaluate(`({expanded: document.getElementById('esc').getAttribute('aria-expanded'), open: document.getElementById('wrap').open})`, &st)
+	if err := chromedp.Run(ctx, escape, read); err != nil {
+		t.Fatal(err)
+	}
+	if st.Expanded != "false" {
+		t.Fatalf("Escape left the listbox expanded=%q", st.Expanded)
+	}
+	if !st.Open {
+		t.Fatal("Escape on the open listbox also closed the disclosure around it")
+	}
+	if err := chromedp.Run(ctx, escape, read); err != nil {
+		t.Fatal(err)
+	}
+	if st.Open {
+		t.Fatal("a second Escape, listbox closed, did not reach the disclosure")
+	}
+}
