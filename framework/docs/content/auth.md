@@ -1229,9 +1229,16 @@ trail the admin back-office writes.
 ```
 POST /auth/login            → 200, Set-Cookie session (PendingTwoFactor=true)
 GET  /auth/me               → 403 "two-factor verification required"
-POST /auth/2fa/challenge    → 200, server clears PendingTwoFactor + sets TwoFactorVerified
+POST /auth/2fa/challenge    → 200, Set-Cookie: a fresh session with TwoFactorVerified
+                              (the pending one is deleted)
 GET  /auth/me               → 200
 ```
+
+The challenge replaces the pending session rather than marking it in
+place: a pending token that existed before the code was typed (one an
+attacker who knows the password minted and planted in the browser)
+never becomes a verified session. Clients that carry the session cookie
+by hand must take the new value from the challenge's `Set-Cookie`.
 
 The login response still returns 200, so clients can't tell whether 2FA
 is required by the status code alone. A pending JSON login carries
