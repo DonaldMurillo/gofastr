@@ -204,7 +204,8 @@ design intent without presenting it as shipped behavior):
   failover (that machinery was removed).
 - **MCP live event push.** MCP clients replay a session's events with
   `resources/read` of `harness/v1://session/{id}/events?since=<id>`,
-  but there is no `resources/subscribe` handler and the GET `/mcp`
+  but there is no `resources/subscribe` handler (`initialize` does not
+  advertise `subscribe`) and the GET `/mcp`
   stream sends keepalives only. A client polls the read to follow a
   turn.
 - **`--framework` default model.** The default profile targets
@@ -715,6 +716,10 @@ The bus API in `engine`:
   harness sets the session store when it creates a session.
 - `SubscribeAll(ctx)` also delivers the events of sub-agents spawned
   under the bus. Persistence and audit use it; client streams do not.
+  It never drops: when its buffer is full, `Publish` waits for the
+  reader, until the subscription's context ends or `Close` starts.
+  `Subscribe` drops for a slow reader, which recovers what it missed
+  with `SubscribeSince`.
 - `NewSubBus(parent, subAgent)` builds a sub-agent's bus. Its ids
   come from the parent's sequence, so one session has one id order,
   and every event it publishes carries `subAgent` and is forwarded

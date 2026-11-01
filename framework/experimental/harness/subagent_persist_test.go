@@ -64,14 +64,11 @@ func TestSessionBusReplaysFromLog(t *testing.T) {
 	sess := mustSession(t, h, h.Providers[0], "openrouter:test")
 	bus := h.Mux.EngineFor(sess).Bus
 	const n = 1100 // past the bus's 1024-event window
-	// In batches the persist loop keeps up with: its subscription
-	// drops past 256 queued events, like any bus subscriber.
-	for i := 1; i <= n; i++ {
+	// In one burst: the persist loop's subscription is lossless, so a
+	// burst past its 256-event buffer waits instead of dropping.
+	for range n {
 		if _, err := bus.Publish(control.TextDelta{Text: "x"}, ""); err != nil {
 			t.Fatal(err)
-		}
-		if i%100 == 0 {
-			waitStored(t, h, sess, i)
 		}
 	}
 	waitStored(t, h, sess, n)

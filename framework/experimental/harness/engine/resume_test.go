@@ -199,3 +199,54 @@ func TestBacklogStopsOnCancel(t *testing.T) {
 		t.Fatalf("read %d log pages after cancel, want at most 1", log.pages)
 	}
 }
+
+// The session log subscribes with SubscribeAll. A burst past its
+// buffer must wait for the reader, not leave holes in the log.
+func TestSubscribeAllNeverDrops(t *testing.T) {
+	bus := NewBus(ids.NewSessionID())
+	defer bus.Close()
+	audit := bus.SubscribeAll(t.Context())
+	const n = 600 // past the 256-event buffer
+	go func() {
+		for range n {
+			_, _ = bus.Publish(control.TextDelta{Text: "x"}, "")
+		}
+	}()
+	// Read only after the publisher has run far past the buffer: a
+	// dropping bus is done publishing by now, a lossless one waits.
+	time.Sleep(50 * time.Millisecond)
+	for want := uint64(1); want <= n; want++ {
+		select {
+		case env := <-audit:
+			if env.ID != want {
+				t.Fatalf("got id %d, want %d", env.ID, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("stalled at id %d: the bus dropped the rest", want)
+		}
+	}
+}
+
+// A reader that stops must not wedge Close: the publish waiting on it
+// gives up once the bus starts closing.
+func TestCloseFreesBlockedPublish(t *testing.T) {
+	bus := NewBus(ids.NewSessionID())
+	_ = bus.SubscribeAll(t.Context()) // never read
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 300 {
+			_, _ = bus.Publish(control.TextDelta{Text: "x"}, "")
+		}
+	}()
+	time.Sleep(50 * time.Millisecond) // let the publisher fill the buffer and wait
+	closed := make(chan struct{})
+	go func() { bus.Close(); close(closed) }()
+	for _, ch := range []chan struct{}{closed, done} {
+		select {
+		case <-ch:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Close or the blocked publisher never returned")
+		}
+	}
+}

@@ -318,7 +318,7 @@ func (s *Server) handleInitialize(req rpcRequest) {
 			"protocolVersion": "2024-11-05",
 			"capabilities": map[string]any{
 				"tools":     map[string]any{},
-				"resources": map[string]any{"subscribe": true},
+				"resources": map[string]any{},
 				"prompts":   map[string]any{},
 			},
 			"serverInfo": map[string]any{

@@ -38,6 +38,12 @@ type Bus struct {
 	subscribers map[*subscription]struct{}
 	closed      bool
 
+	// closing is closed when Close starts, before it takes mu, so a
+	// publish blocked on a lossless subscriber (SubscribeAll) gives up
+	// and Close is never stuck behind a store that stopped reading.
+	closing   chan struct{}
+	closeOnce sync.Once
+
 	// hist is the replay window: the last histMax own events, at most
 	// histMaxBytes of payload. evicted is the highest id pushed out of
 	// it, so a resume from below it must read the log. Guarded by
@@ -71,7 +77,8 @@ type subscription struct {
 	ch     chan control.EventEnvelope
 	ctx    context.Context
 	cancel context.CancelFunc
-	// all also receives events from sub-agent buses under this one.
+	// all also receives events from sub-agent buses under this one,
+	// and is lossless: a send waits for room instead of dropping.
 	all bool
 }
 
@@ -80,6 +87,7 @@ func NewBus(session ids.SessionID) *Bus {
 	return &Bus{
 		session:      session,
 		subscribers:  make(map[*subscription]struct{}),
+		closing:      make(chan struct{}),
 		histMax:      defaultHistMax,
 		histMaxBytes: defaultHistMaxBytes,
 	}
@@ -125,6 +133,12 @@ func (b *Bus) Subscribe(ctx context.Context) <-chan control.EventEnvelope {
 // SubscribeAll is Subscribe plus the events of every sub-agent bus
 // under this one (SubAgent set). The session log subscribes this way;
 // client streams use Subscribe.
+//
+// Delivery is lossless: when the channel is full, Publish waits for
+// the reader instead of dropping, because the session log is the
+// record resume and audit read, and a burst past the buffer used to
+// leave holes in it. A reader that stops reading therefore stalls the
+// session's publishers, until ctx ends or the bus starts closing.
 func (b *Bus) SubscribeAll(ctx context.Context) <-chan control.EventEnvelope {
 	ch, _ := b.subscribe(ctx, true, nil)
 	return ch
@@ -337,6 +351,7 @@ func (b *Bus) NextID() uint64 { return b.root().nextID.Load() + 1 }
 
 // Close terminates the bus and all subscriptions.
 func (b *Bus) Close() {
+	b.closeOnce.Do(func() { close(b.closing) })
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
@@ -361,7 +376,7 @@ func (b *Bus) broadcast(env control.EventEnvelope) {
 	defer b.mu.RUnlock()
 	b.remember(env)
 	for s := range b.subscribers {
-		deliver(s, env)
+		b.deliver(s, env)
 	}
 }
 
@@ -373,12 +388,30 @@ func (b *Bus) forward(env control.EventEnvelope) {
 	defer b.mu.RUnlock()
 	for s := range b.subscribers {
 		if s.all {
-			deliver(s, env)
+			b.deliver(s, env)
 		}
 	}
 }
 
-func deliver(s *subscription, env control.EventEnvelope) {
+func (b *Bus) deliver(s *subscription, env control.EventEnvelope) {
+	if s.all {
+		// Lossless (SubscribeAll). The wait holds mu's read lock, which
+		// is safe: the reader (the persist loop) never takes mu, and
+		// the subscription's ctx or a starting Close ends the wait.
+		// The first send is on its own so a Close already under way
+		// never wins a race against a channel with room.
+		select {
+		case s.ch <- env:
+			return
+		default:
+		}
+		select {
+		case s.ch <- env:
+		case <-s.ctx.Done():
+		case <-b.closing:
+		}
+		return
+	}
 	select {
 	case s.ch <- env:
 		// delivered

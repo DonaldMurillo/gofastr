@@ -4145,7 +4145,11 @@ few lines, and link the PR or the docs page for the rest.
   `Last-Event-ID`) replays the events since the given id over SSE, the WebSocket and MCP
   (`resources/read` of `harness/v1://session/{id}/events?since=N`). The stdio MCP server handles requests concurrently, so
   `harness.cancel_turn` reaches a `wait=turn` call. Sub-agent tool calls
-  are persisted on the parent's log, tagged with the sub-agent.
+  are persisted on the parent's log, tagged with the sub-agent. The
+  session log's bus subscription waits for the store instead of
+  dropping, so a burst past 256 queued events no longer leaves holes in
+  the log that resume and export read. The MCP server's `initialize`
+  no longer advertises `resources.subscribe`, which it never handled.
 - **Service.** On macOS a stop whose drain overruns, or a battery
   `OnStop` error, no longer exits 1, so launchd does not restart the
   daemon `service stop` reported stopped. `service uninstall` and macOS
