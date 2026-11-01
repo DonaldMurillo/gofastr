@@ -119,8 +119,9 @@ few lines, and link the PR or the docs page for the rest.
   were missing. A `,empty` tag option (`query:"q,empty"`) keeps an
   explicit empty: `""`, a zero, or a non-nil pointer to one, so a
   handler can tell `?q=` from no `q`. A generated endpoint's optional
-  `*string` query field now gets nil for `?q=`. An unknown tag option
-  is refused.
+  `*string` query field now gets nil for `?q=` unless the input tags
+  it `query:"q,empty"`, which the endpoint generator now accepts. An
+  unknown tag option is refused.
 - **Tag binding honours `encoding.TextUnmarshaler`.** A query, path,
   header or tool parameter whose type implements it is filled through
   `UnmarshalText`, and its error is a 400. `?status=bogus` used to get

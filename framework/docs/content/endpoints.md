@@ -81,7 +81,9 @@ with the same tags `handler.Bind` reads:
 - `path:"id" json:"-"`: a `{id}` segment of the path. Every `{name}` in the
   path needs one. Never a pointer: a path value is always present.
 - `query:"q" json:"-"`: a query-string value. Only `GET` and `DELETE` take
-  them, and they take nothing else besides path values.
+  them, and they take nothing else besides path values. `query:"q,empty"`
+  keeps an explicit `?q=` (see below); it is the only option a query tag
+  takes, and a path tag takes none.
 - `json:"amount"`: a JSON body key, for `POST`, `PUT` and `PATCH`.
 
 A pointer field is optional; any other field is required. The generated CLI
@@ -89,8 +91,7 @@ refuses a call that leaves out a required flag before it sends anything.
 Path and query values are strings, numbers or bools. Body fields may also be
 `time.Time`, `json.RawMessage`, slices, maps, or structs declared in the
 entities package. That limit is the generator's: the generated clients and
-CLI spell a path or query value as a plain scalar, and the generator
-refuses tag options such as `,empty`. A hand-registered handler gets all
+CLI spell a path or query value as a plain scalar. A hand-registered handler gets all
 of `handler.Bind`, which also binds a `time.Time` or any other
 `encoding.TextUnmarshaler` from a query, path or header value (see
 [core packages](core-packages.md) → handler).
@@ -98,7 +99,10 @@ of `handler.Bind`, which also binds a `time.Time` or any other
 An empty query value (`?q=`) is the same as no value: the field stays at
 its zero value and a pointer field stays nil. Before this release `?q=`
 bound `""` into a string field, and `?page=` failed an int field with a
-400.
+400. A field tagged `query:"q,empty"` gets the empty value instead: a
+`*string` is a non-nil pointer to `""`, so the handler can tell `?q=` from
+no `q`. The generated Go client sends `?q=` when an optional field points
+at `""`, and the JS client when the value is `""`.
 
 ## Who can call it
 
