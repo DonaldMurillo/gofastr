@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -37,5 +38,26 @@ func TestBindAttrBooleanOmitsFalse(t *testing.T) {
 	resetForTest()
 	if v := string(New("t").Bool("b", false).BindAttr(ctx, "div", "data-state", nil)); !strings.Contains(v, `data-state="false"`) {
 		t.Errorf("data-state false: %s", v)
+	}
+}
+
+type lockedFlag bool
+
+// booleanAttrOn decides on the JSON the client receives, so every Go type
+// that encodes to false, null, "", "false" or a zero number is off
+// (2026-11-01 review: uint, int32, float32 and a named bool fell through
+// to on, and the control arrived hidden or disabled).
+func TestBooleanAttrOnFollowsJSON(t *testing.T) {
+	off := []any{nil, false, "", "false", 0, int32(0), uint(0), uint8(0), float32(0), 0.0, lockedFlag(false), json.Number("0"), json.Number("1e-400")}
+	for _, v := range off {
+		if booleanAttrOn(v) {
+			t.Errorf("%T(%v) reads on, want off", v, v)
+		}
+	}
+	on := []any{true, "x", "0", 1, uint(3), float32(0.5), lockedFlag(true), json.Number("2"), json.Number("1e400"), json.Number("-1e400"), []int{}, map[string]int{}}
+	for _, v := range on {
+		if !booleanAttrOn(v) {
+			t.Errorf("%T(%v) reads off, want on", v, v)
+		}
 	}
 }

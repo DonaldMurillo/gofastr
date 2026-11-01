@@ -18,7 +18,16 @@ import (
 // after the navigate swaps the client cache; mounting its answer there
 // shows a panel the reader walked away from, its deep link writes
 // ?panel=late onto the new page's URL, and its params land as signals.
+// The deep-link module load is a second wait the reader can navigate
+// during (2026-11-01 review), so each wait is held in turn.
 func TestStaleChromeSkipsNextPage(t *testing.T) {
+	t.Run("chrome held", func(t *testing.T) { staleOpenCase(t, "/chrome/late") })
+	t.Run("widgetlinks held", func(t *testing.T) { staleOpenCase(t, "/__gofastr/runtime/widgetlinks.js") })
+}
+
+// staleOpenCase opens the widget on /a with the request at held hanging,
+// navigates to /b, then lets the request finish.
+func staleOpenCase(t *testing.T, held string) {
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -38,14 +47,31 @@ func TestStaleChromeSkipsNextPage(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `[{"hidden":true,"cfg":{"name":"late","chromePath":"/chrome/late","deepLinkKey":"panel","deepLinkValue":"late","deepLinkParams":["who"]}}]`)
 	})
-	mux.HandleFunc("/chrome/late", func(w http.ResponseWriter, r *http.Request) {
+	hold := func(r *http.Request) bool {
+		if r.URL.Path != held {
+			return true
+		}
 		select {
 		case <-release:
+			return true
 		case <-r.Context().Done():
+			return false
+		}
+	}
+	mux.HandleFunc("/chrome/late", func(w http.ResponseWriter, r *http.Request) {
+		if !hold(r) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<div class="cui-widget" data-cui-widget="late" role="dialog" aria-label="late">late</div>`)
+	})
+	mux.HandleFunc("/__gofastr/runtime/widgetlinks.js", func(w http.ResponseWriter, r *http.Request) {
+		if !hold(r) {
+			return
+		}
+		src, _ := Module("widgetlinks")
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, src)
 	})
 	routes := `<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"}]</script>`
 	for path, screen := range map[string]string{"/a": "screen-a", "/b": "screen-b"} {
@@ -85,7 +111,7 @@ func TestStaleChromeSkipsNextPage(t *testing.T) {
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if mounted {
+	if mounted && held == "/chrome/late" {
 		t.Errorf("widget opened on /a mounted on /b after its chrome arrived late")
 	}
 	if who != "" {

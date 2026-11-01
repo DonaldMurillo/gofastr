@@ -3,8 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,24 +143,34 @@ var booleanSignalAttrs = map[string]bool{
 	"disabled": true, "hidden": true, "checked": true, "open": true, "selected": true,
 }
 
-// booleanAttrOn is the runtime's `!!value && value !== 'false'` in Go:
-// false, nil, "", "false" and a numeric zero are off; anything else is on.
+// booleanAttrOn is the runtime's `!!value && value !== 'false'` in Go,
+// decided on the JSON the client receives for v: null, false, "",
+// "false" and a zero number are off; anything else, an empty array or
+// object included, is on. Reading the encoding instead of switching on
+// Go types covers every integer and float width, named types and
+// json.Number. A value that does not encode (NaN) never reaches the
+// client as a value, and is off.
 func booleanAttrOn(v any) bool {
-	switch t := v.(type) {
-	case nil:
+	b, err := json.Marshal(v)
+	if err != nil || len(b) == 0 {
 		return false
-	case bool:
-		return t
-	case string:
-		return t != "" && t != "false"
-	case int:
-		return t != 0
-	case int64:
-		return t != 0
-	case float64:
-		return t != 0 && !math.IsNaN(t)
-	default:
+	}
+	switch b[0] {
+	case 'n', 'f':
+		return false
+	case 't', '[', '{':
 		return true
+	case '"':
+		var str string
+		if json.Unmarshal(b, &str) != nil {
+			return false
+		}
+		return str != "" && str != "false"
+	default:
+		// A number past float64 range (1e400) parses to ±Inf with
+		// ErrRange; the client reads Infinity, which is on.
+		f, err := strconv.ParseFloat(string(b), 64)
+		return (err == nil || errors.Is(err, strconv.ErrRange)) && f != 0
 	}
 }
 

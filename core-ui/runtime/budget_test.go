@@ -1437,10 +1437,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// opened above the top modal, so a modal that refuses Escape keeps
 		// the popover under it open (2026-10-31 bug bash R14,
 		// TestEscapeSparesPopoverUnderModal). The open sequence lives here.
-		// 3281 measured (3261 + 20): an open whose chrome lands after a
-		// navigation neither mounts nor applies its deep link on the next
-		// page (2026-11-01 bug hunt S31, TestStaleChromeSkipsNextPage).
-		"widgets": 3281,
+		// 3283 measured (3261 + 22): an open whose chrome, or whose
+		// deep-link module, lands after a navigation neither mounts nor
+		// applies its deep link on the next page (2026-11-01 bug hunt S31,
+		// TestStaleChromeSkipsNextPage).
+		"widgets": 3283,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top

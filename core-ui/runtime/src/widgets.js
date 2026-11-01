@@ -79,6 +79,8 @@
     if (page !== NS._chromeCache) return;
     if ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
       if (!NS._deepLinkOpen) await NS.loadModule('widgetlinks');
+      // The module load is a second wait the reader can navigate during.
+      if (page !== NS._chromeCache) return;
       NS._deepLinkOpen(cfg, o);
     }
   };
