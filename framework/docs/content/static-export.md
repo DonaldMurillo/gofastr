@@ -212,7 +212,10 @@ key `a/b` on `/orders/{id}` is the page `/orders/a%2Fb`. A static host
 decodes that URL to `orders/a/b`, so the export writes the page to
 `orders/a/b/index.html`. The build refuses a value whose file would land
 outside its route's directory: an empty, `.` or `..` path component on
-disk, a NUL, or a backslash (a Windows separator).
+disk, a NUL, or a backslash (a Windows separator). It also refuses two
+pages that land on one file, such as that key beside a route
+`/orders/a/b`: the error names both paths, where the later page would
+otherwise replace the earlier one without a word.
 
 Routes whose screen doesn't implement `StaticPathsProvider` (or returns an
 empty slice) are **skipped** at build time, but the builder now logs a

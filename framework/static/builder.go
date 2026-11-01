@@ -142,6 +142,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// pages), as slash paths under OutDir: no static-source or extra
 	// file replaces one.
 	rendered := map[string]bool{}
+	// The URL path each page file was rendered from, to refuse a second
+	// page landing on the same file.
+	pageOwner := map[string]string{}
 	// The other page files this build writes (404.html, every llm.md and
 	// its index), as slash paths under OutDir: with rendered, what the
 	// page manifest records (pruneStalePages).
@@ -177,6 +180,14 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 					return fmt.Errorf("static: contributor on %q: %w", p, err)
 				}
 			}
+			// Two pages whose paths map to one file (a StaticPaths key
+			// "a/b" beside a route /products/a/b) would leave the later
+			// one in place of the earlier: refuse the export instead.
+			file := filepath.ToSlash(pathToFile(p))
+			if prev, dup := pageOwner[file]; dup {
+				return fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, p, file)
+			}
+			pageOwner[file] = p
 			html := b.applyStaticMode(lctx, page)
 			dst := filepath.Join(b.OutDir, pathToFile(p))
 			if err := b.ensureContained(dst); err != nil {
