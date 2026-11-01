@@ -308,6 +308,18 @@ Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
 `manifest.json`. Responses carry `Cache-Control: no-cache` plus an ETag
 from the manifest hash, so stable URLs revalidate for free.
+The downloads follow the same visibility as the pages: every route
+answers 404 unless each entity the manifest's `entities` list names is
+one the site documents, and a missing manifest refuses too. Each file
+must match the SHA-256 the manifest records for it, so an artifact an
+earlier run left in dist (a `sdk-go.zip` from before a `--target=js`
+run) answers 404 instead of serving schema the manifest no longer
+names.
+`gofastr generate sdk` covers every entity by default, so for a site
+that documents only `Public` entities generate with
+`--only=<those entities>`, or widen `Entities` / `IncludeGated` if
+the gated schema is meant to ship. The overview page says when the
+downloads are withheld, and one WARN names the entities at fault.
 
 ### Drift detection
 

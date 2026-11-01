@@ -318,9 +318,7 @@
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     const sel = FORM + ' form';
-    const forms = [...scope.querySelectorAll(sel)];
-    if (scope.matches && scope.matches(sel)) forms.push(scope);
-    forms.forEach((f) => f.setAttribute('enctype', 'application/json'));
+    [scope, ...scope.querySelectorAll(sel)].forEach((f) => f.matches?.(sel) && f.setAttribute('enctype', 'application/json'));
   }
   scan(document);
   NS._moduleScanners = NS._moduleScanners || {};
