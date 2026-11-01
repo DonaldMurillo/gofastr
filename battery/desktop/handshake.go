@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/gatepath"
 )
 
 // The boot handshake. The desktop host serves the app on loopback; any
@@ -115,6 +117,16 @@ func (b *Battery) gateMiddleware() func(next http.Handler) http.Handler {
 				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
 			}
+			// An open path (Config.OpenPrefixes) skips the session, never
+			// the Host pin above or the cross-site refusal here.
+			if b.openPath(r) {
+				if !safeMethod(r.Method) && handler.IsCrossSiteRequest(r) {
+					i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !b.requestHasSession(r) {
 				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
@@ -154,6 +166,15 @@ func (b *Battery) requestHasSession(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// openPath reports whether r is under Config.OpenPrefixes.
+func (b *Battery) openPath(r *http.Request) bool {
+	return gatepath.Open(r, b.cfg.OpenPrefixes)
+}
+
+func safeMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }
 
 // setHostPin pins the gate to the listener-reported address. Called by

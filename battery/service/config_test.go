@@ -23,6 +23,12 @@ func TestValidateConfig(t *testing.T) {
 	if err := validateConfig(ok); err != nil {
 		t.Fatalf("valid config refused: %v", err)
 	}
+	opened := ok
+	opened.OpenPrefixes = []string{"/api", "/hooks/v1"}
+	opened.BindAddress = "0.0.0.0"
+	if err := validateConfig(opened); err != nil {
+		t.Fatalf("valid OpenPrefixes/BindAddress refused: %v", err)
+	}
 	bad := map[string]func(*Config){
 		"empty id":          func(c *Config) { c.ID = "" },
 		"no dot":            func(c *Config) { c.ID = "hello" },
@@ -44,6 +50,13 @@ func TestValidateConfig(t *testing.T) {
 		"allowhost scheme":  func(c *Config) { c.AllowHosts = []string{"http://x"} },
 		"allowhost path":    func(c *Config) { c.AllowHosts = []string{"x/y"} },
 		"allowhost empty":   func(c *Config) { c.AllowHosts = []string{""} },
+		"open root":         func(c *Config) { c.OpenPrefixes = []string{"/"} },
+		"open relative":     func(c *Config) { c.OpenPrefixes = []string{"api"} },
+		"open dotdot":       func(c *Config) { c.OpenPrefixes = []string{"/api/.."} },
+		"open framework":    func(c *Config) { c.OpenPrefixes = []string{"/__gofastr/sse"} },
+		"bind hostname":     func(c *Config) { c.BindAddress = "example.com" },
+		"bind with port":    func(c *Config) { c.BindAddress = "0.0.0.0:80" },
+		"bind with zone":    func(c *Config) { c.BindAddress = "fe80::1%eth0" },
 	}
 	for name, mutate := range bad {
 		c := ok

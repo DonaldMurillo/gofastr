@@ -252,6 +252,31 @@ The `Host` pin closes DNS rebinding from a browser tab; the cookie
 closes every other local process. Neither value is ever logged. An app
 that never calls `Run` never arms the gate.
 
+### Local callers with no window: `OpenPrefixes`
+
+A CLI or script on the same machine has no window and no cookie, so
+every call gets 403. List the paths it uses in `Config.OpenPrefixes`
+and protect them with the app's own auth (an API key, a bearer token,
+`battery/auth`):
+
+```go
+d := desktop.New(desktop.Config{ID: "dev.gofastr.notes", OpenPrefixes: []string{"/api"}})
+```
+
+A path under an open prefix skips only the cookie check. The `Host`
+pin stays, a cross-site write gets 403, and a request without the
+cookie reaches the app with no user: the local identity goes only on
+the window's requests, so the window's own `fetch("/api/...")` is still
+the local user. The window keeps its JS bridge, because it never leaves
+the app's origin. The listener stays on `127.0.0.1`; a caller in a
+container needs `battery/service` and its `BindAddress`.
+
+The match is on whole segments of the clean, unescaped path, so
+`/apix`, `/api//x`, `/api/../admin` and `/api%2Fx` stay gated. `New`
+panics on `/`, on anything under `/__gofastr/` (the bridge, the runtime,
+the handshake) and on a malformed entry. `Run` logs the open prefixes
+as a warning.
+
 ## Where a window may navigate
 
 A window's main frame stays on the app's own origin. Each shell asks
