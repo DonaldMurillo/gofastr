@@ -74,8 +74,8 @@ type PasswordResetConfig struct {
 
 	// AddressRateLimit limits /auth/forgot-password per email address,
 	// however many IPs ask: without it a rotating proxy mails a victim an
-	// unbounded stream of reset links. It defaults to 5 per hour with a
-	// one-hour block. Past it the request gets the same {"sent":true} as
+	// unbounded stream of reset links. It defaults to one mail per
+	// address every two minutes. Past it the request gets the same {"sent":true} as
 	// any other and nothing is minted or sent. The key is a SHA-256
 	// digest of the canonical address, never the address. Loosen by
 	// passing a config with a large MaxAttempts.

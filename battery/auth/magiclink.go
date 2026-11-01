@@ -82,8 +82,9 @@ type MagicLinkConfig struct {
 
 	// AddressRateLimit limits /auth/magic-link/send per email address,
 	// however many IPs ask: without it a rotating proxy mails a victim an
-	// unbounded stream of sign-in links. It defaults to 5 per hour with a
-	// one-hour block. Past it the request gets the same 200 as any other
+	// unbounded stream of sign-in links. It defaults to one mail per
+	// address every two minutes (see defaultAddressRateLimit). Past it
+	// the request gets the same 200 as any other
 	// and nothing is minted or sent, so the limit tells a caller nothing
 	// about the address. The key is a SHA-256 digest of the canonical
 	// address, never the address. Loosen by passing a config with a large
@@ -350,12 +351,21 @@ func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
 
 // defaultAddressRateLimit is the per-address floor on the two endpoints
 // that mail a link to whatever address they are given (magic-link send,
-// forgot-password): 5 per hour, then an hour's block.
+// forgot-password): one mail every two minutes, no longer block.
+//
+// It is a cooldown on purpose, not an hourly budget. Anyone can spend an
+// address's budget, and the first version (5 an hour, then an hour's
+// block) let a stranger send six requests and stop every link to the
+// victim for the next hour: for a passwordless app, no sign-in at all.
+// With a two-minute cooldown the mails a stranger triggers still reach
+// the victim's inbox, and each link lives longer than the cooldown, so
+// the owner always holds a working one, while a flood is held to about
+// thirty mails an hour.
 func defaultAddressRateLimit() *RateLimiterConfig {
 	return &RateLimiterConfig{
-		MaxAttempts:   5,
-		Window:        time.Hour,
-		BlockDuration: time.Hour,
+		MaxAttempts:   1,
+		Window:        2 * time.Minute,
+		BlockDuration: 2 * time.Minute,
 	}
 }
 
@@ -367,7 +377,12 @@ func allowAddress(ctx context.Context, rl *RateLimiter, email string) bool {
 	if rl == nil {
 		return true
 	}
-	allowed, _ := rl.AllowContext(ctx, "address:"+sha256hex(email))
+	allowed, _, err := rl.Admit(ctx, "address:"+sha256hex(email))
+	if err != nil {
+		// AllowContext fails closed; say so, or a store outage reads as
+		// the address's own cooldown and mail silently stops.
+		slog.Warn("auth: per-address mail limiter store error: not sending", "err", err)
+	}
 	return allowed
 }
 

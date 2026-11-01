@@ -126,8 +126,8 @@ func TestMagicLinkSendPerAddressLimit(t *testing.T) {
 			t.Errorf("send %d body %q differs from the first %q: the throttle must not be observable", i+1, w.Body.String(), first)
 		}
 	}
-	if got := sender.count("victim@example.com"); got != 5 {
-		t.Errorf("SECURITY: [mail-flood] %d links mailed to one address from 12 IPs, want the per-address budget of 5", got)
+	if got := sender.count("victim@example.com"); got != 1 {
+		t.Errorf("SECURITY: [mail-flood] %d links mailed to one address from 12 IPs inside one cooldown, want 1", got)
 	}
 	// Another address has its own budget.
 	sendFrom(r, "other@example.com", 50)
@@ -167,7 +167,7 @@ func TestForgotPasswordPerAddressLimit(t *testing.T) {
 		sender.mu.Lock()
 		n := sender.sendCount
 		sender.mu.Unlock()
-		if n >= 5 {
+		if n >= 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -176,8 +176,8 @@ func TestForgotPasswordPerAddressLimit(t *testing.T) {
 	sender.mu.Lock()
 	n := sender.sendCount
 	sender.mu.Unlock()
-	if n != 5 {
-		t.Errorf("SECURITY: [mail-flood] %d reset mails sent to one address from 12 IPs, want the per-address budget of 5", n)
+	if n != 1 {
+		t.Errorf("SECURITY: [mail-flood] %d reset mails sent to one address from 12 IPs inside one cooldown, want 1", n)
 	}
 }
 

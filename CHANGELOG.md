@@ -154,10 +154,11 @@ few lines, and link the PR or the docs page for the rest.
   when a 2FA plugin is registered and that field is empty, as the
   passkey plugin does. Set it to the page that posts the code to
   `/2fa/challenge`.
-- **Magic-link send and forgot-password limit each address.** Past 5
-  requests an hour for one address (`AddressRateLimit`), the request
-  gets the same 200 and nothing is minted or mailed, however many IPs
-  ask.
+- **Magic-link send and forgot-password limit each address.** One mail
+  per address every two minutes (`AddressRateLimit`), however many IPs
+  ask; within the cooldown the request gets the same 200 and nothing is
+  minted or mailed. A cooldown rather than an hourly budget, so a
+  stranger cannot stop the owner's links.
 - **Password hashing follows `auth.DefaultHasher`.** Passwordless and
   cleared accounts store a placeholder made by it, so login timing no
   longer tells them from unknown addresses under argon2id; a custom
