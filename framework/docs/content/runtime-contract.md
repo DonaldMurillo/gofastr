@@ -506,6 +506,15 @@ Every other form, with no special attribute and the default or
 submits it the standard way: POST body matches enctype, Set-Cookie
 headers apply, 303→Location is followed, file inputs upload natively.
 
+A form's `action` names a handler registered for its method, never a
+bare screen path. A screen answers GET and HEAD: any other method to a
+screen path that no route takes is a **405** with `Allow: GET, HEAD`
+(OPTIONS: 204 with the same `Allow`), and the screen's policy and
+`Load` never run and no session is minted. An intercepted form gets the
+405 as a refusal and toasts its status. A route registered at the
+screen's path (`r.Post("/contact", h)`) wins its method; see
+[ui-wiring](ui-wiring.md) → "Posting a form to a screen's own path".
+
 ### Server redirects (after intercept)
 
 When the interceptor IS active and the handler responds with a `30x`

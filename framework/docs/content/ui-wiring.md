@@ -357,6 +357,25 @@ marked no-store before any branch can return.
 > the middleware chain wraps the handler at request time, and the
 > router sets the RFC-compliant Allow header (filtered to exclude
 > gated methods) before dispatching.
+- **Posting a form to a screen's own path.** A screen answers GET and
+  HEAD only. A POST, PUT, PATCH or DELETE to a screen path that no
+  registered route takes answers **405** with `Allow: GET, HEAD` and the
+  kit's 405 document (`no-store`; an RFC 9457 problem document for an
+  `application/problem+json` Accept), and OPTIONS answers **204** with
+  the same `Allow`. Nothing of the screen's runs: no policy, no `Load`,
+  and no session is minted (a live cookie is read, so the document's
+  chrome keeps the caller's stream; without one the chrome is
+  session-less, like a static export). Before this a POST rendered the
+  page with a 200, ran its `Load` and minted a session. A form posts to
+  a handler: `r.Post("/contact", handleContact)` beside the `/contact`
+  screen wins its method while GET still renders the screen, and the
+  405 for a third method lists both sets
+  (`Allow: GET, HEAD, POST`). A host that wants the page rendered for a
+  POST registers it explicitly, `r.Post("/x", host.PageHandler("/x"))`,
+  or answers from its handler with `RenderScreen` (the
+  re-render-with-errors shape). A path that is no screen keeps its
+  404 for every method; a declared redirect keeps its 308, method and
+  all, and the trailing-slash 301 still answers first.
 - **Skipping the `routerMounter` shim and wondering why the sidebar
   drawer never opens on mobile.** `ui.Sidebar(cfg)` only renders the
   desktop rail; the `< md` drawer is a widget that must be mounted

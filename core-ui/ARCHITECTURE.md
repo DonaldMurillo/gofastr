@@ -122,6 +122,10 @@ discriminates on it:
   inside the render), logged at Warn with the path so it is no longer
   silent.
 - **A path no route owns** stays a plain 404 and logs nothing.
+- **A method other than GET or HEAD on a screen path** never reaches
+  the render pipeline: 405 with `Allow: GET, HEAD` (OPTIONS 204), no
+  policy, no `Load`, no session minted (see Forms below). A path no
+  screen serves keeps its 404 whatever the method.
 
 The 500 is the same error page a failed route resolver gets
 (`serveError`): RFC 9457 `application/problem+json` for machine
@@ -1382,6 +1386,15 @@ Every other form, with no special attribute and a default or `urlencoded`
 or `multipart/form-data` enctype, is **NOT intercepted**. The browser
 submits it the standard way: POST body matches enctype, Set-Cookie
 headers apply, 303→Location is followed, file inputs upload natively.
+
+A form's `action` names a handler registered for its method, never a
+bare screen path. A screen is a GET resource: any other method to a
+screen path that no registered route takes answers **405** with
+`Allow: GET, HEAD` and the kit's 405 document (`no-store`), OPTIONS
+answers **204** with the same `Allow`, and the screen's policy and
+`Load` never run and no session is minted (uihost
+`serveScreenMethodNotAllowed`). A route registered at the screen's
+path, including an explicit `host.PageHandler`, wins its method.
 
 `ui.FilterToolbar` with `ClientNavigation: true` emits `data-cui-spa` on its GET form. With the runtime it
 uses the existing client navigator, preserving the document and shared layout.

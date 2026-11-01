@@ -1690,6 +1690,20 @@ func withRenderAlt(ctx context.Context, res app.RenderResult) context.Context {
 	return context.WithValue(ctx, renderAltKey{}, true)
 }
 
+type noMintKey struct{}
+
+// withoutMint marks ctx so finishPageDocument reads a live session but
+// never mints one (the screen-path 405).
+func withoutMint(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noMintKey{}, true)
+}
+
+// mintRefused reports whether ctx carries the withoutMint mark.
+func mintRefused(ctx context.Context) bool {
+	refused, _ := ctx.Value(noMintKey{}).(bool)
+	return refused
+}
+
 // screenOwns reports whether the screen's registration-time metadata
 // (Description, Article, its registration instance's HeadHTML)
 // describes comp: comp is nil or a copy of the screen's component, and
@@ -1753,6 +1767,12 @@ func pageStatus(res app.RenderResult, recorded int) int {
 // the re-mint arm additionally carries a Set-Cookie token. A shared
 // cache that stores no-freshness responses keyed on URL alone would
 // serve visitor B this session's page.
+//
+// A ctx marked withoutMint (the screen-path 405) still reads a live
+// cookie and puts its id in the chrome, but never mints for a request
+// without one: the document then ships session-less chrome (no SSE
+// meta), the shape a static export has. A request that never asked to
+// read a page does not open a session.
 func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx context.Context, html render.HTML, path string, comp component.Component, status int) {
 	// The <title> element is user-data-bearing on dynamic routes (the
 	// post-Load ScreenTitle) and escapes markup, not invisibles: strip the
@@ -1763,7 +1783,10 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Add("Vary", "Cookie")
 	sessionID, live := ds.verifySessionToken(readSessionCookie(r))
-	if !live {
+	switch {
+	case !live && mintRefused(ctx):
+		sessionID = ""
+	case !live:
 		sess := ds.CreateSession()
 		sessionID = sess.ID
 		setSessionCookie(w, r, sess.Token)
@@ -4338,15 +4361,68 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 // methods (GET/HEAD) where a static file or screen resolves at the
 // path, it delegates to serveOrRender so the page renders normally
 // (200). This restores fall-through for a screen that shares its path
-// with a POST-only sibling route. For all other cases it renders a
-// styled 405 page through the default layout, preserving the Allow
-// header the router already set.
+// with a POST-only sibling route. Any other method on such a path gets
+// the screen-path answer (serveScreenMethodNotAllowed), with the
+// screen's GET and HEAD added to the router's Allow. For all other
+// cases it renders a styled 405 page through the default layout,
+// preserving the Allow header the router already set.
 func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && ds.resolvesStaticOrScreen(r) {
 		ds.serveOrRender(w, r)
 		return
 	}
+	if ds.isScreenPath(r) {
+		ds.serveScreenMethodNotAllowed(w, r)
+		return
+	}
 	ds.serveMethodNotAllowedPage(w, r)
+}
+
+// isScreenPath reports whether the request's path names a screen: the
+// app router resolves it and no declared redirect claims it first
+// (handlePage answers a redirect before it resolves a screen, so a
+// redirect's path is not a screen's, whatever the method).
+func (ds *UIHost) isScreenPath(r *http.Request) bool {
+	if ds.App == nil || ds.App.Router == nil {
+		return false
+	}
+	path := routePath(r)
+	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
+		return false
+	}
+	_, _, ok := ds.App.Router.Resolve(path)
+	return ok
+}
+
+// screenAllow is the Allow header of a screen path: GET and HEAD, then
+// each method a route registered at the same path serves (the router's
+// own Allow, when it dispatched a method mismatch), each once.
+func screenAllow(routed string) string {
+	methods := []string{http.MethodGet, http.MethodHead}
+	for m := range strings.SplitSeq(routed, ",") {
+		if m = strings.TrimSpace(m); m != "" && !slices.Contains(methods, m) {
+			methods = append(methods, m)
+		}
+	}
+	return strings.Join(methods, ", ")
+}
+
+// serveScreenMethodNotAllowed answers a method other than GET or HEAD
+// to a screen path that no registered route takes. A screen is a GET
+// resource: rendering it for a POST ran its policy and Load and minted
+// a session for a request that never asked to read the page. OPTIONS
+// gets 204 with the Allow header; every other method gets 405 and the
+// kit's 405 document. Nothing of the screen's runs: no policy, no Load,
+// and no session is minted (a live cookie is read, never renewed). A
+// route registered for the method at the path, an explicit PageHandler
+// included, is dispatched by the router before this is reached.
+func (ds *UIHost) serveScreenMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Allow", screenAllow(w.Header().Get("Allow")))
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	ds.renderMethodNotAllowed(w, r.WithContext(withoutMint(r.Context())))
 }
 
 // serveMethodNotAllowedPage renders a styled 405 page through the
@@ -4355,8 +4431,26 @@ func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) 
 // preserved (set by the router before dispatching). Composed entirely
 // from design-system elements, zero bespoke CSS.
 func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Request) {
+	ds.renderMethodNotAllowed(w, r)
+}
+
+// renderMethodNotAllowed writes the 405 answer: an RFC 9457 problem
+// document when the Accept header names one (the 404 and 500 shape),
+// else the 405 document. A request context marked withoutMint (the
+// screen-path refusal) keeps the document's tail from minting.
+func (ds *UIHost) renderMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
+	w.Header().Add("Vary", "Accept")
+	if acceptsProblemJSON(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		// Neither the path nor the method is echoed, as in the 404's
+		// problem document.
+		json.NewEncoder(w).Encode(newProblem(r.Context(), http.StatusMethodNotAllowed, problemMethodNotAllowed, problemMethodRefused))
+		return
+	}
 
 	rctx := r.Context()
 	children := []render.HTML{
@@ -4503,6 +4597,13 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
 		setPageMarkdownHeaders(w)
 		w.Write([]byte(md))
+		return
+	}
+	// A screen answers GET and HEAD. Any other method no route took
+	// stops here, before handlePage runs the screen's policy and Load
+	// or mints a session; a path that is no screen keeps its 404.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && ds.isScreenPath(r) {
+		ds.serveScreenMethodNotAllowed(w, r)
 		return
 	}
 	ds.handlePage(w, r)
