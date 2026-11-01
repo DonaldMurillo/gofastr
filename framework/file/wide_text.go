@@ -23,9 +23,11 @@ type wideText struct {
 }
 
 // detectWideText reports whether data is BOM-marked UTF-16/32 text, or
-// BOM-less UTF-16 that opens with "<" followed by an ASCII character.
+// BOM-less UTF-16/32 that opens with "<" followed by an ASCII character
+// (XML Appendix F: 3C 00 3F 00, 00 3C 00 3F, 3C 00 00 00, 00 00 00 3C).
 // UTF-32 LE is checked before UTF-16 LE because its BOM (FF FE 00 00)
-// starts with the UTF-16 LE one.
+// starts with the UTF-16 LE one; the BOM-less UTF-16 arms need a
+// non-NUL third byte, so they never claim BOM-less UTF-32.
 func detectWideText(b []byte) (wideText, bool) {
 	switch {
 	case len(b) >= 4 && b[0] == 0x00 && b[1] == 0x00 && b[2] == 0xFE && b[3] == 0xFF:
@@ -36,6 +38,12 @@ func detectWideText(b []byte) (wideText, bool) {
 		return wideText{width: 2, big: true, start: 2}, true
 	case len(b) >= 2 && b[0] == 0xFF && b[1] == 0xFE:
 		return wideText{width: 2, big: false, start: 2}, true
+	case len(b) >= 8 && b[0] == '<' && b[1] == 0x00 && b[2] == 0x00 && b[3] == 0x00 &&
+		b[4] != 0x00 && b[4] < 0x80 && b[5] == 0x00 && b[6] == 0x00 && b[7] == 0x00:
+		return wideText{width: 4, big: false, start: 0}, true
+	case len(b) >= 8 && b[0] == 0x00 && b[1] == 0x00 && b[2] == 0x00 && b[3] == '<' &&
+		b[4] == 0x00 && b[5] == 0x00 && b[6] == 0x00 && b[7] != 0x00 && b[7] < 0x80:
+		return wideText{width: 4, big: true, start: 0}, true
 	case len(b) >= 4 && b[0] == '<' && b[1] == 0x00 && b[2] != 0x00 && b[2] < 0x80 && b[3] == 0x00:
 		return wideText{width: 2, big: false, start: 0}, true
 	case len(b) >= 4 && b[0] == 0x00 && b[1] == '<' && b[2] == 0x00 && b[3] != 0x00 && b[3] < 0x80:

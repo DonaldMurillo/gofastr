@@ -26,7 +26,16 @@ func utf16Body(s string, order binary.ByteOrder, bom bool) []byte {
 }
 
 func utf32Body(s string, order binary.ByteOrder) []byte {
-	runes := append([]rune{0xFEFF}, []rune(s)...)
+	return utf32Units(append([]rune{0xFEFF}, []rune(s)...), order)
+}
+
+// utf32NoBOM is utf32Body without the BOM: XML Appendix F reads UCS-4
+// from a leading "<" (3C 00 00 00 or 00 00 00 3C).
+func utf32NoBOM(s string, order binary.ByteOrder) []byte {
+	return utf32Units([]rune(s), order)
+}
+
+func utf32Units(runes []rune, order binary.ByteOrder) []byte {
 	out := make([]byte, 4*len(runes))
 	for i, r := range runes {
 		order.PutUint32(out[4*i:], uint32(r))
@@ -48,6 +57,8 @@ func TestWideTextMarkupRejected(t *testing.T) {
 		"utf16be-nobom":  utf16Body(`<?xml version="1.0"?>`+svg, binary.BigEndian, false),
 		"utf32le-bom":    utf32Body(svg, binary.LittleEndian),
 		"utf32be-bom":    utf32Body(svg, binary.BigEndian),
+		"utf32le-nobom":  utf32NoBOM(svg, binary.LittleEndian),
+		"utf32be-nobom":  utf32NoBOM(svg, binary.BigEndian),
 		"utf16le-script": utf16Body("hello\n<script>alert(1)</script>", binary.LittleEndian, true),
 		"utf16le-js-uri": utf16Body(`<a href="javascript:alert(1)">x</a>`, binary.LittleEndian, true),
 	}
