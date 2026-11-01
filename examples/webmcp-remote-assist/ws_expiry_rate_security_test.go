@@ -35,6 +35,49 @@ func TestSweepClosesExpiredSupportSockets(t *testing.T) {
 	}
 }
 
+// The sweep closed a credential's sockets one after another, and each
+// Close waits up to a second for the peer's Close frame. With peers that
+// never answer, the fourth socket kept receiving the session about three
+// seconds after its credential expired. Every close now starts at once.
+func TestSweepClosesSocketsTogether(t *testing.T) {
+	srv, a := newTestApp(t)
+	a.mu.Lock()
+	a.recheckEvery = time.Hour // only the sweep may close them
+	a.mu.Unlock()
+	cookie := supportLogin(t, srv)
+	const n = 4
+	conns := make([]*strictWS, n)
+	for i := range conns {
+		s := a.createSession()
+		conns[i] = strictDialWS(t, srv, "/support/session/"+s.id+"/ws", fmt.Sprintf("%s=%s", cookie.Name, cookie.Value))
+		defer conns[i].conn.Close()
+		strictDrainWS(conns[i], 200*time.Millisecond)
+	}
+
+	a.mu.Lock()
+	a.supporters[cookie.Value] = time.Now().Add(-time.Second)
+	a.mu.Unlock()
+	start := time.Now()
+	a.sweepExpired()
+
+	// recvText answers nil on the server's Close frame, which these
+	// peers never answer, so every server-side Close waits its full
+	// second for a reply.
+	waits := make(chan time.Duration, n)
+	for _, ws := range conns {
+		go func() {
+			for ws.recvText(5*time.Second) != nil {
+			}
+			waits <- time.Since(start)
+		}()
+	}
+	for range n {
+		if d := <-waits; d > 700*time.Millisecond {
+			t.Fatalf("a socket got its Close %v after the sweep; want every close started at once", d)
+		}
+	}
+}
+
 // Every media frame took the shared mutex and fanned out an event, with no
 // frame budget. Frames now pass a per-socket token bucket (battery/rtc's
 // shape); a socket over it is closed. The limiter's clock is frozen and

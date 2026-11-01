@@ -834,17 +834,15 @@ func (a *assistApp) takeCredentialConnsLocked(credential string) []*stream.WebSo
 	return out
 }
 
-// closeConns closes sockets off the caller's goroutine: Close waits on
-// the socket's pumps, which must never run under mu.
+// closeConns closes sockets off the caller's goroutine, each on its own:
+// Close waits on the socket's pumps, which must never run under mu, and
+// up to a second for the peer's Close frame, so closing them in turn
+// left the last of a credential's 16 sockets open about 15 seconds
+// after the credential ended.
 func closeConns(conns []*stream.WebSocketConn) {
-	if len(conns) == 0 {
-		return
+	for _, c := range conns {
+		go c.Close()
 	}
-	go func() {
-		for _, c := range conns {
-			c.Close()
-		}
-	}()
 }
 
 // reserveWSSeat takes one seat for credential under
