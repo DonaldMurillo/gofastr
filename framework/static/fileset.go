@@ -120,7 +120,9 @@ func writtenPaths(res *Result, rendered *fileSet, docs map[string]bool) []string
 // past a symlink, so nothing outside the build's own directories moves,
 // but the walk goes on through it (os.Root keeps it inside outDir): an
 // entry there in another spelling fails the build, since the export
-// would not serve that path on a case-sensitive host.
+// would not serve that path on a case-sensitive host. That check runs
+// after every rename, on a fresh listing, so a directory another path
+// renames through its real name passes whatever the path order.
 func respell(outDir string, paths []string) error {
 	root, err := os.OpenRoot(outDir)
 	if err != nil {
@@ -131,6 +133,7 @@ func respell(outDir string, paths []string) error {
 	stop := map[string]bool{}   // a path at which the walk ends: nothing there
 	linked := map[string]bool{} // a path at or below a symlink
 	done := map[string]bool{}
+	var behindLink [][2]string // parent, name: judged once every rename ran
 	for _, p := range paths {
 		parent := "."
 		for _, name := range strings.Split(p, "/") {
@@ -142,7 +145,9 @@ func respell(outDir string, paths []string) error {
 					d = listNames(root, parent)
 					listed[parent] = d
 				}
-				if err := d.respell(root, parent, name, linked[parent]); err != nil {
+				if linked[parent] {
+					behindLink = append(behindLink, [2]string{parent, name})
+				} else if err := d.respell(root, parent, name); err != nil {
 					return err
 				}
 				fi, err := root.Lstat(filepath.FromSlash(cur))
@@ -153,6 +158,12 @@ func respell(outDir string, paths []string) error {
 				break
 			}
 			parent = cur
+		}
+	}
+	for _, e := range behindLink {
+		parent, name := e[0], e[1]
+		if old, ok := listNames(root, parent).sameFileAs(root, parent, name); ok {
+			return fmt.Errorf("static: /%s is spelled /%s on disk, behind a symlink the export does not rename through; remove the stale entry", path.Join(parent, name), path.Join(parent, old))
 		}
 	}
 	return nil
@@ -185,26 +196,32 @@ func listNames(root *os.Root, dir string) *dirNames {
 	return d
 }
 
-// respell renames parent's entry for name to name when the directory
-// holds it only under another spelling of the same file. Under a
-// symlink (linked) it refuses instead of renaming.
-func (d *dirNames) respell(root *os.Root, parent, name string, linked bool) error {
+// sameFileAs reports the name parent's entry for name goes by when the
+// directory holds it only under another spelling of the same file.
+func (d *dirNames) sameFileAs(root *os.Root, parent, name string) (string, bool) {
 	if d.exact[name] {
-		return nil
+		return "", false
 	}
 	old, ok := d.folded[foldPath(name)]
+	if !ok {
+		return "", false
+	}
+	a, errA := root.Lstat(filepath.FromSlash(path.Join(parent, old)))
+	b, errB := root.Lstat(filepath.FromSlash(path.Join(parent, name)))
+	if errA != nil || errB != nil || !os.SameFile(a, b) {
+		return "", false
+	}
+	return old, true
+}
+
+// respell renames parent's entry for name to name when the directory
+// holds it only under another spelling of the same file.
+func (d *dirNames) respell(root *os.Root, parent, name string) error {
+	old, ok := d.sameFileAs(root, parent, name)
 	if !ok {
 		return nil
 	}
 	from, to := path.Join(parent, old), path.Join(parent, name)
-	a, errA := root.Lstat(filepath.FromSlash(from))
-	b, errB := root.Lstat(filepath.FromSlash(to))
-	if errA != nil || errB != nil || !os.SameFile(a, b) {
-		return nil
-	}
-	if linked {
-		return fmt.Errorf("static: /%s is spelled /%s on disk, behind a symlink the export does not rename through; remove the stale entry", to, from)
-	}
 	if err := root.Rename(filepath.FromSlash(from), filepath.FromSlash(to)); err != nil {
 		return fmt.Errorf("static: respell /%s as /%s: %w", from, to, err)
 	}

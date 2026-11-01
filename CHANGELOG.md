@@ -3880,8 +3880,9 @@ few lines, and link the PR or the docs page for the rest.
   content rotated the worker's cache and every installed client
   re-downloaded the site. The hash leaves out the files the PWA surface
   writes, under their exact names, after renaming a leftover in another
-  case that is the same file. On a case-sensitive disk a file such as
-  `MANIFEST.webmanifest` is a file of its own and stays in the hash.
+  case that is the same file, and any symlink or hard link to one. On a
+  case-sensitive disk a file such as `MANIFEST.webmanifest` is a file
+  of its own and stays in the hash.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.

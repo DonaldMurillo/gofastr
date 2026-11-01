@@ -544,3 +544,46 @@ func TestPWAHashesDistinctCaseFile(t *testing.T) {
 		t.Error("a changed MANIFEST.webmanifest kept the old worker")
 	}
 }
+
+// An alias of a generated PWA file (a symlink or hard link under any
+// name, SERVICE-WORKER.JS on a case-sensitive disk) hashed the previous
+// build's worker, so every rebuild over unchanged content wrote another
+// worker and installed clients re-downloaded the site.
+func TestPWAHashSkipsWorkerAlias(t *testing.T) {
+	out := t.TempDir()
+	build := func() string {
+		t.Helper()
+		a := coreapp.NewApp("t")
+		a.Register("/", &helloScreen{}, nil)
+		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+		if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return readOut(t, out, "service-worker.js")
+	}
+	build()
+	if err := os.Symlink("service-worker.js", filepath.Join(out, "sw-alias.js")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	if build() != build() {
+		t.Error("an unchanged rebuild beside a worker alias wrote another worker")
+	}
+}
+
+// A refusal behind a symlink was judged from a listing cached before a
+// later path renamed the same directory through its real name, and in
+// path order: public/docs was refused although shared/docs, the same
+// directory, was about to take the build's spelling.
+func TestRespellLinkedAfterRename(t *testing.T) {
+	out := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(out, "shared", "DOCS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("shared", filepath.Join(out, "public")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	paths := []string{"public/docs/readme.txt", "public/foo/index.html", "shared/docs/index.html"}
+	if err := respell(out, paths); err != nil {
+		t.Fatalf("a directory the build respells through its real name was refused: %v", err)
+	}
+}

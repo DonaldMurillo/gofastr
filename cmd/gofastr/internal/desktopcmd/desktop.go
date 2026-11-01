@@ -180,8 +180,12 @@ func runDesktopRun(args []string) {
 
 	// Scanned before the first build: FirstSnapshot keeps these times,
 	// so a save made during the build or the graph read rebuilds.
-	var before map[string]time.Time
+	var (
+		since  time.Time
+		before map[string]time.Time
+	)
 	if f.watch {
+		since = time.Now()
 		before = devcmd.ScanModTimes(f.dir)
 	}
 
@@ -209,7 +213,7 @@ func runDesktopRun(args []string) {
 	// ended the dependency query.
 	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
 	go func() {
-		prev := devcmd.FirstSnapshot(before, watch.Scan())
+		prev := devcmd.FirstSnapshot(before, watch.Scan(), since)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {

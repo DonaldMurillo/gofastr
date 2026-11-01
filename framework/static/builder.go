@@ -1478,11 +1478,25 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 		generated[filepath.ToSlash(f.relFile)] = true
 	}
 	const pwaDir = "__gofastr/pwa"
-	if err := respell(b.OutDir, append(slices.Sorted(maps.Keys(generated)), pwaDir+"/register.js", pwaDir+"/offline/index.html")); err != nil {
+	genPaths := append(slices.Sorted(maps.Keys(generated)), pwaDir+"/register.js", pwaDir+"/offline/index.html")
+	if err := respell(b.OutDir, genPaths); err != nil {
 		return err
 	}
+	// An alias of a generated file (a symlink or hard link under any
+	// name) would hash the last build's copy, and change with every
+	// build: it is left out like the file it names.
+	var genFiles []fs.FileInfo
+	for _, g := range genPaths {
+		if fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(g))); err == nil {
+			genFiles = append(genFiles, fi)
+		}
+	}
 	contentHash, err := hashExportTree(b.OutDir, func(rel string) bool {
-		return generated[rel] || strings.HasPrefix(rel, pwaDir+"/")
+		if generated[rel] || strings.HasPrefix(rel, pwaDir+"/") {
+			return true
+		}
+		fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(rel)))
+		return err == nil && slices.ContainsFunc(genFiles, func(g fs.FileInfo) bool { return os.SameFile(fi, g) })
 	})
 	if err != nil {
 		return fmt.Errorf("static: fingerprint export: %w", err)

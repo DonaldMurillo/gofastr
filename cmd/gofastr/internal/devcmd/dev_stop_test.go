@@ -161,20 +161,26 @@ func TestBuildAfterSignalIsInterrupted(t *testing.T) {
 }
 
 // The first snapshot came after the build and the graph read, so a
-// save made in that time was already in it and never rebuilt. Taken
-// before the build alone, it saw the build's own files (a GOTMPDIR
-// work dir in the tree) as a change and rebuilt in a loop.
+// save made in that time was already in it and never rebuilt.
 func TestFirstSnapshotKeepsPreBuildTimes(t *testing.T) {
 	old := time.Unix(1_000, 0)
 	saved := time.Unix(2_000, 0)
 	before := map[string]time.Time{"screens.go": old, "gone.go": old}
 	after := map[string]time.Time{"screens.go": saved, "build/x.cgo1.go": saved}
-	first := FirstSnapshot(before, after)
+	since := time.Unix(1_500, 0)
+	first := FirstSnapshot(before, after, since)
 	if !Changed(first, after) {
 		t.Fatal("a save or removal during the build is not a change")
 	}
-	builtOnly := map[string]time.Time{"screens.go": old, "gone.go": old, "build/x.cgo1.go": saved}
-	if Changed(FirstSnapshot(before, builtOnly), builtOnly) {
-		t.Fatal("a file the build created is a change")
+	// A file the pre-build scan did not cover (gen/, kept by the graph)
+	// counts by its time: older than the scan is the baseline, newer is
+	// a save made during the build or the graph read.
+	kept := map[string]time.Time{"screens.go": old, "gone.go": old, "gen/api.go": old}
+	if Changed(FirstSnapshot(before, kept, since), kept) {
+		t.Fatal("a gen/ file untouched since before the build is a change")
+	}
+	kept["gen/api.go"] = saved
+	if !Changed(FirstSnapshot(before, kept, since), kept) {
+		t.Fatal("a gen/ file saved during the build is not a change")
 	}
 }

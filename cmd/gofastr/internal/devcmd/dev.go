@@ -150,6 +150,7 @@ func RunDev(args []string) {
 
 	// Scanned before the first build: FirstSnapshot keeps these times,
 	// so a save made during the build or the graph read rebuilds.
+	since := time.Now()
 	before := ScanModTimes(dir)
 
 	// Build and start the server initially
@@ -167,7 +168,7 @@ func RunDev(args []string) {
 	// graph is read after the first build, which fetched the modules.
 	watch := NewWatch(watchCtx, dir, pkg, nil)
 	go func() {
-		prev := FirstSnapshot(before, watch.Scan())
+		prev := FirstSnapshot(before, watch.Scan(), since)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -723,16 +724,21 @@ func ScanModTimes(dir string) map[string]time.Time {
 }
 
 // FirstSnapshot is a watch's first snapshot. before is the scan taken
-// before the first build (ScanModTimes, no package graph yet) and after
-// the watch's scan once the build ran and the graph loaded. A file in
-// both keeps its time from before, and a file only in before stays, so
-// a save or a removal made during the build or the graph read differs
-// from the next scan and rebuilds. A file only in after counts as
-// present: the build's own output (a GOTMPDIR work dir inside the
-// tree) and a directory the graph keeps (gen/) are not changes.
-func FirstSnapshot(before, after map[string]time.Time) map[string]time.Time {
-	first := maps.Clone(after)
-	maps.Copy(first, before)
+// before the first build (ScanModTimes, no package graph yet), started
+// at since, and after the watch's scan once the build ran and the graph
+// loaded. A file in both keeps its time from before, and a file only in
+// before stays, so a save or a removal made during the build or the
+// graph read differs from the next scan and rebuilds. A file only in
+// after (a gen/ file the graph keeps, a file created since) counts by
+// its time: one not modified since the scan began is the baseline, and
+// a newer one is left out, so the next scan sees it and rebuilds.
+func FirstSnapshot(before, after map[string]time.Time, since time.Time) map[string]time.Time {
+	first := maps.Clone(before)
+	for p, t := range after {
+		if _, ok := before[p]; !ok && !t.After(since) {
+			first[p] = t
+		}
+	}
 	return first
 }
 
