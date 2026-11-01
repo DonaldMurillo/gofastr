@@ -40,3 +40,25 @@ func TestPasswordRevealPaintsItsPressedState(t *testing.T) {
 		}
 	}
 }
+
+// The input sat transparent on the shell's surface with no colour of
+// its own, so the browser's field text (black) painted a revealed
+// password black on the dark surface (seen in the D10 screenshots).
+// The typed text takes --color-text in both schemes, as .fui-input's
+// does.
+func TestPasswordInputTextFollowsTheScheme(t *testing.T) {
+	th := theme.Default()
+	css := th.CSSCustomProperties() + passwordInputStyle.Entry().CSSFor(th)
+	for _, scheme := range []string{"light", "dark"} {
+		m := geometryOf(t, css, PasswordInput(PasswordInputConfig{Name: "pw", ID: "pw"}), `(() => {
+			document.documentElement.setAttribute('data-color-scheme', '`+scheme+`');
+			const probe = document.createElement('span');
+			probe.style.color = 'var(--color-text)';
+			document.body.append(probe);
+			return {same: getComputedStyle(document.getElementById('pw')).color === getComputedStyle(probe).color ? 1 : 0};
+		})()`)
+		if m["same"] != 1 {
+			t.Errorf("%s: the password input's text is not --color-text", scheme)
+		}
+	}
+}

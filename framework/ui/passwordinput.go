@@ -136,6 +136,7 @@ func passwordInputCSS(_ style.Theme) string {
   flex: 1;
   border: 0;
   background: transparent;
+  color: var(--color-text, #09090B);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
