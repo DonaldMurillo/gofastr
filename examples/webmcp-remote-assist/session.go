@@ -189,6 +189,14 @@ type assistApp struct {
 	// janitorStop stops the background sweeper. The process-global app
 	// never closes it; tests that churn apps may.
 	janitorStop chan struct{}
+
+	// recheckEvery paces each socket's idle role re-check; frameRate and
+	// frameClock feed its frame limiter. A socket reads all three under
+	// mu at upgrade: wsRecheckEvery, wsFramesPerSecond and time.Now
+	// outside tests, which set them (under mu) before dialing.
+	recheckEvery time.Duration
+	frameRate    int
+	frameClock   func() time.Time
 }
 
 func newAssistApp() *assistApp {
@@ -197,15 +205,18 @@ func newAssistApp() *assistApp {
 		key = randomID()
 	}
 	a := &assistApp{
-		sessions:    map[string]*assistSession{},
-		order:       list.New(),
-		byToken:     map[string]string{},
-		operators:   map[string]string{},
-		supporters:  map[string]time.Time{},
-		wsSeats:     map[string][]*wsSeat{},
-		maxSessions: maxLiveSessions,
-		supportKey:  key,
-		janitorStop: make(chan struct{}),
+		sessions:     map[string]*assistSession{},
+		order:        list.New(),
+		byToken:      map[string]string{},
+		operators:    map[string]string{},
+		supporters:   map[string]time.Time{},
+		wsSeats:      map[string][]*wsSeat{},
+		maxSessions:  maxLiveSessions,
+		supportKey:   key,
+		janitorStop:  make(chan struct{}),
+		recheckEvery: wsRecheckEvery,
+		frameRate:    wsFramesPerSecond,
+		frameClock:   time.Now,
 	}
 	go a.janitor(sweepEvery)
 	return a
@@ -948,6 +959,7 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		prev := s.conns[r]
 		s.conns[r] = conn
 		seat.conn = conn
+		recheckEvery, frameRate, frameClock := a.recheckEvery, a.frameRate, a.frameClock
 		a.mu.Unlock()
 		// A role reconnect supplants the tracked transport; closing the one
 		// it replaces frees its channel registration and its pumps instead
@@ -976,7 +988,7 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		stopWatch := make(chan struct{})
 		defer close(stopWatch)
 		go func() {
-			t := time.NewTicker(wsRecheckEvery)
+			t := time.NewTicker(recheckEvery)
 			defer t.Stop()
 			for {
 				select {
@@ -998,13 +1010,13 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		// Every frame takes the shared mutex and most fan out an event,
 		// so frames pass a per-socket token bucket first; a socket over
 		// it is closed, battery/rtc's posture.
-		limiter := newFrameLimiter(wsFramesPerSecond)
+		limiter := newFrameLimiter(frameRate)
 		for {
 			data, rerr := conn.Read()
 			if rerr != nil {
 				return
 			}
-			if !limiter.allow(time.Now()) {
+			if !limiter.allow(frameClock()) {
 				return
 			}
 			if !held() {
@@ -1030,7 +1042,7 @@ func (a *assistApp) handleWS(r role) http.Handler {
 }
 
 // wsRecheckEvery paces the idle re-check of an assist socket's role.
-var wsRecheckEvery = 30 * time.Second
+const wsRecheckEvery = 30 * time.Second
 
 // wsFramesPerSecond caps inbound frames per assist socket (burst twice
 // that). A page sends a handful of signaling frames per call and a media

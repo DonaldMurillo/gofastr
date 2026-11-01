@@ -8,6 +8,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // The section-menu drawer lists every included entity. Its /chrome and
@@ -48,6 +50,24 @@ func TestRedirectPolicyRefusesDrawer(t *testing.T) {
 	resp, _ = get(t, srv, "/docs/api/sdk/go.zip")
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("download status %d; want 303 to sign-in", resp.StatusCode)
+	}
+}
+
+// The drawer built its menu once, at Mount, so an entity registered after
+// Mount was on the screens' menu and never in the drawer.
+func TestDrawerListsLateEntities(t *testing.T) {
+	reg := testRegistry()
+	srv := mountedServer(t, Config{Registry: reg, IncludeGated: true})
+	reg.entities = append(reg.entities, entity.Define("refunds", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "amount", Type: schema.Decimal}},
+	}))
+	_, page := get(t, srv, "/docs/api")
+	if !strings.Contains(page, "/entities/refunds") {
+		t.Fatalf("setup broken: the screen menu does not list the late entity")
+	}
+	resp, body := get(t, srv, "/core-ui/widget/"+drawerName+"/chrome")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "/entities/refunds") {
+		t.Fatalf("drawer (status %d) misses an entity registered after Mount:\n%s", resp.StatusCode, body)
 	}
 }
 

@@ -61,7 +61,7 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 // The drawer is mounted once for every page, so it marks no page: the
 // runtime's active-link pass marks the one the reader is on.
 func sectionMenuDrawer(s *site) *widget.Builder {
-	return interactive.SectionMenuDrawer(s.menuConfig(""))
+	return interactive.SectionMenuDrawerFunc(func(context.Context) interactive.SectionMenuConfig { return s.menuConfig("") })
 }
 
 // page wraps a screen body in the standard doc chrome (nav rail, crumbs,

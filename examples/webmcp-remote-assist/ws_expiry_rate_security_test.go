@@ -12,11 +12,10 @@ import (
 // kept receiving the session after the credential it was admitted on had
 // expired. The sweep now closes every socket that credential owns.
 func TestSweepClosesExpiredSupportSockets(t *testing.T) {
-	prev := wsRecheckEvery
-	wsRecheckEvery = time.Hour // only the sweep may close it
-	t.Cleanup(func() { wsRecheckEvery = prev })
-
 	srv, a := newTestApp(t)
+	a.mu.Lock()
+	a.recheckEvery = time.Hour // only the sweep may close it
+	a.mu.Unlock()
 	s := a.createSession()
 	cookie := supportLogin(t, srv)
 	ws := strictDialWS(t, srv, "/support/session/"+s.id+"/ws", fmt.Sprintf("%s=%s", cookie.Name, cookie.Value))
@@ -38,9 +37,17 @@ func TestSweepClosesExpiredSupportSockets(t *testing.T) {
 
 // Every media frame took the shared mutex and fanned out an event, with no
 // frame budget. Frames now pass a per-socket token bucket (battery/rtc's
-// shape); a socket over it is closed.
+// shape); a socket over it is closed. The limiter's clock is frozen and
+// its rate small, so the bucket admits exactly its burst and the frame
+// after it closes the socket, whatever the machine's speed.
 func TestMediaFramesAreRateLimited(t *testing.T) {
 	srv, a := newTestApp(t)
+	const rate = 4
+	frozen := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a.mu.Lock()
+	a.frameRate = rate
+	a.frameClock = func() time.Time { return frozen }
+	a.mu.Unlock()
 	s := a.createSession()
 	cookie := supportLogin(t, srv)
 	ws := strictDialWS(t, srv, "/support/session/"+s.id+"/ws", fmt.Sprintf("%s=%s", cookie.Name, cookie.Value))
@@ -62,18 +69,37 @@ func TestMediaFramesAreRateLimited(t *testing.T) {
 	_, _ = ws.conn.Write(buf)
 	for ws.recvText(3*time.Second) != nil {
 	}
-	elapsed := time.Since(start)
-	if elapsed > 2*time.Second {
+	if time.Since(start) > 2*time.Second {
 		t.Fatal("the socket stayed open through a frame flood")
 	}
 	a.mu.Lock()
 	published := s.seq - before
 	a.mu.Unlock()
-	// The bucket admits its burst plus what it refilled while the flood
-	// ran, and nothing more.
-	limit := uint64(2*wsFramesPerSecond) + uint64(elapsed.Seconds()*wsFramesPerSecond) + 16
-	if published > limit {
-		t.Fatalf("%d of %d flood frames published in %v; want at most %d", published, flood, elapsed, limit)
+	// Each admitted media frame publishes one event; with no refill the
+	// bucket admits its burst (2x rate) and nothing more.
+	if published != 2*rate {
+		t.Fatalf("%d of %d flood frames published; want exactly the burst, %d", published, flood, 2*rate)
+	}
+}
+
+// The bucket starts at its burst and refills at rate tokens a second.
+func TestFrameLimiterRefillsAtRate(t *testing.T) {
+	f := newFrameLimiter(4)
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 8 {
+		if !f.allow(t0) {
+			t.Fatalf("frame %d refused inside the burst", i)
+		}
+	}
+	if f.allow(t0) {
+		t.Fatal("frame past the burst admitted with no time elapsed")
+	}
+	half := t0.Add(500 * time.Millisecond)
+	if !f.allow(half) || !f.allow(half) || f.allow(half) {
+		t.Fatal("half a second at 4/s should refill exactly 2 tokens")
+	}
+	if !f.allow(t0.Add(time.Hour)) {
+		t.Fatal("an idle hour refilled nothing")
 	}
 }
 

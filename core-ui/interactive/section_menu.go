@@ -29,6 +29,8 @@ package interactive
 //	interactive.SectionMenu(cfg)                       // rail + trigger pill
 //	// once at startup (cfg.DrawerName must match)
 //	widget.MountBuilder(router, interactive.SectionMenuDrawer(cfg))
+//	// or, when the items change after startup, rebuilt per request
+//	widget.MountBuilder(router, interactive.SectionMenuDrawerFunc(menuFor))
 
 import (
 	"context"
@@ -225,13 +227,32 @@ func sectionMenuFilter(cfg SectionMenuConfig) render.HTML {
 //
 //	widget.MountBuilder(router, interactive.SectionMenuDrawer(cfg))
 func SectionMenuDrawer(cfg SectionMenuConfig) *widget.Builder {
+	return sectionMenuDrawer(cfg, nil)
+}
+
+// SectionMenuDrawerFunc is SectionMenuDrawer for a menu whose items change
+// after startup: build runs on every render of the sheet, with the
+// request's context, so the sheet lists what the rail beside it lists on
+// the same request. build is also called once here, with
+// context.Background(), for the sheet's name; the DrawerName it returns
+// then is kept for every later render.
+//
+//	widget.MountBuilder(router, interactive.SectionMenuDrawerFunc(menuFor))
+func SectionMenuDrawerFunc(build func(ctx context.Context) SectionMenuConfig) *widget.Builder {
+	if build == nil {
+		panic("interactive: SectionMenuDrawerFunc: build is nil")
+	}
+	return sectionMenuDrawer(build(context.Background()), build)
+}
+
+func sectionMenuDrawer(cfg SectionMenuConfig, build func(context.Context) SectionMenuConfig) *widget.Builder {
 	if cfg.DrawerName == "" {
 		panic("interactive: SectionMenuDrawer requires cfg.DrawerName")
 	}
 	return preset.BottomSheet(cfg.DrawerName).
 		Hidden().
 		LabelledBy(sheetTitleID(cfg)).
-		Slot("body", sectionMenuDrawerSlot{cfg: cfg})
+		Slot("body", sectionMenuDrawerSlot{cfg: cfg, resolve: build})
 }
 
 // sheetTitleID names the sheet's title, which labels the sheet's dialog.
@@ -239,8 +260,13 @@ func sheetTitleID(cfg SectionMenuConfig) string { return cfg.DrawerName + "-titl
 
 // sectionMenuDrawerSlot renders the menu body for the sheet, the same groups
 // and links as the rail, wrapped in the component marker so the scoped CSS
-// applies inside the sheet chrome too.
-type sectionMenuDrawerSlot struct{ cfg SectionMenuConfig }
+// applies inside the sheet chrome too. resolve, when set
+// (SectionMenuDrawerFunc), rebuilds the config on every render; cfg then
+// carries the mount-time DrawerName the sheet's routes and title use.
+type sectionMenuDrawerSlot struct {
+	cfg     SectionMenuConfig
+	resolve func(context.Context) SectionMenuConfig
+}
 
 func (s sectionMenuDrawerSlot) Render() render.HTML { return s.RenderCtx(s.cfg.Ctx) }
 
@@ -248,6 +274,15 @@ func (s sectionMenuDrawerSlot) Render() render.HTML { return s.RenderCtx(s.cfg.C
 // the slot is mounted once, so the context it was built with is no
 // reader's.
 func (s sectionMenuDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
+	if s.resolve != nil {
+		rctx := ctx
+		if rctx == nil {
+			rctx = context.Background()
+		}
+		name := s.cfg.DrawerName
+		s.cfg = s.resolve(rctx)
+		s.cfg.DrawerName = name
+	}
 	if ctx != nil {
 		s.cfg.Ctx = ctx
 	}
