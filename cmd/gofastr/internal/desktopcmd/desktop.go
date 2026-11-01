@@ -2,8 +2,10 @@ package desktopcmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	stdimage "image"
 	"image/draw"
@@ -102,14 +104,44 @@ func runDesktopRun(args []string) {
 	var mu sync.Mutex
 	var child *exec.Cmd
 
+	// --watch owns SIGINT/SIGTERM from the start, so a signal during a
+	// build ends the build (devcmd.RunBuildWithHeartbeat) instead of
+	// waiting for it and the app it starts. shutdown closes on the first.
+	// Without --watch nothing owns the signal: the build gets a nil
+	// interrupt and stays in the terminal's process group, where Ctrl-C
+	// reaches it directly.
+	shutdown := make(chan struct{})
+	// watchCtx ends with the signal: the watcher's go list can stall on
+	// a module proxy, and shutdown does not wait for it.
+	watchCtx, endWatch := context.WithCancel(context.Background())
+	defer endWatch()
+	var buildInterrupt <-chan struct{}
+	if f.watch {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-signals
+			close(shutdown)
+			endWatch()
+		}()
+		buildInterrupt = shutdown
+	}
+
+	// buildEnv is the build's environment, and the watcher's go list
+	// runs with the same one: CGO_ENABLED picks files, and files pick
+	// the imports the watch keeps.
+	buildEnv := append(os.Environ(), "CGO_ENABLED=0")
+
 	launch := func() bool {
 		buildCmd := exec.Command("go", "build", "-o", bin, f.pkg)
 		buildCmd.Dir = f.dir
-		buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+		buildCmd.Env = buildEnv
 		buildCmd.Stdout = os.Stdout
 		buildCmd.Stderr = os.Stderr
-		if err := buildCmd.Run(); err != nil {
-			cli.Fail("Build failed: %v", err)
+		if err := devcmd.RunBuildWithHeartbeat(buildCmd, f.pkg, buildInterrupt); err != nil {
+			if !errors.Is(err, devcmd.ErrBuildInterrupted) {
+				cli.Fail("Build failed: %v", err)
+			}
 			return false
 		}
 		if err := prepareDesktopRun(bin); err != nil {
@@ -146,7 +178,27 @@ func runDesktopRun(args []string) {
 		return true
 	}
 
+	// Scanned before the first build: FirstSnapshot keeps these times,
+	// so a save made during the build or the graph read rebuilds.
+	var (
+		since  time.Time
+		before map[string]time.Time
+	)
+	if f.watch {
+		since = time.Now()
+		before = devcmd.ScanModTimes(f.dir)
+	}
+
 	if !launch() {
+		select {
+		case <-shutdown:
+			// Stopped during the first build: nothing ran, nothing failed.
+			if dir := devcmd.DevServerBinDir(); dir != "" {
+				_ = os.RemoveAll(dir)
+			}
+			return
+		default:
+		}
 		cli.OsExit(1)
 		return
 	}
@@ -154,12 +206,14 @@ func runDesktopRun(args []string) {
 		return
 	}
 
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 	reload := make(chan struct{}, 1)
 	stop := make(chan struct{})
+	// A signal after the build but before here leaves shutdown closed:
+	// the loop below sees it on its first turn, and watchCtx has already
+	// ended the dependency query.
+	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
 	go func() {
-		prev := devcmd.ScanModTimes(f.dir)
+		prev := devcmd.FirstSnapshot(before, watch.Scan(), since)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -167,7 +221,7 @@ func runDesktopRun(args []string) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				curr := devcmd.ScanModTimes(f.dir)
+				curr := watch.Scan()
 				if devcmd.Changed(prev, curr) {
 					prev = curr
 					select {
@@ -196,8 +250,13 @@ func runDesktopRun(args []string) {
 			devcmd.KillServer(&mu, &child)
 			if launch() {
 				cli.Success("Reloaded!")
+				go watch.Refresh()
 			} else {
-				cli.Fail("Build failed. Fixing and saving will retry")
+				select {
+				case <-shutdown: // the next turn shuts down
+				default:
+					cli.Fail("Build failed. Fixing and saving will retry")
+				}
 			}
 		}
 	}

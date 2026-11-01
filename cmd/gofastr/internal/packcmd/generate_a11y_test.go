@@ -82,7 +82,7 @@ func TestAppSpecYAMLControlBlocksBuild(t *testing.T) {
 		`[]ui.SelectOption{{Value: "Sales", Text: "Sales"}, {Value: "Support", Text: "Support"}}`,
 		`{Value: "free", Label: "Free", Checked: true}`,
 		`html.OrderedList(`,
-		`ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonGhost, Type: "button"})`,
+		`ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonGhost, Type: "button", Ctx: ctx})`,
 		`html.Nav(html.NavConfig{Label: "More"}, ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD}`,
 		`ID: "people-2"`,
 		`Method: "GET"`,

@@ -202,7 +202,11 @@ func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record a
 		// this point: the operation joined it and the outer owner decides
 		// whether it commits. Publishing now would announce a write that
 		// may be rolled back a moment later.
+		// A handler bound to a caller's *sql.Tx is in the same position:
+		// its write commits when, and if, the caller commits.
 		if tx, ok := db.TxFromContext(ctx); ok {
+			ch.emitAfterAmbientTx(ctx, tx, eventType, record)
+		} else if tx, ok := ch.DB.(*sql.Tx); ok {
 			ch.emitAfterAmbientTx(ctx, tx, eventType, record)
 		} else {
 			ch.Events.EmitAsync(ctx, event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
@@ -466,6 +470,16 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 				if !authzHeld() {
 					return
 				}
+				// The filter decided the read-scope lift on the context
+				// the previous check left, so a lift removed since then
+				// still passed this event. Decide it again on the context
+				// authzHeld just refreshed.
+				if !readScopeUnrestricted(liveCtx(), ch.Entity) {
+					data, _ := ev.Data.(map[string]any)
+					if !ch.readScopeAllowsRecord(data[eventKeyRecord]) {
+						continue
+					}
+				}
 				// Redact at DELIVERY, not when the event is built. The record
 				// is captured from the write's RETURNING, so it holds stored
 				// values and a subscriber would otherwise read past every mask
@@ -553,11 +567,17 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 // reaches SSE subscribers promptly, long enough not to spin.
 const ambientTxProbeInterval = 5 * time.Millisecond
 
-// ambientTxProbeTimeout bounds the wait. A caller that never commits or rolls
-// back would otherwise pin the goroutine for the process lifetime; past this
-// the emission is dropped and logged, because an event announcing a write
-// nobody committed is worse than a missing one.
-const ambientTxProbeTimeout = 2 * time.Minute
+// ambientTxProbeTimeout bounds the wait, from the emission to the decision.
+// A caller that never commits or rolls back, or a statement of its own that
+// holds the transaction's connection, would otherwise pin the goroutine for
+// the process lifetime; past this the emission is dropped and logged,
+// because an event announcing a write nobody committed is worse than a
+// missing one. A var so tests can shorten it.
+var ambientTxProbeTimeout = 2 * time.Minute
+
+// unconfirmedWarnOnce gates the once-per-process warning that an emission
+// was dropped because its transaction's outcome cannot be learned.
+var unconfirmedWarnOnce sync.Once
 
 // probeWarnOnce gates the once-per-process warning that the caller-owned
 // fallback below is probing a live transaction.
@@ -615,21 +635,22 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 		return
 	}
 	base, ok := ch.DB.(*sql.DB)
-	if !ok {
+	id, hasKey := ch.recordPrimaryKey(record)
+	if !ok || !hasKey {
 		// The handler itself is bound to a transaction, so there is no
-		// independent connection to verify against. Nothing sensible to
-		// gate on; publish as before rather than silently dropping. The
-		// tx is masked first (#367): EmitAsync hands the context to a
-		// goroutine per subscriber, and a live *sql.Tx in a goroutine
-		// running beside the transaction's owner is the same
-		// one-connection statements race the commit queue exists to
-		// avoid. eventData reads identity values, which survive the mask.
-		ch.Events.EmitAsync(db.WithoutTx(ctx), event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
-		return
-	}
-	id, ok := ch.recordPrimaryKey(record)
-	if !ok {
-		ch.Events.EmitAsync(db.WithoutTx(ctx), event.Event{Type: eventType, Data: ch.eventData(ctx, record)})
+		// independent connection to check the write against, or the
+		// record carries no key to check it by. Either way the outcome
+		// cannot be learned, and publishing now announced writes the
+		// caller went on to roll back (2026-10-27 bug bash D35). The
+		// emission is dropped: the live bus is lossy by design, and a
+		// caller that wants these events carries the transaction's commit
+		// queue on the context (db.WithTxQueue) and drains it after
+		// Commit, which the branch above serves.
+		unconfirmedWarnOnce.Do(func() {
+			logf("crud: dropping %s for %s: the write runs in a caller-owned transaction with no commit queue "+
+				"and no way to confirm it landed; carry the transaction with db.WithTxQueue and drain the queue "+
+				"after Commit (see hooks-and-transactions docs)", eventType, ch.Entity.GetTable())
+		})
 		return
 	}
 
@@ -654,22 +675,18 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 	match := ch.comparableColumns(record)
 
 	go func() {
-		deadline := time.Now().Add(ambientTxProbeTimeout)
-		for {
-			// Any statement on a finished Tx reports sql.ErrTxDone,
-			// whether it committed or rolled back.
-			if _, err := tx.ExecContext(context.Background(), "SELECT 1"); errors.Is(err, sql.ErrTxDone) {
-				break
-			}
-			if time.Now().After(deadline) {
-				logf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
-					eventType, table, fmt.Sprint(id...), ambientTxProbeTimeout)
-				return
-			}
-			time.Sleep(ambientTxProbeInterval)
+		// One detached context carries the limit for both statements:
+		// the request's own context ends with the request, long before a
+		// caller's transaction may.
+		pctx, cancel := context.WithTimeout(context.Background(), ambientTxProbeTimeout)
+		defer cancel()
+		if !waitTxDone(pctx, tx) {
+			logf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
+				eventType, table, fmt.Sprint(id...), ambientTxProbeTimeout)
+			return
 		}
 
-		committed, err := landed(base, eventType, table, pk, id, match)
+		committed, err := landed(pctx, base, eventType, table, pk, id, match)
 		if err != nil {
 			logf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
 				eventType, table, fmt.Sprint(id...), err)
@@ -682,11 +699,47 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 	}()
 }
 
+// waitTxDone polls tx until it has finished (committed or rolled back) and
+// reports true, or reports false once ctx ends. Any statement on a finished
+// Tx reports sql.ErrTxDone, whichever way it ended.
+//
+// The poll statement itself runs on context.Background(), in a goroutine
+// the wait does not join. database/sql serializes a transaction's
+// statements on one connection lock that no context reaches, so a statement
+// the owner has running holds the poll there; and a poll statement whose
+// own context ends while it runs makes lib/pq mark the connection bad and
+// send a cancel request that lands on whatever that backend runs next,
+// which is the owner's transaction. The deadline is therefore enforced on
+// the wait: the decision to drop is made on time, and a parked poll
+// finishes on its own when the owner's statement releases the connection.
+func waitTxDone(ctx context.Context, tx *sql.Tx) bool {
+	for {
+		res := make(chan error, 1)
+		go func() {
+			_, err := tx.ExecContext(context.Background(), "SELECT 1")
+			res <- err
+		}()
+		select {
+		case err := <-res:
+			if errors.Is(err, sql.ErrTxDone) {
+				return true
+			}
+		case <-ctx.Done():
+			return false
+		}
+		select {
+		case <-time.After(ambientTxProbeInterval):
+		case <-ctx.Done():
+			return false
+		}
+	}
+}
+
 // landed reports whether the write the event describes is visible on the
 // base connection. A delete landed when the row is gone; a create when it is
 // there; an update when it is there AND carries the announced values (match),
 // since the row survives a rollback either way.
-func landed(base *sql.DB, eventType, table string, pk []string, id []any, match map[string]any) (bool, error) {
+func landed(ctx context.Context, base *sql.DB, eventType, table string, pk []string, id []any, match map[string]any) (bool, error) {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
 		return false, err
@@ -725,7 +778,7 @@ func landed(base *sql.DB, eventType, table string, pk []string, id []any, match 
 	var n int
 	stmt := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s",
 		query.QuoteFolded(safeTable), strings.Join(where, " AND "))
-	if err := base.QueryRow(stmt, args...).Scan(&n); err != nil {
+	if err := base.QueryRowContext(ctx, stmt, args...).Scan(&n); err != nil {
 		return false, err
 	}
 	if eventType == event.EntityDeleted {

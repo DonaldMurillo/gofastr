@@ -614,6 +614,25 @@ func TestFrameFriendlyWriterStripsHeaders(t *testing.T) {
 	}
 }
 
+// A second CSP field survives the widening, and every 'none' in it is
+// widened too: a dropped field lifts the app's policy, a missed one keeps
+// the preview iframe blocked.
+func TestFrameWriterKeepsEveryCSPField(t *testing.T) {
+	rec := httptest.NewRecorder()
+	fw := &frameFriendlyWriter{rw: rec}
+	fw.Header().Add("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+	fw.Header().Add("Content-Security-Policy", "frame-ancestors 'none', script-src 'self'")
+	fw.WriteHeader(http.StatusOK)
+	got := rec.Header().Values("Content-Security-Policy")
+	want := []string{
+		"default-src 'self'; frame-ancestors 'self'",
+		"frame-ancestors 'self', script-src 'self'",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("CSP fields = %q, want %q", got, want)
+	}
+}
+
 // The gallery preview screen renders gallery Demo closures + the contrast
 // probes. This exercises the same render path the UIHost serves at /preview.
 func TestThemeEditGalleryPreviewRenders(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/config"
@@ -22,6 +23,13 @@ const (
 	LiveReloadStreamURL = "/__livereload"
 	LiveReloadScriptURL = "/__livereload.js"
 )
+
+// LiveReloadExposeEnv is the explicit opt-in for keeping the livereload
+// stream on a non-loopback listener (a developer reloading a phone on
+// the LAN). Without it, framework.App.Start withdraws the stream on such
+// a bind (WithdrawLiveReload), and `gofastr dev`'s hold page drops its
+// own.
+const LiveReloadExposeEnv = "GOFASTR_DEV_LIVERELOAD_EXPOSE"
 
 // heartbeatInterval governs how often the SSE handler emits a comment
 // to keep intermediaries from timing the connection out. Exported as a
@@ -93,11 +101,55 @@ func isNonDevEnv(v string) bool {
 
 // registered tracks routers that already have livereload wired so calls from
 // both framework.NewApp and an explicit user RegisterLiveReload don't race
-// or double-register the same handler.
+// or double-register the same handler. The value records whether this
+// package's stream is the one serving and holds its withdrawal switch
+// (WithdrawLiveReload).
 var (
 	registeredMu sync.Mutex
-	registered   = map[*router.Router]bool{}
+	registered   = map[*router.Router]*liveReloadRoute{}
 )
+
+// liveReloadRoute is RegisterLiveReload's record for one router.
+type liveReloadRoute struct {
+	// installed is false when the router already had its own
+	// /__livereload or /__livereload.js, which this package left alone.
+	installed bool
+	withdrawn atomic.Bool
+}
+
+// Withdrawal is what WithdrawLiveReload did.
+type Withdrawal int
+
+const (
+	// NotRegistered: r has no livereload; nothing to withdraw.
+	NotRegistered Withdrawal = iota
+	// Withdrawn: this package's stream on r now answers 404.
+	Withdrawn
+	// HostOwned: r served its own /__livereload before
+	// RegisterLiveReload ran, so this package installed nothing and the
+	// host's handler is still live. Withdrawing it is the host's call.
+	HostOwned
+)
+
+// WithdrawLiveReload turns the livereload stream on r off: from now on
+// it answers 404, which an EventSource treats as final, so the page
+// stops asking. framework.App.Start calls it on a non-loopback bind: the
+// stream has no seat and no cap, and its single-operator posture does
+// not hold for every peer that can reach the address. The result says
+// whether a stream was withdrawn, and when one was not, why.
+func WithdrawLiveReload(r *router.Router) Withdrawal {
+	registeredMu.Lock()
+	defer registeredMu.Unlock()
+	route, ok := registered[r]
+	switch {
+	case !ok:
+		return NotRegistered
+	case !route.installed:
+		return HostOwned
+	}
+	route.withdrawn.Store(true)
+	return Withdrawn
+}
 
 // RegisterLiveReload installs the SSE endpoint and client script on r.
 // Idempotent: safe to call multiple times on the same router. If the
@@ -109,11 +161,12 @@ func RegisterLiveReload(r *router.Router) {
 		return
 	}
 	registeredMu.Lock()
-	if registered[r] {
+	if registered[r] != nil {
 		registeredMu.Unlock()
 		return
 	}
-	registered[r] = true
+	route := &liveReloadRoute{}
+	registered[r] = route
 	registeredMu.Unlock()
 
 	// Pre-existing routes win. Leave the host's own implementation
@@ -124,10 +177,18 @@ func RegisterLiveReload(r *router.Router) {
 			return
 		}
 	}
+	registeredMu.Lock()
+	route.installed = true
+	registeredMu.Unlock()
+	withdrawn := &route.withdrawn
 
 	buildID := strconv.FormatInt(time.Now().UnixNano(), 10)
 	r.Get(LiveReloadStreamURL, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream") //gofastr:allow(unseated) dev-mode livereload, single operator watching one dev server; no principal to seat
+		if withdrawn.Load() {
+			i18n.HTTPError(w, req, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream") //gofastr:allow(unseated) dev-mode livereload with no principal to seat; App.Start withdraws it on a non-loopback bind, so only this machine holds it
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")

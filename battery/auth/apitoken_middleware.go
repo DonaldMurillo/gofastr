@@ -4,12 +4,14 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // TokenMiddlewareOption tunes TokenMiddleware.
@@ -261,7 +263,11 @@ func emitTokenEvent(sink AuditSink, ctx context.Context, r *http.Request, kind, 
 // derived from the route: the first path segment after apiPrefix is the
 // resource (the entity table), and the HTTP method maps to the verb,
 // GET/HEAD need "<resource>:read", everything else "<resource>:write".
-// Subroutes (/{id}, /_batch, /_events, /llm.md) inherit the resource.
+// Subroutes (/{id}, /_batch, /_events, /llm.md) inherit the resource: a
+// route an entity registers names its table (router.RouteResource).
+// A version segment before the table is skipped; which segment is the
+// version and which the table is read from the matched route pattern
+// (see apiScopeResources), so mount it with Use on the app's router.
 //
 // Session/JWT callers (no token on the request) pass through unscoped, as
 // do paths outside apiPrefix, this only *narrows* what a token may do,
@@ -289,47 +295,119 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Derive the authorization resource from the first path segment
-			// after the API prefix, skipping version-like segments (v1, v2,
-			// v1.2) so that /api/v1/posts and /api/v2/posts both map to the
-			// same scope resource "posts". Version is an API-surface concern,
-			// not an authorization one, a token scoped to posts:read can read
-			// posts at any version. Per-version authorization uses RequireScope.
-			//
-			// A version-like segment is only skipped when a real segment
-			// follows it. An entity whose table is genuinely version-shaped
-			// ("v1", "v2", legal, since Table only has to match [A-Za-z0-9_])
-			// would otherwise leave resource empty, and the empty case falls
-			// through unchecked: an authorization bypass, not a naming quirk.
-			segs := make([]string, 0, 4)
-			for seg := range strings.SplitSeq(rest, "/") {
-				if seg != "" {
-					segs = append(segs, seg)
-				}
-			}
-			resource := ""
-			for i, seg := range segs {
-				if isVersionSegment(seg) && i < len(segs)-1 {
-					continue
-				}
-				resource = seg
-				break
-			}
-			if resource == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
 			verb := "write"
 			if r.Method == http.MethodGet || r.Method == http.MethodHead {
 				verb = "read"
 			}
-			if !scopeMatches(held, resource+":"+verb) {
-				writeAuthError(w, r, http.StatusForbidden, reasonInsufficientTokenScope)
-				return
+			for _, resource := range apiScopeResources(r, prefix, rest) {
+				if !scopeMatches(held, resource+":"+verb) {
+					writeAuthError(w, r, http.StatusForbidden, reasonInsufficientTokenScope)
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// apiScopeResources returns the scope resources a request under prefix
+// must hold. rest is the path after prefix+"/".
+//
+// A route registered under a router.ResourceGroup (every route an entity
+// registers: CRUD, Endpoints, EntityUI, crud.EntityRouter) names its
+// table, and that name wins: the entity knows its table, while the path
+// cannot tell a table named "v1" with a "/_batch" subroute from a
+// versioned mount of "_batch", nor an orders mount at /api/orders/v1
+// from a table named "v1".
+// The rules below derive the resource for any other route.
+//
+// Version-like segments (v1, v2, v1.2) are skipped so /api/v1/posts and
+// /api/v2/posts both need "posts": version is an API-surface concern, not
+// an authorization one. Per-version authorization uses RequireScope.
+//
+// Whether a segment is a version or a table is read from the route that
+// matched (Request.Pattern, set by the mux before the middleware chain
+// runs), never from the path's spelling: with a table named "v1" mounted
+// at /api, GET /api/v1/orders is record "orders" of table v1, and the
+// pattern says so ("/api/v1/{id}"). A version-like segment is skipped
+// only when the pattern's next segment is a literal, the table of a
+// versioned mount ("/api/v1/posts/{id}"). A wildcard segment takes the
+// request's value, as it always has.
+//
+// With no pattern (the middleware runs outside a mux, or nothing matched)
+// the path alone cannot tell "/api/v1/orders" apart, so every candidate
+// is required: each version-like segment that has a segment after it, and
+// the first that is not version-like or is last. That is fail-closed: a
+// token needs both v1 and orders.
+func apiScopeResources(r *http.Request, prefix, rest string) []string {
+	if res, ok := router.RouteResource(r.Context()); ok {
+		return []string{res}
+	}
+	if pat := patternPath(r.Pattern); pat != "" {
+		if res, ok := patternResource(pat, r.URL.EscapedPath(), prefix); ok {
+			if res == "" {
+				return nil
+			}
+			return []string{res}
+		}
+	}
+	var segs []string
+	for seg := range strings.SplitSeq(rest, "/") {
+		if seg != "" {
+			segs = append(segs, seg)
+		}
+	}
+	var out []string
+	for i, seg := range segs {
+		out = append(out, seg)
+		if !isVersionSegment(seg) || i == len(segs)-1 {
+			break
+		}
+	}
+	return out
+}
+
+// patternPath returns the path part of a ServeMux pattern
+// ("GET example.com/api/{id}" → "/api/{id}"), or "" for none.
+func patternPath(pattern string) string {
+	if i := strings.IndexByte(pattern, '/'); i >= 0 {
+		return pattern[i:]
+	}
+	return ""
+}
+
+// patternResource walks the matched pattern and the escaped request path
+// segment by segment from the first segment after prefix. ok is false
+// when the pattern does not line up with the path past the prefix (a
+// pattern shorter than the prefix), so the caller falls back.
+func patternResource(pat, escPath, prefix string) (string, bool) {
+	psegs := strings.Split(pat, "/")
+	segs := strings.Split(escPath, "/")
+	start := len(strings.Split(prefix, "/"))
+	if prefix == "" {
+		start = 1
+	}
+	if len(psegs) < start || len(segs) <= start {
+		return "", false
+	}
+	literal := func(i int) bool {
+		if i >= len(psegs) {
+			return false // past the pattern: a trailing "/" or {x...} matched it
+		}
+		s := psegs[i]
+		return s != "" && !strings.HasPrefix(s, "{")
+	}
+	for i := start; i < len(segs); i++ {
+		seg, err := url.PathUnescape(segs[i])
+		if err != nil {
+			seg = segs[i]
+		}
+		if literal(i) && isVersionSegment(seg) && literal(i+1) {
+			continue
+		}
+		return seg, true
+	}
+	return "", true
 }
 
 // RequireScope returns middleware that 403s token-authenticated requests

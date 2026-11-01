@@ -862,7 +862,13 @@ its group (kept current across client navigations), and opens
 `interactive.SectionMenuDrawer` as a bottom sheet with the current
 page's group open. The page ends a pill's height lower, so the pill
 never covers its last line. Mount that drawer once in the layout, under the same
-`DrawerName`. `InlineTrigger: true` keeps the pill in flow instead, for
+`DrawerName`. `SectionMenuDrawer(cfg)` renders the items it was given
+at mount; when the menu changes after startup (a registry that grows,
+items that depend on the request), mount
+`interactive.SectionMenuDrawerFunc(build)` instead: `build(ctx)` runs on
+every render of the sheet with the request's context, so the sheet lists
+what the rail lists on that request. The `DrawerName` from the first
+call, made at mount with `context.Background()`, is kept. `InlineTrigger: true` keeps the pill in flow instead, for
 a menu shown inside a card or a demo. The knobs are
 `--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
 `--ui-section-menu-inset` (the link inset) and `--ui-section-menu-dot`

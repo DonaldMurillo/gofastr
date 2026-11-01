@@ -1,9 +1,11 @@
 package devcmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -110,23 +113,62 @@ func RunDev(args []string) {
 	}
 
 	var (
-		mu       sync.Mutex
-		server   *exec.Cmd
-		stop     = make(chan struct{})
-		reload   = make(chan struct{}, 1)
-		shutdown = make(chan os.Signal, 1)
+		mu      sync.Mutex
+		server  *exec.Cmd
+		stop    = make(chan struct{})
+		reload  = make(chan struct{}, 1)
+		signals = make(chan os.Signal, 1)
+		// shutdown closes on the first SIGINT/SIGTERM. A channel that
+		// closes, not the signal channel itself, so a build in progress
+		// and the main loop both see the one signal: a build no longer
+		// runs to the end, and starts the app, before the loop reads it.
+		shutdown = make(chan struct{})
 	)
 
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+	// watchCtx ends with the signal too: the watcher's go list can
+	// stall on a module proxy, and shutdown does not wait for it.
+	watchCtx, endWatch := context.WithCancel(context.Background())
+	defer endWatch()
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-signals
+		close(shutdown)
+		endWatch()
+	}()
 
-	// Build and start the server initially
-	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold) {
-		cli.Fail("Initial build failed. Fixing and saving will retry")
+	exit := func() {
+		fmt.Println()
+		cli.Info("Shutting down...")
+		KillServer(&mu, &server)
+		hold.release()
+		// Remove the whole minted dir: the binary inside plus the dir
+		// itself, so restarts don't accumulate either.
+		if dir := DevServerBinDir(); dir != "" {
+			_ = os.RemoveAll(dir)
+		}
 	}
 
-	// File watcher goroutine: polls for .go file changes
+	// Scanned before the first build: FirstSnapshot keeps these times,
+	// so a save made during the build or the graph read rebuilds.
+	since := time.Now()
+	before := ScanModTimes(dir)
+
+	// Build and start the server initially
+	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold, shutdown) && !closed(shutdown) {
+		cli.Fail("Initial build failed. Fixing and saving will retry")
+	}
+	if closed(shutdown) {
+		// Stopped during the first build: no watcher to start.
+		exit()
+		return
+	}
+
+	// File watcher goroutine: polls for .go file changes. The watch
+	// keeps every directory the build imports from, gen/ included; its
+	// graph is read after the first build, which fetched the modules.
+	watch := NewWatch(watchCtx, dir, pkg, nil)
 	go func() {
-		prev := ScanModTimes(dir)
+		prev := FirstSnapshot(before, watch.Scan(), since)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -135,7 +177,7 @@ func RunDev(args []string) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				curr := ScanModTimes(dir)
+				curr := watch.Scan()
 				if Changed(prev, curr) {
 					prev = curr
 					select {
@@ -156,15 +198,7 @@ func RunDev(args []string) {
 	for {
 		select {
 		case <-shutdown:
-			fmt.Println()
-			cli.Info("Shutting down...")
-			KillServer(&mu, &server)
-			hold.release()
-			// Remove the whole minted dir: the binary inside plus the dir
-			// itself, so restarts don't accumulate either.
-			if dir := DevServerBinDir(); dir != "" {
-				_ = os.RemoveAll(dir)
-			}
+			exit()
 			close(stop)
 			return
 		case <-reload:
@@ -172,17 +206,30 @@ func RunDev(args []string) {
 			cli.Info("Change detected; rebuilding...")
 			KillServer(&mu, &server)
 			hold.show(holdBuilding, "")
-			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold) {
+			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold, shutdown) {
 				cli.Success("Reloaded!")
+				// The save may have added an import: re-read the graph,
+				// behind the restart.
+				go watch.Refresh()
 				// After the reload, never before it: analysis takes about
 				// a second, and a second added to every save is the
 				// difference between a loop people use and one they turn
 				// off. Runs behind the restart and prints when ready.
 				contractWatch.Run()
-			} else {
+			} else if !closed(shutdown) {
 				cli.Fail("Build failed. Fixing and saving will retry")
 			}
 		}
+	}
+}
+
+// closed reports whether ch is closed, without blocking.
+func closed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -305,9 +352,13 @@ func devA11yGate(dir string, noA11y bool, out io.Writer) bool {
 
 // buildAndServe runs the gates, builds, and starts the app. A failure
 // leaves hold showing the output; a nil hold (tests on :0) skips that.
-func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, hold *devHold) bool {
+//
+// interrupt ends a build in progress: when it closes, the build is
+// killed and buildAndServe returns false without starting the app. Nil
+// never interrupts.
+func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, hold *devHold, interrupt <-chan struct{}) bool {
 	out := &holdOutput{}
-	if !buildGatesAndBinary(dir, pkg, runtimeIsolation, mu, cmd, noA11y, out) {
+	if !buildGatesAndBinary(dir, pkg, runtimeIsolation, mu, cmd, noA11y, out, interrupt) {
 		hold.show(holdBuildFailed, out.String())
 		return false
 	}
@@ -372,7 +423,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 
 // buildGatesAndBinary runs the rebuild's gates and go build, copying
 // their output to out as well as the terminal.
-func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, out io.Writer) bool {
+func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, out io.Writer, interrupt <-chan struct{}) bool {
 	// Same posture as `gofastr build`: the static a11y lint gates the
 	// rebuild by default. Failing here is a build failure: the watch
 	// loop keeps running and the next save retries.
@@ -405,10 +456,10 @@ func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, m
 	*cmd = buildCmd
 	mu.Unlock()
 
-	return runBuildWithHeartbeat(buildCmd, dir) == nil
+	return RunBuildWithHeartbeat(buildCmd, dir, interrupt) == nil
 }
 
-// runBuildWithHeartbeat waits out the dev build, printing a progress
+// RunBuildWithHeartbeat waits out the dev build, printing a progress
 // line every 10s it runs. `go build` is silent however long it takes,
 // the banner above has already named an address, and under load a
 // build can run for minutes after that: the heartbeat is what tells
@@ -417,49 +468,241 @@ func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, m
 // building" from "wedged". The writer is captured at entry for the
 // same reason the crash watcher below captures its copy: coverage
 // tests swap os.Stdout around buildAndServe.
-func runBuildWithHeartbeat(buildCmd *exec.Cmd, what string) error {
+//
+// When interrupt closes (the caller's SIGINT or SIGTERM), the build is
+// killed with its children (the compiler, the linker, cgo's C
+// toolchain) and ErrBuildInterrupted returned, so shutdown does not wait
+// out a build whose result nobody will run. A non-nil interrupt puts the
+// build in a process group of its own so the kill reaches all of them;
+// the terminal's Ctrl-C then reaches only the caller, which must own
+// the signal and close interrupt. A caller that does not own it passes
+// nil, and the build stays in the terminal's group.
+func RunBuildWithHeartbeat(buildCmd *exec.Cmd, what string, interrupt <-chan struct{}) error {
 	w := os.Stdout
 	start := time.Now()
+	if interrupt != nil {
+		ownBuildGroup(buildCmd)
+	}
+	// A signal before the build: nothing to start.
+	if closed(interrupt) {
+		return ErrBuildInterrupted
+	}
+	// Started here, not inside the waiting goroutine, so the interrupt
+	// arm below reads a Process that Start has already set.
+	if err := buildCmd.Start(); err != nil {
+		return err
+	}
 	done := make(chan error, 1)
-	go func() { done <- buildCmd.Run() }()
+	go func() { done <- buildCmd.Wait() }()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case err := <-done:
 			return err
+		case <-interrupt:
+			killBuild(buildCmd)
+			<-done // WaitDelay bounds a child holding the output pipe
+			return ErrBuildInterrupted
 		case <-ticker.C:
 			fmt.Fprintf(w, "%s\n", cli.InfoString("Building %s (%ds)...", what, int(time.Since(start).Seconds())))
 		}
 	}
 }
 
-// KillServer kills the current server process.
+// killGrace is how long KillServer lets the app drain after SIGTERM
+// before it sends SIGKILL: shutdown hooks, the process-module drain (a
+// 2s budget) and outbox flushes run in it. The framework ends open
+// event streams (livereload, the SSE bus) when its drain starts, so an
+// app usually exits well inside it, and KillServer returns as soon as
+// it does.
+var killGrace = 5 * time.Second
+
+// exitPoll is how often KillServer looks for the process's exit.
+const exitPoll = 10 * time.Millisecond
+
+// ErrBuildInterrupted is RunBuildWithHeartbeat's answer for a build
+// killed by shutdown.
+var ErrBuildInterrupted = errors.New("build interrupted by shutdown")
+
+// KillServer stops the current server process: SIGTERM, then up to
+// killGrace for the app to exit, then SIGKILL. The caller must have a
+// goroutine waiting on the process (both dev loops do, and a build's
+// Run waits on its own): exit is observed when that wait reaps it, so a
+// process nobody reaps reads as running until the grace ends.
 func KillServer(mu *sync.Mutex, cmd **exec.Cmd) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	if *cmd != nil && (*cmd).Process != nil {
-		(*cmd).Process.Signal(syscall.SIGTERM)
-		time.Sleep(100 * time.Millisecond)
-		(*cmd).Process.Kill()
+		stopProcess((*cmd).Process, killGrace)
 		*cmd = nil
 	}
 }
 
-// ScanModTimes walks the directory and records the latest mod time of
-// source and embedded-asset files. Go embeds .js, .css, .html, and .md
-// at build time (framework docs, llm.md sources), so changes to those
-// files also require a rebuild.
-func ScanModTimes(dir string) map[string]time.Time {
+// stopProcess sends SIGTERM and waits up to grace for p to exit before
+// it kills it. Windows has no SIGTERM to send, so p is killed at once.
+func stopProcess(p *os.Process, grace time.Duration) {
+	if runtime.GOOS == "windows" || p.Signal(syscall.SIGTERM) != nil {
+		_ = p.Kill()
+		return
+	}
+	deadline := time.Now().Add(grace)
+	for time.Now().Before(deadline) {
+		// Signal 0 delivers nothing; once the waiter has reaped p it
+		// answers os.ErrProcessDone.
+		if errors.Is(p.Signal(syscall.Signal(0)), os.ErrProcessDone) {
+			return
+		}
+		time.Sleep(exitPoll)
+	}
+	_ = p.Kill()
+}
+
+// Watch is the dev watcher's view of a project: the directory it walks
+// and the directories it must walk whatever their name, the build
+// target's own package and every package it imports from the tree.
+type Watch struct {
+	dir string
+	pkg string
+	// env is the build's environment, nil for this process's: the
+	// graph go list reports depends on it (CGO_ENABLED, GOOS and build
+	// tags pick files, and files pick imports).
+	env []string
+	// ctx ends a dependency query in progress: shutdown must not wait
+	// on a go list stalled on a module proxy.
+	ctx context.Context
+	// refresh serializes Refresh, so a slower, older query can never
+	// land after a newer one and put a stale graph back.
+	refresh sync.Mutex
+	// keep holds slash paths relative to dir: each package directory in
+	// the target's graph and every directory above it. Nil keeps none.
+	keep atomic.Pointer[map[string]bool]
+}
+
+// NewWatch reads pkg's package graph (go list, run in dir with env, the
+// build's environment; nil inherits this process's) and returns the
+// watch over dir. Cancelling ctx ends a query in progress, this one and
+// every later Refresh: the watch then keeps the graph it has.
+func NewWatch(ctx context.Context, dir, pkg string, env []string) *Watch {
+	w := &Watch{dir: dir, pkg: pkg, env: env, ctx: ctx}
+	w.Refresh()
+	return w
+}
+
+// listTimeout bounds the go list behind a Refresh.
+const listTimeout = 30 * time.Second
+
+// listDeps lists the directories of pkg's non-standard dependencies,
+// pkg included. A variable so a test can hold one query back.
+var listDeps = func(ctx context.Context, dir, pkg string, env []string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+	// No -e: a package that does not load fails the query, and a failed
+	// query keeps the last graph rather than a partial one.
+	list := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", pkg)
+	list.Dir = dir
+	list.Env = env
+	list.WaitDelay = 5 * time.Second
+	out, err := list.Output()
+	if err != nil {
+		return nil, err
+	}
+	var dirs []string
+	for line := range strings.Lines(string(out)) {
+		if d := strings.TrimSpace(line); d != "" {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs, nil
+}
+
+// Refresh re-reads the package graph, after a rebuild that may have
+// added or dropped an import. A successful query replaces the graph, so
+// an import that is gone stops keeping its directory. A failed one (a
+// save that left go.mod or an import broken, or a cancelled ctx) keeps
+// the graph it had: a package does not drop out of the watch because
+// the tree is mid-edit. Calls run one at a time, in call order.
+func (w *Watch) Refresh() {
+	w.refresh.Lock()
+	defer w.refresh.Unlock()
+	root, err := filepath.Abs(w.dir)
+	if err != nil {
+		return
+	}
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
+	}
+	keep := map[string]bool{}
+	add := func(d string) {
+		if real, err := filepath.EvalSymlinks(d); err == nil {
+			d = real
+		}
+		rel, err := filepath.Rel(root, d)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return
+		}
+		for rel != "." {
+			keep[filepath.ToSlash(rel)] = true
+			rel = filepath.Dir(rel)
+		}
+	}
+	// The target's own directory counts even when go list cannot run.
+	if strings.HasPrefix(w.pkg, ".") {
+		add(filepath.Join(root, filepath.FromSlash(w.pkg)))
+	}
+	dirs, err := listDeps(w.ctx, w.dir, w.pkg, w.env)
+	if err != nil {
+		if w.keep.Load() == nil {
+			w.keep.Store(&keep)
+		}
+		return
+	}
+	for _, d := range dirs {
+		add(d)
+	}
+	w.keep.Store(&keep)
+}
+
+// skipDir reports a directory the watcher does not walk: dependencies
+// (vendor, node_modules) and every dot-directory (.git, .gofastr,
+// editor state, and agent worktrees under .claude/worktrees, whose
+// saves would otherwise restart this server) at any depth, and build
+// output (dist, gen, tmp) at the root alone. A directory the build
+// target's package graph runs through is always walked.
+func (w *Watch) skipDir(path, name string) bool {
+	rel, err := filepath.Rel(w.dir, path)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if keep := w.keep.Load(); keep != nil && (*keep)[rel] {
+		return false
+	}
+	switch name {
+	case "vendor", "node_modules":
+		return true
+	case "dist", "gen", "tmp":
+		if !strings.Contains(rel, "/") {
+			return true
+		}
+	}
+	return strings.HasPrefix(name, ".")
+}
+
+// Scan walks the directory and records the latest mod time of source
+// and embedded-asset files. Go embeds .js, .css, .html, and .md at build
+// time (framework docs, llm.md sources), so changes to those files also
+// require a rebuild.
+func (w *Watch) Scan() map[string]time.Time {
 	result := make(map[string]time.Time)
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(w.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
-		// Skip vendor, .git, node_modules, tmp dirs
-		name := info.Name()
-		if info.IsDir() && (name == "vendor" || name == ".git" || name == "node_modules" || name == "tmp") {
+		// The root itself is walked whatever its name (".", a dot-dir
+		// the developer pointed --dir at).
+		if info.IsDir() && path != w.dir && w.skipDir(path, info.Name()) {
 			return filepath.SkipDir
 		}
 		ext := filepath.Ext(path)
@@ -470,6 +713,33 @@ func ScanModTimes(dir string) map[string]time.Time {
 		return nil
 	})
 	return result
+}
+
+// ScanModTimes scans dir with no package graph: root-level build output
+// and dependency and dot-directories are skipped, everything else
+// walked. The dev loops scan through NewWatch, which also keeps every
+// directory the build target imports from.
+func ScanModTimes(dir string) map[string]time.Time {
+	return (&Watch{dir: dir}).Scan()
+}
+
+// FirstSnapshot is a watch's first snapshot. before is the scan taken
+// before the first build (ScanModTimes, no package graph yet), started
+// at since, and after the watch's scan once the build ran and the graph
+// loaded. A file in both keeps its time from before, and a file only in
+// before stays, so a save or a removal made during the build or the
+// graph read differs from the next scan and rebuilds. A file only in
+// after (a gen/ file the graph keeps, a file created since) counts by
+// its time: one not modified since the scan began is the baseline, and
+// a newer one is left out, so the next scan sees it and rebuilds.
+func FirstSnapshot(before, after map[string]time.Time, since time.Time) map[string]time.Time {
+	first := maps.Clone(before)
+	for p, t := range after {
+		if _, ok := before[p]; !ok && !t.After(since) {
+			first[p] = t
+		}
+	}
+	return first
 }
 
 // Changed compares two mod-time maps and returns true if any file was added, removed, or modified.

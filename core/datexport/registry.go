@@ -17,6 +17,8 @@
 // registers DataErasers (App.EraseUserData) so an erasure reaches the same
 // tables an export does. Erasers are declarative too, {Table, Column, Mode},
 // and ride the same SafeIdent-guarded code path (see framework/erase_data.go).
+// A store outside the SQL database (a file, a Redis key space) registers a
+// StoreEraser instead, which the erasure runs after its SQL part commits.
 package datexport
 
 import (
@@ -415,6 +417,7 @@ func Reset(_ *testing.T) {
 	defer mu.Unlock()
 	entries = nil
 	erasers = nil
+	storeErasers = nil
 	for k := range resolvers {
 		delete(resolvers, k)
 	}

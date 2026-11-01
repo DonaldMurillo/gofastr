@@ -2,8 +2,12 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"regexp"
 	"sort"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 
 	"github.com/DonaldMurillo/gofastr/internal/attrscan"
 )
@@ -39,7 +43,10 @@ func ScanReferenced(html string) []string {
 // name resolves to its per-request value (if a producer seeded one) or
 // its declared default. Unregistered names (hand-written attrs with no
 // declaration) are skipped, there is nothing to seed. The returned
-// values are raw Go values ready for JSON marshaling by the host.
+// values are raw Go values ready for JSON marshaling by the host. A
+// value that holds an element id still waiting for its region to
+// settle (HTML seeded during the render) carries the settled id, the
+// one the page's own markup shows (settleSeed).
 func ResolveSeed(ctx context.Context, names []string) map[string]any {
 	bag := valuesFrom(ctx)
 	out := make(map[string]any, len(names))
@@ -60,9 +67,45 @@ func ResolveSeed(ctx context.Context, names []string) map[string]any {
 			}
 			bag.mu.Unlock()
 		}
-		out[n] = val
+		out[n] = settleSeed(ctx, val)
 	}
 	return out
+}
+
+// settleSeed runs a seeded value through render.SettleIDs. The render
+// that seeded it ran inside an id region, so a derived id in it is
+// still a placeholder while the page's markup already shows the id;
+// seeded as is, the client would write the placeholder back into the
+// DOM. A string-kinded value keeps its type; any other value whose
+// JSON holds a placeholder is seeded as the settled JSON.
+func settleSeed(ctx context.Context, v any) any {
+	if !render.HasIDScope(ctx) {
+		return v
+	}
+	if s, ok := v.(string); ok {
+		return render.SettleIDs(ctx, s)
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32, reflect.Float64:
+		return v // no string in it to hold an id
+	}
+	if rv.Kind() == reflect.String {
+		s := rv.String()
+		if t := render.SettleIDs(ctx, s); t != s {
+			return reflect.ValueOf(t).Convert(rv.Type()).Interface()
+		}
+		return v
+	}
+	j, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	if t := render.SettleIDs(ctx, string(j)); t != string(j) {
+		return json.RawMessage(t)
+	}
+	return v
 }
 
 // SeedFor is the host convenience: scan the page for referenced names,

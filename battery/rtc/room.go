@@ -600,7 +600,17 @@ func (s *Signaler) handleSignal(roomName string, p *roomPeer, in inboundMsg) {
 	send, nodeID := s.fanoutSend, s.nodeID
 	s.mu.Unlock()
 	if send != nil {
-		publishFanout(send, nodeID, fanoutMsg{Kind: evSignal, Room: roomName, Signal: sig})
+		// A signal the lane loses (the backend refused or timed out, or
+		// the queue dropped it on overflow) leaves both peers waiting on
+		// an answer that never comes. Close the sender's socket, as a
+		// local overflow closes a socket, so the client reconnects and
+		// renegotiates. The close runs on its own goroutine: the report
+		// can arrive on a sender holding s.mu, and Close waits for the
+		// peer's close frame.
+		publishFanout(send, nodeID, fanoutMsg{Kind: evSignal, Room: roomName, Signal: sig}, func(error) {
+			s.logger.Warn("rtc: peer closed", "reason", "signal_lost")
+			go p.conn.Close()
+		})
 	}
 }
 

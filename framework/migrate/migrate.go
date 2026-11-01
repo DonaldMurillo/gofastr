@@ -1200,14 +1200,24 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	case schema.Text:
 		return "TEXT"
 	case schema.Int:
-		// On Postgres an auto-incrementing integer needs a real sequence:
-		// SERIAL is INTEGER + NOT NULL + a backing sequence + DEFAULT
-		// nextval(). A plain "INTEGER PRIMARY KEY" has no sequence on
-		// Postgres and never auto-increments. SQLite keeps INTEGER. Its
-		// "INTEGER PRIMARY KEY" aliases the rowid and auto-increments when
-		// the column is omitted from INSERT.
-		if dialect == DialectPostgres && f.AutoGenerate == schema.AutoIncrement {
-			return "SERIAL"
+		// Int holds an int64, which is what validation accepts and what
+		// SQLite's INTEGER stores. Postgres's INTEGER is 32-bit, so an
+		// Int there is BIGINT: a value past 2^31 used to pass validation
+		// and fail the insert. A table an older build made keeps its
+		// INTEGER columns (typesEquivalent), and widening one is a
+		// hand-written migration.
+		//
+		// An auto-incrementing integer needs a real sequence on Postgres:
+		// BIGSERIAL is BIGINT + NOT NULL + a bigint sequence + DEFAULT
+		// nextval(). A plain "BIGINT PRIMARY KEY" has no sequence and never
+		// auto-increments. SQLite keeps INTEGER. Its "INTEGER PRIMARY KEY"
+		// aliases the rowid and auto-increments when the column is omitted
+		// from INSERT.
+		if dialect == DialectPostgres {
+			if f.AutoGenerate == schema.AutoIncrement {
+				return "BIGSERIAL"
+			}
+			return "BIGINT"
 		}
 		return "INTEGER"
 	case schema.Float:
@@ -1358,7 +1368,9 @@ func quoteSQLLiteral(s string) string {
 }
 
 // fkColumnSQLType resolves the SQL column type for a foreign key referencing ent's pkName.
-// In PostgreSQL, if the primary key is SERIAL or BIGSERIAL, the referencing column must be INTEGER or BIGINT.
+// In PostgreSQL, a SERIAL, BIGSERIAL or SMALLSERIAL key is referenced by an
+// INTEGER, BIGINT or SMALLINT column: the serial spelling would give the
+// referencing column a sequence of its own.
 // A key that is itself a Relation column takes the type columnSQLType gives it.
 func fkColumnSQLType(ent *entity.Entity, pkName string, all map[string]*entity.Entity, dialect Dialect) string {
 	return keyColumnType(ent, pkName, all, dialect, map[columnRef]bool{})
@@ -1369,11 +1381,9 @@ func keyColumnType(ent *entity.Entity, pkName string, all map[string]*entity.Ent
 		if strings.EqualFold(f.Name, pkName) {
 			t := relationColumnType(ent, f, all, dialect, seen)
 			if dialect == DialectPostgres {
-				if strings.EqualFold(t, "SERIAL") {
-					return "INTEGER"
-				}
-				if strings.EqualFold(t, "BIGSERIAL") {
-					return "BIGINT"
+				switch strings.ToLower(strings.TrimSpace(t)) {
+				case "serial", "bigserial", "smallserial":
+					return integerFKType(t, dialect)
 				}
 			}
 			return t
@@ -1386,10 +1396,12 @@ func keyColumnType(ent *entity.Entity, pkName string, all map[string]*entity.Ent
 // which Postgres refuses as a foreign key to an integer key ("foreign key
 // constraint cannot be implemented") and refuses to join against one. When
 // the field is a belongs_to's foreign key and the target's one-column key
-// is an integer, the column takes that integer type on Postgres, following
-// a target key that is itself such a Relation. SQLite compares TEXT and
-// INTEGER by affinity, so it keeps TEXT and an existing table sees no
-// retype.
+// is an integer, the column takes that integer type, following a target
+// key that is itself such a Relation. SQLite takes it too: a TEXT column
+// stores 10 as '10', so a range filter or a sort on the foreign key
+// compared text and put 10 before 2. A TEXT foreign key an older build
+// made on SQLite diffs as a retype, which the table rebuild applies,
+// converting the stored values.
 func columnSQLType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect) string {
 	return relationColumnType(ent, f, all, dialect, map[columnRef]bool{})
 }
@@ -1405,7 +1417,7 @@ type columnRef struct {
 func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect, seen map[columnRef]bool) string {
 	t := SQLType(f, dialect)
 	ref := columnRef{ent, f.Name}
-	if f.Type != schema.Relation || f.RawType != "" || dialect != DialectPostgres || all == nil || seen[ref] {
+	if f.Type != schema.Relation || f.RawType != "" || all == nil || seen[ref] {
 		return t
 	}
 	seen[ref] = true
@@ -1421,13 +1433,29 @@ func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*enti
 		if err != nil {
 			return t
 		}
-		switch ft := keyColumnType(target, pk, all, dialect, seen); ft {
-		case "INTEGER", "BIGINT":
-			return ft
+		if ft := keyColumnType(target, pk, all, dialect, seen); isIntegerType(ft) {
+			return integerFKType(ft, dialect)
 		}
 		return t
 	}
 	return t
+}
+
+// integerFKType is the column type of a foreign key to an integer key of
+// type keyType, any spelling isIntegerType accepts (a RawType "INT", a
+// lower-case "int8", a SERIAL). SQLite has one integer type; Postgres
+// keeps the key's width.
+func integerFKType(keyType string, dialect Dialect) string {
+	if dialect != DialectPostgres {
+		return "INTEGER"
+	}
+	switch canonicalType(keyType, DialectPostgres) {
+	case "bigint", "int8":
+		return "BIGINT"
+	case "smallint", "int2":
+		return "SMALLINT"
+	}
+	return "INTEGER"
 }
 
 // generatedPivots yields each many_to_many relation whose Through table the

@@ -78,8 +78,9 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   battery/auth middleware that authenticated the request looks the
   session, API token or JWT owner up again, and `access.Middleware`
   re-derives the roles. The entity's read permission is then checked on
-  that fresh principal, and the read-scope lift is re-evaluated per
-  event. A caller who would now be refused (session deleted, token
+  that fresh principal, and the read-scope lift is re-evaluated on it
+  before each event goes out, so the first private row written after a
+  lifting role is removed does not reach the caller. A caller who would now be refused (session deleted, token
   revoked or expired, user deleted, role dropped, a resource decider
   flipped to deny) has the stream closed at the next check, even on an
   entity with no read permission. The EventSource reconnects and meets

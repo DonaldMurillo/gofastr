@@ -48,8 +48,28 @@ gofastr export --base /gofastr _site
 
 A registered battery that implements `static.Contributor` sees every
 rendered page and adds files of its own; [site search](site-search.md)
-writes its index this way. Exports are reproducible: two runs over the
-same content write the same bytes (a page that shows live data aside).
+writes its index this way. A contributor file at a page's path, in any
+case, fails the build, and so does a contributor file, rail script,
+static-dir or `ExtraDirs` file whose path holds a backslash (a separator
+on Windows). A build that writes two files differing only in case (a
+contributor's `/_HEADERS` beside the generated `_headers`, a rail script
+`/REDUCERS.js` beside a static `reducers.js`, a static `ABOUT/logo.png`
+beside the page `about/index.html`) fails and names both: a
+case-insensitive filesystem keeps one spelling, and a case-sensitive
+host then answers 404 for the other. A static file that replaces a
+generated one (`manifest.webmanifest`, `robots.txt`) must match its
+spelling exactly. A rebuild into the same directory renames a file or
+directory an earlier build left in another case to this build's
+spelling, so an export built on macOS deploys to a case-sensitive host
+unchanged; only an entry that is the build's own file under the other
+name moves, and nothing past a symlink does: an entry behind a symlink
+in another spelling fails the build and is named, as does a symlink
+whose target names a directory in a spelling the disk no longer has. A contributor may not
+write `_headers` or `_redirects`, which the build writes itself; ship
+extra rules in the static dir, where they are appended. Exports are
+reproducible: two runs over the same content write the same bytes (a
+page that shows live data aside), the PWA worker included, in a fresh
+directory or over the last build.
 
 The example site also wires a `--export <dir>` flag so the same binary
 serves live *or* exports:
@@ -99,7 +119,10 @@ go build -o site ./examples/site/
   it no longer writes, such as a page that became gated or a route that
   was dropped, so the static host stops serving it with a 200. A file
   the builder never listed, and anything this build wrote or copied,
-  stays; a first build with no list removes nothing.
+  stays; a first build with no list removes nothing. A page renamed by
+  case only (`/About` to `/about`) is the same file on a
+  case-insensitive filesystem, so its old spelling is not removed
+  there.
 - With `uihost.WithSitemap` / `uihost.WithRobots`: `sitemap.xml` and
   `robots.txt`, built by the live handlers' code (same route expansion
   via `StaticPathsProvider`, same `ExcludePaths`, same AI-bot rules).
@@ -157,19 +180,23 @@ go build -o site ./examples/site/
   to the same path, `index.html` files included. Two kinds of file are
   refused: one the UI host would not serve (a path with a dot segment
   such as `.env` or `.git/config`, or a server config file name such
-  as `web.config`), and one at the path of a page the build rendered
-  (`about/index.html` beside an `/about` route). The build log names
+  as `web.config`), and one at the path of a page the build rendered,
+  in any case (`about/index.html` or `About/index.html` beside an
+  `/about` route). The build log names
   each. Files under a leading `.well-known/`, unless they are dotfiles
   themselves, and the root `.nojekyll` GitHub Pages reads are copied.
   A static-dir
   `_headers` or `_redirects` is appended to the generated one, so its
   rules apply and the generated ones (the security headers and the
-  `app.Redirect` rules) stay first.
+  `app.Redirect` rules) stay first. One spelled in another case
+  (`_HEADERS`) is refused: no host reads it, and on a case-insensitive
+  filesystem it would replace the generated file.
 - `Builder.ExtraDirs` files under their mount path, minus the dotfiles
   and config files the static dir also skips. A page or asset
-  the build wrote (the generated `_headers` and `_redirects` included),
+  the build wrote, in any case (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
-  same path. Which file wins is decided by this
+  same path. An extra file spelled in another case than an asset the
+  build wrote fails the build. Which file wins is decided by this
   build and the static source, never by what an earlier build left in
   the output directory, so `Builder.Watch` (which rebuilds into the
   same directory) picks up a changed extra file.
@@ -206,6 +233,22 @@ func (s *DocScreen) StaticPaths(ctx context.Context) []map[string]string {
     return out
 }
 ```
+
+A value fills one URL segment, escaped the way the sitemap links it: the
+key `a/b` on `/orders/{id}` is the page `/orders/a%2Fb`. A static host
+decodes that URL to `orders/a/b`, so the export writes the page to
+`orders/a/b/index.html`. The build refuses a value whose file would land
+outside its route's directory: an empty, `.` or `..` path component on
+disk, a NUL, or a backslash (a Windows separator). It also refuses two
+pages that land on one file, such as that key beside a route
+`/orders/a/b`: the error names both paths, where the later page would
+otherwise replace the earlier one without a word. Two files that differ
+only in case (`/orders/A` beside `/orders/a`) count as one, since a
+case-insensitive filesystem (macOS, Windows) stores them as one, and so
+do two that differ only in Unicode normalization (`café` precomposed or
+with a combining accent), which APFS stores as one. A
+redirect's page is checked the same way, against the pages and the
+other redirects.
 
 Routes whose screen doesn't implement `StaticPathsProvider` (or returns an
 empty slice) are **skipped** at build time, but the builder now logs a

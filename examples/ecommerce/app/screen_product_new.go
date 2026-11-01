@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=51d3d02117e74177
+//gofastr:generated generator=app kind=scaffold version=dev sum=9d88f8f3f52fbd36
 
 package main
 
@@ -41,13 +41,13 @@ func (s *ProductNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *ProductNewScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text(productNewScreenTextAddNewProduct.Text(ctx))),
-		render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: productNewScreenTextNewProduct.Text(ctx)}), ui.Form(ui.FormConfig{Action: "/api/products", Method: "POST", SubmitLabel: productNewScreenTextCreate.Text(ctx), ExtraAttrs: html.MergeAttrs(html.Attrs{"data-entity-form": "products", "data-entity-mode": "create"}, interactive.Post("/api/products").OnSuccess(interactive.ResetForm()).Attrs())}, ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "name", "Name"), For: "field-name", Required: true, Input: func(c headless.FieldControl) render.HTML {
+		render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: productNewScreenTextNewProduct.Text(ctx)}), ui.Form(ui.FormConfig{Ctx: ctx, Action: "/api/products", Method: "POST", SubmitLabel: productNewScreenTextCreate.Text(ctx), ExtraAttrs: html.MergeAttrs(html.Attrs{"data-entity-form": "products", "data-entity-mode": "create"}, interactive.Post("/api/products").OnSuccess(interactive.ResetForm()).Attrs())}, ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "name", "Name"), For: "field-name", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "name"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "slug", "Slug"), For: "field-slug", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "slug"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "sku", "SKU"), For: "field-sku", Required: false, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "sku"})
-		}}), ui.TextArea(ui.TextAreaConfig{Name: "description", Label: i18nui.FieldLabel(ctx, nil, "products", "description", "Description"), ID: "field-description", Required: false}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "price", "Price"), For: "field-price", Required: true, Input: func(c headless.FieldControl) render.HTML {
+		}}), ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: "description", Label: i18nui.FieldLabel(ctx, nil, "products", "description", "Description"), ID: "field-description", Required: false}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "price", "Price"), For: "field-price", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "price", Step: "0.0001"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "stock", "Stock"), For: "field-stock", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "stock", Step: "1"})

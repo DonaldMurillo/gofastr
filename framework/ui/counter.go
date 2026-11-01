@@ -89,7 +89,7 @@ func Counter(cfg CounterConfig) render.HTML {
 		Signal:     name,
 		Value:      initial,
 		Step:       cfg.Step,
-		ID:         autoID("counter"),
+		ID:         scopedID(cfg.Ctx, "counter"),
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
 		Parts:      parts,
 		Strings:    StringsFor(ctx),

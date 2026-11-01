@@ -17,7 +17,8 @@ type Document struct {
 	// Owner is the user id the document belongs to, or empty for one
 	// that names nobody. Add copies it onto every chunk, and
 	// App.EraseUserData deletes the erased user's chunks from a
-	// PgVectorStore.
+	// PgVectorStore and from an index opened with Options.Path, its
+	// snapshot and WAL included.
 	Owner string `json:"owner,omitempty"`
 }
 
@@ -298,5 +299,6 @@ func Open(opts Options) (Index, error) {
 		return nil, err
 	}
 	idx.storeDim() // seed the cache at startup, not on a write
+	idx.registerEraser()
 	return idx, nil
 }

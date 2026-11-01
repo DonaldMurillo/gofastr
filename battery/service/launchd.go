@@ -133,14 +133,14 @@ func (l launchd) start(b *Battery) error {
 // drains, exits 0, and KeepAlive leaves it down. A daemon that is not
 // running is already stopped (`launchctl kill` would fail on it).
 func (l launchd) stop(b *Battery) error {
-	pid, err := b.runningPID()
-	if err != nil || pid == 0 {
+	daemon, err := b.runningDaemon()
+	if err != nil || daemon.PID == 0 {
 		return err
 	}
 	if err := b.run("launchctl", "kill", "SIGTERM", l.target(b)); err != nil {
 		return err
 	}
-	return b.waitExit(pid)
+	return b.waitExit(daemon)
 }
 
 // restart is stop (which waits for the exit), then start, rather than

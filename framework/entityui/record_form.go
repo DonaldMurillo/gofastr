@@ -351,7 +351,7 @@ func (fb *formBuilder) sidePanels(ctx context.Context) []render.HTML {
 		if !p.Title.IsZero() {
 			title = p.Title.Text(ctx)
 		}
-		out = append(out, ui.Section(ui.SectionConfig{ID: "eui-side-" + p.Key, Heading: title, Overline: true, Compact: true}, body))
+		out = append(out, ui.Section(ui.SectionConfig{Ctx: ctx, ID: "eui-side-" + p.Key, Heading: title, Overline: true, Compact: true}, body))
 	}
 	return out
 }
@@ -426,7 +426,7 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 	if len(items) == 0 {
 		return ""
 	}
-	return ui.Section(ui.SectionConfig{Heading: i18nui.EntityDetails.Text(ctx), Overline: true, Compact: true},
+	return ui.Section(ui.SectionConfig{Ctx: ctx, Heading: i18nui.EntityDetails.Text(ctx), Overline: true, Compact: true},
 		ui.DetailList(ui.DetailListConfig{Spread: true, Items: items}))
 }
 
@@ -495,7 +495,7 @@ func (fb *formBuilder) section(ctx context.Context, it entity.FormItem, depth in
 		}
 		return ui.Collapsible(ui.CollapsibleConfig{Summary: heading, ID: "eui-sec-" + it.Section}, inner...), nil
 	}
-	return ui.Section(ui.SectionConfig{Heading: heading, Description: it.Help}, body...), nil
+	return ui.Section(ui.SectionConfig{Ctx: ctx, Heading: heading, Description: it.Help}, body...), nil
 }
 
 // value reads the field's current value as input text: the create

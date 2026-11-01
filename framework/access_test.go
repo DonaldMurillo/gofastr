@@ -225,7 +225,10 @@ func TestCursorPageWithMore(t *testing.T) {
 		{"id": 4, "name": "d"},
 	}
 	// Request limit=3, so we get 4 rows back (3+1 for hasMore check)
-	page := pagination.NewCursorPage(data, "id", 3)
+	page, err := pagination.NewCursorPage(data, "id", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if !page.HasMore {
 		t.Error("expected HasMore=true")
@@ -252,7 +255,10 @@ func TestCursorPageNoMore(t *testing.T) {
 		{"id": 2},
 	}
 	// Only 2 rows, limit=3 → no more
-	page := pagination.NewCursorPage(data, "id", 3)
+	page, err := pagination.NewCursorPage(data, "id", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if page.HasMore {
 		t.Error("expected HasMore=false")

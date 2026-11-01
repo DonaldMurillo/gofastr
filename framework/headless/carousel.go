@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"slices"
 	"strconv"
 
@@ -63,6 +64,12 @@ type CarouselProps struct {
 	// controls.
 	Parts   Parts
 	Strings *Strings
+
+	// Ctx is the render context. An id this component derives (no ID
+	// given) is handed out through its id scope (render.UniqueID), so a
+	// repeat on the page gets a -2 suffix; an explicit ID is never
+	// changed. With no Ctx the derived id is used as is.
+	Ctx context.Context
 }
 
 // Carousel renders the slider.
@@ -88,9 +95,22 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	w := p.Strings.Resolve()
 
 	b := p.Parts.Box(s)
+	// The family: the track and every slide without its own id. A slide
+	// with its own id is an explicit id like any other: reserved, so a
+	// derived id elsewhere on the page that would repeat it moves.
+	family := []string{"-track"}
+	for i, sl := range p.Slides {
+		if sl.ID == "" {
+			family = append(family, "-track-slide-"+strconv.Itoa(i))
+		} else {
+			render.ReserveID(p.Ctx, sl.ID)
+		}
+	}
 	id := p.ID
 	if id == "" {
-		id = "hui-carousel-" + menuShortHash(p.Label)
+		id = render.UniqueID(p.Ctx, "hui-carousel-"+menuShortHash(p.Label), family...)
+	} else {
+		render.ReserveID(p.Ctx, id, family...)
 	}
 	trackID := id + "-track"
 

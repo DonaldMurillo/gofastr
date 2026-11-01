@@ -184,12 +184,22 @@ the module applies:
 - a **focus trap**: Tab cycles within the topmost open pane (the
   kernel's shared `NS._focusSel` selector; it never touches the
   widgets module's private `_modalStack`, and defers while a modal
-  widget is open),
+  widget is open). Entering overlay mode moves focus to the drawer's
+  first focusable when focus sits outside it, so a drawer the server
+  rendered open (`SecondaryOpen`) on a phone-width first load, or a
+  window narrowed under an open pane, does not leave focus behind the
+  scrim; an open modal widget keeps focus instead. Tab with focus
+  outside the drawer re-enters it at the first
+  focusable, Shift+Tab at the last,
 - a refcounted **scroll lock**: `__gofastr.doc.lockScroll('panehost:<id>')`,
   released on close / widen / navigate,
 - **ESC** and **backdrop-click** to close — ESC and the backdrop are
   light-dismiss for the OVERLAY drawer only; an open inline column at
   desktop width is page content and survives both.
+
+With two hosts on a page, Tab and ESC act on the overlay host that
+holds focus, or on the only overlay host when focus is in none. With
+two open drawers and focus in neither, the keys leave both alone.
 
 Widening the viewport or closing the pane clears overlay mode and
 releases the lock. Pane widths and the drawer width are themeable via

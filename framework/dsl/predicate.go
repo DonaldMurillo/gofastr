@@ -59,6 +59,16 @@ func ParsePredicate(text string, fields []schema.Field) (*filter.Predicate, erro
 	return filter.ValidatePredicate(root, fields)
 }
 
+// Quote writes v as a quoted string value of the predicate grammar,
+// the inverse of the parser's quoted-string scan: the backslash is
+// escaped first, then the double quote, so `C:\reports` comes back as
+// `"C:\\reports"` and parses to the same text. Every writer of filter
+// text quotes through it. A CR or LF has no escape in the grammar, so a
+// value holding one cannot be written as a term.
+func Quote(v string) string {
+	return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
+}
+
 // maxSortTerms bounds how many keys one Sort string may carry. Mirrors
 // filter's maxSortFields cap on ?sort= so a hostile ?sort= cannot inflate
 // the ORDER BY through this surface either.

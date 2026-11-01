@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -40,6 +41,11 @@ type Router struct {
 	mu          sync.RWMutex
 	middlewares []Middleware
 	patterns    []RegisteredRoute // populated by Handle for introspection
+
+	// inner (ROOT only) is the UseInner list: middleware composed inside
+	// every Use and Group middleware in the tree, next to the handler.
+	// Guarded by mu.
+	inner []Middleware
 
 	// timeout is this router's request-timeout override for every route
 	// registered under it (SetTimeout). nil = inherit. Guarded by mu.
@@ -107,6 +113,12 @@ type Router struct {
 	// the mux matches it (PreRoute). An atomic pointer, so the request
 	// path pays one load and no lock.
 	preRoute atomic.Pointer[func(*http.Request) (*http.Request, string)]
+
+	// resource names the REST resource every route registered on this
+	// router serves (ResourceGroup); "" for none. Set before any route is
+	// registered and never written again, so the request path reads it
+	// without a lock.
+	resource string
 }
 
 // RegisteredRoute is the (method, pattern) pair returned by
@@ -473,6 +485,14 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			}))
 		}
 	}
+	// The route's resource, stamped before the chain so a middleware
+	// that authorizes by resource reads it from the route, not the path.
+	// An unnamed route clears one it inherited: a handler that
+	// redispatches its request through the router (the entity MCP tools)
+	// must not hand the next route the first route's name.
+	if c.router.resource != "" || req.Context().Value(routeResourceKey{}) != nil {
+		req = req.WithContext(context.WithValue(req.Context(), routeResourceKey{}, c.router.resource))
+	}
 	curVer := c.router.root.chainVersion.Load()
 	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
 		(*h).ServeHTTP(w, req)
@@ -576,6 +596,7 @@ func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 		middlewares: own,
 		parent:      r,
 		root:        r.root,
+		resource:    r.resource,
 	}
 	if len(own) > 0 {
 		r.root.chainVersion.Add(1)
@@ -939,6 +960,29 @@ func (r *Router) Use(mw ...Middleware) {
 	r.root.chainVersion.Add(1)
 }
 
+// UseInner adds middleware that wraps every handler in the tree from the
+// inside: it runs after every middleware added with Use, on this router,
+// its parent or any Group, so it sees the context those middleware built
+// (the authenticated user, the resolved tenant). Among themselves, inner
+// middleware keep Use's order: the first added is the outermost of them.
+// A call on a Group adds to the whole tree.
+//
+// The framework mounts its idempotency middleware here, so a replay is
+// keyed on the tenant and user the app's own middleware resolved.
+//
+// Like Use, safe to call concurrently with in-flight ServeHTTP, and a
+// call after a route was registered still wraps it.
+func (r *Router) UseInner(mw ...Middleware) {
+	if len(mw) == 0 {
+		return
+	}
+	root := r.root
+	root.mu.Lock()
+	root.inner = append(root.inner, mw...)
+	root.mu.Unlock()
+	root.chainVersion.Add(1)
+}
+
 // effectiveChain returns the full middleware chain for this router,
 // composed parent-first → own. Resolved per call so additions to any
 // router in the chain take effect immediately.
@@ -970,6 +1014,12 @@ func (r *Router) effectiveChain() []Middleware {
 // Middleware is applied in order: the first in the list wraps the outside,
 // so it executes first on the way in and last on the way out.
 func (r *Router) wrap(handler http.Handler) http.Handler {
+	r.root.mu.RLock()
+	inner := slices.Clone(r.root.inner)
+	r.root.mu.RUnlock()
+	for _, c := range slices.Backward(inner) {
+		handler = c(handler)
+	}
 	chain := r.effectiveChain()
 	for _, c := range slices.Backward(chain) {
 		handler = c(handler)

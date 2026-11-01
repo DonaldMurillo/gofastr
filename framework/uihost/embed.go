@@ -375,12 +375,81 @@ func applyEmbedFraming(w http.ResponseWriter, origins []string) {
 	// honour it over XFO, which also means a buffering middleware that
 	// re-adds XFO downstream cannot break this.
 	h.Del("X-Frame-Options")
-	h.Set("Content-Security-Policy", withFrameAncestors(h.Get("Content-Security-Policy"), origins))
+	fields := withFrameAncestorsFields(h.Values("Content-Security-Policy"), origins)
+	h.Del("Content-Security-Policy")
+	for _, f := range fields {
+		h.Add("Content-Security-Policy", f)
+	}
 	h.Set("Cross-Origin-Resource-Policy", "cross-origin")
 }
 
-// withFrameAncestors rewrites ONLY the frame-ancestors directive of an existing
-// policy, leaving every other directive intact.
+// withFrameAncestorsFields rewrites the frame-ancestors directive in every
+// policy the response carries. An app may send several
+// Content-Security-Policy fields, and one field may hold several policies
+// joined by commas; the browser enforces each of them, so each keeps its
+// own directives and only its frame-ancestors is replaced. Fields are never
+// merged or dropped: a dropped field is a policy the app set and the embed
+// silently lifted.
+//
+// A policy with no frame-ancestors leaves framing to the others. When no
+// policy has one, the directive is added once, to the first policy, which
+// is enough: framing must pass every policy.
+func withFrameAncestorsFields(fields []string, origins []string) []string {
+	policies := make([][]string, 0, len(fields))
+	found := false
+	for _, field := range fields {
+		var kept []string
+		for p := range strings.SplitSeq(field, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if hasFrameAncestors(p) {
+				p = withFrameAncestors(p, origins)
+				found = true
+			}
+			kept = append(kept, p)
+		}
+		if len(kept) > 0 {
+			policies = append(policies, kept)
+		}
+	}
+	if len(policies) == 0 {
+		return []string{withFrameAncestors("", origins)}
+	}
+	if !found {
+		policies[0][0] = withFrameAncestors(policies[0][0], origins)
+	}
+	out := make([]string, len(policies))
+	for i, kept := range policies {
+		out[i] = strings.Join(kept, ", ")
+	}
+	return out
+}
+
+// hasFrameAncestors reports whether one policy (no commas) carries a
+// frame-ancestors directive.
+func hasFrameAncestors(policy string) bool {
+	for d := range strings.SplitSeq(policy, ";") {
+		if strings.EqualFold(directiveName(d), "frame-ancestors") {
+			return true
+		}
+	}
+	return false
+}
+
+// directiveName returns a directive's name: its first token split on any
+// whitespace, so a tab after the name still names frame-ancestors.
+func directiveName(d string) string {
+	if f := strings.Fields(d); len(f) > 0 {
+		return f[0]
+	}
+	return ""
+}
+
+// withFrameAncestors rewrites ONLY the frame-ancestors directive of one
+// policy (no commas: withFrameAncestorsFields splits them), leaving every
+// other directive intact.
 //
 // Replacing the whole header would be a downgrade dressed as a relaxation: the
 // app's policy also carries default-src 'self', script-src, img-src and the
@@ -407,8 +476,7 @@ func withFrameAncestors(policy string, origins []string) string {
 		if trimmed == "" {
 			continue
 		}
-		name, _, _ := strings.Cut(trimmed, " ")
-		if strings.EqualFold(name, "frame-ancestors") {
+		if strings.EqualFold(directiveName(trimmed), "frame-ancestors") {
 			out = append(out, directive)
 			replaced = true
 			continue

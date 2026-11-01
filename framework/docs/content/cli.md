@@ -162,7 +162,7 @@ with `go mod tidy` from that project directory.
   error-severity finding generates nothing, the run continues so one
   pass reports everything, and the exit code is non-zero. `app.style.css`
   is the app sheet; every other name is a scoped owner. Names match
-  `^[a-z][a-z0-9-]*$`, must not start with `ui-`, and are unique within
+  `^[a-z][a-z0-9-]{0,63}$`, must not start with `ui-`, and are unique within
   each program.
 
   The generated file carries the CSS as a raw-string constant with a
@@ -178,6 +178,14 @@ with `go mod tidy` from that project directory.
   each as `<Owner>Style` (`IssuecardStyle`, `BoardStyle`). A class
   name that becomes an invalid or colliding Go identifier is a
   generator error, never a mangled name.
+
+  `ownstyle.Must` compiles the sheet against the default theme, and
+  `App.WithTheme` compiles every registered sheet against the app's
+  theme (`ownstyle.CheckTheme`): a theme that renames or drops a
+  breakpoint a sheet's `(--above-md)` names panics at boot. A theme
+  variant registered later that cannot compile a sheet does not fail
+  the request: the sheet ships empty under that theme and the error
+  is logged.
 
   The sheets are checked against the built-in tokens plus every app
   token, so `gofastr gen styles` and `gofastr verify` report the same

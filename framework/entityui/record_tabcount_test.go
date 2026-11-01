@@ -96,3 +96,33 @@ func TestRecordRelatedCountHonorsBeforeList(t *testing.T) {
 		t.Errorf("SECURITY: Related counts %q past the BeforeList scope, want 1", got)
 	}
 }
+
+// The Related count is the rows the related list draws: its default
+// view narrows the count as it narrows the list, and so does a filter
+// the URL sets on that list.
+func TestRelatedCountUsesListView(t *testing.T) {
+	ents := invoiceEntities()
+	pay := ents["payments"]
+	pay.Fields = append(pay.Fields, schema.Field{Name: "kind", Type: schema.String})
+	pay.Display = &entity.DisplayConfig{Views: []entity.ListView{
+		{Key: "card", Where: `kind = "card"`, Default: true},
+	}}
+	ents["payments"] = pay
+	rows := invoiceRows()
+	rows["payments"] = []map[string]any{
+		{"id": "p1", "invoice_id": "inv-1", "amount": "10.00", "kind": "card"},
+		{"id": "p2", "invoice_id": "inv-1", "amount": "20.00", "kind": "cash"},
+		{"id": "p3", "invoice_id": "inv-1", "amount": "30.00", "kind": "card"},
+	}
+	x := newTestUI(t, ents, rows, withAPI(map[string]string{"invoices": "/api/invoices", "payments": "/api/payments"}))
+	rec := func(query string) string {
+		return string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Related("payments").
+			RenderCtx(x.userCtx("/rec/invoices/inv-1", query, "u1")))
+	}
+	if got := tabBadge(t, rec(""), "related"); got != "2" {
+		t.Errorf("Related counts %q past the list's default view, want 2", got)
+	}
+	if got := tabBadge(t, rec(`?payments_filter=amount+%3E%3D+%2225%22`), "related"); got != "1" {
+		t.Errorf("Related counts %q past the list's own filter, want 1", got)
+	}
+}

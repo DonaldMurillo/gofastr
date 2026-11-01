@@ -30,6 +30,15 @@ Each record is one JSON file in the registry directory:
 | `dir`, `exe` | The working directory and executable path. |
 | `started` | When the record was written (UTC). |
 
+Beside the record sits `<id>.start`, the OS's start value for `pid` as a
+decimal number (clock ticks after boot on Linux, the start time in
+microseconds on macOS, the creation FILETIME on Windows), only ever
+compared with a later reading of the same pid. It is written first, and
+absent when the OS would not say. It lives outside the JSON so the
+record stays the layout readers already know: a reader decodes records
+strictly, and a new field would make one built against an older
+framework drop every record. `Record.ProcStart` carries it in Go.
+
 The directory is `$GOFASTR_RUNS_DIR` when set, else
 `<os.UserConfigDir()>/gofastr/runs`:
 
@@ -47,7 +56,7 @@ belongs to another user (on Windows: neither the user's SID nor the
 token's default owner), and one swapped in between that check and the
 open. One of the user's own that group or others can reach is
 tightened back to 0700. A record holds no secret: a name, a
-URL, a pid and two paths.
+URL, a pid, its start value and two paths.
 
 ## Reading the registry
 
@@ -60,7 +69,13 @@ for _, r := range recs {
 
 `List` returns live runs only. A run that died without shutting down
 (`kill -9`, a crash, a power cut) leaves its file behind; `List` checks
-each record's pid and deletes the file of one that has exited. It skips
+each record's pid and deletes the file of one that has exited. Once a
+run is gone the OS may hand its pid to a newer process, so `List` also
+compares the `.start` value with the pid's start value now and deletes
+the record when they differ. A record without a `.start` file, or a pid
+whose start value the OS will not report, falls back to the pid check.
+A `.start` file whose record is gone (a reader that predates it deleted
+the record) is removed once its pid has exited. It skips
 anything that is not a record: a FIFO or other non-regular file, a file
 another user owns (one planted while the directory was loose), a file
 whose name is not `<pid>-<hex>.json`, a body over 16 KiB, a duplicate

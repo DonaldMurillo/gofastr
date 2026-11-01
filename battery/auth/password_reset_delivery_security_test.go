@@ -115,9 +115,9 @@ func TestPasswordResetDeliveryRefusedAfterStop(t *testing.T) {
 	}
 	p.queueResetEmail(context.Background(), "late@example.com", "http://localhost/reset")
 
-	p.deliveryMu.Lock()
-	started, queued := p.deliveryStarted, len(p.deliveryQueue)
-	p.deliveryMu.Unlock()
+	p.delivery.mu.Lock()
+	started, queued := p.delivery.started, len(p.delivery.queue)
+	p.delivery.mu.Unlock()
 	if started || queued != 0 {
 		t.Fatalf("delivery after stop: workers started=%v, queued=%d; want none", started, queued)
 	}
@@ -133,10 +133,10 @@ func TestPasswordResetDeliveryDroppedWhenQueueFull(t *testing.T) {
 	p := NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "http://localhost", EmailSender: &countingPasswordResetSender{}})
 	// Started with no workers and one slot, so the second delivery finds
 	// the queue full.
-	p.deliveryQueue = make(chan passwordResetDelivery, 1)
-	p.deliveryStarted = true
-	p.deliveryCtx, p.deliveryCancel = context.WithCancel(context.Background())
-	defer p.deliveryCancel()
+	p.delivery.queue = make(chan mailJob, 1)
+	p.delivery.started = true
+	p.delivery.ctx, p.delivery.cancel = context.WithCancel(context.Background())
+	defer p.delivery.cancel()
 
 	p.queueResetEmail(context.Background(), "a@example.com", "http://localhost/reset?a")
 	done := make(chan struct{})
@@ -147,13 +147,13 @@ func TestPasswordResetDeliveryDroppedWhenQueueFull(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		<-p.deliveryQueue // unblock the stuck send so the goroutine exits
+		<-p.delivery.queue // unblock the stuck send so the goroutine exits
 		t.Fatal("queueResetEmail blocked on a full delivery queue")
 	}
-	if got := len(p.deliveryQueue); got != 1 {
+	if got := len(p.delivery.queue); got != 1 {
 		t.Fatalf("queue holds %d deliveries, want the first one only", got)
 	}
-	if d := <-p.deliveryQueue; d.to != "a@example.com" {
-		t.Fatalf("queued delivery is for %q, want the first request", d.to)
+	if d := <-p.delivery.queue; d.emailHash != hashedIdentifier("a@example.com") {
+		t.Fatalf("queued delivery is for %q, want the first request", d.emailHash)
 	}
 }

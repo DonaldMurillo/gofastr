@@ -24,8 +24,10 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
 middleware.Timeout(30 * time.Second)
 ```
 
-(`WithIdempotency` / `WithI18n` insert their middleware between
-`RequestID` and `SecurityHeaders` when configured.)
+(`WithI18n` inserts its middleware between `RequestID` and
+`SecurityHeaders` when configured. `WithIdempotency` is not in this
+chain: it mounts innermost with `router.UseInner`, after the app's own
+auth and tenant middleware.)
 
 `Recovery` is outermost so a panic anywhere below it produces a clean
 `500`. `RequestID` runs next so every later log line carries the trace

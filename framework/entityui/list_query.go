@@ -388,10 +388,27 @@ func (s *listState) clearSearchHref() string {
 		drop = append(drop, s.facetParam(name))
 	}
 	q := s.carry(drop...)
-	if s.savedID != "" && !s.q.Has(s.p.filter) && s.filterText != "" {
+	s.clearFilter(q)
+	return listHref(s.path, q)
+}
+
+// clearFilter finishes a link that drops this list's filter (q came
+// from carry with the filter excluded) so an open saved view's filter
+// does not come back with it. When the URL's own filter param was
+// overriding the view's, an empty one included, the link carries that
+// param empty: the reader clearing the filter. When the text was the
+// view's, the link leaves the view.
+func (s *listState) clearFilter(q url.Values) {
+	if s.savedID == "" {
+		return
+	}
+	if s.q.Has(s.p.filter) {
+		q.Set(s.p.filter, "")
+		return
+	}
+	if s.filterText != "" {
 		q.Del(s.p.saved)
 	}
-	return listHref(s.path, q)
 }
 
 // activeFacets are the facets with a value in the URL, for carrying
@@ -429,6 +446,10 @@ func (s *listState) carry(exclude ...string) url.Values {
 	}
 	if v := s.filterText; v != "" && !drop[s.p.filter] {
 		out.Set(s.p.filter, v)
+	} else if v == "" && !drop[s.p.filter] && !drop[s.p.saved] && s.savedID != "" && s.q.Has(s.p.filter) {
+		// ?saved=S&filter= is the reader clearing S's filter; dropping
+		// the empty param would bring S's filter back on the next link.
+		out.Set(s.p.filter, "")
 	}
 	if !drop[s.p.view] {
 		if s.view != "" {

@@ -64,6 +64,8 @@ byte-identical):
 - `ID string` — wires tab↔panel semantics: button
   `id="<ID>-tab-<i>"` + `aria-controls="<ID>-panel-<i>"`, panel
   `id="<ID>-panel-<i>"`. You own cross-page uniqueness of `ID`.
+  Without `ID` the prefix is the signal name; set `Ctx` and a second
+  strip on the same signal in one render gets `<name>-2` ids.
 - `VacateHidden bool` — hidden panels ship empty with their content in
   an adjacent JSON stash, so page-scoped test locators cannot match
   text inside hidden panels. The `headless-tabs` module restores content on

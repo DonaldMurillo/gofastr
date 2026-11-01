@@ -236,6 +236,56 @@ func TestSavedViewExplicitParamsWin(t *testing.T) {
 	}
 }
 
+// A reader who cleared a saved view's filter (?saved=S&filter=) keeps
+// it cleared across a sort or page link: the link carries the empty
+// filter, or S's filter applies again.
+func TestSavedViewClearedFilterStays(t *testing.T) {
+	x, store := savedUI(t)
+	saved, err := store.Create(asUser(x.ctx("/orders", ""), "u1"), SavedView{
+		Entity: "orders", Name: "Open only", Filter: `status = "open"`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := listHTML(t, x.ui.List("orders").SavedViews(), x.userCtx("/orders", "?saved="+saved.ID+"&filter=", "u1"))
+	if !strings.Contains(html, "zeta") {
+		t.Fatalf("the cleared filter still narrows the list:\n%s", html)
+	}
+	links := regexp.MustCompile(`href="(/orders\?[^"]*sort=[^"]*)"`).FindAllStringSubmatch(html, -1)
+	if len(links) == 0 {
+		t.Fatalf("no sort links in:\n%s", html)
+	}
+	for _, l := range links {
+		q, err := url.ParseQuery(strings.TrimPrefix(strings.ReplaceAll(l[1], "&amp;", "&"), "/orders?"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q.Get("saved") != saved.ID {
+			continue
+		}
+		if !q.Has("filter") || q.Get("filter") != "" {
+			t.Errorf("sort link %s drops the cleared filter, so the saved filter returns", l[1])
+		}
+	}
+	// Removing an override's last chip clears the filter too: dropping
+	// the param would bring the saved filter back in its place.
+	html = listHTML(t, x.ui.List("orders").SavedViews(),
+		x.userCtx("/orders", "?saved="+saved.ID+"&filter=status+%3D+%22paid%22", "u1"))
+	removes := regexp.MustCompile(`<a aria-label="Remove[^>]*href="(/orders[^"]*)"`).FindAllStringSubmatch(html, -1)
+	if len(removes) == 0 {
+		t.Fatalf("no chip remove links in:\n%s", html)
+	}
+	for _, l := range removes {
+		q, err := url.ParseQuery(strings.TrimPrefix(strings.TrimPrefix(strings.ReplaceAll(l[1], "&amp;", "&"), "/orders"), "?"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q.Get("saved") == saved.ID && !q.Has("filter") {
+			t.Errorf("chip remove link %s brings the saved filter back", l[1])
+		}
+	}
+}
+
 func TestSavedViewUnknownIDShowsCallout(t *testing.T) {
 	x, _ := savedUI(t)
 	html := listHTML(t, x.ui.List("orders").SavedViews(), x.userCtx("/orders", "?saved=nope", "u1"))

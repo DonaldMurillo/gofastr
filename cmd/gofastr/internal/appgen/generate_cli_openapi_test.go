@@ -211,6 +211,34 @@ func TestOpenAPICLI_RefCycleFails(t *testing.T) {
 	}
 }
 
+func TestOpenAPICLI_AllOfSelfRefFails(t *testing.T) {
+	doc := `{"openapi":"3.0.3",
+	  "components":{"schemas":{"A":{"allOf":[{"$ref":"#/components/schemas/A"}]}}},
+	  "paths":{"/a":{"post":{"operationId":"mk",
+	    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}}}`
+	var m map[string]any
+	_ = json.Unmarshal([]byte(doc), &m)
+	if _, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c"); err == nil || !strings.Contains(err.Error(), "$ref cycle") {
+		t.Fatalf("allOf self-reference must fail with the $ref cycle error, got %v", err)
+	}
+}
+
+func TestOpenAPICLI_AllOfDiamondResolves(t *testing.T) {
+	doc := `{"openapi":"3.0.3",
+	  "components":{"schemas":{
+	    "Base":{"type":"object","properties":{"id":{"type":"string"}}},
+	    "L":{"allOf":[{"$ref":"#/components/schemas/Base"},{"type":"object","properties":{"left":{"type":"string"}}}]},
+	    "R":{"allOf":[{"$ref":"#/components/schemas/Base"},{"type":"object","properties":{"right":{"type":"string"}}}]},
+	    "D":{"allOf":[{"$ref":"#/components/schemas/L"},{"$ref":"#/components/schemas/R"}]}}},
+	  "paths":{"/a":{"post":{"operationId":"mk",
+	    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/D"}}}}}}}}`
+	var m map[string]any
+	_ = json.Unmarshal([]byte(doc), &m)
+	if _, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c"); err != nil {
+		t.Fatalf("a shared allOf base is not a cycle: %v", err)
+	}
+}
+
 func mustJSON(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {

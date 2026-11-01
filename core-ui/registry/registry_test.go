@@ -76,6 +76,33 @@ func TestIsolateForTestStartsUnfrozen(t *testing.T) {
 	}
 }
 
+// A style name is spliced into every instance's data-cui-comp marker
+// and names a /__gofastr/comp/<name>.css path, so it follows the
+// behavior-name grammar: a quote would add attributes to every
+// instance, a "/" would rewrite the path. This refusal replaced three
+// framework/uihost tests that registered "evil/../escape"-shaped names
+// to prove the comp-CSS link and handlers refuse them: such an entry
+// can no longer exist.
+func TestRegisterStyleRefusesBadName(t *testing.T) {
+	IsolateForTest(t)
+	fn := func(style.Theme) string { return "" }
+	for _, name := range []string{
+		`x" onclick="alert(1)`, "evil/../escape", "Upper", "9lead", "has space",
+		"-lead", strings.Repeat("a", 65),
+	} {
+		func() {
+			defer func() {
+				r, _ := recover().(string)
+				if !strings.Contains(r, "must match ^[a-z][a-z0-9-]{0,63}$") {
+					t.Errorf("RegisterStyle(%q): panic = %q, want the name-grammar refusal", name, r)
+				}
+			}()
+			RegisterStyle(name, fn)
+		}()
+	}
+	RegisterStyle("ui-ok-2", fn) // the grammar's own shape still registers
+}
+
 func TestConflictingRegistrationPanics(t *testing.T) {
 	reset()
 	fn1 := func(t style.Theme) string { return "x" }

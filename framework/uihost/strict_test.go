@@ -422,6 +422,7 @@ func TestStrictCorruptManifestFailsBoot(t *testing.T) {
 }
 
 func TestStrictDynamicRouteWithoutStaticPathsWarnsNotDemands(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	// A dynamic route with no StaticPaths is invisible to the sitemap,
 	// so a sitemap-driven axe gate can never cover it. Strict must not
 	// demand what the gate cannot discover. It screams instead.
@@ -451,6 +452,7 @@ type emptyPathsScreen struct{ describedScreen }
 func (s *emptyPathsScreen) StaticPaths(ctx context.Context) []map[string]string { return nil }
 
 func TestStrictDynamicRouteWithEmptyStaticPathsWarnsNotDemands(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	t.Chdir(t.TempDir())
 	t.Setenv("GOFASTR_DEV", "1")
 	if err := axecov.Record(".", "/", "dark"); err != nil {

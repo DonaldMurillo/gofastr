@@ -192,12 +192,6 @@ func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.
 // caller can ship the kept layers' fresh areas with the response (see
 // exportFillsFor)..
 func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, content render.HTML, fills *fillSet, guards regionGuards) (render.HTML, error) {
-	// Collect mode for the kept layers. Every build runs every render.
-	for i := 0; i < from && i < len(chain); i++ {
-		if chain[i].Layout.isTree() {
-			chain[i].Layout.collectTreeLayer(ctx, chain, i, fills, guards)
-		}
-	}
 	out := content
 	for i := len(chain) - 1; i >= from; i-- {
 		layer := chain[i]
@@ -231,6 +225,15 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 				Class:      "cui-screen-group",
 				ExtraAttrs: attrs,
 			}, out)
+		}
+	}
+	// Collect mode for the kept layers. Every build runs every render.
+	// They run after the rendered layers and innermost first, the order
+	// the full page builds every layer in, so an area's derived element
+	// ids (render.UniqueID) match the ones the full page gave it.
+	for i := min(from, len(chain)) - 1; i >= 0; i-- {
+		if chain[i].Layout.isTree() {
+			chain[i].Layout.collectTreeLayer(ctx, chain, i, fills, guards)
 		}
 	}
 	return out, nil

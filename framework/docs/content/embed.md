@@ -288,6 +288,13 @@ header is written the server does not know who the framer is. Listing origins
 does not widen anything: the browser enforces against the real ancestor chain,
 so an eleventh origin still cannot frame a page that lists ten.
 
+Only the `frame-ancestors` directive is rewritten. Every other directive of
+the app's policy stays, and so does every policy: when the app sends several
+`Content-Security-Policy` header fields, or joins several policies with commas
+in one field, each keeps its own directives and has its `frame-ancestors`
+replaced. When none of them carries `frame-ancestors`, the directive is added
+to the first one.
+
 There are two ways that list is produced.
 
 ### Static origins (the default)

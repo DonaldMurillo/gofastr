@@ -199,6 +199,33 @@ so a store that declares it wrongly hands out no task, though its
 the `scope` column to an older table on open, and its rows read as a
 session's.
 
+A task also records the tenant the creating request acted in. With a
+tenant hook, a caller reads, lists, resumes, cancels and configures only
+the tasks made in the tenant it is in now: a member removed from tenant
+A, or switched to B, gets `-32001` for A's tasks, and an open stream on
+one ends at the next keep-alive once the refreshed principal resolves
+to another tenant. `WithA2A` wires the tenant your tenant middleware
+resolved (`tenant.GetTenantID`); a server built by hand passes
+`a2a.Config.Tenant`. The owner stays the user id, which erasure deletes
+by. A custom `a2a.Store` keeps `TaskRecord.Tenant` and never changes it
+on update; one that filters `ListTasks` by `ListQuery.Tenanted` in its
+query declares `a2a.TenantFilter` (both built-in stores do), and without
+it the server walks the owner's tasks the same way as for scopes. The
+SQL store adds the `tenant` column to an older table on open, and its
+rows read as made in no tenant, so a caller in a tenant no longer sees
+them.
+
+Every request-driven store call runs on the request's context, so a
+store that scopes by it (its tenant, its trace) sees the caller:
+`GetTask`, `ListTasks`, and the four push-config methods read on it, and
+a client that leaves stops the read. `CancelTask` and the push-config
+create carry the request's values but not its cancellation, so a cancel
+or a create the client abandons halfway still completes. A push config
+belongs to its task: every push-config method first reads the task
+under the caller's owner, scopes and tenant, and answers `-32001` when
+the caller cannot see it. The `ExtendedCard` hook gets the request's
+context too.
+
 The SQL task store registers its task and push-config tables with
 `App.ExportData` and `App.EraseUserData`, keyed on the owner column, so
 erasing a user deletes their tasks and push configs (see

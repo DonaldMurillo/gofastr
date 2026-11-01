@@ -215,6 +215,18 @@ func TestE2E_LiveDashboard_ComputedStatusPill(t *testing.T) {
 		t.Fatalf("dash.status reducer is %q, want \"function\" — WithExtraScripts did not register it",
 			reducerIsFn)
 	}
+	// Every branch the reducer computes matches the label the server
+	// painted for the same count, or the pill changes text on hydration.
+	for open := 0; open <= 3; open++ {
+		var got string
+		js := `window.__gofastr._reducers['dash.status']({'dash.incidentsOpen': ` + strconv.Itoa(open) + `})`
+		if err := chromedp.Run(ctx, chromedp.Evaluate(js, &got)); err != nil {
+			t.Fatalf("dash.status(%d): %v", open, err)
+		}
+		if want := dashStatusLabel(open, 0); got != want {
+			t.Errorf("dash.status(%d) = %q, SSR paints %q", open, got, want)
+		}
+	}
 }
 
 // TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush catches the
