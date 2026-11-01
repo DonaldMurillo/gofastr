@@ -273,3 +273,24 @@ func TestSQLMagicLinkCreateTokenSurvivesSweepFailure(t *testing.T) {
 		t.Error("a failed sweep waited out the full interval instead of retrying after magicLinkSweepRetry")
 	}
 }
+
+// The per-address limit is a cooldown, not an hourly block: anyone can
+// spend an address's budget, so a long block lets a stranger stop the
+// owner's mail. Mails a stranger triggers reach the owner, and the owner
+// always holds a working link only while a link outlives the longest gap
+// the limiter can force, Window + BlockDuration (2026-11-01 review,
+// round 2: MaxAttempts 1 with an hour's block passed every other test).
+func TestAddressLimitIsACooldownALinkOutlives(t *testing.T) {
+	cfg := defaultAddressRateLimit()
+	gap := cfg.Window + cfg.BlockDuration
+	if gap > 5*time.Minute {
+		t.Errorf("per-address limit can hold mail back %v, want a short cooldown", gap)
+	}
+	ml := NewMagicLinkPlugin(MagicLinkConfig{})
+	pr := NewPasswordResetPlugin(PasswordResetConfig{})
+	for name, ttl := range map[string]time.Duration{"magic link": ml.config.TokenTTL, "password reset": pr.cfg.TokenTTL} {
+		if ttl <= gap {
+			t.Errorf("%s TokenTTL %v does not outlive the per-address gap %v", name, ttl, gap)
+		}
+	}
+}
