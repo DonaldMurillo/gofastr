@@ -85,6 +85,24 @@ func TestBrokerFilterCannotSetControlKeys(t *testing.T) {
 	if len(m) != 3 {
 		t.Errorf("sanitizeFilter left %d keys, want exactly 3: %v", len(m), m)
 	}
+
+	// The bracket spelling survives on a declared field (it is the only
+	// key that reaches a field beside its name plus a suffix) and is
+	// dropped on a Hidden, NoQuery, undeclared or control name.
+	got, err = sanitizeFilter(ent, json.RawMessage(`{
+		"status[ne]":"void","created_at[gte]":"2026-01-01",
+		"secret[eq]":"x","ssn[like]":"1","bogus[eq]":"y","include[eq]":"author","status[within]":"x"
+	}`))
+	if err != nil {
+		t.Fatalf("sanitizeFilter errored: %v", err)
+	}
+	m = nil
+	if err := json.Unmarshal(got, &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 2 || m["status[ne]"] != "void" || m["created_at[gte]"] != "2026-01-01" {
+		t.Errorf("bracket keys after sanitizeFilter: %v, want only status[ne] and created_at[gte]", m)
+	}
 }
 
 // ---------------------------------------------------------------------------

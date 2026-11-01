@@ -1135,7 +1135,8 @@ as before: no behavioural change.
 **The `q`-column edge case.** An entity WITH `SearchFields` that also
 has a physical column named `q`: plain `?q=value` means **search** (the
 OpEq filter on the `q` column is dropped). Suffixed ops (`?q_like=`,
-`?q_gt=`, …) still filter the column normally.
+`?q_gt=`, …) and the explicit `?q[eq]=value` still filter the column
+normally.
 
 Column names must be known, non-Hidden, and String/Text-typed;
 `entity.Define` panics otherwise (the app spec decoder returns a
@@ -1172,6 +1173,21 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | `_like`  | case-insensitive literal `contains` (`LOWER(col) LIKE '%value%'`) |
 | `_in`    | `IN (…)`, comma-separated, capped at 1000 |
 
+**The bracket form.** Every operator also has a word you can put in
+brackets after the field name: `?price[gte]=5`, `?status[in]=a,b`,
+`?title[like]=foo`, `?check_in[eq]=2026-11-01`. The words are the
+suffixes without the underscore, plus `eq` for equals: `eq`, `ne`,
+`gt`, `gte`, `lt`, `lte`, `like`, `in`. The text before the brackets is
+always the whole field name (or its `WireName`), never cut at a suffix,
+so `check_in[eq]` filters the `check_in` field and `check[in]` filters
+`check` with `IN`. `%5B` and `%5D` decode to the same key. Any other word
+in the brackets (`?price[within]=5`) is a **400** naming it. A bracket
+on an unknown or Hidden field is the same unknown-filter 400 any unknown
+key gets, so the form tells nobody a Hidden field exists. A bracket key
+follows every rule a suffix key does: it is sent once (`[in]` reads every
+occurrence), its operator must suit the field's type, and `?f_in=` beside
+`?f[in]=` are two keys, two IN lists ANDed.
+
 `sort` names a field, with a `-` prefix for descending. Several fields
 go comma-separated (`sort=status,-created_at`) or as repeated `sort`
 keys, at most 16 in all; an unknown field is a 400.
@@ -1203,16 +1219,21 @@ query string (`?price_lt=100&price_lt=5`) is a **400** naming the key,
 dropped without a word, so the result was wider than asked and a proxy
 that reads the last value saw a different query from the one the
 database ran. Only `_in` reads every occurrence (below). A field whose
-name ends in a suffix but whose name before it is no field (`opt_in`,
-`check_in`) filters as itself, at the top level, in `?rel.field=` and in
-`include=rel(…)`.
+name ends in a suffix but whose name before it is no field (`opt_in`
+with no `opt` field) filters as itself, at the top level, in
+`?rel.field=` and in `include=rel(…)`.
 
-**Field names cannot shadow an operator suffix.** A queryable field whose
-name or wire name is another queryable field's plus a suffix from the
-table above (`status` beside `status_ne`) is refused at entity
-registration: the parser tries the suffix first, so `?status_ne=` would
-filter `status` and the `status_ne` column could never be filtered at
-all. Rename one field or set a `WireName`.
+**A bare key that reads two ways is a 400.** When an entity has both
+`check` and `check_in`, `?check_in=x` could mean `check_in = x` or
+`check IN (x)`. The parser does not guess: it answers **400**
+(`filter.ambiguous_filter`) naming both readings and the keys that pick
+one, `?check_in[eq]=x` or `?check[in]=x`. Hidden fields never count, but
+NoQuery fields do. This holds at the top level (`LenientFilters`
+included), in `?rel.check_in=` and in `include=rel(check_in=…)`. Keys
+that read one way are unchanged. Such a pair of fields registers fine;
+the generated OpenAPI document, MCP list tool, CLI and SDK readmes spell
+the two readings in bracket form and keep the suffix form for every
+other key.
 
 **A wire key names one column.** Two fields resolving to one wire key
 (`WireName`, or a bare column's name and its camelCase form) are refused
@@ -1235,7 +1256,7 @@ for the same reason unknown filters fail closed below.
 
 **Unknown filters fail closed (strict).** A misspelled or unrecognized
 top-level filter, `?stauts=open`, or a suffixed op on a non-field like
-`?scor_gt=5`, returns a **400** naming the bad key (with a "did you
+`?scor_gt=5` or `?scor[gt]=5`, returns a **400** naming the bad key (with a "did you
 mean" suggestion when a field is an unambiguous near-match), rather than
 being silently dropped. Silently dropping a filter returns an
 **unfiltered** result set: a broken client reads the whole table, and an
@@ -1273,7 +1294,9 @@ app.Entity("things", entity.EntityConfig{
 tracking params) rather than an enumerated set, opt back into the old
 drop-silently behavior with `EntityConfig.LenientFilters: true`. Prefer
 `AllowedFilterParams` or fixing the caller: a dropped filter is a
-data-exposure hazard.
+data-exposure hazard. Lenient drops keys that name no field (a bracket
+on an unknown field included); a key that names a field but cannot be
+read, an ambiguous bare key or an unknown bracket word, is still a 400.
 
 ## Nested predicate filters (`?where=`)
 

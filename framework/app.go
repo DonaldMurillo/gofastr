@@ -2656,11 +2656,10 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		}
 	}
 	// A queryable field whose name is another's plus an operator suffix
-	// (?status_ne= next to a `status_ne` column) is a silent wrong-column
-	// filter, not an error; refuse it at the same gate.
-	if err := checkFilterSuffixCollisions(ent); err != nil {
-		return err
-	}
+	// (`status` beside `status_ne`) registers: the bare key ?status_ne=
+	// reads two ways and every filter parser refuses it with the bracket
+	// spellings that pick one (?status_ne[eq]=, ?status[ne]=), so neither
+	// column is unreachable and no reading is guessed (filter.ReadKey).
 	// Endpoint routes: an endpoint whose (method, path) is already taken,
 	// by an existing route, by a CRUD route this same call is about to
 	// mount, or by a sibling endpoint on this same declaration, would

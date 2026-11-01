@@ -3,6 +3,7 @@ package sdkdocs
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -683,6 +684,13 @@ func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 	// example. When no queryable column accepts a range comparison the
 	// snippets show plain equality.
 	filterField, filterOp := exampleFilter(cfg)
+	// The key as the server reads it: the bracket spelling only where the
+	// bare key reads two ways (a field beside its name plus a suffix).
+	op := filter.OpEq
+	if filterOp == "_gte" {
+		op = filter.OpGte
+	}
+	filterKey := filter.SpellerFor(cfg.Fields).Key(filterField, op)
 	// A versioned entity shares the page with its siblings; the tab
 	// widget name must stay unique per section.
 	tabsName := "sdk-ent-" + cfg.Table
@@ -699,7 +707,7 @@ created, err := c.Create%s(ctx, client.%sInput{ /* … */ })
 _ = c.Watch%s(ctx, func(event string, data []byte) error {
 	fmt.Println(event)
 	return nil
-})`, filterField+filterOp, filterField, structName, structName, structName, structName)
+})`, filterKey, filterField, structName, structName, structName, structName)
 
 	tsCode := fmt.Sprintf(`const page = await api.%s.list({
   sort: "-%s",
@@ -708,10 +716,11 @@ _ = c.Watch%s(ctx, func(event string, data []byte) error {
 
 const created = await api.%s.create({ /* … */ });
 await api.%s.watch((event) => console.log(event), { signal });`,
-		prop, filterField, filterField+filterOp, prop, prop)
+		prop, filterField, filterKey, prop, prop)
 
+	// Escaped: curl reads a literal [..] in a URL as a glob range.
 	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \
-  "%s/%s?%s%s=10&sort=-%s"`, origin, cfg.Table, filterField, filterOp, filterField)
+  "%s/%s?%s=10&sort=-%s"`, origin, cfg.Table, url.QueryEscape(filterKey), filterField)
 
 	return ui.CodeTabs(ui.CodeTabsConfig{Name: tabsName},
 		ui.CodeSample{Label: "Go", Language: "go", Code: goCode},

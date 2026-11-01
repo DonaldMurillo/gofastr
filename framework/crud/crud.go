@@ -892,14 +892,15 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, erro
 // when the entity has SearchFields AND ?q= is present. This resolves the
 // edge case: an entity WITH SearchFields that also has a physical column
 // named "q", plain ?q= means search (not filter on the column). Suffixed
-// ops (?q_like=, ?q_gt=, …) still filter the column.
+// ops (?q_like=, ?q_gt=, …) and the explicit ?q[eq]= still filter the
+// column.
 func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPresent bool) []filter.ParsedFilter {
 	if !hasSearchFields || !qPresent || len(filters) == 0 {
 		return filters
 	}
 	out := filters[:0]
 	for _, f := range filters {
-		if f.Op == filter.OpEq && f.Field == "q" {
+		if f.Op == filter.OpEq && f.Field == "q" && !filter.IsBracketKey(f.Key()) {
 			continue
 		}
 		out = append(out, f)

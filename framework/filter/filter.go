@@ -146,14 +146,20 @@ type ParsedFilter struct {
 	// type sets it (ParseFiltersValues, Typed, Coerced).
 	typed any
 
-	// inKey is the query key an OpIn filter was parsed from
-	// (ParseFiltersValues). collectInRun merges a run of OpIn filters
-	// into one IN list only while this matches, so ?author_id_in=1,2
-	// and its wire alias ?writer_in=3 stay two ANDed predicates, the
-	// rule every other key follows, instead of one union. Filters built
+	// inKey is the query key the filter was parsed from
+	// (ParseFiltersValues; Key reads it). collectInRun merges a run of
+	// OpIn filters into one IN list only while this matches, so
+	// ?author_id_in=1,2 and its wire alias ?writer_in=3 stay two ANDed
+	// predicates, the rule every other key follows, instead of one
+	// union; ?f_in= and ?f[in]= are two keys the same way. Filters built
 	// by hand leave it empty and merge with each other as before.
 	inKey string
 }
+
+// Key returns the query key the filter was parsed from: set by
+// ParseFiltersValues on every filter it returns, and by InList. A filter
+// built by hand returns "".
+func (f ParsedFilter) Key() string { return f.inKey }
 
 // InList returns f tagged with the query key whose IN list it belongs
 // to. A parser that emits one OpIn filter per value (ParseFiltersValues
@@ -316,6 +322,17 @@ var FilterSuffixes = [...]FilterSuffixOp{
 //	?field_lte=value    → less than or equal
 //	?field_like=value   → LIKE (contains)
 //	?field_in=v1,v2,v3  → IN
+//	?field[op]=value    → the same operators by word (eq, ne, gt, gte,
+//	                      lt, lte, like, in); the name before the
+//	                      brackets is always the whole field name
+//
+// A bare key cuts at its suffix only when the name before the suffix is a
+// field, so a lone opt_in field filters as ?opt_in=. When the key is a
+// field AND another field plus a suffix (check beside check_in, key
+// check_in) it reads two ways and is a 400 naming both readings and the
+// bracket spellings that pick one (?check_in[eq]=, ?check[in]=), Lenient
+// included. An unknown bracket word is a 400 too; a bracket on an unknown
+// or Hidden field is the unknown-filter 400.
 //
 // `?field_ne=` follows OpEq's NULL semantics rather than SQL three-valued
 // intuition: a row whose column is NULL matches neither `=` nor `!=`, no
@@ -405,7 +422,11 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 	}
 
-	// FilterSuffixes is package-level. See its declaration above.
+	// named is every name a filter key may put before an operator: the
+	// filterable columns, their wire names, and the NoQuery fields (refused
+	// by name below). Hidden fields are in none of these maps, so a Hidden
+	// field reads exactly as an absent one.
+	named := func(n string) bool { return fieldSet[n] || wireAlias[n] != "" || noQuery[n] }
 
 	var filters []ParsedFilter
 
@@ -417,6 +438,11 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// blocked records the first NoQuery field a caller tried to filter on,
 	// chosen lexically like unknown.
 	blocked := ""
+
+	// malformed records the lexically-smallest key that names a field but
+	// cannot be read: a bare key that reads two ways, or a bracket whose
+	// operator word is not one of BracketOps (ReadKey).
+	malformed, malformedErr := "", error(nil)
 
 	// overCapField/overCapCount record the lexically-smallest ?field_in= list
 	// that exceeds MaxINListEntries, surfaced as a single error after the
@@ -451,9 +477,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			recordMistyped(key, err)
 			return
 		}
-		if op == OpIn {
-			pf.inKey = key
-		}
+		pf.inKey = key
 		filters = append(filters, pf)
 	}
 
@@ -497,40 +521,49 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		// so a column whose name collides with a control word (e.g. a field
 		// named "stream" or "q") is still filtered rather than silently
 		// swallowed, which would return an unfiltered result set.
-		matched := false
-		for _, s := range FilterSuffixes {
-			if !strings.HasSuffix(key, s.Suffix) {
+		//
+		// ReadKey splits the key: name[op] names the whole field before the
+		// brackets, a bare key cuts at its suffix only when the name before
+		// it is a field (opt_in alone is the field opt_in), and a bare key
+		// that reads both ways (fields check and check_in) is refused.
+		name, op, ok, keyErr := ReadKey(key, named)
+		if ok {
+			if keyErr != nil {
+				// An ambiguous bare key, or a bracket naming no operator:
+				// refused even under Lenient, which drops unknown keys,
+				// never a known field's.
+				if malformed == "" || key < malformed {
+					malformed, malformedErr = key, keyErr
+				}
 				continue
 			}
-			fieldName := strings.TrimSuffix(key, s.Suffix)
 			// Refuse a NoQuery column BEFORE resolving an alias to it. The
 			// map holds both spellings, so ?writer_like= is refused for the
 			// same reason ?author_id_like= is.
-			if noQuery[fieldName] {
-				if !o.lenient && (blocked == "" || fieldName < blocked) {
-					blocked = fieldName
+			if noQuery[name] {
+				if !o.lenient && (blocked == "" || name < blocked) {
+					blocked = name
 				}
-				matched = true
-				break
+				continue
 			}
 			// Accept both the raw column name and a WireName override;
 			// resolve to the DB column for the WHERE clause.
-			col := fieldName
+			col := name
 			if !fieldSet[col] {
-				if w, ok := wireAlias[col]; ok {
-					col = w
-				} else {
+				col = wireAlias[col]
+			}
+			if op != OpEq {
+				// An operator the column's type refuses. Lenient drops it,
+				// as it always has for a suffixed key; equality goes
+				// through add, which refuses it either way.
+				if err := CheckOpType(name, op, colType[col]); err != nil {
+					if !o.lenient {
+						recordMistyped(key, err)
+					}
 					continue
 				}
 			}
-			if err := CheckOpType(fieldName, s.Op, colType[col]); err != nil {
-				if !o.lenient {
-					recordMistyped(key, err)
-				}
-				matched = true
-				break
-			}
-			if s.Op == OpIn {
+			if op == OpIn {
 				parts, total := SplitINValuesBounded(values, MaxINListEntries)
 				if total > MaxINListEntries {
 					// Fail closed: a truncated list silently narrows the
@@ -542,38 +575,11 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 					}
 				} else {
 					for _, p := range parts {
-						add(key, fieldName, col, OpIn, p)
+						add(key, name, col, OpIn, p)
 					}
 				}
 			} else if v, ok := single(key, values); ok {
-				add(key, fieldName, col, s.Op, v)
-			}
-			matched = true
-			break
-		}
-		if matched {
-			continue
-		}
-
-		// A plain known field name: equality. A key that ends in an operator
-		// suffix whose cut name is not a field (opt_in, check_in) lands here
-		// too, as the whole field name.
-		if noQuery[key] {
-			if !o.lenient && (blocked == "" || key < blocked) {
-				blocked = key
-			}
-			continue
-		}
-		if fieldSet[key] {
-			if v, ok := single(key, values); ok {
-				add(key, key, key, OpEq, v)
-			}
-			continue
-		}
-		// WireName override on a plain key (no suffix): resolve to column.
-		if col, ok := wireAlias[key]; ok {
-			if v, ok := single(key, values); ok {
-				add(key, key, col, OpEq, v)
+				add(key, name, col, op, v)
 			}
 			continue
 		}
@@ -598,6 +604,9 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	}
 	if unknown != "" {
 		return nil, unknownFilterError(unknown, names)
+	}
+	if malformedErr != nil {
+		return nil, malformedErr
 	}
 	if repeated != "" {
 		return nil, i18n.NewError(reasonRepeatedFilter, map[string]any{"key": strconv.Quote(repeated), "count": repeatedCount})
@@ -640,11 +649,12 @@ func unknownFilterError(key string, fieldNames []string) error {
 // none.
 func nearestField(key string, fieldNames []string) string {
 	base := key
-	for _, s := range FilterSuffixes {
-		if before, ok := strings.CutSuffix(base, s.Suffix); ok {
-			base = before
-			break
-		}
+	if name, _, ok := splitBracket(key); ok {
+		// ?titel[gte]= suggests "title": the name is the whole text
+		// before the brackets.
+		base = name
+	} else if cut, _, ok := cutSuffix(key); ok {
+		base = cut
 	}
 	// The key arrives straight off the request URL (a query-param NAME,
 	// unauthenticated, no body). Levenshtein's cost is len(key) ×

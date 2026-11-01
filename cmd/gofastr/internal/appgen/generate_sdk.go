@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
@@ -727,14 +728,51 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	if exampleField != nil {
 		filterField = exampleField.Snake
 	}
+	// Spelled the way the server reads them: a bare key that reads two
+	// ways (a field beside its name plus a suffix) takes the bracket form.
+	eqKey := first.filterKeys.Key(filterField, filter.OpEq)
 	if filterOp == "" {
-		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality; _ne and _in suit every column\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", filterField, first.Struct)
+		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality; _ne and _in suit every column\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", eqKey, first.Struct)
 	} else {
-		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // ne/gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", filterField, filterField+filterOp, first.Struct)
+		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // ne/gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", eqKey, first.filterKeys.Key(filterField, filter.OpGte), first.Struct)
 	}
+	sb.WriteString(sdkBracketKeysNote(spec))
 	sb.WriteString("Validation errors return `*APIError`; its `Body` holds the JSON envelope\n`{\"error\", \"success\", \"code\", \"reason\", \"fields\", \"field_reasons\"}`: `error` is the\nmessage in the request's locale and `reason` its stable code; `fields` keys are\nsnake_case column names and `field_reasons` holds each message's code.\n\n")
 	sb.WriteString("`Do(ctx, method, path, body, out)` is the escape hatch for custom endpoints\nand presence-faithful `map[string]any` bodies. `Watch<Entity>` subscribes to\nthe live SSE feed. `Batch*` methods hit the atomic `_batch` routes.\n")
 	return sb.String()
+}
+
+// sdkBracketKeysNote is the readme paragraph naming every filter key
+// of the spec that reads two ways (a field beside its name plus a
+// suffix), which the server answers 400, with the bracket spellings
+// that pick one. A spec with no such key gets no paragraph, so its
+// readme is unchanged.
+func sdkBracketKeysNote(spec sdkSpec) string {
+	var lines []string
+	for _, e := range spec.Entities {
+		for _, key := range e.filterKeys.AmbiguousKeys() {
+			// sdkFenceWord holds the names to the code-span alphabet;
+			// the brackets are added after, from the fixed op words.
+			safe := sdkFenceWord(key)
+			lines = append(lines, fmt.Sprintf("- `%s` on `%s`: send `%s` (equality on `%s`) or `%s`",
+				safe, sdkFenceWord(e.Table), filter.BracketKey(safe, filter.OpEq), safe, bracketSplit(safe)))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "These filter keys name a field and also another field plus an operator\nsuffix, so the server answers the bare key 400. Send the operator word in\nbrackets after the whole field name (eq, ne, gt, gte, lt, lte, like, in):\n\n" + strings.Join(lines, "\n") + "\n\n"
+}
+
+// bracketSplit spells the suffix reading of an ambiguous key in bracket
+// form: stage_in is stage[in].
+func bracketSplit(key string) string {
+	for _, s := range filter.FilterSuffixes {
+		if base, ok := strings.CutSuffix(key, s.Suffix); ok {
+			return filter.BracketKey(base, s.Op)
+		}
+	}
+	return key
 }
 
 // sdkExampleFilter picks the readme's example filter column and
