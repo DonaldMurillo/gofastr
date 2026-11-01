@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -558,19 +557,7 @@ func datePickerDay(b Box, p DatePickerProps, w *Strings, d time.Time, tabDay str
 func (p DatePickerProps) monthHref(month time.Time) string {
 	q := scrubbedQuery(p.Query)
 	q.Set(orDefault(p.MonthParam, "month"), month.Format(isoMonth))
-	href := "?" + q.Encode()
-	if p.Path != "" {
-		u, err := url.Parse(p.Path)
-		if err != nil {
-			panic("headless: DatePicker Path " + strconv.Quote(p.Path) + " does not parse as a URL: " + err.Error())
-		}
-		u.RawQuery = q.Encode()
-		href = u.String()
-	}
-	if urlsafe.CleanAnchor(href) == "" {
-		panic("headless: DatePicker Path " + strconv.Quote(p.Path) + " is not a URL the anchor policy allows")
-	}
-	return href
+	return queryHref("DatePicker", p.Path, q)
 }
 
 func init() {

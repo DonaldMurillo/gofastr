@@ -414,12 +414,20 @@ func pageHref(p PaginationProps, page int) string {
 	// carries may still hold the last page, and p=2&p=3 is two
 	// answers to one question. Add would append; Set does not.
 	q.Set(orDefault(p.PageParam, "p"), strconv.Itoa(page))
+	return queryHref("Pagination", p.Path, q)
+}
 
+// queryHref is a same-page anchor's href: query q on path, or on the
+// current document ("?query") when path is empty. Built through
+// net/url and never by substitution, and held to the anchor policy;
+// component names the caller in a refusal. Pagination's page anchors
+// and DatePicker's month anchors are both this shape.
+func queryHref(component, path string, q url.Values) string {
 	href := "?" + q.Encode()
-	if p.Path != "" {
-		u, err := url.Parse(p.Path)
+	if path != "" {
+		u, err := url.Parse(path)
 		if err != nil {
-			panic("headless: Pagination Path " + strconv.Quote(p.Path) + " does not parse as a URL: " + err.Error())
+			panic("headless: " + component + " Path " + strconv.Quote(path) + " does not parse as a URL: " + err.Error())
 		}
 		u.RawQuery = q.Encode()
 		href = u.String()
@@ -427,7 +435,7 @@ func pageHref(p PaginationProps, page int) string {
 	// Every href this package writes goes through the anchor policy;
 	// same-origin and the scrub have refused what a refusal is for.
 	if urlsafe.CleanAnchor(href) == "" {
-		panic("headless: Pagination Path " + strconv.Quote(p.Path) + " is not a URL the anchor policy allows")
+		panic("headless: " + component + " Path " + strconv.Quote(path) + " is not a URL the anchor policy allows")
 	}
 	return href
 }
