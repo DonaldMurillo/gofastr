@@ -749,5 +749,3 @@ notes:
       uses:
         - gofastr/battery/auth.RefreshOAuthToken
         - gofastr/battery/auth.ValidOAuthToken
-        - gofastr/battery/auth.OAuth2Plugin.ValidOAuthToken
-        - gofastr/battery/auth.OAuth2Plugin.RefreshOAuthToken
