@@ -229,9 +229,11 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("{\n")
 	b.WriteString("  \"data\": [...],\n")
 	b.WriteString("  \"cursor\": \"opaque-string-for-next-page\",\n")
-	b.WriteString("  \"hasMore\": true,\n")
-	b.WriteString("  \"total\": 42\n")
+	b.WriteString("  \"hasMore\": true\n")
 	b.WriteString("}\n```\n\n")
+	// No total: the cursor route deliberately skips the COUNT
+	// (serveCursorList), so documenting one sent agents after a field
+	// that never arrives.
 
 	// GET /{table}/{id}
 	fmt.Fprintf(&b, "### GET %s\n\n", recordPath)
