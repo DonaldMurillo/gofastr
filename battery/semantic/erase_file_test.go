@@ -220,3 +220,44 @@ func TestClosedIndexLeavesErasure(t *testing.T) {
 		t.Errorf("store erasers after Close = %+v, want the index's gone", datexport.AllStoreErasers())
 	}
 }
+
+// A replace of the victim's document whose keyword delete failed left the
+// store without the document and its new version pending. The erasure
+// found nothing to remove, and its snapshot then applied the pending
+// replace, wrote the victim's text back to disk and reported success
+// (2026-10-31 review). The erasure finishes the pending write first and
+// removes what it restored.
+func TestEraseFinishesPendingReplace(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	kw := &flakyKeyword{MemoryKeyword: NewMemoryKeyword()}
+	idx, err := Open(Options{Embedder: NewStubEmbedder(16), Path: dir, Keyword: kw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	if err := idx.Add(ctx, Document{ID: "d", Text: "victim first diary", Owner: "victim"}); err != nil {
+		t.Fatal(err)
+	}
+	kw.fails = 1
+	if err := idx.Add(ctx, Document{ID: "d", Text: "victim second diary", Owner: "victim"}); err == nil {
+		t.Fatal("the failing keyword delete was not reported")
+	}
+	ix := idx.(*index)
+	if n, err := ix.eraseOwner(ctx, "victim", true); err != nil || n != 1 {
+		t.Fatalf("dry run = %d, %v; want the pending chunk counted", n, err)
+	}
+	n, err := ix.eraseOwner(ctx, "victim", false)
+	if err != nil || n != 1 {
+		t.Fatalf("erase = %d, %v; want 1 chunk removed", n, err)
+	}
+	if got := idx.Stats().Docs; got != 0 {
+		t.Errorf("Docs = %d after the erasure, want 0", got)
+	}
+	files := indexFiles(t, dir)
+	for _, text := range []string{"victim first diary", "victim second diary"} {
+		if bytes.Contains(files, []byte(text)) {
+			t.Errorf("index files still hold %q after the erasure", text)
+		}
+	}
+}

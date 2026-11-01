@@ -11,7 +11,12 @@ import (
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
+
+// syncDir flushes the index directory after a snapshot is renamed into
+// it; a variable so a test can watch the order against the WAL truncate.
+var syncDir = atomicfile.SyncDir
 
 // snapshotter is the optional Store capability needed for on-disk persistence
 // (Options.Path). FlatStore implements it; a custom Store that doesn't gets
@@ -99,16 +104,33 @@ func (i *index) registerEraser() {
 
 // eraseOwner removes every document whose chunks name owner and then
 // rewrites the snapshot, which empties the WAL (an index with no Path has
-// neither, and Snapshot does nothing). A remove is logged as a
+// neither, and the snapshot step does nothing). A remove is logged as a
 // record that names the documents, so the records that added them, text
 // included, stay in the WAL and the snapshot until one is rewritten. The
 // snapshot is rewritten even when owner has nothing left, since an earlier
 // remove leaves the same records behind. It returns the chunks removed;
 // with dryRun it removes nothing and returns how many it would.
+//
+// It holds i.mu from the selection through the snapshot, and first applies
+// a logged write that failed part-way: that write's chunks are in no
+// listing yet, and the snapshot would apply it, putting back the text the
+// erasure was meant to remove. A write that still cannot apply fails the
+// erasure, so it never reports success over text it could not reach.
 func (i *index) eraseOwner(ctx context.Context, owner string, dryRun bool) (int, error) {
 	cl, ok := i.store.(chunkLister)
 	if !ok {
 		return 0, fmt.Errorf("semantic: store %T cannot list its chunks, so the user's cannot be found", i.store)
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed {
+		return 0, ErrClosed
+	}
+	if dryRun {
+		return i.ownedChunksLocked(cl, owner), nil
+	}
+	if err := i.finishHalfAppliedLocked(); err != nil {
+		return 0, fmt.Errorf("semantic: the user's documents were not erased: %w", err)
 	}
 	var docs []string
 	seen := map[string]bool{}
@@ -123,18 +145,39 @@ func (i *index) eraseOwner(ctx context.Context, owner string, dryRun bool) (int,
 			docs = append(docs, c.DocID)
 		}
 	}
-	if dryRun {
-		return n, nil
-	}
 	if len(docs) > 0 {
-		if err := i.Remove(ctx, docs...); err != nil {
+		if err := i.replaceLocked(context.WithoutCancel(ctx), docs, nil); err != nil {
 			return 0, err
 		}
 	}
-	if err := i.Snapshot(); err != nil {
+	if err := i.snapshotLocked(); err != nil {
 		return 0, fmt.Errorf("semantic: documents removed, but the snapshot and WAL that still hold them were not rewritten: %w", err)
 	}
 	return n, nil
+}
+
+// ownedChunksLocked counts the chunks naming owner as the index stands
+// once a half-applied write finishes: the stored chunks of documents that
+// write does not replace, plus its own. The caller MUST hold i.mu.
+func (i *index) ownedChunksLocked(cl chunkLister, owner string) int {
+	pending := map[string]bool{}
+	n := 0
+	if p := i.halfApplied; p != nil {
+		for _, id := range p.docIDs {
+			pending[id] = true
+		}
+		for _, c := range p.chunks {
+			if c.Owner == owner {
+				n++
+			}
+		}
+	}
+	for _, c := range cl.AllChunks() {
+		if c.Owner == owner && !pending[c.DocID] {
+			n++
+		}
+	}
+	return n
 }
 
 // storeDim returns the store's vector dimension, asking Stats only while
@@ -436,6 +479,11 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	return i.replaceLocked(ctx, docIDs, chunks)
+}
+
+// replaceLocked is replace past its checks. The caller MUST hold i.mu.
+func (i *index) replaceLocked(ctx context.Context, docIDs []string, chunks []Chunk) error {
 	// A store that replaces documents in one transaction of its own
 	// (PgVectorStore) does so: removing and adding as separate steps loses
 	// the old version when the add fails, and i.mu does not reach a second
@@ -719,6 +767,13 @@ func (i *index) snapshotLocked() error {
 	snapPath := filepath.Join(i.path, "store.snap")
 	if err := s.Snapshot(snapPath); err != nil {
 		return err
+	}
+	// The snapshot is renamed into place, and a rename is durable only
+	// once its directory is synced. Truncating the WAL first, a power loss
+	// could keep the empty WAL beside the old snapshot: the writes since
+	// lost, and an erasure's removed text back.
+	if err := syncDir(i.path); err != nil {
+		return fmt.Errorf("semantic: fsync index dir after snapshot: %w", err)
 	}
 	if i.wal != nil {
 		if err := i.wal.truncate(); err != nil {
