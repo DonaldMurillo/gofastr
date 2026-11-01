@@ -657,8 +657,11 @@ const (
 	// and the RPC bridge yielding only to a mounted widget (4); the
 	// navigator's click edges (a prevented click, a same-path click,
 	// the forced-fetch join), Back across a hash jump and the seed's
-	// own() (20).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20
+	// own() (20). Boot's mount pass marking each element it fires, so
+	// the actionloader module fires inserted markup's mounts without
+	// repeating a navigation's, adds 8 (the firing itself is the
+	// module's).
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1138,7 +1141,12 @@ const (
 	// forced-fetch join and Back across a hash jump. Each runs in the
 	// kernel's CSS loader, boot or the navigator before any demand module
 	// could, so none carves. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 18481
+	// Boot's mount pass marking the elements it fired measures 18488 at
+	// level 1; inserted markup's mounts were carved into the actionloader
+	// module (+59 in core before the carve), leaving only the mark the
+	// navigation pass must set. Two bytes of clearance, cliff fixture
+	// re-run.
+	coreCongestionWindowGZ = 18490
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1242,6 +1250,10 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestForcedNavigateNotDedupedByCacheReplay,
 		// TestBackAfterHashJumpRestoresScroll, TestNavSeedPrototypeNamedKey.
 		"nav click edges, forced-fetch join, Back across a hash jump, seed own()": 20, // (l1: 50)
+		// Measured 15905 → 15913: TestActionMountFiresForInsertedComponent.
+		// Firing inserted markup's mounts in boot measured +59; the firing
+		// moved to the actionloader module and only this mark stayed.
+		"boot's mount pass marks the elements it fired (_cuiM)": 8, // (l1: 9)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

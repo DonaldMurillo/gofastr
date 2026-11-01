@@ -738,12 +738,18 @@
   // view fetching one record, a relation <select> fetching its options, opts
   // in by carrying data-action-mount="<actionName>" on a node inside a
   // [data-component]. Re-runs on SPA nav so a swapped-in page repopulates.
+  // Each element this pass fires is marked (_cuiM): markup inserted
+  // outside a navigation (an overlay, an island swap, widget chrome) is
+  // the actionloader module's, which fires only unmarked elements, so the
+  // swap a navigation's pass already fired is not fired again when the
+  // mutation observer hands the same nodes over a microtask later.
   const _runMountActions = (root) => {
     const G = window.__gofastr;
     if (!G || !G.trigger) return;
     const scope = root || document;
     for (const el of scope.querySelectorAll('[data-action-mount]')) {
       const action = el.getAttribute('data-action-mount');
+      el._cuiM = 1;
       if (!action) continue;
       const name = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
       if (!name) continue;

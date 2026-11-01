@@ -1652,6 +1652,12 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 
 type renderAltKey struct{}
 
+// staticExportKey marks a render for a static export (RenderStaticPage*,
+// RenderStaticNotFoundPage). The head built for it differs from the PWA
+// offline shell's, which shares the export mode but runs the live
+// runtime: the export's static runtime never loads rpc.js.
+type staticExportKey struct{}
+
 // withRenderAlt marks ctx when res is a RenderAlt answer, for the head
 // built after it (screenOwns).
 func withRenderAlt(ctx context.Context, res app.RenderResult) context.Context {
@@ -2357,7 +2363,13 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// the rendered page. Lets the browser parallel-fetch modules with
 	// initial render instead of stalling on hover/click. Content-
 	// addressed ?v=<hash> URLs match the immutable cache headers.
-	if preloads := runtimeModulePreloadLinks(page); preloads != "" {
+	// A static export's runtime answers data-cui-rpc with its rpc stub and
+	// boot never loads the rpc module, so its preload was a wasted fetch.
+	skip := ""
+	if ctx.Value(staticExportKey{}) != nil {
+		skip = "rpc"
+	}
+	if preloads := runtimeModulePreloadLinks(page, skip); preloads != "" {
 		headClose.WriteString(preloads)
 		headClose.WriteByte('\n')
 	}
@@ -4624,6 +4636,7 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 // this record and refuses. Same rendering semantics as
 // RenderStaticPage.
 func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (string, []app.FillFailure, error) {
+	ctx = context.WithValue(ctx, staticExportKey{}, true)
 	// The chrome renders with the same context a live request gets. A
 	// layout component that reads the path from the request, such as a
 	// sidebar for the section being read or a header whose language follows
@@ -4689,6 +4702,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 	if ds.App == nil || ds.App.Router.GetDefaultLayout() == nil {
 		return "", false
 	}
+	ctx = context.WithValue(ctx, staticExportKey{}, true)
 	if app.RequestFromContext(ctx) == nil {
 		if req, err := pageRequest(ctx, path); err == nil {
 			ctx = app.WithRequest(ctx, req)
@@ -5163,13 +5177,16 @@ func runtimeModuleManifestScript() string {
 // priority and competes with the stylesheets and the document itself
 // for the first-paint bandwidth. Modules hydrate after paint, so the
 // hint only has to land before the kernel asks for them.
-func runtimeModulePreloadLinks(pageHTML string) string {
+func runtimeModulePreloadLinks(pageHTML string, skip ...string) string {
 	mods := runtime.NeededModules(pageHTML)
 	if len(mods) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	for _, name := range mods {
+		if slices.Contains(skip, name) {
+			continue
+		}
 		hash := widget.RuntimeModuleHash(name)
 		href := "/__gofastr/runtime/" + name + ".js"
 		if hash != "" {

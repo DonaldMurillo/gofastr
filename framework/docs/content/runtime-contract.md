@@ -333,7 +333,14 @@ input/change/submit). `data-action-mount="<name>"` fires the named action
 *once on hydration* (and again after each SPA nav): the hook a server-rendered
 island uses to populate itself on load, since the other triggers are
 user-event-driven. Any `data-param-*` on the element flows into the handler's
-`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`.
+`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`. Markup inserted outside a navigation (an intercepted
+route's overlay, an island swap, a widget's chrome) fires its mounts too,
+each element once, through the `actionloader` module a page with compiled
+actions loads (boot marks what its own pass fired). The module also
+fetches the compiled action script of a component such markup brings (retrying one that
+failed to load), then fires that component's mounts once it registers
+(`core-ui/runtime/action_mount_inserted_e2e_test.go`,
+`actionloader_inserted_e2e_test.go`).
 
 **Response headers the runtime understands:**
 
@@ -627,6 +634,9 @@ another replica mid-deploy, no version at all) is `no-cache` with the
 content hash as its `ETag`, so a browser or CDN never pins one build's
 bytes under another build's URL. A static export writes every registered
 compute asset to `/__gofastr/compute/` beside the runtime modules.
+An exported page's head preloads the demand modules it uses except
+`rpc.js`: the static runtime answers `data-cui-rpc` with its stub and never
+loads the module.
 A malformed block (a `window.__gofastr_behaviors` that is not a
 descriptor map, an inline `#gofastr-behaviors` that is not JSON) is
 ignored: the kernel registers no behaviours and boots on its own

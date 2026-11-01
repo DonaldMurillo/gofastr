@@ -137,6 +137,11 @@ few lines, and link the PR or the docs page for the rest.
   - The JS minifier no longer hangs on `x = {} / 2` followed by a newline,
     and keeps ASI newlines, regex flags, empty statements, CR/U+2028
     line ends and class fields named `const` intact.
+  - `data-action-mount` fires for markup inserted outside a navigation
+    (an intercepted route's overlay, an island swap, widget chrome), once
+    per element, and the component's compiled action script loads for it.
+    Static exports stop preloading `rpc.js`, which their runtime never
+    loads.
   - `reveal` leaves content already on screen at load visible instead
     of blinking it; the theme toggles work with site storage blocked.
 - **Images.** `StripMetadata` keeps the Adobe colour marker, so a
