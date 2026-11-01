@@ -4496,22 +4496,32 @@ func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (stri
 	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
 		return "", false
 	}
+	return ds.LLMMDWithSEO(ctx, base, scr, res), true
+}
+
+// LLMMDWithSEO is the llm.md the host serves for res, the doc
+// app.ScreenLLMMDForPath rendered for the concrete URL base of screen
+// scr: its markdown behind the screen's SEO front matter. The static
+// export writes it too, so an exported doc matches the served one. ctx
+// is the context the doc rendered under.
+func (ds *UIHost) LLMMDWithSEO(ctx context.Context, base string, scr *app.Screen, res app.ScreenLLMMDResult) string {
 	md := res.MD
 	// SEO front matter ONLY for an allowed render, resolved against the
 	// LOADED instance (the registration instance is a zero-value template
 	// for dynamic routes, and for a non-Allow decision, all
 	// component-supplied metadata is policy-protected).
-	if res.Allowed {
-		title := res.Title
-		if title == "" {
-			title = scr.Title
-		}
-		seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
-		if fm := screenSEOFrontMatter(title, seo); fm != "" {
-			md = fm + "\n" + md
-		}
+	if !res.Allowed {
+		return md
 	}
-	return md, true
+	title := res.Title
+	if title == "" {
+		title = scr.Title
+	}
+	seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
+	if fm := screenSEOFrontMatter(title, seo); fm != "" {
+		md = fm + "\n" + md
+	}
+	return md
 }
 
 // PageHandler returns an http.HandlerFunc that renders the registered

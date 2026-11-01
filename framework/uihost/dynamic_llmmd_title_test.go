@@ -209,3 +209,21 @@ func TestGatedLLMMDHasNoFrontMatter(t *testing.T) {
 		t.Errorf("expected withheld doc:\n%s", body)
 	}
 }
+
+// A gated screen that declares SEO serves no front matter either: its
+// description and canonical are the screen's own words.
+func TestGatedLLMMDHidesSEO(t *testing.T) {
+	a := app.NewApp("gated-seo")
+	a.Register("/", &testHomeComp{}, nil)
+	deny := app.PolicyFunc(func(context.Context) app.Decision {
+		return app.Decision{Kind: app.DecisionBlock, Status: 403}
+	})
+	a.RegisterScreen(app.NewScreen("/ledger", &ledgerComp{}).WithPolicy(deny), nil)
+	ds := New(a, WithPublicLLMMD())
+
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ledger/llm.md", nil))
+	if md := rec.Body.String(); strings.Contains(md, "LEDGER") || strings.HasPrefix(md, "---") {
+		t.Errorf("gated llm.md leaked its SEO:\n%s", md)
+	}
+}

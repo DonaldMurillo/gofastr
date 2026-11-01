@@ -104,6 +104,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A static export's `llm.md` carries the page's SEO front matter.** The
+  live `/llm.md` opens with the screen's description, canonical and
+  other head metadata; the exported file was the bare doc. Both now go
+  through the new `UIHost.LLMMDWithSEO`, so an exported doc matches the
+  served one byte for byte.
 - **One A2A caller can no longer take every push-delivery slot.** The 16
   in-flight deliveries and the 16-event backlog were shared by every
   owner, so a caller whose receiver hung held them all and every other
