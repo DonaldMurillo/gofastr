@@ -54,3 +54,20 @@ func TestQuoteIndexNameFitsBarePart(t *testing.T) {
 		t.Errorf("QuoteIndexName(%q) = %s, want %s", short, got, want)
 	}
 }
+
+// ObjectName trims the longer part first, the way Postgres names an
+// inline constraint, so short column names on a long table stay apart.
+func TestObjectNameTrimsLongerPart(t *testing.T) {
+	table := "t" + strings.Repeat("x", 57)
+	for _, tc := range []struct{ col, want string }{
+		{"email", table[:53] + "_email_key"},
+		{"email_alt", table[:49] + "_email_alt_key"},
+	} {
+		if got := ObjectName(table, tc.col, "key"); got != tc.want {
+			t.Errorf("ObjectName(%d bytes, %q) = %q, want %q", len(table), tc.col, got, tc.want)
+		}
+	}
+	if got := ObjectName("widgets", "sku", "key"); got != "widgets_sku_key" {
+		t.Errorf("short name = %q, want widgets_sku_key", got)
+	}
+}

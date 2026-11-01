@@ -54,6 +54,28 @@ func FitIdent(name string) string {
 	return name[:MaxIdentBytes-9] + "_" + hex.EncodeToString(sum[:4])
 }
 
+// ObjectName is the name Postgres gives an object it names itself from
+// two parts and a label, name1_name2_label (makeObjectName): the inline
+// UNIQUE constraint of column c on table t is ObjectName(t, c, "key").
+// When the whole is past MaxIdentBytes it trims the longer part one byte
+// at a time until it fits, so a short column name survives a long table
+// name and two columns of one table keep distinct names. The parts are
+// validated identifiers (ASCII), so a cut never splits a character.
+// Postgres adds a digit to the label when the name is already taken;
+// ObjectName does not.
+func ObjectName(name1, name2, label string) string {
+	avail := MaxIdentBytes - len(label) - 2
+	n1, n2 := len(name1), len(name2)
+	for n1+n2 > avail {
+		if n1 > n2 {
+			n1--
+		} else {
+			n2--
+		}
+	}
+	return name1[:n1] + "_" + name2[:n2] + "_" + label
+}
+
 // MustIdent is like SafeIdent but panics on invalid identifiers.
 // Use in init/config-time code where the identifier is a hard-coded constant.
 func MustIdent(s string) string {

@@ -78,9 +78,11 @@ func recordedUniqueColumns(ddl string) ([]string, bool) {
 }
 
 // uniqueIndexName names the unique index a field-level Unique column gets
-// outside CREATE TABLE, the name Postgres gives the inline constraint.
+// outside CREATE TABLE, the name Postgres gives the inline constraint
+// (entity.UniqueKeyName). Past 63 bytes it is trimmed the way Postgres
+// trims that name, so two long names no longer cut to one index name.
 func uniqueIndexName(ent *entity.Entity, col string) (string, error) {
-	name, err := query.SafeIdent(tableBase(ent.GetTable()) + "_" + col + "_key")
+	name, err := query.SafeIdent(entity.UniqueKeyName(ent.GetTable(), col))
 	if err != nil {
 		return "", fmt.Errorf("invalid unique index name for %q: %w", col, err)
 	}

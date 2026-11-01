@@ -443,7 +443,19 @@ names that shared those bytes named one index, so the second unique
 index was skipped. The index names the framework's own stores derive
 from a configured table (`query.QuoteIndexName`) fit the same way. A
 table that has such an index from an older build gets the new name on
-the next boot, beside the old one, which you can drop.
+the next boot, beside the old one, which you can drop. `gofastr migrate
+generate` from a snapshot an older build wrote does the same: it creates
+the index under the new name and never drops the old one, since a
+foreign key you added by hand may depend on a unique index and the drop
+would fail.
+
+A `Unique` field's `<table>_<column>_key` is named the way Postgres
+names the inline constraint `CREATE TABLE` writes
+(`entity.UniqueKeyName`, `query.ObjectName`): past 63 bytes the longer
+of the table and column parts is trimmed, so two columns of one long
+table keep distinct names, the index a later `Unique` gets matches the
+constraint a new table gets, and a unique violation on either maps to
+its field.
 
 The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
 

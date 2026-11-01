@@ -537,7 +537,11 @@ notes:
   - change: "a default index name, or a store index name derived from a configured table, longer than Postgres's 63-byte limit keeps its first 54 bytes and appends an 8-hex hash of the full name, so two long names that share a prefix no longer collide; shorter names are unchanged"
     breaking: false
     nodetect: "only names past 63 bytes change; nothing in an app's source spells the derived name"
-    guidance: "On Postgres the next boot creates the index under the new name and the old truncated one stays. Drop the old index by hand once the new one exists."
+    guidance: "On Postgres the next boot creates the index under the new name and the old truncated one stays; gofastr migrate generate from an older snapshot also creates it and drops nothing. Drop the old index by hand once the new one exists, after moving any foreign key that depends on it."
+  - change: "a Unique field's <table>_<column>_key index is named the way Postgres names the inline UNIQUE constraint, trimming the longer part past 63 bytes, so two Unique columns of one long table both get their index, and a unique or foreign-key violation on a long table maps to its field"
+    breaking: false
+    nodetect: "only names past 63 bytes change; nothing in an app's source spells the derived name"
+    guidance: "Nothing to do. A column whose unique index an older build skipped gets it on the next boot; rows that already repeat a value fail that boot, and the error names the column. A unique index an older build added under a name past 63 bytes is not found when Unique is later cleared on Postgres; drop it by hand."
   - change: "BREAKING - a JSON field takes no filter: ?field=, _ne, _in, a ?where= leaf, relation and include-scoped filters, the DSL and the MCP list tool answer 400, and the OpenAPI spec, generated CLI and SDK readmes stop offering one"
     breaking: true
     hits: review

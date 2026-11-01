@@ -1433,13 +1433,29 @@ func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*enti
 		if err != nil {
 			return t
 		}
-		switch ft := keyColumnType(target, pk, all, dialect, seen); ft {
-		case "INTEGER", "BIGINT":
-			return ft
+		if ft := keyColumnType(target, pk, all, dialect, seen); isIntegerType(ft) {
+			return integerFKType(ft, dialect)
 		}
 		return t
 	}
 	return t
+}
+
+// integerFKType is the column type of a foreign key to an integer key of
+// type keyType, any spelling isIntegerType accepts (a RawType "INT", a
+// lower-case "int8", a SERIAL). SQLite has one integer type; Postgres
+// keeps the key's width.
+func integerFKType(keyType string, dialect Dialect) string {
+	if dialect != DialectPostgres {
+		return "INTEGER"
+	}
+	switch canonicalType(keyType, DialectPostgres) {
+	case "bigint", "int8":
+		return "BIGINT"
+	case "smallint", "int2":
+		return "SMALLINT"
+	}
+	return "INTEGER"
 }
 
 // generatedPivots yields each many_to_many relation whose Through table the

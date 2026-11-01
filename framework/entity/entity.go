@@ -255,6 +255,20 @@ func DefaultIndexName(table string, cols []string) string {
 	return query.FitIdent("idx_" + table + "_" + strings.Join(cols, "_"))
 }
 
+// UniqueKeyName is the name of a Unique field's constraint or index:
+// <table>_<col>_key, the table's own name (its schema left off), named
+// the way Postgres names the inline UNIQUE constraint CREATE TABLE writes
+// (query.ObjectName). Past 63 bytes the longer part is trimmed, so the
+// index migrate creates for a column made Unique later, the constraint
+// CREATE TABLE made, and the name a unique violation reports all agree,
+// and two columns of one long table keep distinct names.
+func UniqueKeyName(table, col string) string {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		table = table[i+1:]
+	}
+	return query.ObjectName(table, col, "key")
+}
+
 // Endpoint declares a custom route owned by an entity.
 //
 // Path may be absolute ("/posts/{id}/publish") or relative to the entity table

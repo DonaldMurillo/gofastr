@@ -145,6 +145,32 @@ func TestNotNullColumnByDriver(t *testing.T) {
 	}
 }
 
+// On a long table Postgres trims the longer part of <table>_<col>_key and
+// <table>_<col>_fkey to fit 63 bytes; the refusal names that trimmed
+// constraint, which the untrimmed spelling never matched (round 3 review
+// of M7).
+func TestConflictColumnsLongTable(t *testing.T) {
+	table := "t" + strings.Repeat("x", 57)
+	ent := entity.Define("longinv", entity.EntityConfig{
+		Name: "longinv", Table: table,
+		Fields: []schema.Field{
+			{Name: "email", Type: schema.String, Unique: true},
+			{Name: "customer_id", Type: schema.Relation, To: "customers"},
+		},
+	}.WithTimestamps(false))
+	for _, c := range []struct {
+		msg  string
+		want []string
+	}{
+		{`pq: duplicate key value violates unique constraint "` + table[:53] + `_email_key"`, []string{"email"}},
+		{`ERROR: insert or update on table "` + table + `" violates foreign key constraint "` + table[:46] + `_customer_id_fkey" (SQLSTATE 23503)`, []string{"customer_id"}},
+	} {
+		if got := conflictColumns(ent, c.msg); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s\n got %v, want %v", c.msg, got, c.want)
+		}
+	}
+}
+
 func TestConflictColumnsByDriver(t *testing.T) {
 	ent := entity.Define("inv", entity.EntityConfig{
 		Name: "inv", Table: "inv",

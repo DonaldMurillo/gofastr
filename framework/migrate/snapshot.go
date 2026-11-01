@@ -965,6 +965,26 @@ func isIndexDrop(sql string) bool {
 	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "DROP INDEX")
 }
 
+// refitted reports whether prev index name, past 63 bytes, is today's
+// query.FitIdent name of the same index: desired holds the fitted name
+// with the same definition. An older build created such an index under
+// the raw name, which Postgres cut to 63 bytes. The diff creates the
+// fitted index and keeps the old one rather than dropping it: a foreign
+// key a developer added by hand may depend on a unique index, and the
+// DROP fails then. The old index is left for the developer to drop.
+func refitted(name, prevDDL string, desired map[string]string) bool {
+	if len(name) <= query.MaxIdentBytes {
+		return false
+	}
+	fitted := query.FitIdent(name)
+	ddl, ok := desired[strings.ToLower(fitted)]
+	if !ok {
+		return false
+	}
+	norm := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), ";") }
+	return norm(strings.Replace(prevDDL, name, fitted, 1)) == norm(ddl)
+}
+
 // diffTableIndices compares desired index DDLs against previous index DDLs for a table,
 // emitting CREATE INDEX for new indices and DROP INDEX for removed indices.
 func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string) []SchemaChange {
@@ -1028,6 +1048,9 @@ func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string)
 			continue
 		}
 		if _, ok := desiredMap[strings.ToLower(name)]; !ok {
+			if refitted(name, ddl, desiredMap) {
+				continue
+			}
 			changes = append(changes, SchemaChange{
 				Summary:     fmt.Sprintf("%s: remove index %s", entName, safeName),
 				SQL:         dropIndexSQL(safeTable, safeName),
