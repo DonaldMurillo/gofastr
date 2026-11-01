@@ -5,16 +5,6 @@ import (
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
-// Theme returns the macOS desktop theme preset. It remains the
-// compatibility shorthand for ThemeFor("darwin"). Use ThemeFor with
-// runtime.GOOS when the app should use its host platform's preset.
-//
-//	site := app.NewApp("Focus")
-//	site.WithTheme(desktopui.Theme())
-func Theme() style.Theme {
-	return ThemeFor("darwin")
-}
-
 // ThemeFor returns the canonical adaptive desktop theme with token
 // values for goos, using the names returned by runtime.GOOS. The token
 // fields stay the same across platforms. Windows and Linux presets use

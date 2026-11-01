@@ -129,6 +129,7 @@ type winShell struct {
 	onFocus     func(string)
 	onBlur      func(string)
 	onDeepLink  func(string)
+	deepLinks   deepLinkLine
 	ready       func(desktop.Window)
 	runErr      error
 

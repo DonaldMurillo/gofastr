@@ -400,7 +400,10 @@ decision is written on a context detached from the request, because a
 page that aborts its own fetch must not be able to make the user's
 Deny unwritable, which is the whole point of persisting it. The alert
 itself is bounded by `modalTimeout` (10 minutes), not by the default
-main-thread deadline.
+main-thread deadline. One alert shows at a time. A first-time call that
+arrives while an alert is up waits for it and then reads the stored
+answer; if its own request ends first, it returns `cancelled` without
+prompting.
 
 ## The JS bridge
 
@@ -729,7 +732,11 @@ directly. The request rides the WebView's script message channel
 (`window.webkit.messageHandlers.gofastr`), not the HTTP bridge:
 `performWindowDragWithEvent:` needs the mouse-down that is still the
 current event on the UI thread, and by the time an HTTP round-trip
-came back it no longer would be. In a plain browser (`--serve`) there
+came back it no longer would be. WebKitGTK exposes the same handler
+name, but its message arrives from the web process after GTK has moved
+past the press, so the Linux shell starts the move from the last
+primary-button press the web view saw and ignores the message once that
+button is released. In a plain browser (`--serve`) there
 is no message handler and the call is a no-op, so screens carrying the
 attribute render unchanged there.
 
@@ -765,8 +772,21 @@ window it lives in.
 The style contracts are OS-neutral. macOS/arm64 and Windows/amd64
 implement native chrome (see the platform package layout). Linux supports
 standard GTK decorations, borderless windows, resizability and window-manager
-placement/keep-above hints. Unified/hidden title bars and transparent materials
-fall back to ordinary opaque GTK windows. On Windows 11 the shell asks DWM for dark frame colors,
+placement/keep-above hints. Unified and hidden title bars fall back to GTK's
+own decorations. `Transparent` works when a compositing manager is running and
+the screen has an RGBA visual: the shell gives the window that visual, clears
+the GTK window background and WebKit's page background, and the desktop shows
+where the page paints nothing. A material needs more than that. The shell asks
+for blur behind the window only from KWin on X11 with its blur effect on
+(`_KDE_NET_WM_BLUR_BEHIND_REGION`), and tints the window with the GTK theme's
+background color at 88% (`MaterialWindow`), 80% (`MaterialSidebar`) or 62%
+(`MaterialGlass`) opacity. Without blur a material window stays opaque, since
+a tint over a sharp desktop is harder to read than a solid window; a material
+window that also sets `Transparent` gets plain transparency instead. GNOME has
+no blur protocol, and the shell does not probe Wayland compositors for one.
+`[data-cui-window-drag]` regions move a Linux window: the page posts its drag
+message, and the shell starts a window-manager move from the primary-button
+press the web view saw, only while that button is still held. On Windows 11 the shell asks DWM for dark frame colors,
 rounded corners, and system materials. `MaterialWindow` maps to Mica,
 `MaterialSidebar` maps to whole-window Mica Alt, and `MaterialGlass`
 maps to whole-window Desktop Acrylic. DWM materials require Windows 11
@@ -894,7 +914,7 @@ import (
 )
 
 site := appui.NewApp("focus")
-site.WithTheme(desktopui.Theme())
+site.WithTheme(desktopui.ThemeFor(runtime.GOOS))
 layout := desktopui.Layout(
     appui.NewStaticComponent(desktopui.SourceList(desktopui.SourceListConfig{
         Label: "Focus",
@@ -928,6 +948,13 @@ user's settings, but the design system's color grammar refuses them
 (`TestColorGrammarRefusesSystemKeywords`), so the nearest values stand
 in. Values marked `// measured, unverified` in `theme.go` came from
 captures, not from Apple sources.
+
+The primary stays `#0071E3` on purpose. A filled button's label is 13px
+regular, and WCAG only relaxes the floor to 3:1 for large text (24px, or
+18.66px bold), so a large-text exception would not cover desktop buttons.
+The system blue stays on Accent, where no white text sits on it.
+`TestPrimaryStaysAAUnderWhite` fails if a theme swaps `#007AFF` into
+primary.
 
 `desktopui.Layout(sidebar)` is an `app.NewLayout` layout named
 `desktop`. Its build renders the desktop frame (`.desktopui-frame`):
@@ -1215,7 +1242,13 @@ path space, keeps the query, and drops the fragment:
 The result must pass the same grammar a menu `Navigate` path passes
 (leading `/`, no scheme, no control characters, no `.` or `..`
 segments, percent-encoded ones such as `%2e%2e` included); a link
-that cannot pass is dropped with a Warn. A link that reaches an app with
+that cannot pass is dropped with a Warn. The grammar decodes each path
+segment and also refuses one that decodes to a `/`, a `\` or a control
+character. Go's `ServeMux` decodes a `{name}` wildcard, so
+`gofastr-notes://files/..%2f..%2fsecret` would otherwise reach a
+`GET /files/{name}` handler as `PathValue("name") == "../../secret"`,
+and `%00` would reach it as a NUL byte. The query is not checked this
+way: it is the page's to decode. A link that reaches an app with
 no `DeepLink` config is dropped with a Warn as well. These are
 also dropped, each with a Warn and a scrubbed copy in the log: links on
 any other scheme (the match folds case, so `NOTES://` is the app's
@@ -1263,6 +1296,10 @@ Links that arrive before the window is up (a cold launch: the OS may
 deliver the URL event before the first window finished its boot
 navigation) are queued, at most 16, oldest dropped first with a Warn,
 and replayed in arrival order right after the boot navigation. A
+link that arrives while the window is coming up waits behind them:
+the battery checks for the window and writes its queue under the lock
+the replay takes, so no link lands in the queue after the replay has
+emptied it, and none overtakes a link queued before it. A
 queued link is validated and mapped when it arrives, so `OnDeepLink`
 runs once per link, never again at replay. Once the window is up, the
 pending delivery queue is also capped at 16 (in addition to the link
@@ -1273,11 +1310,18 @@ first with a scrubbed Warn instead of allowing an unbounded backlog.
 
 On macOS the URL arrives as a GetURL Apple Event (class `'GURL'`, id
 `'GURL'`). The darwin shell installs its handler before the run loop
-starts, so it receives cold-launch links too.
+starts, so it receives cold-launch links too. One goroutine hands the
+URLs to the battery in the order the events arrived, at most 16
+waiting.
 
 On Windows, the URL arrives as a command-line argument. A named
 per-app mutex keeps one process running; a second activation forwards
-the URL to the existing window. A cold-launch URL waits until the first
+the URL to the existing window. Every window the app opens (main,
+Settings, `OpenWindow`, `Config.Widgets`) shares one window class, and
+the second process finds the first of them in Z-order, so any of them
+accepts the forwarded URL. The main window is the one that comes
+forward and navigates. A forward of several URLs reaches the battery
+in order, through one goroutine, at most 16 waiting. A cold-launch URL waits until the first
 page has completed its boot navigation. The battery validates the
 scheme before it navigates or emits the event.
 
@@ -1314,11 +1358,16 @@ test double on every OS.
 
 The harness plays the OS: `h.OpenURL("gofastr-notes://notes/123")` fires the
 deep-link callback exactly as the shell would, before or after the
-window is up (`battery/desktop/deeplink_test.go`). On a Mac, the
+window is up (`battery/desktop/deeplink_test.go`). The race between a
+link and the window coming up is pinned by a test hook in
+`battery/desktop/deeplink_queue_test.go`. On Windows,
+`battery/desktop/windows/activation_deeplink_windows_test.go` hands
+`receiveDeepLink` the `WM_COPYDATA` payload a second instance sends, on
+the main, Settings and widget handles. On a Mac, the
 untagged suite exercises the real Apple Event handler: the test
 builds an `NSAppleEventDescriptor`, registers through
 `installDeepLinkHandler`, and invokes the handler IMP the way the
-manager does (`battery/desktop/shell_darwin_deeplink_test.go`); the
+manager does (`battery/desktop/macos/shell_darwin_deeplink_test.go`); the
 tagged e2e drives the whole chain in a live window
 (`battery/desktop/shell_darwin_e2e_test.go`, step 12).
 
@@ -1535,7 +1584,9 @@ unsupported host logs once and stops. So does a bundle whose
 `CFBundleShortVersionString` is not semver (`1.0`): the check answers
 `unsupported` with "this app's version is not major.minor.patch"
 instead of blaming the feed. Log lines never carry the feed URL or a
-path.
+filesystem path. A failed file operation logs the operation and the OS
+error (`rename: permission denied`), and `codesign` or `open` output
+names files relative to the bundle (`Notes.app: invalid signature`).
 
 ### The updates capability
 
@@ -1572,7 +1623,10 @@ the decision persists in `desktop_grants` like every other grant.
    refuse on failure.
 7. Swap: move the current bundle to `<Name>.app.old`, move the new one
    into place, `open -n` the new bundle, and quit. The next launch
-   removes a leftover `.old`.
+   removes a leftover `.old`. When the second move fails, the old
+   bundle is moved back. If that rollback fails too, `<Name>.app.old`
+   is the only copy of the app, and a later `install` refuses rather
+   than clear it; the log says to rename it back to `<Name>.app`.
 
 Every failure surfaces as one of the bridge's closed error codes with
 a fixed message; no path or URL ever reaches the page.
@@ -1609,7 +1663,11 @@ the `GOOS-GOARCH` grammar, a non-https archive URL, an archive
 that is not a zip with exactly one top-level `.app` directory, and an
 archive whose `Contents/Info.plist` does not declare `--version` as its
 `CFBundleShortVersionString` (build with the same `--version` you
-publish). The
+publish). It also extracts the archive into a temporary directory with
+the updater's own extractor, so anything a client would refuse is
+refused at release time instead: a stray top-level file (`README.txt`,
+`.DS_Store`), a zip with no directory entry for the bundle root, a
+symlink. `gofastr desktop build` writes archives that pass. The
 writer and the updater's verifier share one implementation
 (`desktop.SignUpdateFeed`), so the format cannot drift between them.
 
@@ -2447,6 +2505,49 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^Test
 CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^TestNativeGoFastrBridge$' -count=1 -v
 ```
 
+GTK and WebKit bind to the first thread that initializes them, so every shell
+lifetime in a process runs its GTK work on one toolkit thread, started on the
+first `Run` and locked to its OS thread for the life of the process. A
+lifetime releases ownership when `Run` returns, and the next `Run` starts a
+new window, a new ephemeral cookie store and the same thread. A `Run` while
+another lifetime is live returns an error instead of sharing GTK's main loop.
+A shell callback that calls `runtime.Goexit` ends the toolkit thread for good,
+and every later `Run` returns an error. `TestNativeGTKLifetimes` runs three
+lifetimes in one process, each started from a goroutine whose thread then
+exits, and checks the page, the cookie store, the concurrent refusal and that
+all three ran on one thread:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^TestNativeGTKLifetimes$' -count=1 -v
+```
+
+`TestNativeWindowEffects` reads screen pixels. Before a compositing manager
+runs, a `Transparent` window must stay opaque. With `xcompmgr` running it must
+show the root window's gray through the page, a glass window without blur must
+stay opaque, a drag message with no held press must not move the window, and
+an `xdotool` press-and-drag on a `data-cui-window-drag` handle must move it by
+the dragged distance. It needs `xcompmgr` and `xdotool`;
+`GOFASTR_LINUX_COMPOSITOR=1` turns a missing tool into a failure instead of a
+skip:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_COMPOSITOR=1 GDK_BACKEND=x11 xvfb-run -a   go test ./battery/desktop/linux -run '^TestNativeWindowEffects$' -count=1 -v
+```
+
+`TestNativePickersAutomated` drives the real GTK file choosers with `xdotool`.
+With no portal on the bus, GTK shows them in process, so the test finds each
+one among the process's own windows. It opens a file through a filter,
+selects a folder, picks a new save destination and checks nothing was created,
+then saves over an existing file: Cancel on the overwrite confirmation must
+keep the chooser open with no result, and Replace on the second confirmation
+must return the existing path. It opens the choosers on the working directory
+through a private GSettings keyfile, because a folder chooser opened on Recent
+has no folder to select:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_PICKERS=1 GDK_BACKEND=x11 xvfb-run -a   go test ./battery/desktop/linux -run '^TestNativePickersAutomated$' -count=1 -v
+```
+
 Two further opt-in tests cover the private activation transport and actual
 cold/warm GTK navigation, including the boot/session gate. They require a
 test-only embedded scheme; the graphical check also needs a display:
@@ -2489,8 +2590,10 @@ view. `TestNativeNotifications` exports a fixture daemon on its own private bus
 and checks native payloads with and without markup support, failed capability
 queries, Unicode, daemon refusal, loss/restart and operation cleanup. A bounded
 held reply verifies caller cancellation and GTK recovery after release. The
-production `Run` refusal gate is checked against the fixture's retained GTK
-owner; this is not a test of production `Run` teardown. `TestNativeNotificationGraphical` starts an actual
+fixture then ends its GTK loop, and a second lifetime on a new daemon must show
+a notification under its own app name: libnotify keeps the first name it was
+initialized with, so the shell sets the name on every `Show`. This is not a test
+of production `Run` teardown. `TestNativeNotificationGraphical` starts an actual
 `dunst` daemon on another private bus, verifies displayed/dismissed counts and
 finds the daemon's unique mapped X11 window with `xdotool`. It captures that
 window as `notification.png`, checks its frame/text pixels, and requires it to
@@ -2506,8 +2609,8 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_NOTIFICATIONS=1 GDK_BACKEND=x
 ```
 
 For a headless Linux worker with GTK/WebKitGTK, `libnotify`, **dunst 1.7.0 or newer**
-(including its matching `dunstctl`), `xdotool`, `dbus` (including `dbus-daemon`),
-`xvfb` and `xauth` installed, use the repository's runner below.
+(including its matching `dunstctl`), `xdotool`, `xcompmgr`, `dbus` (including
+`dbus-daemon`), `xvfb` and `xauth` installed, use the repository's runner below.
 
 The notification fixture needs `dunstctl count` (added in 1.6) and the
 `width`/`height`/`origin` geometry options (added in 1.7). The runner checks the
@@ -2516,7 +2619,7 @@ versions. Ubuntu 22.04's stock dunst 1.5 package is insufficient for this test;
 use a worker with dunst 1.7 or newer. This test dependency does not raise the
 application shell's GTK/WebKitGTK runtime minimum.
 
-Run all nine automated tests in separate invocations:
+Run all twelve automated tests in separate invocations:
 
 ```sh
 ./scripts/test-linux-desktop.sh
@@ -2524,12 +2627,12 @@ Run all nine automated tests in separate invocations:
 
 The blocking Linux CI job runs this script with `CGO_ENABLED=0`, a private
 session bus per invocation and an authenticated Xvfb for graphical cases.
-Only the activation tests get the test-only embedded scheme; the two original
-smoke, profile, tray and notification tests retain unembedded defaults. Logs and
+Only the activation tests get the test-only embedded scheme; every other suite
+keeps the unembedded defaults. Logs and
 PNG captures go to `dist/ci/linux-native/`. A skipped or missing test fails the runner. Xvfb
-coverage validates notification rendering with dunst on X11, but does not
-validate other notification daemons, Wayland, compositor effects, or interactive
-file selection and overwrite confirmation.
+coverage validates notification rendering with dunst on X11, transparency under
+`xcompmgr`, and the in-process GTK choosers. It does not validate other
+notification daemons, Wayland, KWin blur, or portal-backed file choosers.
 
 Do not disable WebKit's process sandbox to run the tests. Ordinary `go test`
 runs the no-display tests and skips these opt-in graphical tests. When running
@@ -2538,9 +2641,10 @@ the PNG capture.
 
 ### Interactive picker QA
 
-For operator-driven picker QA, run this test by itself in a visible desktop
-session (not Xvfb). Both opt-ins are required; it is excluded from the automated
-runner:
+`TestNativePickersAutomated` covers the same four steps under Xvfb. This
+operator-driven test is for a real desktop session, with its own theme, window
+manager and possibly a portal. Run it by itself in a visible session (not Xvfb).
+Both opt-ins are required; it is excluded from the automated runner:
 
 ```sh
 CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_INTERACTIVE=1 \
@@ -2566,15 +2670,14 @@ native shell, not the authenticated browser bridge or every desktop's portal.
 
 ## What does not work yet
 
-darwin/amd64 has no native shell yet. Linux does not yet support
-transparent/compositor materials, custom title bars or native drag regions.
+darwin/amd64 has no native shell yet. Linux draws GTK's own title bar for
+unified and hidden chrome, and blurs behind materials only under KWin on X11.
 Linux tray icons require a compatible StatusNotifierItem host; no-host operation
 keeps ordinary visible-window and close behavior. Linux defaults to an ephemeral WebKit
-store shared by all windows in the process; `Config.PersistentProfile` opts
+store shared by the windows of one shell lifetime; `Config.PersistentProfile` opts
 into the private persistent browser profile described above. The explicit Linux
 installer advertises a per-user OS handler but does not choose default handlers,
-install system-wide packages or provide signing/native updates. The Linux shell
-runs once per process. Windows currently
+install system-wide packages or provide signing/native updates. Windows currently
 supports amd64 and needs the Evergreen WebView2 Runtime. Windows builds
 do not include code signing or an installer. The updater is macOS-only.
 macOS notifications need a signed `.app` bundle (ad-hoc is

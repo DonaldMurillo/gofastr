@@ -714,3 +714,10 @@ notes:
     breaking: true
     guidance: "The server returns a NULL column as null, which the old types hid. Regenerate the JS SDK (gofastr sdk). TypeScript that reads an optional field checks for null first (v ?? fallback, or if (v !== null)). A required, generated or key field keeps its plain type."
     nodetect: "the change lands in regenerated SDK files; caller code that reads an optional field has no fixed spelling to search for"
+  - change: "BREAKING - desktopui.Theme() is removed; it returned the macOS theme on every OS"
+    breaking: true
+    hits: edit
+    guidance: "Call desktopui.ThemeFor(runtime.GOOS) for the running OS, or desktopui.ThemeFor(\"darwin\") to keep the old result. The primary color stays #0071E3 on every OS."
+    find:
+      uses:
+        - gofastr/battery/desktop/ui.Theme
