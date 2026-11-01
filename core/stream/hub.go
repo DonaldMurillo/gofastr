@@ -22,8 +22,10 @@ import (
 //	// On disconnect:
 //	hub.Unregister(conn)
 type Hub struct {
-	mu          sync.RWMutex
-	connections map[*WebSocketConn]struct{}
+	mu sync.RWMutex
+	// connections maps each registered connection to the stop channel
+	// of its close watcher; Unregister closes it so the watcher exits.
+	connections map[*WebSocketConn]chan struct{}
 	broadcast   chan []byte
 	stop        chan struct{}
 	stopped     atomic.Bool
@@ -32,7 +34,7 @@ type Hub struct {
 // NewHub creates a new Hub.
 func NewHub() *Hub {
 	return &Hub{
-		connections: make(map[*WebSocketConn]struct{}),
+		connections: make(map[*WebSocketConn]chan struct{}),
 		broadcast:   make(chan []byte, 64),
 		stop:        make(chan struct{}),
 	}
@@ -114,20 +116,34 @@ func (h *Hub) Register(conn *WebSocketConn) {
 		h.mu.Unlock()
 		return
 	}
-	h.connections[conn] = struct{}{}
+	if _, ok := h.connections[conn]; ok {
+		// Already registered: its watcher is still running.
+		h.mu.Unlock()
+		return
+	}
+	stop := make(chan struct{})
+	h.connections[conn] = stop
 	h.mu.Unlock()
 
-	// Auto-unregister when the connection closes.
+	// Auto-unregister when the connection closes. The watcher ends with
+	// the registration: a connection moved between hubs (Unregister
+	// here, Register there) leaves no goroutine behind per move.
 	go func() {
-		<-conn.Closed()
-		h.Unregister(conn)
+		select {
+		case <-conn.Closed():
+			h.Unregister(conn)
+		case <-stop:
+		case <-h.stop:
+		}
 	}()
 }
 
-// Unregister removes a connection from the hub. Non-blocking.
+// Unregister removes a connection from the hub and stops its close
+// watcher. Non-blocking.
 func (h *Hub) Unregister(conn *WebSocketConn) {
 	h.mu.Lock()
-	if h.connections != nil {
+	if stop, ok := h.connections[conn]; ok {
+		close(stop)
 		delete(h.connections, conn)
 	}
 	h.mu.Unlock()

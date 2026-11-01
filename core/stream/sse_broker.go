@@ -85,7 +85,7 @@ type subscriber struct {
 	// every path that removes the map entry splices the seat first.
 	regID    string
 	ch       chan sseEvent
-	filter   string // optional event name filter
+	filter   string // optional event name filter; see wants
 	done     chan struct{}
 	slowMode sseSlowMode
 
@@ -511,7 +511,7 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			if sub.filter != "" && evt.Name != sub.filter {
+			if !sub.wants(evt.Name) {
 				continue
 			}
 			if !held() {
@@ -575,6 +575,14 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 	b.mu.RUnlock()
 
 	for _, sub := range subs {
+		// An event the subscriber's ?event= filter excludes never
+		// enters its buffer: queued there it would take a slot, and
+		// drop-oldest would evict an event the subscriber asked for to
+		// make room for one it then throws away (a block-mode
+		// subscriber would backpressure Publish for it too).
+		if !sub.wants(name) {
+			continue
+		}
 		if !fromFanout && sub.slowMode == sseSlowBlock {
 			// Bounded: an unbounded send lets one stalled subscriber
 			// wedge deliver(), and therefore every other subscriber
@@ -603,6 +611,14 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 			}
 		}
 	}
+}
+
+// wants reports whether the subscriber's ?event= filter admits an
+// event named name: no filter admits every event, a filter admits only
+// that exact name. deliver and the subscriber's own loop both ask it,
+// so the two can never disagree.
+func (s *subscriber) wants(name string) bool {
+	return s.filter == "" || name == s.filter
 }
 
 // publishFanout mirrors the event to other replicas via the attached fanout,

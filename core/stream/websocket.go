@@ -88,10 +88,18 @@ type WebSocketConn struct {
 	ownClosePayload atomic.Pointer[[]byte]
 	// closing is set by the first detached closer a StateChannel
 	// spawns for this connection, so a stalled socket costs one
-	// goroutine however many events pile up behind it (closed is only
-	// closed once Close acquires the write mutex the stalled pump
-	// holds, so it cannot be the guard).
+	// goroutine however many events pile up behind it (every later
+	// Close parks on closeOnce until the first one, waiting on the
+	// stalled pump, returns, so Close itself cannot be the guard).
 	closing atomic.Bool
+
+	// takeMu is held by the write pump from the moment it waits for a
+	// queued message until that message is written, and by Close while
+	// it drains the queue and writes the Close frame. A message the
+	// pump has taken off sendBuffer is therefore always on the wire
+	// before Close looks at the queue: nothing Write accepted is
+	// written out of order or lost behind our Close frame.
+	takeMu sync.Mutex
 
 	// readMsgs delivers decoded data messages from the internal read
 	// pump to Read(). Buffered (cap 8): beyond that, TCP backpressure
@@ -131,7 +139,7 @@ type WSConfig struct {
 	ReadLimit int64
 
 	// SendBuffer is the number of messages that can be buffered before
-	// Write blocks. 0 = 32.
+	// Write blocks. 0 or negative = 32.
 	SendBuffer int
 
 	// WriteTimeout bounds each frame write. 0 means default 10s. Set
@@ -211,6 +219,13 @@ func CheckUpgradeRequest(r *http.Request, originOK func(*http.Request) bool) err
 	if r.Method != http.MethodGet {
 		return errors.New("stream: websocket upgrade must be GET")
 	}
+	// §4.1: the opening handshake is an HTTP/1.1 (or later) request,
+	// and RFC 9110 §7.8 has a server ignore Upgrade on HTTP/1.0. An
+	// intermediary that reads the request as 1.0 forwards it as an
+	// ordinary request, the desync described above.
+	if !r.ProtoAtLeast(1, 1) {
+		return errors.New("stream: websocket upgrade requires HTTP/1.1 or later")
+	}
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		return errors.New("stream: not a websocket upgrade request")
 	}
@@ -222,7 +237,7 @@ func CheckUpgradeRequest(r *http.Request, originOK func(*http.Request) bool) err
 	if !checkOrigin(r, originOK) {
 		return errors.New("stream: cross-origin websocket upgrade rejected (set WSConfig.CheckOrigin to allow)")
 	}
-	if !headerHasToken(r.Header.Get("Connection"), "upgrade") {
+	if !headerHasToken(r.Header.Values("Connection"), "upgrade") {
 		return errors.New("stream: missing Connection: Upgrade")
 	}
 	if v := r.Header.Get("Sec-WebSocket-Version"); v != "13" {
@@ -264,6 +279,15 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 
 	// Compute accept key (SHA-1 of key + magic GUID)
 	acceptKey := computeAcceptKey(key)
+
+	// Settle the config before the hijack: once the socket is ours,
+	// nothing below may fail without closing it, and a negative
+	// SendBuffer used to reach make(chan) and panic there, leaking the
+	// hijacked connection. Negative means the default, as zero does.
+	sendBuf := cfg.SendBuffer
+	if sendBuf <= 0 {
+		sendBuf = 32
+	}
 
 	// Hijack the connection
 	hijacker, ok := w.(http.Hijacker)
@@ -318,10 +342,6 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	if readLimit == 0 {
 		readLimit = 1 << 20 // 1MB
 	}
-	sendBuf := cfg.SendBuffer
-	if sendBuf == 0 {
-		sendBuf = 32
-	}
 	// 0 = default, negative = disable. Negative values are honored verbatim
 	// so callers can opt out of keepalive (and explicitly disable the pong
 	// timeout) without the constructor silently rewriting their intent.
@@ -338,7 +358,7 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 		cfg.MaxControlFramesPerSecond = defaultControlFramesPerSecond
 	}
 	if cfg.WriteTimeout == 0 {
-		cfg.WriteTimeout = 10 * time.Second
+		cfg.WriteTimeout = defaultWriteTimeout
 	}
 
 	// Real upgrades always enforce mask-from-client per RFC 6455.
@@ -445,16 +465,19 @@ func pickSubprotocol(r *http.Request, serverPrefs []string) string {
 	if len(serverPrefs) == 0 {
 		return ""
 	}
-	raw := r.Header.Get("Sec-WebSocket-Protocol")
-	if raw == "" {
-		return ""
-	}
+	// Every field line counts: a client may send its offers as one
+	// comma-separated line or as several (RFC 9110 §5.3).
 	offered := make(map[string]struct{})
-	for p := range strings.SplitSeq(raw, ",") {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			offered[p] = struct{}{}
+	for _, raw := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for p := range strings.SplitSeq(raw, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				offered[p] = struct{}{}
+			}
 		}
+	}
+	if len(offered) == 0 {
+		return ""
 	}
 	for _, p := range serverPrefs {
 		if _, ok := offered[p]; ok {
@@ -484,7 +507,13 @@ func checkOrigin(r *http.Request, custom func(*http.Request) bool) bool {
 }
 
 // Write sends a text message to the client. Blocks if the send buffer
-// is full (backpressure). Returns an error if the connection is closed.
+// is full (backpressure). Returns ErrClosed once Close has started.
+//
+// A nil return means the message is queued, not yet written. Close
+// writes every queued message before its Close frame, within the
+// WriteTimeout bound described on Close, so a message Write accepted
+// before Close reaches the peer unless the peer is too slow to take it
+// in that time or the socket already failed.
 func (c *WebSocketConn) Write(data []byte) error {
 	// Check closed first to avoid non-deterministic select
 	select {
@@ -551,6 +580,13 @@ func (c *WebSocketConn) Read() ([]byte, error) {
 // down the underlying TCP connection. This avoids the abnormal 1006
 // close code on the peer side.
 //
+// Before the Close frame, Close stops accepting writes (Write returns
+// ErrClosed) and writes the messages Write already queued, oldest
+// first. The drain is bounded by WriteTimeout from the moment Close is
+// called (10s when WriteTimeout is zero or negative), so a peer that
+// stopped reading cannot hold Close open; what is still queued when
+// the bound passes or a write fails is dropped.
+//
 // If the peer initiated the close, the echo Close frame preserves the
 // peer's 2-byte status code per RFC 6455 §5.5.1, sanitized per §7.4.1
 // so a reserved (1004/1005/1006/1015), sub-1000, or otherwise invalid
@@ -560,6 +596,15 @@ func (c *WebSocketConn) Read() ([]byte, error) {
 func (c *WebSocketConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
+		// Refuse new writes, then flush what Write already accepted.
+		// Taking takeMu waits out the frame the pump is writing (the
+		// pump stops once it sees closed), so the drain starts after
+		// it and the wire keeps Write's order.
+		by := time.Now().Add(c.drainBound())
+		close(c.closed)
+		c.takeMu.Lock()
+		c.drainQueued(by)
+
 		// If readFrame already captured a peer Close payload, echo the
 		// (already-sanitized) bytes back. Otherwise send an empty Close.
 		echo := c.peerClosePayload.Load()
@@ -572,7 +617,7 @@ func (c *WebSocketConn) Close() error {
 		// Send close frame. Ignore the error: if writing fails the peer
 		// is likely already gone, but we still want to drop the TCP conn.
 		_ = c.writeFrame(wsopcodeClose, payload)
-		close(c.closed)
+		c.takeMu.Unlock()
 
 		// Drain incoming frames briefly so we receive the peer's Close
 		// (or timeout). Bound the deadline so a silent peer can't pin us.
@@ -779,25 +824,70 @@ func (c *WebSocketConn) keepalive() {
 	}
 }
 
-// writePump drains the send buffer and writes WebSocket frames.
+// writePump drains the send buffer and writes WebSocket frames. It
+// exits when Close starts; Close writes what is still queued.
 func (c *WebSocketConn) writePump() {
 	for {
+		c.takeMu.Lock()
+		done, err := c.pumpOne()
+		c.takeMu.Unlock()
+		if !done {
+			continue
+		}
+		// ErrClosed means Close already wrote our Close frame and is
+		// waiting out the peer's; a second Close would park this
+		// goroutine on closeOnce for that whole wait. Close takes
+		// takeMu, so it is called only after the unlock above.
+		if err != nil && !errors.Is(err, ErrClosed) {
+			c.Close()
+		}
+		return
+	}
+}
+
+// pumpOne waits for one queued message and writes it. done reports
+// that the pump must stop: Close started, or the write failed. The
+// caller holds takeMu.
+func (c *WebSocketConn) pumpOne() (done bool, err error) {
+	select {
+	case <-c.closed:
+		return true, nil
+	case msg := <-c.sendBuffer:
+		if err := c.writeFrame(wsopcodeText, msg); err != nil {
+			return true, err
+		}
+		return false, nil
+	}
+}
+
+// drainQueued writes the messages still in sendBuffer, oldest first,
+// until the buffer is empty, a write fails, or by passes; each write
+// carries by as its deadline. The caller holds takeMu.
+func (c *WebSocketConn) drainQueued(by time.Time) {
+	for time.Now().Before(by) {
 		select {
-		case <-c.closed:
-			return
 		case msg := <-c.sendBuffer:
-			if err := c.writeFrame(wsopcodeText, msg); err != nil {
-				// ErrClosed means Close already wrote our Close frame and
-				// is waiting out the peer's; a second Close would park
-				// this goroutine on closeOnce for that whole wait.
-				if !errors.Is(err, ErrClosed) {
-					c.Close()
-				}
+			if err := c.writeFrameBy(wsopcodeText, msg, by); err != nil {
 				return
 			}
+		default:
+			return
 		}
 	}
 }
+
+// drainBound is how long Close may spend writing queued messages:
+// WriteTimeout, or defaultWriteTimeout when it is unset or disabled,
+// because the drain is new work Close does and must stay bounded.
+func (c *WebSocketConn) drainBound() time.Duration {
+	if c.config.WriteTimeout > 0 {
+		return c.config.WriteTimeout
+	}
+	return defaultWriteTimeout
+}
+
+// defaultWriteTimeout is WSConfig.WriteTimeout's default.
+const defaultWriteTimeout = 10 * time.Second
 
 // startReadPump launches the internal read pump, the single goroutine
 // that owns ALL socket reads. It processes control frames (Ping/Pong/
@@ -976,6 +1066,12 @@ func wsEchoableCloseCode(code uint16) bool {
 // follows our Close frame: a writer that waited on mu while Close
 // wrote it gets ErrClosed and puts nothing on the wire.
 func (c *WebSocketConn) writeFrame(opcode byte, payload []byte) error {
+	return c.writeFrameBy(opcode, payload, time.Time{})
+}
+
+// writeFrameBy is writeFrame with an explicit write deadline. A zero by
+// means the per-frame WriteTimeout (none when it is negative).
+func (c *WebSocketConn) writeFrameBy(opcode byte, payload []byte, by time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closeSent {
@@ -988,9 +1084,12 @@ func (c *WebSocketConn) writeFrame(opcode byte, payload []byte) error {
 	// Apply per-frame write deadline so a slow client cannot pin the
 	// writePump goroutine indefinitely. A negative WriteTimeout disables
 	// the deadline (opt-in by callers that know what they're doing).
-	if c.config.WriteTimeout > 0 {
+	if by.IsZero() && c.config.WriteTimeout > 0 {
+		by = time.Now().Add(c.config.WriteTimeout)
+	}
+	if !by.IsZero() {
 		if sd, ok := c.conn.(interface{ SetWriteDeadline(time.Time) error }); ok {
-			_ = sd.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
+			_ = sd.SetWriteDeadline(by)
 			defer sd.SetWriteDeadline(time.Time{})
 		}
 	}
@@ -1052,12 +1151,12 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 		// negotiated. We negotiate no extensions, so any non-zero RSV
 		// is a protocol error.
 		if rsv != 0 {
-			return nil, errors.New("stream: protocol error: reserved bits set")
+			return nil, c.failConn(1002, "stream: protocol error: reserved bits set")
 		}
 
 		// RFC 6455 §5.5: control frames MUST NOT be fragmented (FIN=1).
 		if isControl && !fin {
-			return nil, errors.New("stream: protocol error: fragmented control frame")
+			return nil, c.failConn(1002, "stream: protocol error: fragmented control frame")
 		}
 
 		// Extended length. RFC 6455 §5.2: "the minimal number of bytes
@@ -1085,20 +1184,20 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 
 		// RFC 6455: control frames MUST be <=125 bytes and not fragmented.
 		if isControl && length > 125 {
-			return nil, errors.New("stream: protocol error: oversized control frame")
+			return nil, c.failConn(1002, "stream: protocol error: oversized control frame")
 		}
 
 		// Compare as uint64 so a top-bit-set length cannot wrap negative
 		// and bypass the read limit.
 		if length > uint64(readLimit) {
-			return nil, fmt.Errorf("stream: message too large (%d > %d)", length, readLimit)
+			return nil, c.failConn(1009, fmt.Sprintf("stream: message too large (%d > %d)", length, readLimit))
 		}
 
 		// RFC 6455: client-to-server frames MUST be masked. Optional
 		// enforcement so existing tests that craft unmasked frames keep
 		// working until they explicitly opt in.
 		if c.config.requireMask && !masked {
-			return nil, errors.New("stream: protocol error: client frame must be masked")
+			return nil, c.failConn(1002, "stream: protocol error: client frame must be masked")
 		}
 
 		// Masking key
@@ -1209,10 +1308,10 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 		switch opcode {
 		case wsopcodeContinuation:
 			if fragOpcode == 0 {
-				return nil, errors.New("stream: protocol error: continuation frame with nothing to continue")
+				return nil, c.failConn(1002, "stream: protocol error: continuation frame with nothing to continue")
 			}
 			if uint64(len(fragBuf))+uint64(len(payload)) > uint64(readLimit) {
-				return nil, fmt.Errorf("stream: message too large (> %d)", readLimit)
+				return nil, c.failConn(1009, fmt.Sprintf("stream: message too large (> %d)", readLimit))
 			}
 			fragBuf = append(fragBuf, payload...)
 			if !fin {
@@ -1223,7 +1322,7 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			return c.dataMessage(op, msg)
 		case wsopcodeText, wsopcodeBinary:
 			if fragOpcode != 0 {
-				return nil, errors.New("stream: protocol error: new data frame while a fragmented message is open")
+				return nil, c.failConn(1002, "stream: protocol error: new data frame while a fragmented message is open")
 			}
 			if !fin {
 				fragOpcode, fragBuf = opcode, append([]byte(nil), payload...)
@@ -1233,7 +1332,7 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 		default:
 			// Reserved opcodes (0x3-0x7, 0xB-0xF) were previously
 			// delivered to the application as ordinary data frames.
-			return nil, fmt.Errorf("stream: protocol error: reserved opcode 0x%X", opcode)
+			return nil, c.failConn(1002, fmt.Sprintf("stream: protocol error: reserved opcode 0x%X", opcode))
 		}
 	}
 }
@@ -1251,7 +1350,10 @@ func (c *WebSocketConn) dataMessage(opcode byte, payload []byte) (*wsFrame, erro
 
 // failConn records the status our Close frame carries when the pump
 // tears the connection down for this error, and returns the error. A
-// status already recorded (CloseWithStatus) is kept.
+// status already recorded (CloseWithStatus) is kept. Every protocol
+// violation readFrame finds goes through here (1002 for a malformed
+// frame, 1007 for bad UTF-8, 1009 for a message past ReadLimit): a
+// bodyless Close would tell the peer only 1005, "no status".
 func (c *WebSocketConn) failConn(code uint16, msg string) error {
 	status := binary.BigEndian.AppendUint16(nil, code)
 	c.ownClosePayload.CompareAndSwap(nil, &status)
@@ -1288,12 +1390,17 @@ func minInt(a, b int) int {
 	return b
 }
 
-// headerHasToken reports whether a comma-separated header value
-// contains token (case-insensitive), e.g. "keep-alive, Upgrade".
-func headerHasToken(value, token string) bool {
-	for part := range strings.SplitSeq(value, ",") {
-		if strings.EqualFold(strings.TrimSpace(part), token) {
-			return true
+// headerHasToken reports whether a comma-separated header contains
+// token (case-insensitive), e.g. "keep-alive, Upgrade". values is every
+// field line of the header: RFC 9110 §5.3 lets a sender split one list
+// across several lines, so "Connection: keep-alive" followed by
+// "Connection: Upgrade" carries the token as surely as one line does.
+func headerHasToken(values []string, token string) bool {
+	for _, value := range values {
+		for part := range strings.SplitSeq(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), token) {
+				return true
+			}
 		}
 	}
 	return false

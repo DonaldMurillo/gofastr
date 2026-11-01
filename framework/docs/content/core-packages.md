@@ -105,6 +105,13 @@ add an SSE or WebSocket endpoint; the framework's island-push and event
 bus layer on `SSEBroker`. Start at `core/stream/sse_broker.go`:
 `SSEBroker`.
 
+A subscriber that asks for `?event=<name>` gets only events of that
+name, and the broker never queues the others for it, so under
+drop-oldest an event it filtered out cannot push out one it asked for.
+`SSEWriter.SetID` cuts the id at its first CR, LF or NUL, and writes no
+`id:` field when nothing is left: an empty `id:` line would reset the
+browser's Last-Event-ID.
+
 Above the WebSocket client sits `StateChannel`
 (`core/stream/state_channel.go`), for apps that reconnect into live
 state: it hydrates each new connection with a role's snapshot and then
@@ -150,10 +157,16 @@ it to close every open one with 1001 when `Shutdown` starts, since
 connection.
 
 `WebSocketConn` follows RFC 6455's strict readings: a text message
-that is not valid UTF-8 closes with 1007, a close reason that is not
-valid UTF-8 or a payload length in a longer form than it needs closes
-with 1002, and no data frame goes out after the connection's own Close
-frame. One read pump owns the socket and hands each message to `Read`
+that is not valid UTF-8 closes with 1007, a message past `ReadLimit`
+closes with 1009, and every malformed frame closes with 1002 (reserved
+bits or opcode, an unmasked client frame, a fragmented or oversized
+control frame, a continuation with nothing to continue or a new message
+inside one, a close reason that is not valid UTF-8, a payload length in
+a longer form than it needs). No data frame goes out after the
+connection's own Close frame, and `Close` first writes the messages
+`Write` already queued, oldest first, for up to `WriteTimeout` (10s
+when it is zero or negative); `Write` returns `ErrClosed` once `Close`
+has started. One read pump owns the socket and hands each message to `Read`
 through a small buffer. An app that reads must take a message at least
 once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
 (the keepalive cannot run while a message waits). `PongTimeout` counts
@@ -167,8 +180,11 @@ disables) caps the Pings and Pongs a client sends, and past it the
 connection closes with 1008.
 
 `Upgrade` refuses a handshake RFC 6455 does not accept before it
-hijacks: a method other than GET, no `Connection: Upgrade` token, a
-version other than 13, or a key that is not base64 of 16 bytes. A
+hijacks: a method other than GET, a request older than HTTP/1.1, no
+`Connection: Upgrade` token, a version other than 13, or a key that is
+not base64 of 16 bytes. `Connection` and `Sec-WebSocket-Protocol` are
+read across every line the client sent them on. A zero or negative
+`WSConfig.SendBuffer` means the default of 32. A
 transport that hijacks the connection itself runs the same check,
 `stream.CheckUpgradeRequest(r, originOK)`, before writing its 101;
 `originOK` decides the Origin as `WSConfig.CheckOrigin` does.

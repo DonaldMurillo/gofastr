@@ -600,9 +600,10 @@ func (b *blockedConn) Close() error { return nil }
 
 // TestStateChannelOverflowClosesOncePerConn: with CloseOnOverflow, a
 // stalled socket costs one closing goroutine however many events pile
-// up behind it. c.closed is closed only once Close acquires c.mu, which
-// the stalled writePump holds for up to WriteTimeout, so the Closed()
-// guard alone let every further event spawn another blocked Close.
+// up behind it. c.closed was once closed only after Close acquired the
+// write lock the stalled writePump holds for up to WriteTimeout, so the
+// Closed() guard alone let every further event spawn another blocked
+// Close; the closing flag holds however Close orders its work.
 func TestStateChannelOverflowClosesOncePerConn(t *testing.T) {
 	bc := &blockedConn{release: make(chan struct{})}
 	conn := &WebSocketConn{
@@ -670,5 +671,30 @@ func TestCloseWithStatusRefusesReservedCodes(t *testing.T) {
 				t.Fatalf("code %d: frame %x, want close code 1002", code, got)
 			}
 		})
+	}
+}
+
+// Property: Unregister stops the close watcher Connect started, and a
+// connection connected again (a role change) keeps one watcher. The
+// watcher used to wait for the connection to close and nothing else,
+// so each Connect of a live connection left one more goroutine behind.
+func TestStateChannelUnregisterStopsCloseWatcher(t *testing.T) {
+	src := newBannerSource()
+	c := NewStateChannel[string, bannerState, bannerEvent](src)
+	go c.Run()
+	defer c.Stop()
+	conn := newChannelConn(4)
+
+	runtime.GC()
+	base := runtime.NumGoroutine()
+	for range 200 {
+		c.Connect("admin", conn)
+		recvEnvelope(t, conn)
+		c.Connect("viewer", conn) // role change: no second watcher
+		recvEnvelope(t, conn)
+		c.Unregister(conn)
+	}
+	if grew := goroutineGrowth(base, 20); grew > 20 {
+		t.Fatalf("200 connect/unregister cycles on one live conn left %d goroutines behind", grew)
 	}
 }

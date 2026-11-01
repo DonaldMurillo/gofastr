@@ -1,12 +1,14 @@
 package stream
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -140,4 +142,70 @@ func blockedFor(sub *subscriber, d time.Duration) bool {
 		time.Sleep(5 * time.Millisecond)
 	}
 	return true
+}
+
+// gatedSSEWriter parks every Write until gate is closed.
+type gatedSSEWriter struct {
+	h       http.Header
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	gate    chan struct{}
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (g *gatedSSEWriter) Header() http.Header { return g.h }
+func (g *gatedSSEWriter) WriteHeader(int)     {}
+func (g *gatedSSEWriter) Flush()              {}
+func (g *gatedSSEWriter) Write(p []byte) (int, error) {
+	g.once.Do(func() { close(g.entered) })
+	<-g.gate
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.buf.Write(p)
+}
+func (g *gatedSSEWriter) body() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.buf.String()
+}
+
+// Property: an event a subscriber's ?event= filter excludes never takes
+// a slot in its buffer. The filter used to run only in the handler, on
+// the way out, so the excluded event sat in the buffer and drop-oldest
+// evicted the event the subscriber asked for to make room for it.
+func TestFilteredOutEventsDoNotEvictWantedOnes(t *testing.T) {
+	b := NewSSEBroker(SSEBrokerConfig{HeartbeatInterval: -1})
+	w := &gatedSSEWriter{h: http.Header{}, gate: make(chan struct{}), entered: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := httptest.NewRequest("GET", "/?buffer=1&event=alert", nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() { b.Subscribe(w, r); close(done) }()
+	defer func() { cancel(); <-done }()
+
+	waitForSubscribers(t, b, 1)
+	b.Publish("alert", "first")
+	// Wait until the handler is parked in a write, so the buffer (cap
+	// 1) is the only room left for what follows.
+	select {
+	case <-w.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never wrote")
+	}
+	b.Publish("alert", "second") // fills the buffer
+	b.Publish("tick", "noise")   // filtered out: must not evict "second"
+	close(w.gate)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(w.body(), "data: second") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	body := w.body()
+	if !strings.Contains(body, "data: second") {
+		t.Fatalf("alert subscriber lost %q to a filtered-out event; body=%q", "second", body)
+	}
+	if strings.Contains(body, "noise") {
+		t.Fatalf("filtered-out event reached the subscriber: %q", body)
+	}
 }
