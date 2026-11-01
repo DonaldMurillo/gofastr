@@ -25,6 +25,24 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Bracket filter keys.** `?field[op]=value` names the operator by word
+  (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`, `in`), and the text
+  before the brackets is always the whole field or wire name, so fields
+  `check` and `check_in` are both reachable (`?check_in[eq]=`,
+  `?check[in]=`). It works at the top level, in `?rel.field[op]=` and in
+  `include=rel(field[op]=…)`. New in `framework/filter`: `ReadKey`,
+  `BracketKey`, `SuffixKey`, `IsBracketKey`, `IsAmbiguousKey`,
+  `KeySpeller` / `SpellerFor`, `BracketOps`, `ParsedFilter.Key()` and
+  `RepeatedFilterError`.
+- **`store.Slice.Value(ctx)`** returns a slice's value for this request
+  (the seed, else the default), and `ui.SignalToggleConfig.Ctx`.
+- **`core/handler.JSONErrorDetail`, `BodyReadDetail` and
+  `JSONTrailingData`** phrase a JSON decode error for your own decode
+  sites.
+- **`schema.DecimalColumn`, `schema.DecimalColumnType`,
+  `schema.MaxDecimalExponent` and `schema.DecimalExponentFits`.**
+- **`headless.CounterProps.Seeded`**, and the `headless-copy` behaviour
+  module (the copy control, split out of `headless-feedback`).
 - **`embedskip` analyzer.** `gofastr verify` and `make analyze` report a
   struct field walk (`NumField()` or the `Fields()` iterator) that maps
   fields to keys by their tags and never handles an embedded struct, so
@@ -104,6 +122,42 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Decimal writes are checked against their column.** A `decimal`
+  field refuses, with a 400 naming the field, an exponent past ±1000
+  (`decimal_exponent`), more integer digits than the column holds
+  (`decimal_integer_digits`, 15 for the default `DECIMAL(19,4)`) or more
+  fraction digits than its scale (`decimal_fraction_digits`, 4). Postgres
+  refused the first two with a 500 and rounded the third while SQLite
+  stored all three. A `RawType` of `DECIMAL(p,s)`/`NUMERIC(p,s)` sets the
+  limit.
+- **Malformed JSON bodies answer in the client's terms.** The message names
+  the JSON path and type (`invalid JSON: ids[0]: expected a string, got a
+  number`), the byte of a syntax error, or an empty or cut-off body,
+  instead of `encoding/json`'s text naming the server's Go types. Every
+  part is a phrase; `reason` codes are unchanged. `?where=`, `?cursor=`
+  and `_batch` envelope refusals follow, and MCP `invalid params`
+  messages use the same wording.
+- **A screen answers GET and HEAD only.** POST, PUT, PATCH or DELETE to a
+  screen path no route takes answers 405 with `Allow: GET, HEAD` (problem
+  JSON for a machine Accept) instead of rendering the page, running its
+  policy and `Load` and minting a session. OPTIONS answers 204. A route
+  registered at the path still wins its method.
+- **Slice-backed `ui.Counter`, `ui.Tabs` and `ui.SignalToggle` paint the
+  request's seed**, not the slice's default: a counter seeded to 7
+  rendered 0 while its first + made 8.
+- **Headless.** A pane drawer releases its scroll lock when an island swap
+  removes it; a bare `headless.Counter` steps from its own `Value`; when
+  overlapping SortableList saves fail the list returns to the last order
+  the server confirmed; a tab strip whose signal holds no tab of the strip
+  writes the tab it paints back into the signal. Rating builds its radio
+  ids from `ID` when set.
+- **`ui.Repeater` and `ui.FormRepeater` controls are kit buttons** (ghost
+  or danger Remove, secondary Add) instead of browser buttons or the
+  form repeater's own button CSS; their lists drop bullets and indent.
+- **A repeated scalar nested filter key** (`?author.age_lt=100&author.age_lt=5`)
+  is a 400 `filter.repeated_filter`, as at the top level.
+- **Generated CLIs:** an equality flag sends a comma list as the field's
+  IN key (`--status a,b` → `status_in=a,b`), as its help promised.
 - **A disabled menu link row renders no `href`.** `aria-disabled` and
   `pointer-events` stopped a mouse, but a keyboard Enter or an
   assistive-tech activation still followed the link, as `headless.Button`
@@ -4127,6 +4181,14 @@ few lines, and link the PR or the docs page for the rest.
 - **examples/site's status pill keeps its wording through hydration.**
 
 ### Security
+- **A `BeforeGet` read scope binds record writes.** A row
+  `GET /<entity>/{id}` answered 404 for, because the caller's own
+  BeforeGet hooks excluded it, could still be changed with PUT, PATCH,
+  DELETE, a transition or a `_batch` item. Those writes now answer the
+  404 a missing id gets, before anything is written; restore, purge and
+  the in-process helpers under `crud.WithReadHooks` follow, and
+  `UpsertOne` refuses a hidden existing key as it refuses another owner's
+  row.
 - **`RedirectPattern` no longer opens an off-origin redirect through a
   tab, CR or LF in a catch-all value.** `GET /old/%09/evil.example`
   against `/{rest...}` answered `Location: /\t/evil.example`, which

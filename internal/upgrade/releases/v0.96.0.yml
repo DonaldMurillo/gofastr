@@ -685,3 +685,31 @@ notes:
       shapes:
         - symbol: gofastr/framework/filter.SearchConditions
           type: '^func\(fields \[\]string, term string\) \(\[\]filter\.Condition, error\)$'
+  - change: "BREAKING - a BeforeGet hook that hides a row now also blocks writes to it: PUT, PATCH, DELETE, transitions, _batch items, restore and purge answer 404 (in process only under crud.WithReadHooks), and BeforeGet hooks run inside the write transaction"
+    breaking: true
+    guidance: "If a hook hides rows from callers who still need to write them, move that rule to Access permissions or stop hiding the row. A hook that reads the database must use the ctx it is given (framework.TxFromContext), not a separate pool connection, or it can deadlock on a one-connection pool."
+    nodetect: "hooks are registered and decide at runtime"
+  - change: "BREAKING - a filter key that reads two ways (one field's name and another field's name plus a suffix, check_in beside check) is a 400 filter.ambiguous_filter on every surface, LenientFilters included; entities may now declare such a pair, which registration used to refuse"
+    breaking: true
+    guidance: "Send ?check[in]= for the operator on check, ?check_in[eq]= for equality on check_in. Regenerate the OpenAPI document, CLI and SDK: those keys are spelled in bracket form."
+    nodetect: "query strings come from clients at request time"
+  - change: "Decimal writes are checked against the column: an exponent past ±1000, more than 15 integer or 4 fraction digits on a default decimal field (or past a RawType DECIMAL(p,s)) is a 400; a decimal Default past the scale fails at registration"
+    breaking: false
+    guidance: "Round to the column's scale before sending, or declare a wider column with RawType NUMERIC(p,s). Rows already stored past the column on SQLite still read back."
+    nodetect: "values come from clients at request time"
+  - change: "A malformed JSON body's error text names the JSON path and type instead of Go types; reason codes are unchanged"
+    breaking: false
+    guidance: "A client or test that parsed the old text (cannot unmarshal, invalid character, unexpected EOF) should branch on reason or expect the new phrase."
+    nodetect: "the wording is produced at request time"
+  - change: "A non-GET request to a screen path answers 405 with Allow: GET, HEAD instead of rendering the page; OPTIONS answers 204"
+    breaking: false
+    guidance: "Point a form's action at a handler registered for its method, or register the page for that method with r.Post(path, host.PageHandler(path))."
+    nodetect: "forms and clients that post to page URLs live in templates and other sites"
+  - change: "Generated CLIs: --<field> a,b on a list command filters with IN (<field>_in=a,b)"
+    breaking: false
+    guidance: "Filter on a literal comma with --param <field>=a,b; re-run gofastr generate to refresh committed *.gen.go."
+    nodetect: "the change is in generated code"
+  - change: "ui.FormRepeater's private --ui-form-repeater-action-min-height knob is removed; its Remove and Add are kit buttons"
+    breaking: false
+    guidance: "Set button density through the theme's button tokens instead."
+    nodetect: "a CSS custom property set in a stylesheet"
