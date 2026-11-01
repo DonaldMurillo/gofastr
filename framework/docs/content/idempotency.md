@@ -7,9 +7,11 @@ back instead of a duplicated side effect.
 
 ## Wiring
 
-The simplest form is `framework.WithIdempotency`. The middleware
-slots into the default chain between `RequestID` and
-`SecurityHeaders`:
+The simplest form is `framework.WithIdempotency`. It mounts the
+middleware with `router.UseInner`, innermost: after the default chain,
+after every middleware the app adds with `app.Use` (auth, tenant
+resolution) and after any `Group` middleware, next to the handler. It
+works with `WithoutDefaultMiddleware` too.
 
 <!-- gofastr:compile
 stmt: _ = app
@@ -20,17 +22,20 @@ import "github.com/DonaldMurillo/gofastr/core/middleware"
 app := framework.NewApp(framework.WithIdempotency(middleware.IdempotencyConfig{}))
 ```
 
-That spot in the chain runs before any auth middleware the app adds
-with `app.Use`, so no user or session is in the request context yet.
-The default `Principal` keys on the request's credential instead (a
-hash of its `Authorization`, `X-API-Key` and `Cookie` headers), and a
-request with none shares one `"anon"` namespace. A `Principal` you pass
-here sees the same bare request: `auth.SessionFrom` and
-`handler.GetUser` find no user, so a lookup that returns `""` for that
-case caches nothing.
+So the request already carries what the app's middleware resolved. The
+default `Principal` is the authenticated user (the framework's owner
+extractor). A request with no resolved user keys on its credential
+instead (a hash of its `Authorization`, `X-API-Key` and `Cookie`
+headers), and a request with neither shares one `"anon"` namespace.
+The default `Tenant` is the resolved tenant id (`tenant.GetTenantID`),
+so one credential that switches its active tenant and resends the same
+key, path and body runs the write in the new tenant instead of getting
+the old tenant's response. A request with no tenant keys on the
+principal alone.
 
-To key on the user, mount it yourself with `app.Use` after the
-middleware that resolves the user:
+To mount it yourself, add it with `app.Router().UseInner` (or
+`app.Use` after the middleware that resolves the user) and set
+`Principal`, plus `Tenant` when the app is multi-tenant:
 
 ```go
 import "github.com/DonaldMurillo/gofastr/core/middleware"
@@ -49,6 +54,9 @@ app.Use(router.Middleware(middleware.Idempotency(middleware.IdempotencyConfig{
             return u.GetID()
         }
         return ""
+    },
+    Tenant: func(r *http.Request) string {
+        return framework.GetTenantID(r.Context())
     },
 })))
 ```
@@ -132,7 +140,9 @@ yourself before returning.
 | Store backend failure (FailOpen=true)             | Pass through, fail open (legacy availability) |
 | Cached row is corrupt (unparseable stored headers)| `503 Service Unavailable`, fail closed — a corrupt cached response is never replayed with silently-dropped headers |
 
-The cache is keyed by `(principal, Idempotency-Key)`. The
+The cache is keyed by `(principal, tenant, Idempotency-Key)`, each part
+length-prefixed; the tenant is `""` when `Tenant` is unset or returns
+nothing. The
 **fingerprint** that guards against accidental key reuse is
 `sha256(principal ∥ method ∥ path ∥ raw query ∥ Content-Type ∥ body)`,
 where the path is the escaped one, so `/items/a%2Fb` and `/items/a/b`

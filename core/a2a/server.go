@@ -73,6 +73,14 @@ type Config struct {
 	// made under the same scopes, so a narrow token of the owner cannot
 	// read what a stronger credential ran. Nil: every caller is unscoped.
 	Scopes func(r *http.Request) (scopes []string, scoped bool)
+	// Tenant reports the tenant the caller acts in, "" for none. A task
+	// records its creator's tenant, and a caller reads, lists, resumes,
+	// cancels and configures only the tasks made in the tenant it is in
+	// now, so a member removed from a tenant, or switched to another,
+	// stops reading the results its tasks returned there. A stream ends
+	// when the refreshed principal resolves to another tenant. Nil: no
+	// tenant check, every task of the owner is visible.
+	Tenant func(r *http.Request) string
 	// ExtendedCard, when set, serves GetExtendedAgentCard. Nil → the
 	// method answers CodeExtendedAgentCardNotConfigured and
 	// Capabilities().ExtendedAgentCard is false.
@@ -156,6 +164,7 @@ type Server struct {
 	router   Router
 	owner    func(*http.Request) (string, bool)
 	scopes   func(*http.Request) ([]string, bool)
+	tenant   func(*http.Request) string
 	extended func(context.Context, string) (map[string]any, error)
 	push     *pusher
 	log      *slog.Logger
@@ -315,6 +324,7 @@ func NewServer(cfg Config) (*Server, error) {
 		router:                    router,
 		owner:                     cfg.Owner,
 		scopes:                    cfg.Scopes,
+		tenant:                    cfg.Tenant,
 		extended:                  cfg.ExtendedCard,
 		push:                      newPusher(cfg.Push, log),
 		log:                       log,
@@ -456,6 +466,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.writeTransport(w, http.StatusUnauthorized, ErrUnauthenticated())
 		return
 	}
+	if s.tenant != nil {
+		// The tenant at connect, which a stream's re-check compares the
+		// refreshed principal's tenant against.
+		r = r.WithContext(context.WithValue(r.Context(), connectTenantKey{}, s.tenant(r)))
+	}
 	s.dispatch(w, r, &req, owner)
 }
 
@@ -466,9 +481,9 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, req *rpcReques
 	case MethodSendStreamingMessage:
 		s.handleSend(w, r, req, owner, true)
 	case MethodGetTask:
-		s.handleGetTask(w, req, owner, s.callerScope(r))
+		s.handleGetTask(w, r, req, owner, s.callerScope(r))
 	case MethodListTasks:
-		s.handleListTasks(w, req, owner, s.callerScope(r))
+		s.handleListTasks(w, r, req, owner, s.callerScope(r))
 	case MethodCancelTask:
 		s.handleCancelTask(w, req, owner, s.callerScope(r))
 	case MethodSubscribeToTask:
@@ -1061,6 +1076,7 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		Owner:     owner,
 		SkillID:   skillID,
 		Scope:     s.callerScope(r).key,
+		Tenant:    s.callerScope(r).tenant,
 		CreatedAt: s.now(),
 		UpdatedAt: s.now(),
 	}
@@ -1559,7 +1575,7 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, r *http
 }
 
 // callerHeld reports whether a fresh request with r's credentials would
-// still resolve to owner. A stream resolves its caller once, at connect,
+// still resolve to owner, in the same tenant. A stream resolves its caller once, at connect,
 // and then outlives that answer: re-establish the principal
 // (handler.RecheckPrincipal) and re-run Owner on the refreshed context, so a
 // revoked session or a deleted user ends the stream at the next event or
@@ -1577,13 +1593,28 @@ func (s *Server) callerHeld(r *http.Request, owner string) (held bool) {
 	if !ok {
 		return false
 	}
-	got, ok := s.owner(r.WithContext(fresh))
-	return ok && got == owner
+	fr := r.WithContext(fresh)
+	got, ok := s.owner(fr)
+	if !ok || got != owner {
+		return false
+	}
+	// A member removed from the stream's tenant, or moved to another,
+	// stops receiving that tenant's task (tenant.ResolveMiddleware
+	// re-resolves it on the recheck).
+	if s.tenant == nil {
+		return true
+	}
+	at, ok := r.Context().Value(connectTenantKey{}).(string)
+	return ok && s.tenant(fr) == at
 }
+
+// connectTenantKey carries the tenant Config.Tenant resolved when the
+// request arrived.
+type connectTenantKey struct{}
 
 // ---- GetTask / ListTasks / CancelTask / SubscribeToTask ---------------
 
-func (s *Server) handleGetTask(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
+func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p GetTaskRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -1593,7 +1624,9 @@ func (s *Server) handleGetTask(w http.ResponseWriter, req *rpcRequest, owner str
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
-	rec, err := s.getTask(context.Background(), owner, sc, p.ID)
+	// The request's context, not Background: a client that gave up stops
+	// the read, and a Store that scopes by the request (its tenant) sees it.
+	rec, err := s.getTask(r.Context(), owner, sc, p.ID)
 	if errors.Is(err, ErrNotFound) {
 		s.writeResult(w, req.ID, nil, ErrTaskNotFound(p.ID))
 		return
@@ -1607,7 +1640,7 @@ func (s *Server) handleGetTask(w http.ResponseWriter, req *rpcRequest, owner str
 	s.writeResult(w, req.ID, task, nil)
 }
 
-func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
+func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p ListTasksRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -1632,18 +1665,21 @@ func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner s
 		after = p.StatusTimestampAfter.Time
 	}
 	q := ListQuery{ContextID: p.ContextID, Status: p.Status, After: after,
-		Scoped: sc.scoped, Scope: sc.key, Limit: size, Offset: offset}
+		Scoped: sc.scoped, Scope: sc.key, Tenanted: sc.tenanted, Tenant: sc.tenant,
+		Limit: size, Offset: offset}
 	var recs []*TaskRecord
 	var total, advance int
 	var err error
-	if _, filters := s.store.(ScopeFilter); sc.scoped && !filters {
-		recs, total, err = s.walkScopedTasks(owner, q, sc)
+	_, scopeFilters := s.store.(ScopeFilter)
+	_, tenantFilters := s.store.(TenantFilter)
+	if (sc.scoped && !scopeFilters) || (sc.tenanted && !tenantFilters) {
+		recs, total, err = s.walkScopedTasks(r.Context(), owner, q, sc)
 		advance = len(recs)
 	} else {
-		recs, total, err = s.store.ListTasks(context.Background(), owner, q)
+		recs, total, err = s.store.ListTasks(r.Context(), owner, q)
 		advance = len(recs)
-		// A store that claims ScopeFilter and still returns another
-		// tier's task must not hand it to a scoped caller.
+		// A store that claims ScopeFilter or TenantFilter and still
+		// returns another tier's or tenant's task must not hand it over.
 		recs = slices.DeleteFunc(recs, func(rec *TaskRecord) bool { return !sc.sees(rec) })
 	}
 	if err != nil {
@@ -1668,20 +1704,21 @@ func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner s
 }
 
 // walkScopedTasks lists a scoped caller through a Store that does not
-// declare ScopeFilter. Such a store's page and total may count other
+// declare ScopeFilter, and a caller with a tenant through one that does
+// not declare TenantFilter. Such a store's page and total may count other
 // tiers' tasks, so a narrow token would read how many tasks a stronger
 // credential ran, and a page of dropped rows would hand back its own
 // offset. The walk reads every task of the owner that matches q's other
 // filters and counts the caller's alone: q.Offset and q.Limit index the
 // caller's tasks, and total is how many there are.
-func (s *Server) walkScopedTasks(owner string, q ListQuery, sc taskScope) ([]*TaskRecord, int, error) {
+func (s *Server) walkScopedTasks(ctx context.Context, owner string, q ListQuery, sc taskScope) ([]*TaskRecord, int, error) {
 	offset, size := q.Offset, q.Limit
 	q.Limit = max(size, walkScopedBatch)
 	var page []*TaskRecord
 	seen, read := 0, 0
 	for {
 		q.Offset = read
-		recs, total, err := s.store.ListTasks(context.Background(), owner, q)
+		recs, total, err := s.store.ListTasks(ctx, owner, q)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -2011,16 +2048,23 @@ var errStorePanicked = errors.New("a2a: store GetTask panicked")
 // implementation must become an error this stream ends on — never an
 // unrecovered panic that takes down the process.
 // taskScope is the credential tier a caller holds: unscoped, or the
-// canonical key of the scopes its credential is narrowed to.
+// canonical key of the scopes its credential is narrowed to, plus the
+// tenant it acts in when the server has a Tenant hook.
 type taskScope struct {
-	scoped bool
-	key    string
+	scoped   bool
+	key      string
+	tenanted bool
+	tenant   string
 }
 
 // sees reports whether a caller of this tier may reach rec: an unscoped
 // caller reaches every task of its owner, a scoped one only the tasks
-// made under the same scopes.
+// made under the same scopes; with a Tenant hook, only the tasks made in
+// the caller's current tenant.
 func (sc taskScope) sees(rec *TaskRecord) bool {
+	if sc.tenanted && rec.Tenant != sc.tenant {
+		return false
+	}
 	return !sc.scoped || rec.Scope == sc.key
 }
 
@@ -2041,14 +2085,19 @@ func ScopeKey(scopes []string) string {
 }
 
 func (s *Server) callerScope(r *http.Request) taskScope {
+	var sc taskScope
+	if s.tenant != nil {
+		sc.tenanted, sc.tenant = true, s.tenant(r)
+	}
 	if s.scopes == nil {
-		return taskScope{}
+		return sc
 	}
 	scopes, scoped := s.scopes(r)
 	if !scoped {
-		return taskScope{}
+		return sc
 	}
-	return taskScope{scoped: true, key: ScopeKey(scopes)}
+	sc.scoped, sc.key = true, ScopeKey(scopes)
+	return sc
 }
 
 // getTask is Store.GetTask for a caller of tier sc: a task made under

@@ -56,7 +56,10 @@ needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
 A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 /pattern` registration with `{id}` path capture, concurrency-safe
-middleware chaining after registration, route groups, and sanitized path
+middleware chaining after registration (`Use` adds outside-in, the first
+added is outermost; `UseInner` adds middleware that runs after every `Use`
+and `Group` middleware in the tree, next to the handler), route groups,
+and sanitized path
 params (`Param` strips CR/LF/NUL, a decoded `/`, and smuggled `..`;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
 reader of `r.PathValue` should go through `Param` or the exported

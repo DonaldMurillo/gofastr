@@ -87,6 +87,9 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	next := rec.Clone()
 	next.Version = stored.Version + 1
 	next.CreatedAt = stored.CreatedAt
+	// The tenant is fixed at creation, as in the SQL store, whose
+	// UPDATE never writes the column.
+	next.Tenant = stored.Tenant
 	next.UpdatedAt = time.Now()
 	m.tasks[key] = next
 	// Hand back a fresh clone, never next itself: copying next's
@@ -100,6 +103,10 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 // FiltersByScope implements ScopeFilter: ListTasks filters by
 // ListQuery.Scoped in its query.
 func (m *MemoryStore) FiltersByScope() {}
+
+// FiltersByTenant implements TenantFilter: ListTasks filters by
+// ListQuery.Tenanted in its query.
+func (m *MemoryStore) FiltersByTenant() {}
 
 func (m *MemoryStore) ListTasks(_ context.Context, owner string, q ListQuery) (recs []*TaskRecord, total int, err error) {
 	m.mu.Lock()
@@ -142,6 +149,9 @@ func matchesQuery(rec *TaskRecord, q ListQuery) bool {
 		return false
 	}
 	if q.Scoped && rec.Scope != q.Scope {
+		return false
+	}
+	if q.Tenanted && rec.Tenant != q.Tenant {
 		return false
 	}
 	if q.Status != "" && rec.Task.Status.State != q.Status {

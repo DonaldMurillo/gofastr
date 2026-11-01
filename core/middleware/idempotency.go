@@ -98,6 +98,14 @@ var (
 // each other's cached responses, closing a cross-tenant replay leak.
 // Without one, or for a request it returns "" for, nothing is cached;
 // return a constant such as "anon" to share one namespace on purpose.
+//
+// Tenant, when set, returns the tenant the request acts in ("" for
+// none). A non-empty tenant joins the principal in the storage key, so
+// one credential that switches its active tenant and resends the same
+// key, path and body runs the write in the second tenant instead of
+// being served the first tenant's response. The principal alone stays
+// the row's owner for export and erasure.
+//
 // FailOpen flips behaviour on store error: true falls through to the
 // handler (availability-first), false returns 503 to the client
 // (correctness-first). Default false; a broken store no longer
@@ -116,6 +124,7 @@ type IdempotencyConfig struct {
 	Methods          []string
 	Required         bool
 	Principal        func(r *http.Request) string
+	Tenant           func(r *http.Request) string
 	FailOpen         bool
 	Logger           *slog.Logger
 	// MaxStoreEntries caps how many entries the DEFAULT in-memory store
@@ -267,7 +276,11 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			// only user of — a cross-principal cache-poisoning DoS for
 			// any Principal function that can return NUL-bearing
 			// subjects.
-			storeKey := idemStoreKey(principal, key)
+			tenant := ""
+			if cfg.Tenant != nil {
+				tenant = cfg.Tenant(r)
+			}
+			storeKey := idemStoreKey(principal, tenant, key)
 
 			replay, ok, beginErr := cfg.Store.Begin(r.Context(), storeKey, fp)
 			switch {
@@ -363,9 +376,11 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 }
 
 // idemStoreKey is the key the store sees: the principal's byte length,
-// NUL, the principal, then the client's key.
-func idemStoreKey(principal, key string) string {
-	return strconv.Itoa(len(principal)) + "\x00" + principal + key
+// NUL, the principal, the tenant the same way, then the client's key.
+// The length prefixes keep it injective over (principal, tenant, key).
+func idemStoreKey(principal, tenant, key string) string {
+	return strconv.Itoa(len(principal)) + "\x00" + principal +
+		strconv.Itoa(len(tenant)) + "\x00" + tenant + key
 }
 
 // idemPrincipal reads the principal back out of an idemStoreKey key,

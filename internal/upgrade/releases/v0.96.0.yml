@@ -561,3 +561,21 @@ notes:
       uses:
         - gofastr/framework/db.WithTx
         - gofastr/framework/crud.CrudHandler.DB
+  - change: "BREAKING - WithIdempotency mounts its middleware innermost, after the app's own middleware, and keys a replay on the resolved user and tenant; it is no longer part of DefaultMiddleware and works with WithoutDefaultMiddleware"
+    breaking: true
+    hits: review
+    guidance: "A replay is now keyed on the user your auth middleware resolved and the tenant your tenant middleware resolved, not on a hash of the credential headers. A key cached before the upgrade is not found after it, so a retry that straddles the deploy runs the handler once more. Middleware you add with Use now runs before the replay check, on replays too. Code that ranged over DefaultMiddleware(app) expecting the idempotency entry mounts it with app.Router().UseInner instead. A custom Principal keeps working; set IdempotencyConfig.Tenant when you mount the middleware yourself in a multi-tenant app."
+    find:
+      uses:
+        - gofastr/framework.WithIdempotency
+        - gofastr/framework.DefaultMiddleware
+        - gofastr/core/middleware.Idempotency
+  - change: "BREAKING - an A2A task is bound to the tenant it ran in: with a tenant resolved (WithA2A wires tenant.GetTenantID, a hand-built server sets a2a.Config.Tenant), a caller sees only the tasks of its current tenant, and a2a.TaskRecord gains Tenant"
+    breaking: true
+    hits: review
+    guidance: "Tasks stored before the upgrade read as made in no tenant, so a caller acting in a tenant stops seeing them; they age out under the retention bounds. A custom a2a.Store persists TaskRecord.Tenant at CreateTask, never changes it in UpdateTask, and filters ListTasks by ListQuery.Tenanted and Tenant; declare a2a.TenantFilter once it does, or the server walks the owner's tasks for every list. The built-in SQL store adds the tenant column on open."
+    find:
+      uses:
+        - gofastr/core/a2a.Store
+        - gofastr/core/a2a.TaskRecord
+        - gofastr/core/a2a.Config

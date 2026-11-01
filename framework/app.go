@@ -1042,28 +1042,44 @@ func WithLogger(l *slog.Logger) AppOption {
 	}
 }
 
-// WithIdempotency adds an Idempotency-Key middleware to the default
-// chain. Pass middleware.IdempotencyConfig{} to take all defaults; the
-// option is otherwise idiomatic-Go composition over the existing
+// WithIdempotency adds an Idempotency-Key middleware. Pass
+// middleware.IdempotencyConfig{} to take all defaults; the option is
+// otherwise idiomatic-Go composition over the existing
 // middleware.Idempotency primitive.
 //
-// Defaults Principal to the request's owner (the framework's owner
-// extractor, i.e. the authenticated user). The middleware caches nothing
-// without a Principal. One shared key namespace would replay one
-// caller's response body to another, and the framework layer is where
-// "who is this" is knowable, so IdempotencyConfig{} still means "all
-// defaults" here. Set Principal explicitly to key on something else
-// (a tenant, an API-token id).
+// The middleware is mounted with router.UseInner: it runs after every
+// middleware the app adds with Use (auth, tenant resolution) and next to
+// the handler, so a replay is keyed on the user and tenant those
+// resolved. It is independent of the default chain and works with
+// WithoutDefaultMiddleware too.
 //
-// Has no effect when WithoutDefaultMiddleware is also set. Wire your
-// own chain explicitly in that case.
+// Defaults Principal to the request's owner (the framework's owner
+// extractor, i.e. the authenticated user), falling back to a hash of the
+// request's credential headers. The middleware caches nothing without a
+// Principal. One shared key namespace would replay one caller's response
+// body to another, and the framework layer is where "who is this" is
+// knowable, so IdempotencyConfig{} still means "all defaults" here. Set
+// Principal explicitly to key on something else (an API-token id).
+//
+// Defaults Tenant to the resolved tenant id (tenant.GetTenantID), so a
+// credential that switches tenants and resends the same key runs the
+// write in the new tenant.
 func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 	if cfg.Principal == nil {
 		cfg.Principal = ownerPrincipal
 	}
+	if cfg.Tenant == nil {
+		cfg.Tenant = requestTenantID
+	}
 	return func(a *App) {
 		a.idempotency = &cfg
 	}
+}
+
+// requestTenantID is WithIdempotency's default Tenant: the tenant id the
+// app's tenant middleware resolved, "" when there is none.
+func requestTenantID(r *http.Request) string {
+	return handler.GetTenantID(r.Context())
 }
 
 // ownerPrincipal keys idempotency entries by the request's owner. An
@@ -1076,19 +1092,18 @@ func ownerPrincipal(r *http.Request) string {
 	if id, ok := owner.Get(r.Context()); ok && id != nil {
 		return fmt.Sprintf("%v", id)
 	}
-	// No resolved owner, and on the default wiring there never is one.
+	// No resolved owner: the app has no auth middleware, or this route's
+	// caller did not authenticate through it.
 	//
-	// NewApp installs this middleware, and the router makes the first-added
-	// middleware outermost, so idempotency runs BEFORE any authentication the
-	// app adds with Use(). owner.Get resolves through GetCurrentUser, which
-	// that inner middleware has not populated yet. So the branch above is inert
-	// for the default install and every caller landed in one "anon" namespace:
-	// two different users sending the same Idempotency-Key, "order-1" is
-	// enough, meant the second received the first's stored response and its
-	// own handler never ran.
+	// WithIdempotency mounts the middleware innermost (router.UseInner), so
+	// on that wiring the branch above sees the user the app's auth resolved.
+	// A Principal used elsewhere, or a credential the app's auth does not
+	// read, still lands here. Keying every such caller on one "anon"
+	// namespace would let two callers sending the same Idempotency-Key,
+	// "order-1" is enough, receive each other's stored response.
 	//
-	// The credential itself is the only identity visible this early, so key on
-	// it. Different credentials can never share a namespace; the cost is that
+	// The credential itself is still visible, so key on it. Different
+	// credentials can never share a namespace; the cost is that
 	// re-authenticating starts a new one, so a retry that straddles a login or
 	// a token refresh is treated as a fresh request rather than a replay. That
 	// is the right trade against serving one caller's response to another.
@@ -1237,12 +1252,13 @@ func (a *App) SetLogger(l *slog.Logger) {
 // canonical order:
 //
 //	recovery → request-id → [i18n] → [compress] → [locale prefix] →
-//	[db] → [tracing] → [metrics] → [idempotency] → security headers →
-//	timeout
+//	[db] → [tracing] → [metrics] → security headers → timeout
 //
 // The optional entries are present when the App was configured with
-// WithIdempotency / WithI18n / WithLocalePrefixes; the timeout entry is omitted when
-// AppConfig.DisableRequestTimeout is true.
+// WithI18n / WithLocalePrefixes / WithTracing / WithMetrics; the timeout
+// entry is omitted when AppConfig.DisableRequestTimeout is true.
+// WithIdempotency is not part of this chain: it mounts innermost, after
+// the app's own middleware (see WithIdempotency).
 //
 // Access logging is deliberately NOT in this list. battery/log owns
 // structured access logging when registered, and ad-hoc apps that just
@@ -1257,7 +1273,6 @@ func (a *App) SetLogger(l *slog.Logger) {
 func DefaultMiddleware(a *App) []router.Middleware {
 	var getLogger func() *slog.Logger
 	timeout := 30 * time.Second
-	var idempotency *middleware.IdempotencyConfig
 	var translator *i18n.Translator
 	var localeResolver i18n.LocaleResolver
 	if a != nil {
@@ -1265,7 +1280,6 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		if a.Config.RequestTimeout > 0 {
 			timeout = a.Config.RequestTimeout
 		}
-		idempotency = a.idempotency
 		translator = a.translator
 		localeResolver = a.localeResolver
 	}
@@ -1275,7 +1289,8 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	}
 	// Locale and translator go on the context ahead of every middleware
 	// that can refuse a request, so an idempotency or metrics refusal
-	// answers in the caller's language too.
+	// answers in the caller's language too (idempotency is innermost, so
+	// it is inside this regardless).
 	if translator != nil {
 		var negOpts []i18n.NegotiateOption
 		if localeResolver.Resolve != nil {
@@ -1312,9 +1327,6 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	}
 	if a != nil && a.metrics != nil {
 		chain = append(chain, middleware.MetricsMiddleware(a.metrics))
-	}
-	if idempotency != nil {
-		chain = append(chain, middleware.Idempotency(*idempotency))
 	}
 	shCfg := middleware.SecurityHeadersConfig{}
 	if a != nil {
@@ -1966,15 +1978,6 @@ func NewApp(opts ...AppOption) *App {
 		})
 	}
 
-	// WithIdempotency / WithI18n add entries to the default chain; if
-	// the caller also passed WithoutDefaultMiddleware they would never
-	// appear. Surface the misconfiguration immediately rather than
-	// silently dropping the middleware.
-	if a.noDefaults && a.idempotency != nil {
-		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware: " +
-			"the idempotency middleware lives in the default chain; mount it explicitly via " +
-			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
-	}
 	// The default store keeps keys in this process: behind a fanout (more
 	// than one replica) a retry that reaches another replica runs again.
 	if a.idempotency != nil && a.idempotency.Store == nil && a.fanout != nil {
@@ -2004,6 +2007,13 @@ func NewApp(opts ...AppOption) *App {
 	// registered earlier (e.g. by Mount).
 	if !a.noDefaults {
 		a.router.Use(DefaultMiddleware(a)...)
+	}
+	// Idempotency runs innermost, after the app's auth and tenant
+	// middleware, so the replay key carries the user and tenant they
+	// resolved: a credential that switches tenants and resends the same
+	// key, path and body runs the write in the new tenant.
+	if a.idempotency != nil {
+		a.router.UseInner(middleware.Idempotency(*a.idempotency))
 	}
 
 	// Inbound Web Bot Auth verification (experimental, draft-tracked):
