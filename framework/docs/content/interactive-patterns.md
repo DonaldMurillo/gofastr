@@ -58,6 +58,12 @@ the signal itself.
 sets the signal to the tab's index; CSS attribute selectors show/hide
 the matching panel. No JavaScript beyond the runtime's click delegation.
 
+With `Slice`, the strip selects the slice's value for the request. A
+value that names no tab (negative, or 5 on a three-tab strip) selects
+tab 0, and when the `headless-tabs` module loads it writes 0 back into
+the signal, so the store and anything else bound to the signal read
+the tab the page shows. An in-range value is left as it is.
+
 Three opt-in config knobs add the contracts a port from a component
 library usually needs (every zero value keeps the default output
 byte-identical):
