@@ -91,7 +91,8 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 		}
 		return f, nil
 	case schema.Decimal:
-		if !decimalLiteral.MatchString(raw) || !decimalExponentFits(raw) {
+		// The write check (schema.Validate) shares the exponent rule.
+		if !decimalLiteral.MatchString(raw) || !schema.DecimalExponentFits(raw) {
 			return nil, valueTypeError(field, t)
 		}
 		return raw, nil
@@ -135,21 +136,6 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 // else in a text bind (22021).
 func storableText(raw string) bool {
 	return utf8.ValidString(raw) && strings.IndexByte(raw, 0) < 0
-}
-
-// maxDecimalExponent is the largest exponent magnitude Postgres numeric_in
-// reads (NUMERIC_MAX_PRECISION); past it the literal is 22P02.
-const maxDecimalExponent = 1000
-
-// decimalExponentFits reports whether a decimalLiteral's exponent, if it
-// has one, is within ±maxDecimalExponent.
-func decimalExponentFits(raw string) bool {
-	i := strings.IndexAny(raw, "eE")
-	if i < 0 {
-		return true
-	}
-	e, err := strconv.Atoi(raw[i+1:])
-	return err == nil && e >= -maxDecimalExponent && e <= maxDecimalExponent
 }
 
 // TypedBind is CoerceValue for a value already checked, or one the program
