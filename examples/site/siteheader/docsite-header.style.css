@@ -32,7 +32,7 @@
   font-size: var(--text-ui);
 }
 
-/* Brand: the λ mark, the lowercase wordmark, and the live version
+/* Brand: the go-arrow lockup and the live version
    capsule with its pulse. */
 .brand {
   display: inline-flex;
@@ -45,22 +45,15 @@
   text-decoration: none;
 }
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
-  inline-size: 22px;
-  block-size: 22px;
-  border-radius: var(--radii-sm);
-  background: color-mix(in oklch, var(--color-primary) 14%, var(--color-surface));
-  color: var(--color-primary);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 1;
-  font-weight: var(--font-weight-medium);
+  display: inline-flex;
+  flex-shrink: 0;
+  inline-size: var(--size-brand-width);
+  block-size: var(--size-brand-height);
 }
-.brand-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text);
-  letter-spacing: -0.012em;
+.brand-mark svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
 }
 .brand-status {
   display: inline-flex;
