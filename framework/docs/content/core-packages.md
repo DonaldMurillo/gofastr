@@ -56,7 +56,9 @@ params), so an enum that refuses `bogus` in a JSON body refuses
 
 An empty query or header value is the same as an absent one, for every
 kind: `?page=` and `?q=` leave the field at its zero value and a pointer
-field nil (a `Handler[*T, O]` input stays nil too). **Behaviour change (after v0.95.0):** `?q=` used to bind `""` into a
+field nil (a `Handler[*T, O]` input stays nil too). A repeated
+parameter binds its first value only, so `?q=&q=x` is an absent `q`.
+**Behaviour change (after v0.95.0):** `?q=` used to bind `""` into a
 string field (and `?page=` failed an int field with a 400). To receive an
 explicit empty, add the `,empty` tag option, `query:"q,empty"` or
 `header:"X-Foo,empty"`: a string gets `""`, a number, bool or

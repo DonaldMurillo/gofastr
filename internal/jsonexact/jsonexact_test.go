@@ -3,6 +3,7 @@ package jsonexact
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestUnmarshalKeepsBigIntegers(t *testing.T) {
@@ -109,5 +110,29 @@ func TestSettleDescendsUnexportedEmbed(t *testing.T) {
 	}
 	if v.hide != json.Number("4") {
 		t.Errorf("unexported leaf changed: %#v", v.hide)
+	}
+}
+
+// A value that points back into itself through an unexported embedded
+// pointer (which Settle now descends into) settles and ends.
+func TestSettleEndsOnPointerCycle(t *testing.T) {
+	type node struct {
+		*node
+		V any `json:"v"`
+	}
+	n := &node{V: json.Number("3")}
+	n.node = n
+	done := make(chan error, 1)
+	go func() { done <- Settle(n) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Settle never returned on a pointer cycle")
+	}
+	if _, ok := n.V.(float64); !ok {
+		t.Fatalf("V = %T, want float64", n.V)
 	}
 }

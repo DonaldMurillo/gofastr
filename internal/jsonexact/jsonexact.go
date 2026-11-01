@@ -34,14 +34,14 @@ func Decode(b []byte, dest any, leaf func(json.Number) (any, error)) error {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return errors.New("jsonexact: invalid data after top-level value")
 	}
-	return walk(reflect.ValueOf(dest), leaf)
+	return walk(reflect.ValueOf(dest), leaf, map[uintptr]bool{})
 }
 
 // Settle replaces each json.Number an interface value under dest holds
 // with Lossless(n). It is for a stream: decode with a json.Decoder that
 // called UseNumber, then Settle what it filled.
 func Settle(dest any) error {
-	return walk(reflect.ValueOf(dest), Lossless)
+	return walk(reflect.ValueOf(dest), Lossless, map[uintptr]bool{})
 }
 
 // Lossless is n as a float64 when the float64 holds it exactly, the type
@@ -63,12 +63,18 @@ func Lossless(n json.Number) (any, error) {
 	return f, nil
 }
 
-func walk(v reflect.Value, leaf func(json.Number) (any, error)) error {
+// walk settles every json.Number under v. seen holds the pointers
+// already walked, so a value that points back into itself (a cycle
+// through an embedded *T the struct case descends into) ends instead of
+// recursing until the stack runs out.
+func walk(v reflect.Value, leaf func(json.Number) (any, error), seen map[uintptr]bool) error {
 	switch v.Kind() {
 	case reflect.Pointer:
-		if !v.IsNil() {
-			return walk(v.Elem(), leaf)
+		if v.IsNil() || seen[v.Pointer()] {
+			return nil
 		}
+		seen[v.Pointer()] = true
+		return walk(v.Elem(), leaf, seen)
 	case reflect.Interface:
 		if v.IsNil() {
 			return nil
@@ -86,7 +92,7 @@ func walk(v reflect.Value, leaf func(json.Number) (any, error)) error {
 		// A map or slice held by an interface is not addressable, but its
 		// entries are reachable through it.
 		if e := v.Elem(); e.Kind() == reflect.Map || e.Kind() == reflect.Slice {
-			return walk(e, leaf)
+			return walk(e, leaf, seen)
 		}
 	case reflect.Struct:
 		for i := range v.NumField() {
@@ -100,14 +106,14 @@ func walk(v reflect.Value, leaf func(json.Number) (any, error)) error {
 				ft = ft.Elem()
 			}
 			if f.CanSet() || (sf.Anonymous && ft.Kind() == reflect.Struct) {
-				if err := walk(f, leaf); err != nil {
+				if err := walk(f, leaf, seen); err != nil {
 					return err
 				}
 			}
 		}
 	case reflect.Slice, reflect.Array:
 		for i := range v.Len() {
-			if err := walk(v.Index(i), leaf); err != nil {
+			if err := walk(v.Index(i), leaf, seen); err != nil {
 				return err
 			}
 		}
@@ -117,7 +123,7 @@ func walk(v reflect.Value, leaf func(json.Number) (any, error)) error {
 			// Map entries are not addressable: fix a copy and store it back.
 			entry := reflect.New(v.Type().Elem()).Elem()
 			entry.Set(iter.Value())
-			if err := walk(entry, leaf); err != nil {
+			if err := walk(entry, leaf, seen); err != nil {
 				return err
 			}
 			v.SetMapIndex(iter.Key(), entry)
