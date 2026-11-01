@@ -434,6 +434,15 @@ gates) and by `RequireRole`, `MCPUser`, and `MCPRole` (with the zero Ref
 and the caller's roles), and a `DecisionDeny` refuses before the role
 policy runs. `DecisionAbstain` falls through to the role check.
 
+A scoped API token carries its owner's roles, but `RequireRole` and
+`MCPRole` count a role for it only when the token also holds the role
+scope `role:<name>` (`access.RoleScope`; `role:*` and `*:*` cover every
+role), the rule `framework.MCPRequireRole` follows. A `customers:read`
+token an admin minted does not pass `RequireRole("admin")`; a token meant
+to call admin routes is minted with `role:admin` in its scopes. Sessions
+and JWTs carry no scopes and are unaffected. The Decider still sees the
+owner's full role set, so a deny keyed on a role holds either way.
+
 
 Non-human identities such as CI runners, background workers, and internal scripts
 authenticate with **API tokens** (`gfsk_`-prefixed PATs) instead of session
@@ -601,7 +610,9 @@ their tokens by logging in, not with the token itself.
 
 A service account authenticates **only** via tokens. There is no login
 path. Create one in Go; its roles flow to `RequireRole` / `access.Can`
-through the `User` interface:
+through the `User` interface. Its tokens still need the matching scope:
+`role:deploy` for `RequireRole("deploy")`, and the permission itself for
+`access.Can`:
 
 ```go
 sa := auth.NewServiceAccount("ci-runner", []string{"deploy", "reader"})

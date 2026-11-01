@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: `auth.RequireRole` and `auth.MCPRole` need a role scope on
+  an API token.** A token carries its owner's roles, so a `customers:read`
+  token an admin minted passed `RequireRole("admin")`. A scoped token now
+  counts a role only when it holds `role:<name>` (`role:*`, `*:*`), as
+  `framework.MCPRequireRole` already required. Sessions and JWTs are
+  unaffected. ([auth](framework/docs/content/auth.md))
 - **Images.** `StripMetadata` keeps the Adobe colour marker, so a
   stripped CMYK JPEG still decodes. Image-field renditions and
   placeholders follow the upload's EXIF orientation. A long upload name

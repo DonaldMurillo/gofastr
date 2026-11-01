@@ -217,7 +217,7 @@ func RolePolicy(roles []string, opts ...PolicyOption) app.Policy {
 			// decider coverage on them.
 			return failureDecision(ctx, o)
 		}
-		if !hasAnyRole(u, roles) {
+		if !hasAnyRole(ctx, u, roles) {
 			return failureDecision(ctx, o)
 		}
 		return decide.Allow()

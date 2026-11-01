@@ -629,3 +629,11 @@ notes:
     breaking: false
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
     guidance: "Two same-titled regions emitted one id, so aria-labelledby and #features hit the first. Update a #features link or an e2e selector that targets a derived id inside an island or a deferred outlet to the prefixed id, or give the component an explicit ID, which always wins."
+  - change: "BREAKING - auth.RequireRole and auth.MCPRole count a role for a scoped API token only when the token holds role:<name> (role:* and *:* cover every role)"
+    breaking: true
+    hits: review
+    guidance: "A token used to carry its owner's roles through these gates. A service account or script whose token calls a role-gated route or MCP tool needs the role scope added (mint it with \"role:admin\" beside its resource scopes). Sessions and JWTs are unaffected."
+    find:
+      uses:
+        - gofastr/battery/auth.RequireRole
+        - gofastr/battery/auth.MCPRole
