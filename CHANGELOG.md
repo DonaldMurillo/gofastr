@@ -206,6 +206,18 @@ few lines, and link the PR or the docs page for the rest.
   `OFFSET $n` alone, which SQLite refuses, so `TypedQuery.Offset`
   without `Limit` failed there and ran on Postgres. An offset alone now
   carries the largest `LIMIT` both dialects accept.
+- **WHERE conditions with comments or `ESCAPE'\'` bind the right
+  arguments.** The `core/query` builders renumber each condition's `$N`
+  placeholders, and three spellings broke that. A quote right after a
+  word ending in E (`ESCAPE'\'`, `LIKE'x\'`) was read as a Postgres
+  `E'…'` string, so the placeholders after it kept their numbers and
+  bound the wrong arguments; only an E that starts a token opens one
+  now. A condition ending in a `--` comment swallowed the closing paren
+  and every clause after it, so the statement did not parse; the
+  builder now ends the line first. A block comment holding `/*` (a glob
+  like `/api/*`) left the placeholders after it unrenumbered, though
+  SQLite ends the comment at the first `*/` and runs them; when the
+  comment would otherwise never close, it now closes there.
 - **`kiln agent` starts when ports 8765–8774 are all busy.** The
   fallback handed serve port 0 while the panel URL said `localhost:0`,
   so the readiness check timed out and killed a healthy server. The
@@ -4030,6 +4042,15 @@ few lines, and link the PR or the docs page for the rest.
 - **examples/site's status pill keeps its wording through hydration.**
 
 ### Security
+- **A scope added after an `OrWhere` covers the whole WHERE.**
+  `query.Select` wrote its connectors flat, so
+  `Where(a).OrWhere(b).Where(tenant)` built `(a) OR (b) AND (tenant)`,
+  which SQL reads as `a OR (b AND tenant)`. A tenant, owner or
+  soft-delete scope, or a `Cursor`, added to a host-built query after an
+  `OrWhere` bound only to the last condition, and rows matching `a` came
+  back from every tenant. An AND after an OR now wraps everything before
+  it: `((a) OR (b)) AND (tenant)`. A chain with no `OrWhere` before a
+  `Where` builds the same SQL as before.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.
