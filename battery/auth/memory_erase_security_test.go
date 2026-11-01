@@ -29,6 +29,7 @@ func TestMemoryStoresReachedByErasure(t *testing.T) {
 	if err := mgr.Init(nil); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.OnStop(context.Background()) })
 	for _, id := range []string{u.GetID(), other.GetID()} {
 		if _, err := mgr.SessionStore().Create(ctx, id, time.Hour); err != nil {
 			t.Fatal(err)
@@ -69,5 +70,16 @@ func TestMemoryStoresReachedByErasure(t *testing.T) {
 	// The other user is untouched.
 	if got := erase(other.GetID(), true); got != 3 {
 		t.Errorf("another user's items: %d, want 3 untouched", got)
+	}
+	// A stopped manager's stores leave the process-wide registry, so
+	// another app's erasure of the same id never reaches them.
+	name := mgr.memoryEraseName
+	if err := mgr.OnStop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range datexport.AllStoreErasers() {
+		if e.Name == name {
+			t.Errorf("store eraser %q still registered after OnStop", name)
+		}
 	}
 }

@@ -698,6 +698,9 @@ func (m *AuthManager) OnStart(ctx context.Context) error {
 
 // OnStop stops plugins that implement AuthPluginOnStop.
 func (m *AuthManager) OnStop(ctx context.Context) error {
+	// The in-memory store eraser is process-wide; a stopped manager's
+	// stores must not be reached by another app's EraseUserData.
+	unregisterMemoryStoreEraser(m)
 	var firstErr error
 	for _, name := range slices.Backward(m.order) {
 

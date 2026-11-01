@@ -680,3 +680,17 @@ notes:
     find:
       uses:
         - gofastr/battery/auth.RequireAuth
+  - change: "BREAKING for direct callers of the harness event bus - engine.Bus.Replay is removed; SubscribeSince replays from the bus's window and the session log itself"
+    breaking: true
+    hits: edit
+    guidance: "Replay copied envelopes a transport had fetched from session.Store onto one channel, and every transport now resumes through SubscribeSince(ctx, since), which reads the in-memory window, then the log set with SetLog, then goes live, with a StreamGap event in place of any id range neither holds. Call bus.SetLog(store) once and replace a fetch-then-Replay with SubscribeSince; Backlog(ctx, since, limit) returns the same replay as a slice."
+    find:
+      uses:
+        - gofastr/framework/experimental/harness/engine.Bus.Replay
+  - change: "BREAKING for audit consumers - a SQL audit row from battery/auth with no user id (an unknown address, a magic-link request, a refused OAuth sign-in) carries diff.email_hash, a 12-hex-char sha256 prefix of the canonical address, instead of diff.email"
+    breaking: true
+    hits: review
+    guidance: "EraseUserData scrubs the rows a user acted from and cannot reach a row with no actor, so the raw address outlived the user's erasure. A query or alert that reads diff.email on such rows matches on diff.email_hash instead: hash the canonical address the same way to look one up. Rows with a user id keep diff.email."
+    find:
+      uses:
+        - gofastr/battery/auth.NewSQLAuditSink
