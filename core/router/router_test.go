@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -623,4 +624,37 @@ func TestRouteConflictPanicIsActionable(t *testing.T) {
 
 	// Second registration at the same pattern → conflict.
 	r.Get("/posts", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+}
+
+// TestUncleanPatternPanicIsNotAConflict pins that a pattern the mux
+// refuses on its own (an unclean path from a Group prefix ending in "/")
+// is reported as an invalid route, not as a conflict with a second
+// registration that does not exist.
+func TestUncleanPatternPanicIsNotAConflict(t *testing.T) {
+	defer func() {
+		msg := fmt.Sprint(recover())
+		if strings.Contains(msg, "route conflict") || !strings.Contains(msg, "invalid route") {
+			t.Fatalf("panic = %q, want an invalid-route message, not a conflict", msg)
+		}
+	}()
+	New().Group("/api/").GetFunc("/x", func(http.ResponseWriter, *http.Request) {})
+}
+
+// TestCatchAllRefusesEncodedEmptySegment pins Param's empty-segment rule
+// end to end: %2F in a catch-all can't hand a handler an absolute path.
+func TestCatchAllRefusesEncodedEmptySegment(t *testing.T) {
+	r := New()
+	var got string
+	r.GetFunc("/files/{p...}", func(_ http.ResponseWriter, req *http.Request) { got = Param(req, "p") })
+	for target, want := range map[string]string{
+		"/files/%2Fetc/passwd": "",
+		"/files/a/%2F/b":       "a/",
+		"/files/a/b/":          "a/b/",
+	} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if got != want {
+			t.Errorf("%s: Param = %q, want %q", target, got, want)
+		}
+	}
 }

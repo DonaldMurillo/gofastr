@@ -60,7 +60,8 @@ middleware chaining after registration (`Use` adds outside-in, the first
 added is outermost; `UseInner` adds middleware that runs after every `Use`
 and `Group` middleware in the tree, next to the handler), route groups,
 and sanitized path
-params (`Param` strips CR/LF/NUL, a decoded `/`, and smuggled `..`;
+params (`Param` strips CR/LF/NUL, a decoded `/`, smuggled `..`, and in a
+`{name...}` catch-all a leading or doubled `/`, which only `%2F` produces;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
 reader of `r.PathValue` should go through `Param` or the exported
 `SanitizePathParam`). `Param` panics when the matched route declares

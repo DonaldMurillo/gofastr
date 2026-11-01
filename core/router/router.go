@@ -161,6 +161,13 @@ func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
+				// Only a conflict gets the conflict advice: an unclean or
+				// malformed pattern ("/api//x" from a Group prefix ending
+				// in "/") is its own mistake, and naming a second
+				// registration that does not exist sent authors hunting.
+				if !strings.Contains(fmt.Sprint(rec), "conflicts with") {
+					panic(fmt.Sprintf("router: invalid route %q: %v", fullPattern, rec))
+				}
 				panic(fmt.Sprintf("router: route conflict registering %q: %v\n"+
 					"Two registrations want the same path (commonly an auto-generated "+
 					"entity/CRUD route and a page at the same name). Mount one elsewhere, "+
@@ -260,6 +267,9 @@ func (r *Router) Patch(pattern string, handler http.Handler) {
 //     form: the mux cleans dot segments out of the request path and
 //     redirects, so a ".." that survives into a value likewise only
 //     arrives %2E-encoded.
+//   - an empty segment in a catch-all {name...}: a leading "/" or a
+//     "//" can only arrive as %2F, for the same reason. A trailing "/"
+//     is a real path's and stays.
 //
 // A catch-all {name...} still spans segments: "a/b/c" is returned
 // intact. That's the one form allowed to contain "/".
@@ -347,9 +357,10 @@ func Params(r *http.Request) map[string]string {
 // never carry. See [Param] for the full contract.
 //
 // catchAll relaxes the "/" rule only: a {name...} wildcard is defined
-// to span segments. The dot-segment rule applies to both forms: Go's
-// mux resolves "." and ".." out of the request path (redirecting when
-// it must), so a surviving ".." segment is always percent-encoded
+// to span segments, but not to hold an empty one except at the end.
+// The dot-segment rule applies to both forms: Go's mux resolves "."
+// and ".." out of the request path (redirecting when it must), so a
+// surviving ".." segment is always percent-encoded
 // smuggling, never a legitimate route match.
 //
 // Exported for readers that hold a name and a catch-all flag without a
@@ -361,6 +372,11 @@ func SanitizePathParam(s string, catchAll bool) string {
 		case c == '\n' || c == '\r' || c == 0:
 			return s[:i]
 		case c == '/' && !catchAll:
+			return s[:i]
+		case c == '/' && (i == 0 || s[i-1] == '/'):
+			// An empty segment, leading or interior, in a catch-all: the
+			// mux cleans "//" out of a real path, so it arrived as %2F
+			// and would hand a sink an absolute path ("/etc/passwd").
 			return s[:i]
 		case c == '.' && isDotDotSegment(s, i):
 			return s[:i]
