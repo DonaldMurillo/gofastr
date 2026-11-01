@@ -548,6 +548,14 @@ func (m *AuthManager) initPlugins() error {
 // Name returns the battery name for the framework's BatteryManager.
 func (m *AuthManager) Name() string { return "auth" }
 
+// ReservedEmbedPrefixes reports the BasePath every auth route mounts under
+// (token minting, 2FA, account linking), so an embed grant can neither sit
+// over nor reach it wherever AuthConfig.BasePath moved it. framework/embed's
+// built-in list names only the default "/auth". See framework.EmbedReserving.
+func (m *AuthManager) ReservedEmbedPrefixes() []string {
+	return []string{m.Config().BasePath}
+}
+
 // Init is called by the framework during App.Start. It initializes JWT
 // (if configured), all registered auth plugins, and mounts their HTTP
 // routes on app.Router() under the configured BasePath.

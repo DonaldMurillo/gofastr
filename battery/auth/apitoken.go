@@ -34,11 +34,14 @@ const (
 	maxTokenScopes = 32
 	tokenRandBytes = 20 // → 40 hex chars; plaintext is "gfsk_" + 40 = 45 chars
 	tokenPrefixLen = 12 // display prefix length (TokenPrefix + 7 hex chars)
+
+	tokenDisplayRandLen = 7  // random chars a display prefix keeps after the brand
+	maxTokenBrandLen    = 16 // longest brand tokenPrefixPattern admits, "_" included
 )
 
 // APIToken is one scoped, hashed API token (a PAT or a service-account
 // credential). Only a sha256 hash of the plaintext is persisted; the
-// Prefix field is the first tokenPrefixLen chars of the plaintext so
+// Prefix field is the brand plus 7 chars of the plaintext so
 // listings can identify a token without revealing it.
 type APIToken struct {
 	ID         string
@@ -166,7 +169,7 @@ func invalidTokenSpec(reason i18n.Phrase, params map[string]any) error {
 // is never persisted, logged, or placed in any error string.
 //
 // Validation: Name/OwnerKind/OwnerID required; OwnerKind ∈ {user,service};
-// scope strings must match ^[a-z0-9_-]+:[a-z0-9_*-]+$; max 32 scopes.
+// scope strings must match ^[a-z0-9_*-]+:[a-z0-9_*-]+$; max 32 scopes.
 func IssueToken(ctx context.Context, store APITokenStore, spec TokenSpec) (string, APIToken, error) {
 	if store == nil {
 		return "", APIToken{}, errors.New("auth: IssueToken: store is nil")
@@ -271,12 +274,18 @@ func sha256hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// tokenDisplayPrefix returns the first tokenPrefixLen chars of a plaintext
-// token (safe to surface in listings/audit). It never panics on short
-// input.
+// tokenDisplayPrefix returns the token's brand plus tokenDisplayRandLen
+// random chars (safe to surface in listings/audit): "gfsk_" + 7 hex for the
+// default brand. A fixed 12-char cut held no random chars at all for a
+// brand of 12 or more ("acmecorpprod_"), so every token listed and audited
+// alike. It never panics on short input.
 func tokenDisplayPrefix(plaintext string) string {
-	if len(plaintext) > tokenPrefixLen {
-		return plaintext[:tokenPrefixLen]
+	n := tokenPrefixLen
+	if i := strings.IndexByte(plaintext, '_'); i >= 0 && i < maxTokenBrandLen {
+		n = i + 1 + tokenDisplayRandLen
+	}
+	if len(plaintext) > n {
+		return plaintext[:n]
 	}
 	return plaintext
 }

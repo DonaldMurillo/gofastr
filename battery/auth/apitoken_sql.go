@@ -400,10 +400,27 @@ func scanAPIToken(row rowScanner) (*APIToken, error) {
 		return nil, err
 	}
 	t.Scopes = unmarshalStringList(scopes)
-	t.ExpiresAt = timePtrFromRaw(expiresAtRaw)
+	t.ExpiresAt = timePtrFailClosed(expiresAtRaw)
 	t.LastUsedAt = timePtrFromRaw(lastUsedRaw)
-	t.RevokedAt = timePtrFromRaw(revokedAtRaw)
+	t.RevokedAt = timePtrFailClosed(revokedAtRaw)
 	return &t, nil
+}
+
+// timePtrFailClosed reads a nullable timestamp whose presence is the fact
+// that matters: a revocation, an expiry. A non-NULL value the parser cannot
+// read (SQLite's unixepoch(), julianday('now'), an unlisted layout) is set,
+// so it reads as the epoch, already passed. Through timePtrFromRaw it read
+// as NULL: an operator's out-of-band revoke left the token live and an
+// unreadable expiry never expired.
+func timePtrFailClosed(src any) *time.Time {
+	if src == nil {
+		return nil
+	}
+	if t := coerceTime(src); !t.IsZero() {
+		return &t
+	}
+	epoch := time.Unix(0, 0).UTC()
+	return &epoch
 }
 
 // nullableTime renders a *time.Time as a driver value: nil for unset, the

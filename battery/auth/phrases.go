@@ -130,6 +130,7 @@ var (
 	reasonTooManyScopes                  = i18n.Define("auth.too_many_scopes", "too many scopes ({{count}} > {{max}})")
 	reasonInvalidScope                   = i18n.Define("auth.invalid_scope", "invalid scope {{scope}} (want resource:verb)")
 	reasonNegativeTokenTTL               = i18n.Define("auth.negative_token_ttl", "token ttl must be positive (got {{ttl}}); omit it for a token that does not expire")
+	reasonTokenTTLOutOfRange             = i18n.Define("auth.token_ttl_out_of_range", "ttl_seconds must be between 1 and {{max}} (got {{ttl}}); omit it for a token that does not expire")
 	reasonInvalidTokenPrefix             = i18n.Define("auth.invalid_token_prefix", "invalid token prefix {{prefix}} (want lowercase alnum starting with a letter, 2-16 chars, trailing underscore, e.g. {{example}})")
 	reasonCurrentPasswordRequired        = i18n.Define("auth.current_password_required", "current password required")
 	reasonNewPasswordRequired            = i18n.Define("auth.new_password_required", "new password required")
