@@ -665,3 +665,7 @@ notes:
     find:
       uses:
         - gofastr/battery/rtc.New
+  - change: "A process module whose descriptor drops grants and adds none stays enabled at boot (new InstallOutcome InstallGrantsNarrowed); a runtime RevokeGrants survives the next boot"
+    breaking: false
+    guidance: "Code that read InstallGrantsChanged as \"the grants differ\" now also needs InstallGrantsNarrowed. RegisterResult.EffectiveGrants is the stored set, which leaves out grants an operator revoked; give one back with SetEffectiveGrants. The revoked_grants column is added at boot."
+    nodetect: "a narrowed boot used to disable the module and now keeps it enabled; no source spelling changes"

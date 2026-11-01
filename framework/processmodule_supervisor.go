@@ -689,6 +689,9 @@ func (s *ProcessModuleSupervisor) Register(ctx context.Context, d ProcessModuleD
 	slot.mu.Lock()
 	slot.enabled = inst.Row.Enabled
 	slot.mu.Unlock()
+	// A new row holds the descriptor's grants; an existing one holds them
+	// less its stored revokes.
+	effective = inst.Row.EffectiveGrants
 	if inst.Outcome == InstallGrantsChanged {
 		s.logf("processmodule: %q grants changed (%v -> %v): disabled until an operator re-enables it", d.Name, inst.PreviousGrants, effective)
 	}

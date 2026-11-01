@@ -104,6 +104,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A reboot no longer undoes a process-module revoke.** The next boot
+  compared the descriptor with the stored row, read the revoked grant as a
+  grant change, wrote it back and disabled the module. The store now
+  records revokes (`DesiredState.RevokedGrants`, a `revoked_grants` column
+  `EnsureSchema` adds to an existing table), the boot subtracts them from
+  the descriptor, and only a grant the row does not hold disables the
+  module. A descriptor that only drops grants reports the new
+  `InstallGrantsNarrowed` outcome and keeps the module enabled.
 - **A revoked process-module grant stops working when the drain starts.**
   A revoke or disable drains the child for up to `DrainPerModule` (30 s by
   default), and the broker kept answering its `host.*` reverse calls under
