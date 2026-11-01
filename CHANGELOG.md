@@ -132,6 +132,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A list on a bare filter key is no longer sent as an IN.** The
+  server reads `?status=a,b` as equality with the literal `a,b`, so a
+  list there matched nothing it was meant to. The generated JS SDK sent
+  an array on any filter key that way; it now throws on an array whose
+  key does not end in `_in`, naming the `<key>_in` to use (`sort`,
+  `fields` and `include` arrays still go comma-joined). The generated
+  CLI's bare `--<field>` flag claimed "comma list = IN" and sent the
+  same query; it is equality only now, and a new `--<field>-in` flag
+  sends `<field>_in`.
 - **`gofastr generate cli` refuses a `custom.go` from the other mode.**
   The generator never rewrites `custom.go`, so moving between the entity
   and `--from-openapi` modes kept a file importing the other mode's client,

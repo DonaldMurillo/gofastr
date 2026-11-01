@@ -513,9 +513,15 @@ function encodeParams(params) {
 
 // A filter list goes as one comma-joined value, which the server splits
 // on commas, so an element holding a comma would arrive as two values.
-// The top-level lists (sort, fields, include) name fields, where a comma
-// already separates names the way the server reads them.
+// Only an _in key is split: the server reads a list on a bare key as
+// equality with the whole joined string, so status: ["a", "b"] would
+// match rows whose status is "a,b". The top-level lists (sort, fields,
+// include) name fields, where a comma already separates names the way
+// the server reads them.
 function joinList(key, list) {
+  if (!key.endsWith("_in")) {
+    throw new Error("query: " + key + " takes one value; send a list as " + key + "_in");
+  }
   for (const v of list) {
     if (String(v).includes(",")) {
       throw new Error("query: a value of " + key + " holds a comma, which the server reads as a separator");
@@ -630,9 +636,10 @@ class Resource {
    * Offset-paged list. params: {page, limit, sort, include, fields, q,
    * trashed, filters}: filter keys are the snake_case column names (see
    * the exported <entity>Fields constants), with _ne/_gt/_gte/_lt/_lte/_like/_in
-   * suffixes for operators. A filter value may be an array (an _in
-   * list); an element holding a comma throws, because the server splits
-   * on commas.
+   * suffixes for operators. An _in key takes an array; an array on any
+   * other filter key throws (the server reads a bare key as equality
+   * with the whole value), and so does an element holding a comma,
+   * because the server splits _in values on commas.
    */
   list(params) {
     return this.client.do("GET", this._path("", params));
@@ -880,6 +887,8 @@ export interface ListParams {
   /**
    * Filter params keyed by snake_case column name (use the <entity>Fields
    * constants), with _ne/_gt/_gte/_lt/_lte/_like/_in operator suffixes.
+   * An array is an IN list and goes only on an _in key; on any other
+   * key it throws.
    */
   filters?: Record<string, string | number | boolean | Array<string | number>>;
 }

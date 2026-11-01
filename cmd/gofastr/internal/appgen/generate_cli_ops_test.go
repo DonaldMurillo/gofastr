@@ -88,3 +88,20 @@ func TestRenderCLI_FilterFlagsMatchOpMatrix(t *testing.T) {
 		}
 	}
 }
+
+// The bare filter flag used to say "comma list = IN" and send
+// ?status=a,b, which the server reads as equality with the literal
+// "a,b". A list now has its own -in flag bound to the _in param, and the
+// bare flag is equality only.
+func TestRenderCLI_InFlagBindsInParam(t *testing.T) {
+	posts := renderedCLI(t, defaultCLIOptions())["posts.gen.go"]
+	if !strings.Contains(posts, `{flag: "title-in", param: "title_in"`) {
+		t.Errorf("posts.go has no --title-in flag bound to title_in")
+	}
+	if !strings.Contains(posts, `{flag: "title", param: "title", help: "filter: title equals"}`) {
+		t.Errorf("the bare --title flag is not equality only")
+	}
+	if strings.Contains(posts, "= IN") {
+		t.Errorf("a bare flag still claims a comma list is IN")
+	}
+}
