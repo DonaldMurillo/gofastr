@@ -133,9 +133,11 @@ func TestErrorDocumentMintsSession(t *testing.T) {
 			t.Errorf("%s: chrome session id %q does not match the Set-Cookie token (verified %q, ok=%v)", tc.name, sid, id, ok)
 		}
 	}
-	// The 405 document: a screen path answers POST with the screen
-	// itself, so the 405 arm is exercised directly the way its existing
-	// test does (method_not_allowed_test.go), on the same layout host.
+	// The 405 document for a NON-screen path (a route on another
+	// method): exercised directly the way its existing test does
+	// (method_not_allowed_test.go), on the same layout host. A screen
+	// path's 405 deliberately mints nothing; screen_method_test.go pins
+	// that arm.
 	rec405 := httptest.NewRecorder()
 	rec405.Header().Set("Allow", "GET")
 	ds.serveMethodNotAllowedPage(rec405, httptest.NewRequest(http.MethodPost, "/", nil))

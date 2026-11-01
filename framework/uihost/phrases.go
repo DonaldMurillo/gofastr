@@ -54,6 +54,9 @@ var (
 	problemNoRoute      = i18n.Define("uihost.problem_no_route", "No route matches this request.")
 	problemServerError  = i18n.Define("uihost.problem_server_error", "Internal Server Error")
 	problemRenderFailed = i18n.Define("uihost.problem_render_failed", "The page failed to render.")
+
+	problemMethodNotAllowed = i18n.Define("uihost.problem_method_not_allowed", "Method Not Allowed")
+	problemMethodRefused    = i18n.Define("uihost.problem_method_refused", "This address does not accept the request's method; the Allow header lists the ones it does.")
 )
 
 // problem is an RFC 9457 problem document with the framework's reason
