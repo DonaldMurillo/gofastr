@@ -97,9 +97,8 @@ func (s *SQLMagicLinkTokenStore) DeleteTokensForPayload(ctx context.Context, pay
 //
 // A failed sweep is logged and the token is still returned: the row is
 // already written and live, so failing the mint would leave a link no one
-// receives (a reset mails nothing, a magic-link send answers 500). The
-// sweep timer only moves on a sweep that succeeded, so the next mint
-// retries it.
+// receives (a reset mails nothing, a magic-link send answers 500). A
+// failed sweep is retried after magicLinkSweepRetry, not on the next mint.
 func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, ttl time.Duration) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

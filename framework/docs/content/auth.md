@@ -1219,7 +1219,16 @@ short cooldown, not an hourly budget with a long block: anyone can spend
 an address's budget, and a long block would let a stranger stop every
 link to its owner. The mails a stranger triggers still reach the owner,
 and each link outlives the cooldown, so the owner always holds a working
-one. Past the budget the request gets the same 200 as any
+one. Keep `TokenTTL` above `Window + BlockDuration` (4 minutes at the
+defaults) if you shorten it.
+
+The default per-address limiter keeps its state in memory on each
+replica, even when the plugin's `RateLimit` uses a shared
+`SQLRateLimitStore`, so the cooldown holds per replica. That is
+deliberate: the SQL store records an attempt before it counts, so a
+concurrent burst on one key can deny every caller, which on this limiter
+would let a stranger's burst stop the owner's mail again. Put
+`AddressRateLimit` on a shared store only knowing that. Past the budget the request gets the same 200 as any
 other and nothing is minted or mailed, so the limit says nothing about
 whether the address has an account; the audit event carries
 `throttled=address`. The limiter key is `address:` plus the SHA-256 of
@@ -1245,8 +1254,9 @@ SQL token store (`NewSQLMagicLinkTokenStore`) sweeps expired rows on its
 own mint path (at most once per 15 minutes), and the magic-link plugin
 runs a cleanup ticker from `OnStart` — no operator cron, no scheduled
 `Cleanup` calls to wire. A failed sweep is logged and the mint still
-returns its token (the row is already written); the 15 minutes restart
-only after a sweep that succeeded, so the next mint tries again.
+returns its token (the row is already written); a failed sweep is tried
+again a minute later rather than on every mint, so a failing DELETE
+does not run on each one.
 
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service
