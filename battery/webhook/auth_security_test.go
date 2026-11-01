@@ -348,7 +348,7 @@ func TestDeliveryRedactsEchoedCredential(t *testing.T) {
 	for name, a := range map[string]Auth{
 		"api key": {Kind: AuthAPIKey, Token: "key-very-secret"},
 		"bearer":  {Kind: AuthBearer, Token: "tok-very-secret"},
-		"basic":   {Kind: AuthBasic, Username: "svc", Password: "pw-very-secret"},
+		"basic":   {Kind: AuthBasic, Username: "svc", Password: "pw-very-secret"}, // not-a-secret: fixture credential the echo test must see redacted
 	} {
 		d := deliverOnce(t, Subscriber{URL: echo.URL, Auth: a}, Options{})
 		basic := base64.StdEncoding.EncodeToString([]byte("svc:pw-very-secret"))
