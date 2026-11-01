@@ -176,6 +176,9 @@ func TestMemHogRefusedUnderDataCap(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("RLIMIT_DATA via prlimit is the linux backend's cap")
 	}
+	if raceEnabled {
+		t.Skip("-race build: ThreadSanitizer cannot start under a data cap")
+	}
 	prlimit, err := exec.LookPath("prlimit")
 	if err != nil {
 		t.Skip("prlimit not installed")

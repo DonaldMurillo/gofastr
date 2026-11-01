@@ -300,6 +300,9 @@ func TestSandboxConformance(t *testing.T) {
 	if b == nil {
 		t.Skipf("no sandbox backend available on %s: untrusted modules fail-closed here (design §6)", runtime.GOOS)
 	}
+	if raceEnabled && b.Name() == "bwrap" {
+		t.Skip("-race build: ThreadSanitizer's startup reservation exceeds the bwrap backend's data cap, so this test binary cannot be a capped probe child; the non-race run and the processmodule-demo host tests cover it")
+	}
 	skipIfSandboxAccountCannotReachTestBinary(t, b)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
