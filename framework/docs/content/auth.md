@@ -1288,6 +1288,18 @@ A store error **fails closed** (denies with a short Retry-After): an
 attacker must never lift the limit by degrading its backend. See
 [Horizontal scaling](scaling.md).
 
+**Under a concurrent burst the shared store also fails closed.** Each
+attempt is recorded before it is counted, so no burst, on any number of
+replicas, admits more than `MaxAttempts`. The cost runs the other way:
+when a burst's inserts all land before its counts, every caller in it is
+refused, the legitimate one included, and the key is blocked. For a
+brute-force limiter that is the right side to err on. For a limiter
+whose budget a stranger can spend on someone else's behalf, it hands the
+stranger a way to lock the owner out, which is why the per-address mail
+limit (`AddressRateLimit`) keeps its default in memory. Put such a
+limiter on the shared store only if a fleet-wide bound matters more than
+the owner always getting through.
+
 ## Security audit trail
 
 Login success/failure, the 2FA lifecycle, password resets, OAuth links, and
