@@ -662,7 +662,8 @@ func (c *WebSocketConn) allowControl(now time.Time) bool {
 }
 
 // awaitPeerClose waits for the read pump to signal that it parsed the
-// peer's reciprocal Close frame, or for CloseTimeout to elapse. The
+// peer's reciprocal Close frame, or that its read failed, or for
+// CloseTimeout to elapse. The
 // pump is the sole reader, so this never races another reader on the
 // same TCP stream. If the peer already sent Close before our Close()
 // was invoked (the common responder path), peerClosed is already
@@ -674,6 +675,9 @@ func (c *WebSocketConn) awaitPeerClose() {
 	}
 	select {
 	case <-c.peerClosed:
+	case <-c.readDone:
+		// The connection died under the handshake (the peer vanished, or
+		// Shutdown force-closed the socket): no Close frame can come.
 	case <-time.After(timeout):
 	}
 }
