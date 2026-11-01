@@ -2194,15 +2194,24 @@ exchanged server-to-server with the secret, and the plugin's HMAC state
 token already binds the callback. A nonce only matters for the
 implicit/hybrid flow.
 
-No **PKCE** `code_challenge` is sent. PKCE's payload is protecting a
-*public* client that has no secret; the flow here is confidential: the
-single-use code is exchanged server-to-server under the client secret,
-which is the actual protection on the code→token step, and the HMAC state
-token binds the callback. A verifier derived from that same secret (or
-from the public state) would add no defense a client-secret holder doesn't
-already have, so it is deliberately omitted. Supporting public clients
-(SPA/mobile) would need genuine PKCE, meaning a random per-request verifier bound
-via a cookie or store, and is out of scope for the confidential provider.
+**PKCE** (RFC 7636, S256) is sent by the OIDC, Google and GitHub
+providers. The client secret protects the code→token step, but not
+against authorization-code injection: an attacker holding a victim's code
+(a leaked redirect, a log, a referer) starts a flow of their own and
+swaps the code into its callback. Their state and cookie check out and
+the server redeems the code with its own secret, signing them in as the
+victim. RFC 9700 recommends PKCE for confidential clients for this
+reason. The verifier is the HMAC of the flow's signed state under the
+state key: secret (the key never leaves the server), different per flow,
+and recomputed at the callback, so nothing is stored. A stolen code fails
+the IdP's verifier check in any flow but its own.
+
+`OIDCConfig.DisablePKCE`, `GoogleProvider.DisablePKCE` and
+`GitHubProvider.DisablePKCE` turn it off for an IdP that refuses the
+parameters. A custom provider opts in by implementing
+`auth.OAuth2PKCEProvider` (`AuthURLWithChallenge`,
+`ExchangeCodeWithVerifier`); one that does not keeps working without
+PKCE.
 
 **Claims mapping.** `OIDCClaimsMapping` overrides which claim supplies
 each field (defaults `sub`, `email`, `name`, `picture`, `email_verified`)

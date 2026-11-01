@@ -155,6 +155,12 @@ few lines, and link the PR or the docs page for the rest.
     It redirected to `/`, which refuses the pending session. Next to a
     2FA plugin, `Init` now requires `OAuth2Config.TwoFactorURL`, as
     passkey and magic link do.
+  - **OAuth sends PKCE.** The OIDC, Google and GitHub providers send an
+    S256 `code_challenge` and the `code_verifier`, so a stolen
+    authorization code no longer redeems in an attacker's own flow
+    (authorization-code injection, RFC 9700). `DisablePKCE` on each
+    provider turns it off; custom providers opt in through
+    `auth.OAuth2PKCEProvider`.
   - OAuth: an account claim deletes the squatter's stored provider
     tokens; callbacks without a code no longer fill the replay table
     and lock every login out; concurrent refreshes spend a refresh token

@@ -716,3 +716,12 @@ notes:
     find:
       uses:
         - gofastr/battery/auth.DefaultHasher
+  - change: "the OIDC, Google and GitHub OAuth providers send PKCE (S256 code_challenge and code_verifier); new auth.OAuth2PKCEProvider lets a custom provider do the same"
+    breaking: true
+    hits: review
+    guidance: "Every mainstream IdP accepts PKCE on a confidential client. If yours rejects the authorize or token request after upgrading, set OIDCConfig.DisablePKCE (or DisablePKCE on the Google or GitHub provider). A custom OAuth2Provider is unchanged until it implements AuthURLWithChallenge and ExchangeCodeWithVerifier."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOIDCProvider
+        - gofastr/battery/auth.NewGoogleProvider
+        - gofastr/battery/auth.NewGitHubProvider

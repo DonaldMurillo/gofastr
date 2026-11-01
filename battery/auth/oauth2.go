@@ -72,6 +72,27 @@ type OAuth2Provider interface {
 	FetchUserInfo(ctx context.Context, token string) (*OAuth2UserInfo, error)
 }
 
+// OAuth2PKCEProvider is implemented by a provider that sends a PKCE
+// (RFC 7636, S256) challenge with the authorization request and the
+// matching verifier with the code exchange. The plugin uses these methods
+// in place of AuthURL and ExchangeCode whenever a provider has them; the
+// built-in Google, GitHub and OIDC providers do.
+//
+// PKCE is not only for public clients. A confidential client's secret
+// protects the exchange, but not against authorization-code injection: an
+// attacker holding a victim's code (a leaked redirect, a log, a referer)
+// starts a flow of their own, swaps the stolen code into its callback, and
+// the server redeems it with its own secret, signing the attacker in as
+// the victim. The state cookie is the attacker's own, so it checks out. A
+// verifier bound to the flow's state makes the stolen code unredeemable
+// in any other flow (RFC 9700 §2.1.1, §4.5).
+type OAuth2PKCEProvider interface {
+	// AuthURLWithChallenge is AuthURL plus code_challenge (S256).
+	AuthURLWithChallenge(state, challenge string) string
+	// ExchangeCodeWithVerifier is ExchangeCode plus code_verifier.
+	ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error)
+}
+
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 // OAuth2Config holds the configuration for the OAuth2 plugin.
@@ -389,7 +410,7 @@ func (p *OAuth2Plugin) redirectHandler() http.HandlerFunc {
 		}
 		p.bindStateToBrowser(w, state)
 
-		http.Redirect(w, r, provider.AuthURL(state), http.StatusFound)
+		http.Redirect(w, r, p.authURL(provider, state), http.StatusFound)
 	}
 }
 
@@ -418,7 +439,7 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 			return
 		}
 		p.bindStateToBrowser(w, state)
-		http.Redirect(w, r, provider.AuthURL(state), http.StatusFound)
+		http.Redirect(w, r, p.authURL(provider, state), http.StatusFound)
 	}
 }
 
@@ -514,9 +535,10 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		}
 
 		// Exchange the authorization code for a token. The HMAC state token
-		// (validated above) is what binds the callback to this authorization
-		// request; the confidential client's secret protects the exchange.
-		tok, err := provider.ExchangeCode(r.Context(), code)
+		// (validated above) binds the callback to this browser; the PKCE
+		// verifier, derived from that same state, binds the code to this
+		// flow, so a code stolen from another flow does not redeem here.
+		tok, err := p.exchangeCode(r.Context(), provider, code, stateParam)
 		if err != nil {
 			writeAuthError(w, r, http.StatusUnauthorized, reasonCodeExchangeFailed)
 			return
@@ -936,6 +958,41 @@ func (p *OAuth2Plugin) dropProviderTokenRow(ctx context.Context, userID, provide
 		return false
 	}
 	return true
+}
+
+// pkceVerifier derives the flow's PKCE code_verifier from its signed
+// state: HMAC-SHA256 under the state key, base64url (43 chars, the RFC 7636
+// minimum, all unreserved). The state travels in the URL, but the key does
+// not, so the verifier is secret, and deriving it means the callback needs
+// no server-side storage to find it again.
+func (p *OAuth2Plugin) pkceVerifier(state string) string {
+	mac := hmac.New(sha256.New, p.stateKey)
+	mac.Write([]byte("pkce|" + state))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// pkceChallenge is the S256 code_challenge for verifier.
+func pkceChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// authURL is the provider's authorization URL, with a PKCE challenge when
+// the provider supports one.
+func (p *OAuth2Plugin) authURL(provider OAuth2Provider, state string) string {
+	if pp, ok := provider.(OAuth2PKCEProvider); ok {
+		return pp.AuthURLWithChallenge(state, pkceChallenge(p.pkceVerifier(state)))
+	}
+	return provider.AuthURL(state)
+}
+
+// exchangeCode redeems code, sending the flow's PKCE verifier when the
+// provider supports one.
+func (p *OAuth2Plugin) exchangeCode(ctx context.Context, provider OAuth2Provider, code, state string) (*OAuth2Token, error) {
+	if pp, ok := provider.(OAuth2PKCEProvider); ok {
+		return pp.ExchangeCodeWithVerifier(ctx, code, p.pkceVerifier(state))
+	}
+	return provider.ExchangeCode(ctx, code)
 }
 
 // errOAuthLookupFailed means a transient/transport error happened during
@@ -1434,7 +1491,12 @@ func tokenExpiry(expiresIn int64) time.Time {
 }
 
 // GoogleProvider implements OAuth2Provider for Google's OAuth2 endpoints.
+// It sends PKCE (OAuth2PKCEProvider); set DisablePKCE to stop.
 type GoogleProvider struct {
+	// DisablePKCE stops the PKCE challenge and verifier. Only for a
+	// deployment whose Google client refuses them.
+	DisablePKCE bool
+
 	clientID         string
 	clientSecret     string
 	redirectURL      string
@@ -1457,7 +1519,10 @@ func NewGoogleProvider(clientID, clientSecret, redirectURL string) *GoogleProvid
 
 func (g *GoogleProvider) Name() string { return "google" }
 
-func (g *GoogleProvider) AuthURL(state string) string {
+func (g *GoogleProvider) AuthURL(state string) string { return g.AuthURLWithChallenge(state, "") }
+
+// AuthURLWithChallenge implements OAuth2PKCEProvider.
+func (g *GoogleProvider) AuthURLWithChallenge(state, challenge string) string {
 	u, _ := url.Parse("https://accounts.google.com/o/oauth2/v2/auth")
 	q := u.Query()
 	q.Set("client_id", g.clientID)
@@ -1470,13 +1535,20 @@ func (g *GoogleProvider) AuthURL(state string) string {
 	// configured OAuthTokenStore always has something to refresh with.
 	q.Set("access_type", "offline")
 	q.Set("prompt", "consent")
+	setPKCEChallenge(q, challenge, g.DisablePKCE)
 	u.RawQuery = q.Encode()
 	return u.String()
 }
 
 func (g *GoogleProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2Token, error) {
+	return g.ExchangeCodeWithVerifier(ctx, code, "")
+}
+
+// ExchangeCodeWithVerifier implements OAuth2PKCEProvider.
+func (g *GoogleProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error) {
 	data := url.Values{}
 	data.Set("code", code)
+	setPKCEVerifier(data, verifier, g.DisablePKCE)
 	data.Set("client_id", g.clientID)
 	data.Set("client_secret", g.clientSecret)
 	data.Set("redirect_uri", g.redirectURL)
@@ -1609,7 +1681,12 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 }
 
 // GitHubProvider implements OAuth2Provider for GitHub's OAuth2 endpoints.
+// It sends PKCE (OAuth2PKCEProvider); set DisablePKCE to stop.
 type GitHubProvider struct {
+	// DisablePKCE stops the PKCE challenge and verifier. Only for a
+	// deployment whose GitHub app refuses them.
+	DisablePKCE bool
+
 	clientID         string
 	clientSecret     string
 	redirectURL      string
@@ -1632,20 +1709,30 @@ func NewGitHubProvider(clientID, clientSecret, redirectURL string) *GitHubProvid
 
 func (g *GitHubProvider) Name() string { return "github" }
 
-func (g *GitHubProvider) AuthURL(state string) string {
+func (g *GitHubProvider) AuthURL(state string) string { return g.AuthURLWithChallenge(state, "") }
+
+// AuthURLWithChallenge implements OAuth2PKCEProvider.
+func (g *GitHubProvider) AuthURLWithChallenge(state, challenge string) string {
 	u, _ := url.Parse("https://github.com/login/oauth/authorize")
 	q := u.Query()
 	q.Set("client_id", g.clientID)
 	q.Set("redirect_uri", g.redirectURL)
 	q.Set("scope", "user:email")
 	q.Set("state", state)
+	setPKCEChallenge(q, challenge, g.DisablePKCE)
 	u.RawQuery = q.Encode()
 	return u.String()
 }
 
 func (g *GitHubProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2Token, error) {
+	return g.ExchangeCodeWithVerifier(ctx, code, "")
+}
+
+// ExchangeCodeWithVerifier implements OAuth2PKCEProvider.
+func (g *GitHubProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error) {
 	data := url.Values{}
 	data.Set("code", code)
+	setPKCEVerifier(data, verifier, g.DisablePKCE)
 	data.Set("client_id", g.clientID)
 	data.Set("client_secret", g.clientSecret)
 	data.Set("redirect_uri", g.redirectURL)
@@ -1852,3 +1939,28 @@ func parseGoogleEmailVerified(v any) bool {
 	}
 	return false
 }
+
+// setPKCEChallenge adds an S256 code_challenge to an authorization query,
+// unless there is none or the provider disabled PKCE.
+func setPKCEChallenge(q url.Values, challenge string, disabled bool) {
+	if challenge == "" || disabled {
+		return
+	}
+	q.Set("code_challenge", challenge)
+	q.Set("code_challenge_method", "S256")
+}
+
+// setPKCEVerifier adds code_verifier to a token request, unless there is
+// none or the provider disabled PKCE.
+func setPKCEVerifier(form url.Values, verifier string, disabled bool) {
+	if verifier == "" || disabled {
+		return
+	}
+	form.Set("code_verifier", verifier)
+}
+
+var (
+	_ OAuth2PKCEProvider = (*GoogleProvider)(nil)
+	_ OAuth2PKCEProvider = (*GitHubProvider)(nil)
+	_ OAuth2PKCEProvider = (*OIDCProvider)(nil)
+)
