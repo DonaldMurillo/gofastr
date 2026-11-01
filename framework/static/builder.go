@@ -440,6 +440,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if err := b.dumpPWAAssets(&res, frameworkAssetCount); err != nil {
 		return res, err
 	}
+	// Last, once every file is written: no two spellings of one file.
+	if err := checkCaseTwins(&res, rendered, docs); err != nil {
+		return res, err
+	}
 
 	return res, nil
 }
@@ -1594,11 +1598,8 @@ func hashExportTree(outDir string) (string, error) {
 // appropriate rewriter (rewriteBaseURLs for HTML, manual prefixing for JSON)
 // before calling. Guards path containment via ensureContained.
 func (b *Builder) writeRawAsset(urlPath string, body []byte) error {
-	// A backslash is a separator on Windows: /about\index.html would land
-	// on about/index.html there, past every check keyed on the slash
-	// path. A NUL names no file anywhere.
-	if strings.ContainsAny(urlPath, "\\\x00") {
-		return fmt.Errorf("static: file %q holds a backslash or NUL; name it with / only", urlPath)
+	if err := refuseSeparatorName(urlPath); err != nil {
+		return err
 	}
 	dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(urlPath, "/")))
 	if err := b.ensureContained(dst); err != nil {
@@ -1702,9 +1703,9 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 	}
 	// Keyed folded: a script in another case is the same file on a
 	// case-insensitive filesystem.
-	written := make(map[string]bool, len(res.Assets))
+	written := newFileSet()
 	for _, p := range res.Assets {
-		written[foldPath(p)] = true
+		written.add(p)
 	}
 	for _, src := range b.Host.ExtraScriptSrcs(routes) {
 		u, err := url.Parse(src)
@@ -1719,7 +1720,16 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 		if rendered.has(strings.TrimPrefix(urlPath, "/")) {
 			return fmt.Errorf("static: extra script %s would overwrite the exported page at the same path", urlPath)
 		}
-		if written[foldPath(urlPath)] || (urlPath == pwaRegisterJS && b.Host.PWAEnabled()) {
+		// The same spelling is the file the build wrote, which wins.
+		// Another spelling would be skipped while every page still asks
+		// for it: a 404 on a case-sensitive host.
+		if own, ok := written.spelling(urlPath); ok {
+			if own != urlPath {
+				return caseTwinError(own, urlPath)
+			}
+			continue
+		}
+		if urlPath == pwaRegisterJS && b.Host.PWAEnabled() {
 			continue
 		}
 		target := u.EscapedPath()
@@ -1736,7 +1746,7 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 			return err
 		}
 		res.Assets = append(res.Assets, urlPath)
-		written[foldPath(urlPath)] = true
+		written.add(urlPath)
 		b.log("script %s", urlPath)
 	}
 	return nil
@@ -1751,9 +1761,9 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 // file must not keep the new one out.
 func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 	// Keyed folded, like every lookup below.
-	written := make(map[string]bool, len(res.Assets))
+	written := newFileSet()
 	for _, p := range res.Assets {
-		written[foldPath(p)] = true
+		written.add(p)
 	}
 	mounts := make([]string, 0, len(b.ExtraDirs))
 	for m := range b.ExtraDirs {
@@ -1770,6 +1780,9 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 			if err != nil || d.IsDir() {
 				return err
 			}
+			if err := refuseSeparatorName(p); err != nil {
+				return err
+			}
 			urlPath := path.Join(cleanMount, p)
 			rel := strings.TrimPrefix(urlPath, "/")
 			if !publishable(rel) {
@@ -1780,7 +1793,10 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if written[foldPath(urlPath)] || rendered.has(rel) || b.staticSourceHas(filepath.FromSlash(rel)) {
+			if own, ok := written.spelling(urlPath); ok && own != urlPath {
+				return caseTwinError(own, urlPath)
+			}
+			if written.has(urlPath) || rendered.has(rel) || b.staticSourceHas(filepath.FromSlash(rel)) {
 				b.log("kept %s (extra dir %s skipped)", urlPath, mount)
 				return nil
 			}
@@ -1792,7 +1808,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 				return err
 			}
 			res.Assets = append(res.Assets, urlPath)
-			written[foldPath(urlPath)] = true
+			written.add(urlPath)
 			b.log("copied extra %s", urlPath)
 			return nil
 		})
@@ -1972,6 +1988,9 @@ func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(str
 		}
 		if d.IsDir() {
 			return nil
+		}
+		if err := refuseSeparatorName(path); err != nil {
+			return err
 		}
 		if !publishable(path) {
 			log("skipped %s (not published)", path)

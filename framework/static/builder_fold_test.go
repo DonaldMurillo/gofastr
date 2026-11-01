@@ -195,3 +195,78 @@ func TestContributorRefusesBackslash(t *testing.T) {
 		t.Fatalf("Build error = %v, want a backslash refusal", err)
 	}
 }
+
+// A rail script whose path differs only in case from a file the build
+// wrote is one file on a case-insensitive filesystem, and a second
+// spelling on a case-sensitive host: the export refuses it instead of
+// skipping it and leaving the page's script URL unwritten.
+func TestRailScriptRefusesCaseTwin(t *testing.T) {
+	for name, c := range map[string]struct {
+		srcs  []string
+		setup func(*uihost.UIHost)
+	}{
+		"static file": {[]string{"/REDUCERS.js"}, func(h *uihost.UIHost) {
+			h.SetStaticFS(fstest.MapFS{"reducers.js": {Data: []byte("JS")}})
+		}},
+		"two scripts": {[]string{"/a.js", "/A.js"}, func(*uihost.UIHost) {}},
+	} {
+		a := coreapp.NewApp("t")
+		a.Register("/", &homeScreen{}, nil)
+		host := uihost.New(a, uihost.WithExtraScripts(c.srcs...))
+		c.setup(host)
+		mux := http.NewServeMux()
+		for _, s := range c.srcs {
+			mux.HandleFunc("GET "+s, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("JS")) })
+		}
+		_, err := (&Builder{Host: host, OutDir: t.TempDir(), Handler: mux}).Build(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "differ only in case") {
+			t.Errorf("%s: Build error = %v, want a case refusal", name, err)
+		}
+	}
+}
+
+// An ExtraDirs file whose path differs only in case from a file the
+// build wrote is refused for the same reason.
+func TestExtraDirRefusesCaseTwin(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	b := &Builder{Host: uihost.New(a), OutDir: t.TempDir(),
+		ExtraDirs: map[string]fs.FS{"/__gofastr": fstest.MapFS{"RUNTIME.js": {Data: []byte("BAD")}}}}
+	if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "differ only in case") {
+		t.Fatalf("Build error = %v, want a case refusal", err)
+	}
+}
+
+// fs.FS names may hold a backslash, a separator on Windows: a static
+// source or ExtraDirs file named about\index.html landed on the page
+// there. Both are refused everywhere.
+func TestCopyRefusesBackslash(t *testing.T) {
+	src := fstest.MapFS{`about\index.html`: {Data: []byte("ASSET")}}
+	for name, setup := range map[string]func(*Builder){
+		"static source": func(b *Builder) { b.Host.SetStaticFS(src) },
+		"extra dir":     func(b *Builder) { b.ExtraDirs = map[string]fs.FS{"/": src} },
+	} {
+		a := coreapp.NewApp("t")
+		a.Register("/about", &homeScreen{}, nil)
+		b := &Builder{Host: uihost.New(a), OutDir: t.TempDir()}
+		setup(b)
+		if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "backslash") {
+			t.Errorf("%s: Build error = %v, want a backslash refusal", name, err)
+		}
+	}
+}
+
+// A contributor file the build later rewrites in another case kept the
+// contributor's spelling on a case-insensitive filesystem: _HEADERS
+// left a case-sensitive host with no _headers and no frame-ancestors.
+func TestContributorRefusesCaseTwin(t *testing.T) {
+	for _, p := range []string{"/_HEADERS", "/_Redirects", "/__gofastr/RUNTIME.js", "/LLM.md"} {
+		a := coreapp.NewApp("t")
+		a.Register("/", &homeScreen{}, nil)
+		a.Redirect("/old", "/")
+		b := &Builder{Host: uihost.New(a), OutDir: t.TempDir(), Contributors: []Contributor{fileContributor{p}}}
+		if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "differ only in case") {
+			t.Errorf("%s: Build error = %v, want a case refusal", p, err)
+		}
+	}
+}

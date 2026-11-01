@@ -3863,8 +3863,11 @@ few lines, and link the PR or the docs page for the rest.
   differ only in case, or only in Unicode normalization (`café`
   precomposed or with a combining accent), count as one file: a redirect's page, a
   static-source or `ExtraDirs` copy (`_HEADERS` included), a contributor
-  file and a rail script are checked the same way. A rebuild after a
-  case-only rename keeps the page.
+  file and a rail script are checked the same way. A build that writes
+  any two such spellings, an asset and a rail script or a contributor
+  file and the generated `_headers` among them, fails and names both. A
+  static-source or `ExtraDirs` file name holding `\` is refused. A
+  rebuild after a case-only rename keeps the page.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.
