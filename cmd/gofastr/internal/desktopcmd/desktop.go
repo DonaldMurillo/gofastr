@@ -178,6 +178,18 @@ func runDesktopRun(args []string) {
 		return true
 	}
 
+	// The watch takes its first snapshot before the first build, so a
+	// save made during the build or the graph read still rebuilds (the
+	// same order as gofastr dev).
+	var (
+		watch *devcmd.Watch
+		first map[string]time.Time
+	)
+	if f.watch {
+		watch = devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
+		first = watch.Scan()
+	}
+
 	if !launch() {
 		select {
 		case <-shutdown:
@@ -198,11 +210,9 @@ func runDesktopRun(args []string) {
 	reload := make(chan struct{}, 1)
 	stop := make(chan struct{})
 	// A signal after the build but before here leaves shutdown closed:
-	// the loop below sees it on its first turn, and watchCtx has already
-	// ended the dependency query.
-	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
+	// the loop below sees it on its first turn.
 	go func() {
-		prev := watch.Scan()
+		prev := first
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {

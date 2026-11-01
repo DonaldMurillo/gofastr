@@ -147,6 +147,15 @@ func RunDev(args []string) {
 		}
 	}
 
+	// The watch takes its first snapshot before the first build, not
+	// after the server answers: a save made while the build runs, or
+	// while the go list behind NewWatch reads the graph, is then a
+	// change, where a snapshot taken later would already hold it and
+	// never rebuild. The watch keeps every directory the build imports
+	// from, gen/ included.
+	watch := NewWatch(watchCtx, dir, pkg, nil)
+	first := watch.Scan()
+
 	// Build and start the server initially
 	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold, shutdown) && !closed(shutdown) {
 		cli.Fail("Initial build failed. Fixing and saving will retry")
@@ -157,11 +166,9 @@ func RunDev(args []string) {
 		return
 	}
 
-	// File watcher goroutine: polls for .go file changes. The watch
-	// keeps every directory the build imports from, gen/ included.
-	watch := NewWatch(watchCtx, dir, pkg, nil)
+	// File watcher goroutine: polls for .go file changes.
 	go func() {
-		prev := watch.Scan()
+		prev := first
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
