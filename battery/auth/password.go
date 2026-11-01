@@ -45,8 +45,10 @@ var ErrPasswordTooShort error = i18n.NewError(reasonPasswordTooShortField)
 // auth.Init. Verification auto-detects the stored hash's format from its PHC
 // prefix, so an existing user base migrates gradually: old bcrypt rows keep
 // verifying, new rows use the configured hasher. A custom hasher (a
-// pepper, scrypt) works too: [CheckPassword] asks DefaultHasher.Verify
-// first whenever it is not one of the two built-ins. Passwordless
+// pepper, scrypt) works too: the battery's sign-in and password-change
+// paths ask DefaultHasher.Verify first whenever it is not one of the two
+// built-ins, then fall back to [CheckPassword], which knows only the
+// built-in formats (so a custom Verify may call it). Passwordless
 // accounts (OAuth, magic link) store a placeholder made by the
 // configured hasher, so their verify costs what any other row's does.
 type PasswordHasher interface {
@@ -101,19 +103,34 @@ func ValidatePasswordStrength(password string) error {
 // is applied here for inputs longer than 72 bytes, so a long passphrase that
 // was hashed at registration time still verifies at login time.
 //
-// When [DefaultHasher] is a custom hasher (neither [BcryptHasher] nor
-// [Argon2Hasher]), its Verify is asked first: a peppered bcrypt hash looks
-// like any other bcrypt hash, so the prefix cannot route it. A hash the
-// custom hasher does not accept then goes through the prefix dispatch, so
-// rows written before the switch keep verifying.
+// CheckPassword knows the two built-in formats only, so a custom
+// [PasswordHasher]'s Verify may call it for rows written before the switch.
+// The battery's own sign-in paths also ask a custom [DefaultHasher] first
+// (see verifyPassword).
 func CheckPassword(password, hash string) bool {
-	if isCustomHasher(DefaultHasher) && DefaultHasher.Verify(password, hash) {
-		return true
-	}
 	if strings.HasPrefix(hash, "$argon2id$") {
 		return Argon2Hasher{}.Verify(password, hash)
 	}
 	return BcryptHasher{}.Verify(password, hash)
+}
+
+// verifyPassword is the battery's own password check: login, password
+// change, and the unknown-account dummy. When [DefaultHasher] is a custom
+// hasher (neither [BcryptHasher] nor [Argon2Hasher]), its Verify is asked
+// first: a peppered bcrypt hash looks like any other bcrypt hash, so the
+// prefix cannot route it. A hash it does not accept goes through
+// [CheckPassword], so rows written before the switch keep verifying.
+//
+// It is not CheckPassword itself: a custom Verify written against the
+// documented contract ("verification auto-detects the format") calls
+// CheckPassword, and asking the custom hasher from inside CheckPassword
+// recursed until the stack overflowed, killing the process on any
+// anonymous login attempt.
+func verifyPassword(password, hash string) bool {
+	if isCustomHasher(DefaultHasher) && DefaultHasher.Verify(password, hash) {
+		return true
+	}
+	return CheckPassword(password, hash)
 }
 
 // isCustomHasher reports whether h is a host-supplied hasher rather than

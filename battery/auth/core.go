@@ -266,14 +266,14 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			// real row does. Skipping the work leaks user existence by
 			// timing; doing the WRONG algorithm's work leaks it just as
 			// well, only more subtly.
-			_ = CheckPassword(password, dummyHashFor(DefaultHasher))
+			_ = verifyPassword(password, dummyHashFor(DefaultHasher))
 			// Unknown user OR a transport error, record a failed login.
 			// UserID stays empty (anti-enumeration: the event never
 			// distinguishes "no such user" from "wrong password").
 			failLogin("", "bad_credentials", http.StatusUnauthorized, reasonInvalidCredentials)
 			return
 		}
-		if !CheckPassword(password, hash) {
+		if !verifyPassword(password, hash) {
 			failLogin(user.GetID(), "bad_credentials", http.StatusUnauthorized, reasonInvalidCredentials)
 			return
 		}
