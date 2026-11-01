@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // logSlogWarnDefault routes to slog.Default() so callers passing nil to
@@ -330,7 +331,7 @@ func readAndBufferCapped(r *http.Request, cap int64) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	limited := io.LimitReader(r.Body, cap+1)
+	limited := io.LimitReader(r.Body, sentinelLimit(cap))
 	buf, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, err
@@ -469,6 +470,12 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 	if len(cfg.SecretKey) > 0 {
 		return
 	}
+	// A nil *slog.Logger arrives as a non-nil interface holding a nil
+	// pointer: a host passing its own still-unset logger field. Treat it
+	// as nil, or (*slog.Logger).Warn dereferences nil at startup.
+	if l, ok := logger.(*slog.Logger); ok && l == nil {
+		logger = nil
+	}
 	if logger == nil {
 		// stdlib slog default; keeps this package log-implementation-agnostic.
 		// Importing log/slog here is fine; it's stdlib since Go 1.21.
@@ -480,11 +487,20 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 }
 
 // SkipBearerAuth returns a Skip predicate suitable for CSRFConfig.Skip that
-// bypasses requests using Authorization: Bearer or Api-Key headers; those
-// don't ride on cookies and so aren't subject to CSRF.
+// bypasses requests carrying an X-API-Key header or an Authorization
+// header in a scheme the client has to attach on purpose (Bearer, a
+// token or signature scheme): those don't ride along on a cross-site
+// request, so they aren't subject to CSRF.
+//
+// The browser-ambient schemes are NOT skipped: Basic, Digest, Negotiate
+// and NTLM (the scheme token compared case-insensitively). A browser
+// caches those credentials and attaches them to a cross-site form POST
+// on its own, the way it attaches a cookie, so a request carrying one
+// still owes a CSRF token. An app behind a Basic-auth gate or an
+// intranet Negotiate SSO keeps CSRF protection on its cookie writes.
 func SkipBearerAuth() func(*http.Request) bool {
 	return func(r *http.Request) bool {
-		if r.Header.Get("Authorization") != "" {
+		if authz := r.Header.Get("Authorization"); authz != "" && !ambientAuthScheme(authz) {
 			return true
 		}
 		if r.Header.Get("X-API-Key") != "" {
@@ -492,4 +508,21 @@ func SkipBearerAuth() func(*http.Request) bool {
 		}
 		return false
 	}
+}
+
+// ambientAuthScheme reports whether an Authorization value uses a scheme
+// the browser attaches by itself once the user has answered a challenge.
+// The fold is ASCII-only: a browser sends these scheme names in ASCII,
+// and a look-alike is a header the page set itself, which a cross-site
+// form cannot do.
+func ambientAuthScheme(authz string) bool {
+	scheme := strings.TrimLeft(authz, " \t")
+	if i := strings.IndexAny(scheme, " \t"); i >= 0 {
+		scheme = scheme[:i]
+	}
+	switch asciicase.Lower(scheme) {
+	case "basic", "digest", "negotiate", "ntlm":
+		return true
+	}
+	return false
 }

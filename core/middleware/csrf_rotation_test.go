@@ -151,6 +151,30 @@ func TestCSRF_EmptySecretLogsWarning(t *testing.T) {
 	}
 }
 
+// TestWarnIfCSRFUnconfigured_NilSlogLogger: a host passing its own
+// still-unset *slog.Logger field hands the function a non-nil interface
+// holding a nil pointer. The nil check missed it and (*slog.Logger).Warn
+// dereferenced nil at startup; it now falls back to slog.Default as the
+// doc promises for nil.
+func TestWarnIfCSRFUnconfigured_NilSlogLogger(t *testing.T) {
+	var sink strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&sink, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	var lg *slog.Logger
+	func() {
+		defer func() {
+			if v := recover(); v != nil {
+				t.Fatalf("WarnIfCSRFUnconfigured(cfg, (*slog.Logger)(nil)) panicked: %v", v)
+			}
+		}()
+		WarnIfCSRFUnconfigured(CSRFConfig{}, lg)
+	}()
+	if !strings.Contains(sink.String(), "SecretKey") {
+		t.Fatalf("warning did not reach slog.Default: %q", sink.String())
+	}
+}
+
 func mustRandomKey() []byte {
 	k := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, k); err != nil {

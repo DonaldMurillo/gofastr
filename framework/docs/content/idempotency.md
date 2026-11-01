@@ -154,6 +154,7 @@ yourself before returning.
 | Duplicate key + different body                    | `422 Unprocessable Entity`                     |
 | Duplicate key while first is still running        | `409 Conflict` + `Retry-After: 1`              |
 | First request returned non-2xx                    | Claim released; retry runs the handler again   |
+| Handler panicked (`http.ErrAbortHandler` included) | Claim released, then the panic goes on to `Recovery`; retry runs the handler again |
 | Body larger than `MaxBodyBytes`                   | Pass through with `Idempotent-Bypass: body-too-large`; handler still sees full body. The bypass response appends `Vary: Idempotency-Key` (Add, not Set — an upstream middleware such as CORS may already have written `Vary`) so a shared cache cannot serve one caller's bypassed response at another's key |
 | Store backend failure (FailOpen=false, default)   | `503 Service Unavailable`, fail closed         |
 | Store backend failure (FailOpen=true)             | Pass through, fail open (legacy availability) |
@@ -219,7 +220,11 @@ Two stores are bundled:
   reaches another replica runs again, so `NewApp` logs a warning when
   `WithIdempotency` keeps the default store beside `WithFanout`.
 - `NewSQLIdempotencyStore(db, opts...)`: SQL-backed (sqlite + postgres),
-  creates `idempotency_keys` on first use. Options:
+  creates `idempotency_keys` on first use (`body` is `BLOB` on SQLite,
+  `BYTEA` on Postgres). The middleware's store key joins its parts with
+  NUL bytes, which Postgres `TEXT` refuses, so on Postgres the key column
+  holds it with `\` written as `\\` and NUL as `\0`; SQLite keeps the
+  key as is. Options:
   - `WithSQLIdempotencyTable(name)`: override the default table name.
   - `WithSQLIdempotencyTTL(d)`: override the 24h cached-response TTL.
   - `WithSQLIdempotencyInFlightTTL(d)`: override the 30s in-flight

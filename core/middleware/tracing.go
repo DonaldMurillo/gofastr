@@ -74,21 +74,36 @@ func Tracing() Middleware {
 			// later change never reaches the client.
 			prop.Inject(ctx, propagation.HeaderCarrier(w.Header()))
 			ww := &tracingResponseWriter{ResponseWriter: w, status: 200}
+			finish := func(status int) {
+				// After the handler runs, r.Pattern is populated by the mux.
+				route := r.Pattern
+				if route == "" {
+					route = "unmatched"
+				}
+				span.SetName(fmt.Sprintf("HTTP %s %s", textsafe.ScrubControlBytes(r.Method), textsafe.ScrubControlBytes(route)))
+				span.SetAttributes(
+					attribute.String("http.route", textsafe.ScrubControlBytes(route)),
+					attribute.Int("http.status_code", status),
+				)
+				if status >= 500 {
+					span.SetStatus(codes.Error, http.StatusText(status))
+				}
+			}
+			// A panicking handler: the span gets the status the client
+			// gets (Recovery's 500, or the one already sent) and an Error
+			// status naming the panic, even when a 2xx had already gone
+			// out. Runs before the deferred span.End above; the panic goes
+			// on, and the SDK's End records it as the span's exception
+			// event, so no RecordError here (it would add a second one).
+			defer func() {
+				if v := recover(); v != nil {
+					finish(panickedStatus(ww.wroteHeader, ww.status))
+					span.SetStatus(codes.Error, textsafe.Recovered(v))
+					panic(v)
+				}
+			}()
 			next.ServeHTTP(ww, r.WithContext(ctx))
-
-			// After the handler runs, r.Pattern is populated by the mux.
-			route := r.Pattern
-			if route == "" {
-				route = "unmatched"
-			}
-			span.SetName(fmt.Sprintf("HTTP %s %s", textsafe.ScrubControlBytes(r.Method), textsafe.ScrubControlBytes(route)))
-			span.SetAttributes(
-				attribute.String("http.route", textsafe.ScrubControlBytes(route)),
-				attribute.Int("http.status_code", ww.status),
-			)
-			if ww.status >= 500 {
-				span.SetStatus(codes.Error, http.StatusText(ww.status))
-			}
+			finish(ww.status)
 		})
 	}
 }
@@ -128,6 +143,10 @@ func (w *tracingResponseWriter) Write(b []byte) (int, error) {
 }
 
 func (w *tracingResponseWriter) Flush() {
+	// A flush sends the headers: the status is the one set, or 200.
+	// Latch it, so a WriteHeader after the flush (which net/http drops)
+	// does not record a status the client never got.
+	w.wroteHeader = true
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

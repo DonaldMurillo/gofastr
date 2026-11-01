@@ -156,13 +156,36 @@ func DiscardLogging() Middleware {
 // interfaces the underlying writer actually supports.
 type responseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
+	wroteHeader bool
 }
 
-// WriteHeader captures the status code before delegating.
+// WriteHeader records the status the client gets, the way the metrics
+// and tracing wrappers do: an informational status (103 Early Hints) is
+// forwarded and not latched, since a final status follows it; the first
+// final status latches and a later, superfluous call is dropped, as
+// net/http drops it. Latching every call logged a 103 for a response
+// the client got as 200, and a 500 for one already sent as 200.
 func (rw *responseWriter) WriteHeader(code int) {
+	if rw.wroteHeader {
+		return
+	}
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		rw.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
+		return
+	}
 	rw.statusCode = code
+	rw.wroteHeader = true
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Write latches the implicit 200 a first Write sends, so a WriteHeader
+// after it cannot rewrite the logged status.
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.wroteHeader {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(b)
 }
 
 // Unwrap lets http.NewResponseController walk through this wrapper so
@@ -181,6 +204,7 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWrite
 type flushWriter struct{ *responseWriter }
 
 func (f flushWriter) Flush() {
+	f.responseWriter.wroteHeader = true // a flush sends the headers: 200 unless a status was set
 	if fl, ok := f.responseWriter.ResponseWriter.(http.Flusher); ok {
 		fl.Flush()
 	}

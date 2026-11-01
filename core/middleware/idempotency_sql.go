@@ -31,11 +31,16 @@ import (
 //	    fingerprint    TEXT NOT NULL,
 //	    status         INTEGER,           -- nullable while in-flight
 //	    headers        TEXT,              -- JSON, http.Header shape
-//	    body           BLOB,
+//	    body           BLOB (sqlite) / BYTEA (postgres),
 //	    expires_at     TIMESTAMP/TIMESTAMPTZ NOT NULL,
 //	    created_at     TIMESTAMP/TIMESTAMPTZ NOT NULL,
 //	    principal      TEXT NOT NULL DEFAULT ''
 //	)
+//
+// On postgres the key column holds the middleware's store key with a
+// backslash written as two and NUL as backslash-zero (pgKey): the key
+// joins its parts with NUL bytes and Postgres TEXT refuses 0x00. SQLite
+// keeps the key as is.
 //
 // principal is the IdempotencyConfig.Principal value the response was
 // cached for. App.EraseUserData deletes the rows whose principal is the
@@ -130,20 +135,21 @@ func (s *SQLIdempotencyStore) registerData() {
 }
 
 func (s *SQLIdempotencyStore) ensureTable() error {
-	tsType := "DATETIME"
+	tsType, blobType := "DATETIME", "BLOB"
 	if s.dialect == "postgres" {
-		tsType = "TIMESTAMPTZ"
+		// Postgres has no BLOB type; BYTEA is its byte string.
+		tsType, blobType = "TIMESTAMPTZ", "BYTEA"
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		key         TEXT PRIMARY KEY,
 		fingerprint TEXT NOT NULL,
 		status      INTEGER,
 		headers     TEXT,
-		body        BLOB,
+		body        %s,
 		expires_at  %s NOT NULL,
 		created_at  %s NOT NULL,
 		principal   TEXT NOT NULL DEFAULT ''
-	)`, s.table, tsType, tsType)
+	)`, s.table, blobType, tsType, tsType)
 	if _, err := s.db.Exec(stmt); err != nil {
 		return err
 	}
@@ -167,6 +173,7 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 // generic store failure and bypass idempotency.
 func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string) (*IdempotentResponse, bool, error) {
 	now := time.Now()
+	dbKey, principal := s.columnKey(key), s.columnPrincipal(key)
 	// Rate-limited reap. Skipping the per-call DELETE keeps Begin cheap
 	// at high load; expired rows still get removed at least once per
 	// minute per store instance.
@@ -184,7 +191,7 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	// 1) Try to claim the row atomically. If another writer beat us to
 	//    it, RowsAffected==0 and we fall through to a read.
 	res, err := s.db.ExecContext(ctx, s.upsertClaimStmt(),
-		key, fingerprint, now.Add(s.inFlightTTL), now, idemPrincipal(key),
+		dbKey, fingerprint, now.Add(s.inFlightTTL), now, principal,
 	)
 	if err != nil {
 		return nil, false, err
@@ -201,7 +208,7 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	row := s.db.QueryRowContext(ctx,
 		fmt.Sprintf("SELECT fingerprint, status, headers, body FROM %s WHERE key = %s AND expires_at > %s",
 			s.table, s.placeholder(1), s.placeholder(2)),
-		key, now,
+		dbKey, now,
 	)
 	var storedFP string
 	var status sql.NullInt64
@@ -219,12 +226,12 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 		// TestIdemReclaimKeepsFreshRow.
 		if _, deleteErr := s.db.ExecContext(ctx,
 			fmt.Sprintf("DELETE FROM %s WHERE key = %s AND expires_at <= %s", s.table, s.placeholder(1), s.placeholder(2)),
-			key, now,
+			dbKey, now,
 		); deleteErr != nil {
 			return nil, false, fmt.Errorf("idempotency: delete expired claim: %w", deleteErr)
 		}
 		res, err = s.db.ExecContext(ctx, s.upsertClaimStmt(),
-			key, fingerprint, now.Add(s.inFlightTTL), now, idemPrincipal(key),
+			dbKey, fingerprint, now.Add(s.inFlightTTL), now, principal,
 		)
 		if err != nil {
 			return nil, false, err
@@ -266,7 +273,7 @@ func (s *SQLIdempotencyStore) Finish(ctx context.Context, key, fingerprint strin
 	if resp == nil {
 		_, err := s.db.ExecContext(ctx,
 			fmt.Sprintf("DELETE FROM %s WHERE key = %s AND fingerprint = %s", s.table, s.placeholder(1), s.placeholder(2)),
-			key, fingerprint,
+			s.columnKey(key), fingerprint,
 		)
 		return err
 	}
@@ -279,7 +286,7 @@ func (s *SQLIdempotencyStore) Finish(ctx context.Context, key, fingerprint strin
 		"UPDATE %s SET status = %s, headers = %s, body = %s, expires_at = %s WHERE key = %s AND fingerprint = %s",
 		s.table,
 		s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6),
-	), resp.Status, string(hdrJSON), resp.Body, expires, key, fingerprint)
+	), resp.Status, string(hdrJSON), resp.Body, expires, s.columnKey(key), fingerprint)
 	return err
 }
 
@@ -313,6 +320,52 @@ func (s *SQLIdempotencyStore) upsertClaimStmt() string {
 		"INSERT INTO %s (key, fingerprint, expires_at, created_at, principal) VALUES (?,?,?,?,?) ON CONFLICT(key) DO NOTHING",
 		s.table,
 	)
+}
+
+// columnKey is the value bound to the key column. On postgres it is
+// pgKey(key); SQLite stores the key unchanged, so rows an earlier
+// release wrote there keep matching within their TTL.
+func (s *SQLIdempotencyStore) columnKey(key string) string {
+	if s.dialect == "postgres" {
+		return pgKey(key)
+	}
+	return key
+}
+
+// columnPrincipal is the value bound to the principal column: the
+// principal read out of the store key. On postgres a principal holding
+// NUL is pgKey-encoded so the insert does not fail; one without NUL is
+// stored as is, so App.EraseUserData, which matches the raw user id,
+// still reaches it (a DOMAIN\user id keeps its one backslash).
+func (s *SQLIdempotencyStore) columnPrincipal(key string) string {
+	p := idemPrincipal(key)
+	if s.dialect == "postgres" && strings.IndexByte(p, 0) >= 0 {
+		return pgKey(p)
+	}
+	return p
+}
+
+// pgKey makes a string storable in a Postgres TEXT column, which
+// refuses NUL: a backslash becomes two backslashes and NUL becomes a
+// backslash then "0". Escaping the backslash too keeps the mapping
+// injective, so two different store keys never land on one row.
+func pgKey(s string) string {
+	if strings.IndexByte(s, 0) < 0 && strings.IndexByte(s, '\\') < 0 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			b.WriteString(`\\`)
+		case 0:
+			b.WriteString(`\0`)
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }
 
 func (s *SQLIdempotencyStore) placeholder(n int) string {
