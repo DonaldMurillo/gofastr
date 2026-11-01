@@ -16,8 +16,8 @@ import (
 //	// On connect:
 //	hub.Register(conn)
 //
-//	// Broadcast:
-//	hub.Broadcast([]byte("hello everyone"))
+//	// Broadcast (text must be valid UTF-8; BroadcastBinary sends bytes):
+//	if err := hub.Broadcast([]byte("hello everyone")); err != nil { ... }
 //
 //	// On disconnect:
 //	hub.Unregister(conn)
@@ -26,7 +26,7 @@ type Hub struct {
 	// connections maps each registered connection to the stop channel
 	// of its close watcher; Unregister closes it so the watcher exits.
 	connections map[*WebSocketConn]chan struct{}
-	broadcast   chan []byte
+	broadcast   chan wsMessage
 	stop        chan struct{}
 	stopped     atomic.Bool
 }
@@ -35,7 +35,7 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		connections: make(map[*WebSocketConn]chan struct{}),
-		broadcast:   make(chan []byte, 64),
+		broadcast:   make(chan wsMessage, 64),
 		stop:        make(chan struct{}),
 	}
 }
@@ -149,14 +149,55 @@ func (h *Hub) Unregister(conn *WebSocketConn) {
 	h.mu.Unlock()
 }
 
-// Broadcast sends a message to all registered connections.
-// Non-blocking: if the hub's broadcast channel is full, the message is dropped.
-func (h *Hub) Broadcast(msg []byte) {
+// Broadcast sends a text message to all registered connections.
+// Non-blocking: if the hub's broadcast channel is full, the message is
+// dropped, and a connection whose send buffer is full drops it too.
+//
+// A text message must be valid UTF-8 (RFC 6455 §5.6). Broadcast checks
+// msg first and returns ErrInvalidUTF8, sending it to no one, when it
+// is not; send arbitrary bytes with BroadcastBinary. Any other return
+// is nil: a dropped message is not an error.
+func (h *Hub) Broadcast(msg []byte) error {
+	m, err := textMessage(msg)
+	if err != nil {
+		return err
+	}
+	h.send(m)
+	return nil
+}
+
+// BroadcastBinary is Broadcast for a binary message (opcode 0x2): the
+// bytes reach every connection exactly as given, with no UTF-8 check.
+// It shares each connection's send queue, so text and binary keep the
+// order they were broadcast in.
+func (h *Hub) BroadcastBinary(msg []byte) {
+	h.send(wsMessage{opcode: wsopcodeBinary, data: msg})
+}
+
+// BroadcastWait sends a text message to all connections, blocking if
+// the broadcast channel is full. Like Broadcast, it returns
+// ErrInvalidUTF8 and sends nothing for msg that is not valid UTF-8.
+func (h *Hub) BroadcastWait(msg []byte) error {
+	m, err := textMessage(msg)
+	if err != nil {
+		return err
+	}
+	h.sendWait(m)
+	return nil
+}
+
+// BroadcastBinaryWait is BroadcastWait for a binary message.
+func (h *Hub) BroadcastBinaryWait(msg []byte) {
+	h.sendWait(wsMessage{opcode: wsopcodeBinary, data: msg})
+}
+
+// send queues one message for Run without blocking.
+func (h *Hub) send(m wsMessage) {
 	if h.stopped.Load() {
 		return
 	}
 	select {
-	case h.broadcast <- msg:
+	case h.broadcast <- m:
 	case <-h.stop:
 		// hub stopped while we were waiting
 	default:
@@ -164,14 +205,14 @@ func (h *Hub) Broadcast(msg []byte) {
 	}
 }
 
-// BroadcastWait sends a message to all connections, blocking if the
-// broadcast channel is full.
-func (h *Hub) BroadcastWait(msg []byte) {
+// sendWait queues one message for Run, blocking while the channel is
+// full.
+func (h *Hub) sendWait(m wsMessage) {
 	if h.stopped.Load() {
 		return
 	}
 	select {
-	case h.broadcast <- msg:
+	case h.broadcast <- m:
 	case <-h.stop:
 		// hub stopped while we were blocked
 	}

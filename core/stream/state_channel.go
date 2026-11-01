@@ -473,10 +473,18 @@ func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Sna
 		Payload:  snap,
 		SentAt:   time.Now(),
 	})
+	var msg wsMessage
+	if err == nil {
+		// json.Marshal passes a json.RawMessage or a Marshaler's
+		// bytes through without a UTF-8 check, and the envelope goes
+		// out as a text frame a browser fails the connection over.
+		msg, err = textMessage(data)
+	}
 	if err != nil {
-		// The snapshot does not serialize; this connection can never
-		// hydrate. Close it so the client reconnects and the failure
-		// surfaces, rather than leaving a silently blind connection.
+		// The snapshot does not serialize to valid UTF-8 JSON; this
+		// connection can never hydrate. Close it so the client
+		// reconnects and the failure surfaces, rather than leaving a
+		// silently blind connection.
 		go job.conn.Close()
 		return
 	}
@@ -484,7 +492,7 @@ func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Sna
 	case <-job.conn.Closed():
 	default:
 		select {
-		case job.conn.sendBuffer <- data:
+		case job.conn.sendBuffer <- msg:
 		default:
 			// Buffer full: the connection cannot accept hydration, and
 			// every later event is newer than the snapshot it missed.
@@ -573,6 +581,12 @@ func (c *StateChannel[Role, Snapshot, Event]) deliver(conns []*WebSocketConn, ro
 		Payload:  payload,
 		SentAt:   time.Now(),
 	})
+	var msg wsMessage
+	if err == nil {
+		// A RawMessage or Marshaler can carry bytes that are not
+		// UTF-8; as a text frame they would fail every connection.
+		msg, err = textMessage(data)
+	}
 	if err != nil {
 		// An event the source cannot serialize is dropped for this role;
 		// the snapshot path is where an unserializable payload is fatal.
@@ -581,7 +595,7 @@ func (c *StateChannel[Role, Snapshot, Event]) deliver(conns []*WebSocketConn, ro
 	for _, conn := range conns {
 		select {
 		case <-conn.Closed():
-		case conn.sendBuffer <- data:
+		case conn.sendBuffer <- msg:
 		default:
 			// Buffer full: drop for this connection, as Hub.Run does,
 			// or close it when the source asked (CloseOnOverflow).

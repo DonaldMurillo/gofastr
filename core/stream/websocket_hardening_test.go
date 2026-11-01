@@ -65,7 +65,7 @@ func TestWSSlowWriterReturns(t *testing.T) {
 	bw := &blockingWriter{block: make(chan struct{})}
 	conn := &WebSocketConn{
 		conn:       bw,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		config:     WSConfig{WriteTimeout: 100 * time.Millisecond, ReadLimit: 1 << 20},
 	}
@@ -111,7 +111,7 @@ func TestWSPingFloodNoStackOverflow(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(frame.Bytes()), w: io.Discard},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -139,7 +139,7 @@ func TestWSHugeLengthRejected(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(frame.Bytes()), w: io.Discard},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -166,7 +166,7 @@ func TestWSOversizeControlFrameRejected(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(frame.Bytes()), w: io.Discard},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -188,7 +188,7 @@ func TestWSUnmaskedClientFrameRejected(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(frame.Bytes()), w: io.Discard},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20, requireMask: true},
 	}

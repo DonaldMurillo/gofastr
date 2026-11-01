@@ -44,7 +44,7 @@ func TestCloseWritesQueuedMessagesBeforeCloseFrame(t *testing.T) {
 		rc := &recordConn{}
 		c := &WebSocketConn{
 			conn:       rc,
-			sendBuffer: make(chan []byte, n),
+			sendBuffer: make(chan wsMessage, n),
 			closed:     make(chan struct{}),
 			peerClosed: make(chan struct{}),
 			config:     WSConfig{CloseTimeout: time.Millisecond},
@@ -121,7 +121,7 @@ func closeQueued(t *testing.T, sc *slowConn, n int, writeTimeout time.Duration) 
 	t.Helper()
 	c := &WebSocketConn{
 		conn:       sc,
-		sendBuffer: make(chan []byte, n),
+		sendBuffer: make(chan wsMessage, n),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{WriteTimeout: writeTimeout, CloseTimeout: time.Millisecond},

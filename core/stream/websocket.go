@@ -43,7 +43,7 @@ import (
 type WebSocketConn struct {
 	conn       io.ReadWriteCloser
 	mu         sync.Mutex
-	sendBuffer chan []byte
+	sendBuffer chan wsMessage
 	closed     chan struct{}
 	closeOnce  sync.Once
 	onClose    []func()
@@ -375,7 +375,7 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 
 	wsc := &WebSocketConn{
 		conn:         conn,
-		sendBuffer:   make(chan []byte, sendBuf),
+		sendBuffer:   make(chan wsMessage, sendBuf),
 		closed:       make(chan struct{}),
 		peerClosed:   make(chan struct{}),
 		readMsgs:     make(chan []byte, 8),
@@ -509,12 +509,42 @@ func checkOrigin(r *http.Request, custom func(*http.Request) bool) bool {
 // Write sends a text message to the client. Blocks if the send buffer
 // is full (backpressure). Returns ErrClosed once Close has started.
 //
+// A text message must be valid UTF-8 (RFC 6455 §5.6): a browser fails
+// the whole connection with 1007 on one that is not. Write checks data
+// before queueing it and returns ErrInvalidUTF8, queueing nothing, when
+// it is not; send arbitrary bytes with WriteBinary.
+//
 // A nil return means the message is queued, not yet written. Close
 // writes every queued message before its Close frame, within the
 // WriteTimeout bound described on Close, so a message Write accepted
 // before Close reaches the peer unless the peer is too slow to take it
 // in that time or the socket already failed.
 func (c *WebSocketConn) Write(data []byte) error {
+	if !utf8.Valid(data) {
+		return ErrInvalidUTF8
+	}
+	return c.enqueue(wsMessage{opcode: wsopcodeText, data: data})
+}
+
+// WriteString is a convenience for sending a text message. Like Write,
+// it returns ErrInvalidUTF8 for a string that is not valid UTF-8.
+func (c *WebSocketConn) WriteString(data string) error {
+	return c.Write([]byte(data))
+}
+
+// WriteBinary sends a binary message (opcode 0x2) to the client: the
+// bytes arrive exactly as given, with no UTF-8 requirement. A browser
+// hands it to the page as a Blob or ArrayBuffer (per binaryType), not a
+// string. It shares Write's queue, so text and binary messages reach
+// the peer in the order they were written, Close's drain included, and
+// it blocks and returns ErrClosed exactly as Write does.
+func (c *WebSocketConn) WriteBinary(data []byte) error {
+	return c.enqueue(wsMessage{opcode: wsopcodeBinary, data: data})
+}
+
+// enqueue puts one data message on the send queue, blocking while it is
+// full, and refuses it with ErrClosed once Close has started.
+func (c *WebSocketConn) enqueue(msg wsMessage) error {
 	// Check closed first to avoid non-deterministic select
 	select {
 	case <-c.closed:
@@ -524,14 +554,27 @@ func (c *WebSocketConn) Write(data []byte) error {
 	select {
 	case <-c.closed:
 		return ErrClosed
-	case c.sendBuffer <- data:
+	case c.sendBuffer <- msg:
 		return nil
 	}
 }
 
-// WriteString is a convenience for sending a text message.
-func (c *WebSocketConn) WriteString(data string) error {
-	return c.Write([]byte(data))
+// wsMessage is one queued data message and the opcode it goes out
+// with, so text and binary share one FIFO and keep Write's order.
+type wsMessage struct {
+	opcode byte
+	data   []byte
+}
+
+// textMessage wraps data as a queued text message, or refuses it with
+// ErrInvalidUTF8. Every path that queues text without Write (Hub,
+// StateChannel) goes through it, so no text frame leaves this package
+// with bytes a browser would fail the connection over.
+func textMessage(data []byte) (wsMessage, error) {
+	if !utf8.Valid(data) {
+		return wsMessage{}, ErrInvalidUTF8
+	}
+	return wsMessage{opcode: wsopcodeText, data: data}, nil
 }
 
 // Read reads a complete message from the client. It consumes from the
@@ -540,6 +583,12 @@ func (c *WebSocketConn) WriteString(data string) error {
 // frames stay processed even between Read calls. A push-only server
 // need not call Read at all; the pump still answers Pings, clears the
 // keepalive's Pong watch, and completes Close()'s handshake.
+//
+// Read returns text and binary messages alike, as their payload bytes,
+// and does not say which opcode a message came in on. A text message
+// has already been checked as valid UTF-8 (one that is not closes the
+// connection with 1007), so a protocol that mixes the two must tell
+// them apart in its own framing.
 //
 // Messages decoded by the pump before a terminal error are delivered
 // before the error surfaces (drain-before-error). Concurrent Read
@@ -853,7 +902,7 @@ func (c *WebSocketConn) pumpOne() (done bool, err error) {
 	case <-c.closed:
 		return true, nil
 	case msg := <-c.sendBuffer:
-		if err := c.writeFrame(wsopcodeText, msg); err != nil {
+		if err := c.writeFrame(msg.opcode, msg.data); err != nil {
 			return true, err
 		}
 		return false, nil
@@ -861,13 +910,14 @@ func (c *WebSocketConn) pumpOne() (done bool, err error) {
 }
 
 // drainQueued writes the messages still in sendBuffer, oldest first,
-// until the buffer is empty, a write fails, or by passes; each write
-// carries by as its deadline. The caller holds takeMu.
+// each with its own opcode, until the buffer is empty, a write fails,
+// or by passes; each write carries by as its deadline. The caller holds
+// takeMu.
 func (c *WebSocketConn) drainQueued(by time.Time) {
 	for time.Now().Before(by) {
 		select {
 		case msg := <-c.sendBuffer:
-			if err := c.writeFrameBy(wsopcodeText, msg, by); err != nil {
+			if err := c.writeFrameBy(msg.opcode, msg.data, by); err != nil {
 				return
 			}
 		default:
@@ -1415,6 +1465,13 @@ func computeAcceptKey(key string) string {
 // ErrClosed is returned when writing to a closed connection. It is a
 // plain errors.New sentinel so callers can compare with errors.Is.
 var ErrClosed = errors.New("stream: connection closed")
+
+// ErrInvalidUTF8 is returned by Write, WriteString, Hub.Broadcast and
+// Hub.BroadcastWait for data that is not valid UTF-8. A WebSocket text
+// message must be (RFC 6455 §5.6), and a browser fails the connection
+// with 1007 on one that is not, so the message is refused before it is
+// queued. Send arbitrary bytes with WriteBinary or Hub.BroadcastBinary.
+var ErrInvalidUTF8 = errors.New("stream: text message is not valid UTF-8")
 
 // compile-time assertion that net.Conn implements SetWriteDeadline so
 // the writeFrame interface upgrade is valid for real network conns.

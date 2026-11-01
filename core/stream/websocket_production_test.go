@@ -36,7 +36,7 @@ func TestWSCloseHandshakeWaitsPeer(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		config:     WSConfig{WriteTimeout: time.Second, CloseTimeout: 500 * time.Millisecond},
 	}
@@ -79,7 +79,7 @@ func TestWSCloseHandshakeTimesOut(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		config:     WSConfig{WriteTimeout: time.Second, CloseTimeout: 100 * time.Millisecond},
 	}
@@ -102,7 +102,7 @@ func TestWSCloseHandshakeIgnoresFalsePositiveBytes(t *testing.T) {
 	srv, cli := newPipePair(t)
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{WriteTimeout: time.Second, CloseTimeout: 250 * time.Millisecond},
@@ -144,7 +144,7 @@ func TestWSIdlePingPongCloses(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		config: WSConfig{
 			ReadLimit:       1 << 20,
@@ -175,7 +175,7 @@ func TestWSPongKeepsAlive(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 4),
+		sendBuffer: make(chan wsMessage, 4),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		readMsgs:   make(chan []byte, 8),
@@ -298,7 +298,7 @@ func TestWSProtocolFuzz(t *testing.T) {
 			}()
 			conn := &WebSocketConn{
 				conn:       &nopConn{r: bytes.NewReader(tc.frame), w: io.Discard},
-				sendBuffer: make(chan []byte, 4),
+				sendBuffer: make(chan wsMessage, 4),
 				closed:     make(chan struct{}),
 				config:     WSConfig{ReadLimit: 1 << 20, requireMask: true},
 			}

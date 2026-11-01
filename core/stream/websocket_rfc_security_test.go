@@ -113,7 +113,7 @@ func TestRejectsBareContinuationAndReservedOpcode(t *testing.T) {
 func wsConnFromBytes(b []byte) *WebSocketConn {
 	return &WebSocketConn{
 		conn:       readOnlyConn{Reader: bytes.NewReader(b)},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -223,7 +223,7 @@ func TestCloseFrameAbortsFragmentedMsg(t *testing.T) {
 	// conn fully: readFrame closes peerClosed when it parses the Close.
 	c := &WebSocketConn{
 		conn:       readOnlyConn{Reader: bytes.NewReader(frames)},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
@@ -252,7 +252,7 @@ func TestUnmaskedCloseIsProtocolError(t *testing.T) {
 	unmaskedClose := []byte{0x88, 0x02, 0x03, 0xE9} // CLOSE, code 1001, no mask
 	c := &WebSocketConn{
 		conn:       readOnlyConn{Reader: bytes.NewReader(unmaskedClose)},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20, requireMask: true},

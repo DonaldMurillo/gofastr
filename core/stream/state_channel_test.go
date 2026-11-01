@@ -76,7 +76,7 @@ func (s *bannerSource) set(banner string) {
 func newChannelConn(buf int) *WebSocketConn {
 	return &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, buf),
+		sendBuffer: make(chan wsMessage, buf),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -86,8 +86,11 @@ func newChannelConn(buf int) *WebSocketConn {
 func recvRaw(t *testing.T, conn *WebSocketConn) []byte {
 	t.Helper()
 	select {
-	case data := <-conn.sendBuffer:
-		return data
+	case msg := <-conn.sendBuffer:
+		if msg.opcode != wsopcodeText {
+			t.Fatalf("state channel queued opcode 0x%X, want text 0x1", msg.opcode)
+		}
+		return msg.data
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for a wire message")
 		return nil
@@ -353,8 +356,8 @@ func TestStateChannelFilterHidesRoleEntirely(t *testing.T) {
 
 		recvEnvelope(t, admin)
 		select {
-		case data := <-guest.sendBuffer:
-			t.Fatalf("guest received %q despite ok=false", data)
+		case msg := <-guest.sendBuffer:
+			t.Fatalf("guest received %q despite ok=false", msg.data)
 		default:
 		}
 	})
@@ -493,7 +496,7 @@ func TestStateChannelFullBufferClosesConn(t *testing.T) {
 		c := startChannel(t, src)
 
 		conn := newChannelConn(1)
-		conn.sendBuffer <- []byte("occupied")
+		conn.sendBuffer <- wsMessage{opcode: wsopcodeText, data: []byte("occupied")}
 
 		c.Connect("admin", conn)
 		synctest.Wait()
@@ -561,7 +564,7 @@ func TestCloseWithStatusWritesCodeAndReason(t *testing.T) {
 		out := &bytes.Buffer{}
 		conn := &WebSocketConn{
 			conn:       &nopConn{r: bytes.NewReader(nil), w: out},
-			sendBuffer: make(chan []byte, 1),
+			sendBuffer: make(chan wsMessage, 1),
 			closed:     make(chan struct{}),
 			peerClosed: make(chan struct{}),
 			config:     WSConfig{ReadLimit: 1 << 20},
@@ -608,7 +611,7 @@ func TestStateChannelOverflowClosesOncePerConn(t *testing.T) {
 	bc := &blockedConn{release: make(chan struct{})}
 	conn := &WebSocketConn{
 		conn:       bc,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		readMsgs:   make(chan []byte, 8),
@@ -658,7 +661,7 @@ func TestCloseWithStatusRefusesReservedCodes(t *testing.T) {
 			out := &bytes.Buffer{}
 			conn := &WebSocketConn{
 				conn:       &nopConn{r: bytes.NewReader(nil), w: out},
-				sendBuffer: make(chan []byte, 1),
+				sendBuffer: make(chan wsMessage, 1),
 				closed:     make(chan struct{}),
 				peerClosed: make(chan struct{}),
 				config:     WSConfig{ReadLimit: 1 << 20},

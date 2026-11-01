@@ -210,6 +210,31 @@ a Ping itself, so an app limiting its own frames never counts them:
 disables) caps the Pings and Pongs a client sends, and past it the
 connection closes with 1008.
 
+The same rule holds on the way out. `Write` and `WriteString` send a
+text frame, and a text frame must be valid UTF-8, or the browser fails
+the connection with 1007. So they check the bytes first and return
+`stream.ErrInvalidUTF8`, queueing nothing, when the check fails.
+`Hub.Broadcast` and `Hub.BroadcastWait` now return an error too: the
+same `ErrInvalidUTF8`, before the message goes to anyone (a dropped
+message is still not an error). `StateChannel` never queues an
+envelope that is not UTF-8 (a `json.RawMessage` or `MarshalJSON` can
+carry such bytes past `json.Marshal`): a snapshot like that closes the
+connection, and an event like that is dropped. To send arbitrary bytes,
+use `WriteBinary`, or `Hub.BroadcastBinary` / `BroadcastBinaryWait`.
+They send a binary frame (opcode 0x2) holding exactly the bytes given,
+and the browser hands it to the page as a `Blob` or `ArrayBuffer`.
+Text and binary share one send queue, so they reach the peer in the
+order they were written, including the messages `Close` drains.
+`Read` returns text and binary messages alike as bytes and does not
+say which opcode a message came in on, so a protocol that mixes the
+two tells them apart in its own framing.
+
+```go
+if err := conn.WriteString(msg); errors.Is(err, stream.ErrInvalidUTF8) {
+	err = conn.WriteBinary([]byte(msg)) // not text: send the bytes as binary
+}
+```
+
 `Upgrade` refuses a handshake RFC 6455 does not accept before it
 hijacks: a method other than GET, a request older than HTTP/1.1, no
 `Connection: Upgrade` token, a version other than 13, or a key that is

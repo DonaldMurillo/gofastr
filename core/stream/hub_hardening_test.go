@@ -36,7 +36,7 @@ func TestHubStopFastWithSlowClose(t *testing.T) {
 	// One slow-closing conn
 	slow := &WebSocketConn{
 		conn:       &blockingClose{closed: make(chan struct{}), release: release},
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		config:     WSConfig{},
 	}

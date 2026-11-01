@@ -26,7 +26,7 @@ func TestWebSocketConnWriteRead(t *testing.T) {
 	buf := &bytes.Buffer{}
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: buf},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -55,7 +55,7 @@ func TestWebSocketConnClose(t *testing.T) {
 	cb := func() { callbackRan.Store(1) }
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		onClose:    []func(){cb},
 	}
@@ -95,7 +95,7 @@ func TestWebSocketConnClose(t *testing.T) {
 func TestWebSocketConnClosePanickingHook(t *testing.T) {
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		onClose:    []func(){func() { panic("close hook boom") }},
 	}
@@ -152,7 +152,7 @@ func (b *lockedBuffer) String() string {
 func TestWebSocketConnWriteAfterClose(t *testing.T) {
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{},
 	}
@@ -167,7 +167,7 @@ func TestWebSocketConnWriteAfterClose(t *testing.T) {
 func TestWebSocketClosedChannel(t *testing.T) {
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 	}
 	select {
@@ -187,7 +187,7 @@ func TestWriteFrameFormatsCorrectly(t *testing.T) {
 	buf := &bytes.Buffer{}
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: buf},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 	}
 
@@ -215,7 +215,7 @@ func TestWriteFrameExtendedLength16(t *testing.T) {
 	buf := &bytes.Buffer{}
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: buf},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 	}
 
@@ -251,7 +251,7 @@ func TestReadFrameSmallMessage(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(frame), w: io.Discard},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -279,7 +279,7 @@ func TestReadFrameTooLarge(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(frame), w: io.Discard},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20}, // 1MB limit
 	}

@@ -172,7 +172,7 @@ func TestNoDataFrameAfterClose(t *testing.T) {
 	rc := &recordConn{}
 	c := &WebSocketConn{
 		conn:       rc,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{CloseTimeout: 10 * time.Millisecond},

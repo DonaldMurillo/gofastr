@@ -12,7 +12,7 @@ import (
 func newTestConn() *WebSocketConn {
 	return &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -177,7 +177,7 @@ func TestHubBroadcastDropsOnFullBuffer(t *testing.T) {
 		// Create a conn with tiny send buffer
 		conn := &WebSocketConn{
 			conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-			sendBuffer: make(chan []byte, 1), // tiny buffer
+			sendBuffer: make(chan wsMessage, 1), // tiny buffer
 			closed:     make(chan struct{}),
 			config:     WSConfig{},
 		}
