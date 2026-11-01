@@ -821,7 +821,10 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<meta name="robots" content="noindex, nofollow">` + "\n")
 	fmt.Fprintf(&b, `<meta name="gofastr-embed" content="%s">`+"\n", stdhtml.EscapeString(string(cfgJSON)))
 	b.WriteString(`<script src="/__gofastr/color-scheme.js"></script>` + "\n")
-	fmt.Fprintf(&b, `<link rel="stylesheet" href="%s">`+"\n", stdhtml.EscapeString(appCSS))
+	// id="cui-app-css": the runtime inserts each component sheet before it.
+	// In a frame every component sheet loads lazily, so without the anchor
+	// every one landed after app.css and the host's overrides lost.
+	fmt.Fprintf(&b, `<link rel="stylesheet" href="%s" id="cui-app-css">`+"\n", stdhtml.EscapeString(appCSS))
 	// The component catalog and the runtime module manifest, as inert
 	// <script type="application/json"> blocks, the same shape a normal page
 	// ships, and the same reason: the kernel's CSS scanner resolves a

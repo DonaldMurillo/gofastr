@@ -363,6 +363,13 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 		}
 		return &Behavior{e: existing}
 	}
+	// The same freeze RegisterStyle honours: the host builds the
+	// manifest (behaviours block and module hashes) once, at Freeze, so
+	// a behaviour registered later is preloaded and served but never in
+	// the block the kernel scans, and its marker stays dead.
+	if frozen {
+		panic("registry.RegisterBehavior(" + name + "): registered after the host built its manifest; register behaviours at package init")
+	}
 	behaviors[name] = e
 	for _, m := range e.Markers {
 		behaviorMarkerAttrs[behaviorMarker.FindStringSubmatch(m)[1]] = true

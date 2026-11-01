@@ -29,6 +29,10 @@
     let stored = '';
     try { stored = localStorage.getItem(KEY) || ''; } catch (_) {}
     if (VALID.test(stored)) root.classList.add(stored);
+    // `chosen` is this page's answer when storage throws (blocked site
+    // data, a sandboxed frame): set() still applies for the visit, and
+    // get() reports it, so a picker reading get() is not stuck.
+    let chosen = VALID.test(stored) ? stored : '';
     // Public API: window.__gofastr_theme.set(cls) puts one override
     // class on <html> and persists it; set('') returns to the app's
     // own theme. A value that is not one override class is refused.
@@ -37,10 +41,11 @@
         try {
           const v = localStorage.getItem(KEY) || '';
           return VALID.test(v) ? v : '';
-        } catch (_) { return ''; }
+        } catch (_) { return chosen; }
       },
       set: (cls) => {
         if (cls !== '' && !VALID.test(cls)) return;
+        chosen = cls;
         for (const c of [...root.classList]) {
           if (c.indexOf('cui-theme-') === 0) root.classList.remove(c);
         }
@@ -100,14 +105,16 @@
     window.__gofastr_colorScheme = {
       get: () => {
         try { return localStorage.getItem(KEY) || 'auto'; }
-        catch (_) { return 'auto'; }
+        catch (_) { return stored || 'auto'; }
       },
       set: (mode) => {
         if (mode !== 'auto' && mode !== 'light' && mode !== 'dark') return;
+        // The in-memory choice applies even when storage throws: the
+        // page switches for this visit, it just is not remembered.
+        stored = mode === 'auto' ? '' : mode;
         try {
           if (mode === 'auto') localStorage.removeItem(KEY);
           else localStorage.setItem(KEY, mode);
-          stored = mode === 'auto' ? '' : mode;
         } catch (_) {}
         apply();
       },

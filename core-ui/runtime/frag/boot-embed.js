@@ -247,12 +247,16 @@
           if (r.ok) html = await r.text();
         });
         if (!r.ok) { fail('content-failed', r.status); return; }
+        // The shell links no component sheet, so start the content's sheets
+        // and wait for them (each wait is bounded) before the markup lands:
+        // writing first painted every embed unstyled until they arrived.
+        const G = window.__gofastr;
+        if (G && G._cssReady) await G._cssReady(html);
         root.innerHTML = html;
         root.setAttribute('data-cui-embed-state', 'ready');
         // The MutationObserver installed by boot handles hydration and
         // demand-loading modules for the injected subtree; component CSS is
         // not part of that pass, so scan for it explicitly.
-        const G = window.__gofastr;
         if (G && G.scanAndLoadCSS) {
           G.scanAndLoadCSS(root);
           if (G.scheduleIdleLoads) G.scheduleIdleLoads();

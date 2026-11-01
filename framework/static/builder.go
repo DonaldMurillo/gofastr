@@ -1,6 +1,7 @@
 package static
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,6 +28,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
@@ -343,6 +345,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	type asset struct {
 		urlPath string
 		body    []byte
+		// binary skips the base-path rewrite: it is a byte-level string
+		// replace, and a WebAssembly module is not text.
+		binary bool
 	}
 	colorScheme, err := runtime.ColorSchemeJS()
 	if err != nil {
@@ -387,9 +392,31 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 		assets = append(assets, asset{urlPath: "/__gofastr/runtime/" + name + ".js", body: []byte(body)})
 	}
+	// Registered compute assets (core-ui/compute). Every exported page
+	// carries the #gofastr-compute-assets block and the compute module
+	// builds /__gofastr/compute/<name>.js|.wasm?v=<hash> from it, so
+	// each worker and WebAssembly module must exist on disk query-free,
+	// as the split modules above do, or every compute task 404s.
+	computeAssets := compute.Manifest()
+	for _, name := range slices.Sorted(maps.Keys(computeAssets)) {
+		var buf bytes.Buffer
+		if a, ok := compute.LookupWorker(name); ok {
+			_, _ = a.WriteTo(&buf)
+			assets = append(assets, asset{urlPath: "/__gofastr/compute/" + name + ".js", body: bytes.Clone(buf.Bytes())})
+			buf.Reset()
+		}
+		if a, ok := compute.LookupWASM(name); ok {
+			_, _ = a.WriteTo(&buf)
+			assets = append(assets, asset{urlPath: "/__gofastr/compute/" + name + ".wasm", body: bytes.Clone(buf.Bytes()), binary: true})
+		}
+	}
 	for _, a := range assets {
 		dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(a.urlPath, "/")))
-		if err := writeUnder(b.OutDir, dst, b.rewriteJSAsset(a.body)); err != nil {
+		body := a.body
+		if !a.binary {
+			body = b.rewriteJSAsset(body)
+		}
+		if err := writeUnder(b.OutDir, dst, body); err != nil {
 			return res, err
 		}
 		res.Assets = append(res.Assets, a.urlPath)
