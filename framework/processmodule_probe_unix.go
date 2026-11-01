@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -74,34 +73,23 @@ func runProbeChildBody(id ProbeID) int {
 		return probeNoInheritedSecretBody(pass, breach)
 
 	case ProbeNoInheritedFD:
-		// P3: child enumerates fds > 2; an inherited host fd = breach.
-		// Linux exposes /proc/self/fd; Darwin lacks it and we fall
-		// through to a bounded fstat scan. Go's exec with ExtraFiles
-		// nil inherits only 0/1/2, so an enforced baseline surfaces none.
+		// P3: the host's planted secret fd must not reach the child. The
+		// child names it by identity (device + inode, which an inherited
+		// or dup'd fd keeps) and ignores every other fd: its own runtime
+		// (epoll, eventfd) and the directory it lists hold fds > 2, so
+		// counting them made P3 breach on every Linux host.
 		hostFD := os.Getenv("GOFASTR_PROBE_HOST_FD_NUM")
-		var leaked []int
-		if entries, err := os.ReadDir("/proc/self/fd"); err == nil {
-			for _, e := range entries {
-				var n int
-				if _, err := fmt.Sscanf(e.Name(), "%d", &n); err != nil {
-					continue
-				}
-				if n > 2 {
-					leaked = append(leaked, n)
-				}
-			}
-		} else {
-			for n := 3; n < 64; n++ {
-				if fdIsOpen(n) {
-					leaked = append(leaked, n)
-				}
-			}
-		}
-		if len(leaked) > 0 {
-			breach(fmt.Sprintf("inherited %d fds >2 (first=%d, host_fd=%s)", len(leaked), leaked[0], hostFD))
+		want, ok := plantedFDIdentity()
+		if !ok {
+			unreachable("no planted fd identity (GOFASTR_PROBE_FD_DEV / GOFASTR_PROBE_FD_INO)")
 			return 0
 		}
-		pass(fmt.Sprintf("no fds >2 inherited (host_fd=%s)", hostFD))
+		fds := openFDIdentities(fdScanCandidates(hostFD))
+		if fd, found := findPlantedFD(fds, want); found {
+			breach(fmt.Sprintf("inherited the host's planted secret fd as fd %d (host fd %s)", fd, hostFD))
+			return 0
+		}
+		pass(fmt.Sprintf("planted secret fd not inherited (%d fds >2 checked, host_fd=%s)", len(fds), hostFD))
 
 	case ProbeNoNetworkEgress:
 		// P4 is portable: every dial target must be refused (shared body
@@ -145,24 +133,20 @@ func runProbeChildBody(id ProbeID) int {
 		pass("host files unreadable, writes confined to scratch")
 
 	case ProbeResourceLimits:
-		// P6: fork-bomb capped. The probe runner asked the backend for a
-		// cap of defaultProbePidLimit; a backend that enforces it must
-		// deny forks beyond ~2× the cap.
-		cap := defaultProbePidLimit
-		want := 512
-		if v := os.Getenv("GOFASTR_PROBE_FORK_COUNT"); v != "" {
-			var n int
-			if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
-				want = n
-			}
+		// P6: the caps the runner asked the backend for must fire. The
+		// memory sub-probe re-execs this binary as the allocating child.
+		if v := os.Getenv(probeMemHogEnv); v != "" {
+			return runProbeMemHog(v)
 		}
-		got := forkBombCount(want)
-		threshold := max(cap*2, cap+8)
-		if got > threshold {
-			breach(fmt.Sprintf("forked %d children (cap=%d, threshold=%d not enforced)", got, cap, threshold))
-			return 0
+		status, detail := probeResourceLimitsBody()
+		switch status {
+		case ProbeStatusPass:
+			pass(detail)
+		case ProbeStatusFail:
+			breach(detail)
+		default:
+			unreachable(detail)
 		}
-		pass(fmt.Sprintf("fork capped at %d children (cap=%d)", got, cap))
 
 	case ProbeNoPrivReEscalation:
 		// P7: cannot setuid up, cannot gain new caps.
@@ -196,44 +180,4 @@ func runProbeChildBody(id ProbeID) int {
 // comparison.
 func hostUIDString() string {
 	return fmt.Sprintf("%d", os.Getuid())
-}
-
-// forkBombCount attempts to fork up to want child processes, returning
-// the number that actually started. Each child runs /bin/true and exits
-// immediately (it exists only to consume a pid slot). Forks happen in
-// waves of 16 with a Wait per wave so the live-pid peak stays bounded;
-// the point is to observe whether the cumulative fork count is capped,
-// not to keep them all alive. A cgroup pids.max caps allocation when old
-// pids exit; an RLIMIT_NPROC caps the live set.
-func forkBombCount(want int) int {
-	const wave = 16
-	successes := 0
-	for started := 0; started < want; started += wave {
-		end := min(started+wave, want)
-		cmds := make([]*exec.Cmd, 0, wave)
-		for i := started; i < end; i++ {
-			c := exec.Command("/bin/true")
-			if err := c.Start(); err != nil {
-				// Fork denied, cap likely fired. Stop; the cumulative
-				// count is what the caller compares.
-				return successes
-			}
-			cmds = append(cmds, c)
-			successes++
-		}
-		for _, c := range cmds {
-			_ = c.Wait()
-		}
-	}
-	return successes
-}
-
-// fdIsOpen reports whether fd is currently open in this process. Uses
-// fstat (portable across Unix syscall tables) rather than fcntl.
-// syscall.FcntlFlock's return arity differs between Linux (uintptr,
-// error) and Darwin (error), and fstat's (error) signature is stable.
-// Returns false for a closed fd (EBADF).
-func fdIsOpen(fd int) bool {
-	var st syscall.Stat_t
-	return syscall.Fstat(fd, &st) == nil
 }

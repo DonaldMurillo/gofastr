@@ -336,11 +336,16 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 	callCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 
-	raw, err := peer.Call(callCtx, moduleproto.MethodToolCall, moduleproto.ToolCallParams{
+	// A caller that gives up (deadline or cancel) tells the child through
+	// module.cancel on the frame id, as serveProxy does, so the child's
+	// handler stops instead of running to its own deadline.
+	raw, err := peer.CallWithID(callCtx, moduleproto.MethodToolCall, moduleproto.ToolCallParams{
 		ToolID:         toolID,
 		Arguments:      args,
 		Caller:         callerFromCtx(ctx, handle),
 		DeadlineUnixMs: deadline.UnixMilli(),
+	}, func(frameID uint64) {
+		go s.watchCancel(peer, frameID, callCtx)
 	})
 	if err != nil {
 		return nil, err

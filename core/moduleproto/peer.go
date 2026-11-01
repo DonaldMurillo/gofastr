@@ -595,10 +595,25 @@ func (p *Peer) dispatch(f *Frame) {
 		// per frame it writes. Overflow gets an immediate CodeInflightCap
 		// error response (never a silent drop, which would hang the
 		// caller's pending Call).
+		//
+		// The overflow answer is a served response like any other: it is
+		// written off the read loop and counted against the unwritten-
+		// response bound. Written inline, a counterparty that filled the
+		// serve cap and stopped reading blocked the read loop on that
+		// write, so no fault was ever recorded and the peer stayed up
+		// serving nothing.
 		p.mu.Lock()
 		if p.serveInflight >= p.maxServeInflight {
+			stalled := p.respPending >= p.maxServeInflight
+			if !stalled {
+				p.respPending++
+			}
 			p.mu.Unlock()
-			_ = p.writeFrame(NewErrorResponse(*f.ID, CodeInflightCap,
+			if stalled {
+				p.setFatal(fmt.Errorf("%w: %d responses unwritten", ErrStalled, p.maxServeInflight))
+				return
+			}
+			go p.writeServed(NewErrorResponse(*f.ID, CodeInflightCap,
 				"serve inflight cap reached", nil))
 			return
 		}

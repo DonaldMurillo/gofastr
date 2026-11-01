@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"net/http"
 	"net/textproto"
 	"slices"
@@ -120,6 +121,12 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 
 	// Build the module.http params.
 	params, err := buildHTTPRequestParams(r, name, routeID, requestID, handle, sl.callDeadline())
+	if err == nil && !moduleHTTPFrameFits(params, sl.frameBytes()) {
+		// Under the read cap but over the module's frame once base64 and
+		// the envelope grow it: the codec would refuse the frame, and a
+		// 503 + Retry-After would invite a retry that can never succeed.
+		err = errModuleBodyTooLarge
+	}
 	if errors.Is(err, errModuleBodyTooLarge) {
 		i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 		return
@@ -258,11 +265,35 @@ func subjectFromRequest(r *http.Request) string {
 	return ""
 }
 
-// maxModuleHTTPBodyBytes bounds an inbound proxied body. The codec cap
-// (default 1 MiB) is the hard protocol limit; this is the per-call guard
-// before base64 inflation. A request body larger than this yields a 413;
-// a body that fails to read yields the usual 503.
+// maxModuleHTTPBodyBytes bounds how much of an inbound proxied body the
+// proxy reads. The module's frame cap (default 1 MiB) is the hard
+// protocol limit, and base64 grows the body by a third, so serveProxy
+// also refuses a body whose encoded frame would not fit
+// ([moduleHTTPFrameFits]). Either refusal is a 413; a body that fails to
+// read yields the usual 503.
 const maxModuleHTTPBodyBytes = 1024 * 1024
+
+// moduleHTTPFrameFits reports whether the module.http request frame for
+// params fits the module's negotiated frame cap. It measures the frame
+// the codec would write, with the widest possible id, so a request it
+// admits is never refused by the codec's own cap check.
+func moduleHTTPFrameFits(params moduleproto.HTTPRequestParams, frameBytes int) bool {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return false
+	}
+	id := uint64(math.MaxUint64)
+	body, err := json.Marshal(&moduleproto.Frame{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Method:  moduleproto.MethodHTTP,
+		Params:  raw,
+	})
+	if err != nil {
+		return false
+	}
+	return len(body) <= frameBytes
+}
 
 // errModuleBodyTooLarge is buildHTTPRequestParams' refusal of a body over
 // maxModuleHTTPBodyBytes; serveProxy answers it with 413.
