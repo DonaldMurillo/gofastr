@@ -82,7 +82,8 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 	}
 	id := cfg.ID
 	if id == "" {
-		id = autoID("rep")
+		// "-items" is the items container and the RPC region's signal.
+		id = scopedID(cfg.Ctx, "rep", "-items")
 	}
 
 	items := make([]headless.RepeaterItem, 0, len(cfg.Items)+max(cfg.MinItems, 1))

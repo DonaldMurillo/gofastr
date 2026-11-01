@@ -260,6 +260,14 @@ func ReserveID(ctx context.Context, id string, children ...string) {
 	}
 }
 
+// HasIDScope reports whether ctx carries an id scope (WithIDScope,
+// WithIDNamespace, or a region of a RegionBatch), so UniqueID hands
+// out page-unique ids from it. A component that falls back to a
+// process-wide counter when no scope is there asks this first: a
+// counter gives an island one id on the page and another in its RPC
+// answer.
+func HasIDScope(ctx context.Context) bool { return scopeOf(ctx) != nil }
+
 func scopeOf(ctx context.Context) *idScope {
 	if ctx == nil {
 		return nil

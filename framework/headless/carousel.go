@@ -95,11 +95,15 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	w := p.Strings.Resolve()
 
 	b := p.Parts.Box(s)
-	// The family: the track and every slide without its own id.
+	// The family: the track and every slide without its own id. A slide
+	// with its own id is an explicit id like any other: reserved, so a
+	// derived id elsewhere on the page that would repeat it moves.
 	family := []string{"-track"}
 	for i, sl := range p.Slides {
 		if sl.ID == "" {
 			family = append(family, "-track-slide-"+strconv.Itoa(i))
+		} else {
+			render.ReserveID(p.Ctx, sl.ID)
 		}
 	}
 	id := p.ID
