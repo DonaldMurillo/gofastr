@@ -50,7 +50,8 @@ func TestCursorFields_SingleAndComposite(t *testing.T) {
 		}
 		c.Pagination.CursorField = "seq"
 	}, 0)
-	if got := ch.cursorFields(); len(got) != 1 || got[0] != "seq" {
+	// The key is the tiebreak behind a single CursorField too.
+	if got := ch.cursorFields(); len(got) != 2 || got[0] != "seq" || got[1] != "id" {
 		t.Errorf("single cursorField = %v", got)
 	}
 

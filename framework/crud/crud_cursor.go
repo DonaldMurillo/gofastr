@@ -19,28 +19,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
-// cursorFields returns the ordered list of columns the handler keysets on.
-// Defaults to the entity primary key; EntityConfig.CursorField overrides to
-// a single named column; EntityConfig.CursorFields overrides to a composite
-// (multi-field) cursor with tuple comparison.
-//
-// Composite cursors should end in a guaranteed-unique tiebreak column
-// (typically the primary key) so paging never stalls on ties, the
-// framework appends each key column that isn't already listed.
+// cursorFields returns the ordered list of columns the handler keysets on:
+// EntityConfig.CursorFields, else CursorField, then each primary-key
+// column neither names, so paging never skips rows tied on the sort
+// value; the primary key alone when neither is set. entity.Define checks
+// the same list.
 func (ch *CrudHandler) cursorFields() []string {
-	if len(ch.Entity.Config.Pagination.CursorFields) > 0 {
-		fields := append([]string{}, ch.Entity.Config.Pagination.CursorFields...)
-		for _, k := range ch.keyCols() {
-			if !slices.Contains(fields, k) {
-				fields = append(fields, k)
-			}
+	var fields []string
+	switch p := ch.Entity.Config.Pagination; {
+	case len(p.CursorFields) > 0:
+		fields = append(fields, p.CursorFields...)
+	case p.CursorField != "":
+		fields = append(fields, p.CursorField)
+	}
+	for _, k := range ch.keyCols() {
+		if !slices.Contains(fields, k) {
+			fields = append(fields, k)
 		}
-		return fields
 	}
-	if ch.Entity.Config.Pagination.CursorField != "" {
-		return []string{ch.Entity.Config.Pagination.CursorField}
-	}
-	return ch.keyCols()
+	return fields
 }
 
 // serveCursorList handles a cursor-paginated List request. It uses keyset
@@ -48,8 +45,10 @@ func (ch *CrudHandler) cursorFields() []string {
 // The total count is intentionally omitted, cursor pagination's appeal is
 // avoiding count's table scan.
 //
-// Single-field cursor: WHERE field > $1 ORDER BY field.
-// Composite cursor:    WHERE (f1, f2, …) > ($1, $2, …) ORDER BY f1, f2, …
+// One column (the key):  WHERE id > $1 ORDER BY id.
+// Several (a sort field and the key tiebreak, or a composite):
+//
+//	WHERE (f1, f2, …) > ($1, $2, …) ORDER BY f1, f2, …
 //
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
 // ordered, unique-enough key, so the cursor field(s) control ORDER BY.
@@ -190,6 +189,11 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	// backward page back into ascending order so a "prev" page reads the same
 	// way a "next" page does.
 	page, err := buildCursorPage(results, keys, ch.convertKey, isDate, limit)
+	if errors.Is(err, errCursorKeyTooLong) {
+		logf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
+		writeJSONError(w, r, http.StatusInternalServerError, reasonCursorKeyTooLong)
+		return
+	}
 	if err != nil {
 		logf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
@@ -419,8 +423,17 @@ func buildCursorPage(data []map[string]any, fields []string, convertKey func(str
 		if val, ok := dbRow[fields[0]]; ok {
 			page.Cursor = pagination.EncodeCursor(fields[0], val)
 		}
-		return page, nil
+	} else {
+		page.Cursor = pagination.EncodeMultiCursor(fields, dbRow)
 	}
-	page.Cursor = pagination.EncodeMultiCursor(fields, dbRow)
+	// A key past the decoder's cap would mint a token the next request
+	// refuses as too long; refuse it here, where the reason can say so.
+	if !pagination.CursorFits(page.Cursor) {
+		return page, fmt.Errorf("%w: %d bytes", errCursorKeyTooLong, len(page.Cursor))
+	}
 	return page, nil
 }
+
+// errCursorKeyTooLong is buildCursorPage's refusal of a key whose cursor
+// would not fit the decoder's size cap.
+var errCursorKeyTooLong = errors.New("the last row's key is too long for a cursor")

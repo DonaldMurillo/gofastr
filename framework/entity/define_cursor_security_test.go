@@ -177,3 +177,16 @@ func TestCursorCompositeMemberUndeclaredPanics(t *testing.T) {
 		Pagination: &PaginationConfig{CursorFields: []string{"created_at", "postioned_at"}},
 	})
 }
+
+// A cursor carries the anchor row's key, whatever CursorField names, and
+// the key is the tiebreak behind it, so a Hidden key column reaches the
+// token on this spelling too (round 3 review of D33).
+func TestCursorFieldHiddenKeyPanics(t *testing.T) {
+	expectCursorPanic(t, "cursor field \"id\" is Hidden", EntityConfig{
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String, Hidden: true},
+			{Name: "name", Type: schema.String, Required: true},
+		},
+		Pagination: &PaginationConfig{CursorField: "name"},
+	})
+}

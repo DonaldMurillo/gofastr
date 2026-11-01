@@ -49,7 +49,13 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
   Cursors are client-echoed input, so decode work is bounded by these
   fixed caps, never by the payload size the client chose. A cursor the
   server mints carries only the last row's key, so a long sort value
-  (a Text column) never pushes it past the cap.
+  (a Text column) never pushes it past the cap. A key that does not fit
+  (a key value of more than about 12 KiB, which only a Text or unbounded
+  String key on SQLite can hold) answers 500 with reason
+  `cursor_key_too_long` on the page that would mint the cursor, rather
+  than a token the next request refuses; page such a list with `?page=`.
+  `pagination.CursorFits` is the check, for code that mints its own
+  cursors.
 - `direction` defaults to `"forward"`; only `"forward"` and
   `"backward"` are accepted.
 
@@ -74,9 +80,13 @@ framework.EntityConfig{
 }
 ```
 
-Composite cursors guarantee unique ordering by automatically appending
-each primary-key column the list does not already name. Without a
-unique tiebreak, two rows with identical sort keys break paging.
+Both spellings guarantee unique ordering by appending each primary-key
+column the list does not already name: `CursorField: "created_at"`
+pages on `(created_at, id)`. Without a unique tiebreak, the second of
+two rows with identical sort keys would be skipped. The key columns are
+cursor columns like any other, so `entity.Define` refuses a `Hidden` or
+`NoQuery` key column behind a `CursorField` too: the token carries the
+key.
 
 **A cursor column must never hold NULL.** The keyset comparison
 `(created_at, id) > ($1, $2)` is never true for a row whose
@@ -174,5 +184,3 @@ first-read intermediary parsed differently.
   from its anchor under the new order.
 - **Trying to "jump to page N" with cursor mode.** You can't. Cursors
   are sequential by design.
-- **Configuring a non-unique single cursor field.** Use `CursorFields`
-  to add a tiebreak, or paging stalls on ties.

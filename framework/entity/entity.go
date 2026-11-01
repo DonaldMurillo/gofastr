@@ -144,6 +144,8 @@ type ScopeConfig struct {
 
 // PaginationConfig groups list limits and keyset cursor configuration. A
 // non-empty CursorFields composite takes precedence over CursorField.
+// Either way keyset paging appends each primary-key column the list does
+// not name, as the tiebreak, and the cursor token carries the key.
 type PaginationConfig struct {
 	CursorField  string
 	CursorFields []string
@@ -651,6 +653,8 @@ func Define(name string, config EntityConfig) *Entity {
 		cursorCols = append(cursorCols, keyCols...) // auto-appended tiebreak
 	case config.Pagination.CursorField != "":
 		cursorCols = append(cursorCols, config.Pagination.CursorField)
+		// The key is the tiebreak here too, and the token carries it.
+		cursorCols = append(cursorCols, keyCols...)
 	default:
 		cursorCols = append(cursorCols, keyCols...)
 	}

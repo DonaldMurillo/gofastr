@@ -194,6 +194,13 @@ func EncodeCursor(field string, value any) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
+// CursorFits reports whether cursor is within the size DecodeCursor and
+// DecodeMultiCursor accept. A server that mints a cursor checks it here
+// first, so it never hands out a token its own decoder refuses.
+func CursorFits(cursor string) bool {
+	return len(cursor) <= maxCursorEncodedSize
+}
+
 // DecodeCursor decodes a base64 cursor string into its field and value components.
 //
 // The field name is stripped of control / invisible codepoints: it flows

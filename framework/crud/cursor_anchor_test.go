@@ -132,3 +132,67 @@ func TestCursorAnchorGoneRefused(t *testing.T) {
 		}
 	})
 }
+
+// A key too long for the 16 KiB cursor cap is refused when the cursor
+// would be minted, with a reason naming it, never handed out as a token
+// the next request refuses as "too long" (round 3 review of D33). SQLite
+// only: a Postgres btree key cannot hold a value this size.
+func TestCursorRefusesKeyPastCap(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE lnotes (id TEXT PRIMARY KEY, body TEXT NOT NULL)`)
+	ent := entity.Define("lnotes", entity.EntityConfig{
+		Name: "lnotes", Table: "lnotes",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.Text},
+			{Name: "body", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	for _, id := range []string{"a" + strings.Repeat("k", 13<<10), "b"} {
+		if _, err := db.Exec("INSERT INTO lnotes (id, body) VALUES (?, ?)", id, "x"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/lnotes?limit=1&cursor=", nil), "u1")
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code == http.StatusOK {
+		var page pagination.CursorPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		t.Fatalf("minted a %d-byte cursor the decoder refuses", len(page.Cursor))
+	}
+	if !strings.Contains(rec.Body.String(), "cursor_key_too_long") {
+		t.Fatalf("got %d %.300s, want reason cursor_key_too_long", rec.Code, rec.Body.String())
+	}
+}
+
+// Rows tied on a single CursorField all come back: the key is the
+// tiebreak behind it, the way CursorFields already appended it. Paging
+// compared body > "x" alone and skipped the second "x" (round 3 review).
+func TestCursorFieldPagesThroughTies(t *testing.T) {
+	anchorDialects(t, func(t *testing.T, ch *CrudHandler, db *sql.DB, ph func(int) string) {
+		anchorSeed(t, db, ph, "n1", "alice", "x")
+		anchorSeed(t, db, ph, "n2", "alice", "x")
+		anchorSeed(t, db, ph, "n3", "alice", "y")
+		var got []string
+		cursor := ""
+		for range 5 {
+			code, page, body := anchorPage(t, ch, "alice", cursor)
+			if code != http.StatusOK {
+				t.Fatalf("page %d = %d: %s", len(got)+1, code, body)
+			}
+			for _, row := range page.Data {
+				got = append(got, row["id"].(string))
+			}
+			if !page.HasMore {
+				break
+			}
+			cursor = page.Cursor
+		}
+		if strings.Join(got, ",") != "n1,n2,n3" {
+			t.Errorf("paged %v, want n1,n2,n3", got)
+		}
+	})
+}

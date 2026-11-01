@@ -100,12 +100,12 @@ func TestMCPListToolDropsNoQueryArguments(t *testing.T) {
 }
 
 func TestLLMMDFilterExampleSkipsLeadingNoQueryField(t *testing.T) {
-	ent := entity.Define("llm_noquery_order", entity.EntityConfig{Fields: []schema.Field{
-		{Name: "id", Type: schema.UUID, Hidden: true},
+	// Keyed on name, so the NoQuery secret is the leading field and no
+	// injected id comes before it.
+	ent := entity.Define("llm_noquery_order", entity.EntityConfig{PrimaryKey: []string{"name"}, Fields: []schema.Field{
 		{Name: "secret", Type: schema.String, NoQuery: true},
 		{Name: "name", Type: schema.String, Required: true},
-	}, Pagination: &entity.PaginationConfig{CursorField: "name"},
-	}.WithTimestamps(false))
+	}}.WithTimestamps(false))
 
 	doc := EntityLLMMD(ent)
 	if strings.Contains(doc, "secret_like") || strings.Contains(doc, "`secret=active`") {

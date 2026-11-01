@@ -579,3 +579,10 @@ notes:
         - gofastr/core/a2a.Store
         - gofastr/core/a2a.TaskRecord
         - gofastr/core/a2a.Config
+  - change: "BREAKING - a single Pagination.CursorField pages on that field and then each primary-key column, as CursorFields already did, so rows tied on the field are no longer skipped; entity.Define refuses a Hidden or NoQuery key column behind a CursorField, since the cursor token carries the key"
+    breaking: true
+    hits: review
+    guidance: "An entity whose key column is Hidden or NoQuery and that sets CursorField panics at Define and names the column. Return the key column, or key the entity on a column the API returns. A cursor-paged list whose last row's key does not fit the 16 KiB cursor cap answers 500 with reason cursor_key_too_long; page such a list with ?page=."
+    find:
+      uses:
+        - gofastr/framework/entity.PaginationConfig
