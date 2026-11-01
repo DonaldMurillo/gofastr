@@ -35,11 +35,14 @@ type RangeSliderConfig struct {
 	Max int
 	// Step is the step granularity. Default 1.
 	Step int
-	// ValueLow / ValueHigh are the initial values. Defaults: Min / Max.
-	// A crossed pair (low above high) is refused at render — the
-	// module clamps drags, never the server's props.
-	ValueLow  int
-	ValueHigh int
+	// ValueLow / ValueHigh are the initial values. Nil means unset: an
+	// unset low sits on Min and an unset high on Max. Any set value is
+	// honoured, zero included (ValueLow: new(0), ValueHigh: new(0) is
+	// a real 0..0 pair). Values outside Min..Max clamp into it and a
+	// crossed pair (low above high) renders ordered — the same repair
+	// the module makes of a drag.
+	ValueLow  *int
+	ValueHigh *int
 	// ShowValue renders the live "lo to hi" sentence beside the label.
 	ShowValue bool
 	// Disabled disables both thumbs.

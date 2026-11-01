@@ -88,7 +88,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs
 - **rating-display**: `framework/ui.Rating` (`ui.RatingDisplayConfig`), a read-only score drawn as glyphs sized to themselves, one `role="img"` with a localized "4 out of 5" name. Shares Shape / Size and the `--ui-rating-color` knob with RatingInput. Use it for a testimonial or a product average, where a disabled RatingInput would announce a form control and space its stars on 44px tap targets.
 - **slider**: `framework/ui.Slider`, `<input type=range>` with optional live value mirror
-- **rangeslider**: `framework/ui.RangeSlider`, dual-thumb range with cross-clamp
+- **rangeslider**: `framework/ui.RangeSlider`, dual-thumb range with cross-clamp; `ValueLow` / `ValueHigh` are `*int`, nil the unset end (low on `Min`, high on `Max`), so a set pair of `new(0)`, `new(0)` renders as 0 to 0 rather than the whole range
 - **numberinput**: `framework/ui.NumberInput`, number field with explicit +/- buttons
 - **textarea**: `framework/ui.TextArea`, multi-line input with typed Autogrow and Monospace (the mono font token, for JSON and code) and JSON (checks the text as JSON as it is typed: an invalid value reads aria-invalid and stops the form's submit with "Enter valid JSON", through `headless.Textarea`'s `JSON` sentence and the `data-hui-json` hook of the headless-controls module; empty text is left to Required, and the server still validates)
 - **colorpicker**: `framework/ui.ColorPicker`, styled native `<input type=color>`

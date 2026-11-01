@@ -94,7 +94,7 @@ func TestE2E_SliderOutputsUsePageDigits(t *testing.T) {
 	body := `<script>document.documentElement.lang = 'ar-EG'</script>` +
 		string(Slider(SliderProps{Name: "cpu", Label: "CPU share", Value: 40, ShowValue: true}, nil)) +
 		string(RangeSlider(RangeSliderProps{Name: "price", Label: "Price",
-			Min: 0, Max: 100, ValueLow: 20, ValueHigh: 80, ShowValue: true}, nil))
+			Min: 0, Max: 100, ValueLow: new(20), ValueHigh: new(80), ShowValue: true}, nil))
 	b := startBehaviorServer(t, body)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {
@@ -120,7 +120,7 @@ func TestE2E_SliderOutputsUsePageDigits(t *testing.T) {
 // the {name}-free "%s to %s" the server's Strings resolved.
 func TestE2E_ControlsRangePairClampsAndSpeaksInServerWords(t *testing.T) {
 	body := RangeSlider(RangeSliderProps{Name: "price", Label: "Price",
-		Min: 0, Max: 100, ValueLow: 20, ValueHigh: 80, ShowValue: true}, nil)
+		Min: 0, Max: 100, ValueLow: new(20), ValueHigh: new(80), ShowValue: true}, nil)
 	b := startBehaviorServer(t, string(body))
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {

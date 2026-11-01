@@ -334,12 +334,14 @@ type RangeSliderProps struct {
 	Min  int
 	Max  int
 	Step int
-	// ValueLow and ValueHigh are the thumbs' values. Both zero means
-	// Min and Max. Values outside the bounds clamp to them, and a
-	// crossed pair is ordered low, high — the same repair the module
+	// ValueLow and ValueHigh are the thumbs' values. Nil means unset:
+	// an unset low sits on Min and an unset high on Max, so a pair
+	// left unset spans the whole range. Any set value is honoured, a
+	// 0..0 pair included. Values outside the bounds clamp to them, and
+	// a crossed pair is ordered low, high — the same repair the module
 	// makes of a dragged pair.
-	ValueLow  int
-	ValueHigh int
+	ValueLow  *int
+	ValueHigh *int
 	// ShowValue renders the pair's one output sentence, from
 	// RangeValue; the module keeps it in step using the same
 	// sentence, which travels with the output.
@@ -390,9 +392,12 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 	// crossed pair is ordered low, high — the same repair the browser
 	// makes of a dragged pair, so a re-rendered form shows the posted
 	// pair as a valid range.
-	lo, hi := p.ValueLow, p.ValueHigh
-	if lo == 0 && hi == 0 {
-		lo, hi = min, max
+	lo, hi := min, max
+	if p.ValueLow != nil {
+		lo = *p.ValueLow
+	}
+	if p.ValueHigh != nil {
+		hi = *p.ValueHigh
 	}
 	if lo < min {
 		lo = min
@@ -666,12 +671,17 @@ func init() {
 				Name: "a narrowed pair",
 				Why:  "the output sentence travels with the output (the module re-formats through it, so a translated page says its own words live) and a crossed pair renders ordered — the same repair the module makes of a drag",
 				HTML: RangeSlider(RangeSliderProps{Name: "age", Label: "Age", Min: 18, Max: 65,
-					Step: 1, ValueLow: 25, ValueHigh: 40, ShowValue: true}, s),
+					Step: 1, ValueLow: new(25), ValueHigh: new(40), ShowValue: true}, s),
 			}, {
 				Name: "equal values",
 				Why:  "low equal to high is a real pair — a single-point range, rendered as given rather than repaired",
 				HTML: RangeSlider(RangeSliderProps{Name: "window", Label: "Window",
-					ValueLow: five, ValueHigh: five}, s),
+					ValueLow: &five, ValueHigh: &five}, s),
+			}, {
+				Name: "a pair set to zero",
+				Why:  "nil is the unset pair, so a set value is honoured even when it is zero — a posted 0 to 0 renders as posted instead of widening back to the whole range",
+				HTML: RangeSlider(RangeSliderProps{Name: "delay", Label: "Delay",
+					ValueLow: new(0), ValueHigh: new(0), ShowValue: true}, s),
 			}}
 		},
 	})
