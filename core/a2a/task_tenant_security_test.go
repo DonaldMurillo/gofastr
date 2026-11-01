@@ -57,6 +57,9 @@ func TestTaskHiddenFromOtherTenant(t *testing.T) {
 			{MethodCancelTask, map[string]any{"id": inA.ID}},
 			{MethodSubscribeToTask, map[string]any{"id": inA.ID}},
 			{MethodListTaskPushNotificationConfigs, map[string]any{"taskId": inA.ID}},
+			{MethodCreateTaskPushNotificationConfig, map[string]any{"taskId": inA.ID, "url": "https://hooks.example.test/cb"}},
+			{MethodGetTaskPushNotificationConfig, map[string]any{"taskId": inA.ID, "id": "cfg-a"}},
+			{MethodDeleteTaskPushNotificationConfig, map[string]any{"taskId": inA.ID, "id": "cfg-a"}},
 			{MethodSendMessage, map[string]any{"message": map[string]any{
 				"taskId": inA.ID, "role": "ROLE_USER", "parts": []any{map[string]any{"text": "go on"}},
 			}}},

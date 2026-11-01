@@ -485,19 +485,19 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, req *rpcReques
 	case MethodListTasks:
 		s.handleListTasks(w, r, req, owner, s.callerScope(r))
 	case MethodCancelTask:
-		s.handleCancelTask(w, req, owner, s.callerScope(r))
+		s.handleCancelTask(w, r, req, owner, s.callerScope(r))
 	case MethodSubscribeToTask:
 		s.handleSubscribe(w, r, req, owner)
 	case MethodCreateTaskPushNotificationConfig:
-		s.handleCreatePushConfig(w, req, owner, s.callerScope(r))
+		s.handleCreatePushConfig(w, r, req, owner, s.callerScope(r))
 	case MethodGetTaskPushNotificationConfig:
-		s.handleGetPushConfig(w, req, owner, s.callerScope(r))
+		s.handleGetPushConfig(w, r, req, owner, s.callerScope(r))
 	case MethodListTaskPushNotificationConfigs:
-		s.handleListPushConfigs(w, req, owner, s.callerScope(r))
+		s.handleListPushConfigs(w, r, req, owner, s.callerScope(r))
 	case MethodDeleteTaskPushNotificationConfig:
-		s.handleDeletePushConfig(w, req, owner, s.callerScope(r))
+		s.handleDeletePushConfig(w, r, req, owner, s.callerScope(r))
 	case MethodGetExtendedAgentCard:
-		s.handleExtendedCard(w, req, owner)
+		s.handleExtendedCard(w, r, req, owner)
 	default:
 		s.writeResult(w, req.ID, nil, Errorf(CodeMethodNotFound, "unknown method %q", req.Method))
 	}
@@ -1741,7 +1741,7 @@ func (s *Server) walkScopedTasks(ctx context.Context, owner string, q ListQuery,
 // walkScopedBatch is the store page walkScopedTasks reads per call.
 const walkScopedBatch = 200
 
-func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
+func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p CancelTaskRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -1776,8 +1776,12 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 			s.wakeRun(halted)
 		}
 	}()
+	// The request's values (its tenant, its trace) without its
+	// cancellation: the run is halted before the write, so a cancel the
+	// client abandons halfway must still land.
+	base := context.WithoutCancel(r.Context())
 	for range attempts {
-		ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
+		ctx, cancel := context.WithTimeout(base, storeOpTimeout)
 		rec, err := s.getTask(ctx, owner, sc, p.ID)
 		cancel()
 		if errors.Is(err, ErrNotFound) {
@@ -1816,7 +1820,7 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		}
 		cand := rec.Clone()
 		cand.Task.Status = TaskStatus{State: TaskStateCanceled, Timestamp: s.stamp()}
-		ctx, cancel = context.WithTimeout(context.Background(), storeOpTimeout)
+		ctx, cancel = context.WithTimeout(base, storeOpTimeout)
 		err = s.store.UpdateTask(ctx, cand)
 		cancel()
 		if err != nil {
@@ -2125,7 +2129,7 @@ func (s *Server) pollGetTask(ctx context.Context, owner, taskID string) (rec *Ta
 
 // ---- push config methods ----------------------------------------------
 
-func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
+func (s *Server) handleCreatePushConfig(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var cfg PushNotificationConfig
 	if aerr := decodeParams(req.Params, &cfg); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -2143,7 +2147,7 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, 
 		s.writeResult(w, req.ID, nil, Errorf(CodePushNotificationNotSupported, "push notifications are disabled"))
 		return
 	}
-	if _, err := s.getTask(context.Background(), owner, sc, cfg.TaskID); err != nil {
+	if _, err := s.getTask(r.Context(), owner, sc, cfg.TaskID); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			s.writeResult(w, req.ID, nil, ErrTaskNotFound(cfg.TaskID))
 			return
@@ -2155,7 +2159,11 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, 
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "%v", err))
 		return
 	}
-	if aerr := s.storePushConfig(context.Background(), owner, &cfg); aerr != nil {
+	// The request's values without its cancellation: the create and the
+	// trim that bounds the task's configs after it run as one step.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), storeOpTimeout)
+	defer cancel()
+	if aerr := s.storePushConfig(ctx, owner, &cfg); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
@@ -2163,10 +2171,11 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, 
 }
 
 // requireOwnedTask answers ErrTaskNotFound when the task is absent,
-// another owner's, or made under scopes the caller does not hold; the
-// push-config handlers all need exactly that.
-func (s *Server) requireOwnedTask(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope, taskID string) bool {
-	_, err := s.getTask(context.Background(), owner, sc, taskID)
+// another owner's, made under scopes the caller does not hold, or made in
+// another tenant; the push-config handlers all need exactly that. A
+// push config belongs to its task, so the task's check is the config's.
+func (s *Server) requireOwnedTask(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope, taskID string) bool {
+	_, err := s.getTask(r.Context(), owner, sc, taskID)
 	if err == nil {
 		return true
 	}
@@ -2178,16 +2187,16 @@ func (s *Server) requireOwnedTask(w http.ResponseWriter, req *rpcRequest, owner 
 	return false
 }
 
-func (s *Server) handleGetPushConfig(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
+func (s *Server) handleGetPushConfig(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p GetTaskPushNotificationConfigRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
-	if !s.requireOwnedTask(w, req, owner, sc, p.TaskID) {
+	if !s.requireOwnedTask(w, r, req, owner, sc, p.TaskID) {
 		return
 	}
-	rec, err := s.store.GetPushConfig(context.Background(), owner, p.TaskID, p.ID)
+	rec, err := s.store.GetPushConfig(r.Context(), owner, p.TaskID, p.ID)
 	if errors.Is(err, ErrNotFound) {
 		// The spec has no dedicated code for a missing config id; the
 		// task was verified above, so the params are what is wrong.
@@ -2201,13 +2210,13 @@ func (s *Server) handleGetPushConfig(w http.ResponseWriter, req *rpcRequest, own
 	s.writeResult(w, req.ID, rec.Config, nil)
 }
 
-func (s *Server) handleListPushConfigs(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
+func (s *Server) handleListPushConfigs(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p ListTaskPushNotificationConfigsRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
-	if !s.requireOwnedTask(w, req, owner, sc, p.TaskID) {
+	if !s.requireOwnedTask(w, r, req, owner, sc, p.TaskID) {
 		return
 	}
 	offset := 0
@@ -2219,7 +2228,7 @@ func (s *Server) handleListPushConfigs(w http.ResponseWriter, req *rpcRequest, o
 		}
 		offset = n
 	}
-	recs, err := s.store.ListPushConfigs(context.Background(), owner, p.TaskID)
+	recs, err := s.store.ListPushConfigs(r.Context(), owner, p.TaskID)
 	if err != nil {
 		s.internalErr(w, req.ID, "list push configs", err)
 		return
@@ -2244,16 +2253,16 @@ func (s *Server) handleListPushConfigs(w http.ResponseWriter, req *rpcRequest, o
 	s.writeResult(w, req.ID, resp, nil)
 }
 
-func (s *Server) handleDeletePushConfig(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
+func (s *Server) handleDeletePushConfig(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p DeleteTaskPushNotificationConfigRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
-	if !s.requireOwnedTask(w, req, owner, sc, p.TaskID) {
+	if !s.requireOwnedTask(w, r, req, owner, sc, p.TaskID) {
 		return
 	}
-	err := s.store.DeletePushConfig(context.Background(), owner, p.TaskID, p.ID)
+	err := s.store.DeletePushConfig(r.Context(), owner, p.TaskID, p.ID)
 	if errors.Is(err, ErrNotFound) {
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "push config not found"))
 		return
@@ -2267,7 +2276,7 @@ func (s *Server) handleDeletePushConfig(w http.ResponseWriter, req *rpcRequest, 
 
 // ---- GetExtendedAgentCard ---------------------------------------------
 
-func (s *Server) handleExtendedCard(w http.ResponseWriter, req *rpcRequest, owner string) {
+func (s *Server) handleExtendedCard(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string) {
 	if s.extended == nil {
 		s.writeResult(w, req.ID, nil, Errorf(CodeExtendedAgentCardNotConfigured, "extended agent card not configured"))
 		return
@@ -2277,7 +2286,7 @@ func (s *Server) handleExtendedCard(w http.ResponseWriter, req *rpcRequest, owne
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
-	card, err := s.extended(context.Background(), owner)
+	card, err := s.extended(r.Context(), owner)
 	if err != nil {
 		var ae *Error
 		if errors.As(err, &ae) {

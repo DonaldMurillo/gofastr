@@ -215,7 +215,16 @@ SQL store adds the `tenant` column to an older table on open, and its
 rows read as made in no tenant, so a caller in a tenant no longer sees
 them.
 
-`GetTask` and `ListTasks` read the store on the request's context.
+Every request-driven store call runs on the request's context, so a
+store that scopes by it (its tenant, its trace) sees the caller:
+`GetTask`, `ListTasks`, and the four push-config methods read on it, and
+a client that leaves stops the read. `CancelTask` and the push-config
+create carry the request's values but not its cancellation, so a cancel
+or a create the client abandons halfway still completes. A push config
+belongs to its task: every push-config method first reads the task
+under the caller's owner, scopes and tenant, and answers `-32001` when
+the caller cannot see it. The `ExtendedCard` hook gets the request's
+context too.
 
 The SQL task store registers its task and push-config tables with
 `App.ExportData` and `App.EraseUserData`, keyed on the owner column, so
