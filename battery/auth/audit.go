@@ -64,6 +64,11 @@ type SecurityEvent struct {
 // internally; they are called on the request path. A nil sink disables
 // auditing entirely. AuthManager.emitSecurity no-ops.
 //
+// The ctx carries the request's values but not its cancellation (every
+// event is emitted after the change it records, and a client hanging up
+// must not drop the row), and a 5-second deadline. A sink that keeps
+// working past it holds the auth handler that emitted the event.
+//
 // The built-in NewSQLAuditSink writes one audit_log row per event via
 // framework.AppendAuditEvent, sharing the CRUD audit table and its
 // sanitisation so the two trails never drift apart.
@@ -119,12 +124,18 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 		// stolen session could disable 2FA, drop the connection and leave
 		// no row. The write keeps the request's values, not its
 		// cancellation (the settlectx shape).
-		sink.SecurityEvent(context.WithoutCancel(ctx), ev)
+		// The deadline applies to every sink, not only the built-in one:
+		// emitSecurity is synchronous, and a host sink that POSTs to a log
+		// service would otherwise hold the auth handler until the remote
+		// gave up, now that the client's hang-up no longer ends it.
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditWriteTimeout)
+		defer cancel()
+		sink.SecurityEvent(sctx, ev)
 	}()
 }
 
-// auditWriteTimeout bounds the built-in sink's insert now that it no
-// longer inherits the request's cancellation.
+// auditWriteTimeout bounds every sink's handling of one event now that it
+// no longer inherits the request's cancellation.
 const auditWriteTimeout = 5 * time.Second
 
 // sqlAuditSink is the built-in AuditSink: it writes each SecurityEvent as a
@@ -181,8 +192,14 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 		// scrubs the rows a user acted from: an address kept here
 		// (magic-link requests, refused OAuth sign-ins, unknown-account
 		// login failures) survived the erasure of its owner. A short
-		// digest still correlates repeated attempts on one address.
-		diff["email_hash"] = hashedIdentifier(ev.Email)
+		// digest still correlates repeated attempts on one address,
+		// across spellings once canonical. It is a pseudonym, not
+		// anonymous: anyone holding a candidate address can confirm it.
+		addr := ev.Email
+		if c, err := CanonicalEmail(addr); err == nil {
+			addr = c
+		}
+		diff["email_hash"] = hashedIdentifier(addr)
 	}
 	if ev.Remote != "" {
 		diff["remote"] = ev.Remote
@@ -190,8 +207,6 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 	for k, v := range ev.Meta {
 		diff[k] = v
 	}
-	ctx, cancel := context.WithTimeout(ctx, auditWriteTimeout)
-	defer cancel()
 	if err := framework.AppendAuditEvent(ctx, s.db, s.table, "auth", ev.Kind, recordID, ev.UserID, diff); err != nil {
 		slog.Warn("auth: failed to write security audit row",
 			"kind", ev.Kind, "error", err)

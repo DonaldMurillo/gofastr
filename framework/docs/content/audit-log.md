@@ -250,13 +250,15 @@ when unknown, since the column is NOT NULL), and a `diff` JSON of
 `X-Forwarded-For` is never trusted (see the auth threat model). A row
 with no user id (an unknown address, a magic-link request, a refused
 OAuth sign-in) carries `email_hash`, a 12-hex-char sha256 prefix of the
-address, instead of `email`: erasure scrubs the rows a user acted from and
-cannot reach a row with no actor, so a raw address there outlived it.
+canonical address, instead of `email`, because erasure scrubs the rows
+a user acted from and cannot reach a row with no actor: a raw address
+there outlived the user. The digest is a pseudonym, not anonymous data:
+anyone holding a candidate address can confirm a match.
 
-The sink writes on the request's context minus its cancellation, with a
-5-second bound. Every event is emitted after the change it records, so a
-client that hangs up after a 2FA disable or a role change no longer drops
-the row.
+Every sink, the built-in one and a host's own, gets the request's
+context minus its cancellation, with a 5-second deadline. Every event is
+emitted after the change it records, so a client that hangs up after a
+2FA disable or a role change no longer drops the row.
 
 ### Redaction posture
 

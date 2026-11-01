@@ -23,10 +23,9 @@ import (
 
 var memoryEraseMu sync.Mutex
 
-// registerMemoryStoreEraser (re)registers the manager's in-memory store
-// eraser. A later Init replaces the earlier registration. memoryEraseMu
-// guards the manager's two fields; the unregister func runs outside it.
-func registerMemoryStoreEraser(mgr *AuthManager) {
+// unregisterMemoryStoreEraser drops the manager's in-memory store eraser,
+// if it registered one. AuthManager.OnStop calls it.
+func unregisterMemoryStoreEraser(mgr *AuthManager) {
 	memoryEraseMu.Lock()
 	prev := mgr.unregisterMemoryErase
 	mgr.unregisterMemoryErase, mgr.memoryEraseName = nil, ""
@@ -34,6 +33,13 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 	if prev != nil {
 		prev()
 	}
+}
+
+// registerMemoryStoreEraser (re)registers the manager's in-memory store
+// eraser. A later Init replaces the earlier registration. memoryEraseMu
+// guards the manager's two fields; the unregister func runs outside it.
+func registerMemoryStoreEraser(mgr *AuthManager) {
+	unregisterMemoryStoreEraser(mgr)
 	var (
 		sessions *MemorySessionStore
 		twofa    *MemoryTwoFAStore

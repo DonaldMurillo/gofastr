@@ -101,3 +101,30 @@ func TestAuditActorlessRowHoldsNoAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+type ctxRecordingSink struct {
+	deadline  bool
+	cancelled bool
+}
+
+func (s *ctxRecordingSink) SecurityEvent(ctx context.Context, _ SecurityEvent) {
+	_, s.deadline = ctx.Deadline()
+	s.cancelled = ctx.Err() != nil
+}
+
+// A host sink gets the request's values without its cancellation, and a
+// deadline: emitSecurity is synchronous, so a sink with no bound held the
+// auth handler as long as its remote did (2026-11-01 review).
+func TestAuditCustomSinkContextBounded(t *testing.T) {
+	sink := &ctxRecordingSink{}
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, AuditSink: sink})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	mgr.emitSecurity(ctx, SecurityEvent{Kind: "login.succeeded"})
+	if sink.cancelled {
+		t.Error("the sink saw the request's cancellation")
+	}
+	if !sink.deadline {
+		t.Error("the sink's context has no deadline")
+	}
+}

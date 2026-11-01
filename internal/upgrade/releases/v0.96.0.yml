@@ -680,3 +680,10 @@ notes:
     find:
       uses:
         - gofastr/framework/experimental/harness/engine.Bus.Replay
+  - change: "BREAKING for audit consumers - a SQL audit row from battery/auth with no user id (an unknown address, a magic-link request, a refused OAuth sign-in) carries diff.email_hash, a 12-hex-char sha256 prefix of the canonical address, instead of diff.email"
+    breaking: true
+    hits: review
+    guidance: "EraseUserData scrubs the rows a user acted from and cannot reach a row with no actor, so the raw address outlived the user's erasure. A query or alert that reads diff.email on such rows matches on diff.email_hash instead: hash the canonical address the same way to look one up. Rows with a user id keep diff.email."
+    find:
+      uses:
+        - gofastr/battery/auth.NewSQLAuditSink
