@@ -3859,7 +3859,8 @@ few lines, and link the PR or the docs page for the rest.
 - **The static export writes a `StaticPaths` key holding `/`, and refuses
   two pages that write one file.** The key is checked after it is encoded
   for disk; `..`, `.`, `\` and NUL are still refused. Two files that
-  differ only in case count as one file.
+  differ only in case count as one file, and a redirect's page counts
+  like any other.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.

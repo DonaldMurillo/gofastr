@@ -49,3 +49,27 @@ func TestExportRefusesCaseFoldedFile(t *testing.T) {
 		t.Fatalf("Build error = %v, want a refusal of /products/A beside /products/a", err)
 	}
 }
+
+// A redirect whose file differs from a page's only in case would replace
+// that page on a case-insensitive filesystem, and so would a second
+// redirect: the export refuses both.
+func TestExportRefusesCaseFoldedRedirect(t *testing.T) {
+	for name, setup := range map[string]func(a *coreapp.App){
+		"page and redirect": func(a *coreapp.App) {
+			a.Register("/About", &homeScreen{}, nil)
+			a.Redirect("/about", "/About")
+		},
+		"two redirects": func(a *coreapp.App) {
+			a.Register("/next", &homeScreen{}, nil)
+			a.Redirect("/old", "/next")
+			a.Redirect("/OLD", "/next")
+		},
+	} {
+		a := coreapp.NewApp("t")
+		setup(a)
+		b := &Builder{Host: uihost.New(a), OutDir: t.TempDir()}
+		if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "both export to") {
+			t.Errorf("%s: Build error = %v, want a refusal of the case-folded pair", name, err)
+		}
+	}
+}

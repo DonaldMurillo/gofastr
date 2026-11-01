@@ -247,7 +247,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// Redirect routes: a page at each exact redirect's path, and the
 	// _redirects rules the hosts that read _headers also read.
-	if err := b.writeRedirects(ctx, pageSet(res.Pages), rendered); err != nil {
+	if err := b.writeRedirects(ctx, pageSet(res.Pages), rendered, pageOwner); err != nil {
 		return res, err
 	}
 
@@ -658,7 +658,7 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 // redirect chain that never ends (the live router fails it closed) is
 // skipped too. With path locales each locale tree gets its own page, its
 // target under the same prefix.
-func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string]bool) error {
+func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string]bool, owner map[string]string) error {
 	locales, byPrefix := b.Host.PathLocales()
 	tags := []string{""}
 	if byPrefix {
@@ -691,6 +691,13 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 			}
 			href := b.redirectHref(to, pages)
 			rel := filepath.ToSlash(pathToFile(from))
+			// A redirect file that differs from a page's, or another
+			// redirect's, only in case is the same file on a
+			// case-insensitive filesystem; it would replace that page.
+			if prev, dup := owner[foldPath(rel)]; dup {
+				return fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, from, rel)
+			}
+			owner[foldPath(rel)] = from
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
 			if err := b.ensureContained(dst); err != nil {
 				return err
