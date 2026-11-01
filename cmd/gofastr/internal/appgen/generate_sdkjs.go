@@ -201,7 +201,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if slices.Contains(decl.PrimaryKey, fd.Name) {
 			opt = ""
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values))
+		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values)+dtsNull(decl, fd))
 	}
 	dts.WriteString("}\n\n")
 
@@ -224,7 +224,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if inputTakesValue(fd) {
 			opt = ""
 		}
-		typ := tsTypeForField(fd.Type, fd.Values)
+		typ := tsTypeForField(fd.Type, fd.Values) + dtsNull(decl, fd)
 		if slices.ContainsFunc(uploadFields(decl), func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
 			// A Blob (a File is one) is uploaded; a string is a stored URL.
 			typ += " | Blob"
@@ -291,6 +291,20 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		dts.WriteString("}\n\n")
 	}
 	writeDTSEndpoints(dts, decl, ent)
+}
+
+// dtsNull is " | null" for a field the server can hold as null, the rule
+// the OpenAPI document follows: an optional column with no generated
+// value outside the key. A read returns its null, and a write may send
+// one to clear it.
+func dtsNull(decl framework.EntityDeclaration, fd framework.FieldDeclaration) string {
+	if fd.Required || fd.AutoGenerate != "" || slices.Contains(decl.PrimaryKey, fd.Name) {
+		return ""
+	}
+	if fd.Name == "id" && appspec.DeclKeyIsID(decl) {
+		return ""
+	}
+	return " | null"
 }
 
 // dtsRuntimeTypes are the names client.d.ts declares for every app.

@@ -710,3 +710,7 @@ notes:
     breaking: true
     guidance: "client.js used JSON.parse, which rounds an integer past 2^53. Regenerate the JS SDK (gofastr sdk). TypeScript that treats an integer field as a number narrows it first (typeof v === \"number\"), or converts with Number(v) when the value is known to stay under 2^53, or BigInt(v) when it may not."
     nodetect: "the change lands in regenerated SDK files; caller code that reads an integer field as number has no fixed spelling to search for"
+  - change: "BREAKING - the generated client.d.ts types an optional field T | null on the entity and Input interfaces"
+    breaking: true
+    guidance: "The server returns a NULL column as null, which the old types hid. Regenerate the JS SDK (gofastr sdk). TypeScript that reads an optional field checks for null first (v ?? fallback, or if (v !== null)). A required, generated or key field keeps its plain type."
+    nodetect: "the change lands in regenerated SDK files; caller code that reads an optional field has no fixed spelling to search for"

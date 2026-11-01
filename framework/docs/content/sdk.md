@@ -159,7 +159,14 @@ Bodies and `watch` events parse with the client's `parseJSON`, not bare
 arrives as its exact decimal string where `JSON.parse` would round it.
 Every other value parses the same. `client.d.ts` types each integer
 field `number | string` for that reason, and the server takes the string
-back for an integer column, so a value read this way round-trips. The exported
+back for an integer column, so a value read this way round-trips.
+
+A field that is not required, has no generated value and is not part of
+the key can hold SQL `NULL`, and the server returns it as `null`, so
+`client.d.ts` types it `T | null` on `<Struct>` and on `<Struct>Input`
+(where sending `null` clears it). A required field, a generated one and
+the key stay plain `T`. Check for `null` before using an optional field's
+value. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
 

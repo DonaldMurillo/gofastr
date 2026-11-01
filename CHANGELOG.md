@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: `client.d.ts` types nullable fields `T | null`.** The
+  server returns SQL `NULL` as `null` for any optional column, but the
+  generated types said `T`, so strict TypeScript compiled code that read
+  `null` as a string or number. A field that is not required, generated or
+  part of the key is now `T | null` on the entity interface and its Input
+  (where `null` clears it). See [SDK](framework/docs/content/sdk.md).
 - **BREAKING: the JS SDK keeps integers past 2^53.** `client.js` parsed
   with `JSON.parse`, so a big id or counter lost digits. It now hands such
   an integer over as its exact decimal string, and `client.d.ts` types
