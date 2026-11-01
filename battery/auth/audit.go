@@ -107,31 +107,38 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 	if ev.At.IsZero() {
 		ev.At = time.Now().UTC()
 	}
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// The recovered value is whatever the host sink held;
-				// scrub it before the log (textsafe.Recovered) so
-				// control/bidi bytes cannot forge lines in the operator's
-				// tail — this funnel is read during incidents.
-				slog.Warn("auth: audit sink panic recovered; event lost",
-					"kind", ev.Kind, "panic", textsafe.Recovered(r))
-			}
-		}()
-		// Every event is emitted after the change it records committed.
-		// On the request's own context, a client that hung up (or a
-		// request timeout) between the two cancelled the audit write: a
-		// stolen session could disable 2FA, drop the connection and leave
-		// no row. The write keeps the request's values, not its
-		// cancellation (the settlectx shape).
-		// The deadline applies to every sink, not only the built-in one:
-		// emitSecurity is synchronous, and a host sink that POSTs to a log
-		// service would otherwise hold the auth handler until the remote
-		// gave up, now that the client's hang-up no longer ends it.
-		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditWriteTimeout)
-		defer cancel()
-		sink.SecurityEvent(sctx, ev)
+	deliverAudit(ctx, sink, ev)
+}
+
+// deliverAudit hands ev to sink: panic-isolated, on the request's context
+// minus its cancellation, under auditWriteTimeout. Every audit emission in
+// the package goes through it, emitSecurity and the token middleware's
+// emitTokenEvent alike, so no sink sees a context a hang-up can cancel or
+// one with no deadline.
+func deliverAudit(ctx context.Context, sink AuditSink, ev SecurityEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			// The recovered value is whatever the host sink held;
+			// scrub it before the log (textsafe.Recovered) so
+			// control/bidi bytes cannot forge lines in the operator's
+			// tail — this funnel is read during incidents.
+			slog.Warn("auth: audit sink panic recovered; event lost",
+				"kind", ev.Kind, "panic", textsafe.Recovered(r))
+		}
 	}()
+	// Every event is emitted after the change it records committed.
+	// On the request's own context, a client that hung up (or a
+	// request timeout) between the two cancelled the audit write: a
+	// stolen session could disable 2FA, drop the connection and leave
+	// no row. The write keeps the request's values, not its
+	// cancellation (the settlectx shape).
+	// The deadline applies to every sink, not only the built-in one:
+	// emitSecurity is synchronous, and a host sink that POSTs to a log
+	// service would otherwise hold the auth handler until the remote
+	// gave up, now that the client's hang-up no longer ends it.
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditWriteTimeout)
+	defer cancel()
+	sink.SecurityEvent(sctx, ev)
 }
 
 // auditWriteTimeout bounds every sink's handling of one event now that it

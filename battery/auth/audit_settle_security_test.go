@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -103,11 +105,13 @@ func TestAuditActorlessRowHoldsNoAddress(t *testing.T) {
 }
 
 type ctxRecordingSink struct {
+	called    bool
 	deadline  bool
 	cancelled bool
 }
 
 func (s *ctxRecordingSink) SecurityEvent(ctx context.Context, _ SecurityEvent) {
+	s.called = true
 	_, s.deadline = ctx.Deadline()
 	s.cancelled = ctx.Err() != nil
 }
@@ -127,4 +131,59 @@ func TestAuditCustomSinkContextBounded(t *testing.T) {
 	if !sink.deadline {
 		t.Error("the sink's context has no deadline")
 	}
+}
+
+// The token middleware called its sink directly on the request's context,
+// so a replayed token whose sender hung up left no token.auth_failed row,
+// and a host sink got no deadline (2026-11-01 review, round 2).
+func TestTokenAuditGoesThroughDeliverAudit(t *testing.T) {
+	_, ts, _ := newTokenTestDB(t)
+	sink := &ctxRecordingSink{}
+	users := &staticUserStore{byID: map[string]User{}}
+	ctx, cancel := context.WithCancel(context.Background())
+	store := cancelAfterFind{APITokenStore: ts, cancel: cancel}
+	h := TokenMiddleware(users, nil, store, WithTokenAudit(sink))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	req := bearerRequest(http.MethodGet, "/x", "gfsk_"+strings.Repeat("0", 40), "").WithContext(ctx)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if !sink.called {
+		t.Fatal("no token.auth_failed event")
+	}
+	if sink.cancelled || !sink.deadline {
+		t.Errorf("token audit context: cancelled=%v deadline=%v, want the request's values minus its cancellation, with a deadline", sink.cancelled, sink.deadline)
+	}
+}
+
+// email_hash is taken over the canonical address, so spellings of one
+// address correlate.
+func TestAuditEmailHashIsCanonical(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	sink, err := NewSQLAuditSink(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink.SecurityEvent(context.Background(), SecurityEvent{Kind: "magiclink.requested", Email: "  Victim@Example.COM "})
+	var diff string
+	if err := db.QueryRow(`SELECT diff FROM audit_log`).Scan(&diff); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diff, hashedIdentifier("victim@example.com")) {
+		t.Errorf("email_hash of a non-canonical spelling = %s, want the canonical address's digest", diff)
+	}
+}
+
+// cancelAfterFind hangs the client up once the token lookup has answered.
+type cancelAfterFind struct {
+	APITokenStore
+	cancel context.CancelFunc
+}
+
+func (c cancelAfterFind) FindByHash(ctx context.Context, hash string) (*APIToken, error) {
+	t, err := c.APITokenStore.FindByHash(ctx, hash)
+	c.cancel()
+	return t, err
 }
