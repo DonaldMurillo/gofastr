@@ -232,6 +232,12 @@ The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
 provided in this package implement every relevant interface; if you
 start from `EntityUserStore` you get the full feature matrix.
 
+`mgr.JWT()` is ready as soon as `auth.New` returns (when `JWTSecret` is
+set, or DevMode minted one), so `RequireAuth(mgr.JWT())` can be wired
+before `App.Start` runs `Init`. `RequireAuth(nil)` panics at wiring time.
+A zero `AuthConfig.JWTExpiry` means one hour; `Init` refuses a negative
+one.
+
 A zero `AuthConfig.SessionTTL` means seven days. A negative one is a
 sign or unit error, and `AuthManager.Init` refuses it, so the app does
 not boot with a session lifetime nobody chose. The stores refuse one

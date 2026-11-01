@@ -24,8 +24,15 @@ import (
 // answers 401. A bare NewJWTAuth with no store keeps the stateless
 // claims-derived principal (service-to-server deployments with no user
 // table).
+//
+// RequireAuth panics on a nil jwt: mgr.JWT() is nil only when the manager has
+// no JWTSecret, and the middleware would otherwise panic on the first bearer
+// request instead of at wiring time.
 func RequireAuth(jwt *JWTAuth) middleware.Middleware {
-	if jwt != nil && jwt.onResolve != nil {
+	if jwt == nil {
+		panic("auth: RequireAuth needs a *JWTAuth; mgr.JWT() is nil when AuthConfig.JWTSecret is empty")
+	}
+	if jwt.onResolve != nil {
 		jwt.onResolve()
 	}
 	return func(next http.Handler) http.Handler {
