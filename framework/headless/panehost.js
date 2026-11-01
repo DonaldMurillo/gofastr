@@ -149,9 +149,7 @@
     if (open.indexOf(slot) === -1) open.push(slot);
     setOpenList(host, open);
     // Focus handoff: the first tabbable in the pane.
-    const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
-    const first = pane.querySelector(sel);
-    if (first) { try { first.focus({ preventScroll: true }); } catch (_) {} }
+    focusIn(pane, false);
     if (!syncing) pushPane(host, slot, key);
     host.dispatchEvent(new CustomEvent('pane-host:open', { bubbles: true, detail: { pane: slot } }));
     syncMode(host);
@@ -234,12 +232,25 @@
     return 'panehost:' + (host.id || '');
   }
 
+  // The pane's tabbables, over the kernel's shared focus selector.
+  function tabbables(pane) {
+    return pane.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+  }
+  function focusIn(pane, last) {
+    const items = tabbables(pane);
+    const el = items[last ? items.length - 1 : 0];
+    if (el) { try { el.focus({ preventScroll: true }); } catch (_) {} }
+  }
+
   // The responsive overlay. data-hui-pane-mode="overlay" is set ONLY
   // while the viewport is under the breakpoint AND a side pane is open
   // (the sheet's scrim and drawer chrome key off it, so an attribute
   // on a closed page would paint a scrim over everything); it is
   // REMOVED otherwise. Entering overlay mode takes the kernel's
-  // refcounted scroll lock, leaving releases it.
+  // refcounted scroll lock, leaving releases it, and moves focus into
+  // the drawer when it sits outside: a drawer the server rendered open
+  // on a phone-width first load, or a window narrowed under an open
+  // pane, would otherwise leave focus behind the scrim.
   function syncMode(host) {
     const wantOverlay = window.matchMedia(MQ).matches && !!topmost(host);
     const isOverlay = host.getAttribute('data-hui-pane-mode') === 'overlay';
@@ -247,6 +258,8 @@
     if (wantOverlay) {
       host.setAttribute('data-hui-pane-mode', 'overlay');
       if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
+      const pane = paneOf(host, topmost(host));
+      if (pane && !pane.contains(document.activeElement)) focusIn(pane, false);
     } else {
       host.removeAttribute('data-hui-pane-mode');
       if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
@@ -283,12 +296,14 @@
     if (!slot) return;
     const pane = paneOf(host, slot);
     if (!pane) return;
-    const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
-    const items = pane.querySelectorAll(sel);
+    const items = tabbables(pane);
     if (!items.length) { e.preventDefault(); return; }
-    const first = items[0], last = items[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    const a = document.activeElement, first = items[0], last = items[items.length - 1];
+    // Focus outside the drawer (the body, background nav) re-enters it
+    // at the end Tab moves toward, never the page behind the scrim.
+    if (!pane.contains(a)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    else if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
   });
 
   // Programmatic API mirroring openWidget / closeWidget: the host by
