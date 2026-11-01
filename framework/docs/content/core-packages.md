@@ -45,6 +45,33 @@ hold, and the pointer is allocated when a value arrives, as
 `encoding/json` allocates it. `Bind` caps the body at 1 MiB; a larger
 one is a 413 whose `Err` is the cap's `*http.MaxBytesError`.
 
+A tagged field binds a string, a number or a bool, or any type that
+implements `encoding.TextUnmarshaler`, directly or through a pointer:
+`?since=2026-11-01T09:00:00Z` fills a `time.Time`, and a UUID type or an
+enum with its own `UnmarshalText` binds the same way. The type's
+`UnmarshalText` runs on every tag surface (query, path, header, tool
+params), so an enum that refuses `bogus` in a JSON body refuses
+`?status=bogus` too; its error is a 400 naming the parameter
+(`error.invalid_parameter`, or `error.invalid_header` for a header).
+
+An empty query or header value is the same as an absent one, for every
+kind: `?page=` and `?q=` leave the field at its zero value and a pointer
+field nil (a `Handler[*T, O]` input stays nil too). **Behaviour change (after v0.95.0):** `?q=` used to bind `""` into a
+string field (and `?page=` failed an int field with a 400). To receive an
+explicit empty, add the `,empty` tag option, `query:"q,empty"` or
+`header:"X-Foo,empty"`: a string gets `""`, a number, bool or
+`TextUnmarshaler` field its zero value, and a pointer field a non-nil
+pointer to that zero value, so `*string` tells `?q=` (pointer to `""`)
+from no `q` at all (nil). Path values are never empty and take no
+option. The tag name is the part before the first comma; any other
+option (`query:"q,emtpy"`), `,empty` on a `path` tag, or a tag with no
+name fails every `Bind` with a plain error (a 500), so the typo shows on
+the first request. `ToolAdapter` reads a tagged param given as `""` the
+same way. It also refuses two params keys that fold to one name
+(`{"q":"safe","Q":"danger"}`) across the whole params object, before
+splitting it into tagged values and the body, with the same
+`error.json_folded_keys` a strict body decode returns.
+
 Every decode of client-controlled JSON outside `Bind` goes through the
 same strict rule: `DecodeStrict(r, &dst)` for a reader,
 `UnmarshalStrict(data, &dst)` for bytes already in memory (a websocket

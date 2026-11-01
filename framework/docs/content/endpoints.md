@@ -88,7 +88,17 @@ A pointer field is optional; any other field is required. The generated CLI
 refuses a call that leaves out a required flag before it sends anything.
 Path and query values are strings, numbers or bools. Body fields may also be
 `time.Time`, `json.RawMessage`, slices, maps, or structs declared in the
-entities package.
+entities package. That limit is the generator's: the generated clients and
+CLI spell a path or query value as a plain scalar, and the generator
+refuses tag options such as `,empty`. A hand-registered handler gets all
+of `handler.Bind`, which also binds a `time.Time` or any other
+`encoding.TextUnmarshaler` from a query, path or header value (see
+[core packages](core-packages.md) → handler).
+
+An empty query value (`?q=`) is the same as no value: the field stays at
+its zero value and a pointer field stays nil. Before this release `?q=`
+bound `""` into a string field, and `?page=` failed an int field with a
+400.
 
 ## Who can call it
 
