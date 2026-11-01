@@ -139,16 +139,20 @@ func Counter(p CounterProps, s Classes) render.HTML {
 	if p.Name != "" {
 		// The signal writes the input's value attribute, so a named
 		// counter is still one control: the buttons, the display and
-		// the submitted field hold one number.
-		value = b.El("input", PartCounterValue, Internal(html.Attrs{
-			"type":                 "number",
-			"name":                 p.Name,
-			"step":                 strconv.Itoa(step),
-			"value":                strconv.Itoa(p.Value),
-			"aria-label":           label,
-			"data-cui-signal":      p.Signal,
-			"data-cui-signal-attr": "value",
-		}))
+		// the submitted field hold one number. Built through Bind, the
+		// package's one binding spelling: it writes the attr mode the
+		// kernel reads. Without data-cui-signal-mode the kernel took
+		// the input for a text binding, set the void input's
+		// textContent on each step, left its value alone (the form
+		// submitted the server's number), and stamped role=status over
+		// its spinbutton role.
+		value = b.El("input", PartCounterValue, Internal(Merge(html.Attrs{
+			"type":       "number",
+			"name":       p.Name,
+			"step":       strconv.Itoa(step),
+			"value":      strconv.Itoa(p.Value),
+			"aria-label": label,
+		}, Bind{Signal: p.Signal, Mode: "attr", Attr: "value"}.attrs())))
 	} else {
 		// Number mode: the runtime writes each new value the reader's
 		// way, as the server wrote this one.

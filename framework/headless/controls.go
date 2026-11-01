@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,13 @@ type NumberInputProps struct {
 	// Strings are the strings this component says. Nil means the English
 	// defaults; a layer above sets them from the request's language.
 	Strings *Strings
+
+	// Ctx is the render context. With no ID the input's id is the
+	// Name, handed out through Ctx's id scope (render.UniqueID), so a
+	// second control with the same Name on the page gets a -2 suffix;
+	// an explicit ID is never changed. With no Ctx the Name is used as
+	// is.
+	Ctx context.Context
 }
 
 // NumberInput renders the number field between its steppers.
@@ -81,7 +89,7 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 	if p.Min != nil && p.Max != nil && *p.Min > *p.Max {
 		panic("headless: NumberInput Min " + strconv.Itoa(*p.Min) + " is above Max " + strconv.Itoa(*p.Max) + " — an empty range is a configuration error, not a field")
 	}
-	id := orDefault(p.ID, p.Name)
+	id := instanceID(p.Ctx, p.ID, p.Name, "-hint", "-error")
 	// The value is DATA, not configuration: a form re-rendered with
 	// what the reader posted renders it back as given (the browser
 	// marks it invalid against the bounds; the Error prop is how the
@@ -208,6 +216,10 @@ type SliderProps struct {
 	// Strings are the strings this component says. Nil means the English
 	// defaults; a layer above sets them from the request's language.
 	Strings *Strings
+
+	// Ctx is the render context: the derived id goes through its id
+	// scope, as NumberInputProps.Ctx describes.
+	Ctx context.Context
 }
 
 // Slider renders the labelled range control.
@@ -246,7 +258,7 @@ func Slider(p SliderProps, s Classes) render.HTML {
 	if value > max {
 		value = max
 	}
-	id := orDefault(p.ID, p.Name)
+	id := instanceID(p.Ctx, p.ID, p.Name)
 
 	b := p.Parts.Box(s)
 	input := html.Attrs{
@@ -344,6 +356,11 @@ type RangeSliderProps struct {
 	// Strings are the strings this component says. Nil means the English
 	// defaults; a layer above sets them from the request's language.
 	Strings *Strings
+
+	// Ctx is the render context: the derived id the two thumbs' ids
+	// are built from goes through its id scope, as
+	// NumberInputProps.Ctx describes.
+	Ctx context.Context
 }
 
 // RangeSlider renders the two-thumb range pair.
@@ -392,7 +409,7 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 	if lo > hi {
 		lo, hi = hi, lo
 	}
-	id := orDefault(p.ID, p.Name)
+	id := instanceID(p.Ctx, p.ID, p.Name, "-min", "-max")
 
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s)
@@ -481,6 +498,12 @@ type RatingProps struct {
 	// Strings are the strings this component says. Nil means the English
 	// defaults; a layer above sets them from the request's language.
 	Strings *Strings
+
+	// Ctx is the render context. The choices' ids are built from Name;
+	// through Ctx's id scope (render.UniqueID) a second rating with the
+	// same Name on the page builds them from Name-2 instead of
+	// repeating them. With no Ctx the Name is used as is.
+	Ctx context.Context
 }
 
 // Rating renders the radio group.
@@ -531,9 +554,16 @@ func Rating(p RatingProps, s Classes) render.HTML {
 		"aria-label": p.Label,
 		"id":         p.ID,
 	}))
+	// The choices' ids build from the Name (never the ID), handed out
+	// through the id scope with every choice's suffix.
+	family := make([]string, max)
+	for i := range family {
+		family[i] = "-" + strconv.Itoa(i+1)
+	}
+	base := render.UniqueID(p.Ctx, p.Name, family...)
 	items := make([]render.HTML, 0, max*2)
 	for i := max; i >= 1; i-- {
-		idV := p.Name + "-" + strconv.Itoa(i)
+		idV := base + "-" + strconv.Itoa(i)
 		radio := html.Attrs{
 			"type":       "radio",
 			"name":       p.Name,

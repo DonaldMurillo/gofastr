@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -60,6 +61,12 @@ type TagInputProps struct {
 	// Strings are the strings this component says. Nil means the English
 	// defaults; a layer above sets them from the request's language.
 	Strings *Strings
+
+	// Ctx is the render context. With no ID the draft field's id is
+	// the Name, handed out through Ctx's id scope (render.UniqueID), so
+	// a second tag input with the same Name on the page gets a -2
+	// suffix. With no Ctx the Name is used as is.
+	Ctx context.Context
 }
 
 // TagInput renders the chips, the draft input and the add control.
@@ -83,7 +90,22 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 	if p.MaxLength < 0 {
 		panic("headless: TagInput MaxLength " + strconv.Itoa(p.MaxLength) + " is negative — a cap below zero caps nothing")
 	}
-	id := orDefault(p.ID, p.Name)
+	// The draft field's id, which the label's for= names. The root
+	// carries an explicit ID, so the field takes ID-field: the two once
+	// shared it, and for= resolved to the root div (not labelable), so
+	// clicking the label focused nothing. With no ID the field's id is
+	// the Name, through the id scope.
+	var fieldID string
+	if p.ID != "" {
+		render.ReserveID(p.Ctx, p.ID, "-field", "-field-hint")
+		fieldID = p.ID + "-field"
+	} else {
+		fieldID = render.UniqueID(p.Ctx, p.Name, "-hint")
+	}
+	hintID := ""
+	if p.Help != "" {
+		hintID = fieldID + "-hint"
+	}
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s)
 
@@ -121,12 +143,15 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 
 	field := html.Attrs{
 		"type":                     "text",
-		"id":                       id,
+		"id":                       fieldID,
 		"data-hui-tag-input-field": "",
 		"aria-label":               p.Label,
 		"autocomplete":             "off",
 	}
 	attrsSet(field, "placeholder", p.Placeholder)
+	// The rule the values obey is the field's description, not only
+	// a line a sighted reader sees.
+	attrsSet(field, "aria-describedby", hintID)
 	Flag(field, "disabled", p.Disabled)
 	if p.MaxLength > 0 {
 		field["maxlength"] = strconv.Itoa(p.MaxLength)
@@ -151,7 +176,7 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 		b.El("button", PartTagInputAdd, add, render.Text("+")))
 
 	kids := []render.HTML{
-		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": id})), render.Text(p.Label)),
+		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": fieldID})), render.Text(p.Label)),
 		// The values are data, not caller markup, so the whole zone —
 		// the chip list, the draft field and the add control — is the
 		// component's own; the mark sits on the zone, not its children.
@@ -170,7 +195,7 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 		})),
 	)
 	if p.Help != "" {
-		kids = append(kids, b.El("p", PartHint, Internal(nil), render.Text(p.Help)))
+		kids = append(kids, b.El("p", PartHint, Internal(html.Attrs{"id": hintID}), render.Text(p.Help)))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label"), Attrs(map[string]string{
@@ -309,6 +334,13 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 		}
 		return q
 	}
+	// ops is where the add and remove requests go: the Action, with
+	// the Island's signal for the answer to land in. The Action was
+	// checked and then dropped for the Island's Endpoint, so an
+	// operations URL apart from the region's renderer was never
+	// fetched. Every caller that gave both the same path renders the
+	// same markup it did.
+	ops := Island{Endpoint: p.Action, Signal: p.Island.Signal}
 
 	// anyFields says whether any row carries the caller's fields: with
 	// none, the whole list is the component's own.
@@ -330,8 +362,8 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 			remove["name"] = p.RemoveName
 			remove["value"] = strconv.Itoa(i)
 		}
-		if p.Island.Endpoint != "" {
-			for k, v := range p.Island.attrs(opQuery("remove", i), "POST") {
+		if p.Action != "" {
+			for k, v := range ops.attrs(opQuery("remove", i), "POST") {
 				remove[k] = v
 			}
 		}
@@ -361,15 +393,31 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 		add["name"] = p.AddName
 		add["value"] = orDefault(p.AddValue, "1")
 	}
-	if p.Island.Endpoint != "" {
-		for k, v := range p.Island.attrs(opQuery("add", -1), "POST") {
+	if p.Action != "" {
+		for k, v := range ops.attrs(opQuery("add", -1), "POST") {
 			add[k] = v
 		}
 	}
 	atCeiling := p.MaxItems > 0 && len(p.Items) >= p.MaxItems
 	Flag(add, "disabled", atCeiling)
 
-	kids := []render.HTML{}
+	kids := []render.HTML{
+		// The default button, ahead of every row: the repeater lives in
+		// the host's form, and implicit submission (Enter in a row's
+		// field) clicks the form's first submit control in tree order,
+		// which was row 0's Remove — Enter deleted the first row. This
+		// hidden, nameless submit is the first instead: with no script
+		// Enter submits the host form carrying no operation, and the
+		// module forwards the click to the host form's own default (its
+		// first submit control outside every repeater), so Enter
+		// submits as if the repeater's controls were not there.
+		b.El("button", PartDefaultAction, Internal(html.Attrs{
+			"type":                      "submit",
+			"hidden":                    "",
+			"tabindex":                  "-1",
+			"data-hui-repeater-default": "",
+		})),
+	}
 	if p.Label != "" {
 		kids = append(kids, b.El("span", PartLabel, Internal(nil), render.Text(p.Label)))
 	}
@@ -436,9 +484,9 @@ func init() {
 
 	Register(Spec{
 		Name: "Repeater",
-		Anatomy: []Part{PartRoot, PartLabel, PartRepeaterItems, PartRepeaterItem,
+		Anatomy: []Part{PartRoot, PartDefaultAction, PartLabel, PartRepeaterItems, PartRepeaterItem,
 			PartRepeaterFields, PartActions, PartDismiss, PartRepeaterAdd, PartStatus},
-		Hooks: []string{"data-hui-repeater", "data-hui-repeater-item",
+		Hooks: []string{"data-hui-repeater", "data-hui-repeater-default", "data-hui-repeater-item",
 			"data-hui-repeater-action", "data-hui-repeater-index", "data-hui-repeater-status"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Repeater(RepeaterProps{Name: "links", Items: []RepeaterItem{{}}, Parts: parts}, s)

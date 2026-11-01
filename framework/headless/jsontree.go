@@ -42,7 +42,8 @@ type JSONTreeProps struct {
 	// OpenDepth is the recursion depth that renders open by default.
 	// 0 means only the root is open; -1 means everything is open.
 	OpenDepth int
-	// MaxStringLen truncates long strings with the truncation mark.
+	// MaxStringLen truncates long strings with the truncation mark,
+	// counted in characters (runes), so a cut never lands inside one.
 	// 0 means no limit.
 	MaxStringLen int
 
@@ -105,8 +106,12 @@ func jsonNode(b Box, v any, depth int, p JSONTreeProps, w *Strings) render.HTML 
 		return b.El("span", PartJSONNum, own, render.Text(t.String()))
 	case string:
 		s := t
-		if p.MaxStringLen > 0 && len(s) > p.MaxStringLen {
-			s = s[:p.MaxStringLen] + w.JSONTruncated
+		// Runes, not bytes: a byte cut split "é" and rendered invalid
+		// UTF-8, the way TagInput's MaxLength (the other cap) never did.
+		if p.MaxStringLen > 0 {
+			if r := []rune(s); len(r) > p.MaxStringLen {
+				s = string(r[:p.MaxStringLen]) + w.JSONTruncated
+			}
 		}
 		return b.El("span", PartJSONStr, own, render.Text(`"`+s+`"`))
 	case []any:

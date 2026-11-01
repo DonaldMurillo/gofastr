@@ -83,6 +83,8 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		headless.PartCarouselPrev:  "fui-carousel__prev",
 		headless.PartCarouselNext:  "fui-carousel__next",
 		headless.PartMarker:        "fui-carousel__dots",
+		// The slide status live region: read, never seen.
+		headless.PartVisuallyHidden: "fui-visually-hidden",
 	}
 	// The visible-per-view variant rides the root as a class modifier;
 	// the count clamps to the CSS ceiling (8) the way it always did.
@@ -279,6 +281,19 @@ func carouselCSS(_ style.Theme) string {
 [data-cui-comp="ui-carousel"] .fui-carousel__next:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
+}
+/* Scoped copy of the visually-hidden recipe: the slide status live
+   region must not be seen on a page that loads only this sheet. */
+[data-cui-comp="ui-carousel"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dots {
   display: flex;

@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -62,6 +63,13 @@ type MultiSelectProps struct {
 	// checkbox group is the contract.
 	Parts   Parts
 	Strings *Strings
+
+	// Ctx is the render context. The instance id the option ids are
+	// built from defaults to Name; through Ctx's id scope
+	// (render.UniqueID) a second multiselect with the same Name on the
+	// page gets a -2 suffix instead of repeating every option id. An
+	// explicit ID is never changed. With no Ctx the Name is used as is.
+	Ctx context.Context
 }
 
 // MultiSelect renders the checkbox-group disclosure.
@@ -80,10 +88,11 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 		checkLabel("MultiSelect option "+strconv.Itoa(i), "Label", opt.Label)
 	}
 	w := p.Strings.Resolve()
-	id := p.ID
-	if id == "" {
-		id = p.Name
+	family := make([]string, len(p.Options))
+	for i := range p.Options {
+		family[i] = "-opt-" + strconv.Itoa(i)
 	}
+	id := instanceID(p.Ctx, p.ID, p.Name, family...)
 	placeholder := p.Placeholder
 	if placeholder == "" {
 		placeholder = w.MultiSelectPlaceholder

@@ -80,6 +80,7 @@ func Picker(cfg PickerConfig) render.HTML {
 		headless.PartComboboxOption:  "fui-combobox__option",
 		headless.PartComboboxStatus:  "fui-visually-hidden",
 		headless.PartText:            "fui-combobox__option-label",
+		headless.PartComboboxMeta:    "fui-combobox__option-meta",
 	}
 	control := func(c headless.FieldControl) render.HTML {
 		box := headless.Own(headless.Combobox(headless.ComboboxProps{
@@ -116,6 +117,7 @@ func PickerRows(id string, opts []PickerOption, more string) render.HTML {
 	return headless.ComboboxRows(id+"-listbox", pickerOptions(opts, more), headless.Classes{
 		headless.PartComboboxOption: "fui-combobox__option",
 		headless.PartText:           "fui-combobox__option-label",
+		headless.PartComboboxMeta:   "fui-combobox__option-meta",
 	})
 }
 

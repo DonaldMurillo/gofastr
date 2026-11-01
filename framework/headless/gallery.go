@@ -3,6 +3,7 @@ package headless
 import (
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -161,11 +162,17 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 		if group == "" {
 			group = p.Lightbox.Name + "-gallery"
 		}
-		dl := "src=" + url.PathEscape(it.Src) +
-			"&alt=" + url.PathEscape(scrubControlBytes(it.Alt)) +
-			"&group=" + url.PathEscape(group)
+		// The viewer's src passes the image-source policy the thumb
+		// does, degrading to the same blank stub.
+		src := urlsafe.Clean(it.Src, urlsafe.ImageSource)
+		if src == "" {
+			src = "/__gofastr/blank.png"
+		}
+		dl := "src=" + deeplinkEscape(src) +
+			"&alt=" + deeplinkEscape(scrubControlBytes(it.Alt)) +
+			"&group=" + deeplinkEscape(group)
 		if it.Caption != "" {
-			dl += "&caption=" + url.PathEscape(scrubControlBytes(it.Caption))
+			dl += "&caption=" + deeplinkEscape(scrubControlBytes(it.Caption))
 		}
 		linkAttrs["data-cui-open"] = p.Lightbox.Name
 		linkAttrs["data-cui-deeplink"] = dl
@@ -188,6 +195,19 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 		b.El("figure", PartHeader, nil,
 			b.El("a", PartLabel, linkAttrs, img),
 			b.El("figcaption", PartText, nil, render.Text(scrubControlBytes(it.Caption)))))
+}
+
+// deeplinkEscape encodes one deeplink key or value the way the
+// runtime decodes it: the data-cui-open delegate
+// (core-ui/runtime/frag/widgets-boot.js) splits the deeplink on '&',
+// takes the first '=' as the key/value split, and decodeURIComponent's
+// each side. url.PathEscape left '&' and '=' bare, so an Alt of
+// "Tom & Jerry" or a Src with a two-parameter query was cut short and
+// spilled junk keys into the viewer's signals. QueryEscape escapes
+// both; its '+' for a space is spelled %20, because decodeURIComponent
+// keeps a '+' as a plus (a literal plus is already %2B).
+func deeplinkEscape(s string) string {
+	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
 
 // safeGalleryHref degrades an unsafe href to the fragment, the same

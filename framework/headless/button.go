@@ -341,6 +341,13 @@ func Button(p ButtonProps, s Classes) render.HTML {
 		// rather than a link that runs something.
 		href := urlsafe.CleanAnchor(p.Href)
 		if p.Disabled || href == "" {
+			// The Action's wiring goes with the href: the runtime's
+			// delegates (data-cui-open and the rest) read no
+			// aria-disabled, so a dead-looking link kept opening its
+			// widget on click.
+			for k := range action {
+				delete(own, k)
+			}
 			own["aria-disabled"] = "true"
 			own["tabindex"] = "-1"
 			own["role"] = "link"

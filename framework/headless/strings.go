@@ -287,6 +287,18 @@ type Strings struct {
 	CarouselSlide string
 	// CarouselGoTo names a dot control, "Go to slide {{n}}".
 	CarouselGoTo string
+	// CarouselRole and CarouselSlideRole are the roledescriptions the
+	// region and each slide carry ("carousel", "slide"): a screen
+	// reader says them in place of "region" and "group". One word each.
+	CarouselRole      string
+	CarouselSlideRole string
+
+	// ─── PaneHost ─────────────────────────────────────────────────────
+
+	// PaneSecondary and PaneTertiary name a side pane's region when its
+	// own label is empty ("Secondary", "Tertiary"). One word each.
+	PaneSecondary string
+	PaneTertiary  string
 
 	// ─── JSONTree ──────────────────────────────────────────────────────
 
@@ -472,6 +484,12 @@ var defaultStrings = Strings{
 
 	CarouselSlide: "Slide {{n}} of {{total}}",
 	CarouselGoTo:  "Go to slide {{n}}",
+
+	CarouselRole:      "carousel",
+	CarouselSlideRole: "slide",
+
+	PaneSecondary: "Secondary",
+	PaneTertiary:  "Tertiary",
 
 	ComboboxLoading:      "Loading…",
 	ComboboxNoResults:    "No matches",

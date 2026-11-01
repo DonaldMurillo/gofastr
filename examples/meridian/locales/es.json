@@ -634,7 +634,9 @@
       "next": "Diapositiva siguiente",
       "pagination": "Paginación de diapositivas",
       "previous": "Diapositiva anterior",
-      "slide": "Diapositiva {{n}} de {{total}}"
+      "role": "carrusel",
+      "slide": "Diapositiva {{n}} de {{total}}",
+      "slideRole": "diapositiva"
     },
     "change": {
       "from": "de",
@@ -1001,6 +1003,10 @@
       "previous": "Anterior",
       "results": "resultados",
       "showing": "Mostrando"
+    },
+    "paneHost": {
+      "secondary": "Secundario",
+      "tertiary": "Terciario"
     },
     "passwordInput": {
       "hide": "Ocultar contraseña",

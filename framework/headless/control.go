@@ -172,7 +172,16 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 	if p.Invalid {
 		attrs["aria-invalid"] = "true"
 	}
-	return El("textarea", s, PartRoot, attrs, render.Text(p.Value))
+	// The HTML parser drops ONE newline straight after <textarea>, so a
+	// value that opens on a line break (a markdown body that starts
+	// with a blank line, a code block) lost it on every render and
+	// save. One extra newline is what the parser eats. CR and CRLF
+	// count: the tokenizer folds both to LF before the drop.
+	value := p.Value
+	if strings.HasPrefix(value, "\n") || strings.HasPrefix(value, "\r") {
+		value = "\n" + value
+	}
+	return El("textarea", s, PartRoot, attrs, render.Text(value))
 }
 
 // Option is one entry in a Select's list.

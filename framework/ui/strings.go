@@ -147,6 +147,13 @@ var stringsKeys = map[string]i18n.Phrase{
 	// in English.
 	"CarouselSlide": i18nui.HuiCarouselSlide,
 	"CarouselGoTo":  i18nui.HuiCarouselGoToSlide,
+	// The carousel's roledescriptions and PaneHost's default region
+	// names: words a screen reader speaks that the primitives once
+	// wrote in English past Strings.
+	"CarouselRole":      i18nui.HuiCarouselRole,
+	"CarouselSlideRole": i18nui.HuiCarouselSlideRole,
+	"PaneSecondary":     i18nui.HuiPaneSecondary,
+	"PaneTertiary":      i18nui.HuiPaneTertiary,
 
 	"ComboboxLoading":      i18nui.HuiComboboxLoading,
 	"ComboboxNoResults":    i18nui.HuiComboboxNoResults,
