@@ -736,12 +736,12 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// path so password_set=false is recorded for the unlink guard;
 		// fall back to CreateUser+placeholder for stores that don't opt
 		// in. Either way, magic-link users never authenticate via
-		// password and the placeholder bcrypt step is reused.
+		// password; the shared placeholder (made by DefaultHasher) is reused.
 		var err error
 		if creator, ok := userStore.(OAuthUserCreator); ok {
 			user, err = creator.CreateUserNoPassword(r.Context(), email, p.mgr.DefaultRoles())
 		} else {
-			user, err = userStore.CreateUser(r.Context(), email, passwordPlaceholderHash, p.mgr.DefaultRoles())
+			user, err = userStore.CreateUser(r.Context(), email, placeholderPasswordHash(), p.mgr.DefaultRoles())
 		}
 		if errors.Is(err, ErrEmailTaken) {
 			// A concurrent redeem for the same address created it

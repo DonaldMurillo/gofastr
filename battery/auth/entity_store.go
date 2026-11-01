@@ -514,10 +514,12 @@ func (s *EntityUserStore) CreateUser(ctx context.Context, email, hashedPassword 
 }
 
 // CreateUserNoPassword auto-creates a user using the package-level
-// placeholder hash and records password_set=false. Used by the OAuth /
+// placeholder hash (made by DefaultHasher, so a login against it costs
+// what one against an unknown address does) and records
+// password_set=false. Used by the OAuth /
 // magic-link auto-create flows. Implements OAuthUserCreator.
 func (s *EntityUserStore) CreateUserNoPassword(ctx context.Context, email string, roles []string) (User, error) {
-	return s.create(ctx, email, passwordPlaceholderHash, roles, false)
+	return s.create(ctx, email, placeholderPasswordHash(), roles, false)
 }
 
 func (s *EntityUserStore) create(ctx context.Context, email, hashedPassword string, roles []string, passwordSet bool) (User, error) {
