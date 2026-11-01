@@ -163,8 +163,19 @@ Terminal rows make this sharp: the only job-row `DELETE` is
 every later export.
 
 Leave it empty for infrastructure work — cache warms, sweeps, index
-rebuilds — where there is no subject to erase. Only `DBQueue` persists
-it; the in-memory and Redis backends own no erasable table.
+rebuilds — where there is no subject to erase.
+
+`RedisQueue` is erased too: `NewRedisQueue` registers a store eraser
+(see [Stores outside the database](data-export.md#stores-outside-the-database))
+that removes every job whose `UserID` is the erased user from the main,
+delayed and dead lists and the pop and processing hashes, after the SQL
+erasure commits. `RedisQueue.Close` removes the registration. A worker
+still running an erased job finds nothing to settle, and its `Ack` or
+`Nack` does nothing. `MemoryQueue` holds jobs in process memory only, and
+erasure does not reach them.
+
+A schedule sets `UserID` on the jobs it fires with its `UserID` option; see
+[Scheduler](#scheduler).
 ## Unique jobs
 
 Set `Job.UniqueKey` when a second copy of a job is wasted or harmful: a
@@ -439,7 +450,9 @@ bulk work off interactive workers; to do that, dedicate workers to an
 interactive lane (so there is no shared pool draining bulk) instead of
 relying on the tag (see [Lanes](#lanes)). `Priority(n)` nudges dequeue
 order among pending work, and `MaxAttempts(k)` bounds how many times a
-single occurrence may retry before dead-lettering.
+single occurrence may retry before dead-lettering. `UserID(id)` sets
+`Job.UserID` on every fired job, so `App.EraseUserData` reaches the jobs
+of a schedule whose payload is about one person (a per-user digest).
 
 `Every(d)` schedules fire on a fixed interval; `Cron(spec)` schedules
 fire when the cron expression's next time arrives; use it for
@@ -541,9 +554,17 @@ if err := durable.Every("nightly-bulk-reindex", 24*time.Hour).
 }
 ```
 
-The options columns (`lane`, `priority`, `max_attempts`) are added to an
-existing `scheduler_schedules` table by an idempotent migration during
-`NewDurableScheduler`; no manual schema work is required on upgrade.
+The options columns (`lane`, `priority`, `max_attempts`, `user_id`) are
+added to an existing `scheduler_schedules` table by an idempotent migration
+during `NewDurableScheduler`; no manual schema work is required on upgrade.
+
+A durable schedule with `UserID(id)` keeps its payload in the schedules
+table and fires it on every tick, so `NewDurableScheduler` registers that
+table with `App.EraseUserData`: erasing the user deletes the schedules that
+name them, and the `queue_jobs` eraser deletes the jobs they fired. A
+schedule registered before the option existed names nobody. An in-memory
+`Scheduler` schedule is not erased, since it lives in process memory; its
+fired jobs still carry the `UserID`.
 
 Cron field evaluation follows the location of the registration anchor.
 `Register()` anchors in UTC, so `"0 2 * * *"` fires at 02:00 UTC, the

@@ -15,6 +15,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/datexport"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // RedisClient defines the minimal Redis operations needed by RedisQueue.
@@ -187,6 +190,10 @@ type RedisQueue struct {
 	// independently. Read via StaleClaimCount; a rising value means worker
 	// handlers are outliving their visibility timeout.
 	staleClaims atomic.Int64
+
+	// unregisterErase removes the store eraser NewRedisQueue registers;
+	// Close calls it.
+	unregisterErase func()
 }
 
 // StaleClaimCount returns how many Ack/Nack calls were rejected as coming
@@ -209,7 +216,115 @@ func NewRedisQueue(client RedisClient, queueName string) *RedisQueue {
 		now:             time.Now,
 	}
 	q.visibilityTimeout.Store(int64(30 * time.Second))
+	// App.EraseUserData reaches the jobs a SQL eraser cannot: every entry
+	// here is json.Marshal(job), its payload included.
+	q.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   "queue_redis:" + queueName,
+		Source: "queue",
+		Erase:  q.eraseUser,
+	})
 	return q
+}
+
+// eraseUser removes every job whose UserID is userID from the delayed,
+// main and dead lists and the pop and processing hashes, and returns how
+// many entries it removed (with dryRun, how many it would). The order
+// follows a job's path through the queue, so a job a worker moves on
+// while the sweep runs is met again at its next home: delayed before main
+// (promoteDue pushes onto main, then takes the entry off delayed), main
+// before the pop and processing hashes, and those before the dead list. A
+// job a worker puts back on the main list after the sweep has passed it
+// survives; erasing again removes it. An entry that does not decode names
+// nobody and stays. A worker still running an erased claim finds nothing
+// to settle, and its Ack or Nack is a no-op.
+func (q *RedisQueue) eraseUser(ctx context.Context, userID string, dryRun bool) (n int, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("redis queue: erase panicked: %s", textsafe.Recovered(v))
+		}
+	}()
+	for _, list := range []string{q.delayedQueue, q.queueName} {
+		c, err := q.eraseFromList(ctx, list, userID, dryRun)
+		n += c
+		if err != nil {
+			return n, err
+		}
+	}
+	for _, hash := range []string{q.poppedQueue, q.processingQueue} {
+		c, err := q.eraseFromHash(ctx, hash, userID, dryRun)
+		n += c
+		if err != nil {
+			return n, err
+		}
+	}
+	c, err := q.eraseFromList(ctx, q.deadLetterQueue, userID, dryRun)
+	return n + c, err
+}
+
+// jobNames reports whether raw is a job whose UserID is userID.
+func jobNames(raw, userID string) bool {
+	var job struct {
+		UserID string `json:"user_id"`
+	}
+	return json.Unmarshal([]byte(raw), &job) == nil && job.UserID == userID
+}
+
+func (q *RedisQueue) eraseFromList(ctx context.Context, list, userID string, dryRun bool) (int, error) {
+	entries, err := q.client.LRange(ctx, list, 0, -1)
+	if errors.Is(err, ErrRedisEmpty) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("erase: read %s: %w", list, err)
+	}
+	n := 0
+	done := map[string]bool{}
+	for _, raw := range entries {
+		if done[raw] || !jobNames(raw, userID) {
+			continue
+		}
+		if dryRun {
+			n++
+			continue
+		}
+		// Count 0 removes every copy, so each value is removed once.
+		done[raw] = true
+		removed, err := q.client.LRem(ctx, list, 0, raw)
+		if err != nil {
+			return n, fmt.Errorf("erase: remove from %s: %w", list, err)
+		}
+		n += int(removed)
+	}
+	return n, nil
+}
+
+func (q *RedisQueue) eraseFromHash(ctx context.Context, hash, userID string, dryRun bool) (int, error) {
+	entries, err := q.client.HGetAll(ctx, hash)
+	if err != nil {
+		return 0, fmt.Errorf("erase: read %s: %w", hash, err)
+	}
+	var fields []string
+	for _, field := range slices.Sorted(maps.Keys(entries)) {
+		raw := entries[field]
+		if hash == q.processingQueue {
+			// A processing entry wraps the claimed job.
+			var entry processingEntry
+			if json.Unmarshal([]byte(raw), &entry) != nil {
+				continue
+			}
+			raw = entry.Job
+		}
+		if jobNames(raw, userID) {
+			fields = append(fields, field)
+		}
+	}
+	if dryRun || len(fields) == 0 {
+		return len(fields), nil
+	}
+	if err := q.client.HDel(ctx, hash, fields...); err != nil {
+		return 0, fmt.Errorf("erase: remove from %s: %w", hash, err)
+	}
+	return len(fields), nil
 }
 
 // SetVisibilityTimeout configures how long a job can be in-flight before it
@@ -1028,8 +1143,12 @@ var (
 	_ Replayable = (*RedisQueue)(nil)
 )
 
-// Close is a no-op for RedisQueue, the caller manages the Redis connection.
+// Close removes the queue from App.EraseUserData's reach. The caller
+// manages the Redis connection.
 func (q *RedisQueue) Close() error {
+	if q.unregisterErase != nil {
+		q.unregisterErase()
+	}
 	return nil
 }
 

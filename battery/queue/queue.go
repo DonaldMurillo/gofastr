@@ -40,8 +40,11 @@ type Job struct {
 	// whenever the payload is personal data; leave it empty for
 	// infrastructure work (cache warms, sweeps, index rebuilds).
 	//
-	// Only the durable DBQueue persists it — the in-memory and Redis
-	// backends hold no erasable table.
+	// DBQueue erases the job's row through its queue_jobs eraser, and
+	// RedisQueue removes the job from its lists and hashes through a store
+	// eraser. MemoryQueue holds jobs in process memory only, where an
+	// erasure does not reach. A schedule's UserID option sets it on every
+	// job the schedule fires.
 	UserID string `json:"user_id,omitempty"`
 
 	// UniqueKey, when set, makes the job unique among the live jobs of its

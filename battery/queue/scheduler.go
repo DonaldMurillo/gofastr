@@ -31,6 +31,10 @@ type ScheduledJob struct {
 	Priority    int    `json:"priority"`
 	MaxAttempts int    `json:"max_attempts"`
 
+	// UserID is carried into every Job fired by this schedule (see
+	// Job.UserID). Empty for a schedule that names nobody.
+	UserID string `json:"user_id,omitempty"`
+
 	// cron, when set, drives NextRun from a cron expression instead of
 	// Interval. Nil for interval schedules (the pre-existing behaviour).
 	cron *cron.Schedule
@@ -116,6 +120,7 @@ type ScheduleBuilder struct {
 	lane        string
 	priority    int
 	maxAttempts int
+	userID      string
 }
 
 // Job sets the job type and payload for the scheduled job. A payload
@@ -176,6 +181,16 @@ func (b *ScheduleBuilder) MaxAttempts(n int) *ScheduleBuilder {
 	return b
 }
 
+// UserID names the person the schedule's payload is about. Every Job it
+// fires carries it as Job.UserID, which is what App.EraseUserData matches
+// on in the queue the job lands in. The schedule itself lives in process
+// memory, out of an erasure's reach; use a DurableScheduler for a
+// schedule that must go with the user.
+func (b *ScheduleBuilder) UserID(id string) *ScheduleBuilder {
+	b.userID = id
+	return b
+}
+
 // RegisterAt is like Register but anchors the first NextRun to base instead of
 // the wall clock. It exists so cron schedules can be registered deterministically
 // (tests, replayed fixtures) without depending on time.Now().
@@ -194,6 +209,7 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 		Lane:        b.lane,
 		Priority:    b.priority,
 		MaxAttempts: b.maxAttempts,
+		UserID:      b.userID,
 	}
 
 	if b.hasCron {
@@ -306,6 +322,7 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 				Lane:        sch.Lane,
 				Priority:    sch.Priority,
 				MaxAttempts: sch.MaxAttempts,
+				UserID:      sch.UserID,
 				CreatedAt:   now,
 			}
 			// Preserve the pre-options contract: a scheduled job always

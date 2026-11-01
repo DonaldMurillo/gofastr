@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // snapshotter is the optional Store capability needed for on-disk persistence
@@ -61,6 +63,64 @@ type index struct {
 	// never calls Store.Stats (a full-table COUNT on pgvector, under its
 	// own timeout) per write.
 	dim atomic.Int64
+
+	// unregisterErase removes the store eraser a writer on Path registers
+	// (see registerEraser); nil otherwise.
+	unregisterErase func()
+}
+
+// registerEraser makes App.EraseUserData reach a writer's files: the
+// snapshot and the WAL hold every chunk's text, and no SQL eraser can
+// reach a file. A read-only index leaves erasure to the writer, and an
+// index with no Path holds nothing on disk.
+func (i *index) registerEraser() {
+	if i.path == "" || i.readOnly {
+		return
+	}
+	i.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   "semantic:" + i.path,
+		Source: "semantic",
+		Erase:  i.eraseOwner,
+	})
+}
+
+// eraseOwner removes every document whose chunks name owner and then
+// rewrites the snapshot, which empties the WAL. A remove is logged as a
+// record that names the documents, so the records that added them, text
+// included, stay in the WAL and the snapshot until one is rewritten. The
+// snapshot is rewritten even when owner has nothing left, since an earlier
+// remove leaves the same records behind. It returns the chunks removed;
+// with dryRun it removes nothing and returns how many it would.
+func (i *index) eraseOwner(ctx context.Context, owner string, dryRun bool) (int, error) {
+	cl, ok := i.store.(chunkLister)
+	if !ok {
+		return 0, fmt.Errorf("semantic: store %T cannot list its chunks, so the user's cannot be found", i.store)
+	}
+	var docs []string
+	seen := map[string]bool{}
+	n := 0
+	for _, c := range cl.AllChunks() {
+		if c.Owner != owner {
+			continue
+		}
+		n++
+		if !seen[c.DocID] {
+			seen[c.DocID] = true
+			docs = append(docs, c.DocID)
+		}
+	}
+	if dryRun {
+		return n, nil
+	}
+	if len(docs) > 0 {
+		if err := i.Remove(ctx, docs...); err != nil {
+			return 0, err
+		}
+	}
+	if err := i.Snapshot(); err != nil {
+		return 0, fmt.Errorf("semantic: documents removed, but the snapshot and WAL that still hold them were not rewritten: %w", err)
+	}
+	return n, nil
 }
 
 // storeDim returns the store's vector dimension, asking Stats only while
@@ -888,6 +948,10 @@ func (i *index) Close() error {
 		return nil
 	}
 	i.closed = true
+	if i.unregisterErase != nil {
+		i.unregisterErase()
+		i.unregisterErase = nil
+	}
 	var errs []error
 	if i.path != "" && !i.readOnly {
 		if err := i.snapshotLocked(); err != nil {
