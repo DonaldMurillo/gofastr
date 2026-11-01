@@ -173,8 +173,9 @@ the restarted process:
   connection whose peer has not answered.
 
 A connection that was accepted but never sent
-a request (a browser's speculative preconnect) is closed at the start of
-the drain, so it cannot hold the drain to its deadline. In-flight cron jobs are joined under the
+a request (a browser's speculative preconnect) is closed once the
+listener stops accepting, so it cannot hold the drain to its deadline.
+That covers one accepted while the drain was ending the streams above. In-flight cron jobs are joined under the
 same deadline (their contexts are cancelled when the drain starts).
 If your process owns signal handling itself, set
 `AppConfig.DisableSignalHandling` and call `App.Shutdown` (or

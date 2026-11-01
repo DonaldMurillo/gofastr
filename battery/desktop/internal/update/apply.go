@@ -65,7 +65,7 @@ type Platform interface {
 // tree is copied, every create exclusive, and the source removed.
 func MoveTree(src, dst string) error {
 	if _, err := os.Lstat(dst); err == nil {
-		return fmt.Errorf("MoveTree: destination already exists")
+		return errMoveDestExists
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -74,7 +74,7 @@ func MoveTree(src, dst string) error {
 		return nil
 	}
 	if errors.Is(err, fs.ErrExist) { // EEXIST or ENOTEMPTY
-		return fmt.Errorf("MoveTree: destination already exists")
+		return errMoveDestExists
 	}
 	if err := copyTree(src, dst); err != nil {
 		return err
@@ -111,7 +111,7 @@ func copyTree(src, dst string) error {
 		// A symlink or device in a bundle we just extracted and
 		// verified cannot exist (the extractor refuses them); refuse
 		// here too rather than duplicating whatever it is.
-		return fmt.Errorf("copyTree: %s is not a regular file", "bundle entry")
+		return errNotRegular
 	}
 	in, err := os.Open(src)
 	if err != nil {
@@ -140,11 +140,60 @@ func runCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		tail := string(out)
+		tail := relativeToArgs(string(out), args)
 		if len(tail) > 512 {
 			tail = tail[len(tail)-512:]
 		}
 		return fmt.Errorf("%s failed: %v: %s", name, err, strings.TrimSpace(tail))
 	}
 	return nil
+}
+
+// relativeToArgs rewrites every absolute-path argument in a command's
+// output to its base name. codesign and open print the bundle path they
+// were given ("/Users/ann/Library/.../Notes.app: invalid signature"),
+// and the log must not carry the user's home directory, so the line
+// becomes "Notes.app: invalid signature" with nested files left
+// relative to the bundle.
+func relativeToArgs(out string, args []string) string {
+	for _, a := range args {
+		if a == "" || !filepath.IsAbs(a) {
+			continue
+		}
+		out = strings.ReplaceAll(out, filepath.Clean(a), filepath.Base(a))
+	}
+	return out
+}
+
+// Fixed-text errors MoveTree and copyTree return; LogDetail passes
+// their text through because it names no path.
+var (
+	errMoveDestExists = errors.New("MoveTree: destination already exists")
+	errNotRegular     = errors.New("copyTree: a bundle entry is not a regular file")
+)
+
+// LogDetail reduces an error from a file-system call to text a log line
+// may carry: the operation and the OS error ("rename: permission
+// denied") of an *fs.PathError, *os.LinkError or *os.SyscallError, never
+// the paths they hold, which name the user's home directory. Any other
+// error collapses to fixed words, since its text may embed a path.
+func LogDetail(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Op + ": " + pe.Err.Error()
+	}
+	var le *os.LinkError
+	if errors.As(err, &le) {
+		return le.Op + ": " + le.Err.Error()
+	}
+	var se *os.SyscallError
+	if errors.As(err, &se) {
+		return se.Syscall + ": " + se.Err.Error()
+	}
+	for _, fixed := range []error{errMoveDestExists, errNotRegular} {
+		if errors.Is(err, fixed) {
+			return fixed.Error()
+		}
+	}
+	return "not a file-system error"
 }

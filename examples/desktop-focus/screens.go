@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -506,7 +507,7 @@ func sidebarNav() component.Component {
 // entities registered.
 func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-focus")
-	site.WithTheme(desktopui.Theme())
+	site.WithTheme(desktopui.ThemeFor(runtime.GOOS))
 	layout := desktopui.Layout(sidebarNav())
 
 	focusUI := app.EntityUI(entityui.Extensions{

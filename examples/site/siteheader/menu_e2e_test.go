@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
@@ -182,7 +183,7 @@ func menuSite(t *testing.T) *httptest.Server {
 			html.Main(html.MainConfig{}, render.Join(paras...)),
 		),
 	)
-	site := app.NewApp("Header")
+	site := app.NewApp("Header").WithTheme(theme.Default().Extend(siteheader.Tokens))
 	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
 	host := uihost.New(site)
 	fw := framework.NewApp()
