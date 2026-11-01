@@ -63,3 +63,35 @@ func TestSessionTableIndexedUnderDocumentedWiring(t *testing.T) {
 		t.Error("two sessions share a token")
 	}
 }
+
+// One unique index on token, not two: the inline UNIQUE and the
+// EnsureSchema index each built one (2026-11-01 review).
+func TestSessionTableHasOneTokenIndex(t *testing.T) {
+	for _, viaAutoMigrate := range []bool{false, true} {
+		ctx := context.Background()
+		db, err := sql.Open("sqlite3", ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.SetMaxOpenConns(1)
+		t.Cleanup(func() { _ = db.Close() })
+		if viaAutoMigrate {
+			app := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware())
+			app.Entity("sessions", SessionEntityConfig())
+			if err := framework.AutoMigrate(db, app.Registry); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := NewEntitySessionStore(db, "sessions").EnsureSchema(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_index_list('sessions') l
+			JOIN pragma_index_info(l.name) i WHERE l."unique" = 1 AND i.name = 'token'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("automigrate=%v: %d unique indexes on token, want 1", viaAutoMigrate, n)
+		}
+	}
+}
