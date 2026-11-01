@@ -532,11 +532,17 @@ func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[s
 type transitionDeniedError struct{ perm string }
 
 func (e *transitionDeniedError) Error() string {
-	return handler.ReasonMissingPermission.Format(map[string]any{"permission": e.perm})
+	p, params := e.Phrased()
+	return p.Format(params)
 }
 
-// Phrased implements i18n.Phrased.
+// Phrased implements i18n.Phrased. A blank Update in a declared Access
+// block names no permission a role could hold, so it answers the
+// operation-refused reason, the way requirePermission does.
 func (e *transitionDeniedError) Phrased() (i18n.Phrase, map[string]any) {
+	if e.perm == permRefused {
+		return reasonOpRefused, nil
+	}
 	return handler.ReasonMissingPermission, map[string]any{"permission": e.perm}
 }
 

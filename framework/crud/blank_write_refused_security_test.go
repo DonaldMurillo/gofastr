@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,5 +114,22 @@ func TestElevationLiftsBlankWrite(t *testing.T) {
 	ch, _ := blankWriteHandler(t, entity.AccessControl{Read: "posts:read"})
 	if got := blankWriteStatus(ch, WithElevation(context.Background(), "posts"), "update"); got != http.StatusOK {
 		t.Errorf("elevated update with a blank permission = %d, want 200", got)
+	}
+}
+
+// A transition, restore or purge refused by a blank write names no
+// permission: the "(none)" sentinel is internal, and a client branching on
+// the permission would look for one no role can hold.
+func TestBlankWriteRefusalNamesNoSentinel(t *testing.T) {
+	ch, _ := blankWriteHandler(t, entity.AccessControl{Read: "posts:read"})
+	p, params := (&transitionDeniedError{perm: ch.permissionForOp(opUpdate)}).Phrased()
+	if p != reasonOpRefused || params != nil {
+		t.Fatalf("transition refusal = %v %v, want the operation-refused reason", p, params)
+	}
+	for _, op := range []crudOp{opUpdate, opDelete} {
+		err := ch.errForbiddenOp(op)
+		if !errors.Is(err, ErrForbidden) || strings.Contains(err.Error(), permRefused) {
+			t.Fatalf("restore/purge refusal = %v, want ErrForbidden without %q", err, permRefused)
+		}
 	}
 }
