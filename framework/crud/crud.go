@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -1528,16 +1529,45 @@ func (ch *CrudHandler) maxListOffset() int {
 // scan, so both are refused with 400 rather than served as an empty
 // window at full cost. A page within the cap past the last row still
 // returns 200 with no data.
+//
+// The skip is reckoned exactly, past int: pagination.OffsetForPage answers
+// 0 when (page-1)*limit overflows, and a ?page= or ?offset= too long for
+// strconv.Atoi parses as no value at all, so ?page=9223372036854775807
+// passed the bound and List served page 1's rows labelled as that page.
 func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, q url.Values, page, perPage int) bool {
-	offset, ok := explicitOffsetValues(q)
-	if !ok {
-		offset = pagination.OffsetForPage(page, perPage)
-	}
-	if offset <= ch.maxListOffset() {
+	offset := requestedOffset(q, perPage)
+	if offset.Cmp(big.NewInt(int64(ch.maxListOffset()))) <= 0 {
 		return true
 	}
-	writeJSONError(w, r, http.StatusBadRequest, reasonOffsetTooLarge, map[string]any{"offset": offset, "max": ch.maxListOffset()})
+	var shown any = offset.String()
+	if offset.IsInt64() {
+		shown = offset.Int64()
+	}
+	writeJSONError(w, r, http.StatusBadRequest, reasonOffsetTooLarge, map[string]any{"offset": shown, "max": ch.maxListOffset()})
 	return false
+}
+
+// requestedOffset is the row skip q names, exactly: an explicit ?offset=
+// when it is a non-negative integer (explicitOffsetValues' rule, at any
+// size), else (page-1) × perPage for a positive ?page= (parsePaginationValues'
+// rule, at any size), else 0.
+func requestedOffset(q url.Values, perPage int) *big.Int {
+	whole := func(v string) (*big.Int, bool) {
+		n, ok := new(big.Int).SetString(v, 10)
+		return n, ok && n.Sign() >= 0
+	}
+	if v := q.Get("offset"); v != "" {
+		if n, ok := whole(v); ok {
+			return n
+		}
+	}
+	if v := q.Get("page"); v != "" {
+		if n, ok := whole(v); ok && n.Sign() > 0 {
+			n.Sub(n, big.NewInt(1))
+			return n.Mul(n, big.NewInt(int64(perPage)))
+		}
+	}
+	return new(big.Int)
 }
 
 // listLimitCap is the effective per-request row cap for an entity:

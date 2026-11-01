@@ -94,14 +94,16 @@ SDK form adds the wire-format notes (decimal arrives as a string, image
 and file fields as URLs), and an unknown type labels as `string`.
 
 The skip side of pagination is bounded the same way the limit side is:
-an explicit `?offset=` beyond the handler's ceiling is refused with
-`400` instead of being handed raw to `OFFSET` (a per-request deep-skip
-scan). The ceiling is `CrudHandler.MaxOffset` when set, otherwise the
-page cap × 1000 — 100,000 at the default `Pagination.MaxListLimit` —
-and it can be moved per handler with `WithMaxOffset`, never removed.
-Page-derived offsets keep their own pinned behaviour: a huge `?page=`
-serves the empty window (200), with the arithmetic overflow guarded in
-`pagination.OffsetForPage`.
+an explicit `?offset=`, or a `?page=` whose `(page-1) × limit` skip lies
+beyond the handler's ceiling, is refused with `400 offset_too_large`
+instead of being handed to `OFFSET` (a per-request deep-skip scan). The
+skip is reckoned exactly, so a page or offset too large for an `int`
+(`?page=9223372036854775807`) is refused too, on the buffered and the
+`?stream=true` path alike, rather than served as page 1. The ceiling is
+`CrudHandler.MaxOffset` when set, otherwise the page cap × 1000 — 100,000
+at the default `Pagination.MaxListLimit` — and it can be moved per handler
+with `WithMaxOffset`, never removed. A page within the ceiling past the
+last row answers 200 with no data.
 
 MCP tools are the opposite. They are **off by default** and need
 `Exposure: &framework.ExposureConfig{MCP: true}`. The one exception is the dev
