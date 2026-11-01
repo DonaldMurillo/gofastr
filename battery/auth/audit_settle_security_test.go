@@ -97,4 +97,7 @@ func TestAuditActorlessRowHoldsNoAddress(t *testing.T) {
 			}
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 }
