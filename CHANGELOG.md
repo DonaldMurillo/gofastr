@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An idle MCP notification stream re-checks its caller.** The GET
+  stream `ServeSSE` holds re-checked the caller only before a
+  notification, and notifications are rare, so a revoked session's
+  stream kept its seat, goroutine and buffer for as long as the server
+  stayed quiet, and a half-open connection was never written to and
+  never freed. The stream now re-checks the caller every 15 seconds and
+  writes an SSE comment line (`: keep-alive`) that clients ignore.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

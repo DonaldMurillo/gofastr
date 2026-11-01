@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -228,6 +229,10 @@ type Server struct {
 	sseSeatCap      int
 	sseSeatOverflow SeatOverflowPolicy
 	sseSeatOrder    map[string][]*sseSubscriber
+	// sseKeepAlive overrides sseKeepAliveEvery, the interval at which an
+	// idle notification stream re-checks its caller and writes a comment
+	// line. Zero means the default; tests shrink it.
+	sseKeepAlive time.Duration
 }
 
 // NewServer creates a new MCP server with an empty tool registry.

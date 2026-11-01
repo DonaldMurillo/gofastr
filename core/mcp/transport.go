@@ -32,6 +32,14 @@ const maxMCPBodyBytes = 1 << 20
 // cannot interrupt an in-flight write. Each write arms a fresh one.
 const sseWriteTimeout = 10 * time.Second
 
+// sseKeepAliveEvery paces the comment line the held notification stream
+// writes while no notification is due. Each tick also re-checks the
+// caller, so a stream whose session was revoked, or whose connection
+// went half-open, ends within one interval instead of whenever the next
+// notification happens to arrive. Server.sseKeepAlive overrides it
+// (tests).
+const sseKeepAliveEvery = 15 * time.Second
+
 // isMCPJSONContentType allows only "application/json" (with optional
 // parameters) and the +json structured-suffix family. The literal
 // prefix check that used to live here accepted "application/jsonp"
@@ -542,6 +550,34 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// callerHeld re-establishes the caller: the context was built at
+	// connect, so on its own it keeps answering for a session since
+	// revoked or a token since expired. A caller a fresh request would no
+	// longer carry has the stream closed, as framework/crud's event
+	// stream does. So does one the re-check placed in another tenant
+	// (tenant.ResolveMiddleware re-resolves it): the stream was admitted
+	// for the connect-time tenant, and a gate that does not read the
+	// tenant would keep delivering its URIs.
+	callerHeld := func() (context.Context, bool) {
+		live, held := handler.RecheckPrincipal(sub.ctx)
+		if !held || handler.GetTenantID(live) != handler.GetTenantID(sub.ctx) {
+			return nil, false
+		}
+		return live, true
+	}
+
+	// The keep-alive tick re-checks the caller and writes an SSE comment
+	// while the server is quiet. Without it the re-check ran only before
+	// a delivery, and a revoked caller held its seat for as long as no
+	// notification was raised; a half-open connection was never written
+	// to, so it was never found dead either.
+	every := s.sseKeepAlive
+	if every <= 0 {
+		every = sseKeepAliveEvery
+	}
+	keepAlive := time.NewTicker(every)
+	defer keepAlive.Stop()
+
 	// Hold the connection until the client goes away. Each notification
 	// is filtered per subscriber (server-wide gate + the item's gate,
 	// both evaluated HERE at send time — see subscriberMayReceive) and
@@ -552,6 +588,13 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			// Client disconnected. The deferred removeSSESubscriber
 			// unregisters; nothing else is needed.
 			return
+		case <-keepAlive.C:
+			if _, held := callerHeld(); !held {
+				return
+			}
+			if !writeSSEComment(rc, ew) {
+				return
+			}
 		case n, ok := <-sub.ch:
 			if !ok {
 				// The publisher dropped this subscriber for
@@ -561,17 +604,10 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 				// is to reconnect and re-list. See notifySubscribers.
 				return
 			}
-			// Re-establish the caller before every delivery: the
-			// context was built at connect, so on its own it keeps
-			// answering for a session since revoked or a token since
-			// expired. A caller a fresh request would no longer carry
-			// has the stream closed, as framework/crud's event stream
-			// does. So does one the re-check placed in another tenant
-			// (tenant.ResolveMiddleware re-resolves it): the stream was
-			// admitted for the connect-time tenant, and a gate that
-			// does not read the tenant would keep delivering its URIs.
-			live, held := handler.RecheckPrincipal(sub.ctx)
-			if !held || handler.GetTenantID(live) != handler.GetTenantID(sub.ctx) {
+			// Re-establish the caller before every delivery too (see
+			// callerHeld).
+			live, held := callerHeld()
+			if !held {
 				return
 			}
 			if !s.subscriberMayReceive(live, n) {
@@ -597,6 +633,25 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// writeSSEComment writes one SSE comment line (": keep-alive") under a
+// fresh write deadline, flushes it, and clears the deadline again, the
+// same discipline writeSSEEvent keeps. A consumer ignores comment lines,
+// so the stream's events are unchanged; the write is what finds a dead
+// connection. It reports whether the stream is still alive.
+func writeSSEComment(rc *http.ResponseController, ew *errWriter) bool {
+	if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return false
+	}
+	if _, err := io.WriteString(ew, ": keep-alive\n\n"); err != nil {
+		return false
+	}
+	if err := rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return false
+	}
+	_ = rc.SetWriteDeadline(time.Time{})
+	return true
 }
 
 // wantsSSE checks if the request Accept header indicates SSE.
