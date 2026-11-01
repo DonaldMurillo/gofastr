@@ -77,6 +77,8 @@ go test ./examples/site -run TestSiteServesApprovedBrandIcon
 Edit the canonical master, then regenerate; never independently redraw the
 light and dark variants. The exporter validates path-only SVGs, identical
 light/dark alpha masks, clear margins, icon dimensions, and ICO sizes.
+`renders.sha256` records each raster's hash beside its source's, so
+`--check` fails on a PNG or ICO left behind by an interrupted run.
 Browser regression coverage checks mobile/desktop layouts, theme inheritance,
 contrast, and the accessible home link. The site HTTP test verifies all icon
 sizes and compares the served 512px icon to the approved source.

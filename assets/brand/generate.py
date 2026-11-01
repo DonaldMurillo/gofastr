@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from pathlib import Path
+import hashlib
 import os
 import shutil
 import subprocess
@@ -22,6 +23,37 @@ def drawing(symbol=False, color='currentColor'):
     if symbol:
         root.remove(root.find(f"{NAMESPACE}g[@id='fastr']"))
     return root
+
+
+def icon_drawing():
+    icon = ET.Element(f'{NAMESPACE}svg', {'viewBox': '0 0 512 512'})
+    ET.SubElement(icon, f'{NAMESPACE}rect', {'width': '512', 'height': '512', 'rx': '96', 'fill': INK})
+    symbol = drawing(True, PAPER).find(f'{NAMESPACE}g')
+    symbol.set('fill', PAPER)
+    symbol.set('transform', 'translate(56 129) scale(1.4)')
+    icon.append(symbol)
+    return icon
+
+
+# Each raster and the file it was made from. MANIFEST records both hashes
+# once generate() finishes, so --check catches a raster left behind by a
+# run that rewrote its source and then failed.
+DERIVED = [
+    *[(f'gofastr-{label}-{scheme}.png', f'gofastr-{label}-{scheme}.svg')
+      for label in ['logo', 'symbol'] for scheme in ['light', 'dark']],
+    ('gofastr-icon.png', 'gofastr-icon.svg'),
+    ('gofastr-favicon.ico', 'gofastr-icon.png'),
+    *[(f'gofastr-preview-{scheme}.png', f'gofastr-logo-{scheme}.png') for scheme in ['light', 'dark']],
+]
+MANIFEST = ROOT / 'renders.sha256'
+
+
+def digest(name):
+    return hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+
+
+def manifest_lines():
+    return [f'{digest(source)} {digest(output)} {output}' for output, source in DERIVED]
 
 
 def write_svg(name, root):
@@ -69,17 +101,12 @@ def generate():
             write_svg(f'{name}.svg', drawing(symbol, color))
             render(chrome, ROOT / f'{name}.svg', ROOT / f'{name}.png', 1585, 1065)
     shutil.copyfile(ROOT / 'gofastr-logo-light.png', ROOT / 'gofastr-logo.png')
-    icon = ET.Element(f'{NAMESPACE}svg', {'viewBox': '0 0 512 512'})
-    ET.SubElement(icon, f'{NAMESPACE}rect', {'width': '512', 'height': '512', 'rx': '96', 'fill': INK})
-    symbol = drawing(True, PAPER).find(f'{NAMESPACE}g')
-    symbol.set('fill', PAPER)
-    symbol.set('transform', 'translate(56 129) scale(1.4)')
-    icon.append(symbol)
-    write_svg('gofastr-icon.svg', icon)
+    write_svg('gofastr-icon.svg', icon_drawing())
     render(chrome, ROOT / 'gofastr-icon.svg', ROOT / 'gofastr-icon.png', 512, 512)
     with Image.open(ROOT / 'gofastr-icon.png') as image:
         image.save(ROOT / 'gofastr-favicon.ico', sizes=[(16, 16), (32, 32), (48, 48)])
     previews()
+    MANIFEST.write_text('\n'.join(manifest_lines()) + '\n')
 
 
 def validate():
@@ -87,7 +114,10 @@ def validate():
         for suffix, color in [('', 'currentColor'), ('-light', INK), ('-dark', PAPER)]:
             expected = ET.tostring(drawing(symbol, color), encoding='unicode')
             assert (ROOT / f'gofastr-{label}{suffix}.svg').read_text() == expected
+    assert (ROOT / 'gofastr-icon.svg').read_text() == ET.tostring(icon_drawing(), encoding='unicode')
     assert (ROOT / 'gofastr-logo.png').read_bytes() == (ROOT / 'gofastr-logo-light.png').read_bytes()
+    assert MANIFEST.read_text().splitlines() == manifest_lines(), \
+        'a raster no longer matches the source it was rendered from; run generate.py'
     for path in [ROOT / 'source/gofastr.svg', *ROOT.glob('*.svg')]:
         root = ET.parse(path).getroot()
         assert root.tag == f'{NAMESPACE}svg', path
@@ -107,7 +137,7 @@ def validate():
         assert icon.getpixel((256, 256))[3] == 255
     with Image.open(ROOT / 'gofastr-favicon.ico') as icon:
         assert icon.ico.sizes() == {(16, 16), (32, 32), (48, 48)}
-    print('PASS: outlined SVGs, theme-matched transparent PNGs, square icon, and favicon sizes.')
+    print('PASS: outlined SVGs, rasters current with their sources, theme-matched transparent PNGs, square icon, and favicon sizes.')
 
 
 if __name__ == '__main__':
