@@ -152,9 +152,15 @@ drains in-flight requests on `SIGINT`/`SIGTERM` via `App.Shutdown`, so
 rolling deploys don't cut active requests.
 
 The drain is **bounded**: `AppConfig.ShutdownTimeout` (default 15s) caps
-it, and anything still open at the deadline, say an SSE stream that
-never goes idle, is force-closed so the process exits well inside Kubernetes'
-30s SIGTERM→SIGKILL window. A connection that was accepted but never sent
+it, and anything still open at the deadline is force-closed so the process
+exits well inside Kubernetes' 30s SIGTERM→SIGKILL window. An event stream
+never goes idle, so the drain does not wait on one: when it starts, every
+open stream request (a GET whose `Accept` names `text/event-stream`, which
+is what an `EventSource` sends) has its request context cancelled, its
+handler returns, and the browser reconnects to another replica or to the
+restarted process. A POST that answers with a stream (MCP's streamable
+HTTP) drains like any other request. WebSockets are hijacked connections,
+outside the drain. A connection that was accepted but never sent
 a request (a browser's speculative preconnect) is closed at the start of
 the drain, so it cannot hold the drain to its deadline. In-flight cron jobs are joined under the
 same deadline (their contexts are cancelled when the drain starts).

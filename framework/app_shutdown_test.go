@@ -169,6 +169,76 @@ func TestShutdownClosesConnsThatNeverSentARequest(t *testing.T) {
 	}
 }
 
+// An EventSource stream never goes idle, so Server.Shutdown alone waits
+// the whole deadline on it: every `gofastr dev` reload and every rolling
+// deploy paid that wait. Shutdown ends open event streams when the
+// drain starts, so it returns as soon as the real work is done.
+func TestShutdownEndsEventStreams(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	app.Config.DisableSignalHandling = true
+	app.Router().Get("/events", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	ready := make(chan string, 1)
+	app.OnReady(func(addr string) { ready <- addr })
+	done := make(chan error, 1)
+	go func() { done <- app.Start("127.0.0.1:0") }()
+	var addr string
+	select {
+	case addr = <-ready:
+	case err := <-done:
+		t.Fatalf("Start returned before ready: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never became ready")
+	}
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("GET /events HTTP/1.1\r\nHost: test\r\nAccept: text/event-stream\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	br := bufio.NewReader(conn)
+	if line, err := br.ReadString('\n'); err != nil || !strings.Contains(line, "200") {
+		t.Fatalf("expected 200 status line, got %q (%v)", line, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	started := time.Now()
+	if err := app.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown with an event stream open: %v", err)
+	}
+	if took := time.Since(started); took > 2*time.Second {
+		t.Fatalf("Shutdown took %v with an event stream open; the drain waited on it", took)
+	}
+	<-done
+}
+
+// A POST that may answer with a stream (MCP's streamable HTTP) is
+// request-bounded work: Shutdown drains it, it does not cancel it.
+func TestShutdownDrainsStreamPOST(t *testing.T) {
+	a := &App{}
+	saw := make(chan error, 1)
+	h := a.endStreamsOnShutdown(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.streams.endAll()
+		saw <- r.Context().Err()
+	}))
+	req, _ := http.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	h.ServeHTTP(nil, req)
+	if err := <-saw; err != nil {
+		t.Fatalf("a POST's context was cancelled by the stream ending: %v", err)
+	}
+}
+
 // Shutdown detaches the server and clears appCancel under serverMu, then
 // cancels the lifecycle context after unlocking. A Start that reaches its
 // adopt check inside that gap sees an uncancelled context; it must still

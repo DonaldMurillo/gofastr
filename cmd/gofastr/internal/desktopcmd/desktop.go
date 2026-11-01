@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	stdimage "image"
 	"image/draw"
@@ -102,14 +103,29 @@ func runDesktopRun(args []string) {
 	var mu sync.Mutex
 	var child *exec.Cmd
 
+	// --watch owns SIGINT/SIGTERM from the start, so a signal during a
+	// build ends the build (devcmd.RunBuildWithHeartbeat) instead of
+	// waiting for it and the app it starts. shutdown closes on the first.
+	shutdown := make(chan struct{})
+	if f.watch {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-signals
+			close(shutdown)
+		}()
+	}
+
 	launch := func() bool {
 		buildCmd := exec.Command("go", "build", "-o", bin, f.pkg)
 		buildCmd.Dir = f.dir
 		buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		buildCmd.Stdout = os.Stdout
 		buildCmd.Stderr = os.Stderr
-		if err := buildCmd.Run(); err != nil {
-			cli.Fail("Build failed: %v", err)
+		if err := devcmd.RunBuildWithHeartbeat(buildCmd, f.pkg, shutdown); err != nil {
+			if !errors.Is(err, devcmd.ErrBuildInterrupted) {
+				cli.Fail("Build failed: %v", err)
+			}
 			return false
 		}
 		if err := prepareDesktopRun(bin); err != nil {
@@ -147,6 +163,15 @@ func runDesktopRun(args []string) {
 	}
 
 	if !launch() {
+		select {
+		case <-shutdown:
+			// Stopped during the first build: nothing ran, nothing failed.
+			if dir := devcmd.DevServerBinDir(); dir != "" {
+				_ = os.RemoveAll(dir)
+			}
+			return
+		default:
+		}
 		cli.OsExit(1)
 		return
 	}
@@ -154,8 +179,6 @@ func runDesktopRun(args []string) {
 		return
 	}
 
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 	reload := make(chan struct{}, 1)
 	stop := make(chan struct{})
 	go func() {
@@ -197,7 +220,11 @@ func runDesktopRun(args []string) {
 			if launch() {
 				cli.Success("Reloaded!")
 			} else {
-				cli.Fail("Build failed. Fixing and saving will retry")
+				select {
+				case <-shutdown: // the next turn shuts down
+				default:
+					cli.Fail("Build failed. Fixing and saving will retry")
+				}
 			}
 		}
 	}

@@ -110,17 +110,26 @@ func RunDev(args []string) {
 	}
 
 	var (
-		mu       sync.Mutex
-		server   *exec.Cmd
-		stop     = make(chan struct{})
-		reload   = make(chan struct{}, 1)
-		shutdown = make(chan os.Signal, 1)
+		mu      sync.Mutex
+		server  *exec.Cmd
+		stop    = make(chan struct{})
+		reload  = make(chan struct{}, 1)
+		signals = make(chan os.Signal, 1)
+		// shutdown closes on the first SIGINT/SIGTERM. A channel that
+		// closes, not the signal channel itself, so a build in progress
+		// and the main loop both see the one signal: a build no longer
+		// runs to the end, and starts the app, before the loop reads it.
+		shutdown = make(chan struct{})
 	)
 
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-signals
+		close(shutdown)
+	}()
 
 	// Build and start the server initially
-	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold) {
+	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold, shutdown) && !closed(shutdown) {
 		cli.Fail("Initial build failed. Fixing and saving will retry")
 	}
 
@@ -172,17 +181,27 @@ func RunDev(args []string) {
 			cli.Info("Change detected; rebuilding...")
 			KillServer(&mu, &server)
 			hold.show(holdBuilding, "")
-			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold) {
+			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold, shutdown) {
 				cli.Success("Reloaded!")
 				// After the reload, never before it: analysis takes about
 				// a second, and a second added to every save is the
 				// difference between a loop people use and one they turn
 				// off. Runs behind the restart and prints when ready.
 				contractWatch.Run()
-			} else {
+			} else if !closed(shutdown) {
 				cli.Fail("Build failed. Fixing and saving will retry")
 			}
 		}
+	}
+}
+
+// closed reports whether ch is closed, without blocking.
+func closed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -305,9 +324,13 @@ func devA11yGate(dir string, noA11y bool, out io.Writer) bool {
 
 // buildAndServe runs the gates, builds, and starts the app. A failure
 // leaves hold showing the output; a nil hold (tests on :0) skips that.
-func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, hold *devHold) bool {
+//
+// interrupt ends a build in progress: when it closes, the build is
+// killed and buildAndServe returns false without starting the app. Nil
+// never interrupts.
+func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, hold *devHold, interrupt <-chan struct{}) bool {
 	out := &holdOutput{}
-	if !buildGatesAndBinary(dir, pkg, runtimeIsolation, mu, cmd, noA11y, out) {
+	if !buildGatesAndBinary(dir, pkg, runtimeIsolation, mu, cmd, noA11y, out, interrupt) {
 		hold.show(holdBuildFailed, out.String())
 		return false
 	}
@@ -372,7 +395,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 
 // buildGatesAndBinary runs the rebuild's gates and go build, copying
 // their output to out as well as the terminal.
-func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, out io.Writer) bool {
+func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, out io.Writer, interrupt <-chan struct{}) bool {
 	// Same posture as `gofastr build`: the static a11y lint gates the
 	// rebuild by default. Failing here is a build failure: the watch
 	// loop keeps running and the next save retries.
@@ -405,10 +428,10 @@ func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, m
 	*cmd = buildCmd
 	mu.Unlock()
 
-	return runBuildWithHeartbeat(buildCmd, dir) == nil
+	return RunBuildWithHeartbeat(buildCmd, dir, interrupt) == nil
 }
 
-// runBuildWithHeartbeat waits out the dev build, printing a progress
+// RunBuildWithHeartbeat waits out the dev build, printing a progress
 // line every 10s it runs. `go build` is silent however long it takes,
 // the banner above has already named an address, and under load a
 // build can run for minutes after that: the heartbeat is what tells
@@ -417,34 +440,97 @@ func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, m
 // building" from "wedged". The writer is captured at entry for the
 // same reason the crash watcher below captures its copy: coverage
 // tests swap os.Stdout around buildAndServe.
-func runBuildWithHeartbeat(buildCmd *exec.Cmd, what string) error {
+//
+// When interrupt closes (a SIGTERM from a supervisor, which unlike a
+// terminal's Ctrl-C does not reach the build's process group), the build
+// is killed and ErrBuildInterrupted returned, so shutdown does not wait
+// out a build whose result nobody will run.
+func RunBuildWithHeartbeat(buildCmd *exec.Cmd, what string, interrupt <-chan struct{}) error {
 	w := os.Stdout
 	start := time.Now()
+	// Started here, not inside the waiting goroutine, so the interrupt
+	// arm below reads a Process that Start has already set.
+	if err := buildCmd.Start(); err != nil {
+		return err
+	}
 	done := make(chan error, 1)
-	go func() { done <- buildCmd.Run() }()
+	go func() { done <- buildCmd.Wait() }()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case err := <-done:
 			return err
+		case <-interrupt:
+			_ = buildCmd.Process.Kill()
+			<-done // WaitDelay bounds a child holding the output pipe
+			return ErrBuildInterrupted
 		case <-ticker.C:
 			fmt.Fprintf(w, "%s\n", cli.InfoString("Building %s (%ds)...", what, int(time.Since(start).Seconds())))
 		}
 	}
 }
 
-// KillServer kills the current server process.
+// killGrace is how long KillServer lets the app drain after SIGTERM
+// before it sends SIGKILL: shutdown hooks, the process-module drain (a
+// 2s budget) and outbox flushes run in it. The framework ends open
+// event streams (livereload, the SSE bus) when its drain starts, so an
+// app usually exits well inside it, and KillServer returns as soon as
+// it does.
+var killGrace = 5 * time.Second
+
+// exitPoll is how often KillServer looks for the process's exit.
+const exitPoll = 10 * time.Millisecond
+
+// ErrBuildInterrupted is RunBuildWithHeartbeat's answer for a build
+// killed by shutdown.
+var ErrBuildInterrupted = errors.New("build interrupted by shutdown")
+
+// KillServer stops the current server process: SIGTERM, then up to
+// killGrace for the app to exit, then SIGKILL. The caller must have a
+// goroutine waiting on the process (both dev loops do, and a build's
+// Run waits on its own): exit is observed when that wait reaps it, so a
+// process nobody reaps reads as running until the grace ends.
 func KillServer(mu *sync.Mutex, cmd **exec.Cmd) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	if *cmd != nil && (*cmd).Process != nil {
-		(*cmd).Process.Signal(syscall.SIGTERM)
-		time.Sleep(100 * time.Millisecond)
-		(*cmd).Process.Kill()
+		stopProcess((*cmd).Process, killGrace)
 		*cmd = nil
 	}
+}
+
+// stopProcess sends SIGTERM and waits up to grace for p to exit before
+// it kills it. Windows has no SIGTERM to send, so p is killed at once.
+func stopProcess(p *os.Process, grace time.Duration) {
+	if runtime.GOOS == "windows" || p.Signal(syscall.SIGTERM) != nil {
+		_ = p.Kill()
+		return
+	}
+	deadline := time.Now().Add(grace)
+	for time.Now().Before(deadline) {
+		// Signal 0 delivers nothing; once the waiter has reaped p it
+		// answers os.ErrProcessDone.
+		if errors.Is(p.Signal(syscall.Signal(0)), os.ErrProcessDone) {
+			return
+		}
+		time.Sleep(exitPoll)
+	}
+	_ = p.Kill()
+}
+
+// skipWatchDir reports a directory the dev watcher does not walk:
+// dependencies and build output (vendor, node_modules, tmp, dist, gen)
+// and every dot-directory (.git, .gofastr, editor state, and agent
+// worktrees under .claude/worktrees, whose saves would otherwise restart
+// this server).
+func skipWatchDir(name string) bool {
+	switch name {
+	case "vendor", "node_modules", "tmp", "dist", "gen":
+		return true
+	}
+	return strings.HasPrefix(name, ".")
 }
 
 // ScanModTimes walks the directory and records the latest mod time of
@@ -457,9 +543,9 @@ func ScanModTimes(dir string) map[string]time.Time {
 		if err != nil {
 			return nil
 		}
-		// Skip vendor, .git, node_modules, tmp dirs
-		name := info.Name()
-		if info.IsDir() && (name == "vendor" || name == ".git" || name == "node_modules" || name == "tmp") {
+		// The root itself is walked whatever its name (".", a dot-dir
+		// the developer pointed --dir at).
+		if info.IsDir() && path != dir && skipWatchDir(info.Name()) {
 			return filepath.SkipDir
 		}
 		ext := filepath.Ext(path)

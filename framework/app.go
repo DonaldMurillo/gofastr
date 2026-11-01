@@ -311,6 +311,9 @@ type App struct {
 	// itself first. The ConnState hook keeps the set exact.
 	newConnsMu sync.Mutex
 	newConns   map[net.Conn]struct{}
+	// streams holds the open event-stream requests, which Shutdown ends
+	// when the drain starts (shutdown_streams.go).
+	streams    openStreams
 	events     *event.EventBus
 	hooksMu    sync.RWMutex // guards hooks: kiln's build-mode runtime registers while the app serves
 	hooks      map[string]*hook.HookRegistry
@@ -3299,6 +3302,9 @@ func (a *App) shutdown(ctx context.Context) error {
 		// A connection that never sent a request would hold the drain
 		// for five seconds; it carries no work, so it goes first.
 		a.closeNewConns()
+		// An event stream never goes idle: end each one now rather than
+		// wait out the deadline on it (shutdown_streams.go).
+		a.streams.endAll()
 		if err := srv.Shutdown(ctx); err != nil {
 			// Bounded drain: the deadline expired with connections still
 			// open (an SSE stream never goes idle, so Server.Shutdown
@@ -3489,6 +3495,7 @@ func (a *App) Start(addr string) error {
 
 	a.warnUnresolvableRelations()
 	a.guardDevMCPBind(listenAddrFor(addr))
+	a.guardDevLiveReloadBind(listenAddrFor(addr))
 
 	abort := func(err error) error {
 		// Read the shutdown state BEFORE draining: the drain below calls
@@ -3854,6 +3861,8 @@ func (a *App) Start(addr string) error {
 		serveHandler = a.serverWrappers[i](serveHandler)
 	}
 	serveHandler = a.serveLocale(serveHandler)
+	// Outermost, so a stream's context is the one every layer below sees.
+	serveHandler = a.endStreamsOnShutdown(serveHandler)
 	a.serverWrapped = true
 	srv := &http.Server{
 		Addr:              addr,

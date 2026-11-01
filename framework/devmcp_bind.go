@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/config"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
 // devMCPExposeEnv is the explicit opt-in for serving the dev MCP surface
@@ -128,4 +129,21 @@ func (a *App) guardDevMCPBind(addr string) {
 		return
 	}
 	a.Logger().Warn(devMCPExposureWarning(addr), "addr", addr)
+}
+
+// guardDevLiveReloadBind withdraws the livereload stream when the
+// listener is not loopback, unless GOFASTR_DEV_LIVERELOAD_EXPOSE is set.
+// The stream parks a goroutine per EventSource with no seat and no cap;
+// that is fine for the one developer at the terminal, not for every peer
+// that can reach an exposed bind. Called from Start beside
+// guardDevMCPBind, with the same bind address.
+func (a *App) guardDevLiveReloadBind(addr string) {
+	if bindIsLoopback(addr) || config.EnvBool(dev.LiveReloadExposeEnv) {
+		return
+	}
+	if dev.WithdrawLiveReload(a.router) {
+		a.Logger().Warn(fmt.Sprintf(
+			"gofastr dev: livereload is off on %s: it is not a loopback bind, and the stream has no limit on how many clients hold it open. "+
+				"Bind to localhost, or set %s=1 to keep it.", addr, dev.LiveReloadExposeEnv), "addr", addr)
+	}
 }

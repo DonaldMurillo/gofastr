@@ -40,8 +40,9 @@ When enabled:
 - `framework.NewApp()` registers two routes on the App router:
   - `GET /__livereload`: `text/event-stream`. Fires one `event: ready`
     on connect, then idles with a 25s SSE-comment heartbeat. Closes
-    when the request context cancels (server shutdown / browser tab
-    close).
+    when the request context cancels (browser tab close, or the start
+    of `App.Shutdown`, which ends every open event stream rather than
+    wait for it; see [deploy](deploy.md)).
   - `GET /__livereload.js`: ~16 lines of JS. Opens an `EventSource`
     and remembers the build ID the first `ready` event carries. A
     `ready` with a different ID (the reconnect after a rebuild, or
@@ -67,6 +68,17 @@ When enabled:
 
 One persistent SSE connection per tab, near-zero idle traffic, no
 polling.
+
+### Loopback only, unless you opt in
+
+The stream has no seat and no cap: it is meant for the developer at
+this machine. When `App.Start` binds an address other machines can
+reach (`0.0.0.0:8080`, `:8080`, a LAN IP), it turns the stream off and
+logs a warning: `/__livereload` answers `404`, which an `EventSource`
+treats as final, so open pages stop asking. The script still loads.
+Set `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` (`dev.LiveReloadExposeEnv`) to keep
+it on such a bind, say to reload a phone on your network. The dev MCP
+follows the same rule with its own opt-in, `GOFASTR_DEV_MCP_EXPOSE`.
 
 ### Project static assets are served uncached
 
@@ -149,6 +161,20 @@ running, fixing and saving retries. `gofastr dev --no-a11y` skips the
 gate with the same "escape hatch, not a setting" caveat as build's
 flag (see the accessibility doc).
 
+On each save `gofastr dev` sends the running app `SIGTERM` and gives it
+up to five seconds to exit before `SIGKILL`, so shutdown hooks, the
+process-module drain and outbox flushes finish. It moves on as soon as
+the app exits, which with livereload's streams ended at the start of
+the drain is usually at once. A `SIGINT` or `SIGTERM` to `gofastr dev`
+during a build kills the build and exits; it does not wait for the build
+and the app it would start.
+
+The watcher walks the project for `.go`, `.js`, `.css`, `.html` and
+`.md` changes. It skips every dot-directory (`.git`, `.gofastr`, editor
+state, agent worktrees under `.claude/worktrees`), `vendor`,
+`node_modules`, `tmp`, `dist` and `gen`, so a save in a sibling worktree
+or a build writing to `dist/` does not restart the app.
+
 A build that runs longer than ten seconds prints a progress line every
 ten seconds (`Building <dir> (20s)...`). `go build` itself is silent
 however long it takes, and the startup banner has already named an
@@ -168,10 +194,14 @@ itself in those windows, so a request gets an answer instead of
   or `exited`.
 - A plain-text body for `curl` and other clients that don't ask for
   HTML: what is happening, and for a failed build the compiler, lint
-  or sandbox output. A browser gets the same as a page.
+  or sandbox output. A browser gets the same as a page. On an address
+  other machines can reach, the output is left out (it carries absolute
+  paths and quoted source) and the page points at the terminal.
 - `/__livereload` answers too. An open tab reloads into the page when a
   build fails or the app exits, but not for an ordinary rebuild, and
-  reloads back into the app when its new build comes up.
+  reloads back into the app when its new build comes up. On an address
+  other machines can reach it answers `404`, unless
+  `GOFASTR_DEV_LIVERELOAD_EXPOSE=1`, the same rule as the app's stream.
 
 The hold never proxies. It closes its listener right before the app
 starts, and the app binds the address itself, so the app runs the same

@@ -26,7 +26,7 @@ func TestDevRebuildBlocksOnA11yFindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("isolation: %v", err)
 	}
-	if buildAndServe(root, ".", "localhost:0", rt, &mu, &cmd, false, nil) {
+	if buildAndServe(root, ".", "localhost:0", rt, &mu, &cmd, false, nil, nil) {
 		t.Fatal("buildAndServe started a server despite a11y findings")
 	}
 }
