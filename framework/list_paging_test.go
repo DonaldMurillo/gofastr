@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -87,9 +88,11 @@ func TestCursorWalksCreatedAtKeyset(t *testing.T) {
 	}
 }
 
-// A cursor on created_at carries the last row's key, not its timestamp:
-// the timestamp is read back from that row on the next page.
-func TestCursorTimestampTokenCarriesKey(t *testing.T) {
+// A cursor on created_at carries the last row's timestamp, in the layout
+// crud stores (pagination.KeysetString, six fractional digits, UTC), and
+// its key as the tiebreak, so SQLite compares the token against the
+// stored text byte for byte.
+func TestCursorTimestampInStoredLayout(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 		app.Entity("notes", entity.EntityConfig{
@@ -105,19 +108,20 @@ func TestCursorTimestampTokenCarriesKey(t *testing.T) {
 			ta.Post("/notes", map[string]any{"title": fmt.Sprintf("n%d", i)}).AssertStatus(t, http.StatusCreated)
 		}
 		page := decodeCursorPage(t, ta.Get("/notes?cursor=&limit=1").Body())
-		// The token carries the last row's key; the server reads the
-		// created_at it pages after back from that row, in the stored
-		// layout (pagination.KeysetString), so no timestamp spelling
-		// travels through the client at all.
-		field, value, err := pagination.DecodeCursor(page.Cursor)
-		if err != nil || field != "id" {
-			t.Fatalf("decode cursor: field=%q err=%v", field, err)
+		fields, err := pagination.DecodeMultiCursor(page.Cursor)
+		if err != nil || len(fields) != 2 || fields[0].Name != "created_at" || fields[1].Name != "id" {
+			t.Fatalf("decode cursor: %+v, %v", fields, err)
 		}
-		if len(page.Data) != 1 || page.Data[0]["id"] != value {
-			t.Fatalf("cursor names %q, want the last row's id (page %v)", value, page.Data)
+		if len(page.Data) != 1 || page.Data[0]["id"] != fields[1].Value {
+			t.Fatalf("cursor names %q, want the last row's id (page %v)", fields[1].Value, page.Data)
+		}
+		if !storedTimestamp.MatchString(fields[0].Value) {
+			t.Fatalf("cursor created_at %q is not in the stored layout", fields[0].Value)
 		}
 	})
 }
+
+var storedTimestamp = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$`)
 
 // A whole-second time is where a trimming layout (RFC3339Nano) goes wrong:
 // the cursor "…07Z" sorts after the stored "…07.500000Z" as text ('.' <

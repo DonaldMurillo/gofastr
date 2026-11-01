@@ -91,7 +91,7 @@ func TestCursorPagesPastLongSortValue(t *testing.T) {
 				got = append(got, row["id"].(string))
 			}
 			if len(page.Cursor) > 1024 {
-				t.Errorf("cursor is %d bytes; it should carry the key, not the sort value", len(page.Cursor))
+				t.Errorf("cursor is %d bytes; past the cap it should carry the key alone", len(page.Cursor))
 			}
 			if !page.HasMore {
 				break
@@ -104,11 +104,13 @@ func TestCursorPagesPastLongSortValue(t *testing.T) {
 	})
 }
 
-// The anchor row deleted between pages answers 400 error.cursor_anchor_gone,
-// so the client restarts from the first page instead of being served a
-// page from an unknown position. A row the caller may not read is gone
-// the same way, so a cursor naming another owner's row learns nothing
-// about where that row sorts.
+// A key-only cursor (minted when the sort values overflow the cap) whose
+// anchor row is gone answers 400 error.cursor_anchor_gone, so the client
+// restarts from the first page instead of being served a page from an
+// unknown position. A row the caller may not read is gone the same way,
+// so a cursor naming another owner's row learns nothing about where that
+// row sorts. A cursor that carries its sort values needs no anchor row
+// and pages on after the delete.
 func TestCursorAnchorGoneRefused(t *testing.T) {
 	anchorDialects(t, func(t *testing.T, ch *CrudHandler, db *sql.DB, ph func(int) string) {
 		anchorSeed(t, db, ph, "n1", "alice", "a")
@@ -121,8 +123,11 @@ func TestCursorAnchorGoneRefused(t *testing.T) {
 		if _, err := db.Exec("DELETE FROM anotes WHERE id = "+ph(1), "n1"); err != nil {
 			t.Fatal(err)
 		}
+		if code, next, body := anchorPage(t, ch, "alice", page.Cursor); code != http.StatusOK || len(next.Data) != 1 || next.Data[0]["id"] != "n2" {
+			t.Errorf("full cursor after delete = %d %s, want n2", code, body)
+		}
 		for name, cur := range map[string]string{
-			"deleted anchor":     page.Cursor,
+			"deleted anchor":     pagination.EncodeCursor("id", "n1"),
 			"other owner's row":  pagination.EncodeCursor("id", "b1"),
 			"row that never was": pagination.EncodeCursor("id", "zz"),
 		} {
@@ -171,8 +176,8 @@ func TestCursorRefusesKeyPastCap(t *testing.T) {
 
 // A cursor v0.95.0 minted carried the values of its cursor fields: the
 // one CursorField alone, CursorFields plus the key columns they left out,
-// or the key. Today's cursor carries the key, and the order is the cursor
-// fields plus the key. A released token the decoder accepts must name the
+// or the key. Today's cursor carries the cursor fields plus the key, or
+// the key alone when those overflow the cap. A released token the decoder accepts must name the
 // same columns in the same order as the new keyset, or it would resume
 // under a different meaning; every other one is refused once (round 3
 // review of D33).
@@ -220,13 +225,17 @@ func TestReleasedCursorKeepsItsMeaning(t *testing.T) {
 				}
 				token = pagination.EncodeMultiCursor(old, row)
 			}
-			if _, err := decodeCursorAny(token, ch.keyCols()); err != nil {
+			fields, keys := ch.cursorFields(), ch.keyCols()
+			if _, err := decodeCursorFor(token, fields, keys); err != nil {
 				refused++
 				continue
 			}
 			accepted++
-			if !slices.Equal(old, ch.cursorFields()) {
-				t.Errorf("key %v, %+v: released cursor on %v accepted under the order %v", key, p, old, ch.cursorFields())
+			// Accepted as the full shape, the values page in the new
+			// keyset's order; accepted as the key, the anchor row supplies
+			// the sort values, so any key order names the same row.
+			if !slices.Equal(old, fields) && !sameSet(old, keys) {
+				t.Errorf("key %v, %+v: released cursor on %v accepted under the order %v", key, p, old, fields)
 			}
 		}
 	}
@@ -260,6 +269,30 @@ func TestCursorFieldPagesThroughTies(t *testing.T) {
 		}
 		if strings.Join(got, ",") != "n1,n2,n3" {
 			t.Errorf("paged %v, want n1,n2,n3", got)
+		}
+	})
+}
+
+// The anchor row's sort value changing between pages must not skip the
+// rows after it. A key-only cursor read the anchor's new value back, so
+// a row edited after page 1 (an updated_at feed) jumped the cursor past
+// every row between (round 3 review of D33). The cursor carries the sort
+// values whenever they fit the cap.
+func TestCursorSurvivesMovedAnchor(t *testing.T) {
+	anchorDialects(t, func(t *testing.T, ch *CrudHandler, db *sql.DB, ph func(int) string) {
+		for i, id := range []string{"n1", "n2", "n3"} {
+			anchorSeed(t, db, ph, id, "alice", string(rune('a'+i)))
+		}
+		code, page, body := anchorPage(t, ch, "alice", "")
+		if code != http.StatusOK || page.Cursor == "" {
+			t.Fatalf("first page = %d, cursor %q: %s", code, page.Cursor, body)
+		}
+		if _, err := db.Exec("UPDATE anotes SET body = "+ph(1)+" WHERE id = "+ph(2), "z", "n1"); err != nil {
+			t.Fatal(err)
+		}
+		code, page, body = anchorPage(t, ch, "alice", page.Cursor)
+		if code != http.StatusOK || len(page.Data) != 1 || page.Data[0]["id"] != "n2" {
+			t.Fatalf("second page = %d %s, want n2", code, body)
 		}
 	})
 }

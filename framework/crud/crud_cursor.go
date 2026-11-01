@@ -71,15 +71,18 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	}
 
 	fields := ch.cursorFields()
-	// The cursor carries the last row's key, never its sort values: a
-	// sort value can be any length (a Text column), and a cursor past the
-	// decoder's 16 KiB cap stopped paging partway. The next request reads
-	// the sort values back from that row (cursorAnchor).
+	// The cursor carries the last row's sort values and key when they fit
+	// the decoder's 16 KiB cap, and the key alone when they do not: a sort
+	// value can be any length (a Text column), and a cursor past the cap
+	// stopped paging partway. A key-only cursor reads the sort values back
+	// from that row (cursorAnchor). Carrying them when they fit keeps a
+	// row edited between pages (an updated_at feed) from moving the
+	// position past the rows after it.
 	keys := ch.keyCols()
-	// A key column the projection leaves out is still read, since the
+	// A cursor column the projection leaves out is still read, since the
 	// next cursor is built from it, and comes off the rows after.
 	var unprojected []string
-	for _, k := range keys {
+	for _, k := range fields {
 		if !slices.Contains(cols, k) {
 			unprojected = append(unprojected, k)
 		}
@@ -103,7 +106,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	// Decode cursor (if any) and apply tuple-comparison WHERE.
 	isDate := func(f string) bool { return ch.queryField(f).Type == schema.Date }
 	if cursor != "" {
-		decoded, err := decodeCursorAny(cursor, keys)
+		decoded, err := decodeCursorFor(cursor, fields, keys)
 		if err != nil {
 			// Wrap, not a frame: the decoder's phrased refusal keeps the
 			// "invalid cursor:" prefix and still answers its own code.
@@ -122,16 +125,20 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		// for its column (?cursor= naming id "abc" on an int key) is a
 		// 400 here on both dialects. Bound raw, Postgres refused it as a
 		// 500 and SQLite compared it as text and answered a 200.
-		keyVals := make(map[string]any, len(keys))
-		for _, k := range keys {
-			v, err := filter.CoerceValue(k, ch.queryField(k).Type, decoded[k])
+		carried := make(map[string]any, len(fields))
+		for _, f := range fields {
+			raw, ok := decoded[f]
+			if !ok {
+				continue
+			}
+			v, err := filter.CoerceValue(f, ch.queryField(f).Type, raw)
 			if err != nil {
 				writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, err), i18n.Phrase{})
 				return
 			}
-			keyVals[k] = v
+			carried[f] = v
 		}
-		args, err := ch.cursorAnchor(ctx, r, fields, keys, keyVals, extraWhere, isDate)
+		args, err := ch.cursorAnchor(ctx, r, fields, keys, carried, extraWhere, isDate)
 		if errors.Is(err, errCursorAnchorGone) {
 			writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, i18n.NewError(reasonCursorAnchorGone, nil)), i18n.Phrase{})
 			return
@@ -188,7 +195,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	// the true last row of the keyset window. Only AFTER that do we flip a
 	// backward page back into ascending order so a "prev" page reads the same
 	// way a "next" page does.
-	page, err := buildCursorPage(results, keys, ch.convertKey, isDate, limit)
+	page, err := buildCursorPage(results, fields, keys, ch.convertKey, isDate, limit)
 	if errors.Is(err, errCursorKeyTooLong) {
 		logf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
 		writeJSONError(w, r, http.StatusInternalServerError, reasonCursorKeyTooLong)
@@ -243,6 +250,21 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(page)
+}
+
+// decodeCursorFor decodes a cursor in either shape buildCursorPage
+// mints: every cursor field (the sort values and the key), or the key
+// columns alone. The two never collide: a key-only cursor names fewer
+// columns. A cursor that fits neither answers the full shape's refusal.
+func decodeCursorFor(cursor string, fields, keys []string) (map[string]string, error) {
+	vals, err := decodeCursorAny(cursor, fields)
+	if err == nil || len(fields) == len(keys) {
+		return vals, err
+	}
+	if kv, kerr := decodeCursorAny(cursor, keys); kerr == nil {
+		return kv, nil
+	}
+	return nil, err
 }
 
 // decodeCursorAny accepts either the single-field cursor or the
@@ -308,9 +330,10 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 var errCursorAnchorGone = errors.New("cursor anchor row not found")
 
 // cursorAnchor returns the keyset values the next page starts after, one
-// per cursor field: the anchor row's values, read back by the key the
-// cursor carries. A cursor field that is a key column takes the cursor's
-// own value, so an entity cursored on its key needs no lookup.
+// per cursor field. carried holds the values the cursor itself held,
+// already typed: when it holds every field (the full shape, or an entity
+// cursored on its key) no lookup runs. Otherwise the cursor held the key
+// alone and the anchor row's values are read back by that key.
 //
 // The lookup applies the same tenant, owner, read-scope, soft-delete and
 // BeforeList predicates as the page, so a cursor naming a row the caller
@@ -318,11 +341,11 @@ var errCursorAnchorGone = errors.New("cursor anchor row not found")
 // where that row sorts. A gone anchor is errCursorAnchorGone: the caller
 // restarts from the first page rather than reading a page from a position
 // nobody can name.
-func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields, keys []string, keyVals map[string]any, extraWhere []hook.WhereClause, isDate func(string) bool) ([]any, error) {
+func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields, keys []string, carried map[string]any, extraWhere []hook.WhereClause, isDate func(string) bool) ([]any, error) {
 	args := make([]any, len(fields))
 	lookup := false
 	for i, f := range fields {
-		if v, ok := keyVals[f]; ok {
+		if v, ok := carried[f]; ok {
 			args[i] = v
 		} else {
 			lookup = true
@@ -334,7 +357,7 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 	qb := query.Select(fields...)
 	qb.From(ch.Entity.GetTable())
 	for _, k := range keys {
-		qb.Where(k+" = $1", keyVals[k])
+		qb.Where(k+" = $1", carried[k])
 	}
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
@@ -404,9 +427,10 @@ func keysetValues(row map[string]any, fields []string, convertKey func(string) s
 }
 
 // buildCursorPage assembles the CursorPage envelope. The cursor carries
-// the last row's key columns: a single key uses the compact EncodeCursor
-// shape, a composite key the multi-field encoding.
-func buildCursorPage(data []map[string]any, fields []string, convertKey func(string) string, isDate func(string) bool, limit int) (pagination.CursorPage, error) {
+// the last row's cursor fields when that token fits the decoder's cap,
+// else its key columns alone (decodeCursorFor reads both). One column
+// uses the compact EncodeCursor shape, several the multi-field encoding.
+func buildCursorPage(data []map[string]any, fields, keys []string, convertKey func(string) string, isDate func(string) bool, limit int) (pagination.CursorPage, error) {
 	hasMore := len(data) > limit
 	if hasMore {
 		data = data[:limit]
@@ -419,12 +443,18 @@ func buildCursorPage(data []map[string]any, fields []string, convertKey func(str
 	if err != nil {
 		return page, err
 	}
-	if len(fields) == 1 {
-		if val, ok := dbRow[fields[0]]; ok {
-			page.Cursor = pagination.EncodeCursor(fields[0], val)
+	encode := func(cols []string) string {
+		if len(cols) == 1 {
+			if val, ok := dbRow[cols[0]]; ok {
+				return pagination.EncodeCursor(cols[0], val)
+			}
+			return ""
 		}
-	} else {
-		page.Cursor = pagination.EncodeMultiCursor(fields, dbRow)
+		return pagination.EncodeMultiCursor(cols, dbRow)
+	}
+	page.Cursor = encode(fields)
+	if !pagination.CursorFits(page.Cursor) && len(keys) < len(fields) {
+		page.Cursor = encode(keys)
 	}
 	// A key past the decoder's cap would mint a token the next request
 	// refuses as too long; refuse it here, where the reason can say so.

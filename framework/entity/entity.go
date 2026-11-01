@@ -145,7 +145,8 @@ type ScopeConfig struct {
 // PaginationConfig groups list limits and keyset cursor configuration. A
 // non-empty CursorFields composite takes precedence over CursorField.
 // Either way keyset paging appends each primary-key column the list does
-// not name, as the tiebreak, and the cursor token carries the key.
+// not name, as the tiebreak, and the cursor token carries the key (with
+// the sort values when they fit the cursor cap).
 type PaginationConfig struct {
 	CursorField  string
 	CursorFields []string
