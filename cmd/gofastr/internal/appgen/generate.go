@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -2263,6 +2264,17 @@ func renderGoLiteral(value any) (string, error) {
 		return fmt.Sprintf("%g", v), nil
 	case int, int32, int64:
 		return fmt.Sprintf("%d", v), nil
+	case json.Number:
+		// A spec decoded with UseNumber: an int64 keeps every digit; any
+		// other number takes the float64 spelling above.
+		if i, err := v.Int64(); err == nil {
+			return fmt.Sprintf("%d", i), nil
+		}
+		f, err := v.Float64()
+		if err != nil {
+			return "", fmt.Errorf("default literal %q: %w", v.String(), err)
+		}
+		return renderGoLiteral(f)
 	case map[string]any:
 		keys := make([]string, 0, len(v))
 		for key := range v {
