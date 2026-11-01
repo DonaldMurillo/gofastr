@@ -62,7 +62,8 @@ spelling exactly. A rebuild into the same directory renames a file or
 directory an earlier build left in another case to this build's
 spelling, so an export built on macOS deploys to a case-sensitive host
 unchanged; only an entry that is the build's own file under the other
-name moves, and nothing past a symlink does. A contributor may not
+name moves, and nothing past a symlink does: an entry behind a symlink
+in another spelling fails the build and is named. A contributor may not
 write `_headers` or `_redirects`, which the build writes itself; ship
 extra rules in the static dir, where they are appended. Exports are
 reproducible: two runs over the same content write the same bytes (a

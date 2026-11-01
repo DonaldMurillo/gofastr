@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"net/http"
 	"os"
@@ -416,8 +417,14 @@ func TestRespellRenamesOnlyTheSameFile(t *testing.T) {
 	if err := os.Symlink("shared", filepath.Join(out, "public")); err != nil {
 		t.Skip("no symlinks here:", err)
 	}
-	if err := respell(out, []string{"public/docs/index.html"}); err != nil {
-		t.Fatal(err)
+	// Behind the symlink the stale spelling is refused, not renamed:
+	// the export would not serve /public/docs/ on a case-sensitive host.
+	err := respell(out, []string{"public/docs/index.html"})
+	if insensitive && (err == nil || !strings.Contains(err.Error(), "/public/DOCS")) {
+		t.Errorf("a stale spelling behind a symlink passed: %v", err)
+	}
+	if !insensitive && err != nil {
+		t.Errorf("a case-sensitive disk refused a distinct entry: %v", err)
 	}
 	if !dirHas(t, filepath.Join(out, "shared"), "DOCS") {
 		t.Error("respell renamed shared/DOCS through the public symlink")
@@ -468,5 +475,72 @@ func TestPWARebuildKeepsWorker(t *testing.T) {
 	first, second := build(out), build(out)
 	if first != second {
 		t.Error("an unchanged rebuild wrote another service worker")
+	}
+}
+
+// statlessFS serves files whose Stat fails, as some fs.FS adapters do:
+// directories list and files read, but a file's own metadata does not.
+type statlessFS struct{ fs.FS }
+
+func (s statlessFS) Open(name string) (fs.File, error) {
+	f, err := s.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if _, isDir := f.(fs.ReadDirFile); isDir {
+		return f, nil
+	}
+	return statlessFile{f}, nil
+}
+
+type statlessFile struct{ fs.File }
+
+func (statlessFile) Stat() (fs.FileInfo, error) { return nil, errors.ErrUnsupported }
+
+// A static source whose files cannot be stat'ed read as absent, so the
+// PWA surface wrote its own worker over the source's custom one.
+func TestStaticWorkerWithoutStatKept(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/", &helloScreen{}, nil)
+	host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+	host.SetStaticFS(statlessFS{fstest.MapFS{"service-worker.js": {Data: []byte("// custom worker")}}})
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sw := readOut(t, out, "service-worker.js"); sw != "// custom worker" {
+		t.Errorf("the custom worker was replaced: %.80q", sw)
+	}
+}
+
+// On a case-sensitive disk MANIFEST.webmanifest is a file of its own,
+// served and precachable, yet the worker's tree hash left it out as if
+// it were the generated manifest: a change to it kept the old worker,
+// so installed clients kept the old bytes.
+func TestPWAHashesDistinctCaseFile(t *testing.T) {
+	out := t.TempDir()
+	upper := filepath.Join(out, "MANIFEST.webmanifest")
+	if err := os.WriteFile(upper, []byte(`{"name":"v1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "manifest.webmanifest")); err == nil {
+		t.Skip("case-insensitive disk: MANIFEST.webmanifest is the generated file here")
+	}
+	build := func() string {
+		t.Helper()
+		a := coreapp.NewApp("t")
+		a.Register("/", &helloScreen{}, nil)
+		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+		if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return readOut(t, out, "service-worker.js")
+	}
+	first := build()
+	if err := os.WriteFile(upper, []byte(`{"name":"v2"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if build() == first {
+		t.Error("a changed MANIFEST.webmanifest kept the old worker")
 	}
 }

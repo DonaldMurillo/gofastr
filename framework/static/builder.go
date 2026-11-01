@@ -1467,17 +1467,22 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 			localeManifests = append(localeManifests, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
 		}
 	}
-	// The hash leaves out every file this surface writes, in any case:
-	// a rebuild finds them from the last build and a fresh build does
-	// not, and a leftover in another case is respelled only afterwards.
-	generated := map[string]bool{foldPath("manifest.webmanifest"): true, foldPath("service-worker.js"): true}
+	// The hash leaves out every file this surface writes: a rebuild
+	// finds them from the last build and a fresh build does not. They
+	// are respelled first, so a leftover in another case that is the
+	// same file on this disk (MANIFEST.webmanifest on APFS) takes the
+	// generated name and drops out, and one that is a file of its own
+	// on a case-sensitive disk stays in the hash like any other file.
+	generated := map[string]bool{"manifest.webmanifest": true, "service-worker.js": true}
 	for _, f := range localeManifests {
-		generated[foldPath(filepath.ToSlash(f.relFile))] = true
+		generated[filepath.ToSlash(f.relFile)] = true
 	}
-	pwaDir := foldPath("__gofastr/pwa/")
+	const pwaDir = "__gofastr/pwa"
+	if err := respell(b.OutDir, append(slices.Sorted(maps.Keys(generated)), pwaDir+"/register.js", pwaDir+"/offline/index.html")); err != nil {
+		return err
+	}
 	contentHash, err := hashExportTree(b.OutDir, func(rel string) bool {
-		f := foldPath(rel)
-		return generated[f] || strings.HasPrefix(f, pwaDir)
+		return generated[rel] || strings.HasPrefix(rel, pwaDir+"/")
 	})
 	if err != nil {
 		return fmt.Errorf("static: fingerprint export: %w", err)
@@ -1581,7 +1586,9 @@ func (b *Builder) staticSourceHas(rel string) bool {
 // that spelling: each directory listing names each segment.
 func spelledIn(fsys fs.FS, rel string) bool {
 	// Absent in any spelling is the common answer, and one Stat gives it.
-	if _, err := fs.Stat(fsys, rel); err != nil {
+	// Any other Stat error (an adapter whose files read but do not stat)
+	// leaves the answer to the listings.
+	if _, err := fs.Stat(fsys, rel); errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
 	dir := "."

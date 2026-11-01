@@ -3872,13 +3872,16 @@ few lines, and link the PR or the docs page for the rest.
   refused, and so is a contributor's `_headers` or `_redirects`. A
   rebuild after a case-only rename keeps the page, and every file and
   directory the build writes is renamed to its spelling when an earlier
-  build left it in another case.
+  build left it in another case. One behind a symlink in the output
+  directory is not renamed; the build fails and names it.
 - **A rebuilt static export writes the same PWA worker.** The worker's
   tree hash read a locale tree's `manifest.webmanifest` only once an
   earlier build had written it, so a second build over unchanged
   content rotated the worker's cache and every installed client
-  re-downloaded the site. The hash leaves out every file the PWA
-  surface writes, in any case.
+  re-downloaded the site. The hash leaves out the files the PWA surface
+  writes, under their exact names, after renaming a leftover in another
+  case that is the same file. On a case-sensitive disk a file such as
+  `MANIFEST.webmanifest` is a file of its own and stays in the hash.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.
