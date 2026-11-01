@@ -69,22 +69,40 @@ type longLived struct {
 
 	mu       sync.Mutex
 	key      uint64 // 0 while not in the set
+	ended    bool   // end ran: anything attached later is closed at once
 	hijacked bool
 	ws       *stream.WebSocketConn
 	raw      net.Conn
 }
 
-// join puts l in the set. It reports false once the drain has started,
-// and the caller ends the stream at once.
-func (l *longLived) join() bool {
+// join puts l in the set. ok is false once the drain has started, and
+// the caller ends the stream at once. added reports whether this call
+// is the one that put l there, so a caller whose next step fails undoes
+// only its own join.
+func (l *longLived) join() (added, ok bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.key != 0 {
-		return true
+		return false, true
 	}
 	key, ok := l.set.add(l)
 	l.key = key
-	return ok
+	return ok, ok
+}
+
+// attach records the connection a hijack handed back. It reports false
+// when the drain ended l in between (join had succeeded, the end found
+// nothing to close): the caller closes conn instead of handing a live
+// connection out past shutdown.
+func (l *longLived) attach(conn net.Conn) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.ended {
+		return false
+	}
+	l.hijacked = true
+	l.raw = conn
+	return true
 }
 
 // leave takes l out of the set.
@@ -98,23 +116,45 @@ func (l *longLived) leave() {
 	}
 }
 
+// setWS records the WebSocket Upgrade built on the hijacked
+// connection. One handed over after the end closes at once.
 func (l *longLived) setWS(c *stream.WebSocketConn) {
 	l.mu.Lock()
-	l.ws = c
+	ended := l.ended
+	if !ended {
+		l.ws = c
+	}
 	l.mu.Unlock()
+	if ended {
+		_ = c.CloseWithStatus(shutdownCloseCode, "server shutting down")
+	}
 }
 
 // end cancels the request context, then closes the connection the
-// handler took over, if any.
+// handler took over, if any. Whatever is attached after it is closed
+// on arrival (attach, setWS).
 func (l *longLived) end() {
 	l.cancel()
 	l.mu.Lock()
+	l.ended = true
 	ws, raw := l.ws, l.raw
 	l.mu.Unlock()
 	switch {
 	case ws != nil:
 		_ = ws.CloseWithStatus(shutdownCloseCode, "server shutting down")
 	case raw != nil:
+		_ = raw.Close()
+	}
+}
+
+// forceClose closes the hijacked connection under a WebSocket whose
+// close handshake outran the drain's budget: its peer never answered,
+// and the connection and its read loop must not outlive Shutdown.
+func (l *longLived) forceClose() {
+	l.mu.Lock()
+	raw := l.raw
+	l.mu.Unlock()
+	if raw != nil {
 		_ = raw.Close()
 	}
 }
@@ -140,9 +180,10 @@ func (s *openStreams) remove(key uint64) {
 }
 
 // endAll ends every open stream, concurrently, and waits up to
-// streamEndWait (or ctx) for the WebSocket close handshakes. The ends
-// run outside the lock: a close fires the connection's OnClose hooks,
-// and the set stays a leaf lock.
+// streamEndWait (or ctx) for the WebSocket close handshakes; a
+// connection still open when that runs out is closed without one. The
+// ends run outside the lock: a close fires the connection's OnClose
+// hooks, and the set stays a leaf lock.
 func (s *openStreams) endAll(ctx context.Context) {
 	s.mu.Lock()
 	s.ending = true
@@ -169,8 +210,12 @@ func (s *openStreams) endAll(ctx context.Context) {
 	defer t.Stop()
 	select {
 	case <-done:
+		return
 	case <-t.C:
 	case <-ctx.Done():
+	}
+	for _, l := range ending {
+		l.forceClose()
 	}
 }
 
@@ -225,7 +270,7 @@ func (w *streamWriter) noteHeaders() {
 	if err != nil || mt != "text/event-stream" {
 		return
 	}
-	if !w.life.join() {
+	if _, ok := w.life.join(); !ok {
 		// The drain has already ended the others: end this one too.
 		w.life.cancel()
 	}
@@ -252,30 +297,40 @@ func (w *streamWriter) ReadFrom(src io.Reader) (int64, error) {
 	return io.Copy(w.ResponseWriter, src)
 }
 
-// Flush keeps the Flusher the writer underneath has. A flush sends the
-// headers, so it is where a stream that has written nothing yet shows.
-func (w *streamWriter) Flush() {
+// FlushError flushes the writer underneath and returns its error, so
+// http.ResponseController.Flush still reports a reset HTTP/2 stream or
+// a gone client. A flush sends the headers, so it is where a stream
+// that has written nothing yet shows.
+func (w *streamWriter) FlushError() error {
 	w.noteHeaders()
-	_ = http.NewResponseController(w.ResponseWriter).Flush()
+	return http.NewResponseController(w.ResponseWriter).Flush()
 }
+
+// Flush is FlushError for callers holding an http.Flusher.
+func (w *streamWriter) Flush() { _ = w.FlushError() }
 
 // Hijack takes the connection over and records it, or refuses once the
 // drain has started. The returned connection takes the stream out of
 // the open set when it closes.
 func (w *streamWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if !w.life.join() {
+	added, ok := w.life.join()
+	if !ok {
 		return nil, nil, errDraining
 	}
 	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
 	if err != nil {
-		w.life.leave()
+		// HTTP/2 has no Hijack. An event stream that joined when it
+		// flushed stays in the set: undo only this call's join.
+		if added {
+			w.life.leave()
+		}
 		return nil, nil, err
 	}
 	sc := &streamConn{Conn: conn, release: w.life.leave}
-	w.life.mu.Lock()
-	w.life.hijacked = true
-	w.life.raw = sc
-	w.life.mu.Unlock()
+	if !w.life.attach(sc) {
+		_ = conn.Close()
+		return nil, nil, errDraining
+	}
 	return sc, rw, nil
 }
 

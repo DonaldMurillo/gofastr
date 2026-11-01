@@ -167,7 +167,10 @@ the restarted process:
   even if the handler that opened it has returned. A connection a
   handler hijacked by hand is closed. Neither would end otherwise:
   `http.Server.Shutdown` does not wait for or close a hijacked
-  connection. A hijack attempted after the drain started is refused.
+  connection. A hijack attempted after the drain started is refused,
+  and its connection closed. The drain gives the close handshakes up to
+  2s (less if the `Shutdown` context ends first), then closes any
+  connection whose peer has not answered.
 
 A connection that was accepted but never sent
 a request (a browser's speculative preconnect) is closed at the start of
