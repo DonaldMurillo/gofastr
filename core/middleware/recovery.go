@@ -3,6 +3,7 @@ package middleware
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -165,6 +166,14 @@ func (w *recoveryWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		w.started = true
 	}
 	return conn, brw, err
+}
+
+// ReadFrom keeps the underlying writer's sendfile path (io.Copy uses its
+// ReaderFrom when it has one): hiding it would turn every file a handler
+// serves through Recovery into a userspace copy.
+func (w *recoveryWriter) ReadFrom(src io.Reader) (int64, error) {
+	w.started = true
+	return io.Copy(w.ResponseWriter, src)
 }
 
 func (w *recoveryWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

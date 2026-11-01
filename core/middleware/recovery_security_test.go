@@ -172,3 +172,31 @@ func TestRecovery500DropsHandlerRepresentationHeaders(t *testing.T) {
 		t.Errorf("500 dropped headers it should keep: %v", rec.Header())
 	}
 }
+
+// TestRecoveryKeepsReaderFrom pins that Recovery's writer forwards
+// ReadFrom (the sendfile path) and that a ReadFrom starts the response,
+// so a later panic cuts instead of splicing a 500 onto the file.
+func TestRecoveryKeepsReaderFrom(t *testing.T) {
+	var sawRF bool
+	h := Recovery()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		rf, ok := w.(io.ReaderFrom)
+		sawRF = ok
+		if ok {
+			_, _ = rf.ReadFrom(strings.NewReader("file-bytes"))
+		}
+		panic("after the file")
+	}))
+	rec := httptest.NewRecorder()
+	defer func() {
+		if v := recover(); v != http.ErrAbortHandler {
+			t.Fatalf("recover = %v, want http.ErrAbortHandler once ReadFrom sent bytes", v)
+		}
+		if !sawRF {
+			t.Fatal("Recovery's writer hides io.ReaderFrom")
+		}
+		if got := rec.Body.String(); got != "file-bytes" {
+			t.Fatalf("body = %q, want only the file bytes", got)
+		}
+	}()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+}

@@ -104,6 +104,50 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The SQL idempotency store runs on Postgres.** Its table declared
+  `body BLOB`, which Postgres has no type for, and its key joins its
+  parts with NUL bytes, which Postgres text refuses, so
+  `NewSQLIdempotencyStore` failed on Postgres and could never store a
+  key. The body is `BYTEA` there and the key is escaped on Postgres
+  only; SQLite keys are unchanged. See `idempotency.md`.
+- **A panic no longer corrupts a response that already started.**
+  `Recovery` and `handler.HandlerAdapter` cut the connection instead of
+  writing a 500 after a status, a flush or body bytes went out; before,
+  the client got a 200 with error text appended. Recovery's 500 drops
+  the handler's representation headers (`Content-Encoding`, `ETag`, …)
+  and is sent `Cache-Control: no-store`. The panic stack in the log
+  names the handler, not `Timeout`. Metrics and tracing count a
+  panicked request as a 500 (or the status already sent) and mark its
+  span Error. See `security.md` and `observability.md`.
+- **Middleware status and claim bookkeeping.** An idempotency claim is
+  released when the handler panics, so a retry no longer gets 409 until
+  the in-flight TTL. A failed `Hijack` under `Timeout` keeps the writer
+  buffered and the deadline armed. The logging, metrics and tracing
+  wrappers record the status the client got (1xx passes through, a
+  first write or flush latches 200). `Compress` maps its `-gzip` ETag
+  back for `If-Match` too. A body cap of `math.MaxInt64` no longer reads
+  an empty body. `WarnIfCSRFUnconfigured` accepts a nil `*slog.Logger`.
+- **`core/handler`.** A pointer input (`Handler[*T, O]`,
+  `ToolAdapter[*T]`) gets the struct rules: duplicate, case-folded and
+  unknown keys are refused and query, path and header tags bind. A body
+  over the cap answers 413, not 400. A `Handler[I, *Out]` returning
+  `(nil, nil)` answers 204; a nil slice or map is still a 200.
+  `WriteError` sends a nil `*Error` or a code outside 400–599 as 500.
+  Numbers under an unexported embedded struct settle to `float64`.
+- **`core/stream`.** WebSocket `Close` writes the messages `Write`
+  already accepted before its Close frame, bounded by `WriteTimeout`.
+  Every protocol error closes with 1002 (1009 for a message past
+  `ReadLimit`) instead of an empty status. The upgrade refuses
+  HTTP/1.0 and reads `Connection` and `Sec-WebSocket-Protocol` across
+  every header line. A negative `SendBuffer` means the default instead
+  of panicking after the hijack. `Hub` and `StateChannel` stop a
+  registration's close watcher on `Unregister`. An SSE id made only of
+  control bytes writes no empty `id:` line, and a subscriber's `?event=`
+  filter applies before its buffer, so ignored events no longer evict
+  wanted ones.
+- **`router.Handle` names an unclean pattern** (`Group("/api/")` builds
+  `/api//x`) as an invalid route, not a conflict with a registration
+  that does not exist.
 - **Images.** `StripMetadata` keeps the Adobe colour marker, so a
   stripped CMYK JPEG still decodes. Image-field renditions and
   placeholders follow the upload's EXIF orientation. A long upload name
@@ -4042,6 +4086,22 @@ few lines, and link the PR or the docs page for the rest.
 - **examples/site's status pill keeps its wording through hydration.**
 
 ### Security
+- **`SkipBearerAuth` keeps CSRF on for browser-ambient credentials.** It
+  skipped the check for any `Authorization` header, and a browser
+  attaches Basic, Digest, Negotiate and NTLM credentials to a
+  cross-site form post on its own, so an app behind a Basic-auth gate or
+  intranet SSO had no CSRF protection on its cookie-session writes.
+  Those four schemes are now checked; Bearer and other schemes still
+  skip. `battery/auth.CSRF` uses this predicate by default.
+- **A junk-key flood no longer resets an exhausted rate-limit key.**
+  With the default `RefillBy`, eviction at `MaxKeys` shed the exhausted
+  bucket first, so a per-username login throttle came back with a full
+  budget after a burst of made-up usernames. The buckets with the most
+  tokens left go first now.
+- **`router.Param` refuses an empty catch-all segment.** A `{name...}`
+  value with a leading or doubled `/` only arrives as `%2F`, and
+  `/files/%2Fetc/passwd` handed the handler the absolute path
+  `/etc/passwd`. The value is cut there, as a smuggled `..` already is.
 - **A scope added after an `OrWhere` covers the whole WHERE.**
   `query.Select` wrote its connectors flat, so
   `Where(a).OrWhere(b).Where(tenant)` built `(a) OR (b) AND (tenant)`,
