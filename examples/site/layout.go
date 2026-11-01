@@ -154,8 +154,8 @@ func examplesSectionMenuConfig() interactive.SectionMenuConfig {
 				{Label: "Catalog (intercepting route)", Href: "/examples/catalog"},
 			}},
 			{Label: "Live data", Items: []interactive.SectionItem{
-				{Label: "Live dashboard", Href: "/examples/live-dashboard?presence=" + liveDashTopic},
-				{Label: "Live presence", Href: "/examples/presence?presence=" + presenceDemoTopic},
+				{Label: "Live dashboard", Href: "/examples/live-dashboard"},
+				{Label: "Live presence", Href: "/examples/presence"},
 			}},
 			{Label: "Theme layer", Items: themes, Collapsed: true},
 		},

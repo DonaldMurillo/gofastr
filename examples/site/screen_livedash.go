@@ -37,8 +37,8 @@ package main
 //   - Topic-scoped delivery. Pushes are addressed to
 //     host.Islands.PresenceSessions(liveDashTopic), only sessions that
 //     joined the "live-dashboard-demo" presence topic receive them. The
-//     page is linked with ?presence=live-dashboard-demo so the SSE
-//     connection joins the topic. To isolate tenants on an authenticated
+//     screen declares the topic (PresenceTopics), so every open
+//     dashboard's SSE connection joins it. To isolate tenants on an authenticated
 //     app, use a server-derived tenant-qualified topic
 //     (tenant:<id>:dashboard) and render per-tenant state, a single fixed
 //     topic + AuthorizeTopic authorizes the join but does NOT scope the
@@ -71,8 +71,8 @@ import (
 )
 
 const (
-	// liveDashTopic is the presence topic the dashboard joins. Any SSE
-	// connection carrying ?presence=live-dashboard-demo is a push target.
+	// liveDashTopic is the presence topic the dashboard declares. Every
+	// open dashboard's stream is a push target.
 	// The page is always linked with this topic so viewers see live data.
 	liveDashTopic = "live-dashboard-demo"
 
@@ -258,7 +258,7 @@ type dashIslandPusher interface {
 // pushAll re-renders every dashboard island from the current state and
 // pushes each to every session on liveDashTopic. Called by the ticker
 // after a tick. The push targets are PRESENCE SESSIONS, only sessions
-// that joined the topic via ?presence= receive updates. This is the
+// whose page declared the topic receive updates. This is the
 // same wiring shape as the presence screen's OnPresenceChange. To isolate
 // tenants, push to a per-tenant topic with per-tenant state, a fixed topic
 // broadcasts identical HTML to every viewer (AuthorizeTopic gates the join,
@@ -537,6 +537,11 @@ func (s *LiveDashboardScreen) ScreenDescription(ctx context.Context) string {
 	return "Live-data reference: SSE island push, computed signals, bounded feed"
 }
 func (s *LiveDashboardScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+// PresenceTopics puts every open dashboard on the push topic.
+func (s *LiveDashboardScreen) PresenceTopics(context.Context) []string {
+	return []string{liveDashTopic}
+}
 
 func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	snap := liveDash.snapshot()

@@ -197,8 +197,15 @@ type ReadScopeConfig struct {
 }
 
 // AccessControl declares the RBAC permission required for each CRUD operation
-// on an entity. Each field holds a permission string (e.g. "posts:write");
-// blank means that operation is not RBAC-gated. Read covers both List and Get.
+// on an entity. Each field holds a permission string (e.g. "posts:write").
+// Read covers both List and Get.
+//
+// Once any field is set, a blank Create, Update or Delete is refused to
+// every caller (403), a wildcard role included; only server code that
+// elevated its context (crud.WithElevation) still writes. Set the field to
+// [Anyone] to open that operation on purpose. A blank Read stays open, the
+// "public reads, gated writes" shape. Anyone lifts only this RBAC check:
+// owner and tenant scoping still apply.
 //
 // Permissions are plain strings here so the entity package stays decoupled
 // from framework/access; the CRUD layer converts them to access.Permission and
@@ -210,6 +217,11 @@ type AccessControl struct {
 	Update string
 	Delete string
 }
+
+// Anyone, as an AccessControl operation, opens that operation to every
+// caller, signed in or not. It is not a permission: no role grants it and
+// no scope names it.
+const Anyone = "anyone"
 
 // Declared reports whether any per-operation permission is set, i.e.
 // whether the entity opted into RBAC gating at all. Used by

@@ -33,18 +33,19 @@ const maxSessionIDLen = 256
 // The client must pass a "session" query parameter to identify its session.
 // Example: GET /islands/sse?session=abc123
 func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
-	m.ServeSSEWithPresence(w, r, PresenceIdentity{}, nil)
+	m.ServeSSEWithPresence(w, r, PresenceIdentity{}, PresenceTopics{})
 }
 
 // ServeSSEWithPresence streams island updates AND registers the connection
 // on one or more presence topics for the duration of the SSE stream. identity
 // is the SERVER-DERIVED user identity (from the request context; never a
-// client param). topics is the bounded, parsed ?presence= list. When topics
-// is empty this behaves identically to ServeSSE. The presence handle is
+// client param). topics carries the page's declared topics and the client's
+// requested ones; admitTopics decides which join (see PresenceTopics). When
+// both are empty this behaves identically to ServeSSE. The presence handle is
 // removed (Leave) on disconnect, including the ref-counted last-tab case:
 // every ServeSSEWithPresence call gets its own handle, so closing one tab
 // drops exactly that connection's contribution to the roster.
-func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, identity PresenceIdentity, topics []string) {
+func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, identity PresenceIdentity, pt PresenceTopics) {
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
 		i18n.HTTPError(w, r, http.StatusBadRequest, reasonSessionMissing)
@@ -63,14 +64,14 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 
 	sse := stream.NewSSEWriter(w)
 
-	// Gate the requested topics through AuthorizeTopic (nil hook = all
-	// allowed) BEFORE anything is subscribed. Running the app-supplied hook
+	// Admit topics (declared only with no hook; every topic through
+	// AuthorizeTopic with one) BEFORE anything is subscribed. Running the app-supplied hook
 	// here, before ConnectSession, means a panicking hook cannot leak a
 	// subscription (there is none yet); net/http recovers the request and
 	// nothing needs teardown. An unauthorized topic never yields a
 	// subscription or a roster entry. The request context carries the
 	// server-derived user the hook authorizes against.
-	topics = m.filterAuthorizedTopics(r.Context(), topics)
+	topics := m.admitTopics(r.Context(), pt)
 
 	// Subscribe BEFORE flushing headers. Flushing headers (the "connected"
 	// comment below) unblocks the HTTP client, its Do() returns, so a
@@ -99,7 +100,7 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	// cancel is deferred IMMEDIATELY: PresenceJoin fires the app-supplied
 	// OnPresenceChange hook, and a panicking hook (net/http recovers it)
 	// must not strand the subscription we just created. Same reasoning as
-	// running filterAuthorizedTopics before ConnectSession above.
+	// running admitTopics before ConnectSession above.
 	defer cancel()
 	// Presence join happens AFTER the stream exists (so the roster-change
 	// callback can deliver to this connection's buffered channel) and

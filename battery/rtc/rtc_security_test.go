@@ -373,6 +373,7 @@ func TestNoSDPInLogs(t *testing.T) {
 		MaxFramesPerSecond: 5,
 		TURN:               &TURN{URLs: []string{"turn:t.example:3478"}, Secret: turnSecretMarker},
 		Logger:             slog.New(cap),
+		AnonymousSeats:     AnonymousPerSocket,
 	})
 	base := startSignaler(t, s)
 

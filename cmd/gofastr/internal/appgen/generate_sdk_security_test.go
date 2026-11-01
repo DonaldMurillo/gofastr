@@ -93,7 +93,7 @@ func TestSDKJSIdentSlotRefusesTables(t *testing.T) {
 	}
 	for _, want := range []string{
 		"export const blogPostsFields = Object.freeze({",
-		`this["blogPosts"] = new Resource(this, "blog_posts");`,
+		`this["blogPosts"] = new Resource(this, "blog_posts", [`,
 	} {
 		if !strings.Contains(clientJS, want) {
 			t.Errorf("client.js lost %q — the gate must refuse hostile tables, not change benign emission:\n%s", want, clientJS)

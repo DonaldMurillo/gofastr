@@ -368,8 +368,11 @@ Entity declarations reuse the existing `entities` package generator, including
 `owner_field`), `search_fields` (multi-field free-text `?q=` search),
 per-operation `access` RBAC, cursor settings, indices, and `properties`.
 The `access` map (keys `read`, `create`, `update`, `delete`;
-each value a permission string) is emitted as `Access:
-framework.AccessControl{...}` in the generated registration; see
+each value a permission string, or `anyone`) is emitted as `Access:
+framework.AccessControl{...}` in the generated registration, with
+`anyone` written as `framework.Anyone`. A write left out of a declared
+`access:` block is refused to every caller; `create: anyone` is the
+public contact-form shape. See
 [entity-declarations](entity-declarations.md) for the semantics and
 [access-control](access-control.md) for wiring roles + policy. Custom
 endpoints generate the files listed in
@@ -1020,8 +1023,9 @@ so the app must install a policy or every write 403s. The generator emits an
 `access.RolePolicy` that grants the **admin role** (`app.admin.role`) the wildcard
 (`*`) and an `access.Middleware` that resolves the signed-in user's roles, mounted
 after the session middleware. The admin operator can therefore manage every entity
-through its own gated API (the same API the back-office uses); add finer
-per-role `Grant`s in `RegisterGenerated` as you define more roles.
+through its own gated API (the same API the back-office uses), for each operation
+the `access:` block names; a write it leaves out is refused to the admin too. Add
+finer per-role `Grant`s in `RegisterGenerated` as you define more roles.
 
 ### UI component blocks (the framework/ui catalog)
 
