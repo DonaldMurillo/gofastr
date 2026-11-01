@@ -213,7 +213,7 @@ func runDesktopRun(args []string) {
 	// ended the dependency query.
 	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
 	go func() {
-		prev := devcmd.FirstSnapshot(before, watch.Scan(), since)
+		poll := watch.Poller(before, since)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -221,9 +221,7 @@ func runDesktopRun(args []string) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				curr := watch.Scan()
-				if devcmd.Changed(prev, curr) {
-					prev = curr
+				if poll.Changed() {
 					select {
 					case reload <- struct{}{}:
 					default:

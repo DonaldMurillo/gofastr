@@ -4,7 +4,9 @@ package macos
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
@@ -74,5 +76,42 @@ func TestShellPromptOverrideSeam(t *testing.T) {
 	d, err := s.Prompt(context.Background(), desktop.PermissionRequest{})
 	if err != nil || d != desktop.DecisionAllowOnce {
 		t.Fatalf("override prompt: d=%v err=%v, want AllowOnce/nil", d, err)
+	}
+}
+
+// The open and save panels refuse what the Linux and Windows shells
+// refuse (desktop.CheckFileDialog), before any panel or framework load:
+// a page gets one answer for the same input on every OS.
+func TestDialogInputRefusedLikeOtherOS(t *testing.T) {
+	s := New().(*darwinShell)
+	calls := map[string]func() error{
+		"open ext with ;": func() error {
+			_, err := s.OpenFile(context.Background(), desktop.OpenOptions{Filters: []desktop.FileFilter{{Name: "Text", Extensions: []string{"txt;exe"}}}})
+			return err
+		},
+		"open NUL name": func() error {
+			_, err := s.OpenFile(context.Background(), desktop.OpenOptions{Filters: []desktop.FileFilter{{Name: "a\x00b", Extensions: []string{"txt"}}}})
+			return err
+		},
+		"save name with /": func() error {
+			_, err := s.SaveFile(context.Background(), desktop.SaveOptions{DefaultName: "../evil.txt"})
+			return err
+		},
+	}
+	for name, call := range calls {
+		done := make(chan error, 1)
+		go func() { done <- call() }()
+		select {
+		case err := <-done:
+			var de *desktop.Error
+			if !errors.As(err, &de) || de.Code != desktop.CodeInvalidInput {
+				t.Errorf("%s: err = %v, want CodeInvalidInput", name, err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Errorf("%s: reached the panel instead of refusing", name)
+		}
+	}
+	if objc.DlopenCount() != 0 {
+		t.Fatalf("refused dialog loaded frameworks: %d", objc.DlopenCount())
 	}
 }

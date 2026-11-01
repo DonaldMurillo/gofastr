@@ -149,7 +149,7 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		}
 	case schema.Decimal, schema.Float:
 		if s := cell(v); s != "" {
-			return render.Text(decimal(ctx, s))
+			return render.Text(decimal(ctx, f, s))
 		}
 	case schema.Int:
 		if s := cell(v); s != "" {
