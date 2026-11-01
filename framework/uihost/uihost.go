@@ -433,13 +433,24 @@ func WithCustomCSS(css string) Option {
 	}
 }
 
-// WithExtraScripts adds external <script src="…"> URLs to inject before
-// </body> on every page. Use for dev-only tooling like livereload.
-// CSP-safe: every URL becomes an external resource, no inline JS.
+// WithExtraScripts adds external <script src="…"> URLs to every full
+// page, emitted deferred at the end of <head> after runtime.js and the
+// per-screen action scripts (the same rail RegisterExternalScript
+// writes). Use for dev-only tooling like livereload. CSP-safe: every URL
+// becomes an external resource, no inline JS.
+//
+// Each src is held to RegisterExternalScript's same-origin grammar
+// ("/x.js", optionally "/x.js?v=abc"): the tag loads under the default
+// CSP's script-src 'self'. A src that fails it (a scheme, a host, a
+// protocol-relative "//cdn…", a backslash, a control byte, a fragment, a
+// "." or ".." segment) is dropped with a warning, the way the URL-typed
+// head options (WithFavicon, WithPreconnect) drop an unsafe URL.
 func WithExtraScripts(urls ...string) Option {
 	return func(ds *UIHost) {
 		for _, u := range urls {
-			ds.extraScripts = append(ds.extraScripts, externalScript{src: u})
+			if err := ds.registerScript(externalScript{src: u}, "WithExtraScripts"); err != nil {
+				slog.Default().Warn("uihost: script dropped from the page", "err", err)
+			}
 		}
 	}
 }
