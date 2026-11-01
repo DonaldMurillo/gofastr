@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -287,8 +288,15 @@ type Options struct {
 	PollInterval         time.Duration
 	MaxResponseBodyBytes int64
 	AllowPrivateNetworks bool
-	SignatureTolerance   time.Duration
-	LeasePeriod          time.Duration
+
+	// AllowPlaintextAuth lets a subscriber with Auth use an http:// URL.
+	// By default Subscribe refuses that pairing, and a delivery that
+	// meets it fails without sending: the bearer token, API key or
+	// Basic password would cross the network in clear text. Set it for
+	// a receiver on loopback or a trusted LAN segment, or in tests.
+	AllowPlaintextAuth bool
+	SignatureTolerance time.Duration
+	LeasePeriod        time.Duration
 
 	// ResponseBodyLimit is how many bytes of each receiver response are
 	// kept on the delivery (Delivery.ResponseBody) for diagnosing a
@@ -456,6 +464,9 @@ func (m *Manager) Subscribe(ctx context.Context, s Subscriber) (Subscriber, erro
 	}
 	if err := s.Auth.validate(); err != nil {
 		return Subscriber{}, err
+	}
+	if m.plaintextAuth(s) {
+		return Subscriber{}, errPlaintextAuth
 	}
 	if err := validateSubscriberURL(s.URL, m.opts.AllowPrivateNetworks); err != nil {
 		return Subscriber{}, err
@@ -825,6 +836,18 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	req.Header.Set("X-GoFastr-Timestamp", fmt.Sprintf("%d", ts))
 	req.Header.Set(SignatureHeader, SignWithTimestamp(sub.Secret, ts, d.Payload))
 	client := m.opts.HTTPClient
+	if m.plaintextAuth(*sub) {
+		// A subscriber stored past Subscribe (or before this check
+		// existed): fail the attempt rather than send the credential in
+		// clear text. It stays failed until the URL or the option changes.
+		m.failuresTotal.Add(1)
+		d.Status = StatusFailed
+		d.LastError = errPlaintextAuth.Error()
+		d.ResponseStatus, d.ResponseBody = 0, ""
+		m.schedule(&d)
+		m.saveDelivery(d)
+		return
+	}
 	if sub.Auth.Kind != AuthNone {
 		sub.Auth.apply(req)
 		client = m.credentialClient()
@@ -861,6 +884,20 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	d.LastError = fmt.Sprintf("http %d", resp.StatusCode)
 	m.schedule(&d)
 	m.saveDelivery(d)
+}
+
+// errPlaintextAuth refuses a credential on an http:// URL (see
+// Options.AllowPlaintextAuth). It names no credential value.
+var errPlaintextAuth = errors.New("webhook: Subscriber.Auth needs an https:// URL; set Options.AllowPlaintextAuth for a trusted plain-HTTP receiver")
+
+// plaintextAuth reports whether sub would send its credential over
+// plain HTTP without Options.AllowPlaintextAuth.
+func (m *Manager) plaintextAuth(sub Subscriber) bool {
+	if sub.Auth.Kind == AuthNone || m.opts.AllowPlaintextAuth {
+		return false
+	}
+	u, err := url.Parse(sub.URL)
+	return err != nil || !strings.EqualFold(u.Scheme, "https")
 }
 
 // defaultResponseBodyLimit is Options.ResponseBodyLimit's zero value.

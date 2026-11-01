@@ -129,3 +129,12 @@ func TestDesktopOpenPrefixValidatedAtNew(t *testing.T) {
 		}()
 	}
 }
+
+func TestDesktopNewCopiesOpenPrefixes(t *testing.T) {
+	prefixes := []string{"/api"}
+	b := New(Config{ID: "test.example.app", Title: "Test", Shell: newFakeShell(), Logger: testLogger(t), OpenPrefixes: prefixes})
+	prefixes[0] = "/"
+	if b.cfg.OpenPrefixes[0] != "/api" {
+		t.Fatalf("New aliased the caller's OpenPrefixes: %v", b.cfg.OpenPrefixes)
+	}
+}

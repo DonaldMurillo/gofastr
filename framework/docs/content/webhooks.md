@@ -74,6 +74,12 @@ token, a value holding a control byte, or an API key header the
 delivery sets itself (`Host`, `Content-Type`, `User-Agent`, any
 `X-GoFastr-*`). Its errors never repeat the credential.
 
+A credential needs an `https://` URL. `Subscribe` refuses `Auth` on an
+`http://` URL, and a subscriber that reached the store with one anyway
+fails each attempt without sending: the token or password would cross
+the network in clear text. A receiver on loopback or a trusted LAN
+segment can opt in with `Options.AllowPlaintextAuth = true`.
+
 A delivery that carries a credential never follows a redirect, even
 through a caller-supplied `HTTPClient` that does. Go drops
 `Authorization` on a cross-host redirect but not `X-API-Key` or any

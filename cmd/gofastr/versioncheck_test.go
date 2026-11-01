@@ -39,6 +39,8 @@ func TestProjectDirFlag(t *testing.T) {
 		{"dev", []string{"--addr", ":9000", "--dir", "/srv/app"}, "/srv/app"},
 		{"dev", nil, ""},
 		{"build", []string{"--dir=../app"}, ""},
+		{"dev", []string{"--dir=./default", "--dir=/srv/app"}, "/srv/app"},
+		{"dev", []string{"--dir", "./default", "--dir=/srv/app"}, "/srv/app"},
 	} {
 		if got := projectDirFlag(tc.cmd, tc.args); got != tc.want {
 			t.Errorf("projectDirFlag(%q, %q) = %q; want %q", tc.cmd, tc.args, got, tc.want)

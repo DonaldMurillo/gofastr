@@ -162,6 +162,10 @@ const defaultSessionTTL = 7 * 24 * time.Hour
 // New validates cfg and constructs the Battery. A config error is held
 // and returned by Run, so main has one error path.
 func New(cfg Config) *Battery {
+	// Own copies of the slices validateConfig checks: a caller that
+	// edits its slice after New must not change what the gate serves.
+	cfg.OpenPrefixes = append([]string(nil), cfg.OpenPrefixes...)
+	cfg.AllowHosts = append([]string(nil), cfg.AllowHosts...)
 	b := &Battery{cfg: cfg, tool: execTool}
 	if cfg.Stdout == nil {
 		b.cfg.Stdout = os.Stdout

@@ -17,6 +17,7 @@ import (
 func deliverOnce(t *testing.T, sub Subscriber, opts Options) Delivery {
 	t.Helper()
 	opts.AllowPrivateNetworks = true
+	opts.AllowPlaintextAuth = true // httptest serves plain HTTP
 	opts.MaxAttempts = 3
 	opts.Backoff = []time.Duration{time.Hour}
 	store := NewMemoryStore()
@@ -286,5 +287,52 @@ func TestCredentialClientWithoutNew(t *testing.T) {
 		if c == nil || c.CheckRedirect == nil {
 			t.Fatalf("credentialClient = %+v; want a client that refuses redirects", c)
 		}
+	}
+}
+
+// A credential never crosses the network in clear text unless the
+// manager opts in: Subscribe refuses an http:// URL with Auth, and a
+// subscriber that reached the store anyway is not sent to.
+func TestPlaintextAuthRefused(t *testing.T) {
+	ctx := context.Background()
+	strict := New(NewMemoryStore(), Options{AllowPrivateNetworks: true})
+	_, err := strict.Subscribe(ctx, Subscriber{URL: "http://127.0.0.1:1/h", Secret: "s", Auth: Auth{Kind: AuthBearer, Token: "tok-secret"}})
+	if err == nil || strings.Contains(err.Error(), "tok-secret") {
+		t.Fatalf("Subscribe(http + Auth) = %v; want a refusal that does not echo the token", err)
+	}
+	if _, err := strict.Subscribe(ctx, Subscriber{URL: "https://93.184.216.34/h", Secret: "s", Auth: Auth{Kind: AuthBearer, Token: "x"}}); err != nil {
+		t.Fatalf("Subscribe(https + Auth) = %v; want accepted", err)
+	}
+	if _, err := strict.Subscribe(ctx, Subscriber{URL: "http://127.0.0.1:1/h", Secret: "s"}); err != nil {
+		t.Fatalf("Subscribe(http, no Auth) = %v; plain HTTP without a credential stays allowed", err)
+	}
+	loose := New(NewMemoryStore(), Options{AllowPrivateNetworks: true, AllowPlaintextAuth: true})
+	if _, err := loose.Subscribe(ctx, Subscriber{URL: "http://127.0.0.1:1/h", Secret: "s", Auth: Auth{Kind: AuthBearer, Token: "x"}}); err != nil {
+		t.Fatalf("Subscribe with AllowPlaintextAuth = %v; want accepted", err)
+	}
+
+	// A subscriber written to the store directly is still not sent to.
+	var c headerCatcher
+	srv := httptest.NewServer(c.handler(http.StatusOK, ""))
+	defer srv.Close()
+	store := NewMemoryStore()
+	if err := store.AddSubscriber(ctx, Subscriber{ID: "direct", URL: srv.URL, Secret: "s", Events: []string{"*"}, Active: true,
+		Created: time.Now(), Auth: Auth{Kind: AuthAPIKey, Token: "key-secret"}}); err != nil {
+		t.Fatal(err)
+	}
+	mgr := New(store, Options{AllowPrivateNetworks: true, MaxAttempts: 3, Backoff: []time.Duration{time.Hour}})
+	if _, err := mgr.Publish(ctx, "orders.created", []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	mgr.tick(ctx)
+	c.mu.Lock()
+	n := len(c.seen)
+	c.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("the receiver got %d plain-HTTP request(s) carrying the credential", n)
+	}
+	ds, _ := store.ListDeliveries(ctx, "direct", 0)
+	if len(ds) != 1 || ds[0].Status == StatusSuccess || ds[0].LastError != errPlaintextAuth.Error() {
+		t.Fatalf("delivery = %+v; want a failed attempt naming the refusal", ds)
 	}
 }

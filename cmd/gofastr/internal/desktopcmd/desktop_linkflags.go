@@ -12,6 +12,11 @@ import (
 // stamps; desktop.LaunchArgs reads it.
 const builtLaunchArgsVar = "github.com/DonaldMurillo/gofastr/battery/desktop.builtLaunchArgs"
 
+// builtLaunchSchemeVar carries --scheme beside --launch-args, so
+// desktop.LaunchArgs recognises a deep link passed as an argument on
+// every platform (macOS builds keep the scheme itself in Info.plist).
+const builtLaunchSchemeVar = "github.com/DonaldMurillo/gofastr/battery/desktop.builtLaunchScheme"
+
 const (
 	maxLaunchArgs     = 16
 	maxLaunchArgBytes = 256
@@ -65,6 +70,12 @@ func extraLinkerFlags(f desktopBuildFlags) (string, error) {
 			return "", err
 		}
 		extra += " -X " + builtLaunchArgsVar + "=" + base64.RawURLEncoding.EncodeToString(b)
+		if f.scheme != "" {
+			if !desktopSchemeRe.MatchString(f.scheme) {
+				return "", fmt.Errorf("--scheme %q must match %s", f.scheme, desktopSchemeRe.String())
+			}
+			extra += " -X " + builtLaunchSchemeVar + "=" + f.scheme
+		}
 	}
 	if f.ldflags != "" {
 		for _, r := range f.ldflags {

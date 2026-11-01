@@ -9,8 +9,9 @@ import (
 
 func withBuiltLaunchArgs(t *testing.T, args []string, scheme string) {
 	t.Helper()
-	oldArgs, oldScheme := builtLaunchArgs, builtDeepLinkScheme
-	t.Cleanup(func() { builtLaunchArgs, builtDeepLinkScheme = oldArgs, oldScheme })
+	oldArgs, oldScheme, oldLaunch := builtLaunchArgs, builtDeepLinkScheme, builtLaunchScheme
+	t.Cleanup(func() { builtLaunchArgs, builtDeepLinkScheme, builtLaunchScheme = oldArgs, oldScheme, oldLaunch })
+	builtLaunchScheme = ""
 	builtLaunchArgs = ""
 	if args != nil {
 		b, _ := json.Marshal(args)

@@ -313,6 +313,9 @@ func New(cfg Config) *Battery {
 	if err := validateAppID(cfg.ID); err != nil {
 		panic(err.Error())
 	}
+	// An own copy, validated: a caller that edits its slice after New
+	// must not change what the gate opens.
+	cfg.OpenPrefixes = append([]string(nil), cfg.OpenPrefixes...)
 	for _, p := range cfg.OpenPrefixes {
 		if err := gatepath.Validate("desktop: Config.OpenPrefixes", p); err != nil {
 			panic(err.Error())

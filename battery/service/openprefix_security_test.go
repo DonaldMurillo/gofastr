@@ -193,3 +193,18 @@ func TestBindAddressHosts(t *testing.T) {
 		t.Fatalf("browserAddr(specific) = %q; want it unchanged", got)
 	}
 }
+
+// New keeps its own copy of the validated slices: a caller editing its
+// slice afterwards cannot open a prefix New never checked.
+func TestNewCopiesOpenPrefixes(t *testing.T) {
+	prefixes := []string{"/api"}
+	hosts := []string{"proxy.internal:8443"}
+	b := New(Config{ID: "dev.gofastr.hello", Port: 47811, OpenPrefixes: prefixes, AllowHosts: hosts})
+	if b.err != nil {
+		t.Fatal(b.err)
+	}
+	prefixes[0], hosts[0] = "/", "attacker.example:80"
+	if b.cfg.OpenPrefixes[0] != "/api" || b.cfg.AllowHosts[0] != "proxy.internal:8443" {
+		t.Fatalf("New aliased the caller's slices: %v %v", b.cfg.OpenPrefixes, b.cfg.AllowHosts)
+	}
+}

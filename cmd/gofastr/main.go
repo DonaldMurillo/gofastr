@@ -338,15 +338,16 @@ func projectDirFlag(cmd string, args []string) string {
 	if cmd != "dev" {
 		return ""
 	}
+	// The last --dir wins, as in dev's own flag parser.
+	dir := ""
 	for i, a := range args {
 		if v, ok := strings.CutPrefix(a, "--dir="); ok {
-			return v
-		}
-		if a == "--dir" && i+1 < len(args) {
-			return args[i+1]
+			dir = v
+		} else if a == "--dir" && i+1 < len(args) {
+			dir = args[i+1]
 		}
 	}
-	return ""
+	return dir
 }
 
 func desktopCommandOwnsVersionFlag(args []string, index int) bool {

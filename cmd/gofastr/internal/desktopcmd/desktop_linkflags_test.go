@@ -48,7 +48,9 @@ func TestLaunchArgsStampReachesBattery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary")
 	}
-	extra, err := extraLinkerFlags(desktopBuildFlags{launchArgs: "desktop --profile=work", ldflags: "-s"})
+	// A scheme with no builtDeepLinkScheme stamp is the macOS build's
+	// shape: only extraLinkerFlags carries it.
+	extra, err := extraLinkerFlags(desktopBuildFlags{launchArgs: "desktop --profile=work", ldflags: "-s", scheme: "notes"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,5 +80,14 @@ func TestLaunchArgsStampReachesBattery(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(out)); got != `["serve"]` {
 		t.Fatalf("explicit args = %s; want them unchanged", got)
+	}
+	run = exec.CommandContext(ctx, bin, "notes://n/1")
+	run.WaitDelay = 10 * time.Second
+	out, err = run.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != `["desktop","--profile=work","notes://n/1"]` {
+		t.Fatalf("deep-link launch = %s; want the baked args in front of the link", got)
 	}
 }

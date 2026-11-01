@@ -108,8 +108,9 @@ few lines, and link the PR or the docs page for the rest.
   them;
   `service.Config.BindAddress` serves beyond loopback
   ([service](framework/docs/content/service.md#callers-with-no-browser-openprefixes)).
-  `webhook.Subscriber.Auth` sends a bearer, API key or basic credential,
-  and each delivery records `ResponseStatus` and `ResponseBody`
+  `webhook.Subscriber.Auth` sends a bearer, API key or basic credential
+  (over `https://` only, unless `Options.AllowPlaintextAuth`), and each
+  delivery records `ResponseStatus` and `ResponseBody`
   ([webhooks](framework/docs/content/webhooks.md#authenticating-to-the-receiver)).
   `openapi.DocsHandlerWith` chooses the spec and page paths and lists
   the operations; `Spec.SetDescription` sets `info.description`.

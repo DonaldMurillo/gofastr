@@ -102,6 +102,7 @@ func TestLocalRunSkipsWildcardDeployment(t *testing.T) {
 	t.Setenv(localrun.EnvDir, "")
 	t.Setenv(localrun.EnvRuns, "")
 	t.Setenv("GOFASTR_DEV", "0") // a developer's shell must not make every run local
+	t.Setenv("GOFASTR_ENV", "development")
 	app := NewApp(WithoutDefaultMiddleware())
 	if app.isLocalRun("0.0.0.0") || app.isLocalRun("::") || app.isLocalRun("192.168.1.20") {
 		t.Fatal("a wildcard or LAN bind with no host mark must not count as a local run")

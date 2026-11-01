@@ -11,6 +11,13 @@ import (
 // with. Empty when the build set none.
 var builtLaunchArgs string
 
+// builtLaunchScheme is the --scheme of a build that also set
+// --launch-args, stamped on every platform so LaunchArgs can tell a
+// deep link handed over as an argument. It is separate from
+// builtDeepLinkScheme, which also sets the battery's default deep-link
+// contract and which macOS builds leave to Info.plist.
+var builtLaunchScheme string
+
 // LaunchArgs returns the arguments main should act on, given its own
 // (os.Args[1:]). A binary whose desktop mode is a subcommand ("myapp
 // desktop") and whose no-argument mode is a server starts that server,
@@ -62,7 +69,14 @@ func decodeLaunchArgs(s string) []string {
 }
 
 // isBuiltSchemeLink reports whether a is a URL on the build's embedded
-// deep-link scheme.
+// deep-link scheme (builtDeepLinkScheme, or builtLaunchScheme on a
+// build that stamped only that).
 func isBuiltSchemeLink(a string) bool {
-	return builtDeepLinkScheme != "" && strings.HasPrefix(strings.ToLower(a), builtDeepLinkScheme+":")
+	low := strings.ToLower(a)
+	for _, s := range []string{builtDeepLinkScheme, builtLaunchScheme} {
+		if s != "" && strings.HasPrefix(low, s+":") {
+			return true
+		}
+	}
+	return false
 }
