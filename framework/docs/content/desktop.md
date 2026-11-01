@@ -264,7 +264,9 @@ d := desktop.New(desktop.Config{ID: "dev.gofastr.notes", OpenPrefixes: []string{
 ```
 
 A path under an open prefix skips only the cookie check. The `Host`
-pin stays, a cross-site write gets 403, and a request without the
+pin stays, a forged cross-site write (a form-shaped request with no
+CORS preflight) gets 403, a preflighted cross-origin JSON call is left
+to CORS and the app's auth, and a request without the
 cookie reaches the app with no user: the local identity goes only on
 the window's requests, so the window's own `fetch("/api/...")` is still
 the local user. The window keeps its JS bridge, because it never leaves

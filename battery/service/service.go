@@ -62,8 +62,9 @@ type Config struct {
 	// OpenPrefixes lists path prefixes ("/api") the session gate lets
 	// through without a browser session, for a client with no browser
 	// that the app authenticates itself (an API key, a bearer token,
-	// battery/auth). The Host check and the cross-site refusal for
-	// writes still apply to them, and a request that does carry a
+	// battery/auth). The Host check still applies to them, and so does
+	// the refusal of a forged cross-site write (a cross-origin JSON call
+	// is preflighted, so CORS decides it), and a request that does carry a
 	// session is still signed in as the local user. Everything else
 	// stays gated. Each entry is an absolute path of plain segments;
 	// "/" and anything under /__gofastr/ are refused, and the match is
@@ -331,11 +332,12 @@ func isLoopbackIP(s string) bool {
 
 // extraHosts is AllowHosts plus the specific BindAddress at port: a
 // caller that reaches the app on that interface's address sends it as
-// Host. An unspecified BindAddress (0.0.0.0, ::) adds nothing: the
+// Host. A loopback address other than 127.0.0.1 (::1, 127.0.0.2) is
+// pinned the same way: `open` hands the browser the address as bound. An unspecified BindAddress (0.0.0.0, ::) adds nothing: the
 // address a caller uses is not knowable here, so it goes in AllowHosts.
 func (b *Battery) extraHosts(port int) []string {
 	hosts := append([]string(nil), b.cfg.AllowHosts...)
-	if ip, err := netip.ParseAddr(b.cfg.BindAddress); err == nil && !ip.IsUnspecified() && !ip.IsLoopback() {
+	if ip, err := netip.ParseAddr(b.cfg.BindAddress); err == nil && !ip.IsUnspecified() {
 		hosts = append(hosts, net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 	}
 	return hosts

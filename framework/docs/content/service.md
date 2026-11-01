@@ -210,7 +210,11 @@ svc := service.New(service.Config{
 ```
 
 A path under an open prefix skips only the session check. The Host
-check and the cross-site refusal still apply. A request that carries a
+check still applies, and so does the cross-site refusal for a forged
+write: a form-shaped request another site's page could send without a
+CORS preflight. A browser client on another origin that sends JSON is
+preflighted, so `middleware.CORS` and the app's auth decide it. The
+answer carries `Cache-Control: no-store`. A request that carries a
 session is still signed in as the local user, so the app's own pages
 keep calling `/api` as before; one without a session reaches the app
 with no user. Everything else stays behind the sign-in.
@@ -240,7 +244,8 @@ svc := service.New(service.Config{
 
 The Host check stays on, so DNS rebinding stays blocked. Host must name
 `127.0.0.1`, `localhost`, a specific `BindAddress`, or an `AllowHosts`
-entry. A wildcard bind adds no Host value, because the name a caller
+entry (a loopback address such as `::1` is pinned too). A wildcard bind
+adds no Host value, because the name a caller
 uses is not knowable, so list it in `AllowHosts`. The browser session
 still comes only from `service open` on this machine, which opens
 `127.0.0.1` for a wildcard bind. Pair `BindAddress` with `OpenPrefixes`

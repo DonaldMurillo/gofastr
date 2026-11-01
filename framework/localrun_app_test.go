@@ -114,6 +114,20 @@ func TestLocalRunSkipsWildcardDeployment(t *testing.T) {
 	}
 }
 
+// The same decision through Start: a wildcard bind with nothing marking
+// it local writes no record, though the registry directory is set (it
+// says where, not whether).
+func TestLocalRunWildcardStartWritesNothing(t *testing.T) {
+	t.Setenv(localrun.EnvDir, t.TempDir())
+	t.Setenv(localrun.EnvRuns, "")
+	app := NewApp(WithoutDefaultMiddleware())
+	_, stop := serveForRecord(t, app, ":0")
+	defer stop()
+	if recs, _ := localrun.List(); len(recs) != 0 {
+		t.Fatalf("a wildcard deployment registered: %+v", recs)
+	}
+}
+
 // GOFASTR_RUNS=on registers a wildcard bind too.
 func TestLocalRunForcedOn(t *testing.T) {
 	dir := t.TempDir()

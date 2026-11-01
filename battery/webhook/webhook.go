@@ -60,7 +60,11 @@ type Subscriber struct {
 	Created time.Time
 	// Auth is the credential each delivery sends to the receiver
 	// (bearer, API key, basic); the zero value sends none. Sealed at
-	// rest with Secret's codec. See Auth.
+	// rest with Secret's codec. See Auth. Subscribe replaces the whole
+	// subscriber, so re-subscribing an ID with a zero Auth clears the
+	// stored credential: read the subscriber first to change one field.
+	// A Store of your own must persist Auth, or deliveries go out
+	// without it.
 	Auth Auth
 }
 
@@ -293,7 +297,7 @@ type Options struct {
 	// stored with the delivery, so a receiver that echoes the payload
 	// or a secret back puts it in the store: size this to what an
 	// error message needs.
-	ResponseBodyLimit int
+	ResponseBodyLimit int64
 
 	// Retention, when positive, turns on the manager's terminal-row
 	// sweep: every tick reaps successful deliveries — and processed
@@ -859,9 +863,16 @@ func refuseRedirect(*http.Request, []*http.Request) error { return http.ErrUseLa
 
 // credentialClient is the client a delivery carrying Subscriber.Auth
 // uses: never one that follows a redirect.
+//
+// New builds it. A Manager made some other way gets one derived from
+// its HTTPClient, and a bounded default client when that is nil too,
+// never a nil dereference on the worker.
 func (m *Manager) credentialClient() *http.Client {
 	if m.credClient != nil {
 		return m.credClient
+	}
+	if m.opts.HTTPClient == nil {
+		return &http.Client{Timeout: 10 * time.Second, CheckRedirect: refuseRedirect}
 	}
 	c := *m.opts.HTTPClient
 	c.CheckRedirect = refuseRedirect
@@ -876,7 +887,7 @@ func (m *Manager) readResponse(body io.Reader) string {
 	if total > 0 {
 		body = io.LimitReader(body, total)
 	}
-	keep := int64(m.opts.ResponseBodyLimit)
+	keep := m.opts.ResponseBodyLimit
 	if total > 0 && keep > total {
 		keep = total
 	}

@@ -257,12 +257,18 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			login.ServeHTTP(w, r)
 			return
 		}
-		if !safeMethod(r.Method) && handler.IsCrossSiteRequest(r) {
+		// An open path refuses only a FORGED cross-site write (a form-shaped
+		// body another site's page could send without a preflight): a
+		// browser client on another origin sending JSON is preflighted, so
+		// CORS decides it, and the app's own auth does the rest. Gated
+		// paths keep the strict check.
+		if open && handler.IsForgedCrossSiteWrite(r) || !open && !safeMethod(r.Method) && handler.IsCrossSiteRequest(r) {
 			i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
 			return
 		}
 		signed := g.hasSession(r)
 		if open && !signed {
+			w.Header().Set("Cache-Control", "no-store")
 			next.ServeHTTP(w, r)
 			return
 		}

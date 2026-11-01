@@ -38,6 +38,10 @@ func hasInterp(t *testing.T, tags string) bool {
 	return false
 }
 
+// The builds compile the platform shells and their internal packages.
+//
+//gofastr:test-reads battery/desktop/
+
 // #635: linking battery/desktop made a CGO_ENABLED=0 Linux binary
 // dynamic. The gofastr_nodesktop tag keeps it static. The untagged
 // build is checked too, so the test cannot pass by failing to see an

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 func docsSpec() *Spec {
@@ -132,5 +133,44 @@ func TestDocsHandlerWithRefusesBadPaths(t *testing.T) {
 			}()
 			DocsHandlerWith(NewSpec("t", "1"), cfg)
 		}()
+	}
+}
+
+// "/docs/" is the same mount as "/docs": the slash must not send the
+// page or the spec outside it.
+func TestDocsHandlerWithTrailingSlashBasePath(t *testing.T) {
+	h := DocsHandlerWith(docsSpec(), DocsConfig{BasePath: "/docs/", Public: true})
+	for _, p := range []string{"/docs/", "/docs", "/docs/openapi.json"} {
+		if rec := serveDocs(h, p, false); rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d (Location %q); want 200", p, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+}
+
+// Unknown paths and methods answer through i18n like the framework's
+// other refusals, not with net/http's fixed English text: under a French
+// catalog the body is French.
+func TestDocsHandlerWithRefusalsAreI18n(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", i18n.StatusPhrase(http.StatusNotFound).Key(), i18n.Message{Text: "introuvable"})
+	cat.Set("fr", i18n.StatusPhrase(http.StatusMethodNotAllowed).Key(), i18n.Message{Text: "méthode refusée"})
+	fr := func(r *http.Request) *http.Request {
+		ctx := i18n.WithTranslator(i18n.WithContext(r.Context(), i18n.Locale{Tag: "fr"}), i18n.NewTranslator(cat, "en"))
+		return r.WithContext(ctx)
+	}
+	h := DocsHandlerWith(docsSpec(), DocsConfig{BasePath: "/docs", Public: true})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, fr(httptest.NewRequest(http.MethodGet, "/docs/nope", nil)))
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "introuvable") {
+		t.Fatalf("unknown path = %d %q; want the translated 404", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, fr(httptest.NewRequest(http.MethodPost, "/docs/openapi.json", nil)))
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" || !strings.Contains(rec.Body.String(), "méthode refusée") {
+		t.Fatalf("POST = %d %q allow=%q; want the translated 405 with Allow", rec.Code, rec.Body.String(), rec.Header().Get("Allow"))
+	}
+	if rec := serveDocs(h, "/docs/openapi.json", false); rec.Code != http.StatusOK {
+		t.Fatalf("spec = %d", rec.Code)
 	}
 }

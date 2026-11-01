@@ -33,7 +33,8 @@ var (
 type DocsConfig struct {
 	// BasePath is where the handler is mounted ("/api/docs",
 	// "/swagger"); the handler strips it before matching SpecPath and
-	// PagePath. Mount the handler on BasePath and everything below it.
+	// PagePath. A trailing slash is dropped. Mount the handler on
+	// BasePath and everything below it; any other path below it is 404.
 	BasePath string
 	// SpecPath is where the OpenAPI JSON is served, under BasePath.
 	// Empty means "/openapi.json". "/v1/swagger.json" under BasePath
@@ -69,6 +70,11 @@ const docsCSP = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-
 // browser's own styles. It panics on a SpecPath or PagePath that is not
 // an absolute clean path of plain segments, and on the two colliding.
 func DocsHandlerWith(spec *Spec, cfg DocsConfig) http.Handler {
+	// "/docs/" and "/docs" name the same mount; with the slash kept,
+	// StripPrefix would leave "" for "/docs/" and miss "/docs/openapi.json".
+	if len(cfg.BasePath) > 1 && strings.HasPrefix(cfg.BasePath, "/") {
+		cfg.BasePath = strings.TrimRight(cfg.BasePath, "/")
+	}
 	if cfg.SpecPath == "" {
 		cfg.SpecPath = "/openapi.json"
 	}
@@ -116,13 +122,28 @@ func DocsHandlerWith(spec *Spec, cfg DocsConfig) http.Handler {
 		_, _ = w.Write([]byte(renderDocsPage(r.Context(), view, specHref, specText)))
 	})
 
-	mux := http.NewServeMux()
-	mux.Handle("GET "+cfg.SpecPath, specHandler)
-	mux.Handle("GET /{$}", page)
-	if cfg.PagePath != "" {
-		mux.Handle("GET "+cfg.PagePath, page)
-	}
-	return http.StripPrefix(cfg.BasePath, mux)
+	// Routing is by exact path, so an unknown path or method answers
+	// through i18n like every other framework refusal, not with the
+	// standard library's English 404/405.
+	route := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var h http.Handler
+		switch p := r.URL.Path; {
+		case p == "" || p == "/" || (cfg.PagePath != "" && p == cfg.PagePath):
+			h = page
+		case p == cfg.SpecPath:
+			h = specHandler
+		default:
+			i18n.HTTPError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+	return http.StripPrefix(cfg.BasePath, route)
 }
 
 // docsRow is one operation on the page.

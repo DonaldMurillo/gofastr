@@ -226,8 +226,9 @@ A browser client that sends headers you do not list one by one
 `AllowAnyHeader: true` to answer an allowed origin's preflight with the
 headers it asked for (`Access-Control-Request-Headers`), and
 `AllowAnyMethod: true` to do the same for the method. Only well-formed
-names are echoed, at most 64 of them, with `Vary` set for each echoed
-request header. A rejected origin still gets no `Access-Control-Allow-*`
+names are echoed, at most 64 of them. While either option is on, every
+answer to an allowed origin adds `Vary: Access-Control-Request-Headers`
+or `Vary: Access-Control-Request-Method`. A rejected origin still gets no `Access-Control-Allow-*`
 header and a 403 preflight. An `OPTIONS` request with no `Origin` or no
 `Access-Control-Request-Method` is not a preflight and reaches your
 router.

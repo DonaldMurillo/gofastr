@@ -120,7 +120,9 @@ func (b *Battery) gateMiddleware() func(next http.Handler) http.Handler {
 			// An open path (Config.OpenPrefixes) skips the session, never
 			// the Host pin above or the cross-site refusal here.
 			if b.openPath(r) {
-				if !safeMethod(r.Method) && handler.IsCrossSiteRequest(r) {
+				// Only a forged write is refused: a cross-origin JSON call is
+				// preflighted, so CORS and the app's own auth decide it.
+				if handler.IsForgedCrossSiteWrite(r) {
 					i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
 					return
 				}
@@ -171,10 +173,6 @@ func (b *Battery) requestHasSession(r *http.Request) bool {
 // openPath reports whether r is under Config.OpenPrefixes.
 func (b *Battery) openPath(r *http.Request) bool {
 	return gatepath.Open(r, b.cfg.OpenPrefixes)
-}
-
-func safeMethod(m string) bool {
-	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }
 
 // setHostPin pins the gate to the listener-reported address. Called by

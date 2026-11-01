@@ -270,3 +270,14 @@ func TestSQLStoreUpgradesOldTables(t *testing.T) {
 		t.Fatalf("delivery read back %+v, %v; want status 503 and body busy", ds, err)
 	}
 }
+
+// A Manager not built by New still gets a client that refuses
+// redirects, never a nil dereference on the worker.
+func TestCredentialClientWithoutNew(t *testing.T) {
+	for _, m := range []*Manager{{}, {opts: Options{HTTPClient: &http.Client{}}}} {
+		c := m.credentialClient()
+		if c == nil || c.CheckRedirect == nil {
+			t.Fatalf("credentialClient = %+v; want a client that refuses redirects", c)
+		}
+	}
+}

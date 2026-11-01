@@ -109,15 +109,17 @@ A server bound to every interface (`:8080`, `0.0.0.0`) or to a LAN
 address is a deployment, such as a container or a VM. It writes
 nothing, because no local tool reads its record and its home directory
 is often missing or read-only. `GOFASTR_RUNS=on` (also `1`, `true`,
-`yes`), or setting `GOFASTR_RUNS_DIR`, registers any run.
+`yes`) registers any run. `GOFASTR_RUNS_DIR` only says where the
+registry is.
 
 ## Opting out
 
 `GOFASTR_RUNS=off` (also `0`, `false`, `no`) keeps a process out of the
 registry; listing still works. A failure to write is logged and the app
 serves anyway: at debug level for a run that registered on its own, as
-a warning naming the opt-out when `GOFASTR_RUNS=on` or
-`GOFASTR_RUNS_DIR` asked for it.
+a warning naming the opt-out when `GOFASTR_RUNS=on` asked for it. In Go
+the variable's name is `localrun.EnvRuns` (`localrun.EnvOff` is the
+same constant under its older name).
 
 Test binaries never register unless `GOFASTR_RUNS_DIR` is set, so a
 test that starts an App does not write into the real registry. Neither

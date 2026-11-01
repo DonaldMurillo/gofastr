@@ -78,7 +78,11 @@ key to whatever host it names. The 3xx is recorded as a failed
 attempt.
 
 The `SQLStore` seals `Auth` with the same codec as `Secret` (see
-[Secret encryption at rest](#secret-encryption-at-rest)).
+[Secret encryption at rest](#secret-encryption-at-rest)). `Subscribe`
+replaces the whole subscriber, so re-subscribing an ID with a zero
+`Auth` clears its credential; read the subscriber first when you change
+only its URL. A `Store` of your own must persist `Auth`, or deliveries
+go out without it.
 
 `Publish` returns the number of subscribers the event was queued for.
 The actual HTTP POST happens on the manager's worker goroutine.

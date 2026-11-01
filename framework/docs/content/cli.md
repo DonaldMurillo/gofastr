@@ -97,7 +97,8 @@ with `go mod tidy` from that project directory.
 
 ### When the CLI and the project disagree
 
-Every command but `init`, `version`, `docs` and `upgrade` compares the
+Every command that works on a project (all but `init`, `version`,
+`docs` and `upgrade`; never `--help` or a mistyped command) compares the
 GoFastr version the project's `go.mod` requires with the CLI's own
 release. When they differ it prints a warning on stderr with the
 `go install .../cmd/gofastr@<version>` line that fixes it, then runs the

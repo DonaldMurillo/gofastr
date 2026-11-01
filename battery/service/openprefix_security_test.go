@@ -85,6 +85,38 @@ func TestOpenPrefixKeepsCrossSiteRefusal(t *testing.T) {
 	}
 }
 
+// A browser client on another origin sends JSON, which the browser
+// preflights; CORS and the app's own auth decide it, so an open path lets
+// it through. The same call to a gated path is still refused.
+func TestOpenPrefixLetsPreflightedCrossOriginWritesThrough(t *testing.T) {
+	g := newOpenGate(t)
+	r := request(http.MethodPost, gateHost, "/api/things", "")
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	if code, _ := serveWho(g, r); code != http.StatusOK {
+		t.Fatalf("cross-site JSON POST to an open path = %d; want 200", code)
+	}
+	c := signIn(t, g)
+	r = request(http.MethodPost, gateHost, "/admin", "")
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	r.AddCookie(c)
+	if code, _ := serveWho(g, r); code != http.StatusForbidden {
+		t.Fatalf("cross-site JSON POST to a gated path = %d; want 403", code)
+	}
+}
+
+// An open path's answer to a caller with no session is not cacheable,
+// like every other answer the gate lets through.
+func TestOpenPrefixAnswerIsNoStore(t *testing.T) {
+	g := newOpenGate(t)
+	rec := httptest.NewRecorder()
+	g.wrap(whoApp).ServeHTTP(rec, request(http.MethodGet, gateHost, "/api/things", ""))
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q; want no-store", got)
+	}
+}
+
 // A signed-in browser calling the open path is still the local user,
 // so the app's own UI keeps working through /api.
 func TestOpenPrefixSignedInStaysSignedIn(t *testing.T) {
@@ -120,6 +152,10 @@ func TestBindAddressHosts(t *testing.T) {
 		if !want[h] {
 			t.Fatalf("extraHosts = %v; want %v", got, want)
 		}
+	}
+	v6 := &Battery{cfg: Config{BindAddress: "::1"}}
+	if got := v6.extraHosts(47811); len(got) != 1 || got[0] != "[::1]:47811" {
+		t.Fatalf("a ::1 bind pins %v; want [::1]:47811, the address open hands the browser", got)
 	}
 	if !b.boundHostOK("192.168.1.20") || b.boundHostOK("127.0.0.1") {
 		t.Fatal("boundHostOK must accept exactly the configured address")

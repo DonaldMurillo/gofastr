@@ -41,8 +41,10 @@ func NewSpec(title, version string) *Spec {
 	}
 }
 
-// SetDescription sets info.description: what the API is for, in
-// CommonMark (OpenAPI 3.1). An empty string removes it.
+// SetDescription sets info.description: what the API is for. OpenAPI
+// 3.1 reads it as CommonMark; DocsHandler's page shows it as plain text,
+// one paragraph per blank-line-separated block. An empty string removes
+// it.
 func (s *Spec) SetDescription(description string) {
 	if description == "" {
 		delete(s.info, "description")

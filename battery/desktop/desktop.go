@@ -175,8 +175,8 @@ type Config struct {
 	// with no window (a CLI, a script, an editor plugin) that the app
 	// authenticates itself: an API key, a bearer token, battery/auth.
 	// The Host pin stays (Host must name the app's own loopback
-	// address, so DNS rebinding stays blocked), a cross-site write is
-	// refused, and a request with no session reaches the app with no
+	// address, so DNS rebinding stays blocked), a forged cross-site
+	// write is refused (a preflighted JSON call is left to CORS), and a request with no session reaches the app with no
 	// user: the local identity is only put on the window's requests.
 	// The listener stays on 127.0.0.1. Each entry is an absolute path
 	// of plain segments; New panics on "/", on anything under

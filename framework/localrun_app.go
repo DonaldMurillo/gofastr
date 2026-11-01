@@ -91,7 +91,7 @@ func (a *App) registerLocalRun(bound string) func() {
 			log = a.Logger().Warn
 		}
 		log("local run registry: record not written", "error", err.Error(),
-			"opt_out", localrun.EnvOff+"=off")
+			"opt_out", localrun.EnvRuns+"=off")
 		return func() {}
 	}
 	a.Logger().Debug("local run registry: recorded", "url", rec.URL)

@@ -101,6 +101,31 @@ few lines, and link the PR or the docs page for the rest.
   battery-plane table in
   [data export](framework/docs/content/data-export.md) lists every store
   and how it is erased.
+- **Gaps from building on v0.95.0 (#635).**
+  `service.Config.OpenPrefixes` and `desktop.Config.OpenPrefixes` let a
+  client with no browser reach paths the app authenticates itself;
+  `service.Config.BindAddress` serves beyond loopback
+  ([service](framework/docs/content/service.md#callers-with-no-browser-openprefixes)).
+  `webhook.Subscriber.Auth` sends a bearer, API key or basic credential,
+  and each delivery records `ResponseStatus` and `ResponseBody`
+  ([webhooks](framework/docs/content/webhooks.md#authenticating-to-the-receiver)).
+  `openapi.DocsHandlerWith` chooses the spec and page paths and lists
+  the operations; `Spec.SetDescription` sets `info.description`.
+  `CORSConfig.AllowAnyHeader`/`AllowAnyMethod`, `handler.RefuseCrossSite`,
+  `desktop.LaunchArgs` with `gofastr desktop build --launch-args` and
+  `--ldflags`, and the `gofastr_nodesktop` build tag for a static server
+  image. The CLI warns when `go.mod` requires another GoFastr release
+  (`GOFASTR_NO_VERSION_CHECK=1` silences it).
+
+### Changed
+- **Local run registry registers local runs only (#635).** A server
+  bound to every interface or a LAN address, with no `gofastr dev` and
+  no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
+  registering it; `GOFASTR_RUNS_DIR` only says where the registry is.
+- **API docs page (#635).** `/api/docs/` lists the operations, ships no
+  inline CSS, and answers 404 under its mount except at the page and
+  spec paths. The webhook SQL tables gain `auth`, `response_status`
+  and `response_body`, added when the store opens.
 
 
 ### Fixed

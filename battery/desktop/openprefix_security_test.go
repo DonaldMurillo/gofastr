@@ -93,7 +93,12 @@ func TestDesktopOpenPrefixRefusesCrossSiteWrite(t *testing.T) {
 	_, srv := serveOpen(t)
 	code, _ := openDo(t, http.MethodPost, srv.URL+"/api/things", "", "", map[string]string{"Sec-Fetch-Site": "cross-site"})
 	if code != http.StatusForbidden {
-		t.Fatalf("cross-site POST to an open path = %d; want 403", code)
+		t.Fatalf("cross-site bodyless POST to an open path = %d; want 403", code)
+	}
+	// A preflighted cross-origin JSON call is CORS's to decide.
+	code, _ = openDo(t, http.MethodPost, srv.URL+"/api/things", "", "", map[string]string{"Sec-Fetch-Site": "cross-site", "Content-Type": "application/json"})
+	if code != http.StatusOK {
+		t.Fatalf("cross-site JSON POST to an open path = %d; want 200", code)
 	}
 }
 
