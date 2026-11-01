@@ -1458,24 +1458,27 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	})
 }
 
-// scrubCtl percent-encodes C0 control bytes (except tab) and DEL in a
+// scrubCtl percent-encodes every C0 control byte and DEL in a
 // Location header value built from request-derived paths. It is the
-// header scrub, and its two deliberate pass-throughs hold there:
+// header scrub, and its one deliberate pass-through holds there:
 // net/http's http.Redirect hex-escapes every non-ASCII byte in the
 // Location value it writes, so C1 and the bidi set cannot reach the
 // wire raw downstream of these emit sites (the gap it closes is
-// exactly the C0/DEL that hexEscapeNonASCII leaves alone), and HTAB
-// is a legal header-value byte. The log sink is NOT this scrub's
-// customer: slog leaves C1/bidi runes raw, so log fields
-// use textsafe.ScrubControlBytes instead.
+// exactly the C0/DEL that hexEscapeNonASCII leaves alone). Tab is
+// encoded too, although HTAB is a legal header-value byte: the WHATWG
+// URL parser deletes tab, CR and LF from a Location before parsing it,
+// so a raw "/\t/evil.example" is the protocol-relative "//evil.example"
+// in the browser, while "/%09/evil.example" stays a same-origin path.
+// The log sink is NOT this scrub's customer: slog leaves C1/bidi runes
+// raw, so log fields use textsafe.ScrubControlBytes instead.
 func scrubCtl(s string) string {
 	for i := range len(s) {
-		if c := s[i]; c < 0x20 && c != '\t' || c == 0x7f {
+		if c := s[i]; c < 0x20 || c == 0x7f {
 			var b strings.Builder
 			b.Grow(len(s))
 			for j := range len(s) {
 				d := s[j]
-				if d < 0x20 && d != '\t' || d == 0x7f {
+				if d < 0x20 || d == 0x7f {
 					fmt.Fprintf(&b, "%%%02x", d)
 					continue
 				}
@@ -1578,7 +1581,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// raw C0/DEL bytes pass through into the Location header verbatim,
 	// where they forge log lines and header values downstream. Percent-
 	// encode them, the same contract sanitizeHeaderValue pins elsewhere.
-	if target, ok := ds.App.ResolveRedirect(path); ok {
+	// handler.IsSafeRelativePath is the same gate the navigation arm
+	// applies: a target that is not a same-origin relative path (a tab
+	// a browser deletes in front of "/evil.example", a "//host") is no
+	// redirect at all, and the request falls through to the router.
+	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
 		http.Redirect(w, r, scrubCtl(target), http.StatusPermanentRedirect)
 		return
 	}
