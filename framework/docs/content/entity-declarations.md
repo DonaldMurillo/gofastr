@@ -191,7 +191,10 @@ column to null on update, and a blank required field fails with
 `File` on update keeps the stored file, since a file input cannot
 carry it back. An upsert reads a blank as a create does when no row
 holds the key and as an update does when one does. A blank in a key
-column is never dropped, so an `Int` key part still refuses it. Empty
+column is never dropped, so an `Int` key part still refuses it, and a
+`""` in any caller-chosen key column, a one-column key included, is
+refused with `400` (`is required`): no route could name that row again.
+Empty
 text stays an
 empty string, since that is a value a user can mean. A filled number
 input arrives as text too: an `Int` field takes `"42"` and a `Float`
