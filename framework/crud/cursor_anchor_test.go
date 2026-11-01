@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -165,6 +166,72 @@ func TestCursorRefusesKeyPastCap(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "cursor_key_too_long") {
 		t.Fatalf("got %d %.300s, want reason cursor_key_too_long", rec.Code, rec.Body.String())
+	}
+}
+
+// A cursor v0.95.0 minted carried the values of its cursor fields: the
+// one CursorField alone, CursorFields plus the key columns they left out,
+// or the key. Today's cursor carries the key, and the order is the cursor
+// fields plus the key. A released token the decoder accepts must name the
+// same columns in the same order as the new keyset, or it would resume
+// under a different meaning; every other one is refused once (round 3
+// review of D33).
+func TestReleasedCursorKeepsItsMeaning(t *testing.T) {
+	released := func(p entity.PaginationConfig, keys []string) []string {
+		switch {
+		case len(p.CursorFields) > 0:
+			out := slices.Clone(p.CursorFields)
+			for _, k := range keys {
+				if !slices.Contains(out, k) {
+					out = append(out, k)
+				}
+			}
+			return out
+		case p.CursorField != "":
+			return []string{p.CursorField}
+		}
+		return keys
+	}
+	var accepted, refused int
+	for _, key := range [][]string{{"id"}, {"a", "b"}} {
+		for _, p := range []entity.PaginationConfig{
+			{}, {CursorField: "id"}, {CursorField: "a"}, {CursorField: "body"},
+			{CursorFields: []string{"body"}}, {CursorFields: []string{"body", "id"}},
+			{CursorFields: []string{"id"}}, {CursorFields: []string{"a"}},
+			{CursorFields: []string{"b", "a"}}, {CursorFields: []string{"body", "a"}},
+		} {
+			ent := entity.Define("rel", entity.EntityConfig{
+				Name: "rel", Table: "rel", PrimaryKey: key,
+				Fields: []schema.Field{
+					{Name: "id", Type: schema.String, Required: true},
+					{Name: "a", Type: schema.String, Required: true},
+					{Name: "b", Type: schema.String, Required: true},
+					{Name: "body", Type: schema.String, Required: true},
+				},
+				Pagination: &p,
+			}.WithTimestamps(false))
+			ch := NewCrudHandler(ent, nil)
+			old := released(p, ch.keyCols())
+			token := pagination.EncodeCursor(old[0], "v")
+			if len(old) > 1 {
+				row := map[string]any{}
+				for _, f := range old {
+					row[f] = "v"
+				}
+				token = pagination.EncodeMultiCursor(old, row)
+			}
+			if _, err := decodeCursorAny(token, ch.keyCols()); err != nil {
+				refused++
+				continue
+			}
+			accepted++
+			if !slices.Equal(old, ch.cursorFields()) {
+				t.Errorf("key %v, %+v: released cursor on %v accepted under the order %v", key, p, old, ch.cursorFields())
+			}
+		}
+	}
+	if accepted == 0 || refused == 0 {
+		t.Fatalf("accepted %d, refused %d: the cases no longer cover both outcomes", accepted, refused)
 	}
 }
 
