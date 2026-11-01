@@ -86,6 +86,18 @@ func TestPIIEmptyAccessStillFlagged(t *testing.T) {
 	}
 }
 
+// anyone opens an operation to every caller, so an access: map holding
+// only anyone (the contact-form shape: create: anyone, read blank) gates
+// nothing and anonymous callers list every email.
+func TestPIIAnyoneAccessStillFlagged(t *testing.T) {
+	decl := piiEntity("subscribers", "email")
+	decl.Exposure.Access = &fwentity.AccessDeclaration{Create: fwentity.Anyone}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
+	if got := LintUnscopedPII(bp); len(got) != 1 {
+		t.Fatalf("an anyone-only access map should not suppress: %+v", got)
+	}
+}
+
 // The examples/blog case: auth enabled, users entity with email, no
 // scoping. Auth only mounts pass-through SessionMiddleware: anonymous
 // requests still reach auto-CRUD/MCP, so it must NOT suppress the rule.
