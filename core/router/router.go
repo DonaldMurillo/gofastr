@@ -658,37 +658,90 @@ func checkHostPrefix(prefix string) {
 		"without it ServeMux reads %q as a host name and the routes never match a path", prefix, "/"+prefix, host))
 }
 
-// fallbackFor picks the handler a miss runs: the one set on the group
-// with the longest prefix that covers the request path (a group the
+// fallbackFor picks the handler a miss runs: the one set on the most
+// specific group that covers the request (moreSpecific: a group the
 // root serves for), else the nearest one up r's own parent chain. pick
-// reads the handler a router set for itself (nil for none).
-func (r *Router) fallbackFor(req *http.Request, pick func(*Router) http.Handler) http.Handler {
+// reads the handler a router set for itself (nil for none). below, when
+// set, limits the groups to those less specific than it: a group's
+// WrapNotFound delegates there, so a chain of them always ends.
+func (r *Router) fallbackFor(req *http.Request, pick func(*Router) http.Handler, below *Router) http.Handler {
 	root := r.root
 	root.mu.RLock()
 	groups := slices.Clone(root.fallbackGroups)
 	root.mu.RUnlock()
-	var best *Router
+	belowAt := slices.Index(groups, below)
+	if below != nil && belowAt < 0 {
+		groups = nil // not registered yet: only the parent chain is safe
+	}
+	bestAt := -1
 	var bestH http.Handler
-	for _, g := range groups {
-		if best != nil && len(g.prefix) <= len(best.prefix) {
+	for i, g := range groups {
+		if below != nil && (g == below || !moreSpecific(groups, belowAt, i)) {
+			continue
+		}
+		if bestAt >= 0 && !moreSpecific(groups, i, bestAt) {
 			continue
 		}
 		if !g.servedBy(r) || !prefixCovers(g.prefix, req) {
 			continue
 		}
 		if h := pick(g); h != nil {
-			best, bestH = g, h
+			bestAt, bestH = i, h
 		}
 	}
-	if best != nil {
+	if bestAt >= 0 {
 		return bestH
 	}
 	for cur := r; cur != nil; cur = cur.parent {
+		if cur == below {
+			continue
+		}
 		if h := pick(cur); h != nil {
 			return h
 		}
 	}
 	return nil
+}
+
+// moreSpecific reports whether groups[a] outranks groups[b] for a miss
+// both cover, the way the mux ranks patterns: a host group first, then
+// the longer path, then, left to right, a literal segment over a
+// wildcard. Registration order breaks a tie, so the order is total.
+func moreSpecific(groups []*Router, a, b int) bool {
+	if b < 0 {
+		return true
+	}
+	ha, pa := splitGroupPrefix(groups[a].prefix)
+	hb, pb := splitGroupPrefix(groups[b].prefix)
+	if (ha != "") != (hb != "") {
+		return ha != ""
+	}
+	if len(pa) != len(pb) {
+		return len(pa) > len(pb)
+	}
+	for i := range pa {
+		wa, wb := strings.HasPrefix(pa[i], "{"), strings.HasPrefix(pb[i], "{")
+		if wa != wb {
+			return !wa
+		}
+	}
+	return a < b
+}
+
+// splitGroupPrefix splits a Group prefix into its host ("" for none)
+// and its non-empty path segments.
+func splitGroupPrefix(prefix string) (string, []string) {
+	host := ""
+	if prefix != "" && prefix[0] != '/' {
+		host, prefix, _ = strings.Cut(prefix, "/")
+	}
+	var segs []string
+	for seg := range strings.SplitSeq(prefix, "/") {
+		if seg != "" {
+			segs = append(segs, seg)
+		}
+	}
+	return host, segs
 }
 
 // servedBy reports whether g is r or a Group under it, so serving a
@@ -769,7 +822,6 @@ func (r *Router) registerFallback() {
 	root.mu.Unlock()
 }
 
-
 // NotFound sets a custom handler for 404 (Not Found) responses.
 // The router's middleware chain wraps the handler at request time, so 404
 // responses go through the same recovery, logging, security headers, etc.
@@ -811,31 +863,45 @@ func (r *Router) NotFound(handler http.Handler) {
 // wrapper adds behavior without doubling logging, request IDs, or headers.
 //
 // Call after the mounts that install a NotFound handler (e.g. after a UI
-// host's Mount), so next is the handler being delegated to.
+// host's Mount), so next is the handler being delegated to. On a Group
+// with no NotFound of its own, next is resolved per request instead: the
+// next less specific group covering the miss, else the root's handler,
+// whenever it was set.
 func (r *Router) WrapNotFound(mw func(next http.Handler) http.Handler) {
-	// On a Group with no NotFound of its own, next is the one it would
-	// otherwise inherit: the nearest set up its parent chain.
-	var prev http.Handler
-	for cur := r.parent; cur != nil && prev == nil; cur = cur.parent {
-		prev = ownNotFound(cur)
-	}
 	r.mu.Lock()
+	prev := r.notFound
 	var next http.Handler = http.NotFoundHandler()
-	if r.notFound != nil {
-		prev = r.notFound
-	}
-	// NotFound stores its handler wrapped in a cachedRoute; unwrap to the
-	// raw one so delegation does not re-run the middleware chain.
-	if cr, ok := prev.(*cachedRoute); ok {
-		next = cr.raw
-	} else if prev != nil {
-		next = prev
+	switch {
+	case prev != nil:
+		// NotFound stores its handler wrapped in a cachedRoute; unwrap to
+		// the raw one so delegation does not re-run the middleware chain.
+		if cr, ok := prev.(*cachedRoute); ok {
+			next = cr.raw
+		} else {
+			next = prev
+		}
+	case r.parent != nil:
+		// A Group with no NotFound of its own delegates to the handler a
+		// miss here would otherwise get, resolved per request: the next
+		// less specific group that covers it (a sibling Group("/api")
+		// for Group("/api/v2")), else the root's, including one the root
+		// sets after this call (a UI host Mount).
+		g := r
+		next = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			h := g.root.fallbackFor(req, ownNotFound, g)
+			if cr, ok := h.(*cachedRoute); ok {
+				h = cr.raw
+			}
+			if h == nil {
+				h = http.NotFoundHandler()
+			}
+			h.ServeHTTP(w, req)
+		})
 	}
 	r.notFound = newCachedRoute(mw(next), r, "", "")
 	r.mu.Unlock()
 	r.registerFallback()
 }
-
 
 // MethodNotAllowed sets a custom handler for 405 (Method Not Allowed)
 // responses. The router sets the RFC-compliant Allow header (filtered
@@ -931,7 +997,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			// gated methods) BEFORE dispatching, so the handler, custom
 			// or default, inherits it without recomputing the set.
 			w.Header().Set("Allow", strings.Join(allowed, ", "))
-			if mna := r.fallbackFor(req, ownMethodNotAllowed); mna != nil {
+			if mna := r.fallbackFor(req, ownMethodNotAllowed, nil); mna != nil {
 				mna.ServeHTTP(w, req)
 				return
 			}
@@ -949,7 +1015,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		// fall through to the mux here: the mux would produce a 405 with
 		// the full Allow header for a path that exists only under gated
 		// methods, leaking the disabled module's registered methods.
-		if nf := r.fallbackFor(req, ownNotFound); nf != nil {
+		if nf := r.fallbackFor(req, ownNotFound, nil); nf != nil {
 			nf.ServeHTTP(w, req)
 			return
 		}

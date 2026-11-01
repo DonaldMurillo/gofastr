@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fallbackServe(h http.Handler, method, host, target string) *httptest.ResponseRecorder {
@@ -138,4 +139,74 @@ func TestGroupRefusesBarePrefix(t *testing.T) {
 	}
 	// Nested groups join onto a path prefix and are not checked.
 	New().Group("/api").Group("v1")
+}
+
+// A miss goes to the most specific covering group the way the mux ranks
+// patterns, not to the longest prefix in bytes: a literal segment beats
+// a wildcard in either registration order, and a host group beats a
+// longer path group.
+func TestGroupFallbackRanksBySpecificity(t *testing.T) {
+	for _, literalFirst := range []bool{true, false} {
+		r := New()
+		r.NotFound(status(404))
+		add := []func(){
+			func() { r.Group("/t/acme").NotFound(status(418)) },
+			func() { r.Group("/t/{tenant}").NotFound(status(419)) },
+		}
+		if !literalFirst {
+			add[0], add[1] = add[1], add[0]
+		}
+		add[0]()
+		add[1]()
+		if got := fallbackServe(r, http.MethodGet, "", "/t/acme/missing").Code; got != 418 {
+			t.Errorf("literalFirst=%v: /t/acme/missing = %d, want 418 from the literal group", literalFirst, got)
+		}
+		if got := fallbackServe(r, http.MethodGet, "", "/t/other/missing").Code; got != 419 {
+			t.Errorf("literalFirst=%v: /t/other/missing = %d, want 419 from the wildcard group", literalFirst, got)
+		}
+	}
+	r := New()
+	r.Group("api.example.com").NotFound(status(418))
+	r.Group("/a/very/long/path/prefix").NotFound(status(419))
+	if got := fallbackServe(r, http.MethodGet, "api.example.com", "/a/very/long/path/prefix/missing").Code; got != 418 {
+		t.Errorf("host group lost to a longer path group: %d, want 418", got)
+	}
+}
+
+// A Group's WrapNotFound with no NotFound of its own resolves next per
+// request: a NotFound the root sets later (a UI host Mount) and a
+// sibling group covering it (app.Group makes every group a root child)
+// are what it wraps. Two such wrappers nested by prefix still end.
+func TestGroupWrapNotFoundResolvesNextPerRequest(t *testing.T) {
+	identity := func(next http.Handler) http.Handler { return next }
+
+	r := New()
+	r.Group("/app").WrapNotFound(identity)
+	r.NotFound(status(418))
+	if got := fallbackServe(r, http.MethodGet, "", "/app/screen").Code; got != 418 {
+		t.Errorf("wrap before the root's NotFound: %d, want 418", got)
+	}
+
+	r = New()
+	r.NotFound(status(404))
+	r.Group("/api").NotFound(status(418))
+	r.Group("/api/v2").WrapNotFound(identity)
+	if got := fallbackServe(r, http.MethodGet, "", "/api/v2/missing").Code; got != 418 {
+		t.Errorf("sibling inherit: %d, want 418 from /api", got)
+	}
+
+	r = New()
+	r.NotFound(status(418))
+	r.Group("/api").WrapNotFound(identity)
+	r.Group("/api/v2").WrapNotFound(identity)
+	done := make(chan int, 1)
+	go func() { done <- fallbackServe(r, http.MethodGet, "", "/api/v2/missing").Code }()
+	select {
+	case got := <-done:
+		if got != 418 {
+			t.Errorf("nested lazy wrappers: %d, want the root's 418", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("nested lazy WrapNotFound delegated in a loop")
+	}
 }
