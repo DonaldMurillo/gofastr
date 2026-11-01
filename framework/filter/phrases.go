@@ -10,6 +10,8 @@ var (
 	reasonNotSortable         = i18n.Define("filter.not_sortable", "field {{field}} cannot be sorted on")
 	reasonUnknownFilterHint   = i18n.Define("filter.unknown_filter_hint", "unknown filter {{key}} (did you mean {{suggestion}}?)")
 	reasonUnknownFilter       = i18n.Define("filter.unknown_filter", "unknown filter {{key}}")
+	reasonAmbiguousFilter     = i18n.Define("filter.ambiguous_filter", "filter {{key}} reads two ways: equality on field {{key}}, or {{op}} on field {{field}}; send {{exact}} or {{split}} instead")
+	reasonUnknownBracketOp    = i18n.Define("filter.unknown_bracket_op", "filter {{key}} names unknown operator {{op}}; use one of {{ops}}")
 	reasonRepeatedFilter      = i18n.Define("filter.repeated_filter", "filter {{key}} is sent {{count}} times; send it once (only an _in filter takes several values)")
 	reasonTooManySorts        = i18n.Define("filter.too_many_sorts", "too many sort fields: {{count}} (max {{max}})")
 	reasonSortControlBytes    = i18n.Define("filter.sort_control_bytes", "invalid sort {{sort}}: control bytes not allowed")

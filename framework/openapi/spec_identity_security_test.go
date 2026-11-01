@@ -76,9 +76,11 @@ func TestFilterParamCollidesWithListControl(t *testing.T) {
 		}
 	}
 
-	// Same property, suffix-folding shape: the range/_in suffixes emitted
-	// for field "x" land in the same namespace as field "x_in"'s exact
-	// match parameter.
+	// Same property, suffix-folding shape: the _in suffix emitted for
+	// field "x" lands on field "x_in"'s exact match parameter. The route
+	// answers the bare ?x_in= 400 (it reads two ways), so the spec
+	// advertises each meaning under its bracket spelling and never the
+	// bare key; every other parameter keeps its suffix name.
 	suffix := entity.Define("suffixfold", entity.EntityConfig{
 		Table:    "suffixfold",
 		Exposure: &entity.ExposureConfig{Public: true},
@@ -89,8 +91,13 @@ func TestFilterParamCollidesWithListControl(t *testing.T) {
 	})
 	doc = EntityOpenAPI(reg(suffix), "Test", "1.0.0", nil).Build()
 	op = getMap(t, getMap(t, getMap(t, doc, "paths"), "/suffixfold"), "get")
-	if n := countQueryParams(op, "x_in"); n != 1 {
-		t.Errorf("query parameter %q declared %d times (field x's comma-list operator collides with field x_in's exact match; want exactly 1)", "x_in", n)
+	if n := countQueryParams(op, "x_in"); n != 0 {
+		t.Errorf("query parameter %q declared %d times: the bare key reads two ways and the route refuses it; want 0", "x_in", n)
+	}
+	for _, name := range []string{"x[in]", "x_in[eq]", "x", "x_gte", "x_in_ne", "x_in_in"} {
+		if n := countQueryParams(op, name); n != 1 {
+			t.Errorf("query parameter %q declared %d times; want exactly 1", name, n)
+		}
 	}
 }
 

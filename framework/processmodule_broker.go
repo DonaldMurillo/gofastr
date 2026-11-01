@@ -24,6 +24,7 @@ import (
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
@@ -784,8 +785,16 @@ func queryableFieldKeys(ent *entity.Entity) map[string]bool {
 			if k == "" {
 				continue
 			}
-			for _, suffix := range []string{"", "_ne", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
-				allowed[k+suffix] = true
+			// The bare key, each suffix spelling, and each bracket
+			// spelling (k[in]), which is the only one that reaches a
+			// field beside its name plus a suffix: the list route
+			// refuses the bare key that reads two ways.
+			allowed[k] = true
+			for _, s := range filter.FilterSuffixes {
+				allowed[k+s.Suffix] = true
+			}
+			for _, op := range filter.BracketOps {
+				allowed[filter.BracketKey(k, op)] = true
 			}
 		}
 	}

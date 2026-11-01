@@ -207,6 +207,18 @@ func TestSearch_QColumnEdge(t *testing.T) {
 	if !strings.Contains(body, "e1") {
 		t.Fatalf("q-column edge: e1 missing from title search: %s", body)
 	}
+
+	// ?q[eq]= names the column explicitly, so it filters q beside the
+	// search: title "quality" AND q = "quantity" matches no row.
+	req = withTestUser(httptest.NewRequest(http.MethodGet, "/api/sedge?q=quality&q%5Beq%5D=quantity", nil), "alice")
+	rec = httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); strings.Contains(body, "e1") || strings.Contains(body, "e2") {
+		t.Fatalf("q[eq]= was dropped as the search term instead of filtering the q column: %s", body)
+	}
 }
 
 // TestSearch_MultiTokenAND: multiple tokens AND together.
