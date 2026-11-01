@@ -81,3 +81,24 @@ func TestWrittenIDsWinOnAPage(t *testing.T) {
 		}
 	}
 }
+
+var systemID = regexp.MustCompile(`data-hui-system-id="([^"]*)"`)
+
+// A banner with no DismissID or ID keeps one identity on every render,
+// so a dismissal the runtime remembers still hides it after a re-render;
+// another message gets another identity.
+func TestBannerIdentityIsStable(t *testing.T) {
+	id := func(title string) string {
+		m := systemID.FindStringSubmatch(string(Banner(BannerConfig{Title: title, Dismissible: true, Ctx: context.Background()})))
+		if m == nil {
+			t.Fatal("banner has no system id")
+		}
+		return m[1]
+	}
+	if a, b := id("Notice"), id("Notice"); a != b {
+		t.Errorf("two renders of one banner: %q then %q", a, b)
+	}
+	if id("Notice") == id("Other") {
+		t.Error("two messages share an identity")
+	}
+}
