@@ -74,3 +74,68 @@ func TestFittedIndexNameDropsNothing(t *testing.T) {
 		}
 	})
 }
+
+// After the name-only refit both indexes exist. The snapshot recorded only
+// the fitted one, so removing the declared index later dropped that one,
+// and the old unique index went on refusing duplicates (round 3 review).
+func TestRetainedIndexDroppedOnRemoval(t *testing.T) {
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		table := "w" + strings.Repeat("z", 40)
+		cols := []string{"code_number_one", "code_number_two"}
+		define := func(idx []entity.Index) *entity.Entity {
+			return entity.Define("parts", entity.EntityConfig{
+				Table: table,
+				Fields: []schema.Field{
+					{Name: cols[0], Type: schema.String, Required: true},
+					{Name: cols[1], Type: schema.String, Required: true},
+				},
+				Indices: idx,
+			}.WithTimestamps(false))
+		}
+		ent := define([]entity.Index{{Columns: cols, Unique: true}})
+		raw := "idx_" + table + "_" + strings.Join(cols, "_")
+		fitted := entity.DefaultIndexName(table, cols)
+		bootPlan(t, db, "1", ent)
+		fkExec(t, db,
+			"DROP INDEX "+fitted,
+			"CREATE UNIQUE INDEX "+raw+" ON "+table+" ("+strings.Join(cols, ", ")+")",
+		)
+		prev := migrate.SnapshotFromRegistry(fkReg{ent}, d)
+		for tbl, ddls := range prev.Indices {
+			for i, ddl := range ddls {
+				prev.Indices[tbl][i] = strings.ReplaceAll(ddl, fitted, raw)
+			}
+		}
+		apply := func(up string) {
+			t.Helper()
+			for _, stmt := range strings.Split(up, ";\n") {
+				if s := strings.TrimSpace(stmt); s == "" || strings.HasPrefix(s, "--") {
+					continue
+				}
+				if _, err := db.Exec(stmt); err != nil {
+					t.Fatalf("apply %q: %v", stmt, err)
+				}
+			}
+		}
+		up, _, next, err := migrate.GenerateMigration(fkReg{ent}, prev, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		apply(up)
+		// A generation with nothing changed keeps recording the old index.
+		if up, _, next, err = migrate.GenerateMigration(fkReg{ent}, next, d); err != nil || up != "" {
+			t.Fatalf("unchanged entity generated %q, %v", up, err)
+		}
+
+		up, _, _, err = migrate.GenerateMigration(fkReg{define(nil)}, next, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		apply(up)
+		ins := "INSERT INTO " + table + " (" + strings.Join(cols, ", ") + ") VALUES ('a', 'b')"
+		fkExec(t, db, ins)
+		if _, err := db.Exec(ins); err != nil {
+			t.Errorf("the index was removed, and a duplicate is still refused: %v\nmigration:\n%s", err, up)
+		}
+	})
+}

@@ -469,6 +469,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	changes = dedupedChanges
 
 	next = SnapshotFromPlan(plan, dialect)
+	keepRefitted(prev, next)
 	if len(changes) == 0 {
 		return "", "", next, nil
 	}
@@ -983,6 +984,31 @@ func refitted(name, prevDDL string, desired map[string]string) bool {
 	}
 	norm := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), ";") }
 	return norm(strings.Replace(prevDDL, name, fitted, 1)) == norm(ddl)
+}
+
+// keepRefitted carries into next each index of prev that the diff kept on
+// a name-only refit (refitted): the old index still exists beside the
+// fitted one, so the snapshot keeps recording it. A later generation then
+// sees it as prev, keeps it while the fitted index is declared, and drops
+// it with the fitted one when the index is removed or changed. Recorded
+// only as the fitted index, it outlived the removal and went on refusing
+// duplicates.
+func keepRefitted(prev, next SchemaSnapshot) {
+	for table, ddls := range next.Indices {
+		desired := make(map[string]string, len(ddls))
+		for _, ddl := range ddls {
+			if name := parseIndexName(ddl); name != "" {
+				desired[strings.ToLower(name)] = ddl
+			}
+		}
+		for _, ddl := range lookupIndicesCase(prev.Indices, table) {
+			name := parseIndexName(ddl)
+			if _, ok := desired[strings.ToLower(name)]; ok || name == "" || !refitted(name, ddl, desired) {
+				continue
+			}
+			next.Indices[table] = append(next.Indices[table], ddl)
+		}
+	}
 }
 
 // diffTableIndices compares desired index DDLs against previous index DDLs for a table,

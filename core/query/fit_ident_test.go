@@ -71,3 +71,22 @@ func TestObjectNameTrimsLongerPart(t *testing.T) {
 		t.Errorf("short name = %q, want widgets_sku_key", got)
 	}
 }
+
+// Two long names ObjectName trims to one stay distinct, and fit; a name
+// that fits is Postgres's own.
+func TestFitObjectNameKeepsLongNames(t *testing.T) {
+	a, b := strings.Repeat("x", 60)+"a", strings.Repeat("x", 60)+"b"
+	if ObjectName("t", a, "key") != ObjectName("t", b, "key") {
+		t.Fatal("the case no longer trims both names to one")
+	}
+	na, nb := FitObjectName("t", a, "key"), FitObjectName("t", b, "key")
+	if na == nb || len(na) > MaxIdentBytes || len(nb) > MaxIdentBytes {
+		t.Errorf("FitObjectName gave %q (%d) and %q (%d)", na, len(na), nb, len(nb))
+	}
+	if !strings.HasSuffix(na, "_key") || !strings.HasPrefix(na, "t_xxx") {
+		t.Errorf("FitObjectName = %q, want t_<col>_<hash>_key", na)
+	}
+	if FitObjectName("widgets", "sku", "key") != "widgets_sku_key" {
+		t.Error("a short name is not Postgres's")
+	}
+}

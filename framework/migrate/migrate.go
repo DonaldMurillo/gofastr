@@ -1368,7 +1368,9 @@ func quoteSQLLiteral(s string) string {
 }
 
 // fkColumnSQLType resolves the SQL column type for a foreign key referencing ent's pkName.
-// In PostgreSQL, if the primary key is SERIAL or BIGSERIAL, the referencing column must be INTEGER or BIGINT.
+// In PostgreSQL, a SERIAL, BIGSERIAL or SMALLSERIAL key is referenced by an
+// INTEGER, BIGINT or SMALLINT column: the serial spelling would give the
+// referencing column a sequence of its own.
 // A key that is itself a Relation column takes the type columnSQLType gives it.
 func fkColumnSQLType(ent *entity.Entity, pkName string, all map[string]*entity.Entity, dialect Dialect) string {
 	return keyColumnType(ent, pkName, all, dialect, map[columnRef]bool{})
@@ -1379,11 +1381,9 @@ func keyColumnType(ent *entity.Entity, pkName string, all map[string]*entity.Ent
 		if strings.EqualFold(f.Name, pkName) {
 			t := relationColumnType(ent, f, all, dialect, seen)
 			if dialect == DialectPostgres {
-				if strings.EqualFold(t, "SERIAL") {
-					return "INTEGER"
-				}
-				if strings.EqualFold(t, "BIGSERIAL") {
-					return "BIGINT"
+				switch strings.ToLower(strings.TrimSpace(t)) {
+				case "serial", "bigserial", "smallserial":
+					return integerFKType(t, dialect)
 				}
 			}
 			return t

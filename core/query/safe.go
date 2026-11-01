@@ -44,6 +44,12 @@ func FitIdent(name string) string {
 	if len(name) <= MaxIdentBytes {
 		return name
 	}
+	return name[:MaxIdentBytes-9] + "_" + identHash(name)
+}
+
+// identHash is 8 hex digits of the SHA-256 of name, ASCII-folded as
+// unquoted DDL folds it.
+func identHash(name string) string {
 	folded := []byte(name)
 	for i, c := range folded {
 		if 'A' <= c && c <= 'Z' {
@@ -51,7 +57,7 @@ func FitIdent(name string) string {
 		}
 	}
 	sum := sha256.Sum256(folded)
-	return name[:MaxIdentBytes-9] + "_" + hex.EncodeToString(sum[:4])
+	return hex.EncodeToString(sum[:4])
 }
 
 // ObjectName is the name Postgres gives an object it names itself from
@@ -62,7 +68,8 @@ func FitIdent(name string) string {
 // name and two columns of one table keep distinct names. The parts are
 // validated identifiers (ASCII), so a cut never splits a character.
 // Postgres adds a digit to the label when the name is already taken;
-// ObjectName does not.
+// ObjectName does not, so two long names can trim to one. FitObjectName
+// names an object this code creates.
 func ObjectName(name1, name2, label string) string {
 	avail := MaxIdentBytes - len(label) - 2
 	n1, n2 := len(name1), len(name2)
@@ -74,6 +81,22 @@ func ObjectName(name1, name2, label string) string {
 		}
 	}
 	return name1[:n1] + "_" + name2[:n2] + "_" + label
+}
+
+// FitObjectName names an object this code creates from two parts and a
+// label. A name that fits MaxIdentBytes is name1_name2_label, the name
+// Postgres gives it (ObjectName). A longer one is trimmed the way
+// ObjectName trims it, with 8 hex digits of the SHA-256 of the whole name
+// before the label, so two long names that trim to one prefix stay
+// distinct: x…xa and x…xb (60 x's) both trim to t_x…x_key, where
+// Postgres numbers the second by what already exists and CREATE INDEX IF
+// NOT EXISTS skipped it.
+func FitObjectName(name1, name2, label string) string {
+	whole := name1 + "_" + name2 + "_" + label
+	if len(whole) <= MaxIdentBytes {
+		return whole
+	}
+	return ObjectName(name1, name2, identHash(whole)+"_"+label)
 }
 
 // MustIdent is like SafeIdent but panics on invalid identifiers.

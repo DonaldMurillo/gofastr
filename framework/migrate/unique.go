@@ -133,20 +133,42 @@ func uniqueFlipChanges(ent *entity.Entity, dialect Dialect, qtable string, liveL
 		if dialect == DialectSQLite {
 			continue
 		}
-		// The inline constraint and the ADD path's index share the name,
-		// so dropping both forms by it covers a column made unique either
-		// way; each IF EXISTS is a no-op for the form the table lacks.
+		// The inline constraint is found by its column when the migration
+		// runs: a table an older build created holds it under the name
+		// Postgres chose, trimmed past 63 bytes and numbered when two
+		// columns trimmed to one, which no name computed here predicts.
+		// The ADD path's index is ours and goes by name; IF EXISTS is a
+		// no-op on a table whose column was made unique inline.
 		name, err := uniqueIndexName(ent, src)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		drops = append(drops, SchemaChange{
 			Summary: fmt.Sprintf("%s: drop unique on %s", ent.GetName(), f.Name),
-			SQL:     fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;\n%s", qtable, name, dropIndexSQL(qtable, name)),
+			SQL:     dropUniqueConstraintSQL(qtable, src, f.Name) + ";\n" + dropIndexSQL(qtable, name),
 			Down:    createIndexSQL(dialect, true, name, qtable, qcol),
 		})
 	}
 	return adds, drops, cleared, nil
+}
+
+// dropUniqueConstraintSQL renders a Postgres block that drops each UNIQUE
+// constraint on qtable covering one column alone, the column named col
+// or, across a rename in the same migration, oldCol, whatever the
+// constraint's name. A unique index that is no constraint (a declared
+// Index, the ADD path's) is left alone.
+func dropUniqueConstraintSQL(qtable, oldCol, col string) string {
+	return fmt.Sprintf(`DO $$
+DECLARE r record;
+BEGIN
+	FOR r IN SELECT con.conname FROM pg_constraint con
+		JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
+		WHERE con.conrelid = %[1]s::regclass AND con.contype = 'u' AND cardinality(con.conkey) = 1
+			AND lower(a.attname) IN (lower(%[2]s), lower(%[3]s))
+	LOOP
+		EXECUTE format('ALTER TABLE %%s DROP CONSTRAINT %%I', %[1]s::regclass, r.conname);
+	END LOOP;
+END $$`, quoteSQLLiteral(qtable), quoteSQLLiteral(oldCol), quoteSQLLiteral(col))
 }
 
 // ensureUniqueIndexes is boot's half: every Unique column of an existing

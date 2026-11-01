@@ -283,9 +283,11 @@ column and an indexed column dropped with its index both apply. A
 `Unique` field added to an existing table gets a unique index,
 `<table>_<column>_key`, after its `ADD COLUMN`. `Unique` set on a column
 that already exists gets the same index, and `Unique` cleared removes
-it: on Postgres the file drops the constraint and the index of that
-name, and on SQLite it rebuilds the table, since only a rebuild removes
-an inline `UNIQUE`. The snapshot records each table's unique columns for
+it: on Postgres the file drops the index of that name and every
+`UNIQUE` constraint on that column alone, found in the catalog when the
+migration runs (so a constraint an older build's `CREATE TABLE` left
+under a name Postgres chose goes too), and on SQLite it rebuilds the
+table, since only a rebuild removes an inline `UNIQUE`. The snapshot records each table's unique columns for
 this; for a snapshot written before it, the diff reads them from the
 `CREATE TABLE` the snapshot recorded. Defaults render as the
 value they hold: a float in its shortest exact form (`1e-07`, not
@@ -447,15 +449,21 @@ the next boot, beside the old one, which you can drop. `gofastr migrate
 generate` from a snapshot an older build wrote does the same: it creates
 the index under the new name and never drops the old one, since a
 foreign key you added by hand may depend on a unique index and the drop
-would fail.
+would fail. The snapshot keeps recording the old index while the new
+one is declared, so removing or changing the index later drops both.
 
-A `Unique` field's `<table>_<column>_key` is named the way Postgres
-names the inline constraint `CREATE TABLE` writes
-(`entity.UniqueKeyName`, `query.ObjectName`): past 63 bytes the longer
-of the table and column parts is trimmed, so two columns of one long
-table keep distinct names, the index a later `Unique` gets matches the
-constraint a new table gets, and a unique violation on either maps to
-its field.
+A `Unique` field's `<table>_<column>_key` is the name Postgres gives
+the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
+`entity.UniqueKeyName`'s (`query.FitObjectName`): the longer of the
+table and column parts is trimmed and 8 hex digits of a hash of the
+whole name go before `_key`, so no two columns share one. Postgres
+would trim two long columns to one name and number the second by
+creation order, so `CREATE TABLE` names such a constraint itself. The
+index a later `Unique` gets matches the constraint a new table gets,
+and a unique violation on either maps to its field. A table an older
+build created holds a long column's constraint under the trimmed name
+Postgres chose; a violation on it maps to its field unless two `Unique`
+columns trim to that one name, and then it answers a bare 409.
 
 The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
 

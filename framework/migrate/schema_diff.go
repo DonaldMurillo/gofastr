@@ -754,6 +754,8 @@ func canonicalType(s string, dialect Dialect) string {
 			t = "integer" // SERIAL is an integer column + a sequence
 		case "bigserial":
 			t = "bigint"
+		case "smallserial":
+			t = "smallint"
 		}
 	}
 	return t
@@ -1195,6 +1197,17 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			col += " PRIMARY KEY"
 		}
 		if f.Unique {
+			// Past 63 bytes Postgres trims the name it picks, and numbers
+			// a second column trimmed to the same one, so the constraint
+			// is named here: the name UniqueKeyName gives, which the clear,
+			// the boot check and the crud conflict mapping all use.
+			uq, err := uniqueIndexName(ent, f.Name)
+			if err != nil {
+				return nil, err
+			}
+			if dialect == DialectPostgres && uq != entity.LegacyUniqueKeyName(ent.GetTable(), f.Name) {
+				col += " CONSTRAINT " + uq
+			}
 			col += " UNIQUE"
 		}
 		c := declaredConstraint(f, keys, dialect)

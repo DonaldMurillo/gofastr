@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -24,6 +25,8 @@ func TestFKTakesIntegerRawKeyType(t *testing.T) {
 		{"SMALLINT", "INTEGER", "SMALLINT"},
 		{"serial", "INTEGER", "INTEGER"},
 		{"BigSerial", "INTEGER", "BIGINT"},
+		{"SMALLSERIAL", "INTEGER", "SMALLINT"},
+		{"smallserial", "INTEGER", "SMALLINT"},
 	} {
 		parent := entity.Define("counters", entity.EntityConfig{
 			Table:  "counters",
@@ -45,6 +48,11 @@ func TestFKTakesIntegerRawKeyType(t *testing.T) {
 			if got := columnSQLType(child, fk, all, d); got != want {
 				t.Errorf("key RawType %q on %v: foreign key is %s, want %s", tc.raw, d, got, want)
 			}
+		}
+		// A pivot column onto the key takes the key's type, never a
+		// serial, which would give the pivot column a sequence of its own.
+		if got := fkColumnSQLType(parent, "id", all, DialectPostgres); strings.Contains(strings.ToLower(tc.raw), "serial") && got != tc.pg {
+			t.Errorf("key RawType %q: pivot column is %s, want %s", tc.raw, got, tc.pg)
 		}
 	}
 }

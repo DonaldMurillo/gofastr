@@ -171,6 +171,48 @@ func TestConflictColumnsLongTable(t *testing.T) {
 	}
 }
 
+// Two long Unique columns that trim to one Postgres name: each maps by
+// the hashed name migrate gives it today, and the trimmed name a table
+// from an older build holds (and its numbered twin) maps to neither,
+// since Postgres numbered them by creation order. Two relation columns
+// trimmed to one foreign-key name are bare the same way (round 3
+// re-review).
+func TestConflictColumnsTrimmedPair(t *testing.T) {
+	c1, c2 := strings.Repeat("x", 60)+"a", strings.Repeat("x", 60)+"b"
+	r1, r2 := strings.Repeat("r", 60)+"a", strings.Repeat("r", 60)+"b"
+	ent := entity.Define("pairs", entity.EntityConfig{
+		Name: "pairs", Table: "t",
+		Fields: []schema.Field{
+			{Name: c1, Type: schema.String, Unique: true},
+			{Name: c2, Type: schema.String, Unique: true},
+			{Name: r1, Type: schema.Relation, To: "customers"},
+			{Name: r2, Type: schema.Relation, To: "customers"},
+		},
+	}.WithTimestamps(false))
+	uq := func(name string) string { return `pq: duplicate key value violates unique constraint "` + name + `"` }
+	fk := func(name string) string {
+		return `ERROR: insert or update on table "t" violates foreign key constraint "` + name + `" (SQLSTATE 23503)`
+	}
+	legacy := entity.LegacyUniqueKeyName("t", c1)
+	if legacy != entity.LegacyUniqueKeyName("t", c2) {
+		t.Fatalf("the columns do not trim to one name")
+	}
+	for _, c := range []struct {
+		msg  string
+		want []string
+	}{
+		{uq(entity.UniqueKeyName("t", c1)), []string{c1}},
+		{uq(entity.UniqueKeyName("t", c2)), []string{c2}},
+		{uq(legacy), nil},
+		{uq(legacy + "1"), nil},
+		{fk("t_" + strings.Repeat("r", 56) + "_fkey"), nil},
+	} {
+		if got := conflictColumns(ent, c.msg); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s\n got %v, want %v", c.msg, got, c.want)
+		}
+	}
+}
+
 func TestConflictColumnsByDriver(t *testing.T) {
 	ent := entity.Define("inv", entity.EntityConfig{
 		Name: "inv", Table: "inv",

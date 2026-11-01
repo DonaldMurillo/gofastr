@@ -256,17 +256,31 @@ func DefaultIndexName(table string, cols []string) string {
 }
 
 // UniqueKeyName is the name of a Unique field's constraint or index:
-// <table>_<col>_key, the table's own name (its schema left off), named
-// the way Postgres names the inline UNIQUE constraint CREATE TABLE writes
-// (query.ObjectName). Past 63 bytes the longer part is trimmed, so the
-// index migrate creates for a column made Unique later, the constraint
-// CREATE TABLE made, and the name a unique violation reports all agree,
-// and two columns of one long table keep distinct names.
+// <table>_<col>_key, the table's own name (its schema left off), the
+// name Postgres gives the inline UNIQUE constraint CREATE TABLE writes.
+// Past 63 bytes it is query.FitObjectName's: the longer part trimmed and
+// a hash of the whole name before the label, so no two columns share
+// one, and CREATE TABLE names the constraint itself rather than let
+// Postgres number a collision. The index migrate creates for a column
+// made Unique later, the constraint CREATE TABLE made, and the name a
+// unique violation reports all agree.
 func UniqueKeyName(table, col string) string {
-	if i := strings.LastIndexByte(table, '.'); i >= 0 {
-		table = table[i+1:]
-	}
-	return query.ObjectName(table, col, "key")
+	return query.FitObjectName(tableBase(table), col, "key")
+}
+
+// LegacyUniqueKeyName is the name Postgres gave a Unique field's inline
+// constraint in a table a build before v0.96.0 created: UniqueKeyName up
+// to 63 bytes, the plain trimmed name (query.ObjectName) past it. A
+// second column trimmed to the same name got a number from Postgres, so
+// the name may belong to either.
+func LegacyUniqueKeyName(table, col string) string {
+	return query.ObjectName(tableBase(table), col, "key")
+}
+
+// tableBase is a table's own name, without the schema a qualified one
+// carries.
+func tableBase(table string) string {
+	return table[strings.LastIndexByte(table, '.')+1:]
 }
 
 // Endpoint declares a custom route owned by an entity.

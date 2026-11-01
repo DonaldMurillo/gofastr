@@ -134,20 +134,38 @@ type constraintGroup struct {
 }
 
 // uniqueGroups lists the entity's unique constraints: each Unique field
-// alone (Postgres names it <table>_<col>_key, trimmed past 63 bytes as
-// entity.UniqueKeyName trims it; MySQL by the column), then
-// each unique column index under its name or the idx_<table>_<cols>
-// name AutoMigrate gives it. <table> is tableBase: a constraint name
-// never carries the schema. An expression index names no columns and
-// is skipped. Each name is also listed folded: AutoMigrate's DDL is
-// unquoted, so Postgres reports a mixed-case name in lower case.
+// alone (entity.UniqueKeyName, <table>_<col>_key with a hash past 63
+// bytes; MySQL by the column), then each unique column index under its
+// name or the idx_<table>_<cols> name AutoMigrate gives it. <table> is
+// tableBase: a constraint name never carries the schema. An expression
+// index names no columns and is skipped. Each name is also listed folded:
+// AutoMigrate's DDL is unquoted, so Postgres reports a mixed-case name in
+// lower case.
+//
+// A table a build before v0.96.0 created holds a long column's constraint
+// under the name Postgres chose (entity.LegacyUniqueKeyName), which maps
+// too, unless another Unique field trims to the same name: Postgres
+// numbered one of the two, by the order they were created in, so the
+// name says nothing about which column it covers and the refusal stays
+// bare.
 func uniqueGroups(e *entity.Entity) []constraintGroup {
 	table := tableBase(e.Config.Table)
-	var gs []constraintGroup
+	legacy := map[string]int{}
 	for _, f := range e.Config.Fields {
 		if f.Unique {
-			gs = append(gs, constraintGroup{cols: []string{f.Name}, names: withFolded(entity.UniqueKeyName(table, f.Name)), keys: withFolded(f.Name)})
+			legacy[foldIdent(entity.LegacyUniqueKeyName(table, f.Name))]++
 		}
+	}
+	var gs []constraintGroup
+	for _, f := range e.Config.Fields {
+		if !f.Unique {
+			continue
+		}
+		names := []string{entity.UniqueKeyName(table, f.Name)}
+		if old := entity.LegacyUniqueKeyName(table, f.Name); old != names[0] && legacy[foldIdent(old)] == 1 {
+			names = append(names, old)
+		}
+		gs = append(gs, constraintGroup{cols: []string{f.Name}, names: withFolded(names...), keys: withFolded(f.Name)})
 	}
 	for _, ix := range e.Config.Indices {
 		if !ix.Unique || ix.Expression != "" || len(ix.Columns) == 0 {
@@ -211,11 +229,23 @@ func conflictColumns(e *entity.Entity, msg string) []string {
 	if !pg && !my {
 		return nil
 	}
+	// Postgres names a foreign key itself, trimmed past 63 bytes, and
+	// numbers a second one trimmed to the same name; such a name maps to
+	// neither column.
+	fkeys := map[string]int{}
+	for _, f := range e.Config.Fields {
+		if f.Type == schema.Relation && !f.Many {
+			fkeys[foldIdent(query.ObjectName(table, f.Name, "fkey"))]++
+		}
+	}
 	for _, f := range e.Config.Fields {
 		if f.Type != schema.Relation || f.Many {
 			continue
 		}
 		fkey := query.ObjectName(table, f.Name, "fkey")
+		if pg && fkeys[foldIdent(fkey)] > 1 {
+			continue
+		}
 		if (pg && (strings.Contains(msg, `"`+fkey+`"`) || strings.Contains(msg, `"`+foldIdent(fkey)+`"`))) ||
 			(my && strings.Contains(msg, "FOREIGN KEY (`"+f.Name+"`)")) {
 			return []string{f.Name}
