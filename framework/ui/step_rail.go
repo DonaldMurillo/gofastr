@@ -193,7 +193,10 @@ func stepRailCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
-  color: var(--color-text-subtle, currentColor);
+  /* Muted, not subtle: the rail sits on --color-surface-soft, where
+     --color-text-subtle (tuned to 4.5:1 on --color-surface) drops to
+     4.39:1 in the default light theme. */
+  color: var(--color-text-muted, currentColor);
   text-decoration: none;
   border-radius: var(--radii-sm, 6px);
 }
@@ -219,7 +222,7 @@ func stepRailCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__meta {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-subtle, currentColor);
+  color: var(--color-text-muted, currentColor);
   line-height: var(--leading-normal, 1.5);
   /* Long URLs in the meta line must wrap rather than overrun the
      rail's narrow column. The arbitrary break is acceptable because

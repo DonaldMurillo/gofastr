@@ -1,10 +1,11 @@
 /* The site's v2 type ramp has three steps between the built-in text
    tokens: 11px mono footnotes (keycaps, version labels), 13px UI chrome
-   (the bar's voice, drawer links, footer links), 15px the body voice
-   the wordmark sits at. */
+   (the bar's voice, drawer links, footer links), 15px the body voice. */
 @property --text-micro { syntax: "<length>"; inherits: true; initial-value: 11px; }
 @property --text-ui { syntax: "<length>"; inherits: true; initial-value: 13px; }
 @property --text-ui-lg { syntax: "<length>"; inherits: true; initial-value: 15px; }
+@property --size-brand-width { syntax: "<length>"; inherits: true; initial-value: 76px; }
+@property --size-brand-height { syntax: "<length>"; inherits: true; initial-value: 51px; }
 
 /* The faint hairline under the banner, one step quieter than
    --color-border on both schemes. */
