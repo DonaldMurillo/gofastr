@@ -43,9 +43,10 @@ type PasswordClearer interface {
 //  4. every passkey is removed and every API token issued through
 //     TokensPlugin is revoked;
 //  5. every session is deleted again: a sign-in through a credential
-//     steps 2-4 removed may have minted one since step 1. Steps 4 and 5
-//     run even when one of them fails, and any failure ends the claim
-//     here with the joined error;
+//     steps 2-4 removed may have minted one since step 1. Every step runs
+//     even when an earlier one fails, so one failing store does not leave
+//     the others' credentials live, and any failure ends the claim here
+//     with the joined error;
 //  6. the account is marked verified (EmailVerifier), last, so a failure
 //     at any earlier step leaves it unverified and the next proof retries
 //     the whole claim.
@@ -65,52 +66,54 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 		return errors.New("session store does not implement SessionUserPurger")
 	}
 
-	early, err := purger.DeleteByUser(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("revoke sessions: %w", err)
-	}
-
-	unlinked := 0
+	// A missing extension is configuration, refused before any step runs.
+	var lister AccountLister
+	var unlinker AccountUnlinker
 	if _, isLinker := store.(OAuthLinker); isLinker {
-		lister, lok := store.(AccountLister)
-		unlinker, uok := store.(AccountUnlinker)
+		var lok, uok bool
+		lister, lok = store.(AccountLister)
+		unlinker, uok = store.(AccountUnlinker)
 		if !lok || !uok {
 			return errors.New("user store links OAuth identities but cannot list and unlink them")
 		}
+	}
+	clearer, _ := store.(PasswordClearer)
+	setter, _ := store.(PasswordSetter)
+	if clearPassword && clearer == nil && setter == nil {
+		return errors.New("user store implements neither PasswordClearer nor PasswordSetter")
+	}
+
+	// Every step runs even when an earlier one fails: a failing session
+	// store must not leave the OAuth links, password, passkeys or tokens
+	// live, nor a failed passkey purge the tokens. Any failure still stops
+	// the claim before step 6.
+	var failed []error
+	early, err := purger.DeleteByUser(ctx, userID)
+	if err != nil {
+		failed = append(failed, fmt.Errorf("revoke sessions: %w", err))
+	}
+
+	unlinked := 0
+	if lister != nil {
 		accts, err := lister.ListAccounts(ctx, userID)
 		if err != nil {
-			return fmt.Errorf("list OAuth links: %w", err)
+			failed = append(failed, fmt.Errorf("list OAuth links: %w", err))
 		}
 		for _, a := range accts {
 			if err := unlinker.UnlinkOAuth(ctx, userID, a.Provider); err != nil {
-				return fmt.Errorf("unlink %s: %w", a.Provider, err)
+				failed = append(failed, fmt.Errorf("unlink %s: %w", a.Provider, err))
+				continue
 			}
 			unlinked++
 		}
 	}
 
 	if clearPassword {
-		if clearer, ok := store.(PasswordClearer); ok {
-			if err := clearer.ClearPassword(ctx, userID); err != nil {
-				return fmt.Errorf("clear password: %w", err)
-			}
-		} else if setter, ok := store.(PasswordSetter); ok {
-			placeholder, err := newPlaceholderHash()
-			if err != nil {
-				return fmt.Errorf("clear password: %w", err)
-			}
-			if err := setter.SetPassword(ctx, userID, placeholder); err != nil {
-				return fmt.Errorf("clear password: %w", err)
-			}
-		} else {
-			return errors.New("user store implements neither PasswordClearer nor PasswordSetter")
+		if err := clearOrPlaceholder(ctx, clearer, setter, userID); err != nil {
+			failed = append(failed, fmt.Errorf("clear password: %w", err))
 		}
 	}
 
-	// Steps 4 and 5 all run even when one fails: a failed passkey purge
-	// must not leave the tokens live, nor a session minted since step 1.
-	// Any failure still stops the claim before step 6.
-	var failed []error
 	passkeys, err := m.purgeUserPasskeys(ctx, userID)
 	if err != nil {
 		failed = append(failed, fmt.Errorf("remove passkeys: %w", err))
@@ -145,4 +148,18 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 		},
 	})
 	return nil
+}
+
+// clearOrPlaceholder removes userID's password through clearer when the
+// store has one, else overwrites it with a fresh unusable hash through
+// setter. One of the two is non-nil (claimAccount checks before it runs).
+func clearOrPlaceholder(ctx context.Context, clearer PasswordClearer, setter PasswordSetter, userID string) error {
+	if clearer != nil {
+		return clearer.ClearPassword(ctx, userID)
+	}
+	placeholder, err := newPlaceholderHash()
+	if err != nil {
+		return err
+	}
+	return setter.SetPassword(ctx, userID, placeholder)
 }
