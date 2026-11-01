@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Field-level Unique on an existing column
@@ -156,7 +157,10 @@ func uniqueFlipChanges(ent *entity.Entity, dialect Dialect, qtable string, liveL
 // constraint on qtable covering one column alone, the column named col
 // or, across a rename in the same migration, oldCol, whatever the
 // constraint's name. A unique index that is no constraint (a declared
-// Index, the ADD path's) is left alone.
+// Index, the ADD path's) is left alone. The column is matched exactly
+// under the name the unquoted DDL gave it, the declared name ASCII-folded:
+// a quoted "Email" beside email is another column, which lowering the
+// catalog's names would have matched too.
 func dropUniqueConstraintSQL(qtable, oldCol, col string) string {
 	return fmt.Sprintf(`DO $$
 DECLARE r record;
@@ -164,11 +168,11 @@ BEGIN
 	FOR r IN SELECT con.conname FROM pg_constraint con
 		JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
 		WHERE con.conrelid = %[1]s::regclass AND con.contype = 'u' AND cardinality(con.conkey) = 1
-			AND lower(a.attname) IN (lower(%[2]s), lower(%[3]s))
+			AND a.attname IN (%[2]s, %[3]s)
 	LOOP
 		EXECUTE format('ALTER TABLE %%s DROP CONSTRAINT %%I', %[1]s::regclass, r.conname);
 	END LOOP;
-END $$`, quoteSQLLiteral(qtable), quoteSQLLiteral(oldCol), quoteSQLLiteral(col))
+END $$`, quoteSQLLiteral(qtable), quoteSQLLiteral(asciicase.Lower(oldCol)), quoteSQLLiteral(asciicase.Lower(col)))
 }
 
 // ensureUniqueIndexes is boot's half: every Unique column of an existing
@@ -211,8 +215,13 @@ func ensureUniqueIndexes(ctx context.Context, q execQueryer, ent *entity.Entity,
 		if err != nil {
 			return err
 		}
-		if _, err := q.ExecContext(ctx, createIndexSQL(dialect, true, name, qtable, qcol)); err != nil {
-			return fmt.Errorf("%s.%s is declared unique, and its unique index could not be created (do rows repeat a value?): %w", ent.GetTable(), c, err)
+		// No IF NOT EXISTS: the column is not covered, so an index of
+		// this name belongs to another table or column (t_a.b and t.a_b
+		// both name t_a_b_key), and skipping it left the column taking
+		// duplicates while boot succeeded.
+		ddl := strings.Replace(createIndexSQL(dialect, true, name, qtable, qcol), " IF NOT EXISTS", "", 1)
+		if _, err := q.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("%s.%s is declared unique, and its unique index %s could not be created (do rows repeat a value, or does another table hold an index of that name? a unique index of another name on the column alone also counts): %w", ent.GetTable(), c, name, err)
 		}
 	}
 	return nil

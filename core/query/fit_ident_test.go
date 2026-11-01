@@ -90,3 +90,15 @@ func TestFitObjectNameKeepsLongNames(t *testing.T) {
 		t.Error("a short name is not Postgres's")
 	}
 }
+
+// The hash covers the parts, not their underscore join: table t_a with
+// column x…xb and table t with column a_x…xb (60 x's) join to one string,
+// and index names share a schema, so the second table's CREATE INDEX IF
+// NOT EXISTS skipped (round 3 final review).
+func TestFitObjectNameHashesParts(t *testing.T) {
+	x := strings.Repeat("x", 60)
+	a, b := FitObjectName("t_a", x+"b", "key"), FitObjectName("t", "a_"+x+"b", "key")
+	if a == b {
+		t.Errorf("t_a.%sb and t.a_%sb both name %q", x, x, a)
+	}
+}

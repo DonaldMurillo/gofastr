@@ -86,17 +86,20 @@ func ObjectName(name1, name2, label string) string {
 // FitObjectName names an object this code creates from two parts and a
 // label. A name that fits MaxIdentBytes is name1_name2_label, the name
 // Postgres gives it (ObjectName). A longer one is trimmed the way
-// ObjectName trims it, with 8 hex digits of the SHA-256 of the whole name
+// ObjectName trims it, with 8 hex digits of a SHA-256 of the three parts
 // before the label, so two long names that trim to one prefix stay
 // distinct: x…xa and x…xb (60 x's) both trim to t_x…x_key, where
 // Postgres numbers the second by what already exists and CREATE INDEX IF
-// NOT EXISTS skipped it.
+// NOT EXISTS skipped it. The hash covers each part with its length, not
+// the underscore join: t_a + x…xb and t + a_x…xb join to one string, and
+// index names share a schema.
 func FitObjectName(name1, name2, label string) string {
 	whole := name1 + "_" + name2 + "_" + label
 	if len(whole) <= MaxIdentBytes {
 		return whole
 	}
-	return ObjectName(name1, name2, identHash(whole)+"_"+label)
+	parts := fmt.Sprintf("%d:%s|%d:%s|%d:%s", len(name1), name1, len(name2), name2, len(label), label)
+	return ObjectName(name1, name2, identHash(parts)+"_"+label)
 }
 
 // MustIdent is like SafeIdent but panics on invalid identifiers.

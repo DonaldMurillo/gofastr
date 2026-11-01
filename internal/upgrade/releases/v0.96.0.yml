@@ -403,9 +403,9 @@ notes:
       uses:
         - gofastr/framework.App.NewModuleMigrationCoordinator
         - gofastr/framework.NewMigrationCoordinator
-  - change: "BREAKING - boot creates the <table>_<column>_key unique index for a Unique field whose column existed before it was made Unique, and fails when the column already repeats a value"
+  - change: "BREAKING - boot creates the <table>_<column>_key unique index for a Unique field whose column existed before it was made Unique, and fails when the column already repeats a value or another table or column already holds an index of that name"
     breaking: true
-    guidance: "Such a column used to accept duplicates, since only CREATE TABLE and ADD COLUMN wrote uniqueness. Before deploying, check each field made Unique after its column existed for repeated values (SELECT col, count(*) FROM t GROUP BY col HAVING count(*) > 1) and resolve them, or clear Unique."
+    guidance: "Such a column used to accept duplicates, since only CREATE TABLE and ADD COLUMN wrote uniqueness. Before deploying, check each field made Unique after its column existed for repeated values (SELECT col, count(*) FROM t GROUP BY col HAVING count(*) > 1) and resolve them, or clear Unique. Table t_a column b and table t column a_b both name t_a_b_key, and index names share a schema; when boot names such a clash, create a unique index of another name on the column, which counts as covering it."
     nodetect: "the failure depends on the rows in the database, not on the app's source"
   - change: "BREAKING for app specs - app.auth.base_path must be an absolute path with no trailing slash whose segments hold letters, digits, -, _ and ., none starting with a dot; gofastr generate refuses /auth/, auth, //host, /a//b and /.."
     breaking: true

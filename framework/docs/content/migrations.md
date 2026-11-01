@@ -11,6 +11,10 @@ GoFastr has two migration paths:
    gets its `<table>_<column>_key` unique index on boot unless a
    single-column unique index already covers the column; rows that
    already repeat a value fail the boot with an error naming the column.
+   So does an index of that name another table or column already holds
+   (table `t_a` column `b` and table `t` column `a_b` both name
+   `t_a_b_key`, and index names share a schema): create a unique index
+   of another name on the column, which counts as covering it.
    Clearing `Unique` is left to `migrate generate`. Type changes and renames are surfaced by the
    declarative diff (`DiffSchema` / `migrate generate`): type changes as
    destructive changes refused by default, renames as non-destructive
@@ -286,7 +290,9 @@ that already exists gets the same index, and `Unique` cleared removes
 it: on Postgres the file drops the index of that name and every
 `UNIQUE` constraint on that column alone, found in the catalog when the
 migration runs (so a constraint an older build's `CREATE TABLE` left
-under a name Postgres chose goes too), and on SQLite it rebuilds the
+under a name Postgres chose goes too). The column is matched by the
+exact name the unquoted DDL gave it, the declared name in lower case, so
+a quoted `"Email"` beside `email` keeps its constraint. On SQLite it rebuilds the
 table, since only a rebuild removes an inline `UNIQUE`. The snapshot records each table's unique columns for
 this; for a snapshot written before it, the diff reads them from the
 `CREATE TABLE` the snapshot recorded. Defaults render as the
@@ -456,7 +462,9 @@ A `Unique` field's `<table>_<column>_key` is the name Postgres gives
 the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
 `entity.UniqueKeyName`'s (`query.FitObjectName`): the longer of the
 table and column parts is trimmed and 8 hex digits of a hash of the
-whole name go before `_key`, so no two columns share one. Postgres
+table, column and label, each with its length, go before `_key`, so no
+two columns share one, in one table or across two whose names join to
+the same string (`t_a` + `x…b` and `t` + `a_x…b`). Postgres
 would trim two long columns to one name and number the second by
 creation order, so `CREATE TABLE` names such a constraint itself. The
 index a later `Unique` gets matches the constraint a new table gets,

@@ -1,6 +1,7 @@
 package migrate_test
 
 import (
+	"context"
 	"database/sql"
 	"slices"
 	"strings"
@@ -121,6 +122,77 @@ func TestClearDropsLegacyUniqueName(t *testing.T) {
 		}
 		if _, err := db.Exec(ins + "('c', 'x', 'other')"); err == nil {
 			t.Errorf("%s took a duplicate: the clear of the other column dropped its constraint", c1)
+		}
+	})
+}
+
+// The clear finds the column by the name unquoted DDL gives it, folded,
+// and compares the catalog's name exactly: a quoted "Email" beside email
+// is another column, and lowering the catalog side dropped its UNIQUE
+// too (round 3 final review).
+func TestClearKeepsQuotedCaseTwin(t *testing.T) {
+	for _, field := range []string{"email", "EMAIL"} {
+		clearBesideCaseTwin(t, field)
+	}
+}
+
+func clearBesideCaseTwin(t *testing.T, field string) {
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		if d != migrate.DialectPostgres {
+			t.Skip("SQLite clears Unique by rebuilding the table")
+		}
+		def := func(unique bool) *entity.Entity {
+			return entity.Define("people", entity.EntityConfig{
+				Table:  "people",
+				Fields: []schema.Field{{Name: field, Type: schema.String, Unique: unique}},
+			}.WithTimestamps(false))
+		}
+		fkExec(t, db, `CREATE TABLE people (id TEXT PRIMARY KEY, email TEXT UNIQUE, "Email" TEXT UNIQUE)`)
+		prev := migrate.SnapshotFromRegistry(fkReg{def(true)}, d)
+		up, _, _, err := migrate.GenerateMigration(fkReg{def(false)}, prev, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fkExec(t, db, up)
+		fkExec(t, db, `INSERT INTO people (id, email, "Email") VALUES ('a', 'same', 'x')`)
+		if _, err := db.Exec(`INSERT INTO people (id, email, "Email") VALUES ('b', 'same', 'y')`); err != nil {
+			t.Errorf("email is no longer Unique and still refuses a duplicate: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO people (id, email, "Email") VALUES ('c', 'other', 'x')`); err == nil {
+			t.Error(`"Email" took a duplicate: clearing email dropped its constraint`)
+		}
+	})
+}
+
+// Table t_a column b and table t column a_b both name their unique index
+// t_a_b_key, the name Postgres gives the inline constraint, and index
+// names share a schema. Boot made the first and CREATE INDEX IF NOT
+// EXISTS skipped the second, so a_b took duplicates while boot reported
+// success. Boot creates the index only for a column no unique index
+// covers, so a taken name now fails it, naming the column.
+func TestBootRefusesTakenUniqueName(t *testing.T) {
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		def := func(name, table, col string, unique bool) *entity.Entity {
+			return entity.Define(name, entity.EntityConfig{
+				Table:  table,
+				Fields: []schema.Field{{Name: col, Type: schema.String, Unique: unique}},
+			}.WithTimestamps(false))
+		}
+		bootPlan(t, db, "1", def("one", "t_a", "b", false), def("two", "t", "a_b", false))
+		err := migrate.AutoMigratePlanContext(context.Background(), db, migrate.Plan{Registry: fkReg{def("one", "t_a", "b", true), def("two", "t", "a_b", true)}})
+		if err != nil {
+			if !strings.Contains(err.Error(), "a_b") && !strings.Contains(err.Error(), ".b ") {
+				t.Errorf("boot failed without naming the column: %v", err)
+			}
+			return
+		}
+		fkExec(t, db, "INSERT INTO t (id, a_b) VALUES ('1', 'same')")
+		if _, err := db.Exec("INSERT INTO t (id, a_b) VALUES ('2', 'same')"); err == nil {
+			t.Error("boot succeeded and t.a_b took a duplicate: its unique index was skipped")
+		}
+		fkExec(t, db, "INSERT INTO t_a (id, b) VALUES ('1', 'same')")
+		if _, err := db.Exec("INSERT INTO t_a (id, b) VALUES ('2', 'same')"); err == nil {
+			t.Error("boot succeeded and t_a.b took a duplicate: its unique index was skipped")
 		}
 	})
 }
