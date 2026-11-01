@@ -28,12 +28,15 @@ func (k Kind) String() string {
 	return "scoped"
 }
 
-// styleNameRe is the owner-name grammar: lowercase, digits and dashes,
-// starting with a letter (the file stem of <name>.style.css).
+// styleNameOK is the owner-name grammar: lowercase, digits and dashes,
+// starting with a letter, 64 bytes at most (the file stem of
+// <name>.style.css).
 const styleNamePrefix = "ui-"
 
 var styleNameOK = func(name string) bool {
-	if name == "" {
+	// 64 bytes at most: the registry's style-name grammar, which every
+	// owned sheet registers under.
+	if name == "" || len(name) > 64 {
 		return false
 	}
 	for i := 0; i < len(name); i++ {
@@ -76,7 +79,7 @@ var styleNameOK = func(name string) bool {
 // (style.ThemeToTokens). Compile never mutates sheet.
 func Compile(sheet *Stylesheet, name string, kind Kind, tokens map[string]string) (string, error) {
 	if !styleNameOK(name) {
-		return "", fmt.Errorf("ownstyle: %q is not a valid style name: ^[a-z][a-z0-9-]*$ and not the ui- prefix", name)
+		return "", fmt.Errorf("ownstyle: %q is not a valid style name: ^[a-z][a-z0-9-]{0,63}$ and not the ui- prefix", name)
 	}
 	c := &compiler{
 		name:        name,

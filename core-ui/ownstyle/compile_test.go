@@ -112,7 +112,7 @@ func TestCompileUnknownCustomMediaIsError(t *testing.T) {
 
 func TestCompileInvalidName(t *testing.T) {
 	sheet, _ := Parse(".a{color:red}")
-	for _, name := range []string{"", "Board", "ui-card", "a/b"} {
+	for _, name := range []string{"", "Board", "ui-card", "a/b", strings.Repeat("a", 65)} {
 		if _, err := Compile(sheet, name, KindScoped, style.ThemeToTokens(style.DefaultTheme())); err == nil {
 			t.Errorf("name %q accepted", name)
 		}

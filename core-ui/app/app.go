@@ -122,10 +122,16 @@ func NewApp(name string) *App {
 // then validates, passing a partially-populated theme (e.g. a
 // Color with empty Value) panics with the field path naming the
 // missing piece. This catches "silently broken styling" failures at
-// startup, not at the first page render.
+// startup, not at the first page render. Every registered owned style
+// sheet is compiled against the theme too (ownstyle.CheckTheme), so a
+// theme that renames a breakpoint a sheet's custom media names panics
+// here.
 func (a *App) WithTheme(theme style.Theme) *App {
 	style.AutoFillNames(&theme)
 	theme.MustValidate()
+	if err := ownstyle.CheckTheme(theme); err != nil {
+		panic(fmt.Sprintf("app: WithTheme: %v", err))
+	}
 	a.Theme = &theme
 	return a
 }

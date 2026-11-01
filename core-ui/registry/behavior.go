@@ -184,6 +184,9 @@ var (
 )
 
 var (
+	// behaviorName is the grammar for behavior AND style names: each is
+	// a URL segment and a manifest key, and a style name is spliced
+	// unescaped into every instance's data-cui-comp marker.
 	behaviorName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 	// The value may not carry a control character (a tab included),
 	// DEL, a backslash, a quote or a bracket: a CSS string with an
