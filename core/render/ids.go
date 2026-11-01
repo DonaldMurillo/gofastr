@@ -559,19 +559,13 @@ func unescapeAttr(s string) string {
 		}
 		k := i + 1
 		if k < len(s) && s[k] == '#' {
-			k++
-			hex := k < len(s) && (s[k] == 'x' || s[k] == 'X')
-			if hex {
-				k++
+			if r, n := numericRef(s[i:]); n > 0 {
+				b.WriteRune(r)
+				i += n
+			} else {
+				b.WriteByte('&')
+				i++
 			}
-			for k < len(s) && (isDigit(s[k]) || hex && isHexLetter(s[k])) {
-				k++
-			}
-			if k < len(s) && s[k] == ';' {
-				k++
-			}
-			b.WriteString(html.UnescapeString(s[i:k]))
-			i = k
 			continue
 		}
 		for k < len(s) && (isDigit(s[k]) || (s[k]|0x20) >= 'a' && (s[k]|0x20) <= 'z') {
@@ -596,6 +590,54 @@ func unescapeAttr(s string) string {
 		i += len(ref)
 	}
 	return b.String()
+}
+
+// numericRef decodes the numeric character reference at the start of s
+// ("&#65;", "&#x41", ...) the way the HTML tokenizer does, returning the
+// rune and the bytes it spans, or 0 bytes when no digit follows: "&#x;"
+// stays literal. Zero, a surrogate or a value past U+10FFFF reads as
+// U+FFFD, and 0x80-0x9F as its Windows-1252 character.
+func numericRef(s string) (rune, int) {
+	k := 2
+	hex := k < len(s) && (s[k] == 'x' || s[k] == 'X')
+	if hex {
+		k++
+	}
+	start, x := k, rune(0)
+	for ; k < len(s); k++ {
+		var d rune
+		switch c := s[k]; {
+		case isDigit(c):
+			d = rune(c - '0')
+		case hex && isHexLetter(c):
+			d = rune(c|0x20-'a') + 10
+		default:
+			goto done
+		}
+		if x <= utf8.MaxRune {
+			if hex {
+				x = x*16 + d
+			} else {
+				x = x*10 + d
+			}
+		}
+	}
+done:
+	if k == start {
+		return 0, 0
+	}
+	if k < len(s) && s[k] == ';' {
+		k++
+	}
+	switch {
+	case x == 0 || x >= 0xD800 && x <= 0xDFFF || x > utf8.MaxRune:
+		return utf8.RuneError, k
+	case x >= 0x80 && x <= 0x9F:
+		// The standard decoder carries the Windows-1252 table.
+		r, _ := utf8.DecodeRuneInString(html.UnescapeString("&#" + strconv.Itoa(int(x)) + ";"))
+		return r, k
+	}
+	return x, k
 }
 
 func isDigit(c byte) bool     { return c >= '0' && c <= '9' }
