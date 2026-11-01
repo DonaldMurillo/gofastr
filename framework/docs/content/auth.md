@@ -2084,14 +2084,29 @@ moment it arrived, so every call forced a refresh that could not happen
 (no refresh token) and failed. A provider call refused with such a token
 means the grant was revoked: refresh, or have the user sign in again.
 
-Refreshes of one `(user, provider)` run one at a time within a process.
-A caller that waited behind another's refresh gets that refresh's record
-instead of spending the refresh token again, which under a provider with
-single-use, rotating refresh tokens would fail or revoke the grant. When
-an exchange fails because another replica already spent the token, the
-newer record that replica stored is returned instead of the error. The
-final write stays a compare-and-swap on the refresh token refreshed
-from, so a grant a login stored meanwhile is never overwritten.
+Refreshes of one `(user, provider)` run one at a time, within a process
+and across replicas. A refresh token spent twice fails under a provider
+that rotates them, and one that detects reuse (Auth0, Okta; RFC 9700
+§4.14.2) revokes the whole grant, so the user has to reconnect.
+
+- Within a process, a caller that waited behind another's refresh gets
+  that refresh's record instead of spending the token again.
+- Across replicas, `SQLOAuthTokenStore` leases the grant in its row (one
+  conditional `UPDATE`) before the token is spent. A replica that finds
+  another's lease never spends it: it waits up to 10 seconds, bounded by
+  its context, for that refresh to land and returns the stored record.
+  If nothing lands it fails closed with `auth.ErrOAuthRefreshInProgress`
+  and the token stays unspent; retry shortly. A lease lapses after 30
+  seconds, so a replica that died mid-exchange frees the grant, and a
+  failed exchange releases it at once.
+- A custom store opts in by implementing `auth.OAuthTokenLeaser`
+  (`LeaseRefresh`, `ReleaseRefresh`); one that does not is serialized
+  per process only.
+
+The final write stays a compare-and-swap on the refresh token refreshed
+from, so a grant a login stored meanwhile is never overwritten. The
+lease column (`refresh_lease_ms`) is added to an existing table on
+first use.
 
 Refresh is concrete per provider; there is no generic provider registry.
 `GoogleProvider` and `GitHubProvider` implement `OAuthTokenRefresher`

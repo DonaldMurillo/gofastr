@@ -741,3 +741,13 @@ notes:
         - gofastr/framework/ratelimit.Limiter.Middleware
         - gofastr/framework/ratelimit.Limiter.MiddlewareByKey
         - gofastr/framework.AgentRateLimitKey
+  - change: "RefreshOAuthToken and ValidOAuthToken on a SQLOAuthTokenStore lease the grant before spending its refresh token, and can fail with auth.ErrOAuthRefreshInProgress when another replica's refresh does not land within 10 seconds; the store adds a refresh_lease_ms column to an existing table on first use"
+    breaking: true
+    hits: review
+    guidance: "Two replicas refreshing one grant both spent its refresh token, and a provider that detects reuse revoked the grant. Treat ErrOAuthRefreshInProgress as retryable: the token was not spent. The column is added automatically; nothing to migrate by hand."
+    find:
+      uses:
+        - gofastr/battery/auth.RefreshOAuthToken
+        - gofastr/battery/auth.ValidOAuthToken
+        - gofastr/battery/auth.OAuth2Plugin.ValidOAuthToken
+        - gofastr/battery/auth.OAuth2Plugin.RefreshOAuthToken

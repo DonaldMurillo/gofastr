@@ -165,6 +165,11 @@ few lines, and link the PR or the docs page for the rest.
     (authorization-code injection, RFC 9700). `DisablePKCE` on each
     provider turns it off; custom providers opt in through
     `auth.OAuth2PKCEProvider`.
+  - **OAuth refresh is serialized across replicas.** `SQLOAuthTokenStore`
+    leases a grant (`auth.OAuthTokenLeaser`, new `refresh_lease_ms`
+    column) before its refresh token is spent; a replica that finds
+    another's lease waits for that refresh and never spends the token,
+    failing with `auth.ErrOAuthRefreshInProgress` if it does not land.
   - OAuth: an account claim deletes the squatter's stored provider
     tokens; callbacks without a code no longer fill the replay table
     and lock every login out; concurrent refreshes spend a refresh token

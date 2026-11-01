@@ -141,6 +141,38 @@ type OAuthTokenStore interface {
 	Delete(ctx context.Context, userID, provider string) error
 }
 
+// OAuthTokenLeaser is implemented by a token store shared across replicas
+// that can lease the right to spend a stored refresh token. Without it,
+// two replicas refreshing one grant at once both spend the same refresh
+// token: a rotating provider refuses the second, and one that detects
+// reuse (RFC 9700 §4.14.2; Auth0, Okta) revokes the whole grant, so the
+// user has to reconnect. SQLOAuthTokenStore implements it. A store that
+// does not is serialized per process only.
+type OAuthTokenLeaser interface {
+	// LeaseRefresh claims the right to spend the stored refresh token
+	// `from` for (userID, provider) until `until`. It reports false, and
+	// claims nothing, when another holder's lease is live or the row no
+	// longer holds `from`.
+	LeaseRefresh(ctx context.Context, userID, provider, from string, until time.Time) (bool, error)
+	// ReleaseRefresh drops the lease on `from` early, after an exchange
+	// that failed. SaveIfRefreshUnchanged and Save clear it on success.
+	ReleaseRefresh(ctx context.Context, userID, provider, from string) error
+}
+
+// ErrOAuthRefreshInProgress reports that another replica holds the lease
+// on this grant's refresh and did not finish within the caller's wait.
+// The refresh token was not spent: retry shortly.
+var ErrOAuthRefreshInProgress = errors.New("auth: oauth token refresh in progress on another replica")
+
+// oauthRefreshLease bounds a refresh lease: longer than a token exchange
+// (10s client timeout) so a live exchange never loses its lease, short
+// enough that a replica that died mid-exchange frees the grant soon.
+const oauthRefreshLease = 30 * time.Second
+
+// oauthRefreshWait bounds how long a caller that found another replica's
+// lease waits for that refresh to land before failing closed.
+const oauthRefreshWait = 10 * time.Second
+
 // ─── SQL implementation ─────────────────────────────────────────────────────
 
 // SQLOAuthTokenStoreConfig tunes the SQL-backed store. EncryptionKey is
@@ -238,7 +270,47 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, q); err != nil {
 		return err
 	}
-	return s.migrateRefreshSHA(ctx)
+	if err := s.migrateRefreshSHA(ctx); err != nil {
+		return err
+	}
+	return s.addColumn(ctx, "refresh_lease_ms BIGINT NOT NULL DEFAULT 0")
+}
+
+// addColumn adds a column to a table created by an older build; a column
+// already there is the goal, not an error.
+func (s *SQLOAuthTokenStore) addColumn(ctx context.Context, def string) error {
+	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s`, query.QuoteFolded(s.table), def)
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
+		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s`, query.QuoteFolded(s.table), def)
+	}
+	if _, err := s.db.ExecContext(ctx, alter); err != nil {
+		if s.dialect.of(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// LeaseRefresh implements OAuthTokenLeaser: one conditional UPDATE, so of
+// any number of replicas racing for one grant exactly one claims it.
+func (s *SQLOAuthTokenStore) LeaseRefresh(ctx context.Context, userID, provider, from string, until time.Time) (bool, error) {
+	res, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		`UPDATE %s SET refresh_lease_ms = $4 WHERE user_id = $1 AND provider = $2 AND refresh_sha = $3 AND refresh_lease_ms < $5`,
+		query.QuoteFolded(s.table)), userID, provider, sha256hex(from), until.UnixMilli(), time.Now().UnixMilli())
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+// ReleaseRefresh implements OAuthTokenLeaser.
+func (s *SQLOAuthTokenStore) ReleaseRefresh(ctx context.Context, userID, provider, from string) error {
+	_, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		`UPDATE %s SET refresh_lease_ms = 0 WHERE user_id = $1 AND provider = $2 AND refresh_sha = $3`,
+		query.QuoteFolded(s.table)), userID, provider, sha256hex(from))
+	return err
 }
 
 // migrateRefreshSHA upgrades tables created before the CAS column
@@ -316,7 +388,8 @@ func (s *SQLOAuthTokenStore) Save(ctx context.Context, rec OAuthTokenRecord) err
 		 DO UPDATE SET access_token = EXCLUDED.access_token,
 		               refresh_token = EXCLUDED.refresh_token,
 		               refresh_sha = EXCLUDED.refresh_sha,
-		               expires_at = EXCLUDED.expires_at`,
+		               expires_at = EXCLUDED.expires_at,
+		               refresh_lease_ms = 0`,
 		query.QuoteFolded(s.table),
 	)
 	_, err = s.db.ExecContext(ctx, q, rec.UserID, rec.Provider, access, refresh, sha256hex(rec.RefreshToken), rec.Expiry.Unix())
@@ -340,7 +413,7 @@ func (s *SQLOAuthTokenStore) SaveIfRefreshUnchanged(ctx context.Context, rec OAu
 		return false, err
 	}
 	q := fmt.Sprintf(
-		`UPDATE %s SET access_token = $3, refresh_token = $4, refresh_sha = $5, expires_at = $6
+		`UPDATE %s SET access_token = $3, refresh_token = $4, refresh_sha = $5, expires_at = $6, refresh_lease_ms = 0
 		 WHERE user_id = $1 AND provider = $2 AND refresh_sha = $7`,
 		query.QuoteFolded(s.table),
 	)
@@ -585,8 +658,29 @@ func refreshFrom(ctx context.Context, store OAuthTokenStore, provider OAuth2Prov
 	}
 
 	refreshedFrom := rec.RefreshToken
+	// Across replicas the in-process gate above holds nothing: lease the
+	// grant before spending its refresh token. Fail closed throughout: a
+	// lease that cannot be taken or read is no licence to spend.
+	leaser, leased := store.(OAuthTokenLeaser)
+	if leased {
+		got, err := leaser.LeaseRefresh(ctx, userID, key, refreshedFrom, time.Now().Add(oauthRefreshLease))
+		if err != nil {
+			return OAuthTokenRecord{}, fmt.Errorf("auth: lease oauth token refresh: %w", err)
+		}
+		if !got {
+			return awaitOtherRefresh(ctx, store, userID, key, rec)
+		}
+	}
 	tok, err := refresher.RefreshToken(ctx, rec.RefreshToken)
 	if err != nil {
+		if leased {
+			undo, cancel := undoContext(ctx)
+			if rerr := leaser.ReleaseRefresh(undo, userID, key, refreshedFrom); rerr != nil {
+				slog.Warn("auth: releasing an oauth refresh lease failed; it lapses on its own",
+					"user_hash", hashedIdentifier(userID), "err", rerr)
+			}
+			cancel()
+		}
 		// Another replica may have spent this refresh token first; its
 		// newer record is then the answer, not the failure.
 		if cur, gerr := store.Get(ctx, userID, key); gerr == nil && tokenMovedOn(rec, cur) {
@@ -628,6 +722,32 @@ func refreshFrom(ctx context.Context, store OAuthTokenStore, provider OAuth2Prov
 		return current, nil
 	}
 	return rec, nil
+}
+
+// awaitOtherRefresh waits, bounded by oauthRefreshWait and ctx, for the
+// replica holding the lease to store its refreshed grant, and returns it.
+// It never spends the refresh token itself: when the wait ends with the
+// grant unchanged it fails with ErrOAuthRefreshInProgress.
+func awaitOtherRefresh(ctx context.Context, store OAuthTokenStore, userID, key string, seen OAuthTokenRecord) (OAuthTokenRecord, error) {
+	ctx, cancel := context.WithTimeout(ctx, oauthRefreshWait)
+	defer cancel()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		//gofastr:allow(recovercallback) a bounded poll on the caller's own request goroutine, the same call refreshFrom makes outside the loop; no goroutine or read loop is spawned
+		cur, err := store.Get(ctx, userID, key)
+		if err == nil && tokenMovedOn(seen, cur) {
+			return cur, nil
+		}
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+			return OAuthTokenRecord{}, err
+		}
+		select {
+		case <-ctx.Done():
+			return OAuthTokenRecord{}, ErrOAuthRefreshInProgress
+		case <-tick.C:
+		}
+	}
 }
 
 // oauthRefreshKey names one stored grant for the refresh gate.
