@@ -625,7 +625,7 @@ notes:
     find:
       uses:
         - gofastr/battery/auth.RequireAPIScopes
-  - change: "Derived element ids inside an island or a deferred outlet carry that region's namespace: a section titled Features in island cart is cart--features, and in the deferred outlet l:shell#aside it is l-shell-aside--features, on the full page and in the RPC or part answer alike"
+  - change: "Derived element ids inside an island or a deferred outlet carry that region's namespace: a section titled Features in island cart is cart--features, and in the deferred outlet l:shell#aside it is _l-shell-aside--features, on the full page and in the RPC or part answer alike"
     breaking: false
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
     guidance: "Two same-titled regions emitted one id, so aria-labelledby and #features hit the first. Update a #features link or an e2e selector that targets a derived id inside an island or a deferred outlet to the prefixed id, or give the component an explicit ID, which always wins."

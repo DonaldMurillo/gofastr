@@ -3754,7 +3754,8 @@ few lines, and link the PR or the docs page for the rest.
   rows tied on it are no longer skipped. A key-only cursor whose anchor
   row is gone answers 400 with reason `cursor_anchor_gone`; a key too
   long for the cap answers 500 with `cursor_key_too_long`. Define refuses
-  a Hidden or NoQuery key behind a `CursorField`. A cursor minted before
+  a Hidden or NoQuery key behind a `CursorField`, and a `CursorFields`
+  list naming one column twice. A cursor minted before
   the upgrade on a single `CursorField` other than the key is refused
   once. See
   [cursor pagination](framework/docs/content/cursor-pagination.md).
@@ -3859,13 +3860,18 @@ few lines, and link the PR or the docs page for the rest.
 - **The static export writes a `StaticPaths` key holding `/`, and refuses
   two pages that write one file.** The key is checked after it is encoded
   for disk; `..`, `.`, `\` and NUL are still refused. Two files that
-  differ only in case count as one file: a redirect's page, a
+  differ only in case, or only in Unicode normalization (`café`
+  precomposed or with a combining accent), count as one file: a redirect's page, a
   static-source or `ExtraDirs` copy (`_HEADERS` included) and a
   contributor file are checked the same way. A rebuild after a
   case-only rename keeps the page.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.
+- **A dismissed `ui.Banner` with no `DismissID` stays dismissed.** Its
+  identity came from a process-wide counter, so the next render, an
+  island refresh or a page navigation, showed it again. It is now named
+  by its message.
 - **A theme missing a breakpoint fails at boot, not on a request.**
   `app.WithTheme` compiles every owned style sheet against the theme and
   names the one that fails; at serve time a sheet that does not compile
@@ -3890,8 +3896,9 @@ few lines, and link the PR or the docs page for the rest.
   that render at once settle in slot order. An island renders under its
   own id, so a section in island `cart` is `cart--features` in both the
   page and the RPC answer, and one in a deferred outlet takes the
-  outlet's address (`l-shell-aside--features`); a link to an auto-derived
-  id inside either needs the prefix. A namespace keeps letters, digits
+  outlet's address, marked so no island name reaches it
+  (`_l-shell-aside--features`); a link to an auto-derived id inside
+  either needs the prefix. A namespace keeps letters, digits
   and single inner hyphens and escapes any other byte as `_` and hex
   (island `cart.v2` gives `cart_2ev2--features`), so two namespaces never
   share ids and an island id with a quote never reaches an attribute.
