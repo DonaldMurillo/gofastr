@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,10 +133,27 @@ func (l launchd) start(b *Battery) error {
 // stop sends SIGTERM and waits for the process to exit: the daemon
 // drains, exits 0, and KeepAlive leaves it down. A daemon that is not
 // running is already stopped (`launchctl kill` would fail on it).
+//
+// One still in its builder past startingWait is booted out instead: it
+// has no SIGTERM handler until it is ready, so the signal kills it, a
+// death launchd's KeepAlive {SuccessfulExit=false} counts as a crash and
+// restarts. bootout unloads the job, so nothing restarts it; start
+// bootstraps it again. The wait is on its control channel, since no
+// reply named its pid.
 func (l launchd) stop(b *Battery) error {
 	daemon, err := b.runningDaemon()
-	if err != nil || daemon.PID == 0 {
+	starting := errors.Is(err, errStarting)
+	if err != nil && !starting {
 		return err
+	}
+	if daemon.PID == 0 && !starting {
+		return nil
+	}
+	if starting {
+		if err := b.run("launchctl", "bootout", l.target(b)); err != nil {
+			return err
+		}
+		return b.waitExit(daemon)
 	}
 	if err := b.run("launchctl", "kill", "SIGTERM", l.target(b)); err != nil {
 		return err

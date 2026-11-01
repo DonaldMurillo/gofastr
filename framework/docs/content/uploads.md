@@ -536,14 +536,17 @@ What it removes:
 | Format | Removed | How |
 |--------|---------|-----|
 | JPEG | every APPn segment (EXIF, XMP, ICC, Photoshop data) and COM comments; anything after EOI. The Adobe APP14 colour marker stays, cut to its 12 bytes: a CMYK JPEG does not decode without it | segments spliced out; no re-encode unless a rotation is needed |
-| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks | re-encoded (PNG is lossless, pixels unchanged) |
+| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks | re-encoded (PNG is lossless, pixels unchanged); an animated PNG is spliced instead, every frame chunk kept |
 | WebP | `EXIF` and `XMP ` chunks | container rewritten, image bytes untouched |
 
 An EXIF orientation of 2–8 is applied first so the stripped photo still
 displays upright: JPEG and PNG bake the rotation into the pixels (the
 only path that re-compresses a JPEG, at quality 95), while WebP keeps an
 orientation-only EXIF chunk, because the WebP encoder lives above this
-layer and the container is all that can be rewritten here.
+layer and the container is all that can be rewritten here. An animated
+PNG does the same with an orientation-only `eXIf` chunk: the standard
+PNG decoder reads only the first frame, so re-encoding would store a
+still image.
 
 Behaviour worth knowing:
 

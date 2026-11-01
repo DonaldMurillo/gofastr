@@ -30,7 +30,11 @@ and waits for the worker goroutine to drain. Pass a tight context if
 shutdown speed matters more than letting a hung receiver complete.
 On a `LeasedStore`, the deliveries of the claimed batch that had not
 started go back with their attempt refunded, so the next process
-sends them at once instead of after the lease.
+sends them at once instead of after the lease. So does the POST that
+`Stop` cancelled mid-flight: a shutdown is not a failed attempt, and a
+delivery on its last attempt is retried by the next process rather than
+dead-lettered. The receiver may have seen that POST, so it can arrive
+twice; dedupe on `X-GoFastr-Delivery-ID`.
 
 Register a subscriber and publish:
 

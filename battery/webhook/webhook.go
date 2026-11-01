@@ -728,6 +728,10 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	// failuresTotal stays <= deliveriesTotal. Success bumps nothing else.
 	m.deliveriesTotal.Add(1)
 	sub, err := m.store.GetSubscriber(ctx, d.SubscriberID)
+	if err != nil && ctx.Err() != nil {
+		m.refundShutdown(ctx, d)
+		return
+	}
 	if err != nil {
 		// Transient lookup failure (DB blip, canceled worker context
 		// on a ctx-aware store): says nothing about the subscriber.
@@ -780,6 +784,11 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	req.Header.Set(SignatureHeader, SignWithTimestamp(sub.Secret, ts, d.Payload))
 
 	resp, err := m.opts.HTTPClient.Do(req)
+	if err != nil && ctx.Err() != nil {
+		// Stop cancelled the POST: a shutdown, not a failed attempt.
+		m.refundShutdown(ctx, d)
+		return
+	}
 	if err != nil {
 		m.failuresTotal.Add(1)
 		d.Status = StatusFailed
@@ -808,6 +817,26 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	d.LastError = fmt.Sprintf("http %d", resp.StatusCode)
 	m.schedule(&d)
 	m.saveDelivery(d)
+}
+
+// refundShutdown hands back an attempt the worker's shutdown cut short:
+// the row goes back to pending, due now, with the attempt refunded, the
+// way tick hands back claims it never started. Scheduled as a failure
+// instead, a delivery on its last attempt was dead-lettered by a
+// restart. The receiver may have seen the POST; the next send is the
+// at-least-once retry it already has to dedupe (X-GoFastr-Delivery-ID).
+//
+// The plain-dequeue fallback bumped the attempt in this snapshot only,
+// so leaving the row alone is its refund. A host LeasedStore with no
+// release keeps the claim until its lease expires, as for unstarted
+// claims in tick.
+func (m *Manager) refundShutdown(ctx context.Context, d Delivery) {
+	if d.unclaimedAttempt {
+		return
+	}
+	if r, ok := m.store.(claimReleaser); ok {
+		m.releaseClaims(ctx, r, []Delivery{d})
+	}
 }
 
 // saveDelivery persists a delivery's post-attempt state, logging (never
