@@ -6,7 +6,8 @@
 //
 // Records live in [Dir], one owner-only JSON file per run. A run that
 // dies without shutting down leaves its file behind; [List] drops a
-// record whose pid is gone. Registration is best-effort: a run that
+// record whose process is gone, a pid now held by a newer process
+// included. Registration is best-effort: a run that
 // cannot write its record serves anyway.
 package localrun
 
@@ -51,6 +52,10 @@ type Record struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	PID  int    `json:"pid"`
+	// ProcStart is the OS's start value for PID (procalive.Identity),
+	// so List can tell the run from a later process that got its pid.
+	// Absent when the OS would not say; the pid alone decides then.
+	ProcStart uint64 `json:"proc_start,omitempty"`
 	// URL is the base URL a local client dials: http://127.0.0.1:<port>
 	// for a wildcard bind.
 	URL string `json:"url"`
@@ -123,13 +128,17 @@ func Disabled() bool {
 }
 
 // Register writes rec and returns the func that removes it. It fills
-// ID, PID (this process), Version and a zero Started. URL is required.
+// ID, PID (this process), ProcStart, Version and a zero Started. URL is
+// required.
 func Register(rec Record) (unregister func(), err error) {
 	if rec.URL == "" {
 		return nil, errors.New("localrun: a record needs a URL")
 	}
 	if rec.PID == 0 {
 		rec.PID = os.Getpid()
+	}
+	if rec.ProcStart == 0 {
+		rec.ProcStart = procalive.Identify(rec.PID).Start
 	}
 	if rec.Started.IsZero() {
 		rec.Started = time.Now().UTC()
@@ -174,7 +183,8 @@ func Register(rec Record) (unregister func(), err error) {
 }
 
 // List returns the records of live runs, newest first. A record whose
-// pid has exited is removed on the way. Files that are not records are
+// process has exited is removed on the way, and so is one whose pid a
+// newer process now holds (its start value differs from ProcStart). Files that are not records are
 // skipped. A missing directory is an empty list.
 func List() ([]Record, error) {
 	root, err := openDir(false)
@@ -205,7 +215,7 @@ func List() ([]Record, error) {
 		if !ok {
 			continue
 		}
-		if !procalive.Alive(rec.PID) {
+		if !(procalive.Identity{PID: rec.PID, Start: rec.ProcStart}).Alive() {
 			_ = root.Remove(name)
 			continue
 		}

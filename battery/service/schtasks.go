@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
 // taskScheduler is the Windows backend: a Task Scheduler task with a
@@ -243,13 +245,14 @@ func (t taskScheduler) stop(b *Battery) error {
 		// then wait for its control channel to go away (no pid to
 		// watch without a reply).
 		_, _ = b.tool.output("schtasks", "/End", "/TN", name)
-		return b.waitExit(0)
+		return b.waitExit(procalive.Identity{})
 	}
-	if b.waitExit(resp.PID) == nil {
+	daemon := procalive.Identify(resp.PID)
+	if b.waitExit(daemon) == nil {
 		return nil
 	}
 	_, _ = b.tool.output("schtasks", "/End", "/TN", name)
-	return b.waitExit(resp.PID)
+	return b.waitExit(daemon)
 }
 
 func (t taskScheduler) restart(b *Battery) error {

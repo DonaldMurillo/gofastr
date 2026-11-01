@@ -300,7 +300,7 @@ func (b *Battery) copySelf() (string, error) {
 }
 
 func (b *Battery) uninstall(purge bool) error {
-	pid, err := b.runningPID()
+	daemon, err := b.runningDaemon()
 	if err != nil {
 		return err
 	}
@@ -309,8 +309,8 @@ func (b *Battery) uninstall(purge bool) error {
 	}
 	// Whatever the manager reported, nothing is deleted while the
 	// daemon is still alive: it holds the database and the binary.
-	if pid > 0 {
-		if err := b.waitExit(pid); err != nil {
+	if daemon.PID > 0 {
+		if err := b.waitExit(daemon); err != nil {
 			return fmt.Errorf("%w; nothing was deleted", err)
 		}
 	}
@@ -432,21 +432,22 @@ func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 	}
 }
 
-// runningPID is the installed daemon's pid, or 0 when nothing answers
-// on its control channel.
-func (b *Battery) runningPID() (int, error) {
+// runningDaemon is the installed daemon's process, pid 0 when nothing
+// answers on its control channel. Its start value is read as soon as it
+// answers, while the pid is still certainly the daemon's.
+func (b *Battery) runningDaemon() (procalive.Identity, error) {
 	inst, err := b.layoutFor(false)
 	if err != nil {
-		return 0, err
+		return procalive.Identity{}, err
 	}
 	resp, err := callControl(inst.socketPath(), "status")
 	if errors.Is(err, errNotRunning) {
-		return 0, nil
+		return procalive.Identity{}, nil
 	}
 	if err != nil {
-		return 0, err
+		return procalive.Identity{}, err
 	}
-	return resp.PID, nil
+	return procalive.Identify(resp.PID), nil
 }
 
 // stopWait bounds how long a stop waits for the process to exit: the
@@ -459,12 +460,14 @@ var stopWait = stopTimeout + 10*time.Second
 var startingWait = startWait
 
 // waitExit waits until the installed daemon's control channel is gone
-// and process pid has exited. The daemon keeps the channel open until
-// its drain finishes, but the channel closing is not the process
+// and the daemon process has exited. The daemon keeps the channel open
+// until its drain finishes, but the channel closing is not the process
 // exiting: until it exits, Windows holds its executable locked and a
 // service manager still counts the job as running, so a start issued
-// then is dropped.
-func (b *Battery) waitExit(pid int) error {
+// then is dropped. A pid the kernel has handed to a newer process is
+// not the daemon (procalive.Identity), so a recycled pid does not hold
+// stop for the full wait or make uninstall refuse.
+func (b *Battery) waitExit(daemon procalive.Identity) error {
 	inst, err := b.layoutFor(false)
 	if err != nil {
 		return err
@@ -472,11 +475,11 @@ func (b *Battery) waitExit(pid int) error {
 	deadline := time.Now().Add(stopWait)
 	for {
 		_, err := callControl(inst.socketPath(), "status")
-		if errors.Is(err, errNotRunning) && (pid <= 0 || !procalive.Alive(pid)) {
+		if errors.Is(err, errNotRunning) && (daemon.PID <= 0 || !daemon.Alive()) {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("service: %s (pid %d) did not exit within %s", b.cfg.Name, pid, stopWait)
+			return fmt.Errorf("service: %s (pid %d) did not exit within %s", b.cfg.Name, daemon.PID, stopWait)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

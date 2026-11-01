@@ -53,7 +53,7 @@ func TestResolveAdapterCustomBuildArgs(t *testing.T) {
 	if !ok {
 		t.Fatal("custom freeform should resolve")
 	}
-	want := []string{"custombin", "--flag1", "value1", "--flag2", "the prompt"}
+	want := []string{"custombin", "--flag1", "value1", "--flag2", "--", "the prompt"}
 	got := a.BuildArgs("the prompt")
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("BuildArgs = %#v, want %#v", got, want)
@@ -238,8 +238,7 @@ func TestResolveAdapterFreeformMatchesBuiltin(t *testing.T) {
 		// Build the adapter's natural spawn command (argv minus the
 		// trailing prompt) and feed it back through resolveAdapter as
 		// a single string, the same path --agent "<freeform>" takes.
-		argv := want.BuildArgs("")
-		prefix := argv[:len(argv)-1]
+		prefix := spawnPrefix(want.BuildArgs(""))
 		if anyTokenHasWhitespace(prefix) {
 			t.Logf("%s: skipping freeform roundtrip (one or more argv tokens contain whitespace and can't survive shell-style splitting)", name)
 			continue
@@ -253,6 +252,52 @@ func TestResolveAdapterFreeformMatchesBuiltin(t *testing.T) {
 		if got.Name != name {
 			t.Errorf("%s: spawn cmd %q resolved to adapter %q, want %q (so the gear modal can mark it current)",
 				name, spawn, got.Name, name)
+		}
+	}
+}
+
+// A chat message is the operator's text, never a flag. Without "--" in
+// front of it, "--fix the header" ended an omp or claude turn with an
+// unknown-option error, and "--tools=Read" could replace an adapter's
+// own flag. pi and codex lead the prompt with a <kiln-system> block.
+func TestDashPromptIsNotAFlag(t *testing.T) {
+	const msg = "--tools=Read fix the header"
+	custom, ok := resolveAdapter("mycli --json")
+	if !ok {
+		t.Fatal("custom freeform should resolve")
+	}
+	given, _ := resolveAdapter("mycli --json --")
+	cases := map[string]Adapter{
+		"omp":         adapters["omp"],
+		"claude-code": adapters["claude-code"],
+		"custom":      custom,
+		"custom --":   given,
+	}
+	for name, a := range cases {
+		argv := a.BuildArgs(msg)
+		n := len(argv)
+		if n < 2 || argv[n-1] != msg || argv[n-2] != "--" {
+			t.Errorf("%s: argv tail = %q, want [-- %q]", name, argv[max(0, n-2):], msg)
+		}
+		markers := 0
+		for _, arg := range argv {
+			if arg == "--" {
+				markers++
+			}
+		}
+		if markers != 1 {
+			t.Errorf("%s: %d end-of-options markers, want 1", name, markers)
+		}
+	}
+	// The preset match compares a free-form command with argv minus the
+	// prompt and its marker, or no preset would ever match again.
+	if got := spawnPrefix([]string{"x", "-p", "--", "msg"}); !reflect.DeepEqual(got, []string{"x", "-p"}) {
+		t.Errorf("spawnPrefix kept the marker: %q", got)
+	}
+	for _, name := range []string{"pi", "codex"} {
+		last := adapters[name].BuildArgs(msg)
+		if p := last[len(last)-1]; strings.HasPrefix(p, "-") {
+			t.Errorf("%s: prompt argument starts with a dash: %q", name, p)
 		}
 	}
 }
