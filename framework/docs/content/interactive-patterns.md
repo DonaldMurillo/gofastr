@@ -45,7 +45,12 @@ Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
 
 `framework/ui.Counter` renders a numeric counter with +/− buttons.
 Uses `data-cui-signal-inc`. Configurable `Step` for
-non-unit increments.
+non-unit increments. The kernel steps the signal store, not the
+markup: `ui.Counter` over a `Slice` steps from the page's seed. A bare
+`headless.Counter` hands its own `Value` to the signal when it arrives
+(`data-hui-counter-value`, bound by `headless-controls`), so its first
++ steps from the number on screen; set `Seeded` when the page seeds
+the signal itself.
 
 ### Tabs
 

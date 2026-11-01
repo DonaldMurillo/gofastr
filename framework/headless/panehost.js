@@ -260,19 +260,45 @@
   // window narrowed under an open pane, would otherwise leave focus
   // behind the scrim.
   //
-  // lockers holds the hosts that took the lock, so the navigation pass
-  // below can release the lock of a host that is no longer in the
-  // document: a client navigation detaches the old page BEFORE it
-  // announces itself, so a query of the document finds nothing to
-  // unlock and the next page would stay scroll-locked.
+  // lockers holds the hosts that took the lock, so a host that left
+  // the document can still give it back: a detached host is no longer
+  // in a document query's answer. Two things detach one. A client
+  // navigation takes the old page away BEFORE it announces itself
+  // (the navigate pass below), and an island swap re-renders the
+  // region a host sat in with no navigation at all, so nothing would
+  // ever announce it: while any host holds the lock, a childList
+  // watcher on the body (the detach-watcher shape carousel.js and
+  // disclosure.js use) releases every locker that left the tree. It
+  // observes child lists only, so the attribute writes below never
+  // re-enter it, and it disconnects when the last lock is gone.
   const lockers = new Set();
+  let detachWatcher = null;
   function lock(host) {
     lockers.add(host);
     if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
+    syncDetachWatcher();
   }
   function unlock(host) {
     lockers.delete(host);
     if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
+    syncDetachWatcher();
+  }
+  function releaseDetached() {
+    for (const host of Array.from(lockers)) {
+      if (!host.isConnected) {
+        host.removeAttribute('data-hui-pane-mode');
+        unlock(host);
+      }
+    }
+  }
+  function syncDetachWatcher() {
+    if (lockers.size > 0 && !detachWatcher && typeof MutationObserver === 'function') {
+      detachWatcher = new MutationObserver(releaseDetached);
+      detachWatcher.observe(document.body, { childList: true, subtree: true });
+    } else if (lockers.size === 0 && detachWatcher) {
+      detachWatcher.disconnect();
+      detachWatcher = null;
+    }
   }
   function syncMode(host) {
     const wantOverlay = window.matchMedia(MQ).matches && !!topmost(host);
@@ -376,20 +402,14 @@
   });
 
   // Release the lock of every host a client-side navigation took away,
-  // so the next page is not left scroll-locked: the hosts that took the
-  // lock are walked from the module's own record, because a detached
-  // one is no longer in a document query's answer. A host the
-  // navigation kept (layout chrome) is re-synced: its open drawer is
-  // still on screen and keeps its lock.
+  // so the next page is not left scroll-locked, without waiting for the
+  // watcher's microtask: the hosts that took the lock are walked from
+  // the module's own record. A host the navigation kept (layout
+  // chrome) is re-synced: its open drawer is still on screen and keeps
+  // its lock.
   window.addEventListener('gofastr:navigate', function () {
-    for (const host of Array.from(lockers)) {
-      if (!host.isConnected) {
-        host.removeAttribute('data-hui-pane-mode');
-        unlock(host);
-      } else {
-        syncMode(host);
-      }
-    }
+    releaseDetached();
+    for (const host of Array.from(lockers)) syncMode(host);
   });
 
   function scan(root) {
