@@ -55,7 +55,13 @@ func midNavOpenCase(t *testing.T, held string, modal bool) {
 	}
 	navGate, freeNav := gate()
 	openGate, freeOpen := gate()
+	// reached closes when the open's held request arrives, so the test
+	// releases /b only once the open is parked on it (no fixed sleep).
+	reached, markReached := gate()
 	hold := func(r *http.Request, ch chan struct{}) bool {
+		if ch == openGate {
+			markReached()
+		}
 		select {
 		case <-ch:
 			return true
@@ -128,17 +134,59 @@ func midNavOpenCase(t *testing.T, held string, modal bool) {
 		chromedp.Poll(`location.pathname === '/b' && !!document.getElementById('screen-a')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
 		// Not awaited: the request at held hangs until freeOpen.
 		chromedp.Evaluate(`window.__gofastr.openWidget('late', {pushUrl: true, params: {who: 'fresh'}}); true`, nil),
-		chromedp.Sleep(300*time.Millisecond),
 		chromedp.ActionFunc(func(c context.Context) error {
-			if !modal {
-				return nil
+			if modal {
+				// The modal's chrome and deep link land while /b is held.
+				return chromedp.Poll(`!!window.__gofastr._widgets.late && location.search !== ''`, nil,
+					chromedp.WithPollingTimeout(5*time.Second)).Do(c)
 			}
-			// The modal's chrome and deep link land while /b is held.
-			return chromedp.Poll(`!!window.__gofastr._widgets.late && location.search !== ''`, nil,
-				chromedp.WithPollingTimeout(5*time.Second)).Do(c)
+			select {
+			case <-reached:
+				return nil
+			case <-time.After(5 * time.Second):
+				return fmt.Errorf("the open never reached the held request %s", held)
+			}
 		}),
+		// Count the deep-link syncs from here on, recording whether the
+		// widget was still open after each one. widgets-boot calls the
+		// namespace slot at call time, so the wrapper sees every call.
+		chromedp.Evaluate(`(() => {
+			const G = window.__gofastr, sync = G._syncDeepLinks;
+			G.__syncs = 0; G.__syncKept = true;
+			G._syncDeepLinks = function () {
+				try { return sync.apply(this, arguments); } finally {
+					G.__syncs++;
+					if (!G._widgets.late) G.__syncKept = false;
+				}
+			};
+		})()`, nil),
 		chromedp.ActionFunc(func(context.Context) error { freeNav(); return nil }),
 		chromedp.WaitVisible(`#screen-b`, chromedp.ByID),
+		chromedp.ActionFunc(func(c context.Context) error {
+			if held != "/__gofastr/runtime/widgetlinks.js" {
+				return nil
+			}
+			// The widget mounted while /b was held (only widgetlinks.js
+			// is), so the commit's catalog re-fetch syncs deep links
+			// against a URL with no ?panel yet. That sync must run, and
+			// the widget must survive it, BEFORE the module is released:
+			// otherwise this case never exercises the guard.
+			return chromedp.Poll(`window.__gofastr.__syncs >= 1`, nil,
+				chromedp.WithPollingTimeout(5*time.Second)).Do(c)
+		}),
+		chromedp.ActionFunc(func(c context.Context) error {
+			if held != "/__gofastr/runtime/widgetlinks.js" {
+				return nil
+			}
+			var kept bool
+			if err := chromedp.Evaluate(`window.__gofastr.__syncKept && !!window.__gofastr._widgets.late`, &kept).Do(c); err != nil {
+				return err
+			}
+			if !kept {
+				return fmt.Errorf("the post-commit deep-link sync closed the widget whose open was still writing its deep link")
+			}
+			return nil
+		}),
 		chromedp.ActionFunc(func(context.Context) error { freeOpen(); return nil }),
 		chromedp.Poll(`!!window.__gofastr._widgets.late && String(window.__gofastr.getSignal('who') ?? '') === 'fresh'`, nil,
 			chromedp.WithPollingTimeout(5*time.Second)),
