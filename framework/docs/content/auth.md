@@ -1585,7 +1585,12 @@ supported way to add that provider is the **authenticated link flow**:
    login decision table: it re-checks that the session still belongs to
    that same user, refuses (`409`) if the provider identity is already
    bound to a *different* account, and otherwise links `(provider,
-   provider_id)` to the proven user.
+   provider_id)` to the proven user. It then reads the binding back: a
+   concurrent link of the same identity to another account that won the
+   race also answers `409` (`auth.provider_linked_elsewhere`, an
+   `oauth.refused` event with `reason=provider_already_linked`), never a
+   success with an `oauth.linked` event. A successful link stores the
+   provider's tokens in `OAuth2Config.TokenStore`, as a login does.
 
    The provider's redirect back is a cross-site navigation, so the
    browser withholds the `SameSite=Strict` session cookie. When a
@@ -1632,7 +1637,12 @@ session. In order:
 1. every session is deleted, so a request attaching a credential under
    one (an OAuth link callback, a token or passkey registration) finds
    its session gone when it checks again after writing;
-2. every OAuth link is removed;
+2. every OAuth link is removed, and the provider tokens stored for the
+   account in `OAuth2Config.TokenStore` are deleted: one row per
+   provider it unlinked and per provider the OAuth2 plugin registers, so
+   a retry also reaches a row an earlier, failed attempt left behind. A
+   row that cannot be deleted fails the claim after the remaining steps
+   run, before the account is marked verified;
 3. the password is cleared (magic link only; a reset keeps the new
    one);
 4. every passkey is removed;
@@ -1653,7 +1663,9 @@ the account. Its profile refresh is an UPDATE, so it cannot put back a
 link the claim removed, and once its session is stored it resolves the
 link again. A link that is gone or names another account drops the
 session: the callback answers 401 `auth.oauth_link_removed` and emits
-`oauth.refused` with `reason=link_removed`.
+`oauth.refused` with `reason=link_removed`. The callback stores provider
+tokens only after that check passes, so a refused sign-in leaves none
+behind.
 
 A verified account is never claimed: a magic link signs its owner in
 and leaves the password and other sessions alone.
@@ -1792,6 +1804,26 @@ still rides the provider's top-level redirect back. A callback URL
 replayed into any other browser carries no cookie and is refused with
 `400 oauth flow was not started in this browser`.
 
+Single use is enforced by an in-process map of spent state nonces, kept
+until each state's expiry. A callback with no `code` is refused before
+its nonce is recorded. The map holds at most 65,536 nonces; when it is
+full, the earliest-expiring ones are dropped to make room. It does not
+refuse callbacks at the cap: anyone can start a flow and keep its
+cookie, so a cap that refused would let two requests per entry lock
+every user out of OAuth sign-in for ten minutes. Dropping an entry
+leaves replay closed in practice, because a replay also needs the state
+cookie, which the callback clears, and the IdP accepts a code once.
+
+### Provider keys
+
+The key a provider is registered under (`OAuth2Config.Providers` or
+`RegisterProvider`) is its `{provider}` route segment and a field of the
+state token. It must be 1 to 64 ASCII letters, digits, `-` or `_`;
+`NewOAuth2Plugin` and `RegisterProvider` panic on any other key, as
+they do on a short `StateSecret`. A key holding a `.` used to register
+cleanly and then fail every login with "invalid or expired state",
+since the state token separates its fields with dots.
+
 ## OAuth identity linking
 
 OAuth login MUST bind the returned identity to `(provider, provider_id)`
@@ -1867,6 +1899,21 @@ downgrading.
    (best-effort ignore; the email-unique constraint means a future
    callback re-resolves cleanly).
 
+**An empty email is no email.** When the provider shares no address
+(a GitHub account with no verified email, an IdP that omits the claim)
+and no link names the identity, steps 2 and 3 do not run: the callback
+answers `400 auth.oauth_no_email` and emits `oauth.refused` with
+`reason=no_email`. Matching by `""` merged every email-less identity
+into the first one's account. An identity that is already linked signs
+in through step 1 with or without an email. A provider address longer
+than 254 bytes is refused with `400 auth.invalid_email`, the bound the
+form paths apply.
+
+The `409` refusals in step 2 emit `oauth.refused` with
+`reason=link_conflict` and `UserID` set to the local account the address
+belongs to, so `App.EraseUserData` removes the row with that account's
+other audit history.
+
 **An unverified email NEVER binds to an existing account.** It falls
 through to step 3 as if the email didn't match: the core takeover
 regression. If the email happens to collide with an existing account,
@@ -1884,7 +1931,11 @@ strictly:
    When the id_token lacks the claim, the userinfo response's flag is
    used only if its email is exactly the one kept; a flag about another
    address does not verify this one. Defaults to `false` when absent: a
-   missing assertion is never a verified email.
+   missing assertion is never a verified email. The flag describes the
+   standard `email` claim only, so it counts only when that claim (in
+   the same id_token or userinfo response) is exactly the address kept.
+   With `OIDCClaimsMapping.EmailClaim` mapped to another claim, the
+   address is verified only when it equals the verified `email`.
 - **Google**: from the `email_verified` (modern) or `verified_email`
    (legacy) userinfo field.
 - **GitHub**: `true` only when the email came back from
@@ -1979,6 +2030,39 @@ accessToken, err := auth.ValidOAuthToken(ctx, tokStore, google, userID)
 rec, err := auth.RefreshOAuthToken(ctx, tokStore, google, userID)
 ```
 
+The callback stores each row under the provider's **registry key**, the
+`{provider}` of `/auth/oauth/{provider}`. The package functions above
+read the row under `provider.Name()`, which is the same string only when
+the provider is registered under its own name. An `OIDCProvider`
+registered as `"keycloak"` reports `Name()` `"oidc"` unless
+`ProviderName` says otherwise, and the package functions then find no
+row (`ErrOAuthTokenNotFound`). The plugin's methods take the registry
+key and always match the callback:
+
+```go
+accessToken, err := oauth.ValidOAuthToken(ctx, "keycloak", userID)
+rec, err := oauth.RefreshOAuthToken(ctx, "keycloak", userID)
+```
+
+They use the plugin's `OAuth2Config.TokenStore` and return an error for
+a key no provider is registered under.
+
+A token whose provider stated no `expires_in` (GitHub's classic
+OAuth-app tokens, which never expire) is stored with a zero `Expiry`, and
+`ValidOAuthToken` returns it as it is. Before, its expiry was set to the
+moment it arrived, so every call forced a refresh that could not happen
+(no refresh token) and failed. A provider call refused with such a token
+means the grant was revoked: refresh, or have the user sign in again.
+
+Refreshes of one `(user, provider)` run one at a time within a process.
+A caller that waited behind another's refresh gets that refresh's record
+instead of spending the refresh token again, which under a provider with
+single-use, rotating refresh tokens would fail or revoke the grant. When
+an exchange fails because another replica already spent the token, the
+newer record that replica stored is returned instead of the error. The
+final write stays a compare-and-swap on the refresh token refreshed
+from, so a grant a login stored meanwhile is never overwritten.
+
 Refresh is concrete per provider; there is no generic provider registry.
 `GoogleProvider` and `GitHubProvider` implement `OAuthTokenRefresher`
 (`RefreshToken(ctx, refreshToken)`), POSTing a `refresh_token` grant to the
@@ -2035,6 +2119,16 @@ IdP endpoint moves. The document's `issuer` MUST match the configured
 `Issuer` exactly (OIDC §4.3, issuer-spoofing guard). `Issuer` must be
 an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
 (local IdPs and tests).
+
+Discovery and JWKS fetches run one at a time and never under a lock
+other logins wait on. A login waiting for another login's discovery
+fetch gives up at its own deadline. Once a key set is cached, a login
+whose set is past `JWKSCacheTTL` verifies against the cached set while a
+single refresh runs, and when that refresh fails the next attempt waits
+a minute: an IdP outage no longer turns every login into a JWKS fetch
+that runs into the HTTP timeout. A token signed by an unknown `kid`
+still triggers its own refetch, at most once per kid per five minutes
+and not during that minute.
 
 Every endpoint the discovery document names (`token_endpoint`, `jwks_uri`,
 `userinfo_endpoint`, `authorization_endpoint`) is transport-validated when
@@ -2099,6 +2193,16 @@ for IdPs that use `preferred_username` or `upn`:
 ```go
 Claims: auth.OIDCClaimsMapping{EmailClaim: "upn", NameClaim: "preferred_username"},
 ```
+
+A remapped `EmailClaim` does not inherit `email_verified`. That flag
+(OIDC Core §5.1) is about the standard `email` claim, so an address
+taken from `upn` or `preferred_username` counts as verified only when
+it is exactly the `email` the IdP verified. Otherwise anyone who could
+set their own `preferred_username` to someone else's address, while
+verifying their own `email`, would arrive as a verified owner of that
+address and be linked into its account. Under a remap most sign-ins
+therefore arrive unverified: they get a new account and never
+auto-link into an existing one.
 
 **`email_verified` is enforced.** The callback reads the IdP's
 `email_verified` claim (JSON bool, or the string `"true"` for IdPs that

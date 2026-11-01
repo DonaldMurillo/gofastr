@@ -105,6 +105,11 @@ type OIDCProvider struct {
 	// transient IdP outage remains retryable on the next call.
 	mu        sync.Mutex
 	discovery *oidcDiscovery
+	// discFetch admits one discovery fetch at a time (a one-slot
+	// semaphore, created lazily under mu). mu itself is never held across
+	// the network: a waiter gives up at its own deadline instead of
+	// queueing behind another caller's 10s fetch.
+	discFetch chan struct{}
 
 	jwks *jwksCache
 
@@ -287,19 +292,42 @@ func oidcNoRedirect(c *http.Client) *http.Client {
 }
 
 // ensureDiscovery returns the cached discovery document, fetching it on first
-// use. The mutex serializes concurrent first-callers (no thundering herd) and
-// caches only on success so a failed fetch stays retryable.
+// use. Concurrent first-callers fetch one at a time (no thundering herd),
+// each waiting no longer than its own ctx allows, and only a success is
+// cached, so a failed fetch stays retryable.
 func (p *OIDCProvider) ensureDiscovery(ctx context.Context) (*oidcDiscovery, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.discovery != nil {
-		return p.discovery, nil
+	if d := p.discovery; d != nil {
+		p.mu.Unlock()
+		return d, nil
+	}
+	if p.discFetch == nil {
+		p.discFetch = make(chan struct{}, 1)
+	}
+	slot := p.discFetch
+	p.mu.Unlock()
+
+	select {
+	case slot <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-slot }()
+
+	// The fetch that held the slot before us may have succeeded.
+	p.mu.Lock()
+	d := p.discovery
+	p.mu.Unlock()
+	if d != nil {
+		return d, nil
 	}
 	d, err := p.fetchDiscovery(ctx)
 	if err != nil {
 		return nil, err
 	}
+	p.mu.Lock()
 	p.discovery = d
+	p.mu.Unlock()
 	return d, nil
 }
 
@@ -469,7 +497,7 @@ func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2To
 	return &OAuth2Token{
 		AccessToken:  body.AccessToken,
 		RefreshToken: body.RefreshToken,
-		Expiry:       time.Now().Add(time.Duration(body.ExpiresIn) * time.Second),
+		Expiry:       tokenExpiry(body.ExpiresIn),
 	}, nil
 }
 
@@ -500,14 +528,31 @@ func (p *OIDCProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2
 	if id == "" {
 		return nil, errors.New("oidc: userinfo missing subject")
 	}
+	email := claimString(ui, p.cfg.Claims.EmailClaim)
 	return &OAuth2UserInfo{
 		ID:            id,
-		Email:         claimString(ui, p.cfg.Claims.EmailClaim),
+		Email:         email,
 		Name:          claimString(ui, p.cfg.Claims.NameClaim),
 		AvatarURL:     claimString(ui, p.cfg.Claims.AvatarClaim),
 		Provider:      p.name,
-		EmailVerified: parseEmailVerified(ui, p.cfg.Claims.EmailVerifiedClaim),
+		EmailVerified: parseEmailVerified(ui, p.cfg.Claims.EmailVerifiedClaim) && verifiedFlagCovers(ui, email),
 	}, nil
+}
+
+// verifiedFlagCovers reports whether the email_verified flag read from src
+// vouches for email, the address the callback keeps.
+//
+// OIDC Core §5.1 defines email_verified as a statement about the `email`
+// claim and nothing else. With EmailClaim mapped to another claim
+// (preferred_username, upn) the flag still describes `email`: an account
+// whose preferred_username named the victim and whose own `email` was
+// verified read as a verified victim address, and the callback auto-linked
+// the victim's account. The flag therefore counts only when the source's
+// `email` claim is exactly the kept address. Under the default mapping that
+// is the same claim; under a remap it holds only when the IdP's verified
+// email and the mapped value are one address.
+func verifiedFlagCovers(src map[string]any, email string) bool {
+	return email != "" && claimString(src, "email") == email
 }
 
 func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, claims map[string]any) (*OAuth2UserInfo, error) {
@@ -516,6 +561,9 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 	name := claimString(claims, p.cfg.Claims.NameClaim)
 	avatar := claimString(claims, p.cfg.Claims.AvatarClaim)
 	emailVerified, verifiedPresent := parseEmailVerifiedClaim(claims, p.cfg.Claims.EmailVerifiedClaim)
+	// verifiedSrc is the claim set the flag was read from: the flag says
+	// something only about that set's own `email` claim.
+	verifiedSrc := claims
 	// Fetch userinfo when the id_token is missing the email OR the
 	// email_verified claim. Either gap can block a legitimate verified-email
 	// migration (a passwordless account that should auto-link), and the IdP
@@ -551,6 +599,7 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 				// the callback auto-linked that address's account.
 				if !verifiedPresent && claimString(ui, p.cfg.Claims.EmailClaim) == email {
 					emailVerified, _ = parseEmailVerifiedClaim(ui, p.cfg.Claims.EmailVerifiedClaim)
+					verifiedSrc = ui
 				}
 			}
 		}
@@ -564,7 +613,7 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 		Name:          name,
 		AvatarURL:     avatar,
 		Provider:      p.name,
-		EmailVerified: emailVerified,
+		EmailVerified: emailVerified && verifiedFlagCovers(verifiedSrc, email),
 	}, nil
 }
 

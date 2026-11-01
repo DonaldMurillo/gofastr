@@ -164,3 +164,7 @@ var (
 	reasonVerifyOtherAccount         = i18n.Define("auth.verify_other_account", "this verification link belongs to another account")
 	reasonVerifySignIn               = i18n.Define("auth.verify_sign_in", "sign in, then open the verification link again")
 )
+
+// The OAuth callback's refusal of an identity whose provider shared no
+// email address and that no link names yet.
+var reasonOauthNoEmail = i18n.Define("auth.oauth_no_email", "this provider account shares no email address: let the app see your email at the provider, or sign up another way")
