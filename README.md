@@ -1,5 +1,11 @@
 # GoFastr
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/gofastr-logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/brand/gofastr-logo-light.svg">
+  <img src="assets/brand/gofastr-logo-light.svg" alt="GoFastr" width="240">
+</picture>
+
 [![CI](https://github.com/DonaldMurillo/gofastr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DonaldMurillo/gofastr/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/DonaldMurillo/gofastr)](https://github.com/DonaldMurillo/gofastr/releases)
 [![Go version](https://img.shields.io/github/go-mod/go-version/DonaldMurillo/gofastr)](go.mod)

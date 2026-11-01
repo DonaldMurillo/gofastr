@@ -305,6 +305,18 @@ few lines, and link the PR or the docs page for the rest.
   headless Section, Table and Fieldset ids keep Unicode letters and
   digits, so a Japanese or Cyrillic heading keeps its anchor and two
   different ones no longer share `section--title`.
+- **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
+  checks no node, and axe files it as incomplete, which the scan never
+  read. The docs site's header had a `color-mix()` that serialised to
+  `oklch(L C none)`; axe could not parse it, so `color-contrast` checked
+  nothing on any page. Allowlisting the rule still skips it.
+- **`ui.StepRail` links and meta line meet 4.5:1.** They used
+  `--color-text-subtle` on the rail's `--color-surface-soft` (4.39:1 in
+  the default light theme) and now use `--color-text-muted`.
+- **`ui.CodeBlock` word marks keep token colors readable.** The mark
+  tint drops from 28% to 12% of `--color-warning` and gains a
+  warning-colored underline. In dark, 28% put function names at 3.91:1
+  and comments at 2.96:1.
 - **BREAKING: `desktopui.Theme()` is removed (#607).** It returned the
   macOS theme on every OS. Call `desktopui.ThemeFor(runtime.GOOS)`, or
   `ThemeFor("darwin")` for the old result. The primary color stays

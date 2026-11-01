@@ -525,6 +525,9 @@ Line bands derive from the theme's status colours
 added/removed, `--color-warning` for word marks) and are tunable through
 `--ui-code-block-highlight-bg`, `--ui-code-block-added-bg`,
 `--ui-code-block-removed-bg`, and `--ui-code-block-mark-bg`.
+A word mark keeps its token's color, so its tint stays at 12% (every
+token color holds 4.5:1 on it) and a `--color-warning` underline carries
+the emphasis.
 
 ### Syntax highlighting
 
