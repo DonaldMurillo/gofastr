@@ -1208,10 +1208,14 @@ Loosening any of them is explicit: pass the plugin's `RateLimit` (or
 
 The two endpoints that mail a link to whatever address they are given,
 `POST /auth/magic-link/send` and `POST /auth/forgot-password`, also
-limit each address however many IPs ask: 5 per hour, then an hour's
-block (`AddressRateLimit` on `MagicLinkConfig` and
-`PasswordResetConfig`). Without it a rotating proxy could flood one
-inbox with links. Past the budget the request gets the same 200 as any
+limit each address however many IPs ask: one mail every two minutes
+(`AddressRateLimit` on `MagicLinkConfig` and `PasswordResetConfig`).
+Without it a rotating proxy could flood one inbox with links. It is a
+short cooldown, not an hourly budget with a long block: anyone can spend
+an address's budget, and a long block would let a stranger stop every
+link to its owner. The mails a stranger triggers still reach the owner,
+and each link outlives the cooldown, so the owner always holds a working
+one. Past the budget the request gets the same 200 as any
 other and nothing is minted or mailed, so the limit says nothing about
 whether the address has an account; the audit event carries
 `throttled=address`. The limiter key is `address:` plus the SHA-256 of
