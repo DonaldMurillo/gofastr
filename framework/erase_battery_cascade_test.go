@@ -121,15 +121,23 @@ func TestEraseSeedLeavesNullKeyToEraser(t *testing.T) {
 }
 
 // The entity names its table users and the battery eraser public.users
-// (here the test's own schema): one table on Postgres, but matched by
-// spelling the eraser seeded nothing, and the profile its delete cascaded
-// to kept its photo and audit diff (2026-10-31 review). The eraser's table
-// is matched by the table the catalog resolves it to.
+// (main.users on SQLite; here the test's own schema): one table, but
+// matched by spelling the eraser seeded nothing, and the profile its delete
+// cascaded to kept its photo and audit diff (2026-10-31 review). The
+// eraser's table is matched by the table the catalog resolves it to, on
+// both dialects.
 func TestEraseSeedMatchesSchemaQualified(t *testing.T) {
-	db := openTestDB(t, migrate.DialectPostgres)
-	var schemaName string
-	if err := db.QueryRow(`SELECT current_schema()`).Scan(&schemaName); err != nil {
-		t.Fatal(err)
+	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
+		eraseSeedQualified(t, db, dialect)
+	})
+}
+
+func eraseSeedQualified(t *testing.T, db *sql.DB, dialect Dialect) {
+	schemaName := "main"
+	if dialect == DialectPostgres {
+		if err := db.QueryRow(`SELECT current_schema()`).Scan(&schemaName); err != nil {
+			t.Fatal(err)
+		}
 	}
 	store := &recordingDeleteStore{present: map[string]bool{"av/u1.png": true, "ph/u1.png": true}}
 	app := usersWithProfilesAt(t, db, store, schemaName+".users")
@@ -204,4 +212,91 @@ func TestEraseAnonymizerMatchesQualified(t *testing.T) {
 	if diff != erasedAuditDiff {
 		t.Errorf("audit diff = %q, want it erased", diff)
 	}
+}
+
+// On Postgres a quoted "Users" a battery made is a table apart from the
+// entity's users. The eraser on "Users" matched the entity's table, by its
+// lowercased name or by a lowercased catalog id, and seeded deletes there:
+// the erasure removed an unrelated users row and the profile it cascaded to
+// (2026-10-31 review). The entity's name resolves as its unquoted DDL folds
+// it and the eraser's as its own table is spelled, and the two compare with
+// their case kept.
+func TestEraseKeepsCaseKeptTableApart(t *testing.T) {
+	db := openTestDB(t, migrate.DialectPostgres)
+	var schemaName string
+	if err := db.QueryRow(`SELECT current_schema()`).Scan(&schemaName); err != nil {
+		t.Fatal(err)
+	}
+	for _, spelling := range []string{"Users", schemaName + ".Users"} {
+		t.Run(spelling, func(t *testing.T) {
+			cascadeExec(t, db, `DROP TABLE IF EXISTS profiles`, `DROP TABLE IF EXISTS users`,
+				`DROP TABLE IF EXISTS audit_log`, `DROP TABLE IF EXISTS "Users"`,
+				`CREATE TABLE "Users" (id TEXT PRIMARY KEY, login TEXT)`)
+			store := &recordingDeleteStore{present: map[string]bool{"ph/u1.png": true}}
+			app := usersWithProfilesAt(t, db, store, spelling)
+			cascadeExec(t, db, `INSERT INTO "Users" (id, login) VALUES ('x1','u1')`,
+				`INSERT INTO users (id, login) VALUES ('i1','u1')`,
+				`INSERT INTO profiles (id, user_id, photo) VALUES ('p1','i1','ph/u1.png')`)
+
+			eraseBoth(t, app, "u1")
+
+			var left int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM "Users"`).Scan(&left); err != nil {
+				t.Fatal(err)
+			}
+			if left != 0 {
+				t.Errorf(`"Users" rows after erasure = %d, want 0`, left)
+			}
+			wantIDs(t, db, "users", "i1")
+			wantIDs(t, db, "profiles", "p1")
+			if !store.present["ph/u1.png"] {
+				t.Error("the entity profile's photo was deleted by an eraser on another table")
+			}
+		})
+	}
+}
+
+// The other half of the same rule: an entity declaring Members has the
+// table members, because AutoMigrate's DDL is unquoted and Postgres folds
+// it. Resolved with its case kept, the entity's name found a battery's
+// quoted "Members" instead, and that battery's eraser seeded deletes from
+// the entity's members and the cards they cascade to.
+func TestEraseEntityNameResolvesFolded(t *testing.T) {
+	db := openTestDB(t, migrate.DialectPostgres)
+	datexport.Reset(t)
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithFileStorage(&recordingDeleteStore{present: map[string]bool{}}))
+	app.Entity("members", entity.EntityConfig{
+		Table:  "Members",
+		Fields: []schema.Field{{Name: "login", Type: schema.String}},
+	}.WithTimestamps(false))
+	card := entity.BelongsTo("member", "members", "member_id")
+	card.OnDelete = entity.OnDeleteCascade
+	app.Entity("cards", entity.EntityConfig{
+		Table:     "cards",
+		Fields:    []schema.Field{{Name: "member_id", Type: schema.String}},
+		Relations: []entity.Relation{card},
+	}.WithTimestamps(false))
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	app.WithAuditLog(AuditConfig{})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "members", Source: "test", Table: "Members", Column: "login", Mode: datexport.EraseDelete,
+	})
+	cascadeExec(t, db, `CREATE TABLE "Members" (id TEXT PRIMARY KEY, login TEXT)`,
+		`INSERT INTO "Members" (id, login) VALUES ('x1','u1')`,
+		`INSERT INTO members (id, login) VALUES ('i1','u1')`,
+		`INSERT INTO cards (id, member_id) VALUES ('c1','i1')`)
+
+	eraseBoth(t, app, "u1")
+
+	var left int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM "Members"`).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Errorf(`"Members" rows after erasure = %d, want 0`, left)
+	}
+	wantIDs(t, db, "members", "i1")
+	wantIDs(t, db, "cards", "c1")
 }

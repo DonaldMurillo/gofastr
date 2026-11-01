@@ -414,10 +414,14 @@ staged with it, so its stored files are deleted and its audit diffs scrubbed
 the same way. The database's own `ON DELETE CASCADE` no longer removes it
 unseen. The eraser's `RowsAffected` counts the rows it matched; the profile
 counts in `Cascaded`. A matched row with a NULL in its key is left to the
-eraser's own delete, since no foreign key can name it. On Postgres the
-eraser's table matches the entity's by the table the catalog resolves each
-name to, so an eraser on `public.users` seeds the walk from an entity whose
-table is `users`.
+eraser's own delete, since no foreign key can name it. The eraser's table
+matches the entity's by the table the catalog resolves each name to, so an
+eraser on `public.users` (`main.users` on SQLite) seeds the walk from an
+entity whose table is `users`. The entity's name resolves the way
+AutoMigrate's unquoted DDL folds it and the eraser's name resolves as its
+own table is spelled, and on Postgres the two compare with their case kept:
+an eraser on a quoted `"Users"` a battery created never seeds deletes from
+the entity's `users`.
 
 - **Composite keys** are followed column for column: an `order_lines` row is
   reached through `(store, order_no)`, never through one of the two alone.

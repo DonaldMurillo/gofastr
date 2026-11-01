@@ -12,8 +12,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/internal/asciicase"
-
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -564,9 +562,8 @@ type erasePlan struct {
 	// battery plane reads the key, file columns and entity names of the
 	// rows an eraser reaches through it.
 	graph map[string]*dataTable
-	// eraserGraph maps an eraser's name to the graph table it erases from,
-	// matched by name or, on Postgres, by the table the catalog resolves
-	// both to.
+	// eraserGraph maps an eraser's name to the graph table it erases from:
+	// the one the catalog resolves to the same table (graphIdentities).
 	eraserGraph map[string]string
 	// seededBy holds, per delete eraser whose matches seed the plan, the
 	// rows its match staged. The battery plane adds them to the rows the
@@ -574,27 +571,18 @@ type erasePlan struct {
 	seededBy map[string]int
 }
 
-// catalogID is the schema-qualified table the catalog resolves name to,
-// lowercased, and whether it exists.
-func catalogID(ctx context.Context, db rowQueryer, dialect migrate.Dialect, name string) (string, bool, error) {
-	s, rel, ok, err := resolveTable(ctx, db, name, dialect, false)
-	if !ok || err != nil {
-		return "", ok, err
-	}
-	return asciicase.Lower(s + "." + rel), true, nil
-}
-
-// catalogNames maps every graph table that exists to its catalogID, so an
-// eraser spelled apart from the entity that registered its table still
-// finds it.
-func catalogNames(ctx context.Context, db rowQueryer, dialect migrate.Dialect, g *dataGraph) (map[string]string, error) {
+// graphIdentities maps the identity (tableIdentity) of every graph table the
+// database holds to its graph name. A graph table is an entity's or a
+// pivot's, made by AutoMigrate's unquoted DDL, so its name resolves as the
+// DDL folded it.
+func graphIdentities(ctx context.Context, db rowQueryer, dialect migrate.Dialect, g *dataGraph) (map[string]string, error) {
 	out := map[string]string{}
 	for _, t := range g.sorted {
-		id, ok, err := catalogID(ctx, db, dialect, t)
+		id, err := tableIdentity(ctx, db, t, dialect, true)
 		if err != nil {
-			return nil, fmt.Errorf("framework: erase probe %q: %w", t, err)
+			return nil, fmt.Errorf("framework: erase %w", err)
 		}
-		if ok {
+		if _, held := out[id]; strings.HasPrefix(id, "table:") && !held {
 			out[id] = t
 		}
 	}
@@ -624,30 +612,28 @@ func (a *App) planErase(ctx context.Context, dialect migrate.Dialect, erasers []
 			queue = append(queue, t)
 		}
 	}
-	graphName := make(map[string]string, len(g.tables))
-	for t := range g.tables {
-		graphName[strings.ToLower(t)] = t
-	}
+	// An eraser's table is matched to the graph by the table the catalog
+	// resolves each to, never by spelling. users and public.users
+	// (main.users on SQLite) are one table; on Postgres a quoted "Users" a
+	// battery made is a table apart from the entity's users, and comparing
+	// lowercased names seeded the entity's rows from the battery's eraser.
+	// The eraser's name resolves as its own table is spelled, like the
+	// battery plane's physicalTable.
 	eraserGraph := map[string]string{}
-	var byCatalog map[string]string
+	var byID map[string]string
 	for _, e := range erasers {
-		t, ok := graphName[strings.ToLower(e.eraser.Table)]
-		if !ok && dialect == migrate.DialectPostgres {
-			// Spelled apart, one table: an entity's users and an eraser's
-			// public.users. Match by what the catalog resolves both to.
-			if byCatalog == nil {
-				if byCatalog, err = catalogNames(ctx, a.DB, dialect, g); err != nil {
-					return nil, err
-				}
+		if byID == nil {
+			if byID, err = graphIdentities(ctx, a.DB, dialect, g); err != nil {
+				return nil, err
 			}
-			id, found, err := catalogID(ctx, a.DB, dialect, e.eraser.Table)
-			if err != nil {
-				return nil, fmt.Errorf("framework: erase probe %q: %w", e.eraser.Table, err)
-			}
-			t, ok = byCatalog[id], found && byCatalog[id] != ""
 		}
+		id, err := tableIdentity(ctx, a.DB, e.eraser.Table, dialect, false)
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase %w", err)
+		}
+		t, ok := byID[id]
 		if !ok {
-			continue
+			continue // an absent table: the battery plane skips its eraser too
 		}
 		eraserGraph[e.eraser.Name] = t
 		if e.eraser.Mode != datexport.EraseDelete {
