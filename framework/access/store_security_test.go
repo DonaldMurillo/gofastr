@@ -28,20 +28,24 @@ import (
 // and replica B's was narrowed by its revoke: A reloads to granted, B to
 // denied, permanently.
 //
-// The interleave is forced deterministically (no sleeps): a driver wrapper
-// parks Grant's tombstone-clearing DELETE until Revoke has fully returned.
+// A driver wrapper parks Grant's tombstone-clearing DELETE while Revoke
+// starts. Each call's statements are one transaction now, so Revoke waits
+// for Grant's commit rather than interleaving, and the test asserts the
+// replicas agree either way.
 
 // ---- gated sqlite driver ----------------------------------------------------
 
 // gateState parks the FIRST armed DELETE on the tombstone table until the
 // test releases it, producing the G1 → R1 → R2 → G2 order.
 type gateState struct {
-	mu      sync.Mutex
-	armed   bool
-	parked  bool
-	entered chan struct{}
-	release chan struct{}
-	seen    []string
+	mu     sync.Mutex
+	armed  bool
+	parked bool
+	// parkedAt is len(seen) when the first statement parked.
+	parkedAt int
+	entered  chan struct{}
+	release  chan struct{}
+	seen     []string
 }
 
 func newGateState() *gateState {
@@ -59,6 +63,9 @@ func (g *gateState) onExec(q string) {
 	if strings.Contains(q, "DELETE FROM") && strings.Contains(q, "_revoked") {
 		g.mu.Lock()
 		first := !g.parked
+		if first {
+			g.parkedAt = len(g.seen)
+		}
 		g.parked = true
 		g.mu.Unlock()
 		if first {
@@ -66,6 +73,22 @@ func (g *gateState) onExec(q string) {
 		}
 		<-g.release
 	}
+}
+
+// sawGrantRowDelete reports whether a DELETE on the grant table itself
+// (Revoke's R1, not a tombstone delete) has been issued since the park.
+func (g *gateState) sawGrantRowDelete() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.parked {
+		return false
+	}
+	for _, q := range g.seen[g.parkedAt:] {
+		if strings.Contains(q, "DELETE FROM") && !strings.Contains(q, "_revoked") {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *gateState) arm()    { g.mu.Lock(); g.armed = true; g.mu.Unlock() }
@@ -178,12 +201,26 @@ func TestGrantRevokeCrossReplicaConverge(t *testing.T) {
 		t.Fatalf("gate never observed Grant's tombstone-clearing DELETE; queries seen: %v", gate.queries())
 	}
 
-	if err := storeB.Revoke(ctx, "editor", Permission("posts:read")); err != nil {
-		t.Fatalf("Revoke on B: %v", err)
+	// Each call's statements are one transaction now (bug hunt r7 R7-067),
+	// so B's R1 waits on A's open write instead of landing between G1 and
+	// G2. Release A once B's R1 has been issued: B then runs after A's
+	// commit, and the replicas must still agree.
+	revokeErr := make(chan error, 1)
+	go func() { revokeErr <- storeB.Revoke(ctx, "editor", Permission("posts:read")) }()
+	deadline := time.Now().Add(10 * time.Second)
+	for !gate.sawGrantRowDelete() {
+		if time.Now().After(deadline) {
+			close(gate.release)
+			t.Fatalf("never saw Revoke's grant-row DELETE; queries seen: %v", gate.queries())
+		}
+		time.Sleep(time.Millisecond)
 	}
 	close(gate.release)
 	if err := <-grantErr; err != nil {
 		t.Fatalf("Grant on A: %v", err)
+	}
+	if err := <-revokeErr; err != nil {
+		t.Fatalf("Revoke on B: %v", err)
 	}
 	gate.disarm()
 

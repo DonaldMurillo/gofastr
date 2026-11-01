@@ -52,8 +52,10 @@ func (ch *CrudHandler) cursorFields() []string {
 //
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
 // ordered, unique-enough key, so the cursor field(s) control ORDER BY.
-// cols is the ?fields= projection.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere []hook.WhereClause) {
+// cols is the ?fields= projection. extraWhere is every clause the page
+// applies (search, ?where= and BeforeList); hookWhere is the BeforeList
+// part alone, the scope the anchor lookup keeps.
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere, hookWhere []hook.WhereClause) {
 	// Same no-store posture as List: the cursor page is the same per-caller
 	// rows through the keyset arm, and this handler is also reachable via
 	// decodeCursorAny paths that bypass List's stamp.
@@ -138,7 +140,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 			}
 			carried[f] = v
 		}
-		args, err := ch.cursorAnchor(ctx, r, fields, keys, carried, extraWhere, isDate)
+		args, err := ch.cursorAnchor(ctx, r, fields, keys, carried, hookWhere, isDate)
 		if errors.Is(err, errCursorAnchorGone) {
 			writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, i18n.NewError(reasonCursorAnchorGone, nil)), i18n.Phrase{})
 			return
@@ -338,10 +340,13 @@ var errCursorAnchorGone = errors.New("cursor anchor row not found")
 // The lookup applies the same tenant, owner, read-scope, soft-delete and
 // BeforeList predicates as the page, so a cursor naming a row the caller
 // cannot read is gone, the same answer as a deleted row, and never tells
-// where that row sorts. A gone anchor is errCursorAnchorGone: the caller
+// where that row sorts. hookWhere holds the BeforeList clauses alone: the
+// client's ?q= and ?where= decide which rows the page shows, not whether
+// a readable row still marks a position, so an anchor edited out of the
+// search keeps paging the way a plain ?field= filter always did. A gone anchor is errCursorAnchorGone: the caller
 // restarts from the first page rather than reading a page from a position
 // nobody can name.
-func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields, keys []string, carried map[string]any, extraWhere []hook.WhereClause, isDate func(string) bool) ([]any, error) {
+func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields, keys []string, carried map[string]any, hookWhere []hook.WhereClause, isDate func(string) bool) ([]any, error) {
 	args := make([]any, len(fields))
 	lookup := false
 	for i, f := range fields {
@@ -363,7 +368,7 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 	ch.ApplyOwnerScope(qb, r)
 	ch.ApplyReadScope(qb, r)
 	ch.ApplySoftDeleteFilter(qb, r)
-	for _, c := range extraWhere {
+	for _, c := range hookWhere {
 		qb.Where(c.SQL, c.Args...)
 	}
 	qb.Limit(1)
