@@ -47,13 +47,10 @@ var stringsKeys = map[string]i18n.Phrase{
 	// Color's swatch, which carries no visible label of its own.
 	"PickColor": i18nui.ColorPick,
 
-	// Password: the reveal button's two names, then its two visible
-	// words. The names reuse the keys PasswordInput already resolved
-	// through Ctx; the one-word texts are their own pair.
+	// Password: the reveal button's one name, then its one visible
+	// word. It is a toggle button, so neither changes with its state.
 	"ShowPassword": i18nui.PasswordInputShow,
-	"HidePassword": i18nui.PasswordInputHide,
 	"RevealShow":   i18nui.PasswordRevealShow,
-	"RevealHide":   i18nui.PasswordRevealHide,
 
 	// Pagination's disabled ends.
 	"Previous": i18nui.PaginationPrevious,
@@ -154,6 +151,9 @@ var stringsKeys = map[string]i18n.Phrase{
 	"CarouselSlideRole": i18nui.HuiCarouselSlideRole,
 	"PaneSecondary":     i18nui.HuiPaneSecondary,
 	"PaneTertiary":      i18nui.HuiPaneTertiary,
+	// The phone drawer's hamburger when its DrawerLabel is empty: the
+	// phrase ui.Sidebar already names its own trigger with.
+	"SidebarOpenDrawer": i18nui.SidebarOpenDrawer,
 
 	"ComboboxLoading":      i18nui.HuiComboboxLoading,
 	"ComboboxNoResults":    i18nui.HuiComboboxNoResults,

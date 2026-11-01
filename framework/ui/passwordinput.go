@@ -16,10 +16,11 @@ import (
 // a div carrying data-hui-affix with a borderless input and a reveal
 // button inside, the shell owning the one border. The headless
 // behaviour module (not a component of its own) binds the reveal
-// button's data-hui-reveal: it retypes the input, swaps the button's
-// visible word and its accessible name from the four data-hui-*
-// attributes, and keeps the caret where the reader left it. SSR ships
-// the hidden state.
+// button's data-hui-reveal: it retypes the input, flips the button's
+// aria-pressed, and keeps the caret where the reader left it. The
+// button is a toggle button: its name ("Show password") and its word
+// ("Show") never change, and the kit paints the pressed state. SSR
+// ships the hidden state.
 //
 // The component is a control, not a field: it renders no message of
 // its own. Wrap it in a FormField and let the field own the error;
@@ -52,9 +53,8 @@ type PasswordInputConfig struct {
 	ExtraAttrs map[string]string
 
 	// Ctx carries the per-request context used to resolve the reveal
-	// button's words (ui.StringsFor: ShowPassword, HidePassword,
-	// RevealShow, RevealHide). When nil, the English defaults are
-	// used.
+	// button's name and word (ui.StringsFor: ShowPassword,
+	// RevealShow). When nil, the English defaults are used.
 	Ctx context.Context
 
 	// Field is the wiring an enclosing FormField handed its builder
@@ -136,6 +136,7 @@ func passwordInputCSS(_ style.Theme) string {
   flex: 1;
   border: 0;
   background: transparent;
+  color: var(--color-text, #09090B);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
@@ -168,7 +169,8 @@ func passwordInputCSS(_ style.Theme) string {
   cursor: pointer;
   user-select: none;
 }
-.fui-password__reveal:hover {
+.fui-password__reveal:hover,
+.fui-password__reveal[aria-pressed="true"] {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #09090B);
 }

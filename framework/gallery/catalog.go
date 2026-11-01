@@ -674,7 +674,7 @@ var Catalog = []Entry{
 		})
 	}},
 	{"rangeslider", "RangeSlider", "Forms", "Min/max thumb pair.", func() render.HTML {
-		return ui.RangeSlider(ui.RangeSliderConfig{Name: "price", Label: "Price range", Min: 0, Max: 1000, ValueLow: 100, ValueHigh: 700, ShowValue: true})
+		return ui.RangeSlider(ui.RangeSliderConfig{Name: "price", Label: "Price range", Min: 0, Max: 1000, ValueLow: new(100), ValueHigh: new(700), ShowValue: true})
 	}},
 	{"slider", "Slider", "Forms", "Single-value slider.", func() render.HTML {
 		return ui.Slider(ui.SliderConfig{Name: "vol", Label: "Volume", Min: 0, Max: 100, Value: 50, ShowValue: true})

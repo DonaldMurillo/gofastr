@@ -375,10 +375,18 @@ A stateful control with no `ID` builds its ids from its `Name`.
 second control with the same `Name` on the page (a filter form and an
 edit form both naming a field `tags`) builds its ids from `tags-2`,
 so no label's `for=` reaches the first one. One instance renders the
-same ids it always did. A `Rating` with an `ID` builds its choices'
-ids from it (`<ID>-1` to `<ID>-<Max>`, reserved with the `ID`), so two
-ratings sharing a `Name` but given their own ids never repeat a radio
-id. A `TagInput` with an `ID` gives its draft
+same ids it always did. `RangeSlider`'s `ValueLow` and `ValueHigh`
+are `*int`: nil is unset (the low thumb sits on `Min`, the high on
+`Max`) and any set value is honoured, a 0..0 pair included, then
+clamped into the range and ordered low, high. A `Rating` with an
+`ID` builds its choices' ids from it (`<ID>-1` to `<ID>-<Max>`,
+reserved with the `ID`), so two ratings sharing a `Name` but given
+their own ids never repeat a radio id. A `Rating`'s choices render
+in reading order, 1 to `Max`, so the browser's radio arrows move the
+way the stars read (ArrowRight to the next star, flipped in RTL); a
+sheet fills the stars up to the checked or hovered one with `:has()`
+(`framework/ui`'s `RatingInput` does), and a browser without `:has()`
+still rates, missing only the earlier stars' fill. A `TagInput` with an `ID` gives its draft
 field `<ID>-field` (the root keeps `ID`, so the label names the
 field, not the group), and its `Help` is the field's
 `aria-describedby`. A named `Counter`'s input is an attr binding
@@ -424,7 +432,13 @@ The parts the navigation members draw beyond the shared vocabulary:
   (with a `--sub` variant), `sidebar-nav`, `sidebar-prepend`,
   `sidebar-group`, `sidebar-group-toggle` (the button dialect),
   `sidebar-group-list`, and `icon` with a `--fallback` variant (the
-  label's initial, for rail states). `Gallery` takes a
+  label's initial, for rail states). The drawer trigger (the shell's
+  `sidebar-drawer` and the standalone `SidebarDrawerTrigger`) is named
+  by `DrawerLabel`; an empty or blank one takes
+  `Strings.SidebarOpenDrawer` ("Open navigation", the
+  `ui.sidebar.openDrawer` phrase `ui.Sidebar` names its own trigger
+  with), so the phone's only way into the navigation is never an
+  unnamed button. `Gallery` takes a
   `GalleryLightbox` wiring: the typed prop that renders the widget
   runtime's `data-cui-open` / `data-cui-deeplink` /
   `data-fui-lightbox-group` trigger family on every item anchor. Each
@@ -456,10 +470,11 @@ What it does, one line per behaviour:
   not a row. A CSS
   counter cannot do it: a table is a size container, and the style
   containment that brings walls the counter in.
-- **reveal** retypes the password input, swaps the button's text and
-  accessible name from the `data-hui-show-*` and `data-hui-hide-*`
-  attributes, and keeps focus and the caret where the reader left
-  them.
+- **reveal** retypes the password input, flips the button's
+  `aria-pressed`, and keeps focus and the caret where the reader left
+  them. The button is a toggle button: its name ("Show password") and
+  its word ("Show") never change, so a screen reader hears "Show
+  password, pressed" rather than the state said twice.
 - **color** keeps the swatch and the hex text one value in both
   directions, and marks the shell `data-invalid` when the text holds a
   non-empty value that is neither `#rgb` nor `#rrggbb`.

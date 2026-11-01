@@ -80,15 +80,15 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **segmented**: `framework/ui.SegmentedControl`, radio-group styled as a sliding pill bar; an empty `Selected` checks the first segment, and a `Selected` no option lists checks none (the pill hides), so the group submits nothing rather than a value nobody chose
 - **counter**: `framework/ui.Counter`, signal-driven numeric counter with +/− buttons
 - **signaltoggle**: `framework/ui.SignalToggle`, `role="switch"` button bound to a boolean signal
-- **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups
-- **passwordinput**: `framework/ui.PasswordInput`, password field with a show/hide reveal button rendered through `headless.Password` — the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
+- **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups; a toggle button whose accessible name is `IdleLabel` in both states (`aria-pressed` carries the state, only the visible label flips), so keep the idle label's words in `CommittedLabel`
+- **passwordinput**: `framework/ui.PasswordInput`, password field with a reveal button rendered through `headless.Password` — a toggle button: its name ("Show password") and word ("Show") never change, `aria-pressed` says whether the password shows and the kit paints the pressed state; the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
 - **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
 - **searchresults**: `framework/ui.SearchResults`, a full search results page (GET form, match count, results with section links, pagination) that works without script
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons
-- **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs
+- **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs; the radios are in reading order (1 to Max in the DOM), so arrows move the way the stars read, and the checked and hover fill is `:has()` in the kit sheet
 - **rating-display**: `framework/ui.Rating` (`ui.RatingDisplayConfig`), a read-only score drawn as glyphs sized to themselves, one `role="img"` with a localized "4 out of 5" name. Shares Shape / Size and the `--ui-rating-color` knob with RatingInput. Use it for a testimonial or a product average, where a disabled RatingInput would announce a form control and space its stars on 44px tap targets.
 - **slider**: `framework/ui.Slider`, `<input type=range>` with optional live value mirror
-- **rangeslider**: `framework/ui.RangeSlider`, dual-thumb range with cross-clamp
+- **rangeslider**: `framework/ui.RangeSlider`, dual-thumb range with cross-clamp; `ValueLow` / `ValueHigh` are `*int`, nil the unset end (low on `Min`, high on `Max`), so a set pair of `new(0)`, `new(0)` renders as 0 to 0 rather than the whole range
 - **numberinput**: `framework/ui.NumberInput`, number field with explicit +/- buttons
 - **textarea**: `framework/ui.TextArea`, multi-line input with typed Autogrow and Monospace (the mono font token, for JSON and code) and JSON (checks the text as JSON as it is typed: an invalid value reads aria-invalid and stops the form's submit with "Enter valid JSON", through `headless.Textarea`'s `JSON` sentence and the `data-hui-json` hook of the headless-controls module; empty text is left to Required, and the server still validates)
 - **colorpicker**: `framework/ui.ColorPicker`, styled native `<input type=color>`

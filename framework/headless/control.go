@@ -290,8 +290,8 @@ type PasswordProps struct {
 	DescribedBy string
 
 	// Parts: attrs and binds on the shell, the input and the
-	// reveal button. Strings carry the reveal button's two
-	// names).
+	// reveal button. Strings carry the reveal button's name
+	// (ShowPassword) and its visible word (RevealShow).
 	Parts Parts
 	// Strings are the strings this component says. Nil means the English
 	// defaults; a layer above sets them from the request's language.
@@ -303,11 +303,13 @@ type PasswordProps struct {
 // inside. The shell owns the one border, so nothing stacks a border
 // on a border.
 //
-// The reveal button is complete, correct markup — type=button so it
-// never submits, an aria-label — but it is INERT until a runtime
-// module exists to toggle the input's type and the button's own label.
-// Nothing is wired on purpose: no inline script, no dead onclick, and
-// no pretending it works before it does.
+// The reveal button is a toggle button (the APG pattern): type=button
+// so it never submits, one name that never changes ("Show password")
+// and one visible word ("Show"), with aria-pressed carrying the state.
+// The headless behaviour module binds data-hui-reveal: a click retypes
+// the input and flips aria-pressed, and nothing else. A name that
+// swapped to "Hide password" while pressed read as "Hide password,
+// pressed" — the state said twice, the second time backwards.
 func Password(p PasswordProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Name == "" {
@@ -327,20 +329,15 @@ func Password(p PasswordProps, s Classes) render.HTML {
 		input["aria-invalid"] = "true"
 	}
 
-	// The module that binds data-hui-reveal retypes the input and swaps
-	// these four strings, so both the label and the accessible name
-	// stay true to what the button will do next. They travel as data-*
-	// rather than being hardcoded in that module so a caller can
-	// localise them.
+	// The name and the word are constant: aria-pressed is the state,
+	// and the visible word stays inside the name (WCAG 2.5.3), so a
+	// voice user who says what they see reaches the button pressed or
+	// not.
 	reveal := html.Attrs{
-		"type":                "button",
-		"data-hui-reveal":     "",
-		"aria-pressed":        "false",
-		"aria-label":          p.Strings.Resolve().ShowPassword,
-		"data-hui-show-label": p.Strings.Resolve().ShowPassword,
-		"data-hui-hide-label": p.Strings.Resolve().HidePassword,
-		"data-hui-show-text":  p.Strings.Resolve().RevealShow,
-		"data-hui-hide-text":  p.Strings.Resolve().RevealHide,
+		"type":            "button",
+		"data-hui-reveal": "",
+		"aria-pressed":    "false",
+		"aria-label":      p.Strings.Resolve().ShowPassword,
 	}
 	Flag(reveal, "disabled", p.Disabled)
 
@@ -567,8 +564,7 @@ func init() {
 	Register(Spec{
 		Name:    "Password",
 		Anatomy: []Part{PartRoot, PartControl, PartAffixButton},
-		Hooks: []string{"data-hui-affix", "data-hui-affix-input", "data-hui-reveal",
-			"data-hui-show-label", "data-hui-hide-label", "data-hui-show-text", "data-hui-hide-text"},
+		Hooks:   []string{"data-hui-affix", "data-hui-affix-input", "data-hui-reveal"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Password(PasswordProps{Name: "token", ID: "token", Parts: parts}, s)
 		},
@@ -576,7 +572,7 @@ func init() {
 			s := k.Classes
 			return []Case{{
 				Name: "revealable",
-				Why:  "the reveal button says what it will do next rather than what the field is doing now, and the labels it swaps between are published for the runtime instead of built from a class",
+				Why:  "the reveal button is a toggle button: one name (Show password) and one word that never change, with aria-pressed saying whether the password is shown — a name that flipped to Hide password read as Hide password, pressed",
 				HTML: Field(FieldProps{Label: "Registry token", For: "password-token"}, k.For("Field"),
 					func(c FieldControl) render.HTML {
 						return Password(PasswordProps{Name: "token", ID: c.ID}, s)

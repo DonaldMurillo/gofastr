@@ -77,9 +77,9 @@
     if (!input) return;
     const shown = input.type === 'text';
     input.type = shown ? 'password' : 'text';
+    // A toggle button: the name and the word stay as rendered and
+    // aria-pressed carries the state (the APG pattern).
     btn.setAttribute('aria-pressed', String(!shown));
-    btn.setAttribute('aria-label', shown ? btn.dataset.huiShowLabel : btn.dataset.huiHideLabel);
-    btn.textContent = shown ? btn.dataset.huiShowText : btn.dataset.huiHideText;
     const at = input.value.length;
     input.focus();
     try { input.setSelectionRange(at, at); } catch (e) { /* type=password forbids it in Safari */ }

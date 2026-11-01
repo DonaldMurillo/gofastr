@@ -2,6 +2,7 @@ package headless
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -211,7 +212,7 @@ func TestSliderRefusesBrokenConfigAndClampsPostedValues(t *testing.T) {
 // re-format.
 func TestRangeSliderPairContract(t *testing.T) {
 	got := RangeSlider(RangeSliderProps{Name: "price", Label: "Price",
-		ValueLow: 20, ValueHigh: 80, ShowValue: true}, nil)
+		ValueLow: new(20), ValueHigh: new(80), ShowValue: true}, nil)
 	for _, want := range []string{
 		`name="price-min"`, `name="price-max"`,
 		`aria-label="Minimum Price"`, `aria-label="Maximum Price"`,
@@ -236,15 +237,38 @@ func TestRangeSliderOrdersAndClampsPostedPairs(t *testing.T) {
 	refuse(t, "Label", func() {
 		RangeSlider(RangeSliderProps{Name: "price", Label: " "}, nil)
 	})
-	crossed := RangeSlider(RangeSliderProps{Name: "price", Label: "Price", Min: 0, Max: 100, ValueLow: 80, ValueHigh: 20}, nil)
+	crossed := RangeSlider(RangeSliderProps{Name: "price", Label: "Price", Min: 0, Max: 100, ValueLow: new(80), ValueHigh: new(20)}, nil)
 	has(t, crossed, `data-hui-range-slider-low="" id="price-min" max="100" min="0" name="price-min" step="1" type="range" value="20"`,
 		"a crossed pair's low thumb was not ordered to the smaller value")
 	has(t, crossed, `value="80"`, "a crossed pair's high thumb was not ordered to the larger value")
-	outside := RangeSlider(RangeSliderProps{Name: "price", Label: "Price", Min: 0, Max: 50, ValueLow: 60, ValueHigh: 90}, nil)
+	outside := RangeSlider(RangeSliderProps{Name: "price", Label: "Price", Min: 0, Max: 50, ValueLow: new(60), ValueHigh: new(90)}, nil)
 	has(t, outside, `name="price-min" step="1" type="range" value="50"`, "a posted low above Max did not clamp")
 	has(t, outside, `name="price-max" step="1" type="range" value="50"`, "a posted high above Max did not clamp")
 	// Equal values are a single-point range, not a crossed pair.
-	RangeSlider(RangeSliderProps{Name: "w", Label: "W", ValueLow: 5, ValueHigh: 5}, nil)
+	RangeSlider(RangeSliderProps{Name: "w", Label: "W", ValueLow: new(5), ValueHigh: new(5)}, nil)
+}
+
+// Nil is the unset pair and any set value is honoured: a 0..0 pair
+// round-trips instead of widening to Min..Max (both-zero used to mean
+// "unset"), and one unset end still sits on its bound.
+func TestRangeSliderZeroPairRoundTrips(t *testing.T) {
+	zero := RangeSlider(RangeSliderProps{Name: "delay", Label: "Delay",
+		ValueLow: new(0), ValueHigh: new(0), ShowValue: true}, nil)
+	has(t, zero, `name="delay-max" step="1" type="range" value="0"`,
+		"a set 0..0 pair widened its high thumb to Max")
+	has(t, zero, `>0 to 0</output>`, "a set 0..0 pair's sentence widened to the whole range")
+	unset := RangeSlider(RangeSliderProps{Name: "delay", Label: "Delay", ShowValue: true}, nil)
+	has(t, unset, `>0 to 100</output>`, "an unset pair did not span Min..Max")
+	lowOnly := RangeSlider(RangeSliderProps{Name: "delay", Label: "Delay", Min: 10, Max: 50,
+		ValueLow: new(20), ShowValue: true}, nil)
+	has(t, lowOnly, `>20 to 50</output>`, "an unset high did not sit on Max")
+	highOnly := RangeSlider(RangeSliderProps{Name: "delay", Label: "Delay", Min: 10, Max: 50,
+		ValueHigh: new(30), ShowValue: true}, nil)
+	has(t, highOnly, `>10 to 30</output>`, "an unset low did not sit on Min")
+	// A set value still clamps: zero below a Min of 10 sits on Min.
+	clamped := RangeSlider(RangeSliderProps{Name: "delay", Label: "Delay", Min: 10, Max: 50,
+		ValueLow: new(0), ValueHigh: new(0), ShowValue: true}, nil)
+	has(t, clamped, `>10 to 10</output>`, "a set pair below Min did not clamp")
 }
 
 // The rating is a radio group whose every choice names itself; the
@@ -254,10 +278,14 @@ func TestRatingRadioContract(t *testing.T) {
 	has(t, got, `role="radiogroup"`, "the group does not say it is one")
 	has(t, got, `aria-label="3 out of 5"`, "a choice does not name itself")
 	has(t, got, `aria-label="3 out of 5" checked=""`, "the chosen choice is not checked")
-	// Reverse order: the highest choice is first in the markup, the
-	// sheet's sibling cascade depends on it.
-	if i := strings.Index(string(got), `value="5"`); i == -1 || strings.Index(string(got), `value="1"`) < i {
-		t.Error("the choices do not render in reverse order — the stylesheet's cascade is built on it")
+	// Forward order: 1..Max is the reading order, so native arrows move
+	// the way the stars read (WCAG 2.4.3). The reverse order a sibling
+	// cascade once needed made ArrowRight move to the lower star.
+	at := func(v int) int { return strings.Index(string(got), `value="`+strconv.Itoa(v)+`"`) }
+	for v := 1; v < 5; v++ {
+		if at(v) == -1 || at(v+1) < at(v) {
+			t.Fatalf("choice %d does not come before choice %d in the markup — the DOM order must be the reading order", v, v+1)
+		}
 	}
 }
 
