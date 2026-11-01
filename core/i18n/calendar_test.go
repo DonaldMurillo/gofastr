@@ -12,24 +12,16 @@ func TestDateYearMonthLong(t *testing.T) {
 		{"fr", "mars 2026"},
 		{"ja", "2026年3月"},
 		{"ru", "март 2026\u202fг."},
+		// CLDR's own yMMMM, not a lengthened yMMM: Spanish adds "de",
+		// Greek takes the nominative, Georgian loses yMMM's dot, and
+		// Bulgarian writes the month out where its yMMM is numeric.
+		{"es", "marzo de 2026"},
+		{"el", "Μάρτιος 2026"},
+		{"ka", "მარტი, 2026"},
+		{"bg", "март 2026\u202fг."},
 	} {
 		if got := Date(inLocale(tc.tag), sample, DateYearMonthLong); got != tc.want {
 			t.Errorf("%s: got %q want %q", tc.tag, got, tc.want)
-		}
-	}
-}
-
-func TestLengthenMonth(t *testing.T) {
-	for in, want := range map[string]string{
-		"MMM y":       "MMMM y",
-		"LLL y 'г.'":  "LLLL y 'г.'",
-		"y年M月":        "y年M月",
-		"MMMM y":      "MMMM y",
-		"'MMM' MMM y": "'MMM' MMMM y",
-		"MMM y 'open": "MMMM y 'open",
-	} {
-		if got := lengthenMonth(in); got != want {
-			t.Errorf("lengthenMonth(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -71,7 +63,11 @@ func TestFirstWeekday(t *testing.T) {
 		{"ar-MA", time.Monday},
 		{"dv", time.Friday},
 		{"ja", time.Sunday},
-		{"not a tag", time.Monday},
+		// Unparseable reads as English, the way every formatter does.
+		{"not a tag", time.Sunday},
+		{"en-GB-u-fw-sun", time.Sunday},
+		{"en-US-u-fw-mon", time.Monday},
+		{"fr-u-fw-xyz", time.Monday},
 	} {
 		if got := FirstWeekday(inLocale(tc.tag)); got != tc.want {
 			t.Errorf("%q: got %v want %v", tc.tag, got, tc.want)

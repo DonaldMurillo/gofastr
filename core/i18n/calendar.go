@@ -30,29 +30,37 @@ func weekdayIndex(d time.Weekday) int {
 
 // FirstWeekday is the day a week starts on where the context's reader
 // lives: Sunday in the United States, Monday in France, Saturday in
-// Egypt. The region decides it, the tag's own ("en-GB" starts on
-// Monday) or the language's likely one ("en" reads as en-US, "ar" as
-// ar-EG). No locale on ctx is English, and so Sunday.
+// Egypt. A tag's own -u-fw- extension wins ("en-GB-u-fw-sun"); else
+// the region decides, the tag's own ("en-GB" starts on Monday) or the
+// language's likely one ("en" reads as en-US, "ar" as ar-EG). No
+// locale on ctx, or a tag that does not parse, is English — the
+// language every other formatter here falls back to — and so Sunday.
 //
 // The table is CLDR's supplemental weekData firstDay; a region it does
 // not name starts on Monday, CLDR's world default.
 func FirstWeekday(ctx context.Context) time.Weekday {
 	tag := FromContext(ctx).Tag
-	if tag == "" {
+	if tag == "" || len(tag) > maxCLDRTag {
 		tag = "en"
-	}
-	if len(tag) > maxCLDRTag {
-		return time.Monday
 	}
 	t, err := language.Parse(tag)
 	if err != nil {
-		return time.Monday
+		t = language.English
+	}
+	if d, ok := weekdayByCode[t.TypeForKey("fw")]; ok {
+		return d
 	}
 	region, _ := t.Region()
 	if d, ok := firstDayByRegion[region.String()]; ok {
 		return d
 	}
 	return time.Monday
+}
+
+// weekdayByCode reads a -u-fw- value, CLDR's three-letter day codes.
+var weekdayByCode = map[string]time.Weekday{
+	"sun": time.Sunday, "mon": time.Monday, "tue": time.Tuesday, "wed": time.Wednesday,
+	"thu": time.Thursday, "fri": time.Friday, "sat": time.Saturday,
 }
 
 // firstDayByRegion is CLDR 47's weekData firstDay, the regions whose
@@ -68,37 +76,3 @@ var firstDayByRegion = func() map[string]time.Weekday {
 	}
 	return m
 }()
-
-// lengthenMonth writes a pattern's abbreviated month (a run of exactly
-// three M or L) out in full, outside quoted text: CLDR's year-month
-// skeleton "MMM y" becomes "MMMM y", "LLL y г." becomes "LLLL y г.", and
-// a numeric month ("y年M月") stays as written.
-func lengthenMonth(p string) string {
-	var b strings.Builder
-	for i := 0; i < len(p); i++ {
-		c := p[i]
-		switch {
-		case c == '\'':
-			j := strings.IndexByte(p[i+1:], '\'')
-			if j < 0 {
-				b.WriteString(p[i:])
-				return b.String()
-			}
-			b.WriteString(p[i : i+j+2])
-			i += j + 1
-		case c == 'M' || c == 'L':
-			j := i
-			for j < len(p) && p[j] == c {
-				j++
-			}
-			b.WriteString(p[i:j])
-			if j-i == 3 {
-				b.WriteByte(c)
-			}
-			i = j - 1
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
-}

@@ -19,10 +19,16 @@
   NS.loadedModules[NAME] = true;
 
   const DAY = 864e5;
-  // What a calendar's next swap should focus: { date } after a key,
-  // { nav } after an anchor. Per calendar, never module-wide.
+  // A month request older than this is taken as lost: the kernel says
+  // nothing to a module when an anchor's fetch fails (the anchor's
+  // error toast tells the reader), so a move waiting on it must not
+  // wait forever.
+  const STALE = 5000;
+  // A calendar's month request in flight: { date } is the day the
+  // reader's last key asked for, { nav } the anchor clicked, at its
+  // start time. Per calendar, never module-wide.
   const pending = new WeakMap();
-  // The full name of the start a reader picked, for the range sentence.
+  // The start a reader picked, { date, name }, for the range sentence.
   const startName = new WeakMap();
   const watched = new WeakSet();
 
@@ -33,19 +39,22 @@
     return out;
   }
 
-  function cssEscape(s) {
-    if (window.CSS && CSS.escape) return CSS.escape(s);
-    return String(s).replace(/([!"#$%&'()*+,./:;<=>?@[\]^`{|}~\\])/g, '\\$1');
-  }
-
   function closest(el, sel) {
     return el && el.closest ? el.closest(sel) : null;
+  }
+
+  // utc builds a UTC time without Date.UTC's quirk of reading years
+  // 0-99 as 1900-1999.
+  function utc(y, m, d) {
+    const t = new Date(0);
+    t.setUTCFullYear(y, m, d);
+    return t.getTime();
   }
 
   function parse(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
     if (!m) return null;
-    const t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+    const t = utc(+m[1], +m[2] - 1, +m[3]);
     return iso(t) === s ? t : null;
   }
 
@@ -67,8 +76,8 @@
     const d = new Date(parse(s));
     const y = d.getUTCFullYear();
     const m = d.getUTCMonth() + n;
-    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    return iso(Date.UTC(y, m, Math.min(d.getUTCDate(), last)));
+    const last = new Date(utc(y, m + 1, 0)).getUTCDate();
+    return iso(utc(y, m, Math.min(d.getUTCDate(), last)));
   }
 
   function monthIndex(ym) {
@@ -76,7 +85,7 @@
   }
 
   function input(root, which) {
-    return root.querySelector('[data-hui-datepicker-input="' + cssEscape(which) + '"]');
+    return root.querySelector('[data-hui-datepicker-input="' + CSS.escape(which) + '"]');
   }
 
   function calOf(root) {
@@ -123,6 +132,7 @@
     let focused = null, sel = null, today = null, open = null;
     for (const btn of days) {
       const p = place(v, btn.getAttribute('data-hui-date'));
+      btn.setAttribute('aria-pressed', p ? 'true' : 'false');
       const cell = btn.closest('td');
       if (cell) {
         cell.setAttribute('aria-selected', p ? 'true' : 'false');
@@ -155,7 +165,7 @@
   // nameOf is a day's full name: its button's, when the day is drawn,
   // else the page language's own long date.
   function nameOf(cal, d) {
-    const b = cal && cal.querySelector('[data-hui-date="' + cssEscape(d) + '"]');
+    const b = cal && cal.querySelector('[data-hui-date="' + CSS.escape(d) + '"]');
     if (b && b.getAttribute('aria-label')) return b.getAttribute('aria-label');
     try {
       return new Date(parse(d)).toLocaleDateString(document.documentElement.lang || undefined,
@@ -185,12 +195,15 @@
       if (!v.start || v.end || d < v.start) {
         setValue(input(root, 'start'), d);
         setValue(input(root, 'end'), '');
-        startName.set(root, name);
+        startName.set(root, { date: d, name: name });
         say(root, fill(root.getAttribute('data-hui-datepicker-choose-end'), { date: name }));
       } else {
         setValue(input(root, 'end'), d);
+        // The start as the input holds it now: a start typed after the
+        // pick is the one the sentence names.
+        const s = startName.get(root);
         say(root, fill(root.getAttribute('data-hui-datepicker-ranged'), {
-          start: startName.get(root) || nameOf(cal, v.start), end: name,
+          start: s && s.date === v.start ? s.name : nameOf(cal, v.start), end: name,
         }));
       }
     }
@@ -198,34 +211,55 @@
     if (cal) rove(cal, btn);
   }
 
+  function inFlight(cal) {
+    const p = pending.get(cal);
+    return p && Date.now() - p.at < STALE ? p : null;
+  }
+
   // moveTo focuses day target: in place when it is drawn, else through
   // the nav anchor one month or one year away, the swap focusing it.
+  // While a month is in flight the last key wins: its day is recorded,
+  // and the arrival walks on to it, so quick keys are never lost to the
+  // kernel's newest-request-wins abort.
   function moveTo(root, target) {
     const cal = calOf(root);
     if (!cal || !target) return;
-    const btn = cal.querySelector('[data-hui-date="' + cssEscape(target) + '"]');
+    const p = inFlight(cal);
+    const btn = cal.querySelector('[data-hui-date="' + CSS.escape(target) + '"]');
     if (btn) {
       rove(cal, btn);
       btn.focus();
+      if (p) p.date = target;
+      return;
+    }
+    if (p) {
+      p.date = target;
       return;
     }
     const grid = cal.querySelector('[data-hui-datepicker-grid]');
     if (!grid) return;
+    // Step toward the day: a year while it is a year or more away,
+    // else a month. A day further off arrives by several steps, each
+    // arrival walking on.
     const diff = monthIndex(target.slice(0, 7)) - monthIndex(grid.getAttribute('data-hui-datepicker-grid') || '');
-    const which = { '-1': 'prev-month', '1': 'next-month', '-12': 'prev-year', '12': 'next-year' }[String(diff)];
-    const a = which && cal.querySelector('[data-hui-datepicker-nav="' + cssEscape(which) + '"]');
+    if (!diff) return;
+    const which = (diff < 0 ? 'prev-' : 'next-') + (Math.abs(diff) >= 12 ? 'year' : 'month');
+    const a = cal.querySelector('[data-hui-datepicker-nav="' + CSS.escape(which) + '"]');
     if (!a || a.getAttribute('aria-disabled') === 'true') return;
     a.click();
     // After the click: the anchor's own click (below) recorded itself,
     // and the key's day is what the swap should focus instead.
-    pending.set(cal, { date: target });
+    pending.set(cal, { date: target, at: Date.now() });
   }
 
   document.addEventListener('keydown', function (e) {
     const btn = closest(e.target, '[data-hui-date]');
     const root = closest(btn, '[data-hui-datepicker]');
     if (!root || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
-    const d = btn.getAttribute('data-hui-date');
+    // Keys pressed while a month is loading count from the day the
+    // last one asked for, not from the old grid still on screen.
+    const p = inFlight(calOf(root));
+    const d = (p && p.date) || btn.getAttribute('data-hui-date');
     if (!valid(d)) return;
     const rtl = getComputedStyle(btn).direction === 'rtl';
     const row = btn.closest('tr');
@@ -252,7 +286,7 @@
     const a = closest(e.target, '[data-hui-datepicker-nav]');
     const cal = closest(a, '[data-hui-datepicker-calendar]');
     if (cal && a.getAttribute('aria-disabled') !== 'true') {
-      pending.set(cal, { nav: a.getAttribute('data-hui-datepicker-nav') });
+      pending.set(cal, { nav: a.getAttribute('data-hui-datepicker-nav'), at: Date.now() });
     }
   }, true);
 
@@ -286,10 +320,24 @@
     const cap = cal.querySelector('[data-hui-datepicker-caption]');
     if (cap) say(root, cap.textContent);
     if (!p) return;
-    let to = p.date ? cal.querySelector('[data-hui-date="' + cssEscape(p.date) + '"]') : null;
+    // A reader who moved on while the month loaded keeps their place:
+    // focus comes back only when it was lost with the old month.
+    const active = document.activeElement;
+    if (active && active !== document.body && !cal.contains(active)) return;
+    let to = p.date ? cal.querySelector('[data-hui-date="' + CSS.escape(p.date) + '"]') : null;
     if (to) rove(cal, to);
+    if (!to && p.date) {
+      // The day is not in this month (a key pressed during the load,
+      // or a year move held at Min or Max): walk on toward it, and
+      // when no step is left, take the same day number in this month.
+      moveTo(root, p.date);
+      if (pending.has(cal)) return;
+      const days = cal.querySelectorAll('[data-hui-date]');
+      to = days[Math.min(+p.date.slice(8), days.length) - 1] || null;
+      if (to) rove(cal, to);
+    }
     if (!to && p.nav) {
-      to = cal.querySelector('[data-hui-datepicker-nav="' + cssEscape(p.nav) + '"]');
+      to = cal.querySelector('[data-hui-datepicker-nav="' + CSS.escape(p.nav) + '"]');
       if (to && to.getAttribute('aria-disabled') === 'true') to = null;
     }
     if (!to) to = cal.querySelector('[data-hui-date][tabindex="0"]');
@@ -300,6 +348,14 @@
     if (watched.has(cal) || typeof MutationObserver !== 'function') return;
     watched.add(cal);
     new MutationObserver(function () { arrived(cal); }).observe(cal, { childList: true });
+    // A failed month reaches the calendar's signal as an error object,
+    // which the html swap ignores; hearing it here ends the wait at
+    // once, so the next key moves instead of queueing.
+    const name = cal.getAttribute('data-cui-signal');
+    const store = NS._signals;
+    if (!store || !name || name === '__proto__' || name === 'constructor' || name === 'prototype') return;
+    const slot = Object.prototype.hasOwnProperty.call(store, name) ? store[name] : (store[name] = { value: undefined, listeners: [] });
+    slot.listeners.push(function (v) { if (typeof v !== 'string') pending.delete(cal); });
   }
 
   function scan(scope) {

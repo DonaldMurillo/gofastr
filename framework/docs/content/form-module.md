@@ -98,9 +98,10 @@ The native `<input type="date">` is still the value. It is rendered,
 named and submitted whatever the calendar does, so the form posts
 `2026-11-12` without script, and a reader can always type the date.
 The calendar is the WAI-ARIA date grid: arrow keys move a day or a week
-(mirrored on a right-to-left page), Home and End go to the week's ends,
-Page Up and Page Down move a month and, with Shift, a year; Enter or
-Space picks. Each day is named by its full date in the reader's
+(mirrored on a right-to-left page), Home and End go to the first and
+last day of the row (on a month's first and last rows, the first and
+last day of the month in that week), Page Up and Page Down move a month
+and, with Shift, a year; Enter or Space picks. Each day is named by its full date in the reader's
 language, today is `aria-current="date"`, and a refused day is
 `aria-disabled` but still reachable. The week starts on the reader's
 first day (`i18n.FirstWeekday`).
@@ -109,7 +110,11 @@ Changing the month is an island. Each month anchor keeps a real href to
 the same page with the month in its query (the no-script path) and
 GETs `Endpoint` with script; the endpoint answers `ui.DatePickerMonth`
 and the calendar swaps in place, with focus kept on the day or anchor
-it was on. Build the page and the endpoint from one function, so they
+it was on. Keys pressed while a month loads are not lost: they count
+from the day the last one asked for. A month that fails to load is
+toasted and the calendar stays where it was. The shown month is held
+between `Min`'s and `Max`'s months, and a month anchor moves at most to
+that edge. Build the page and the endpoint from one function, so they
 agree on the days:
 
 <!-- gofastr:compile
@@ -122,7 +127,7 @@ func stay(r *http.Request) ui.DatePickerConfig {
 	return ui.DatePickerConfig{
 		ID: "stay", Label: "Your stay", Endpoint: "/book/month",
 		Range: &ui.DatePickerRange{StartName: "check_in", EndName: "check_out"},
-		Month: r.URL.Query().Get("month"), // the endpoint's month; empty on the page
+		Month: r.URL.Query().Get("month"), // the page and the endpoint alike
 		Today: today(r), Min: today(r),    // the reader's today, in their zone
 		Days: map[string]ui.DatePickerDay{
 			"2026-11-13": {Disabled: true, Note: "Full"},
@@ -144,9 +149,27 @@ A single date takes `Name` and `Value` instead of `Range`, and renders
 as a `FormField` (its `Help` and `Error` describe the input); a range
 renders as a fieldset named by `Label`, its inputs labelled
 `StartLabel` and `EndLabel` (default "Start date" and "End date" in the
-reader's language). The handler still validates what it receives: a
-refused day is refused in the calendar, not in a request that skips
-it.
+reader's language).
+
+Things to get right in the host:
+
+- **The page reads `month` too.** The no-script href is the page with
+  `?month=`; the page's own handler passes the query's month, as the
+  endpoint does. Without script a month change is a page load, so
+  anything typed in the form is lost; the native input stays usable
+  either way.
+- **`Path` is the page's constant path, never `r.URL.Path`.** The
+  endpoint renders the same config, and its `r.URL.Path` is the
+  endpoint's.
+- **One endpoint per picker**, or carry what tells them apart in
+  `Query`: the endpoint receives only the month and `Query`.
+- **`Today`, `Min` and `Max` are configuration.** One that is not a
+  date panics at render. A check-out picker whose `Min` is the
+  submitted check-in parses that value first; `Value` and `Month` are
+  the fields that take request data and fall back.
+- **The handler still validates** what it receives: a refused day is
+  refused in the calendar, not in a request that skips it, and a range
+  may come back with the end equal to the start (one day) or empty.
 
 ## Validation
 

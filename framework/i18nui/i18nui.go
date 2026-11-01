@@ -380,6 +380,7 @@ var (
 	HuiDatePickerChosen    = i18n.Define("ui.datepicker.chosen", "{{date}} selected.")
 	HuiDatePickerChooseEnd = i18n.Define("ui.datepicker.chooseEnd", "{{date}} selected. Choose the end date.")
 	HuiDatePickerRange     = i18n.Define("ui.datepicker.range", "{{start}} to {{end}} selected.")
+	HuiDatePickerFailed    = i18n.Define("ui.datepicker.monthFailed", "The month could not be loaded.")
 )
 
 // CodeBlock's accessible name, its line count and its copy control,

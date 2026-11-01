@@ -85,36 +85,92 @@ func TestDatePickerUserInputFallsBack(t *testing.T) {
 	}
 }
 
-// Min and Max refuse the days outside them and disable an anchor
-// whose whole month is outside; Days refuses its own.
+// tagWith returns the start tag in out carrying attr, or "".
+func tagWith(out, attr string) string {
+	i := strings.Index(out, attr)
+	if i < 0 {
+		return ""
+	}
+	start := strings.LastIndex(out[:i], "<")
+	end := strings.Index(out[i:], ">")
+	return out[start : i+end+1]
+}
+
+// Min and Max refuse the days outside them; Days refuses its own; and a
+// nav anchor that would not move is disabled, with no href.
 func TestDatePickerBounds(t *testing.T) {
 	p := dpProps()
 	p.Month, p.Min, p.Max = "2026-11", "2026-11-03", "2026-11-28"
 	p.Days = map[string]DateDay{"2026-11-10": {Disabled: true}}
 	out := string(DatePickerMonth(p, nil))
-	for _, d := range []string{"2026-11-02", "2026-11-10", "2026-11-29"} {
-		if !strings.Contains(out, `aria-disabled="true" aria-label="`+i18n.Date(context.Background(), mustDate(t, d), i18n.DateFull)+`" data-hui-date="`+d+`"`) {
-			t.Errorf("%s is not refused", d)
+	for d, refused := range map[string]bool{
+		"2026-11-02": true, "2026-11-10": true, "2026-11-29": true,
+		"2026-11-03": false, "2026-11-28": false, "2026-11-15": false,
+	} {
+		tag := tagWith(out, `data-hui-date="`+d+`"`)
+		if tag == "" {
+			t.Fatalf("no day %s", d)
 		}
-	}
-	for _, d := range []string{"2026-11-03", "2026-11-28"} {
-		if strings.Contains(out, `aria-disabled="true" aria-label="`+i18n.Date(context.Background(), mustDate(t, d), i18n.DateFull)+`" data-hui-date="`+d+`"`) {
-			t.Errorf("%s, a bound itself, is refused", d)
+		if got := strings.Contains(tag, `aria-disabled="true"`); got != refused {
+			t.Errorf("%s refused = %v, want %v: %s", d, got, refused, tag)
 		}
 	}
 	for _, nav := range []string{"prev-month", "next-month", "prev-year", "next-year"} {
-		if !strings.Contains(out, `aria-disabled="true" aria-label="`) || !strings.Contains(out, `data-hui-datepicker-nav="`+nav+`"`) {
-			t.Fatalf("missing %s", nav)
-		}
-		i := strings.Index(out, `data-hui-datepicker-nav="`+nav+`"`)
-		start := strings.LastIndex(out[:i], "<a ")
-		if !strings.Contains(out[start:i], `aria-disabled="true"`) || strings.Contains(out[start:i], "href=") {
-			t.Errorf("%s leads to a month wholly outside the bounds and must be a disabled anchor: %s", nav, out[start:i])
+		tag := tagWith(out, `data-hui-datepicker-nav="`+nav+`"`)
+		if !strings.Contains(tag, `aria-disabled="true"`) || strings.Contains(tag, "href=") || strings.Contains(tag, "data-cui-rpc") {
+			t.Errorf("%s would not move and must be a disabled anchor: %s", nav, tag)
 		}
 	}
 	// The tab stop skips the refused first days.
-	if !strings.Contains(out, `data-hui-date="2026-11-03" tabindex="0"`) {
-		t.Error("the tab stop is not on the first day that can be picked")
+	if tag := tagWith(out, `data-hui-date="2026-11-03"`); !strings.Contains(tag, `tabindex="0"`) {
+		t.Errorf("the tab stop is not on the first day that can be picked: %s", tag)
+	}
+}
+
+// The shown month is held between Min's and Max's months, so a picker
+// never opens on a month it cannot leave; a year anchor lands on the
+// nearest reachable month rather than going dark with months behind it.
+func TestDatePickerHoldsTheMonthInBounds(t *testing.T) {
+	p := dpProps()
+	p.Today, p.Min, p.Max = "2026-01-15", "2026-03-01", "2027-02-10"
+	out := string(DatePickerMonth(p, nil))
+	if !strings.Contains(out, `data-hui-datepicker-grid="2026-03"`) {
+		t.Fatalf("Today before Min did not open on Min's month:\n%s", out)
+	}
+	if tag := tagWith(out, `data-hui-datepicker-nav="next-year"`); !strings.Contains(tag, `href="?month=2027-02"`) {
+		t.Errorf("next year from March 2026 must land on February 2027, Max's month: %s", tag)
+	}
+	if tag := tagWith(out, `data-hui-datepicker-nav="prev-month"`); !strings.Contains(tag, `aria-disabled="true"`) {
+		t.Errorf("at Min's month the previous month must be disabled: %s", tag)
+	}
+	for month, want := range map[string]string{
+		"2025-06": "2026-03", // a stale link before Min
+		"2030-01": "2027-02", // after Max
+		"0000-01": "2026-03", // year zero is not a month
+	} {
+		p.Month = month
+		if out := string(DatePickerMonth(p, nil)); !strings.Contains(out, `data-hui-datepicker-grid="`+want+`"`) {
+			t.Errorf("Month %s did not show %s", month, want)
+		}
+	}
+}
+
+// A range selects many cells, which a grid allows only when it says so;
+// a single date selects one, and says nothing.
+func TestDatePickerRangeGridIsMultiselectable(t *testing.T) {
+	p := dpProps()
+	p.Month = "2026-11"
+	if strings.Contains(string(DatePickerMonth(p, nil)), "aria-multiselectable") {
+		t.Error("a single date's grid claims many selections")
+	}
+	p.Name = ""
+	p.Range = &DateRange{StartName: "a", EndName: "b", Start: "2026-11-02", End: "2026-11-04"}
+	out := string(DatePickerMonth(p, nil))
+	if !strings.Contains(tagWith(out, `role="grid"`), `aria-multiselectable="true"`) {
+		t.Error("a range's grid does not say it holds many selections")
+	}
+	if tag := tagWith(out, `data-hui-date="2026-11-03"`); !strings.Contains(tag, `aria-pressed="true"`) {
+		t.Errorf("a day inside the range does not say so on the button focus lands on: %s", tag)
 	}
 }
 

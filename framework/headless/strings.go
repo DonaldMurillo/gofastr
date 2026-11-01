@@ -381,6 +381,9 @@ type Strings struct {
 	// DatePickerRange is said when a range's end is picked, with
 	// {{start}} and {{end}} for the two full dates.
 	DatePickerRange string
+	// DatePickerMonthFailed titles the toast a month that failed to
+	// load raises. A short sentence.
+	DatePickerMonthFailed string
 
 	// ctx is the request the words were resolved for, set by ForRequest:
 	// a count, a step number or a slider value is written the way its
@@ -535,6 +538,8 @@ var defaultStrings = Strings{
 	DatePickerChosen:    "{{date}} selected.",
 	DatePickerChooseEnd: "{{date}} selected. Choose the end date.",
 	DatePickerRange:     "{{start}} to {{end}} selected.",
+
+	DatePickerMonthFailed: "The month could not be loaded.",
 }
 
 // DefaultStrings returns a fresh copy of the English defaults, every

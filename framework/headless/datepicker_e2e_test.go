@@ -6,7 +6,9 @@ import (
 	"html"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
@@ -19,11 +21,23 @@ const datepickerLoaded = `!!(window.__gofastr && window.__gofastr.loadedModules 
 // month, and the form's target, which echoes what it received.
 func datePickerServer(t *testing.T, props func(month string) DatePickerProps) context.Context {
 	t.Helper()
+	return datePickerServerWith(t, props, 0, "")
+}
+
+// datePickerServerWith is datePickerServer whose endpoint answers after
+// delay, and with a 500 for the month failMonth.
+func datePickerServerWith(t *testing.T, props func(month string) DatePickerProps, delay time.Duration, failMonth string) context.Context {
+	t.Helper()
 	page := `<form id="host" method="post" action="/submit">` +
 		string(DatePicker(props(""), nil)) +
 		`<button id="save" type="submit">Save</button></form>`
 	b := startBehaviorServer(t, page, func(mux *http.ServeMux) {
 		mux.HandleFunc("/island/cal", func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(delay)
+			if failMonth != "" && r.URL.Query().Get("month") == failMonth {
+				http.Error(w, "no", http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			fmt.Fprint(w, DatePickerMonth(props(r.URL.Query().Get("month")), nil))
 		})
@@ -108,7 +122,19 @@ func TestE2E_DatePickerSelectingADayRoundTrips(t *testing.T) {
 		t.Fatal("the new month was not announced")
 	}
 	// The swapped month knows nothing of the pick; the module marks it
-	// from the input, so going back to November shows the 12th again.
+	// from the input, so going back to November shows the 12th again,
+	// on the cell and on the focusable button.
+	dpRun(t, ctx, dpKey(kb.PageUp))
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'November 2026' &&
+		document.activeElement.getAttribute('data-hui-date') === '2026-11-20' &&
+		document.querySelector('[data-hui-date="2026-11-12"]').closest('td').getAttribute('aria-selected') === 'true' &&
+		document.querySelector('[data-hui-date="2026-11-12"]').getAttribute('aria-pressed') === 'true'`) {
+		t.Fatal("back in November, the 12th is not marked as the pick")
+	}
+	dpRun(t, ctx, dpKey(kb.PageDown))
+	if !pollTrue(ctx, `document.activeElement.getAttribute('data-hui-date') === '2026-12-20'`) {
+		t.Fatal("PageDown did not return to December 20")
+	}
 	dpRun(t, ctx, dpKey(kb.ArrowLeft), dpKey(kb.Enter))
 	if !pollTrue(ctx, `document.getElementById('due').value === '2026-12-19' &&
 		document.querySelector('[data-hui-date="2026-12-19"]').closest('td').getAttribute('aria-selected') === 'true'`) {
@@ -226,5 +252,104 @@ func TestE2E_DatePickerKeysFollowTheDirection(t *testing.T) {
 	dpRun(t, ctx, dpKey(kb.End))
 	if !at("2026-11-14") {
 		t.Fatal("End did not move to the week's last day")
+	}
+}
+
+// The month loads slowly, and the reader does not wait for it. Keys
+// pressed during the load count from the day the last one asked for,
+// so three quick PageDowns land three months on; an arrow across the
+// month's edge crosses it; and a reader who has moved to another field
+// by the time the month lands keeps their place.
+func TestE2E_DatePickerKeepsUpWithTheReader(t *testing.T) {
+	ctx := datePickerServerWith(t, func(month string) DatePickerProps {
+		return DatePickerProps{ID: "due", Label: "Due date", Name: "due_on",
+			Month: orDefault(month, "2026-11"), Max: "2027-03-31",
+			Island: Island{Endpoint: "/island/cal", Signal: "due-cal"}}
+	}, 400*time.Millisecond, "")
+	dpRun(t, ctx, chromedp.Focus(`[data-hui-date="2026-11-15"]`, chromedp.ByQuery),
+		dpKey(kb.PageDown), dpKey(kb.PageDown), dpKey(kb.PageDown))
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'February 2027' &&
+		document.activeElement.getAttribute('data-hui-date') === '2027-02-15'`) {
+		t.Fatal("three quick PageDowns did not land on February 15")
+	}
+	// A key toward a month past Max does nothing, and focus stays put.
+	dpRun(t, ctx, dpKey(kb.PageDown), dpKey(kb.PageDown))
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'March 2027' &&
+		document.activeElement.getAttribute('data-hui-date') === '2027-03-15'`) {
+		t.Fatal("PageDown did not reach March 15")
+	}
+	time.Sleep(600 * time.Millisecond)
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'March 2027' &&
+		document.activeElement.getAttribute('data-hui-date') === '2027-03-15' &&
+		document.querySelector('[data-hui-datepicker-nav="next-month"]').getAttribute('aria-disabled') === 'true'`) {
+		t.Fatal("a key toward a month past Max moved the calendar or lost focus")
+	}
+	// ArrowRight from the month's last day crosses into the next.
+	dpRun(t, ctx, chromedp.Focus(`[data-hui-date="2027-03-31"]`, chromedp.ByQuery), dpKey(kb.ArrowUp), dpKey(kb.PageUp))
+	if !pollTrue(ctx, `document.activeElement.getAttribute('data-hui-date') === '2027-02-24'`) {
+		t.Fatal("ArrowUp then PageUp did not land on February 24")
+	}
+	dpRun(t, ctx, chromedp.Focus(`[data-hui-date="2027-02-28"]`, chromedp.ByQuery), dpKey(kb.ArrowRight))
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'March 2027' &&
+		document.activeElement.getAttribute('data-hui-date') === '2027-03-01'`) {
+		t.Fatal("ArrowRight from February 28 did not cross into March 1")
+	}
+	// The reader leaves for the input while a month loads.
+	dpRun(t, ctx, chromedp.Focus(`[data-hui-date="2027-03-01"]`, chromedp.ByQuery), dpKey(kb.PageUp),
+		chromedp.Focus(`#due`, chromedp.ByID))
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'February 2027'`) {
+		t.Fatal("PageUp did not load February")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if !pollTrue(ctx, `document.activeElement === document.getElementById('due')`) {
+		t.Fatal("the month landing took focus back from the field the reader moved to")
+	}
+}
+
+// A month that fails to load says so (the kernel's toast titled by the
+// anchor), the calendar stays on the month it had, and the keys still
+// work afterwards.
+func TestE2E_DatePickerSaysAFailedMonth(t *testing.T) {
+	ctx := datePickerServerWith(t, func(month string) DatePickerProps {
+		return DatePickerProps{ID: "due", Label: "Due date", Name: "due_on",
+			Month:  orDefault(month, "2026-11"),
+			Island: Island{Endpoint: "/island/cal", Signal: "due-cal"}}
+	}, 0, "2026-12")
+	dpRun(t, ctx, chromedp.Focus(`[data-hui-date="2026-11-15"]`, chromedp.ByQuery), dpKey(kb.PageDown))
+	if !pollTrue(ctx, `document.body.innerText.includes('The month could not be loaded.')`) {
+		t.Fatal("a failed month was not said")
+	}
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'November 2026'`) {
+		t.Fatal("a failed month changed the calendar")
+	}
+	dpRun(t, ctx, chromedp.Focus(`[data-hui-date="2026-11-15"]`, chromedp.ByQuery), dpKey(kb.PageUp))
+	if !pollTrue(ctx, `document.getElementById('due-caption').textContent === 'October 2026'`) {
+		t.Fatal("the keys stopped working after a failed month")
+	}
+}
+
+// Without script the month anchors are plain links to the page itself:
+// the page reads the month from its query and renders that month, and
+// the native input still submits.
+func TestE2E_DatePickerChangesMonthWithoutScript(t *testing.T) {
+	props := func(month string) DatePickerProps {
+		return DatePickerProps{ID: "due", Label: "Due date", Name: "due_on",
+			Month: orDefault(month, "2026-11"), Path: "/book",
+			Island: Island{Endpoint: "/island/cal", Signal: "due-cal"}}
+	}
+	b := startBehaviorServer(t, "", func(mux *http.ServeMux) {
+		mux.HandleFunc("/book", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<!doctype html><html><head><title>book</title></head><body><span id="ready">ready</span>%s</body></html>`,
+				DatePicker(props(r.URL.Query().Get("month")), nil))
+		})
+	})
+	ctx := behaviorBrowserCtx(t)
+	dpRun(t, ctx, emulation.SetScriptExecutionDisabled(true),
+		chromedp.Navigate(b.srv.URL+"/book"), chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Click(`[data-hui-datepicker-nav="next-month"]`, chromedp.ByQuery))
+	if !pollTrue(ctx, `location.pathname + location.search === '/book?month=2026-12' &&
+		document.getElementById('due-caption').textContent === 'December 2026'`) {
+		t.Fatal("without script, the next-month anchor did not load December")
 	}
 }

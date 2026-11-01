@@ -196,6 +196,8 @@ var stringsKeys = map[string]i18n.Phrase{
 	"DatePickerChosen":    i18nui.HuiDatePickerChosen,
 	"DatePickerChooseEnd": i18nui.HuiDatePickerChooseEnd,
 	"DatePickerRange":     i18nui.HuiDatePickerRange,
+
+	"DatePickerMonthFailed": i18nui.HuiDatePickerFailed,
 }
 
 // StringsFor resolves a headless.Strings from the request's context:

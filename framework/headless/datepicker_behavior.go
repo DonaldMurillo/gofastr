@@ -22,7 +22,10 @@ const DatePickerBehaviorName = "headless-datepicker"
 // once it registers, so the first pick on a fresh page is not lost.
 var _ = uiregistry.RegisterBehavior(DatePickerBehaviorName, datepickerJS,
 	uiregistry.Markers("[data-hui-datepicker]"),
-	uiregistry.Interactions(uiregistry.Interaction{
-		Event:    "click",
-		Selector: "[data-hui-date]",
-	}))
+	uiregistry.Interactions(
+		uiregistry.Interaction{Event: "click", Selector: "[data-hui-date]"},
+		// A month anchor clicked cold still swaps (the kernel owns its
+		// fetch); replayed, it also records itself, so the swap puts
+		// focus back on it — Pagination's data-hui-page, the same seam.
+		uiregistry.Interaction{Event: "click", Selector: "[data-hui-datepicker-nav]"},
+	))

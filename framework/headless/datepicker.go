@@ -105,15 +105,24 @@ type DatePickerProps struct {
 
 	// Month is the month shown, YYYY-MM: an endpoint passes the one
 	// it was asked for. Empty, or not a month, shows the month of the
-	// value (the range's start), else Today's, else the current one.
+	// value (the range's start), else Today's, else the server's
+	// current month in UTC; whichever it is, it is held inside Min and
+	// Max's months.
 	Month string
 	// Today is the reader's today, YYYY-MM-DD, marked
 	// aria-current=date. The server knows the reader's zone and this
 	// package does not, so it is the caller's; empty marks none.
+	//
+	// Today, Min and Max are configuration: one that is not a date
+	// panics at render. Never pass request data through them (a
+	// check-out picker whose Min is the submitted check-in) without
+	// parsing it first; a value the reader sent belongs in Value or
+	// Month, which fall back instead.
 	Today string
 	// Min and Max bound the dates, YYYY-MM-DD, on the native inputs
-	// and on the calendar: a day outside is refused, and a nav anchor
-	// whose month lies wholly outside is disabled.
+	// and on the calendar: a day outside is refused, the shown month
+	// is held between their months, and a nav anchor moves at most to
+	// the edge, disabled when it would not move at all.
 	Min, Max string
 	// Days is what the server knows about each day, keyed YYYY-MM-DD.
 	Days map[string]DateDay
@@ -127,7 +136,9 @@ type DatePickerProps struct {
 	Island Island
 	// Path is the page's own path, the no-script destination of the
 	// nav anchors: it plus Query, the month parameter set. Empty means
-	// the current document (a relative "?query" href).
+	// the current document (a relative "?query" href). It is the
+	// page's constant path, never r.URL.Path: the endpoint renders the
+	// same props, and its r.URL.Path is the endpoint's own.
 	Path string
 	// Query is what the page's URL already carries, kept across a
 	// month change.
@@ -278,20 +289,50 @@ func (p DatePickerProps) check() {
 }
 
 // shownMonth is the first of the month the calendar shows: Month when
-// it is one, else the value's, else Today's, else the current month.
-// Month comes from a query string, so a value that is not a month is
-// a stale link, not a mistake, and falls through.
+// it is one, else the value's (a range's start), else Today's, else the
+// server's current month in UTC — then held inside monthBounds, so the
+// calendar never opens on a month it could not leave. Month comes from
+// a query string, so a value that is not a month (year 0000 included)
+// is a stale link, not a mistake, and falls through.
 func (p DatePickerProps) shownMonth() time.Time {
-	if m, err := time.Parse(isoMonth, p.Month); err == nil {
-		return m
+	lo, hi := p.monthBounds()
+	if m, err := time.Parse(isoMonth, p.Month); err == nil && m.Year() >= 1 {
+		return clampMonth(m, lo, hi)
 	}
 	for _, v := range []string{p.Value, p.rangeStart(), p.Today} {
-		if d, err := time.Parse(isoDate, v); err == nil {
-			return time.Date(d.Year(), d.Month(), 1, 0, 0, 0, 0, time.UTC)
+		if d, err := time.Parse(isoDate, v); err == nil && d.Year() >= 1 {
+			return clampMonth(monthOf(d), lo, hi)
 		}
 	}
-	now := time.Now().UTC()
-	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	return clampMonth(monthOf(time.Now().UTC()), lo, hi)
+}
+
+// monthBounds are the first and last months a day can be picked in:
+// Min's and Max's, else the calendar's own ends, years 1 and 9999.
+func (p DatePickerProps) monthBounds() (lo, hi time.Time) {
+	lo = time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC)
+	hi = time.Date(9999, time.December, 1, 0, 0, 0, 0, time.UTC)
+	if d, err := time.Parse(isoDate, p.Min); err == nil && d.Year() >= 1 {
+		lo = monthOf(d)
+	}
+	if d, err := time.Parse(isoDate, p.Max); err == nil {
+		hi = monthOf(d)
+	}
+	return lo, hi
+}
+
+func monthOf(d time.Time) time.Time {
+	return time.Date(d.Year(), d.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
+func clampMonth(m, lo, hi time.Time) time.Time {
+	if m.Before(lo) {
+		return lo
+	}
+	if m.After(hi) {
+		return hi
+	}
+	return m
 }
 
 func (p DatePickerProps) rangeStart() string {
@@ -346,15 +387,14 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 	last := month.AddDate(0, 1, -1)
 	captionID := p.ID + "-caption"
 
+	lo, hi := p.monthBounds()
 	nav := func(which, label, glyph string, target time.Time) render.HTML {
-		// A month is reachable when some day of it is: its last day
-		// on or after Min, and its first on or before Max.
-		tFirst := time.Date(target.Year(), target.Month(), 1, 0, 0, 0, 0, time.UTC)
-		tLast := tFirst.AddDate(0, 1, -1)
-		disabled := p.Disabled ||
-			(p.Min != "" && tLast.Format(isoDate) < p.Min) ||
-			(p.Max != "" && tFirst.Format(isoDate) > p.Max) ||
-			tFirst.Year() < 1 || tFirst.Year() > 9999
+		// The target is held inside the reachable months: a year back
+		// from March when Min is last November lands on November, not
+		// on a disabled anchor with four pickable months behind it. An
+		// anchor is disabled only when it would not move at all.
+		tFirst := clampMonth(target, lo, hi)
+		disabled := p.Disabled || tFirst.Equal(month)
 		attrs := Attrs(map[string]string{"aria-label": label})
 		attrs["data-hui-datepicker-nav"] = which
 		if disabled {
@@ -369,6 +409,10 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 			attrs["data-cui-rpc"] = mergeQuery(p.Island.Endpoint, href)
 			attrs["data-cui-rpc-method"] = "GET"
 			attrs["data-cui-rpc-signal"] = p.Island.Signal
+			// A month that fails to load says so: the kernel toasts the
+			// title on a non-2xx or a network error, where the html
+			// swap alone would leave the old month and say nothing.
+			attrs["data-cui-rpc-error-toast"] = w.DatePickerMonthFailed
 		}
 		return b.El("a", PartDatePickerNav, Internal(attrs),
 			render.Tag("span", map[string]string{"aria-hidden": "true"}, render.Text(glyph)))
@@ -443,6 +487,10 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 		"aria-labelledby": captionID,
 	})
 	gridAttrs["data-hui-datepicker-grid"] = month.Format(isoMonth)
+	if p.Range != nil {
+		// A range selects many cells; without this a grid allows one.
+		gridAttrs["aria-multiselectable"] = "true"
+	}
 	grid := b.El("table", PartDatePickerGrid, gridAttrs,
 		render.Tag("thead", map[string]string{"data-cui-internal": ""}, render.Tag("tr", nil, heads...)),
 		render.Tag("tbody", map[string]string{"data-cui-internal": ""}, rows...))
@@ -470,6 +518,11 @@ func datePickerDay(b Box, p DatePickerProps, w *Strings, d time.Time, tabDay str
 		"aria-label": i18n.Date(w.ctx, d, i18n.DateFull),
 	})
 	dayAttrs["data-hui-date"] = iso
+	// The selection rides the focused element too: aria-selected on the
+	// cell is the grid's state, but focus sits on the button, and most
+	// screen readers in focus mode read only the button. The module
+	// keeps the two in step.
+	dayAttrs["aria-pressed"] = strconv.FormatBool(sel)
 	dayAttrs["tabindex"] = "-1"
 	if iso == tabDay {
 		dayAttrs["tabindex"] = "0"

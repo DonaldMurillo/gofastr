@@ -61,22 +61,29 @@ type DatePickerConfig struct {
 	// Endpoint is the same-origin path a month change GETs, with the
 	// month in its query (MonthParam): it answers DatePickerMonth.
 	Endpoint string
-	// Month is the month shown, YYYY-MM: the endpoint passes the
-	// query's. Empty, or not a month, shows the value's month, else
-	// Today's.
+	// Month is the month shown, YYYY-MM: the page and the endpoint
+	// both pass the query's. Empty, or not a month, shows the value's
+	// month (a range's start), else Today's, else the server's current
+	// month in UTC; whichever it is, it is held between Min's and
+	// Max's months.
 	Month string
 	// MonthParam names the month query parameter. Default "month".
 	MonthParam string
 	// Path and Query are the page's own path and query: a nav anchor's
 	// href without script is Path plus Query with the month set.
-	// Empty Path is the current page.
+	// Empty Path is the current page. Path is the page's constant
+	// path, never r.URL.Path: the endpoint builds the same config, and
+	// its r.URL.Path is its own. Two pickers sharing one Endpoint tell
+	// themselves apart through Query.
 	Path  string
 	Query url.Values
 
 	// Today is the reader's today, YYYY-MM-DD, in the reader's zone,
 	// which the server knows and this package does not.
 	Today string
-	// Min and Max bound the dates, YYYY-MM-DD.
+	// Min and Max bound the dates, YYYY-MM-DD. Today, Min and Max are
+	// configuration and panic when they are not dates: parse request
+	// data before passing it here.
 	Min, Max string
 	// Days is what the server knows about each day, keyed YYYY-MM-DD.
 	Days map[string]DatePickerDay
