@@ -152,7 +152,11 @@ packaged StateChannel consumer for rooms of peers (see
 The lossy, best-effort cross-replica transport behind real-time
 delivery. A `Fanout` interface (`Publish` / `Subscribe`) with an
 in-process backend and a Redis adapter (`NewRedis`), plus a node-id
-envelope that stops broadcasts from re-broadcasting. Indirect by
+envelope that stops broadcasts from re-broadcasting. `PublishQueue`
+publishes from hot paths without blocking; `PublishQueueReporting` is
+the same queue with a per-payload callback that runs when the payload
+is not published (backend error, timeout, or `ErrPublishDropped` on
+overflow), for a caller that must act on a loss. Indirect by
 default: the framework wires it under the event bus, the island
 manager, and `SSEBroker`. Reach for it directly only to span a new
 real-time surface across replicas. Start at `core/fanout/fanout.go`:

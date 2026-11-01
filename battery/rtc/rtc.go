@@ -208,7 +208,7 @@ type Signaler struct {
 	// Cross-replica state; empty until SetFanout.
 	fanout       fanout.Fanout
 	nodeID       string
-	fanoutSend   func([]byte)
+	fanoutSend   func([]byte, func(error))
 	fanoutStopQ  func()
 	fanoutCancel func()
 	remote       map[string]map[string]*remoteEntry // room -> replica node -> roster
