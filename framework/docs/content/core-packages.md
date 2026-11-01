@@ -21,9 +21,9 @@ middleware chain populates. Author-facing: you write handlers against
 this. Start at `core/handler/handler.go`: `HandlerAdapter`.
 `Respond` encodes `O` before it writes the status, so a value JSON cannot
 encode (a NaN, a channel) answers the generic 500, never an empty 200.
-A nil output answers 204 No Content, and so does a nil pointer, map or
-slice: a `Handler[I, *Out]` returning `(nil, nil)` is a 204, not a 200
-`null`. A panic in the handler is a generic 500; a panic after the
+A nil output answers 204 No Content, and so does a nil pointer: a
+`Handler[I, *Out]` returning `(nil, nil)` is a 204, not a 200 `null`. A
+nil slice or map stays a 200 `null`, since it is a list's empty result. A panic in the handler is a generic 500; a panic after the
 response started (inside a `ResponseType`'s `WriteBody`, once the 200 and
 part of the body went out) is logged and aborts the connection with
 `http.ErrAbortHandler`, so the client sees a broken response, never an

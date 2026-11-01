@@ -42,7 +42,8 @@ type ResponseType interface {
 }
 
 // Respond writes out the response based on out's type:
-//   - nil, or a nil pointer, map or slice → 204 No Content
+//   - nil, or a nil pointer → 204 No Content (a nil slice or map is
+//     still JSON "null", 200: a list handler's empty result is content)
 //   - ResponseType → delegates to the custom type
 //   - any other value → JSON serialization, 200 OK
 func Respond(w http.ResponseWriter, r *http.Request, out any) {
@@ -94,14 +95,16 @@ func respond(w http.ResponseWriter, r *http.Request, out any, started *bool) {
 	_, _ = w.Write(append(body, '\n'))
 }
 
-// isNilValue reports whether out is nil or a nil pointer, map, slice or
-// interface held in an any.
+// isNilValue reports whether out is nil or a nil pointer or interface
+// held in an any. A nil slice or map is deliberately not "no content":
+// a list handler that found no rows returns one, and turning its 200 into
+// a bodyless 204 would break every client that parses the body.
 func isNilValue(out any) bool {
 	if out == nil {
 		return true
 	}
 	switch rv := reflect.ValueOf(out); rv.Kind() {
-	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		return rv.IsNil()
 	}
 	return false

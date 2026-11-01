@@ -432,11 +432,17 @@ func TestRespondTypedNilIs204(t *testing.T) {
 	if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
 		t.Errorf("Handler returned (*out)(nil): status %d body %q, want 204 and no body", w.Code, w.Body.String())
 	}
-	for _, v := range []any{map[string]int(nil), []int(nil), (*HTML)(nil)} {
+	w = httptest.NewRecorder()
+	Respond(w, nil, (*HTML)(nil))
+	if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Errorf("(*HTML)(nil): status %d body %q, want 204 and no body", w.Code, w.Body.String())
+	}
+	// A nil slice or map is a list handler's empty result: still 200.
+	for _, v := range []any{map[string]int(nil), []int(nil)} {
 		w := httptest.NewRecorder()
 		Respond(w, nil, v)
-		if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
-			t.Errorf("%T(nil): status %d body %q, want 204 and no body", v, w.Code, w.Body.String())
+		if w.Code != http.StatusOK {
+			t.Errorf("%T(nil): status %d, want 200", v, w.Code)
 		}
 	}
 	// An empty, non-nil value is still content.
