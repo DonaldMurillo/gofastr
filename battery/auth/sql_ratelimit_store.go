@@ -180,6 +180,15 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND attempted_at_ms <= $2`, attempts), scopePrefix, cutoffMs); err != nil {
 			return false, 0, err
 		}
+		// An expired block goes with the attempts it covered, as on the
+		// per-key path below. Dropping only the block left those attempts
+		// counting: with BlockDuration < Window the key's next try found
+		// them still in the window and was blocked again, where the
+		// in-memory limiter admits it. Attempts made after the block
+		// expired are fresh and stay.
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE a.rl_key LIKE $1 ESCAPE '\' AND EXISTS (SELECT 1 FROM %s b WHERE b.rl_key = a.rl_key AND b.blocked_until_ms <= $2 AND a.attempted_at_ms < b.blocked_until_ms)`, attempts, blocks), scopePrefix, nowMs); err != nil {
+			return false, 0, err
+		}
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND blocked_until_ms <= $2`, blocks), scopePrefix, nowMs); err != nil {
 			return false, 0, err
 		}
