@@ -130,6 +130,7 @@ func TestAckDoesNotDeleteNewerClaimEntry(t *testing.T) {
 	r := newMockRedis()
 	gate := &interleaveHDel{casOnlyClient: r}
 	q := NewRedisQueue(gate, "jobs")
+	t.Cleanup(func() { _ = q.Close() })
 	now := time.Now()
 	q.now = func() time.Time { return now }
 	ctx := context.Background()
@@ -171,6 +172,7 @@ func TestNackDoesNotDeleteNewerClaimEntry(t *testing.T) {
 	r := newMockRedis()
 	gate := &interleaveHDel{casOnlyClient: r}
 	q := NewRedisQueue(gate, "jobs")
+	t.Cleanup(func() { _ = q.Close() })
 	now := time.Now()
 	q.now = func() time.Time { return now }
 	ctx := context.Background()
@@ -219,6 +221,7 @@ func TestNackDoesNotDeleteNewerClaimEntry(t *testing.T) {
 func TestReclaimKeepsCorruptEntryObservable(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "jobs")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 
 	const raw = `{"job":"pay","expiresAt":` // truncated JSON, unparseable as a processingEntry

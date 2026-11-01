@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"maps"
@@ -164,34 +165,7 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 			return fmt.Errorf("semantic: abs(%q): %w", root, err)
 		}
 		absRoots = append(absRoots, abs)
-		err = filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			name := d.Name()
-			if d.IsDir() {
-				if slices.Contains(w.opts.ExcludeDirs, name) {
-					return fs.SkipDir
-				}
-				return nil
-			}
-			if !w.matchExt(name) {
-				return nil
-			}
-			info, ierr := d.Info()
-			if ierr != nil {
-				return nil // racing deletion; skip
-			}
-			if w.opts.MaxFileSize > 0 && info.Size() > w.opts.MaxFileSize {
-				return nil
-			}
-			seen[path] = struct{}{}
-			return w.upsert(ctx, path, info)
-		})
-		if err != nil {
+		if err := w.scanRoot(ctx, abs, seen); err != nil {
 			return err
 		}
 	}
@@ -234,6 +208,110 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 		w.mu.Unlock()
 	}
 	return nil
+}
+
+// scanRoot walks one absolute root and upserts every matching regular
+// file. Files are read through an os.Root opened on the root, so a path
+// swapped for a link that leads out of it between the walk and the read
+// is refused by the kernel, never followed. Symlinks, devices, sockets
+// and pipes are skipped at the walk: a link's own Lstat says nothing
+// about its target, which could be ~/.ssh/id_ed25519 or /dev/zero.
+//
+// A root that names a file (ScanOnce(ctx, "README.md")) is confined to
+// its parent directory, since os.OpenRoot opens only a directory; the
+// walk still visits that one file. The directory is opened as one
+// (openDirRoot), so a root swapped for a FIFO after the Lstat fails the
+// open instead of blocking it.
+func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]struct{}) error {
+	dir := abs
+	if fi, lerr := os.Lstat(abs); lerr == nil && !fi.IsDir() {
+		dir = filepath.Dir(abs)
+	}
+	root, err := openDirRoot(dir)
+	if err != nil {
+		return fmt.Errorf("semantic: open root %q: %w", abs, err)
+	}
+	defer root.Close()
+	return filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if slices.Contains(w.opts.ExcludeDirs, name) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() || !w.matchExt(name) {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil // racing deletion; skip
+		}
+		if w.opts.MaxFileSize > 0 && info.Size() > w.opts.MaxFileSize {
+			return nil
+		}
+		rel, rerr := filepath.Rel(dir, path)
+		if rerr != nil {
+			return fmt.Errorf("semantic: rel(%q): %w", path, rerr)
+		}
+		seen[path] = struct{}{}
+		return w.upsert(ctx, root, rel, path, info)
+	})
+}
+
+// readCapped reads rel through root: only a regular file, and at most
+// MaxFileSize bytes even when the file grew since the walk measured it.
+// skip reports a file that is no longer one to index (gone, replaced by
+// something that is not a regular file, or grown past the limit).
+//
+// The open does not wait (openNonblock): a file swapped for a FIFO after
+// the walk would otherwise block the open until a writer appeared, and
+// no context reaches an open(2). The regular-file check on the handle
+// then skips it; a regular file reads the same with the flag set.
+func (w *Watcher) readCapped(root *os.Root, rel string) (data []byte, skip bool, err error) {
+	f, err := root.OpenFile(rel, os.O_RDONLY|openNonblock, 0)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, true, nil // racing deletion
+		}
+		if fi, lerr := root.Lstat(rel); lerr == nil && !fi.Mode().IsRegular() {
+			return nil, true, nil // swapped for a link out of the root
+		}
+		return nil, false, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, true, nil
+	}
+	if w.opts.MaxFileSize < 0 {
+		data, err = io.ReadAll(f)
+		return data, false, err
+	}
+	return readLimited(f, w.opts.MaxFileSize)
+}
+
+// readLimited reads at most max+1 bytes of src: max or fewer is the
+// file, one more says it grew past the limit (skip), and the rest of a
+// file that keeps growing is never read.
+func readLimited(src io.Reader, max int64) (data []byte, skip bool, err error) {
+	data, err = io.ReadAll(io.LimitReader(src, max+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(data)) > max {
+		return nil, true, nil
+	}
+	return data, false, nil
 }
 
 // reconcile removes the documents the index holds for files under roots
@@ -293,7 +371,7 @@ func underAnyRoot(path string, roots []string) bool {
 	return false
 }
 
-func (w *Watcher) upsert(ctx context.Context, path string, info os.FileInfo) (err error) {
+func (w *Watcher) upsert(ctx context.Context, root *os.Root, rel, path string, info os.FileInfo) (err error) {
 	// Same recover net as scan: idx.Add is host-supplied code on the
 	// watcher loop.
 	defer func() {
@@ -308,13 +386,22 @@ func (w *Watcher) upsert(ctx context.Context, path string, info os.FileInfo) (er
 	if unchanged {
 		return nil
 	}
-	data, err := os.ReadFile(path)
+	data, skip, err := w.readCapped(root, rel)
 	if err != nil {
-		// Race with a deletion is fine; treat as a skip.
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
 		return fmt.Errorf("semantic: read %q: %w", path, err)
+	}
+	if skip {
+		// No longer a file to index; drop any version indexed before.
+		// The document ID is the path's, so this holds for one an
+		// earlier process indexed too: the walk already marked the path
+		// seen, so reconcile will not remove it.
+		if err := w.idx.Remove(ctx, pathDocID(path)); err != nil {
+			return fmt.Errorf("semantic: watcher remove %q: %w", path, err)
+		}
+		w.mu.Lock()
+		delete(w.known, path)
+		w.mu.Unlock()
+		return nil
 	}
 	docID := pathDocID(path)
 	doc := Document{

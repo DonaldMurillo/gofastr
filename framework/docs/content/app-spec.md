@@ -1637,6 +1637,11 @@ The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
+- two app spec items that would declare the same Go name in one generated
+  package, or a declaration that takes the name of a package the file
+  imports (a hook handler named `http`, a helper whose stub collides with
+  `RegisterGenerated`). The check runs over the whole package, not file by
+  file, and the error names both files; rename one of the items
 - an entity `table:` that is not letters, digits and underscores: the table
   name reaches two sinks that neither re-escape nor re-validate it: the
   generated typed client emits it into Go string literals, and the runtime

@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
@@ -239,6 +240,20 @@ func CheckUpgradeRequest(r *http.Request, originOK func(*http.Request) bool) err
 	return nil
 }
 
+// upgradeHookKey carries the WithUpgradeHook callback on a request
+// context.
+type upgradeHookKey struct{}
+
+// WithUpgradeHook returns a copy of ctx that makes Upgrade, serving a
+// request whose context carries it, hand fn each connection it opens,
+// before Upgrade returns it. A server uses it to reach the WebSockets
+// its handlers own: framework.App closes each one with 1001 (going
+// away) when Shutdown starts, since a hijacked connection is outside
+// http.Server.Shutdown's drain.
+func WithUpgradeHook(ctx context.Context, fn func(*WebSocketConn)) context.Context {
+	return context.WithValue(ctx, upgradeHookKey{}, fn)
+}
+
 // Upgrade upgrades an HTTP connection to a simple WebSocket.
 // Performs the HTTP upgrade handshake and returns a managed connection.
 func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketConn, error) {
@@ -361,6 +376,9 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	wsc.startKeepalive()
 	wsc.startReadPump()
 
+	if hook, ok := r.Context().Value(upgradeHookKey{}).(func(*WebSocketConn)); ok && hook != nil {
+		hook(wsc)
+	}
 	return wsc, nil
 }
 
@@ -644,7 +662,8 @@ func (c *WebSocketConn) allowControl(now time.Time) bool {
 }
 
 // awaitPeerClose waits for the read pump to signal that it parsed the
-// peer's reciprocal Close frame, or for CloseTimeout to elapse. The
+// peer's reciprocal Close frame, or that its read failed, or for
+// CloseTimeout to elapse. The
 // pump is the sole reader, so this never races another reader on the
 // same TCP stream. If the peer already sent Close before our Close()
 // was invoked (the common responder path), peerClosed is already
@@ -656,6 +675,9 @@ func (c *WebSocketConn) awaitPeerClose() {
 	}
 	select {
 	case <-c.peerClosed:
+	case <-c.readDone:
+		// The connection died under the handshake (the peer vanished, or
+		// Shutdown force-closed the socket): no Close frame can come.
 	case <-time.After(timeout):
 	}
 }

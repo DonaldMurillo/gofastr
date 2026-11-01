@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
@@ -50,9 +51,9 @@ func TestTxBoundBatchUndoesItsItems(t *testing.T) {
 	}
 }
 
-// The savepoint holds a cascade child's announcement until the operation
-// succeeds, then sends it: a tx-bound create announces its note as the
-// pool-bound one does.
+// A tx-bound create with the transaction's commit queue on the context
+// announces its cascade note with the post, once the owner drains the
+// queue after Commit.
 func TestTxBoundCascadeAnnouncesChild(t *testing.T) {
 	ch, conn := cascadeNotesHandler(t, CaseSnake, "")
 	bus := event.NewEventBus()
@@ -68,13 +69,18 @@ func TestTxBoundCascadeAnnouncesChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
+	ctx, queue := db.WithTxQueue(context.Background(), tx)
 	bound := *ch
 	bound.DB = tx
-	if _, err := bound.CreateOne(context.Background(), map[string]any{
+	if _, err := bound.CreateOne(ctx, map[string]any{
 		"title": "t", "notes": []any{map[string]any{"status": "published", "body": "child"}},
 	}); err != nil {
 		t.Fatalf("cascade: %v", err)
 	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	queue.RunAfterCommit()
 	for range 2 {
 		select {
 		case <-got:

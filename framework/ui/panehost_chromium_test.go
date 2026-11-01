@@ -209,3 +209,51 @@ func TestPaneHostEscapeDoesNotCloseAtWideViewport(t *testing.T) {
 		t.Error("desktop-width host entered overlay mode: the breakpoint or the open-state gate is wrong")
 	}
 }
+
+// Two hosts on one page, both open as phone drawers: Escape and the
+// Tab trap act on the host holding focus, not the first one in the
+// document.
+func TestPaneHostKeysFollowFocusedHost(t *testing.T) {
+	drawer := func(p string) render.HTML {
+		return PaneHost(PaneHostConfig{
+			Primary: render.Text("list " + p),
+			Secondary: render.Join(
+				render.Tag("a", map[string]string{"id": p + "-first", "href": "#" + p + "1"}, render.Text("first")),
+				render.Tag("a", map[string]string{"id": p + "-last", "href": "#" + p + "2"}, render.Text("last")),
+			),
+			SecondaryOpen: true,
+		})
+	}
+	srv := paneHostTestPage(t, string(render.Join(drawer("a"), drawer("b"))))
+	ctx := chromedptest.Context(t)
+	const hosts = `document.querySelectorAll('[data-hui-panehost]')`
+	var bothOverlay, tabWrapped, aOpen, bClosed bool
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 844),
+		chromedp.Navigate(srv.URL),
+		chromedp.Poll(paneHostDrawerLoaded, nil, chromedp.WithPollingTimeout(15*time.Second)),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`Array.prototype.every.call(`+hosts+`, function (h) { return h.getAttribute('data-hui-pane-mode') === 'overlay'; })`, &bothOverlay),
+		chromedp.Evaluate(`document.getElementById('b-last').focus()`, nil),
+		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', bubbles: true, cancelable: true}))`, nil),
+		chromedp.Evaluate(`document.activeElement === document.getElementById('b-first')`, &tabWrapped),
+		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}))`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Evaluate(`!`+hosts+`[0].querySelector('[data-hui-pane="secondary"]').hasAttribute('hidden')`, &aOpen),
+		chromedp.Evaluate(hosts+`[1].querySelector('[data-hui-pane="secondary"]').hasAttribute('hidden')`, &bClosed),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !bothOverlay {
+		t.Fatal("both hosts should be phone drawers at 390px with their pane open")
+	}
+	if !tabWrapped {
+		t.Error("Tab from the second drawer's last link did not wrap to its first: focus escapes behind its scrim")
+	}
+	if !aOpen {
+		t.Error("Escape in the second drawer closed the first host's pane")
+	}
+	if !bClosed {
+		t.Error("Escape in the second drawer did not close it")
+	}
+}

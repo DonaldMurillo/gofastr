@@ -231,7 +231,7 @@ func TestBoolFieldOmitsRangeFilters(t *testing.T) {
 	}
 }
 
-func TestJSONFieldOmitsRangeAndLike(t *testing.T) {
+func TestJSONFieldAdvertisesNoFilter(t *testing.T) {
 	e := entity.Define("blobs", entity.EntityConfig{
 		Table: "blobs",
 		Fields: []schema.Field{
@@ -244,15 +244,11 @@ func TestJSONFieldOmitsRangeAndLike(t *testing.T) {
 	get := getMap(t, base, "get")
 	params := get["parameters"]
 
-	// The spec mirrors CheckOpType exactly: eq/ne/in suit a JSON column;
-	// the ordered comparisons and _like do not (a blob has no order, and
-	// text-shape coercion on one is dialect luck).
-	for _, suffix := range []string{"", "_ne", "_in"} {
-		if findParam(params, "payload"+suffix) == nil {
-			t.Errorf("JSON field must advertise %q (CheckOpType accepts it)", "payload"+suffix)
-		}
-	}
-	for _, suffix := range []string{"_gt", "_gte", "_lt", "_lte", "_like"} {
+	// The spec mirrors CheckOpType exactly: a JSON column takes no
+	// operator. Equality compared text on SQLite and JSONB values on
+	// Postgres (D17), a blob has no order, and text-shape coercion on one
+	// is dialect luck.
+	for _, suffix := range []string{"", "_ne", "_in", "_gt", "_gte", "_lt", "_lte", "_like"} {
 		if findParam(params, "payload"+suffix) != nil {
 			t.Errorf("JSON field must not advertise %q", "payload"+suffix)
 		}

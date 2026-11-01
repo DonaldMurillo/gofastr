@@ -798,14 +798,14 @@ func conflictingIndices(a, b *entity.Entity) error {
 }
 
 // indexDedupName returns the key the merge uses to deduplicate indices: the
-// explicit Name, or the synthesised "idx_<table>_<cols>" slug for an unnamed
+// explicit Name, or the entity.DefaultIndexName slug for an unnamed
 // index (mirroring indexDDL in migrate.go).
 func indexDedupName(idx entity.Index, table string) string {
 	if idx.Name != "" {
 		return idx.Name
 	}
 	if len(idx.Columns) > 0 {
-		return "idx_" + table + "_" + strings.Join(idx.Columns, "_")
+		return entity.DefaultIndexName(table, idx.Columns)
 	}
 	return ""
 }

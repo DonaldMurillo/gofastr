@@ -19,7 +19,7 @@ func TestSqlType_DialectMatrix(t *testing.T) {
 	}{
 		{schema.Field{Type: schema.String}, "TEXT", "TEXT"},
 		{schema.Field{Type: schema.Text}, "TEXT", "TEXT"},
-		{schema.Field{Type: schema.Int}, "INTEGER", "INTEGER"},
+		{schema.Field{Type: schema.Int}, "INTEGER", "BIGINT"},
 		{schema.Field{Type: schema.Float}, "REAL", "DOUBLE PRECISION"},
 		{schema.Field{Type: schema.Bool}, "BOOLEAN", "BOOLEAN"},
 		{schema.Field{Type: schema.Decimal}, "DECIMAL(19,4)", "DECIMAL(19,4)"},

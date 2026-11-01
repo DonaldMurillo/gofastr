@@ -8,6 +8,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
+// Quote is the parser's inverse: every value with a quote or a
+// backslash parses back to itself.
+func TestQuoteRoundTripsParser(t *testing.T) {
+	for _, v := range []string{"", "open", `C:\reports`, `a"b`, `ends\`, `\"`, `x\\y`, `\\"\\`} {
+		p, err := ParsePredicate("status = "+Quote(v), predTestFields())
+		if err != nil {
+			t.Errorf("%q: %s does not parse: %v", v, Quote(v), err)
+			continue
+		}
+		if p.Value != v {
+			t.Errorf("%q: parsed back as %q", v, p.Value)
+		}
+	}
+}
+
 func predTestFields() []schema.Field {
 	return []schema.Field{
 		{Name: "status", Type: schema.String},

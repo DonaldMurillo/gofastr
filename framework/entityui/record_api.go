@@ -33,10 +33,10 @@ func (b *RecordBuilder) apiTabBody(ctx context.Context, m *meta, row map[string]
 		return slotFailed(ctx)
 	}
 	return ui.Stack(ui.StackConfig{},
-		ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiRestTitle.Text(ctx)},
+		ui.Section(ui.SectionConfig{Ctx: ctx, Heading: i18nui.EntityApiRestTitle.Text(ctx)},
 			b.restSection(ctx, m)...),
 		b.mcpSection(ctx, m),
-		ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiJsonTitle.Text(ctx)},
+		ui.Section(ui.SectionConfig{Ctx: ctx, Heading: i18nui.EntityApiJsonTitle.Text(ctx)},
 			ui.CodeBlock(ui.CodeBlockConfig{
 				Ctx:      ctx,
 				Language: "json",
@@ -80,7 +80,7 @@ func (b *RecordBuilder) restSection(ctx context.Context, m *meta) []render.HTML 
 // entity, or the notice that MCP does not expose it.
 func (b *RecordBuilder) mcpSection(ctx context.Context, m *meta) render.HTML {
 	if m.e.Config.Exposure == nil || !m.e.Config.Exposure.MCP {
-		return ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
+		return ui.Section(ui.SectionConfig{Ctx: ctx, Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
 			ui.Callout(ui.CalloutConfig{
 				Title:   i18nui.EntityApiMcpTitle.Text(ctx),
 				Variant: ui.StatusInfo,
@@ -90,7 +90,7 @@ func (b *RecordBuilder) mcpSection(ctx context.Context, m *meta) render.HTML {
 	if len(names) == 0 {
 		return ""
 	}
-	return ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
+	return ui.Section(ui.SectionConfig{Ctx: ctx, Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
 		ui.CodeBlock(ui.CodeBlockConfig{Ctx: ctx, Code: strings.Join(names, "\n"), Language: "text", Scroll: true}))
 }
 

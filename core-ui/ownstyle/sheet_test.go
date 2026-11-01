@@ -198,3 +198,40 @@ func TestMustPanicsOnDeclAfterNestedRule(t *testing.T) {
 	}()
 	Must("card", KindScoped, ".a { & { color: red; } color: blue; }")
 }
+
+// A theme that renames a breakpoint the sheet names cannot compile it.
+// Serving that theme logs and ships the sheet empty: a request never
+// panics on it.
+func TestServeSkipsThemeMissingBreakpoint(t *testing.T) {
+	ownIsolate(t)
+	s := Must("bpcard", KindScoped, "@media (--above-md) { :scope { color: blue; } }\n")
+	theme := style.DefaultTheme()
+	theme.Breakpoints.MD.Name = "tablet"
+	var got string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("serving the theme panicked: %v", r)
+			}
+		}()
+		got = s.entry.CSSFor(theme)
+	}()
+	if got != "" {
+		t.Errorf("sheet served under a theme it does not compile against: %s", got)
+	}
+}
+
+// CheckTheme is the boot-time form: it names the sheet and the medium.
+func TestCheckThemeNamesBrokenSheet(t *testing.T) {
+	ownIsolate(t)
+	Must("bpcheck", KindScoped, "@media (--above-md) { :scope { color: blue; } }\n")
+	if err := CheckTheme(style.DefaultTheme()); err != nil {
+		t.Fatalf("default theme: %v", err)
+	}
+	theme := style.DefaultTheme()
+	theme.Breakpoints.MD.Name = "tablet"
+	err := CheckTheme(theme)
+	if err == nil || !strings.Contains(err.Error(), "bpcheck") || !strings.Contains(err.Error(), "--above-md") {
+		t.Fatalf("CheckTheme = %v, want an error naming bpcheck and --above-md", err)
+	}
+}

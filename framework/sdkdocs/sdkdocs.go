@@ -94,7 +94,8 @@ type Config struct {
 	// auth.TokensPlugin + TokenMiddleware).
 	HasAPITokens bool
 
-	// Policy, when set, gates every docs screen AND artifact download,
+	// Policy, when set, gates every docs screen, artifact download and
+	// the section-menu drawer's /chrome and /state routes,
 	// for internal/partner deployments. Nil = public site.
 	Policy app.Policy
 }
@@ -165,8 +166,14 @@ func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 		coreApp.RegisterScreen(sc, nil)
 	}
 
-	// Mobile nav drawer for the SectionMenu rail.
-	widget.MountBuilder(r, sectionMenuDrawer(s))
+	// Mobile nav drawer for the SectionMenu rail. It lists the same
+	// entities as the screens, so its /chrome and /state routes sit behind
+	// the same Policy: a group with no prefix keeps the widget's URLs.
+	drawerRouter := r
+	if cfg.Policy != nil {
+		drawerRouter = r.Group("", func(next http.Handler) http.Handler { return s.policyGate(false, next) })
+	}
+	widget.MountBuilder(drawerRouter, sectionMenuDrawer(s))
 
 	r.Get(base+"/sdk/go.zip", s.artifactHandler("go", sdk.GoArtifact))
 	r.Get(base+"/sdk/client.js", s.artifactHandler("js", sdk.JSArtifact))
@@ -322,30 +329,7 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 		sdk.ManifestFile:    "application/json; charset=utf-8",
 	}[file]
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.Policy != nil {
-			d := s.cfg.Policy.Decide(app.WithRequest(r.Context(), r))
-			switch d.Kind {
-			case app.DecisionAllow:
-			case app.DecisionRedirect:
-				// The DecisionRedirect URL reaches the Location header;
-				// uihost scrubs the identical app.Decision value at all
-				// four of its emit sites (scrubCtl). This is the one
-				// divergent consumer: strip C0/DEL so a policy URL
-				// carrying raw CR/LF cannot forge headers and DEL cannot
-				// break HTTP/2 writes. Clean URLs pass byte-identical
-				// (StripUnsafe's fast path).
-				http.Redirect(w, r, textsafe.StripUnsafe(d.URL), http.StatusSeeOther)
-				return
-			default:
-				status := d.Status
-				if status == 0 {
-					status = http.StatusForbidden
-				}
-				i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
-				return
-			}
-		}
+	return s.policyGate(true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.Artifacts == nil {
 			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKNotGenerated)
 			return
@@ -385,6 +369,40 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			return
 		}
 		_, _ = w.Write(data)
+	}))
+}
+
+// policyGate runs Config.Policy in front of next, the gate the screens
+// carry through WithPolicy. With no Policy it returns next unchanged.
+// redirect says whether a DecisionRedirect is followed: a download is a
+// navigation and may land on a sign-in page, while the drawer's /chrome
+// and /state are fetched by the runtime, which would paste the sign-in
+// page into the sheet, so there a redirect refuses with 403.
+func (s *site) policyGate(redirect bool, next http.Handler) http.Handler {
+	if s.cfg.Policy == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		d := s.cfg.Policy.Decide(app.WithRequest(r.Context(), r))
+		switch {
+		case d.Kind == app.DecisionAllow:
+			next.ServeHTTP(w, r)
+		case d.Kind == app.DecisionRedirect && redirect:
+			// The DecisionRedirect URL reaches the Location header;
+			// uihost scrubs the identical app.Decision value at all
+			// four of its emit sites (scrubCtl). This is the one
+			// divergent consumer: strip C0/DEL so a policy URL
+			// carrying raw CR/LF cannot forge headers and DEL cannot
+			// break HTTP/2 writes. Clean URLs pass byte-identical
+			// (StripUnsafe's fast path).
+			http.Redirect(w, r, textsafe.StripUnsafe(d.URL), http.StatusSeeOther)
+		default:
+			status := d.Status
+			if status == 0 || d.Kind == app.DecisionRedirect {
+				status = http.StatusForbidden
+			}
+			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
+		}
 	})
 }
 

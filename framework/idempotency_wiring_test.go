@@ -73,20 +73,20 @@ func TestWithIdempotency_RepliesCachedResponse(t *testing.T) {
 	}
 }
 
-func TestWithIdempotency_PanicsWithWithoutDefaultMiddleware(t *testing.T) {
-	// WithIdempotency wires the middleware into the default chain;
-	// combined with WithoutDefaultMiddleware it would silently no-op.
-	// The framework now panics so the misconfiguration is loud.
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatalf("expected panic when WithIdempotency is paired with WithoutDefaultMiddleware")
-		}
-		if msg, ok := r.(string); !ok || !strings.Contains(msg, "WithoutDefaultMiddleware") {
-			t.Fatalf("panic message should mention the conflict; got %v", r)
-		}
-	}()
-	_ = NewApp(WithoutDefaultMiddleware(), WithIdempotency(middleware.IdempotencyConfig{}))
+// WithIdempotency mounts innermost (router.UseInner), outside the default
+// chain, so it keeps working when the defaults are switched off.
+func TestIdempotencyWorksWithoutDefaults(t *testing.T) {
+	a := NewApp(WithoutDefaultMiddleware(), WithIdempotency(middleware.IdempotencyConfig{}))
+	var calls int32
+	withTestRoute(a, &calls, http.StatusCreated, "ok")
+	for range 2 {
+		req := httptest.NewRequest(http.MethodPost, "/r", strings.NewReader("{}"))
+		req.Header.Set("Idempotency-Key", "k")
+		a.Router().ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if calls != 1 {
+		t.Fatalf("handler ran %d times, want 1 (second request replayed)", calls)
+	}
 }
 
 // Compile-time assertion that router.Middleware is the adapter shape

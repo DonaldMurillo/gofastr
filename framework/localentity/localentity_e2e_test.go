@@ -44,7 +44,8 @@ var (
 		{Name: "at", Type: schema.Timestamp},
 		{Name: "when", Type: schema.Timestamp},
 	})
-	pins = localentity.Define(e2eDB, "pins", []schema.Field{{Name: "label", Type: schema.String, Required: true}})
+	pins   = localentity.Define(e2eDB, "pins", []schema.Field{{Name: "label", Type: schema.String, Required: true}})
+	prices = localentity.Define(e2eDB, "prices", []schema.Field{{Name: "price", Type: schema.Float}})
 )
 
 const noteForm = "note-form"
@@ -95,6 +96,17 @@ func (partialScreen) RenderCtx(ctx context.Context) render.HTML {
 	))
 }
 
+// priceScreen's number field is a text control, where the reader
+// types the digits their own way.
+type priceScreen struct{ component.ContextOnly }
+
+func (priceScreen) RenderCtx(ctx context.Context) render.HTML {
+	return prices.Form("price-form", ui.Form(ui.FormConfig{Action: "/", Method: "POST", HideSubmit: true, Ctx: ctx},
+		ui.TextField(ui.TextFieldConfig{Name: "price", Label: "Price", ID: "f-price"}),
+		ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit"}),
+	))
+}
+
 type formOnlyScreen struct{ component.ContextOnly }
 
 func (formOnlyScreen) RenderCtx(ctx context.Context) render.HTML { return form(ctx) }
@@ -105,6 +117,7 @@ func startHost(t *testing.T) string {
 	site.RegisterScreen(uiapp.NewScreen("/", &fullScreen{}), nil)
 	site.RegisterScreen(uiapp.NewScreen("/form", &formOnlyScreen{}), nil)
 	site.RegisterScreen(uiapp.NewScreen("/partial", &partialScreen{}), nil)
+	site.RegisterScreen(uiapp.NewScreen("/price", &priceScreen{}), nil)
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "localentity-e2e"}))
 	app.Mount(uihost.New(site))
 	srv := httptest.NewServer(app.Router())
@@ -440,5 +453,76 @@ func TestUntouchedDateTimeKeepsSeconds(t *testing.T) {
 	}
 	if got := when(); got != want {
 		t.Fatalf("changed when saved as %q, want %q", got, want)
+	}
+}
+
+// A number typed in a text control reads in the page's language, the
+// one formatNumber writes in: "3,5" is 3.5 on a Spanish page, not a
+// refusal. A stored number fills the control the same way, so an edit
+// saved untouched keeps its value.
+func TestNumberReadsPageLocale(t *testing.T) {
+	base := startHost(t)
+	tab := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(tab,
+		chromedp.Navigate(base+"/price"),
+		poll(`!!(window.__gofastr && __gofastr._localForm)`),
+		chromedp.Evaluate(`window.__saved = 0; document.addEventListener('gofastr:local-saved', () => window.__saved++)`, nil),
+	); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	price := func(id string) any {
+		t.Helper()
+		var rec map[string]any
+		if err := chromedp.Run(tab, chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.get('prices', '`+id+`'))`, &rec, await)); err != nil {
+			t.Fatal(err)
+		}
+		return rec["price"]
+	}
+	saves := 0
+	for _, c := range []struct {
+		lang, typed string
+		want        float64
+	}{
+		{"es", "3,5", 3.5},
+		{"es", "1.234,5", 1234.5},
+		{"es", "2.5", 2.5},
+		{"en", "1,234.5", 1234.5},
+		{"en-IN", "12,34,567.8", 1234567.8},
+		{"fr", "1 234,5", 1234.5},
+	} {
+		saves++
+		var id string
+		if err := chromedp.Run(tab,
+			chromedp.Evaluate(`document.documentElement.lang = '`+c.lang+`'`, nil),
+			chromedp.SetValue(`#f-price`, c.typed, chromedp.ByQuery),
+			chromedp.Click(`#price-form button[type=submit]`, chromedp.ByQuery),
+			poll(`window.__saved === `+strconv.Itoa(saves)),
+			chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.list('prices', { index: 'by_created_at' })).then((rs) => rs[rs.length - 1].id)`, &id, await),
+		); err != nil {
+			t.Fatalf("%s %q: %v", c.lang, c.typed, err)
+		}
+		if got := price(id); got != c.want {
+			t.Errorf("%s %q saved %v, want %v", c.lang, c.typed, got, c.want)
+		}
+	}
+
+	var shown string
+	saves++
+	if err := chromedp.Run(tab,
+		chromedp.Evaluate(`document.documentElement.lang = 'es'`, nil),
+		chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.put('prices', {
+			id: 'e1', price: 1234.5, created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z' }))`, nil, await),
+		chromedp.Evaluate(`__gofastr._localForm.fill(document.querySelector('[data-fui-local-form]'), { id: 'e1', price: 1234.5 })`, nil),
+		chromedp.Value(`#f-price`, &shown, chromedp.ByQuery),
+		chromedp.Click(`#price-form button[type=submit]`, chromedp.ByQuery),
+		poll(`window.__saved === `+strconv.Itoa(saves)),
+	); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if shown != "1234,5" {
+		t.Errorf("fill shows %q on a Spanish page, want 1234,5", shown)
+	}
+	if got := price("e1"); got != 1234.5 {
+		t.Errorf("untouched edit saved %v, want 1234.5", got)
 	}
 }

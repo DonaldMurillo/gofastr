@@ -221,3 +221,41 @@ func (e *countingErrWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func (e *countingErrWriter) Flush() {}
+
+// WithdrawLiveReload reported success for a router whose /__livereload
+// was the host's own, which it never installed and could not turn off:
+// the bind guard then logged "livereload is off" over a stream that
+// stayed live. The result now says which of the three happened.
+func TestWithdrawReportsHostRoute(t *testing.T) {
+	if got := dev.WithdrawLiveReload(router.New()); got != dev.NotRegistered {
+		t.Fatalf("bare router: %v, want NotRegistered", got)
+	}
+
+	ours := router.New()
+	dev.RegisterLiveReload(ours)
+	if got := dev.WithdrawLiveReload(ours); got != dev.Withdrawn {
+		t.Fatalf("installed stream: %v, want Withdrawn", got)
+	}
+	// A stream still on would park until the request ends: bound it.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	gone := httptest.NewRecorder()
+	ours.ServeHTTP(gone, httptest.NewRequest(http.MethodGet, dev.LiveReloadStreamURL, nil).WithContext(ctx))
+	if gone.Code != http.StatusNotFound {
+		t.Fatalf("withdrawn stream answered %d, want 404", gone.Code)
+	}
+
+	host := router.New()
+	host.Get(dev.LiveReloadStreamURL, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	dev.RegisterLiveReload(host)
+	if got := dev.WithdrawLiveReload(host); got != dev.HostOwned {
+		t.Fatalf("host-owned stream: %v, want HostOwned", got)
+	}
+	rr := httptest.NewRecorder()
+	host.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, dev.LiveReloadStreamURL, nil))
+	if rr.Code != http.StatusTeapot {
+		t.Fatalf("host stream answered %d; HostOwned must leave it serving", rr.Code)
+	}
+}

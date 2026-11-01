@@ -781,7 +781,7 @@ allow_project_hooks = false
 	}
 	defer h.Shutdown()
 	h.Providers = []provider.Provider{cap}
-	sess := h.CreateSession(cap, "m")
+	sess := mustSession(t, h, cap, "m")
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)
 	_ = h.Mux.Attach(sess, c)
 	defer c.Close()
@@ -859,7 +859,7 @@ allow_project_hooks = false
 		h.Sessions = store
 	}
 	h.Providers = []provider.Provider{prov}
-	sess := h.CreateSession(prov, "m")
+	sess := mustSession(t, h, prov, "m")
 	return h, sess, func() { h.Shutdown() }
 }
 

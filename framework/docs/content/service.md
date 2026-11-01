@@ -88,7 +88,7 @@ An app with subcommands of its own checks for them before calling
 |------|--------------|
 | `install [--port N]` | Copies the running binary to the managed path, writes the service definition, starts it, and waits up to 15 s for the daemon to answer. Reinstalling stops the old copy and waits for it to exit first; if it will not stop, `install` fails and replaces nothing. |
 | `uninstall [--purge]` | Stops and unregisters, waits for the daemon to exit, then deletes the installed binary. Data stays unless `--purge`. If the daemon is still running after the wait, nothing is deleted. |
-| `start` / `stop` / `restart` | Through the service manager. `stop` is a clean exit, which no backend restarts, and returns once the process has exited (up to 20 s), so a `start` right after it is not dropped. |
+| `start` / `stop` / `restart` | Through the service manager. `stop` is a clean exit, which no backend restarts, and returns once the process has exited (up to 20 s), so a `start` right after it is not dropped. The wait watches the daemon's pid together with its start time, which the daemon reads itself and sends in its reply, so a newer process the OS gave the same pid, even right after the stop, does not count as the daemon. |
 | `status` | Installed or not, running or not, pid, address, version, data directory. Asked of the daemon, never parsed from manager output. |
 | `logs [-n N] [-f]` | The service log. journald on Linux; `logs/service.log` in the state directory on macOS and Windows. Control bytes are stripped before printing. |
 | `open [--dev] [--print]` | Signs the browser in (see below). `--dev` targets the dev run. |

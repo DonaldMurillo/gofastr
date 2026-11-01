@@ -153,10 +153,14 @@ func (a *App) mountA2A() error {
 		}
 	}
 	srv, err := a2a.NewServer(a2a.Config{
-		Skills:         a.a2aSkills(),
-		Store:          store,
-		Owner:          a2aOwnerPrincipal,
-		Scopes:         a2aCallerScopes,
+		Skills: a.a2aSkills(),
+		Store:  store,
+		Owner:  a2aOwnerPrincipal,
+		Scopes: a2aCallerScopes,
+		// The tenant the app's tenant middleware resolved: a task's results
+		// stay with the tenant it ran in, and the owner stays the user id,
+		// which erasure deletes by.
+		Tenant:         requestTenantID,
 		ExtendedCard:   cfg.ExtendedCard,
 		Push:           a2a.PushOptions{AllowPrivate: cfg.AllowPrivatePush},
 		Logger:         a.Logger(),

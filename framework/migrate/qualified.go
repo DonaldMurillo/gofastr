@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // Schema-qualified tables
@@ -33,10 +34,11 @@ func tableBase(table string) string {
 }
 
 // defaultIndexName is the name an index without one gets: idx_, the
-// table's own name, and its columns. A schema in it would read as the
-// index's schema, which CREATE INDEX refuses on Postgres.
+// table's own name, and its columns, with a hashed tail past 63 bytes
+// (entity.DefaultIndexName). A schema in it would read as the index's
+// schema, which CREATE INDEX refuses on Postgres.
 func defaultIndexName(table string, cols []string) string {
-	return "idx_" + tableBase(table) + "_" + strings.Join(cols, "_")
+	return entity.DefaultIndexName(table, cols)
 }
 
 // createIndexSQL renders CREATE INDEX IF NOT EXISTS for an index named name

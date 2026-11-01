@@ -16,9 +16,10 @@ import (
 
 // The list tool sends each filter in the shape the list route reads
 // (2026-10-27 bug bash D28, D29, D30). A JSON field's value went out as
-// its first array element or fmt.Sprint's map[x:1]; an empty _in array
-// dropped the filter and listed every row; and an _in element holding a
-// comma was split by the route into two values.
+// its first array element or fmt.Sprint's map[x:1], and a JSON field now
+// takes no filter at all (D17); an empty _in array dropped the filter and
+// listed every row; and an _in element holding a comma was split by the
+// route into two values.
 func TestMCPListToolFilterShapes(t *testing.T) {
 	installSecurityOwnerExtractor(t)
 
@@ -87,8 +88,11 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 	}
 
 	expect(`{"name_in": ["Doe", "Jane"]}`, "one", "obj")
-	expect(`{"payload": [1, 2]}`, "pair")
-	expect(`{"payload": {"x": 1}}`, "obj")
+	// A JSON field takes no filter (D17): the engines disagree on what
+	// equal JSON is, so the tool refuses it as the route does.
+	refuse(`{"payload": [1, 2]}`)
+	refuse(`{"payload": {"x": 1}}`)
+	refuse(`{"payload": 3}`)
 	refuse(`{"name_in": []}`)
 	refuse(`{"name_in": ["Doe, Jane"]}`)
 	refuse(`{"name": ["Doe", "Jane"]}`)
@@ -100,25 +104,22 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 // reach toolFilterValues only from a caller that skips it. The tool
 // still refuses them rather than sending a cut or garbled value.
 func TestToolFilterValuesRefusesOffSchemaShapes(t *testing.T) {
-	name := schema.Field{Name: "name", Type: schema.String}
-	payload := schema.Field{Name: "payload", Type: schema.JSON}
 	for _, tc := range []struct {
-		key   string
-		field schema.Field
-		in    bool
-		v     any
+		key string
+		in  bool
+		v   any
 	}{
-		{"name", name, false, []any{"Doe", "Jane"}},
-		{"name", name, false, map[string]any{"x": 1.0}},
-		{"name_in", name, true, []any{map[string]any{"x": 1.0}}},
-		{"payload_in", payload, true, map[string]any{"x": 1.0, "y": 2.0}},
+		{"name", false, []any{"Doe", "Jane"}},
+		{"name", false, map[string]any{"x": 1.0}},
+		{"name_in", true, []any{map[string]any{"x": 1.0}}},
+		{"name_in", true, map[string]any{"x": 1.0, "y": 2.0}},
 	} {
-		if vs, err := toolFilterValues(tc.key, tc.field, tc.in, tc.v); err == nil {
+		if vs, err := toolFilterValues(tc.key, tc.in, tc.v); err == nil {
 			t.Errorf("%s = %#v was sent as %q, want a refusal", tc.key, tc.v, vs)
 		}
 	}
 	// A scalar _in on a plain field keeps the route's comma form.
-	if vs, err := toolFilterValues("name_in", name, true, "Doe,Jane"); err != nil || len(vs) != 1 || vs[0] != "Doe,Jane" {
+	if vs, err := toolFilterValues("name_in", true, "Doe,Jane"); err != nil || len(vs) != 1 || vs[0] != "Doe,Jane" {
 		t.Errorf("name_in = \"Doe,Jane\" became %q, %v", vs, err)
 	}
 }

@@ -46,6 +46,7 @@ func newInterleavePushQueue(t *testing.T) (*RedisQueue, *interleavePush, *time.T
 	r := newMockRedis()
 	gate := &interleavePush{mockRedis: r}
 	q := NewRedisQueue(gate, "jobs")
+	t.Cleanup(func() { _ = q.Close() })
 	now := time.Now()
 	q.now = func() time.Time { return now }
 	q.SetVisibilityTimeout(time.Minute)

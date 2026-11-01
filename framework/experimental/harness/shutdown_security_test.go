@@ -64,7 +64,7 @@ func TestShutdownReleasesSessions(t *testing.T) {
 
 	const n = 8
 	for range n {
-		h.CreateSession(h.Providers[0], "openrouter:test")
+		mustSession(t, h, h.Providers[0], "openrouter:test")
 	}
 
 	// Sanity: sessions are registered and goroutines are up.
@@ -88,7 +88,7 @@ func TestShutdownReleasesSessions(t *testing.T) {
 // lookup returns nothing (no dangling engine references).
 func TestShutdownUnregistersEngines(t *testing.T) {
 	h := newShutdownTestHarness(t)
-	sess := h.CreateSession(h.Providers[0], "openrouter:test")
+	sess := mustSession(t, h, h.Providers[0], "openrouter:test")
 	if h.Mux.EngineFor(sess) == nil {
 		t.Fatal("engine not registered after CreateSession")
 	}

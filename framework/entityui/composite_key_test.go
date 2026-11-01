@@ -120,9 +120,10 @@ func TestCompositeRecordDefaultBase(t *testing.T) {
 	id := entity.JoinKey([]string{"s1", "c1"})
 	var want string
 	for _, p := range []string{"/enrollments/s1/c1", "/enrollments/s1/c1/"} {
-		ctx := x.userCtx(p, "", "u1")
-		got := string(x.ui.Record("enrollments", id).Delete().Duplicate().RenderCtx(ctx))
-		want = string(x.ui.Record("enrollments", id).Delete().Duplicate().Base("/enrollments").RenderCtx(ctx))
+		// One request per render: a request's id scope hands each
+		// derived id out once.
+		got := string(x.ui.Record("enrollments", id).Delete().Duplicate().RenderCtx(x.userCtx(p, "", "u1")))
+		want = string(x.ui.Record("enrollments", id).Delete().Duplicate().Base("/enrollments").RenderCtx(x.userCtx(p, "", "u1")))
 		if got != want {
 			t.Errorf("at %s the record screen with no Base differs from Base(/enrollments):\n%s\nwant:\n%s", p, got, want)
 		}

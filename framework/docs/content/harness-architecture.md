@@ -2123,11 +2123,17 @@ spawn + sha256 pinning, the concurrent-worktree one-engine-many-clients
 socket model, and the graceful-shutdown re-encryption/token-zeroing
 steps below are **design intent, not current behavior** (see Maturity).
 
-Shutdown today is `Harness.Shutdown()`: it tears down each per-session
-run (cancels the persist loop, closes the engine bus, unregisters the
-engine from the mux + catalog) and closes the session store. The fuller
-graceful contract (broadcast `SessionEnded`, stop the control plane,
-`shutdown` MCP servers, restore the terminal, flush + re-encrypt
+Shutdown today is `Harness.Shutdown()`: it closes each session's engine
+bus, waits up to 10 seconds for the persist loop to write the events
+already queued on it, then cancels the loop, unregisters the engine from
+the mux + catalog, and closes the session store. The session event log
+is flushed: an append the store refused, or a loop still writing at the
+limit, comes back in `Shutdown`'s error with the store's `Close` error,
+so a missing transcript event is reported rather than dropped. Once
+`Shutdown` begins, `Harness.CreateSession` registers nothing and returns
+`harness.ErrShutdown`, so no session is left running against the closed
+store. The rest of the graceful contract (broadcast `SessionEnded`, stop the
+control plane, `shutdown` MCP servers, restore the terminal, re-encrypt
 SQLite, persist the revocation list, zero in-memory tokens) is the
 target, not the present implementation.
 

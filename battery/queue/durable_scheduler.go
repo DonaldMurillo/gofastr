@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
@@ -77,6 +78,7 @@ type DurableScheduleBuilder struct {
 	lane        string
 	priority    int
 	maxAttempts int
+	userID      string
 }
 type durableSchedule struct {
 	id          string
@@ -88,6 +90,7 @@ type durableSchedule struct {
 	lane        string
 	priority    int
 	maxAttempts int
+	userID      string
 	nextRun     time.Time
 	updatedAt   time.Time
 	version     int64
@@ -122,6 +125,17 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 	if err := s.ensureTables(); err != nil {
 		return nil, fmt.Errorf("queue: ensure durable scheduler tables: %w", err)
 	}
+	// App.EraseUserData deletes the schedules a user owns: a schedule keeps
+	// its payload and fires it again on every tick. The jobs it fired carry
+	// the same user_id, which the queue_jobs eraser matches.
+	table := q.schedulerName("_scheduler_schedules")
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name:   datexport.ScopedName("queue_scheduler_schedules", table),
+		Source: "queue",
+		Table:  table,
+		Column: "user_id",
+		Mode:   datexport.EraseDelete,
+	})
 	return s, nil
 }
 
@@ -213,6 +227,16 @@ func (b *DurableScheduleBuilder) MaxAttempts(n int) *DurableScheduleBuilder {
 	return b
 }
 
+// UserID names the person the schedule's payload is about. It persists
+// with the schedule, and every Job the schedule fires carries it as
+// Job.UserID. App.EraseUserData deletes the user's schedules and the jobs
+// they fired. Leave it empty for a schedule that names nobody (a sweep, a
+// cache warm). Re-registering the same schedule ID updates it.
+func (b *DurableScheduleBuilder) UserID(id string) *DurableScheduleBuilder {
+	b.userID = id
+	return b
+}
+
 // Register persists the schedule definition without resetting an existing
 // watermark. The anchor is UTC, so cron field evaluation keeps the
 // historical "0 2 * * *" = 02:00 UTC semantics regardless of the server's
@@ -265,9 +289,9 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	_, err := b.scheduler.queue.db.Exec(
 		fmt.Sprintf(`INSERT INTO %s
 			(id, job_type, payload, interval_ns, cron_spec, tz,
-			 lane, priority, max_attempts,
+			 lane, priority, max_attempts, user_id,
 			 next_run, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 			ON CONFLICT(id) DO UPDATE SET
 				job_type=excluded.job_type,
 				payload=excluded.payload,
@@ -277,12 +301,13 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 				lane=excluded.lane,
 				priority=excluded.priority,
 				max_attempts=excluded.max_attempts,
+				user_id=excluded.user_id,
 				updated_at=excluded.updated_at,
 				version=%s.version+1`,
 			b.scheduler.queue.schedulerSchedulesTable(),
 			b.scheduler.queue.schedulerSchedulesTable()),
 		b.id, b.jobType, payload, int64(b.interval), b.cronSpec, tz,
-		b.lane, b.priority, b.maxAttempts,
+		b.lane, b.priority, b.maxAttempts, b.userID,
 		next.UTC(), time.Now().UTC(),
 	)
 	if err == nil {
@@ -479,7 +504,7 @@ func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int
 func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durableSchedule, error) {
 	rows, err := s.queue.db.QueryContext(ctx,
 		fmt.Sprintf(`SELECT id, job_type, payload, interval_ns, cron_spec, tz,
-				lane, priority, max_attempts,
+				lane, priority, max_attempts, user_id,
 				next_run, updated_at, version
 			FROM %s WHERE next_run <= $1 ORDER BY next_run, id`,
 			s.queue.schedulerSchedulesTable()),
@@ -502,7 +527,7 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		// one layer down for dueTicks errors. Surface it via the logger so
 		// operators notice, then continue.
 		if err := rows.Scan(&row.id, &row.jobType, &payload, &intervalNS,
-			&row.cronSpec, &row.tz, &row.lane, &row.priority, &row.maxAttempts,
+			&row.cronSpec, &row.tz, &row.lane, &row.priority, &row.maxAttempts, &row.userID,
 			&nextRun, &updatedAt, &row.version); err != nil {
 			slog.Default().Error("queue: durable scheduler skipping schedule",
 				"schedule_id", row.id, "err", err.Error())
@@ -623,6 +648,7 @@ func (s *DurableScheduler) commitOccurrences(
 			Lane:         schedule.lane,
 			Priority:     schedule.priority,
 			MaxAttempts:  schedule.maxAttempts,
+			UserID:       schedule.userID,
 			CreatedAt:    now,
 			// A cron-fired job is the execution of an already-due event, so it
 			// must be dequeue-eligible the moment it is committed. `tick` is the
@@ -725,7 +751,7 @@ func (s *DurableScheduler) ensureTables() error {
 		tsType = "TIMESTAMPTZ"
 	}
 	statements := []string{
-		//gofastr:allow(GOFASTR1415) a schedule is a recurring job the host declares by id (Every/Cron), with no user attribution; the jobs it enqueues land in queue_jobs, which both planes cover
+		//gofastr:allow(GOFASTR1415) NewDurableScheduler registers this table's eraser under its configured name, on user_id (added by ensureHardeningSchema), so the rule's static scan cannot see it
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			id TEXT PRIMARY KEY,
 			job_type TEXT NOT NULL,
@@ -736,6 +762,7 @@ func (s *DurableScheduler) ensureTables() error {
 			lane TEXT NOT NULL DEFAULT '',
 			priority INTEGER NOT NULL DEFAULT 0,
 			max_attempts INTEGER NOT NULL DEFAULT 0,
+			user_id TEXT NOT NULL DEFAULT '',
 			next_run %s NOT NULL,
 			updated_at %s NOT NULL,
 			version BIGINT NOT NULL DEFAULT 0

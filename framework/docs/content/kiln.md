@@ -79,7 +79,12 @@ further tool calls. Pass `--no-http` when a parent process owns the UI.
 Built-ins are `omp`, `claude-code`, `pi`, and `codex`. `auto` chooses the first
 installed adapter in that order. `none` keeps chat journaled without spawning
 an agent. A free-form command is parsed as an executable plus arguments and
-receives the prompt as its final argument.
+receives the prompt as its final argument, after `--`. The `omp` and
+`claude-code` adapters put `--` before the prompt too, so a chat message
+that starts with a dash (`--fix the header`) reaches the agent as text
+instead of being parsed as a flag. A custom CLI has to accept `--` as the
+end of its options, as most argument parsers do. A command that already
+ends in `--` gets no second one.
 
 Kiln injects `KILN_URL`, installs the current embedded skill, and enforces an
 HTTP boundary for built-in adapters: they must mutate the app by calling

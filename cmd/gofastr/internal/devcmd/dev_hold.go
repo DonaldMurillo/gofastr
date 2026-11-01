@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/core/config"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
 // What the hold says about the app while it holds the dev address.
@@ -43,9 +45,18 @@ const holdDetailLimit = 64 << 10
 // only when there is an error to show: a tab sitting through an
 // ordinary rebuild never reloads into a "building" page, and when the
 // app comes back its new build ID reloads the tab as before.
+//
+// On a bind other machines can reach, the page carries no build or lint
+// output (absolute paths and quoted source; the terminal has it), and
+// /__livereload answers 404 unless dev.LiveReloadExposeEnv is set, the
+// same rule framework.App.Start applies to the app's own stream.
 type devHold struct {
 	addr     string // the bound address, reused on every relisten
 	idPrefix string
+	// exposed is a bind that is not loopback; liveReload is whether the
+	// hold serves /__livereload (always on loopback).
+	exposed    bool
+	liveReload bool
 
 	mu      sync.Mutex
 	ln      net.Listener
@@ -65,16 +76,27 @@ func newDevHold(addr string) (*devHold, error) {
 	if err != nil {
 		return nil, err
 	}
+	exposed := !boundLoopback(ln.Addr())
 	h := &devHold{
-		addr:     ln.Addr().String(),
-		idPrefix: fmt.Sprintf("gofastr-dev-hold-%d-", time.Now().UnixNano()),
-		phase:    holdBuilding,
-		changed:  make(chan struct{}),
+		addr:       ln.Addr().String(),
+		idPrefix:   fmt.Sprintf("gofastr-dev-hold-%d-", time.Now().UnixNano()),
+		exposed:    exposed,
+		liveReload: !exposed || config.EnvBool(dev.LiveReloadExposeEnv),
+		phase:      holdBuilding,
+		changed:    make(chan struct{}),
 	}
 	h.mu.Lock()
 	h.serveLocked(ln)
 	h.mu.Unlock()
 	return h, nil
+}
+
+// boundLoopback reports a listener only this machine can reach. It reads
+// the address the kernel bound, so "localhost:8080" counts (it bound
+// 127.0.0.1) and ":8080" does not (it bound every interface).
+func boundLoopback(a net.Addr) bool {
+	tcp, ok := a.(*net.TCPAddr)
+	return ok && tcp.IP.IsLoopback()
 }
 
 func (h *devHold) serveLocked(ln net.Listener) {
@@ -158,7 +180,12 @@ func (h *devHold) state() (phase, detail string, gen int, changed chan struct{})
 func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/__livereload":
-		h.liveReload(w, r)
+		if !h.liveReload {
+			// 404 is final to an EventSource: the tab stops asking.
+			http.NotFound(w, r)
+			return
+		}
+		h.serveLiveReload(w, r)
 		return
 	case holdScriptURL:
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
@@ -167,7 +194,10 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	phase, detail, gen, _ := h.state()
-	title, lead := holdMessage(phase)
+	if h.exposed {
+		detail = ""
+	}
+	title, lead := holdMessage(phase, h.exposed)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Retry-After", "1")
 	w.Header().Set("X-Gofastr-Dev", phase)
@@ -192,7 +222,7 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // event carrying a build ID, where a changed ID reloads the page. The
 // hold's IDs never match an app's, so a ready event from the hold
 // reloads an app tab into the error page.
-func (h *devHold) liveReload(w http.ResponseWriter, r *http.Request) {
+func (h *devHold) serveLiveReload(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -220,10 +250,16 @@ func (h *devHold) liveReload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func holdMessage(phase string) (title, lead string) {
+// holdMessage is the page's title and lead. exposed means the page
+// carries no build output, so a failed build points at the terminal.
+func holdMessage(phase string, exposed bool) (title, lead string) {
 	switch phase {
 	case holdBuildFailed:
-		return "Build failed", "the last build failed. Fix the error below and save; " +
+		where := "below"
+		if exposed {
+			where = "in the terminal running gofastr dev (this address is reachable from other machines, so the page leaves the build output out)"
+		}
+		return "Build failed", "the last build failed. Fix the error " + where + " and save; " +
 			"gofastr dev rebuilds on every save. It is still running, so do not start another one."
 	case holdExited:
 		return "The app stopped", "the app process exited. Its output is in the terminal " +

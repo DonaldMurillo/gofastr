@@ -145,6 +145,8 @@ w.ScanOnce(ctx, "./src")          // one-shot
 
 A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
 
+Only regular files are indexed. Symlinks, devices, sockets and pipes under a root are skipped, so a link to `~/.ssh/id_ed25519` or `/dev/zero` is never read, and a link inside the root to another file there is not indexed twice. Each file is opened through an `os.Root` on its root, so a path swapped for a link out of the root between the walk and the read is refused, not followed. The open does not wait, so a file swapped for a FIFO is skipped instead of blocking the scan until a writer appears, and a root directory swapped for one fails the scan with an error. The read stops at `MaxFileSize`: a file that grew past it since the walk measured it, or was deleted, is skipped, and the document indexed for its path before is removed, whether this watcher or an earlier process indexed it. A root may name one file (`ScanOnce(ctx, "README.md")`, `gofastr semantic index README.md`); it is confined to the file's directory and indexes only that file.
+
 A deleted file's document is removed on the next scan; if `Remove` fails, the scan returns the error and the scan after it tries again.
 
 The first scan after a watcher starts also removes the documents it indexed in an earlier run for files under its roots that are gone, so a file deleted while the app was down leaves the index. Only documents whose ID is the watcher's own for that path are touched; documents the app added itself, and files under another watcher's roots, stay. An index that is not the one `Open` returns is not reconciled.
@@ -428,10 +430,14 @@ table filled before this check existed takes whatever model opens it first.
 **Erasure.** `Document.Owner` names the user a document belongs to, and
 `Index.Add` copies it onto every chunk (`Chunk.Owner`). `PgVectorStore`
 registers a data eraser, so `App.EraseUserData` deletes the erased user's
-chunks from the table. `FlatStore` does not: its chunks, its gob snapshot
-and its WAL are not reached by erasure, so remove an erased user's
-documents with `Index.Remove` yourself, or use `PgVectorStore` for
-per-user data. Hybrid search copies each chunk's text into the keyword
+chunks from the table. Any other index registers a store eraser (see
+[Stores outside the database](data-export.md#stores-outside-the-database)):
+after the SQL erasure commits it removes the user's documents, and with
+`Options.Path` it rewrites the snapshot, which also empties the WAL, so no
+copy of their text stays on disk. The registration stays until `Close`, so
+close an index you are done with. An index opened `ReadOnly` registers
+none, and neither does one over a custom `Store` that cannot list its
+chunks. Hybrid search copies each chunk's text into the keyword
 backend; a backend that implements `OwnedKeywordBackend`
 (`IndexOwned(ctx, id, owner, text)`) receives the chunk's owner with it.
 `WrapSearchBackend` does, so the copy lands as a `search.Document` with

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
 func TestRegisterThenUnregister(t *testing.T) {
@@ -25,6 +27,9 @@ func TestRegisterThenUnregister(t *testing.T) {
 	}
 	if len(recs) != 1 || recs[0].PID != os.Getpid() || recs[0].Version != recordVersion || recs[0].Started.IsZero() {
 		t.Fatalf("records = %+v", recs)
+	}
+	if want := procalive.Identify(os.Getpid()).Start; recs[0].ProcStart != want {
+		t.Fatalf("ProcStart = %d, want this process's start value %d", recs[0].ProcStart, want)
 	}
 	if runtime.GOOS != "windows" {
 		fi, err := os.Stat(filepath.Join(dir, recs[0].ID+".json"))
@@ -59,6 +64,33 @@ func TestListDropsDeadRun(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, id+".json")); !os.IsNotExist(err) {
 		t.Fatalf("dead record not removed: %v", err)
+	}
+}
+
+// Once a run is gone its pid may go to a newer process. That process is
+// alive but is not the run: a record whose start value disagrees with
+// the pid's is dropped, so a tool never lists a dead run's URL as live.
+func TestListDropsRecycledPID(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(EnvDir, dir)
+	self := procalive.Identify(os.Getpid())
+	if self.Start == 0 {
+		t.Fatal("no start value for this process: the recycled-pid check is vacuous")
+	}
+	live := fmt.Sprintf("%d-0000aaaa", self.PID)
+	writeRaw(t, dir, live, Record{Version: 1, ID: live, PID: self.PID, ProcStart: self.Start, URL: "http://127.0.0.1:1"})
+	gone := fmt.Sprintf("%d-0000bbbb", self.PID)
+	writeRaw(t, dir, gone, Record{Version: 1, ID: gone, PID: self.PID, ProcStart: self.Start - 1, URL: "http://127.0.0.1:2"})
+
+	recs, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || recs[0].ID != live {
+		t.Fatalf("List = %+v; want only %s", recs, live)
+	}
+	if _, err := os.Stat(filepath.Join(dir, gone+".json")); !os.IsNotExist(err) {
+		t.Fatalf("recycled-pid record not removed: %v", err)
 	}
 }
 
@@ -199,5 +231,41 @@ func writeRaw(t *testing.T, dir, id string, r Record) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, id+".json"), b, 0o600); err != nil {
 		t.Fatal(err)
+	}
+	if r.ProcStart != 0 {
+		if err := os.WriteFile(filepath.Join(dir, id+".start"), fmt.Appendf(nil, "%d", r.ProcStart), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Two List calls raced: A read a recycled-pid record's JSON, B found it
+// dead and removed the JSON and its sidecar, and A then read the missing
+// sidecar as "no start value" and listed the dead run as live on the
+// pid alone. List reads the sidecar before the record.
+func TestListRaceKeepsRecycledDead(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(EnvDir, dir)
+	self := procalive.Identify(os.Getpid())
+	if self.Start == 0 {
+		t.Fatal("no start value for this process: the recycled-pid check is vacuous")
+	}
+	gone := fmt.Sprintf("%d-0000cccc", self.PID)
+	writeRaw(t, dir, gone, Record{Version: 1, ID: gone, PID: self.PID, ProcStart: self.Start - 1, URL: "http://127.0.0.1:2"})
+	prev := loadRecord
+	loadRecord = func(root *os.Root, name, id string) (Record, bool) {
+		rec, ok := prev(root, name, id)
+		// The other List removes both files between this one's reads.
+		_ = os.Remove(filepath.Join(dir, id+".json"))
+		_ = os.Remove(filepath.Join(dir, id+".start"))
+		return rec, ok
+	}
+	t.Cleanup(func() { loadRecord = prev })
+	recs, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 0 {
+		t.Fatalf("List = %+v; the recycled-pid run was listed live", recs)
 	}
 }

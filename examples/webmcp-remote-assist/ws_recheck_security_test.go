@@ -17,11 +17,10 @@ func TestWSClosesRevokedSupport(t *testing.T) {
 }
 
 func testWSClosesRevokedSupport(t *testing.T, every time.Duration, frame bool) {
-	prev := wsRecheckEvery
-	wsRecheckEvery = every
-	t.Cleanup(func() { wsRecheckEvery = prev })
-
 	srv, a := newTestApp(t)
+	a.mu.Lock()
+	a.recheckEvery = every
+	a.mu.Unlock()
 	s := a.createSession()
 	cookie := supportLogin(t, srv)
 	ws := strictDialWS(t, srv, "/support/session/"+s.id+"/ws", fmt.Sprintf("%s=%s", cookie.Name, cookie.Value))

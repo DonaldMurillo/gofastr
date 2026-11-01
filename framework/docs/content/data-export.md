@@ -123,6 +123,14 @@ An exporter's columns that the entity does not declare join that source
 (compared case-insensitively), so auth's `name` column on an entity user
 table is exported and restored with the rest of the row.
 
+Tables compare by what the database resolves each spelling to, so an
+exporter configured as `public.users` (or `main.users` on SQLite) is the
+`users` entity's table and joins its source. Two entities that spell one
+table differently are refused with an error naming both. On SQLite a
+schema-qualified table reads the `sqlite_master` of its own schema; a
+schema the connection has not attached holds no table, and its exporter is
+skipped as absent.
+
 ## Archive layout
 
 ```
@@ -208,7 +216,15 @@ these is rejected up front, leaving the database untouched:
 - a source whose table is not in the live database;
 - an archive table name that doesn't match the live table;
 - an archive column absent from the live schema (incompatible column set);
+- a source whose archive columns leave out a primary-key column (a keyless
+  raw table has none to leave out);
 - a per-file `sha256` that doesn't match the `.ndjson` bytes (corrupt/tampered).
+
+A row whose primary-key value is null or missing is refused too, in the
+write phase, and the transaction rolls back. Without these two checks a key
+column was written NULL, which SQLite accepts in a non-integer key (the
+restored rows can never be read by key), or Postgres minted new ids that no
+reference pointed at.
 
 Restore into an empty (or freshly migrated) database. Import uses plain
 `INSERT` and will fail loud on a primary-key conflict if a row already exists,
@@ -363,12 +379,17 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    | `event_outbox` | `owner` (the record's owner) | anonymize: `payload` set to JSON `null` |
    | `webhook_deliveries` | `owner` (`Manager.PublishFor`) | delete |
    | `webhook_inbound` | `owner` (`IngestConfig.Owner`) | delete |
+   | the durable scheduler's schedules (`<queue table>_scheduler_schedules`) | `user_id` (`DurableScheduleBuilder.UserID`) | delete |
    | entity admin bulk jobs | `creator` | anonymize |
    | search indexes, pgvector chunks | `owner` (`Document.Owner`) | delete |
 
    Search and semantic indexes register an eraser and no exporter: they are
    rebuilt from the records that are exported, not restored. A row a store
-   wrote with an empty owner names nobody and stays.
+   wrote with an empty owner names nobody and stays. Stores outside the
+   database (a semantic index's files or memory, a Redis or in-memory
+   queue, an in-memory scheduler) are erased after the transaction
+   commits; see
+   [Stores outside the database](#stores-outside-the-database).
 3. **Audit plane (built-in).** The audit table is retained, since it is the
    compliance record of who did what, but the user's `actor_id` is
    anonymized (every row where `actor_id = userID` is set to `[erased]`) and
@@ -384,6 +405,23 @@ entity with no `OwnerField`), another user's comment on the user's post, the
 replies under that comment, and the pivot rows of a many_to_many. The walk is
 recursive and runs in the same transaction, deleting children before parents,
 so the constraints AutoMigrate generates never refuse the delete.
+
+The walk starts from two kinds of row: the rows of owner-scoped tables, and
+the rows a delete eraser (`datexport.EraseDelete`) matches on a table the
+registry declares, such as a host entity mapped onto the user table that
+`battery/auth` deletes from. A profile that belongs to that user row is
+staged with it, so its stored files are deleted and its audit diffs scrubbed
+the same way. The database's own `ON DELETE CASCADE` no longer removes it
+unseen. The eraser's `RowsAffected` counts the rows it matched; the profile
+counts in `Cascaded`. A matched row with a NULL in its key is left to the
+eraser's own delete, since no foreign key can name it. The eraser's table
+matches the entity's by the table the catalog resolves each name to, so an
+eraser on `public.users` (`main.users` on SQLite) seeds the walk from an
+entity whose table is `users`. The entity's name resolves the way
+AutoMigrate's unquoted DDL folds it and the eraser's name resolves as its
+own table is spelled, and on Postgres the two compare with their case kept:
+an eraser on a quoted `"Users"` a battery created never seeds deletes from
+the entity's `users`.
 
 - **Composite keys** are followed column for column: an `order_lines` row is
   reached through `(store, order_no)`, never through one of the two alone.
@@ -452,6 +490,87 @@ Erasure deletes only objects it can attribute to the erased user:
 If the check for other references fails, the rows stay erased, no object is
 deleted, and `EraseUserData` returns an error.
 
+### Stores outside the database
+
+A `DataEraser` names a SQL table, so it cannot reach data a battery keeps
+elsewhere. Such a store registers a `datexport.StoreEraser` instead: a name,
+a source, and an `Erase(ctx, userID, dryRun)` func that removes everything
+in the store naming the user and returns the count. `EraseUserData` runs
+every registered store eraser after the transaction commits and after the
+stored files are deleted. Each result is listed in `report.Stores` with
+`Mode: "delete"`.
+
+| Store | Registered by (name) | What is erased |
+|---|---|---|
+| a semantic index opened with `Options.Path` | `semantic.Open` (`semantic:<path>`) | the chunks whose `Owner` is the user; the snapshot is rewritten and the WAL emptied, so no copy of the text stays on disk |
+| a semantic index with no `Path` | `semantic.Open` (`semantic:memory`) | the chunks whose `Owner` is the user, from memory |
+| `queue.RedisQueue` | `queue.NewRedisQueue` (`queue_redis:<queue>`) | every job whose `UserID` is the user, from the main, delayed and dead lists and the pop and processing hashes |
+| `queue.MemoryQueue` | `queue.NewMemoryQueue` (`queue_memory`) | every job whose `UserID` is the user: pending, delayed, handed out by `Dequeue`, and dead; the unique keys they held are freed |
+| `queue.Scheduler` (in-memory) | `queue.NewScheduler` (`queue_scheduler_memory`) | every schedule whose `UserID` is the user, so it is neither kept nor fired again |
+
+**A store eraser stays registered until the store closes**: `Index.Close`,
+`RedisQueue.Close`, `MemoryQueue.Close` or `Scheduler.Close` removes it.
+Until then the registry holds the store, so it is never garbage-collected,
+and every erasure reaches it. Close each one you are done with, including
+one built for a single request or a test.
+
+Two stores of one name both stay registered and are both erased; the later
+one is listed under the first free `#n` suffix (`queue_redis:jobs#2` for a
+second `RedisQueue` named `jobs` on another Redis server). An index opened
+`ReadOnly` registers nothing, since the process writing the index erases
+it. A semantic index over a store shared across processes
+(`PgVectorStore`) registers nothing either, since its table has a SQL
+eraser, and neither does one over a custom `Store` that cannot list its
+chunks (`AllChunks`): register a store eraser for it yourself.
+
+A job a worker is running when the sweep passes is not stopped. If it fails
+and is retried after the sweep, it is back in the queue until the next
+erasure. The Redis erasure is one Lua script, which the server runs with
+no other command in between, so no worker step lands between its reads and
+its deletes. A worker that read a job just before the script ran (a job
+`Dequeue` popped but has not claimed, a `Nack`, a `Replay`) does not write
+it back: the queue's moves between keys are scripts too, and each finds
+its source empty and drops the job. It needs an adapter that implements
+[`queue.ScriptRunner`](queue.md#optional-scriptrunner); with one that does
+not, the store fails and nothing is removed from it. While it runs the
+server serves no other client, for a time that grows with the queue's
+length.
+
+**Failure.** The SQL erasure has committed by the time a store eraser runs,
+so a failure cannot roll it back. Every store eraser runs even when another
+fails, and `EraseUserData` returns an error naming each store that failed:
+`rows deleted but N store(s) failed and may still hold the user's data`. The
+report lists the rows deleted and the stores that succeeded. Erase again
+once the store is reachable: the SQL planes match nothing, and each store
+removes what is left. A panicking eraser counts as a failed one.
+
+A dry run rolls the transaction back first, then asks each store for its
+count with `dryRun` set, so nothing in the store changes.
+
+A custom store registers the same way:
+
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/core/datexport"
+func eraseFromCache(ctx context.Context, userID string, dryRun bool) (int, error) { return 0, nil }
+-->
+```go
+name, unregister := datexport.RegisterStoreEraser(datexport.StoreEraser{
+    Name:   "profile_cache",
+    Source: "app",
+    Erase:  eraseFromCache, // func(ctx, userID, dryRun) (int, error)
+})
+defer unregister() // when the store closes
+_ = name           // "profile_cache", or "profile_cache#2" beside a live one
+```
+
+Store erasers run in name order, except that a store which puts items into
+other stores sets `Producer: true` and runs first. The in-memory `Scheduler`
+is one: erased after the queue it feeds, a tick between the two put the
+user's job back into a queue already erased. A producer's `Erase` returns
+only after any dispatch it had already started has finished; the
+`Scheduler` holds the lock its tick enqueues under.
+
 ### Audit retention
 
 Audit rows are **not deleted**. This is deliberate and is the industry-standard
@@ -503,13 +622,15 @@ type EraseReport struct {
     Cascaded  []EraseTableResult // rows deleted because a foreign key named an erased row
     Batteries []EraseTableResult // registered erasers (delete or anonymize)
     Audit     *EraseTableResult  // built-in audit plane; nil if the audit table is absent
+    Stores    []EraseTableResult // store erasers that ran after the commit (semantic files, Redis)
     Skipped   []string           // erasers skipped because their identity could not be resolved (idempotent re-run)
 }
 ```
 
 Each `EraseTableResult` carries the table name, its source (`entity`,
 `cascade`, the battery name, or `audit`), the mode (`delete` or `anonymize`),
-and the row count. `report.TotalErased()` sums every plane.
+and the row count. A `Stores` entry has the store's name and no table.
+`report.TotalErased()` sums every plane, the stores included.
 `Skipped` names identity-resolved erasers that were skipped because the
 resolved identity row was already gone, the idempotent-re-run case (see
 "Identity-keyed tables" above): skipping is not an error, and the erasure

@@ -81,7 +81,7 @@ allow_project_hooks = false
 		t.Fatal(err)
 	}
 	defer h.Shutdown()
-	sess := h.CreateSession(h.Providers[0], "openrouter:test")
+	sess := mustSession(t, h, h.Providers[0], "openrouter:test")
 	if h.Mux.EngineFor(sess) == nil {
 		t.Fatal("engine not registered with mux after CreateSession")
 	}

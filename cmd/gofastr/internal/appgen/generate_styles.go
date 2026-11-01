@@ -229,16 +229,16 @@ func discoverOwnedFiles(patterns []string, suffix string) ([]styleFile, error) {
 			if suffix == ".tokens.css" {
 				what = "tokens file"
 			}
-			return nil, fmt.Errorf("generate styles: %s: %q is not a valid %s name: ^[a-z][a-z0-9-]*$ and not the ui- prefix; rename the file", f.rel, f.name, what)
+			return nil, fmt.Errorf("generate styles: %s: %q is not a valid %s name: ^[a-z][a-z0-9-]{0,63}$ and not the ui- prefix; rename the file", f.rel, f.name, what)
 		}
 	}
 	return out, nil
 }
 
-// styleNamePattern is the owner-name grammar: ^[a-z][a-z0-9-]*$, no
+// styleNamePattern is the owner-name grammar: ^[a-z][a-z0-9-]{0,63}$, no
 // ui- prefix (kit names). Mirrors ownstyle.Must's validation so the
 // generator's error names the file before Must can panic.
-var styleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+var styleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 
 // generateStyleFile checks, models and generates one style file.
 // checkDiags are the per-program ownstyle.Check findings the shared

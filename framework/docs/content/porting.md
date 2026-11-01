@@ -131,7 +131,8 @@ r.Get("/legacy/{path...}", site.PageHandler("/legacy"))
 Use it when a wildcard subtree claims a path the normal screen dispatch
 never resolves — the mux redirects the bare path to a trailing-slash
 form, and the NotFound screen answers instead of the screen you
-registered. A dynamic pattern (`/thing/{id}`) is passed through rather
+registered. A dynamic pattern (`/thing/{id}`, or the `/thing/:id`
+spelling a registered screen's `Path` holds) is passed through rather
 than forced, so param capture still reads the real request path.
 
 ## Answering with a status other than 200

@@ -122,10 +122,16 @@ func NewApp(name string) *App {
 // then validates, passing a partially-populated theme (e.g. a
 // Color with empty Value) panics with the field path naming the
 // missing piece. This catches "silently broken styling" failures at
-// startup, not at the first page render.
+// startup, not at the first page render. Every registered owned style
+// sheet is compiled against the theme too (ownstyle.CheckTheme), so a
+// theme that renames a breakpoint a sheet's custom media names panics
+// here.
 func (a *App) WithTheme(theme style.Theme) *App {
 	style.AutoFillNames(&theme)
 	theme.MustValidate()
+	if err := ownstyle.CheckTheme(theme); err != nil {
+		panic(fmt.Sprintf("app: WithTheme: %v", err))
+	}
 	a.Theme = &theme
 	return a
 }
@@ -583,6 +589,12 @@ func (a *App) RenderNotFoundPageResult(ctx context.Context, path string, comp co
 // included. An unknown fromPath keeps the bare partial (empty SwapLayer),
 // the runtime's existing deploy-skew recovery answers with a full load.
 func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
+	return withPageIDs(ctx, func(ctx context.Context) (RenderResult, error) {
+		return a.renderNotFoundFromResultIDs(ctx, path, fromPath, comp)
+	})
+}
+
+func (a *App) renderNotFoundFromResultIDs(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
 	target := notFoundScreenFor(ctx, comp)
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
@@ -621,6 +633,12 @@ func (a *App) RenderErrorPageResult(ctx context.Context, path string, comp compo
 // whole-page shows the error page inside the live shell instead of
 // toasting..
 func (a *App) RenderErrorFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
+	return withPageIDs(ctx, func(ctx context.Context) (RenderResult, error) {
+		return a.renderErrorFromResultIDs(ctx, path, fromPath, comp)
+	})
+}
+
+func (a *App) renderErrorFromResultIDs(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
 	target := errorScreenFor(ctx, comp)
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
@@ -649,6 +667,14 @@ func (a *App) renderPageResult(ctx context.Context, path string) (RenderResult, 
 // 404 page renders through the app's root layout with its outlets'
 // defaults exactly like a registered page.
 func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen, params map[string]string) (RenderResult, error) {
+	return withPageIDs(ctx, func(ctx context.Context) (RenderResult, error) {
+		return a.renderScreenPageIDs(ctx, path, screen, params)
+	})
+}
+
+// renderScreenPageIDs is renderScreenPage's body, inside the page's id
+// region.
+func (a *App) renderScreenPageIDs(ctx context.Context, path string, screen *Screen, params map[string]string) (RenderResult, error) {
 	// Route areas read the route match from the context. The host's
 	// middleware normally installs it; direct renders (SSG, tests) get
 	// the same snapshot here so a RouteArea sees the path everywhere.
@@ -1001,6 +1027,14 @@ func (a *App) RenderPartialFromResultDefer(ctx context.Context, path, fromPath s
 // renderPartialFrom is the shared body of RenderPartialFromResult and
 // its deferring variant.
 func (a *App) renderPartialFrom(ctx context.Context, path, fromPath string, deferOutlets bool) (RenderResult, error) {
+	return withPageIDs(ctx, func(ctx context.Context) (RenderResult, error) {
+		return a.renderPartialFromIDs(ctx, path, fromPath, deferOutlets)
+	})
+}
+
+// renderPartialFromIDs is renderPartialFrom's body, inside the answer's
+// id region.
+func (a *App) renderPartialFromIDs(ctx context.Context, path, fromPath string, deferOutlets bool) (RenderResult, error) {
 	// The resolver store is per REQUEST: install it here so the base
 	// render (renderPartial → renderScreenPartial) and the fills pass
 	// below (partialFromShared) share one set of cells — a resolver
@@ -1241,7 +1275,7 @@ func (a *App) RenderPartResult(ctx context.Context, path, addr string) (Fill, Pa
 	// never runs).
 	markChainArea(ctx, chain)
 	seedRouteValues(ctx, path, screen.Path, registeredTitle(screen, decision.Kind), params, requestQuery(ctx))
-	res := a.resolveFillSlot(ctx, path, params, *slot, guards)
+	res := a.resolveDeferredSlot(ctx, path, params, *slot, guards)
 	if res.notFound {
 		// The 404-outlet outcome is a WHOLE-PAGE outcome: the page this
 		// part belongs to answers the not-found page with status 404, so
@@ -1316,6 +1350,14 @@ func screenRenderPanicError(path string, err error) error {
 // DI, and Load are identical, so an intercepted render can never diverge
 // from the canonical one in anything but its outermost element.
 func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenType) (RenderResult, error) {
+	return withPageIDs(ctx, func(ctx context.Context) (RenderResult, error) {
+		return a.renderPartialIDs(ctx, path, overlay)
+	})
+}
+
+// renderPartialIDs is renderPartial's body, inside the answer's id
+// region.
+func (a *App) renderPartialIDs(ctx context.Context, path string, overlay *ScreenType) (RenderResult, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
 		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)

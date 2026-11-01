@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"hash/fnv"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -118,7 +120,7 @@ func Banner(cfg BannerConfig) render.HTML {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
 	return bannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
-		ID: orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), autoID("banner")),
+		ID: orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), bannerIdentity(cfg)),
 		// Banner has no Icon field of its own: the icon is always this
 		// component's own choice, drawn from Variant, never a caller's.
 		Icon:   headless.Own(render.HTML(bannerIcon(cfg.Variant))),
@@ -290,4 +292,19 @@ func bannerCSS(_ style.Theme) string {
 
 /* Hidden state for runtime dismiss. */
 [data-cui-comp="ui-banner"][hidden] { display: none; }`
+}
+
+// bannerIdentity names a banner given no DismissID or ID by its message,
+// so the same banner keeps one identity on every render, on every
+// replica, and a dismissal the runtime remembers for the session still
+// hides it after an island re-render or a page navigation. A counter
+// gave each render a new one, and the dismissed banner came back.
+func bannerIdentity(cfg BannerConfig) string {
+	h := fnv.New64a()
+	for _, s := range []string{string(cfg.Variant), cfg.Title, cfg.Body} {
+		h.Write([]byte(strconv.Itoa(len(s))))
+		h.Write([]byte{':'})
+		h.Write([]byte(s))
+	}
+	return "banner-" + strconv.FormatUint(h.Sum64(), 36)
 }

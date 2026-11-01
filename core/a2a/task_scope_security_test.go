@@ -266,24 +266,12 @@ func TestStoresFilterTasksByScope(t *testing.T) {
 // A task table from before the scope column gains it on open, and its
 // rows read as an unscoped caller's.
 func TestSQLStoreAddsScopeColumn(t *testing.T) {
-	db := openSQLite(t)
-	if _, err := db.Exec(`CREATE TABLE a2a_tasks (
+	st := openOlderTaskStore(t, `CREATE TABLE a2a_tasks (
 		id TEXT PRIMARY KEY, owner TEXT NOT NULL, context_id TEXT NOT NULL DEFAULT '',
 		skill_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, status_ts DATETIME NOT NULL,
 		version BIGINT NOT NULL DEFAULT 0, task_json TEXT NOT NULL,
-		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO a2a_tasks VALUES ('old', 'alice', '', 'echo', 'TASK_STATE_COMPLETED', ?, 0, '{"id":"old","contextId":"","status":{"state":"TASK_STATE_COMPLETED"}}', ?, ?)`, t0, t0, t0); err != nil {
-		t.Fatal(err)
-	}
-	st, err := NewSQLStore(db)
-	if err != nil {
-		t.Fatalf("NewSQLStore over the older table: %v", err)
-	}
-	if _, err := NewSQLStore(db); err != nil {
-		t.Fatalf("second open: %v", err)
-	}
+		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
+		`INSERT INTO a2a_tasks VALUES ('old', 'alice', '', 'echo', 'TASK_STATE_COMPLETED', ?, 0, '{"id":"old","contextId":"","status":{"state":"TASK_STATE_COMPLETED"}}', ?, ?)`)
 	got, err := st.GetTask(context.Background(), "alice", "old")
 	if err != nil || got.Scope != "" {
 		t.Fatalf("older row = %+v, %v; want unscoped", got, err)
@@ -311,4 +299,26 @@ func TestTokenSeesTasksOfItsOwnScopes(t *testing.T) {
 	if got := h.listTasks("alice"); len(got) != 2 {
 		t.Errorf("the session lists %d task(s), want both token tasks", len(got))
 	}
+}
+
+// openOlderTaskStore creates a2a_tasks with an older build's DDL, inserts
+// one row stamped t0 three times, and opens the store over it twice: the
+// second open proves the column migration is idempotent.
+func openOlderTaskStore(t *testing.T, ddl, insert string) *SQLStore {
+	t.Helper()
+	db := openSQLite(t)
+	if _, err := db.Exec(ddl); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(insert, t0, t0, t0); err != nil {
+		t.Fatal(err)
+	}
+	st, err := NewSQLStore(db)
+	if err != nil {
+		t.Fatalf("NewSQLStore over the older table: %v", err)
+	}
+	if _, err := NewSQLStore(db); err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	return st
 }

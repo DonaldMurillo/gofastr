@@ -4523,11 +4523,12 @@ func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (stri
 // request's auth/policy context flows through unchanged.
 func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if p := r.URL.Path; p != path && path != "" && !strings.Contains(path, "{") {
+		if p := r.URL.Path; p != path && path != "" && !isDynamicScreenPath(path) {
 			// Keep query intact; only the dispatch path is forced. Dynamic
-			// screen paths ({id}) are NEVER forced: rewriting would feed the
-			// literal pattern to param capture (id="{id}"); the real request
-			// path already matches the registered dynamic screen.
+			// screen paths ({id} or :id) are NEVER forced: rewriting would
+			// feed the literal pattern to param capture (id="{id}"); the
+			// real request path already matches the registered dynamic
+			// screen.
 			u := *r.URL
 			u.Path = path
 			r2 := r.Clone(r.Context())
@@ -4537,6 +4538,21 @@ func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
 		}
 		ds.handlePage(w, r)
 	}
+}
+
+// isDynamicScreenPath reports whether path names a dynamic screen in
+// either spelling the router accepts: a "{name}" segment, or a
+// ":name" segment (the form the router stores in Screen.Path).
+func isDynamicScreenPath(path string) bool {
+	if strings.Contains(path, "{") {
+		return true
+	}
+	for _, seg := range strings.Split(path, "/") {
+		if strings.HasPrefix(seg, ":") {
+			return true
+		}
+	}
+	return false
 }
 
 // NotFoundOutletError is the static-render form of the 404-outlet

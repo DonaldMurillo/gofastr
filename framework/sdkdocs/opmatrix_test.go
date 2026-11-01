@@ -22,6 +22,14 @@ func TestExampleFilterOperatorSuitsPickedField(t *testing.T) {
 	} {
 		cfg := entity.EntityConfig{Fields: []schema.Field{{Name: "f", Type: tpe}}}
 		field, op := exampleFilter(cfg)
+		if !filter.OpSuitsType(filter.OpEq, tpe) {
+			// A JSON column takes no filter: the example falls back to
+			// the primary key rather than publish a request that 400s.
+			if field != "id" {
+				t.Errorf("type %d: example picked %q, want the id fallback", tpe, field)
+			}
+			continue
+		}
 		if field != "f" {
 			t.Fatalf("type %d: example picked %q, want the probe field f", tpe, field)
 		}
@@ -34,11 +42,12 @@ func TestExampleFilterOperatorSuitsPickedField(t *testing.T) {
 
 // An entity whose every queryable column refuses the range operators
 // (a Bool and a JSON blob) still gets a working example: plain
-// equality, which suits every type.
+// equality on the Bool. The JSON blob comes first and is skipped, since
+// it takes no filter at all.
 func TestExampleFilterFallsBackToEquality(t *testing.T) {
 	cfg := entity.EntityConfig{Fields: []schema.Field{
-		{Name: "flag", Type: schema.Bool},
 		{Name: "meta", Type: schema.JSON},
+		{Name: "flag", Type: schema.Bool},
 	}}
 	field, op := exampleFilter(cfg)
 	if field != "flag" || op != "" {

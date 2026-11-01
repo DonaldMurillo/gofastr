@@ -61,6 +61,9 @@ func TestKillServerNilAndProcess(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot start sleep: %v", err)
 	}
+	// Reaped in the background, as the dev loops do: KillServer sees
+	// the exit through that wait.
+	go func(c *exec.Cmd) { _ = c.Wait() }(cmd)
 	KillServer(&mu, &cmd)
 	if cmd != nil {
 		t.Fatal("killServer should nil out the cmd pointer")
@@ -98,7 +101,7 @@ func TestBuildAndServeBuildsAndStarts(t *testing.T) {
 
 // buildAndServeResult is a tiny wrapper so the bool result is observed.
 func buildAndServeResult(dir, addr string, rt *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
-	return buildAndServe(dir, ".", addr, rt, mu, cmd, false, nil)
+	return buildAndServe(dir, ".", addr, rt, mu, cmd, false, nil, nil)
 }
 
 func TestBuildAndServeBuildFails(t *testing.T) {
@@ -118,7 +121,7 @@ func TestBuildAndServeBuildFails(t *testing.T) {
 	var cmd *exec.Cmd
 	var ok bool
 	clitest.CovT_capStdout(t, func() {
-		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd, false, nil)
+		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd, false, nil, nil)
 	})
 	if ok {
 		t.Fatal("buildAndServe should return false on build failure")

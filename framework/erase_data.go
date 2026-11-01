@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -148,7 +149,12 @@ type EraseReport struct {
 	// Audit is the built-in audit plane; nil if the audit table is absent.
 	// RowsAffected counts the rows whose actor was anonymized plus the other
 	// rows whose diff was replaced because they record an erased row.
-	Audit   *EraseTableResult
+	Audit *EraseTableResult
+	// Stores lists the registered datexport.StoreErasers that ran: stores
+	// outside the database, such as a semantic index's files or a Redis
+	// queue. They run after the SQL erasure commits; one that fails is not
+	// listed, and EraseUserData returns an error naming it.
+	Stores  []EraseTableResult
 	Skipped []string // erasers skipped because their identity could not be resolved (idempotent re-run)
 }
 
@@ -172,6 +178,9 @@ func (r EraseReport) TotalErased() int {
 	}
 	if r.Audit != nil {
 		n += r.Audit.RowsAffected
+	}
+	for i := range r.Stores {
+		n += r.Stores[i].RowsAffected
 	}
 	return n
 }
@@ -201,17 +210,18 @@ func (a *App) EraseUserData(ctx context.Context, userID string, opts ...EraseOpt
 	}
 
 	dialect := migrate.DetectDialect(a.DB)
-	plan, err := a.planErase(ctx, dialect)
-	if err != nil {
-		return EraseReport{}, err
-	}
 	erasers := datexport.AllErasers()
 
 	// Resolve every non-user-id identity ONCE, before the write transaction
 	// opens (a single-connection pool deadlocks on a read inside the tx). An
 	// eraser declaring an identity with no resolver fails loud here; an
-	// identity whose value cannot be resolved is skipped, not failed.
+	// identity whose value cannot be resolved is skipped, not failed. It runs
+	// before the plan, which seeds the cascade from the delete erasers.
 	resolved, skipped, err := a.resolveEraserIdentities(ctx, dialect, userID, erasers)
+	if err != nil {
+		return EraseReport{}, err
+	}
+	plan, err := a.planErase(ctx, dialect, resolved)
 	if err != nil {
 		return EraseReport{}, err
 	}
@@ -526,10 +536,18 @@ type erasePlanTable struct {
 	owner   string // owner column a seed table matches the user id against; "" when cascade-only
 	tmp     string // session temp table holding the keys of the rows to erase
 	reached bool   // a cascade edge leads here, so it is reported in Cascaded
-	// owned and cascaded partition the staged rows: owned are the user's,
-	// cascaded are the rows staged because a foreign key named a staged row.
-	owned, cascaded int
+	// seeds are the delete erasers on this table: their matches are staged
+	// like the user's own rows, so the rows a foreign key cascade removes
+	// with them are staged, read and reported too.
+	seeds []resolvedEraser
+	// owned, seeded and cascaded partition the staged rows: owned are the
+	// user's, seeded are the ones a delete eraser matched, cascaded are the
+	// rows staged because a foreign key named a staged row.
+	owned, seeded, cascaded int
 }
+
+// staged is the number of rows staged in the table.
+func (pt *erasePlanTable) staged() int { return pt.owned + pt.seeded + pt.cascaded }
 
 type erasePlan struct {
 	tables []*erasePlanTable // children first
@@ -544,6 +562,31 @@ type erasePlan struct {
 	// battery plane reads the key, file columns and entity names of the
 	// rows an eraser reaches through it.
 	graph map[string]*dataTable
+	// eraserGraph maps an eraser's name to the graph table it erases from:
+	// the one the catalog resolves to the same table (graphIdentities).
+	eraserGraph map[string]string
+	// seededBy holds, per delete eraser whose matches seed the plan, the
+	// rows its match staged. The battery plane adds them to the rows the
+	// eraser's own delete finds left.
+	seededBy map[string]int
+}
+
+// graphIdentities maps the identity (tableIdentity) of every graph table the
+// database holds to its graph name. A graph table is an entity's or a
+// pivot's, made by AutoMigrate's unquoted DDL, so its name resolves as the
+// DDL folded it.
+func graphIdentities(ctx context.Context, db rowQueryer, dialect migrate.Dialect, g *dataGraph) (map[string]string, error) {
+	out := map[string]string{}
+	for _, t := range g.sorted {
+		id, err := tableIdentity(ctx, db, t, dialect, true)
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase %w", err)
+		}
+		if _, held := out[id]; strings.HasPrefix(id, "table:") && !held {
+			out[id] = t
+		}
+	}
+	return out, nil
 }
 
 // planErase builds the erase plan before any transaction opens: the seed
@@ -551,7 +594,12 @@ type erasePlan struct {
 // that make a missing column fail loud. Probes run against a.DB here because
 // a single-connection pool (SQLite, MaxOpenConns(1)) would deadlock reading
 // the catalog while the transaction holds the only connection.
-func (a *App) planErase(ctx context.Context, dialect migrate.Dialect) (*erasePlan, error) {
+//
+// The seeds are the owner-scoped tables and the tables a delete eraser
+// removes rows from. A battery-owned root such as the user table used to
+// delete its rows on its own, and the rows the database cascade removed with
+// them went without their stored objects or audit diffs.
+func (a *App) planErase(ctx context.Context, dialect migrate.Dialect, erasers []resolvedEraser) (*erasePlan, error) {
 	g, err := a.buildDataGraph()
 	if err != nil {
 		return nil, err
@@ -563,6 +611,56 @@ func (a *App) planErase(ctx context.Context, dialect migrate.Dialect) (*erasePla
 			byTable[t] = &erasePlanTable{dt: dt, owner: dt.owner}
 			queue = append(queue, t)
 		}
+	}
+	// An eraser's table is matched to the graph by the table the catalog
+	// resolves each to, never by spelling. users and public.users
+	// (main.users on SQLite) are one table; on Postgres a quoted "Users" a
+	// battery made is a table apart from the entity's users, and comparing
+	// lowercased names seeded the entity's rows from the battery's eraser.
+	// The eraser's name resolves as its own table is spelled, like the
+	// battery plane's physicalTable.
+	eraserGraph := map[string]string{}
+	var byID map[string]string
+	for _, e := range erasers {
+		if byID == nil {
+			if byID, err = graphIdentities(ctx, a.DB, dialect, g); err != nil {
+				return nil, err
+			}
+		}
+		id, err := tableIdentity(ctx, a.DB, e.eraser.Table, dialect, false)
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase %w", err)
+		}
+		t, ok := byID[id]
+		if !ok {
+			continue // an absent table: the battery plane skips its eraser too
+		}
+		eraserGraph[e.eraser.Name] = t
+		if e.eraser.Mode != datexport.EraseDelete {
+			continue
+		}
+		// A pivot names no child, and a keyless table has nothing to
+		// stage: the eraser deletes those rows itself.
+		if dt := g.tables[t]; dt.pivot || len(dt.key) == 0 {
+			continue
+		}
+		pt := byTable[t]
+		if pt == nil {
+			ok, err := tableExists(ctx, a.DB, t, dialect)
+			if err != nil {
+				return nil, fmt.Errorf("framework: erase probe %q: %w", t, err)
+			}
+			if !ok {
+				continue // the battery plane skips the eraser too
+			}
+			pt = &erasePlanTable{dt: g.tables[t]}
+			byTable[t] = pt
+			queue = append(queue, t)
+		}
+		if err := requireColumns(ctx, a.DB, t, append([]string{e.eraser.Column}, whereColumns(e.eraser)...), dialect); err != nil {
+			return nil, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
+		}
+		pt.seeds = append(pt.seeds, e)
 	}
 	absent := map[string]bool{}
 	var edges []fkEdge
@@ -650,7 +748,7 @@ func (a *App) planErase(ctx context.Context, dialect migrate.Dialect) (*erasePla
 			return nil, fmt.Errorf("framework: erase entity %q: %w", label, err)
 		}
 	}
-	plan := &erasePlan{edges: edges, blockers: blockers, graph: map[string]*dataTable{}}
+	plan := &erasePlan{edges: edges, blockers: blockers, graph: map[string]*dataTable{}, seededBy: map[string]int{}, eraserGraph: eraserGraph}
 	for t, dt := range g.tables {
 		plan.graph[strings.ToLower(t)] = dt
 	}
@@ -825,6 +923,27 @@ func (p *erasePlan) stage(ctx context.Context, tx *sql.Tx, dialect migrate.Diale
 			return fmt.Errorf("framework: erase entity %q: %w", pt.label(), err)
 		}
 		pt.owned = n
+	}
+	// A delete eraser's matches, each row once: a row the user owns, or one
+	// an earlier eraser matched, counts where it was first staged. A row
+	// with a NULL in its key is left to the eraser's own delete, which runs
+	// after the plan's: no foreign key can name it, so nothing cascades from
+	// it, and staging it would count a row the staged delete cannot match.
+	for _, pt := range p.tables {
+		for _, e := range pt.seeds {
+			qtmp := query.QuoteFolded(query.MustIdent(pt.tmp))
+			match, args := eraserMatch(e, 1)
+			stmt := fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s t WHERE %s AND NOT %s AND NOT EXISTS (SELECT 1 FROM %s x WHERE %s)",
+				qtmp, quotedCols("", pt.dt.key), quotedCols("t", pt.dt.key),
+				query.QuoteFolded(query.MustIdent(pt.dt.table)), match, anyNull("t", pt.dt.key),
+				qtmp, colsEqual("x", pt.dt.key, "t", pt.dt.key))
+			n, err := execCount(ctx, tx, stmt, args...)
+			if err != nil {
+				return fmt.Errorf("framework: erase %q: stage: %w", e.eraser.Name, err)
+			}
+			pt.seeded += n
+			p.seededBy[e.eraser.Name] = n
+		}
 	}
 	by := p.byTable()
 	for {
@@ -1054,7 +1173,7 @@ type auditRecordSet struct {
 func (p *erasePlan) auditRecords(ctx context.Context, tx *sql.Tx) ([]auditRecordSet, error) {
 	var out []auditRecordSet
 	for _, pt := range p.tables {
-		if len(pt.dt.entities) == 0 || pt.tmp == "" || pt.owned+pt.cascaded == 0 {
+		if len(pt.dt.entities) == 0 || pt.tmp == "" || pt.staged() == 0 {
 			continue
 		}
 		ids, err := readRecordIDs(ctx, tx, fmt.Sprintf("SELECT %s FROM %s",
@@ -1139,7 +1258,7 @@ func lockRead(dialect migrate.Dialect) string {
 func (a *App) storedObjectKeys(ctx context.Context, tx *sql.Tx, dialect migrate.Dialect, p *erasePlan, into *objectKeys) error {
 	for _, pt := range p.tables {
 		cols := append(append([]string{}, pt.dt.fileCols...), pt.dt.variantCols...)
-		if len(cols) == 0 || pt.owned+pt.cascaded == 0 {
+		if len(cols) == 0 || pt.staged() == 0 {
 			continue
 		}
 		stmt := fmt.Sprintf("SELECT %s FROM %s t WHERE %s%s",
@@ -1374,7 +1493,14 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 	}
 
 	if dryRun {
-		return report, nil // the deferred rollback undoes every write
+		// Every write is undone before the stores count what they would
+		// remove: a store eraser that reads the database would otherwise
+		// wait on the connection the transaction holds.
+		committed = true // the transaction is finished; the deferred rollback has nothing to do
+		if err := tx.Rollback(); err != nil {
+			return report, fmt.Errorf("framework: erase dry run: rollback: %w", err)
+		}
+		return report, a.eraseStores(ctx, userID, true, &report)
 	}
 	if err := tx.Commit(); err != nil {
 		return report, fmt.Errorf("framework: erase: commit: %w", err)
@@ -1389,14 +1515,55 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 	// Only keys erasure can attribute to this user are deleted: never an
 	// external URL, and never a key a surviving row still names (see
 	// erase_shared_keys.go). If that check fails, nothing is deleted.
-	deletable, err := a.unsharedObjectKeys(ctx, dialect, storedKeys)
-	if err != nil {
-		return report, fmt.Errorf("framework: erase: rows deleted but no stored objects were removed: checking which keys other rows still name: %w", err)
+	var objErr error
+	if deletable, err := a.unsharedObjectKeys(ctx, dialect, storedKeys); err != nil {
+		objErr = fmt.Errorf("framework: erase: rows deleted but no stored objects were removed: checking which keys other rows still name: %w", err)
+	} else {
+		objErr = a.eraseStoredObjects(ctx, deletable)
 	}
-	if err := a.eraseStoredObjects(ctx, deletable); err != nil {
-		return report, err
+	// Stores outside the database last, for the reason objects are: a
+	// failure here cannot roll the rows back, and the reverse order would
+	// leave a store erased behind rows that survived.
+	return report, errors.Join(objErr, a.eraseStores(ctx, userID, false, &report))
+}
+
+// eraseStores runs every registered datexport.StoreEraser, producers
+// first (AllStoreErasers' order), and adds the ones that succeed to the
+// report. Every one runs even when another fails,
+// so one unreachable store does not keep the user's data in the others.
+// The SQL part is committed by now (or rolled back, on a dry run), so a
+// failure is reported with the store's name, never folded into success:
+// the operator erases again once the store is reachable, and each eraser
+// finds only what is left.
+func (a *App) eraseStores(ctx context.Context, userID string, dryRun bool, rep *EraseReport) error {
+	var failed []string
+	for _, s := range datexport.AllStoreErasers() {
+		n, err := runStoreEraser(ctx, s, userID, dryRun)
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, err))
+			continue
+		}
+		rep.Stores = append(rep.Stores, EraseTableResult{Name: s.Name, Source: s.Source, Mode: "delete", RowsAffected: n})
 	}
-	return report, nil
+	if len(failed) == 0 {
+		return nil
+	}
+	if dryRun {
+		return fmt.Errorf("framework: erase dry run: %d store(s) could not be counted: %s", len(failed), strings.Join(failed, "; "))
+	}
+	return fmt.Errorf("framework: erase: rows deleted but %d store(s) failed and may still hold the user's data: %s",
+		len(failed), strings.Join(failed, "; "))
+}
+
+// runStoreEraser calls a store's Erase, a host or battery callback, with a
+// recover guard: a panic in one store is that store's error.
+func runStoreEraser(ctx context.Context, s datexport.StoreEraser, userID string, dryRun bool) (n int, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			n, err = 0, fmt.Errorf("panicked: %s", textsafe.Recovered(v))
+		}
+	}()
+	return s.Erase(ctx, userID, dryRun)
 }
 
 // probeAuditTable returns the audit table's shape, or nil when it is absent.
@@ -1549,7 +1716,7 @@ func (p *erasePlan) eraseBatteries(ctx context.Context, tx *sql.Tx, dialect migr
 			}
 			anon[t] = append(anon[t], i)
 		}
-		dt := p.graph[strings.ToLower(e.eraser.Table)]
+		dt := p.graph[strings.ToLower(p.eraserGraph[e.eraser.Name])]
 		if dt == nil || dt.pivot || e.eraser.Mode == datexport.EraseRemoveMember {
 			continue
 		}
@@ -1586,10 +1753,13 @@ func (p *erasePlan) eraseBatteries(ctx context.Context, tx *sql.Tx, dialect migr
 		if e.eraser.Mode != datexport.EraseDelete {
 			continue
 		}
+		// A seeded eraser's staged rows went with the plan's delete; its
+		// own delete finds only what the plan did not stage.
 		n, err := eraseDelete(ctx, tx, e)
 		if err != nil {
 			return nil, nil, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
 		}
+		n += p.seededBy[e.eraser.Name]
 		results[i] = EraseTableResult{Name: e.eraser.Name, Source: e.eraser.Source, Table: e.eraser.Table, Mode: "delete", RowsAffected: n}
 	}
 	for i, e := range erasers {

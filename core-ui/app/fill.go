@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -501,6 +502,11 @@ func (a *App) rebuildFillsFromDefaults(ctx context.Context, path string, params 
 // concurrency — so which goroutine finished first is unobservable.
 func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params map[string]string, slots []fillSlot, guards regionGuards) []fillSlotResult {
 	results := make([]fillSlotResult, len(slots))
+	// Element ids the slots derive (render.UniqueID) are settled in slot
+	// order once every slot has rendered, so a second slot's repeat of
+	// the first slot's "features" is "features-2" whichever goroutine
+	// finished first.
+	ids := render.NewRegionBatch(ctx, len(slots))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxConcurrentFills)
 	for i, slot := range slots {
@@ -509,11 +515,91 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[i] = a.resolveFillSlot(ctx, path, params, slot, guards)
+			if slot.spec.Deferred {
+				results[i] = a.resolveDeferredSlot(ctx, path, params, slot, guards)
+				return
+			}
+			results[i] = a.resolveFillSlot(ids.Context(i), path, params, slot, guards)
 		}(i, slot)
 	}
 	wg.Wait()
+	for i := range results {
+		ids.ReserveRendered(i, results[i].html)
+	}
+	for i := range results {
+		results[i].html = ids.Settle(i)(results[i].html)
+	}
 	return results
+}
+
+// resolveDeferredSlot resolves a deferred outlet's fill with element ids
+// of its own. A deferred outlet also renders alone, as a part request
+// (RenderPartResult), where nothing else on the page has rendered, so
+// on the full page as in the part its derived ids come from the
+// outlet's namespace (outletIDs, named after the outlet's address):
+// "_l-shell-aside--features", the same in both answers and apart from
+// every other id on the page.
+func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[string]string, slot fillSlot, guards regionGuards) fillSlotResult {
+	ids := render.NewRegionBatch(outletIDs(ctx, slot.addr), 1)
+	res := a.resolveFillSlot(ids.Context(0), path, params, slot, guards)
+	ids.ReserveRendered(0, res.html)
+	res.html = ids.Settle(0)(res.html)
+	return res
+}
+
+// outletIDs opens a deferred outlet's id namespace. It is of its own
+// kind (render.WithIDNamespaceKind, "_l-"), so no island, whatever its
+// id, shares it: island "l-shell-aside" is "l-shell-aside--features",
+// outlet l:shell#aside is "_l-shell-aside--features".
+func outletIDs(ctx context.Context, addr string) context.Context {
+	return render.WithIDNamespaceKind(ctx, 'l', idNamespace(addr))
+}
+
+// idNamespace names a deferred outlet's id namespace after its wire
+// address. The common address, a layout and an outlet whose names are
+// letters and digits only ("l:shell#aside"), reads "shell-aside". Any
+// other address is passed as it is, and the namespace spells it in hex
+// escapes ("l:shell#aside-a" is "l_3ashell_23aside-a"); every address
+// holds a "#", so that form always holds a "_" the readable form never
+// does. So two outlets never share a namespace: "aside-a" and
+// "aside_a", or "Aside" and "aside", stay apart.
+func idNamespace(addr string) string {
+	alnum := func(s string) bool {
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+				return false
+			}
+		}
+		return s != ""
+	}
+	if rest, ok := strings.CutPrefix(addr, "l:"); ok {
+		if layout, outlet, ok := strings.Cut(rest, "#"); ok && alnum(layout) && alnum(outlet) {
+			return layout + "-" + outlet
+		}
+	}
+	return addr
+}
+
+// withPageIDs renders one page answer (a document, a partial, an
+// error or not-found body) as a single id region (render.NewRegionBatch)
+// and settles it: every explicit id on the page, reserved by its
+// component or only written in the HTML, is reserved before any
+// derived id is handed out, so a section with ID "features" keeps it
+// even when a section titled "Features" rendered first.
+func withPageIDs(ctx context.Context, fn func(context.Context) (RenderResult, error)) (RenderResult, error) {
+	ids := render.NewRegionBatch(ctx, 1)
+	res, err := fn(ids.Context(0))
+	ids.ReserveRendered(0, res.HTML)
+	for _, f := range res.Fills {
+		ids.ReserveRendered(0, f.HTML)
+	}
+	settle := ids.Settle(0)
+	res.HTML = settle(res.HTML)
+	for i := range res.Fills {
+		res.Fills[i].HTML = settle(res.Fills[i].HTML)
+	}
+	return res, err
 }
 
 // containedFillError renders the degraded outlet of a contained fill

@@ -298,8 +298,11 @@ would leak into every host's CSS bundle).
 Visibility is fail-closed: by default only `Public` entities are
 documented; a gated entity's reference URL 404s exactly like a
 nonexistent one. Opt in with an explicit `Entities` allow-list or
-`IncludeGated: true`, and gate the whole site (screens AND downloads)
-with `Policy`. Hidden fields never render.
+`IncludeGated: true`, and gate the whole site (screens, downloads and
+the mobile section-menu drawer's `/chrome` and `/state` routes) with
+`Policy`. A redirecting policy refuses the drawer's fetches with 403;
+the runtime fetches them, so a redirect has nowhere to land. Hidden
+fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
@@ -315,6 +318,13 @@ and shows a banner on every docs page; downloads keep working (a stale
 SDK beats none), and re-running `gofastr generate sdk` clears it. A
 manifest from a different gofastr version downgrades the check to an
 "unknown provenance" note instead of a false stale warning.
+
+The hash covers what changes a generated client: each entity's name,
+table, primary-key columns in their declared order (keyed calls take the
+key as positional arguments in that order), exposure, soft delete,
+search fields, relations, states, settings-declared endpoints and every
+non-hidden field. Reordering a composite key therefore reports drift,
+since an old SDK would pass the key arguments the wrong way round.
 
 The manifest must list the entities it covers: `ReadManifest` refuses an
 empty (or omitted) `entities` list the same way it refuses a missing
