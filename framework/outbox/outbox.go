@@ -59,7 +59,9 @@ type Outbox struct {
 
 	// Lease held on a claimed row. Mirrors battery/queue's lease: a
 	// Relay that dies mid-batch releases its rows after the lease
-	// expires so another Relay (or a restart) reclaims them.
+	// expires so another Relay (or a restart) reclaims them. Five minutes,
+	// stretched by New to twice one delivery's budget (handler timeout
+	// plus settle window) when that is longer: see leaseFloor.
 	lease time.Duration
 
 	// Exponential backoff for failed Emits: base*2^(attempts-1), capped
@@ -123,6 +125,27 @@ type Outbox struct {
 	// (dispatched) parent rows and their deliveries older than this from the
 	// relay loop. 0 (default) keeps every row forever.
 	retention time.Duration
+}
+
+// leaseFloor is the shortest lease a claim may hold: twice one delivery's
+// budget, its handler timeout plus its settle window. The lease has no
+// option, and WithHandlerTimeout takes any budget: a handler allowed ten
+// minutes outlived the fixed five-minute lease while still inside its
+// budget, so another relay re-claimed the delivery and ran it again
+// concurrently, or, with the attempts spent, its budget sweep
+// dead-lettered a delivery that was about to succeed. One budget covers
+// the first delivery of a batch; the second covers the next one, so a
+// batch still makes progress before pump hands the rest back.
+// The sum saturates rather than wrapping: a budget near the Duration
+// limit must not come out negative and leave the five-minute lease in
+// place.
+func leaseFloor(handlerTimeout, settleTimeout time.Duration) time.Duration {
+	const maxLease = time.Duration(1<<63 - 1)
+	budget := handlerTimeout + settleTimeout
+	if budget < 0 || budget > maxLease/2 {
+		return maxLease
+	}
+	return 2 * budget
 }
 
 // Option configures an Outbox.
@@ -192,8 +215,13 @@ func WithHandlerGrace(d time.Duration) Option {
 // its cancelled context cannot be killed (Go has no goroutine
 // termination) and its late side effects count as the duplicate the
 // documented at-least-once contract already allows. d <= 0 keeps the
-// default (30s). Mirrors battery/queue's WithHandlerTimeout
-// (MemoryQueue) and WithDBHandlerTimeout (DBQueue).
+// default (30s). A budget long enough that the five-minute claim lease
+// could run out under it stretches the lease to twice the sum of the
+// budget and the settle window, so a slow handler is not re-claimed by
+// another relay while it is still allowed to run; a relay that crashes
+// holding such a claim takes that much longer to hand it on. Mirrors
+// battery/queue's WithHandlerTimeout (MemoryQueue) and
+// WithDBHandlerTimeout (DBQueue).
 func WithHandlerTimeout(d time.Duration) Option {
 	return func(o *Outbox) {
 		if d > 0 {
@@ -237,6 +265,7 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 	for _, opt := range opts {
 		opt(o)
 	}
+	o.lease = max(o.lease, leaseFloor(o.handlerTimeout, o.settleTimeout))
 	// Validate the table name once at construction (identifier
 	// injection guard, table names can't be $1-parameterised).
 	if _, err := query.SafeIdent(o.table); err != nil {

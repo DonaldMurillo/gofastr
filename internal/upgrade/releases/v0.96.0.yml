@@ -643,3 +643,9 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
+  - change: "An outbox relay's claim lease is twice the handler budget plus the 10s settle window when outbox.WithHandlerTimeout makes that longer than five minutes"
+    breaking: false
+    guidance: "A handler allowed longer than the five-minute lease was re-claimed by another relay while it still ran. Nothing to change; a relay that crashes holding such a claim now hands it on after the longer lease, so keep handler budgets as short as the work allows."
+    find:
+      uses:
+        - gofastr/framework/outbox.WithHandlerTimeout

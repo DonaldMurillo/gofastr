@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An outbox handler budget longer than the claim lease no longer runs
+  twice.** The relay's lease is a fixed five minutes, but
+  `outbox.WithHandlerTimeout` took any budget: a handler allowed ten
+  minutes was re-claimed by another relay at minute five and ran
+  concurrently, and its own success was then fenced out. The lease is
+  now twice the handler budget plus the settle window when that is
+  longer than five minutes.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

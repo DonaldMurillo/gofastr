@@ -505,6 +505,11 @@ handler)` + `ob.StartRelay(ctx)`.
   whose lease expired and was re-claimed settles nothing, so its late
   write cannot clear the re-claimant's lease and let a third relay claim
   the delivery mid-run. The current claimant's outcome decides the row.
+  The lease is five minutes, or twice the handler budget plus the 10s
+  settle window when that is longer: a `WithHandlerTimeout` of ten
+  minutes gets a lease of 20m20s, so a slow handler still inside its
+  budget is never re-claimed by another relay. The cost is that a relay
+  that crashes holding such a claim hands it on that much later.
   A relay that has less lease left than one handler run plus its settle
   hands the rest of its batch back unstarted, attempts refunded; the
   first delivery of a batch always runs. A graceful shutdown mid-batch
