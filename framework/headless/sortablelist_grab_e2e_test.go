@@ -133,3 +133,51 @@ func TestE2E_SortableLateFailureDoesNotRevertALaterSave(t *testing.T) {
 		t.Fatalf("the server saved order %q but the list shows %q after the earlier commit's late failure rolled back", s, shown)
 	}
 }
+
+// The older commit fails while the newer one is still out: that
+// failure is superseded, so the list keeps the newer move on screen
+// instead of flashing back to the last confirmed order until the newer
+// commit lands.
+func TestE2E_SortableSupersededFailureLeavesTheNewerMoveShown(t *testing.T) {
+	list := SortableList(SortableListProps{ID: "ol", Label: "Order", RPCPath: "/__hui/order", Items: []SortableItem{
+		{Key: "a", Label: "A"}, {Key: "b", Label: "B"}, {Key: "c", Label: "C"},
+	}}, nil)
+	b := startBehaviorServer(t, string(list), func(mux *http.ServeMux) {
+		mux.HandleFunc("/__hui/order", func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, 4096)
+			if err := r.ParseForm(); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			// Keyed on the order sent, not on arrival: the older
+			// commit carries b,a,c whichever connection lands first.
+			if r.PostForm.Get("order") == "b,a,c" {
+				time.Sleep(150 * time.Millisecond)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			time.Sleep(1200 * time.Millisecond)
+			w.WriteHeader(http.StatusNoContent)
+		})
+	})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr("headless-sortablelist")) {
+		t.Fatal("module never loaded")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Focus(`[data-hui-sort-key="a"]`, chromedp.ByQuery),
+		chromedp.KeyEvent(" "), chromedp.KeyEvent(kb.ArrowDown), chromedp.KeyEvent(" "),
+		chromedp.Focus(`[data-hui-sort-key="c"]`, chromedp.ByQuery),
+		chromedp.KeyEvent(" "), chromedp.KeyEvent(kb.ArrowUp), chromedp.KeyEvent(" "),
+	); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(600 * time.Millisecond)
+	if shown := evalString(t, ctx, sortKeysOf("ol")); shown != "b,c,a" {
+		t.Fatalf("with the newer commit still out, the older one's failure repainted the list to %q, want b,c,a", shown)
+	}
+	time.Sleep(1200 * time.Millisecond)
+	if shown := evalString(t, ctx, sortKeysOf("ol")); shown != "b,c,a" {
+		t.Fatalf("after the newer commit saved b,c,a the list shows %q", shown)
+	}
+}
