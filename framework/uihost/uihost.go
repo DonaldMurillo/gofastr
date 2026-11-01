@@ -3247,10 +3247,15 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// the runtime writes the decoded header straight into document.title,
 	// so the header is the tab title. Strip before the suffix is appended.
 	title = textsafe.StripInvisible(title)
+	if title == "" {
+		// An untitled screen's full document is titled with the app name
+		// (core-ui/app renderPage); the partial says the same, or the
+		// runtime keeps the previous page's title and announcement.
+		title = textsafe.StripInvisible(ds.App.Name)
+	} else if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
+		title += suffix
+	}
 	if title != "" {
-		if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
-			title += suffix
-		}
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))
 	}
 
