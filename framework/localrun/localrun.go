@@ -246,11 +246,19 @@ func List() ([]Record, error) {
 		if !ok || !idPattern.MatchString(id) {
 			continue
 		}
-		rec, ok := readRecord(root, name, id)
+		// The sidecar first. A concurrent List that finds this run dead
+		// removes the record and then its sidecar: read in the other
+		// order, the record could arrive with its sidecar already gone,
+		// a missing start value would mean "older tracker, check the pid
+		// alone", and a recycled pid would pass. Read first, a sidecar
+		// gone by now means the record is gone too, and the read below
+		// skips it.
+		start := readStart(root, id+startExt)
+		rec, ok := loadRecord(root, name, id)
 		if !ok {
 			continue
 		}
-		rec.ProcStart = readStart(root, id+startExt)
+		rec.ProcStart = start
 		if !(procalive.Identity{PID: rec.PID, Start: rec.ProcStart}).Alive() {
 			_ = root.Remove(name)
 			_ = root.Remove(id + startExt)
@@ -263,6 +271,10 @@ func List() ([]Record, error) {
 	})
 	return out, nil
 }
+
+// loadRecord is readRecord, a variable so a test can run another List's
+// removals between this one's reads.
+var loadRecord = readRecord
 
 // readRecord decodes one record file, refusing an oversized file, a
 // record whose ID does not match its file name or whose pid disagrees

@@ -1,6 +1,7 @@
 package devcmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -49,7 +50,7 @@ func TestWatcherKeepsGenSourcePackages(t *testing.T) {
 		".gofastr/state.md":   "x",
 	})
 	want := []string{"gen/api.go", "internal/gen/m.go", "main.go", "web/dist/app.js"}
-	if got := watched(root, NewWatch(root, ".")); !slices.Equal(got, want) {
+	if got := watched(root, NewWatch(context.Background(), root, ".", nil)); !slices.Equal(got, want) {
 		t.Fatalf("watched %v, want %v", got, want)
 	}
 }
@@ -63,14 +64,14 @@ func TestWatcherWalksPkgGen(t *testing.T) {
 		"gen/main.go": "package main\n\nfunc main() {}\n",
 	})
 	want := []string{"gen/main.go"}
-	if got := watched(root, NewWatch(root, "./gen")); !slices.Equal(got, want) {
+	if got := watched(root, NewWatch(context.Background(), root, "./gen", nil)); !slices.Equal(got, want) {
 		t.Fatalf("watched %v, want %v", got, want)
 	}
 	// With no go.mod go list fails; the target's directory still counts.
 	if err := os.Remove(filepath.Join(root, "go.mod")); err != nil {
 		t.Fatal(err)
 	}
-	if got := watched(root, NewWatch(root, "./gen")); !slices.Equal(got, want) {
+	if got := watched(root, NewWatch(context.Background(), root, "./gen", nil)); !slices.Equal(got, want) {
 		t.Fatalf("watched %v with go list failing, want %v", got, want)
 	}
 }
@@ -85,7 +86,15 @@ func TestWatcherKeepsGraphOnBrokenSave(t *testing.T) {
 		"main.go":    "package main\n\nimport _ \"example.com/w/gen\"\n\nfunc main() {}\n",
 		"gen/api.go": "package gen\n",
 	})
-	w := NewWatch(root, ".")
+	w := NewWatch(context.Background(), root, ".", nil)
+	// A half-typed import line: go list -e reports main with no imports
+	// and exits 0, a graph without gen/. The query runs without -e, so
+	// it fails and the last graph stands.
+	writeTree(t, root, map[string]string{"main.go": "package main\n\nimport _ \"example.com/w/gen\n\nfunc main() {}\n"})
+	w.Refresh()
+	if got := watched(root, w); !slices.Contains(got, "gen/api.go") {
+		t.Fatalf("watched %v after a half-typed import; gen/api.go dropped", got)
+	}
 	writeTree(t, root, map[string]string{"go.mod": "not a go.mod"})
 	w.Refresh()
 	if got := watched(root, w); !slices.Contains(got, "gen/api.go") {

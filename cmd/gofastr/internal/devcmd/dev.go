@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net"
 	"os"
 	"os/exec"
@@ -125,20 +124,42 @@ func RunDev(args []string) {
 		shutdown = make(chan struct{})
 	)
 
+	// watchCtx ends with the signal too: the watcher's go list can
+	// stall on a module proxy, and shutdown does not wait for it.
+	watchCtx, endWatch := context.WithCancel(context.Background())
+	defer endWatch()
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-signals
 		close(shutdown)
+		endWatch()
 	}()
+
+	exit := func() {
+		fmt.Println()
+		cli.Info("Shutting down...")
+		KillServer(&mu, &server)
+		hold.release()
+		// Remove the whole minted dir: the binary inside plus the dir
+		// itself, so restarts don't accumulate either.
+		if dir := DevServerBinDir(); dir != "" {
+			_ = os.RemoveAll(dir)
+		}
+	}
 
 	// Build and start the server initially
 	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold, shutdown) && !closed(shutdown) {
 		cli.Fail("Initial build failed. Fixing and saving will retry")
 	}
+	if closed(shutdown) {
+		// Stopped during the first build: no watcher to start.
+		exit()
+		return
+	}
 
 	// File watcher goroutine: polls for .go file changes. The watch
 	// keeps every directory the build imports from, gen/ included.
-	watch := NewWatch(dir, pkg)
+	watch := NewWatch(watchCtx, dir, pkg, nil)
 	go func() {
 		prev := watch.Scan()
 		ticker := time.NewTicker(500 * time.Millisecond)
@@ -170,15 +191,7 @@ func RunDev(args []string) {
 	for {
 		select {
 		case <-shutdown:
-			fmt.Println()
-			cli.Info("Shutting down...")
-			KillServer(&mu, &server)
-			hold.release()
-			// Remove the whole minted dir: the binary inside plus the dir
-			// itself, so restarts don't accumulate either.
-			if dir := DevServerBinDir(); dir != "" {
-				_ = os.RemoveAll(dir)
-			}
+			exit()
 			close(stop)
 			return
 		case <-reload:
@@ -541,15 +554,27 @@ func stopProcess(p *os.Process, grace time.Duration) {
 type Watch struct {
 	dir string
 	pkg string
+	// env is the build's environment, nil for this process's: the
+	// graph go list reports depends on it (CGO_ENABLED, GOOS and build
+	// tags pick files, and files pick imports).
+	env []string
+	// ctx ends a dependency query in progress: shutdown must not wait
+	// on a go list stalled on a module proxy.
+	ctx context.Context
+	// refresh serializes Refresh, so a slower, older query can never
+	// land after a newer one and put a stale graph back.
+	refresh sync.Mutex
 	// keep holds slash paths relative to dir: each package directory in
 	// the target's graph and every directory above it. Nil keeps none.
 	keep atomic.Pointer[map[string]bool]
 }
 
-// NewWatch reads pkg's package graph (go list, run in dir) and returns
-// the watch over dir.
-func NewWatch(dir, pkg string) *Watch {
-	w := &Watch{dir: dir, pkg: pkg}
+// NewWatch reads pkg's package graph (go list, run in dir with env, the
+// build's environment; nil inherits this process's) and returns the
+// watch over dir. Cancelling ctx ends a query in progress, this one and
+// every later Refresh: the watch then keeps the graph it has.
+func NewWatch(ctx context.Context, dir, pkg string, env []string) *Watch {
+	w := &Watch{dir: dir, pkg: pkg, env: env, ctx: ctx}
 	w.Refresh()
 	return w
 }
@@ -557,15 +582,39 @@ func NewWatch(dir, pkg string) *Watch {
 // listTimeout bounds the go list behind a Refresh.
 const listTimeout = 30 * time.Second
 
-// Refresh re-reads the package graph, after a rebuild that may have
-// added an import. A go list that fails (a save that left go.mod or an
-// import broken) keeps the graph it had: a package does not drop out
-// of the watch because the tree is mid-edit.
-func (w *Watch) Refresh() {
-	keep := map[string]bool{}
-	if old := w.keep.Load(); old != nil {
-		maps.Copy(keep, *old)
+// listDeps lists the directories of pkg's non-standard dependencies,
+// pkg included. A variable so a test can hold one query back.
+var listDeps = func(ctx context.Context, dir, pkg string, env []string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+	// No -e: a package that does not load fails the query, and a failed
+	// query keeps the last graph rather than a partial one.
+	list := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", pkg)
+	list.Dir = dir
+	list.Env = env
+	list.WaitDelay = 5 * time.Second
+	out, err := list.Output()
+	if err != nil {
+		return nil, err
 	}
+	var dirs []string
+	for line := range strings.Lines(string(out)) {
+		if d := strings.TrimSpace(line); d != "" {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs, nil
+}
+
+// Refresh re-reads the package graph, after a rebuild that may have
+// added or dropped an import. A successful query replaces the graph, so
+// an import that is gone stops keeping its directory. A failed one (a
+// save that left go.mod or an import broken, or a cancelled ctx) keeps
+// the graph it had: a package does not drop out of the watch because
+// the tree is mid-edit. Calls run one at a time, in call order.
+func (w *Watch) Refresh() {
+	w.refresh.Lock()
+	defer w.refresh.Unlock()
 	root, err := filepath.Abs(w.dir)
 	if err != nil {
 		return
@@ -573,6 +622,7 @@ func (w *Watch) Refresh() {
 	if real, err := filepath.EvalSymlinks(root); err == nil {
 		root = real
 	}
+	keep := map[string]bool{}
 	add := func(d string) {
 		if real, err := filepath.EvalSymlinks(d); err == nil {
 			d = real
@@ -590,17 +640,15 @@ func (w *Watch) Refresh() {
 	if strings.HasPrefix(w.pkg, ".") {
 		add(filepath.Join(root, filepath.FromSlash(w.pkg)))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
-	defer cancel()
-	list := exec.CommandContext(ctx, "go", "list", "-e", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", w.pkg)
-	list.Dir = w.dir
-	list.WaitDelay = 5 * time.Second
-	if out, err := list.Output(); err == nil {
-		for line := range strings.Lines(string(out)) {
-			if d := strings.TrimSpace(line); d != "" {
-				add(d)
-			}
+	dirs, err := listDeps(w.ctx, w.dir, w.pkg, w.env)
+	if err != nil {
+		if w.keep.Load() == nil {
+			w.keep.Store(&keep)
 		}
+		return
+	}
+	for _, d := range dirs {
+		add(d)
 	}
 	w.keep.Store(&keep)
 }

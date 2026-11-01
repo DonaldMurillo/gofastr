@@ -187,8 +187,13 @@ root, so a save in a sibling worktree or a build writing to `dist/` does
 not restart the app. A directory the built package imports from is
 always walked, whatever its name: an `internal/gen` package, app spec
 output in `gen/` that `main` imports, or `--pkg ./gen` itself. The
-import graph comes from `go list -deps`, read at start and again after
-each rebuild.
+import graph comes from `go list -deps`, run with the build's
+environment (`gofastr desktop` builds with `CGO_ENABLED=0`, and so does
+its query), read at start and again after each rebuild. A query that
+succeeds replaces the graph, so an import you remove stops keeping its
+directory walked; one that fails, because a save left the tree
+mid-edit, keeps the last graph. Ctrl-C ends a query still waiting on a
+module proxy.
 
 A build that runs longer than ten seconds prints a progress line every
 ten seconds (`Building <dir> (20s)...`). `go build` itself is silent

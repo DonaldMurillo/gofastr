@@ -238,3 +238,34 @@ func writeRaw(t *testing.T, dir, id string, r Record) {
 		}
 	}
 }
+
+// Two List calls raced: A read a recycled-pid record's JSON, B found it
+// dead and removed the JSON and its sidecar, and A then read the missing
+// sidecar as "no start value" and listed the dead run as live on the
+// pid alone. List reads the sidecar before the record.
+func TestListRaceKeepsRecycledDead(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(EnvDir, dir)
+	self := procalive.Identify(os.Getpid())
+	if self.Start == 0 {
+		t.Fatal("no start value for this process: the recycled-pid check is vacuous")
+	}
+	gone := fmt.Sprintf("%d-0000cccc", self.PID)
+	writeRaw(t, dir, gone, Record{Version: 1, ID: gone, PID: self.PID, ProcStart: self.Start - 1, URL: "http://127.0.0.1:2"})
+	prev := loadRecord
+	loadRecord = func(root *os.Root, name, id string) (Record, bool) {
+		rec, ok := prev(root, name, id)
+		// The other List removes both files between this one's reads.
+		_ = os.Remove(filepath.Join(dir, id+".json"))
+		_ = os.Remove(filepath.Join(dir, id+".start"))
+		return rec, ok
+	}
+	t.Cleanup(func() { loadRecord = prev })
+	recs, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 0 {
+		t.Fatalf("List = %+v; the recycled-pid run was listed live", recs)
+	}
+}
