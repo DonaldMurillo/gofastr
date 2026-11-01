@@ -260,9 +260,18 @@ classes, so it is the kit's and not the kernel's.
 The stateful family renders through this package the same way, and
 its Island rules are the same rule: a `TagInput` owns its chips
 client-side and needs no Island; a `Repeater` whose add/remove
-re-renders the region needs `Action` plus a complete `Island`, and
-the same buttons stay named submit controls so the surrounding form
-is the no-script path; a `Toast` with a `DismissHref` needs a
+re-renders the region needs `Action` plus a complete `Island` (the
+operations post to `Action`, the answer lands in the Island's
+`Signal`), and the same buttons stay named submit controls so the
+surrounding form is the no-script path. Implicit submission (Enter in
+a field) clicks a form's first submit control, so `Repeater` and
+`StepWizard` each render a hidden default button (part
+`default-action`, `hidden` and out of the tab order; a class map must
+not give it a display) ahead of their visible controls: the wizard's
+is Next's twin, so Enter moves forward, never Back; the repeater's is
+nameless, so Enter never submits a row's Remove, and the collections
+module forwards it to the host form's own first submit control. A
+`Toast` with a `DismissHref` needs a
 complete `Island` exactly as an `Alert`'s dismiss does; a `Tag`
 dismiss is a GET that writes its href to the URL unless
 `DismissMethod` names a mutation (POST, PUT, PATCH, DELETE), which
@@ -360,14 +369,36 @@ StepWizard and BackToTop. The navigation-behaviour members: Rail, TableOfContent
 Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar and
 SidebarRegion, and the two pure-render trees JSONTree and Gallery.
 
+A stateful control with no `ID` builds its ids from its `Name`.
+`MultiSelect`, `NumberInput`, `Slider`, `RangeSlider`, `Rating` and
+`TagInput` take a `Ctx`: through its id scope (`render.UniqueID`) a
+second control with the same `Name` on the page (a filter form and an
+edit form both naming a field `tags`) builds its ids from `tags-2`,
+so no label's `for=` reaches the first one. One instance renders the
+same ids it always did. A `TagInput` with an `ID` gives its draft
+field `<ID>-field` (the root keeps `ID`, so the label names the
+field, not the group), and its `Help` is the field's
+`aria-describedby`. A named `Counter`'s input is an attr binding
+(`data-cui-signal-mode="attr"` writing `value`), so a step moves what
+the form submits. A `Tree` row's link is out of the tab order: the
+tree is one tab stop and Enter on the row follows the link.
+
 The parts the navigation members draw beyond the shared vocabulary:
 
 - **Carousel**: `carousel-stage` (the overflow scroller the slides sit
   in), `carousel-track`, `carousel-slide`, `carousel-dot`,
-  `carousel-prev`, `carousel-next`.
+  `carousel-prev`, `carousel-next`, and a `visually-hidden` live
+  region (`data-hui-carousel-live`) the module says each slide's
+  status sentence through: `aria-live="polite"`, or `"off"` while a
+  carousel with `AutoRotateMS` rotates on its own (the APG carousel
+  pattern), turned polite again whenever the rotation is paused. Its
+  roledescriptions are `Strings.CarouselRole` / `CarouselSlideRole`.
 - **Combobox**: `combobox-form` (the no-script GET form),
   `combobox-input`, `combobox-listbox`, `combobox-option`,
-  `combobox-status`. `Pick` makes it a picker inside a host form: a
+  `combobox-meta` (an option's `Meta` line, its own part so the
+  option's class never lands on it), `combobox-status`.
+  `NoScriptAction` is checked whenever it is set, static or island:
+  same-origin, never `#`. `Pick` makes it a picker inside a host form: a
   hidden input (`data-hui-combobox-value`) submits the picked option's
   `Value`, the search input names a form that does not exist so the
   host form never submits the query, `Options` are the first rows of
@@ -377,7 +408,8 @@ The parts the navigation members draw beyond the shared vocabulary:
 - **JSONTree**: under each value's shared parts, one part per JSON
   scalar kind so a class map can colour a string without colouring a
   number: `json-colon`, `json-type`, `json-count`, `json-str`,
-  `json-num`, `json-bool`, `json-null`, `json-empty`.
+  `json-num`, `json-bool`, `json-null`, `json-empty`. `MaxStringLen`
+  counts characters, so a cut never splits one.
 - **Sidebar** draws the shell (`sidebar-drawer`, `sidebar-inline`,
   `sidebar-toggle`) and, with `SidebarRegion`, the slot-in version of
   the same content with no shell hooks; items carry `sidebar-item`
@@ -387,7 +419,11 @@ The parts the navigation members draw beyond the shared vocabulary:
   label's initial, for rail states). `Gallery` takes a
   `GalleryLightbox` wiring: the typed prop that renders the widget
   runtime's `data-cui-open` / `data-cui-deeplink` /
-  `data-fui-lightbox-group` trigger family on every item anchor.
+  `data-fui-lightbox-group` trigger family on every item anchor. Each
+  deeplink value is encoded the way the runtime's
+  `decodeURIComponent` reads it back (`&`, `=` and `+` escaped, a
+  space as `%20`), and the viewer's `src` passes the image-source
+  policy the thumbnail does.
 
 ## The behaviour module
 
@@ -507,7 +543,10 @@ same way and each owning one family of the stateful controls:
   after a repeater's island swap puts focus back on the row's control
   or the add control and says the server's status. The click record
   waits for its own answer: an unrelated insertion that lands first (a
-  toast, another region's poll) leaves it in place. It replaced the
+  toast, another region's poll) leaves it in place. A click on the
+  repeater's hidden default button (Enter in a row's field) is
+  forwarded to the host form's first submit control outside every
+  repeater. It replaced the
   retired `taginput` and `formrepeater` runtime modules, and the IME
   guard (an Enter that confirms a composition candidate commits
   nothing) moved with it.
@@ -593,7 +632,8 @@ registered the same way:
   (`data-hui-shortcut-*`), and **headless-tabs**
   (`[data-hui-tabs]`) owns the roving tabindex and the vacate stash;
   **headless-carousel** (`[data-hui-carousel]`) owns the fragment
-  controls, the status sentence and one rotation timer per root,
+  controls, the status sentence (written into the live region, quiet
+  while the carousel rotates on its own) and one rotation timer per root,
   paused on hidden documents, reduced motion, hover and focus. They
   replaced the retired `tabs` and `carousel` runtime modules.
 - **headless-panehost** (`[data-hui-panehost]`): the pane lifecycle —

@@ -133,7 +133,7 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 
 	rootAttrs := Merge(Safe(p.ExtraAttrs, "role", "aria-roledescription"), html.Attrs{
 		"role":                 "region",
-		"aria-roledescription": "carousel",
+		"aria-roledescription": w.CarouselRole,
 		"aria-label":           scrubControlBytes(p.Label),
 		"id":                   id,
 	})
@@ -154,7 +154,7 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		own := html.Attrs{
 			"id":                   sl.ID,
 			"role":                 "group",
-			"aria-roledescription": "slide",
+			"aria-roledescription": w.CarouselSlideRole,
 			"aria-label":           scrubControlBytes(label),
 		}
 		if i == 0 {
@@ -171,7 +171,8 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	// The status format travels beside the initial sentence: the module
 	// re-says the sentence through the format after every step, so the
 	// words stay the server's while the number stays live.
-	trackAttrs["data-hui-carousel-status"] = w.fill(w.CarouselSlide, "n", 1, "total", len(p.Slides))
+	status := w.fill(w.CarouselSlide, "n", 1, "total", len(p.Slides))
+	trackAttrs["data-hui-carousel-status"] = status
 	trackAttrs["data-hui-carousel-status-fmt"] = w.CarouselSlide + "|" + strconv.Itoa(len(p.Slides))
 	// The stage is the positioning context the overlaid controls
 	// hang from: it wraps exactly the track, so an absolutely
@@ -213,7 +214,19 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		// prev/next controls) is entirely the component's own.
 		stageOwn = Internal(nil)
 	}
-	children := []render.HTML{b.El("div", PartCarouselStage, stageOwn, stage...)}
+	children := []render.HTML{b.El("div", PartCarouselStage, stageOwn, stage...),
+		// The live region the slide status is said through: the module
+		// writes the sentence here after each step. A rotating carousel
+		// renders it quiet (aria-live="off", the APG carousel pattern),
+		// so an automatic step is not an interruption; the module turns
+		// it polite while the rotation is paused (hover, focus, reduced
+		// motion), which is when a step is the reader's own.
+		b.El("span", PartVisuallyHidden, Internal(html.Attrs{
+			"aria-live":              carouselLive(p.AutoRotateMS),
+			"aria-atomic":            "true",
+			"data-hui-carousel-live": "",
+		}), render.Text(status)),
+	}
 
 	if !p.NoDots {
 		dots := make([]render.HTML, 0, len(p.Slides))
@@ -233,6 +246,16 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		}), dots...))
 	}
 	return b.El("div", PartRoot, rootAttrs, children...)
+}
+
+// carouselLive is the live region's politeness at render: quiet for a
+// carousel that rotates on its own, polite for one that moves only
+// when the reader moves it.
+func carouselLive(rotateMS int) string {
+	if rotateMS > 0 {
+		return "off"
+	}
+	return "polite"
 }
 
 // carouselSlidesHaveContent reports whether any slide carries content —

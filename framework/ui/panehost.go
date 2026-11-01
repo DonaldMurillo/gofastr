@@ -35,6 +35,7 @@ package ui
 // (data-hui-pane-open-control / -close / -swap) and the drawer collapse.
 
 import (
+	"context"
 	"net/url"
 	"strings"
 
@@ -66,9 +67,13 @@ type PaneHostConfig struct {
 
 	// SecondaryLabel / TertiaryLabel label each side pane's
 	// role="region" via aria-label. Empty falls back to "Secondary" /
-	// "Tertiary".
+	// "Tertiary", in the request's language when Ctx carries one.
 	SecondaryLabel string
 	TertiaryLabel  string
+
+	// Ctx is the render context: the default pane names are said in
+	// its language. Nil says them in English.
+	Ctx context.Context
 
 	// DeepLinkParam opts this host into URL round-tripping, naming the
 	// query parameter that carries pane state, e.g. "pane" for
@@ -145,6 +150,7 @@ func PaneHost(cfg PaneHostConfig) render.HTML {
 		DeepLinkParam:  cfg.DeepLinkParam,
 		ID:             cfg.ID,
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class"),
+		Strings:        StringsFor(cfg.Ctx),
 	}, classes)
 	return paneHostStyle.WrapHTML(out)
 }

@@ -8,10 +8,11 @@ func init() {
 	Register(Spec{
 		Name: "Carousel",
 		Anatomy: []Part{PartRoot, PartCarouselStage, PartCarouselTrack, PartCarouselSlide,
-			PartCarouselDot, PartCarouselPrev, PartCarouselNext, PartMarker},
+			PartCarouselDot, PartCarouselPrev, PartCarouselNext, PartVisuallyHidden, PartMarker},
 		Hooks: []string{"data-hui-carousel", "data-hui-carousel-rotate-ms",
 			"data-hui-carousel-loop", "data-hui-carousel-track",
 			"data-hui-carousel-status", "data-hui-carousel-status-fmt",
+			"data-hui-carousel-live",
 			"data-hui-carousel-goto",
 			"data-hui-carousel-prev", "data-hui-carousel-next"},
 		WithParts: func(s Classes, parts Parts) render.HTML {

@@ -149,6 +149,7 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 				"Narrow the window to see the pane become an overlay drawer.",
 		}),
 		ui.PaneHost(ui.PaneHostConfig{
+			Ctx:            ctx,
 			ID:             "workspace",
 			Primary:        primary,
 			Secondary:      secondary,

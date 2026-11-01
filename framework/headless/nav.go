@@ -437,6 +437,13 @@ func pageHref(p PaginationProps, page int) string {
 // a 0 marking each elision. Pages small enough to show whole are shown
 // whole. It is the core pattern's algorithm, moved.
 func pageNumbers(pages, page, window int) []int {
+	// A window wider than the pages is the whole list: clamp it first,
+	// or 2*(window-1) and page±window overflow for a huge window
+	// ("show every page" as math.MaxInt) and the current page drops
+	// out of the pager.
+	if window > pages {
+		window = pages
+	}
 	if pages <= 7+2*(window-1) {
 		out := make([]int, pages)
 		for i := range out {

@@ -178,8 +178,22 @@
         if (bar > 0) {
           const fmt = pack.slice(0, bar);
           const total = pack.slice(bar + 1);
-          track.setAttribute('data-hui-carousel-status',
-            fmt.replace(/\{\{n\}\}/g, () => NS.formatNumber(idx + 1)).replace(/\{\{total\}\}/g, () => total));
+          const sentence = fmt.replace(/\{\{n\}\}/g, () => NS.formatNumber(idx + 1)).replace(/\{\{total\}\}/g, () => total);
+          track.setAttribute('data-hui-carousel-status', sentence);
+          // The live region says it. Quiet while the carousel rotates
+          // on its own (APG: aria-live off during rotation), polite
+          // when the rotation is paused or absent, so the reader's own
+          // step is heard and a timer's is not. Written only when it
+          // changed, so the boot pass's mark of slide one is silent.
+          let live = null;
+          for (const el of root.querySelectorAll('[data-hui-carousel-live]')) {
+            if (el.closest('[data-hui-carousel]') === root) { live = el; break; }
+          }
+          if (live) {
+            const rotates = root.hasAttribute('data-hui-carousel-rotate-ms') && !paused(root);
+            live.setAttribute('aria-live', rotates ? 'off' : 'polite');
+            if (live.textContent !== sentence) live.textContent = sentence;
+          }
         }
       }
     }

@@ -387,7 +387,7 @@ func (f *sentinelFiller) value(t reflect.Type, depth int) reflect.Value {
 // zero (its default), and every other field gets distinct text, so
 // optional text parts render and ids stay unique.
 func (f *sentinelFiller) stringFor(field string) string {
-	for _, suf := range []string{"Endpoint", "Action", "Href", "URL", "Src", "Path"} {
+	for _, suf := range []string{"Endpoint", "Action", "Href", "URL", "Src", "Path", "RPC"} {
 		if strings.HasSuffix(field, suf) {
 			return "/x"
 		}

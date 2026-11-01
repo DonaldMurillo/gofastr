@@ -332,6 +332,10 @@ var (
 	HuiTableOfContentsLabel = i18n.Define("ui.toc.label", "On this page")
 	HuiCarouselSlide        = i18n.Define("ui.carousel.slide", "Slide {{n}} of {{total}}")
 	HuiCarouselGoToSlide    = i18n.Define("ui.carousel.goToSlide", "Go to slide {{n}}")
+	HuiCarouselRole         = i18n.Define("ui.carousel.role", "carousel")
+	HuiCarouselSlideRole    = i18n.Define("ui.carousel.slideRole", "slide")
+	HuiPaneSecondary        = i18n.Define("ui.paneHost.secondary", "Secondary")
+	HuiPaneTertiary         = i18n.Define("ui.paneHost.tertiary", "Tertiary")
 
 	HuiJSONObject                = i18n.Define("ui.json.object", "Object")
 	HuiJSONArray                 = i18n.Define("ui.json.array", "Array")

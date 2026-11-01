@@ -25,7 +25,9 @@ body := ui.PaneHost(ui.PaneHostConfig{
 
 `Primary` is required (`PaneHost` panics when empty, mirroring
 `DataTable`). Each side pane is a labelled `role="region"`;
-`SecondaryLabel`/`TertiaryLabel` default to `"Secondary"`/`"Tertiary"`.
+`SecondaryLabel`/`TertiaryLabel` default to `"Secondary"`/`"Tertiary"`,
+said in the request's language when `Ctx` is set (the
+`ui.paneHost.secondary` / `ui.paneHost.tertiary` phrases).
 
 ## What it renders
 

@@ -211,6 +211,31 @@
     };
   }, true);
 
+  // The default-button forward. The repeater renders a hidden,
+  // nameless submit ahead of its rows so implicit submission (Enter in
+  // a row's field) does not click row 0's Remove. That hidden submit
+  // hands the submission to the host form's own default: its first
+  // submit control outside every repeater, the button Enter would
+  // click if the repeater's controls were not in the form. A disabled
+  // host default submits nothing, the way a disabled default button
+  // makes implicit submission do nothing; a form with no such control
+  // keeps the hidden submit's own nameless submission.
+  document.addEventListener('click', function (ev) {
+    const t = ev.target;
+    if (!t || !t.matches || !t.matches('[data-hui-repeater-default]')) return;
+    const form = t.form;
+    if (!form) return;
+    let host = null;
+    for (const el of form.elements) {
+      if (el === t || !el.closest || el.closest('[data-hui-repeater]')) continue;
+      if ((el.tagName === 'BUTTON' || el.tagName === 'INPUT') &&
+        (el.type === 'submit' || el.type === 'image')) { host = el; break; }
+    }
+    if (!host) return;
+    ev.preventDefault();
+    if (!host.disabled) form.requestSubmit(host);
+  });
+
   // ─── the arrival pass ────────────────────────────────────────────
 
   // After an island swap the kernel hands the inserted region here:
