@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -48,6 +49,11 @@ type SignalToggleConfig struct {
 	Slice      *store.Slice[bool] // optional; supplies the signal name + initial value, takes precedence
 	Label      string             // optional:  aria-label (falls back to the signal name)
 	Class      string             // optional:  extra CSS classes
+	// Ctx is the render context. With a Slice, the toggle's first
+	// paint (aria-checked and the label) is the slice's value for this
+	// request: what a producer Seeded on Ctx, else its default. With
+	// no Ctx the declared default is stamped.
+	Ctx context.Context
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the toggle's root
 	// <button>. Keys the component owns are dropped: class (use
@@ -69,7 +75,9 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	initial := false
 	if cfg.Slice != nil {
 		name = cfg.Slice.Name()
-		initial = cfg.Slice.Default()
+		// The request's value (a producer's Seed on Ctx), the same one
+		// the page's seed hands the runtime.
+		initial = cfg.Slice.Value(cfg.Ctx)
 	}
 	if name == "" {
 		panic("ui: SignalToggle requires SignalName or Slice")
