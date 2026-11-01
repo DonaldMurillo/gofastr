@@ -83,6 +83,11 @@ func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
 	if err != nil {
 		return err
 	}
+	extra, err := extraLinkerFlags(f)
+	if err != nil {
+		return err
+	}
+	ldflags += extra
 	bundleRoot, err := linuxBundleRoot(f, name, arch)
 	if err != nil {
 		return err
