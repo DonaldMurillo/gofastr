@@ -122,22 +122,33 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 
 // sweepExpiredOnCreate reaps expired rows at most once per
 // magicLinkSweepInterval, the EntitySessionStore posture: a failure is
-// logged, never returned, and does not advance lastSweep.
+// logged, never returned. The slot is claimed under sweepMu and the DELETE
+// runs outside it, so a slow sweep never queues every mint behind the
+// mutex; a failed sweep retries after magicLinkSweepRetry rather than on
+// the very next mint, where a lock-timeout DELETE would run on every one.
 func (s *SQLMagicLinkTokenStore) sweepExpiredOnCreate(ctx context.Context) {
-	s.sweepMu.Lock()
-	defer s.sweepMu.Unlock()
 	now := time.Now()
+	s.sweepMu.Lock()
 	if now.Sub(s.lastSweep) < magicLinkSweepInterval {
+		s.sweepMu.Unlock()
 		return
 	}
+	s.lastSweep = now
+	s.sweepMu.Unlock()
 	if _, err := s.db.ExecContext(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteFolded(s.table)),
 		now.Unix()); err != nil {
 		slog.Warn("auth: expired magic-link token sweep failed", "err", err)
-		return
+		s.sweepMu.Lock()
+		if s.lastSweep.Equal(now) {
+			s.lastSweep = now.Add(magicLinkSweepRetry - magicLinkSweepInterval)
+		}
+		s.sweepMu.Unlock()
 	}
-	s.lastSweep = now
 }
+
+// magicLinkSweepRetry is how soon a failed sweep is tried again.
+const magicLinkSweepRetry = time.Minute
 
 // RedeemToken atomically consumes a token (single-use) via DELETE … RETURNING,
 func (s *SQLMagicLinkTokenStore) RedeemToken(ctx context.Context, token string) (string, error) {

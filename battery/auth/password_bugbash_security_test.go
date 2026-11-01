@@ -204,3 +204,25 @@ func TestPasswordFloorCountsCharacters(t *testing.T) {
 		}
 	}
 }
+
+// countingHasher has a mutable field: keyed on its field values, every
+// call was a new cache key, paying a full KDF and growing the dummy and
+// placeholder caches without bound (2026-11-01 review).
+type countingHasher struct{ calls *int }
+
+func (h countingHasher) Hash(p string) (string, error) {
+	*h.calls++
+	return BcryptHasher{}.Hash(p)
+}
+func (h countingHasher) Verify(p, hash string) bool { return BcryptHasher{}.Verify(p, hash) }
+
+func TestCustomHasherDummyCachedOnce(t *testing.T) {
+	withDefaultBcryptCost(t)
+	n := 0
+	h := countingHasher{calls: &n}
+	a := dummyHashFor(h)
+	b := dummyHashFor(countingHasher{calls: new(int)})
+	if a != b || n != 1 {
+		t.Errorf("custom hasher dummy derived %d times (same=%v), want once per type", n, a == b)
+	}
+}
