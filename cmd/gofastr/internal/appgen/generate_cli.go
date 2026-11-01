@@ -135,8 +135,9 @@ var cliOpHelp = map[filter.FilterOp]string{
 // predicate every server filter surface applies — so the CLI can never
 // offer a flag the list handler answers 400, nor hide one it accepts
 // (the old hardcoded Comparable/Likeable lists did both). OpIn suits
-// every type and is folded into the bare equality flag (a comma list),
-// so it contributes no flag of its own.
+// every type and is folded into the bare equality flag: a value holding
+// a comma goes to the IN key (filterFlag.inParam), so it contributes no
+// flag of its own.
 func cliFilterOps(t schema.FieldType) []cliFilterOp {
 	var ops []cliFilterOp
 	for _, s := range filter.FilterSuffixes {
@@ -2019,11 +2020,15 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		if f.NoQuery || f.NoEq {
 			continue
 		}
-		help := "filter: " + f.Snake + " equals (comma list = IN)"
+		// The server reads ?status=a,b as equality on the literal "a,b",
+		// so the help's "comma list = IN" is kept true by the flag: a
+		// value holding a comma goes to the IN key instead (inParam).
+		inKey := ent.filterKeys.Key(f.Snake, filter.OpIn)
+		help := "filter: " + f.Snake + " equals (a comma list sends " + inKey + ", IN)"
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
-		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, ent.filterKeys.Key(f.Snake, filter.OpEq), help)
+		fmt.Fprintf(sb, "\t{flag: %q, param: %q, inParam: %q, help: %q},\n", f.Flag, ent.filterKeys.Key(f.Snake, filter.OpEq), inKey, help)
 		// One row per operator the field's type accepts, from the same
 		// FilterOps derivation: the table cannot name a param the server
 		// refuses, and a new operator in filter.FilterSuffixes lands
@@ -2290,8 +2295,8 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if uploads {
 		imports = append(imports, "\t\"path/filepath\"")
 	}
-	if endpoint {
-		imports = append(imports, "\t\"strings\"")
+	if endpoint || list {
+		imports = append(imports, "\t\"strings\"") // list: a comma list on an equality flag sends its IN key
 	}
 	if watch || uploads {
 		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
@@ -2302,12 +2307,16 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list {
 		sb.WriteString(`// filterFlag binds one list flag to the query param it sets. String
 // filters (the default) only set their param when non-empty; isBool
-// filters (soft-delete trashed) set theirs to "true" when given.
+// filters (soft-delete trashed) set theirs to "true" when given. An
+// equality flag carries inParam, the field's IN key: a value holding a
+// comma goes there (--status a,b sends status_in=a,b), since the server
+// reads ?status=a,b as equality on the literal "a,b".
 type filterFlag struct {
-	flag   string
-	param  string
-	help   string
-	isBool bool
+	flag    string
+	param   string
+	inParam string
+	help    string
+	isBool  bool
 }
 
 // runListVerb is the shared list body: the pagination/output flags, the
@@ -2360,6 +2369,8 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 			if *boolVals[i] {
 				q.Set(f.param, "true")
 			}
+		} else if f.inParam != "" && strings.Contains(*strVals[i], ",") {
+			set(f.inParam, *strVals[i])
 		} else {
 			set(f.param, *strVals[i])
 		}

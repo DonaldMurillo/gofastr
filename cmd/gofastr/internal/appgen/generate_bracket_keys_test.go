@@ -39,6 +39,11 @@ func TestRenderCLI_CollidingFilterKeyUsesBracket(t *testing.T) {
 		`{flag: "stage-in-ne", param: "stage_in_ne"`,
 		`{flag: "title", param: "title"`,
 		`{flag: "title-like", param: "title_like"`,
+		// A comma list on an equality flag goes to the field's IN key,
+		// itself bracket-spelled where the suffix key reads two ways.
+		`{flag: "stage", param: "stage", inParam: "stage[in]"`,
+		`{flag: "stage-in", param: "stage_in[eq]", inParam: "stage_in_in"`,
+		`{flag: "title", param: "title", inParam: "title_in"`,
 	} {
 		if !strings.Contains(table, want) {
 			t.Errorf("filter table lacks %s:\n%s", want, table)
