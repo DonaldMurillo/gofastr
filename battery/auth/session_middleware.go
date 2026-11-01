@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -130,13 +131,25 @@ func sessionRecheck(mgr *AuthManager, token string, log *slog.Logger) handler.Pr
 	}
 }
 
-// sessionCookieCandidates returns the values of every cookie named name, in
-// the order the client sent them.
+// maxSessionCookieCandidates bounds the same-name session cookies one
+// request is judged on. A browser holds two or three at most (a parent
+// domain's and the host's, or a stale Path); net/http parses up to 3000,
+// and each candidate costs a session-store query (two on logout), so an
+// anonymous request with 2999 copies drove 2999 queries on every route.
+const maxSessionCookieCandidates = 8
+
+// sessionCookieCandidates returns the distinct values of the cookies named
+// name, in the order the client sent them, at most
+// maxSessionCookieCandidates of them.
 func sessionCookieCandidates(r *http.Request, name string) []string {
 	var out []string
-	for _, c := range r.Cookies() {
-		if c.Name == name && c.Value != "" {
-			out = append(out, c.Value)
+	for _, c := range r.CookiesNamed(name) {
+		if c.Value == "" || slices.Contains(out, c.Value) {
+			continue
+		}
+		out = append(out, c.Value)
+		if len(out) == maxSessionCookieCandidates {
+			break
 		}
 	}
 	return out
