@@ -3840,7 +3840,9 @@ few lines, and link the PR or the docs page for the rest.
 - **`App.Shutdown` ends open streams when the drain starts.** An SSE
   response, a `core/stream` WebSocket (closed with 1001) or a hijacked
   connection held Shutdown to its deadline. A stream is known by its
-  response, not its `Accept` header. `stream.WithUpgradeHook` is new.
+  response, not its `Accept` header. `stream.WithUpgradeHook` is new. A
+  WebSocket whose connection dies during the close handshake ends at
+  once instead of waiting out `CloseTimeout`.
 - **`gofastr dev` lets the app shut down.** It killed the app 100 ms
   after SIGTERM on every save; it now waits up to 5 s and returns as soon
   as the app exits. A signal during a build kills the build's process
