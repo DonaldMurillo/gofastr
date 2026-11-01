@@ -265,7 +265,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 
 | Attribute | Purpose |
 |---|---|
-| `data-cui-rpc="<path>"` | Click on the element (or submit of a `<form data-cui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-cui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, and the error node's id added to its `aria-describedby` beside any hint already there; the retry that removes a live node drops only that id) and places a `role="alert"` paragraph by the headless hooks, never by a kit class: it fills a reserved `[data-hui-field-error]` node inside the `[data-hui-field]` group (`FormFieldConfig.ReserveError`) or appends a live one, and after a bare `[data-hui-choice]` label it inserts the paragraph as the next sibling; when no field matched, the `error` text is toasted (module or fallback). The form's next answer, refused or successful, first clears every error the form shows, the messages the server rendered with the page included: `aria-invalid` goes, live nodes are removed and every other error node empties back to reserved. In the JSON body a repeated name becomes an array (checkbox group, multi-select) with one exception, the HTML checkbox idiom: a hidden input followed by a checkbox of the same name (hidden `false`, checkbox `true`) serializes as one scalar, the last value, so a bool field submits `"true"` or `"false"` and never `["false","true"]`. A trigger that carries no value and no `data-cui-rpc-signal` (a button, span or link outside a form, holding no named control) ignores a click while its request is in flight, so a double click sends one request even before the rpc module has loaded; a form, a control or a signal-targeted trigger supersedes instead, the newest dispatch winning. |
+| `data-cui-rpc="<path>"` | Click on the element (or submit of a `<form data-cui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-cui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, and the error node's id added to its `aria-describedby` beside any hint already there; the retry that removes a live node drops only that id) and places a `role="alert"` paragraph by the headless hooks, never by a kit class: it fills a reserved `[data-hui-field-error]` node inside the `[data-hui-field]` group (`FormFieldConfig.ReserveError`) or appends a live one, and after a bare `[data-hui-choice]` label it inserts the paragraph as the next sibling; when no field matched, the `error` text is toasted (module or fallback). The envelope is read in either spelling: CRUD's flat `{error: "…", fields}` or `core/handler.WriteError`'s nested `{success: false, error: {code, message, fields}}`, which every typed handler (`handler.ValidationError`, `HandlerAdapter`) answers with; the toast then carries `error.message`. The form's next answer, refused or successful, first clears every error the form shows, the messages the server rendered with the page included: `aria-invalid` goes, live nodes are removed and every other error node empties back to reserved. In the JSON body a repeated name becomes an array (checkbox group, multi-select) with one exception, the HTML checkbox idiom: a hidden input followed by a checkbox of the same name (hidden `false`, checkbox `true`) serializes as one scalar, the last value, so a bool field submits `"true"` or `"false"` and never `["false","true"]`. A trigger that carries no value and no `data-cui-rpc-signal` (a button, span or link outside a form, holding no named control) ignores a click while its request is in flight, so a double click sends one request even before the rpc module has loaded; a form, a control or a signal-targeted trigger supersedes instead, the newest dispatch winning. |
 | `data-cui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-cui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-cui-rpc-close` | Containing widget closes on 2xx |
@@ -288,9 +288,9 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-cui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. The runtime also refuses a destination that is not same-origin: the SPA navigator applies its own origin check, and the pre-boot `location.href` fallback applies the same one inline, so a `javascript:` or cross-origin value in this attribute navigates nowhere. |
 | `data-cui-confirm="<message>"` | Pre-flight confirmation gate, honored on every form submit the runtime sees — native POST, `data-cui-spa`, and `data-cui-rpc` forms alike — and on non-form `data-cui-rpc` clicks. On a form, an attribute on the submit button takes precedence over one on the form element. The ask is the `confirm` module's themed dialog: the submit is cancelled while it is open and submitted again on an accept (a module that cannot load fails closed: nothing is sent). A page with no confirm template, or a browser without `showModal`, asks with `window.confirm(<message>)`. Cancel aborts: the submit stays prevented (a native form never navigates), the RPC never fires. Use for destructive actions (delete, revoke). |
 | `data-cui-confirm-title="<text>"` / `data-cui-confirm-accept="<label>"` / `data-cui-confirm-tone="danger"` | Beside `data-cui-confirm`, on the element that carries it: the dialog's heading, its accept button's label, and the danger tone, which shows the template's danger accept button in place of the primary one. Absent, the template's own defaults stand. `interactive.Action.WithConfirmDialog` writes all four. |
-| `<template data-cui-confirm-dialog>` / `data-cui-confirm-part="title\|message\|accept\|accept-danger\|cancel\|label"` | The kit's confirm dialog, rendered once per page by the host from the template a kit registers (`preset.ConfirmTemplate`; `framework/ui` registers one). The `confirm` module clones the template's `<dialog>`, writes the gated element's text into the `title` and `message` parts (and `label`, the accept button's text node, when one is marked), drops the accept button the tone does not pick, loads the sheets the clone names (`data-cui-comp` and `data-cui-scope` on its root and inside it) and waits for those alone, not for unrelated prewarms (the host prefetched them at first paint, so this is normally a cache hit; each wait is bounded at 3 seconds), opens it with `showModal()`, focuses `cancel`, and resolves true on the accept button and false on cancel, Escape or a backdrop click. The clone is removed on close and focus returns to the trigger. One question at a time: an ask made while another waits on its sheets or stands open resolves false at once, so a double click opens one dialog and sends at most one request. The module names no class. |
+| `<template data-cui-confirm-dialog>` / `data-cui-confirm-part="title\|message\|accept\|accept-danger\|cancel\|label"` | The kit's confirm dialog, rendered once per page by the host from the template a kit registers (`preset.ConfirmTemplate`; `framework/ui` registers one). The `confirm` module clones the template's `<dialog>`, writes the gated element's text into the `title` and `message` parts (and `label`, the accept button's text node, when one is marked), drops the accept button the tone does not pick, loads the sheets the clone names (`data-cui-comp` and `data-cui-scope` on its root and inside it) and waits for those alone, not for unrelated prewarms (the host prefetched them at first paint, so this is normally a cache hit; each wait is bounded at 3 seconds), opens it with `showModal()`, focuses `cancel`, and resolves true on the accept button and false on cancel, Escape or a backdrop click. The clone is removed on close and focus returns to the trigger. Asked from inside a modal widget, the dialog owns the keyboard while it is open: the widget's Tab trap and Escape handler stand down for a modal `<dialog>` that is not inside the top widget, so Tab reaches the accept button and Escape closes only the dialog. One question at a time: an ask made while another waits on its sheets or stands open resolves false at once, so a double click opens one dialog and sends at most one request. The module names no class. |
 | `data-cui-rpc-trigger="input"` | On a `<form data-cui-rpc=…>`, dispatch the RPC on every `input` event from any control inside, after a debounce window. |
-| `data-cui-rpc-debounce-ms="<ms>"` | Debounce window for `data-cui-rpc-trigger="input"`. Default 250. |
+| `data-cui-rpc-debounce-ms="<ms>"` | Debounce window for `data-cui-rpc-trigger="input"`. Default 250. Any other dispatch of the same node inside the window (a submit) cancels the pending request, so the form is sent once, and a node that left the page before its window ends sends nothing. |
 | `data-cui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot, idempotent on re-click via `data-cui-rpc-after-done`. |
 | `data-cui-rpc-after-disable` | On 2xx RPC, mark the trigger as `aria-disabled="true"` and (for `<button>`/`<input>`) set `disabled=true` permanently. Use with `after-text` for "Saved ✓" / "Revealed ✓" feedback. |
 | `data-cui-rpc-scroll-to="<selector>"` | On 2xx RPC, smooth-scroll the matching element into view. Use to direct the user's eye at newly-inserted content. |
@@ -364,7 +364,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-dropdown-open` | Runtime-written marker on a `data-cui-dropdown-wrap` while its dropdown is open. CSS keys the open state off it; the runtime uses it to find and close open dropdowns. |
 | `data-cui-animate-signal="<name>"` | On an element wired by the `animate` runtime module: names the signal to watch. When the signal becomes truthy the runtime adds `data-cui-animate-class`; falsy removes it. Initial state is applied on wire. |
 | `data-cui-animate-class="<class>"` | The CSS class the `animate` module toggles on the element as its `data-cui-animate-signal` value flips between truthy and falsy. |
-| `data-cui-reveal="<type>"` | Marks an element for the `reveal` runtime module's scroll-into-view animation. The element gets `cui-hidden` immediately; when it enters the viewport the runtime swaps in `cui-revealed` + `cui-reveal-<type>` (e.g. `data-cui-reveal="fade-up"` → `cui-reveal-fade-up`). One-shot. |
+| `data-cui-reveal="<type>"` | Marks an element for the `reveal` runtime module's scroll-into-view animation. The element gets `cui-hidden` immediately; when it enters the viewport the runtime swaps in `cui-revealed` + `cui-reveal-<type>` (e.g. `data-cui-reveal="fade-up"` → `cui-reveal-fade-up`). One-shot. The module loads after first paint, so an element already on screen at its first scan has been painted visible: it is marked `cui-revealed` and never hidden (hiding it to fade it back was a blink on every load). Content scanned later (a navigation, an island swap) is hidden before it paints and keeps the entrance. |
 | `data-fui-dropzone-preview` | On a `<input type="file">` inside a `framework/ui.FileDropzone`: opt the input into image-preview rendering. After each `change`, the `filedropzone` module (framework/ui's own) FileReader-reads each selected image and renders `<img>` tags into the sibling `[data-fui-dropzone-preview-for="<input-id>"]` container; the drop itself, the chosen-names list and the pick announcement are the headless module's `data-hui-drop` hooks. |
 | `data-fui-dropzone-preview-for="<input-id>"` | On the previews strip element: links it to the input it should display previews for. |
 | `data-hui-back-to-top-visible` | Runtime-written BackToTop visibility marker (`headless-navigation` owns it; no component renders it). CSS uses it to reveal the control once the threshold is crossed. |
@@ -437,7 +437,14 @@ input/change/submit). `data-action-mount="<name>"` fires the named action
 *once on hydration* (and again after each SPA nav), the hook a server-rendered
 island uses to populate itself on load, since the other triggers are
 user-event-driven. Any `data-param-*` on the element flows into the handler's
-`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`. The host
+`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`. Markup inserted outside a navigation (an intercepted
+route's overlay, an island swap, a widget's chrome) fires its mounts too,
+each element once, through the `actionloader` module a page with compiled
+actions loads (boot marks what its own pass fired). The module also
+fetches the compiled action script of a component such markup brings (retrying one that
+failed to load), then fires that component's mounts once it registers
+(`core-ui/runtime/action_mount_inserted_e2e_test.go`,
+`actionloader_inserted_e2e_test.go`). The host
 compiles a screen's actions at `Mount` and again in `ValidateBoot`, which
 `App.Start` calls after every plugin `Init`, so a screen a plugin registers
 there gets them; a screen registered while the app serves does not.
@@ -450,7 +457,7 @@ there gets them; a screen registered while the app serves does not.
 | `X-Gofastr-Partial: true` | Body is a screen-partial (used by the cross-page nav path) |
 | `X-Gofastr-Swap: <layer key>` | Names the layout layer the partial body renders BELOW (see `data-cui-layout-key`). The runtime swaps the matching `data-cui-layout-slot` cell and records the key on the cache entry so a replay swaps the same cell. Emitted when the navigation request carried `X-Gofastr-From` and the two routes share an addressable chain prefix; a key the DOM doesn't have (deploy skew) makes the runtime recover with a full-page load. Absent → the body is bare screen content for the whole `<main>`. |
 | `X-Gofastr-Envelope: 2` | Set when the partial body is a fills envelope: the seed island, then the primary `<template data-cui-fill>` (addressed by the bare swap key, no hash), then one hashed template per kept-layer fill. Emitted only when the request carried `X-Gofastr-Fills: 2` and the render produced fills; otherwise today's body. |
-| `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) An untitled screen sends no header and keeps the current `document.title` verbatim: only the header is decoded, and a header that fails to decode is used as sent. |
+| `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) An untitled screen's header carries the app name, the same title its full document gets (uihost; a partial that omitted it left the previous page's title and announcement in place). With no header at all (another server) the runtime keeps the current `document.title` verbatim: only the header is decoded, and a header that fails to decode is used as sent. |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders, never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 | `X-Gofastr-Document: <URL>` | Load the URL as a page (`location.replace`) and swap nothing. uihost sends it with a 200 and no body when a screen policy redirects a runtime fetch to an absolute http(s) URL: a nav partial, or the whole-page fetch of a cross-chain navigation (told apart from a document load by `Sec-Fetch-Mode`). fetch follows a 303 itself, and a site that refuses CORS, an identity provider's login for one, fails it. Anything but an `http://` or `https://` URL fails the navigation instead. A relative target keeps `X-Gofastr-Location`. |
 
@@ -463,7 +470,10 @@ are **not** on (an admin action that stales `/pricing`, a create that
 stales every page of a list). The JS mirrors are
 `__gofastr.invalidate(...selectors)` (same selector rules as the header)
 and `__gofastr.refresh()` (re-fetch and re-render the current screen,
-bypassing the cache). Scope is per tab: the header only reaches the tab
+bypassing the cache). A forced fetch (`refresh()`,
+`navigate(path, {force: true})`, `data-cui-rpc-navigate`) joins a
+navigation already fetching the same path, never one replaying a cached
+or prefetched copy: that copy is what the force exists to replace. Scope is per tab: the header only reaches the tab
 whose request carried it, and an evicted entry costs nothing until that
 tab actually navigates. Surfaces that must stay fresh across tabs
 belong on the polling rung (`data-cui-poll`), not on cache eviction.
@@ -517,10 +527,14 @@ userland to take over a link (e.g. smooth-scroll to an in-page section)
 instead of racing the router with a capture-phase click listener. The
 event does NOT fire for clicks the router ignores: modifier-key clicks,
 external / `mailto:` / `tel:` links, `<a download>`, non-`_self`
-targets, unknown routes, `data-cui-rpc` anchors, and links to the
-current path — including a link whose only difference from the current
-URL is the `#fragment`; that click falls through to native hash
-behavior.
+targets, unknown routes, `data-cui-rpc` anchors, clicks a listener
+that ran first already `preventDefault()`ed (a listener on the anchor
+or any element below `document` runs before the router's delegated
+listener, and the router then leaves the click alone), and links to
+the current path. A link to the current path with a `#fragment` falls
+through to native hash behavior; one without a fragment, including a
+repeat click on a link whose navigation is still loading, is
+suppressed and does nothing, never a whole-document reload.
 
 **Widget lifecycle events (`fui:widget-open` / `fui:widget-close`).**
 The widgets module dispatches `fui:widget-open` on `document` at the
@@ -1264,7 +1278,9 @@ The `formerrors` demand module (`runtime/src/formerrors.js`) is the
 failure half of a `data-cui-rpc` form submission. `rpc.js` loads it the
 first time a form's request answers non-2xx and hands it the form, the
 status, and the body; the module renders the server's validation
-envelope (`{error, fields: {name: [messages]}}`) beside each named
+envelope (`{error, fields: {name: [messages]}}`, or the nested
+`{error: {message, fields}}` that `core/handler.WriteError` writes for
+every typed handler) beside each named
 field's control, by the headless hooks `framework/ui` renders for a
 server-side error (a `data-hui-field-error` node inside the
 `data-hui-field` group, filled or reserved; the next sibling of a bare
@@ -1414,7 +1430,8 @@ is the browser's own job, same result.
 
 An answer that is not a redirect is handled as on a `data-cui-rpc`
 form. A refusal (non-2xx) renders the server's validation envelope
-(`{error, fields}`) into the fields through the `formerrors` module, or
+(`{error, fields}`, or `core/handler`'s nested `{error: {message,
+fields}}`) into the fields through the `formerrors` module, or
 toasts the status when no field matches. A 2xx answer delivers its
 `X-Gofastr-Toast` and `X-Gofastr-Invalidate` headers. Every intercepted
 submit carries the page's `<meta name="csrf-token">` as `X-CSRF-Token`,
@@ -2092,9 +2109,37 @@ showed a phone on a slow link every new page unstyled for a moment.
 
 All three converge on `loadComponentCSS(name)`. The function is
 **synchronous**: no `await` between the existence check and
-`appendChild`, plus a `_pendingLinks` guard, so promoting a
+inserting the link, plus a `_pendingLinks` guard, so promoting a
 component across modes or having two scans race never produces a
 duplicate request.
+
+The runtime inserts each sheet it loads **before** `app.css`, the
+element carrying `id="cui-app-css"` (the host puts that id on the
+linked and the inlined `app.css` alike, and on the embed shell's link),
+so a component whose sheet arrives after first paint keeps the order
+the server head gives every other one and the host's override still
+wins a tie. A sheet whose fetch fails (a 503 mid-deploy, a dropped
+connection) gives its name back: the link is removed and, after a 3 s
+cooldown (so a poll or push region swapping the same markup cannot
+re-request a sheet that keeps failing on every swap), the next scan of
+that marker requests it again. The boot seeding from
+`data-cui-bundle` skips a bundle link that failed (its sheet is empty),
+so its components fall to the scanner instead of staying unstyled.
+Boot's mutation observer runs the same scan over every inserted subtree
+(its root included), so markup written by a path that does not scan
+for itself (a compiled action's `updateHTML` or `fetchPage`, a module's
+own `innerHTML`) still loads its components' sheets.
+
+The server keeps only registered names in a page's sheet list. A
+`data-cui-comp` marker that names nothing (host markup, a typo, a
+component this replica lacks mid-deploy) never reaches the bundle URL or
+its `data-cui-bundle` list, and the bundle endpoint skips a name it does
+not know instead of refusing the whole bundle; such an answer cannot
+match its `?v=`, so it is served `no-cache`.
+
+An embed frame's shell links no component sheet. The frame starts the
+fetched content's sheets and waits for them (bounded like every sheet
+wait) before it writes the markup, so the content paints styled.
 
 Navigation's hash and history scroll writes wait for newly requested
 component stylesheets to load or fail before measuring the page — and

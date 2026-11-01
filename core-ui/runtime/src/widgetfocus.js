@@ -3,6 +3,15 @@
 (function () {
   'use strict';
   const G = window.__gofastr;
+  // A modal <dialog> outside the top layer's root (the confirm module's,
+  // opened with showModal over a widget) owns the keyboard while it
+  // shows: the browser makes everything else inert and closes it on
+  // Escape itself, so neither handler below may act for the widget.
+  const foreign = (root) => {
+    let d = null;
+    try { d = document.querySelector('dialog:modal'); } catch (_) {}
+    return !!d && !(root && root.contains(d));
+  };
 
   if (!document.__fuiModalEsc) {
     document.__fuiModalEsc = true;
@@ -20,7 +29,7 @@
       const m = reg(mName), p = reg(pName);
       const name = p && (!m || (p.seq || 0) > (m.seq || 0)) ? pName : mName;
       const top = name === pName ? p : m;
-      if (top && top.closeOnEscape) {
+      if (top && top.closeOnEscape && !foreign(top.root)) {
         e.stopPropagation();
         G.closeWidget(name);
       }
@@ -35,7 +44,7 @@
       const root = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
         ? G._widgets[name]?.root
         : undefined;
-      if (!root) return;
+      if (!root || foreign(root)) return;
       const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(function (el) {
         return el.offsetParent !== null || el === document.activeElement;
       });

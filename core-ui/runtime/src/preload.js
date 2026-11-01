@@ -126,10 +126,15 @@
         // A redirect, signalled or followed, is the click's to take.
         if (!r.ok || r.redirected || r.headers.get('X-Gofastr-Location')) return null;
         if (r.headers.get('X-Gofastr-Partial') !== 'true') return null;
+        // The navigators' decode: uihost percent-encodes a key holding
+        // non-ASCII or % (headers read as Latin-1); a key that does not
+        // decode stays as sent. Raw, it never matched a live slot.
+        let layer = r.headers.get('X-Gofastr-Swap') || '';
+        try { layer = decodeURIComponent(layer); } catch (_) {}
         return r.text().then((html) => ({
           html,
           title: NS._title(r),
-          layer: r.headers.get('X-Gofastr-Swap') || '',
+          layer,
           // An envelope body parses at apply time (nav owns the
           // parser); the flag tells it which shape it holds.
           envelope: r.headers.get('X-Gofastr-Envelope') === '2',
