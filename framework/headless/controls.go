@@ -499,10 +499,11 @@ type RatingProps struct {
 	// defaults; a layer above sets them from the request's language.
 	Strings *Strings
 
-	// Ctx is the render context. The choices' ids are built from Name;
-	// through Ctx's id scope (render.UniqueID) a second rating with the
-	// same Name on the page builds them from Name-2 instead of
-	// repeating them. With no Ctx the Name is used as is.
+	// Ctx is the render context. The choices' ids are <ID>-1..<ID>-Max
+	// when ID is set (the ID is reserved with them), and are built from
+	// Name otherwise: through Ctx's id scope (render.UniqueID) a second
+	// rating with the same Name on the page builds them from Name-2
+	// instead of repeating them. With no Ctx the Name is used as is.
 	Ctx context.Context
 }
 
@@ -554,13 +555,14 @@ func Rating(p RatingProps, s Classes) render.HTML {
 		"aria-label": p.Label,
 		"id":         p.ID,
 	}))
-	// The choices' ids build from the Name (never the ID), handed out
-	// through the id scope with every choice's suffix.
+	// The choices' ids build from the instance id (instanceID): the
+	// caller's ID, reserved as is, or else the Name handed out through
+	// the id scope — each with every choice's suffix taken with it.
 	family := make([]string, max)
 	for i := range family {
 		family[i] = "-" + strconv.Itoa(i+1)
 	}
-	base := render.UniqueID(p.Ctx, p.Name, family...)
+	base := instanceID(p.Ctx, p.ID, p.Name, family...)
 	items := make([]render.HTML, 0, max*2)
 	for i := max; i >= 1; i-- {
 		idV := base + "-" + strconv.Itoa(i)

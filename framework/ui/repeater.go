@@ -49,6 +49,15 @@ type RepeaterConfig struct {
 
 // repeaterClasses dresses headless.Repeater's parts in this package's
 // own vocabulary — the names the registered ui-repeater sheet matches.
+//
+// The row's remove and the add control are kit buttons: they wear the
+// button classes (buttonClassTokens, the LoadAlways ui-button sheet)
+// under this component's marker, the way ToggleAction and
+// OptimisticAction do, so they read as the same controls as every
+// other button on the page — a ghost remove beside each row, a
+// secondary add under the list. PartDefaultAction is deliberately
+// absent: the hidden default submit must take no class, since the
+// button sheet's display would beat the UA's [hidden] rule.
 var repeaterClasses = headless.Classes{
 	headless.PartRoot:           "fui-repeater",
 	headless.PartLabel:          "fui-repeater__label",
@@ -56,8 +65,8 @@ var repeaterClasses = headless.Classes{
 	headless.PartRepeaterItem:   "fui-repeater__item",
 	headless.PartRepeaterFields: "fui-repeater__item-fields",
 	headless.PartActions:        "fui-repeater__item-actions",
-	headless.PartDismiss:        "fui-repeater__remove",
-	headless.PartRepeaterAdd:    "fui-repeater__add",
+	headless.PartDismiss:        buttonClassTokens(ButtonGhost, ButtonSizeDefault) + " fui-repeater__remove",
+	headless.PartRepeaterAdd:    buttonClassTokens(ButtonSecondary, ButtonSizeDefault) + " fui-repeater__add",
 	headless.PartStatus:         "fui-visually-hidden",
 }
 
@@ -142,7 +151,8 @@ var repeaterStyle = registry.RegisterStyle("ui-repeater", repeaterCSS)
 
 func repeaterCSS(t style.Theme) string {
 	return `[data-cui-comp="ui-repeater"] { display: flex; flex-direction: column; gap: var(--spacing-sm); }
-[data-cui-comp="ui-repeater"] .fui-repeater__items { display: flex; flex-direction: column; gap: var(--spacing-md); }
+[data-cui-comp="ui-repeater"] .fui-repeater__label { font-size: var(--text-sm); font-weight: var(--font-weight-medium); color: var(--color-text); }
+[data-cui-comp="ui-repeater"] .fui-repeater__items { display: flex; flex-direction: column; gap: var(--spacing-md); list-style: none; margin: 0; padding: 0; }
 [data-cui-comp="ui-repeater"] .fui-repeater__item { display: flex; gap: var(--spacing-sm); align-items: flex-start; padding: var(--spacing-sm); border: var(--stroke-thin, 1px) solid var(--color-border); border-radius: var(--radii-md); }
 [data-cui-comp="ui-repeater"] .fui-repeater__item-fields { flex: 1; display: grid; gap: var(--spacing-sm); }
 [data-cui-comp="ui-repeater"] .fui-repeater__add { align-self: flex-start; }

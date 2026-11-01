@@ -108,7 +108,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **validationsummary**: `framework/ui.ValidationSummary`, inline summary of form validation errors
 - **conditionalfield**: `framework/ui.ConditionalField`, form region visible on first paint and hidden by the runtime until the watched field matches — one value (`WhenValue`) or any of a list (`WhenValues`)
 - **formrepeater**: `framework/ui.FormRepeater`, dynamic list of repeating field groups (add / remove rows)
-- **repeater**: `framework/ui.Repeater`, dynamic add / remove item list with min / max limits
+- **repeater**: `framework/ui.Repeater`, dynamic add / remove item list with min / max limits; each row's Remove is a ghost kit button and Add a secondary one (the `fui-button` classes, so they match every other button on the page), and the items list carries no list bullets or indent
 - **stepwizard**: `framework/ui.StepWizard`, multi-step form with a progress indicator bar
 
 ### Selection & input composition
