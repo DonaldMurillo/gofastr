@@ -59,7 +59,7 @@ func startTLSServer(t *testing.T, h http.HandlerFunc) *testTLSServer {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "*.test"},
-		DNSNames:     []string{"*.test", "test", "signature-agent.test", "localhost"},
+		DNSNames:     []string{"*.test", "*.slow.test", "test", "signature-agent.test", "localhost"},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),

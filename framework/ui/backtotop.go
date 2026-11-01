@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -64,6 +65,10 @@ const (
 
 // BackToTopConfig configures the back-to-top button.
 type BackToTopConfig struct {
+	// Ctx carries the per-request context the component's own words
+	// (the anchor's accessible name) are written in. When nil, English applies.
+	Ctx context.Context
+
 	// Position selects which corner the button anchors to.
 	// Defaults to BackToTopBottomRight when empty.
 	Position BackToTopPosition
@@ -185,7 +190,7 @@ func BackToTop(cfg BackToTopConfig) render.HTML {
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "href",
 			"aria-label", "data-hui-back-to-top", "data-hui-back-to-top-target"),
 		Parts:   parts,
-		Strings: StringsFor(nil),
+		Strings: StringsFor(cfg.Ctx),
 	}, backToTopClasses))
 }
 

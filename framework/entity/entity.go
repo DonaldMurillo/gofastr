@@ -144,9 +144,11 @@ type ScopeConfig struct {
 
 // PaginationConfig groups list limits and keyset cursor configuration. A
 // non-empty CursorFields composite takes precedence over CursorField.
-// Either way keyset paging appends each primary-key column the list does
-// not name, as the tiebreak, and the cursor token carries the key (with
-// the sort values when they fit the cursor cap).
+// Either way the CRUD list's keyset paging appends each primary-key column
+// the list does not name, as the tiebreak, and the cursor token carries
+// the key (with the sort values when they fit the cursor cap). The query
+// DSL's after() has no tiebreak: it keysets on CursorField alone, so it
+// refuses a CursorField that is neither the only key column nor Unique.
 type PaginationConfig struct {
 	CursorField  string
 	CursorFields []string

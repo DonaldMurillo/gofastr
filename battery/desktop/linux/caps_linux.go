@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode/utf8"
 	"unsafe"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
@@ -595,19 +594,9 @@ func (s *linuxShell) chooseFiles(ctx context.Context, action uintptr, title, acc
 	if ctx.Err() != nil {
 		return nil, desktop.ErrCancelled
 	}
-	if !capsValidText(name) || strings.ContainsRune(name, '/') {
-		return nil, capsInvalid("default name must be a file name")
-	}
-	patterns := make([][]string, len(opts.Filters))
-	for i, filter := range opts.Filters {
-		if !capsValidText(filter.Name) {
-			return nil, capsInvalid("invalid file filter name")
-		}
-		var err error
-		patterns[i], err = capsFilterPatterns(filter.Extensions)
-		if err != nil {
-			return nil, err
-		}
+	patterns, err := desktop.CheckFileDialog(opts, name)
+	if err != nil {
+		return nil, err
 	}
 	release, err := s.acquireCaps(ctx)
 	if err != nil {
@@ -661,25 +650,6 @@ func (s *linuxShell) chooseFiles(ctx context.Context, action uintptr, title, acc
 	return r.paths, r.err
 }
 
-func capsFilterPatterns(extensions []string) ([]string, error) {
-	if len(extensions) == 0 {
-		return []string{"*"}, nil
-	}
-	patterns := make([]string, 0, len(extensions))
-	for _, ext := range extensions {
-		ext = strings.TrimPrefix(strings.TrimSpace(ext), ".")
-		if ext == "*" {
-			patterns = append(patterns, "*")
-			continue
-		}
-		if ext == "" || !capsValidText(ext) || strings.ContainsAny(ext, "/\\*?[]") {
-			return nil, capsInvalid("invalid file filter extension")
-		}
-		patterns = append(patterns, "*."+ext)
-	}
-	return patterns, nil
-}
-
 func capsSelectedFiles(chooser uintptr) []string {
 	list := capsCall(gtk.Sym.GtkFileChooserGetFilenames, chooser)
 	if list == 0 {
@@ -715,7 +685,7 @@ func capsSetString(fn, object uintptr, value string) {
 }
 
 func capsCString(s string) []byte { return append([]byte(s), 0) }
-func capsValidText(s string) bool { return utf8.ValidString(s) && !strings.ContainsRune(s, 0) }
+func capsValidText(s string) bool { return desktop.NativeText(s) }
 func capsInvalid(message string) error {
 	return &desktop.Error{Code: desktop.CodeInvalidInput, Message: message}
 }

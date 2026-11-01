@@ -283,3 +283,77 @@ func TestE2E_PaneHostOutsideTriggerTarget(t *testing.T) {
 		t.Errorf("outside trigger must open the targeted host: second open=%v, first still closed=%v", secondOpen, firstClosed)
 	}
 }
+
+// phonePaneHost renders an id-less host whose primary carries an open
+// and a close control, tagged so the test can find each host.
+func phonePaneHost(tag string) string {
+	return string(PaneHost(PaneHostProps{
+		ExtraAttrs: map[string]string{"data-test-host": tag},
+		Primary: render.Join(
+			render.Tag("button", map[string]string{"id": "open-" + tag, "type": "button", "data-hui-pane-open-control": "secondary"}, render.Text("open")),
+			render.Tag("button", map[string]string{"id": "close-" + tag, "type": "button", "data-hui-pane-close": ""}, render.Text("close")),
+		),
+		Secondary: render.Text("S"),
+	}, nil))
+}
+
+const pageScrollLocked = `document.documentElement.style.overflow === 'hidden'`
+
+// An overlay drawer whose host the navigation swapped out still
+// releases its scroll lock: the navigate event fires after the old
+// page left the document, so a lookup in the live document never
+// finds it, and every later page would stay unable to scroll.
+func TestE2E_PaneLockFreedWhenHostSwappedOut(t *testing.T) {
+	b := startBehaviorServer(t, phonePaneHost("a"))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, paneHostLoaded) {
+		t.Fatal("the host marker never loaded headless-panehost")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 800),
+		chromedp.Evaluate(`document.getElementById('open-a').click()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, pageScrollLocked) {
+		t.Fatal("the overlay drawer never took the scroll lock")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('[data-test-host="a"]').remove();`+
+			`window.dispatchEvent(new CustomEvent('gofastr:navigate'))`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.documentElement.style.overflow === ''`) {
+		t.Fatal("the swapped-out host kept the page scroll-locked after the navigation")
+	}
+}
+
+// Two id-less hosts each hold their own lock: closing one drawer
+// leaves the page locked while the other is still open.
+func TestE2E_PaneLocksAreOwnedPerHost(t *testing.T) {
+	b := startBehaviorServer(t, phonePaneHost("a")+phonePaneHost("b"))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, paneHostLoaded) {
+		t.Fatal("the host marker never loaded headless-panehost")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 800),
+		chromedp.Evaluate(`document.getElementById('open-a').click(); document.getElementById('open-b').click()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.querySelectorAll('[data-hui-pane-mode="overlay"]').length === 2 && `+pageScrollLocked) {
+		t.Fatal("both drawers should be overlays holding the lock")
+	}
+	var locked bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('close-a').click()`, nil),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(pageScrollLocked, &locked),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !locked {
+		t.Fatal("closing one id-less drawer released the lock the other open drawer holds")
+	}
+}

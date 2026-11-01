@@ -11,6 +11,7 @@ import (
 	"context"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,10 @@ var (
 	})
 	pins   = localentity.Define(e2eDB, "pins", []schema.Field{{Name: "label", Type: schema.String, Required: true}})
 	prices = localentity.Define(e2eDB, "prices", []schema.Field{{Name: "price", Type: schema.Float}})
+	dials  = localentity.Define(e2eDB, "dials", []schema.Field{
+		{Name: "r", Type: schema.Float}, {Name: "s", Type: schema.Float},
+		{Name: "k", Type: schema.Float}, {Name: "h", Type: schema.Float},
+	})
 )
 
 const noteForm = "note-form"
@@ -107,6 +112,21 @@ func (priceScreen) RenderCtx(ctx context.Context) render.HTML {
 	))
 }
 
+// dialScreen holds a Float in each control the browser hands over in
+// its own dot-decimal spelling: a range, a select, radios and a hidden
+// input.
+type dialScreen struct{ component.ContextOnly }
+
+func (dialScreen) RenderCtx(ctx context.Context) render.HTML {
+	return dials.Form("dial-form", ui.Form(ui.FormConfig{Action: "/", Method: "POST", HideSubmit: true, Ctx: ctx},
+		html.Input(html.InputConfig{Type: "range", Name: "r", ID: "f-r", ExtraAttrs: html.Attrs{"min": "0", "max": "1", "step": "0.1", "aria-label": "R"}}),
+		ui.Select(ui.SelectConfig{Name: "s", Label: "S", ID: "f-s", Options: []ui.SelectOption{{Value: "0.5", Text: "a"}, {Value: "1.5", Text: "b"}}}),
+		ui.RadioGroup(ui.RadioGroupConfig{Name: "k", Legend: "K", Options: []ui.RadioGroupOption{{Value: "0.125", Label: "a"}, {Value: "0.25", Label: "b"}}}),
+		html.Input(html.InputConfig{Type: "hidden", Name: "h", ID: "f-h"}),
+		ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit"}),
+	))
+}
+
 type formOnlyScreen struct{ component.ContextOnly }
 
 func (formOnlyScreen) RenderCtx(ctx context.Context) render.HTML { return form(ctx) }
@@ -118,6 +138,7 @@ func startHost(t *testing.T) string {
 	site.RegisterScreen(uiapp.NewScreen("/form", &formOnlyScreen{}), nil)
 	site.RegisterScreen(uiapp.NewScreen("/partial", &partialScreen{}), nil)
 	site.RegisterScreen(uiapp.NewScreen("/price", &priceScreen{}), nil)
+	site.RegisterScreen(uiapp.NewScreen("/dials", &dialScreen{}), nil)
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "localentity-e2e"}))
 	app.Mount(uihost.New(site))
 	srv := httptest.NewServer(app.Router())
@@ -524,5 +545,42 @@ func TestNumberReadsPageLocale(t *testing.T) {
 	}
 	if got := price("e1"); got != 1234.5 {
 		t.Errorf("untouched edit saved %v, want 1234.5", got)
+	}
+}
+
+// On a comma-decimal page only a text control the reader types into
+// reads and shows the local mark: a range, a select, radios and a
+// hidden input carry the browser's dot-decimal value both ways.
+func TestMachineValuesStayDotDecimal(t *testing.T) {
+	base := startHost(t)
+	tab := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var shown []string
+	if err := chromedp.Run(tab,
+		chromedp.Navigate(base+"/dials"),
+		poll(`!!(window.__gofastr && __gofastr._localForm)`),
+		chromedp.Evaluate(`window.__saved = 0; document.addEventListener('gofastr:local-saved', () => window.__saved++)`, nil),
+		chromedp.Evaluate(`document.documentElement.lang = 'es'`, nil),
+		chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.put('dials', {
+			id: 'd1', r: 0.3, s: 1.5, k: 0.125, h: 0.125, created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z' }))`, nil, await),
+		chromedp.Evaluate(`__gofastr._localForm.fill(document.querySelector('[data-fui-local-form]'), { id: 'd1', r: 0.3, s: 1.5, k: 0.125, h: 0.125 })`, nil),
+		chromedp.Evaluate(`(function(){ const f = document.querySelector('#dial-form form');
+			const k = f.querySelector('[name=k]:checked');
+			return [f.elements.r.value, f.elements.s.value, k ? k.value : '', f.elements.h.value]; })()`, &shown),
+		chromedp.Click(`#dial-form button[type=submit]`, chromedp.ByQuery),
+		poll(`window.__saved === 1`),
+	); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if want := []string{"0.3", "1.5", "0.125", "0.125"}; strings.Join(shown, " ") != strings.Join(want, " ") {
+		t.Errorf("fill shows %q, want %q", shown, want)
+	}
+	var rec map[string]any
+	if err := chromedp.Run(tab, chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.get('dials', 'd1'))`, &rec, await)); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]float64{"r": 0.3, "s": 1.5, "k": 0.125, "h": 0.125} {
+		if rec[k] != want {
+			t.Errorf("%s saved %v, want %v", k, rec[k], want)
+		}
 	}
 }

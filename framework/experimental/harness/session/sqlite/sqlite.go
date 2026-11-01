@@ -21,6 +21,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/internal/jsonredact"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/session"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 
@@ -79,6 +80,10 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: apply schema: %w", err)
 	}
+	if err := addSubAgentColumn(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("sqlite: add events.sub_agent: %w", err)
+	}
 	// Record the schema migration if it's not already there.
 	if _, err := db.Exec(
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at, sha256) VALUES (?, ?, ?)`,
@@ -95,21 +100,35 @@ func Open(path string) (*Store, error) {
 
 // AppendEvent persists one envelope with redactors applied.
 func (s *Store) AppendEvent(ctx context.Context, env control.EventEnvelope) error {
-	payload := string(env.Payload)
-	for _, r := range s.Redactors {
-		payload = r.Redact(payload)
-	}
+	payload := s.redactPayload(env.Payload)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.ExecContext(ctx, `
-        INSERT INTO events(id, session, log_id, kind, originator, ts, payload)
-        VALUES(?, ?, '', ?, ?, ?, ?)`,
+        INSERT INTO events(id, session, log_id, kind, originator, ts, payload, sub_agent)
+        VALUES(?, ?, '', ?, ?, ?, ?, ?)`,
 		env.ID, string(env.Session), env.Kind,
 		string(env.Originator),
 		env.TS.UTC().Format(time.RFC3339Nano),
-		payload,
+		payload, env.SubAgent,
 	)
 	return err
+}
+
+// redactPayload runs the redactors over each decoded string of a JSON
+// payload, so a pattern that reaches a closing quote or an escape cannot
+// leave the stored event unparseable. A payload that is not JSON gets
+// the redactors on its raw text.
+func (s *Store) redactPayload(raw []byte) string {
+	apply := func(text string) string {
+		for _, r := range s.Redactors {
+			text = r.Redact(text)
+		}
+		return text
+	}
+	if out, ok := jsonredact.Strings(raw, apply); ok {
+		return string(out)
+	}
+	return apply(string(raw))
 }
 
 // EventsSince returns events with id > since for a session.
@@ -118,7 +137,7 @@ func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint6
 		limit = 10_000
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT id, kind, originator, ts, payload
+        SELECT id, kind, originator, ts, payload, COALESCE(sub_agent, '')
           FROM events
          WHERE session = ? AND id > ?
          ORDER BY id ASC
@@ -137,8 +156,9 @@ func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint6
 			originator string
 			tsStr      string
 			payload    string
+			subAgent   string
 		)
-		if err := rows.Scan(&id, &kind, &originator, &tsStr, &payload); err != nil {
+		if err := rows.Scan(&id, &kind, &originator, &tsStr, &payload, &subAgent); err != nil {
 			return nil, err
 		}
 		ts, _ := time.Parse(time.RFC3339Nano, tsStr)
@@ -149,9 +169,36 @@ func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint6
 			Originator: ids.ClientID(originator),
 			TS:         ts,
 			Payload:    json.RawMessage(payload),
+			SubAgent:   subAgent,
 		})
 	}
 	return out, rows.Err()
+}
+
+// addSubAgentColumn adds events.sub_agent to a database created before
+// sub-agent events were persisted. CREATE TABLE IF NOT EXISTS leaves an
+// existing table as it was.
+func addSubAgentColumn(db *sql.DB) error {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info('events')`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		if name == "sub_agent" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_ = rows.Close()
+	_, err = db.Exec(`ALTER TABLE events ADD COLUMN sub_agent TEXT`)
+	return err
 }
 
 // ListPastSessions aggregates the events table into per-session
@@ -205,7 +252,7 @@ func (s *Store) ListPastSessions(ctx context.Context, limit int, only []ids.Sess
 		var payload string
 		err := s.db.QueryRowContext(ctx, `
             SELECT payload FROM events
-             WHERE session = ? AND kind = 'TurnStarted'
+             WHERE session = ? AND kind = 'TurnStarted' AND COALESCE(sub_agent, '') = ''
           ORDER BY id ASC LIMIT 1`,
 			string(out[i].SessionID),
 		).Scan(&payload)
