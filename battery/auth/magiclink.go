@@ -7,15 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"html/template"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -76,21 +73,8 @@ type MagicLinkConfig struct {
 	// brute force. Same loosening rule as RateLimit.
 	VerifyRateLimit *RateLimiterConfig
 
-	// ConfirmPage renders the confirmation screen shown when a user
-	// follows a magic link. Return the full HTML document; the plugin
-	// serves it as-is.
-	//
-	// nil ships an unstyled, semantic fallback, correct but plain. A
-	// UIHost app should supply one built from framework/ui (ui.AuthCard)
-	// so the screen matches the rest of the app; the battery does not
-	// import the design system itself, because API-only apps use auth
-	// too and should not pay for it.
-	//
-	// The form MUST POST `token` back to the same path. See
-	// ConfirmPageData. ctx is the request's: it carries the caller's
-	// locale, so the page's phrases resolve in the caller's language and
-	// i18n.DocLang(ctx) is its <html lang>.
-	ConfirmPage func(ctx context.Context, d ConfirmPageData) []byte
+	// The confirmation screen a link opens comes from AuthConfig.Pages
+	// (the plain built-in document when that is nil).
 
 	// DevMode permits the plugin to operate without an EmailSender by
 	// logging the magic-link URL to stdout. Without this flag, a nil
@@ -528,7 +512,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ConfirmPageData is what MagicLinkConfig.ConfirmPage renders.
+// ConfirmPageData is what Pages.MagicLinkConfirm renders.
 type ConfirmPageData struct {
 	// Email is the account the link signs into, or "" when the token
 	// store cannot peek without consuming. Showing it is the point: it
@@ -544,11 +528,14 @@ type ConfirmPageData struct {
 	// CSRFField is a ready-to-embed hidden input carrying the CSRF
 	// token, or "" when the route is not behind CSRF middleware.
 	//
-	// A custom ConfirmPage MUST render this inside its form. Without it,
+	// A Pages implementation MUST render this inside its form. Without it,
 	// with auth.CSRF() mounted (WithBFFPosture does this app-wide), the
 	// only button on the confirmation page returns 403 and passwordless
 	// sign-in is unreachable.
 	CSRFField template.HTML
+
+	// Words are the screen's words in the caller's locale.
+	Words ConfirmWords
 }
 
 // confirmHandler handles GET {basePath}/magic-link/verify?token=xxx.
@@ -600,77 +587,13 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 	if csrfField == "" {
 		csrfField = CSRFInputHTML(r)
 	}
-	data := ConfirmPageData{
+	writeConfirmPage(w, r, p.mgr.config.Pages, ConfirmPageData{
 		Email:     email,
 		Token:     token,
 		Action:    p.basePath + "/magic-link/verify",
 		CSRFField: csrfField,
-	}
-	var body []byte
-	if p.config.ConfirmPage != nil {
-		body = p.config.ConfirmPage(r.Context(), data)
-	} else {
-		body = defaultConfirmPage(r.Context(), data)
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	// The page carries a live credential in a hidden field; keep it out
-	// of any referrer sent to a third-party asset.
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
-}
-
-// defaultConfirmPage is the unstyled fallback. It ships no CSS and no
-// class names: styling belongs to the app, which supplies
-// MagicLinkConfig.ConfirmPage built from the design system. Its words
-// are phrases in the caller's locale, and the document declares that
-// language and its direction.
-func defaultConfirmPage(ctx context.Context, d ConfirmPageData) []byte {
-	// The address is what lets a user notice a link meant for someone
-	// else, so it stays emphasised wherever the translation puts it: the
-	// sentence is escaped whole, then the escaped address inside it is
-	// wrapped. Both pieces are escaped, so the wrap adds no markup the
-	// requester controls.
-	who := confirmThisAccount.Text(ctx)
-	if d.Email != "" {
-		who = d.Email
-	}
-	whoHTML := html.EscapeString(who)
-	ask := html.EscapeString(confirmAs.Text(ctx, map[string]any{"who": who}))
-	if d.Email != "" {
-		ask = strings.Replace(ask, whoHTML, "<strong>"+whoHTML+"</strong>", 1)
-	}
-	// action is a URL attribute: HTML escaping is scheme-blind, so the
-	// value goes through the one scheme allow-list (urlsafe.CleanAnchor,
-	// the menu.go Href spelling) BEFORE the escape. The plugin builds
-	// Action itself (basePath + "/magic-link/verify"); an Action that
-	// somehow fails the allow-list renders an empty action, which posts
-	// to the current URL and is refused by the verify handler.
-	action := urlsafe.CleanAnchor(d.Action)
-	lang := i18n.DocLang(ctx)
-	title := html.EscapeString(confirmTitle.Text(ctx))
-	return []byte(`<!doctype html>
-<html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>` + title + `</title>
-</head>
-<body>
-<main>
-<h1>` + title + `</h1>
-<p>` + ask + `</p>
-<p>` + html.EscapeString(confirmWarning.Text(ctx)) + `</p>
-<form method="post" action="` + html.EscapeString(action) + `">
-<input type="hidden" name="token" value="` + html.EscapeString(d.Token) + `">
-` + string(d.CSRFField) + `
-<button type="submit">` + html.EscapeString(confirmSubmit.Text(ctx)) + `</button>
-</form>
-</main>
-</body>
-</html>`)
+		Words:     confirmWords(r.Context(), email),
+	})
 }
 
 // verifyHandler handles POST {basePath}/magic-link/verify.

@@ -682,3 +682,10 @@ notes:
           value: '.'
         - key: entities.*.exposure.access.*
           value: '.'
+  - change: "BREAKING - auth.MagicLinkConfig.ConfirmPage is removed; auth.AuthConfig.Pages draws the magic-link confirmation and the same-site hop, and authui.Pages(host) renders both with the design system"
+    breaking: true
+    hits: edit
+    guidance: "Move a ConfirmPage func into an auth.Pages implementation set on AuthConfig.Pages: MagicLinkConfirm(w, r, d) writes the page (status and body; the battery already set no-store and no-referrer), and d.Words carries the title, the escaped ask sentence, the warning and the submit label. A UIHost app can drop its own page and set Pages: authui.Pages(host) from battery/auth/authui. Hop(w, r, d) draws the hop page; the battery sends the Refresh header that reloads it."
+    find:
+      uses:
+        - gofastr/battery/auth.MagicLinkConfig.ConfirmPage

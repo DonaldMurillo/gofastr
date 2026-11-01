@@ -1507,9 +1507,11 @@ supported way to add that provider is the **authenticated link flow**:
    browser withholds the `SameSite=Strict` session cookie. When a
    cross-site callback carries a valid, unspent link state and its
    state cookie but no session, it answers a small page that reloads the
-   same callback from this site (a meta refresh plus a "Continue" link,
-   phrases `auth.oauth_hop_title` and `auth.oauth_hop_continue`). That
-   second request carries the session cookie and completes the link.
+   same callback from this site: a `Refresh: 0;url=…` header plus a
+   "Continue" link (phrases `auth.oauth_hop_title` and
+   `auth.oauth_hop_continue`), drawn by `AuthConfig.Pages` when set.
+   That second request carries the session cookie and completes the
+   link.
 
 The user has proven ownership of both the account (session) and the
 provider (the OAuth round-trip), so this is the ONLY path that may link a
@@ -1590,57 +1592,74 @@ not fit: a browser-binding cookie breaks cross-device links (request on
 a laptop, open on a phone) and refusing `Sec-Fetch-Site: cross-site`
 breaks every webmail client. A confirmation keeps both working.
 
-Set `MagicLinkConfig.ConfirmPage` to render the screen with your own
-design system:
+Set `AuthConfig.Pages` to draw this screen, and the same-site hop
+below, with the design system. `authui.Pages`
+(`battery/auth/authui`) renders both as a `ui.AuthCard` through the
+app's UIHost, so they carry its layout, theme and runtime:
 
 ```go
-var (
-    confirmTitle  = i18n.Define("app.confirm_title", "Confirm sign-in")
-    confirmAs     = i18n.Define("app.confirm_as", "Continue as {{email}}?")
-    confirmSubmit = i18n.Define("app.confirm_submit", "Sign in")
-)
+import "github.com/DonaldMurillo/gofastr/battery/auth/authui"
 
-auth.MagicLinkConfig{
-    // ctx is the request's, so the phrases answer in the caller's locale.
-    ConfirmPage: func(ctx context.Context, d auth.ConfirmPageData) []byte {
-        return render(ui.AuthCard(ui.AuthCardConfig{
-            Title: confirmTitle.Text(ctx),
-            Body: ui.Form(ui.FormConfig{
-                Action:      d.Action,
-                SubmitLabel: confirmSubmit.Text(ctx),
-            },
-                // Email and Token are escaped, never concatenated into
-                // render.HTML. A magic-link request accepts any address, so
-                // d.Email is caller-supplied: pasting it into trusted HTML
-                // reflects whatever the requester typed into the page.
-                html.Paragraph(html.TextConfig{}, render.Text(confirmAs.Text(ctx, map[string]any{"email": d.Email}))),
-                // token is the credential, posted back to d.Action.
-                html.Input(html.InputConfig{
-                    Type:  "hidden",
-                    Name:  "token",
-                    Value: d.Token,
-                }),
-                // CSRFField is required: without it the submit 403s
-                // under auth.CSRF(), which WithBFFPosture mounts app-wide.
-                render.HTML(d.CSRFField)),
-        }))
-    },
+host := uihost.New(site)
+mgr := auth.New(auth.AuthConfig{
+    // ...
+    Pages: authui.Pages(host),
+})
+```
+
+To draw them some other way, implement `auth.Pages`. Its two methods
+get the response writer, the request and the page data; the battery
+has already set `Cache-Control: no-store` and `Referrer-Policy:
+no-referrer`, because both URLs carry a credential:
+
+```go
+type myPages struct{ host *uihost.UIHost }
+
+func (p myPages) MagicLinkConfirm(w http.ResponseWriter, r *http.Request, d auth.ConfirmPageData) {
+    p.host.RenderScreen(w, r, confirmScreen{d: d}, uihost.ScreenResponse{})
+}
+
+func (p myPages) Hop(w http.ResponseWriter, r *http.Request, d auth.HopPageData) {
+    p.host.RenderScreen(w, r, hopScreen{d: d}, uihost.ScreenResponse{})
+}
+
+func (s confirmScreen) RenderCtx(ctx context.Context) render.HTML {
+    return ui.AuthCard(ui.AuthCardConfig{
+        Title: s.d.Words.Title,
+        Body: ui.Form(ui.FormConfig{
+            Action:      s.d.Action,
+            SubmitLabel: s.d.Words.Submit,
+        },
+            // Words.Ask is escaped already, the address included. Any
+            // other dynamic value (d.Email, d.Token) goes through an
+            // escaping builder, never into render.HTML: a magic-link
+            // request accepts any address, so d.Email is
+            // caller-supplied.
+            html.Paragraph(html.TextConfig{}, render.HTML(s.d.Words.Ask)),
+            html.Paragraph(html.TextConfig{}, render.Text(s.d.Words.Warning)),
+            // token is the credential, posted back to d.Action.
+            html.Input(html.InputConfig{Type: "hidden", Name: "token", Value: s.d.Token}),
+            // CSRFField is required: without it the submit 403s
+            // under auth.CSRF(), which WithBFFPosture mounts app-wide.
+            render.HTML(s.d.CSRFField)),
+    })
 }
 ```
 
 Render `d.CSRFField` inside the form. Omit it and the submit 403s
 under `auth.CSRF()`, which `WithBFFPosture` mounts app-wide, so
-passwordless sign-in stops at the confirmation step. `ctx` is the
-request's context: it carries the caller's locale for your phrases,
-and `i18n.DocLang(ctx)` with `i18n.Dir` give a full document its
-`<html lang dir>`.
+passwordless sign-in stops at the confirmation step. (`authui` passes
+the request context to `ui.Form`, which stamps the same field itself,
+and adds `d.CSRFField` only when the context carries no token.)
+`d.Words` holds the screen's words in the caller's locale: the phrases
+are `auth.confirm_title`, `auth.confirm_as`,
+`auth.confirm_this_account`, `auth.confirm_warning` and
+`auth.confirm_submit`.
 
-Leave it nil and you get an unstyled but correct fallback, in the
-caller's language when the app has a translator (the phrases are
-`auth.confirm_title`, `auth.confirm_as`, `auth.confirm_this_account`,
-`auth.confirm_warning` and `auth.confirm_submit`). The battery
-does not import `framework/ui` itself: API-only apps use auth too and
-should not pay for the design system.
+Leave `Pages` nil and you get plain but correct documents with no CSS
+and no script, in the caller's language when the app has a
+translator. The battery does not import `framework/ui` itself:
+API-only apps use auth too and should not pay for the design system.
 
 The emails follow the same rule. `BodyTemplate` on
 `MagicLinkConfig`, `EmailVerificationConfig` and

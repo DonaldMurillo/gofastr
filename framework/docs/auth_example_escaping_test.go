@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// The documented ConfirmPage marks render.HTML as trusted. Dynamic email and
+// The documented auth.Pages example marks render.HTML as trusted. Dynamic email and
 // token values must go through escaping builders before entering that type.
 func TestConfirmPageExampleEscapes(t *testing.T) {
-	section := sectionAfter(t, readDoc(t, "auth.md"), "MagicLinkConfig.ConfirmPage", 2000)
+	section := sectionAfter(t, readDoc(t, "auth.md"), "To draw them some other way, implement `auth.Pages`", 2500)
 	for _, bad := range []struct {
 		value   string
 		pattern string

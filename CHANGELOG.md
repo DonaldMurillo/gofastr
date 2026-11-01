@@ -104,6 +104,17 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: auth's own screens draw with the design system.** The
+  magic-link confirmation and the same-site hop (the page a cross-site
+  OAuth link callback or webmail verification click lands on) were
+  hand-written HTML. The new `AuthConfig.Pages` draws both, and
+  `authui.Pages(host)` (`battery/auth/authui`) renders them as a
+  `ui.AuthCard` through the app's UIHost. `MagicLinkConfig.ConfirmPage`
+  is removed: implement `auth.Pages` instead, whose `ConfirmPageData`
+  now carries the screen's words in the caller's locale. The hop now
+  reloads through a `Refresh` header, so a page drawn through a UIHost
+  (which drops a meta refresh from a screen's head) still continues. With
+  `Pages` nil the plain documents stay.
 - **BREAKING: a blank write in a declared `Access` block is refused.**
   Declaring `Access{Read: "posts:read"}` to gate reads left Create, Update
   and Delete open to every caller, anonymous ones included. Once an
