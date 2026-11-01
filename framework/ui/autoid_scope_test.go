@@ -36,3 +36,16 @@ func TestAutoIDsMatchInAnIsland(t *testing.T) {
 		}
 	}
 }
+
+// An explicit Repeater ID is reserved, so a later auto repeater on the
+// page takes the next id instead of repeating it and its -items region.
+func TestRepeaterReservesExplicitID(t *testing.T) {
+	page := render.WithIDScope(context.Background())
+	row := func(int) render.HTML { return render.Text("row") }
+	first := string(Repeater(RepeaterConfig{ID: "rep", Name: "a", Label: "A", Ctx: page, Template: row}))
+	second := string(Repeater(RepeaterConfig{Name: "b", Label: "B", Ctx: page, Template: row}))
+	a, b := firstID.FindStringSubmatch(first), firstID.FindStringSubmatch(second)
+	if a == nil || b == nil || a[1] == b[1] {
+		t.Fatalf("explicit repeater id %v, auto repeater id %v; want them to differ", a, b)
+	}
+}
