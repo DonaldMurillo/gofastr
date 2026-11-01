@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && !gofastr_nodesktop
 
 package native
 

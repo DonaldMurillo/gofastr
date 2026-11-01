@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -382,17 +383,154 @@ func renderAppSpec(bp appspec.AppSpec, entityOrderOffset, screenOrderOffset int,
 // transcribed text. The documented workflow has an agent authoring it from
 // natural-language requirements (see appspec_emitter_injection_test.go), so
 // on that path unparseable output is a security signal and fails closed.
+//
+// Parsing is per file, so it cannot see a name declared twice across the
+// package: a helper named register_generated emits func RegisterGenerated
+// in stubs.go beside the one in app.go, and the app then fails to compile
+// after a generate that reported success. The parsed files go on to
+// assertAppSpecDeclsUnique, which checks each package as a whole.
 func assertAppSpecGoParses(files []GeneratedFile) error {
+	parsed := make([]parsedGoFile, 0, len(files))
 	for _, file := range files {
 		if !strings.HasSuffix(file.Name, ".go") {
 			continue
 		}
 		fset := token.NewFileSet()
-		if _, err := parser.ParseFile(fset, file.Name, file.Content, parser.SkipObjectResolution); err != nil {
+		f, err := parser.ParseFile(fset, file.Name, file.Content, parser.SkipObjectResolution)
+		if err != nil {
 			return fmt.Errorf("app spec: generated %s does not parse (%w): an app spec value escaped the Go literal it was emitted into. Please report this with the app spec that produced it", file.Name, err)
+		}
+		parsed = append(parsed, parsedGoFile{name: file.Name, file: f})
+	}
+	return assertAppSpecDeclsUnique(parsed)
+}
+
+type parsedGoFile struct {
+	name string
+	file *ast.File
+}
+
+// assertAppSpecDeclsUnique refuses an emitted package that declares one
+// package-level name twice (two funcs, a func and a type, a method twice on
+// one receiver), or declares a name a file of the same package imports: Go
+// keeps file-scope import names and package-level names in one space. The
+// package is the directory plus the package clause, so an external test
+// package (package main_test) is checked apart from the one it tests. The
+// error names both files, so an app spec author can rename the stub.
+func assertAppSpecDeclsUnique(files []parsedGoFile) error {
+	type pkgKey struct{ dir, name string }
+	type site struct{ file, what string }
+	decls := map[pkgKey]map[string]site{}
+	imports := map[pkgKey]map[string]string{} // import name -> first file importing it
+	var order []pkgKey
+	for _, pf := range files {
+		key := pkgKey{dir: path.Dir(filepath.ToSlash(pf.name)), name: pf.file.Name.Name}
+		if decls[key] == nil {
+			decls[key] = map[string]site{}
+			imports[key] = map[string]string{}
+			order = append(order, key)
+		}
+		claim := func(name, what string) error {
+			if name == "_" || (name == "init" && what == "func") {
+				return nil
+			}
+			if prev, dup := decls[key][name]; dup {
+				return fmt.Errorf("app spec: generated %s declares %s %s, which %s already declares as a %s; rename the app spec item that produces one of them", pf.name, what, name, prev.file, prev.what)
+			}
+			decls[key][name] = site{file: pf.name, what: what}
+			return nil
+		}
+		for _, imp := range pf.file.Imports {
+			if name := goImportName(imp); name != "" {
+				if _, seen := imports[key][name]; !seen {
+					imports[key][name] = pf.name
+				}
+			}
+		}
+		for _, d := range pf.file.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				name, what := d.Name.Name, "func"
+				if d.Recv != nil && len(d.Recv.List) > 0 {
+					name, what = goRecvTypeName(d.Recv.List[0].Type)+"."+name, "method"
+				}
+				if err := claim(name, what); err != nil {
+					return err
+				}
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					switch spec := spec.(type) {
+					case *ast.TypeSpec:
+						if err := claim(spec.Name.Name, "type"); err != nil {
+							return err
+						}
+					case *ast.ValueSpec:
+						what := "var"
+						if d.Tok == token.CONST {
+							what = "const"
+						}
+						for _, n := range spec.Names {
+							if err := claim(n.Name, what); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	for _, key := range order {
+		for _, name := range slices.Sorted(maps.Keys(imports[key])) {
+			if d, dup := decls[key][name]; dup {
+				return fmt.Errorf("app spec: generated %s declares %s %s, which %s imports as a package name; rename the app spec item that produces it", d.file, d.what, name, imports[key][name])
+			}
 		}
 	}
 	return nil
+}
+
+// goImportName is the file-scope name an import binds: its alias, or the
+// last path element (skipping a /vN major-version suffix). Blank and dot
+// imports bind no name. A path whose package clause differs from its last
+// element is read by that element, which can only miss a collision.
+func goImportName(imp *ast.ImportSpec) string {
+	if imp.Name != nil {
+		if imp.Name.Name == "_" || imp.Name.Name == "." {
+			return ""
+		}
+		return imp.Name.Name
+	}
+	p, err := strconv.Unquote(imp.Path.Value)
+	if err != nil {
+		return ""
+	}
+	elems := strings.Split(p, "/")
+	last := elems[len(elems)-1]
+	if len(elems) > 1 && len(last) > 1 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
+		last = elems[len(elems)-2]
+	}
+	return last
+}
+
+// goRecvTypeName is a method receiver's base type name: T for T, *T, T[K]
+// and *T[K].
+func goRecvTypeName(e ast.Expr) string {
+	for {
+		switch t := e.(type) {
+		case *ast.StarExpr:
+			e = t.X
+		case *ast.IndexExpr:
+			e = t.X
+		case *ast.IndexListExpr:
+			e = t.X
+		case *ast.ParenExpr:
+			e = t.X
+		case *ast.Ident:
+			return t.Name
+		default:
+			return ""
+		}
+	}
 }
 
 // appSpecGitignore keeps the generated .env (and local overrides), the dev
@@ -545,6 +683,38 @@ func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 		}
 	}
 	return public, gated
+}
+
+// appSpecSeedAdminRoles are the roles the bootstrap admin is created with:
+// the admin role (default "admin") and "user".
+func appSpecSeedAdminRoles(bp appspec.AppSpec) []string {
+	role := bp.App.Admin.Role
+	if role == "" {
+		role = "admin"
+	}
+	return []string{role, "user"}
+}
+
+// appSpecE2ERoleSplit splits the static gated routes into those the seeded
+// admin can open and those whose screen requires a role it does not hold.
+// authPolicy's RolePolicy matches roles exactly, so the second set answers
+// the admin 403, and the e2e expects that instead of a 200.
+func appSpecE2ERoleSplit(bp appspec.AppSpec, gated []string) (open, locked []string) {
+	held := appSpecSeedAdminRoles(bp)
+	lockedRoute := map[string]bool{}
+	for _, s := range bp.Screens {
+		if s.Access.Auth && s.Access.Role != "" && !slices.Contains(held, s.Access.Role) {
+			lockedRoute[appSpecScreenRoutePath(s.Route)] = true
+		}
+	}
+	for _, r := range gated {
+		if lockedRoute[r] {
+			locked = append(locked, r)
+		} else {
+			open = append(open, r)
+		}
+	}
+	return open, locked
 }
 
 // appSpecCRUDTarget is the entity the generated e2e exercises with a full
@@ -1192,11 +1362,22 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 		b.WriteString("\t\treturn nil\n")
 		b.WriteString("\t}}\n")
 		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+%q, url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", appSpecAuthBase(bp)+"/login", adminEmail))
-		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(gated)))
-		b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
-		b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 200\", p, code)\n")
-		b.WriteString("\t\t} else if len(body) < 120 { t.Errorf(\"authed screen %s body suspiciously short (%d bytes)\", p, len(body)) }\n")
-		b.WriteString("\t}\n")
+		open, locked := appSpecE2ERoleSplit(bp, gated)
+		if len(open) > 0 {
+			b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(open)))
+			b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
+			b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 200\", p, code)\n")
+			b.WriteString("\t\t} else if len(body) < 120 { t.Errorf(\"authed screen %s body suspiciously short (%d bytes)\", p, len(body)) }\n")
+			b.WriteString("\t}\n")
+		}
+		if len(locked) > 0 {
+			b.WriteString("\t// These screens require a role the seeded admin does not hold.\n")
+			b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(locked)))
+			b.WriteString("\t\tif code, _ := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusForbidden {\n")
+			b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 403: the seeded admin lacks its role\", p, code)\n")
+			b.WriteString("\t\t}\n")
+			b.WriteString("\t}\n")
+		}
 	}
 
 	if crud {
@@ -3133,7 +3314,7 @@ func renderAppSpecCatalogBlock(bp appspec.AppSpec, screen appspec.AppSpecScreen,
 		}
 		return fmt.Sprintf("ui.Hero(ui.HeroConfig{Eyebrow: %s, Title: %s, Subtitle: %s%s%s})", tx(appspec.AppSpecProp(block, "eyebrow")), tx(title), tx(appspec.AppSpecProp(block, "subtitle")), actions, media), true
 	case "section":
-		cfg := fmt.Sprintf("ui.SectionConfig{Heading: %s, Eyebrow: %s, Description: %s, Label: %s, Class: %q, ID: %q}", tx(appspec.AppSpecProp(block, "heading")), tx(appspec.AppSpecProp(block, "eyebrow")), tx(appspec.AppSpecProp(block, "description")), tx(appspec.AppSpecProp(block, "label")), appspec.AppSpecProp(block, "class"), appspec.AppSpecProp(block, "id"))
+		cfg := fmt.Sprintf("ui.SectionConfig{Ctx: ctx, Heading: %s, Eyebrow: %s, Description: %s, Label: %s, Class: %q, ID: %q}", tx(appspec.AppSpecProp(block, "heading")), tx(appspec.AppSpecProp(block, "eyebrow")), tx(appspec.AppSpecProp(block, "description")), tx(appspec.AppSpecProp(block, "label")), appspec.AppSpecProp(block, "class"), appspec.AppSpecProp(block, "id"))
 		if len(block.Children) > 0 {
 			// Card-like children flow in a responsive ui.Grid; anything else
 			// (a CTA button, prose) flows in a left-aligned ui.Stack so it keeps
@@ -3232,7 +3413,7 @@ func appSpecPricingCardExpr(bp appspec.AppSpec, p map[string]any) string {
 	if b, _ := p["featured"].(bool); b {
 		featured = ", Featured: true"
 	}
-	return fmt.Sprintf("ui.PricingCard(ui.PricingCardConfig{Name: %s, Price: %q, Period: %s, Description: %s%s, CTALabel: %s, CTAHref: %q%s})",
+	return fmt.Sprintf("ui.PricingCard(ui.PricingCardConfig{Ctx: ctx, Name: %s, Price: %q, Period: %s, Description: %s%s, CTALabel: %s, CTAHref: %q%s})",
 		tx("name"), s("price"), tx("period"), tx("description"), feats, tx("cta_text"), s("cta_href"), featured)
 }
 
@@ -3479,7 +3660,7 @@ func appSpecAuthFormExpr(bp appspec.AppSpec, heading, action, next, submitLabel,
 	pwField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthPassword.Text(ctx), For: "auth-password", Required: true,` +
 		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %s, SubmitFullWidth: true}, %s, %s, %s)",
+		"ui.Form(ui.FormConfig{Ctx: ctx, Action: %q, Method: \"POST\", SubmitLabel: %s, SubmitFullWidth: true}, %s, %s, %s)",
 		action, appSpecTx(bp, submitLabel), hidden, emailField, pwField)
 	footer := ""
 	if footerHref != "" {
@@ -3589,11 +3770,18 @@ func appSpecSignOutExpr(bp appspec.AppSpec) string {
 }
 
 // appSpecEntityAPIPath is where App.Entity mounts decl's CRUD routes:
-// apiBase plus the table, which is the declared Table or the name in
-// snake_case. Define spells the default, so the path is the framework's
-// and not a copy of its rule.
+// apiBase plus declTable.
 func appSpecEntityAPIPath(apiBase string, decl framework.EntityDeclaration) string {
-	return apiBase + "/" + entity.Define(decl.Name, entity.EntityConfig{Table: decl.Table}).GetTable()
+	return apiBase + "/" + declTable(decl)
+}
+
+// declTable is the table App.Entity mounts decl under: the declared Table,
+// or the name in snake_case. Define spells the default, so every generated
+// caller (SSR forms, CLI, SDKs, typed client) routes on the framework's rule
+// and not a copy of it: a raw fallback to the name sent BlogPost's calls to
+// /BlogPost while the server mounted /blog_post.
+func declTable(decl framework.EntityDeclaration) string {
+	return entity.Define(decl.Name, entity.EntityConfig{Table: decl.Table}).GetTable()
 }
 
 // appSpecFormInputType maps an entity field type to an <input type=…>.
@@ -3678,7 +3866,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
 				field.Name, label, fieldID, req, field.To)
 		case "text":
-			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "bool", "boolean":
 			// entityui's pair: a checked box submits "true" (with no
@@ -3713,7 +3901,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		}
 		fields = append(fields, expr)
 	}
-	form := fmt.Sprintf("ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %s, ExtraAttrs: %s}, %s)", rpcPath, appSpecTx(bp, "Create"), extraAttrs, strings.Join(fields, ", "))
+	form := fmt.Sprintf("ui.Form(ui.FormConfig{Ctx: ctx, Action: %q, Method: \"POST\", SubmitLabel: %s, ExtraAttrs: %s}, %s)", rpcPath, appSpecTx(bp, "Create"), extraAttrs, strings.Join(fields, ", "))
 	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %s}), %s)", appSpecTx(bp, title), form)
 }
 
@@ -4342,7 +4530,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		// they had a session to end. The marketing header already resolved this
 		// correctly from handler.GetUser(ctx); the app shell now does too.
 		sb.WriteString("func sidebarConfig(ctx context.Context) ui.SidebarConfig {\n")
-		sb.WriteString(fmt.Sprintf("\tcfg := ui.SidebarConfig{Title: %q, Items: []ui.SidebarItem{\n", name))
+		sb.WriteString(fmt.Sprintf("\tcfg := ui.SidebarConfig{Ctx: ctx, Title: %q, Items: []ui.SidebarItem{\n", name))
 		for _, item := range bp.Nav {
 			renderNavItemGo(bp, &sb, item, "\t\t")
 		}
@@ -4464,7 +4652,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		sb.WriteString("\tappLayout = app.NewLayout(\"app\", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {\n")
 		sb.WriteString("\t\tnav, _ := component.SafeRenderCtx(ctx, sbComponent)\n")
 		sb.WriteString("\t\treturn ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},\n")
-		sb.WriteString("\t\t\tui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))\n")
+		sb.WriteString("\t\t\tui.ContentRow(ui.ContentRowConfig{Ctx: ctx, Sidebar: nav}, l.Primary()))\n")
 		sb.WriteString("\t})\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
 		sb.WriteString("\tui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)\n")
@@ -4563,7 +4751,8 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			sb.WriteString("\t\t\tif seedPw == \"\" {\n\t\t\t\treturn fmt.Errorf(\"ADMIN_SEED_PASSWORD is not set: admin %q cannot be seeded on a fresh database\", " + fmt.Sprintf("%q", bp.App.Admin.SeedEmail) + ")\n\t\t\t}\n")
 			sb.WriteString("\t\t\th, err := auth.HashPassword(seedPw)\n")
 			sb.WriteString("\t\t\tif err != nil {\n\t\t\t\treturn fmt.Errorf(\"hash bootstrap admin password: %w\", err)\n\t\t\t}\n")
-			sb.WriteString(fmt.Sprintf("\t\t\tu, err = authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, \"user\"})\n", bp.App.Admin.SeedEmail, adminRole))
+			seedRoles := appSpecSeedAdminRoles(bp)
+			sb.WriteString(fmt.Sprintf("\t\t\tu, err = authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, %q})\n", bp.App.Admin.SeedEmail, seedRoles[0], seedRoles[1]))
 			sb.WriteString("\t\t\tif err != nil && err != auth.ErrEmailTaken {\n")
 			sb.WriteString("\t\t\t\treturn fmt.Errorf(\"create bootstrap admin: %w\", err)\n")
 			sb.WriteString("\t\t\t}\n")

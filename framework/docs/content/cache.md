@@ -179,12 +179,13 @@ The middleware is RFC 9111-compliant by default:
   eviction runs whatever the status, so a refused request costs at
   most one origin fetch. A `GET` that started before the change
   committed can still store the old body, which then lasts its TTL.
-- Requests with `Authorization`, `Cookie`, or `X-Gofastr-Embed` headers bypass
-  the cache. The last one is an embeddable surface's grant: it authenticates a
-  request exactly as the other two do, and it deliberately travels without
-  either of them, so a credential check that looked only for cookies and bearer
-  tokens saw a per-subject response as anonymous and served it to the next
-  grant holder.
+- Requests with `Authorization`, `Cookie`, `X-API-Key`, or `X-Gofastr-Embed`
+  headers bypass the cache, the same credential headers the framework uses to
+  tell callers apart. `X-Gofastr-Embed` is an embeddable surface's grant: it
+  authenticates a request exactly as the others do, and it deliberately
+  travels without a cookie or bearer token, so a credential check that looked
+  only for those saw a per-subject response as anonymous and served it to the
+  next grant holder. An API key had the same hole.
 - `Cache-Control: no-cache` / `no-store` directives are honoured.
 - `Set-Cookie` responses and non-2xx/3xx responses are never stored,
   and neither are `304` responses: a 304 is a conditional-reply
@@ -248,8 +249,8 @@ entry appears in the generated `AGENTS.md` output from
   cache without bound (OOM/DoS). Set the cap; LRU eviction handles the
   rest.
 - **Expecting `CacheMiddleware` to cache authenticated traffic.**
-  Requests carrying `Authorization` or `Cookie` headers bypass the
-  cache by design (RFC 9111), and `Set-Cookie` responses are never
+  Requests carrying `Authorization`, `Cookie`, `X-API-Key` or
+  `X-Gofastr-Embed` headers bypass the cache by design (RFC 9111), and `Set-Cookie` responses are never
   stored. If every response says `X-Cache: MISS`, check the request
   headers before suspecting the middleware.
 - **Hand-rolling get-miss-then-set under concurrency.** N concurrent

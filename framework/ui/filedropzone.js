@@ -53,14 +53,23 @@
     }
   });
 
+  // within: the scope itself when it matches, then its descendants.
+  // The kernel hands an arrival pass the inserted node, and a swap
+  // whose root IS the input must be wired too.
+  function within(root, sel) {
+    const out = [];
+    if (root.matches && root.matches(sel)) out.push(root);
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
+    return out;
+  }
+
   // The arrival pass: an input that already carries files (a
   // programmatic set that raced the module's load) gets its previews
   // rendered rather than waiting for a change that already happened.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    const inputs = scope.querySelectorAll('input[data-fui-dropzone-preview]');
-    for (let i = 0; i < inputs.length; i++) {
-      if (inputs[i].files && inputs[i].files.length) renderPreviews(inputs[i]);
+    for (const input of within(scope, 'input[data-fui-dropzone-preview]')) {
+      if (input.files && input.files.length) renderPreviews(input);
     }
   }
   scan(document);

@@ -271,6 +271,45 @@ func TestCardsPresentation(t *testing.T) {
 	}
 }
 
+// A Display.Card field outside the shown columns is still read: the
+// card draws the memo title and the amount meta, not the id and an
+// empty body.
+func TestCardsReadNonColumnFields(t *testing.T) {
+	cfg := ordersConfig()
+	cfg.Display = &entity.DisplayConfig{
+		Columns: []string{"name", "status"},
+		Card:    &entity.CardFields{Title: "memo", Meta: []string{"amount"}},
+	}
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": cfg},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	html := listHTML(t, x.ui.List("orders").As("cards"), x.ctx("/orders", ""))
+	for _, want := range []string{"Amount: 10.5", `href="/orders/o1" data-cui-comp="ui-link">m1<`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("cards missing %q:\n%s", want, html)
+		}
+	}
+}
+
+// A card's subtitle draws under its title: the custom header Card takes
+// replaces the Description block, so the subtitle rides in the header.
+func TestCardDrawsSubtitle(t *testing.T) {
+	cfg := ordersConfig()
+	cfg.Display = &entity.DisplayConfig{
+		Columns: []string{"name", "status"},
+		Card:    &entity.CardFields{Title: "name", Subtitle: "memo"},
+	}
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": cfg},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	html := listHTML(t, x.ui.List("orders").As("cards"), x.ctx("/orders", ""))
+	if !strings.Contains(html, `data-cui-comp="ui-muted">m1<`) {
+		t.Errorf("card subtitle m1 not drawn:\n%s", html)
+	}
+}
+
 // The empty state offers New where the caller may create and takes the
 // heading level below the list's.
 func TestEmptyStateOffersNew(t *testing.T) {

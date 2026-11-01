@@ -4,9 +4,11 @@
 // gofastr-runs example, an agent) can list what is running, where, and
 // how to reach its MCP server, with no port scanning.
 //
-// Records live in [Dir], one owner-only JSON file per run. A run that
+// Records live in [Dir], one owner-only JSON file per run, with the
+// run's process start value in a sidecar file beside it. A run that
 // dies without shutting down leaves its file behind; [List] drops a
-// record whose pid is gone. Registration is best-effort: a run that
+// record whose process is gone, a pid now held by a newer process
+// included. Registration is best-effort: a run that
 // cannot write its record serves anyway.
 package localrun
 
@@ -22,6 +24,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,15 +36,25 @@ import (
 const (
 	// EnvDir overrides the registry directory.
 	EnvDir = "GOFASTR_RUNS_DIR"
-	// EnvOff set to "off" (or 0/false/no) stops this process from
-	// registering. Listing is unaffected.
-	EnvOff = "GOFASTR_RUNS"
+	// EnvRuns set to "off" (or 0/false/no) stops this process from
+	// registering; "on" (or 1/true/yes) makes it register wherever it
+	// binds. Unset, the App decides (see App.Start). Listing is
+	// unaffected.
+	EnvRuns = "GOFASTR_RUNS"
+	// EnvOff is EnvRuns under its older name, from when the variable
+	// could only turn registration off.
+	EnvOff = EnvRuns
 
 	// recordVersion is the Record layout this package writes.
 	recordVersion = 1
 	// maxRecordBytes bounds one record read; a real record is well
 	// under 2 KiB.
 	maxRecordBytes = 16 << 10
+	// maxStartBytes bounds a sidecar read: a decimal uint64.
+	maxStartBytes = 20
+
+	recordExt = ".json"
+	startExt  = ".start"
 )
 
 // Record is one running app.
@@ -51,6 +64,13 @@ type Record struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	PID  int    `json:"pid"`
+	// ProcStart is the OS's start value for PID (procalive.Identity),
+	// so List can tell the run from a later process that got its pid.
+	// Zero when the OS would not say; the pid alone decides then. It is
+	// kept in "<id>.start" beside the record, not in the JSON: readers
+	// built before it decode records strictly, and an unknown field
+	// would make them drop every record.
+	ProcStart uint64 `json:"-"`
 	// URL is the base URL a local client dials: http://127.0.0.1:<port>
 	// for a wildcard bind.
 	URL string `json:"url"`
@@ -114,7 +134,7 @@ func init() {
 // no EnvDir (tests that start an App must not litter the real registry;
 // a test that exercises it sets EnvDir to a temp dir).
 func Disabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvOff))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvRuns))) {
 	case "off", "0", "false", "no":
 		return true
 	}
@@ -122,14 +142,30 @@ func Disabled() bool {
 	return underTest && os.Getenv(EnvDir) == ""
 }
 
+// Forced reports whether the environment asks this process to
+// register regardless of where it binds: EnvRuns says "on" (or
+// 1/true/yes). EnvDir only says where the registry is. Disabled still
+// wins.
+func Forced() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvRuns))) {
+	case "on", "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
 // Register writes rec and returns the func that removes it. It fills
-// ID, PID (this process), Version and a zero Started. URL is required.
+// ID, PID (this process), ProcStart, Version and a zero Started. URL is
+// required.
 func Register(rec Record) (unregister func(), err error) {
 	if rec.URL == "" {
 		return nil, errors.New("localrun: a record needs a URL")
 	}
 	if rec.PID == 0 {
 		rec.PID = os.Getpid()
+	}
+	if rec.ProcStart == 0 {
+		rec.ProcStart = procalive.Identify(rec.PID).Start
 	}
 	if rec.Started.IsZero() {
 		rec.Started = time.Now().UTC()
@@ -153,13 +189,34 @@ func Register(rec Record) (unregister func(), err error) {
 		return nil, err
 	}
 	defer root.Close()
-	name := rec.ID + ".json"
-	tmp := rec.ID + ".tmp"
+	name := rec.ID + recordExt
+	start := rec.ID + startExt
+	// The sidecar first: a reader that sees the record finds its start
+	// value already there.
+	if rec.ProcStart != 0 {
+		if err := writeFile(root, start, strconv.FormatUint(rec.ProcStart, 10)); err != nil {
+			return nil, err
+		}
+	}
+	if err := writeFile(root, name, string(body)); err != nil {
+		_ = root.Remove(start)
+		return nil, err
+	}
+	return func() {
+		_ = remove(name)
+		_ = remove(start)
+	}, nil
+}
+
+// writeFile writes body to name through an owner-only temp file and a
+// rename, so a reader never sees half of it.
+func writeFile(root *os.Root, name, body string) error {
+	tmp := name + ".tmp"
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("localrun: %w", err)
+		return fmt.Errorf("localrun: %w", err)
 	}
-	_, werr := f.Write(body)
+	_, werr := f.WriteString(body)
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
@@ -168,13 +225,14 @@ func Register(rec Record) (unregister func(), err error) {
 	}
 	if werr != nil {
 		_ = root.Remove(tmp)
-		return nil, fmt.Errorf("localrun: %w", werr)
+		return fmt.Errorf("localrun: %w", werr)
 	}
-	return func() { _ = remove(name) }, nil
+	return nil
 }
 
 // List returns the records of live runs, newest first. A record whose
-// pid has exited is removed on the way. Files that are not records are
+// process has exited is removed on the way, and so is one whose pid a
+// newer process now holds (its start value differs from ProcStart). Files that are not records are
 // skipped. A missing directory is an empty list.
 func List() ([]Record, error) {
 	root, err := openDir(false)
@@ -197,16 +255,30 @@ func List() ([]Record, error) {
 	slices.Sort(names)
 	var out []Record
 	for _, name := range names {
-		id, ok := strings.CutSuffix(name, ".json")
+		if id, ok := strings.CutSuffix(name, startExt); ok && idPattern.MatchString(id) {
+			dropOrphanStart(root, names, id)
+			continue
+		}
+		id, ok := strings.CutSuffix(name, recordExt)
 		if !ok || !idPattern.MatchString(id) {
 			continue
 		}
-		rec, ok := readRecord(root, name, id)
+		// The sidecar first. A concurrent List that finds this run dead
+		// removes the record and then its sidecar: read in the other
+		// order, the record could arrive with its sidecar already gone,
+		// a missing start value would mean "older tracker, check the pid
+		// alone", and a recycled pid would pass. Read first, a sidecar
+		// gone by now means the record is gone too, and the read below
+		// skips it.
+		start := readStart(root, id+startExt)
+		rec, ok := loadRecord(root, name, id)
 		if !ok {
 			continue
 		}
-		if !procalive.Alive(rec.PID) {
+		rec.ProcStart = start
+		if !(procalive.Identity{PID: rec.PID, Start: rec.ProcStart}).Alive() {
 			_ = root.Remove(name)
+			_ = root.Remove(id + startExt)
 			continue
 		}
 		out = append(out, rec)
@@ -216,6 +288,10 @@ func List() ([]Record, error) {
 	})
 	return out, nil
 }
+
+// loadRecord is readRecord, a variable so a test can run another List's
+// removals between this one's reads.
+var loadRecord = readRecord
 
 // readRecord decodes one record file, refusing an oversized file, a
 // record whose ID does not match its file name or whose pid disagrees
@@ -254,6 +330,44 @@ func readRecord(root *os.Root, name, id string) (Record, bool) {
 		return Record{}, false
 	}
 	return rec, true
+}
+
+// dropOrphanStart removes the sidecar of a record that is gone (a
+// reader that predates sidecars deleted it) once its process has
+// exited. A live process's sidecar stays: Register writes it just
+// before the record.
+func dropOrphanStart(root *os.Root, names []string, id string) {
+	if _, found := slices.BinarySearch(names, id+recordExt); found {
+		return
+	}
+	pid, err := strconv.Atoi(id[:strings.IndexByte(id, '-')])
+	if err != nil || procalive.Alive(pid) {
+		return
+	}
+	_ = root.Remove(id + startExt)
+}
+
+// readStart reads a record's sidecar start value, 0 when there is none
+// or it is not one: the pid alone decides then. The same checks as a
+// record: a regular file of this user's, read without blocking.
+func readStart(root *os.Root, name string) uint64 {
+	f, err := root.OpenFile(name, openRecordFlags, 0)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || !ownFile(f, fi) {
+		return 0
+	}
+	body, err := io.ReadAll(io.LimitReader(f, maxStartBytes+1))
+	if err != nil || len(body) > maxStartBytes {
+		return 0
+	}
+	v, err := strconv.ParseUint(string(body), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 // openRoot is os.OpenRoot, a variable so a test can swap the directory

@@ -71,9 +71,16 @@
     // server-side.
     const ctx = (o.btn && o.btn.getAttribute('data-cui-ctx')) || '';
     const cfg = entry.cfg;
+    // A navigate while the chrome loads swaps NS._chromeCache: the
+    // reader left the page this open belongs to, so its deep link
+    // must not land on the next one (_mountByName skips the mount).
+    const page = NS._chromeCache;
     await NS._mountByName(name, ctx);
+    if (page !== NS._chromeCache) return;
     if ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
       if (!NS._deepLinkOpen) await NS.loadModule('widgetlinks');
+      // The module load is a second wait the reader can navigate during.
+      if (page !== NS._chromeCache) return;
       NS._deepLinkOpen(cfg, o);
     }
   };
@@ -93,7 +100,7 @@
       //
       // Removing it cannot flash, but NOT because a visible widget
       // "returned above" — nothing orders those. A deep-link arrival is
-      // mounted by the synchronous tryMount block before any pointer
+      // mounted by the catalog boot pass (widgets-boot) before any pointer
       // event can run, and this path is reached only from a trigger
       // click on a catalog-gated widget. So whatever is still in the DOM
       // here is un-mounted chrome nobody is looking at.
@@ -165,8 +172,13 @@
     // silent: it runs per awaiter, and a shared in-flight promise can have
     // several. Rethrowing here would surface an unhandled rejection for a
     // failure already reported once.
-    try { html = await NS._chromeCache[key]; } catch (_) {}
-    if (html) NS.mountWidget(cfg, html);
+    // Same page check as the failure toast above: a gofastr:navigate
+    // while the chrome loaded swapped NS._chromeCache, and mounting the
+    // answer now opens the panel on a page the reader never opened it
+    // on. The cached branch awaits a promise too, so both are covered.
+    const page = NS._chromeCache;
+    try { html = await page[key]; } catch (_) {}
+    if (html && page === NS._chromeCache) NS.mountWidget(cfg, html);
   };
 
   NS.closeWidget = function (name) {

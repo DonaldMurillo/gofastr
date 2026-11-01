@@ -122,7 +122,7 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "role", "aria-live", "hidden",
 			"data-fui-network-retry-health", "data-fui-network-retry-threshold"),
 		Parts:   parts,
-		Strings: StringsFor(nil),
+		Strings: StringsFor(cfg.Ctx),
 	}, networkRetryClasses))
 }
 

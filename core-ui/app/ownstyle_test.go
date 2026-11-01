@@ -8,8 +8,26 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+// An app theme that renames a breakpoint an owned sheet's custom media
+// names fails at boot, not on the first request for that sheet.
+func TestWithThemeChecksOwnedSheets(t *testing.T) {
+	registry.IsolateForTest(t)
+	ownstyle.Must("apptest-bp", ownstyle.KindScoped, "@media (--above-md) { :scope { gap: 1px; } }\n")
+	if got := panicOf(func() { app.NewApp("t").WithTheme(style.DefaultTheme()) }); got != "" {
+		t.Fatalf("default theme panicked: %s", got)
+	}
+	theme := style.DefaultTheme()
+	theme.Breakpoints.MD.Name = "tablet"
+	got := panicOf(func() { app.NewApp("t").WithTheme(theme) })
+	if !strings.Contains(got, "apptest-bp") || !strings.Contains(got, "--above-md") {
+		t.Fatalf("WithTheme panic = %q, want it to name apptest-bp and --above-md", got)
+	}
+}
 
 // Owned sheets register at init, like the generated files that build
 // them. ownedHandle is the shape `gofastr gen styles` writes: a struct

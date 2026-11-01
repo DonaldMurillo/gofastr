@@ -71,7 +71,11 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	}
 	defer os.Remove(exeTemp)
 
-	ldflags := windowsDesktopLinkerFlags(f.scheme)
+	extra, err := extraLinkerFlags(f)
+	if err != nil {
+		return err
+	}
+	ldflags := windowsDesktopLinkerFlags(f.scheme) + extra
 	cli.Info("Building %s (windows/amd64, CGO_ENABLED=0)...", f.pkg)
 	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", exeTemp, f.pkg)
 	cmd.Env = desktopBuildEnvironment(map[string]string{"CGO_ENABLED": "0", "GOOS": "windows", "GOARCH": "amd64"})

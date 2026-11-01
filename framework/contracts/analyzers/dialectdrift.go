@@ -30,8 +30,8 @@ import (
 //
 // Pairing heuristics, both implemented:
 //   - (a) two functions or consts in one package whose names differ
-//     only by a Postgres/PG vs SQLite suffix or infix
-//     (claimDeliveriesPostgres / claimDeliveriesSQLite);
+//     only by a Postgres/PostgreSQL/PG vs SQLite/SQLite3 suffix or
+//     infix (claimDeliveriesPostgres / claimDeliveriesSQLite);
 //   - (b) a switch/if on a dialect value (s.dialect, DialectPostgres,
 //     "postgres") with SQL in each arm, including the early-return
 //     spelling whose other arm is the code after the if.
@@ -49,9 +49,12 @@ import (
 //
 // Only the FIRST SQL-bearing literal of each side is compared (the
 // query the function leads with; a twin's write-back UPDATE by
-// primary key is not a selection predicate), and every WHERE clause
-// of it is pooled — the outbox Postgres claim's predicates live in
-// the sub-SELECT under WHERE id IN (SELECT …). Placeholders ($n, ?,
+// primary key is not a selection predicate). A literal is SQL-bearing
+// when a statement verb opens a statement (literal or line start, an
+// opening paren, a semicolon) and SQL follows it, so an error prefix
+// or log line that says "with" or "select" cannot displace the query.
+// Every WHERE clause of it is pooled — the outbox Postgres claim's
+// predicates live in the sub-SELECT under WHERE id IN (SELECT …). Placeholders ($n, ?,
 // %s), quoting, whitespace, and single-letter table aliases are
 // normalized away; IN-lists of placeholders collapse to one; atoms
 // carrying a sub-SELECT are structural (id IN (SELECT …)) and skipped
@@ -368,8 +371,10 @@ func statementTables(s string) map[string]bool {
 }
 
 // reTableTarget matches a table-name position: FROM x, INSERT INTO x,
-// UPDATE x — the verb spellings that introduce a table.
-var reTableTarget = regexp.MustCompile(`(?:\bfrom|\binto|\bupdate)\s+([a-z_][a-z0-9_$.]*|\?)`)
+// UPDATE x — the verb spellings that introduce a table. Postgres's ONLY
+// (UPDATE ONLY x, DELETE FROM ONLY x) is skipped, so the table matches
+// its SQLite twin's bare name.
+var reTableTarget = regexp.MustCompile(`(?:\bfrom|\binto|\bupdate)(?:\s+only\b)?\s+([a-z_][a-z0-9_$.]*|\?)`)
 
 // sqlKeywords are words the table-target shape can capture that name
 // clauses, not tables (ON CONFLICT DO UPDATE SET …).
@@ -409,14 +414,41 @@ var (
 )
 
 // firstSQLStatement returns the first statement-bearing region of a
-// literal: the verb position and the text from it.
+// literal: the verb position and the text from it. A verb counts only
+// where a statement can start — the literal's start, a new line, an
+// opening paren or a semicolon, whitespace aside — and only when SQL
+// follows it (reSQLShape): "claim with postgres: select the oldest
+// row" is prose, and taking it as the side's query would displace the
+// real one.
 func firstSQLStatement(s string) (string, int, bool) {
-	loc := reDialectVerb.FindStringIndex(s)
-	if loc == nil {
-		return "", -1, false
+	for _, loc := range reDialectVerb.FindAllStringIndex(s, -1) {
+		if !statementBoundary(s[:loc[0]]) || !reSQLShape.MatchString(s[loc[0]:]) {
+			continue
+		}
+		return s[loc[0]:], loc[0], true
 	}
-	return s[loc[0]:], loc[0], true
+	return "", -1, false
 }
+
+// statementBoundary reports whether the text before a verb ends where a
+// statement can begin.
+func statementBoundary(before string) bool {
+	t := strings.TrimRight(before, " \t")
+	if t == "" {
+		return true
+	}
+	switch t[len(t)-1] {
+	case '\n', '\r', '(', ';':
+		return true
+	}
+	return false
+}
+
+// reSQLShape is what follows a statement verb in SQL: SELECT … FROM or
+// a SELECT of a function call, UPDATE [ONLY] x [[AS] alias] SET, DELETE FROM, INSERT
+// [OR x | IGNORE] INTO, WITH name AS (, or the verb alone ending the
+// literal (a builder head, "UPDATE " + table + " SET …").
+var reSQLShape = regexp.MustCompile(`(?is)^(?:select\s.*\bfrom\b|select\s+[\w.]+\s*\(|update\s+(?:only\s+)?\S+(?:\s+(?:as\s+)?\w+)?\s+set\b|delete\s+from\b|insert\s+(?:or\s+\w+\s+|ignore\s+)?into\b|with\s+(?:recursive\s+)?\S+\s+as\s*\(|(?:select|update|delete|insert|with)\s*$)`)
 
 // whereAtoms extracts every WHERE clause of the first SQL statement
 // in s and pools their normalized top-level atoms. A dialect twin's
@@ -571,33 +603,54 @@ func normalizeAtom(raw string) string {
 }
 
 // dialectNameFlavor reports the dialect a declaration name carries:
-// a Postgres/PG vs SQLite token (suffix or infix).
+// a Postgres/PostgreSQL/PG vs SQLite/SQLite3 token (suffix or infix).
 func dialectNameFlavor(name string) string {
-	flavor := ""
-	for _, t := range splitCamel(name) {
-		switch strings.ToLower(t) {
-		case "postgres", "pg":
-			if flavor == "" {
-				flavor = "postgres"
-			}
-		case "sqlite":
-			if flavor == "" {
-				flavor = "sqlite"
-			}
+	for _, t := range dialectTokens(name) {
+		if f := dialectTokenFlavor(t); f != "" {
+			return f
 		}
 	}
-	return flavor
+	return ""
+}
+
+// dialectTokenFlavor classifies one lowercased name token.
+func dialectTokenFlavor(t string) string {
+	switch t {
+	case "postgres", "postgresql", "pg":
+		return "postgres"
+	case "sqlite", "sqlite3":
+		return "sqlite"
+	}
+	return ""
+}
+
+// dialectTokens splits a name into lowercased camelCase and snake_case
+// tokens, rejoining the PostgreSQL spelling the camel split cuts in
+// two (Postgre + SQL).
+func dialectTokens(name string) []string {
+	var raw []string
+	for _, part := range strings.Split(name, "_") {
+		raw = append(raw, splitCamel(part)...)
+	}
+	out := make([]string, 0, len(raw))
+	for i := 0; i < len(raw); i++ { // classic loop: the body consumes a pair
+		t := strings.ToLower(raw[i])
+		if t == "postgre" && i+1 < len(raw) && strings.ToLower(raw[i+1]) == "sql" {
+			t = "postgresql"
+			i++
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 // dialectBaseName strips the dialect tokens from a name so twins land
 // on one key: claimDeliveriesPostgres → claimdeliveries.
 func dialectBaseName(name string) string {
 	var keep []string
-	for _, t := range splitCamel(name) {
-		switch strings.ToLower(t) {
-		case "postgres", "pg", "sqlite":
-		default:
-			keep = append(keep, strings.ToLower(t))
+	for _, t := range dialectTokens(name) {
+		if dialectTokenFlavor(t) == "" {
+			keep = append(keep, t)
 		}
 	}
 	return strings.Join(keep, "")

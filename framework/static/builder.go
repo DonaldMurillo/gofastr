@@ -22,11 +22,15 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	corestatic "github.com/DonaldMurillo/gofastr/core/static"
@@ -141,7 +145,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// The page files this build writes (rendered pages and redirect
 	// pages), as slash paths under OutDir: no static-source or extra
 	// file replaces one.
-	rendered := map[string]bool{}
+	rendered := newFileSet()
+	// The URL path each page file was rendered from, to refuse a second
+	// page landing on the same file.
+	pageOwner := map[string]string{}
 	// The other page files this build writes (404.html, every llm.md and
 	// its index), as slash paths under OutDir: with rendered, what the
 	// page manifest records (pruneStalePages).
@@ -177,6 +184,17 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 					return fmt.Errorf("static: contributor on %q: %w", p, err)
 				}
 			}
+			// Two pages whose paths map to one file (a StaticPaths key
+			// "a/b" beside a route /products/a/b) would leave the later
+			// one in place of the earlier: refuse the export instead.
+			// Files that differ only in case are one file on a
+			// case-insensitive filesystem (APFS, NTFS), so the check
+			// compares case-folded paths.
+			file := filepath.ToSlash(pathToFile(p))
+			if prev, dup := pageOwner[foldPath(file)]; dup {
+				return fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, p, file)
+			}
+			pageOwner[foldPath(file)] = p
 			html := b.applyStaticMode(lctx, page)
 			dst := filepath.Join(b.OutDir, pathToFile(p))
 			if err := b.ensureContained(dst); err != nil {
@@ -187,7 +205,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			}
 			b.log("rendered %s -> %s", p, dst)
 			res.Pages = append(res.Pages, p)
-			rendered[filepath.ToSlash(pathToFile(p))] = true
+			rendered.add(filepath.ToSlash(pathToFile(p)))
 			if !slices.Contains(renderedRoutes, route) {
 				renderedRoutes = append(renderedRoutes, route)
 			}
@@ -209,7 +227,25 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			if !strings.HasPrefix(urlPath, "/") {
 				return res, fmt.Errorf("static: contributor file %q is not a root-absolute path", urlPath)
 			}
-			if err := b.writeRawAsset(urlPath, files[urlPath]); err != nil {
+			// Everything below, the record in res.Assets included, uses
+			// the path the write lands on: /about/./index.html is
+			// /about/index.html.
+			body := files[urlPath]
+			urlPath = path.Clean(urlPath)
+			// A contributor file on a page's file, in any case, would
+			// replace the page; a redirect written later checks it too.
+			rel := strings.TrimPrefix(urlPath, "/")
+			// The build writes _headers over a contributor's and removes
+			// _redirects when the app has no redirects; the static dir's
+			// copy is appended instead.
+			if f := foldPath(rel); f == foldPath("_headers") || f == foldPath("_redirects") {
+				return res, fmt.Errorf("static: contributor file %s: the export writes _headers and _redirects itself; ship extra rules in the static dir, which are appended", urlPath)
+			}
+			if prev, dup := pageOwner[foldPath(rel)]; dup {
+				return res, fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, urlPath, rel)
+			}
+			pageOwner[foldPath(rel)] = urlPath
+			if err := b.writeRawAsset(urlPath, body); err != nil {
 				return res, err
 			}
 			res.Assets = append(res.Assets, urlPath)
@@ -228,11 +264,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 	// An ExtraDirs `_headers` must not replace it: that would drop the
 	// header-only frame-ancestors guard.
-	rendered["_headers"] = true
+	rendered.add("_headers")
 
 	// Redirect routes: a page at each exact redirect's path, and the
 	// _redirects rules the hosts that read _headers also read.
-	if err := b.writeRedirects(ctx, pageSet(res.Pages), rendered); err != nil {
+	if err := b.writeRedirects(ctx, pageSet(res.Pages), rendered, pageOwner); err != nil {
 		return res, err
 	}
 
@@ -390,13 +426,18 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if err := b.dumpExtraDirs(&res, rendered); err != nil {
 		return res, err
 	}
-	if err := b.dumpRailScripts(ctx, &res, renderedRoutes); err != nil {
+	if err := b.dumpRailScripts(ctx, &res, renderedRoutes, rendered); err != nil {
 		return res, err
 	}
 	// A reused OutDir holds the previous build's pages: drop the ones
 	// this build no longer writes, before the PWA worker fingerprints
 	// and precaches the tree.
 	if err := b.pruneStalePages(res, rendered, docs); err != nil {
+		return res, err
+	}
+	// Before the worker hashes the tree, so a rebuild over leftovers
+	// hashes the same names a fresh build does.
+	if err := respell(b.OutDir, writtenPaths(&res, rendered, docs)); err != nil {
 		return res, err
 	}
 
@@ -408,7 +449,15 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// (manifest start_url/scope/id, worker precache list, and
 	// registration target must all resolve under the mount path), so
 	// none of these go through rewriteJSAsset.
-	if err := b.dumpPWAAssets(&res, frameworkAssetCount); err != nil {
+	if err := b.dumpPWAAssets(&res, frameworkAssetCount, rendered); err != nil {
+		return res, err
+	}
+	// Last, once every file is written: no two spellings of one file or
+	// directory, and each one on disk under the build's spelling.
+	if err := checkCaseTwins(&res, rendered, docs); err != nil {
+		return res, err
+	}
+	if err := respell(b.OutDir, writtenPaths(&res, rendered, docs)); err != nil {
 		return res, err
 	}
 
@@ -643,7 +692,7 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 // redirect chain that never ends (the live router fails it closed) is
 // skipped too. With path locales each locale tree gets its own page, its
 // target under the same prefix.
-func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string]bool) error {
+func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, rendered *fileSet, owner map[string]string) error {
 	locales, byPrefix := b.Host.PathLocales()
 	tags := []string{""}
 	if byPrefix {
@@ -676,6 +725,13 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 			}
 			href := b.redirectHref(to, pages)
 			rel := filepath.ToSlash(pathToFile(from))
+			// A redirect file that differs from a page's, or another
+			// redirect's, only in case is the same file on a
+			// case-insensitive filesystem; it would replace that page.
+			if prev, dup := owner[foldPath(rel)]; dup {
+				return fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, from, rel)
+			}
+			owner[foldPath(rel)] = from
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
 			if err := b.ensureContained(dst); err != nil {
 				return err
@@ -683,7 +739,7 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 			if err := writeUnder(b.OutDir, dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
 				return err
 			}
-			rendered[rel] = true
+			rendered.add(rel)
 			fmt.Fprintf(&rules, "%s %s 308\n", urlBytesEscaper(b.BasePath+from), href)
 			b.log("redirect %s -> %s", from, href)
 		}
@@ -700,7 +756,7 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 	if err := writeUnder(b.OutDir, dst, []byte(rules.String())); err != nil {
 		return err
 	}
-	rendered["_redirects"] = true
+	rendered.add("_redirects")
 	return nil
 }
 
@@ -758,7 +814,15 @@ func redirectPage(ctx context.Context, href, policy string) string {
 	if lang == "" {
 		lang = "en"
 	}
-	h := stdhtml.EscapeString(href)
+	// The target lands in a meta refresh, a canonical link and an
+	// anchor. HTML escaping leaves javascript: and data: intact, so the
+	// scheme goes through the anchor allow-list first; a refused target
+	// degrades to an inert "#".
+	safe := urlsafe.CleanAnchor(href)
+	if safe == "" {
+		safe = "#"
+	}
+	h := stdhtml.EscapeString(safe)
 	page := "<!doctype html>\n" +
 		"<html lang=\"" + stdhtml.EscapeString(lang) + "\">\n" +
 		"<head>\n" +
@@ -846,10 +910,10 @@ func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]strin
 }
 
 // expandParams substitutes each StaticPaths param map into the route pattern.
-// It fails closed: any param value that would let the generated URL escape its
-// route segment, a path separator, an "." / ".." traversal component, a NUL,
+// It fails closed: any param value whose page file would leave its route's
+// directory, an "." / ".." or empty component on disk, a NUL, a backslash,
 // or an empty value, aborts the whole build rather than silently writing a
-// file outside OutDir.
+// file outside OutDir (validateDiskValue).
 func expandParams(_ context.Context, pattern string, sets []map[string]string) ([]string, error) {
 	var out []string
 	for _, params := range sets {
@@ -872,14 +936,7 @@ func applyParams(pattern string, params map[string]string) (string, error) {
 		if !ok {
 			continue
 		}
-		// A catch-all segment (":name*") may legitimately carry a
-		// multi-segment remainder; any other param fills exactly one
-		// path component and is validated as such.
-		check := validateParamValue
-		if strings.HasSuffix(part, "*") {
-			check = validateCatchAllValue
-		}
-		if err := check(key, v); err != nil {
+		if err := validateDiskValue(key, v, part); err != nil {
 			return "", err
 		}
 	}
@@ -888,37 +945,27 @@ func applyParams(pattern string, params map[string]string) (string, error) {
 	return coreapp.PatternPath(pattern, params), nil
 }
 
-// validateParamValue rejects StaticPaths values that could break out of their
-// single URL segment when written to disk by pathToFile/Build. A param fills
-// exactly one path component, so anything that introduces a new component
-// (separator) or navigates the tree ("."/"..") or truncates the name (NUL) is
-// unsafe.
-func validateParamValue(key, v string) error {
+// validateDiskValue rejects a StaticPaths value whose page file would
+// leave its route's directory. It checks what Build writes, not the raw
+// value: the segment is encoded the way the sitemap links it
+// (PatternPath), then decoded the way a static host maps that URL to a
+// file (hostPath). A "/" in a one-segment key ("a/b", linked as a%2Fb)
+// is a directory boundary on disk, so that key exports to
+// a/b/index.html; a catch-all's "/" separates segments the same way.
+// Every component on disk must be non-empty and not "." or "..", and
+// the value may not hold a NUL or a backslash (a separator on Windows
+// that the encoding does not escape).
+func validateDiskValue(key, v, part string) error {
 	if v == "" {
 		return fmt.Errorf("static: empty StaticPaths value for %q", key)
 	}
-	if strings.ContainsAny(v, "/\\\x00") {
-		return fmt.Errorf("static: StaticPaths value for %q contains a path separator: %q", key, v)
+	if strings.ContainsAny(v, "\\\x00") {
+		return fmt.Errorf("static: StaticPaths value for %q contains a NUL or a backslash: %q", key, v)
 	}
-	if v == "." || v == ".." {
-		return fmt.Errorf("static: StaticPaths value for %q is a traversal component: %q", key, v)
-	}
-	return nil
-}
-
-// validateCatchAllValue validates a catch-all ("name*") StaticPaths value,
-// which may span several path components joined by "/". Each component must
-// still be non-empty and free of "." / ".." traversal and NUL.
-func validateCatchAllValue(key, v string) error {
-	if v == "" {
-		return fmt.Errorf("static: empty StaticPaths value for %q", key)
-	}
-	if strings.ContainsRune(v, '\x00') {
-		return fmt.Errorf("static: catch-all StaticPaths value for %q contains NUL: %q", key, v)
-	}
-	for comp := range strings.SplitSeq(v, "/") {
+	disk := hostPath(coreapp.PatternPath(part, map[string]string{key: v}))
+	for comp := range strings.SplitSeq(disk, "/") {
 		if comp == "" || comp == "." || comp == ".." {
-			return fmt.Errorf("static: catch-all StaticPaths value for %q has an empty or traversal component: %q", key, v)
+			return fmt.Errorf("static: StaticPaths value for %q writes an empty or traversal path component: %q", key, v)
 		}
 	}
 	return nil
@@ -1398,7 +1445,9 @@ func (b *Builder) dumpAppIcons(res *Result) error {
 // the offline fallback page (as offline/index.html so a plain static
 // server resolves the extension-less precache URL). No-op when the host
 // did not opt into WithPWA.
-func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
+// Each file it writes is added to written under its file path (the
+// offline page's URL is a directory).
+func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *fileSet) error {
 	if !b.Host.PWAEnabled() {
 		return nil
 	}
@@ -1410,7 +1459,59 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// immutable, so every exported page and asset is precached at install
 	// and the whole site works offline. The tree hash makes a
 	// content-only redeploy rotate the cache version.
-	contentHash, err := hashExportTree(b.OutDir)
+	type pwaFile struct {
+		urlPath string
+		relFile string
+		body    []byte
+	}
+	// A locale tree's pages link their own manifest, whose start_url
+	// launches into that tree.
+	var localeManifests []pwaFile
+	if locales, byPrefix := b.Host.PathLocales(); byPrefix {
+		for _, tag := range locales.Prefixed {
+			body, err := b.Host.PWAManifestJSON(localeContext(context.Background(), locales, tag), b.BasePath)
+			if err != nil {
+				return fmt.Errorf("static: pwa manifest %s: %w", tag, err)
+			}
+			localeManifests = append(localeManifests, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
+		}
+	}
+	// The hash leaves out every file this surface writes: a rebuild
+	// finds them from the last build and a fresh build does not. They
+	// are respelled first, so a leftover in another case that is the
+	// same file on this disk (MANIFEST.webmanifest on APFS) takes the
+	// generated name and drops out, and one that is a file of its own
+	// on a case-sensitive disk stays in the hash like any other file.
+	generated := map[string]bool{"manifest.webmanifest": true, "service-worker.js": true}
+	for _, f := range localeManifests {
+		generated[filepath.ToSlash(f.relFile)] = true
+	}
+	const pwaDir = "__gofastr/pwa"
+	genPaths := append(slices.Sorted(maps.Keys(generated)), pwaDir+"/register.js", pwaDir+"/offline/index.html")
+	if err := respell(b.OutDir, genPaths); err != nil {
+		return err
+	}
+	// An alias of a generated file (a symlink or hard link under any
+	// name) would hash the last build's copy, and change with every
+	// build: it is left out like the file it names. A file the static
+	// source supplies is the user's, not generated, and its aliases
+	// stay in the hash.
+	var genFiles []fs.FileInfo
+	for _, g := range genPaths {
+		if b.staticSourceHas(g) {
+			continue
+		}
+		if fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(g))); err == nil {
+			genFiles = append(genFiles, fi)
+		}
+	}
+	contentHash, err := hashExportTree(b.OutDir, func(rel string) bool {
+		if generated[rel] || strings.HasPrefix(rel, pwaDir+"/") {
+			return true
+		}
+		fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(rel)))
+		return err == nil && slices.ContainsFunc(genFiles, func(g fs.FileInfo) bool { return os.SameFile(fi, g) })
+	})
 	if err != nil {
 		return fmt.Errorf("static: fingerprint export: %w", err)
 	}
@@ -1446,28 +1547,13 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// no other policy.
 	offline := b.slashPageLinks(b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML())), pageSet(res.Pages))
 	offline = applyStaticCSP(offline, b.policy())
-	type pwaFile struct {
-		urlPath string
-		relFile string
-		body    []byte
-	}
 	files := []pwaFile{
 		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
 		{"/service-worker.js", "service-worker.js", []byte(sw)},
 		{pwaRegisterJS, filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
 		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
 	}
-	// A locale tree's pages link their own manifest, whose start_url
-	// launches into that tree.
-	if locales, byPrefix := b.Host.PathLocales(); byPrefix {
-		for _, tag := range locales.Prefixed {
-			body, err := b.Host.PWAManifestJSON(localeContext(context.Background(), locales, tag), b.BasePath)
-			if err != nil {
-				return fmt.Errorf("static: pwa manifest %s: %w", tag, err)
-			}
-			files = append(files, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
-		}
-	}
+	files = append(files, localeManifests...)
 	for _, f := range files {
 		// User-supplied files win: before this surface moved to the end of
 		// the build, a manifest/worker shipped in the app's static dir
@@ -1487,6 +1573,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 			return err
 		}
 		res.Assets = append(res.Assets, f.urlPath)
+		written.add(filepath.ToSlash(f.relFile))
 		b.log("wrote %s", f.urlPath)
 	}
 	return nil
@@ -1508,20 +1595,39 @@ const pwaRegisterJS = "/__gofastr/pwa/register.js"
 
 // staticSourceHas reports whether the host's static asset source (dir or
 // embedded FS) provides rel, meaning the user shipped their own copy.
+//
+// The spelling must match: on a case-insensitive filesystem a static
+// MANIFEST.webmanifest opened as manifest.webmanifest, the generated
+// file was skipped, and a case-sensitive host had no manifest. The other
+// spelling is copied as itself and refused as a case twin.
 func (b *Builder) staticSourceHas(rel string) bool {
 	if dir := b.Host.StaticDir(); dir != "" {
-		if _, err := os.Stat(filepath.Join(dir, rel)); err == nil {
-			return true
-		}
-		return false
+		return spelledIn(os.DirFS(dir), filepath.ToSlash(rel))
 	}
 	if fsys := b.Host.StaticFS(); fsys != nil {
-		if f, err := fsys.Open(filepath.ToSlash(rel)); err == nil {
-			_ = f.Close()
-			return true
-		}
+		return spelledIn(fsys, filepath.ToSlash(rel))
 	}
 	return false
+}
+
+// spelledIn reports whether fsys holds rel, a slash path, under exactly
+// that spelling: each directory listing names each segment.
+func spelledIn(fsys fs.FS, rel string) bool {
+	// Absent in any spelling is the common answer, and one Stat gives it.
+	// Any other Stat error (an adapter whose files read but do not stat)
+	// leaves the answer to the listings.
+	if _, err := fs.Stat(fsys, rel); errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	dir := "."
+	for _, name := range strings.Split(rel, "/") {
+		ents, err := fs.ReadDir(fsys, dir)
+		if err != nil || !slices.ContainsFunc(ents, func(e fs.DirEntry) bool { return e.Name() == name }) {
+			return false
+		}
+		dir = path.Join(dir, name)
+	}
+	return true
 }
 
 // hashExportTree fingerprints every file already written to outDir
@@ -1532,11 +1638,9 @@ func (b *Builder) staticSourceHas(rel string) bool {
 // with identical content. A content-only redeploy therefore changes
 // the hash → the worker bytes → the cache version, and installed
 // clients re-precache; an unchanged rebuild reproduces the same worker.
-func hashExportTree(outDir string) (string, error) {
-	skip := map[string]bool{
-		"manifest.webmanifest": true,
-		"service-worker.js":    true,
-	}
+//
+// skip reports, for a slash path under outDir, whether it is left out.
+func hashExportTree(outDir string, skip func(string) bool) (string, error) {
 	h := sha256.New()
 	err := filepath.WalkDir(outDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -1547,7 +1651,7 @@ func hashExportTree(outDir string) (string, error) {
 			return err
 		}
 		slashRel := filepath.ToSlash(rel)
-		if skip[slashRel] || strings.HasPrefix(slashRel, "__gofastr/pwa/") {
+		if skip(slashRel) {
 			return nil
 		}
 		h.Write([]byte(slashRel))
@@ -1575,6 +1679,9 @@ func hashExportTree(outDir string) (string, error) {
 // appropriate rewriter (rewriteBaseURLs for HTML, manual prefixing for JSON)
 // before calling. Guards path containment via ensureContained.
 func (b *Builder) writeRawAsset(urlPath string, body []byte) error {
+	if err := refuseSeparatorName(urlPath); err != nil {
+		return err
+	}
 	dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(urlPath, "/")))
 	if err := b.ensureContained(dst); err != nil {
 		return err
@@ -1671,17 +1778,15 @@ func pathToLLMFile(p string) string {
 // is skipped because dumpPWAAssets writes its base-path-aware copy, and
 // a src that is not a same-origin path (a CDN URL, a relative src) is
 // not the app's to serve and is left to the browser.
-func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []string) error {
+func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []string, rendered *fileSet) error {
 	if b.Handler == nil {
 		return nil
 	}
-	written := make(map[string]bool, len(res.Assets))
+	// Keyed folded: a script in another case is the same file on a
+	// case-insensitive filesystem.
+	written := newFileSet()
 	for _, p := range res.Assets {
-		written[p] = true
-	}
-	pages := make(map[string]bool, len(res.Pages))
-	for _, p := range res.Pages {
-		pages["/"+filepath.ToSlash(pathToFile(p))] = true
+		written.add(p)
 	}
 	for _, src := range b.Host.ExtraScriptSrcs(routes) {
 		u, err := url.Parse(src)
@@ -1690,11 +1795,22 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 		}
 		// The file goes under the decoded path, the name a static host
 		// resolves the request to.
-		urlPath := u.Path
-		if pages[urlPath] {
+		urlPath := path.Clean(u.Path)
+		// rendered holds every page and redirect page, compared in any
+		// case.
+		if rendered.has(strings.TrimPrefix(urlPath, "/")) {
 			return fmt.Errorf("static: extra script %s would overwrite the exported page at the same path", urlPath)
 		}
-		if written[urlPath] || (urlPath == pwaRegisterJS && b.Host.PWAEnabled()) {
+		// The same spelling is the file the build wrote, which wins.
+		// Another spelling would be skipped while every page still asks
+		// for it: a 404 on a case-sensitive host.
+		if own, ok := written.spelling(urlPath); ok {
+			if own != urlPath {
+				return caseTwinError(own, urlPath)
+			}
+			continue
+		}
+		if urlPath == pwaRegisterJS && b.Host.PWAEnabled() {
 			continue
 		}
 		target := u.EscapedPath()
@@ -1711,7 +1827,7 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 			return err
 		}
 		res.Assets = append(res.Assets, urlPath)
-		written[urlPath] = true
+		written.add(urlPath)
 		b.log("script %s", urlPath)
 	}
 	return nil
@@ -1724,10 +1840,11 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 // this build and the source, never what sits in OutDir: Watch rebuilds
 // into the same directory, and the previous build's copy of an extra
 // file must not keep the new one out.
-func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
-	written := make(map[string]bool, len(res.Assets))
+func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
+	// Keyed folded, like every lookup below.
+	written := newFileSet()
 	for _, p := range res.Assets {
-		written[p] = true
+		written.add(p)
 	}
 	mounts := make([]string, 0, len(b.ExtraDirs))
 	for m := range b.ExtraDirs {
@@ -1739,9 +1856,15 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 		if fsys == nil {
 			continue
 		}
+		if err := refuseSeparatorName(mount); err != nil {
+			return fmt.Errorf("static: extra dir: %w", err)
+		}
 		cleanMount := "/" + strings.Trim(mount, "/")
 		err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
+				return err
+			}
+			if err := refuseSeparatorName(p); err != nil {
 				return err
 			}
 			urlPath := path.Join(cleanMount, p)
@@ -1754,7 +1877,10 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if written[urlPath] || rendered[rel] || b.staticSourceHas(filepath.FromSlash(rel)) {
+			if own, ok := written.spelling(urlPath); ok && own != urlPath {
+				return caseTwinError(own, urlPath)
+			}
+			if written.has(urlPath) || rendered.has(rel) || b.staticSourceHas(filepath.FromSlash(rel)) {
 				b.log("kept %s (extra dir %s skipped)", urlPath, mount)
 				return nil
 			}
@@ -1766,7 +1892,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 				return err
 			}
 			res.Assets = append(res.Assets, urlPath)
-			written[urlPath] = true
+			written.add(urlPath)
 			b.log("copied extra %s", urlPath)
 			return nil
 		})
@@ -1822,14 +1948,19 @@ func relUnder(outDir, dst string) (string, error) {
 }
 
 // keepRendered reports whether the static source's file at rel (a slash
-// path) is refused because the build rendered a page there, and logs
-// the refusal. Any other file, an index.html under a path no page takes
-// included, is copied.
-func keepRendered(rel string, rendered map[string]bool, log func(string, ...any)) bool {
-	if !rendered[rel] {
+// path) is refused because the build wrote a file there, in any case,
+// and logs the refusal. Any other file, an index.html under a path no
+// page takes included, is copied.
+func keepRendered(rel string, rendered *fileSet, log func(string, ...any)) bool {
+	own, ok := rendered.spelling(rel)
+	if !ok {
 		return false
 	}
-	log("kept the rendered page /%s (static source copy refused)", rel)
+	if own == rel {
+		log("kept the rendered page /%s (static source copy refused)", rel)
+	} else {
+		log("kept the rendered page /%s (static source copy /%s refused)", own, rel)
+	}
 	return true
 }
 
@@ -1852,8 +1983,8 @@ func publishable(rel string) bool {
 // appended to it rather than refused, so the app's rules (Cache-Control,
 // HSTS, legacy redirects) apply and the generated ones, the header-only
 // frame-ancestors guard among them, stay first.
-func generatedHostRules(rel string, rendered map[string]bool) bool {
-	return (rel == "_headers" || rel == "_redirects") && rendered[rel]
+func generatedHostRules(rel string, rendered *fileSet) bool {
+	return (rel == "_headers" || rel == "_redirects") && rendered.hasExact(rel)
 }
 
 // appendHostRules appends the static source's rules to the generated
@@ -1875,7 +2006,7 @@ func appendHostRules(root *os.Root, rel string, data []byte, log func(string, ..
 	return nil
 }
 
-func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
 		return err
@@ -1890,6 +2021,10 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
+			return err
+		}
+		// ToSlash first: on Windows the separators are the path's own.
+		if err := refuseSeparatorName(filepath.ToSlash(rel)); err != nil {
 			return err
 		}
 		if !publishable(filepath.ToSlash(rel)) {
@@ -1929,7 +2064,7 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 	})
 }
 
-func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
 		return err
@@ -1941,6 +2076,9 @@ func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log f
 		}
 		if d.IsDir() {
 			return nil
+		}
+		if err := refuseSeparatorName(path); err != nil {
+			return err
 		}
 		if !publishable(path) {
 			log("skipped %s (not published)", path)
@@ -2101,4 +2239,19 @@ func writeHeadersFile(outDir, policy string) error {
 		"  X-Content-Type-Options: nosniff\n" +
 		"  Referrer-Policy: strict-origin-when-cross-origin\n"
 	return writeUnder(outDir, filepath.Join(outDir, "_headers"), []byte(body))
+}
+
+// foldPath maps every rune of p to the smallest rune in its Unicode
+// simple case-fold orbit, the relation strings.EqualFold uses, so two
+// paths a case-insensitive filesystem treats as one fold to one key.
+// p is decomposed first (NFD): APFS also treats a precomposed "café"
+// and "cafe" with a combining accent as one name.
+func foldPath(p string) string {
+	return strings.Map(func(r rune) rune {
+		least := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			least = min(least, f)
+		}
+		return least
+	}, norm.NFD.String(p))
 }

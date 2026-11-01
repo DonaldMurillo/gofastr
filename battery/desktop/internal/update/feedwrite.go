@@ -97,9 +97,10 @@ var rePlatformKey = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // size computed from the archive file), signs it with the key file's
 // private key, and writes manifest.json and manifest.json.sig into
 // outDir. It refuses a non-semver version, a platform key outside the
-// grammar, an archive URL outside the https rule, and an archive that
+// grammar, an archive URL outside the https rule, an archive that
 // is not a zip with exactly one top-level directory whose name ends in
-// .app.
+// .app, and an archive whose Contents/Info.plist does not declare
+// version as its CFBundleShortVersionString.
 func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
 	if _, err := ParseVersion(version); err != nil {
 		return fmt.Errorf("version %q: %w", version, err)
@@ -121,8 +122,19 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	if int64(len(data)) > MaxArchiveSize {
 		return fmt.Errorf("archive exceeds the %d byte cap", int64(MaxArchiveSize))
 	}
-	if _, err := zipRootName(data); err != nil {
+	root, err := zipRootName(data)
+	if err != nil {
 		return err
+	}
+	// The label must be the bundle's own version: a feed calling a 0.1.0
+	// bundle 1.2.0 reinstalls it on every check, and an old archive under
+	// a new label is a downgrade the updater cannot see.
+	info, err := zipBundleInfo(data, root)
+	if err != nil {
+		return err
+	}
+	if info.ShortVersion != version {
+		return fmt.Errorf("--version %q does not match the archive: %s/%s says CFBundleShortVersionString %q; rebuild with gofastr desktop build --version %s", version, root, infoPlistPath, info.ShortVersion, version)
 	}
 	sum := sha256.Sum256(data)
 	feed := Feed{

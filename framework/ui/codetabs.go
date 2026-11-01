@@ -109,7 +109,7 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 	if cfg.Label != "" {
 		parts.Attrs = headless.PartAttrs{headless.PartTabsNav: {"aria-label": cfg.Label}}
 	}
-	inner := headless.Tabs(headless.TabsProps{Name: cfg.Name, ID: cfg.ID, Tabs: items, Parts: parts}, classes)
+	inner := headless.Tabs(headless.TabsProps{Name: cfg.Name, ID: cfg.ID, Tabs: items, Parts: parts, Ctx: cfg.Ctx}, classes)
 	// Every panel here is a CodeBlock built from CodeSample's strings —
 	// CodeSample carries no render.HTML field, so nothing a caller
 	// handed CodeTabs ever reaches into this subtree. headless.Tabs'

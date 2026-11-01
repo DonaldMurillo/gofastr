@@ -141,7 +141,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 		}))
 	}
 	if editable {
-		parts = append(parts, ui.Section(ui.SectionConfig{Heading: i18nui.AdminAddRole.Text(ctx)},
+		parts = append(parts, ui.Section(ui.SectionConfig{Ctx: ctx, Heading: i18nui.AdminAddRole.Text(ctx)},
 			b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
 				label: i18nui.AdminGrant.Text(ctx), variant: ui.ButtonSecondary,

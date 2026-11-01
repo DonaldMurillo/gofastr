@@ -23,6 +23,7 @@ package sdkdocs
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -94,7 +95,8 @@ type Config struct {
 	// auth.TokensPlugin + TokenMiddleware).
 	HasAPITokens bool
 
-	// Policy, when set, gates every docs screen AND artifact download,
+	// Policy, when set, gates every docs screen, artifact download and
+	// the section-menu drawer's /chrome and /state routes,
 	// for internal/partner deployments. Nil = public site.
 	Policy app.Policy
 }
@@ -108,6 +110,8 @@ type site struct {
 	manifest     *sdk.Manifest
 	drift        bool
 	provenance   bool // true = manifest schema version unknown → "unknown provenance", not "stale"
+
+	undocumentedOnce sync.Once
 }
 
 // Mount registers the docs screens on the core-ui app and the artifact
@@ -165,8 +169,14 @@ func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 		coreApp.RegisterScreen(sc, nil)
 	}
 
-	// Mobile nav drawer for the SectionMenu rail.
-	widget.MountBuilder(r, sectionMenuDrawer(s))
+	// Mobile nav drawer for the SectionMenu rail. It lists the same
+	// entities as the screens, so its /chrome and /state routes sit behind
+	// the same Policy: a group with no prefix keeps the widget's URLs.
+	drawerRouter := r
+	if cfg.Policy != nil {
+		drawerRouter = r.Group("", func(next http.Handler) http.Handler { return s.policyGate(false, next) })
+	}
+	widget.MountBuilder(drawerRouter, sectionMenuDrawer(s))
 
 	r.Get(base+"/sdk/go.zip", s.artifactHandler("go", sdk.GoArtifact))
 	r.Get(base+"/sdk/client.js", s.artifactHandler("js", sdk.JSArtifact))
@@ -322,32 +332,14 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 		sdk.ManifestFile:    "application/json; charset=utf-8",
 	}[file]
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.Policy != nil {
-			d := s.cfg.Policy.Decide(app.WithRequest(r.Context(), r))
-			switch d.Kind {
-			case app.DecisionAllow:
-			case app.DecisionRedirect:
-				// The DecisionRedirect URL reaches the Location header;
-				// uihost scrubs the identical app.Decision value at all
-				// four of its emit sites (scrubCtl). This is the one
-				// divergent consumer: strip C0/DEL so a policy URL
-				// carrying raw CR/LF cannot forge headers and DEL cannot
-				// break HTTP/2 writes. Clean URLs pass byte-identical
-				// (StripUnsafe's fast path).
-				http.Redirect(w, r, textsafe.StripUnsafe(d.URL), http.StatusSeeOther)
-				return
-			default:
-				status := d.Status
-				if status == 0 {
-					status = http.StatusForbidden
-				}
-				i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
-				return
-			}
-		}
+	return s.policyGate(true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.Artifacts == nil {
 			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKNotGenerated)
+			return
+		}
+		m, _, _ := s.resolved()
+		if !s.artifactsDocumented(m) {
+			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKUndocumented)
 			return
 		}
 		data, err := fs.ReadFile(s.cfg.Artifacts, file)
@@ -356,17 +348,23 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			return
 		}
 
-		// ETag from the manifest's recorded hash when available (free
-		// revalidation on a stable URL); fall back to no validator.
-		m, _, _ := s.resolved()
-		if m != nil && key != "" {
-			if a, ok := m.Artifacts[key]; ok && a.SHA256 != "" {
-				etag := `"` + a.SHA256 + `"`
-				w.Header().Set("ETag", etag)
-				if corestatic.IfNoneMatch(r, etag) {
-					w.WriteHeader(http.StatusNotModified)
-					return
-				}
+		if key != "" {
+			// The file must be the one the manifest records. A run
+			// with fewer targets rewrites the manifest but leaves an
+			// older artifact in dist, and that file can cover entities
+			// the manifest no longer names.
+			a, ok := m.Artifacts[key]
+			if !ok || a.SHA256 == "" || fmt.Sprintf("%x", sha256.Sum256(data)) != a.SHA256 {
+				i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKArtifactMissing)
+				return
+			}
+			// The recorded hash is the ETag: free revalidation on a
+			// stable URL.
+			etag := `"` + a.SHA256 + `"`
+			w.Header().Set("ETag", etag)
+			if corestatic.IfNoneMatch(r, etag) {
+				w.WriteHeader(http.StatusNotModified)
+				return
 			}
 		}
 		w.Header().Set("Content-Type", contentType)
@@ -385,6 +383,74 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			return
 		}
 		_, _ = w.Write(data)
+	}))
+}
+
+// artifactsDocumented reports whether the downloads may be served: the
+// manifest must name only entities this site documents. `gofastr generate
+// sdk` covers every entity unless --only/--exclude narrow it, while the
+// site documents Public entities by default, so serving whole artifacts
+// handed anonymous callers the tables, fields and transitions of gated
+// entities the reference pages 404. A missing or unreadable manifest
+// declares no scope at all, so it refuses too. The site's own visibility
+// rules (Entities, IncludeGated) decide; Policy gates who reaches the
+// routes, not what they cover.
+func (s *site) artifactsDocumented(m *sdk.Manifest) bool {
+	if m == nil {
+		return false
+	}
+	documented := map[string]bool{}
+	for _, e := range s.includedEntities() {
+		documented[e.Config.Name] = true
+	}
+	var undocumented []string
+	for _, name := range m.Entities {
+		if !documented[name] {
+			undocumented = append(undocumented, name)
+		}
+	}
+	if len(undocumented) == 0 {
+		return true
+	}
+	s.undocumentedOnce.Do(func() {
+		slog.Warn("sdkdocs: SDK downloads withheld: the artifacts cover entities this site does not document; "+
+			"regenerate with `gofastr generate sdk --only=<documented entities>`, or widen Config.Entities / IncludeGated",
+			"entities", textsafe.StripUnsafe(strings.Join(undocumented, ",")))
+	})
+	return false
+}
+
+// policyGate runs Config.Policy in front of next, the gate the screens
+// carry through WithPolicy. With no Policy it returns next unchanged.
+// redirect says whether a DecisionRedirect is followed: a download is a
+// navigation and may land on a sign-in page, while the drawer's /chrome
+// and /state are fetched by the runtime, which would paste the sign-in
+// page into the sheet, so there a redirect refuses with 403.
+func (s *site) policyGate(redirect bool, next http.Handler) http.Handler {
+	if s.cfg.Policy == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		d := s.cfg.Policy.Decide(app.WithRequest(r.Context(), r))
+		switch {
+		case d.Kind == app.DecisionAllow:
+			next.ServeHTTP(w, r)
+		case d.Kind == app.DecisionRedirect && redirect:
+			// The DecisionRedirect URL reaches the Location header;
+			// uihost scrubs the identical app.Decision value at all
+			// four of its emit sites (scrubCtl). This is the one
+			// divergent consumer: strip C0/DEL so a policy URL
+			// carrying raw CR/LF cannot forge headers and DEL cannot
+			// break HTTP/2 writes. Clean URLs pass byte-identical
+			// (StripUnsafe's fast path).
+			http.Redirect(w, r, textsafe.StripUnsafe(d.URL), http.StatusSeeOther)
+		default:
+			status := d.Status
+			if status == 0 || d.Kind == app.DecisionRedirect {
+				status = http.StatusForbidden
+			}
+			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
+		}
 	})
 }
 

@@ -340,12 +340,17 @@ profile (a forced GC cycle runs first, so the report reflects now):
   Gated the same way as `/.debug/stats`: no user is a 401, and a signed-in
   user without the `admin` role is a 403. The role is read from the user's
   `GetRoles() []string` (battery/auth's `User` has it) or from the roles
-  access middleware put on the context. A request carrying an embed grant
+  access middleware put on the context. A scope-restricted caller (an API
+  token) counts the role only with the `role:admin` scope
+  (`access.RoleScope`; `"role:*"` and `"*:*"` cover it), since a token
+  carries its owner's roles. A request carrying an embed grant
   is always refused, and so is a caller an access `Decider` denies on
   `access.RoleGateCapability` (the zero `Ref`, as for a role gate). To use
   a different rule, pass
   `framework.WithDebugAuthorize(func(ctx context.Context) bool)`; it runs
-  after the user check and replaces the role test, not the Decider.
+  after the user check and replaces the role test, not the Decider or the
+  scope check: a scope-restricted caller still needs `role:admin` before
+  your function runs, since a token carries its owner's identity.
 - The `app_goroutine_leaks` MCP tool (with `WithMCPIntrospection()`)
   returns `{count, stacks, truncated}` so a connected agent can check the
   running app without shell access.

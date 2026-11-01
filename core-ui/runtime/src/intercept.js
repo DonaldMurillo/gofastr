@@ -367,18 +367,22 @@
       return true;
     }
     if (d.kind === 'page') {
-      // The page takes the top layer's history entry, so Back returns to
-      // what was under the stack, not to a layer that is gone. Then the
-      // router loads it the way fallbackNav hands a navigation over.
+      // Every entry the layers wrote goes first (each layer's open and
+      // its pane's own query moves), so Back from the page returns to
+      // what was under the stack, not to a layer that is gone or a
+      // pane's earlier URL loaded as a page. Once the move lands on the
+      // page under the stack, the page is pushed over it the way
+      // fallbackNav hands a navigation to the router.
+      const n = top().p0 + top().cur;
       closeAllNow();
-      history.replaceState(null, '', path + (hash || ''));
-      window.dispatchEvent(new PopStateEvent('popstate'));
+      repair = { then: () => fallbackNav(path, hash) };
+      history.go(-n);
       return true;
     }
     if (d.kind === 'refuse') {
       // Claimed and refused: the stack, the URL and every layer's
       // content stay as they are.
-      NS._toastOrFallback?.({ variant: 'warning', title: NS.say('runtime.panel_limit', '{{n}} panels is the limit', { n: MAX_LAYERS }), body: NS.say('runtime.panel_limit_hint', 'Open this one as a page, or close a panel first.') });
+      NS._toastOrFallback?.({ variant: 'warning', title: NS.say('runtime.panel_limit', '{{n}} panels is the limit', { n: NS.formatNumber(MAX_LAYERS) }), body: NS.say('runtime.panel_limit_hint', 'Open this one as a page, or close a panel first.') });
       return true;
     }
     const trigger = anchor || document.activeElement;
@@ -469,7 +473,10 @@
     if (repair) {
       const r = repair;
       repair = null;
-      if (r.k === tag.k && r.i === tag.i) return true;
+      // A repair carrying then is a move that continues once it lands
+      // (a page link's walk back to the page under the stack); run it
+      // after this handler, never inside it.
+      if (r.k === tag.k && r.i === tag.i) { if (r.then) setTimeout(r.then); return true; }
     }
     epoch++;
     if (!layers.length) return false;

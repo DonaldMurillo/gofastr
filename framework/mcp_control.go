@@ -212,8 +212,11 @@ func requireMCPUser(ctx context.Context) error {
 
 // MCPRequireRole is MCPRequireUser plus a role: the caller must hold any of
 // roles, read from the user's GetRoles() []string or from the roles access
-// middleware put on the context. It is the default gate of the control
-// tools and battery/log's MCP tools.
+// middleware put on the context. A scope-restricted caller (an API token)
+// must also hold access.RoleScope of the role that admits it ("role:admin",
+// "role:*" or "*:*"): the token carries its owner's roles, and one minted
+// for another surface must not drive these tools. It is the default gate of
+// the control tools and battery/log's MCP tools.
 //
 //	app.MCP.RegisterTool("cache_flush", desc, schema, flush,
 //	    mcp.WithToolGate(framework.MCPRequireRole("admin")))
@@ -236,9 +239,26 @@ func MCPRequireRole(roles ...string) func(ctx context.Context) error {
 	}
 }
 
-// callerRoles is every role the caller holds: the ones access middleware
-// resolved onto the context and the user's own GetRoles().
+// callerRoles is every role the caller may act on at a role gate: the ones
+// access middleware resolved onto the context and the user's own
+// GetRoles(), narrowed for a scope-restricted caller (an API token, an embed
+// grant) to the roles a held scope grants (access.RoleScope). A token
+// carries its owner's roles, and one an admin minted for "customers:read"
+// must not pass MCPRequireRole("admin") or /.debug on them.
 func callerRoles(ctx context.Context) []string {
+	held := heldRoles(ctx)
+	if _, scoped := access.HeldScopes(ctx); !scoped {
+		return held
+	}
+	return slices.DeleteFunc(held, func(r string) bool {
+		return !access.ScopeAllows(ctx, access.RoleScope(r))
+	})
+}
+
+// heldRoles is every role the caller holds, before any scope narrowing.
+// The Decider sees this set: scopes narrow what a credential may grant on,
+// and dropping a role the scopes leave out would lift a deny keyed on it.
+func heldRoles(ctx context.Context) []string {
 	roles := slices.Clone(access.GetRoles(ctx))
 	u, _ := handler.GetUser(ctx)
 	if rh, ok := u.(interface{ GetRoles() []string }); ok {
@@ -255,7 +275,7 @@ func callerRoles(ctx context.Context) []string {
 // does: the caller's roles, access.RoleGateCapability and the zero Ref.
 func deciderDenies(ctx context.Context) bool {
 	d := access.GetDecider(ctx)
-	return d != nil && d(ctx, callerRoles(ctx), access.RoleGateCapability, access.Ref{}) == access.DecisionDeny
+	return d != nil && d(ctx, heldRoles(ctx), access.RoleGateCapability, access.Ref{}) == access.DecisionDeny
 }
 
 var (

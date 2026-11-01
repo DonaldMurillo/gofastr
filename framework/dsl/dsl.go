@@ -283,9 +283,9 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		}
 		// The default cursor is the primary key; a key of more than one
 		// column is a composite cursor, refused the same way.
+		keys := ent.KeyColumns()
 		cursorField := ent.Config.Pagination.CursorField
 		if cursorField == "" {
-			keys := ent.KeyColumns()
 			if len(keys) > 1 {
 				return nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
 			}
@@ -297,6 +297,13 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		}
 		if cf.NoQuery {
 			return nil, i18n.NewError(reasonAfterFieldNotQueryable, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
+		}
+		// after() keysets on this one column, so rows tied on its value
+		// with the one it resumes after would never be served. Only the
+		// sole key or a Unique field cannot tie; anything else is refused
+		// rather than paged with silent gaps.
+		if !cf.Unique && (len(keys) != 1 || keys[0] != cursorField) {
+			return nil, i18n.NewError(reasonAfterNotUnique, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
 		// after() is a bare keyset value: of the cursor column's type, or
 		// refused, the same as a filter value.

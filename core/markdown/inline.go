@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
@@ -26,6 +27,21 @@ func renderInline(input string) string {
 }
 
 func renderInlineDepth(input string, depth int) string {
+	// links indexes bracket matches and ')' positions for the whole block
+	// once, so a '[' that never closes costs a lookup, not a scan to end of
+	// input. Nested link text and emphasis content are windows of the same
+	// block and share it: rebuilding it per level cost a full pass for
+	// every nesting level.
+	var links *linkIndex
+	if strings.IndexByte(input, '[') >= 0 {
+		links = buildLinkIndex(input)
+	}
+	return renderInlineAt(input, depth, links, 0)
+}
+
+// renderInlineAt renders input, which sits at offset base of the block
+// links was built for.
+func renderInlineAt(input string, depth int, links *linkIndex, base int) string {
 	if depth >= maxInlineDepth {
 		// Bail out: emit the rest of this block as escaped plain text
 		// rather than recursing further into nested constructs.
@@ -103,7 +119,7 @@ func renderInlineDepth(input string, depth int) string {
 			sb.WriteString(input[i : i+open])
 			i += open
 		case ch == '!' && i+1 < len(input) && input[i+1] == '[':
-			alt, url, end, ok := parseLink(input, i+1)
+			alt, url, end, ok := links.parseLink(input, base, i+1)
 			if ok {
 				sb.WriteString("<img src=\"")
 				sb.WriteString(escapeAttr(safeImageURL(url)))
@@ -116,24 +132,34 @@ func renderInlineDepth(input string, depth int) string {
 			sb.WriteString("!")
 			i++
 		case ch == '[':
-			text, url, end, ok := parseLink(input, i)
+			text, url, end, ok := links.parseLink(input, base, i)
 			if ok {
 				sb.WriteString("<a href=\"")
 				sb.WriteString(escapeAttr(safeLinkURL(url)))
 				sb.WriteString("\">")
-				sb.WriteString(renderInlineDepth(text, depth+1))
+				sb.WriteString(renderInlineAt(text, depth+1, links, base+i+1))
 				sb.WriteString("</a>")
 				i = end
 				continue
 			}
 			sb.WriteString("[")
 			i++
+		case ch == '_' && wordByteBefore(input, i):
+			// Intraword underscore (CommonMark): XDG_DATA_HOME and
+			// many_to_many are text. The whole run goes out at once, or
+			// its second underscore, preceded by the first, would open.
+			j := i
+			for j < len(input) && input[j] == '_' {
+				j++
+			}
+			sb.WriteString(input[i:j])
+			i = j
 		case ch == '*' || ch == '_':
 			delim, run := scanRun(input, i, ch)
 			key := int(delim)<<2 | run
 			closeIdx := -1
 			if noCloser == nil || !noCloser[key] {
-				closeIdx = findClosingDelim(runs, input, i+run, delim, run)
+				closeIdx = findClosingDelim(runs, links, input, base, i+run, delim, run)
 				if closeIdx < 0 {
 					if noCloser == nil {
 						noCloser = make(map[int]bool, 4)
@@ -146,15 +172,15 @@ func renderInlineDepth(input string, depth int) string {
 				switch run {
 				case 1:
 					sb.WriteString("<em>")
-					sb.WriteString(renderInlineDepth(inner, depth+1))
+					sb.WriteString(renderInlineAt(inner, depth+1, links, base+i+run))
 					sb.WriteString("</em>")
 				case 2:
 					sb.WriteString("<strong>")
-					sb.WriteString(renderInlineDepth(inner, depth+1))
+					sb.WriteString(renderInlineAt(inner, depth+1, links, base+i+run))
 					sb.WriteString("</strong>")
 				default:
 					sb.WriteString("<strong><em>")
-					sb.WriteString(renderInlineDepth(inner, depth+1))
+					sb.WriteString(renderInlineAt(inner, depth+1, links, base+i+run))
 					sb.WriteString("</em></strong>")
 				}
 				i = closeIdx + run
@@ -194,10 +220,23 @@ func scanRun(s string, i int, delim byte) (byte, int) {
 
 // findClosingDelim looks for a matching delimiter run after position start.
 // CommonMark has a more complex flanking rule; we use a simple "next run of
-// the same length" search which works for everyday docs.
-func findClosingDelim(runs *backtickRuns, s string, start int, delim byte, run int) int {
+// the same length" search which works for everyday docs, plus two of its
+// rules: an underscore run followed by a letter or digit is intraword and
+// closes nothing, and a link binds tighter than emphasis, so the search
+// steps over a parsed [text](url) whole (a '*' or '_' in its URL closed
+// the emphasis and broke the link). s is the window at offset base of the
+// block links was built for.
+func findClosingDelim(runs *backtickRuns, links *linkIndex, s string, base, start int, delim byte, run int) int {
 	i := start
 	for i < len(s) {
+		if s[i] == '[' {
+			if _, _, end, ok := links.parseLink(s, base, i); ok {
+				i = end
+				continue
+			}
+			i++
+			continue
+		}
 		if s[i] == '`' {
 			end, open := runs.findCodeEnd(i)
 			if end >= 0 {
@@ -219,7 +258,7 @@ func findClosingDelim(runs *backtickRuns, s string, start int, delim byte, run i
 			for i+n < len(s) && s[i+n] == delim {
 				n++
 			}
-			if n == run {
+			if n == run && (delim != '_' || !wordByteAt(s, i+n)) {
 				return i
 			}
 			i += n
@@ -292,43 +331,99 @@ func (b *backtickRuns) findCodeEnd(i int) (end, open int) {
 	return starts[k], open
 }
 
+// linkIndex records, for one block, where each '[' closes and where every
+// ')' sits, so parseLink answers in O(log n) instead of scanning forward.
+//
+// A forward scan is a CPU-DoS: an unclosed '[' scans to end of input,
+// fails, the caller advances one byte and the next '[' rescans the same
+// tail. "[[[[…", "[x]([x](…" with no ')', and "[[[…]]]" with no "(" after
+// it are all quadratic that way. Bracket matching is a stack walk, the
+// same answer the depth-counting scan gave: the first ']' after i where
+// the bracket depth counted from i returns to zero.
+type linkIndex struct {
+	// opens lists every '[' offset in ascending order and match holds the
+	// offset of its closing ']', or -1 when it never closes. parens lists
+	// every ')' offset in ascending order.
+	opens  []int
+	match  []int
+	parens []int
+}
+
+// buildLinkIndex makes the index for s in one pass.
+func buildLinkIndex(s string) *linkIndex {
+	l := &linkIndex{}
+	var stack []int
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '[':
+			stack = append(stack, len(l.opens))
+			l.opens = append(l.opens, i)
+			l.match = append(l.match, -1)
+		case ']':
+			if n := len(stack); n > 0 {
+				l.match[stack[n-1]] = i
+				stack = stack[:n-1]
+			}
+		case ')':
+			l.parens = append(l.parens, i)
+		}
+	}
+	return l
+}
+
 // parseLink parses [text](url) starting at the '[' at position i.
 // Returns the link text, URL, the index immediately after the closing ')',
-// and a success flag. Used for both links and (with caller adjustments) images.
-func parseLink(s string, i int) (text, url string, end int, ok bool) {
-	if i >= len(s) || s[i] != '[' {
+// and a success flag. Used for both links and (with caller adjustments)
+// images. s is the window at offset base of the block this index was
+// built for. A '[' match is found by counting forward from that '[', so
+// the block's answer holds inside the window when the match falls inside
+// it; a match or ')' past the window's end is no match, as a scan of the
+// window alone would find.
+func (l *linkIndex) parseLink(s string, base, i int) (text, url string, end int, ok bool) {
+	if l == nil || i >= len(s) || s[i] != '[' {
 		return "", "", 0, false
 	}
-	j := i + 1
-	depth := 1
-	for j < len(s) && depth > 0 {
-		switch s[j] {
-		case '[':
-			depth++
-		case ']':
-			depth--
-			if depth == 0 {
-				goto closed
-			}
-		}
-		j++
+	limit := base + len(s)
+	o := sort.SearchInts(l.opens, base+i)
+	if o == len(l.opens) || l.opens[o] != base+i {
+		return "", "", 0, false
 	}
-	return "", "", 0, false
-closed:
+	if m := l.match[o]; m < 0 || m >= limit {
+		return "", "", 0, false
+	}
+	j := l.match[o] - base
 	text = s[i+1 : j]
 	if j+1 >= len(s) || s[j+1] != '(' {
 		return "", "", 0, false
 	}
-	k := j + 2
-	urlStart := k
-	for k < len(s) && s[k] != ')' {
-		k++
-	}
-	if k >= len(s) {
+	urlStart := j + 2
+	p := sort.SearchInts(l.parens, base+urlStart)
+	if p == len(l.parens) || l.parens[p] >= limit {
 		return "", "", 0, false
 	}
+	k := l.parens[p] - base
 	url = strings.TrimSpace(s[urlStart:k])
 	return text, url, k + 1, true
+}
+
+// wordByteBefore reports whether the character before s[i] is a letter
+// or digit. The start of the window counts as a boundary: a nested window
+// opens just after a delimiter or '['.
+func wordByteBefore(s string, i int) bool {
+	if i == 0 {
+		return false
+	}
+	r, _ := utf8.DecodeLastRuneInString(s[:i])
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// wordByteAt reports whether the character at s[i] is a letter or digit.
+func wordByteAt(s string, i int) bool {
+	if i >= len(s) {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(s[i:])
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func isPunct(b byte) bool {

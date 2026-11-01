@@ -30,7 +30,7 @@ its own.
 | `battery/desktop/macos` | The real shell on darwin/arm64 (AppKit + WKWebView through `internal/objc`); the unsupported shell elsewhere. |
 | `battery/desktop/windows` | The Windows/amd64 shell: Win32, WebView2, native capabilities, custom titlebar support, and DWM Mica/Mica Alt/Acrylic. |
 | `battery/desktop/linux` | GTK 3 / WebKitGTK 4.1 shell on linux/amd64 and linux/arm64; unsupported elsewhere. |
-| `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. |
+| `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. The `gofastr_nodesktop` build tag leaves every platform package out (see [A server build that never opens a window](#a-server-build-that-never-opens-a-window)). |
 | `battery/desktop/desktoptest` | The fake shell and the app-shell test harness. |
 | `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `win32`, `update`: one package per OS seam. |
 
@@ -128,8 +128,10 @@ under a window title. Even apps that explicitly share a `DataDir` have separate
 browser profiles by ID. The data directory and profile root must be owned by
 the current user with mode `0700`; missing directories are created privately,
 but existing permissions are not changed. Symlinked paths, foreign-owned or
-unsafe writable ancestors, non-regular profile files, hard links, malformed
-origin metadata and invalid cookie databases are refused, not reset. Startup
+unsafe writable ancestors, non-regular profile files, malformed origin metadata
+and invalid cookie databases are refused, not reset. So is a hard link to a file
+outside the profile, or a second name for the cookie, origin or lock files.
+WebKit's own cache links inside the profile are accepted. Startup
 inspects a bounded profile tree (100,000 entries, depth32); these checks are not
 a defense against a hostile process running as the same user.
 
@@ -252,6 +254,33 @@ The `Host` pin closes DNS rebinding from a browser tab; the cookie
 closes every other local process. Neither value is ever logged. An app
 that never calls `Run` never arms the gate.
 
+### Local callers with no window: `OpenPrefixes`
+
+A CLI or script on the same machine has no window and no cookie, so
+every call gets 403. List the paths it uses in `Config.OpenPrefixes`
+and protect them with the app's own auth (an API key, a bearer token,
+`battery/auth`):
+
+```go
+d := desktop.New(desktop.Config{ID: "dev.gofastr.notes", OpenPrefixes: []string{"/api"}})
+```
+
+A path under an open prefix skips only the cookie check. The `Host`
+pin stays, a forged cross-site write (a form-shaped request with no
+CORS preflight) gets 403, a preflighted cross-origin JSON call is left
+to CORS and the app's auth, and a request without the
+cookie reaches the app with no user: the local identity goes only on
+the window's requests, so the window's own `fetch("/api/...")` is still
+the local user. The window keeps its JS bridge, because it never leaves
+the app's origin. The listener stays on `127.0.0.1`; a caller in a
+container needs `battery/service` and its `BindAddress`.
+
+The match is on whole segments of the clean, unescaped path, so
+`/apix`, `/api//x`, `/api/../admin` and `/api%2Fx` stay gated. `New`
+panics on `/`, on anything under `/__gofastr/` (the bridge, the runtime,
+the handshake) and on a malformed entry. `Run` logs the open prefixes
+as a warning.
+
 ## Where a window may navigate
 
 A window's main frame stays on the app's own origin. Each shell asks
@@ -324,6 +353,14 @@ The core capabilities:
 | `tray` | `setTitle` | none (the tray label is the app's own) |
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
+
+The macOS, Linux and Windows shells check a dialog's input the same way
+(`desktop.CheckFileDialog`) and answer `invalid_input` instead of
+opening a dialog it was not asked for: a filter extension (`png` or
+`.png`; `*` alone matches every file) may not be empty or hold `/`,
+`\`, `*`, `?`, `[`, `]` or `;`, so a filter named Text cannot also
+match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
+`/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
 (`Battery.AllowPath` for in-process grants). The path must arrive in
@@ -461,6 +498,14 @@ level, like every phrase. Each item is exactly one of:
 - `Handler`: a Go `func(ctx context.Context) error`, run on a goroutine
   with a 30 s deadline; errors are logged with the item id.
 - `Role`: `quit`, `about`, or `separator`, implemented by the shell.
+
+`Key` is the item's accelerator: modifiers (`cmd`/`command`/`meta`,
+`ctrl`/`control`, `alt`/`option`/`opt`, `shift`) joined by `+`, then
+one key, as in `cmd+n` or `ctrl+shift+t`. Command maps to Control on
+Windows and Linux. At least one modifier other than `shift` is
+required, and `New` panics on a bare key such as `n` or `shift+n`:
+every shell matches accelerators before the page sees the keystroke,
+so that character could never be typed into the page.
 
 <!-- gofastr:compile
 import (
@@ -683,6 +728,22 @@ current event on the UI thread, and by the time an HTTP round-trip
 came back it no longer would be. In a plain browser (`--serve`) there
 is no message handler and the call is a no-op, so screens carrying the
 attribute render unchanged there.
+
+Only a primary-button press starts the drag, and a press on a control
+inside the handle keeps its click: `button`, `input`, `select`,
+`textarea`, `a[href]` and editable `[contenteditable]` elements never
+drag, because once the native drag starts the host owns the mouse and
+the click never lands. Mark any other clickable element inside the
+handle (a menu trigger, a `role="button"` div) with
+`data-cui-window-no-drag`:
+
+```go
+html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-drag": ""}},
+    render.Text("Quick note"),
+    html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-no-drag": "", "role": "button"}},
+        render.Text("More")),
+),
+```
 
 ### The desktop-notes widget
 
@@ -1466,8 +1527,11 @@ __gofastr.desktop.on("update_available", ({ version, notes }) => {
 ```
 
 Failures are logged (Warn) and retried next interval; an unbundled or
-unsupported host logs once and stops. Log lines never carry the feed
-URL or a path.
+unsupported host logs once and stops. So does a bundle whose
+`CFBundleShortVersionString` is not semver (`1.0`): the check answers
+`unsupported` with "this app's version is not major.minor.patch"
+instead of blaming the feed. Log lines never carry the feed URL or a
+path.
 
 ### The updates capability
 
@@ -1495,14 +1559,25 @@ the decision persists in `desktop_grants` like every other grant.
    `<Name>.app` directory matching the running bundle's name; every
    zip entry is path-cleaned and refused if it could escape the
    extraction root; symlinks and devices are refused outright.
-5. Run `codesign --verify --deep --strict` on the extracted bundle and
+5. Read the extracted bundle's `Contents/Info.plist` (XML, the format
+   `gofastr desktop build` writes) and refuse unless its
+   `CFBundleShortVersionString` is exactly the feed's version and its
+   `CFBundleIdentifier` is the running app's. A mislabelled archive
+   would otherwise reinstall on every check or downgrade silently.
+6. Run `codesign --verify --deep --strict` on the extracted bundle and
    refuse on failure.
-6. Swap: move the current bundle to `<Name>.app.old`, move the new one
+7. Swap: move the current bundle to `<Name>.app.old`, move the new one
    into place, `open -n` the new bundle, and quit. The next launch
    removes a leftover `.old`.
 
 Every failure surfaces as one of the bridge's closed error codes with
 a fixed message; no path or URL ever reaches the page.
+
+One install runs at a time. A second `install` while one is running
+(a double-clicked button) is refused with `invalid_input` ("an update
+install is already running"), and once the swap has happened every
+later call is refused too ("the update is installed; the app is
+restarting"), so two runs never share `<Name>.app.new` or `.old`.
 
 From Go, the same two steps are `d.CheckForUpdates(ctx)` and
 `d.InstallUpdate(ctx)` (the latter is what a File menu
@@ -1515,7 +1590,8 @@ The CLI mints the signing pair and writes the feed:
 ```
 gofastr desktop keygen -o path
     writes path (private, 0600, hex seed + hex public key)
-    and path.pub (hex public key)
+    and path.pub (hex public key); refuses when either exists,
+    and never writes through a symlink
 
 gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     --platform darwin-arm64 --archive Notes.zip \
@@ -1525,8 +1601,11 @@ gofastr desktop feed --key path --version 1.2.0 --notes "..." \
 ```
 
 `feed` refuses a version that is not semver, a platform key outside
-the `GOOS-GOARCH` grammar, a non-https archive URL, and an archive
-that is not a zip with exactly one top-level `.app` directory. The
+the `GOOS-GOARCH` grammar, a non-https archive URL, an archive
+that is not a zip with exactly one top-level `.app` directory, and an
+archive whose `Contents/Info.plist` does not declare `--version` as its
+`CFBundleShortVersionString` (build with the same `--version` you
+publish). The
 writer and the updater's verifier share one implementation
 (`desktop.SignUpdateFeed`), so the format cannot drift between them.
 
@@ -1538,8 +1617,8 @@ reason) and ship only the `.pub` contents in the app's
 
 `battery/desktop/update_harness_test.go` is the reference: an
 `httptest.Server` serves the signed feed on 127.0.0.1, the battery's
-update platform (the OS seam: running version, bundle location,
-codesign, relaunch) is replaced through a test seam before `Run`, and
+update platform (the OS seam: running version and identifier, bundle
+location, codesign, relaunch) is replaced through a test seam before `Run`, and
 the harness drives the page side (`updates.check`, the permission
 gate on `updates.install`) and observes the apply step without any
 native code.
@@ -2116,12 +2195,88 @@ WKWebView through `desktoptest.NativeMain`.
 | `install --bundle=<extracted-directory>` on Linux | Validates and installs a bundle for the current user, including a desktop entry and any embedded URL handler. No default-handler or autostart preference changes. |
 | `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
 | `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
-| `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. |
-| `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies. |
+| `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. Refuses when either path already exists, a symlink included, and leaves no half pair behind. |
+| `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies; refuses a `--version` that differs from the bundle's `CFBundleShortVersionString`. |
 
 `--id` must be reverse-DNS (`[A-Za-z0-9.-]+` with a dot), `--name`
 printable with no path separator and at most 64 characters, and every
-plist value is XML-escaped.
+plist value is XML-escaped. On macOS `--version` must be semver
+(`major.minor.patch` with an optional `-pre-release`, no build metadata,
+no leading zeros, at most 64 characters), the form the updater compares;
+`desktop.ValidateAppVersion` is the same check.
+
+### A binary whose desktop mode is a subcommand
+
+`build` links the package's `main` and launches it with no arguments
+when the user double-clicks it. When the binary's no-argument mode is a
+web server and its window lives behind a subcommand (`myapp desktop`), a
+double-click starts that server with no window, and on Windows with no
+console either. Bake the subcommand in with `--launch-args`, and read it
+in `main` through `desktop.LaunchArgs`:
+
+```sh
+gofastr desktop build --id=dev.example.app --name=MyApp \
+  --launch-args=desktop --ldflags="-X main.version=1.2.3"
+```
+
+<!-- gofastr:compile
+import (
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
+)
+
+func runDesktop([]string) {}
+func runServer([]string)  {}
+-->
+```go
+func main() {
+	args := desktop.LaunchArgs(os.Args[1:])
+	if len(args) > 0 && args[0] == "desktop" {
+		runDesktop(args[1:])
+		return
+	}
+	runServer(args)
+}
+```
+
+`LaunchArgs` puts the baked arguments in front when the binary got none,
+only the `-psn_...` serial number older macOS passes, or only deep links
+on the scheme `--scheme` embedded (a cold-launch link arrives as the
+argument). Any other arguments, and every argument of a build made
+without `--launch-args`, come back unchanged, so `myapp serve` from a
+terminal still serves. `--launch-args` takes up to 16
+whitespace-separated words; one argument holding a space is not
+expressible. `--ldflags` appends linker flags to the build's own.
+
+### Building with plain `go build`
+
+A release script can skip `gofastr desktop build`. Link with the same
+flags it uses (`-trimpath -ldflags "-s -w"`, plus `-H windowsgui` on
+Windows so no console opens; add `-X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=<scheme>`
+for a deep-link scheme). On Windows, put `WebView2Loader.dll` beside the
+`.exe`: take `runtimes/win-x64/native/WebView2Loader.dll` from the
+Microsoft.Web.WebView2 NuGet package, version 1.0.4258.31, the one
+`build` pins, after checking the package's SHA-256 is
+`56f7f4b8bf9aee4b8efefbbdd4f67d5f74ebd1b100ed0806da71bf76af481aa9`.
+Without the DLL the window cannot open. A plain
+`go build` has no version resource or icon; those come from `build`.
+
+### A server build that never opens a window
+
+Linking `battery/desktop/native` links the Linux GTK shell, which loads
+GTK through the glibc loader, so a `CGO_ENABLED=0` Linux binary comes out
+dynamically linked and does not start on Alpine or `scratch`. Build the
+server image with the `gofastr_nodesktop` tag:
+
+```sh
+CGO_ENABLED=0 GOOS=linux go build -tags gofastr_nodesktop -o app ./cmd/app
+```
+
+The tag leaves every platform shell out, on every OS. `native.Shell()`
+then answers the unsupported shell, so `Run` returns its unsupported-platform
+error instead of opening a window. Everything else in
+`battery/desktop` stays.
 
 ## Linux runtime and native tests
 

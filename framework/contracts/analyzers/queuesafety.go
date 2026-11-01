@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // The two queue-safety SQL rules. Both read whole string literals through
@@ -22,7 +24,9 @@ import (
 // ----------------------------------------------------------------------
 
 // Bug class: an UPDATE whose SET assigns the retry/failure counter from a
-// host value (attempts = $1 / ? / %s) instead of the relative
+// host value (attempts = $1 / ? / %s, bare or wrapped: CAST($1 AS
+// INTEGER), COALESCE($1, 0), LEAST($1, max_attempts), $1::int, and
+// the quoted "attempts" column) instead of the relative
 // attempts = attempts + 1. The host value is computed in Go from a row
 // read before the write, so two overlapping runners — a lease-expiry
 // re-claimant and the stale worker it replaced, or a crash between claim
@@ -38,9 +42,10 @@ import (
 // writes state, not arithmetic.
 //
 // Deliberately silent on:
-//   - the relative spellings (attempts = attempts + 1, and the CASE
-//     decrement in battery/queue release): the column computes itself
-//     in SQL, and no shared snapshot can under-count;
+//   - the relative spellings (attempts = attempts + 1, the CASE
+//     decrement in battery/queue release, and any wrapper whose value
+//     reads the counter itself, LEAST(attempts + 1, $1)): the column
+//     computes itself in SQL, and no shared snapshot can under-count;
 //   - literal constants (attempts = 0 on a reset/replay guarded by a
 //     terminal status): the value is not a host snapshot, and every
 //     concurrent writer writes the same zero;
@@ -54,21 +59,76 @@ func ruleAbsoluteAttempts(p *contracts.Pass, rel string, file *ast.File) []contr
 		if stmt.verb != "update" {
 			continue
 		}
-		for _, m := range reAbsCounter.FindAllStringIndex(stmt.set, -1) {
+		for _, m := range reCounterAssign.FindAllStringSubmatchIndex(stmt.set, -1) {
+			lo, hi := m[2], m[3] // the quoted spelling's group
+			if lo < 0 {
+				lo, hi = m[4], m[5] // the bare spelling's group
+			}
+			col := stmt.set[lo:hi]
+			rhs := setValue(stmt.set[m[1]:])
+			if !reHostValue.MatchString(rhs) || selfReference(rhs, col) {
+				continue
+			}
 			d := diag(p, contracts.RuleAbsoluteAttempts, rel,
 				stmt.at(stmt.setOff+m[0]),
 				fmt.Sprintf("UPDATE SET writes the retry counter from a host value (%s), not the relative form: overlapping claimants each write back their own snapshot and under-count — increment in SQL (attempts = attempts + 1, the battery/queue claim spelling) or move the count out of the settle write",
-					strings.TrimSpace(stmt.set[m[0]:m[1]])))
+					strings.TrimSpace(stmt.set[m[0]:m[1]+len(rhs)])))
 			out = append(out, d)
 		}
 	}
 	return out
 }
 
-// reAbsCounter matches a counter column assigned a placeholder ($n, the
-// sqlite ?) or a Sprintf verb. \d+ consumes the whole placeholder
-// number, so $12 needs no lookahead of its own.
-var reAbsCounter = regexp.MustCompile(`(?i)\b(?:attempts|retries|tries|failures)\s*=\s*(?:\$\d+|\?|%[sdv])`)
+var (
+	// reCounterAssign matches a counter column, bare or double-quoted,
+	// opening an assignment. The value that follows is read by
+	// setValue, so CAST($1 …), COALESCE($1, 0), LEAST($1, …) and
+	// $1::int are judged by what they compute, not by their first
+	// token.
+	reCounterAssign = regexp.MustCompile(`(?i)(?:"(attempts|retries|tries|failures)"|\b(attempts|retries|tries|failures)\b)\s*=`)
+	// reHostValue matches a host value: a positional placeholder ($n,
+	// the sqlite ?) or a Sprintf verb. \d+ consumes the whole number,
+	// so $12 needs no lookahead of its own.
+	reHostValue = regexp.MustCompile(`\$\d+|\?|%[sdv]`)
+)
+
+// setValue returns one SET assignment's value expression: the text up
+// to the next comma outside parentheses, or the end of the clause.
+func setValue(rest string) string {
+	depth := 0
+	for i, r := range rest {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth <= 0 {
+				return rest[:i]
+			}
+		}
+	}
+	return rest
+}
+
+// selfReference reports whether a SET value reads the counter column it
+// assigns (attempts = LEAST(attempts + 1, $1)): the column computes
+// itself in SQL, the relative form. The match is a whole word, so
+// max_attempts does not count as attempts.
+func selfReference(value, col string) bool {
+	value, col = asciicase.Lower(value), asciicase.Lower(col)
+	for from := 0; ; {
+		i := strings.Index(value[from:], col)
+		if i < 0 {
+			return false
+		}
+		start, end := from+i, from+i+len(col)
+		if (start == 0 || !ecIdentByte(value[start-1])) && (end == len(value) || !ecIdentByte(value[end])) {
+			return true
+		}
+		from = end
+	}
+}
 
 // ----------------------------------------------------------------------
 // GOFASTR1409: unfenced claim-state writes on a token-fenced table.
@@ -91,46 +151,55 @@ var reAbsCounter = regexp.MustCompile(`(?i)\b(?:attempts|retries|tries|failures)
 //   - touches claim vocabulary — claimed_at / a *_token column /
 //     claimed_until / lease_until / max_attempts / attempts in SET or
 //     WHERE, or a WHERE predicate on status='claimed' — and
-//   - carries none of the four postures that prove it cannot touch
+//   - carries none of the postures that prove it cannot touch
 //     someone's live claim:
-//     a token predicate in the WHERE (the Ack/Nack fence),
+//     a token predicate in the WHERE (claim_token = $n, the Ack/Nack
+//     fence; claim_token IS NOT NULL is not one, it proves somebody
+//     owns the row, not the caller),
+//     an unowned-row predicate (claim_token IS NULL: a live claim
+//     always carries its token),
 //     the minting SET itself (SET claim_token = $n creates the
-//     ownership the WHERE would otherwise have to match),
-//     a staleness bound on the claim timestamp (claimed_at <= $n: a
-//     re-claim refreshes claimed_at, so the bound can never match a
-//     live re-claimant — the dead-letter sweep's fence),
-//     a terminal status guard in the WHERE (status='failed'/'dead'/…:
-//     a live claim holds status='claimed', so the predicate selects
-//     rows nobody owns — Replay's fence).
+//     ownership the WHERE would otherwise have to match; clearing the
+//     token to NULL or the empty string is a release, not a mint),
+//     a staleness bound on the claim timestamp in either operand order
+//     (claimed_at <= $n, now() > lease_until: a re-claim refreshes
+//     claimed_at, so the bound can never match a live re-claimant —
+//     the dead-letter sweep's fence),
+//     a terminal status guard in the WHERE (status='failed'/'dead'/
+//     'cancelled'/'expired'/…: a live claim holds status='claimed',
+//     so the predicate selects rows nobody owns — Replay's fence).
+//
+// The rule arms per package directory: the fenced Ack and the release
+// that misses the fence are often in sibling files.
 //
 // Deliberately silent on:
-//   - files with no token-fenced sibling: the rule is about a table
+//   - packages with no token-fenced statement: the rule is about a table
 //     whose completion paths established the fence and then missed one
 //     writer; an unfenced table is a different (lease-shaped) design,
 //     see framework/outbox;
-//   - SELECTs, DDL, and INSERTs: they cannot retire or re-queue someone
-//     else's claim;
+//   - SELECTs, DDL, and INSERTs, an upsert's ON CONFLICT … DO UPDATE
+//     arm included: they cannot retire or re-queue someone else's
+//     claim;
 //   - writes with no claim vocabulary (a status flip on a plain row): a
 //     fence on the table does not make every column a claim column;
 //   - _test.go and generated files (AppFiles already excludes both).
 func ruleUnfencedClaim(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
-	stmts := sqlStatements(file)
-	armed := false
-	for _, stmt := range stmts {
-		if reTokenFence.MatchString(stmt.where) {
-			armed = true
-			break
-		}
-	}
+	dir := path.Dir(rel)
+	armed, _ := p.Memo("unfencedclaim.package:"+dir, func() any {
+		return unfencedClaimArmed(p, dir)
+	}).(bool)
 	if !armed {
 		return nil
 	}
 	var out []contracts.Diagnostic
-	for _, stmt := range stmts {
+	for _, stmt := range sqlStatements(file) {
 		switch {
-		case reTokenFence.MatchString(stmt.where),
-			reTokenCol.MatchString(stmt.set), // the claim mints its token
+		case stmt.upsert, // an INSERT's conflict arm writes the row it inserts
+			reTokenFence.MatchString(stmt.where),
+			reTokenUnowned.MatchString(stmt.where),
+			reTokenMint.MatchString(stmt.set), // the claim mints its token
 			reStaleClaimAt.MatchString(stmt.where),
+			reStaleClaimAtRev.MatchString(stmt.where),
 			reTerminalStatus.MatchString(stmt.where):
 			continue
 		}
@@ -147,13 +216,48 @@ func ruleUnfencedClaim(p *contracts.Pass, rel string, file *ast.File) []contract
 	return out
 }
 
+// unfencedClaimArmed reports whether any statement in the package
+// directory fences on a claim token. The fence and the writer that
+// misses it are often in sibling files (an ack.go and a release.go),
+// so the arming is per package, the way GOFASTR1414/1415 memoize.
+func unfencedClaimArmed(p *contracts.Pass, dir string) bool {
+	for _, f := range p.AppFiles() {
+		if path.Dir(f.Rel) != dir {
+			continue
+		}
+		file, ok := p.AST(f.Rel)
+		if !ok {
+			continue
+		}
+		for _, stmt := range sqlStatements(file) {
+			if reTokenFence.MatchString(stmt.where) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 var (
-	reTokenCol       = regexp.MustCompile(`(?i)\b(?:claim|lease|owner)_token\b`)
-	reTokenFence     = regexp.MustCompile(`(?i)\b(?:claim|lease|owner)_token\s*(?:=|IS\b)`)
-	reStaleClaimAt   = regexp.MustCompile(`(?i)\b(?:claimed_at|claimed_until|lease_until|lease_expires_at)\s*(?:<=|<)`)
-	reTerminalStatus = regexp.MustCompile(`(?i)\bstatus\b[^;]*'(?:failed|dead|abandoned|dispatched|completed|done|succeeded)'`)
-	reClaimedStatus  = regexp.MustCompile(`(?i)\bstatus\b[^;]*'claimed'`)
-	reClaimVocab     = regexp.MustCompile(`(?i)\b(?:claimed_at|claimed_until|claim_token|lease_token|owner_token|lease_until|lease_expires_at|max_attempts|attempts)\b`)
+	// reTokenFence is the caller's own token matched against the row:
+	// claim_token = $n (or ?, a Sprintf verb), or the null-safe
+	// IS NOT DISTINCT FROM $n. claim_token IS NOT NULL is not one: it
+	// proves somebody owns the row, not that the caller does.
+	reTokenFence = regexp.MustCompile(`(?i)\b(?:claim|lease|owner)_token\s*(?:=|IS\s+NOT\s+DISTINCT\s+FROM)\s*(?:\$\d+|\?|%[sdv])`)
+	// reTokenUnowned selects rows nobody holds (claim_token IS NULL): a
+	// live claim always carries its token, so it cannot match one.
+	reTokenUnowned = regexp.MustCompile(`(?i)\b(?:claim|lease|owner)_token\s+IS\s+NULL\b`)
+	// reTokenMint is the claim minting its fence: the token column SET
+	// from a host value. Clearing it (to NULL or the empty string) is a
+	// release, and needs a fence like any other.
+	reTokenMint    = regexp.MustCompile(`(?i)\b(?:claim|lease|owner)_token\s*=\s*(?:\$\d+|\?|%[sdv])`)
+	reStaleClaimAt = regexp.MustCompile(`(?i)\b(?:claimed_at|claimed_until|lease_until|lease_expires_at)\s*(?:<=|<)`)
+	// reStaleClaimAtRev is the same bound with the clock on the left:
+	// now() > lease_until, $1 >= claimed_at.
+	reStaleClaimAtRev = regexp.MustCompile(`(?i)(?:>=|>)\s*(?:claimed_at|claimed_until|lease_until|lease_expires_at)\b`)
+	reTerminalStatus  = regexp.MustCompile(`(?i)\bstatus\b[^;]*'(?:failed|dead|abandoned|dispatched|completed|done|succeeded|cancelled|canceled|expired)'`)
+	reClaimedStatus   = regexp.MustCompile(`(?i)\bstatus\b[^;]*'claimed'`)
+	reClaimVocab      = regexp.MustCompile(`(?i)\b(?:claimed_at|claimed_until|claim_token|lease_token|owner_token|lease_until|lease_expires_at|max_attempts|attempts)\b`)
 )
 
 // ----------------------------------------------------------------------
@@ -170,6 +274,7 @@ type sqlStmt struct {
 	set     string // the SET clause ("" when absent)
 	setOff  int    // offset of the SET clause within text
 	where   string // the WHERE clause ("" when absent)
+	upsert  bool   // the UPDATE is an INSERT's ON CONFLICT … DO UPDATE arm
 	valOff  int    // offset of text within the literal's value
 	lit     *ast.BasicLit
 	raw     bool // backtick literal: value bytes are source bytes
@@ -188,9 +293,12 @@ func (s sqlStmt) at(off int) token.Pos {
 }
 
 var (
-	reSQLVerb = regexp.MustCompile(`(?i)\b(UPDATE|DELETE)\b`)
-	reSQLSet  = regexp.MustCompile(`(?i)\bSET\b`)
-	reSQLWhre = regexp.MustCompile(`(?i)\bWHERE\b`)
+	// reUpsertArm matches the text ending just before an upsert's
+	// UPDATE: INSERT … ON CONFLICT (…) DO UPDATE.
+	reUpsertArm = regexp.MustCompile(`(?i)\bDO\s+$`)
+	reSQLVerb   = regexp.MustCompile(`(?i)\b(UPDATE|DELETE)\b`)
+	reSQLSet    = regexp.MustCompile(`(?i)\bSET\b`)
+	reSQLWhre   = regexp.MustCompile(`(?i)\bWHERE\b`)
 )
 
 // sqlStatements walks the file's string literals and returns every
@@ -230,6 +338,7 @@ func sqlStatements(file *ast.File) []sqlStmt {
 				lit:     lit,
 				raw:     raw,
 			}
+			stmt.upsert = stmt.verb == "update" && reUpsertArm.MatchString(chunk[:m[2]])
 			stmt.set, stmt.setOff = clause(chunk, reSQLSet, reSQLWhre)
 			stmt.where, _ = clause(chunk, reSQLWhre, nil)
 			out = append(out, stmt)

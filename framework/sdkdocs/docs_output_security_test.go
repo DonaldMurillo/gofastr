@@ -64,7 +64,7 @@ func TestManifestJunkSanitizedInHeaders(t *testing.T) {
 		Entities:       []string{"posts"},
 		SchemaHash:     "sha256:deadbeef",
 		Artifacts: map[string]sdk.Artifact{
-			"go": {File: sdk.GoArtifact, SHA256: "aa11", Bytes: 3, Module: "local/testapp-sdk"},
+			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/testapp-sdk"},
 		},
 	}
 	raw, err := json.Marshal(m)
@@ -132,7 +132,7 @@ func TestInstallFenceScrubManifestApp(t *testing.T) {
 		Entities:       []string{"posts"},
 		SchemaHash:     "sha256:deadbeef",
 		Artifacts: map[string]sdk.Artifact{
-			"go": {File: sdk.GoArtifact, SHA256: "aa11", Bytes: 3, Module: "local/acme-sdk"},
+			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/acme-sdk"},
 		},
 	}
 	raw, err := json.Marshal(m)

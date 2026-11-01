@@ -6,7 +6,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-// The constant reaches only a sheet-name sink, in another package.
+// The constant reaches only a sheet-name sink, in another package. The
+// call itself is a review hit: every RegisterStyle name is checked now.
 func init() {
-	registry.RegisterStyle(styles.ButtonSheet, func(style.Theme) string { return "" })
+	registry.RegisterStyle(styles.ButtonSheet, func(style.Theme) string { return "" }) // zoo:hit registerstyle
 }

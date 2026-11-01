@@ -47,8 +47,21 @@ func TestSDKReadmeExamplesMatchOpMatrix(t *testing.T) {
 		if jsHas != c.gteOK {
 			t.Errorf("type %s: JS readme offers _gte = %v, want %v", c.declType, jsHas, c.gteOK)
 		}
-		if !strings.Contains(goReadme, `params.Set("f"`) {
-			t.Errorf("type %s: Go readme lost the equality example line", c.declType)
+		// A JSON column takes no filter at all (D17), so its readme shows
+		// none; every other type keeps the equality line.
+		if got, want := strings.Contains(goReadme, `params.Set("f"`), c.declType != "json"; got != want {
+			t.Errorf("type %s: Go readme shows the equality example = %v, want %v", c.declType, got, want)
 		}
+	}
+}
+
+// The generated CLI's list verb offers no flag for a JSON column (D17):
+// the server refuses every filter on one, the bare equality included.
+func TestCLIListOmitsJSONFilterFlag(t *testing.T) {
+	spec := sdkReadmeFixture("json")
+	var sb strings.Builder
+	renderCLIListTables(&sb, spec.Entities[0])
+	if strings.Contains(sb.String(), `param: "f"`) {
+		t.Errorf("the list table offers a filter flag for a JSON column:\n%s", sb.String())
 	}
 }

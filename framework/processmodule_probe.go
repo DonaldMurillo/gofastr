@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,12 +58,17 @@ const (
 	ProbeNoInheritedSecret
 
 	// ProbeNoInheritedFD is P3: a host fd opened pre-spawn to a secret is
-	// not inherited, the child enumerating fds > 2 finds none.
-	// (Baseline hygiene: ExtraFiles=nil.)
+	// not inherited. The child looks for that file's device and inode
+	// among its open fds; its own descriptors (runtime, directory reads)
+	// never count. (Baseline hygiene: ExtraFiles=nil.)
 	ProbeNoInheritedFD
 
 	// ProbeNoNetworkEgress is P4: connect() to loopback, a public IP, and
-	// the cloud-metadata IP all fail. (Backend-enforced.)
+	// the cloud-metadata IP all fail, and so do dials to positive-control
+	// listeners the runner opened and reached itself. A refusal counts
+	// only against a control known to accept; with none the probe is
+	// unreachable, and a control that accepted a connection from the
+	// child fails it. (Backend-enforced.)
 	ProbeNoNetworkEgress
 
 	// ProbeFilesystemConfinement is P5: the child can read only its
@@ -70,8 +76,12 @@ const (
 	// are unreadable. (Backend-enforced.)
 	ProbeFilesystemConfinement
 
-	// ProbeResourceLimits is P6: a fork-bomb is capped, an OOM kills the
-	// child (not the host), CPU is throttled, fds are capped.
+	// ProbeResourceLimits is P6: fds stop at EMFILE and processes at
+	// EAGAIN near the requested limits, with every unit held alive at
+	// once, and an allocating sub-child is killed or refused short of
+	// twice the memory limit. Any other error (a missing binary, a
+	// timeout) is unreachable, never a cap. CPU throttling is not probed:
+	// a timing measurement passes falsely on a loaded host.
 	// (Backend-enforced via cgroup/Job Object.)
 	ProbeResourceLimits
 
@@ -399,6 +409,7 @@ func RunConformance(ctx context.Context, b SandboxBackend, t testingTB) Conforma
 		select {
 		case <-ctx.Done():
 			report.Results = append(report.Results, ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: "context canceled"})
+			continue
 		default:
 		}
 		report.Results = append(report.Results, runOneProbe(ctx, b, p, scratch))
@@ -487,15 +498,20 @@ func runOneProbe(ctx context.Context, b SandboxBackend, p ProbeID, scratch strin
 	// supervisor's teardown).
 	waitErr := make(chan error, 1)
 	go func() { waitErr <- cmd.Wait() }()
+	var res ProbeResult
 	select {
 	case <-runCtx.Done():
 		_ = killProcessTree(cmd)
 		<-waitErr
-		return parseProbeOutput(p, "", true, out.String())
+		res = parseProbeOutput(p, "", true, out.String())
 	case err := <-waitErr:
 		_ = err
-		return parseProbeOutput(p, out.String(), false, out.String())
+		res = parseProbeOutput(p, out.String(), false, out.String())
 	}
+	if setup.Check != nil {
+		res = setup.Check(res)
+	}
+	return res
 }
 
 // probeTimeout caps one probe's wall time. A sandboxed child that
@@ -507,9 +523,9 @@ var probeTimeout = 15 * time.Second
 
 // defaultProbe* are the limits the probe runner asks the backend to
 // enforce for P6. They are tight enough that an enforced cap fires before
-// the child can do damage, and loose enough that the child can fork the
-// handful of worker processes its probe body needs (P6 forks ~200 to
-// observe the cap). A backend that ignores them reports BREACH.
+// the child can do damage, and loose enough for the probe child's own
+// runtime. P6 holds processes and fds open, and allocates memory, up to
+// twice each limit; a backend that lets it get there reports BREACH.
 const (
 	defaultProbePidLimit      = 64
 	defaultProbeFdLimit       = 32
@@ -684,10 +700,16 @@ type probeSetup struct {
 	Env []string
 
 	// Cleanup releases host resources the setup opened (the P3 secret fd,
-	// the P2 canary env var). Run after the probe child is spawned (the
-	// child has already inherited-or-not inherited by then; cleaning up
-	// late keeps the suite's host footprint small).
+	// the P2 canary env var, the P4 control listeners). Run after the
+	// probe child is spawned (the child has already inherited-or-not
+	// inherited by then; cleaning up late keeps the suite's host
+	// footprint small).
 	Cleanup func()
+
+	// Check, when set, is the host's own verdict on the child's report,
+	// run once the child exits: P4 fails a probe whose control listener
+	// accepted a connection, whatever the child printed.
+	Check func(ProbeResult) ProbeResult
 }
 
 // setupProbeContext plants the per-probe host state the child will look
@@ -756,19 +778,44 @@ func setupProbeContext(p ProbeID, scratch string) (probeSetup, error) {
 		if err != nil {
 			return probeSetup{}, fmt.Errorf("open fd secret: %w", err)
 		}
+		// The child tells the planted fd from its own descriptors by the
+		// file's identity (device + inode, which an inherited or dup'd fd
+		// keeps), never by counting: the child's runtime and its own
+		// directory reads hold fds > 2 of their own.
+		dev, ino, ok := probeFileIdentity(f)
+		if !ok {
+			_ = f.Close()
+			return probeSetup{}, errors.New("planted fd has no device/inode identity on this OS")
+		}
 		base.Env = []string{
 			"GOFASTR_PROBE_FD_SECRET=" + secretPath,
 			"GOFASTR_PROBE_HOST_FD_NUM=" + fmt.Sprintf("%d", f.Fd()),
+			"GOFASTR_PROBE_FD_DEV=" + strconv.FormatUint(dev, 10),
+			"GOFASTR_PROBE_FD_INO=" + strconv.FormatUint(ino, 10),
 		}
 		base.Cleanup = func() { _ = f.Close() }
 		return base, nil
 
 	case ProbeNoNetworkEgress:
-		// Loopback, a public IP (1.1.1.1), and the metadata IP. The
-		// child dials each; the sandbox denies all three.
+		// Positive controls first: listeners this runner opened and
+		// reached itself, so a refusal in the child is proven against a
+		// target known to accept. Then loopback, a public IP (1.1.1.1)
+		// and the metadata IP; those may be closed or filtered on this
+		// host, so their refusal alone proves nothing.
+		controls, err := openProbeNetControls()
+		if err != nil {
+			return probeSetup{}, fmt.Errorf("P4 positive control: %w", err)
+		}
+		addrs := make([]string, 0, len(controls))
+		for _, c := range controls {
+			addrs = append(addrs, c.ln.Addr().String())
+		}
 		base.Env = []string{
+			"GOFASTR_PROBE_NET_CONTROLS=" + strings.Join(addrs, ","),
 			"GOFASTR_PROBE_NET_TARGETS=127.0.0.1:1,1.1.1.1:53,169.254.169.254:80",
 		}
+		base.Cleanup = func() { closeProbeNetControls(controls) }
+		base.Check = func(res ProbeResult) ProbeResult { return probeNetControlsVerdict(controls, res) }
 		return base, nil
 
 	case ProbeFilesystemConfinement:
@@ -782,11 +829,13 @@ func setupProbeContext(p ProbeID, scratch string) (probeSetup, error) {
 		return base, nil
 
 	case ProbeResourceLimits:
-		// The child tries to fork past the cap; the sandbox's cgroup/
-		// Job Object caps it. Fork count is well above the default cap
-		// (defaultProbePidLimit=64) so an enforced cap fires.
+		// The child pushes past each cap the runner asked the backend
+		// for (live processes, open fds, memory); the sandbox's cgroup /
+		// rlimit / Job Object must stop it near the cap.
 		base.Env = []string{
-			"GOFASTR_PROBE_FORK_COUNT=512",
+			"GOFASTR_PROBE_PID_LIMIT=" + strconv.Itoa(defaultProbePidLimit),
+			"GOFASTR_PROBE_FD_LIMIT=" + strconv.Itoa(defaultProbeFdLimit),
+			"GOFASTR_PROBE_MEM_LIMIT=" + strconv.FormatInt(defaultProbeMemLimitBytes, 10),
 		}
 		return base, nil
 	}

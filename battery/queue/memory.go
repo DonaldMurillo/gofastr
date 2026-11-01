@@ -7,10 +7,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // defaultHandlerTimeout is the handler execution timeout used when none is
@@ -84,6 +87,15 @@ type MemoryQueue struct {
 	// disabled module.
 	gate func(jobType string) bool
 
+	// moveMu holds the queue still for an erasure. The manual moves that
+	// carry a job from one store to the next (Dequeue: heap to dequeued
+	// set; Nack: dequeued set to heap or dead list; Replay: dead list to
+	// heap) hold its read side across the whole move, so between their
+	// steps the job is in no store; eraseUser holds the write side, so no
+	// such move is half done while it reads. Taken before pmu, inflightMu
+	// and deadMu, never after.
+	moveMu sync.RWMutex
+
 	// pmu guards the pending store, the sequence counter, the closed flag,
 	// and the wake cond. cond is bound to pmu.
 	pmu     sync.Mutex
@@ -124,10 +136,19 @@ type MemoryQueue struct {
 	dead    []deadJob
 	deadSeq uint64
 
+	// eraseName is the name the store eraser NewMemoryQueue registers is
+	// listed under; unregisterErase removes it, on Close.
+	eraseName       string
+	unregisterErase func()
+
 	// replayEnqueued is a deterministic seam for package tests: Replay
 	// calls it between its re-enqueue and retiring the dead record.
 	// Production code leaves it nil.
 	replayEnqueued func()
+
+	// eraseScanned is a seam for package tests: eraseUser calls it after it
+	// has read the pending heap, to put a worker step in that gap.
+	eraseScanned func()
 }
 
 // deadJob is one retained dead-letter record. gen identifies this
@@ -226,7 +247,85 @@ func NewMemoryQueue(workers int, opts ...MemoryQueueOption) *MemoryQueue {
 	for _, opt := range opts {
 		opt(q)
 	}
+	// App.EraseUserData reaches the jobs this process holds: their
+	// payloads are the user's data as much as a queue_jobs row's.
+	q.eraseName, q.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   "queue_memory",
+		Source: "queue",
+		Erase:  q.eraseUser,
+	})
 	return q
+}
+
+// eraserName is the name the queue's store eraser is listed under.
+func (q *MemoryQueue) eraserName() string { return q.eraseName }
+
+// eraseUser removes every job whose UserID is userID from the pending
+// heap (delayed jobs included), the set Dequeue handed out, and the dead
+// list, freeing the unique keys they held, and returns how many it
+// removed (with dryRun, how many it would). It holds all three stores and
+// moveMu, so no Dequeue, Nack or Replay carries a job from a store it has
+// not read yet into one it already has. A dequeued job's later Ack or
+// Nack finds nothing and does nothing. A job a worker is running when
+// the sweep passes is not stopped; if it fails and is retried, it is
+// back on the heap until the next erasure.
+func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (int, error) {
+	// No manual move is half done, and none starts, until the erasure has
+	// read and cleared all three stores.
+	q.moveMu.Lock()
+	defer q.moveMu.Unlock()
+	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	q.inflightMu.Lock()
+	defer q.inflightMu.Unlock()
+	q.deadMu.Lock()
+	defer q.deadMu.Unlock()
+
+	var gone []Job
+	kept := make([]pendingJob, 0, len(q.pending.items))
+	for _, pj := range q.pending.items {
+		if pj.job.UserID == userID {
+			gone = append(gone, pj.job)
+		} else {
+			kept = append(kept, pj)
+		}
+	}
+	if !dryRun && len(kept) != len(q.pending.items) {
+		q.pending.items = kept
+		heap.Init(&q.pending)
+	}
+	if q.eraseScanned != nil {
+		q.eraseScanned()
+	}
+
+	for _, id := range slices.Sorted(maps.Keys(q.inflight)) {
+		if job := q.inflight[id]; job.UserID == userID {
+			gone = append(gone, job)
+			if !dryRun {
+				delete(q.inflight, id)
+			}
+		}
+	}
+
+	n := len(gone)
+	keptDead := make([]deadJob, 0, len(q.dead))
+	for _, d := range q.dead {
+		if d.job.UserID == userID {
+			n++
+		} else {
+			keptDead = append(keptDead, d)
+		}
+	}
+	if !dryRun {
+		q.dead = keptDead
+		// release, inline: pmu is held.
+		for _, job := range gone {
+			if job.UniqueKey != "" {
+				delete(q.held, uniqueSlot{job.Type, job.UniqueKey})
+			}
+		}
+	}
+	return n, nil
 }
 
 // RegisterHandler registers a handler function for a given job type.
@@ -550,6 +649,8 @@ func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error)
 		return Job{}, ctx.Err()
 	default:
 	}
+	q.moveMu.RLock()
+	defer q.moveMu.RUnlock()
 	q.pmu.Lock()
 	if q.closed {
 		q.pmu.Unlock()
@@ -588,19 +689,21 @@ func (q *MemoryQueue) takeInflight(jobID string) (Job, bool) {
 	return job, ok
 }
 
-// deferGated re-enqueues a gate-deferred job after gateDeferDelay. Because the
-// pending store is unbounded the push always succeeds, so there is no
-// re-arm-on-full dance; the only failure mode is Close racing the timer,
-// which the closed-check under pmu handles cleanly (no panic).
+// deferGated puts a gate-deferred job back on the pending heap, not due
+// until gateDeferDelay from now, the way DBQueue pushes scheduled_at
+// forward. The heap already holds jobs that are not yet due, so a worker
+// arms its wake for it, and an erasure that sweeps the heap finds it. A
+// job held in a timer closure instead was out of every store eraseUser
+// reads, and ran for an erased user once its module came back. After
+// Close the job is dropped, the same as everything else on the heap.
 func (q *MemoryQueue) deferGated(job Job) {
-	time.AfterFunc(gateDeferDelay, func() {
-		q.pmu.Lock()
-		defer q.pmu.Unlock()
-		if q.closed {
-			return
-		}
-		q.pushLocked(job)
-	})
+	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	if q.closed {
+		return
+	}
+	job.ScheduledAt = q.now().Add(gateDeferDelay)
+	q.pushLocked(job)
 }
 
 // randomID generates a 16-byte hex string ID.
@@ -636,6 +739,8 @@ func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
 // context destroyed the job outright: not pending, not dead, not in-flight,
 // and a retried Nack is the documented no-op against a vanished job.
 func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
+	q.moveMu.RLock()
+	defer q.moveMu.RUnlock()
 	stored, ok := q.takeInflight(job.ID)
 	if !ok {
 		// Unknown job (auto-pool retry, or already acked), nothing to requeue.
@@ -739,6 +844,8 @@ func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
 // again. Idempotent and safe: replaying an unknown or non-failed id matches no
 // retained job and is a no-op (nil), never a double-enqueue.
 func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
+	q.moveMu.RLock()
+	defer q.moveMu.RUnlock()
 	q.deadMu.Lock()
 	idx := -1
 	for i, d := range q.dead {
@@ -801,7 +908,13 @@ var (
 // Jobs whose ScheduledAt is still ahead are not run early and not waited
 // for: an in-memory queue cannot keep them past Close, so they are dropped
 // and their count is logged.
+//
+// Close also removes the queue's store eraser, which NewMemoryQueue
+// registered and which otherwise keeps the queue reachable.
 func (q *MemoryQueue) Close() error {
+	if q.unregisterErase != nil {
+		q.unregisterErase()
+	}
 	q.pmu.Lock()
 	if q.closed {
 		q.pmu.Unlock()

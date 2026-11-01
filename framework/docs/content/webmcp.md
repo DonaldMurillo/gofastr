@@ -116,7 +116,10 @@ The route stays an ordinary route: the app's own UI can POST to
 differs only in carrying the marker header. A query string in the
 declared `Path` (e.g. `/api/search?source=baked`) is baked into the
 bridge's fetches but is not part of the route pattern — the handler
-reads it through `r.URL.Query()` like any other query parameter.
+reads it through `r.URL.Query()` like any other query parameter. On a
+grouped router (`rt.Group("/v1")`) the route registers under the group
+prefix and the manifest advertises the prefixed path
+(`/v1/api/tools/draw-arrow`), since the bridge fetches it from the origin.
 
 Declaration-only `Register` remains available for endpoints the app
 wires itself (existing routes, batteries, generated CRUD surfaces).

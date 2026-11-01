@@ -333,10 +333,52 @@ func SetWindowText(hwnd uintptr, title string) error {
 	return nil
 }
 
+// GetWindowText reads the whole title: the buffer is sized from
+// GetWindowTextLengthW, so a title past any fixed size is not cut.
 func GetWindowText(hwnd uintptr) string {
-	buf := make([]uint16, 1024)
-	n, _, _ := call(user32, "GetWindowTextW", hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-	return syscall.UTF16ToString(buf[:n])
+	return readWindowText(
+		func() int {
+			n, _, _ := call(user32, "GetWindowTextLengthW", hwnd)
+			if n > maxWindowTextUnits {
+				return maxWindowTextUnits
+			}
+			return int(n)
+		},
+		func(buf []uint16) int {
+			n, _, _ := call(user32, "GetWindowTextW", hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+			if n >= uintptr(len(buf)) {
+				return len(buf) - 1
+			}
+			return int(n)
+		},
+	)
+}
+
+// maxWindowTextUnits bounds one title read; a length past it is clamped.
+const maxWindowTextUnits = 1 << 20
+
+// readWindowText sizes the buffer from length (UTF-16 units, without
+// the terminator) and reads into it. A read that fills the buffer may
+// have been cut by a title that grew between the two calls, so the
+// length is asked again and the read retried once if it did grow.
+func readWindowText(length func() int, read func([]uint16) int) string {
+	n := min(max(length(), 0), maxWindowTextUnits)
+	text, got := readWindowTextInto(n, read)
+	if got < n {
+		return text
+	}
+	if grown := min(max(length(), 0), maxWindowTextUnits); grown > n {
+		text, _ = readWindowTextInto(grown, read)
+	}
+	return text
+}
+
+// readWindowTextInto reads into an n+1 unit buffer (room for the
+// terminator) and reports the text and the units copied.
+func readWindowTextInto(n int, read func([]uint16) int) (string, int) {
+	buf := make([]uint16, n+1)
+	got := min(max(read(buf), 0), n)
+	return syscall.UTF16ToString(buf[:got]), got
 }
 
 func GetClientSize(hwnd uintptr) (int, int) {

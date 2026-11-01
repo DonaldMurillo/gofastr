@@ -287,6 +287,38 @@ func TestBehaviorInteractionKeydownScopeGatesRetention(t *testing.T) {
 			t.Fatal("a keydown the scope refused was replayed anyway")
 		}
 	})
+
+	// A declared key held with a modifier is a browser or OS shortcut
+	// (Alt+Arrow is history, Ctrl+Arrow a word jump), never the
+	// behaviour's key: the bridge leaves it alone while the scope exists.
+	for _, mod := range []string{"altKey", "ctrlKey", "metaKey", "shiftKey"} {
+		t.Run("modified key passes "+mod, func(t *testing.T) {
+			s := startIAServer(t, head, `
+<p data-ia>probe target</p>
+<div data-ia-scope><input id="in" type="text"></div>`, iaKeyObserver)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+			iaGoto(t, ctx, s.srv.URL+"/")
+			iaWaitRequested(t, s)
+
+			var prevented bool
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`document.getElementById('in').focus(); document.getElementById('in').dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', `+mod+`: true, bubbles: true, cancelable: true}))`, nil),
+				chromedp.Evaluate(`window.__keyPrevented`, &prevented),
+			); err != nil {
+				t.Fatalf("chromedp modified keydown: %v", err)
+			}
+			if prevented {
+				t.Fatalf("the bridge prevented Enter with %s held", mod)
+			}
+			s.release()
+			if !pollTrue(ctx, iaLoadedExpr) {
+				t.Fatal("the registered module never loaded after the gate opened")
+			}
+			if pollTrue(ctx, `window.__iaKeys !== undefined`) {
+				t.Fatalf("Enter with %s held was replayed", mod)
+			}
+		})
+	}
 }
 
 // The bridge costs a behaviour that declares no interactions nothing:

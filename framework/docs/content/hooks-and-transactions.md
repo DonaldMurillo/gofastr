@@ -268,7 +268,10 @@ If you open a transaction YOURSELF and wrap it with bare `db.WithTx`,
 the framework cannot see your commit, so it learns the outcome by
 polling the live `*sql.Tx` (a `SELECT 1` every few milliseconds until it
 reports done) and then re-checking the row. That poll shares the
-transaction's single connection with your own statements. Prefer
+transaction's single connection with your own statements. The wait is
+capped at two minutes, counted from the write, a statement of yours that
+holds the connection included; past that the event is dropped and
+logged. Prefer
 `db.WithTxQueue`, and call `queue.RunAfterCommit()` after your `Commit`
 succeeds — that removes the poll entirely:
 
@@ -301,11 +304,16 @@ finalizer. It is the same shape `App.InTx` uses internally.
 A handler whose `DB` is your `*sql.Tx` itself (a copy with
 `ch.DB = tx`, the context carrying no transaction) also runs each
 operation under a savepoint, so one that fails, a batch included,
-leaves none of its writes on your transaction. Its events, though, go
-out as soon as the operation succeeds, before your `Commit` and even if
-you roll back: nothing tells the handler how your transaction ends.
-Carry the transaction on the context with `db.WithTxQueue` when events
-must wait for the commit.
+leaves none of its writes on your transaction. Nothing tells such a
+handler how your transaction ends, so it publishes no live-bus events
+of its own: an event sent before your `Commit` would announce a write
+you might roll back. Pass it the context from `db.WithTxQueue` and call
+`queue.RunAfterCommit()` after `Commit`, as in the example above; the
+events then go out once, on commit, and never on rollback.
+
+The same holds for a write in a `db.WithTx` context whose record carries
+no primary key: the framework cannot check it landed, so it is not
+announced. Each dropped event logs one warning per process.
 
 ### Handling validation errors
 
@@ -351,7 +359,7 @@ paths that skip hooks entirely; by design, not accident:
 | `TypedQuery.UpdateAll` | all Before/AfterUpdate | Bulk SQL UPDATE; no per-row callback, and no lifecycle event or outbox row. It runs on the transaction the context carries (`App.InTx`, a hook's), so a rollback undoes it |
 | `TypedQuery.DeleteAll` | all Before/AfterDelete | Bulk SQL DELETE/soft-delete; same reason, no event either, and it joins the context's transaction the same way |
 | Upsert (`UpsertOne`) that inserts | BeforeCreate/AfterCreate fire | An upsert-as-insert IS a Create |
-| Upsert (`UpsertOne`) that updates | BeforeUpdate/AfterUpdate **do not fire** | Indistinguishable from create at the DB level; use Create/Update if you need update hooks. The event is `entity.updated`: the upsert probes the key inside its transaction and announces a create only when no row held it. The conflict arm sets only the columns the caller sent (plus the tenant), so an omitted column keeps its stored value rather than its default |
+| Upsert (`UpsertOne`) that updates | BeforeUpdate/AfterUpdate **do not fire** | Indistinguishable from create at the DB level; use Create/Update if you need update hooks. The event is `entity.updated`: the upsert probes the key inside its transaction and announces a create only when no row held it. The conflict arm sets only the columns the caller sent (plus the tenant), so an omitted column keeps its stored value rather than its default. A conflict that writes any column re-stamps an auto `updated_at` with the server time, as Update does; `created_at` and the key keep their stored values |
 | Streaming list (`?stream=true`) | AfterList (blocked when any AfterList hook is registered; auto-falls back to buffered path for large `limit`) | Rows stream directly to wire; slice unavailable for redaction |
 | Cursor list (`?cursor=`) | none: AfterList fires over the page | The continue-cursor is derived from the stored keyset values first, so a hook that masks the keyset column cannot corrupt paging |
 | Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire: its BeforeList scope (plus BeforeGet for to-one relations, with an empty ID because the load is batched) narrows the child query, a nested `?rel.field=` filter honours the same scope, a hook error answers 400 with the same body the child's own route sends, and AfterList always runs over the rows, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |

@@ -46,10 +46,24 @@ func deliver(fn func([]byte), p []byte) {
 //
 // depth <= 0 selects the default queue depth.
 func SubscriberQueue(fn func([]byte), depth int) (send func([]byte), stop func()) {
+	sendItem, stop := dropOldestQueue(func(p []byte) { deliver(fn, p) }, depth, nil)
+	send = func(payload []byte) {
+		sendItem(append([]byte(nil), payload...))
+	}
+	return send, stop
+}
+
+// dropOldestQueue is the machinery behind SubscriberQueue and
+// PublishQueueReporting: a bounded queue drained by one dedicated
+// goroutine that runs fn per item. send never blocks: when the queue is
+// full it drops the oldest queued item, handing it to dropped (when
+// non-nil) on the sender's goroutine, and enqueues the new one. After
+// stop, send is a silent no-op.
+func dropOldestQueue[T any](fn func(T), depth int, dropped func(T)) (send func(T), stop func()) {
 	if depth <= 0 {
 		depth = defaultInProcessQueue
 	}
-	q := make(chan []byte, depth)
+	q := make(chan T, depth)
 	stopped := make(chan struct{})
 	var once sync.Once
 	go func() {
@@ -57,28 +71,30 @@ func SubscriberQueue(fn func([]byte), depth int) (send func([]byte), stop func()
 			select {
 			case <-stopped:
 				return
-			case p := <-q:
-				deliver(fn, p)
+			case item := <-q:
+				fn(item)
 			}
 		}
 	}()
-	send = func(payload []byte) {
-		cp := append([]byte(nil), payload...)
+	send = func(item T) {
 		for {
 			select {
 			case <-stopped:
 				return
-			case q <- cp:
+			case q <- item:
 				return
 			default:
 			}
 			// Queue full: drop oldest and retry. Receiving from a buffered
 			// channel needs no concurrent consumer, so this pops a queued
-			// payload even while fn is still running, guaranteeing forward
+			// item even while fn is still running, guaranteeing forward
 			// progress (no busy-spin) and the drop-oldest contract. stopped
 			// is re-checked every iteration.
 			select {
-			case <-q:
+			case old := <-q:
+				if dropped != nil {
+					dropped(old)
+				}
 			case <-stopped:
 				return
 			default:
@@ -89,7 +105,7 @@ func SubscriberQueue(fn func([]byte), depth int) (send func([]byte), stop func()
 	// stop signals the goroutine to exit at its next select and returns
 	// promptly. It does not wait for an in-flight fn (fn must not block per
 	// the Fanout contract; a blocking fn would make any wait deadlock), nor
-	// does it drain queued payloads. This is a lossy lane, so dropping the
+	// does it drain queued items. This is a lossy lane, so dropping the
 	// few still-queued messages on unsubscribe is the intended behavior.
 	stop = func() {
 		once.Do(func() { close(stopped) })

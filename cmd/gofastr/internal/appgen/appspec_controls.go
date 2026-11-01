@@ -65,6 +65,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		}
 		f.str("Type", typ)
 		f.flag("Disabled", appspec.AppSpecBoolProp(block, "disabled"))
+		f.raw("Ctx", "ctx") // the Shortcut keycaps are said through it
 		return "ui.Button(ui.ButtonConfig{" + f.String() + "})", true
 	case "text_field", "number_field":
 		f.str("Name", appspec.AppSpecProp(block, "name"))
@@ -146,6 +147,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		f.str("ID", appspec.AppSpecProp(block, "id"))
 		f.raw("Columns", "[]ui.Column{"+strings.Join(cols, ", ")+"}")
 		f.raw("Rows", "[]ui.Row{"+appSpecLines(rowExprs)+"}")
+		f.raw("Ctx", "ctx") // sort, empty-state and pagination words
 		return "ui.DataTable(ui.DataTableConfig{" + f.String() + "})", true
 	case "item_list":
 		items := make([]string, len(childExprs))

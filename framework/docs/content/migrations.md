@@ -11,6 +11,10 @@ GoFastr has two migration paths:
    gets its `<table>_<column>_key` unique index on boot unless a
    single-column unique index already covers the column; rows that
    already repeat a value fail the boot with an error naming the column.
+   So does an index of that name another table or column already holds
+   (table `t_a` column `b` and table `t` column `a_b` both name
+   `t_a_b_key`, and index names share a schema): create a unique index
+   of another name on the column, which counts as covering it.
    Clearing `Unique` is left to `migrate generate`. Type changes and renames are surfaced by the
    declarative diff (`DiffSchema` / `migrate generate`): type changes as
    destructive changes refused by default, renames as non-destructive
@@ -21,6 +25,10 @@ GoFastr has two migration paths:
 2. **SQL files with directives.** `core/migrate` runs versioned `.sql`
    files. Best when you need to express data backfills, complex
    constraints, or anything the entity declaration can't.
+
+Neither copies rows in from another database; see [Data export &
+import](data-export.md#what-this-does-not-do) for how to write that
+one-time job.
 
 Both are production-hardened (see [Production safety](#production-safety)):
 auto-migrate runs under an advisory lock inside a single transaction; the
@@ -111,6 +119,19 @@ runs and only marked clean on success. If it fails partway, the dirty
 flag stays set and every later `up`/`down` refuses with an error until
 you reconcile the schema by hand and run `migrate force` (below).
 Reserve `NoTransaction` for statements that genuinely require it.
+
+On Postgres the runner splits a non-transactional `Up` (and `Down`) at
+its statement boundaries and runs each statement on its own, so one
+migration can hold several `CREATE INDEX CONCURRENTLY` statements. Sent
+together, they reached Postgres as one simple-query message, which it
+runs as one implicit transaction, and the second failed with "cannot run
+inside a transaction block". A semicolon inside a quoted string or
+identifier, a dollar-quoted body (`$$ … $$`), a comment or a
+`BEGIN ATOMIC … END` function body is not a boundary. A statement that
+fails stops the run with the ones before it applied, which the dirty
+row records. SQLite runs the body as one statement list, since a
+`CREATE TRIGGER` body holds semicolons there and SQLite has no implicit
+transaction to escape.
 
 The runner reads `migrations/*.sql` in filename order. Convention:
 zero-pad the version into the filename, e.g.
@@ -270,9 +291,13 @@ column and an indexed column dropped with its index both apply. A
 `Unique` field added to an existing table gets a unique index,
 `<table>_<column>_key`, after its `ADD COLUMN`. `Unique` set on a column
 that already exists gets the same index, and `Unique` cleared removes
-it: on Postgres the file drops the constraint and the index of that
-name, and on SQLite it rebuilds the table, since only a rebuild removes
-an inline `UNIQUE`. The snapshot records each table's unique columns for
+it: on Postgres the file drops the index of that name and every
+`UNIQUE` constraint on that column alone, found in the catalog when the
+migration runs (so a constraint an older build's `CREATE TABLE` left
+under a name Postgres chose goes too). The column is matched by the
+exact name the unquoted DDL gave it, the declared name in lower case, so
+a quoted `"Email"` beside `email` keeps its constraint. On SQLite it rebuilds the
+table, since only a rebuild removes an inline `UNIQUE`. The snapshot records each table's unique columns for
 this; for a snapshot written before it, the diff reads them from the
 `CREATE TABLE` the snapshot recorded. Defaults render as the
 value they hold: a float in its shortest exact form (`1e-07`, not
@@ -399,8 +424,58 @@ declared with `RawType` (Postgres domains, arrays, custom types) are skipped:
 the live DB reports the underlying type, which never matches the raw type, so
 they would otherwise false-positive every diff. And an existing Postgres table
 whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY`
-(no sequence) is not auto-upgraded to `SERIAL`. Bring it up with a one-time
+(no sequence) is not auto-upgraded to `BIGSERIAL`. Bring it up with a one-time
 `ALTER`/rebuild if you adopt `auto_generate: increment` on Postgres.
+
+An `int` field is `BIGINT` on Postgres (`BIGSERIAL` for an `increment`
+key). A Postgres column an older build created as `INTEGER` (or `SERIAL`)
+is taken as in sync with it: the diff proposes no retype, so an upgrade
+does not turn every `int` column into a destructive change. Such a
+column still holds only 32 bits, and a value past 2147483647 fails the
+write. Widen it with a hand-written migration; a `SERIAL` key's sequence
+is `integer` too and needs its own `ALTER SEQUENCE`:
+
+```sql
+-- +migrate Version 12
+-- +migrate Up
+ALTER TABLE counters ALTER COLUMN hits TYPE BIGINT;
+ALTER TABLE counters ALTER COLUMN id TYPE BIGINT;
+ALTER SEQUENCE counters_id_seq AS BIGINT;
+-- +migrate Down
+ALTER SEQUENCE counters_id_seq AS INTEGER;
+ALTER TABLE counters ALTER COLUMN id TYPE INTEGER;
+ALTER TABLE counters ALTER COLUMN hits TYPE INTEGER;
+```
+
+An index declared without a `Name` is called `idx_<table>_<columns>`.
+Past 63 bytes, the longest identifier Postgres keeps, the name keeps its
+first 54 bytes and ends in `_` plus 8 hex digits of a hash of the whole
+name (`query.FitIdent`): Postgres would cut it at 63 bytes, and two
+names that shared those bytes named one index, so the second unique
+index was skipped. The index names the framework's own stores derive
+from a configured table (`query.QuoteIndexName`) fit the same way. A
+table that has such an index from an older build gets the new name on
+the next boot, beside the old one, which you can drop. `gofastr migrate
+generate` from a snapshot an older build wrote does the same: it creates
+the index under the new name and never drops the old one, since a
+foreign key you added by hand may depend on a unique index and the drop
+would fail. The snapshot keeps recording the old index while the new
+one is declared, so removing or changing the index later drops both.
+
+A `Unique` field's `<table>_<column>_key` is the name Postgres gives
+the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
+`entity.UniqueKeyName`'s (`query.FitObjectName`): the longer of the
+table and column parts is trimmed and 8 hex digits of a hash of the
+table, column and label, each with its length, go before `_key`, so no
+two columns share one, in one table or across two whose names join to
+the same string (`t_a` + `x…b` and `t` + `a_x…b`). Postgres
+would trim two long columns to one name and number the second by
+creation order, so `CREATE TABLE` names such a constraint itself. The
+index a later `Unique` gets matches the constraint a new table gets,
+and a unique violation on either maps to its field. A table an older
+build created holds a long column's constraint under the trimmed name
+Postgres chose; a violation on it maps to its field unless two `Unique`
+columns trim to that one name, and then it answers a bare 409.
 
 The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
 

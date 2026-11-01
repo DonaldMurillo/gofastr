@@ -608,8 +608,8 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 		// to be handed back as a "tag" verbatim.
 		tags, _ := parseAcceptLanguage(r.Header.Get("Accept-Language"))
 		for _, want := range tags {
-			if tag := sanitizeTag(want); tag != "" && tag != "*" {
-				return Locale{Tag: tag}
+			if want != "*" {
+				return Locale{Tag: want}
 			}
 		}
 		return Locale{}
@@ -656,7 +656,8 @@ func wildcardMatch(fallback string, available map[string]struct{}, refused []str
 }
 
 // parseAcceptLanguage returns tags ordered by q-value (highest first),
-// and the tags refused with q=0. An entry whose q is not a number in
+// and the tags refused with q=0. Every tag except "*" has passed
+// [sanitizeTag]; an entry it rejects is dropped. An entry whose q is not a number in
 // [0, 1] is skipped: kept at the default q=1 it outranked every
 // well-formed entry.
 func parseAcceptLanguage(header string) (tags, refused []string) {
@@ -717,11 +718,20 @@ func parseAcceptLanguage(header string) (tags, refused []string) {
 		if !valid {
 			continue
 		}
+		// Bound every range here, once, so no caller can match on a raw
+		// one: an ~800 KB "en-x-x-…" range made tagFallbacks build
+		// ~400k strings per request on the catalog path, and each map
+		// probe hashed its whole prefix. "*" is the one non-tag range.
+		if tag = normalize(tag); tag != "*" {
+			if tag = sanitizeTag(tag); tag == "" {
+				continue
+			}
+		}
 		if q == 0 {
-			refused = append(refused, normalize(tag))
+			refused = append(refused, tag)
 			continue
 		}
-		out = append(out, entry{tag: normalize(tag), q: q})
+		out = append(out, entry{tag: tag, q: q})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].q > out[j].q })
 	tags = make([]string, 0, len(out))
@@ -732,23 +742,46 @@ func parseAcceptLanguage(header string) (tags, refused []string) {
 }
 
 // tagFallbacks returns progressively shorter forms of a BCP 47 tag, one
-// subtag off the right at a time: "zh-hant-hk" → ["zh-hant-hk",
-// "zh-hant", "zh"], so a script catalog ("zh-hant") is tried before the
-// bare language. Empty input yields nil.
+// subtag off the right at a time, with the language-script form CLDR
+// reads the tag as placed before the bare language: "zh-cn" →
+// ["zh-cn", "zh-hans", "zh"]. Dropping subtags alone sent zh-TW to the
+// Simplified "zh" catalog. A script that is not the language's usual
+// one ends the chain, the way CLDR makes root the parent of zh-Hant and
+// sr-Latn: "zh-tw" → ["zh-tw", "zh-hant"] and "zh-hant-hk" →
+// ["zh-hant-hk", "zh-hant"], never the Simplified "zh". Empty input
+// yields nil.
 func tagFallbacks(tag string) []string {
 	tag = normalize(tag)
 	if tag == "" {
 		return nil
 	}
 	out := []string{tag}
-	for {
-		i := strings.LastIndexByte(tag, '-')
+	for t := tag; ; {
+		i := strings.LastIndexByte(t, '-')
 		if i <= 0 {
-			return out
+			break
 		}
-		tag = tag[:i]
-		out = append(out, tag)
+		t = t[:i]
+		out = append(out, t)
 	}
+	form, keepBase := scriptFallback(tag, out[len(out)-1])
+	if form == "" {
+		return out
+	}
+	if len(out) == 1 {
+		// The bare language itself: its own catalog first, then the
+		// script form ("zh" → zh, zh-hans).
+		return []string{tag, form}
+	}
+	base := out[len(out)-1]
+	out = out[:len(out)-1]
+	if !slices.Contains(out, form) {
+		out = append(out, form)
+	}
+	if keepBase {
+		out = append(out, base)
+	}
+	return out
 }
 
 // normalize lower-cases a tag and trims surrounding whitespace.

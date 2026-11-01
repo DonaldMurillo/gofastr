@@ -27,9 +27,10 @@ each command to the doc that covers it.
   `.env` never relaxes a deployment. `init .` refuses to run when git
   already tracks `.env` (untrack it with `git rm --cached .env` first),
   since the new secret would land in the next commit. `init .` names the
-  project after its directory (module `local/<dir>` unless `--module` is
-  given), and refuses, writing nothing, when the directory already holds
-  a file it would replace (`main.go`, `screens.go`, `.env`,
+  project after its directory. Its module is the one an existing
+  `go.mod` declares (a `--module` that disagrees is refused), else
+  `--module`, else `local/<dir>`. It refuses, writing nothing, when the
+  directory already holds a file it would replace (`main.go`, `screens.go`, `.env`,
   `gofastr.settings.yml`, the onboarding files, and with the sample
   entity `screens_auth.go` and `entities/entities.go`); `--force`
   overwrites them, each through a temporary file renamed over the old
@@ -94,6 +95,18 @@ refuses a directory that already holds the scaffold, and with `--force`
 writes a new `.env` signing key; it is not a way to acknowledge a
 successful scaffold. For a project whose scaffold completed, continue
 with `go mod tidy` from that project directory.
+
+### When the CLI and the project disagree
+
+Every command that works on a project (all but `init`, `version`,
+`docs` and `upgrade`; never `--help` or a mistyped command) compares the
+GoFastr version the project's `go.mod` requires with the CLI's own
+release. When they differ it prints a warning on stderr with the
+`go install .../cmd/gofastr@<version>` line that fixes it, then runs the
+command anyway: generated code and checks come from the CLI's release,
+not the project's. A development build of the CLI, a `replace`
+directive for GoFastr, and the GoFastr module itself skip the check.
+`GOFASTR_NO_VERSION_CHECK=1` silences it.
 
 ## App specs
 
@@ -162,7 +175,7 @@ with `go mod tidy` from that project directory.
   error-severity finding generates nothing, the run continues so one
   pass reports everything, and the exit code is non-zero. `app.style.css`
   is the app sheet; every other name is a scoped owner. Names match
-  `^[a-z][a-z0-9-]*$`, must not start with `ui-`, and are unique within
+  `^[a-z][a-z0-9-]{0,63}$`, must not start with `ui-`, and are unique within
   each program.
 
   The generated file carries the CSS as a raw-string constant with a
@@ -178,6 +191,14 @@ with `go mod tidy` from that project directory.
   each as `<Owner>Style` (`IssuecardStyle`, `BoardStyle`). A class
   name that becomes an invalid or colliding Go identifier is a
   generator error, never a mangled name.
+
+  `ownstyle.Must` compiles the sheet against the default theme, and
+  `App.WithTheme` compiles every registered sheet against the app's
+  theme (`ownstyle.CheckTheme`): a theme that renames or drops a
+  breakpoint a sheet's `(--above-md)` names panics at boot. A theme
+  variant registered later that cannot compile a sheet does not fail
+  the request: the sheet ships empty under that theme and the error
+  is logged.
 
   The sheets are checked against the built-in tokens plus every app
   token, so `gofastr gen styles` and `gofastr verify` report the same

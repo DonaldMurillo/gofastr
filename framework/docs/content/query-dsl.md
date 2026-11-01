@@ -68,7 +68,7 @@ ASCII only, so a bare `LIKE` answered differently per dialect. The case
 contract is the one `?q=` documents: ASCII-case-insensitive everywhere,
 Unicode folding a Postgres bonus (SQLite's `LOWER` folds ASCII only, so
 a stored `É` is not matched there). `contains` on a column that is not text (a number,
-date, Bool or JSON) is refused.
+date or Bool) is refused, and a JSON column takes no operator at all.
 
 `in` accepts either `field in ["a","b"]` or `field in [1,2,3]`. Every
 value, under every operator but `contains`, must be of the field's
@@ -126,6 +126,15 @@ Composite cursors (`EntityConfig.Pagination.CursorFields`) have no single-value
 DSL form, so `after()` on such an entity returns an error rather than
 silently paging from the start; use the HTTP cursor API for those.
 
+`after()` compares the one cursor column and nothing else, so that
+column must be unique: the entity's sole primary key, or a
+`CursorField` declared `Unique: true`. On any other `CursorField` (a
+`created_at` two rows can share) the rows tied with the value it
+resumes after would never be served, so `after()` returns an error
+(`dsl.after_not_unique`) naming the field. Mark the field `Unique`,
+cursor on the key, or page through the HTTP cursor API, which appends
+the key as a tiebreak.
+
 ## Filter text: `dsl.ParsePredicate` and `dsl.ParseSort`
 
 Beside the chained agent syntax sits a second, smaller parser for filter
@@ -151,6 +160,12 @@ amount >= 10000
 status in ["open", "past_due"] and due_on < "2026-10-01"
 (kind = "company" or vat_number != "") and active = true
 ```
+
+A quoted value knows two escapes, `\"` and `\\`; any other backslash is
+refused. Code that writes filter text quotes a value with
+`dsl.Quote(v)`, which escapes the backslash before the quote, so
+`C:\reports` is written `"C:\\reports"` and parses back to itself. A
+value holding a line break cannot be written as a term.
 
 Keywords are case-insensitive and `and` binds tighter than `or`.
 `contains` is a literal substring match: the `%`, `_` and escape

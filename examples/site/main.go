@@ -717,8 +717,8 @@ func setupServer() *framework.App {
   G._reducers['dash.status'] = function(deps) {
     var open = (deps['dash.incidentsOpen'] - 0) || 0;
     if (open <= 0) return 'All systems operational';
-    if (open <= 2) return 'Degraded \u2014 ' + open + ' open';
-    return 'Major incident \u2014 ' + open + ' open';
+    if (open <= 2) return 'Degraded: ' + open + ' open';
+    return 'Major incident: ' + open + ' open';
   };
 })();
 `)

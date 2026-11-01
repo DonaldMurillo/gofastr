@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
@@ -121,8 +122,10 @@ type RunningChild interface {
 	Kill() error
 
 	// Wait blocks until the child exits and returns the wait error
-	// (nil for a clean exit). It is the reap step. Calling Wait before
-	// Kill/CloseStdin is legal, it just blocks until natural exit.
+	// (nil for a clean exit). It is the reap step, and on Unix it also
+	// SIGKILLs what is left of the child's process group, so a helper
+	// the module started dies with it however it exited. Calling Wait
+	// before Kill/CloseStdin is legal, it just blocks until natural exit.
 	Wait() error
 }
 
@@ -202,6 +205,12 @@ type childPrep struct {
 	// RE-VERIFIES the digest right before exec (best-effort, see its
 	// doc).
 	Artifact *os.File
+	// ChildEnds are the child-side stdio pipe ends exec.Cmd holds until
+	// cmd.Start hands them to the child (and closes the parent's copy).
+	// A spawn abandoned before Start closes them through
+	// [releasePrepFDs]; once Start ran they are already closed and the
+	// second Close is a harmless os.ErrClosed.
+	ChildEnds []*os.File
 }
 
 // fdExecSupported reports whether exec'ing through the child-side
@@ -342,6 +351,13 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		return nil, fmt.Errorf("processmodule: stderr pipe: %w", err)
 	}
 
+	var childEnds []*os.File
+	for _, end := range []any{cmd.Stdin, cmd.Stdout, cmd.Stderr} {
+		if f, ok := end.(*os.File); ok {
+			childEnds = append(childEnds, f)
+		}
+	}
+
 	prepared = true
 	return &childPrep{
 		Cmd:        cmd,
@@ -353,6 +369,7 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		Stderr:     stderr,
 		Spec:       spec,
 		Artifact:   execFD,
+		ChildEnds:  childEnds,
 	}, nil
 }
 
@@ -388,27 +405,18 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		d := prep.Spec.Descriptor
 		got, err := sha256OfFile(d.ArtifactPath)
 		if err != nil {
-			_ = prep.Stdin.Close()
-			_ = prep.Stdout.Close()
-			_ = prep.StderrPipe.Close()
+			releasePrepFDs(prep)
 			return nil, fmt.Errorf("processmodule: re-hash %s: %w", d.ArtifactPath, err)
 		}
 		if got != d.ArtifactSHA256 {
-			_ = prep.Stdin.Close()
-			_ = prep.Stdout.Close()
-			_ = prep.StderrPipe.Close()
+			releasePrepFDs(prep)
 			return nil, &ExecutableSHAMismatchError{
 				Path: d.ArtifactPath, Expected: d.ArtifactSHA256, Actual: got,
 			}
 		}
 	}
 	if err := cmd.Start(); err != nil {
-		_ = prep.Stdin.Close()
-		_ = prep.Stdout.Close()
-		_ = prep.StderrPipe.Close()
-		if prep.Artifact != nil {
-			_ = prep.Artifact.Close()
-		}
+		releasePrepFDs(prep)
 		return nil, fmt.Errorf("processmodule: exec %s: %w", execName(cmd), err)
 	}
 	if prep.Artifact != nil {
@@ -416,9 +424,12 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		// done its job (the exec already resolved it).
 		_ = prep.Artifact.Close()
 	}
+	// From here a failure kills and reaps the child, then closes the
+	// parent-side pipe ends prepare opened: no spawnedChild owns them.
 	if ctx.Err() != nil {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
+		releasePrepFDs(prep)
 		return nil, ctx.Err()
 	}
 
@@ -434,6 +445,7 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
+		releasePrepFDs(prep)
 		return nil, fmt.Errorf("processmodule: codec: %w", err)
 	}
 
@@ -508,6 +520,9 @@ type spawnedChild struct {
 	mu       sync.Mutex
 	waitOnce sync.Once
 	waitErr  error
+	// reaped is set once Wait has reaped the child and signalled its
+	// group. From then on the pgid number is not this child's to signal.
+	reaped atomic.Bool
 
 	// scratch is the runner-made working dir Wait removes once the child
 	// is reaped, so a crash-looping module does not leave one directory
@@ -543,6 +558,11 @@ func (c *spawnedChild) Kill() error {
 	if c.cmd.Process == nil {
 		return nil
 	}
+	// After the reap, Wait has already killed the group, and the pgid
+	// number may lead an unrelated group by now: signal nothing.
+	if c.reaped.Load() {
+		return nil
+	}
 	// Group kill first (cleans up grandchildren the module may have
 	// forked); per-process kill as a fallback if the group signal fails
 	// (e.g. Windows where signalProcessGroup is a no-op).
@@ -559,9 +579,22 @@ func (c *spawnedChild) Kill() error {
 // the cached error. This matters because the supervisor legitimately has
 // two Wait sites (the spawn's exit-watcher + a lease-expired or shutdown
 // drain) that may both be live when the child exits.
+//
+// The reap also kills what is left of the child's process group. A module
+// that exits on its own (a crash, or a drain that ends inside its deadline)
+// never reaches Kill, which was the only place the group was signalled, so
+// a helper it started in its group outlived it beside the replacement. The
+// signal goes right after the reap, never later: while any member of the
+// group lives the kernel will not hand its number out as a new pid, and an
+// emptied group has nothing to kill and would need the pid space to wrap
+// within those few instructions to name someone else's.
 func (c *spawnedChild) Wait() error {
 	c.waitOnce.Do(func() {
 		c.waitErr = c.cmd.Wait()
+		if c.pgid > 0 {
+			_ = signalProcessGroup(c.pgid, syscall.SIGKILL)
+		}
+		c.reaped.Store(true)
 		if c.scratch != "" {
 			_ = os.RemoveAll(c.scratch)
 		}

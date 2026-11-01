@@ -640,8 +640,17 @@ const (
 	// cache entry adds 114. The kernel's formatNumber, which every {{n}}
 	// fill in the runtime and its modules goes through, adds 40. The plain
 	// navigator narrowing a replay keyed above the deepest shared layer to
-	// that layer's cell adds 118.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30
+	// that layer's cell adds 118. The 2026-11-01 bug hunt (round 4) adds
+	// 202: attr-mode signals remove a boolean attribute for false and write
+	// the live checked/selected/value property (84), the client route
+	// lookup runs the server's typed segment constraints so a document
+	// boundary is judged on the route the server serves (100), and the
+	// hash scroll tries the decoded fragment (18). The same lookup then
+	// percent-decodes each segment into the server's routing form before
+	// those tests, so /orders/%31 is the :id:int route on both sides (52).
+	// The interaction bridge leaving a declared key held with Alt, Ctrl,
+	// Meta or Shift to the browser adds 10.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1099,7 +1108,21 @@ const (
 	// throws out of navigation) measures 17918 at level 1. Core's
 	// navigator reads it on every partial swap, so it does not carve.
 	// Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 17920
+	// The 2026-11-01 bug hunt (round 4) measures 18181 at level 1: an
+	// attr-mode signal removing a boolean attribute for false and writing
+	// the live property, the route lookup running the server's typed
+	// segment constraints, and the hash scroll trying the decoded
+	// fragment. All three run on core's own paths (every signal write,
+	// every click's document-boundary check, every hash navigation), so
+	// none carves. Two bytes of clearance, cliff fixture re-run.
+	// The route lookup percent-decoding each segment into the server's
+	// routing form before those constraint tests measures 18258 at level
+	// 1. It runs on the same document-boundary check, so it does not
+	// carve. Two bytes of clearance, cliff fixture re-run.
+	// The interaction bridge skipping a modified key measures 18266 at
+	// level 1. The bridge is core's own retention path, so it does not
+	// carve. Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 18268
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1177,6 +1200,19 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"the envelope keys no boot capture once core's navigator ran (_navShown)": 16, // (l1: 7)
 		// Measured 15460 → 15490 (2026-10-31): TestNavKeepsPercentTitle.
 		"page title decodes only the header, never document.title (_title)": 30, // (l1: 56)
+		// Measured 15490 → 15564 → 15664 → 15682 (2026-11-01), in that order:
+		// TestSignalAttrFalseRemovesBoolean, TestTypedSegmentPicksServerRoute,
+		// TestEncodedHashScrollsToTarget; then 15692 for the signals entry
+		// writing checked and selected by name (LintProtoKeyWrite refuses a
+		// computed node[attr] write).
+		"attr signals: false removes a boolean attribute, live property writes": 84,
+		"route lookup honours typed segment constraints (:int, :uuid, ...)":     100,
+		"hash scroll falls back to the decoded fragment":                        18,
+		// Measured 15692 → 15744 (2026-11-01): TestRouteLookupDecodesSegment.
+		"route lookup decodes each segment as the server does (app.RoutePath)": 52,
+		// Measured 15744 → 15754 (2026-11-01):
+		// TestBehaviorInteractionKeydownScopeGatesRetention/modified_key_passes_*.
+		"interaction bridge skips a modified key (browser shortcut)": 10,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1367,7 +1403,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// navigator has swapped the DOM keys no capture on the served
 		// URL (2026-10-29 bug bash R29,
 		// TestLateEnvelopeKeepsTheBootPage).
-		"envelope": 8034,
+		// 8037 measured (8035 + 2) after its commit seam hands the
+		// incoming markup to the transition module, which gates the pick
+		// on that page's vocabulary (2026-11-01 bug hunt R7-093,
+		// TestTransitionPickUsesIncomingVocab).
+		"envelope": 8037,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1401,7 +1441,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// opened above the top modal, so a modal that refuses Escape keeps
 		// the popover under it open (2026-10-31 bug bash R14,
 		// TestEscapeSparesPopoverUnderModal). The open sequence lives here.
-		"widgets": 3261,
+		// 3283 measured (3261 + 22): an open whose chrome, or whose
+		// deep-link module, lands after a navigation neither mounts nor
+		// applies its deep link on the next page (2026-11-01 bug hunt S31,
+		// TestStaleChromeSkipsNextPage).
+		"widgets": 3283,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1447,7 +1491,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestInterceptGoneRefetchWithHash).
 		// 3520 measured (3518 + 2) after a pane applies its answer's
 		// signal seed (2026-10-27, TestInterceptPaneAppliesSeed).
-		"intercept": 3520,
+		// 3568 measured (3566 + 2) after the panel-limit toast writes
+		// its count through formatNumber (R7-045,
+		// TestInterceptLimitToastFormatsCount) and a page link walks
+		// back over every entry the layers wrote before the page is
+		// pushed (R7-095, TestInterceptPageLinkDropsPaneEntries).
+		"intercept": 3568,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1474,7 +1523,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 2121 measured (2119 + 2) after a part fetch that followed a
 		// redirect restores the slot instead of applying the target's
 		// fills (#577, TestRedirectedPartAppliesNothing).
-		"parts": 2121,
+		// 2387 measured (2385 + 2) after a part that fails in transport
+		// is retried once and a second failure puts its region in the
+		// data-cui-loadstate="error" state with the runtime.part_failed
+		// phrase, cleared once a later navigation refills the region
+		// (2026-11-01 bug hunt R7-094, TestPartFailureRetriesThenErrors).
+		"parts": 2387,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion
@@ -1490,7 +1544,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 1 — the pointer shape — instead of el.click()'s detail 0
 		// plus the core-side hint channel. Before that: 1183 measured
 		// after the re-delivery's pointer-modality hint.
-		"transition": 1395,
+		// 1440 measured (1438 + 2) after an answer's pick is gated by
+		// the INCOMING page's data-cui-vt-kinds, read off the markup the
+		// commit seam now passes, instead of the outgoing page's copy on
+		// <html> (2026-11-01 bug hunt R7-093,
+		// TestTransitionPickUsesIncomingVocab).
+		"transition": 1440,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's

@@ -74,6 +74,10 @@ func kilnSystemPrompt() string {
 //   - Detect() returns true if the agent's binary is on PATH.
 //   - BuildArgs(text) returns the argv to exec for one turn. The user's
 //     prompt is the last argument; KILN_URL is injected via env upstream.
+//     An adapter that passes the prompt as its own argument puts "--"
+//     (endOfOptions) in front of it, so a message that starts with "-"
+//     ("--fix the header", "--tools=...") stays text and never parses as
+//     a flag. omp and claude both end option parsing at "--".
 //
 // Auth is the user's responsibility: each CLI manages its own login
 // (e.g. `claude` reads ~/.claude/.credentials.json). Kiln does not
@@ -112,7 +116,7 @@ var adapters = map[string]Adapter{
 				"--append-system-prompt", kilnSystemPrompt(),
 				"--auto-approve",
 				"--no-session",
-				text,
+				endOfOptions, text,
 			}
 		},
 	},
@@ -143,7 +147,7 @@ var adapters = map[string]Adapter{
 				"claude", "--print", "--dangerously-skip-permissions",
 				"--tools", "Bash",
 				"--append-system-prompt", kilnSystemPrompt(),
-				text,
+				endOfOptions, text,
 			}
 		},
 	},
@@ -188,6 +192,30 @@ var adapters = map[string]Adapter{
 	},
 }
 
+// endOfOptions is the POSIX end-of-options marker an adapter puts in
+// front of the prompt argument. pi and codex start the prompt argument
+// with a <kiln-system> block, so it can never look like a flag.
+const endOfOptions = "--"
+
+// spawnPrefix is argv without its prompt: the trailing argument and, in
+// front of it, the end-of-options marker when there is one. resolveAdapter
+// compares it with a free-form --agent command to find the preset that
+// command names.
+func spawnPrefix(argv []string) []string {
+	if len(argv) == 0 {
+		return argv
+	}
+	return trimEndOfOptions(argv[:len(argv)-1])
+}
+
+// trimEndOfOptions drops a trailing end-of-options marker.
+func trimEndOfOptions(argv []string) []string {
+	if n := len(argv); n > 0 && argv[n-1] == endOfOptions {
+		return argv[:n-1]
+	}
+	return argv
+}
+
 // adapterAutoOrder is the priority list for `--agent auto` detection.
 // OMP/GLM-5.2 is the canonical Kiln driver; the others remain available
 // for users who already have those CLIs authenticated.
@@ -200,7 +228,8 @@ var adapterAutoOrder = []string{"omp", "claude-code", "pi", "codex"}
 //	"auto"    → first installed adapter from adapterAutoOrder, or none
 //	"<name>"  → registry lookup; returns ok=false if not installed
 //	"cmd …"   → custom freeform command; the string is split on whitespace
-//	            and the user's prompt is appended as the final argument
+//	            and "--" plus the user's prompt are appended, so a prompt
+//	            that starts with "-" is not read as a flag
 //
 // Returns (Adapter, ok). ok=false means "no agent will run."
 func resolveAdapter(value string) (Adapter, bool) {
@@ -221,7 +250,8 @@ func resolveAdapter(value string) (Adapter, bool) {
 		}
 		return a, true
 	}
-	parts := strings.Fields(value)
+	// A command that already ends in "--" gets no second one.
+	parts := trimEndOfOptions(strings.Fields(value))
 	if len(parts) == 0 {
 		return Adapter{}, false
 	}
@@ -233,9 +263,7 @@ func resolveAdapter(value string) (Adapter, bool) {
 	// is the pi preset.
 	for _, name := range adapterAutoOrder {
 		a := adapters[name]
-		argv := a.BuildArgs("")
-		prefixArgs := argv[:len(argv)-1]
-		if argvEqual(prefixArgs, parts) {
+		if argvEqual(spawnPrefix(a.BuildArgs("")), parts) {
 			return a, true
 		}
 	}
@@ -249,7 +277,7 @@ func resolveAdapter(value string) (Adapter, bool) {
 			return err == nil
 		},
 		BuildArgs: func(text string) []string {
-			return append(append([]string(nil), prefix...), text)
+			return append(append([]string(nil), prefix...), endOfOptions, text)
 		},
 	}, true
 }

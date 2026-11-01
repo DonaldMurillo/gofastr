@@ -69,6 +69,8 @@ func TestRemoteMergeRecoversHookPanic(t *testing.T) {
 		entry := remoteRosterEntry{members: []PresenceMember{{UserID: "u"}}, expiresAt: now.Add(time.Hour)}
 		touched := now
 		if i == 0 {
+			// Past its TTL: only an expired topic gives up its slot.
+			entry.expiresAt = now.Add(-time.Second)
 			touched = now.Add(-time.Minute)
 		}
 		m.remoteRosters[topic] = map[string]remoteRosterEntry{"r1": entry}

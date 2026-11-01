@@ -163,8 +163,36 @@ Terminal rows make this sharp: the only job-row `DELETE` is
 every later export.
 
 Leave it empty for infrastructure work — cache warms, sweeps, index
-rebuilds — where there is no subject to erase. Only `DBQueue` persists
-it; the in-memory and Redis backends own no erasable table.
+rebuilds — where there is no subject to erase.
+
+`RedisQueue` and `MemoryQueue` are erased too: each constructor registers a
+store eraser (see
+[Stores outside the database](data-export.md#stores-outside-the-database))
+that removes every job whose `UserID` is the erased user after the SQL
+erasure commits. For `RedisQueue` that is the main, delayed and dead lists
+and the pop and processing hashes; for `MemoryQueue`, the pending jobs
+(delayed ones included, and jobs a disabled module's gate holds back), the jobs `Dequeue` handed out, and the dead list,
+with the unique keys they held freed. The Redis erasure is one Lua script,
+so it needs an adapter that implements
+[`ScriptRunner`](#optional-scriptrunner); with one that does not, the
+erasure fails with an error and removes nothing. The `MemoryQueue` erasure
+holds the queue still while it runs: a `Dequeue`, `Nack` or `Replay` waits
+for it, so none carries a job from a store the erasure has not read yet
+into one it already has. The in-memory `Scheduler` is erased before the
+store-erased queues it feeds, so a tick cannot enqueue the user's job into
+them again. A `DBQueue`'s rows go in the SQL erasure, which commits before
+any store eraser runs, so a tick in between can write the user's job back;
+the scheduler's eraser therefore deletes the user's rows from every
+`DBQueue` it feeds once its schedules are gone, and counts them in its
+report line. A worker still
+running an erased job finds nothing to settle, and its `Ack` or `Nack`
+does nothing. The
+registration stays until `Close`, and it keeps the queue from being
+garbage-collected, so close a queue you are done with. Two `RedisQueue`s
+with one queue name on different servers are both erased.
+
+A schedule sets `UserID` on the jobs it fires with its `UserID` option; see
+[Scheduler](#scheduler).
 ## Unique jobs
 
 Set `Job.UniqueKey` when a second copy of a job is wasted or harmful: a
@@ -439,7 +467,9 @@ bulk work off interactive workers; to do that, dedicate workers to an
 interactive lane (so there is no shared pool draining bulk) instead of
 relying on the tag (see [Lanes](#lanes)). `Priority(n)` nudges dequeue
 order among pending work, and `MaxAttempts(k)` bounds how many times a
-single occurrence may retry before dead-lettering.
+single occurrence may retry before dead-lettering. `UserID(id)` sets
+`Job.UserID` on every fired job, so `App.EraseUserData` reaches the jobs
+of a schedule whose payload is about one person (a per-user digest).
 
 `Every(d)` schedules fire on a fixed interval; `Cron(spec)` schedules
 fire when the cron expression's next time arrives; use it for
@@ -541,9 +571,18 @@ if err := durable.Every("nightly-bulk-reindex", 24*time.Hour).
 }
 ```
 
-The options columns (`lane`, `priority`, `max_attempts`) are added to an
-existing `scheduler_schedules` table by an idempotent migration during
-`NewDurableScheduler`; no manual schema work is required on upgrade.
+The options columns (`lane`, `priority`, `max_attempts`, `user_id`) are
+added to an existing `scheduler_schedules` table by an idempotent migration
+during `NewDurableScheduler`; no manual schema work is required on upgrade.
+
+A durable schedule with `UserID(id)` keeps its payload in the schedules
+table and fires it on every tick, so `NewDurableScheduler` registers that
+table with `App.EraseUserData`: erasing the user deletes the schedules that
+name them, and the `queue_jobs` eraser deletes the jobs they fired. A
+schedule registered before the option existed names nobody. The in-memory
+`Scheduler` registers a store eraser that drops the user's schedules from
+memory; `Scheduler.Close` removes it (it does not stop `Start`; cancel
+`Start`'s context for that).
 
 Cron field evaluation follows the location of the registration anchor.
 `Register()` anchors in UTC, so `"0 2 * * *"` fires at 02:00 UTC, the
@@ -793,6 +832,58 @@ Two cases deliver a job twice, which the at-least-once contract allows:
 a record whose delete failed, once its job has finished and left the
 processing hash, and a record that a `Dequeue` slower than the visibility
 timeout still holds.
+
+### Optional: `ScriptRunner`
+
+```go
+type ScriptRunner interface {
+    Eval(ctx context.Context, script string, keys []string, args ...any) (any, error)
+}
+```
+
+`App.EraseUserData` removes a user's jobs from the queue through the
+store eraser `NewRedisQueue` registers, and that erasure runs as one Lua
+script the queue owns. The adapter passes it through; with go-redis:
+
+```go
+func (c adapter) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
+    return c.rdb.Eval(ctx, script, keys, args...).Result()
+}
+```
+
+Redis runs a script with no other command in between. A sweep that reads
+one key at a time cannot prove a job gone, since a worker's `Dequeue` or
+`Nack` can move it into each key just after the sweep read that key, and
+a hash field read in one round trip and deleted in the next can belong to
+another user's claim by then. So an adapter without `Eval` keeps running
+the queue, but erasing a user's data from it fails with an error naming
+`queue.ScriptRunner` and removes nothing.
+
+With `Eval`, the queue's own moves between its keys run as scripts too,
+each writing only while the source still holds the entry: `Dequeue`'s
+claim from its pop record into the processing hash, its dead-lettering
+and requeues, `Nack` and `Reclaim` without `CompareAndMover`, `Replay`,
+and the promotion of due delayed jobs. A worker that read a job just
+before an erasure removed it would otherwise write the job back. With the
+script it finds the source empty and drops the job: `Dequeue` moves on to
+the next one, and `Nack` or `Replay` does nothing. The claim needs
+`PopRecorder` as well, since the pop record is what it checks; without
+one, a job `Dequeue` has popped exists only in the worker's memory until
+the claim writes it.
+
+The script reads every entry of the main, delayed and dead lists and the
+pop and processing hashes, and the server serves no other client while it
+runs, so it takes longer the more jobs the queue holds. It matches a job
+by the `user_id` key `json.Marshal` writes at the top of the job, compared
+byte for byte with `json.Marshal(userID)`, and never decodes the payload:
+Redis's `cjson` refuses JSON nested past 1,000 levels, which `Enqueue`
+accepts, and a job it could not decode would have been kept. A user id
+that is not valid UTF-8 is refused with an error, because `json.Marshal`
+stores every such id as `"�"` and the script cannot tell those
+users' jobs apart. It names all five keys, so on
+Redis Cluster use the same hash-tagged queue name as for
+`CompareAndMover`. Return an integer reply as an integer type (go-redis
+returns `int64`).
 
 **`RPop` must report an empty list as `queue.ErrRedisEmpty`.** Drivers
 signal "nothing there" with their own sentinel (go-redis returns

@@ -405,11 +405,17 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			mistyped, mistypedErr = key, err
 		}
 	}
-	// add checks raw against the column's type and appends the filter. A
-	// mistyped value is refused even under Lenient: Lenient drops unknown
-	// KEYS, and binding a value of the wrong type is what made Postgres
-	// answer 500 where SQLite answered an empty 200.
+	// add checks op and raw against the column's type and appends the
+	// filter. A mistyped value is refused even under Lenient: Lenient
+	// drops unknown KEYS, and binding a value of the wrong type is what
+	// made Postgres answer 500 where SQLite answered an empty 200. The op
+	// check covers the plain-key equality, which takes no suffix: a JSON
+	// column refuses it (OpSuitsType).
 	add := func(key, sent, col string, op FilterOp, raw string) {
+		if err := CheckOpType(sent, op, colType[col]); err != nil {
+			recordMistyped(key, err)
+			return
+		}
 		pf, err := ParsedFilter{Field: col, Op: op, Value: raw}.typedAs(sent, colType[col])
 		if err != nil {
 			recordMistyped(key, err)

@@ -166,6 +166,16 @@ BENCH_TIMEOUT   ?= 30m
 $(BENCH_OUT):
 	@mkdir -p $(BENCH_OUT)
 
+# Every bench recipe pipes `go test` through `tee`, and a pipeline's status is
+# its last command's: without pipefail a failing benchmark exits 0 because tee
+# succeeded. The flag rides in SHELL rather than .SHELLFLAGS because macOS
+# ships GNU Make 3.81, which ignores .SHELLFLAGS; both 3.81 and 4.x run
+# `$(SHELL) -c '<recipe>'`, so the extra words reach bash either way.
+BENCH_TEE_TARGETS := bench bench-sqlite bench-pg bench-tier1 bench-tier2 \
+	bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 \
+	bench-tier9 bench-resources
+$(BENCH_TEE_TARGETS): SHELL := /bin/bash -o pipefail
+
 bench: $(BENCH_OUT)
 	go test -run=^$$ -bench=. -benchmem -benchtime=$(BENCHTIME) -count=$(BENCH_COUNT) \
 		-timeout=$(BENCH_TIMEOUT) $(BENCH_PKGS) | tee $(BENCH_OUT)/all.txt
@@ -316,11 +326,12 @@ vet:
 
 secret-scan:
 	@echo "  Scanning for secrets..."
-	@# The credential patterns bound the gap between key and value
-	@# (password[\"']?\s*[:=]) so HTML type="password" attributes,
-	@# os.Getenv("..._PASSWORD") reads, and prose mentioning "password"
-	@# don't false-positive — only an actual `key = "literal"` shape
-	@# with a non-trivial value matches.
+	@# The credential patterns bound the gap between key and value so
+	@# HTML type="password" attributes, os.Getenv("..._PASSWORD") reads,
+	@# and prose mentioning "password" don't false-positive. Two shapes
+	@# match, each with a quoted value of 8+ characters: `key = "literal"`
+	@# (also `"key"=="literal"`) and the YAML/struct-literal
+	@# `key: "literal"`, the same `[:=]` the pre-commit hook scans for.
 	@# File set: NOT just *.go. A credential committed in a .yml, .json,
 	@# .env*, Dockerfile or shell script is exactly as leaked as one in a
 	@# .go file, and the Go-only glob is why this gate could not have
@@ -335,7 +346,7 @@ secret-scan:
 		'Makefile' '*/Makefile' \
 		| grep -v -E '(^|/)(node_modules|vendor|testdata/fixtures)/' || true); do \
 		for pattern in 'BEGIN RSA PRIVATE KEY' 'BEGIN PRIVATE KEY' 'BEGIN OPENSSH PRIVATE KEY' \
-			'(password|passwd|secret_key|api[-_]?key)["'"'"']?\s*={1,2}\s*["'"'"'][A-Za-z0-9+/_.-]{8,}["'"'"']' \
+			'(password|passwd|secret_key|api[-_]?key)(["'"'"']?\s*={1,2}|\s*:)\s*["'"'"'][A-Za-z0-9+/_.-]{8,}["'"'"']' \
 			'sk_(live|test)_[A-Za-z0-9]{10,}' 'ghp_[A-Za-z0-9]{36}' 'AKIA[0-9A-Z]{16}' 'xoxb-[0-9A-Za-z-]{10,}'; do \
 			matches=$$(grep -n -i -E "$$pattern" "$$file" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:|for pattern in" || true); \
 			if [ -n "$$matches" ]; then \

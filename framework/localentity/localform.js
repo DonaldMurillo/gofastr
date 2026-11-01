@@ -58,11 +58,38 @@
   // msg is one message with {{n}} filled: the app's override when the
   // spec carries a string for k, else the default.
   const msg = (msgs, k, n) => {
-    const own = msgs && Object.prototype.hasOwnProperty.call(msgs, k) && typeof msgs[k] === 'string' && msgs[k];
+    const own = has(msgs, k) && typeof msgs[k] === 'string' && msgs[k];
     const s = own || DEFAULTS[k]();
     return s.split('{{n}}').join(n === undefined ? '' : NS.formatNumber(n));
   };
-  const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
+  const text = (v) => (v == null || typeof v === 'object' ? '' : String(v));
+  // seps is the decimal and group marks of the page's language
+  // (<html lang>), the one NS.formatNumber writes numbers in.
+  const seps = () => {
+    let f;
+    try { f = new Intl.NumberFormat(document.documentElement.lang || undefined); } catch (_) { f = new Intl.NumberFormat(); }
+    const o = { decimal: '.', group: ',', g: [] };
+    for (const x of f.formatToParts(1234567890.5)) if (x.type === 'integer') o.g.push(x.value.length); else if (has(o, x.type)) o[x.type] = x.value;
+    return o;
+  };
+  // num reads a number typed in a text control the reader's way:
+  // "1.234,5" on a Spanish page, "1,234.5" on an English one and
+  // "12,34,567.8" on an Indian English one. Group marks count only where
+  // they match the locale's grouping (the last group and the ones before
+  // it), so "2.5" still reads 2.5 where "." groups; a space-like mark
+  // (French) also takes a plain space.
+  const num = (raw) => {
+    const o = seps(), s = raw.trim(), at = s.lastIndexOf(o.decimal), p = o.g.at(-1), q = o.g.at(-2) || p;
+    let i = at < 0 ? s : s.slice(0, at);
+    const g = i.split(/\s/.test(o.group) ? /\s/ : o.group);
+    if (g.length > 1 && g.every((x, k) => new RegExp(k ? '^\\d{' + (k < g.length - 1 ? q : p) + '}$' : '^-?\\d{1,' + q + '}$').test(x))) i = g.join('');
+    const n = at < 0 ? i : i + '.' + s.slice(at + 1);
+    return n ? Number(n) : NaN;
+  };
+  // typed: a control the reader types digits into, which reads and
+  // shows a number with the page's marks. A range, select, radio or
+  // hidden input holds the browser's dot-decimal value both ways.
+  const typed = (c) => /^(text|search|textarea)$/.test(c.type);
   const pad = (n) => String(n).padStart(2, '0');
 
   // day accepts a real calendar date, YYYY-MM-DD, as core/schema's
@@ -105,9 +132,11 @@
   // declaration. It returns {value}, {empty} (a control with nothing in
   // it: clears the field on an edit, takes the Default on a create),
   // {absent} (no enabled control for the field: an edit leaves it
-  // alone), or {error}.
+  // alone), or {error}. A bound the spec omits is undefined, and no
+  // comparison with undefined is true, so it checks nothing.
   function coerce(f, data, msgs, form) {
-    if (!live(form, f.name).length) return { absent: true };
+    const ctl = live(form, f.name)[0];
+    if (!ctl) return { absent: true };
     if (f.t === 'bool') {
       // A checked box submits its value (whatever it is: "true", "on",
       // "yes"); the hidden "false" twin is the unchecked half.
@@ -117,11 +146,15 @@
     if (raw === null || raw === '') return f.req ? { error: msg(msgs, 'required') } : { empty: true };
     if (typeof raw !== 'string') return { error: msg(msgs, 'required') };
     if (f.t === 'int' || f.t === 'float') {
-      const v = raw.trim() === '' ? NaN : Number(raw.trim());
+      // A text control holds what the reader typed; every other
+      // control (number, range, select, radio, hidden) hands over the
+      // browser's canonical spelling (a number input empties a value it
+      // cannot read).
+      const v = typed(ctl) ? num(raw) : Number(raw);
       if (!Number.isFinite(v)) return { error: msg(msgs, 'number') };
       if (f.t === 'int' && !Number.isSafeInteger(v)) return { error: msg(msgs, 'integer') };
-      if (f.min !== undefined && v < f.min) return { error: msg(msgs, 'min', f.min) };
-      if (f.max !== undefined && v > f.max) return { error: msg(msgs, 'max', f.max) };
+      if (v < f.min) return { error: msg(msgs, 'min', f.min) };
+      if (v > f.max) return { error: msg(msgs, 'max', f.max) };
       return { value: v };
     }
     if (f.t === 'enum' && !(f.values || []).includes(raw)) return { error: msg(msgs, 'choice') };
@@ -132,8 +165,8 @@
     // Lengths count code points, as core/schema counts runes: an emoji
     // is one character on both sides.
     const len = [...raw].length;
-    if (f.min !== undefined && len < f.min) return { error: msg(msgs, 'minlen', f.min) };
-    if (f.max !== undefined && len > f.max) return { error: msg(msgs, 'maxlen', f.max) };
+    if (len < f.min) return { error: msg(msgs, 'minlen', f.min) };
+    if (len > f.max) return { error: msg(msgs, 'maxlen', f.max) };
     if (f.pattern) {
       // Fails closed: a pattern this browser cannot compile refuses the
       // value rather than letting anything through. Define refuses the
@@ -245,6 +278,9 @@
           shown.set(c, { value: c.value, id: text(rec.id), stored: text(value) });
         }
         else if (c.type === 'radio') c.checked = c.value === text(value);
+        // A number shows with the page's decimal mark in a text
+        // control, so saving the edit untouched reads it back the same.
+        else if (typeof value === 'number' && typed(c)) c.value = String(value).split('.').join(seps().decimal);
         else if (c.type !== 'hidden' || list.length === 1) c.value = text(value);
       }
     }
@@ -277,9 +313,12 @@
   // A local form posts nowhere. enctype="application/json" is the
   // runtime's mark for a form script handles: the embed frame's
   // navigation guard passes it instead of reporting a blocked submit.
+  // The kernel hands the scanner each inserted node, and a node that IS
+  // the <form> is marked like one inside the wrapper.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll(FORM + ' form').forEach((f) => f.setAttribute('enctype', 'application/json'));
+    const sel = FORM + ' form';
+    [scope, ...scope.querySelectorAll(sel)].forEach((f) => f.matches?.(sel) && f.setAttribute('enctype', 'application/json'));
   }
   scan(document);
   NS._moduleScanners = NS._moduleScanners || {};

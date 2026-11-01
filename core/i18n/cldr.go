@@ -131,6 +131,60 @@ func matchCLDR(tag string) cldrMatch {
 	return cldrEnglish()
 }
 
+// scriptFallback reads tag's script, stated or inferred from its region
+// (zh-TW is zh-Hant-TW), and names the language-script catalog form
+// tagFallbacks tries before base, the bare language: "zh-hant" for
+// zh-TW. form is "" when there is nothing to add: the script is the
+// language's usual one and CLDR does not split the language by script
+// (en-US), or the tag does not parse. keepBase is false when the script
+// is not the language's usual one: the bare language's catalog is
+// written in another script (zh is Simplified, sr is Cyrillic), so a
+// zh-Hant or sr-Latn reader must not fall back to it.
+func scriptFallback(tag, base string) (form string, keepBase bool) {
+	if len(tag) > maxCLDRTag {
+		return "", true
+	}
+	if v, ok := scriptCache.Load(tag); ok {
+		s := v.(scriptStep)
+		return s.form, s.keepBase
+	}
+	s := scriptStep{keepBase: true}
+	if t, err := language.Parse(tag); err == nil {
+		b, _ := t.Base()
+		script, conf := t.Script()
+		usual, _ := language.Make(b.String()).Script()
+		// An alias the parser rewrote ("iw" reads as "he") keeps the
+		// plain chain: the catalog form would name a language the tag
+		// does not.
+		if conf != language.No && b.String() == base {
+			f := base + "-" + strings.ToLower(script.String())
+			if script != usual {
+				s = scriptStep{form: f, keepBase: false}
+			} else if _, split := cldrLocaleIndex[f]; split {
+				s = scriptStep{form: f, keepBase: true}
+			}
+		}
+	}
+	if scriptCacheSize.Load() < cldrCacheMax {
+		if _, loaded := scriptCache.LoadOrStore(tag, s); !loaded {
+			scriptCacheSize.Add(1)
+		}
+	}
+	return s.form, s.keepBase
+}
+
+type scriptStep struct {
+	form     string
+	keepBase bool
+}
+
+// scriptCache memoizes scriptFallback, which runs on every translated
+// string; bounded like cldrCache because tags arrive from headers.
+var (
+	scriptCache     sync.Map // tag → scriptStep
+	scriptCacheSize atomic.Int32
+)
+
 func cldrEnglish() cldrMatch {
 	return cldrMatch{loc: &cldrLocales[cldrLocaleIndex["en"]], id: "en"}
 }

@@ -6,8 +6,10 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/semantic"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
@@ -29,7 +32,8 @@ import (
 //   - watch <path...>     Index, then poll for changes until SIGINT.
 //   - query <text>        Print top-K hits as JSON.
 //   - stats               Print index stats as JSON.
-//   - clear               Delete the local snapshot + WAL for this cwd.
+//   - clear               Delete the local snapshot + WAL for this cwd;
+//     refused while an index or watch holds the writer lock.
 //
 // When the GOFASTR_URL environment variable is set, query and stats
 // hit that server's /semantic/* endpoints instead of opening a local
@@ -74,6 +78,7 @@ func printSemanticHelp() {
   query "<text>"      Print top hits as JSON
   stats               Print index stats as JSON
   clear               Delete the local snapshot for this directory
+                      (refused while an index or watch holds it)
 
 %s:
   GOFASTR_URL=...     If set, query/stats hit the running server's
@@ -294,11 +299,58 @@ func embedStats() {
 
 func embedClear() {
 	dir := localSnapshotDir()
-	if err := os.RemoveAll(dir); err != nil {
+	if err := clearIndexDir(dir); err != nil {
 		cli.Fail("clear %s: %v", dir, err)
 		cli.OsExit(1)
 	}
 	cli.Success("cleared %s", dir)
+}
+
+// indexLockName is the writer lock battery/semantic keeps in an index
+// directory (lockIndexDir in persist.go).
+const indexLockName = "lock"
+
+// clearIndexDir empties an index directory under its writer lock and
+// keeps the lock file. Removing the whole directory unlinked the lock a
+// running `semantic watch` held, so the next writer locked a new file
+// and two processes wrote one WAL. A held lock refuses the clear; a
+// writer that starts mid-clear finds the same file locked and fails with
+// semantic.ErrIndexLocked instead of writing. A missing directory is
+// already clear.
+func clearIndexDir(dir string) error {
+	root, err := os.OpenRoot(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	lock, err := root.OpenFile(indexLockName, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("open index lock: %w", err)
+	}
+	defer lock.Close()
+	held, err := filelock.TryLock(lock)
+	if err != nil {
+		return fmt.Errorf("lock index: %w", err)
+	}
+	if !held {
+		return errors.New("another process has this index open for writing (a running `gofastr semantic watch`?); stop it, then clear")
+	}
+	entries, err := fs.ReadDir(root.FS(), ".")
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() == indexLockName {
+			continue
+		}
+		if err := root.RemoveAll(e.Name()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // remoteHTTPClient bounds every remote semantic call: a GOFASTR_URL peer

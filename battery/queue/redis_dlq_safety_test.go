@@ -38,6 +38,7 @@ func TestRedisExhaustedJobSurvivesDLQFailure(t *testing.T) {
 
 	fail := &dlqFailingRedis{RedisClient: r, dlqErr: errors.New("dlq down")}
 	q := NewRedisQueue(fail, "test")
+	t.Cleanup(func() { _ = q.Close() })
 
 	if _, err := q.Dequeue(ctx); err == nil || errors.Is(err, ErrNoJob) {
 		t.Fatalf("Dequeue must surface the DLQ failure, got: %v", err)
@@ -76,6 +77,7 @@ func TestRedisMalformedJobSurvivesDLQFailure(t *testing.T) {
 
 	fail := &dlqFailingRedis{RedisClient: r, dlqErr: errors.New("dlq down")}
 	q := NewRedisQueue(fail, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	if _, err := q.Dequeue(ctx); err == nil || errors.Is(err, ErrNoJob) {
 		t.Fatalf("Dequeue must surface the quarantine failure, got: %v", err)
 	}
@@ -143,6 +145,7 @@ func TestRedisCanceledDequeueRestoresPoppedJob(t *testing.T) {
 
 	client := &cancelAfterPopRedis{RedisClient: r, cancel: cancel}
 	q := NewRedisQueue(client, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	if _, err := q.Dequeue(ctx); err == nil {
 		t.Fatal("Dequeue should report the canceled claim write")
 	}
@@ -192,6 +195,7 @@ func TestRedisNackKeepsJobWhenPushFails(t *testing.T) {
 			_ = r.LPush(ctx, "test", data)
 
 			q := NewRedisQueue(r, "test")
+			t.Cleanup(func() { _ = q.Close() })
 			claimed, err := q.Dequeue(ctx)
 			if err != nil {
 				t.Fatalf("Dequeue: %v", err)
@@ -199,6 +203,7 @@ func TestRedisNackKeepsJobWhenPushFails(t *testing.T) {
 
 			fail := &pushFailingRedis{RedisClient: r, err: errors.New("redis down")}
 			failing := NewRedisQueue(fail, "test")
+			t.Cleanup(func() { _ = failing.Close() })
 			if err := failing.Nack(ctx, claimed); err == nil {
 				t.Fatal("Nack must surface the failed push")
 			}
@@ -231,6 +236,7 @@ func TestRedisSkippedJobLossIsReported(t *testing.T) {
 
 	fail := &pushFailingRedis{RedisClient: r, err: errors.New("redis down")}
 	q := NewRedisQueue(fail, "test")
+	t.Cleanup(func() { _ = q.Close() })
 
 	// Ask for a type the queued job does not match: it is popped, skipped,
 	// and then the restoring push fails.
@@ -295,6 +301,7 @@ func TestRedisSlowPopStillRestoresJob(t *testing.T) {
 	_ = r.LPush(context.Background(), "test", data)
 
 	q := NewRedisQueue(&slowRecoveryRedis{RedisClient: r, popDelay: 100 * time.Millisecond, failHSet: true}, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	_, err := q.Dequeue(context.Background())
 	if err == nil || strings.Contains(err.Error(), "restore popped job") {
 		t.Fatalf("Dequeue should report only the processing write failure, got: %v", err)
@@ -315,6 +322,7 @@ func TestRedisHungQuarantineStillRestoresJob(t *testing.T) {
 	_ = r.LPush(context.Background(), "test", "{malformed")
 
 	q := NewRedisQueue(&slowRecoveryRedis{RedisClient: r, hangDead: true}, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	_, err := q.Dequeue(context.Background())
 	if err == nil || strings.Contains(err.Error(), "restore malformed job") {
 		t.Fatalf("Dequeue should report only the quarantine failure, got: %v", err)
@@ -356,6 +364,7 @@ func TestRedisSkippedJobsRestoredInOneBatch(t *testing.T) {
 
 	client := &mainPushCounter{RedisClient: r}
 	q := NewRedisQueue(client, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	if _, err := q.Dequeue(ctx, "wanted"); !errors.Is(err, ErrNoJob) {
 		t.Fatalf("Dequeue = %v, want ErrNoJob", err)
 	}

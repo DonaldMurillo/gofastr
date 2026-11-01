@@ -218,12 +218,15 @@ func Freeze() {
 }
 
 // RegisterStyle registers a component's stylesheet builder under a
-// process-wide unique name and returns a handle. Identical
+// process-wide unique name and returns a handle. The name follows the
+// behavior-name grammar, ^[a-z][a-z0-9-]{0,63}$, and anything else
+// panics: it is spliced into every instance's data-cui-comp marker and
+// names the /__gofastr/comp/<name>.css path. Identical
 // re-registration (same StyleFn pointer + same options) is a no-op;
 // any other duplicate panics so misnames surface at startup.
 func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *Style {
-	if name == "" {
-		panic("registry.RegisterStyle: name must be non-empty")
+	if !behaviorName.MatchString(name) {
+		panic(fmt.Sprintf("registry.RegisterStyle: name %q must match ^[a-z][a-z0-9-]{0,63}$ — it is a URL segment and the data-cui-comp marker value", name))
 	}
 	if fn == nil {
 		panic("registry.RegisterStyle(" + name + "): StyleFn must be non-nil")

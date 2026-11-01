@@ -42,7 +42,8 @@ func parseDesktopKeygenFlags(args []string) desktopKeygenFlags {
 
 // runDesktopKeygen writes the update signing pair: <path> holding
 // hex(seed)+hex(public) (0600) and <path>.pub holding hex(public).
-// It refuses to overwrite an existing private key.
+// It refuses to overwrite an existing key or .pub file, and to write
+// through a symlink at either path.
 func runDesktopKeygen(args []string) {
 	f := parseDesktopKeygenFlags(args)
 	if f.out == "" {
@@ -58,18 +59,26 @@ func runDesktopKeygen(args []string) {
 		return
 	}
 	body := hex.EncodeToString(priv.Seed()) + hex.EncodeToString(pub)
-	if _, err := os.Stat(f.out); err == nil {
-		cli.Fail("%s already exists; keygen refuses to overwrite a private key (move it aside or pick another -o)", f.out)
-		cli.OsExit(1)
-		return
+	pubPath := f.out + ".pub"
+	// Lstat, not Stat: a symlink at either path, live or dangling, is
+	// refused before anything is written, and the exclusive creates
+	// below refuse one planted after this check.
+	for _, p := range []string{f.out, pubPath} {
+		if _, err := os.Lstat(p); err == nil {
+			cli.Fail("%s already exists; keygen refuses to overwrite a key file or write through a link (move it aside or pick another -o)", p)
+			cli.OsExit(1)
+			return
+		}
 	}
-	if err := fileperm.WriteOwnerOnly(f.out, []byte(body)); err != nil {
+	if err := fileperm.WriteNewOwnerOnly(f.out, []byte(body)); err != nil {
 		cli.Fail("writing %s failed: %v", f.out, err)
 		cli.OsExit(1)
 		return
 	}
-	pubPath := f.out + ".pub"
-	if err := fileperm.WriteOwnerOnly(pubPath, []byte(hex.EncodeToString(pub))); err != nil {
+	if err := fileperm.WriteNewOwnerOnly(pubPath, []byte(hex.EncodeToString(pub))); err != nil {
+		// No half pair: a private key without its .pub would make the
+		// next keygen refuse while the app has no public key to ship.
+		_ = os.Remove(f.out)
 		cli.Fail("writing %s failed: %v", pubPath, err)
 		cli.OsExit(1)
 		return

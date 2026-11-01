@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
 
@@ -188,7 +189,7 @@ func TestBuildAndServeHoldShowsCompileError(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h) })
+	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	if ok {
 		KillServer(&mu, &cmd)
 		t.Fatal("broken build reported success")
@@ -208,7 +209,7 @@ func TestBuildAndServeHoldShowsA11yFindings(t *testing.T) {
 	h := newTestHold(t)
 	var mu sync.Mutex
 	var cmd *exec.Cmd
-	clitest.CovT_capStdout(t, func() { buildAndServe(root, ".", h.addr, rt, &mu, &cmd, false, h) })
+	clitest.CovT_capStdout(t, func() { buildAndServe(root, ".", h.addr, rt, &mu, &cmd, false, h, nil) })
 	_, body := holdGet(t, h.addr, "")
 	if !strings.Contains(body, "screen.go") || !strings.Contains(body, "Accessibility lint failed") {
 		t.Fatalf("hold page lacks the a11y findings: %q", body)
@@ -272,7 +273,7 @@ func TestBuildAndServeHandsThePortToTheApp(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h) })
+	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	defer KillServer(&mu, &cmd)
 	if !ok {
 		t.Fatal("build failed")
@@ -289,7 +290,7 @@ func TestBuildAndServeKillIsNotAnExit(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h) })
+	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	if !ok {
 		KillServer(&mu, &cmd)
 		t.Fatal("build failed")
@@ -308,7 +309,7 @@ func TestBuildAndServeHoldShowsAppExit(t *testing.T) {
 	h := newTestHold(t)
 	var mu sync.Mutex
 	var cmd *exec.Cmd
-	clitest.CovT_capStdout(t, func() { buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h) })
+	clitest.CovT_capStdout(t, func() { buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	defer KillServer(&mu, &cmd)
 	pollHold(t, h.addr, "exit status 3")
 }
@@ -325,4 +326,66 @@ func TestHoldDevAddrRejectsABusyPort(t *testing.T) {
 	if h, err := holdDevAddr("127.0.0.1:0"); h != nil || err != nil {
 		t.Fatalf("port 0 should get no hold, got %v, %v", h, err)
 	}
+}
+
+// exposedHold binds every interface, as `gofastr dev --addr 0.0.0.0:...`
+// does, and returns the hold plus a loopback address to reach it on.
+func exposedHold(t *testing.T) (*devHold, string) {
+	t.Helper()
+	h, err := newDevHold("0.0.0.0:0")
+	if err != nil {
+		t.Skipf("cannot bind every interface: %v", err)
+	}
+	t.Cleanup(h.release)
+	_, port, err := net.SplitHostPort(h.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h, net.JoinHostPort("127.0.0.1", port)
+}
+
+// The hold page answered every path with the last 64 KiB of build and
+// lint output: on a LAN bind, any peer read absolute paths and quoted
+// source. Off loopback the page says what happened and leaves the output
+// to the terminal.
+func TestExposedHoldHidesBuildOutput(t *testing.T) {
+	h, addr := exposedHold(t)
+	h.show(holdBuildFailed, "/home/dev/secret/main.go:3:2: undefined: x\n")
+	for _, accept := range []string{"", "text/html"} {
+		res, body := holdGet(t, addr, accept)
+		if res.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("status %d, want 503", res.StatusCode)
+		}
+		if strings.Contains(body, "secret/main.go") {
+			t.Fatalf("an exposed hold served the build output (Accept %q): %q", accept, body)
+		}
+		if !strings.Contains(body, "terminal") {
+			t.Fatalf("an exposed hold must point at the terminal (Accept %q): %q", accept, body)
+		}
+	}
+}
+
+// The hold's own /__livereload follows the app's rule: off on an exposed
+// bind unless dev.LiveReloadExposeEnv opts in.
+func TestExposedHoldDropsLiveReload(t *testing.T) {
+	t.Setenv(dev.LiveReloadExposeEnv, "")
+	_, addr := exposedHold(t)
+	if code := holdStreamStatus(t, addr); code != http.StatusNotFound {
+		t.Fatalf("exposed hold /__livereload answered %d, want 404", code)
+	}
+	t.Setenv(dev.LiveReloadExposeEnv, "1")
+	_, addr = exposedHold(t)
+	if code := holdStreamStatus(t, addr); code != http.StatusOK {
+		t.Fatalf("with the opt-in, /__livereload answered %d, want 200", code)
+	}
+}
+
+func holdStreamStatus(t *testing.T, addr string) int {
+	t.Helper()
+	res, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + addr + "/__livereload")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	return res.StatusCode
 }

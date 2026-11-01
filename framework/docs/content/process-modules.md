@@ -78,8 +78,10 @@ replicas through the SQL-backed `ProcessModuleStore`.
 module's effective set, keeps the rest and bumps the generation; it
 refuses an empty `grants`. The store writes it as a compare-and-swap on
 the generation it read (`ProcessModuleStore.RemoveEffectiveGrants`), so
-two revokes at once both stick. A request body over
-the module's limit answers 413 rather than reaching the child truncated.
+two revokes at once both stick. A request body over 1 MiB, or one whose
+base64-encoded `module.http` frame would not fit the module's
+`Limits.FrameBytes` (about three quarters of it), answers 413 rather than
+reaching the child truncated or failing as a retryable 503.
 
 Every boot calls `RegisterProcessModule` again, and so does every
 replica sharing the store. It compares the descriptor with the stored
@@ -137,7 +139,9 @@ with `ErrModuleInstalled` and leaves the row alone.
   stalled transport), the supervisor kills the child and counts the exit
   as a crash: the module goes through `Crashed` → `Backoff` → `Starting`
   like any other crash, and `CircuitThreshold` faults inside
-  `CircuitWindow` open its restart circuit. A module must read stdin for
+  `CircuitWindow` open its restart circuit. The fault cancels the
+  context of every reverse call the host peer is serving, as `Close`
+  and the end of the transport do. A module must read stdin for
   as long as it sends requests.
 
 ## The two-layer 404 / 503 gate
@@ -153,7 +157,9 @@ handler. Upgrades exploit it: a module stays Enabled (no 404) but not-Ready
 A disable or upgrade drain runs the same steps as the shutdown drain below,
 under the same `DrainPerModule` budget, and closes the module's peer once
 the `module.drain` call is done, which cancels its in-flight reverse
-calls.
+calls. A drain also cancels a spawn still starting for the old state: that
+child is killed instead of installed, so a revoke or disable that lands
+mid-start never leaves a second child serving under the old grants.
 
 ## Shutdown
 
@@ -165,7 +171,10 @@ then EOF on stdin, and is killed when its budget runs out
 Shutdown context's deadline). The budget counts from `module.drain`, and
 the drain call waits at most half of it (2 s at most) for an answer. A
 child that stopped reading stdin, so the drain frame cannot be written,
-is still killed on time. The drain closes the supervisor first, so no
+is still killed on time. However the child ends (it exits at EOF, is
+killed at the deadline, or crashes), the host then kills what is left of
+its process group on Unix, so a helper it started there does not outlive
+it. The drain closes the supervisor first, so no
 module restarts during or after shutdown, and a child still starting when
 it closes is killed instead of installed. `ProcessModuleSupervisor.Close`
 stops the loops and kills the children without the drain; after a drain it
@@ -187,6 +196,15 @@ on macOS, network-egress denial on Windows. So: **an untrusted module may
 be unrunnable on stock macOS/Windows/some-Linux until the operator installs
 a conforming backend or provisions the missing rule.** Fail-closed refusal
 is the correct, honest enforcement, not a gap to paper over.
+
+A probe passes only when it proves the property, never because a test
+could not run. P3 looks for the planted fd by device and inode, so the
+child's own descriptors do not count. P4 dials loopback and LAN listeners
+the runner opened and reached itself before the spawn, and with no such
+control it reports unreachable. P6 holds every fd and process open at
+once and counts only `EMFILE` and `EAGAIN` as the cap (a missing binary
+or a timeout is unreachable), and an allocating sub-child must be killed
+or refused short of twice the memory limit. CPU throttling is not probed.
 
 Probe output replayed to the operator (a `ProbeResult.Detail`, e.g.
 inside the conformance report `NewSandboxRunner` embeds in
@@ -368,6 +386,10 @@ padding or sign. Exactly one spelling is accepted: `"7"` cancels frame 7,
 while `"07"`, `" 7"` and `"notes-7"` are silently ignored, so a
 near-miss can never abort a neighbouring request.
 
+The host sends it for both forwarded call kinds: a proxied `module.http`
+request and an MCP `module.tool.call`, once the caller's context ends
+(client gone or the module's call deadline passed).
+
 Note that this is *not* `HTTPRequestParams.RequestID`, which is a
 diagnostics-only `<module>-<counter>` label and cancels nothing. The two
 fields were documented as the same value and were not, which is why
@@ -385,15 +407,18 @@ raw, err := peer.CallWithID(ctx, moduleproto.MethodHTTP, params, func(frameID ui
 The callback fires synchronously, after the pending entry is registered and
 before the frame is written, so a watcher armed inside it cannot miss a
 response. It must not block — the write is waiting on it. It is not called
-when no id was allocated (the peer is closed, the method is empty, or the
-in-flight cap is reached). Plain `Call` is unchanged and still correct
+when no id was allocated (the peer is closed, the method is empty, the
+context has already ended, or the in-flight cap is reached). Plain `Call` is unchanged and still correct
 wherever the caller has nothing to cancel.
 
 Either call returns once its context ends, even while its request frame
 is still waiting to be written to a peer that stopped reading. The write
 carries on in the background and holds the call's in-flight slot until
 it returns, so stuck writes never exceed the cap. A call whose context
-had already ended writes nothing.
+had already ended writes nothing. `Peer.Notify` (how `module.cancel` is
+sent) works the same way, with its own cap: at most `Limits.Inflight`
+notification writes wait on a peer that stopped reading, and a `Notify`
+past that returns `moduleproto.ErrInflightCap` without writing.
 
 ```go
 codec, _ := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)

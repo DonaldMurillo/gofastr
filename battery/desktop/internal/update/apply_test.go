@@ -78,6 +78,9 @@ func TestUnsupportedPlatformRefusesEverywhere(t *testing.T) {
 	if p.Version() != "" {
 		t.Fatal("unsupported platform reports a version")
 	}
+	if p.Identifier() != "" {
+		t.Fatal("unsupported platform reports an identifier")
+	}
 	if _, _, ok := p.Bundle(); ok {
 		t.Fatal("unsupported platform reports a bundle")
 	}

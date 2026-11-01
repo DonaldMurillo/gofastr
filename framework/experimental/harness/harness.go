@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -106,11 +107,21 @@ type Harness struct {
 	Mux     *multiplex.Mux
 	Catalog *resources.Catalog
 
-	// sessionMu guards sessionRuns. CreateSession and Shutdown may be
-	// called from different goroutines.
+	// sessionMu guards sessionRuns and shutdown. CreateSession and
+	// Shutdown may be called from different goroutines.
 	sessionMu   sync.Mutex
 	sessionRuns []sessionRun
+	// shutdown is set when Shutdown begins; CreateSession refuses after.
+	shutdown bool
 }
+
+// ErrShutdown is CreateSession's error once Shutdown has begun.
+var ErrShutdown = errors.New("harness: shut down")
+
+// shutdownDrainTimeout bounds how long Shutdown waits for the persist
+// loops to write the events already on their buses. A var so tests can
+// shorten it.
+var shutdownDrainTimeout = 10 * time.Second
 
 // sessionRun bundles the per-session teardown handles created by
 // CreateSession so Shutdown can release them deterministically.
@@ -118,6 +129,38 @@ type sessionRun struct {
 	id     ids.SessionID
 	bus    *engine.Bus
 	cancel context.CancelFunc
+	// persist is the session's persist loop: its exit signal and the
+	// appends it could not make.
+	persist *persistRun
+}
+
+// persistRun tracks one persist loop. done closes when the loop has
+// written (or failed) every event its subscription delivered.
+type persistRun struct {
+	done     chan struct{}
+	mu       sync.Mutex
+	failed   int
+	firstErr error
+}
+
+// fail records an append the store refused.
+func (p *persistRun) fail(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.failed++
+	if p.firstErr == nil {
+		p.firstErr = err
+	}
+}
+
+// err reports the refused appends, or nil.
+func (p *persistRun) err(session ids.SessionID) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failed == 0 {
+		return nil
+	}
+	return fmt.Errorf("harness: session %s: %d event(s) not persisted: %w", session, p.failed, p.firstErr)
 }
 
 // New runs the boot sequence and returns a Harness ready to drive
@@ -247,8 +290,18 @@ func New(cfg Config) (*Harness, error) {
 }
 
 // CreateSession wires a fresh EngineRun bound to the given provider.
-// Returns the SessionID for the caller to attach clients to.
-func (h *Harness) CreateSession(prov provider.Provider, model string) ids.SessionID {
+// Returns the SessionID for the caller to attach clients to. Once
+// Shutdown has begun it registers nothing and returns ErrShutdown: a
+// session made after Shutdown took its list would never be torn down and
+// would write to the store Shutdown closed.
+func (h *Harness) CreateSession(prov provider.Provider, model string) (ids.SessionID, error) {
+	// Held through the registration, so a session is either in the list
+	// Shutdown takes or refused.
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	if h.shutdown {
+		return "", ErrShutdown
+	}
 	session := ids.NewSessionID()
 	bus := engine.NewBus(session)
 	disp := engine.NewDispatcher(bus, h.Tools)
@@ -269,18 +322,25 @@ func (h *Harness) CreateSession(prov provider.Provider, model string) ids.Sessio
 	// Subscribe the session store to the bus for persistence.
 	// Subscription must happen synchronously before this function
 	// returns; otherwise an early SendInput races the goroutine.
+	// SubscribeAll: the log also records what sub-agents (the Agent
+	// tool) run on their private buses, tagged with the sub-agent id.
+	// SetLog lets a reconnecting client replay from the log what the
+	// bus's in-memory window no longer holds.
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := bus.Subscribe(ctx)
-	go h.persistLoop(ctx, ch)
+	ch := bus.SubscribeAll(ctx)
+	if h.Sessions != nil {
+		bus.SetLog(h.Sessions)
+	}
+	pr := &persistRun{done: make(chan struct{})}
+	go h.persistLoop(ctx, ch, pr)
 
-	// Track the teardown handles so Shutdown can cancel the persistLoop
-	// context, close the bus, and unregister the engine. Without this
-	// every session leaks a goroutine + context for the process lifetime.
-	h.sessionMu.Lock()
-	h.sessionRuns = append(h.sessionRuns, sessionRun{id: session, bus: bus, cancel: cancel})
-	h.sessionMu.Unlock()
+	// Track the teardown handles so Shutdown can close the bus, join the
+	// persistLoop, cancel its context and unregister the engine. Without
+	// this every session leaks a goroutine + context for the process
+	// lifetime.
+	h.sessionRuns = append(h.sessionRuns, sessionRun{id: session, bus: bus, cancel: cancel, persist: pr})
 
-	return session
+	return session, nil
 }
 
 // toolSchemas converts the registered tools into provider.ToolSchema
@@ -321,9 +381,15 @@ func (h *Harness) buildRequestMiddleware(_ ids.SessionID) []engine.RequestMiddle
 	return mws
 }
 
-func (h *Harness) persistLoop(ctx context.Context, ch <-chan control.EventEnvelope) {
+// persistLoop writes every event the subscription delivers. A closed bus
+// closes the channel after the events already queued on it, so the loop
+// drains them before it exits; Shutdown keeps ctx live until then.
+func (h *Harness) persistLoop(ctx context.Context, ch <-chan control.EventEnvelope, pr *persistRun) {
+	defer close(pr.done)
 	for env := range ch {
-		h.appendEventGuarded(ctx, env)
+		if err := h.appendEventGuarded(ctx, env); err != nil {
+			pr.fail(err)
+		}
 	}
 }
 
@@ -331,8 +397,9 @@ func (h *Harness) persistLoop(ctx context.Context, ch <-chan control.EventEnvelo
 // loop. AppendEvent is host-supplied code behind the session.Store
 // interface, and the loop runs on its own goroutine with no per-request
 // recover net; one panicking store implementation would take the whole
-// harness process down. The event is dropped and the failure logged.
-func (h *Harness) appendEventGuarded(ctx context.Context, env control.EventEnvelope) {
+// harness process down. The event is dropped, the failure logged, and
+// the panic returned as the append's error so Shutdown reports it.
+func (h *Harness) appendEventGuarded(ctx context.Context, env control.EventEnvelope) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// textsafe.Recovered: a panic value is arbitrary
@@ -340,29 +407,62 @@ func (h *Harness) appendEventGuarded(ctx context.Context, env control.EventEnvel
 			// reaches the slog sink live.
 			slog.Error("harness: session store AppendEvent panicked; event dropped",
 				"session", env.Session, "kind", env.Kind, "panic", textsafe.Recovered(r))
+			err = errors.New("session store AppendEvent panicked")
 		}
 	}()
-	_ = h.Sessions.AppendEvent(ctx, env)
+	return h.Sessions.AppendEvent(ctx, env)
 }
 
 // Shutdown releases resources held by the Harness. It tears down every
-// per-session run created by CreateSession (cancelling the persistLoop
-// context, closing the engine bus so subscriptions drain, and
-// unregistering the engine from the mux + catalog) before closing the
-// session store.
+// per-session run created by CreateSession: it closes the engine bus,
+// waits up to shutdownDrainTimeout for the persist loop to write the
+// events already queued, then cancels the loop's context and unregisters
+// the engine from the mux + catalog. The session store closes last.
+// Every append the store refused, and every loop still running at the
+// limit, comes back in the returned error with the store's Close error.
 func (h *Harness) Shutdown() error {
 	h.sessionMu.Lock()
+	h.shutdown = true
 	runs := h.sessionRuns
 	h.sessionRuns = nil
 	h.sessionMu.Unlock()
 
+	// Close every bus first: each subscription channel closes after the
+	// events queued on it, so the persist loops drain and exit. Their
+	// contexts stay live meanwhile, or the queued appends fail on a
+	// cancelled context.
 	for _, r := range runs {
-		// Close the bus first so live subscriptions (incl. persistLoop's)
-		// are signalled to drain, then cancel the parent context as a
-		// belt-and-suspenders teardown for the persistLoop goroutine.
 		if r.bus != nil {
 			r.bus.Close()
 		}
+	}
+	var errs []error
+	limit := time.NewTimer(shutdownDrainTimeout)
+	defer limit.Stop()
+	expired := false
+	for _, r := range runs {
+		if r.persist == nil {
+			continue
+		}
+		if !expired {
+			select {
+			case <-r.persist.done:
+			case <-limit.C:
+				expired = true
+			}
+		}
+		if expired {
+			select {
+			case <-r.persist.done:
+			default:
+				errs = append(errs, fmt.Errorf("harness: session %s: persist loop still writing after %s; later events not persisted", r.id, shutdownDrainTimeout))
+			}
+		}
+		if err := r.persist.err(r.id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, r := range runs {
 		if r.cancel != nil {
 			r.cancel()
 		}
@@ -374,7 +474,6 @@ func (h *Harness) Shutdown() error {
 		}
 	}
 
-	var errs []error
 	if h.Sessions != nil {
 		if err := h.Sessions.Close(); err != nil {
 			errs = append(errs, err)

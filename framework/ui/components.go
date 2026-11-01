@@ -145,6 +145,13 @@ type SectionConfig struct {
 	// ID), data-cui-*, and the accessible-name contract (role,
 	// aria-label, aria-labelledby).
 	ExtraAttrs html.Attrs
+
+	// Ctx is the render context. The id a Heading derives is handed
+	// out through its id scope (render.UniqueID), so a second
+	// "Features" section on the page is "features-2" and its
+	// aria-labelledby follows. With no Ctx the derived id is used as
+	// is. An explicit ID is never changed.
+	Ctx context.Context
 }
 
 // sectionClasses dresses headless.Section's parts.
@@ -172,11 +179,15 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		cfg.Class += " fui-section--band"
 	}
 	sectionID := cfg.ID
-	if sectionID == "" && cfg.Heading != "" {
+	if sectionID != "" {
+		render.ReserveID(cfg.Ctx, sectionID, headless.SectionIDChildren...)
+	} else if cfg.Heading != "" {
 		// Auto-anchor: typical use is in-page rails / scrollspy where the
 		// rail's href="#<slug>" should land on this section without the
-		// caller having to repeat the slug.
-		sectionID = slug(cfg.Heading)
+		// caller having to repeat the slug. A repeat on the page gets a
+		// suffix, and so does a slug that would land on another
+		// section's heading id ("Features title" after "Features").
+		sectionID = render.UniqueID(cfg.Ctx, slug(cfg.Heading), headless.SectionIDChildren...)
 	}
 	return sectionStyle.WrapHTML(headless.Section(headless.SectionProps{
 		Title:           cfg.Heading,
@@ -188,6 +199,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		ID:              sectionID,
 		ExtraAttrs:      headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-labelledby"),
 		Parts:           rootClassParts(cfg.Class),
+		Ctx:             cfg.Ctx,
 	}, sectionClasses, body...))
 }
 
@@ -1014,8 +1026,15 @@ type AvatarConfig struct {
 	// busy / offline). Empty renders no dot.
 	Status AvatarStatus
 	// StatusLabel overrides the dot's accessible name. Defaults to the
-	// status value (e.g. "online"). Ignored when Status is empty.
+	// status word ("Online", "Away", "Busy", "Offline") in the language
+	// of Ctx; a status outside those four defaults to its own value.
+	// Ignored when Status is empty.
 	StatusLabel string
+
+	// Ctx carries the per-request context the status dot's default name
+	// is said in. When nil, English applies. AvatarGroup hands its own
+	// Ctx to an avatar that sets none.
+	Ctx context.Context
 
 	ID    string
 	Class string
@@ -1066,7 +1085,7 @@ func Avatar(cfg AvatarConfig) render.HTML {
 		)
 	}
 	if cfg.Status != AvatarStatusNone {
-		inner = append(inner, avatarStatusDot(cfg.Status, cfg.StatusLabel))
+		inner = append(inner, avatarStatusDot(cfg.Ctx, cfg.Status, cfg.StatusLabel))
 	}
 	return avatarStyle.WrapHTML(html.Span(spanCfg, inner...))
 }
@@ -1075,9 +1094,9 @@ func Avatar(cfg AvatarConfig) render.HTML {
 // aria-label so the status is announced (a bare aria-label on a span is
 // rejected by axe: the implicit role doesn't accept a name), matching
 // the AvatarGroup overflow-chip pattern.
-func avatarStatusDot(status AvatarStatus, label string) render.HTML {
+func avatarStatusDot(ctx context.Context, status AvatarStatus, label string) render.HTML {
 	if label == "" {
-		label = string(status)
+		label = avatarStatusLabel(ctx, status)
 	}
 	return html.Span(html.TextConfig{
 		Class: "fui-avatar__status fui-avatar__status--" + string(status),
@@ -1087,6 +1106,23 @@ func avatarStatusDot(status AvatarStatus, label string) render.HTML {
 			"data-cui-internal": "",
 		},
 	})
+}
+
+// avatarStatusLabel is the dot's default name: the status word in the
+// language of ctx, or the raw value for a status outside the four the
+// kit names.
+func avatarStatusLabel(ctx context.Context, status AvatarStatus) string {
+	switch status {
+	case AvatarOnline:
+		return i18nui.AvatarStatusOnline.Text(ctx)
+	case AvatarAway:
+		return i18nui.AvatarStatusAway.Text(ctx)
+	case AvatarBusy:
+		return i18nui.AvatarStatusBusy.Text(ctx)
+	case AvatarOffline:
+		return i18nui.AvatarStatusOffline.Text(ctx)
+	}
+	return string(status)
 }
 
 func initials(name string) string {

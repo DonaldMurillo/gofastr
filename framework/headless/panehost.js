@@ -149,9 +149,7 @@
     if (open.indexOf(slot) === -1) open.push(slot);
     setOpenList(host, open);
     // Focus handoff: the first tabbable in the pane.
-    const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
-    const first = pane.querySelector(sel);
-    if (first) { try { first.focus({ preventScroll: true }); } catch (_) {} }
+    focusIn(pane, false);
     if (!syncing) pushPane(host, slot, key);
     host.dispatchEvent(new CustomEvent('pane-host:open', { bubbles: true, detail: { pane: slot } }));
     syncMode(host);
@@ -230,8 +228,37 @@
     }
   });
 
-  function scrollOwner(host) {
-    return 'panehost:' + (host.id || '');
+  // The hosts holding the kernel's scroll lock, each under its own
+  // owner key: two id-less hosts must not share one, or closing either
+  // drawer frees the page while the other is still open. The Map also
+  // keeps a host the page swapped out reachable, so its lock can be
+  // released after it left the document.
+  const held = new Map();
+  let lockSeq = 0;
+  function lock(host) {
+    const owner = 'panehost:' + (++lockSeq);
+    held.set(host, owner);
+    if (NS.doc) NS.doc.lockScroll(owner);
+  }
+  function unlock(host) {
+    host.removeAttribute('data-hui-pane-mode');
+    const owner = held.get(host);
+    held.delete(host);
+    if (owner && NS.doc) NS.doc.unlockScroll(owner);
+  }
+  // A host that left the document holds no drawer anyone can close.
+  function releaseDetached() {
+    for (const host of [...held.keys()]) if (!host.isConnected) unlock(host);
+  }
+
+  // The pane's tabbables, over the kernel's shared focus selector.
+  function tabbables(pane) {
+    return pane.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+  }
+  function focusIn(pane, last) {
+    const items = tabbables(pane);
+    const el = items[last ? items.length - 1 : 0];
+    if (el) { try { el.focus({ preventScroll: true }); } catch (_) {} }
   }
 
   // The responsive overlay. data-hui-pane-mode="overlay" is set ONLY
@@ -239,17 +266,24 @@
   // (the sheet's scrim and drawer chrome key off it, so an attribute
   // on a closed page would paint a scrim over everything); it is
   // REMOVED otherwise. Entering overlay mode takes the kernel's
-  // refcounted scroll lock, leaving releases it.
+  // refcounted scroll lock, leaving releases it, and moves focus into
+  // the drawer when it sits outside, unless an open modal holds it: a
+  // drawer the server rendered open on a phone-width first load, or a
+  // window narrowed under an open pane, would otherwise leave focus
+  // behind the scrim.
   function syncMode(host) {
     const wantOverlay = window.matchMedia(MQ).matches && !!topmost(host);
     const isOverlay = host.getAttribute('data-hui-pane-mode') === 'overlay';
     if (wantOverlay === isOverlay) return;
     if (wantOverlay) {
       host.setAttribute('data-hui-pane-mode', 'overlay');
-      if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
+      lock(host);
+      const pane = paneOf(host, topmost(host));
+      // An open modal keeps focus: the drawer is behind it.
+      const modal = NS._modalStack && NS._modalStack.length > 0;
+      if (pane && !modal && !pane.contains(document.activeElement)) focusIn(pane, false);
     } else {
-      host.removeAttribute('data-hui-pane-mode');
-      if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
+      unlock(host);
     }
   }
 
@@ -258,9 +292,18 @@
   // an open modal widget first. Tab is trapped inside the topmost open
   // pane while in overlay mode — the same containment technique the
   // disclosure module spells, over the kernel's focus selector, never
-  // touching the widgets module's private modal stack.
+  // touching the widgets module's private modal stack. The keys act on
+  // the overlay host holding focus, else on the only one on the page:
+  // with two open drawers and focus in neither, they leave both alone.
+  function keyHost() {
+    const a = document.activeElement;
+    const inner = a && a.closest && a.closest('[data-hui-pane-mode="overlay"]');
+    if (inner) return inner;
+    const all = document.querySelectorAll('[data-hui-pane-mode="overlay"]');
+    return all.length === 1 ? all[0] : null;
+  }
   document.addEventListener('keydown', function (e) {
-    const host = document.querySelector('[data-hui-pane-mode="overlay"]');
+    const host = keyHost();
     if (!host) return;
     if (e.key === 'Escape') {
       if (NS._modalStack && NS._modalStack.length > 0) return;
@@ -274,12 +317,14 @@
     if (!slot) return;
     const pane = paneOf(host, slot);
     if (!pane) return;
-    const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
-    const items = pane.querySelectorAll(sel);
+    const items = tabbables(pane);
     if (!items.length) { e.preventDefault(); return; }
-    const first = items[0], last = items[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    const a = document.activeElement, first = items[0], last = items[items.length - 1];
+    // Focus outside the drawer (the body, background nav) re-enters it
+    // at the end Tab moves toward, never the page behind the scrim.
+    if (!pane.contains(a)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    else if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
   });
 
   // Programmatic API mirroring openWidget / closeWidget: the host by
@@ -327,18 +372,17 @@
   });
 
   // Release every overlay lock and clear the mode on a client-side
-  // navigation, so the next page is not left scroll-locked by a host
-  // that is now detached.
+  // navigation, so the next page is not left scroll-locked. The event
+  // fires after the swap took the old page out of the document, so the
+  // walk is over the hosts holding a lock, never a document query that
+  // can no longer see them.
   window.addEventListener('gofastr:navigate', function () {
-    for (const host of document.querySelectorAll('[data-hui-panehost]')) {
-      if (host.getAttribute('data-hui-pane-mode') === 'overlay') {
-        host.removeAttribute('data-hui-pane-mode');
-        if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
-      }
-    }
+    for (const host of [...held.keys()]) unlock(host);
   });
 
   function scan(root) {
+    // An island swap can drop a host with no navigation event.
+    releaseDetached();
     const scope = root && root.querySelectorAll ? root : document;
     for (const host of within(scope, '[data-hui-panehost]')) {
       syncMode(host);

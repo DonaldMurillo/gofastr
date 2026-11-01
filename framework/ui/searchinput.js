@@ -48,8 +48,10 @@
     // Escape clears a non-empty box: the SearchInput is the canonical
     // clear-on-esc control and gets the behaviour without a marker on
     // every call site.
+    // Mid-composition (CJK input) Escape cancels the conversion and
+    // belongs to the IME.
     input.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape' || !input.value) return;
+      if (e.key !== 'Escape' || e.isComposing || !input.value) return;
       e.preventDefault();
       e.stopPropagation();
       clear();
@@ -58,12 +60,21 @@
     updateClearVisibility();
   }
 
+  // within: the scope itself when it matches, then its descendants.
+  // The kernel hands an arrival pass the inserted node, and a swap
+  // whose root IS the wrapper must be wired too.
+  function within(root, sel) {
+    const out = [];
+    if (root.matches && root.matches(sel)) out.push(root);
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
+    return out;
+  }
+
   // The arrival pass: at load, after an island swap and after a client
   // navigation the kernel calls the scanner with the inserted root.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    const wrappers = scope.querySelectorAll('[data-cui-comp="ui-search-input"]');
-    for (let i = 0; i < wrappers.length; i++) wireOne(wrappers[i]);
+    for (const w of within(scope, '[data-cui-comp="ui-search-input"]')) wireOne(w);
   }
   scan(document);
   NS._moduleScanners = NS._moduleScanners || {};

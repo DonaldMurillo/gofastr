@@ -3,8 +3,10 @@ package crud
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -16,9 +18,10 @@ import (
 
 // The list tool sends each filter in the shape the list route reads
 // (2026-10-27 bug bash D28, D29, D30). A JSON field's value went out as
-// its first array element or fmt.Sprint's map[x:1]; an empty _in array
-// dropped the filter and listed every row; and an _in element holding a
-// comma was split by the route into two values.
+// its first array element or fmt.Sprint's map[x:1], and a JSON field now
+// takes no filter at all (D17); an empty _in array dropped the filter and
+// listed every row; and an _in element holding a comma was split by the
+// route into two values.
 func TestMCPListToolFilterShapes(t *testing.T) {
 	installSecurityOwnerExtractor(t)
 
@@ -45,6 +48,10 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 	orig, _ := http.NewRequest(http.MethodPost, "/mcp", nil)
 	ctx := handler.SetUser(mcp.WithRequest(context.Background(), orig), &testUser{id: "alice"})
 
+	// An argument refusal is the agent's to act on: invalid params with
+	// its message, never redacted to "internal tool error" and never
+	// logged at Error as a server fault.
+	errorLogs := countErrorLogs(t)
 	// call answers the ids the list returned, or ok=false for a refusal.
 	call := func(rawArgs string) (ids []string, ok bool) {
 		t.Helper()
@@ -54,6 +61,9 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 		}
 		resp := srv.HandleRequest(ctx, mcp.Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: p})
 		if resp.Error != nil {
+			if resp.Error.Code != mcp.ErrInvalidParams || resp.Error.Message == "internal tool error" {
+				t.Errorf("%s refused as %d %q; want invalid params with the reason", rawArgs, resp.Error.Code, resp.Error.Message)
+			}
 			return nil, false
 		}
 		out, err := json.Marshal(resp.Result)
@@ -87,38 +97,71 @@ func TestMCPListToolFilterShapes(t *testing.T) {
 	}
 
 	expect(`{"name_in": ["Doe", "Jane"]}`, "one", "obj")
-	expect(`{"payload": [1, 2]}`, "pair")
-	expect(`{"payload": {"x": 1}}`, "obj")
+	// A JSON field takes no filter (D17): the engines disagree on what
+	// equal JSON is, so the tool refuses it as the route does.
+	refuse(`{"payload": [1, 2]}`)
+	refuse(`{"payload": {"x": 1}}`)
+	refuse(`{"payload": 3}`)
 	refuse(`{"name_in": []}`)
 	refuse(`{"name_in": ["Doe, Jane"]}`)
 	refuse(`{"name": ["Doe", "Jane"]}`)
 	refuse(`{"name": {"x": 1}}`)
+
+	// The get tool's record key, sent empty, is an argument refusal too.
+	p, _ := json.Marshal(map[string]any{"name": "mcp_docs_get", "arguments": map[string]any{"id": ""}})
+	resp := srv.HandleRequest(ctx, mcp.Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: p})
+	if resp.Error == nil || resp.Error.Code != mcp.ErrInvalidParams || !strings.Contains(resp.Error.Message, "must not be empty") {
+		t.Errorf("get with an empty id answered %+v; want invalid params naming the empty id", resp.Error)
+	}
+	if n := errorLogs.Load(); n != 0 {
+		t.Errorf("argument refusals logged %d records at Error", n)
+	}
 }
+
+// countErrorLogs counts records logged at Error or above on the default
+// logger until the test ends.
+func countErrorLogs(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	prev := slog.Default()
+	slog.SetDefault(slog.New(errorCounter{n: &n}))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &n
+}
+
+type errorCounter struct{ n *atomic.Int32 }
+
+func (errorCounter) Enabled(context.Context, slog.Level) bool { return true }
+func (c errorCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelError {
+		c.n.Add(1)
+	}
+	return nil
+}
+func (c errorCounter) WithAttrs([]slog.Attr) slog.Handler { return c }
+func (c errorCounter) WithGroup(string) slog.Handler      { return c }
 
 // The tools/call validator refuses a list or object for a string filter
 // and a scalar for an _in key before the tool runs, so these shapes
 // reach toolFilterValues only from a caller that skips it. The tool
 // still refuses them rather than sending a cut or garbled value.
 func TestToolFilterValuesRefusesOffSchemaShapes(t *testing.T) {
-	name := schema.Field{Name: "name", Type: schema.String}
-	payload := schema.Field{Name: "payload", Type: schema.JSON}
 	for _, tc := range []struct {
-		key   string
-		field schema.Field
-		in    bool
-		v     any
+		key string
+		in  bool
+		v   any
 	}{
-		{"name", name, false, []any{"Doe", "Jane"}},
-		{"name", name, false, map[string]any{"x": 1.0}},
-		{"name_in", name, true, []any{map[string]any{"x": 1.0}}},
-		{"payload_in", payload, true, map[string]any{"x": 1.0, "y": 2.0}},
+		{"name", false, []any{"Doe", "Jane"}},
+		{"name", false, map[string]any{"x": 1.0}},
+		{"name_in", true, []any{map[string]any{"x": 1.0}}},
+		{"name_in", true, map[string]any{"x": 1.0, "y": 2.0}},
 	} {
-		if vs, err := toolFilterValues(tc.key, tc.field, tc.in, tc.v); err == nil {
+		if vs, err := toolFilterValues(tc.key, tc.in, tc.v); err == nil {
 			t.Errorf("%s = %#v was sent as %q, want a refusal", tc.key, tc.v, vs)
 		}
 	}
 	// A scalar _in on a plain field keeps the route's comma form.
-	if vs, err := toolFilterValues("name_in", name, true, "Doe,Jane"); err != nil || len(vs) != 1 || vs[0] != "Doe,Jane" {
+	if vs, err := toolFilterValues("name_in", true, "Doe,Jane"); err != nil || len(vs) != 1 || vs[0] != "Doe,Jane" {
 		t.Errorf("name_in = \"Doe,Jane\" became %q, %v", vs, err)
 	}
 }

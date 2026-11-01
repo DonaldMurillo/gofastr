@@ -49,7 +49,8 @@ func WithHTTPMiddleware(mw ...router.Middleware) HandleOption {
 // already on rt (checked before anything is registered, so the router
 // never panics mid-wiring), and after Mount has frozen the tool set.
 // On a grouped router the route lands under the group prefix, exactly
-// as an explicit rt.Handle call would.
+// as an explicit rt.Handle call would, and the manifest entry's Path
+// carries that prefix too, so the bridge's fetch reaches the route.
 func (h *Host) Handle(rt *router.Router, t Tool, handler http.Handler, opts ...HandleOption) error {
 	var cfg handleConfig
 	for _, opt := range opts {
@@ -108,6 +109,11 @@ func (h *Host) Handle(rt *router.Router, t Tool, handler http.Handler, opts ...H
 			class = "route_conflict"
 			err = fmt.Errorf("webmcp: Handle(%q): %s %s conflicts with a route already on this router: %v", t.Name, t.Method, full(rt, pattern), perr)
 		} else {
+			// The manifest carries the path the route answers on: the
+			// bridge fetches t.Path from the origin, so on a grouped
+			// router it needs the group prefix the route registered
+			// under (the query rides along unchanged).
+			t.Path = full(rt, t.Path)
 			h.names[t.Name] = true
 			h.tools = append(h.tools, t)
 		}

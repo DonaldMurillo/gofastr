@@ -561,7 +561,7 @@ func (m *Migrator) runMigrationUpNoTx(ctx context.Context, x connish, tbl string
 		}
 	}
 
-	if _, err := x.ExecContext(ctx, mig.Up); err != nil {
+	if err := m.execNoTx(ctx, x, mig.Up); err != nil {
 		// Leave the dirty row in place. It's the signal that this migration
 		// half-applied and the database needs manual reconciliation.
 		return fmt.Errorf("exec up (no-transaction, left dirty): %w", err)
@@ -743,7 +743,7 @@ func (m *Migrator) runMigrationDownNoTx(ctx context.Context, x connish, tbl stri
 	if _, err := x.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET dirty = TRUE WHERE "+where, tbl), args...); err != nil {
 		return fmt.Errorf("mark dirty: %w", err)
 	}
-	if _, err := x.ExecContext(ctx, mig.Down); err != nil {
+	if err := m.execNoTx(ctx, x, mig.Down); err != nil {
 		// Leave the dirty row. The rollback half-applied and needs a human.
 		return fmt.Errorf("exec down (no-transaction, left dirty): %w", err)
 	}

@@ -170,6 +170,7 @@ func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 // on the same prefix.
 func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opts ...CrudRouteOptions) {
 	path = NormalizePath(path)
+	r = EntityRouter(r, handler.Entity)
 
 	var opt CrudRouteOptions
 	if len(opts) > 0 {
@@ -200,6 +201,18 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 	if !opt.NoLLMMD {
 		registerLLMMDRoutes(r, handler, path, opt.ReadOnly)
 	}
+}
+
+// EntityRouter returns the router an entity's routes register on: r's
+// prefix and middleware, with every route named by the entity's table
+// (router.ResourceGroup), the resource auth.RequireAPIScopes scopes it
+// to and the "<table>:<verb>" an Endpoint's MCP twin checks. The CRUD
+// routes, the Endpoints, and the routes beside them (EntityUI's _bulk,
+// _export.csv, _pick; the admin's write API) all register through it,
+// so each answers to its table wherever it is mounted, never to a guess
+// from the path: an orders handler mounted at /api/orders/v1 is orders.
+func EntityRouter(r *router.Router, ent *entity.Entity) *router.Router {
+	return r.ResourceGroup(ent.GetTable())
 }
 
 // NormalizePath strips trailing slashes from a path.

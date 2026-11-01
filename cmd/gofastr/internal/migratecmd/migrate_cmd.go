@@ -57,6 +57,9 @@ func RunMigrate(args []string) {
 		// migration instead. See framework/ARCHITECTURE.md.
 		cli.Fail("`gofastr migrate diff` has been removed.")
 		cli.Info("It applied an app spec directly onto a live DB. Use `gofastr migrate generate <name>` to emit a reviewable migration, then `gofastr migrate up`. See `gofastr docs migrations`.")
+		// Exit non-zero: a deploy script that still runs `migrate diff`
+		// must stop here, not carry on as if the schema were reconciled.
+		cli.OsExit(1)
 	case "generate":
 		runMigrateGenerate(rest)
 	case "force":

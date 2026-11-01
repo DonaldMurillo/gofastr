@@ -332,3 +332,119 @@ func TestE2E_ComboboxKeyboardSkipsFilteredOutRows(t *testing.T) {
 		t.Fatalf("Enter: aria-expanded = %q, want false", afterEnterExpanded)
 	}
 }
+
+// The Enter that confirms an IME candidate (CJK input) belongs to the
+// candidate window: it must not pick the highlighted option, and the
+// arrows mid-composition must not move the highlight. A plain Enter
+// after the composition still picks.
+func TestE2E_ComboboxSkipsComposingKeys(t *testing.T) {
+	box := Combobox(ComboboxProps{ID: "ime", Name: "city", Label: "City", Options: []ComboboxOption{
+		{Label: "Tokyo"},
+		{Label: "Kyoto"},
+	}}, nil)
+	b := startBehaviorServer(t, string(box))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, comboboxLoaded) {
+		t.Fatal("the input marker never loaded headless-combobox")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#ime`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	// Focus opens the list with no highlight; a plain ArrowDown puts it
+	// on the first option, the state the composing keys must not move.
+	if !pollTrue(ctx, `document.getElementById('ime').getAttribute('aria-expanded') === 'true'`) {
+		t.Fatal("focus did not open the listbox")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.getElementById('ime').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}))`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('ime').getAttribute('aria-activedescendant') === 'ime-listbox-opt-0'`) {
+		t.Fatal("ArrowDown did not highlight the first option")
+	}
+	var composingEcho string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function(){
+		var seen = null, i = document.getElementById('ime');
+		var f = function(e){ seen = e.isComposing; };
+		i.addEventListener('keydown', f);
+		i.dispatchEvent(new KeyboardEvent('keydown', {key:'Shift', bubbles:true, isComposing:true}));
+		i.removeEventListener('keydown', f);
+		return String(seen);
+	})()`, &composingEcho)); err != nil {
+		t.Fatal(err)
+	}
+	if composingEcho != "true" {
+		t.Skipf("this browser drops isComposing from the init dict (%q), so the fixture cannot prove the guard", composingEcho)
+	}
+	var got struct {
+		Value, Active string
+		Prevented     bool
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function(){
+		var i = document.getElementById('ime');
+		i.dispatchEvent(new CompositionEvent('compositionstart', {bubbles:true}));
+		i.value = 'きょうと';
+		var down = new KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true, cancelable:true, isComposing:true});
+		i.dispatchEvent(down);
+		var enter = new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true, isComposing:true});
+		i.dispatchEvent(enter);
+		return {Value: i.value, Active: i.getAttribute('aria-activedescendant'), Prevented: down.defaultPrevented || enter.defaultPrevented};
+	})()`, &got)); err != nil {
+		t.Fatal(err)
+	}
+	if got.Value != "きょうと" || got.Active != "ime-listbox-opt-0" || got.Prevented {
+		t.Fatalf("keys mid-composition drove the combobox: value %q, active %q, prevented %v", got.Value, got.Active, got.Prevented)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.getElementById('ime').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('ime').value === 'Tokyo'`) {
+		t.Fatal("a plain Enter after the composition did not pick the active option")
+	}
+}
+
+// Escape on an open listbox closes the listbox and nothing else: the
+// disclosure, modal or intercept overlay around the combobox stays
+// open, because those close on a document-level Escape that would
+// otherwise see the same key. A second Escape (listbox closed) still
+// reaches them.
+func TestE2E_ComboboxEscapeStaysInListbox(t *testing.T) {
+	box := Combobox(ComboboxProps{ID: "esc", Name: "q", Label: "Search", Options: []ComboboxOption{
+		{Label: "Alpha"},
+		{Label: "Beta"},
+	}}, nil)
+	page := string(Disclosure(DisclosureProps{ID: "wrap", Summary: "Filters", Content: box, Open: true}, nil))
+	b := startBehaviorServer(t, page)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, comboboxLoaded) || !pollTrue(ctx, controlsLoadedExpr(DisclosureBehaviorName)) {
+		t.Fatal("the combobox or disclosure module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#esc`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('esc').getAttribute('aria-expanded') === 'true'`) {
+		t.Fatal("focus did not open the listbox")
+	}
+	escape := chromedp.Evaluate(`document.getElementById('esc').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`, nil)
+	var st struct {
+		Expanded string `json:"expanded"`
+		Open     bool   `json:"open"`
+	}
+	read := chromedp.Evaluate(`({expanded: document.getElementById('esc').getAttribute('aria-expanded'), open: document.getElementById('wrap').open})`, &st)
+	if err := chromedp.Run(ctx, escape, read); err != nil {
+		t.Fatal(err)
+	}
+	if st.Expanded != "false" {
+		t.Fatalf("Escape left the listbox expanded=%q", st.Expanded)
+	}
+	if !st.Open {
+		t.Fatal("Escape on the open listbox also closed the disclosure around it")
+	}
+	if err := chromedp.Run(ctx, escape, read); err != nil {
+		t.Fatal(err)
+	}
+	if st.Open {
+		t.Fatal("a second Escape, listbox closed, did not reach the disclosure")
+	}
+}

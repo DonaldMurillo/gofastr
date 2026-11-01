@@ -842,7 +842,9 @@
             }).catch(() => {});
           }
         } else if (mode === 'attr') {
-          const attr = node.getAttribute('data-cui-signal-attr') || 'value';
+          // Folded: the Go allow-list matches names case-insensitively,
+          // and the property writes below need the DOM's spelling.
+          const attr = (node.getAttribute('data-cui-signal-attr') || 'value').toLowerCase();
           // The attribute NAME is developer-supplied and server-
           // rendered, so the allow-list that keeps a signal out of
           // `srcdoc` / `style` / `on*` lives in Go, at the emitters
@@ -858,7 +860,21 @@
           // executing arbitrary JS when an attacker controls the
           // signal value via a query-string deeplink param.
           if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
-          node.setAttribute(attr, v);
+          // A boolean attribute is on whenever it is present, so
+          // disabled="false" disables: false, null, '', 0 and 'false'
+          // remove it. disabled, hidden and open reflect the attribute;
+          // checked, selected and value also live as properties that
+          // stop following it once the reader clicks or types, so the
+          // property is written too, by name (no computed-key write).
+          if (/^(disabled|hidden|checked|open|selected)$/.test(attr)) {
+            const on = !!value && value !== 'false';
+            node.toggleAttribute(attr, on);
+            if (attr === 'checked') node.checked = on;
+            if (attr === 'selected') node.selected = on;
+          } else {
+            node.setAttribute(attr, v);
+            if (attr === 'value' && 'value' in node) node.value = v;
+          }
           // Tabs (framework/ui.Tabs): when the wrapper's data-active
           // index changes, mirror it into aria-selected on the strip's
           // role=tab buttons, CSS keys the visual highlight off
@@ -1055,9 +1071,20 @@
   // "/:param" route must resolve to that route's chain, not to "no
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
+  // Typed segment constraints, the same tests core-ui/app/constraints.go
+  // runs at resolve. The manifest lists dynamic routes in the server's
+  // registration order, so with these the first match here is the route
+  // the server serves: /orders/help skips /orders/:id:int for
+  // /orders/:slug, and reads that route's layouts and docScripts.
+  const _segTest = { int: /^\d+$/, uuid: /^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i, alpha: /^[a-z]+$/i, alnum: /^[a-z\d]+$/i };
+  // A segment in the server's routing form (app.RoutePath): percent-
+  // decoded, so /orders/%31 is the :id:int route there and here, with a
+  // decoded "%" or "/" kept escaped so it stays one segment; a segment
+  // that does not decode (%E0%A4) is taken literally, never thrown.
+  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (c) => encodeURIComponent(c)); };
   const routeEntry = (path) => {
     // Routes register unprefixed: /es/pricing looks up /pricing.
-    const clean = _unlocalize(path.split('?')[0].split('#')[0]);
+    const clean = _unlocalize(path.split('?')[0].split('#')[0]).split('/').map(_routeSeg).join('/');
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
@@ -1071,11 +1098,10 @@
       const pp = pattern.split('/').filter(Boolean);
       // Catch-all patterns ("*") accept >= prefix length; others exact.
       if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
-      // Each literal segment must align; dynamic segments (":name",
-      // incl. the catch-all ":name*") match anything. Typed constraints
-      // (":id:int" / ":id:uuid") are enforced server-side at resolve; a
-      // non-conforming value falls through to a normal request there.
-      if (pp.every((seg, i) => seg.startsWith(':') || seg === parts[i])) return entry;
+      // Each literal segment must align; a dynamic segment (":name",
+      // incl. the catch-all ":name*") matches any value its constraint
+      // (":id:int", ":id:uuid", ":id:alpha", ":id:alnum") accepts.
+      if (pp.every((seg, i) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(parts[i]) : seg === parts[i])) return entry;
     }
     return null;
   };
@@ -1323,12 +1349,16 @@
   // fragment or no matching element. Reads location.hash (set by the
   // click handler's pushState / by the browser on popstate) so back /
   // forward and in-link fragments all land on the right section instead
-  // of always jumping to the top.
+  // of always jumping to the top. location.hash keeps the fragment
+  // percent-encoded (#caf%C3%A9 for id="café"), so the decoded id is
+  // tried after the raw one, the order the browser's own fragment
+  // scroll uses; a fragment that does not decode (#100%) stays raw.
   const scrollToHash = () => {
     const id = (location.hash || '').replace(/^#/, '');
     _settleScroll(() => {
       if (id) {
-        const el = document.getElementById(id);
+        let el = document.getElementById(id);
+        if (!el) try { el = document.getElementById(decodeURIComponent(id)); } catch (_) {}
         if (el) {
           el.scrollIntoView({ block: 'start' });
           return;
@@ -1520,14 +1550,15 @@
   // the pre-layout behaviour, behind the supersede rule's check.
   // css: the incoming markup. Its component sheets load while the old
   // page is still on screen (kernel _cssReady), before the title, the
-  // route announcement or the swap move to the new page.
+  // route announcement or the swap move to the new page; the
+  // transition module reads the incoming vocabulary off it.
   const _swapCommit = async (epoch, from, to, apply, pickSrc, css, title) => {
     await window.__gofastr._cssReady(css);
     if (!_navLive(epoch)) return;
     document.title = title;
     announceRoute(title);
     const T = window.__gofastr._navHooks.transition;
-    if (T) return T.commit(epoch, from, to, apply, pickSrc);
+    if (T) return T.commit(epoch, from, to, apply, pickSrc, css);
     apply();
   };
 
@@ -2187,48 +2218,45 @@
     // A followed 3xx is another URL's list: no catalog.
     .then((r) => (r.ok && !r.redirected ? r.json() : null))
     .then(async (list) => {
-      if (!Array.isArray(list)) { _wcr(); return; }
-      // The widget runtime now ships as a split module. Make sure it's
-      // loaded before iterating mounts, covers the case where no
-      // [data-cui-widget] marker is present in initial HTML (the
-      // marker scanner wouldn't have fired) but server-side
-      // registration says there are widgets to mount.
-      if (list.length > 0) {
-        try { await window.__gofastr.loadModule('widgets'); } catch (_) {}
-      }
-      const tryMount = () => {
-        if (!window.__gofastr || !window.__gofastr.mountWidget) {
-          setTimeout(tryMount, 0);
-          return;
+      // No catalog, an empty one, or a widgets module that failed to
+      // load: settle readiness and stop. The catalog is stored before
+      // the load, since it is data the module does not own: a click
+      // after a failed load reaches openWidget, which retries the load
+      // and finds its widget. Nothing waits on a module that is not
+      // coming.
+      try {
+        if (Array.isArray(list) && list.length) {
+          // The widget runtime now ships as a split module. Make sure it's
+          // loaded before iterating mounts, covers the case where no
+          // [data-cui-widget] marker is present in initial HTML (the
+          // marker scanner wouldn't have fired) but server-side
+          // registration says there are widgets to mount.
+          // loadModule resolves on registration, and widgets.js
+          // registers after it assigns mountWidget.
+          const cat = window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
+          for (const item of list) cat[item.cfg.name] = item;
+          await window.__gofastr.loadModule('widgets');
+          for (const item of list) {
+            if (item.hidden) continue; // open later via openWidget(name)
+            // Non-hidden widgets auto-mount at boot. Chrome HTML is
+            // fetched lazily from cfg.chromePath so the registry stays
+            // small; if the page already SSR-inlined this widget (root
+            // element exists in DOM), mountWidget short-circuits to a
+            // hydrate-only path. Either way, the result is a wired
+            // widget root.
+            window.__gofastr._mountByName(item.cfg.name);
+          }
+          // Open any widget whose deep link matches the current URL. On
+          // a full page load the host has usually SSR-inlined that
+          // chrome (framework/uihost injectWidgetSSR) and _mountByName
+          // hydrates it here; this pass is what covers SPA navigations
+          // and popstate, where no fresh HTML arrives.
+          window.__gofastr._syncDeepLinks();
         }
-        // Stash every widget's payload so openWidget can retrieve a
-        // hidden one on demand. Also settle _wready (via _wcr) so the
-        // eager click delegator can proceed.
-        window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
-        for (const item of list) {
-          window.__gofastr._widgetCatalog[item.cfg.name] = item;
-          if (item.hidden) continue; // open later via openWidget(name)
-          // Non-hidden widgets auto-mount at boot. Chrome HTML is
-          // fetched lazily from cfg.chromePath so the registry stays
-          // small; if the page already SSR-inlined this widget (root
-          // element exists in DOM), mountWidget short-circuits to a
-          // hydrate-only path. Either way, the result is a wired
-          // widget root.
-          window.__gofastr._mountByName(item.cfg.name);
-        }
-        // Open any widget whose deep link matches the current URL. On
-        // a full page load the host has usually SSR-inlined that
-        // chrome (framework/uihost injectWidgetSSR) and _mountByName
-        // hydrates it here; this pass is what covers SPA navigations
-        // and popstate, where no fresh HTML arrives.
-        window.__gofastr._syncDeepLinks();
-
-        // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise, resolve so queued clicks unblock now
-        // that the catalog is populated.
-        _wcr();
-      };
-      tryMount();
+      } catch (_) {}
+      // The eager click delegator (installed at boot, see below)
+      // awaits this Promise.
+      _wcr();
     })
     .catch(() => { _wcr(); });
 
@@ -2884,7 +2912,9 @@
   const _interactionNode = (e, spec) => {
     try {
       if (spec.event === 'keydown') {
-        if (!spec.keys || !spec.keys.includes(e.key) ||
+        // A modified key is a browser or OS shortcut, never the module's.
+        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey ||
+            !spec.keys || !spec.keys.includes(e.key) ||
             !document.querySelector(spec.scope || '')) return null;
         return e.target && e.target.dispatchEvent ? e.target : document.body;
       }

@@ -490,7 +490,10 @@ func tableSortHref(p TableProps, key string, dir SortDir, sortParam, dirParam st
 // from a link. So the bytes are stripped rather than refused: a
 // control byte is never a search a user meant, and a key or value
 // that scrubs to nothing is dropped rather than carried as an empty
-// filter. Path stays a refusal, because Path is configuration.
+// filter. A value that was empty to begin with is carried unchanged:
+// an explicit empty param (?saved=S&filter=, a reader clearing a saved
+// view's filter) means something its absence does not. Path stays a
+// refusal, because Path is configuration.
 func scrubbedQuery(q url.Values) url.Values {
 	out := url.Values{}
 	for k, vs := range q {
@@ -499,7 +502,9 @@ func scrubbedQuery(q url.Values) url.Values {
 			continue
 		}
 		for _, v := range vs {
-			if v = scrubControlBytes(v); v != "" {
+			if v == "" {
+				out.Add(k, v)
+			} else if v = scrubControlBytes(v); v != "" {
 				out.Add(k, v)
 			}
 		}

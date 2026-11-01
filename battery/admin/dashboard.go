@@ -101,7 +101,7 @@ func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 		if g != "" {
 			label = i18nui.NavGroupLabel(ctx, nil, g, "")
 		}
-		out = append(out, ui.Section(ui.SectionConfig{Heading: label, Compact: true, Overline: true},
+		out = append(out, ui.Section(ui.SectionConfig{Ctx: ctx, Heading: label, Compact: true, Overline: true},
 			ui.Grid(ui.GridConfig{Min: "14rem", Fill: true}, byGroup[g]...)))
 	}
 	return out

@@ -3,11 +3,14 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
@@ -31,6 +34,10 @@ type ScheduledJob struct {
 	Priority    int    `json:"priority"`
 	MaxAttempts int    `json:"max_attempts"`
 
+	// UserID is carried into every Job fired by this schedule (see
+	// Job.UserID). Empty for a schedule that names nobody.
+	UserID string `json:"user_id,omitempty"`
+
 	// cron, when set, drives NextRun from a cron expression instead of
 	// Interval. Nil for interval schedules (the pre-existing behaviour).
 	cron *cron.Schedule
@@ -49,17 +56,99 @@ type Scheduler struct {
 	// timer immediately, rather than waiting out a coarse (up to a minute)
 	// poll before a newly-registered sub-minute schedule can fire.
 	wake chan struct{}
+
+	// eraseName is the name the store eraser newScheduler registers is
+	// listed under; unregisterErase removes it, on Close.
+	eraseName       string
+	unregisterErase func()
 }
 
 // NewScheduler creates the non-durable, single-process Scheduler that
 // dispatches to the given queues. Enqueue errors are logged via slog.Default().
 // NewInMemoryScheduler is the explicit spelling for new code.
 func NewScheduler(queues ...Queue) *Scheduler {
-	return &Scheduler{
+	return newScheduler(queues, slog.Default())
+}
+
+// newScheduler builds a Scheduler and registers its store eraser:
+// App.EraseUserData drops the schedules whose UserID is the erased user,
+// so their payload is neither kept nor fired again.
+func newScheduler(queues []Queue, logger *slog.Logger) *Scheduler {
+	s := &Scheduler{
 		queues: queues,
-		logger: slog.Default(),
+		logger: logger,
 		wake:   make(chan struct{}, 1),
 	}
+	s.eraseName, s.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   "queue_scheduler_memory",
+		Source: "queue",
+		Erase:  s.eraseUser,
+		// Erased before the queues it feeds: a tick between a queue's
+		// erasure and this one enqueued the user's job again.
+		Producer: true,
+	})
+	return s
+}
+
+// eraserName is the name the scheduler's store eraser is listed under.
+func (s *Scheduler) eraserName() string { return s.eraseName }
+
+// eraseUser drops every schedule whose UserID is userID and returns how
+// many items it removed (with dryRun, how many schedules it would). It
+// takes s.mu, which dispatchDue holds across its Enqueue calls, so a
+// dispatch in progress has finished before the schedules go.
+//
+// Then it sweeps the user's jobs out of every DBQueue it feeds, and counts
+// them. App.EraseUserData deletes queue_jobs rows in its SQL plan and runs
+// store erasers only after the commit, so a tick between the two put the
+// user's job back in the table; with the schedules gone first, the sweep
+// leaves nothing a later tick re-creates. Stores erased after this one
+// (MemoryQueue, RedisQueue) need no sweep: Producer orders this eraser
+// ahead of them.
+func (s *Scheduler) eraseUser(ctx context.Context, userID string, dryRun bool) (int, error) {
+	s.mu.Lock()
+	kept := make([]ScheduledJob, 0, len(s.schedules))
+	for _, sch := range s.schedules {
+		if sch.UserID != userID {
+			kept = append(kept, sch)
+		}
+	}
+	n := len(s.schedules) - len(kept)
+	if !dryRun {
+		s.schedules = kept
+	}
+	queues := slices.Clone(s.queues)
+	s.mu.Unlock()
+	if dryRun {
+		return n, nil
+	}
+	var errs []error
+	for _, q := range queues {
+		sw, ok := q.(userJobSweeper)
+		if !ok {
+			continue
+		}
+		swept, err := sw.sweepUserJobs(ctx, userID)
+		n += swept
+		errs = append(errs, err)
+	}
+	return n, errors.Join(errs...)
+}
+
+// userJobSweeper is a SQL-backed queue whose rows the erasure's SQL plan
+// already deleted once; the in-memory Scheduler sweeps it again after its
+// own schedules are gone.
+type userJobSweeper interface {
+	sweepUserJobs(ctx context.Context, userID string) (int, error)
+}
+
+// Close removes the scheduler from App.EraseUserData's reach. It does not
+// stop Start; cancel Start's context for that.
+func (s *Scheduler) Close() error {
+	if s.unregisterErase != nil {
+		s.unregisterErase()
+	}
+	return nil
 }
 
 // NewInMemoryScheduler explicitly creates the non-durable, single-process
@@ -75,11 +164,7 @@ func NewSchedulerWithLogger(q Queue, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Scheduler{
-		queues: []Queue{q},
-		logger: logger,
-		wake:   make(chan struct{}, 1),
-	}
+	return newScheduler([]Queue{q}, logger)
 }
 
 // Every returns a ScheduleBuilder that fires on a fixed interval.
@@ -116,6 +201,7 @@ type ScheduleBuilder struct {
 	lane        string
 	priority    int
 	maxAttempts int
+	userID      string
 }
 
 // Job sets the job type and payload for the scheduled job. A payload
@@ -176,6 +262,16 @@ func (b *ScheduleBuilder) MaxAttempts(n int) *ScheduleBuilder {
 	return b
 }
 
+// UserID names the person the schedule's payload is about. Every Job it
+// fires carries it as Job.UserID, which is what App.EraseUserData matches
+// on in the queue the job lands in. The schedule itself lives in process
+// memory, out of an erasure's reach; use a DurableScheduler for a
+// schedule that must go with the user.
+func (b *ScheduleBuilder) UserID(id string) *ScheduleBuilder {
+	b.userID = id
+	return b
+}
+
 // RegisterAt is like Register but anchors the first NextRun to base instead of
 // the wall clock. It exists so cron schedules can be registered deterministically
 // (tests, replayed fixtures) without depending on time.Now().
@@ -194,6 +290,7 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 		Lane:        b.lane,
 		Priority:    b.priority,
 		MaxAttempts: b.maxAttempts,
+		UserID:      b.userID,
 	}
 
 	if b.hasCron {
@@ -306,6 +403,7 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 				Lane:        sch.Lane,
 				Priority:    sch.Priority,
 				MaxAttempts: sch.MaxAttempts,
+				UserID:      sch.UserID,
 				CreatedAt:   now,
 			}
 			// Preserve the pre-options contract: a scheduled job always

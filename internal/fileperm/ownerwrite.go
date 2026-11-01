@@ -25,6 +25,29 @@ func WriteOwnerOnly(path string, data []byte) error {
 	return fillOwnerOnly(f, data)
 }
 
+// WriteNewOwnerOnly is WriteOwnerOnly for a file that must not exist
+// yet (a freshly minted private key): the create is exclusive
+// (O_CREATE|O_EXCL), so an existing file, a live symlink and a dangling
+// one are all refused with an fs.ErrExist error instead of being
+// written through. A failed write removes the file it created.
+func WriteNewOwnerOnly(path string, data []byte) error {
+	return createExclusive(path, data, fillOwnerOnly)
+}
+
+// createExclusive is WriteNewOwnerOnly with the fill step passed in, so a
+// test reaches the failed-write removal without fault injection.
+func createExclusive(path string, data []byte, fill func(*os.File, []byte) error) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := fill(f, data); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
+}
+
 // ReplaceOwnerOnly is WriteOwnerOnly for a file a crash must not leave
 // empty or half-written (a .env, a packed spec): the owner-only
 // temporary file beside path is synced and renamed over it

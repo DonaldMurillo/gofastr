@@ -162,6 +162,10 @@
       return; // at end, no-loop, silently no-op.
     }
     state.index = i;
+    // The modal stays open and its <img> only takes a new src, so the
+    // close-time reset never runs: put the zoom and pan back here, or
+    // the next picture opens magnified where the last one was left.
+    if (resetZoom) resetZoom(state.modal);
     // Instead of synthesizing a click on the sibling anchor (which can
     // bubble into the default <a target="_blank"> navigation path on
     // some browsers and is generally indirect), call the runtime's
@@ -233,9 +237,19 @@
     }).observe(modal, { attributes: true });
   }
 
+  // within: the scope itself when it matches, then its descendants.
+  // The kernel hands an arrival pass the inserted node, and a swap
+  // whose root IS the viewer must be wired too.
+  function within(root, sel) {
+    const out = [];
+    if (root.matches && root.matches(sel)) out.push(root);
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
+    return out;
+  }
+
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-fui-lightbox]').forEach(function (v) {
+    within(scope, '[data-fui-lightbox]').forEach(function (v) {
       const m = modalOf(v);
       if (m) watch(m);
     });
@@ -267,9 +281,30 @@
   // ArrowLeft / ArrowRight while a lightbox is open. Keyboard nav has no
   // clicked-in element to resolve context from, so operate on the
   // topmost OPEN lightbox modal (findOpenModal, last open in DOM order).
+  //
+  // The arrows belong to the top modal layer: a modal opened above the
+  // lightbox (a command palette's search field, a confirm) keeps them,
+  // the way disclosure, dropdown and the intercept stack defer to
+  // NS._modalStack. With a lightbox on top, that lightbox steps.
+  function topLightbox() {
+    const ms = NS._modalStack;
+    if (!ms || ms.length === 0) return findOpenModal();
+    const top = ms[ms.length - 1];
+    let found = null;
+    document.querySelectorAll('[data-fui-lightbox]').forEach(function (v) {
+      const m = modalOf(v);
+      if (isOpen(m) && m.getAttribute('data-cui-widget') === top) found = m;
+    });
+    return found;
+  }
+
+  // Only a bare arrow steps. With Alt, Ctrl, Meta or Shift held the
+  // keystroke is the browser's (history back/forward, word and line
+  // jumps, selection), so it is neither handled nor cancelled.
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
-    const m = findOpenModal();
+    if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+    const m = topLightbox();
     if (!m) return;
     if (!states.get(m)) recordOpen(m);
     const st = states.get(m);
@@ -421,20 +456,22 @@
     document.addEventListener('pointerup', (e) => endPointer(e, false), true);
     document.addEventListener('pointercancel', (e) => endPointer(e, true), true);
 
-    // Reset zoom whenever the lightbox modal closes.
-    function resetAllOnClose(modal) {
-      if (isOpen(modal)) return;
+    // Reset zoom whenever the lightbox modal closes or steps.
+    resetZoom = function (modal) {
       modal.querySelectorAll('[data-fui-lightbox-image]').forEach((img) => {
         const st = zoomStates.get(img);
         if (st) reset(img, st);
       });
+    };
+    function resetAllOnClose(modal) {
+      if (!isOpen(modal)) resetZoom(modal);
     }
     // Watch the lightbox modal for hidden-attr changes (open/close)
     // so we reset zoom on close. Runs whenever the main `scan()` finds
     // a viewer (initial + SPA-nav + MutationObserver re-scan).
     pinchScannerHook = function (root) {
       const scope = root && root.querySelectorAll ? root : document;
-      scope.querySelectorAll('[data-fui-lightbox]').forEach((v) => {
+      within(scope, '[data-fui-lightbox]').forEach((v) => {
         const m = modalOf(v);
         if (!m || m.dataset.cuiLightboxPinchWatched === '1') return;
         m.dataset.cuiLightboxPinchWatched = '1';
@@ -447,6 +484,7 @@
     };
   }
   let pinchScannerHook = null;
+  let resetZoom = null;
   _installPinchZoom();
 
   NS.lightbox = { rescan: scan };

@@ -296,12 +296,14 @@ func quoteQualified(schema, name string) string {
 	return query.QuoteIdent(schema) + "." + query.QuoteIdent(name)
 }
 
-// indexName quotes prefix+table+suffix as an index name. Postgres refuses a
-// schema-qualified index name (an index lands in its table's schema), so a
-// dotted "q.Members" contributes only its folded last part.
+// indexName quotes prefix+table+suffix as an index name, fitted to 63
+// bytes (query.FitIdent) so two long table names do not cut to one
+// index. Postgres refuses a schema-qualified index name (an index lands
+// in its table's schema), so a dotted "q.Members" contributes only its
+// folded last part.
 func indexName(prefix, table, suffix string) string {
 	_, name := foldedTableRef(table)
-	return query.QuoteFolded(prefix + name + suffix)
+	return query.QuoteFolded(query.FitIdent(prefix + name + suffix))
 }
 
 // pgFindTable reports the schema holding a table named exactly name: the

@@ -151,7 +151,10 @@ keeps the UI unchanged; without a callback the default stays
   list (see below) whose Add opens the create form with this record
   prefilled, and shows how many rows its lists hold, each
   entity counted through its own read gate and scope, and Activity how
-  many trail entries it draws (50 at most, "50+" past that). Activity is
+  many trail entries it draws (50 at most, "50+" past that). The trail
+  starts after the key's last purge, or last delete on an entity with no
+  soft delete, that a later row follows, so a record that reuses a gone
+  record's hand-assigned key does not show the old one's history. Activity is
   a timeline, newest first: each entry is a sentence with the actor in
   bold ("**ada@example.com** made changes", "… created this invoice",
   "… ran Send", "… overrode the status") and how long ago, and an edit
@@ -215,7 +218,11 @@ keeps the UI unchanged; without a callback the default stays
   A `Decimal` field steps by `0.0001`, the column's four fraction
   digits, or finer when the stored value has more, so any stored value
   saves untouched. The `money` kind steps by cents, or finer when the
-  stored value has more.
+  stored value has more. A list cell, a card and the read-only view
+  show a `Decimal` or `Float` in the reader's locale, rounded to the
+  column's scale (four for that DECIMAL(19,4), or the `s` of a `RawType`
+  `NUMERIC(p,s)`/`DECIMAL(p,s)`) and padded to two places when the
+  scale has them, so 0.0049 does not read 0.00 and 10.5 reads 10.50.
   An `Image` or `File` field is an upload when the app has file storage
   (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
   named by its file name) above a `ui.FileUpload` of the types the field
@@ -366,7 +373,9 @@ base)` for one whose screens live elsewhere (an empty base draws it with
 `NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
 `Duplicate()`, `Steps(list)`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
-page keeps one `<h1>`.
+page keeps one `<h1>`. The Related tab's count is the rows those lists
+draw: each list's default view, and the filter, search and facets the URL
+sets on it, narrow the count the way they narrow the list.
 
 A builder name that is wrong — an unknown entity, a bad `As`, an unknown
 column — fails that slot with a generic message and a log line, never a
@@ -692,7 +701,9 @@ _ = list.RenderCtx(ctx)
   per caller, in a `SavedViewStore` the host backs with a table
   (`battery/admin` provides it). `?saved=<id>` opens one: its filter
   and columns apply as if they were the `filter` and `cols` params,
-  with an explicit param in the URL winning, and both are re-parsed
+  with an explicit param in the URL winning (an empty `filter=` is the
+  reader clearing the view's filter, and sort, page, column and chip
+  links keep it empty), and both are re-parsed
   and re-checked on every open — a view that no longer applies (or an
   unknown or foreign id) draws a callout and lists the All view,
   revealing nothing. The save form ("Save view", a name; shown once the
@@ -830,6 +841,9 @@ and so does an entity with no REST write routes.
   to `EveryMatchCap`, read through the same scoped handler and read hooks
   the list uses. `NoQuery`, omitted and JSON fields are left out, and a
   cell a spreadsheet would run as a formula is prefixed with a quote. A
+  number in an `Int`, `Float` or `Decimal` column is written as it is,
+  so `-12.5` stays a number a spreadsheet sums; any other value in such
+  a column is quoted like text. A
   list pinned with `Where` draws no Export link: the route reads the
   query, and a pin is not in it. Repeated `_id=<id>` parameters replace
   the query with those rows (at most `InRequestCap`, repeats counted),

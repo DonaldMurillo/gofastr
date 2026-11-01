@@ -386,7 +386,7 @@ Each entry under `fields:` accepts:
 | `max` / `min` | number | Length (strings) or value (numbers) bounds. |
 | `values` | list | Allowed values for `type: enum`. |
 | `pattern` | string | Regex the value must match (validated on write). |
-| `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `SERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
+| `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `BIGSERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned; `visibleFields` shapes the projection). |
 | `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. |
@@ -579,6 +579,10 @@ entity in production) dispatch through the same router + middleware chain
 as REST, so they inherit this session requirement automatically: no
 separate MCP-level auth wiring is needed. An anonymous MCP `posts_create`
 call against a non-public entity is refused exactly like the REST route.
+A tool call whose own arguments are wrong (an empty record id, a filter
+on a JSON field, an empty or comma-holding `_in` list) answers as
+JSON-RPC invalid params with the reason, not "internal tool error", and
+is not logged as a server error.
 
 ```yaml
 entities:
@@ -630,6 +634,15 @@ arithmetic, reading the float bound as its shortest spelling: `0.1` is
 bound that needs 16 or more significant digits (2^60, spelled in full or
 computed) is its exact binary value.
 
+An `int` field holds a 64-bit integer on both dialects: `INTEGER` on
+SQLite (64-bit there) and `BIGINT` on Postgres (`BIGSERIAL` for an
+`increment` key). Postgres's `INTEGER` is 32-bit, and an `int` column
+used to be one, so `2147483648` passed validation and failed the insert.
+A table an older build made keeps its `INTEGER` columns: the schema
+diff takes them as in sync rather than retyping every `int` column in
+the app. Widen one with a hand-written migration (see
+[migrations](migrations.md), "Generating migrations from entity changes").
+
 An `int` field takes a JSON number only when its text is a whole number:
 `3`, `3.0` and `3e2` pass, `1.0000000000000001` is refused even though
 it rounds to the float `1`. A `bool` field takes a number the same way,
@@ -656,12 +669,17 @@ explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
-A relation column is `TEXT`, except on Postgres when the target's key is
-an `int` field: there it is `INTEGER` (`BIGINT` for a `BIGSERIAL` key),
-since Postgres refuses a `TEXT` foreign key to an integer column. A target
-key that is itself a relation column to an `int` key counts the same way,
-however long the chain. SQLite compares the two by affinity, so it keeps
-`TEXT`. Either way a write stores such a reference in canonical decimal:
+A relation column is `TEXT`, except when the target's key is an `int`
+field: then it takes the key's integer type, `BIGINT` on Postgres and
+`INTEGER` on SQLite. Postgres refuses a `TEXT` foreign key to an integer
+column, and on SQLite a `TEXT` column stores `10` as `'10'`, so a range
+filter (`?author_id_gt=2`) or a sort on the foreign key compared text and
+put 10 before 2. A target key that is itself a relation column to an
+`int` key counts the same way, however long the chain. A `TEXT` foreign
+key an older build made on SQLite shows up in the schema diff as a
+destructive retype; boot never applies it, and the table rebuild a
+reviewed migration runs stores the keys as integers. Either way a write
+stores such a reference in canonical decimal:
 `"01"`, `"+1"` and `1.0` are stored as `1`, and a value that names no
 integer (`"owls"`) is a 400 with the reason `not_integer`.
 
@@ -1161,9 +1179,9 @@ a row whose column is NULL matches neither `=` nor `!=`, and no
 `OR column IS NULL` arm is added. Combine with `_in` (or a `?where=`
 `ne`/`in` leaf) when you want "everything except these".
 
-`_like` on a number, date, Bool or JSON column, or `_gt`/`_gte`/`_lt`/`_lte`
-on a Bool or JSON column, is a 400: see "Operators must suit the field's
-type" below. `_like` follows the `?q=` case contract (see "Case
+`_like` on a number, date or Bool column, `_gt`/`_gte`/`_lt`/`_lte`
+on a Bool column, and any filter on a JSON column is a 400: see
+"Operators must suit the field's type" below. `_like` follows the `?q=` case contract (see "Case
 contract" above): `?status_like=OPEN` matches `open` on both dialects,
 where a bare `LIKE` was case-sensitive on Postgres only.
 
@@ -1266,10 +1284,15 @@ like, in` — `ne` is the `!=` twin of `_ne` above, NULL semantics included.
 
 **Operators must suit the field's type.** `like` works only on a
 String, Text, Enum or UUID column, and the ordered comparisons (`gt`,
-`lt`, `gte`, `lte`) are refused on Bool and JSON: SQL orders
-`false < true`, but no caller means that, and a JSON blob has no order
-a request value can compare against. `eq`, `ne` and `in` suit every
-type. The rule is `filter.CheckOpType` (one predicate,
+`lt`, `gte`, `lte`) are refused on Bool: SQL orders `false < true`, but
+no caller means that. A JSON column takes no operator at all, plain
+equality included: SQLite stores JSON as text and compared the text,
+while Postgres compares JSONB values, so `?meta={"x":1.0}` found a stored
+`{"x":1}` on Postgres and nothing on SQLite, and key order and spacing
+split them the same way. Neither engine can give the other's answer in
+SQL, so both refuse. Filter on a scalar column instead, or promote the
+JSON key you query into its own field. `eq`, `ne` and `in` suit every
+other type. The rule is `filter.CheckOpType` (one predicate,
 `filter.OpSuitsType`, behind every surface), and every filter surface
 applies it: the flat `?field_<op>=` params, `?where=`, Go-built
 predicates (`filter.ValidatePredicate` below), the filter DSL, relation
@@ -1291,9 +1314,8 @@ value with `filter.CoerceValue` and binds it as that type:
 | Float | a decimal literal (`1`, `-2.5`, `1e3`); no hex, `_`, `NaN` or `Inf` | `float64` |
 | Decimal | a decimal literal | the text sent, every digit kept |
 | Bool | exactly what `strconv.ParseBool` accepts: `1 t T TRUE true True` and `0 f F FALSE false False` | `bool` |
-| Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
-| Date | `YYYY-MM-DD` | the text sent |
-| JSON | a JSON value (`{"a":1}`, `"x"`, `3`) | the text sent |
+| Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC. The UTC year must be 1 or later: Postgres refuses year 0000 | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
+| Date | `YYYY-MM-DD`, year 0001 or later | the text sent |
 
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).

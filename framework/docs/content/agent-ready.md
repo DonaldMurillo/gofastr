@@ -234,7 +234,14 @@ While negotiation is enabled, **both variants of a page URL — the markdown
 response *and* the HTML one — carry `Vary: Accept`**, so a shared cache keys
 on the Accept header and never replays the markdown body to a browser (or
 the HTML body to an agent). Pages on hosts without the opt-in carry no
-`Vary`, since the URL has a single representation.
+`Vary: Accept`, since the URL has a single representation.
+
+Page markdown is rendered for the caller, the way the HTML is: policy,
+`Load` and the signed-in session decide what it holds. So the negotiated
+markdown, `/llm-pages.md` and every screen's `llm.md` answer
+`Cache-Control: private, no-store` with `Vary: Cookie`, the headers the
+HTML page carries, and no shared cache stores one reader's doc for the
+next.
 
 The markdown answers with the status the HTML would: a page that draws
 its not-found state answers 404 in either, a page whose policy blocks
@@ -407,6 +414,14 @@ framework.NewApp(
     framework.WithMCPControlGate(framework.MCPRequireRole("ops")),
 )
 ```
+
+An API token carries its owner's roles, so `MCPRequireRole` narrows a
+scope-restricted caller (an API token or embed grant) to the roles its
+scopes name: it passes only with `access.RoleScope(role)`
+(`"role:admin"`; `"role:*"` and `"*:*"` cover every role) for a role
+that admits it. A `customers:read` token an admin minted for a
+reporting job does not reach the control tools. Sessions and JWTs carry
+no scopes and are unaffected.
 
 `framework.MCPRequireUser()` and `MCPRequireRole` both consult the
 `Decider` the way battery/auth's `MCPUser` and `MCPRole` do: the caller's

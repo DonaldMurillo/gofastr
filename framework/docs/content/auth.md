@@ -117,7 +117,12 @@ another change that lands while the new hash is computed wins: the
 change answers 422 on `current_password`, as for a wrong one
 (`password.change_failed`, `reason=credential_changed`). The caller
 gets a fresh session cookie that keeps the second factor the old
-session had passed; the response is `{"updated": true}`. API tokens
+session had passed; the response is `{"updated": true}`. A reset,
+another change or an account claim that finishes after this change
+revoked the sessions overtakes the fresh one: once it is stored the
+change re-reads the password hash, and when the hash is no longer the
+one it wrote, it deletes the fresh session and clears the cookie, so
+the caller signs in again. API tokens
 stay: the user minted them on purpose and revokes them under
 `/auth/tokens`. A failed current-password check emits
 `password.change_failed`.
@@ -141,7 +146,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Codes are six digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the passkey, session, magic-link or token store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the passkey, session, magic-link or token store errors, the reset still runs the other purges, then answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
 | `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
@@ -160,9 +165,9 @@ address answers as fast as an unknown one. Forgot-password puts the
 message on a bounded queue (1,024 entries) drained by eight workers;
 `BodyTemplate` and `EmailSender.Send` run on a worker, each send with
 a 30-second deadline. The client already has its 200 by then, so a
-delivery can be dropped, with a `password-reset email delivery queue
-full` or `... delivery stopped` warning (hashed address only), when
-the queue is full or the plugin has stopped. `PasswordResetPlugin.OnStop`
+delivery can be dropped, with an `email delivery queue full` or
+`email delivery stopped` warning (`plugin="password-reset"` and the
+hashed address only), when the queue is full or the plugin has stopped. `PasswordResetPlugin.OnStop`
 (an `AuthPluginOnStop`, so `AuthManager.OnStop` calls it at app
 shutdown) cancels sends in flight, closes the queue and waits for the
 workers, bounded by the context it is given. Once stopped, the plugin
@@ -309,7 +314,11 @@ login already pin). Consequences:
 - A registration attempt on an existing address creates nothing and,
   when `AuthConfig.RegisterEmailSender` is wired, emails the existing
   *holder* ("someone tried to register with your address") off the
-  timed path.
+  timed path, through the same kind of queue password reset uses: 1,024
+  entries, eight workers, a 30-second deadline per send, dropped with a
+  warning (`plugin="core"`) when full. `CorePlugin.OnStop` cancels the
+  notices in flight and waits for the workers, so a stalled provider
+  holds at most eight sends and never outlives shutdown.
 - Both branches burn the same bcrypt work (the hash is computed before
   the branch), so a clock cannot tell them apart either.
 
@@ -541,6 +550,26 @@ real across `/api`:
 app.Use(auth.TokenMiddleware(users, accounts, tokens))
 app.Use(auth.RequireAPIScopes("/api")) // ["customers:*"] token ⇒ 403 off /api/invoices
 ```
+
+Every route an entity registers names the entity's table as its resource
+(`crud.EntityRouter`, built on `router.ResourceGroup`), and the middleware
+takes that name first. The CRUD routes and their subroutes (`/{id}`,
+`/_batch`, `/_events`, `/llm.md`), the entity's `Endpoints`, and EntityUI's
+`/_bulk`, `/_export.csv` and `/_pick` all answer to the table, wherever
+they are mounted: `POST /api/v1/_batch` on a table named `v1` needs
+`v1:write`, never `_batch:write`, and an `orders` handler mounted at
+`/api/orders/v1` needs `orders:read`. An Endpoint's HTTP route and its MCP
+twin ask the same `<table>:<verb>`.
+
+For any other route, a version segment (`v1`, `v2`, `v1.2`) is skipped, so
+`/api/v1/posts` and `/api/v2/posts` both need `posts`. Whether a segment is
+a version or a table comes from the route that matched, not from how the
+path is spelled:
+with a table named `v1` mounted at `/api`, `GET /api/v1/orders` is record
+`orders` of table `v1` (route `/api/v1/{id}`) and needs `v1:read`, never
+`orders:read`. Mounted outside a router (no matched route on the request),
+the path alone cannot tell the two apart, so the middleware requires every
+candidate: `v1:read` and `orders:read`.
 
 Without it (or per-route `RequireScope`), a token's scope list is
 **advisory only**: the token still authenticates as its owner everywhere.
@@ -1477,6 +1506,15 @@ provider whose email matches a password account. A forged or altered
 `state` fails the HMAC; a mismatched session is rejected (`403`); no
 session is rejected (`401`).
 
+The link callback checks again once the link is stored. An account claim
+that overtook it has already removed every link and is deleting the
+sessions; a reset or password change has moved the hash. When the
+callback's session is gone or the password hash moved since it started,
+it removes the link it just wrote and answers 401 `auth.invalid_session`.
+The removal runs detached from the request, so a client that hangs up
+cannot keep the link; if it fails, or the store has no
+`AccountUnlinker`, the callback answers 500 `auth.link_failed`.
+
 ### Proving the mailbox claims an unverified account
 
 Anyone can register an address they do not own, or sign in through an
@@ -1496,13 +1534,17 @@ When a magic link or a reset proves the mailbox of an account that is
 still unverified, the account is claimed before the owner gets a
 session. In order:
 
-1. every OAuth link is removed;
-2. the password is cleared (magic link only; a reset keeps the new
+1. every session is deleted, so a request attaching a credential under
+   one (an OAuth link callback, a token or passkey registration) finds
+   its session gone when it checks again after writing;
+2. every OAuth link is removed;
+3. the password is cleared (magic link only; a reset keeps the new
    one);
-3. every passkey is removed;
-4. every API token issued through `TokensPlugin` is revoked;
-5. every session is deleted;
-6. the account is marked verified and `account.claimed` is emitted.
+4. every passkey is removed;
+5. every API token issued through `TokensPlugin` is revoked;
+6. every session is deleted again, since a sign-in through a credential
+   steps 2-5 removed may have minted one after step 1;
+7. the account is marked verified and `account.claimed` is emitted.
 
 The account is marked verified last, so a failure anywhere leaves it
 unverified, the request answers 500, and the next proof runs the whole

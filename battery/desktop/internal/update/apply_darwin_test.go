@@ -67,6 +67,9 @@ func TestDarwinPlatformUnbundledVersionEmpty(t *testing.T) {
 	if v := p.Version(); v != "" {
 		t.Fatalf("unbundled test binary reports version %q, want empty (never updates)", v)
 	}
+	if id := p.Identifier(); id != "" {
+		t.Fatalf("unbundled test binary reports identifier %q, want empty", id)
+	}
 	name, dir, ok := p.Bundle()
 	if ok {
 		t.Fatalf("unbundled test binary reports bundle %q in %q", name, dir)

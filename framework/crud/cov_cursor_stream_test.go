@@ -3,12 +3,14 @@ package crud
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // covItems builds an N-row "items" table with the given cursor config.
@@ -50,7 +52,8 @@ func TestCursorFields_SingleAndComposite(t *testing.T) {
 		}
 		c.Pagination.CursorField = "seq"
 	}, 0)
-	if got := ch.cursorFields(); len(got) != 1 || got[0] != "seq" {
+	// The key is the tiebreak behind a single CursorField too.
+	if got := ch.cursorFields(); len(got) != 2 || got[0] != "seq" || got[1] != "id" {
 		t.Errorf("single cursorField = %v", got)
 	}
 
@@ -245,12 +248,32 @@ func TestCursorPageRefusesNullKeyset(t *testing.T) {
 	same := func(s string) string { return s }
 	rows := []map[string]any{{"id": "a", "seq": 1}, {"id": "b", "seq": nil}, {"id": "c", "seq": 3}}
 	for _, fields := range [][]string{{"seq"}, {"seq", "id"}} {
-		if _, err := buildCursorPage(rows, fields, same, nil, 2); err == nil {
+		if _, err := buildCursorPage(rows, fields, fields[len(fields)-1:], same, nil, 2); err == nil {
 			t.Errorf("fields %v: a NULL keyset value in the last row minted a cursor", fields)
 		}
 	}
-	page, err := buildCursorPage(rows[:1:1], []string{"seq"}, same, nil, 2)
+	page, err := buildCursorPage(rows[:1:1], []string{"seq"}, []string{"seq"}, same, nil, 2)
 	if err != nil || page.HasMore {
 		t.Fatalf("a short last page: %+v, %v", page, err)
+	}
+}
+
+// More cursor fields than a token may carry mint a key-only cursor,
+// which the next request reads back by its anchor row.
+func TestCursorPastFieldCapCarriesKey(t *testing.T) {
+	same := func(s string) string { return s }
+	fields := make([]string, 65)
+	row := map[string]any{"id": "r1"}
+	for i := range 64 {
+		fields[i] = fmt.Sprintf("f%02d", i)
+		row[fields[i]] = 1
+	}
+	fields[64] = "id"
+	page, err := buildCursorPage([]map[string]any{row, row}, fields, []string{"id"}, same, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name, val, err := pagination.DecodeCursor(page.Cursor); err != nil || name != "id" || val != "r1" {
+		t.Fatalf("cursor decodes to %q=%q, %v; want the key id=r1", name, val, err)
 	}
 }

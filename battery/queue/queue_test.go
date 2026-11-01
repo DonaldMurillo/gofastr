@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -446,6 +447,108 @@ func (m *mockRedis) MoveIfEqual(_ context.Context, key, field, expect, list, val
 	m.lists[list] = append([]string{value}, m.lists[list]...)
 	delete(m.hashes[key], field)
 	return true, nil
+}
+
+// Eval implements [ScriptRunner] for the one script the queue runs,
+// eraseScript, in Go under the single mutex: the atomicity EVAL gives on a
+// real server. redis_live_test.go runs the Lua itself against one.
+func (m *mockRedis) Eval(_ context.Context, script string, keys []string, args ...any) (any, error) {
+	if script == moveScript {
+		return m.evalMove(keys, args)
+	}
+	if script != eraseScript || len(keys) != 5 || len(args) != 2 {
+		return nil, fmt.Errorf("mockRedis: unknown script call")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	uid, dry := fmt.Sprint(args[0]), fmt.Sprint(args[1]) == "1"
+	// Like the script: the raw top-level user_id token is compared with
+	// ARGV[1], json.Marshal(userID), and the payload is never decoded.
+	names := func(raw string) bool {
+		var v map[string]json.RawMessage
+		return json.Unmarshal([]byte(raw), &v) == nil && string(v["user_id"]) == uid
+	}
+	var n int64
+	for i, key := range keys[:2] {
+		for f, raw := range m.hashes[key] {
+			if i == 1 {
+				var e map[string]any
+				if json.Unmarshal([]byte(raw), &e) != nil {
+					continue
+				}
+				job, _ := e["job"].(string)
+				raw = job
+			}
+			if names(raw) {
+				n++
+				if !dry {
+					delete(m.hashes[key], f)
+				}
+			}
+		}
+	}
+	for _, key := range keys[2:] {
+		kept := m.lists[key][:0:0]
+		for _, raw := range m.lists[key] {
+			if names(raw) {
+				n++
+				if !dry {
+					continue
+				}
+			}
+			kept = append(kept, raw)
+		}
+		m.lists[key] = kept
+	}
+	return n, nil
+}
+
+// noScripts, embedded beside *mockRedis, hides mockRedis's Eval: two
+// methods of one name at the same depth cancel out, so the wrapper is no
+// [ScriptRunner] and the queue takes the paths of a client without scripts
+// (TestNoScriptsHidesEval holds it to that).
+type noScripts struct{}
+
+func (noScripts) Eval(context.Context, string, []string, ...any) (any, error) {
+	panic("noScripts.Eval is never selected")
+}
+
+// evalMove is moveScript in Go under the single mutex.
+func (m *mockRedis) evalMove(keys []string, args []any) (any, error) {
+	if len(keys) != 2 || len(args) < 1 || (len(args)-1)%4 != 0 {
+		return nil, fmt.Errorf("mockRedis: bad move script call")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kinds := fmt.Sprint(args[0])
+	src, dst := keys[0], keys[1]
+	var n int64
+	for i := 1; i < len(args); i += 4 {
+		from, expect, to, value := fmt.Sprint(args[i]), fmt.Sprint(args[i+1]), fmt.Sprint(args[i+2]), fmt.Sprint(args[i+3])
+		ok := false
+		if kinds[0] == 'h' {
+			if v, held := m.hashes[src][from]; held && v == expect {
+				delete(m.hashes[src], from)
+				ok = true
+			}
+		} else if j := slices.Index(m.lists[src], expect); j >= 0 {
+			m.lists[src] = slices.Delete(slices.Clone(m.lists[src]), j, j+1)
+			ok = true
+		}
+		if !ok {
+			continue
+		}
+		if kinds[1] == 'h' {
+			if m.hashes[dst] == nil {
+				m.hashes[dst] = make(map[string]string)
+			}
+			m.hashes[dst][to] = value
+		} else {
+			m.lists[dst] = append([]string{value}, m.lists[dst]...)
+		}
+		n++
+	}
+	return n, nil
 }
 
 func (m *mockRedis) Del(_ context.Context, keys ...string) error {

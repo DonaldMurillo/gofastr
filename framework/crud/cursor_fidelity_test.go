@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -32,6 +33,8 @@ func cursorFidelityHandler(t *testing.T) *CrudHandler {
 // exactly the seeded set, no duplicates, no missing rows. DecodeCursor
 // used to strip those codepoints, so the keyset resumed BEFORE the
 // stripped row and re-served it (and its predecessors' tail) twice.
+// The cursor carries the key now and the sort key is read back from the
+// anchor row, which must keep those codepoints the same way.
 func TestCursorPagingServesEveryRowOnce(t *testing.T) {
 	ch := cursorFidelityHandler(t)
 	titles := []string{"aa", "a\u200bb", "a\ufeffb", "mm", "zz"}
@@ -50,10 +53,7 @@ func TestCursorPagingServesEveryRowOnce(t *testing.T) {
 	cursor := ""
 	pages := 0
 	for {
-		path := "/docs?cursor=" + pagination.EncodeCursor("title", cursor) + "&limit=2"
-		if cursor == "" {
-			path = "/docs?cursor=&limit=2"
-		}
+		path := "/docs?cursor=" + url.QueryEscape(cursor) + "&limit=2"
 		req := withTestUser(httptest.NewRequest("GET", path, nil), "u1")
 		rec := httptest.NewRecorder()
 		ch.List()(rec, req)
@@ -72,7 +72,7 @@ func TestCursorPagingServesEveryRowOnce(t *testing.T) {
 		if !page.HasMore || page.Cursor == "" {
 			break
 		}
-		cursor = decodeCursorValue(t, page.Cursor)
+		cursor = page.Cursor
 		if pages > 10 {
 			t.Fatal("paging did not terminate")
 		}
@@ -90,17 +90,6 @@ func TestCursorPagingServesEveryRowOnce(t *testing.T) {
 	if len(dupes) > 0 || len(missing) > 0 {
 		t.Fatalf("cursor paging corrupted: dupes=%v missing=%v seen=%v", dupes, missing, seen)
 	}
-}
-
-// decodeCursorValue extracts the value half of an emitted cursor so the
-// test can follow the paging chain without depending on the token shape.
-func decodeCursorValue(t *testing.T, cur string) string {
-	t.Helper()
-	_, v, err := pagination.DecodeCursor(cur)
-	if err != nil {
-		t.Fatalf("decode cursor: %v", err)
-	}
-	return v
 }
 
 func mustJSONString(s string) string {

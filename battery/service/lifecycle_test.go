@@ -139,13 +139,50 @@ func TestWaitExitWatchesThePID(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
-	if err := b.waitExit(child.Process.Pid); err == nil {
+	daemon := procalive.Identify(child.Process.Pid)
+	if err := b.waitExit(daemon); err == nil {
 		t.Fatal("waitExit returned nil with no control channel but a live pid")
 	}
 	_ = child.Process.Kill()
 	_ = child.Wait()
-	if err := b.waitExit(child.Process.Pid); err != nil {
+	if err := b.waitExit(daemon); err != nil {
 		t.Fatalf("waitExit after the exit: %v", err)
+	}
+}
+
+// Once the daemon exits its pid may go to a newer process. That process
+// is not the daemon: stop must not wait it out and report "did not
+// exit", and uninstall must not refuse over it.
+func TestWaitExitIgnoresRecycledPID(t *testing.T) {
+	b, _, _ := testBattery(t, "darwin", Config{})
+	shortStopWait(t)
+	newcomer := exec.Command("sleep", "60")
+	if err := newcomer.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = newcomer.Process.Kill(); _ = newcomer.Wait() })
+	now := procalive.Identify(newcomer.Process.Pid)
+	if now.Start == 0 {
+		t.Fatal("no start value: the recycled-pid check is vacuous here")
+	}
+	// The daemon held this pid before and started at another moment.
+	daemon := procalive.Identity{PID: now.PID, Start: now.Start - 1}
+	if err := b.waitExit(daemon); err != nil {
+		t.Fatalf("waitExit on a recycled pid: %v", err)
+	}
+}
+
+// The daemon's start value is read when it answers, while its pid is
+// still certainly its own; read later, it could be a newcomer's.
+func TestRunningDaemonReadsStart(t *testing.T) {
+	b, _, _ := testBattery(t, "darwin", Config{})
+	d := startFakeDaemon(t, b, false)
+	got, err := b.runningDaemon()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PID != d.pid || got.Start == 0 || got.Start != procalive.Identify(d.pid).Start {
+		t.Fatalf("runningDaemon = %+v; want pid %d with its start value", got, d.pid)
 	}
 }
 
@@ -238,13 +275,11 @@ func TestLockInstanceRefusesSecondHolder(t *testing.T) {
 	}
 }
 
-// A daemon that accepts the stop request and never answers is wedged:
-// Windows stop ends the task instead of failing, so uninstall can go on.
-func TestTaskSchedulerStopEndsAWedgedDaemon(t *testing.T) {
-	prev := startingWait
-	startingWait = 0 // no grace for a starting daemon: one silent probe is a wedge
-	t.Cleanup(func() { startingWait = prev })
-	b, ft, _ := testBattery(t, "windows", Config{})
+// silentDaemon binds the installed layout's control socket and accepts
+// without ever answering, the way a daemon still in its builder does.
+// end closes the socket and every held connection: the process exiting.
+func silentDaemon(t *testing.T, b *Battery) (end func()) {
+	t.Helper()
 	inst, err := b.layoutFor(false)
 	if err != nil {
 		t.Fatal(err)
@@ -269,22 +304,110 @@ func TestTaskSchedulerStopEndsAWedgedDaemon(t *testing.T) {
 			mu.Unlock()
 		}
 	}()
-	end := func() {
-		ln.Close()
-		mu.Lock()
-		for _, c := range held {
-			c.Close()
-		}
-		mu.Unlock()
+	var once sync.Once
+	end = func() {
+		once.Do(func() {
+			ln.Close()
+			mu.Lock()
+			for _, c := range held {
+				c.Close()
+			}
+			mu.Unlock()
+		})
 	}
 	t.Cleanup(end)
-	ft.hook["schtasks /End"] = end
+	return end
+}
+
+// noStartingGrace makes one silent probe count: the daemon is starting
+// (or wedged) with no wait for it to answer.
+func noStartingGrace(t *testing.T) {
+	t.Helper()
+	prev := startingWait
+	startingWait = 0
+	t.Cleanup(func() { startingWait = prev })
+}
+
+// A daemon that accepts the stop request and never answers is wedged:
+// Windows stop ends the task instead of failing, so uninstall can go on.
+func TestTaskSchedulerStopEndsAWedgedDaemon(t *testing.T) {
+	noStartingGrace(t)
+	b, ft, _ := testBattery(t, "windows", Config{})
+	ft.hook["schtasks /End"] = silentDaemon(t, b)
 	if err := (taskScheduler{}).stop(b); err != nil {
 		t.Fatalf("stop of a wedged daemon: %v", err)
 	}
 	want := []string{"schtasks /End /TN dev.gofastr.svctest-S-1-5-21-7"}
 	if got := ft.got(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv\n got %q\nwant %q", got, want)
+	}
+}
+
+// A daemon whose builder never returns answers no status. macOS stop
+// boots the job out and waits for the exit, instead of refusing. A
+// SIGTERM would kill it (no handler before ready) and launchd's
+// KeepAlive would restart the crash.
+func TestLaunchdStopBootsOutStartingDaemon(t *testing.T) {
+	noStartingGrace(t)
+	b, ft, _ := testBattery(t, "darwin", Config{})
+	launchdUID(t)
+	shortStopWait(t)
+	ft.hook["launchctl bootout"] = silentDaemon(t, b)
+	if err := (launchd{}).stop(b); err != nil {
+		t.Fatalf("stop of a starting daemon: %v", err)
+	}
+	want := []string{"launchctl bootout gui/501/dev.gofastr.svctest"}
+	if got := ft.got(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv\n got %q\nwant %q", got, want)
+	}
+}
+
+// uninstall of a daemon still in its builder unregisters it, waits for
+// it to go, and then deletes, instead of refusing.
+func TestUninstallProceedsWhileStarting(t *testing.T) {
+	noStartingGrace(t)
+	b, ft, out := testBattery(t, "darwin", Config{})
+	launchdUID(t)
+	shortStopWait(t)
+	ft.hook["launchctl bootout"] = silentDaemon(t, b)
+	bin, err := b.binDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.uninstall(false); err != nil {
+		t.Fatalf("uninstall of a starting daemon: %v", err)
+	}
+	if fileExists(bin) {
+		t.Fatal("uninstall left the installed binary")
+	}
+	if !strings.Contains(out.String(), "uninstalled") {
+		t.Fatalf("uninstall output %q", out)
+	}
+}
+
+// Files stay while a starting daemon outlives the unregister.
+func TestUninstallKeepsFilesWhileStarting(t *testing.T) {
+	noStartingGrace(t)
+	b, _, _ := testBattery(t, "darwin", Config{})
+	launchdUID(t)
+	shortStopWait(t)
+	silentDaemon(t, b)
+	bin, err := b.binDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err = b.uninstall(false)
+	if err == nil || !strings.Contains(err.Error(), "nothing was deleted") {
+		t.Fatalf("uninstall error = %v; want nothing was deleted", err)
+	}
+	if !fileExists(bin) {
+		t.Fatal("uninstall deleted files while the daemon was starting")
 	}
 }
 

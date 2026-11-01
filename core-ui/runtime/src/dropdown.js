@@ -107,9 +107,14 @@
     closeAll(null);
   });
 
-  // Scan: wire up initial state for SSR'd dropdowns.
+  // Scan: wire up initial state for SSR'd dropdowns. The kernel hands
+  // the scanner each inserted node, and a node that IS the wrapper is
+  // set up like one inside a region.
   const scan = (root) => {
-    for (const w of root.querySelectorAll('[data-cui-dropdown-wrap]')) {
+    const sel = '[data-cui-dropdown-wrap]';
+    const wraps = [...root.querySelectorAll(sel)];
+    if (root.matches && root.matches(sel)) wraps.push(root);
+    for (const w of wraps) {
       const trigger = w.querySelector('[data-cui-dropdown]');
       const panel = w.querySelector('[data-cui-dropdown-panel]');
       if (!trigger || !panel) continue;

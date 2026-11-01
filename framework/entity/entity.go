@@ -144,6 +144,11 @@ type ScopeConfig struct {
 
 // PaginationConfig groups list limits and keyset cursor configuration. A
 // non-empty CursorFields composite takes precedence over CursorField.
+// Either way the CRUD list's keyset paging appends each primary-key column
+// the list does not name, as the tiebreak, and the cursor token carries
+// the key (with the sort values when they fit the cursor cap). The query
+// DSL's after() has no tiebreak: it keysets on CursorField alone, so it
+// refuses a CursorField that is neither the only key column nor Unique.
 type PaginationConfig struct {
 	CursorField  string
 	CursorFields []string
@@ -219,8 +224,9 @@ func (a AccessControl) Declared() bool {
 // same CREATE INDEX syntax; AutoMigrate emits CREATE INDEX IF NOT EXISTS so
 // re-runs are safe.
 //
-// Name is optional, when empty, AutoMigrate synthesises one as
-// "idx_<table>_<col1>_<col2>". Unique indices reject duplicate rows for the
+// Name is optional, when empty, AutoMigrate synthesises one with
+// DefaultIndexName: "idx_<table>_<col1>_<col2>", with a hashed tail when
+// that passes 63 bytes. Unique indices reject duplicate rows for the
 // chosen column set; for single-column uniqueness prefer the Field-level
 // Unique flag which lives on the column definition.
 //
@@ -237,6 +243,47 @@ type Index struct {
 	Columns    []string `json:"columns,omitempty"`
 	Unique     bool     `json:"unique,omitempty"`
 	Expression string   `json:"expression,omitempty"`
+}
+
+// DefaultIndexName is the name an index declared without one gets:
+// "idx_", the table's own name (its schema left off, since a schema there
+// would read as the index's), and its columns, joined by "_". A name past
+// 63 bytes gets a hashed tail (query.FitIdent): Postgres would cut it at
+// 63, and two names sharing those bytes became one index, so CREATE INDEX
+// IF NOT EXISTS skipped the second. Shorter names are returned as they are.
+func DefaultIndexName(table string, cols []string) string {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		table = table[i+1:]
+	}
+	return query.FitIdent("idx_" + table + "_" + strings.Join(cols, "_"))
+}
+
+// UniqueKeyName is the name of a Unique field's constraint or index:
+// <table>_<col>_key, the table's own name (its schema left off), the
+// name Postgres gives the inline UNIQUE constraint CREATE TABLE writes.
+// Past 63 bytes it is query.FitObjectName's: the longer part trimmed and
+// a hash of the whole name before the label, so no two columns share
+// one, and CREATE TABLE names the constraint itself rather than let
+// Postgres number a collision. The index migrate creates for a column
+// made Unique later, the constraint CREATE TABLE made, and the name a
+// unique violation reports all agree.
+func UniqueKeyName(table, col string) string {
+	return query.FitObjectName(tableBase(table), col, "key")
+}
+
+// LegacyUniqueKeyName is the name Postgres gave a Unique field's inline
+// constraint in a table a build before v0.96.0 created: UniqueKeyName up
+// to 63 bytes, the plain trimmed name (query.ObjectName) past it. A
+// second column trimmed to the same name got a number from Postgres, so
+// the name may belong to either.
+func LegacyUniqueKeyName(table, col string) string {
+	return query.ObjectName(tableBase(table), col, "key")
+}
+
+// tableBase is a table's own name, without the schema a qualified one
+// carries.
+func tableBase(table string) string {
+	return table[strings.LastIndexByte(table, '.')+1:]
 }
 
 // Endpoint declares a custom route owned by an entity.
@@ -630,6 +677,14 @@ func Define(name string, config EntityConfig) *Entity {
 	// validating only the declared members missed a NoQuery `id` entirely.
 	// The key columns are the tiebreak and the default.
 	// normalizeSubConfigs has populated Pagination by here.
+	// A composite naming one column twice mints a token carrying that
+	// name twice, which the decoder refuses as a duplicate key: every
+	// second page would answer 400.
+	for i, cf := range config.Pagination.CursorFields {
+		if slices.Contains(config.Pagination.CursorFields[:i], cf) {
+			panic(fmt.Sprintf("entity %q: cursor field %q is listed twice", name, cf))
+		}
+	}
 	var cursorCols []string
 	switch {
 	case len(config.Pagination.CursorFields) > 0:
@@ -637,6 +692,8 @@ func Define(name string, config EntityConfig) *Entity {
 		cursorCols = append(cursorCols, keyCols...) // auto-appended tiebreak
 	case config.Pagination.CursorField != "":
 		cursorCols = append(cursorCols, config.Pagination.CursorField)
+		// The key is the tiebreak here too, and the token carries it.
+		cursorCols = append(cursorCols, keyCols...)
 	default:
 		cursorCols = append(cursorCols, keyCols...)
 	}

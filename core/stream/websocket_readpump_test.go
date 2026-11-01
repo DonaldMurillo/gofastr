@@ -254,3 +254,35 @@ func TestCloseHandshakeFastWithoutReader(t *testing.T) {
 		t.Fatalf("Close took %v with a reciprocating peer; want <500ms (CloseTimeout=2s)", elapsed)
 	}
 }
+
+// A connection that dies under the closing handshake ends it: the read
+// pump's error is as final as the peer's Close. Shutdown's forced close
+// of a silent peer's socket left Close parked for the rest of
+// CloseTimeout, with its OnClose hooks and the read pump waiting on it.
+func TestCloseEndsWhenConnDies(t *testing.T) {
+	conn, cli := newReadPumpConn(t, WSConfig{
+		ReadLimit:       1 << 20,
+		ReadIdleTimeout: -1,
+		PongTimeout:     -1,
+		WriteTimeout:    time.Second,
+		CloseTimeout:    time.Minute,
+		requireMask:     true,
+	})
+	hooked := make(chan struct{})
+	conn.OnClose(func() { close(hooked) })
+	go func() {
+		cli.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _ = readServerFrame(cli)
+		cli.Close()
+	}()
+	start := time.Now()
+	conn.Close()
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Close took %v after the connection died; want it to end with the read pump (CloseTimeout=1m)", elapsed)
+	}
+	select {
+	case <-hooked:
+	case <-time.After(time.Second):
+		t.Fatal("OnClose hook did not run after Close returned")
+	}
+}

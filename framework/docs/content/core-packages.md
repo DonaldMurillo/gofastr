@@ -49,14 +49,18 @@ duplicate and matches tags case-insensitively, so the same body can
 mean two things to two readers; refusing it is the only resolution that
 privileges neither. Cap the size first (`http.MaxBytesReader`). The
 contracts rule GOFASTR1407 reports any raw `json.NewDecoder`/`Unmarshal`
-of request or frame bytes, so a site that does not use these helpers
+of request or frame bytes, and the repo's own `jsonexact.Unmarshal`/`Decode`
+(exact numbers, the same duplicate and case rules), so a site that does not use these helpers
 needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
 ### router
 
 A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 /pattern` registration with `{id}` path capture, concurrency-safe
-middleware chaining after registration, route groups, and sanitized path
+middleware chaining after registration (`Use` adds outside-in, the first
+added is outermost; `UseInner` adds middleware that runs after every `Use`
+and `Group` middleware in the tree, next to the handler), route groups,
+and sanitized path
 params (`Param` strips CR/LF/NUL, a decoded `/`, and smuggled `..`;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
 reader of `r.PathValue` should go through `Param` or the exported
@@ -66,7 +70,13 @@ first request that reaches it (a 500 through the recovery middleware)
 instead of returning `""`. A request built by hand with `SetPathValue`
 and no pattern is not checked. `handler.Bind` does not panic: a
 `path:"..."` field the route does not declare stays zero, so one input
-struct can serve both `POST /users` and `PUT /users/{id}`. The
+struct can serve both `POST /users` and `PUT /users/{id}`.
+`ResourceGroup(name)` returns a sub-router whose routes name the REST
+resource they serve; `RouteResource(ctx)` reads the name in middleware,
+before the handler runs; a route outside any ResourceGroup clears a
+name its request inherited from a route that redispatched it. Entity
+routes use it so `auth.RequireAPIScopes` scopes `/_batch`, the other
+subroutes and the entity's Endpoints to its table. The
 framework owns the root `*Router` and hands it to batteries and authors
 to mount routes. Direct. Start at `core/router/router.go`: `Router`.
 
@@ -118,6 +128,12 @@ HTTP status off a failed handshake but can read a close code. The
 reason is kept to printable ASCII and 123 bytes; a reserved or
 out-of-range code goes out as 1002 and is returned as an error; a
 close the peer began first still echoes the peer's own code.
+`stream.WithUpgradeHook(ctx, fn)` makes `Upgrade`, serving a request
+whose context carries it, hand `fn` each connection it opens: a server
+reaches the WebSockets its handlers own that way. `framework.App` uses
+it to close every open one with 1001 when `Shutdown` starts, since
+`http.Server.Shutdown` neither waits for nor closes a hijacked
+connection.
 
 `WebSocketConn` follows RFC 6455's strict readings: a text message
 that is not valid UTF-8 closes with 1007, a close reason that is not
@@ -152,7 +168,11 @@ packaged StateChannel consumer for rooms of peers (see
 The lossy, best-effort cross-replica transport behind real-time
 delivery. A `Fanout` interface (`Publish` / `Subscribe`) with an
 in-process backend and a Redis adapter (`NewRedis`), plus a node-id
-envelope that stops broadcasts from re-broadcasting. Indirect by
+envelope that stops broadcasts from re-broadcasting. `PublishQueue`
+publishes from hot paths without blocking; `PublishQueueReporting` is
+the same queue with a per-payload callback that runs when the payload
+is not published (backend error, timeout, or `ErrPublishDropped` on
+overflow), for a caller that must act on a loss. Indirect by
 default: the framework wires it under the event bus, the island
 manager, and `SSEBroker`. Reach for it directly only to span a new
 real-time surface across replicas. Start at `core/fanout/fanout.go`:
@@ -185,10 +205,23 @@ mount the handler behind your auth middleware; the agent card in
 
 An OpenAPI 3.1 builder plus serving handlers. A `Spec` accumulates
 paths, schemas, and security schemes and `Build()` emits the doc;
-`Handler` serves it (auth-gated by default) and `DocsHandler` serves a
-landing page whose `public` flag gates both the page and its nested
-spec route (the framework passes its `PublicOpenAPI` setting, so a
-public spec gets a public browse page). A `Spec` may carry a
+`SetDescription` fills `info.description`, which a per-request
+`RequestView` copy keeps (the docs page shows it as plain text, one
+paragraph per blank-line-separated block);
+`Handler` serves it (auth-gated by default) and `DocsHandler` serves an
+API reference page whose `public` flag gates both the page and its
+nested spec route (the framework passes its `PublicOpenAPI` setting, so
+a public spec gets a public browse page). The page lists every
+operation the caller can see (method, path, summary), grouped by tag,
+and links the spec. It is plain HTML with no script, stylesheet or
+inline style, so it renders under the default Content-Security-Policy
+in the browser's own light or dark styles, and its labels are
+`openapi.docs.*` phrases. `DocsHandlerWith(spec, DocsConfig{...})`
+chooses the paths: `BasePath` is the mount, `SpecPath` the spec under
+it (default `/openapi.json`), and `PagePath` a second page path, so
+`{BasePath: "/swagger", SpecPath: "/v1/swagger.json", PagePath:
+"/index.html"}` serves the Swagger-style layout. Anything else under
+the mount is 404. A `Spec` may carry a
 `RequestView` — a per-request spec builder the auth-gated `Handler`
 consults, so the document can drop what THIS caller may not read; the
 framework's entity spec uses it to hide entities with no read grant,
@@ -310,7 +343,8 @@ pluggable `Source`s (default `EnvSource`; `MapSource` for tests),
 recursing into nested structs with a `SCREAMING_SNAKE` prefix (value or
 pointer form: a pointer is allocated and bound when any nested key is
 present, left nil otherwise) and redacting `sensitive` values from
-errors. `validate:"min=1,max=65535"` enforces numeric bounds (string bounds
+errors, including a `Validate` error that quotes one with `%q` or
+JSON-encodes or URL-escapes it. `validate:"min=1,max=65535"` enforces numeric bounds (string bounds
 count characters; a `time.Duration` takes duration bounds such as
 `min=1s,max=5m`); `validate:"oneof=debug info warn error"` restricts string
 choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)

@@ -79,7 +79,12 @@ further tool calls. Pass `--no-http` when a parent process owns the UI.
 Built-ins are `omp`, `claude-code`, `pi`, and `codex`. `auto` chooses the first
 installed adapter in that order. `none` keeps chat journaled without spawning
 an agent. A free-form command is parsed as an executable plus arguments and
-receives the prompt as its final argument.
+receives the prompt as its final argument, after `--`. The `omp` and
+`claude-code` adapters put `--` before the prompt too, so a chat message
+that starts with a dash (`--fix the header`) reaches the agent as text
+instead of being parsed as a flag. A custom CLI has to accept `--` as the
+end of its options, as most argument parsers do. A command that already
+ends in `--` gets no second one.
 
 Kiln injects `KILN_URL`, installs the current embedded skill, and enforces an
 HTTP boundary for built-in adapters: they must mutate the app by calling
@@ -89,6 +94,9 @@ Each turn's adapter runs in its own process group on Unix. Cancelling,
 superseding or switching away from a turn kills the whole group, and so does
 the turn ending: a shell the adapter left in the background does not keep
 calling Kiln. On Windows only the adapter process itself is killed.
+Stopping `kiln serve` (Ctrl-C or SIGTERM) cancels a running turn the same
+way and waits, up to a few seconds, for the adapter to be killed before the
+process exits.
 
 ## Tools
 
@@ -113,11 +121,13 @@ Entities and data:
 - `add_entity`, `update_entity`, `delete_entity`: an entity whose CRUD
   mount (`/<api_prefix>/<table>`) is an existing page's path is refused
   with `kind: "conflict"`; `delete_entity` removes the entity's seeds
-  and hooks in the same edit, and `undo` brings them back
+  and hooks in the same edit, and `undo` brings them back; a
+  `delete_entity` whose drop SQLite refuses (another table's rows still
+  point at it) fails and leaves every table and row as it was
 - `add_field`, `delete_field`: deleting a field, or an `update_entity`
   that leaves one out, removes that column from the entity's seed rows
-  and weights in the same edit, drops a row left with no column, and
-  `undo` brings them back. The column also leaves the live table. A
+  and weights in the same edit, keeps a row left with only its `id`
+  (another seed may name it), and `undo` brings them back. The column also leaves the live table. A
   UNIQUE, key, indexed or foreign-key column, which SQLite's
   `DROP COLUMN` refuses, and an `update_entity` that makes a field
   optional or no longer unique, rebuild the table from the declared
@@ -132,9 +142,10 @@ Entities and data:
   freeze merges them into one block. A row that leaves out `id` (or sets
   it to null) gets a generated UUID, and one that leaves out `created_at`
   or `updated_at` on an entity with timestamps gets the current time, as a
-  CRUD create would. A generated id changes each time Kiln rebuilds the
-  database from the journal (boot, reset, undo), so give an `id` to a row
-  another seed or a saved link refers to. A `json` field's object, array,
+  CRUD create would. A generated id is journaled with the seed, so boot,
+  reset and undo rebuild the row with the same id and another seed can
+  refer to it; the implicit `created_at`/`updated_at` are stamped again on
+  each rebuild. A `json` field's object, array,
   number or boolean is stored as its JSON text, as a CRUD create stores
   it; a string is stored as written, so it must be JSON text already
 
@@ -322,6 +333,10 @@ cd app
 go test ./...
 ```
 
+Freeze only reads the journal, so it is safe to run while `kiln serve` is
+still running: it opens the file read-only, skips a last line that has no
+newline yet (an append in flight), and never truncates anything.
+
 Freeze writes exactly:
 
 - `build/gofastr.yml`: deterministic current app spec, ready for the
@@ -361,7 +376,9 @@ Freeze fails loudly, naming the offending key, when world data cannot
 round-trip through the app spec's YAML subset: a seed row whose every value
 is a nested object, or a props/row key containing a colon, comment marker, or
 brackets. Reshape the data (or drop the row) and re-run; a freeze that
-succeeded is guaranteed to re-parse into the same values.
+succeeded is guaranteed to re-parse into the same values. An empty object
+(a JSON column holding `{}`) freezes as a bare `key:` line, the block-style
+empty map the YAML subset reads back.
 
 `FreezeAndGenerate(ctx, world, dir, out)` performs the freeze and invokes
 `gofastr generate app gofastr.yml` when `gofastr` is on `PATH`. The

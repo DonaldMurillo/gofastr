@@ -57,8 +57,12 @@ type ModuleGrantView struct {
 	Grants []access.Permission
 
 	// Generation is the ProcessModuleStore's desired_generation read at
-	// spawn. The supervisor rejects a reverse call whose echoed generation
-	// no longer matches the store's current value, the revoke path.
+	// spawn. A view never outlives its generation: a revoke or upgrade
+	// bumps it, and the supervisor drains the connection built for the
+	// old one and cancels any spawn still starting for it, so a stale
+	// spawn never installs a peer under the old view. Reverse calls carry
+	// no generation of their own; the broker trusts the view it was
+	// installed with for as long as that connection lives.
 	Generation uint64
 }
 

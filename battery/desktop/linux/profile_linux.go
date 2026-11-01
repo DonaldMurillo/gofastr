@@ -219,9 +219,23 @@ func openPrivateProfileFile(path string) (*os.File, error) {
 	}
 	return f, nil
 }
+
+// A regular file may carry more than one hard link only when every link is
+// inside the profile: WebKit's network cache stores a body once under
+// Blobs/ and links it into each record. The walk counts the names it finds
+// for each such inode and refuses one whose link count is higher, a name
+// outside the profile the browser would write through. Cookie, origin and
+// lock files keep a single name.
 func inspectProfileTree(dir string) error {
+	type inode struct{ dev, ino uint64 }
+	type linked struct {
+		rel         string
+		nlink, seen uint64
+	}
+	var order []inode
+	links := map[inode]*linked{}
 	count := 0
-	return filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -238,15 +252,34 @@ func inspectProfileTree(dir string) error {
 			return err
 		}
 		st, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || st.Uid != uint32(os.Geteuid()) || !(info.IsDir() || info.Mode().IsRegular()) || info.Mode().Perm()&0o022 != 0 || (info.Mode().IsRegular() && st.Nlink != 1) {
+		if !ok || st.Uid != uint32(os.Geteuid()) || !(info.IsDir() || info.Mode().IsRegular()) || info.Mode().Perm()&0o022 != 0 {
 			return fmt.Errorf("desktop/linux: unsafe file in browser profile: %s", rel)
 		}
 		//gofastr:allow(routing/prefix-without-segment-boundary) cookie filename family, not a route/tree: SQLite sidecars and any backup suffix must all remain owner-only
-		if (strings.HasPrefix(rel, "cookies.sqlite") || rel == "origin.json" || rel == "profile.lock") && (!info.Mode().IsRegular() || info.Mode().Perm() != 0o600) {
+		if (strings.HasPrefix(rel, "cookies.sqlite") || rel == "origin.json" || rel == "profile.lock") && (!info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || st.Nlink != 1) {
 			return fmt.Errorf("desktop/linux: browser profile metadata/cookie file is not private: %s", rel)
+		}
+		if info.Mode().IsRegular() && st.Nlink != 1 {
+			key := inode{dev: uint64(st.Dev), ino: st.Ino}
+			l := links[key]
+			if l == nil {
+				l = &linked{rel: rel, nlink: uint64(st.Nlink)}
+				links[key] = l
+				order = append(order, key)
+			}
+			l.seen++
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	for _, key := range order {
+		if l := links[key]; l.seen != l.nlink {
+			return fmt.Errorf("desktop/linux: browser profile file is linked outside the browser profile: %s", l.rel)
+		}
+	}
+	return nil
 }
 
 type profileOrigin struct {
@@ -370,8 +403,15 @@ func (p *browserProfile) writeOrigin(port int) error {
 	closeErr = dir.Close()
 	return errors.Join(err, closeErr)
 }
+
+// checkCookieDatabase opens the jar read-write (mode=rw never creates the
+// file). A crash mid-write leaves a hot rollback journal, and a read-only
+// connection answers SQLITE_READONLY_ROLLBACK instead of recovering it, which
+// would refuse every later launch. The caller holds the profile lock, so no
+// WebKit process is writing: rolling the journal back here is the same
+// recovery WebKit's own first open would run.
 func checkCookieDatabase(path string) error {
-	u := &url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+	u := &url.URL{Scheme: "file", Path: path, RawQuery: "mode=rw"}
 	db, err := sql.Open("sqlite3", u.String())
 	if err != nil {
 		return fmt.Errorf("desktop/linux: open persistent cookies: %w", err)

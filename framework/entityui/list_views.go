@@ -317,9 +317,7 @@ func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HT
 		drop = append(drop, f.Name)
 	}
 	q := s.carry(drop...)
-	if s.savedID != "" && !s.q.Has(s.p.filter) && s.filterText != "" {
-		q.Del(s.p.saved)
-	}
+	s.clearFilter(q)
 	chips = append(chips, ui.LinkButton(ui.LinkButtonConfig{
 		Label:   i18nui.FilterClearAll.Text(ctx),
 		Href:    listHref(s.path, q),
@@ -376,7 +374,7 @@ func predicateText(p *filter.Predicate) string {
 		}
 		return strings.Join(parts, joiner)
 	}
-	quote := func(v string) string { return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"` }
+	quote := dsl.Quote
 	switch p.Op {
 	case filter.OpIn:
 		vals := make([]string, 0, len(p.Values))
@@ -398,8 +396,9 @@ func predicateText(p *filter.Predicate) string {
 
 // removeFilterHref rebuilds the filter text without term i and returns
 // the same URL with that filter. Removing the last term drops the
-// param — or, when the text came from an open saved view, drops the
-// saved param: leaving it would bring the view's filter straight back.
+// param, and with an open saved view clearFilter keeps the view's
+// filter from coming straight back: an override is carried empty, the
+// view's own text drops the saved param.
 func removeFilterHref(s *listState, terms []string, i int) string {
 	kept := make([]string, 0, len(terms)-1)
 	for j, t := range terms {
@@ -412,9 +411,7 @@ func removeFilterHref(s *listState, terms []string, i int) string {
 		q.Set(s.p.filter, strings.Join(kept, " and "))
 		return listHref(s.path, q)
 	}
-	if s.savedID != "" && !s.q.Has(s.p.filter) {
-		q.Del(s.p.saved)
-	}
+	s.clearFilter(q)
 	return listHref(s.path, q)
 }
 

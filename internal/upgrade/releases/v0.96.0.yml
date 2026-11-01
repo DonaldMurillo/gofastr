@@ -403,9 +403,9 @@ notes:
       uses:
         - gofastr/framework.App.NewModuleMigrationCoordinator
         - gofastr/framework.NewMigrationCoordinator
-  - change: "BREAKING - boot creates the <table>_<column>_key unique index for a Unique field whose column existed before it was made Unique, and fails when the column already repeats a value"
+  - change: "BREAKING - boot creates the <table>_<column>_key unique index for a Unique field whose column existed before it was made Unique, and fails when the column already repeats a value or another table or column already holds an index of that name"
     breaking: true
-    guidance: "Such a column used to accept duplicates, since only CREATE TABLE and ADD COLUMN wrote uniqueness. Before deploying, check each field made Unique after its column existed for repeated values (SELECT col, count(*) FROM t GROUP BY col HAVING count(*) > 1) and resolve them, or clear Unique."
+    guidance: "Such a column used to accept duplicates, since only CREATE TABLE and ADD COLUMN wrote uniqueness. Before deploying, check each field made Unique after its column existed for repeated values (SELECT col, count(*) FROM t GROUP BY col HAVING count(*) > 1) and resolve them, or clear Unique. Table t_a column b and table t column a_b both name t_a_b_key, and index names share a schema; when boot names such a clash, create a unique index of another name on the column, which counts as covering it."
     nodetect: "the failure depends on the rows in the database, not on the app's source"
   - change: "BREAKING for app specs - app.auth.base_path must be an absolute path with no trailing slash whose segments hold letters, digits, -, _ and ., none starting with a dot; gofastr generate refuses /auth/, auth, //host, /a//b and /.."
     breaking: true
@@ -526,3 +526,113 @@ notes:
     find:
       uses:
         - gofastr/core/mcp.WithResourceGate
+  - change: "an entity int field is BIGINT on Postgres (BIGSERIAL when it auto-increments), so it holds the int64 range validation already accepted; an INTEGER column an older build created stays and AutoMigrate reports it in sync"
+    breaking: false
+    nodetect: "the column type comes from the field kind; nothing in an app's source spells the change"
+    guidance: "Nothing to change for values within int32. A column that must hold larger values needs a hand-written migration: ALTER TABLE t ALTER COLUMN c TYPE BIGINT, plus ALTER SEQUENCE t_c_seq AS BIGINT for an auto-increment key. See gofastr docs migrations."
+  - change: "a relation column on SQLite takes the referenced key's type, INTEGER for an integer key, as Postgres already did; a TEXT foreign-key column an older build created diffs as a type change in gofastr migrate generate"
+    breaking: false
+    nodetect: "the column type comes from the referenced key; nothing in an app's source spells the change"
+    guidance: "Boot never applies a type change. Review the rebuild migrate generate writes for the table and apply it: until then range filters and sorts on that column compare the keys as text, so 10 sorts before 2."
+  - change: "a default index name, or a store index name derived from a configured table, longer than Postgres's 63-byte limit keeps its first 54 bytes and appends an 8-hex hash of the full name, so two long names that share a prefix no longer collide; shorter names are unchanged"
+    breaking: false
+    nodetect: "only names past 63 bytes change; nothing in an app's source spells the derived name"
+    guidance: "On Postgres the next boot creates the index under the new name and the old truncated one stays; gofastr migrate generate from an older snapshot also creates it, drops nothing, and keeps recording the old index, so removing or changing the index later drops both. Drop the old index by hand once the new one exists, after moving any foreign key that depends on it."
+  - change: "a Unique field's <table>_<column>_key constraint or index past 63 bytes takes the trimmed name with an 8-hex hash of the whole name before _key, and CREATE TABLE names such a constraint itself on Postgres, so two Unique columns whose names trim to one both stay unique; clearing Unique on Postgres drops the column's UNIQUE constraint whatever its name; a unique or foreign-key violation on a long table maps to its field"
+    breaking: false
+    nodetect: "only names past 63 bytes change; nothing in an app's source spells the derived name"
+    guidance: "Nothing to do. A column whose unique index was never created gets it on the next boot; rows that already repeat a value fail that boot, and the error names the column. A table an older build created keeps the names Postgres gave its long constraints: a violation on one maps to its field unless two Unique columns trim to that one name (Postgres numbered the second), and then it answers a bare 409. Rename such a constraint to the name entity.UniqueKeyName gives to have it map."
+  - change: "BREAKING - a JSON field takes no filter: ?field=, _ne, _in, a ?where= leaf, relation and include-scoped filters, the DSL and the MCP list tool answer 400, and the OpenAPI spec, generated CLI and SDK readmes stop offering one"
+    breaking: true
+    hits: review
+    guidance: "SQLite compared the stored JSON text and Postgres compared JSONB values, so the same filter matched different rows on each engine. Filter on a scalar column, or move the JSON key you query into its own field."
+    find:
+      uses:
+        - gofastr/core/schema.JSON
+  - change: "BREAKING - a list cursor carries the anchor row's CursorField(s) values and key when they fit the 16 KiB cap, and the key alone when they do not, so a long sort value no longer mints a cursor past the cap; the server reads a key-only cursor's sort values back from that row, and one whose anchor row is deleted or out of the caller's reach answers 400 with reason cursor_anchor_gone"
+    breaking: true
+    nodetect: "cursors are opaque tokens a client echoes; nothing in an app's source spells their contents"
+    guidance: "A cursor minted before the upgrade on a single CursorField other than the key answers 400 once; the client starts again from the first page (?cursor=). A client that walks a feed while rows are deleted handles the 400 cursor_anchor_gone the same way. A key-only cursor (sort values past the cap) whose anchor's sort value changes between pages continues from the new value and can skip rows; keep sort columns short where a feed must see every row. See gofastr docs cursor-pagination."
+  - change: "BREAKING - the SDK schema hash includes each entity's primary-key columns in declared order, so every app's SchemaHash changes once and the SDK docs site reports drift for SDKs generated before the upgrade"
+    breaking: true
+    nodetect: "the hash is computed from the live registry; nothing in an app's source spells it"
+    guidance: "Run gofastr generate sdk once after upgrading to record the new hash in the manifest; the drift banner then clears. From now on, reordering a composite PrimaryKey reports drift, because generated clients take the key as positional arguments in that order."
+  - change: "BREAKING - a CRUD handler bound to your own *sql.Tx (h.DB = tx, a generated repo's WithTx), and a write in a bare db.WithTx context whose record has no primary key, no longer publish live-bus events: nothing tells the framework whether your transaction commits"
+    breaking: true
+    hits: review
+    guidance: "Those events went out before your Commit and even after a Rollback. To keep them, run the write with the context from db.WithTxQueue(ctx, tx) and call queue.RunAfterCommit() after Commit succeeds; inside App.InTx or a hook nothing changes."
+    find:
+      uses:
+        - gofastr/framework/db.WithTx
+        - gofastr/framework/crud.CrudHandler.DB
+  - change: "BREAKING - WithIdempotency mounts its middleware innermost, after the app's own middleware, and keys a replay on the resolved user, tenant and held scopes; it is no longer part of DefaultMiddleware and works with WithoutDefaultMiddleware"
+    breaking: true
+    hits: review
+    guidance: "A replay is now keyed on the user your auth middleware resolved and the tenant your tenant middleware resolved, not on a hash of the credential headers. A key cached before the upgrade is not found after it, so a retry that straddles the deploy runs the handler once more. Middleware you add with Use now runs before the replay check, on replays too. Code that ranged over DefaultMiddleware(app) expecting the idempotency entry mounts it with app.Router().UseInner instead. A scope-restricted API token or embed grant gets its own replays, apart from its user's session and from tokens holding other scopes. A custom Principal keeps working; set IdempotencyConfig.Tenant when you mount the middleware yourself in a multi-tenant app, and IdempotencyConfig.Scope when some credentials hold narrower scopes than their user."
+    find:
+      uses:
+        - gofastr/framework.WithIdempotency
+        - gofastr/framework.DefaultMiddleware
+        - gofastr/core/middleware.Idempotency
+  - change: "BREAKING - an A2A task is bound to the tenant it ran in: with a tenant resolved (WithA2A wires tenant.GetTenantID, a hand-built server sets a2a.Config.Tenant), a caller sees only the tasks of its current tenant, and a2a.TaskRecord gains Tenant"
+    breaking: true
+    hits: review
+    guidance: "Tasks stored before the upgrade read as made in no tenant, so a caller acting in a tenant stops seeing them; they age out under the retention bounds. A custom a2a.Store persists TaskRecord.Tenant at CreateTask, never changes it in UpdateTask, and filters ListTasks by ListQuery.Tenanted and Tenant; declare a2a.TenantFilter once it does, or the server walks the owner's tasks for every list. The built-in SQL store adds the tenant column on open."
+    find:
+      uses:
+        - gofastr/core/a2a.Store
+        - gofastr/core/a2a.TaskRecord
+        - gofastr/core/a2a.Config
+  - change: "BREAKING - a single Pagination.CursorField pages on that field and then each primary-key column, as CursorFields already did, so rows tied on the field are no longer skipped; entity.Define refuses a Hidden or NoQuery key column behind a CursorField, since the cursor token carries the key"
+    breaking: true
+    hits: review
+    guidance: "An entity whose key column is Hidden or NoQuery and that sets CursorField panics at Define and names the column. Return the key column, or key the entity on a column the API returns. A cursor-paged list whose last row's key does not fit the 16 KiB cursor cap answers 500 with reason cursor_key_too_long; page such a list with ?page=."
+    find:
+      uses:
+        - gofastr/framework/entity.PaginationConfig
+  - change: "BREAKING - harness.Harness.CreateSession returns (ids.SessionID, error) and refuses with harness.ErrShutdown once Shutdown has begun"
+    breaking: true
+    hits: review
+    guidance: "A session created after Shutdown had taken its list was never torn down and wrote to the store Shutdown closed. Handle the error: sess, err := h.CreateSession(prov, model)."
+    find:
+      uses:
+        - gofastr/framework/experimental/harness.Harness.CreateSession
+  - change: "BREAKING - pagination.NewCursorPage returns (CursorPage, error) and refuses, with an error wrapping pagination.ErrCursorTooLong, a last-row value whose cursor would pass the 16 KiB size the decoder accepts"
+    breaking: true
+    hits: edit
+    guidance: "Take the error: page, err := pagination.NewCursorPage(rows, field, limit). A refused page carries no cursor; the old helper handed out a token the next request refused as too long. Key such a list on a shorter column, or page it by offset."
+    find:
+      uses:
+        - gofastr/framework/pagination.NewCursorPage
+  - change: "BREAKING for apps that erase user data with a RedisQueue - the queue's store eraser runs as one Lua script and needs a client that implements queue.ScriptRunner (Eval); with a client that does not, App.EraseUserData reports the queue_redis store as failed and removes nothing from it"
+    breaking: true
+    hits: review
+    guidance: "A key-by-key sweep could not prove a job gone: a worker's Dequeue or Nack moved it into each key just after the sweep read it, and a field read and deleted in two round trips could be another user's claim by then. Add Eval to your RedisClient adapter; with go-redis it is return c.rdb.Eval(ctx, script, keys, args...).Result(). With Eval the queue also runs Dequeue's claim and requeues, Replay, delayed-job promotion, and Nack and Reclaim without CompareAndMover as scripts, so a worker cannot write back a job the erasure removed. On Redis Cluster give the queue a hash-tagged name ({jobs}) so its five keys share a slot; those scripts fail with CROSSSLOT without one."
+    find:
+      uses:
+        - gofastr/battery/queue.NewRedisQueue
+  - change: "BREAKING - registry.RegisterStyle panics on a name outside ^[a-z][a-z0-9-]{0,63}$, the grammar RegisterBehavior already enforced"
+    breaking: true
+    hits: review
+    guidance: "A name holding a quote added attributes to every instance of the component. Rename the style to lowercase letters, digits and hyphens, starting with a letter: myCard and my_card become my-card. The panic names the style."
+    find:
+      uses:
+        - gofastr/core-ui/registry.RegisterStyle
+  - change: "BREAKING - auth.RequireAPIScopes checks <table>:<verb> on every route an entity registers (CRUD and its subroutes, Endpoints, EntityUI's _bulk, _export.csv and _pick, the admin entity API), wherever it is mounted, instead of the first path segment after the API prefix"
+    breaking: true
+    hits: review
+    guidance: "A record id or _batch read as the scope resource. A token scoped to a mount path that differs from its table now gets 403: a persons table mounted at /people needs persons:read, not people:read, and an Endpoint at /api/reports/run on entity orders needs orders:write. Re-mint such tokens with the table's scope. Routes no entity registers still take the resource from their path."
+    find:
+      uses:
+        - gofastr/battery/auth.RequireAPIScopes
+  - change: "Derived element ids inside an island or a deferred outlet carry that region's namespace: a section titled Features in island cart is cart--features, and in the deferred outlet l:shell#aside it is _l-shell-aside--features, on the full page and in the RPC or part answer alike"
+    breaking: false
+    nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+    guidance: "Two same-titled regions emitted one id, so aria-labelledby and #features hit the first. Update a #features link or an e2e selector that targets a derived id inside an island or a deferred outlet to the prefixed id, or give the component an explicit ID, which always wins."
+  - change: "BREAKING for direct callers of the harness event bus - engine.Bus.Replay is removed; SubscribeSince replays from the bus's window and the session log itself"
+    breaking: true
+    hits: edit
+    guidance: "Replay copied envelopes a transport had fetched from session.Store onto one channel, and every transport now resumes through SubscribeSince(ctx, since), which reads the in-memory window, then the log set with SetLog, then goes live, with a StreamGap event in place of any id range neither holds. Call bus.SetLog(store) once and replace a fetch-then-Replay with SubscribeSince; Backlog(ctx, since, limit) returns the same replay as a slice."
+    find:
+      uses:
+        - gofastr/framework/experimental/harness/engine.Bus.Replay

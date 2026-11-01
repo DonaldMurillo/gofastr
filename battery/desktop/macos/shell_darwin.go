@@ -626,9 +626,9 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 
 // killPage stops a web view's loads and navigates it to an empty
 // page: stopLoading alone does not drop an open EventSource, and a
-// closed window's web view can linger in the process-lifetime
-// autorelease pool with its page (and its SSE) still running. The
-// empty navigation tears the page down deterministically.
+// closed window's web view can stay alive until its window is freed
+// with its page (and its SSE) still running. The empty navigation
+// tears the page down deterministically.
 func killPage(wv objc.ID) {
 	if wv == 0 {
 		return
@@ -881,15 +881,29 @@ func (w *darwinWindow) Eval(js string) error {
 	case <-s.evalRes:
 	default:
 	}
+	// The handle is re-read on the main thread: a close that ran
+	// between the check above and this hop released the web view
+	// (releaseSecondaryWindow zeroes it there first).
+	closed := false
 	submit := func() {
+		if _, wv = w.ids(); wv == 0 {
+			closed = true
+			return
+		}
 		objc.Send(wv, objc.Sel("evaluateJavaScript:completionHandler:"), uintptr(objc.NSString(js)), s.evalBlock)
 	}
 	if objc.PthreadSelf() == objc.MainThreadID() {
 		submit()
+		if closed {
+			return errWindowClosed()
+		}
 		return nil
 	}
 	if err := s.onMain(submit); err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	select {
 	case out := <-s.evalRes:
@@ -940,13 +954,23 @@ func (w *darwinWindow) EvalAsync(ctx context.Context, body string) (json.RawMess
 	default:
 	}
 	src := objc.NSString(evalAsyncWrap(body))
+	closed := false
 	if err := s.onMain(func() {
+		// Re-read on the main thread: a close since the check above
+		// released the web view.
+		if _, wv = w.ids(); wv == 0 {
+			closed = true
+			return
+		}
 		args := objc.Send(objc.Class("NSDictionary"), objc.Sel("dictionary"))
 		world := objc.Send(objc.Class("WKContentWorld"), objc.Sel("pageWorld"))
 		objc.Send(wv, objc.Sel("callAsyncJavaScript:arguments:inFrame:inContentWorld:completionHandler:"),
 			uintptr(src), uintptr(args), 0, uintptr(world), s.asyncBlock)
 	}); err != nil {
 		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return nil, errWindowClosed()
 	}
 	limit := evalAsyncHardCap
 	if d, ok := ctx.Deadline(); ok {
@@ -1010,10 +1034,20 @@ func (w *darwinWindow) Snapshot(ctx context.Context) ([]byte, error) {
 		// here would deadlock.
 		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: "snapshot cannot run on the UI thread"}
 	}
+	closed := false
 	if err := s.onMain(func() {
+		// Re-read on the main thread: a close since the check above
+		// released the web view.
+		if _, wv = w.ids(); wv == 0 {
+			closed = true
+			return
+		}
 		objc.Send(wv, objc.Sel("takeSnapshotWithConfiguration:completionHandler:"), 0, s.snapBlock)
 	}); err != nil {
 		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return nil, errWindowClosed()
 	}
 	var err error
 	select {
@@ -1068,13 +1102,20 @@ func (w *darwinWindow) SetTitle(title string) error {
 	w.mu.Lock()
 	w.title = title
 	w.mu.Unlock()
+	closed := false
 	err := w.shell.onMain(func() {
-		if win, _ := w.ids(); win != 0 {
-			objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
+		win, _ := w.ids()
+		if win == 0 {
+			closed = true
+			return
 		}
+		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	return nil
 }
@@ -1082,9 +1123,11 @@ func (w *darwinWindow) SetTitle(title string) error {
 // Focus brings this window to front and activates the app.
 func (w *darwinWindow) Focus() error {
 	s := w.shell
+	closed := false
 	err := s.onMain(func() {
 		win, _ := w.ids()
 		if win == 0 {
+			closed = true
 			return
 		}
 		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
@@ -1092,6 +1135,9 @@ func (w *darwinWindow) Focus() error {
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	return nil
 }
@@ -1126,9 +1172,11 @@ func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
 	}
+	closed := false
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()
 		if win == 0 {
+			closed = true
 			return
 		}
 		objc.SendRect(win, objc.Sel("setFrame:display:"), frameToRect(f, readScreens()), 1)
@@ -1136,6 +1184,9 @@ func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	return nil
 }
@@ -1243,10 +1294,20 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 
 		webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
 			objc.Sel("initWithFrame:configuration:"), objc.Rect{W: float64(width), H: float64(height)}, uintptr(config)))
+		// Ownership (manual retain/release: nothing here runs under
+		// ARC). The web view copied config, and ucc holds userScript,
+		// so their alloc references go now. The web view, ucc and window
+		// alloc references are this window's own, given back by
+		// releaseSecondaryWindow when it closes.
+		objc.Send(config, objc.Sel("release"))
+		objc.Send(objc.ID(userScript), objc.Sel("release"))
 		window := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class(windowClass), objc.Sel("alloc"))),
 			objc.Sel("initWithContentRect:styleMask:backing:defer:"),
 			objc.Rect{W: float64(width), H: float64(height)},
 			mask, 2 /* buffered */, 0))
+		// NSWindow defaults to releasing itself on close and NSPanel
+		// does not; one rule for both: the close path releases it.
+		objc.Send(window, objc.Sel("setReleasedWhenClosed:"), 0)
 		objc.Send(window, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
 		objc.Send(window, objc.Sel("setContentView:"), uintptr(webView))
 		objc.Send(window, objc.Sel("setDelegate:"), uintptr(bridge))
@@ -1324,6 +1385,35 @@ func (s *darwinShell) forgetWindow(w *darwinWindow) {
 	delete(s.windowsByID, w.id)
 	delete(s.windowsByUCC, ucc)
 	s.mu.Unlock()
+}
+
+// releaseSecondaryWindow gives back a closed secondary window's native
+// objects. It runs on the main thread from windowShouldClose:, after
+// forgetWindow and killPage. The handles are zeroed first, so every
+// later call on the Window reports it closed instead of messaging a
+// freed object. The ucc drops its handler (its strong reference to the
+// bridge); the web view's alloc reference goes now (its superview keeps
+// it until the window goes); the window is autoreleased, so it outlives
+// the close AppKit runs after the delegate returns and is freed when
+// the current event's pool drains.
+func releaseSecondaryWindow(w *darwinWindow) {
+	objc.AssertMainThread("releaseSecondaryWindow")
+	w.mu.Lock()
+	win, wv, ucc := w.window, w.webView, w.ucc
+	w.window, w.webView, w.ucc = 0, 0, 0
+	w.mu.Unlock()
+	if ucc != 0 {
+		objc.Send(ucc, objc.Sel("removeScriptMessageHandlerForName:"), uintptr(objc.NSString(bridgeMessageHandlerName)))
+		objc.Send(ucc, objc.Sel("release"))
+	}
+	if wv != 0 {
+		objc.Send(wv, objc.Sel("setNavigationDelegate:"), 0)
+		objc.Send(wv, objc.Sel("release"))
+	}
+	if win != 0 {
+		objc.Send(win, objc.Sel("setDelegate:"), 0)
+		objc.Send(win, objc.Sel("autorelease"))
+	}
 }
 
 // startWindowDrag begins a native drag on the window that owns the

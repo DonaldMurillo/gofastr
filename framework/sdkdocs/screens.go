@@ -61,7 +61,7 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 // The drawer is mounted once for every page, so it marks no page: the
 // runtime's active-link pass marks the one the reader is on.
 func sectionMenuDrawer(s *site) *widget.Builder {
-	return interactive.SectionMenuDrawer(s.menuConfig(""))
+	return interactive.SectionMenuDrawerFunc(func(context.Context) interactive.SectionMenuConfig { return s.menuConfig("") })
 }
 
 // page wraps a screen body in the standard doc chrome (nav rail, crumbs,
@@ -196,6 +196,13 @@ func (s *site) downloads(m *sdk.Manifest) []render.HTML {
 				code("sdkdocs.Config.Artifacts"), text(" at the dist directory:")),
 			ui.TerminalBlock(ui.TerminalBlockConfig{Label: "$ generate"},
 				text("gofastr generate sdk")),
+		}
+	}
+	if !s.artifactsDocumented(m) {
+		return []render.HTML{
+			para(text("Downloads are withheld on this deployment: the generated SDKs cover entities this reference does not document. Regenerate them for the documented entities:")),
+			ui.TerminalBlock(ui.TerminalBlockConfig{Label: "$ generate"},
+				text("gofastr generate sdk --only=<entities>")),
 		}
 	}
 	stamp := fmt.Sprintf("Version %s · generated with gofastr %s", m.SDKVersion, m.GofastrVersion)
@@ -718,8 +725,8 @@ await api.%s.watch((event) => console.log(event), { signal });`,
 // _gte comparison reads best on one), else the first such field whose
 // type accepts a range comparison (filter.OpSuitsType — the one
 // predicate every filter surface applies), else the first such field
-// with "" (equality suits every type), else created_at, else the
-// primary key.
+// whose type accepts equality, with "" (a JSON column takes no filter),
+// else created_at, else the primary key.
 func exampleFilter(cfg entity.EntityConfig) (field, op string) {
 	first, anyGte := "", ""
 	for _, f := range cfg.Fields {
@@ -742,7 +749,7 @@ func exampleFilter(cfg entity.EntityConfig) (field, op string) {
 		if filter.OpSuitsType(filter.OpGte, f.Type) && anyGte == "" {
 			anyGte = f.Name
 		}
-		if first == "" {
+		if first == "" && filter.OpSuitsType(filter.OpEq, f.Type) {
 			first = f.Name
 		}
 	}

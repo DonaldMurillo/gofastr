@@ -62,6 +62,13 @@ type fanoutMsg struct {
 	Status  json.RawMessage `json:"s,omitempty"` // status
 	Signal  *signalPayload  `json:"g,omitempty"` // signal
 	Members []PeerInfo      `json:"m,omitempty"` // roster
+	// Seq numbers a signal per sending socket and target seat, from 1;
+	// ToOrder is the target seat's Order the sender addressed. The
+	// target's replica closes the target on a gap: a backend subscriber
+	// queue that drops a signal on overflow tells nobody, so the number
+	// is the only way the loss shows. Zero means unnumbered.
+	Seq     uint64 `json:"q,omitempty"`
+	ToOrder int64  `json:"o,omitempty"`
 	// At is the sender's clock at publish, unix nanoseconds. A join
 	// mirror older than the local socket it would displace is stale (the
 	// peer moved HERE after that mirror left) and is dropped; see
@@ -79,15 +86,20 @@ type remoteEntry struct {
 
 // publishFanout marshals one message through the (async, non-blocking)
 // send. Marshal of a plain struct cannot fail in a way the program can
-// recover from; a failure is silently dropped (lossy lane).
-func publishFanout(send func([]byte), nodeID string, msg fanoutMsg) {
+// recover from. failed, when non-nil, runs if the message is not
+// published (see fanout.PublishQueueReporting), a marshal failure
+// included; nil leaves the loss to the lossy lane.
+func publishFanout(send func([]byte, func(error)), nodeID string, msg fanoutMsg, failed func(error)) {
 	msg.Node = nodeID
 	msg.At = time.Now().UnixNano()
 	body, err := json.Marshal(msg)
 	if err != nil {
+		if failed != nil {
+			failed(err)
+		}
 		return
 	}
-	send(fanout.Wrap(nodeID, body))
+	send(fanout.Wrap(nodeID, body), failed)
 }
 
 // SetFanout wires cross-replica relay. Duck-typed to the framework's
@@ -100,7 +112,7 @@ func (s *Signaler) SetFanout(f fanout.Fanout) (func(), error) {
 		return nil, errors.New("rtc: SetFanout: nil fanout")
 	}
 	nodeID := fanout.NewNodeID()
-	send, stopQ := fanout.PublishQueue(f, rtcFanoutTopic, 0)
+	send, stopQ := fanout.PublishQueueReporting(f, rtcFanoutTopic, 0)
 
 	s.mu.Lock()
 	if s.closed {
@@ -309,7 +321,7 @@ func (s *Signaler) broadcastRosterLocked(roomName string) {
 			msg.Members = append(msg.Members, rm.peers[id].info)
 		}
 	}
-	publishFanout(s.fanoutSend, s.nodeID, msg)
+	publishFanout(s.fanoutSend, s.nodeID, msg, nil)
 }
 
 // onFanoutMessage integrates one lane message. Own-node envelopes are
@@ -328,7 +340,7 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 	if msg.Kind == "" || msg.Room == "" {
 		return
 	}
-	var kick, full []*stream.WebSocketConn
+	var kick, full, lost []*stream.WebSocketConn
 	s.mu.Lock()
 	if s.fanout == nil || msg.Node == "" || msg.Node == s.nodeID || origin == s.nodeID {
 		s.mu.Unlock()
@@ -342,7 +354,7 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 	case evStatus:
 		s.remoteStatusLocked(origin, &msg)
 	case evSignal:
-		s.remoteSignalLocked(&msg)
+		s.remoteSignalLocked(&msg, &lost)
 	case evRoster:
 		s.remoteRosterLocked(origin, &msg, &full)
 	}
@@ -358,6 +370,10 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 		s.logger.Warn("rtc: peer closed", "reason", "room_full")
 		go func() { _ = conn.CloseWithStatus(4000+http.StatusConflict, "room full") }()
 	}
+	for _, conn := range lost {
+		s.logger.Warn("rtc: peer closed", "reason", "signal_lost")
+		go conn.Close()
+	}
 }
 
 // mirrorLocked publishes one event mirror (join/leave/status) to the
@@ -369,7 +385,7 @@ func (s *Signaler) mirrorLocked(roomName string, msg fanoutMsg) {
 		return
 	}
 	msg.Room = roomName
-	publishFanout(s.fanoutSend, s.nodeID, msg)
+	publishFanout(s.fanoutSend, s.nodeID, msg, nil)
 }
 
 // localRoomLocked returns the room when it has local members to tell.
@@ -527,8 +543,13 @@ func (s *Signaler) remoteStatusLocked(origin string, msg *fanoutMsg) {
 }
 
 // remoteSignalLocked delivers one fanout-routed signal to its target
-// when this replica owns it.
-func (s *Signaler) remoteSignalLocked(msg *fanoutMsg) {
+// when this replica owns it. A numbered signal addressed to the target's
+// current seat that skips a number means the lane lost one on the way
+// (the backend's subscriber queue drops its oldest payload on overflow,
+// silently): the target's socket is appended to lost and closed outside
+// the lock, as the sender's socket closes on a publish-side loss, so the
+// client reconnects and the pair renegotiates.
+func (s *Signaler) remoteSignalLocked(msg *fanoutMsg, lost *[]*stream.WebSocketConn) {
 	sig := msg.Signal
 	if sig == nil || sig.To == "" || sig.From == "" || sig.From == sig.To {
 		return
@@ -545,7 +566,14 @@ func (s *Signaler) remoteSignalLocked(msg *fanoutMsg) {
 	if rm == nil {
 		return
 	}
-	if _, mine := rm.peers[sig.To]; !mine {
+	target, mine := rm.peers[sig.To]
+	if !mine {
+		return
+	}
+	// A signal addressed to an earlier seat of this id predates the
+	// socket's count; it is delivered as before and not counted.
+	if msg.ToOrder == target.info.Order && target.signalGapLocked(sig.From, msg.Seq) {
+		*lost = append(*lost, target.conn)
 		return
 	}
 	s.publishLocked(rm, evSignal, roomEvent{kind: evSignal, signal: sig})

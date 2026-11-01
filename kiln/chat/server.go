@@ -18,8 +18,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
-	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 	"github.com/DonaldMurillo/gofastr/kiln/internal/kid"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/toolargs"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
@@ -426,12 +426,12 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 	var callID string
 	if journaledTools[name] {
 		// The envelope is journaled only for a body that parses: garbage
-		// must not mint journal history. decodeToolArgs (map shape)
+		// must not mint journal history. toolargs.Decode (map shape)
 		// refuses duplicate and case-folded top-level keys the same way
 		// the typed decode below does, and keeps big integers exact.
 		var args map[string]any
 		if len(body) > 0 {
-			if err := decodeToolArgs(body, &args); err != nil {
+			if err := toolargs.Decode(body, &args); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -539,137 +539,124 @@ func writeResult(w http.ResponseWriter, res protocol.Result) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-// decodeToolArgs is the one decode for a tool-call body: strict
-// (duplicate and case-folded keys are ambiguity, not data) and exact.
-// An `any` slot (entity properties, a field default, page props, action
-// params, seed rows) keeps an integer past 2^53 with its digits, where a
-// plain decode rounded 9007199254740993 to 9007199254740992 before the
-// value was journaled.
-func decodeToolArgs(body []byte, dst any) error {
-	if err := handler.UnmarshalStrict(body, dst, handler.UseNumber()); err != nil {
-		return err
-	}
-	return jsonexact.Settle(dst)
-}
-
 // dispatch is the bridge from JSON tool calls to typed Tools methods. The
-// buffered body decodes through decodeToolArgs, with the size cap applied
+// buffered body decodes through toolargs.Decode, with the size cap applied
 // by the caller that buffered it.
 func (s *Server) dispatch(ctx context.Context, name string, body []byte) (protocol.Result, error) {
 	switch name {
 	case "world_get":
 		var args protocol.WorldGetArgs
 		if len(body) > 0 {
-			if err := decodeToolArgs(body, &args); err != nil {
+			if err := toolargs.Decode(body, &args); err != nil {
 				return protocol.Result{}, err
 			}
 		}
 		return s.tools.WorldGet(ctx, args), nil
 	case "set_app_config":
 		var args protocol.SetAppConfigArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetAppConfig(ctx, args), nil
 	case "set_scaffold":
 		var args protocol.SetScaffoldArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetScaffold(ctx, args), nil
 	case "add_entity":
 		var args protocol.AddEntityArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddEntity(ctx, args), nil
 	case "update_entity":
 		var args protocol.UpdateEntityArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.UpdateEntity(ctx, args), nil
 	case "delete_entity":
 		var args protocol.DeleteEntityArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteEntity(ctx, args), nil
 	case "add_field":
 		var args protocol.AddFieldArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddField(ctx, args), nil
 	case "delete_field":
 		var args protocol.DeleteFieldArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteField(ctx, args), nil
 	case "add_page":
 		var args protocol.AddPageArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddPage(ctx, args), nil
 	case "delete_page":
 		var args protocol.DeletePageArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeletePage(ctx, args), nil
 	case "update_page_element":
 		var args protocol.UpdatePageElementArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.UpdatePageElement(ctx, args), nil
 	case "add_hook":
 		var args protocol.AddHookArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddHook(ctx, args), nil
 	case "delete_hook":
 		var args protocol.DeleteHookArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteHook(ctx, args), nil
 	case "add_route":
 		var args protocol.AddRouteArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddRoute(ctx, args), nil
 	case "delete_route":
 		var args protocol.DeleteRouteArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteRoute(ctx, args), nil
 	case "add_seed":
 		var args protocol.AddSeedArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddSeed(ctx, args), nil
 	case "propose_plan":
 		var args protocol.ProposePlanArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.ProposePlan(ctx, args), nil
 	case "approve_plan":
 		var args protocol.ApprovePlanArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.ApprovePlan(ctx, args), nil
 	case "reject_plan":
 		var args protocol.RejectPlanArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.RejectPlan(ctx, args), nil
@@ -679,14 +666,14 @@ func (s *Server) dispatch(ctx context.Context, name string, body []byte) (protoc
 		return s.tools.ResetSession(ctx, protocol.ResetSessionArgs{}), nil
 	case "set_theme":
 		var args protocol.SetThemeArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetTheme(ctx, args), nil
 
 	case "chat":
 		var args protocol.ChatArgs
-		if err := decodeToolArgs(body, &args); err != nil {
+		if err := toolargs.Decode(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.Chat(ctx, args), nil

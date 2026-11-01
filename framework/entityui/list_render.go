@@ -70,72 +70,9 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		return out, nil
 	}
 
-	s := &listState{m: m, key: b.key, p: listParamsFor(b.key), pins: b.where}
-	s.q = appui.QueryFromContext(ctx)
-	// The page's own path carries the sort, page and view links, so they
-	// stay on the screen the list lives in; .Base overrides where RECORD
-	// links hang off (the admin's entity page beside an app page's list).
-	s.path = b.base
-	if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
-		s.path = r.URL.Path
-	}
-	s.base = b.base
-	if s.base == "" {
-		s.base = s.path
-	}
-
-	s.createPath = b.ui.createScreenPath(m.e, s.base)
-
-	if err := s.resolveColumns(b); err != nil {
-		return "", err
-	}
-	if b.colsMenu {
-		s.applyColsParam()
-	}
-	if err := b.openSaved(ctx, s); err != nil {
-		return "", err
-	}
-	if err := b.narrow(ctx, s); err != nil {
-		return "", err
-	}
-	// The trash view: offered when the builder asked and the entity
-	// soft-deletes, shown when the URL opens it. It keeps every other
-	// scope; the read below inverts only the soft-delete term.
-	s.offeredTab = b.deleted && m.e.Config.Scope.SoftDelete
-	s.deletedView = s.offeredTab && s.view == deletedViewKey
-	s.as = b.as
-	if s.as == "" {
-		for _, v := range m.d.Views {
-			if v.Key == s.view {
-				s.as = v.As
-			}
-		}
-	}
-	if b.layoutSwitch {
-		if v := s.q.Get(s.p.as); v == "table" || v == "cards" {
-			s.as = v
-		}
-	}
-	switch s.as {
-	case "", "table", "cards":
-	default:
-		return "", fmt.Errorf("entityui: entity %q: As(%q) must be \"table\" or \"cards\"", m.name, b.as)
-	}
-
-	s.resolveSort(b)
-	s.resolvePage(b)
-
-	where, err := s.predicate(b)
+	s, read, err := b.state(ctx, m)
 	if err != nil {
 		return "", err
-	}
-	filters := s.facetFilters()
-	read := crud.ListOptions{
-		Where:   where,
-		Filters: filters,
-		Search:  s.search,
-		Fields:  s.readFields(),
-		Deleted: s.deletedView,
 	}
 	// The count only feeds pagination chrome; a refused count degrades to
 	// unknown totals rather than a failed screen, and only a known total
@@ -565,4 +502,79 @@ func (b *ListBuilder) headingLevel() int {
 // (idPath).
 func (s *listState) recordHref(id string) string {
 	return under(s.base, s.m.idPath(id))
+}
+
+// state resolves what the list reads: its columns, saved view, view,
+// filter, facets, search, sort and page, and the read options they
+// make. render draws from it, and a count of the rows the list draws
+// (the record's Related tab) reads the same options.
+func (b *ListBuilder) state(ctx context.Context, m *meta) (*listState, crud.ListOptions, error) {
+	s := &listState{m: m, key: b.key, p: listParamsFor(b.key), pins: b.where}
+	s.q = appui.QueryFromContext(ctx)
+	// The page's own path carries the sort, page and view links, so they
+	// stay on the screen the list lives in; .Base overrides where RECORD
+	// links hang off (the admin's entity page beside an app page's list).
+	s.path = b.base
+	if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
+		s.path = r.URL.Path
+	}
+	s.base = b.base
+	if s.base == "" {
+		s.base = s.path
+	}
+
+	s.createPath = b.ui.createScreenPath(m.e, s.base)
+
+	if err := s.resolveColumns(b); err != nil {
+		return nil, crud.ListOptions{}, err
+	}
+	if b.colsMenu {
+		s.applyColsParam()
+	}
+	if err := b.openSaved(ctx, s); err != nil {
+		return nil, crud.ListOptions{}, err
+	}
+	if err := b.narrow(ctx, s); err != nil {
+		return nil, crud.ListOptions{}, err
+	}
+	// The trash view: offered when the builder asked and the entity
+	// soft-deletes, shown when the URL opens it. It keeps every other
+	// scope; the read below inverts only the soft-delete term.
+	s.offeredTab = b.deleted && m.e.Config.Scope.SoftDelete
+	s.deletedView = s.offeredTab && s.view == deletedViewKey
+	s.as = b.as
+	if s.as == "" {
+		for _, v := range m.d.Views {
+			if v.Key == s.view {
+				s.as = v.As
+			}
+		}
+	}
+	if b.layoutSwitch {
+		if v := s.q.Get(s.p.as); v == "table" || v == "cards" {
+			s.as = v
+		}
+	}
+	switch s.as {
+	case "", "table", "cards":
+	default:
+		return nil, crud.ListOptions{}, fmt.Errorf("entityui: entity %q: As(%q) must be \"table\" or \"cards\"", m.name, b.as)
+	}
+
+	s.resolveSort(b)
+	s.resolvePage(b)
+
+	where, err := s.predicate(b)
+	if err != nil {
+		return nil, crud.ListOptions{}, err
+	}
+	filters := s.facetFilters()
+	read := crud.ListOptions{
+		Where:   where,
+		Filters: filters,
+		Search:  s.search,
+		Fields:  s.readFields(),
+		Deleted: s.deletedView,
+	}
+	return s, read, nil
 }

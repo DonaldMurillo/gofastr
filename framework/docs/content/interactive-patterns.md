@@ -64,6 +64,8 @@ byte-identical):
 - `ID string` — wires tab↔panel semantics: button
   `id="<ID>-tab-<i>"` + `aria-controls="<ID>-panel-<i>"`, panel
   `id="<ID>-panel-<i>"`. You own cross-page uniqueness of `ID`.
+  Without `ID` the prefix is the signal name; set `Ctx` and a second
+  strip on the same signal in one render gets `<name>-2` ids.
 - `VacateHidden bool` — hidden panels ship empty with their content in
   an adjacent JSON stash, so page-scoped test locators cannot match
   text inside hidden panels. The `headless-tabs` module restores content on
@@ -763,8 +765,11 @@ never opens" cause.
 visual half of "who is viewing this". Set `AvatarConfig.Status` to
 `ui.AvatarOnline`, `AvatarAway`, `AvatarBusy`, or `AvatarOffline`; the
 dot colors come from the status tokens, so a themed app recolors them
-for free. `StatusLabel` overrides the dot's accessible name (default:
-the status word).
+for free. `StatusLabel` overrides the dot's accessible name. The
+default is the status word ("Online", "Away", "Busy", "Offline", the
+`ui.avatar.status*` phrases) in the language of `AvatarConfig.Ctx`;
+`AvatarGroup` and `Dropdown` hand their own `Ctx` to an avatar that
+sets none.
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/ui"

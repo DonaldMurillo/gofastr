@@ -180,7 +180,7 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 		_ = c.mgr.SessionStore().Delete(ctx, sess.Token)
 
 		writeCredentialHeaders(w)
-		if fresh, ok := c.remint(ctx, sess); ok {
+		if fresh, ok := c.remint(ctx, sess, user.GetEmail(), newHash); ok {
 			mintSessionCookie(w, c.mgr.Config(), fresh.Token, fresh.ExpiresAt)
 		} else {
 			mintSessionCookie(w, c.mgr.Config(), "", time.Time{})
@@ -196,18 +196,32 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 // caller proved it in this session and the password just now. It reports
 // false when no session could be made; the password change stands and
 // the caller signs in again.
-func (c *CorePlugin) remint(ctx context.Context, old *Session) (*Session, bool) {
+//
+// A reset, another change or an account claim that finished after this
+// change revoked the sessions purged nothing the remint makes. So once the
+// fresh session is stored, the credential is re-read the way a login does:
+// a hash that is no longer newHash, the one this change wrote, means the
+// password is no longer the caller's, and the session goes.
+func (c *CorePlugin) remint(ctx context.Context, old *Session, email, newHash string) (*Session, bool) {
 	fresh, pending, err := c.mgr.MintSession(ctx, old.UserID, c.mgr.Config().SessionTTL)
 	if err != nil {
 		slog.Warn("password-change could not re-issue the session", "user_hash", hashedIdentifier(old.UserID), "err", err)
 		return nil, false
 	}
-	if !pending {
-		return fresh, true
+	if pending {
+		marker, ok := c.mgr.SessionStore().(SessionTwoFAMarker)
+		if !old.TwoFactorVerified || !ok || marker.MarkTwoFactorVerified(ctx, fresh.Token) != nil {
+			_ = c.mgr.SessionStore().Delete(ctx, fresh.Token)
+			return nil, false
+		}
 	}
-	marker, ok := c.mgr.SessionStore().(SessionTwoFAMarker)
-	if !old.TwoFactorVerified || !ok || marker.MarkTwoFactorVerified(ctx, fresh.Token) != nil {
-		_ = c.mgr.SessionStore().Delete(ctx, fresh.Token)
+	if !credentialUnchanged(ctx, c.mgr.UserStore(), email, old.UserID, newHash) {
+		undo, cancel := undoContext(ctx)
+		defer cancel()
+		if err := c.mgr.SessionStore().Delete(undo, fresh.Token); err != nil {
+			slog.Warn("password-change: dropping a session re-issued across a credential change failed",
+				"user_hash", hashedIdentifier(old.UserID), "err", err)
+		}
 		return nil, false
 	}
 	return fresh, true

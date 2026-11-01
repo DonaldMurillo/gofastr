@@ -173,3 +173,43 @@ func TestCenterPanelBareOptOut(t *testing.T) {
 		}
 	}
 }
+
+// A corner-mounted preset.Popover (no anchor attribute on its trigger)
+// and a preset.FloatingPanel paint the same surface an anchored popover
+// does. The surface rule keyed only on data-cui-popover-side, which the
+// runtime sets only when it anchors, so both floated their slot text
+// bare over the page. A toast stack shares the corner positions and
+// stays unpainted: its items are the cards.
+func TestCornerPanelsPaintSurface(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		def   widget.Definition
+		paint bool
+	}{
+		{"popover", preset.Popover("corner-pop").Slot("body", stubComponent{`<p>hi</p>`}).Build(), true},
+		{"floating-panel", preset.FloatingPanel("corner-panel").Slot("body", stubComponent{`<p>hi</p>`}).Build(), true},
+		{"toast-stack", preset.ToastStack("corner-toasts").Build(), false},
+		// The centered root is the whole viewport: Surface must not paint it.
+		{"center-ignores", widget.New("corner-center").Mount(widget.Center).Surface().Slot("body", stubComponent{`<p>hi</p>`}).Build(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chrome := widget.RenderChrome(&tc.def)
+			if got := strings.Contains(chrome, "cui-surface"); got != tc.paint {
+				t.Fatalf("chrome carries cui-surface = %v, want %v:\n%s", got, tc.paint, chrome)
+			}
+			css := fetchWidgetCSS(t, &tc.def)
+			block := ruleBlock(css, ".cui-widget.cui-surface")
+			for _, want := range []string{
+				minify.ServedCSS("background: var(--color-surface)"),
+				"border:",
+				"border-radius:",
+				"box-shadow:",
+				"max-block-size:",
+			} {
+				if !strings.Contains(block, want) {
+					t.Errorf("surface rule missing %q:\n%s", want, block)
+				}
+			}
+		})
+	}
+}

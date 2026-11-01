@@ -64,6 +64,15 @@ entities:
     # also hand anonymous callers create/update/delete on every row, the
     # exposure `gofastr generate` warns about, so reads are opened with a
     # blank `read:` and every write stays behind a real permission.
+    # read_scope narrows the anonymous read to published posts: a draft
+    # stays out of /posts, /posts/{id}, ?include= and the MCP tools unless
+    # the caller holds posts:write.
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
+      unrestricted: posts:write
     access:
       read:
       create: posts:write
@@ -109,6 +118,10 @@ entities:
   - name: comments
     # Readable by anyone; writing is gated. Same reason as posts above:
     # `public: true` grants anonymous DELETE, not just read.
+    # A comment on a draft post must stay as hidden as the post. read_scope
+    # filters only this entity's columns and the app spec has no
+    # before_get hook, so main.go does it with BeforeList/BeforeGet hooks
+    # (scopeCommentsToReadablePosts); a generated app needs the same.
     access:
       read:
       create: comments:write

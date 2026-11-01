@@ -22,8 +22,9 @@
 // The scan (demand below) runs at module load, after every navigation
 // apply (the kernel's scanner hook fires on gofastr:navigate — cached
 // replays included), when a deferred part lands (gofastr:fill — a
-// part can carry the page's only island), and on DOM insertion (the
-// kernel's MutationObserver runs the same scanner hook).
+// part can carry the page's only island), on DOM insertion (the
+// kernel's MutationObserver runs the same scanner hook), and on DOM
+// removal while the stream is open (this module's own observer).
 //
 // Connection state is mirrored onto window.__gofastr.sseStatus
 // ({ connected, lastEventAt, retryCount }), one object mutated in
@@ -186,6 +187,15 @@
   NS._moduleScanners = NS._moduleScanners || {};
   NS._moduleScanners.sse = demand;
   window.addEventListener('gofastr:fill', demand);
+  // The kernel's MutationObserver hands only ADDED nodes to the
+  // scanners, so a removal-only change (a dismissed widget holding the
+  // page's only island, a region emptied to text) never reached demand
+  // and the stream stayed open. Removals are watched here, and only
+  // while a stream is open or reconnecting: closing is the one
+  // decision a removal can change.
+  new MutationObserver((ms) => {
+    if ((source || retryTimer) && ms.some((m) => m.removedNodes.length)) demand();
+  }).observe(document.documentElement, { childList: true, subtree: true });
 
   // bfcache lifecycle. On a hard navigation Chrome puts the outgoing
   // page into the back/forward cache WITHOUT closing its EventSource:

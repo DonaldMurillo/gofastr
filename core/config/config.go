@@ -21,8 +21,10 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"reflect"
 	"sort"
@@ -153,20 +155,75 @@ func LoadWith(cfg any, sources ...Source) error {
 // redactSecrets replaces every occurrence of a bound sensitive value in
 // msg with a placeholder. Values are scrubbed longest-first so a secret
 // that contains a shorter one doesn't leave a fragment behind.
+//
+// Each secret is matched in its escaped spellings too (see
+// [secretSpellings]): a validator writing fmt.Errorf("%q", tok) turns a
+// '"' or '\' in the token into an escape, and a raw-bytes match then
+// missed the whole credential.
 func redactSecrets(msg string, secrets []string) string {
 	if len(secrets) == 0 {
 		return msg
 	}
-	ordered := make([]string, len(secrets))
-	copy(ordered, secrets)
-	sort.Slice(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
-	for _, s := range ordered {
-		if s == "" {
-			continue
+	var ordered []string
+	for _, s := range secrets {
+		if s != "" {
+			ordered = append(ordered, secretSpellings(s)...)
 		}
+	}
+	sort.SliceStable(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
+	for _, s := range ordered {
 		msg = strings.ReplaceAll(msg, s, "(redacted)")
 	}
 	return msg
+}
+
+// secretEscapers are the ways an error message commonly re-spells a
+// value: Go quoting (%q, %+q, %v of a []string), JSON with and without
+// HTML escaping, and URL query/path escaping. Each returns the body
+// without surrounding quotes, so a spelling embedded in a longer quoted
+// string still matches.
+var secretEscapers = []func(string) string{
+	func(s string) string { q := strconv.Quote(s); return q[1 : len(q)-1] },
+	func(s string) string { q := strconv.QuoteToASCII(s); return q[1 : len(q)-1] },
+	func(s string) string { return jsonBody(s, true) },
+	func(s string) string { return jsonBody(s, false) },
+	url.QueryEscape,
+	url.PathEscape,
+}
+
+// secretSpellings returns s and its escaped forms, up to two escapes
+// deep: a validator error quoted again by a wrapping %q (or JSON
+// encoded by a logger) carries the secret doubly escaped.
+func secretSpellings(s string) []string {
+	seen := map[string]bool{s: true}
+	out := []string{s}
+	level := []string{s}
+	for range 2 {
+		var next []string
+		for _, v := range level {
+			for _, esc := range secretEscapers {
+				if e := esc(v); e != "" && !seen[e] {
+					seen[e] = true
+					out = append(out, e)
+					next = append(next, e)
+				}
+			}
+		}
+		level = next
+	}
+	return out
+}
+
+// jsonBody is s JSON-encoded as a string, without the quotes.
+func jsonBody(s string, escapeHTML bool) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(escapeHTML)
+	if err := enc.Encode(s); err != nil {
+		return ""
+	}
+	q := strings.TrimSuffix(b.String(), "\n")
+	return q[1 : len(q)-1]
 }
 
 // srcHasKey reports whether src holds any key the fields of t would read

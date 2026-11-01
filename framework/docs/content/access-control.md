@@ -142,7 +142,13 @@ JWT claims, session cookie, API key lookup. **Service accounts** (see
 hold roles exactly like users and flow through the same `Policy.Can`
 path; an API token's **scopes** (`posts:read`, `*:*`) are an additional
 token-level restriction layered on top, enforced by `auth.HasScope` /
-`auth.RequireScope`, independent of the role/permission model here.
+`auth.RequireScope`. Scopes only narrow: `RequirePermission` also
+refuses a scoped caller (an API token or embed grant) whose scopes do
+not grant the permission, since the token carries its owner's roles.
+The framework's role gates (`framework.MCPRequireRole`, `/.debug`) do
+the same with `access.RoleScope(role)`: a scoped caller acts on a role
+only when it holds `"role:<role>"` (`"role:*"` and `"*:*"` cover every
+role).
 
 ## API
 
@@ -328,7 +334,12 @@ app.Router().Delete("/posts/{id}",
 ```
 
 `RequirePermission` returns `403 access denied: missing permission X`
-when the user does not hold the named permission. The error format
+when the user does not hold the named permission, or when the request
+is scope-restricted (an API token or embed grant) and no held scope
+grants it (`access.ScopeAllows`): a `customers:read` token minted by an
+admin does not pass `RequirePermission("posts:delete")`. A permission
+that is not `resource:verb` cannot be named by a scope, so a scoped
+caller never passes it. The error format
 is JSON via `core/handler.WriteError`, with `"reason":"missing_permission"`.
 
 ## The `Policy` interface

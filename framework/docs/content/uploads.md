@@ -255,8 +255,14 @@ CRUD handler. Only apps that ask for the pipeline link it.
 
 Renditions are written through the same storage backend as the original,
 into the same directory, sharing its unique base name: an original at
-`products/cover/a1b2-photo.png` yields `products/cover/a1b2-photo-sm.webp`
-and so on, so two uploads of `photo.png` never collide.
+`products/cover/photo_1730419200000000000_a1b2c3d4e5f60718.png` yields
+`products/cover/photo_1730419200000000000_a1b2c3d4e5f60718-sm.webp`
+and so on, so two uploads of `photo.png` never collide. A name too long
+for the 255-byte filesystem limit once the suffix is added loses bytes
+from the front of the base, never the random token at its end.
+Renditions and the placeholder are derived after the upload's EXIF
+orientation is applied, so a portrait phone photo yields portrait
+renditions.
 
 The metadata lands in **sibling columns**, named for the image field:
 
@@ -461,12 +467,15 @@ Uploads are bounded and content-checked before anything is stored:
   client's `Content-Type`, both of which an attacker controls. Executable
   magic bytes (PE, ELF, Mach-O) are rejected outright. Active-content
   markup is scanned in two tiers: hard tokens (`<script`, `<svg`,
-  `<iframe`, `<html`, `<!doctype`, `<object`, `<embed`, `<base`) are
+  `<iframe`, `<html`, `<!doctype`, `<object`, `<embed`, `<base`, `<math`) are
   matched anywhere in the body, so they are caught even when buried past
   the leading bytes; soft tokens (`<img`, `<?xml`, `<style`, `<link`,
   `javascript:`) are matched only in the leading 512 bytes and skipped for
-  confirmed binary types, which legitimately carry them in metadata. A
-  rejection returns `file.ErrFileFieldUnsafeContent`.
+  confirmed binary types, which legitimately carry them in metadata.
+  UTF-16 and UTF-32 text (BOM-marked, or BOM-less UTF-16 opening with
+  `<`) is scanned by character as well, since an XML parser decodes it
+  and its markup is NUL-interleaved in the raw bytes. A rejection returns
+  `file.ErrFileFieldUnsafeContent`.
 - **Metadata shape** is enforced by `FileField.Validate` for callers that
   accept a `FileField` from a request body. Beyond the scheme and `..`
   checks on `URL` and `StorageRef`, `Filename` is held to the same
@@ -526,15 +535,18 @@ What it removes:
 
 | Format | Removed | How |
 |--------|---------|-----|
-| JPEG | every APPn segment (EXIF, XMP, ICC, Photoshop data) and COM comments; anything after EOI | segments spliced out; no re-encode unless a rotation is needed |
-| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks | re-encoded (PNG is lossless, pixels unchanged) |
+| JPEG | every APPn segment (EXIF, XMP, ICC, Photoshop data) and COM comments; anything after EOI. The Adobe APP14 colour marker stays, cut to its 12 bytes: a CMYK JPEG does not decode without it | segments spliced out; no re-encode unless a rotation is needed |
+| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks | re-encoded (PNG is lossless, pixels unchanged); an animated PNG is spliced instead, every frame chunk kept |
 | WebP | `EXIF` and `XMP ` chunks | container rewritten, image bytes untouched |
 
 An EXIF orientation of 2–8 is applied first so the stripped photo still
 displays upright: JPEG and PNG bake the rotation into the pixels (the
 only path that re-compresses a JPEG, at quality 95), while WebP keeps an
 orientation-only EXIF chunk, because the WebP encoder lives above this
-layer and the container is all that can be rewritten here.
+layer and the container is all that can be rewritten here. An animated
+PNG does the same with an orientation-only `eXIf` chunk: the standard
+PNG decoder reads only the first frame, so re-encoding would store a
+still image.
 
 Behaviour worth knowing:
 

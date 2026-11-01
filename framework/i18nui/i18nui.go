@@ -241,6 +241,13 @@ var (
 	// StepRail
 	StepRailLabel = i18n.Define("ui.stepRail.label", "Page steps")
 
+	// Avatar presence dot: its accessible name when the caller sets no
+	// StatusLabel.
+	AvatarStatusOnline  = i18n.Define("ui.avatar.statusOnline", "Online")
+	AvatarStatusAway    = i18n.Define("ui.avatar.statusAway", "Away")
+	AvatarStatusBusy    = i18n.Define("ui.avatar.statusBusy", "Busy")
+	AvatarStatusOffline = i18n.Define("ui.avatar.statusOffline", "Offline")
+
 	// Component landmarks and defaults a caller may leave unnamed
 	AvatarGroupLabel    = i18n.Define("ui.avatarGroup.label", "Avatars")
 	AvatarGroupMore     = i18n.Define("ui.avatarGroup.more", "{{count}} more")
@@ -252,6 +259,7 @@ var (
 	ListDetailBack      = i18n.Define("ui.listDetail.back", "Back")
 	SidebarOpenDrawer   = i18n.Define("ui.sidebar.openDrawer", "Open navigation")
 	SidebarCloseDrawer  = i18n.Define("ui.sidebar.closeDrawer", "Close navigation")
+	SidebarDrawerLabel  = i18n.Define("ui.sidebar.drawer", "Navigation")
 	NetworkRetryTitle   = i18n.Define("ui.networkRetry.title", "Connection lost")
 	NetworkRetryText    = i18n.Define("ui.networkRetry.text", "We're having trouble reaching the server. Your changes are paused until the connection comes back.")
 	NetworkRetryNowText = i18n.Define("ui.networkRetry.retry", "Retry now")

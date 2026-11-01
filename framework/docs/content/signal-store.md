@@ -37,6 +37,10 @@ title  := CompanyName.BindAttr(ctx, "a", "title", map[string]string{"href": "/"}
 ctx-aware render interface) so it stamps the **resolved** value: the per-request
 value if a producer seeded one, else the declared default. The same resolved
 value goes into the SSR seed, so the DOM and the client store can never drift.
+That holds for an element id inside a seeded value too: HTML a producer renders
+during the page (a section whose id the page derives, `features-2`) is seeded
+with the id the page's markup shows, never the placeholder the id stood in as
+while the page rendered (`render.SettleIDs`).
 
 ## Declaring slices
 
@@ -117,6 +121,20 @@ import "github.com/DonaldMurillo/gofastr/core-ui/store"
 ```go
 ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
 ```
+
+## Attribute bindings
+
+`BindAttr` writes the slice value into the named attribute, at the server
+render and on every update. The boolean attributes `disabled`, `hidden`,
+`checked`, `open` and `selected` are on whenever present, so a false value
+(`false`, `null`, `""`, `0`, `"false"`) removes the attribute and any other
+value sets it. The server render omits a false one and writes a true one
+with an empty value (`disabled=""`), so the page never arrives with
+`disabled="false"`. On update, `checked` and `selected` also write the live
+property (`disabled`, `hidden` and `open` reflect the attribute), so a
+checkbox the reader already clicked still follows the signal. `value`
+writes the live `el.value` as well as the attribute. Other attributes,
+`aria-*` included, get the value as text.
 
 ## XSS notes
 

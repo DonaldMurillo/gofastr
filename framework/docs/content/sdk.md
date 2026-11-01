@@ -298,13 +298,28 @@ would leak into every host's CSS bundle).
 Visibility is fail-closed: by default only `Public` entities are
 documented; a gated entity's reference URL 404s exactly like a
 nonexistent one. Opt in with an explicit `Entities` allow-list or
-`IncludeGated: true`, and gate the whole site (screens AND downloads)
-with `Policy`. Hidden fields never render.
+`IncludeGated: true`, and gate the whole site (screens, downloads and
+the mobile section-menu drawer's `/chrome` and `/state` routes) with
+`Policy`. A redirecting policy refuses the drawer's fetches with 403;
+the runtime fetches them, so a redirect has nowhere to land. Hidden
+fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
 `manifest.json`. Responses carry `Cache-Control: no-cache` plus an ETag
 from the manifest hash, so stable URLs revalidate for free.
+The downloads follow the same visibility as the pages: every route
+answers 404 unless each entity the manifest's `entities` list names is
+one the site documents, and a missing manifest refuses too. Each file
+must match the SHA-256 the manifest records for it, so an artifact an
+earlier run left in dist (a `sdk-go.zip` from before a `--target=js`
+run) answers 404 instead of serving schema the manifest no longer
+names.
+`gofastr generate sdk` covers every entity by default, so for a site
+that documents only `Public` entities generate with
+`--only=<those entities>`, or widen `Entities` / `IncludeGated` if
+the gated schema is meant to ship. The overview page says when the
+downloads are withheld, and one WARN names the entities at fault.
 
 ### Drift detection
 
@@ -315,6 +330,13 @@ and shows a banner on every docs page; downloads keep working (a stale
 SDK beats none), and re-running `gofastr generate sdk` clears it. A
 manifest from a different gofastr version downgrades the check to an
 "unknown provenance" note instead of a false stale warning.
+
+The hash covers what changes a generated client: each entity's name,
+table, primary-key columns in their declared order (keyed calls take the
+key as positional arguments in that order), exposure, soft delete,
+search fields, relations, states, settings-declared endpoints and every
+non-hidden field. Reordering a composite key therefore reports drift,
+since an old SDK would pass the key arguments the wrong way round.
 
 The manifest must list the entities it covers: `ReadManifest` refuses an
 empty (or omitted) `entities` list the same way it refuses a missing

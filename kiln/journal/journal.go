@@ -152,6 +152,49 @@ func OpenJSONL(path string) (*JSONL, error) {
 	return &JSONL{path: path, file: f, count: count}, nil
 }
 
+// ReadFile returns the complete entries of the JSONL journal at path
+// without changing the file. It is the reader for a journal another
+// process may be appending to (kiln freeze beside a live kiln serve):
+// the file is opened read-only and bytes after the last '\n' are skipped,
+// since they may be an Append still in flight. OpenJSONL's torn-tail heal
+// would truncate them, and between its scan and its truncate the writer
+// can finish that line, so a reader that heals can cut off a committed
+// entry. A symlinked leaf is refused, as in OpenJSONL.
+func ReadFile(path string) ([]Entry, error) {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("journal: %s is a symlink; refusing to read the journal through it", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("journal: open %s: %w", path, err)
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	var entries []Entry
+	for n := 1; ; n++ {
+		line, err := r.ReadBytes('\n')
+		if err == io.EOF {
+			// No '\n': the unfinished tail, not an entry.
+			return entries, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("journal: read %s: %w", path, err)
+		}
+		if len(line) > maxLineBytes {
+			return nil, fmt.Errorf("journal: line %d is %d bytes, over the %d-byte scan limit", n, len(line), maxLineBytes)
+		}
+		line = bytes.TrimRight(line, "\r\n")
+		if len(line) == 0 {
+			continue
+		}
+		var e Entry
+		if err := json.Unmarshal(line, &e); err != nil {
+			return nil, fmt.Errorf("journal: parse entry %d in %s: %w", len(entries)+1, path, err)
+		}
+		entries = append(entries, e)
+	}
+}
+
 // countLines counts the complete ('\n'-terminated) journal lines in f
 // and returns the byte offset just past the last complete line. A
 // trailing fragment with no '\n' is the torn in-flight Append the crash

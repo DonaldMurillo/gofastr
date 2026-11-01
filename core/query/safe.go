@@ -1,6 +1,8 @@
 package query
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -25,6 +27,79 @@ func SafeIdent(s string) (string, error) {
 		return "", fmt.Errorf("query: unsafe SQL identifier %q", s)
 	}
 	return s, nil
+}
+
+// MaxIdentBytes is the longest identifier Postgres keeps (NAMEDATALEN-1).
+// It cuts a longer one to this length with only a NOTICE.
+const MaxIdentBytes = 63
+
+// FitIdent fits a generated object name (an index, a constraint) into
+// MaxIdentBytes. A name that fits is returned as it is. A longer one keeps
+// its first 54 bytes and ends in "_" plus 8 hex digits of the SHA-256 of
+// the whole name, ASCII-folded as unquoted DDL folds it. Postgres would
+// cut it at 63 bytes instead, and two names sharing those bytes named one
+// object: CREATE INDEX IF NOT EXISTS then skipped the second. The name is
+// a validated identifier (ASCII), so the cut never splits a character.
+func FitIdent(name string) string {
+	if len(name) <= MaxIdentBytes {
+		return name
+	}
+	return name[:MaxIdentBytes-9] + "_" + identHash(name)
+}
+
+// identHash is 8 hex digits of the SHA-256 of name, ASCII-folded as
+// unquoted DDL folds it.
+func identHash(name string) string {
+	folded := []byte(name)
+	for i, c := range folded {
+		if 'A' <= c && c <= 'Z' {
+			folded[i] = c + ('a' - 'A')
+		}
+	}
+	sum := sha256.Sum256(folded)
+	return hex.EncodeToString(sum[:4])
+}
+
+// ObjectName is the name Postgres gives an object it names itself from
+// two parts and a label, name1_name2_label (makeObjectName): the inline
+// UNIQUE constraint of column c on table t is ObjectName(t, c, "key").
+// When the whole is past MaxIdentBytes it trims the longer part one byte
+// at a time until it fits, so a short column name survives a long table
+// name and two columns of one table keep distinct names. The parts are
+// validated identifiers (ASCII), so a cut never splits a character.
+// Postgres adds a digit to the label when the name is already taken;
+// ObjectName does not, so two long names can trim to one. FitObjectName
+// names an object this code creates.
+func ObjectName(name1, name2, label string) string {
+	avail := MaxIdentBytes - len(label) - 2
+	n1, n2 := len(name1), len(name2)
+	for n1+n2 > avail {
+		if n1 > n2 {
+			n1--
+		} else {
+			n2--
+		}
+	}
+	return name1[:n1] + "_" + name2[:n2] + "_" + label
+}
+
+// FitObjectName names an object this code creates from two parts and a
+// label. A name that fits MaxIdentBytes is name1_name2_label, the name
+// Postgres gives it (ObjectName). A longer one is trimmed the way
+// ObjectName trims it, with 8 hex digits of a SHA-256 of the three parts
+// before the label, so two long names that trim to one prefix stay
+// distinct: x…xa and x…xb (60 x's) both trim to t_x…x_key, where
+// Postgres numbers the second by what already exists and CREATE INDEX IF
+// NOT EXISTS skipped it. The hash covers each part with its length, not
+// the underscore join: t_a + x…xb and t + a_x…xb join to one string, and
+// index names share a schema.
+func FitObjectName(name1, name2, label string) string {
+	whole := name1 + "_" + name2 + "_" + label
+	if len(whole) <= MaxIdentBytes {
+		return whole
+	}
+	parts := fmt.Sprintf("%d:%s|%d:%s|%d:%s", len(name1), name1, len(name2), name2, len(label), label)
+	return ObjectName(name1, name2, identHash(parts)+"_"+label)
 }
 
 // MustIdent is like SafeIdent but panics on invalid identifiers.
@@ -74,14 +149,15 @@ func QuoteFolded(s string) string {
 // QuoteIndexName quotes the name of an index or trigger built from a
 // table name. Postgres puts an index in its table's schema and refuses a
 // schema-qualified name, so only the part after the last dot is kept,
-// folded the way QuoteFolded folds it.
+// folded the way QuoteFolded folds it and fitted to 63 bytes (FitIdent),
+// so two long names that share their first 63 bytes stay two indexes.
 //
 //	QuoteIndexName("app.UserEvents_idx") → "userevents_idx"
 func QuoteIndexName(s string) string {
 	if i := strings.LastIndexByte(s, '.'); i >= 0 {
 		s = s[i+1:]
 	}
-	return QuoteFolded(s)
+	return QuoteFolded(FitIdent(s))
 }
 
 // IndexOn renders the "<index> ON <table>" part of a CREATE INDEX for an

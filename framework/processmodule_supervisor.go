@@ -304,6 +304,14 @@ type moduleSlot struct {
 	lastExit     string
 	leaseFailing bool // fail-closed: lease expired, drain in progress
 	loopStarted  bool // the supervise + heartbeat goroutines are running
+
+	// spawnSeq names the one spawn allowed to install into this slot.
+	// spawnAsync bumps it and keeps the spawn's cancel in spawnCancel; a
+	// drain bumps it again and cancels, so a spawn still starting when
+	// its generation is superseded installs nothing, writes no state, and
+	// never runs beside its replacement.
+	spawnSeq    uint64
+	spawnCancel context.CancelFunc
 }
 
 // snapshot is an RLock'd read of the slot's mutable state, for proxy /
@@ -1163,6 +1171,9 @@ func (sl *moduleSlot) setState(next ProcessState) {
 func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64) {
 	sl.setState(drainState)
 	sl.mu.Lock()
+	// A spawn still starting belongs to the state being drained: cancel
+	// it before finishDrain may start the replacement.
+	sl.supersedeSpawnLocked()
 	child := sl.child
 	peer := sl.peer
 	sl.mu.Unlock()
@@ -1236,31 +1247,90 @@ func drainReason(s ProcessState) string {
 // completion. The proxy consults state under RLock and returns 503 while
 // not Ready.
 func (sl *moduleSlot) spawnAsync(desired DesiredState) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sl.mu.Lock()
+	sl.supersedeSpawnLocked()
+	seq := sl.spawnSeq
+	sl.spawnCancel = cancel
+	sl.mu.Unlock()
 	sl.setState(StateStarting)
 	go func() {
+		defer cancel()
 		defer func() {
 			if r := recover(); r != nil {
 				sl.sup.logf("processmodule: spawn %s panic: %v\n%s", sl.name, textsafe.Recovered(r), debug.Stack())
-				sl.markCrashed("spawn panic: " + textsafe.Recovered(r))
+				sl.failSpawn(seq, "spawn panic: "+textsafe.Recovered(r), false)
 			}
 		}()
-		err := sl.spawnOnce(desired)
-		if err != nil {
-			// Integrity faults → terminal Failed; other errors → Crashed.
-			if isIntegrityFault(err) {
-				sl.markFailed(err.Error())
-			} else {
-				sl.markCrashed(err.Error())
+		err := sl.spawnOnce(ctx, seq, desired)
+		if err == nil {
+			// spawnOnce already set state = Ready and started the
+			// exit-watcher goroutine.
+			sl.mu.Lock()
+			if sl.spawnSeq == seq {
+				sl.spawnCancel = nil
 			}
+			sl.mu.Unlock()
+			return
 		}
-		// On success, spawnOnce already set state = Ready and started
-		// the exit-watcher goroutine.
+		// Integrity faults → terminal Failed; other errors → Crashed.
+		if !sl.failSpawn(seq, err.Error(), isIntegrityFault(err)) {
+			// A drain or a newer spawn took the slot over: its state is
+			// theirs to write, not this spawn's failure.
+			sl.sup.logf("processmodule: %s superseded spawn ended: %v", sl.name, err)
+		}
 	}()
 }
 
+// failSpawn records spawn seq's failure, Failed when terminal and Crashed
+// otherwise, only while seq is still the slot's current spawn. The check
+// and the write share one critical section: a newer spawn that takes the
+// slot between them and reaches Ready would otherwise be marked Crashed,
+// and the restart that follows would start a child beside the live one.
+// It reports whether it wrote.
+func (sl *moduleSlot) failSpawn(seq uint64, reason string, terminal bool) bool {
+	sl.mu.Lock()
+	if sl.spawnSeq != seq {
+		sl.mu.Unlock()
+		return false
+	}
+	sl.spawnCancel = nil
+	if terminal {
+		sl.markFailedLocked(reason)
+	} else {
+		sl.markCrashedLocked(reason)
+	}
+	sl.mu.Unlock()
+	if terminal {
+		sl.reportFailed(reason)
+	} else {
+		sl.reportCrashed(reason)
+	}
+	return true
+}
+
+// supersedeSpawnLocked retires the spawn in flight, if any: it cancels
+// that spawn's context and moves spawnSeq past it, so the spawn installs
+// nothing when it returns. sl.mu must be held.
+func (sl *moduleSlot) supersedeSpawnLocked() {
+	if sl.spawnCancel != nil {
+		sl.spawnCancel()
+		sl.spawnCancel = nil
+	}
+	sl.spawnSeq++
+}
+
+// errSpawnSuperseded is spawnOnce's abort when a drain or a newer spawn
+// took the slot over while this one was starting.
+var errSpawnSuperseded = errors.New("spawn aborted: superseded by a drain or a newer spawn")
+
 // spawnOnce runs the §4.7 startup sequence: mint instance_id, spawn,
 // handshake, poll ready. Returns nil on success (state already = Ready).
-func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
+// seq is the spawn's token from spawnAsync: every write into the slot
+// checks it under the lock, so a superseded spawn tears its own child
+// down instead of installing it. ctx is cancelled when the spawn is
+// superseded.
+func (sl *moduleSlot) spawnOnce(ctx context.Context, seq uint64, desired DesiredState) error {
 	instanceID := mintInstanceID()
 	stderr := moduleproto.NewRingSink(moduleproto.DefaultRingSinkBytes)
 	spec := ChildSpec{
@@ -1270,7 +1340,7 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 		Generation:      desired.DesiredGeneration,
 		Stderr:          stderr,
 	}
-	spawnCtx, cancel := context.WithTimeout(context.Background(), sl.sup.cfg.SpawnDeadline)
+	spawnCtx, cancel := context.WithTimeout(ctx, sl.sup.cfg.SpawnDeadline)
 	defer cancel()
 
 	child, err := sl.startChildSafely(spawnCtx, spec)
@@ -1279,6 +1349,14 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	}
 	// State → Handshaking under lock.
 	sl.mu.Lock()
+	if sl.spawnSeq != seq {
+		// A drain or a newer spawn owns the slot now; installing would
+		// run this child beside its replacement under a stale view.
+		sl.mu.Unlock()
+		_ = child.Kill()
+		_ = child.Wait()
+		return errSpawnSuperseded
+	}
 	if sl.state == StateFailed || sl.state == StateDrainingDisable || sl.sup.closed.Load() {
 		// State changed under us (operator disabled, integrity fault), or
 		// the supervisor closed: its kill pass reads sl.child after
@@ -1313,8 +1391,15 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	}
 	hostPeer.Start()
 
-	// Stash the peer so the proxy can reach it.
+	// Stash the peer so the proxy can reach it, unless a drain already
+	// took this spawn's child out of the slot (and a newer spawn may have
+	// put its own peer there).
 	sl.mu.Lock()
+	if sl.spawnSeq != seq {
+		sl.mu.Unlock()
+		teardownChild(child, hostPeer, sl.sup.cfg.BackoffMin)
+		return errSpawnSuperseded
+	}
 	sl.peer = hostPeer
 	sl.mu.Unlock()
 
@@ -1367,6 +1452,11 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	}
 	// Success. Transition to Ready and start watching the child's exit.
 	sl.mu.Lock()
+	if sl.spawnSeq != seq {
+		sl.mu.Unlock()
+		teardownChild(child, hostPeer, sl.sup.cfg.BackoffMin)
+		return errSpawnSuperseded
+	}
 	if sl.state == StateDrainingDisable || sl.state == StateFailed {
 		sl.mu.Unlock()
 		teardownChild(child, hostPeer, sl.sup.cfg.BackoffMin)
@@ -1691,13 +1781,17 @@ func (sl *moduleSlot) resetCircuit() {
 	sl.circuitOpen = false
 }
 
-// markCrashed transitions to Crashed with a diagnostic; the supervise loop
-// will pick up restart-or-Failed on its next tick.
-func (sl *moduleSlot) markCrashed(reason string) {
-	sl.mu.Lock()
+// markCrashedLocked transitions to Crashed with a diagnostic; the
+// supervise loop picks up restart-or-Failed on its next tick (failSpawn
+// wakes it through reportCrashed). sl.mu must be held.
+func (sl *moduleSlot) markCrashedLocked(reason string) {
 	sl.state = StateCrashed
 	sl.lastExit = reason
-	sl.mu.Unlock()
+}
+
+// reportCrashed logs a Crashed transition and wakes the supervise loop.
+// Called with sl.mu released.
+func (sl *moduleSlot) reportCrashed(reason string) {
 	sl.sup.logf("processmodule: %s spawn failed: %s", sl.name, reason)
 	select {
 	case sl.wake <- struct{}{}:
@@ -1705,14 +1799,16 @@ func (sl *moduleSlot) markCrashed(reason string) {
 	}
 }
 
-// markFailed transitions to terminal Failed. Used for integrity faults
-// (SHA mismatch, handshake digest mismatch, negotiation failure), a
-// restart cannot fix a bad artifact (design §8).
-func (sl *moduleSlot) markFailed(reason string) {
-	sl.mu.Lock()
+// markFailedLocked transitions to terminal Failed. Used for integrity
+// faults (SHA mismatch, handshake digest mismatch, negotiation failure),
+// a restart cannot fix a bad artifact (design §8). sl.mu must be held.
+func (sl *moduleSlot) markFailedLocked(reason string) {
 	sl.state = StateFailed
 	sl.lastExit = "failed: " + reason
-	sl.mu.Unlock()
+}
+
+// reportFailed logs a Failed transition. Called with sl.mu released.
+func (sl *moduleSlot) reportFailed(reason string) {
 	sl.sup.logf("processmodule: %s FAILED (terminal): %s", sl.name, reason)
 }
 

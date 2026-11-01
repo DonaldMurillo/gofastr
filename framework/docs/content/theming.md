@@ -20,7 +20,9 @@ warning when one arrives too late.
 `style.Theme` is a struct made of typed token groups. Every field is
 required except `Strokes`, `Leading`, `Tracking`, `Opacities`, `Code` and
 `Knobs`; `WithTheme` panics at startup and
-names any token you left out. Each group writes CSS variables with a
+names any token you left out. It also panics, naming the sheet, when an
+owned style sheet's custom media (`(--above-md)`) names a breakpoint
+the theme renamed or dropped. Each group writes CSS variables with a
 fixed prefix:
 
 | Theme group | Emits | Examples |
@@ -145,7 +147,10 @@ Three entry points produce a `style.Theme` you pass to
 - **`gofastr theme init`**: writes `theme/theme.go`, the full adaptive
   default as a literal you own and can edit directly. Use this for apps
   that will keep changing their theme over time; edit `Colors` and
-  `DarkColors` together.
+  `DarkColors` together. `--out=<path>` writes it elsewhere; the file
+  takes the package of the Go files already in that directory
+  (`--out=theme.go` beside `main.go` is `package main`), or the
+  directory's name when it has none.
 
 Check the result at `/__gofastr/app.css`; your values should show up
 as `:root` custom properties.

@@ -198,16 +198,31 @@ func yamlToAny(n *yaml.Node) any {
 // oaResolve dereferences a node: local $ref chains and a shallow allOf
 // merge of object schemas. External refs and $ref cycles fail.
 func oaResolve(root, node map[string]any) (map[string]any, error) {
-	visited := map[string]bool{}
+	return oaResolveIn(root, node, map[string]bool{})
+}
+
+// oaResolveIn resolves node with active holding the refs on the current
+// resolution path, so a cycle through an allOf member (A: allOf [$ref A])
+// is the same "$ref cycle" error as a plain $ref chain instead of
+// unbounded recursion. A ref leaves the set once its subtree is merged:
+// two allOf members sharing a base (a diamond) are not a cycle.
+func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]any, error) {
+	var entered []string
+	defer func() {
+		for _, ref := range entered {
+			delete(active, ref)
+		}
+	}()
 	for node != nil {
 		ref, ok := node["$ref"].(string)
 		if !ok {
 			break
 		}
-		if visited[ref] {
+		if active[ref] {
 			return nil, fmt.Errorf("$ref cycle through %q", ref)
 		}
-		visited[ref] = true
+		active[ref] = true
+		entered = append(entered, ref)
 		if !strings.HasPrefix(ref, "#/") {
 			return nil, fmt.Errorf("external $ref %q is not supported (local #/... refs only)", ref)
 		}
@@ -249,7 +264,7 @@ func oaResolve(root, node map[string]any) (map[string]any, error) {
 			if !ok {
 				continue
 			}
-			pm, err := oaResolve(root, pm)
+			pm, err := oaResolveIn(root, pm, active)
 			if err != nil {
 				return nil, err
 			}
@@ -515,6 +530,9 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 	sort.Strings(pathKeys)
 
 	seen := map[string]string{} // command -> "METHOD path" that claimed it
+	// goSeen is the same guard on the Go name: list_1 and list1 are two
+	// commands but both emit func runOpList1, so the CLI would not compile.
+	goSeen := map[string]string{} // GoName -> `operationId "x" (METHOD path)`
 	for _, p := range pathKeys {
 		item, ok := paths[p].(map[string]any)
 		if !ok {
@@ -551,7 +569,11 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 			if oaReservedCommands[op.Command] {
 				return spec, fmt.Errorf("%s: operationId %q maps to reserved command %q; rename the operation", where, op.ID, op.Command)
 			}
+			if prev, dup := goSeen[op.GoName]; dup {
+				return spec, fmt.Errorf("%s: operationId %q and %s both derive the Go name %s, and the generated CLI would declare runOp%s twice; rename one operation", where, op.ID, prev, op.GoName, op.GoName)
+			}
 			seen[op.Command] = where
+			goSeen[op.GoName] = fmt.Sprintf("operationId %q (%s)", op.ID, where)
 			spec.Ops = append(spec.Ops, op)
 		}
 	}

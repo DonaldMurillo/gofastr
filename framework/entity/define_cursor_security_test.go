@@ -177,3 +177,25 @@ func TestCursorCompositeMemberUndeclaredPanics(t *testing.T) {
 		Pagination: &PaginationConfig{CursorFields: []string{"created_at", "postioned_at"}},
 	})
 }
+
+// A cursor always carries the anchor row's key, whatever CursorField names, and
+// the key is the tiebreak behind it, so a Hidden key column reaches the
+// token on this spelling too (round 3 review of D33).
+func TestCursorFieldHiddenKeyPanics(t *testing.T) {
+	expectCursorPanic(t, "cursor field \"id\" is Hidden", EntityConfig{
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String, Hidden: true},
+			{Name: "name", Type: schema.String, Required: true},
+		},
+		Pagination: &PaginationConfig{CursorField: "name"},
+	})
+}
+
+// A composite naming one column twice is refused: its token would carry
+// the name twice and the decoder refuses that, so page two answered 400.
+func TestCursorFieldsListedTwicePanics(t *testing.T) {
+	expectCursorPanic(t, "is listed twice", EntityConfig{
+		Fields:     []schema.Field{{Name: "body", Type: schema.Text, Required: true}},
+		Pagination: &PaginationConfig{CursorFields: []string{"body", "body"}},
+	})
+}

@@ -153,6 +153,58 @@ func TestProfileCookieFilenameFamilyIsPrivate(t *testing.T) {
 	}
 }
 
+// WebKit's network cache stores a body of 16 KiB or more once under
+// Blobs/ and hard-links it into each record, so a relaunch must accept a
+// link that stays inside the profile. A link to a file outside it, or a
+// second name for cookie or origin data, is still refused.
+func TestProfileHardLinks(t *testing.T) {
+	blobs := filepath.Join("cache", "WebKitCache", "Version 17", "Blobs")
+	records := filepath.Join("cache", "WebKitCache", "Version 17", "Records", "P", "Resource")
+	setup := func(t *testing.T) string {
+		dir := t.TempDir()
+		for _, d := range []string{blobs, records} {
+			if err := os.MkdirAll(filepath.Join(dir, d), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, blobs, "5D4A"), []byte("cached body"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	t.Run("in-tree blob link", func(t *testing.T) {
+		dir := setup(t)
+		if err := os.Link(filepath.Join(dir, blobs, "5D4A"), filepath.Join(dir, records, "R1-blob")); err != nil {
+			t.Fatal(err)
+		}
+		if err := inspectProfileTree(dir); err != nil {
+			t.Fatal("WebKit blob link refused: ", err)
+		}
+	})
+	t.Run("link leaves the profile", func(t *testing.T) {
+		dir := setup(t)
+		if err := os.Link(filepath.Join(dir, blobs, "5D4A"), filepath.Join(t.TempDir(), "outside")); err != nil {
+			t.Fatal(err)
+		}
+		if err := inspectProfileTree(dir); err == nil || !strings.Contains(err.Error(), "outside the browser profile") {
+			t.Fatalf("link to a file outside the profile accepted: %v", err)
+		}
+	})
+	t.Run("cookie store link", func(t *testing.T) {
+		dir := setup(t)
+		path := filepath.Join(dir, "cookies.sqlite")
+		if err := os.WriteFile(path, []byte("private fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Link(path, filepath.Join(dir, "data-copy")); err != nil {
+			t.Fatal(err)
+		}
+		if err := inspectProfileTree(dir); err == nil || !strings.Contains(err.Error(), "not private") {
+			t.Fatalf("hard-linked cookie store accepted: %v", err)
+		}
+	})
+}
+
 func TestProfileOriginValidation(t *testing.T) {
 	for _, body := range []string{
 		`{"version":1,"app_id":"dev.gofastr.profile-test","port":43127,"port":43128}`,
@@ -238,6 +290,59 @@ func TestProfileCookieSchema(t *testing.T) {
 				t.Fatalf("schema validation=%v valid=%v", err, test.valid)
 			}
 		})
+	}
+}
+
+// A crash mid-write leaves a hot rollback journal. A read-only check cannot
+// roll it back (SQLITE_READONLY_ROLLBACK) and would block every later launch.
+func TestCookieCheckRollsBackHotJournal(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "cookies.sqlite")
+	db, err := sql.Open("sqlite3", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	for _, q := range []string{"PRAGMA journal_mode=DELETE", nativeCookieSchema, "INSERT INTO moz_cookies(name) VALUES ('kept')", "PRAGMA cache_size=1"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A tiny cache spills the uncommitted pages to the file, so a copy taken
+	// now is the state a crash leaves behind: a half-written file plus a hot
+	// journal holding the original pages.
+	if _, err := tx.Exec("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<5000) INSERT INTO moz_cookies(name, value) SELECT 'torn', hex(randomblob(200)) FROM n"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "cookies.sqlite")
+	for _, suffix := range []string{"", "-journal"} {
+		data, err := os.ReadFile(src + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path+suffix, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = tx.Rollback()
+	if err := checkCookieDatabase(path); err != nil {
+		t.Fatal("hot journal blocked the cookie check: ", err)
+	}
+	if _, err := os.Stat(path + "-journal"); !os.IsNotExist(err) {
+		t.Fatal("hot journal was not rolled back: ", err)
+	}
+	check, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer check.Close()
+	var torn int
+	if err := check.QueryRow("SELECT count(*) FROM moz_cookies WHERE name = 'torn'").Scan(&torn); err != nil || torn != 0 {
+		t.Fatalf("rollback left torn rows: %d %v", torn, err)
 	}
 }
 
