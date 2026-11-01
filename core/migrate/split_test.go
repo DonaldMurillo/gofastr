@@ -30,6 +30,12 @@ func TestSplitStatementsKeepsQuotedSemis(t *testing.T) {
 		{"begin atomic", "CREATE FUNCTION f() RETURNS int BEGIN ATOMIC SELECT CASE WHEN true THEN 1 END; SELECT 2; END; SELECT 3",
 			[]string{"CREATE FUNCTION f() RETURNS int BEGIN ATOMIC SELECT CASE WHEN true THEN 1 END; SELECT 2; END", "SELECT 3"}},
 		{"empty", "  \n", nil},
+		// An unterminated quote or dollar body runs to the end of the
+		// body: its semicolons are no boundary, and Postgres reports the
+		// syntax error on the one statement.
+		{"unterminated string", "SELECT 1; SELECT 'a; b", []string{"SELECT 1", "SELECT 'a; b"}},
+		{"unterminated dollar body", "SELECT 1; DO $$ x; y", []string{"SELECT 1", "DO $$ x; y"}},
+		{"dollar opener at the end", "SELECT 1; SELECT $tag", []string{"SELECT 1", "SELECT $tag"}},
 	}
 	for _, c := range cases {
 		if got := splitStatements(c.body); !slices.Equal(got, c.want) {
