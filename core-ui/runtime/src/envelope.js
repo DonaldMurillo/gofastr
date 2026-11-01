@@ -220,11 +220,15 @@
     return el;
   };
   const _settleScroll = (fn) => NS._settleScroll(fn);
+  // The fragment as written in location.hash, then decoded (the
+  // browser's own order): #caf%C3%A9 names id="café". A fragment that
+  // does not decode (#100%) stays raw. Same as core's scrollToHash.
   const scrollToHash = () => {
     const id = (location.hash || '').replace(/^#/, '');
     _settleScroll(() => {
       if (id) {
-        const el = document.getElementById(id);
+        let el = document.getElementById(id);
+        if (!el) try { el = document.getElementById(decodeURIComponent(id)); } catch (_) {}
         if (el) { el.scrollIntoView({ block: 'start' }); return; }
       }
       window.scrollTo(0, 0);

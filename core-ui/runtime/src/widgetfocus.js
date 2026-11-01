@@ -8,30 +8,21 @@
     document.__fuiModalEsc = true;
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
-      // A modal that refuses Escape still owns it: only a popover opened
-      // above it may close (one opened before sits under the scrim).
-      let floor = 0;
-      if (G._modalStack && G._modalStack.length) {
-        const name = G._modalStack[G._modalStack.length - 1];
-        const top = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
-          ? G._widgets[name]
-          : undefined;
-        if (top && top.closeOnEscape) {
-          e.stopPropagation();
-          G.closeWidget(name);
-          return;
-        }
-        floor = (top && top.seq) || 0;
-      }
-      if (G._popoverStack && G._popoverStack.length) {
-        const name = G._popoverStack[G._popoverStack.length - 1];
-        const top = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
-          ? G._widgets[name]
-          : undefined;
-        if (top && top.closeOnEscape && (top.seq || 0) > floor) {
-          e.stopPropagation();
-          G.closeWidget(name);
-        }
+      // The newest layer owns Escape: the top popover when it opened
+      // above the top modal (one opened before sits under the scrim),
+      // else the top modal. A layer that refuses Escape still owns it,
+      // so the key never reaches the layer below.
+      const reg = (n) => n && G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, n)
+        ? G._widgets[n]
+        : undefined;
+      const ms = G._modalStack || [], ps = G._popoverStack || [];
+      const mName = ms[ms.length - 1], pName = ps[ps.length - 1];
+      const m = reg(mName), p = reg(pName);
+      const name = p && (!m || (p.seq || 0) > (m.seq || 0)) ? pName : mName;
+      const top = name === pName ? p : m;
+      if (top && top.closeOnEscape) {
+        e.stopPropagation();
+        G.closeWidget(name);
       }
     });
   }

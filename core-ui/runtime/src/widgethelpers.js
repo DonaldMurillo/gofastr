@@ -106,7 +106,7 @@
     if (clearWired.has(el)) return;
     clearWired.add(el);
     el.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape' || !el.value) return;
+      if (e.key !== 'Escape' || e.isComposing || !el.value) return;
       e.preventDefault();
       e.stopPropagation();
       el.value = '';
@@ -147,14 +147,23 @@
     Promise.resolve().then(sync);
   }
 
+  // within: the scope itself when it matches, then its descendants. The
+  // kernel hands the scanner each inserted node, and a node that IS the
+  // marked element is wired like one inside a wrapper.
+  function within(scope, sel) {
+    const out = [...scope.querySelectorAll(sel)];
+    if (scope.matches && scope.matches(sel)) out.push(scope);
+    return out;
+  }
+
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    if (scope.querySelector('[data-cui-tick-elapsed]')) startTicker();
-    scope.querySelectorAll('[data-cui-persist-storage]').forEach(wirePersist);
-    scope.querySelectorAll('[data-cui-charcount-source]').forEach(wireCount);
-    scope.querySelectorAll('[data-cui-clear-on-esc]').forEach(wireClear);
-    scope.querySelectorAll('form[data-cui-submit-on-enter]').forEach(wireEnter);
-    scope.querySelectorAll('form[data-cui-disable-when-invalid]').forEach(wireValidity);
+    if (within(scope, '[data-cui-tick-elapsed]').length) startTicker();
+    within(scope, '[data-cui-persist-storage]').forEach(wirePersist);
+    within(scope, '[data-cui-charcount-source]').forEach(wireCount);
+    within(scope, '[data-cui-clear-on-esc]').forEach(wireClear);
+    within(scope, 'form[data-cui-submit-on-enter]').forEach(wireEnter);
+    within(scope, 'form[data-cui-disable-when-invalid]').forEach(wireValidity);
   }
 
   scan(document);

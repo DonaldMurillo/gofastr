@@ -236,8 +236,10 @@ nav	2	_persistScroll
 nav	2	_plainLoadPage
 nav	2	_pushPub
 nav	2	_pushURL
+nav	2	_routeSeg
 nav	2	_scrollStore
 nav	2	_scrollTimer
+nav	2	_segTest
 nav	2	_settleScroll
 nav	2	_showNavToast
 nav	2	_statefulParams
@@ -389,6 +391,7 @@ signals	10	sel
 signals	10	target
 signals	10	v
 signals	12	dur
+signals	12	on
 signals	12	t
 signals	2	isReservedSignalKey
 signals	4	G

@@ -529,7 +529,9 @@
   const _interactionNode = (e, spec) => {
     try {
       if (spec.event === 'keydown') {
-        if (!spec.keys || !spec.keys.includes(e.key) ||
+        // A modified key is a browser or OS shortcut, never the module's.
+        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey ||
+            !spec.keys || !spec.keys.includes(e.key) ||
             !document.querySelector(spec.scope || '')) return null;
         return e.target && e.target.dispatchEvent ? e.target : document.body;
       }

@@ -18,10 +18,12 @@ import (
 
 // FloatingPanel is a corner-anchored, persistent panel, useful for
 // chat surfaces, devtools, build status. Defaults to BottomRight.
-// Backdrop=false (it floats above the page without dimming it).
+// Backdrop=false (it floats above the page without dimming it). The
+// root paints the panel surface (Definition.Surface).
 func FloatingPanel(name string) *widget.Builder {
 	return widget.New(name).
-		Mount(widget.BottomRight)
+		Mount(widget.BottomRight).
+		Surface()
 }
 
 // Modal is a center-mounted dialog with a backdrop. Closes on ESC and
@@ -227,6 +229,9 @@ func BottomSheet(name string) *widget.Builder {
 //     expanders or any UI where the popover should feel attached to
 //     its trigger.
 //
+// Both modes paint the same panel surface on the widget root
+// (Definition.Surface); only the anchored mode draws the arrow.
+//
 // Distinct from Modal in two ways:
 //
 //   - No backdrop. The popover floats above page content without
@@ -240,7 +245,8 @@ func BottomSheet(name string) *widget.Builder {
 func Popover(name string) *widget.Builder {
 	b := widget.New(name).
 		Mount(widget.TopRight).
-		Hidden()
+		Hidden().
+		Surface()
 	d := b.Definition()
 	// Same dismissal affordances as Drawer / Modal, no backdrop dim,
 	// but ESC and outside-click still close the popover.

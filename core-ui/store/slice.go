@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Slice is a typed handle to one declared shared-state value. It is a
@@ -116,8 +118,50 @@ func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs ma
 	a["data-cui-signal"] = sl.name
 	a["data-cui-signal-mode"] = "attr"
 	a["data-cui-signal-attr"] = htmlAttr
-	a[htmlAttr] = sanitizeSignalURL(htmlAttr, valueString(any(sl.resolve(ctx))))
+	v := any(sl.resolve(ctx))
+	if booleanSignalAttrs[asciicase.Lower(htmlAttr)] {
+		// A boolean attribute is on whenever it is present, so
+		// disabled="false" would ship a disabled control until the
+		// runtime ran. Omit it when off, write it empty when on: the
+		// runtime's attr mode (core-ui/runtime/frag/signals.js) does the
+		// same on every update.
+		if booleanAttrOn(v) {
+			a[htmlAttr] = ""
+		} else {
+			delete(a, htmlAttr)
+		}
+		return renderEl(tag, a)
+	}
+	a[htmlAttr] = sanitizeSignalURL(htmlAttr, valueString(v))
 	return renderEl(tag, a)
+}
+
+// booleanSignalAttrs are the HTML boolean attributes on the signal
+// allow-list (interactive.SignalAttrAllowed). They mirror the runtime's
+// attr-mode list exactly so SSR and client updates agree.
+var booleanSignalAttrs = map[string]bool{
+	"disabled": true, "hidden": true, "checked": true, "open": true, "selected": true,
+}
+
+// booleanAttrOn is the runtime's `!!value && value !== 'false'` in Go:
+// false, nil, "", "false" and a numeric zero are off; anything else is on.
+func booleanAttrOn(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return t
+	case string:
+		return t != "" && t != "false"
+	case int:
+		return t != 0
+	case int64:
+		return t != 0
+	case float64:
+		return t != 0 && !math.IsNaN(t)
+	default:
+		return true
+	}
 }
 
 // urlBearingAttrs are the HTML attributes whose value is a URL the

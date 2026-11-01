@@ -239,7 +239,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders, e.g. a Reset button inside a confirm modal refreshing the chat panel. |
 | `data-cui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-cui-signal-mode="text\|number\|html\|attr"` | How to apply the signal value (default `text`). `number` is `text` to the kernel; the marker loads the `headless-numbers` module, which rewrites a numeric value the way the page's `<html lang>` writes numbers (`Intl.NumberFormat`) in a microtask after each write, matching the server's `i18n.Number` text. The core runtime carries no bytes for it. `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-cui-signal-attr`. |
-| `data-cui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
+| `data-cui-signal-attr="<attr>"` | Attribute name when mode is `attr`. For the boolean attributes `disabled`, `hidden`, `checked`, `open` and `selected`, a false value (`false`, `null`, `""`, `0`, `"false"`) removes the attribute and any other value sets it, since a boolean attribute is on whenever it is present; `checked` and `selected` also write the live property (`disabled`, `hidden` and `open` reflect the attribute), so a checkbox the reader already clicked still follows the signal. The server render (`store.Slice.BindAttr`) follows the same rule: a false value omits the attribute and a true one writes it with an empty value, so the page never arrives with `disabled="false"`. `value` writes the live `el.value` as well as the attribute. Other attributes, `aria-*` included, get the value as text. |
 | `data-cui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
 | `data-cui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
 | `data-cui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. The three signal mutations work inside a widget root too (the document delegate applies them; the widget's scoped listener leaves them alone), and on a node that also carries `data-cui-rpc` the mutation wins and no request is sent, inside a widget or out. |
@@ -2355,7 +2355,8 @@ script. The interaction bridge reads registered descriptors too:
 `registry.Interactions(...)` declares the interactions a behaviour
 needs retained through its module's cold-cache fetch — the bridge's
 own spec shape (event, and for a click the node's selector, for a
-keydown the keys and the scope selector that arms the retention) —
+keydown the keys and the scope selector that arms the retention; a
+key held with Alt, Ctrl, Meta or Shift is never retained) —
 the behaviours block carries them as `x`, and the kernel installs its
 retention listeners over the registered descriptors exactly as over
 its own table; a behaviour that declares none pays nothing.

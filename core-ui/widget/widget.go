@@ -143,6 +143,15 @@ type Definition struct {
 	CloseOnEscape       bool // ESC closes the widget
 	CloseOnClickOutside bool
 
+	// Surface makes the default chrome paint the widget root as a panel
+	// (surface background, border, radius, shadow, size caps, the slot
+	// scrolling inside) at a corner or banner position, the surface an
+	// anchored popover gets. preset.Popover and preset.FloatingPanel set
+	// it; a toast stack leaves it off because its items are the cards.
+	// Center, Edge, EdgeRight and Bottom paint their own panel and
+	// ignore it, and so does a custom Skeleton.
+	Surface bool
+
 	// Role is the ARIA role applied to the widget root element.
 	// Defaults to "dialog" for backdrop'd widgets and is left empty
 	// for plain panels / floating surfaces. Use "alertdialog" for
@@ -468,6 +477,10 @@ func (b *Builder) RPC(method, path string, h http.Handler) *Builder {
 
 // Backdrop forces a backdrop regardless of position.
 func (b *Builder) Backdrop() *Builder { b.def.Backdrop = true; return b }
+
+// Surface paints the widget root as a panel at a corner or banner
+// position. See Definition.Surface.
+func (b *Builder) Surface() *Builder { b.def.Surface = true; return b }
 
 // DragDismiss enables drag-to-dismiss for bottom-edge widgets. See
 // Definition.DragDismiss for the full contract.

@@ -14,6 +14,13 @@ import "strings"
 // The URL-valued members are additionally scheme-checked, at SSR by
 // sanitizeSignalURL and on every client-side update by the runtime's
 // _isUnsafeSignalUrl.
+//
+// disabled, checked, hidden, open and selected are HTML boolean
+// attributes: on whenever present, whatever the value. The runtime's
+// attr mode (core-ui/runtime/frag/signals.js) names the same five and
+// removes them for a false value instead of writing "false", and so does
+// the server render (core-ui/store's booleanSignalAttrs); a boolean
+// attribute added here must join both lists.
 var signalAttrAllowList = map[string]bool{
 	"value": true, "href": true, "src": true, "action": true,
 	"xlink:href": true, "formaction": true,
