@@ -487,7 +487,10 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	// The route's resource, stamped before the chain so a middleware
 	// that authorizes by resource reads it from the route, not the path.
-	if c.router.resource != "" {
+	// An unnamed route clears one it inherited: a handler that
+	// redispatches its request through the router (the entity MCP tools)
+	// must not hand the next route the first route's name.
+	if c.router.resource != "" || req.Context().Value(routeResourceKey{}) != nil {
 		req = req.WithContext(context.WithValue(req.Context(), routeResourceKey{}, c.router.resource))
 	}
 	curVer := c.router.root.chainVersion.Load()

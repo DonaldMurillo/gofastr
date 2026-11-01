@@ -62,3 +62,35 @@ func TestCRUDSubroutesScopeToTheirTable(t *testing.T) {
 		}
 	}
 }
+
+// The scope is the entity's table, not the mount path's last segment: an
+// orders handler mounted at /api/orders/v1 stamped v1, so orders:read was
+// refused and v1:read read orders.
+func TestCRUDMountScopesToEntityTable(t *testing.T) {
+	ent := entity.Define("orders", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+	})
+	r := router.New()
+	r.Use(RequireAPIScopes("/api"), func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	})
+	crud.RegisterCrudRoutes(r, crud.NewCrudHandler(ent, nil), "/api/orders/v1")
+	for _, tc := range []struct {
+		path  string
+		scope string
+		want  int
+	}{
+		{"/api/orders/v1", "orders:read", 204},
+		{"/api/orders/v1", "v1:read", 403},
+		{"/api/orders/v1/7", "orders:read", 204},
+		{"/api/orders/v1/_events", "v1:read", 403},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req = req.WithContext(context.WithValue(req.Context(), tokenScopesKey{}, []string{tc.scope}))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Errorf("GET %s with %s = %d, want %d", tc.path, tc.scope, rec.Code, tc.want)
+		}
+	}
+}

@@ -546,12 +546,15 @@ app.Use(auth.TokenMiddleware(users, accounts, tokens))
 app.Use(auth.RequireAPIScopes("/api")) // ["customers:*"] token ⇒ 403 off /api/invoices
 ```
 
-A CRUD mount names its resource on every route it registers
-(`crud.ResourceRouter`, built on `router.ResourceGroup`), and the
-middleware takes that name first. Every subroute (`/{id}`, `/_batch`,
-`/_events`, `/llm.md`, EntityUI's `/_bulk`, `/_export.csv` and `/_pick`)
-answers to its mount's table: `POST /api/v1/_batch` on a table named `v1`
-needs `v1:write`, never `_batch:write`.
+Every route an entity registers names the entity's table as its resource
+(`crud.EntityRouter`, built on `router.ResourceGroup`), and the middleware
+takes that name first. The CRUD routes and their subroutes (`/{id}`,
+`/_batch`, `/_events`, `/llm.md`), the entity's `Endpoints`, and EntityUI's
+`/_bulk`, `/_export.csv` and `/_pick` all answer to the table, wherever
+they are mounted: `POST /api/v1/_batch` on a table named `v1` needs
+`v1:write`, never `_batch:write`, and an `orders` handler mounted at
+`/api/orders/v1` needs `orders:read`. An Endpoint's HTTP route and its MCP
+twin ask the same `<table>:<verb>`.
 
 For any other route, a version segment (`v1`, `v2`, `v1.2`) is skipped, so
 `/api/v1/posts` and `/api/v2/posts` both need `posts`. Whether a segment is

@@ -1651,7 +1651,9 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 		path := groupEndpointPath(ent, endpoint)
 		if endpoint.Handler != nil {
-			g.Handle(method, path, endpointRoute(endpoint))
+			// On the group's router, so the group's middleware still
+			// wraps it, named by the entity's table like its CRUD routes.
+			crud.EntityRouter(g.Router(), ent).Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -2728,7 +2730,9 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
 		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
-			a.router.Handle(method, path, endpointRoute(endpoint))
+			// Named by the entity's table, the scope its MCP twin checks
+			// (endpointMCPOptions), so RequireAPIScopes asks the same.
+			crud.EntityRouter(a.router, ent).Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {

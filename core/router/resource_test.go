@@ -45,3 +45,34 @@ func TestResourceGroupNamesItsRoutes(t *testing.T) {
 		}
 	}
 }
+
+// A handler under a ResourceGroup that redispatches its request through
+// the router (the entity MCP tools do) reached the next route with the
+// first route's name still in the context: an unnamed route must carry
+// none.
+func TestRedispatchClearsRouteResource(t *testing.T) {
+	r := New()
+	var seen []string
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			name, ok := RouteResource(req.Context())
+			if !ok {
+				name = "(none)"
+			}
+			seen = append(seen, req.URL.Path+"="+name)
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.ResourceGroup("orders").Get("/orders", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		inner := req.Clone(req.Context())
+		inner.URL.Path = "/plain"
+		inner.RequestURI = ""
+		r.ServeHTTP(w, inner)
+	}))
+	r.Get("/plain", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/orders", nil))
+	if len(seen) != 2 || seen[0] != "/orders=orders" || seen[1] != "/plain=(none)" {
+		t.Fatalf("resources seen %v; want [/orders=orders /plain=(none)]", seen)
+	}
+}
