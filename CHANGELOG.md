@@ -104,6 +104,16 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`middleware.Tracing` joins a trace from the configured propagator.**
+  It injected with the global otel propagator but always extracted W3C,
+  so an app on B3 or Jaeger started a new trace per request. It now
+  extracts with the global propagator and falls back to W3C
+  `traceparent` when that finds no upstream span; with no global
+  configured, nothing changes.
+- **The SQL idempotency store refuses a NUL principal on Postgres.** It
+  can't be stored as text, and escaping it could match another user's
+  id. That keyed write answers 503 (or runs unkeyed under `FailOpen`);
+  every other principal is stored as is.
 - **A Group's `NotFound` and `MethodNotAllowed` answer misses under its
   prefix.** They ran only when the group itself was served, and every
   app serves the root, so a group's custom 404 was silently ignored. A
