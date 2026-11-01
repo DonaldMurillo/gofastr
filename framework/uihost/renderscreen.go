@@ -63,7 +63,8 @@ const screenCacheControlDefault = "private, no-store"
 // only reached when a guard chose to answer.
 //
 // Full and partial (X-Gofastr-Navigate) requests get the same status.
-// The partial arm carries the bare component body under the caller's
+// The partial arm carries the bare component body and its signal seed
+// (#gofastr-signals-partial, as a page partial does) under the caller's
 // cache policy and mints nothing; the full arm finishes through the
 // same tail every page runs (finishPageDocument): verify-or-mint the
 // session, no-store + Vary: Cookie, chrome, seed, widget SSR.
@@ -153,7 +154,11 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 			body = render.Join(body, ds.partialHead(ctx, routePath(r), comp))
 		}
 		w.WriteHeader(status)
-		fmt.Fprint(w, string(body))
+		// The signal seed the full document carries, as the page
+		// partial's #gofastr-signals-partial island: without it a value
+		// the render seeded never reaches the client, and a bound
+		// element keeps the value the page the reader left gave it.
+		fmt.Fprint(w, partialSeedIsland(ctx, string(body))+string(body))
 		return
 	}
 

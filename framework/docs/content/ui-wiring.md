@@ -172,7 +172,10 @@ Useful options:
   you write yourself must not follow symlinks out of its tree —
   `os.Root.FS()` is the spelling for a disk-backed one; `embed.FS`
   cannot carry symlinks at all. The dotfile and config-file refusal
-  applies here too.
+  applies here too. Only files are served: a directory in the FS falls
+  through to page rendering, as it does under `WithStaticDir`, so a
+  `docs/` directory of images never shadows a `/docs` screen (and a
+  directory with no screen answers 404, never a redirect or a listing).
 - `host.AssetURL("/logo.svg")`: the URL of a static file with its
   content hash appended (`/logo.svg?v=3f2a9c01b7d4`). Use it wherever a
   page links a file from the static directory or static FS. A request
@@ -302,8 +305,8 @@ func guard(host *uihost.UIHost, next http.Handler) http.Handler {
 }
 ```
 
-`RenderScreen` renders; it authorizes nothing and mints no session.
-The caller owns the decision, and with it the status:
+`RenderScreen` renders; it authorizes nothing. The caller owns the
+decision, and with it the status:
 
 | Situation | Answer |
 |---|---|
@@ -316,11 +319,15 @@ an unauthorized caller must not learn from the difference whether a
 session exists.
 
 Both full and client-side navigation (`X-Gofastr-Navigate`) requests
-get the same status and the same `Cache-Control: private, no-store`
-(the default; `ScreenResponse.CacheControl` overrides it). The partial
-arm carries bare content — the runtime surfaces a non-2xx partial as a
-navigation error and stays on the current page, a full load renders
-the branded page. See [security](security.md) → "Recovery screens and
+get the same status. The two arms differ in what else they carry:
+
+| Arm | Session | Cache policy | Body |
+|---|---|---|---|
+| Full load | Verified, or minted when the cookie is missing or dead (the page tail every screen runs: a direct load is a real page whose islands need a live id) | Always `no-store` + `Vary: Cookie`; `ScreenResponse.CacheControl` does not change it | The branded page in the default layout, with the signal seed |
+| Navigation partial | Never minted: a bare auth-failure body hands out no grant | `private, no-store` by default; `ScreenResponse.CacheControl` overrides it | The bare component, its title (`X-Gofastr-Title`), head carrier and `#gofastr-signals-partial` seed, as a page partial carries them |
+
+The runtime surfaces a non-2xx partial as a navigation error and stays
+on the current page; a full load renders the branded page. See [security](security.md) → "Recovery screens and
 cache policy" for why the no-store default is not optional. Every
 partial-shaped response carries it, including the early exits: the
 dead-session prefetch 204 and a policy redirect's 303 leave the server

@@ -59,7 +59,8 @@ What each piece buys you:
   registration once a page has been served: a script that appears on some
   pages and not others is a wiring bug, so wire it in `main.go` or a
   plugin's `Init`. (`uihost.WithExtraScripts` is the construction-time
-  equivalent.)
+  equivalent, held to the same same-origin grammar: a src with a scheme,
+  a host or a `//cdn…` prefix is dropped with a warning, never shipped.)
 - Use `relay.Base()` when composing URLs server-side instead of
   hard-coding the mount prefix.
 

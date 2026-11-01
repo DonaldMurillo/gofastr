@@ -423,10 +423,12 @@ sliding-window choice.
 
 When middleware refuses a guarded screen route, it answers with
 `uihost.UIHost.RenderScreen` (see [ui-wiring](ui-wiring.md) → "Guards
-on dynamic screens"). That helper defaults to
-`Cache-Control: private, no-store` on both the full-page and the
-client-side-navigation arm, and mints no session cookie. Three rules
-keep the failure surfaces safe:
+on dynamic screens"). Its full-page arm always answers
+`Cache-Control: no-store` with `Vary: Cookie` and verifies or mints the
+anonymous stream session like every page load; its
+client-side-navigation arm defaults to `Cache-Control: private,
+no-store` and mints nothing. Three rules keep the failure surfaces
+safe:
 
 - **A recovery page is per-user.** It was rendered for one caller's
   auth state; a shared cache replaying it to a second visitor leaks

@@ -274,9 +274,13 @@ func (ds *UIHost) verifySessionToken(token string) (string, bool) {
 // returned HTML is injected alongside any global head tags from
 // WithHeadHTML / WithFavicon / etc.
 //
-// WARNING: the returned HTML is injected verbatim. Implementers must
-// escape any dynamic content (e.g. html.EscapeString for user-supplied
-// titles or descriptions) to prevent XSS.
+// The returned HTML goes through the same head scrub as WithHeadHTML
+// (script, iframe, svg, style and the other active tag families,
+// meta-refresh, on*= handlers, autofocus and script-pulling <link>s are
+// removed, run to a fixpoint; HTML nested to outlast the scrub is dropped
+// whole). The scrub is a backstop, not an escaper: implementers must
+// still escape dynamic content (e.g. html.EscapeString for user-supplied
+// titles or descriptions).
 type SEOScreen interface {
 	HeadHTML() string
 }
@@ -429,21 +433,37 @@ func WithCustomCSS(css string) Option {
 	}
 }
 
-// WithExtraScripts adds external <script src="…"> URLs to inject before
-// </body> on every page. Use for dev-only tooling like livereload.
-// CSP-safe: every URL becomes an external resource, no inline JS.
+// WithExtraScripts adds external <script src="…"> URLs to every full
+// page, emitted deferred at the end of <head> after runtime.js and the
+// per-screen action scripts (the same rail RegisterExternalScript
+// writes). Use for dev-only tooling like livereload. CSP-safe: every URL
+// becomes an external resource, no inline JS.
+//
+// Each src is held to RegisterExternalScript's same-origin grammar
+// ("/x.js", optionally "/x.js?v=abc"): the tag loads under the default
+// CSP's script-src 'self'. A src that fails it (a scheme, a host, a
+// protocol-relative "//cdn…", a backslash, a control byte, a fragment, a
+// "." or ".." segment) is dropped with a warning, the way the URL-typed
+// head options (WithFavicon, WithPreconnect) drop an unsafe URL.
 func WithExtraScripts(urls ...string) Option {
 	return func(ds *UIHost) {
 		for _, u := range urls {
-			ds.extraScripts = append(ds.extraScripts, externalScript{src: u})
+			if err := ds.registerScript(externalScript{src: u}, "WithExtraScripts"); err != nil {
+				slog.Default().Warn("uihost: script dropped from the page", "err", err)
+			}
 		}
 	}
 }
 
 // WithHeadHTML injects raw HTML into every page's <head>. This is the
-// escape hatch for arbitrary head content. The HTML is injected verbatim.
-// Callers must ensure it is CSP-compatible (no inline <script> or
-// <style> tags). For safe, auto-escaped alternatives, see WithFavicon,
+// escape hatch for head content the typed options do not cover. It is
+// scrubbed, not injected verbatim: <script>, <style>, <iframe>, <svg> and
+// the other active tag families, <base>/<img>/<embed>, meta-refresh,
+// on*= handlers, autofocus and script-pulling <link>s are removed, and the
+// scrub runs until its output stops changing, so a removal cannot splice
+// a forbidden tag back together. HTML still changing after the pass cap
+// (nesting built to outlast the scrub) is dropped whole and logged once.
+// For safe, auto-escaped alternatives, see WithFavicon,
 // WithThemeColor, WithDescription, WithOpenGraph, WithTwitterCard,
 // WithCanonicalURL, and WithPreconnect.
 func WithHeadHTML(html string) Option {
@@ -691,7 +711,9 @@ func (ds *UIHost) StaticDir() string {
 // serving symlink-following reads from a directory that was not
 // verifiable at installation time is the worse failure. embed.FS and
 // every other fs.FS pass through unchanged; a custom FS must not
-// follow symlinks (os.Root.FS() is the spelling).
+// follow symlinks (os.Root.FS() is the spelling). Only files are
+// served: a directory falls through to the screens, as under
+// WithStaticDir.
 func (ds *UIHost) SetStaticFS(fsys fs.FS) {
 	ds.staticFS = reRootDirFS(fsys)
 }
@@ -1202,7 +1224,7 @@ func (ds *UIHost) AutoCompileActions() {
 }
 
 // pathToActionID derives a component action ID from a route path.
-// "/" → "home", "/products" → "products", "/products/:slug" → "products-detail"
+// "/" → "home", "/products" → "products", "/products/:slug" → "products-slug"
 func pathToActionID(path string) string {
 	path = strings.TrimPrefix(path, "/")
 	if path == "" {
@@ -1458,24 +1480,27 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	})
 }
 
-// scrubCtl percent-encodes C0 control bytes (except tab) and DEL in a
+// scrubCtl percent-encodes every C0 control byte and DEL in a
 // Location header value built from request-derived paths. It is the
-// header scrub, and its two deliberate pass-throughs hold there:
+// header scrub, and its one deliberate pass-through holds there:
 // net/http's http.Redirect hex-escapes every non-ASCII byte in the
 // Location value it writes, so C1 and the bidi set cannot reach the
 // wire raw downstream of these emit sites (the gap it closes is
-// exactly the C0/DEL that hexEscapeNonASCII leaves alone), and HTAB
-// is a legal header-value byte. The log sink is NOT this scrub's
-// customer: slog leaves C1/bidi runes raw, so log fields
-// use textsafe.ScrubControlBytes instead.
+// exactly the C0/DEL that hexEscapeNonASCII leaves alone). Tab is
+// encoded too, although HTAB is a legal header-value byte: the WHATWG
+// URL parser deletes tab, CR and LF from a Location before parsing it,
+// so a raw "/\t/evil.example" is the protocol-relative "//evil.example"
+// in the browser, while "/%09/evil.example" stays a same-origin path.
+// The log sink is NOT this scrub's customer: slog leaves C1/bidi runes
+// raw, so log fields use textsafe.ScrubControlBytes instead.
 func scrubCtl(s string) string {
 	for i := range len(s) {
-		if c := s[i]; c < 0x20 && c != '\t' || c == 0x7f {
+		if c := s[i]; c < 0x20 || c == 0x7f {
 			var b strings.Builder
 			b.Grow(len(s))
 			for j := range len(s) {
 				d := s[j]
-				if d < 0x20 && d != '\t' || d == 0x7f {
+				if d < 0x20 || d == 0x7f {
 					fmt.Fprintf(&b, "%%%02x", d)
 					continue
 				}
@@ -1578,7 +1603,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// raw C0/DEL bytes pass through into the Location header verbatim,
 	// where they forge log lines and header values downstream. Percent-
 	// encode them, the same contract sanitizeHeaderValue pins elsewhere.
-	if target, ok := ds.App.ResolveRedirect(path); ok {
+	// handler.IsSafeRelativePath is the same gate the navigation arm
+	// applies: a target that is not a same-origin relative path (a tab
+	// a browser deletes in front of "/evil.example", a "//host") is no
+	// redirect at all, and the request falls through to the router.
+	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
 		http.Redirect(w, r, scrubCtl(target), http.StatusPermanentRedirect)
 		return
 	}
@@ -3248,6 +3277,14 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
 			title += suffix
 		}
+	} else {
+		// An untitled screen (or a RenderAlt whose alt names no title)
+		// is titled by the app name, as the full page's <title> is. With
+		// no header the runtime keeps document.title, and the tab goes
+		// on naming the page the reader left.
+		title = textsafe.StripInvisible(ds.App.Name)
+	}
+	if title != "" {
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))
 	}
 
@@ -4084,6 +4121,21 @@ func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 }
 
+// setPageMarkdownHeaders writes the headers every page-markdown answer
+// carries: /llm-pages.md, /<page>/llm.md (exact, pattern and concrete
+// dynamic URLs) and the Accept: text/markdown twin of a page. Each one
+// ran the policy chain with the live request, and the per-URL ones ran
+// the page's Load, so the body is per caller: a signed-in reader gets
+// the content a policy withholds from everyone else. no-store + Vary:
+// Cookie, exactly as finishPageDocument answers the HTML twin, so a
+// shared cache never replays one caller's markdown to another. /llms.txt
+// and /llms-full.txt run nothing per caller and keep no-cache.
+func setPageMarkdownHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Cookie")
+}
+
 // mountPageLLMMD registers LLM-friendly documentation routes for every
 // screen in the app. Two route types are added:
 //   - GET /llm-pages.md: top-level index listing all screens
@@ -4102,8 +4154,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 
 	// Top-level page index
 	r.Get("/llm-pages.md", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setPageMarkdownHeaders(w)
 		// Request-scoped: policy-gated screens list metadata-free for
 		// anonymous agents; an authenticated request sees the full index.
 		w.Write([]byte(app.AppLLMMDCtx(app.WithRequest(req.Context(), req), coreApp)))
@@ -4134,13 +4185,11 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 					ds.handlePage(w, req)
 					return
 				}
-				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-				w.Header().Set("Cache-Control", "no-cache")
+				setPageMarkdownHeaders(w)
 				w.Write([]byte(md))
 				return
 			}
-			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-cache")
+			setPageMarkdownHeaders(w)
 			// A screen whose policy phase doesn't Allow this request gets
 			// the metadata-free withheld doc: the pattern doc's title,
 			// description, SEO front matter, AND content are all
@@ -4248,7 +4297,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
-				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					f.Close()
 					return true
 				}
@@ -4353,6 +4402,19 @@ func devStaticNoStore(w http.ResponseWriter) {
 	}
 }
 
+// fsEntryIsDir reports whether an opened static-FS entry is a directory,
+// and closes it when it is: the caller falls through to the screens and
+// never reads it. A Stat error is not a directory, so the handle stays
+// the caller's to serve and close as before.
+func fsEntryIsDir(f fs.File) bool {
+	info, err := f.Stat()
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	_ = f.Close()
+	return true
+}
+
 // serveOrRender is the catch-all NotFound handler. It first tries static
 // file resolution (filesystem or embedded FS), and if no file matches it
 // falls through to page rendering. Resolution steps are mirrored by
@@ -4400,8 +4462,13 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" && staticServable(cleanPath) {
+				// A directory is no static file: it falls through to the
+				// screens, as the static-dir branch above does. Handed to
+				// http.ServeFileFS it answered a 301 to "docs/", whose
+				// trailing slash fs.ValidPath refuses, so a screen sharing
+				// the directory's name was a redirect into a 404.
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
-				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					devStaticNoStore(w)
 					// A versioned URL is served from the handle it was
 					// hashed from; see markVersionedStatic.
@@ -4434,8 +4501,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// Serve the per-instance doc when the base path resolves to a screen.
 	// Mirrored in resolvesStaticOrScreen. Keep the two in sync.
 	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setPageMarkdownHeaders(w)
 		w.Write([]byte(md))
 		return
 	}
@@ -5276,10 +5342,44 @@ var linkTagRe = regexp.MustCompile(`(?is)<link\b[^>]*?/?>`)
 // Allowed survivors: <meta> (except http-equiv=refresh), <link> with
 // http(s)/relative href, <title>, and inline text content. Even
 // those have any on*= event-handler / autofocus attribute scrubbed.
+//
+// One pass is not enough: every rule removes bytes, and removing an
+// inner match splices its neighbours together, so
+// `<scr<script></script>ipt>` leaves `<script>` behind and
+// `http-equiv="ref/autofocusresh"` leaves `http-equiv="refresh"`. The
+// pass runs again until its output stops changing. Each changing pass
+// shortens the string, so the loop ends; headScrubMaxPasses bounds the
+// work, and HTML still changing at the cap is nested on purpose to
+// outlast the scrub: it is dropped whole (fail closed) and logged once.
 func stripInlineScripts(s string) string {
 	if s == "" {
 		return s
 	}
+	for range headScrubMaxPasses {
+		next := stripInlineScriptsOnce(s)
+		if next == s {
+			return s
+		}
+		s = next
+	}
+	headScrubCapWarnOnce.Do(func() {
+		slog.Default().Warn("uihost: caller-supplied head HTML still changed after the scrub's pass cap; dropping it",
+			"passes", headScrubMaxPasses,
+			"fix", "remove the nested script, handler or refresh markup from WithHeadHTML / SEOScreen.HeadHTML")
+	})
+	return ""
+}
+
+// headScrubMaxPasses caps stripInlineScripts' fixpoint loop. Honest head
+// HTML converges in one or two passes; each further pass undoes one more
+// level of deliberate nesting.
+const headScrubMaxPasses = 8
+
+// headScrubCapWarnOnce gates stripInlineScripts' one-time WARN.
+var headScrubCapWarnOnce sync.Once
+
+// stripInlineScriptsOnce is one pass of every head-scrub rule.
+func stripInlineScriptsOnce(s string) string {
 	out := scriptTagRe.ReplaceAllString(s, "")
 	out = dangerousHeadTagsRe.ReplaceAllString(out, "")
 	out = voidHeadTagsRe.ReplaceAllString(out, "")

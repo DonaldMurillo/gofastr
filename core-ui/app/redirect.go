@@ -2,6 +2,7 @@ package app
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -170,12 +171,27 @@ func (r *Router) resolveRedirectOnce(path string) (string, bool) {
 // safeResolvedTarget re-checks a substituted redirect target with the
 // same rules validateRedirectTarget applies to the registered pattern.
 // Backslashes are rejected outright: browsers normalize "/\host" (and
-// "\/host") to the protocol-relative "//host".
+// "\/host") to the protocol-relative "//host". So is every C0 control
+// byte and DEL: the WHATWG URL parser deletes tab, CR and LF from a
+// Location before it parses it, so a catch-all value of "\t/evil.example"
+// substituted into "/{rest...}" reads as "//evil.example" in the browser
+// even though the bytes start with a single "/".
 func safeResolvedTarget(t string) bool {
 	return strings.HasPrefix(t, "/") &&
 		!strings.HasPrefix(t, "//") &&
 		!strings.Contains(t, "\\") &&
-		!strings.Contains(t, "://")
+		!strings.Contains(t, "://") &&
+		!hasControlByte(t)
+}
+
+// hasControlByte reports whether s holds a C0 control byte or DEL.
+func hasControlByte(s string) bool {
+	for i := range len(s) {
+		if c := s[i]; c < 0x20 || c == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // redirectQueryEscaper escapes the delimiters that would end a
@@ -227,6 +243,12 @@ func validateRedirectTarget(to string) {
 	// Location, so "/\evil.com" is "//evil.com" in disguise.
 	if strings.Contains(to, "\\") {
 		panic("app: redirect target must not contain a backslash (open-redirect guard): " + to)
+	}
+	// Browsers delete tab, CR and LF from a Location before parsing it,
+	// so "/\t/evil.com" is "//evil.com" too. No control byte belongs in
+	// a target.
+	if hasControlByte(to) {
+		panic("app: redirect target must not contain a control byte (open-redirect guard): " + strconv.Quote(to))
 	}
 }
 
