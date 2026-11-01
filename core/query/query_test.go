@@ -406,3 +406,20 @@ func TestMultipleCursorsPlaceholderOrdering(t *testing.T) {
 		t.Errorf("expected 2 args, got %d: %v", len(args), args)
 	}
 }
+
+// A builder already ordered by the cursor column gets no second ORDER BY
+// key for it: Order("id").Cursor("id") once emitted ORDER BY id ASC, id ASC.
+func TestCursorAddsNoSecondOrderKeyForOrderedColumn(t *testing.T) {
+	sql, args := Select("*").From("posts").Order("id", "ASC").Cursor("id", 7, "forward").Limit(5).Build()
+	if strings.Count(sql, "id ASC") != 1 {
+		t.Fatalf("SQL = %q, want one ORDER BY key on id", sql)
+	}
+	if !strings.Contains(sql, "id > $1") || len(args) != 2 {
+		t.Fatalf("SQL = %q args = %v, want the keyset predicate and its bind kept", sql, args)
+	}
+	// Ordered by another column, the cursor's key is still appended.
+	other, _ := Select("*").From("posts").Order("seq", "ASC").Cursor("id", 7, "forward").Build()
+	if !strings.Contains(other, "ORDER BY seq ASC, id ASC") {
+		t.Fatalf("SQL = %q, want the cursor key after seq", other)
+	}
+}
