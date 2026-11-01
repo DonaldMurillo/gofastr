@@ -50,6 +50,10 @@ func TestMCPToolGateBranches(t *testing.T) {
 		{"a Decider alone is enough to judge", access.WithDecider(user, denyAll), opCreate, false, true},
 		{"an item tool under a role policy is judged", as("viewer"), opUpdate, true, true},
 		{"an item tool with a Decider is left to the route", access.WithDecider(as("viewer"), perRecord), opUpdate, true, false},
+		// Delete is blank in a declared block: refused before any route.
+		{"a blank write is refused to an unresolved caller", context.Background(), opDelete, true, true},
+		{"a blank write is refused to a granted caller", as("editor"), opDelete, true, true},
+		{"an elevated context still deletes", WithElevation(context.Background(), "notes"), opDelete, true, false},
 	}
 	for _, tc := range cases {
 		err := ch.mcpToolGate(tc.op, tc.item)(tc.ctx)

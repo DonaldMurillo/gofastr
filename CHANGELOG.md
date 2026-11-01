@@ -104,6 +104,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: a blank write in a declared `Access` block is refused.**
+  Declaring `Access{Read: "posts:read"}` to gate reads left Create, Update
+  and Delete open to every caller, anonymous ones included. Once an
+  `Access` block names any permission, a blank `Create`, `Update` or
+  `Delete` now answers **403** for every caller, a wildcard role included,
+  and its MCP tool is refused too; server code under `crud.WithElevation`
+  still writes. The new `framework.Anyone` (`anyone` in an app spec or
+  entity declaration) opens an operation on purpose. A blank `Read` still
+  leaves reads open.
 - **A reboot no longer undoes a process-module revoke.** The next boot
   compared the descriptor with the stored row, read the revoked grant as a
   grant change, wrote it back and disabled the module. The store now

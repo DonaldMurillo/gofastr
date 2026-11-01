@@ -26,6 +26,7 @@ var (
 	reasonInvalidQuery     = i18n.Define("error.invalid_query", "invalid query: {{detail}}")
 	reasonInvalidBody      = i18n.Define("error.invalid_body", "invalid request body: {{detail}}")
 	reasonOffsetTooLarge   = i18n.Define("error.offset_too_large", "offset {{offset}} exceeds the maximum {{max}}")
+	reasonOpRefused        = i18n.Define("error.operation_refused", "access denied: this entity declares no permission for the operation")
 
 	reasonUnknownProjection = i18n.Define("error.unknown_projection_field", "unknown projection field")
 

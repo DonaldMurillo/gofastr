@@ -51,10 +51,37 @@ app.Entity("posts", framework.EntityConfig{
 })
 ```
 
-Each blank field leaves that operation un-gated by RBAC (owner and tenant
-scoping still apply). When a field is set, auto-CRUD refuses a request
-whose context lacks the permission with **403**: on List, Get, Create,
-Update, Delete, the batch/stream variants, and the `_events` SSE feed. The
+When a field is set, auto-CRUD refuses a request whose context lacks the
+permission with **403**: on List, Get, Create, Update, Delete, the
+batch/stream variants, and the `_events` SSE feed.
+
+Once any field is set, a blank one means:
+
+- **`Read` blank**: reads are open to every caller, the "public reads,
+  gated writes" shape.
+- **`Create`, `Update` or `Delete` blank**: the write is refused to every
+  caller with 403, a wildcard role included, and its MCP tool is
+  refused too. Only server code that elevated its context
+  (`crud.WithElevation`) still writes.
+- **`framework.Anyone`** (`"anyone"` in an app spec or entity
+  declaration): the operation is open to every caller, signed in or not.
+  It is not a permission: no role grants it and no scope names it.
+
+Owner and tenant scoping apply either way: `Create: framework.Anyone`
+on an `OwnerField` entity still needs a signed-in owner.
+
+```go
+app.Entity("inquiries", framework.EntityConfig{
+    Exposure: &framework.ExposureConfig{
+        Access: framework.AccessControl{
+            Read:   "inquiries:read",
+            Create: framework.Anyone, // the public contact form
+            Update: "inquiries:write",
+            Delete: "inquiries:admin",
+        },
+    },
+})
+``` The
 roles + policy must be in the request context first; mount
 `framework.AccessMiddleware` (above) ahead of the CRUD routes.
 

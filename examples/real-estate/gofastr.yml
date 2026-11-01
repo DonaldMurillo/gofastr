@@ -293,6 +293,7 @@ entities:
     # (visitor_email, visitor_phone) is readable/mutable only by staff.
     access:
       read: tours:read
+      create: anyone
       update: tours:write
       delete: tours:admin
     indices:
@@ -345,6 +346,7 @@ entities:
     # (create open), but the captured email/phone is staff-only to read.
     access:
       read: inquiries:read
+      create: anyone
       update: inquiries:write
       delete: inquiries:admin
     indices:

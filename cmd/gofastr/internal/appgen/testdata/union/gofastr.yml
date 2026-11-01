@@ -335,7 +335,7 @@ entities:
           op: eq
           value: published
     access:
-      read:
+      read: anyone
       create: catalog:write
       update: catalog:write
       delete: catalog:admin

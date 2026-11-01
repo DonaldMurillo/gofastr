@@ -669,3 +669,16 @@ notes:
     breaking: false
     guidance: "Code that read InstallGrantsChanged as \"the grants differ\" now also needs InstallGrantsNarrowed. RegisterResult.EffectiveGrants is the stored set, which leaves out grants an operator revoked; give one back with SetEffectiveGrants. The revoked_grants column is added at boot."
     nodetect: "a narrowed boot used to disable the module and now keeps it enabled; no source spelling changes"
+  - change: "BREAKING - once an Access block names any permission, a blank Create, Update or Delete is refused with 403 for every caller (wildcard roles included); framework.Anyone, or anyone in an app spec, opens an operation"
+    breaking: true
+    hits: review
+    guidance: "A blank write used to be open to every caller, anonymous ones included. For each entity with an Access block, name a permission for every write it should allow, or set it to framework.Anyone (anyone in gofastr.yml) when the write really is public, such as a contact form. Leave it blank only when no caller should write it; crud.WithElevation still writes from server code. A blank Read is unchanged."
+    find:
+      uses:
+        - gofastr/framework/entity.ExposureConfig.Access
+        - gofastr/framework/entity.AccessDeclaration
+      config:
+        - key: entities.*.access.*
+          value: '.'
+        - key: entities.*.exposure.access.*
+          value: '.'

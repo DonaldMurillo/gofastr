@@ -2034,17 +2034,16 @@ func renderAccessLiteral(access *fwentity.AccessDeclaration) string {
 		return ""
 	}
 	var parts []string
-	if access.Read != "" {
-		parts = append(parts, fmt.Sprintf("Read: %q", access.Read))
-	}
-	if access.Create != "" {
-		parts = append(parts, fmt.Sprintf("Create: %q", access.Create))
-	}
-	if access.Update != "" {
-		parts = append(parts, fmt.Sprintf("Update: %q", access.Update))
-	}
-	if access.Delete != "" {
-		parts = append(parts, fmt.Sprintf("Delete: %q", access.Delete))
+	for _, op := range []struct{ key, perm string }{
+		{"Read", access.Read}, {"Create", access.Create}, {"Update", access.Update}, {"Delete", access.Delete},
+	} {
+		switch op.perm {
+		case "":
+		case fwentity.Anyone:
+			parts = append(parts, op.key+": framework.Anyone")
+		default:
+			parts = append(parts, fmt.Sprintf("%s: %q", op.key, op.perm))
+		}
 	}
 	if len(parts) == 0 {
 		return ""
