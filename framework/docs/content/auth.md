@@ -996,7 +996,14 @@ hidden `_csrf` field (HTML forms) or as the `X-CSRF-Token` header (XHR /
 fetch flows that don't go through a form).
 
 Bearer-token requests (`Authorization: Bearer …`, `X-API-Key: …`) are
-skipped: they don't ride on cookies and aren't subject to CSRF.
+skipped: they don't ride on cookies and aren't subject to CSRF. Any other
+`Authorization` scheme (Basic, Digest, Negotiate, NTLM) is checked: the
+browser attaches those by itself, to a cross-site form too, once a proxy
+or an intranet has challenged for them.
+
+`auth.CSRFToken(r)` reads the token the middleware put on the request,
+on a verified POST too (a form re-rendered after a validation error).
+Without one it reads the `__Host-auth_csrf` cookie before `auth_csrf`.
 
 The CSRF cookie is `Secure`/`__Host-`-prefixed whenever the request is
 HTTPS, including behind a TLS-terminating proxy that sets
