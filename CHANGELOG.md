@@ -3855,7 +3855,8 @@ few lines, and link the PR or the docs page for the rest.
   `id=":id"` on every request.
 - **The static export writes a `StaticPaths` key holding `/`, and refuses
   two pages that write one file.** The key is checked after it is encoded
-  for disk; `..`, `.`, `\` and NUL are still refused.
+  for disk; `..`, `.`, `\` and NUL are still refused. Two files that
+  differ only in case count as one file.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.
@@ -3868,7 +3869,7 @@ few lines, and link the PR or the docs page for the rest.
 - **Pane-host keys act on the focused host, and an open drawer takes
   focus.** Escape and the Tab trap went to the first overlay host on the
   page. A drawer rendered open on a phone-width load now moves focus
-  inside, and Tab from outside goes into it.
+  inside, unless a modal holds it, and Tab from outside goes into it.
 - **A backslash in a filter value keeps the filter.** `C:\reports` made
   the rebuilt DSL unparseable and the list showed unfiltered. `dsl.Quote`
   is the one serializer.
@@ -3884,7 +3885,13 @@ few lines, and link the PR or the docs page for the rest.
   own id, so a section in island `cart` is `cart--features` in both the
   page and the RPC answer, and one in a deferred outlet takes the
   outlet's address (`l-shell-aside--features`); a link to an auto-derived
-  id inside either needs the prefix. See core-ui/ARCHITECTURE.md.
+  id inside either needs the prefix. A namespace keeps letters, digits
+  and single inner hyphens and escapes any other byte as `_` and hex
+  (island `cart.v2` gives `cart_2ev2--features`), so two namespaces never
+  share ids and an island id with a quote never reaches an attribute.
+  `ui.Carousel`, `ui.Repeater` and `ui.Counter` with no `ID` take their
+  id from the same scope, and HTML seeded into a signal carries the
+  settled ids. See core-ui/ARCHITECTURE.md.
 - **Local-entity number fields read the page's language.** `3,5` on a
   Spanish page and `12,34,567.8` on an Indian English one were refused.
 - **The API docs' mobile drawer lists entities registered after `Mount`.**
