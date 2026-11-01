@@ -3,8 +3,6 @@ package moduleproto
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"io"
 	"net"
 	"reflect"
 	"runtime"
@@ -369,23 +367,16 @@ func TestCancelNamesOnlyItsOwnFrame(t *testing.T) {
 // tombstone and the evicted tombstone.
 func TestAbandonedWindowEvictionStaysFatal(t *testing.T) {
 	// setup builds a lone host peer whose counterparty never responds,
-	// makes n abandoned (expired-ctx) calls, and drains the host's
-	// outbound frames so the writes complete. It returns the hostile
-	// write side so subtests can inject late responses by id.
+	// makes n abandoned calls (each written, then given up), and drains
+	// the host's outbound frames so the writes complete. It returns the
+	// hostile write side so subtests can inject late responses by id.
 	setup := func(t *testing.T, n int) (*Peer, net.Conn, func()) {
 		t.Helper()
 		connX, connY := net.Pipe()
 		codecX, _ := NewCodec(connX, connX, 0)
 		h := NewPeer(codecX, RoleHost)
 		h.Start()
-		go func() { _, _ = io.Copy(io.Discard, connY) }()
-		expired, expCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-		defer expCancel()
-		for range n {
-			if _, err := h.Call(expired, "anything", nil); !errors.Is(err, context.DeadlineExceeded) {
-				t.Fatalf("expired-ctx call: err = %v, want DeadlineExceeded", err)
-			}
-		}
+		abandonCalls(t, h, connY, n)
 		return h, connY, func() {
 			_ = h.Close()
 			_ = connX.Close()

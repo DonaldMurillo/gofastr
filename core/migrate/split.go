@@ -8,8 +8,9 @@ import (
 // splitStatements splits a Postgres SQL body at its statement boundaries:
 // each semicolon outside a quoted string ('…', E'…' with backslash
 // escapes, "…"), a dollar-quoted body ($$…$$, $tag$…$tag$), a comment
-// (-- to the end of the line, /* … */ nested) and a BEGIN ATOMIC … END
-// function body. Each statement comes back trimmed and without its
+// (-- to the end of the line, /* … */ nested), a parenthesized group
+// (the multi-action body of CREATE RULE … DO INSTEAD (a; b)) and a
+// BEGIN ATOMIC … END function body. Each statement comes back trimmed and without its
 // semicolon; a piece that holds only comments and space is dropped.
 //
 // A NoTransaction migration runs its statements one at a time through it.
@@ -21,7 +22,7 @@ func splitStatements(body string) []string {
 	var out []string
 	start := 0
 	hasCode := false // the current piece holds something besides comments
-	atomic, cases := 0, 0
+	atomic, cases, parens := 0, 0, 0
 	prevWord := ""
 	flush := func(end int) {
 		if hasCode {
@@ -74,8 +75,20 @@ func splitStatements(body string) []string {
 				continue
 			}
 			i++
+		case c == '(':
+			hasCode = true
+			parens++
+			i++
+		case c == ')':
+			// A stray closer is Postgres's syntax error to report; it
+			// must not drive the depth negative and hide later boundaries.
+			hasCode = true
+			if parens > 0 {
+				parens--
+			}
+			i++
 		case c == ';':
-			if atomic == 0 {
+			if atomic == 0 && parens == 0 {
 				flush(i)
 			}
 			i++

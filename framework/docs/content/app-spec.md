@@ -24,6 +24,13 @@ owned Go into an idiomatic, module-root layout by default: a flat
 additive alternative: it writes only the new files from a partial yml, never
 overwriting. See [Additive generation](#additive-generation---add).
 
+A directory of app spec files loads in file-name order and merges into one
+spec. List sections (`entities`, `screens`, `nav`, `seed`, `endpoints`,
+`hooks`, `middleware`, `plugins`, `helpers`) are concatenated. The `app:`
+blocks merge key by key, so `auth:` can live in one file and `theme:` in
+another; a key that two files both set (`app.name`, `app.auth.enabled`,
+`app.theme.primary`) is an error naming both files.
+
 `--force` overwrites everything, so it tells you what it is destroying.
 Every file the generator writes in a format with comments carries a
 provenance marker with a sum of its content (JSON and binary files such
@@ -144,14 +151,16 @@ is required. Supported syntax:
 
 - indentation-based maps and lists
 - strings, quoted strings, booleans, numbers, and `null`
-- inline scalar lists such as `[draft, published]`
+- inline scalar lists such as `[draft, published]`; a trailing comma
+  (`[draft, published,]`) adds no item, an empty item (`[a,,b]`) is an
+  error, and an empty string is written `""`
 - comments starting with `#` outside quoted strings, at the start of a line
   or after a space or tab
 - a leading byte order mark, which is skipped
 
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
-block scalars, tabs for indentation, and mixed advanced YAML forms are not part
-of the app spec format.
+block scalars, tabs for indentation, a nested list on its parent's dash line
+(`- - a`), and mixed advanced YAML forms are not part of the app spec format.
 
 **No inline (flow-style) maps.** `{type: relation, to: users}` is invalid;
 every map must be written with indented `key: value` lines:
@@ -1637,6 +1646,9 @@ The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
+- two screen routes that differ only in parameter names or syntax
+  (`/posts/{id}` and `/posts/{slug}` or `/posts/:id`): the router tries
+  dynamic routes in registration order, so the second would never render
 - two app spec items that would declare the same Go name in one generated
   package, or a declaration that takes the name of a package the file
   imports (a hook handler named `http`, a helper whose stub collides with
@@ -1797,7 +1809,9 @@ portability rules are built into that template:
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
 
 With gated screens and a seeded admin, the test signs in as that admin and
-then requires each gated screen to answer 200. Its client does not follow a
+then requires each gated screen to answer 200. The admin is seeded with the
+admin role and `user`, so a screen whose `access.role` names any other role
+must answer it 403 instead. Its client does not follow a
 redirect to the login screen's route, so a sign-in that left no session
 fails with the redirect's 303 instead of passing on the login page.
 

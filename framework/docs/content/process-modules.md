@@ -139,7 +139,9 @@ with `ErrModuleInstalled` and leaves the row alone.
   stalled transport), the supervisor kills the child and counts the exit
   as a crash: the module goes through `Crashed` → `Backoff` → `Starting`
   like any other crash, and `CircuitThreshold` faults inside
-  `CircuitWindow` open its restart circuit. A module must read stdin for
+  `CircuitWindow` open its restart circuit. The fault cancels the
+  context of every reverse call the host peer is serving, as `Close`
+  and the end of the transport do. A module must read stdin for
   as long as it sends requests.
 
 ## The two-layer 404 / 503 gate
@@ -169,7 +171,10 @@ then EOF on stdin, and is killed when its budget runs out
 Shutdown context's deadline). The budget counts from `module.drain`, and
 the drain call waits at most half of it (2 s at most) for an answer. A
 child that stopped reading stdin, so the drain frame cannot be written,
-is still killed on time. The drain closes the supervisor first, so no
+is still killed on time. However the child ends (it exits at EOF, is
+killed at the deadline, or crashes), the host then kills what is left of
+its process group on Unix, so a helper it started there does not outlive
+it. The drain closes the supervisor first, so no
 module restarts during or after shutdown, and a child still starting when
 it closes is killed instead of installed. `ProcessModuleSupervisor.Close`
 stops the loops and kills the children without the drain; after a drain it
@@ -402,15 +407,18 @@ raw, err := peer.CallWithID(ctx, moduleproto.MethodHTTP, params, func(frameID ui
 The callback fires synchronously, after the pending entry is registered and
 before the frame is written, so a watcher armed inside it cannot miss a
 response. It must not block — the write is waiting on it. It is not called
-when no id was allocated (the peer is closed, the method is empty, or the
-in-flight cap is reached). Plain `Call` is unchanged and still correct
+when no id was allocated (the peer is closed, the method is empty, the
+context has already ended, or the in-flight cap is reached). Plain `Call` is unchanged and still correct
 wherever the caller has nothing to cancel.
 
 Either call returns once its context ends, even while its request frame
 is still waiting to be written to a peer that stopped reading. The write
 carries on in the background and holds the call's in-flight slot until
 it returns, so stuck writes never exceed the cap. A call whose context
-had already ended writes nothing.
+had already ended writes nothing. `Peer.Notify` (how `module.cancel` is
+sent) works the same way, with its own cap: at most `Limits.Inflight`
+notification writes wait on a peer that stopped reading, and a `Notify`
+past that returns `moduleproto.ErrInflightCap` without writing.
 
 ```go
 codec, _ := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
