@@ -1224,7 +1224,7 @@ func (ds *UIHost) AutoCompileActions() {
 }
 
 // pathToActionID derives a component action ID from a route path.
-// "/" → "home", "/products" → "products", "/products/:slug" → "products-detail"
+// "/" → "home", "/products" → "products", "/products/:slug" → "products-slug"
 func pathToActionID(path string) string {
 	path = strings.TrimPrefix(path, "/")
 	if path == "" {
