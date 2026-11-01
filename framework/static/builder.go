@@ -846,10 +846,10 @@ func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]strin
 }
 
 // expandParams substitutes each StaticPaths param map into the route pattern.
-// It fails closed: any param value that would let the generated URL escape its
-// route segment, a path separator, an "." / ".." traversal component, a NUL,
+// It fails closed: any param value whose page file would leave its route's
+// directory, an "." / ".." or empty component on disk, a NUL, a backslash,
 // or an empty value, aborts the whole build rather than silently writing a
-// file outside OutDir.
+// file outside OutDir (validateDiskValue).
 func expandParams(_ context.Context, pattern string, sets []map[string]string) ([]string, error) {
 	var out []string
 	for _, params := range sets {
@@ -872,14 +872,7 @@ func applyParams(pattern string, params map[string]string) (string, error) {
 		if !ok {
 			continue
 		}
-		// A catch-all segment (":name*") may legitimately carry a
-		// multi-segment remainder; any other param fills exactly one
-		// path component and is validated as such.
-		check := validateParamValue
-		if strings.HasSuffix(part, "*") {
-			check = validateCatchAllValue
-		}
-		if err := check(key, v); err != nil {
+		if err := validateDiskValue(key, v, part); err != nil {
 			return "", err
 		}
 	}
@@ -888,37 +881,27 @@ func applyParams(pattern string, params map[string]string) (string, error) {
 	return coreapp.PatternPath(pattern, params), nil
 }
 
-// validateParamValue rejects StaticPaths values that could break out of their
-// single URL segment when written to disk by pathToFile/Build. A param fills
-// exactly one path component, so anything that introduces a new component
-// (separator) or navigates the tree ("."/"..") or truncates the name (NUL) is
-// unsafe.
-func validateParamValue(key, v string) error {
+// validateDiskValue rejects a StaticPaths value whose page file would
+// leave its route's directory. It checks what Build writes, not the raw
+// value: the segment is encoded the way the sitemap links it
+// (PatternPath), then decoded the way a static host maps that URL to a
+// file (hostPath). A "/" in a one-segment key ("a/b", linked as a%2Fb)
+// is a directory boundary on disk, so that key exports to
+// a/b/index.html; a catch-all's "/" separates segments the same way.
+// Every component on disk must be non-empty and not "." or "..", and
+// the value may not hold a NUL or a backslash (a separator on Windows
+// that the encoding does not escape).
+func validateDiskValue(key, v, part string) error {
 	if v == "" {
 		return fmt.Errorf("static: empty StaticPaths value for %q", key)
 	}
-	if strings.ContainsAny(v, "/\\\x00") {
-		return fmt.Errorf("static: StaticPaths value for %q contains a path separator: %q", key, v)
+	if strings.ContainsAny(v, "\\\x00") {
+		return fmt.Errorf("static: StaticPaths value for %q contains a NUL or a backslash: %q", key, v)
 	}
-	if v == "." || v == ".." {
-		return fmt.Errorf("static: StaticPaths value for %q is a traversal component: %q", key, v)
-	}
-	return nil
-}
-
-// validateCatchAllValue validates a catch-all ("name*") StaticPaths value,
-// which may span several path components joined by "/". Each component must
-// still be non-empty and free of "." / ".." traversal and NUL.
-func validateCatchAllValue(key, v string) error {
-	if v == "" {
-		return fmt.Errorf("static: empty StaticPaths value for %q", key)
-	}
-	if strings.ContainsRune(v, '\x00') {
-		return fmt.Errorf("static: catch-all StaticPaths value for %q contains NUL: %q", key, v)
-	}
-	for comp := range strings.SplitSeq(v, "/") {
+	disk := hostPath(coreapp.PatternPath(part, map[string]string{key: v}))
+	for comp := range strings.SplitSeq(disk, "/") {
 		if comp == "" || comp == "." || comp == ".." {
-			return fmt.Errorf("static: catch-all StaticPaths value for %q has an empty or traversal component: %q", key, v)
+			return fmt.Errorf("static: StaticPaths value for %q writes an empty or traversal path component: %q", key, v)
 		}
 	}
 	return nil

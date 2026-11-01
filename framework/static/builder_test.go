@@ -261,6 +261,33 @@ func TestBuildEscapesStaticPathsValue(t *testing.T) {
 	}
 }
 
+// A key holding "/" is one routing segment (/items/a%2Fb); a static
+// host decodes that URL to items/a/b, so the export writes the page
+// there instead of refusing the whole build.
+func TestBuildExportsKeyWithSlash(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/items/:id", &keyedScreen{paths: []map[string]string{{"id": "a/b"}}}, nil)
+	host := uihost.New(a, uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://example.com"}))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	sm, err := os.ReadFile(filepath.Join(out, "sitemap.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sm), "/items/a%2Fb/</loc>") {
+		t.Errorf("sitemap misses the a%%2Fb entry:\n%s", sm)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "items", "a", "b", "index.html"))
+	if err != nil {
+		t.Fatalf("page for key a/b not written: %v", err)
+	}
+	if !strings.Contains(string(data), "key=a/b<") {
+		t.Errorf("page does not render key a/b")
+	}
+}
+
 func TestBuildSkipsDynamicRoutesWithoutStaticPaths(t *testing.T) {
 	// No StaticPaths method on this screen, so it should be skipped silently.
 	type plainProduct struct{ productScreenWithoutPaths }

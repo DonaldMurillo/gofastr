@@ -83,3 +83,21 @@ func TestPageHandlerKeepsDynamicRequestPath(t *testing.T) {
 		t.Errorf("param not captured from the real path; got: %s", body)
 	}
 }
+
+// The router stores dynamic paths in the ":id" spelling, so a handler
+// built from a registered screen's Path must not force that pattern
+// into the dispatch either.
+func TestPageHandlerKeepsColonParamPath(t *testing.T) {
+	a := app.NewApp("pagehandler")
+	a.Register("/thing/{id}", &paramJSONComp{}, nil)
+	ds := New(a)
+
+	rec := httptest.NewRecorder()
+	ds.PageHandler("/thing/:id")(rec, httptest.NewRequest(http.MethodGet, "/thing/42", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, ">42<") {
+		t.Errorf("param not captured from the real path; got: %s", body)
+	}
+}
