@@ -48,7 +48,8 @@ gofastr export --base /gofastr _site
 
 A registered battery that implements `static.Contributor` sees every
 rendered page and adds files of its own; [site search](site-search.md)
-writes its index this way. Exports are reproducible: two runs over the
+writes its index this way. A contributor file at a page's path, in any
+case, fails the build. Exports are reproducible: two runs over the
 same content write the same bytes (a page that shows live data aside).
 
 The example site also wires a `--export <dir>` flag so the same binary
@@ -99,7 +100,10 @@ go build -o site ./examples/site/
   it no longer writes, such as a page that became gated or a route that
   was dropped, so the static host stops serving it with a 200. A file
   the builder never listed, and anything this build wrote or copied,
-  stays; a first build with no list removes nothing.
+  stays; a first build with no list removes nothing. A page renamed by
+  case only (`/About` to `/about`) is the same file on a
+  case-insensitive filesystem, so its old spelling is not removed
+  there.
 - With `uihost.WithSitemap` / `uihost.WithRobots`: `sitemap.xml` and
   `robots.txt`, built by the live handlers' code (same route expansion
   via `StaticPathsProvider`, same `ExcludePaths`, same AI-bot rules).
@@ -157,17 +161,20 @@ go build -o site ./examples/site/
   to the same path, `index.html` files included. Two kinds of file are
   refused: one the UI host would not serve (a path with a dot segment
   such as `.env` or `.git/config`, or a server config file name such
-  as `web.config`), and one at the path of a page the build rendered
-  (`about/index.html` beside an `/about` route). The build log names
+  as `web.config`), and one at the path of a page the build rendered,
+  in any case (`about/index.html` or `About/index.html` beside an
+  `/about` route). The build log names
   each. Files under a leading `.well-known/`, unless they are dotfiles
   themselves, and the root `.nojekyll` GitHub Pages reads are copied.
   A static-dir
   `_headers` or `_redirects` is appended to the generated one, so its
   rules apply and the generated ones (the security headers and the
-  `app.Redirect` rules) stay first.
+  `app.Redirect` rules) stay first. One spelled in another case
+  (`_HEADERS`) is refused: no host reads it, and on a case-insensitive
+  filesystem it would replace the generated file.
 - `Builder.ExtraDirs` files under their mount path, minus the dotfiles
   and config files the static dir also skips. A page or asset
-  the build wrote (the generated `_headers` and `_redirects` included),
+  the build wrote, in any case (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
   same path. Which file wins is decided by this
   build and the static source, never by what an earlier build left in

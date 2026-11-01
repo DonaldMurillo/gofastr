@@ -142,7 +142,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// The page files this build writes (rendered pages and redirect
 	// pages), as slash paths under OutDir: no static-source or extra
 	// file replaces one.
-	rendered := map[string]bool{}
+	rendered := newFileSet()
 	// The URL path each page file was rendered from, to refuse a second
 	// page landing on the same file.
 	pageOwner := map[string]string{}
@@ -202,7 +202,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			}
 			b.log("rendered %s -> %s", p, dst)
 			res.Pages = append(res.Pages, p)
-			rendered[filepath.ToSlash(pathToFile(p))] = true
+			rendered.add(filepath.ToSlash(pathToFile(p)))
 			if !slices.Contains(renderedRoutes, route) {
 				renderedRoutes = append(renderedRoutes, route)
 			}
@@ -224,6 +224,13 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			if !strings.HasPrefix(urlPath, "/") {
 				return res, fmt.Errorf("static: contributor file %q is not a root-absolute path", urlPath)
 			}
+			// A contributor file on a page's file, in any case, would
+			// replace the page; a redirect written later checks it too.
+			rel := strings.TrimPrefix(urlPath, "/")
+			if prev, dup := pageOwner[foldPath(rel)]; dup {
+				return res, fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, urlPath, rel)
+			}
+			pageOwner[foldPath(rel)] = urlPath
 			if err := b.writeRawAsset(urlPath, files[urlPath]); err != nil {
 				return res, err
 			}
@@ -243,7 +250,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 	// An ExtraDirs `_headers` must not replace it: that would drop the
 	// header-only frame-ancestors guard.
-	rendered["_headers"] = true
+	rendered.add("_headers")
 
 	// Redirect routes: a page at each exact redirect's path, and the
 	// _redirects rules the hosts that read _headers also read.
@@ -658,7 +665,7 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 // redirect chain that never ends (the live router fails it closed) is
 // skipped too. With path locales each locale tree gets its own page, its
 // target under the same prefix.
-func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string]bool, owner map[string]string) error {
+func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, rendered *fileSet, owner map[string]string) error {
 	locales, byPrefix := b.Host.PathLocales()
 	tags := []string{""}
 	if byPrefix {
@@ -705,7 +712,7 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 			if err := writeUnder(b.OutDir, dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
 				return err
 			}
-			rendered[rel] = true
+			rendered.add(rel)
 			fmt.Fprintf(&rules, "%s %s 308\n", urlBytesEscaper(b.BasePath+from), href)
 			b.log("redirect %s -> %s", from, href)
 		}
@@ -722,7 +729,7 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 	if err := writeUnder(b.OutDir, dst, []byte(rules.String())); err != nil {
 		return err
 	}
-	rendered["_redirects"] = true
+	rendered.add("_redirects")
 	return nil
 }
 
@@ -1729,7 +1736,7 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 // this build and the source, never what sits in OutDir: Watch rebuilds
 // into the same directory, and the previous build's copy of an extra
 // file must not keep the new one out.
-func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
+func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 	written := make(map[string]bool, len(res.Assets))
 	for _, p := range res.Assets {
 		written[p] = true
@@ -1759,7 +1766,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if written[urlPath] || rendered[rel] || b.staticSourceHas(filepath.FromSlash(rel)) {
+			if written[foldPath(urlPath)] || rendered.has(rel) || b.staticSourceHas(filepath.FromSlash(rel)) {
 				b.log("kept %s (extra dir %s skipped)", urlPath, mount)
 				return nil
 			}
@@ -1771,7 +1778,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 				return err
 			}
 			res.Assets = append(res.Assets, urlPath)
-			written[urlPath] = true
+			written[foldPath(urlPath)] = true
 			b.log("copied extra %s", urlPath)
 			return nil
 		})
@@ -1827,14 +1834,19 @@ func relUnder(outDir, dst string) (string, error) {
 }
 
 // keepRendered reports whether the static source's file at rel (a slash
-// path) is refused because the build rendered a page there, and logs
-// the refusal. Any other file, an index.html under a path no page takes
-// included, is copied.
-func keepRendered(rel string, rendered map[string]bool, log func(string, ...any)) bool {
-	if !rendered[rel] {
+// path) is refused because the build wrote a file there, in any case,
+// and logs the refusal. Any other file, an index.html under a path no
+// page takes included, is copied.
+func keepRendered(rel string, rendered *fileSet, log func(string, ...any)) bool {
+	own, ok := rendered.spelling(rel)
+	if !ok {
 		return false
 	}
-	log("kept the rendered page /%s (static source copy refused)", rel)
+	if own == rel {
+		log("kept the rendered page /%s (static source copy refused)", rel)
+	} else {
+		log("kept the rendered page /%s (static source copy /%s refused)", own, rel)
+	}
 	return true
 }
 
@@ -1857,8 +1869,8 @@ func publishable(rel string) bool {
 // appended to it rather than refused, so the app's rules (Cache-Control,
 // HSTS, legacy redirects) apply and the generated ones, the header-only
 // frame-ancestors guard among them, stay first.
-func generatedHostRules(rel string, rendered map[string]bool) bool {
-	return (rel == "_headers" || rel == "_redirects") && rendered[rel]
+func generatedHostRules(rel string, rendered *fileSet) bool {
+	return (rel == "_headers" || rel == "_redirects") && rendered.hasExact(rel)
 }
 
 // appendHostRules appends the static source's rules to the generated
@@ -1880,7 +1892,7 @@ func appendHostRules(root *os.Root, rel string, data []byte, log func(string, ..
 	return nil
 }
 
-func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
 		return err
@@ -1934,7 +1946,7 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 	})
 }
 
-func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
 		return err
