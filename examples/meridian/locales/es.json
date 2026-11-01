@@ -1071,6 +1071,7 @@
       "closeDrawer": "Cerrar navegación",
       "collapse": "Contraer la navegación",
       "collapseText": "Contraer",
+      "drawer": "Navegación",
       "expand": "Expandir la navegación",
       "openDrawer": "Abrir navegación"
     },
