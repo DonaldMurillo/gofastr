@@ -55,7 +55,16 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
   `cursor_key_too_long` on the page that would mint the cursor, rather
   than a token the next request refuses; page such a list with `?page=`.
   `pagination.CursorFits` is the check, for code that mints its own
-  cursors.
+  cursors. `pagination.NewCursorPage`, the helper for building a cursor
+  page by hand, returns an error wrapping `pagination.ErrCursorTooLong`
+  in that case, and the page carries no cursor:
+
+  ```go
+  page, err := pagination.NewCursorPage(rows, "id", limit)
+  if errors.Is(err, pagination.ErrCursorTooLong) {
+      // key the list on a shorter column, or page it by offset
+  }
+  ```
 - `direction` defaults to `"forward"`; only `"forward"` and
   `"backward"` are accepted.
 

@@ -597,3 +597,10 @@ notes:
     find:
       uses:
         - gofastr/framework/experimental/harness.Harness.CreateSession
+  - change: "BREAKING - pagination.NewCursorPage returns (CursorPage, error) and refuses, with an error wrapping pagination.ErrCursorTooLong, a last-row value whose cursor would pass the 16 KiB size the decoder accepts"
+    breaking: true
+    hits: edit
+    guidance: "Take the error: page, err := pagination.NewCursorPage(rows, field, limit). A refused page carries no cursor; the old helper handed out a token the next request refused as too long. Key such a list on a shorter column, or page it by offset."
+    find:
+      uses:
+        - gofastr/framework/pagination.NewCursorPage

@@ -3,6 +3,7 @@ package pagination
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"strconv"
@@ -298,9 +299,20 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	return tok.Fields, nil
 }
 
+// ErrCursorTooLong is the error NewCursorPage wraps when the last row's
+// cursor value would mint a token past the size DecodeCursor accepts.
+var ErrCursorTooLong = errors.New("pagination: cursor value too long")
+
 // NewCursorPage builds a CursorPage from data. It fetches limit+1 rows to
-// determine HasMore, and encodes the next cursor from the last row's cursorField.
-func NewCursorPage(data []map[string]any, cursorField string, limit int) CursorPage {
+// determine HasMore, and encodes the next cursor from the last row's
+// cursorField.
+//
+// A last-row value whose cursor would not fit the decoder's 16 KiB cap
+// (CursorFits) is refused with an error wrapping ErrCursorTooLong, and
+// the page comes back with no cursor: handing the token out would only
+// have the next request refuse it as too long. Key such a list on a
+// shorter column, or page it by offset.
+func NewCursorPage(data []map[string]any, cursorField string, limit int) (CursorPage, error) {
 	if limit < 1 {
 		limit = DefaultPageSize
 	}
@@ -308,20 +320,22 @@ func NewCursorPage(data []map[string]any, cursorField string, limit int) CursorP
 	if hasMore {
 		data = data[:limit]
 	}
-
-	var cursor string
+	page := CursorPage{Data: data, HasMore: hasMore}
 	if hasMore && len(data) > 0 {
 		last := data[len(data)-1]
 		if val, ok := last[cursorField]; ok {
-			cursor = EncodeCursor(cursorField, val)
+			cursor := EncodeCursor(cursorField, val)
+			if !CursorFits(cursor) {
+				return page, &i18n.Error{
+					Reason: reasonCursorValueTooLong,
+					Params: map[string]any{"field": cursorField, "size": len(cursor), "max": maxCursorEncodedSize},
+					Err:    ErrCursorTooLong,
+				}
+			}
+			page.Cursor = cursor
 		}
 	}
-
-	return CursorPage{
-		Data:    data,
-		Cursor:  cursor,
-		HasMore: hasMore,
-	}
+	return page, nil
 }
 
 // NewOffsetPage builds an OffsetPage with computed TotalPages from total and pageSize.
