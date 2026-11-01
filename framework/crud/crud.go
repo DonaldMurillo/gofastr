@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -458,14 +459,18 @@ func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
 // CheckTopLevelKeys (it walks raw bytes), so the fold check runs on the
 // decoded map instead — exact duplicates cannot survive a decode, the
 // fold collision is the detectable shape.
+//
+// The keys are walked in sorted order and the refusal names both
+// spellings, so one request body always answers the same bytes; ranging
+// the map named whichever spelling the iteration reached second.
 func (ch *CrudHandler) itemKeyFoldsUnambiguous(item map[string]any) error {
-	seen := make(map[string]struct{}, len(item))
-	for k := range item {
+	seen := make(map[string]string, len(item))
+	for _, k := range slices.Sorted(maps.Keys(item)) {
 		col := ch.wireKeyColumn(k)
-		if _, dup := seen[col]; dup {
-			return fmt.Errorf("keys folding onto the same field %q (sent %q and another spelling)", col, k)
+		if prev, dup := seen[col]; dup {
+			return i18n.NewError(reasonKeysFold, map[string]any{"first": prev, "second": k, "column": col})
 		}
-		seen[col] = struct{}{}
+		seen[col] = k
 	}
 	return nil
 }

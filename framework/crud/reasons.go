@@ -26,6 +26,10 @@ var (
 	reasonInvalidQuery     = i18n.Define("error.invalid_query", "invalid query: {{detail}}")
 	reasonInvalidBody      = i18n.Define("error.invalid_body", "invalid request body: {{detail}}")
 	reasonOffsetTooLarge   = i18n.Define("error.offset_too_large", "offset {{offset}} exceeds the maximum {{max}}")
+	reasonItemMissingKey   = i18n.Define("error.missing_key", "missing {{key}}")
+	reasonDupFormKey       = i18n.Define("error.duplicate_form_key", "form key {{key}} is repeated for a single-valued field")
+	reasonDupFilePart      = i18n.Define("error.duplicate_file_part", "file part {{key}} is repeated: an image or file field holds one upload")
+	reasonBadMultipart     = i18n.Define("error.malformed_multipart", "malformed multipart body")
 
 	reasonUnknownProjection = i18n.Define("error.unknown_projection_field", "unknown projection field")
 

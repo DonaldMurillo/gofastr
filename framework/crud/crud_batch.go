@@ -350,7 +350,13 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 				body := ch.unconvertMapKeys(item)
 				id, ok := entity.RowKey(body, ch.keyCols(), nil)
 				if !ok {
-					results[i] = batchResult{Index: i, Error: fmt.Sprintf("missing %q", strings.Join(ch.keyCols(), ", "))}
+					// The item names its record under the key's wire names.
+					keys := make([]string, len(ch.keyCols()))
+					for k, c := range ch.keyCols() {
+						keys[k] = ch.convertKey(c)
+					}
+					f := phraseRefusal(ctx, http.StatusBadRequest, reasonItemMissingKey, map[string]any{"key": strings.Join(keys, ", ")})
+					results[i] = batchResult{Index: i, Error: f.text, Reason: f.reason}
 					return errBatchAborted
 				}
 				for _, c := range ch.keyCols() {
