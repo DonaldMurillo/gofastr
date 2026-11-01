@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,7 +32,8 @@ type DeepLinkConfig struct {
 	// app path the link navigates to, or ok=false to drop the link
 	// silently. The returned path must pass the same grammar a menu
 	// Navigate path passes (leading /, no scheme, no control
-	// characters, no . or .. segments) or the link is dropped with a
+	// characters, no . or .. segments, no path segment that decodes to
+	// a /, a \ or a control character) or the link is dropped with a
 	// Warn.
 	OnDeepLink func(u *url.URL) (path string, ok bool)
 }
@@ -113,7 +115,19 @@ type deepLinkQueue struct {
 	queued   []queuedDeepLink
 	pending  []deepLinkDelivery
 	draining bool
+	// flushed is set, under mu, by the flush that moves the pre-window
+	// queue onto the delivery line. A link routes to the window only
+	// once it is set: before that, a link that saw the window up could
+	// still pass the flush and strand behind it, or overtake the links
+	// the flush is about to deliver.
+	flushed bool
 }
+
+// deepLinkRouteHook, when set by a test, runs in handleDeepLink after
+// the window check and before the link is queued or put on the line.
+// It is how a test pins the interleaving where the window comes up in
+// between.
+var deepLinkRouteHook atomic.Pointer[func()]
 
 // deepLinkDelivery is one link bound for one window.
 type deepLinkDelivery struct {
@@ -137,31 +151,38 @@ func (b *Battery) deepLinkQueueState() *deepLinkQueue {
 // handleDeepLink is WindowConfig.OnDeepLink: the raw URL the OS asked
 // the app to open. A link that fails validation is dropped with a Warn
 // (scrubbed); a link that arrives before the window is up is queued;
-// otherwise it is delivered at once.
+// otherwise it is delivered at once. The window check and the queue
+// write share one lock with flushDeepLinks, so no link lands in the
+// pre-window queue after its one flush has run.
 func (b *Battery) handleDeepLink(rawURL string) {
 	path, ok := b.mapDeepLink(rawURL)
 	if !ok {
 		return
 	}
-	w, ok := b.Window()
-	if !ok {
-		q := b.deepLinkQueueState()
-		q.mu.Lock()
-		q.queued = append(q.queued, queuedDeepLink{raw: rawURL, path: path})
-		over := len(q.queued) > maxQueuedDeepLinks
-		var dropped string
-		if over {
-			dropped = q.queued[0].raw
-			q.queued = q.queued[1:]
-		}
+	q := b.deepLinkQueueState()
+	q.mu.Lock()
+	w, up := b.Window()
+	if hook := deepLinkRouteHook.Load(); hook != nil {
+		(*hook)()
+	}
+	if up && q.flushed {
+		start, dropped := q.pushLocked(deepLinkDelivery{w: w, raw: rawURL, path: path})
 		q.mu.Unlock()
-		if over {
-			b.logger.Warn("desktop: deep-link queue is full; dropping the oldest link",
-				"url", scrubDeepLink(dropped))
-		}
+		b.startDeepLinkDrain(start, dropped)
 		return
 	}
-	b.enqueueDeepLink(deepLinkDelivery{w: w, raw: rawURL, path: path})
+	q.queued = append(q.queued, queuedDeepLink{raw: rawURL, path: path})
+	over := len(q.queued) > maxQueuedDeepLinks
+	var dropped string
+	if over {
+		dropped = q.queued[0].raw
+		q.queued = q.queued[1:]
+	}
+	q.mu.Unlock()
+	if over {
+		b.logger.Warn("desktop: deep-link queue is full; dropping the oldest link",
+			"url", scrubDeepLink(dropped))
+	}
 }
 
 // mapDeepLink validates rawURL against DeepLinkConfig and maps it to an
@@ -231,19 +252,31 @@ func (b *Battery) mapDeepLink(rawURL string) (string, bool) {
 func (b *Battery) enqueueDeepLink(d deepLinkDelivery) {
 	q := b.deepLinkQueueState()
 	q.mu.Lock()
+	start, dropped := q.pushLocked(d)
+	q.mu.Unlock()
+	b.startDeepLinkDrain(start, dropped)
+}
+
+// pushLocked appends d to the delivery line, dropping the oldest link
+// past the bound. It reports whether the caller must start a drain and
+// which links fell off. q.mu must be held.
+func (q *deepLinkQueue) pushLocked(d deepLinkDelivery) (start bool, dropped []string) {
 	q.pending = append(q.pending, d)
-	var dropped string
-	over := len(q.pending) > maxQueuedDeepLinks
-	if over {
-		dropped = q.pending[0].raw
+	if len(q.pending) > maxQueuedDeepLinks {
+		dropped = append(dropped, q.pending[0].raw)
 		q.pending = q.pending[1:]
 	}
-	start := !q.draining
+	start = !q.draining
 	q.draining = true
-	q.mu.Unlock()
-	if over {
+	return start, dropped
+}
+
+// startDeepLinkDrain logs what pushLocked dropped and starts the drain
+// it asked for. It runs after q.mu is released.
+func (b *Battery) startDeepLinkDrain(start bool, dropped []string) {
+	for _, raw := range dropped {
 		b.logger.Warn("desktop: deep-link delivery queue is full; dropping the oldest pending link",
-			"url", scrubDeepLink(dropped))
+			"url", scrubDeepLink(raw))
 	}
 	if start {
 		go b.drainDeepLinks()
@@ -335,14 +368,22 @@ func (b *Battery) deliverDeepLink(w Window, rawURL, path string) {
 // flushDeepLinks delivers links queued before the window opened, in
 // arrival order, to w. Run calls it right after the boot navigation.
 // Each link was validated and mapped when it arrived, so the flush
-// delivers the stored path and never re-runs the host OnDeepLink.
+// delivers the stored path and never re-runs the host OnDeepLink. The
+// queued links move onto the delivery line under the same lock that
+// sets flushed, so a link arriving during the flush lands behind them.
 func (b *Battery) flushDeepLinks(w Window) {
 	q := b.deepLinkQueueState()
 	q.mu.Lock()
 	queued := q.queued
 	q.queued = nil
-	q.mu.Unlock()
+	q.flushed = true
+	start := false
+	var dropped []string
 	for _, l := range queued {
-		b.enqueueDeepLink(deepLinkDelivery{w: w, raw: l.raw, path: l.path})
+		s, d := q.pushLocked(deepLinkDelivery{w: w, raw: l.raw, path: l.path})
+		start = start || s
+		dropped = append(dropped, d...)
 	}
+	q.mu.Unlock()
+	b.startDeepLinkDrain(start, dropped)
 }

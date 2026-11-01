@@ -82,7 +82,7 @@ func componentCSS(t *testing.T, name string) string {
 	if !ok {
 		t.Fatalf("component %q is not registered", name)
 	}
-	return e.CSSFor(desktopui.Theme())
+	return e.CSSFor(desktopui.ThemeFor("darwin"))
 }
 
 func plain(s string) render.HTML { return render.HTML(s) }
