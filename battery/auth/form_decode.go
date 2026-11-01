@@ -51,25 +51,18 @@ func isFormRequest(r *http.Request) bool {
 // server-side in the handler from a configured default.
 func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize func(string) (string, error)) (email, password string, form bool, ok bool) {
 	if isFormRequest(r) {
-		// http.Request.ParseForm respects MaxBytesReader if we set the
-		// body wrapper first.
-		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-		if err := r.ParseForm(); err != nil {
-			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return "", "", true, false
-			}
-			writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
+		if !parseAuthFormOrRefuse(w, r) {
 			return "", "", true, false
 		}
-		// SECURITY: net/url keeps the FIRST value of a duplicated form
-		// field while the JSON surface keeps the LAST — one body naming
-		// email (or password) twice would authenticate a different
-		// account depending on Content-Type. Reject the ambiguity at
-		// decode instead of letting the parser pick, mirroring the
-		// strict top-level key rule decodeJSONLimited enforces
-		// for the JSON surface and core/handler.Bind enforces for every
-		// bound handler.
+		// SECURITY: net/url and the multipart reader keep the FIRST
+		// value of a duplicated form field while the JSON surface keeps
+		// the LAST — one body naming email (or password) twice would
+		// authenticate a different account depending on Content-Type.
+		// Reject the ambiguity at decode instead of letting the parser
+		// pick, mirroring the strict top-level key rule
+		// decodeJSONLimited enforces for the JSON surface and
+		// core/handler.Bind enforces for every bound handler. PostForm
+		// holds the multipart values too once parseAuthForm ran.
 		for _, field := range []string{"email", "password"} {
 			if len(r.PostForm[field]) > 1 {
 				writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
@@ -96,6 +89,48 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize 
 		return "", "", false, false
 	}
 	return email, body.Password, false, true
+}
+
+// errAuthFormFile refuses a multipart auth body that carries a file part:
+// no auth form takes one.
+var errAuthFormFile = errors.New("auth: form carries a file part")
+
+// parseAuthForm caps the body at maxAuthBodyBytes and parses it into
+// r.PostForm, urlencoded or multipart. ParseForm alone never reads a
+// multipart body, so a multipart login used to arrive with no fields at
+// all. Multipart values land in r.PostForm too (ParseMultipartForm copies
+// them there), so the duplicate-field check and PostFormValue read both
+// encodings the same way. A file part is refused and its temporary files
+// removed: no auth form takes a file, and the body cap means nothing
+// reaches disk in the first place.
+func parseAuthForm(w http.ResponseWriter, r *http.Request) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+	if bareContentType(r) != "multipart/form-data" {
+		return r.ParseForm()
+	}
+	if err := r.ParseMultipartForm(maxAuthBodyBytes); err != nil {
+		return err
+	}
+	if r.MultipartForm != nil && len(r.MultipartForm.File) > 0 {
+		_ = r.MultipartForm.RemoveAll()
+		return errAuthFormFile
+	}
+	return nil
+}
+
+// parseAuthFormOrRefuse runs parseAuthForm and, on failure, writes 413
+// for an over-cap body and 400 otherwise.
+func parseAuthFormOrRefuse(w http.ResponseWriter, r *http.Request) bool {
+	err := parseAuthForm(w, r)
+	if err == nil {
+		return true
+	}
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+		return false
+	}
+	writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
+	return false
 }
 
 // canonicalizeDecodedEmail is the shared tail of both decode branches:
@@ -217,8 +252,7 @@ func emailWithinLimit(w http.ResponseWriter, r *http.Request, email string) bool
 func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) string {
 	next := r.URL.Query().Get("next")
 	if next == "" {
-		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-		if err := r.ParseForm(); err == nil {
+		if err := parseAuthForm(w, r); err == nil {
 			next = r.PostFormValue("next")
 		}
 	}
