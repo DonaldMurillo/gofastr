@@ -150,9 +150,11 @@
   // within: the scope itself when it matches, then its descendants. The
   // kernel hands the scanner each inserted node, and a node that IS the
   // marked element is wired like one inside a wrapper.
-  function within(scope, sel) {
-    const out = [...scope.querySelectorAll(sel)];
-    if (scope.matches && scope.matches(sel)) out.push(scope);
+  // marker is always one of the constant selectors below, never an
+  // attribute value, so the lookup needs no degrade guard.
+  function within(scope, marker) {
+    const out = [...scope.querySelectorAll(marker)];
+    if (scope.matches && scope.matches(marker)) out.push(scope);
     return out;
   }
 
