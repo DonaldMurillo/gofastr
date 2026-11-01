@@ -146,7 +146,10 @@ An `_in` filter takes an array, which goes as one comma-joined value
 The server splits it on commas, so an element holding a comma throws
 before any request is sent. An array on any other filter key throws too,
 naming the `_in` key to use: the server reads `?status=open,paid` as
-equality with the literal `open,paid`, never as a list.
+equality with the literal `open,paid`, never as a list. The same goes
+for a column whose own name ends in `_in`: on a `check_in` column, with
+no `check` column, `filters: { check_in: [...] }` throws and asks for
+`check_in_in`.
 
 `watch` uses fetch streaming (not `EventSource`: it can't send the
 Authorization header). Batch rollbacks (HTTP 400 with a decodable

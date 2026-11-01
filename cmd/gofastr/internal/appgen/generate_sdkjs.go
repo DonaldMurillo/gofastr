@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
@@ -42,7 +43,7 @@ func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 		// the assignment and whatever follows runs in the constructor. Bracket
 		// access is identical for every legitimate name (`client.posts` still
 		// resolves) and admits no name that is not a string.
-		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q%s);", jsResourceProp(ent), ent.Table, jsUploadColumns(decl)))
+		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q, %s%s);", jsResourceProp(ent), ent.Table, jsFilterColumns(decl), jsUploadColumns(decl)))
 		// One binding per move, same quoting rule: the key is data, never
 		// an identifier, in the emitted statements.
 		for _, t := range crud.RoutableTransitions(decl.States) {
@@ -138,7 +139,23 @@ func tsKeyArgs(decl framework.EntityDeclaration) string {
 	return ", " + tsKeyType(decl) + ", { " + strings.Join(fields, "; ") + " }"
 }
 
-// jsUploadColumns is the third Resource argument of an entity that takes
+// jsFilterColumns is the third Resource argument: every declared column
+// the server's filter parser knows (Hidden ones are invisible to it).
+// The server tries the suffix split first and falls back to bare
+// equality on the whole key, so on a column named check_in, with no
+// column named check, a joined list would be read as equality with
+// "a,b"; joinList refuses that key.
+func jsFilterColumns(decl framework.EntityDeclaration) string {
+	var cols []string
+	for _, f := range decl.Fields {
+		if !f.Hidden {
+			cols = append(cols, strconv.Quote(f.Name))
+		}
+	}
+	return "[" + strings.Join(cols, ", ") + "]"
+}
+
+// jsUploadColumns is the fourth Resource argument of an entity that takes
 // files: each Input key mapped to its column, the name a multipart part
 // goes by. Empty for an entity without Image or File fields.
 func jsUploadColumns(decl framework.EntityDeclaration) string {
@@ -494,7 +511,7 @@ export class ApiError extends Error {
   }
 }
 
-function encodeParams(params) {
+function encodeParams(params, filterable) {
   const q = new URLSearchParams();
   if (!params) return q;
   const { filters, ...rest } = params;
@@ -505,7 +522,7 @@ function encodeParams(params) {
   if (filters) {
     for (const [key, value] of Object.entries(filters)) {
       if (value === undefined || value === null) continue;
-      q.set(key, Array.isArray(value) ? joinList(key, value) : String(value));
+      q.set(key, Array.isArray(value) ? joinList(key, value, filterable) : String(value));
     }
   }
   return q;
@@ -513,13 +530,17 @@ function encodeParams(params) {
 
 // A filter list goes as one comma-joined value, which the server splits
 // on commas, so an element holding a comma would arrive as two values.
-// Only an _in key is split: the server reads a list on a bare key as
-// equality with the whole joined string, so status: ["a", "b"] would
-// match rows whose status is "a,b". The top-level lists (sort, fields,
-// include) name fields, where a comma already separates names the way
-// the server reads them.
-function joinList(key, list) {
-  if (!key.endsWith("_in")) {
+// Only <column>_in is split: the server reads a list on any other key
+// as equality with the whole joined string, so status: ["a", "b"] would
+// match rows whose status is "a,b". That includes a column whose own
+// name ends in _in (check_in, with no column check): a key that is a
+// declared column needs its stem to be one as well. filterable holds the
+// declared columns only, so a key it does not hold (created_at_in, on a
+// column Define injects) is left to the server. The top-level lists (sort,
+// fields, include) name fields, where a comma already separates names
+// the way the server reads them.
+function joinList(key, list, filterable) {
+  if (!key.endsWith("_in") || (filterable.has(key) && !filterable.has(key.slice(0, -3)))) {
     throw new Error("query: " + key + " takes one value; send a list as " + key + "_in");
   }
   for (const v of list) {
@@ -608,12 +629,15 @@ function recordID(values) {
 
 class Resource {
   /**
+   * filterable lists the table's declared columns, which joinList reads
+   * to tell <column>_in from a column whose own name ends in _in.
    * columns maps each Input key to its column; only a table with Image or
    * File fields has it, and only it takes Blob values.
    */
-  constructor(client, table, columns) {
+  constructor(client, table, filterable, columns) {
     this.client = client;
     this.table = table;
+    this._filterable = new Set(filterable || []);
     this.columns = columns || null;
   }
 
@@ -627,7 +651,7 @@ class Resource {
 
   _path(suffix, params) {
     let p = "/" + this.table + (suffix || "");
-    const q = encodeParams(params);
+    const q = encodeParams(params, this._filterable);
     const s = q.toString();
     return s ? p + "?" + s : p;
   }

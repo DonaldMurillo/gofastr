@@ -153,8 +153,8 @@ func TestSDKJSTypedSurface(t *testing.T) {
 		// checks (there is no JS parser in the Go stdlib). See
 		// TestClientJSQuotesEmittedNames. `client.posts` still resolves. Only
 		// the emitted assignment form changed.
-		"this[\"posts\"] = new Resource(this, \"posts\")",
-		"this[\"docFiles\"] = new Resource(this, \"doc_files\")",
+		"this[\"posts\"] = new Resource(this, \"posts\", [",
+		"this[\"docFiles\"] = new Resource(this, \"doc_files\", [",
 		"export const postsFields",
 		"watch(onEvent, opts)",
 		"_batch",
