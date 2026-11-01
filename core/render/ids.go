@@ -437,8 +437,8 @@ func (b *RegionBatch) ReserveRendered(i int, hs ...HTML) {
 // writtenIDs returns the values of the id attributes on the elements of
 // s that hold no placeholder token (those are derived ids Settle
 // fills), decoded. It reads tags only: a comment, another attribute's
-// value, and the text of a script, style, textarea or title element
-// are not elements, so an id="..." inside them is not read. Tag and
+// value, and the text of a raw-text element (script, style, textarea,
+// title, iframe, noembed, noframes, xmp, plaintext) are not elements, so an id="..." inside them is not read. Tag and
 // attribute names match in ASCII case, as an HTML parser does.
 func writtenIDs(s string) []string {
 	var out []string
@@ -464,7 +464,10 @@ func writtenIDs(s string) []string {
 			var ids []string
 			i, ids = readAttrs(s, j)
 			out = append(out, ids...)
-			for _, raw := range []string{"script", "style", "textarea", "title"} {
+			if asciiEqualFold(name, "plaintext") {
+				return out // the rest of the document is text
+			}
+			for _, raw := range []string{"script", "style", "textarea", "title", "iframe", "noembed", "noframes", "xmp"} {
 				if asciiEqualFold(name, raw) {
 					i = skipRawText(s, i, raw)
 					break
@@ -546,7 +549,9 @@ func skipRawText(s string, i int, name string) int {
 			return len(s)
 		}
 		at := i + k + 2
-		if at+len(name) <= len(s) && asciiEqualFold(s[at:at+len(name)], name) {
+		end := at + len(name)
+		// The name must end there: </textareax> does not close a textarea.
+		if end <= len(s) && asciiEqualFold(s[at:end], name) && (end == len(s) || isAttrSpace(s[end]) || s[end] == '>' || s[end] == '/') {
 			return i + k
 		}
 		i = at

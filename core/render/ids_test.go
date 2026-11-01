@@ -253,6 +253,7 @@ func TestReserveIDTakesTokenLookalike(t *testing.T) {
 func TestWrittenIDsReadElementsOnly(t *testing.T) {
 	h := `<!-- a > b <i id="a"> --><p title=' id="b" ' data-x=" id=&quot;c&quot;"></p>` +
 		`<script>x = '<i id="d">'</script><style>/* <i id="e"> */</style>` +
+		`<textarea></textareax><b id="i"></b></textarea><iframe><b id="j"></b></iframe>` +
 		`<i class=x id="f"></i><input id=g><br ID='h'/>`
 	got := strings.Join(writtenIDs(h), " ")
 	if got != "f g h" {
