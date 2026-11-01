@@ -1,7 +1,7 @@
 package main
 
 // Browser-level e2e for the live-dashboard reference
-// (/examples/live-dashboard?presence=live-dashboard-demo). Verifies the
+// (/examples/live-dashboard). Verifies the
 // canonical live-data composition actually behaves live in a real Chrome:
 //
 //   - The page renders with StatCards + an activity feed island (SSR).
@@ -71,10 +71,9 @@ func TestE2E_LiveDashboard_NoConsoleErrors(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		runtime.Enable(),
 		cdplog.Enable(),
-		// The ?presence= param joins the SSE topic so the demo ticker's
-		// pushes reach this session. Without it the page still renders
-		// (SSR is complete) but no islands update.
-		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
+		// The screen declares the SSE topic, so the demo ticker's pushes
+		// reach this session.
+		chromedp.Navigate(base+"/examples/live-dashboard"),
 		pageReady(),
 		// Let the SSE connection open and two ticker frames land
 		// (their swapped-in markup is what the CSP guard must see).
@@ -106,7 +105,7 @@ func TestE2E_LiveDashboard_IslandUpdatesViaSSE(t *testing.T) {
 	// innerHTML changes between captures. Read it twice with a gap.
 	var initialHTML, laterHTML string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
+		chromedp.Navigate(base+"/examples/live-dashboard"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		// Make sure the SSE module is up and the stream open before
 		// capturing, otherwise the initial read could race a hydration
@@ -157,7 +156,7 @@ func TestE2E_LiveDashboard_FeedIslandRenders(t *testing.T) {
 	var feedHTML string
 	var feedParentRole string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
+		chromedp.Navigate(base+"/examples/live-dashboard"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.InnerHTML(`[data-island="`+liveDashFeedID+`"]`, &feedHTML, chromedp.ByQuery),
 		// Read the role attribute off the data-island parent itself,
@@ -197,7 +196,7 @@ func TestE2E_LiveDashboard_ComputedStatusPill(t *testing.T) {
 
 	var reducerIsFn string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
+		chromedp.Navigate(base+"/examples/live-dashboard"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		// Ensure runtime.js has assigned __gofastr and the reducer
 		// script (loaded via WithExtraScripts AFTER runtime.js) has
@@ -254,7 +253,7 @@ func TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush(t *testing.T) {
 	// (the el.contains check).
 	var feedTitle, jobsTitle string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
+		chromedp.Navigate(base+"/examples/live-dashboard"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		// Confirm SSE actually connected, otherwise no push lands
 		// and the test would pass against a non-live page.
@@ -313,7 +312,7 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 
 	var before, after, ackAria string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
+		chromedp.Navigate(base+"/examples/live-dashboard"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		// #281: the distinct AriaLabel reaches the rendered button
 		// instead of the visible "Acknowledge".

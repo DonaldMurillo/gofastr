@@ -206,13 +206,14 @@ type Manager struct {
 	onPresenceChange atomic.Pointer[func(string)]
 
 	// AuthorizeTopic, when set, gates which presence topics a connection may
-	// join. It is called once per requested topic at SSE-connect time with the
-	// request context (carrying the server-derived authenticated user);
-	// returning false drops that topic BEFORE any subscription or roster
-	// emission, so an unauthorized viewer never sees the roster (which can
-	// contain emails) and never receives join/leave events. A nil hook
-	// authorizes every topic, presence is public by default (opt-in gating),
-	// so existing apps are unaffected. Install with SetAuthorizeTopic BEFORE
+	// join. It is called once per topic, declared and requested alike, at
+	// SSE-connect time and again on each heartbeat, with the request context
+	// (carrying the server-derived authenticated user); returning false drops
+	// that topic BEFORE any subscription or roster emission, so an
+	// unauthorized viewer never sees the roster (which can contain emails)
+	// and never receives join/leave events. A nil hook admits only the topics
+	// the page declared and refuses every client-requested one (see
+	// PresenceTopics). Install with SetAuthorizeTopic BEFORE
 	// serving traffic; the atomic.Pointer keeps the install race-free against
 	// the SSE-connect read.
 	authorizeTopic atomic.Pointer[func(context.Context, string) bool]

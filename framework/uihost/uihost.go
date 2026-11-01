@@ -2189,15 +2189,17 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	defer returnBuilder(scripts)
 
 	if sessionID != "" && !ds.noLiveChannel {
-		// The SSE connection URL. presenceTopic (from the page's ?presence=
-		// query param) is appended so the SSE handler joins the connection
-		// onto the named topic. This is what binds a live roster island to
-		// the viewers of the page. QueryEscaped to keep the value safe inside
-		// the HTML attribute and the downstream URL.
+		// The SSE connection URL. The topics the screen declares
+		// (PresenceScreen) ride signed for this viewer and join with no
+		// hook. presenceTopic (the page's own ?presence= query value) rides
+		// as a request the SSE handler admits only through AuthorizeTopic.
+		// QueryEscaped to keep the values safe inside the HTML attribute
+		// and the downstream URL.
 		sseURL := "/__gofastr/sse?session=" + sessionID
 		if presenceTopic != "" {
 			sseURL += "&presence=" + url.QueryEscape(presenceTopic)
 		}
+		sseURL += ds.declaredPresenceQuery(ctx, comp)
 		fmt.Fprintf(headClose, `<meta name="gofastr-sse" content="%s">`+"\n", sseURL)
 	}
 	// app.css is injected AFTER component CSS (see further down) so
@@ -3375,13 +3377,18 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the SERVER-DERIVED identity from the request context (a
-	// READ of the middleware-seeded ctx user, never a client param) and
-	// the bounded ?presence= topic list, then delegate to the
-	// presence-aware SSE handler. Anonymous (nil user) is fine: the
-	// manager synthesizes a stable per-session pseudo-identity.
+	// READ of the middleware-seeded ctx user, never a client param), the
+	// page's declared topics (only when their signature verifies for this
+	// user) and the bounded ?presence= requests, then delegate to the
+	// presence-aware SSE handler, which admits requested topics only
+	// through AuthorizeTopic. Anonymous (nil user) is fine: the manager
+	// synthesizes a stable per-session pseudo-identity.
 	identity := island.PresenceIdentityFromContext(r.Context())
-	topics := island.ParsePresenceTopics(r.URL.Query().Get("presence"))
-	ds.Islands.ServeSSEWithPresence(w, r, identity, topics)
+	q := r.URL.Query()
+	ds.Islands.ServeSSEWithPresence(w, r, identity, island.PresenceTopics{
+		Declared:  ds.verifiedDeclaredTopics(q, identity.UserID, time.Now()),
+		Requested: island.ParsePresenceTopics(q.Get("presence")),
+	})
 }
 
 // maxPresenceParamLen caps the raw ?presence= query value threaded from the

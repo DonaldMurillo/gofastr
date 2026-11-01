@@ -696,3 +696,13 @@ notes:
     find:
       uses:
         - gofastr/framework/experimental/harness/engine.Bus.Replay
+  - change: "BREAKING - a ?presence= topic is refused unless an island AuthorizeTopic hook admits it; a screen declares its topics with PresenceTopics(ctx), and ServeSSEWithPresence takes island.PresenceTopics"
+    breaking: true
+    hits: review
+    guidance: "Any topic in a page URL used to join with no hook, so a guessed topic exposed its roster. Give each presence screen a PresenceTopics(ctx context.Context) []string method returning its topics and drop ?presence= from its links; the host signs the list for the viewer and joins it with no hook. Apps that build topics in the browser call host.Islands.SetAuthorizeTopic, which now also sees declared topics. A direct ServeSSEWithPresence call passes island.PresenceTopics{Declared: ..., Requested: ...}; with no hook only Declared joins."
+    find:
+      uses:
+        - gofastr/core-ui/island.Manager.ServeSSEWithPresence
+        - gofastr/core-ui/island.ParsePresenceTopics
+      strings:
+        match: '[?&]presence='

@@ -99,7 +99,7 @@ func TestSSEStreamCapReturnsClearStatus(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/__gofastr/sse?session=sess", nil)
 	// The refusal path returns BEFORE the blocking SSE loop, so this call is
 	// prompt and does not need the request context cancelled.
-	mgr.ServeSSEWithPresence(rec, req, PresenceIdentity{}, nil)
+	mgr.ServeSSEWithPresence(rec, req, PresenceIdentity{}, PresenceTopics{})
 
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected %d for an over-cap stream, got %d (body=%q)",

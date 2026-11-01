@@ -104,6 +104,16 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: a presence topic named in the URL needs `AuthorizeTopic`.**
+  With no hook, any `?presence=` topic joined, so anyone who could guess a
+  topic read its roster, emails included. A screen now declares its topics
+  with `PresenceTopics(ctx)` (`uihost.PresenceScreen`); the host signs the
+  list into the page's stream URL for that viewer, and those topics join
+  with no hook. A `?presence=` topic is refused unless a hook admits it, and
+  an installed hook now answers for declared topics too.
+  `island.Manager.ServeSSEWithPresence` takes an `island.PresenceTopics`
+  (`Declared`, `Requested`) in place of a `[]string`. See
+  [Live presence](framework/docs/content/presence.md).
 - **A desktop window on Windows can no longer open a second, unguarded
   window.** WebView2 answered `window.open` and `target="_blank"` with a
   new web view that had no navigation policy, so a page could open a

@@ -21,7 +21,7 @@ func TestPresenceLeavesRevokedTopic(t *testing.T) {
 	})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		topics := ParsePresenceTopics(r.URL.Query().Get("presence"))
-		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1"}, topics)
+		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1"}, PresenceTopics{Requested: topics})
 	}))
 	defer server.Close()
 

@@ -7,18 +7,20 @@ package main
 // island manager's presence roster API and the SSE presence topic.
 //
 // How it works end-to-end:
-//   - The page is linked as /examples/presence?presence=presence-demo.
-//     handlePage threads the ?presence= value into the SSE <meta> tag,
-//     so the client's EventSource opens /__gofastr/sse?session=X&presence=presence-demo.
-//   - handleSSE reads the SERVER-DERIVED identity (from the auth ctx
-//     user; anonymous → session pseudo-identity) and joins the connection
-//     onto the "presence-demo" topic.
+//   - PresenceScreen declares the "presence-demo" topic (PresenceTopics,
+//     the uihost.PresenceScreen interface). handlePage signs it into the
+//     SSE <meta> tag for this viewer, so the client's EventSource opens
+//     /__gofastr/sse?session=X&declared=presence-demo&dsig=….
+//   - handleSSE checks the signature, reads the SERVER-DERIVED identity
+//     (from the auth ctx user; anonymous → session pseudo-identity) and
+//     joins the connection onto the topic. No AuthorizeTopic hook is
+//     needed for a declared topic.
 //   - The roster region below is a data-island slot. On any join/leave
 //     the manager fires OnPresenceChange (wired in setupServer), which
 //     re-renders the AvatarGroup and pushes it to every session on the
 //     topic, so every open tab updates live.
 //
-// To see two viewers: open /examples/presence?presence=presence-demo in
+// To see two viewers: open /examples/presence in
 // TWO browsers (or one normal + one private window, they get distinct
 // sessions). Each appears in the other's roster; close one and it drops.
 
@@ -33,8 +35,8 @@ import (
 )
 
 const (
-	// presenceDemoTopic is the opaque presence topic this page joins. Any
-	// SSE connection carrying ?presence=presence-demo is a roster member.
+	// presenceDemoTopic is the opaque presence topic this page declares.
+	// Every viewer of the page is a roster member.
 	presenceDemoTopic = "presence-demo"
 	// presenceRosterIslandID is the data-island slot the runtime swaps on
 	// a roster push. Matches the island id used by the OnPresenceChange
@@ -69,6 +71,11 @@ func (s *PresenceScreen) ScreenDescription(ctx context.Context) string {
 	return "Live viewer roster via SSE presence topics"
 }
 func (s *PresenceScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+// PresenceTopics puts every viewer of the page on the demo topic.
+func (s *PresenceScreen) PresenceTopics(context.Context) []string {
+	return []string{presenceDemoTopic}
+}
 
 func (s *PresenceScreen) Render() render.HTML {
 	var members []island.PresenceMember
