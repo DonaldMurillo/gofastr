@@ -115,8 +115,8 @@ ui.Collapsible(ui.CollapsibleConfig{Summary: "Security", Name: "faq"}, security)
 ### Copy to clipboard
 
 `framework/ui.CopyButton` renders a button that copies text to the
-clipboard via `navigator.clipboard.writeText()`. The feedback module
-(`headless-feedback`, through the `data-hui-copy*` hooks) shows a
+clipboard via `navigator.clipboard.writeText()`. The copy module
+(`headless-copy`, through the `data-hui-copy*` hooks) shows a
 brief "Copied!" state and announces it to screen readers once the
 clipboard has taken the text. A write the browser refuses (a declined
 permission, an insecure origin with no clipboard) announces the

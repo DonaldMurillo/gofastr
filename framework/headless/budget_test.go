@@ -54,7 +54,10 @@ func behaviorGzipSize(t *testing.T, file string) int {
 // the conflict toast returned to sortablelist: tree 1347 (row 1536,
 // 189 bytes of room), sortablelist 3027 (row 3072, the walk's own
 // line — no extra room to give), multiselect 865 (row 1024, 159
-// bytes of room).
+// bytes of room). Measured 2026-11-01, the day the copy control split
+// out of headless-feedback (the clipboard-outcome fix took feedback to
+// 3155, past the walk's line): feedback 2711 (row 3072, the walk's own
+// line), copy 789 (row 1024, 235 bytes of room).
 func TestBehaviorModuleSizeBudgets(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -64,6 +67,8 @@ func TestBehaviorModuleSizeBudgets(t *testing.T) {
 		{TreeBehaviorName, "tree.js", 1536},
 		{SortableListBehaviorName, "sortablelist.js", 3072},
 		{MultiSelectBehaviorName, "multiselect.js", 1024},
+		{FeedbackBehaviorName, "feedback.js", 3072},
+		{CopyBehaviorName, "copy.js", 1024},
 	} {
 		got := behaviorGzipSize(t, tc.file)
 		t.Logf("%s (%s) gzip = %d bytes (budget %d)", tc.name, tc.file, got, tc.budget)

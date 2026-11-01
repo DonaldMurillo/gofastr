@@ -98,14 +98,14 @@ func moduleLoaded(name string) string {
 }
 
 // A CopyButton with ToastOnCopy shows a toast when clicked: the
-// config rides the button, and the feedback module must find it there.
+// config rides the button, and the copy module must find it there.
 func TestCopyButtonToastOnCopyShowsAToast(t *testing.T) {
 	body := `<pre id="snippet">go get gofastr</pre>` +
 		string(ui.CopyButton(ui.CopyButtonConfig{Target: "snippet", ToastOnCopy: true, ToastTitle: "Copied it"})) +
 		string(preset.ToastSlotHTML(context.Background(), "toasts"))
 	ctx := moduleTestCtx(t, body)
-	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
-		t.Fatal("the copy marker never loaded headless-feedback")
+	if !pollJS(ctx, moduleLoaded("headless-copy")) {
+		t.Fatal("the copy marker never loaded headless-copy")
 	}
 	// The toast is the clipboard's answer, so the write is stubbed to
 	// succeed: a headless page's real clipboard refuses a scripted click.
@@ -120,7 +120,7 @@ func TestCopyButtonToastOnCopyShowsAToast(t *testing.T) {
 }
 
 // A menu's copy row is the copy wrapper itself, so the toast config
-// rides the row: the feedback module must read it there, not only from
+// rides the row: the copy module must read it there, not only from
 // an element under the wrapper.
 func TestMenuCopyRowShowsAToast(t *testing.T) {
 	body := `<span id="row-url">/notes/n1</span>` +
@@ -129,8 +129,8 @@ func TestMenuCopyRowShowsAToast(t *testing.T) {
 		}})) +
 		string(preset.ToastSlotHTML(context.Background(), "toasts"))
 	ctx := moduleTestCtx(t, body)
-	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
-		t.Fatal("the copy row never loaded headless-feedback")
+	if !pollJS(ctx, moduleLoaded("headless-copy")) {
+		t.Fatal("the copy row never loaded headless-copy")
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-menu"] > summary').click()`, nil),

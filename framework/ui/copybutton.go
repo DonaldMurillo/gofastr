@@ -18,7 +18,7 @@ import (
 // ─── CopyButton ─────────────────────────────────────────────────────
 //
 // A "copy to clipboard" button that targets another element by id.
-// The headless-feedback module's [data-hui-copy] reader performs the
+// The headless-copy module's [data-hui-copy] reader performs the
 // clipboard write; this component adds:
 //
 //   - Visible label/copied-label swap keyed on the wrapper's

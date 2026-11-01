@@ -568,25 +568,35 @@ same way and each owning one family of the stateful controls:
 
 Two attributes are the `headless` module's own, written by it and
 rendered by no component: `data-hui-when-off` and `data-hui-drop-over`.
-One is `headless-navigation`'s: `data-hui-back-to-top-visible`. Two are
-`headless-feedback`'s: `data-hui-copy-state="done"` on a copy control
-after a successful copy, and `data-hui-toast-leaving` on a toast item
-the moment it is dismissed; the kit's sheets style both.
+One is `headless-navigation`'s: `data-hui-back-to-top-visible`. One is
+`headless-copy`'s: `data-hui-copy-state="done"` on a copy control after
+a successful copy. One is `headless-feedback`'s: `data-hui-toast-leaving`
+on a toast item the moment it is dismissed. The kit's sheets style both.
 
-Three more modules of this package own the feedback and page-control
+More modules of this package own the feedback and page-control
 families:
 
+- **headless-copy** (`[data-hui-copy]`): the copy control (no
+  clipboard mutation without script — the words travel on the wrapper
+  from `Strings`). The copied label, the status sentence and the
+  optional toast wait for `navigator.clipboard.writeText` to resolve;
+  a refused or missing clipboard says the `data-hui-copy-failed`
+  sentence instead. The toast goes through the kernel's
+  `_toastOrFallback`, so it rides `headless-feedback`'s stack, or the
+  kernel's fallback region on a page with none. Its own module so the
+  toast runtime's budget does not carry the clipboard.
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
-  and `[data-cui-toast-stack]`, `[data-hui-network-retry]`): the copy control (no clipboard mutation
-  without script — the words travel on the wrapper from `Strings`),
+  and `[data-cui-toast-stack]`, `[data-hui-network-retry]`; the copy
+  wrapper is a marker so a copy that toasts finds the module loaded):
   the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
   this module now; a row is cloned from the stack's `ToastTemplate` and
   the module names no class and mounts no stack — with no stack on the
   page it returns `null` and the kernel's fallback region takes the
-  toast) and the offline banner's retry link. It replaced the retired
-  `copy`, `toasts` and `networkretrybanner` runtime modules.
+  toast) and the offline banner's retry link. With `headless-copy` it
+  replaced the retired `copy`, `toasts` and `networkretrybanner`
+  runtime modules.
 - **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
