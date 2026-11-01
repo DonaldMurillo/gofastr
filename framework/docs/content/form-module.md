@@ -245,6 +245,10 @@ announcement a failed `ui.Form` gets.
 ### Form repeater
 
 Dynamic repeating field groups. Server-driven add/remove via `name_add`/`name_remove` POST fields.
+Each row's Remove is a kit danger button and Add a kit secondary button
+(the `fui-button` classes), so they follow the theme's button density and
+danger treatment like every other button on the page; the repeater's own
+sheet only lays out the rows.
 
 ```go
 ui.FormRepeater(ui.FormRepeaterConfig{

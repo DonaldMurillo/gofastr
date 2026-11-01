@@ -55,6 +55,15 @@ type FormRepeaterConfig struct {
 // formRepeaterClasses dresses headless.Repeater's parts in this
 // package's own vocabulary — the names the registered
 // ui-form-repeater sheet matches.
+//
+// The row's remove and the add control are kit buttons: they wear the
+// button classes (buttonClassTokens, the LoadAlways ui-button sheet)
+// under this component's marker, the way Repeater, ToggleAction and
+// OptimisticAction do — a danger remove on each row (it deletes the
+// row), a secondary add under the list. The ui-form-repeater sheet
+// draws no button of its own. PartDefaultAction is deliberately
+// absent: the hidden default submit must take no class, since the
+// button sheet's display would beat the UA's [hidden] rule.
 var formRepeaterClasses = headless.Classes{
 	headless.PartRoot:           "fui-form-repeater",
 	headless.PartLabel:          "fui-visually-hidden",
@@ -62,8 +71,8 @@ var formRepeaterClasses = headless.Classes{
 	headless.PartRepeaterItem:   "fui-form-repeater__item",
 	headless.PartRepeaterFields: "fui-form-repeater__item-fields",
 	headless.PartActions:        "fui-form-repeater__item-actions",
-	headless.PartDismiss:        "fui-form-repeater__remove",
-	headless.PartRepeaterAdd:    "fui-form-repeater__add",
+	headless.PartDismiss:        buttonClassTokens(ButtonDanger, ButtonSizeDefault) + " fui-form-repeater__remove",
+	headless.PartRepeaterAdd:    buttonClassTokens(ButtonSecondary, ButtonSizeDefault) + " fui-form-repeater__add",
 	headless.PartStatus:         "fui-visually-hidden",
 }
 
@@ -117,84 +126,37 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 }
 
 func formRepeaterCSS(_ style.Theme) string {
-	// Knobs: --ui-form-repeater-action-min-height (36px) is the row
-	// floor of both action buttons, remove and add.
+	// Layout only: the remove and add controls are kit buttons (see
+	// formRepeaterClasses), drawn by the ui-button sheet.
 	return `[data-cui-comp="ui-form-repeater"] {
   display: grid;
-  gap: var(--spacing-md, 8px);
+  gap: var(--spacing-md);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__items {
   display: grid;
-  gap: var(--spacing-md, 8px);
+  gap: var(--spacing-md);
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__item {
   display: grid;
-  gap: var(--spacing-sm, 4px);
-  padding: var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #FFFFFF);
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
+  border-radius: var(--radii-md);
+  background: var(--color-surface);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__item-fields {
   display: grid;
-  gap: var(--spacing-sm, 4px);
+  gap: var(--spacing-sm);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__item-actions {
   display: flex;
   justify-content: flex-end;
 }
-[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-block-size: var(--ui-form-repeater-action-min-height, 36px);
-  padding: 0 var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-danger, #B91C1C);
-  border-radius: var(--radii-md, 8px);
-  background: transparent;
-  color: var(--color-danger, #B91C1C);
-  font: inherit;
-  font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-}
-[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-danger, #B91C1C) 10%, transparent);
-}
-[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:focus-visible {
-  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
-  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
-}
-[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:disabled {
-  opacity: var(--opacity-disabled, 0.5);
-  cursor: not-allowed;
-}
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   justify-self: start;
-  min-block-size: var(--ui-form-repeater-action-min-height, 36px);
-  padding: 0 var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #09090B);
-  font: inherit;
-  font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-}
-[data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:hover:not(:disabled) {
-  background: var(--color-surface-soft, #F4F4F5);
-}
-[data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:focus-visible {
-  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
-  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
-}
-[data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:disabled {
-  opacity: var(--opacity-disabled, 0.5);
-  cursor: not-allowed;
 }
 /* Scoped copy of the visually-hidden recipe: the group label and the
    status live region must not be seen on a page that loads only this
