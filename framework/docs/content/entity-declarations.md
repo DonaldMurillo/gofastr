@@ -386,7 +386,7 @@ Each entry under `fields:` accepts:
 | `max` / `min` | number | Length (strings) or value (numbers) bounds. |
 | `values` | list | Allowed values for `type: enum`. |
 | `pattern` | string | Regex the value must match (validated on write). |
-| `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `SERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
+| `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `BIGSERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned; `visibleFields` shapes the projection). |
 | `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. |
@@ -630,6 +630,15 @@ arithmetic, reading the float bound as its shortest spelling: `0.1` is
 bound that needs 16 or more significant digits (2^60, spelled in full or
 computed) is its exact binary value.
 
+An `int` field holds a 64-bit integer on both dialects: `INTEGER` on
+SQLite (64-bit there) and `BIGINT` on Postgres (`BIGSERIAL` for an
+`increment` key). Postgres's `INTEGER` is 32-bit, and an `int` column
+used to be one, so `2147483648` passed validation and failed the insert.
+A table an older build made keeps its `INTEGER` columns: the schema
+diff takes them as in sync rather than retyping every `int` column in
+the app. Widen one with a hand-written migration (see
+[migrations](migrations.md), "Generating migrations from entity changes").
+
 An `int` field takes a JSON number only when its text is a whole number:
 `3`, `3.0` and `3e2` pass, `1.0000000000000001` is refused even though
 it rounds to the float `1`. A `bool` field takes a number the same way,
@@ -656,12 +665,17 @@ explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
-A relation column is `TEXT`, except on Postgres when the target's key is
-an `int` field: there it is `INTEGER` (`BIGINT` for a `BIGSERIAL` key),
-since Postgres refuses a `TEXT` foreign key to an integer column. A target
-key that is itself a relation column to an `int` key counts the same way,
-however long the chain. SQLite compares the two by affinity, so it keeps
-`TEXT`. Either way a write stores such a reference in canonical decimal:
+A relation column is `TEXT`, except when the target's key is an `int`
+field: then it takes the key's integer type, `BIGINT` on Postgres and
+`INTEGER` on SQLite. Postgres refuses a `TEXT` foreign key to an integer
+column, and on SQLite a `TEXT` column stores `10` as `'10'`, so a range
+filter (`?author_id_gt=2`) or a sort on the foreign key compared text and
+put 10 before 2. A target key that is itself a relation column to an
+`int` key counts the same way, however long the chain. A `TEXT` foreign
+key an older build made on SQLite shows up in the schema diff as a
+destructive retype; boot never applies it, and the table rebuild a
+reviewed migration runs stores the keys as integers. Either way a write
+stores such a reference in canonical decimal:
 `"01"`, `"+1"` and `1.0` are stored as `1`, and a value that names no
 integer (`"owls"`) is a 400 with the reason `not_integer`.
 

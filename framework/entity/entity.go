@@ -219,8 +219,9 @@ func (a AccessControl) Declared() bool {
 // same CREATE INDEX syntax; AutoMigrate emits CREATE INDEX IF NOT EXISTS so
 // re-runs are safe.
 //
-// Name is optional, when empty, AutoMigrate synthesises one as
-// "idx_<table>_<col1>_<col2>". Unique indices reject duplicate rows for the
+// Name is optional, when empty, AutoMigrate synthesises one with
+// DefaultIndexName: "idx_<table>_<col1>_<col2>", with a hashed tail when
+// that passes 63 bytes. Unique indices reject duplicate rows for the
 // chosen column set; for single-column uniqueness prefer the Field-level
 // Unique flag which lives on the column definition.
 //
@@ -237,6 +238,19 @@ type Index struct {
 	Columns    []string `json:"columns,omitempty"`
 	Unique     bool     `json:"unique,omitempty"`
 	Expression string   `json:"expression,omitempty"`
+}
+
+// DefaultIndexName is the name an index declared without one gets:
+// "idx_", the table's own name (its schema left off, since a schema there
+// would read as the index's), and its columns, joined by "_". A name past
+// 63 bytes gets a hashed tail (query.FitIdent): Postgres would cut it at
+// 63, and two names sharing those bytes became one index, so CREATE INDEX
+// IF NOT EXISTS skipped the second. Shorter names are returned as they are.
+func DefaultIndexName(table string, cols []string) string {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		table = table[i+1:]
+	}
+	return query.FitIdent("idx_" + table + "_" + strings.Join(cols, "_"))
 }
 
 // Endpoint declares a custom route owned by an entity.

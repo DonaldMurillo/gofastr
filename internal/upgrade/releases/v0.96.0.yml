@@ -526,3 +526,15 @@ notes:
     find:
       uses:
         - gofastr/core/mcp.WithResourceGate
+  - change: "an entity int field is BIGINT on Postgres (BIGSERIAL when it auto-increments), so it holds the int64 range validation already accepted; an INTEGER column an older build created stays and AutoMigrate reports it in sync"
+    breaking: false
+    nodetect: "the column type comes from the field kind; nothing in an app's source spells the change"
+    guidance: "Nothing to change for values within int32. A column that must hold larger values needs a hand-written migration: ALTER TABLE t ALTER COLUMN c TYPE BIGINT, plus ALTER SEQUENCE t_c_seq AS BIGINT for an auto-increment key. See gofastr docs migrations."
+  - change: "a relation column on SQLite takes the referenced key's type, INTEGER for an integer key, as Postgres already did; a TEXT foreign-key column an older build created diffs as a type change in gofastr migrate generate"
+    breaking: false
+    nodetect: "the column type comes from the referenced key; nothing in an app's source spells the change"
+    guidance: "Boot never applies a type change. Review the rebuild migrate generate writes for the table and apply it: until then range filters and sorts on that column compare the keys as text, so 10 sorts before 2."
+  - change: "a default index name, or a store index name derived from a configured table, longer than Postgres's 63-byte limit keeps its first 54 bytes and appends an 8-hex hash of the full name, so two long names that share a prefix no longer collide; shorter names are unchanged"
+    breaking: false
+    nodetect: "only names past 63 bytes change; nothing in an app's source spells the derived name"
+    guidance: "On Postgres the next boot creates the index under the new name and the old truncated one stays. Drop the old index by hand once the new one exists."

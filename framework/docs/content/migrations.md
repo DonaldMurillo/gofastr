@@ -112,6 +112,19 @@ flag stays set and every later `up`/`down` refuses with an error until
 you reconcile the schema by hand and run `migrate force` (below).
 Reserve `NoTransaction` for statements that genuinely require it.
 
+On Postgres the runner splits a non-transactional `Up` (and `Down`) at
+its statement boundaries and runs each statement on its own, so one
+migration can hold several `CREATE INDEX CONCURRENTLY` statements. Sent
+together, they reached Postgres as one simple-query message, which it
+runs as one implicit transaction, and the second failed with "cannot run
+inside a transaction block". A semicolon inside a quoted string or
+identifier, a dollar-quoted body (`$$ … $$`), a comment or a
+`BEGIN ATOMIC … END` function body is not a boundary. A statement that
+fails stops the run with the ones before it applied, which the dirty
+row records. SQLite runs the body as one statement list, since a
+`CREATE TRIGGER` body holds semicolons there and SQLite has no implicit
+transaction to escape.
+
 The runner reads `migrations/*.sql` in filename order. Convention:
 zero-pad the version into the filename, e.g.
 `0001_create_posts.sql`.
@@ -399,8 +412,38 @@ declared with `RawType` (Postgres domains, arrays, custom types) are skipped:
 the live DB reports the underlying type, which never matches the raw type, so
 they would otherwise false-positive every diff. And an existing Postgres table
 whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY`
-(no sequence) is not auto-upgraded to `SERIAL`. Bring it up with a one-time
+(no sequence) is not auto-upgraded to `BIGSERIAL`. Bring it up with a one-time
 `ALTER`/rebuild if you adopt `auto_generate: increment` on Postgres.
+
+An `int` field is `BIGINT` on Postgres (`BIGSERIAL` for an `increment`
+key). A Postgres column an older build created as `INTEGER` (or `SERIAL`)
+is taken as in sync with it: the diff proposes no retype, so an upgrade
+does not turn every `int` column into a destructive change. Such a
+column still holds only 32 bits, and a value past 2147483647 fails the
+write. Widen it with a hand-written migration; a `SERIAL` key's sequence
+is `integer` too and needs its own `ALTER SEQUENCE`:
+
+```sql
+-- +migrate Version 12
+-- +migrate Up
+ALTER TABLE counters ALTER COLUMN hits TYPE BIGINT;
+ALTER TABLE counters ALTER COLUMN id TYPE BIGINT;
+ALTER SEQUENCE counters_id_seq AS BIGINT;
+-- +migrate Down
+ALTER SEQUENCE counters_id_seq AS INTEGER;
+ALTER TABLE counters ALTER COLUMN id TYPE INTEGER;
+ALTER TABLE counters ALTER COLUMN hits TYPE INTEGER;
+```
+
+An index declared without a `Name` is called `idx_<table>_<columns>`.
+Past 63 bytes, the longest identifier Postgres keeps, the name keeps its
+first 54 bytes and ends in `_` plus 8 hex digits of a hash of the whole
+name (`query.FitIdent`): Postgres would cut it at 63 bytes, and two
+names that shared those bytes named one index, so the second unique
+index was skipped. The index names the framework's own stores derive
+from a configured table (`query.QuoteIndexName`) fit the same way. A
+table that has such an index from an older build gets the new name on
+the next boot, beside the old one, which you can drop.
 
 The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
 

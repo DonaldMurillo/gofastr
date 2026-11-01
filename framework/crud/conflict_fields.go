@@ -153,7 +153,7 @@ func uniqueGroups(e *entity.Entity) []constraintGroup {
 		}
 		name := ix.Name
 		if name == "" {
-			name = "idx_" + table + "_" + strings.Join(ix.Columns, "_")
+			name = entity.DefaultIndexName(table, ix.Columns)
 		}
 		gs = append(gs, constraintGroup{cols: ix.Columns, names: withFolded(name)})
 	}

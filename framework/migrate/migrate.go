@@ -1200,14 +1200,24 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	case schema.Text:
 		return "TEXT"
 	case schema.Int:
-		// On Postgres an auto-incrementing integer needs a real sequence:
-		// SERIAL is INTEGER + NOT NULL + a backing sequence + DEFAULT
-		// nextval(). A plain "INTEGER PRIMARY KEY" has no sequence on
-		// Postgres and never auto-increments. SQLite keeps INTEGER. Its
-		// "INTEGER PRIMARY KEY" aliases the rowid and auto-increments when
-		// the column is omitted from INSERT.
-		if dialect == DialectPostgres && f.AutoGenerate == schema.AutoIncrement {
-			return "SERIAL"
+		// Int holds an int64, which is what validation accepts and what
+		// SQLite's INTEGER stores. Postgres's INTEGER is 32-bit, so an
+		// Int there is BIGINT: a value past 2^31 used to pass validation
+		// and fail the insert. A table an older build made keeps its
+		// INTEGER columns (typesEquivalent), and widening one is a
+		// hand-written migration.
+		//
+		// An auto-incrementing integer needs a real sequence on Postgres:
+		// BIGSERIAL is BIGINT + NOT NULL + a bigint sequence + DEFAULT
+		// nextval(). A plain "BIGINT PRIMARY KEY" has no sequence and never
+		// auto-increments. SQLite keeps INTEGER. Its "INTEGER PRIMARY KEY"
+		// aliases the rowid and auto-increments when the column is omitted
+		// from INSERT.
+		if dialect == DialectPostgres {
+			if f.AutoGenerate == schema.AutoIncrement {
+				return "BIGSERIAL"
+			}
+			return "BIGINT"
 		}
 		return "INTEGER"
 	case schema.Float:
@@ -1386,10 +1396,12 @@ func keyColumnType(ent *entity.Entity, pkName string, all map[string]*entity.Ent
 // which Postgres refuses as a foreign key to an integer key ("foreign key
 // constraint cannot be implemented") and refuses to join against one. When
 // the field is a belongs_to's foreign key and the target's one-column key
-// is an integer, the column takes that integer type on Postgres, following
-// a target key that is itself such a Relation. SQLite compares TEXT and
-// INTEGER by affinity, so it keeps TEXT and an existing table sees no
-// retype.
+// is an integer, the column takes that integer type, following a target
+// key that is itself such a Relation. SQLite takes it too: a TEXT column
+// stores 10 as '10', so a range filter or a sort on the foreign key
+// compared text and put 10 before 2. A TEXT foreign key an older build
+// made on SQLite diffs as a retype, which the table rebuild applies,
+// converting the stored values.
 func columnSQLType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect) string {
 	return relationColumnType(ent, f, all, dialect, map[columnRef]bool{})
 }
@@ -1405,7 +1417,7 @@ type columnRef struct {
 func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect, seen map[columnRef]bool) string {
 	t := SQLType(f, dialect)
 	ref := columnRef{ent, f.Name}
-	if f.Type != schema.Relation || f.RawType != "" || dialect != DialectPostgres || all == nil || seen[ref] {
+	if f.Type != schema.Relation || f.RawType != "" || all == nil || seen[ref] {
 		return t
 	}
 	seen[ref] = true
