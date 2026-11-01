@@ -146,6 +146,25 @@ func WithIDNamespace(ctx context.Context, ns string) context.Context {
 	return context.WithValue(ctx, idScopeKey{}, s)
 }
 
+// WithIDNamespaceKind is WithIDNamespace for a second family of
+// namespaces that must never meet the first (core-ui/app's deferred
+// outlets, beside islands, whose ids nothing validates). The namespace
+// reads "_<kind>-<encoded ns>" ("_l-shell-aside"): an encoded plain
+// namespace holds "_" only before two hex digits, so with kind a letter
+// from g to z no island id gives the same namespace. ns must not be
+// empty.
+func WithIDNamespaceKind(ctx context.Context, kind byte, ns string) context.Context {
+	if kind < 'g' || kind > 'z' {
+		panic("render: WithIDNamespaceKind kind must be a letter from g to z")
+	}
+	if ns == "" {
+		panic("render: WithIDNamespaceKind needs a namespace")
+	}
+	s := newIDScope(scopeOf(ctx))
+	s.ns, s.outer = "_"+string(kind)+"-"+encodeNamespace(ns), ctx
+	return context.WithValue(ctx, idScopeKey{}, s)
+}
+
 // encodeNamespace spells ns in the bytes tokenSafe accepts, so a
 // namespace (an island id, which nothing validates) never brings a
 // quote or a space into an attribute, and so that "<ns>--" ends where
@@ -269,9 +288,10 @@ func (s *idScope) next(id string, children []string) string {
 // any of them is suffixed.
 func ReserveID(ctx context.Context, id string, children ...string) {
 	s := scopeOf(ctx)
-	if s == nil || id == "" || strings.HasPrefix(id, tokenPrefix) {
+	if s == nil || id == "" || containsToken(id) {
 		// A token is a derived id still on its way to the page (a
-		// component handing it to the one that renders it).
+		// component handing it to the one that renders it). An id that
+		// only starts like one ("gofastr-idref-guide") is reserved.
 		return
 	}
 	s.mu.Lock()
@@ -436,10 +456,54 @@ func writtenIDs(s string) []string {
 		}
 		v := s[i : i+end]
 		i += end + 1
-		if v == "" || strings.Contains(v, tokenPrefix) {
+		if v == "" || containsToken(v) {
 			continue
 		}
 		out = append(out, html.UnescapeString(v))
+	}
+}
+
+// containsToken reports whether s holds a placeholder a region issued:
+// tokenPrefix, then <batch>x<region>x<op> in digits, then z, p or s.
+func containsToken(s string) bool {
+	digits := func(i int) int {
+		j := i
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		if j == i {
+			return -1
+		}
+		return j
+	}
+	for off := 0; ; {
+		k := strings.Index(s[off:], tokenPrefix)
+		if k < 0 {
+			return false
+		}
+		i := off + k + len(tokenPrefix)
+		off = i
+		ok := true
+		for n := 0; n < 3 && ok; n++ {
+			if i = digits(i); i < 0 {
+				ok = false
+				break
+			}
+			sep := byte('x')
+			if n == 2 {
+				sep = 0
+			}
+			if sep != 0 {
+				if i >= len(s) || s[i] != sep {
+					ok = false
+				} else {
+					i++
+				}
+			}
+		}
+		if ok && i < len(s) && (s[i] == 'z' || s[i] == 'p' || s[i] == 's') {
+			return true
+		}
 	}
 }
 

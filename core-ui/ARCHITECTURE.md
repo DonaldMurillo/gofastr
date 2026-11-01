@@ -166,11 +166,18 @@ byte becomes `_` and two hex digits (island `cart.v2` gives
 of a namespaced id is always the boundary and two namespaces never give
 one id, and no island id puts markup into an attribute. A deferred layout
 outlet is the same shape (it renders inline on a first load and alone as
-a part request) and gets the namespace of its address: `l:shell#aside`
-reads `l-shell-aside--features`, and an address whose layout or outlet
-name holds anything but letters and digits is escaped whole
-(`l:shell#aside-a` is `l_3ashell_23aside-a--features`), so outlets
-`aside-a` and `aside_a` stay apart. Each island and deferred outlet
+a part request) and gets the namespace of its address, of a kind of its
+own (`render.WithIDNamespaceKind`): `l:shell#aside` reads
+`_l-shell-aside--features`, and an address whose layout or outlet name
+holds anything but letters and digits is escaped whole
+(`l:shell#aside-a` is `_l-l_3ashell_23aside-a--features`), so outlets
+`aside-a` and `aside_a` stay apart. An island's escaped `_` is always
+followed by two hex digits, so no island id, `l-shell-aside` included,
+reaches an outlet's namespace. An id that starts with a region's
+namespace and `--` belongs to that region: an explicit
+`cart--features` written outside island `cart` can repeat one of its
+derived ids, because the island renders the same ids on the page and
+alone and cannot move them for the page. Each island and deferred outlet
 renders as its own id region inside its namespace, so an explicit id in
 it wins over a derived one wherever the two sit, as on the page. A
 region reads the id attributes its HTML writes (`RegionBatch.ReserveRendered`)

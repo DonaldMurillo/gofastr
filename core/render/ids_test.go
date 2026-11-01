@@ -231,3 +231,19 @@ func TestRegionReservesRenderedIDs(t *testing.T) {
 		t.Error("ReserveRendered read the wrong attributes")
 	}
 }
+
+// An explicit id that only starts like a placeholder is reserved like
+// any other; a real placeholder is not.
+func TestReserveIDTakesTokenLookalike(t *testing.T) {
+	ctx := WithIDScope(context.Background())
+	ReserveID(ctx, "gofastr-idref-guide")
+	if got := UniqueID(ctx, "gofastr-idref-guide"); got != "gofastr-idref-guide-2" {
+		t.Errorf("derived id = %q, want the explicit lookalike reserved", got)
+	}
+	b := NewRegionBatch(ctx, 1)
+	tok := UniqueID(b.Context(0), "plans")
+	ReserveID(ctx, tok)
+	if got := b.Settle(0)(HTML(tok)); got != "plans" {
+		t.Errorf("a placeholder was reserved as an id: %q", got)
+	}
+}

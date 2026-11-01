@@ -536,24 +536,32 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 // of its own. A deferred outlet also renders alone, as a part request
 // (RenderPartResult), where nothing else on the page has rendered, so
 // on the full page as in the part its derived ids come from the
-// outlet's namespace (render.WithIDNamespace, named after the outlet's
-// address): "l-shell-aside--features", the same in both answers and
-// apart from every other id on the page.
+// outlet's namespace (outletIDs, named after the outlet's address):
+// "_l-shell-aside--features", the same in both answers and apart from
+// every other id on the page.
 func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[string]string, slot fillSlot, guards regionGuards) fillSlotResult {
-	ids := render.NewRegionBatch(render.WithIDNamespace(ctx, idNamespace(slot.addr)), 1)
+	ids := render.NewRegionBatch(outletIDs(ctx, slot.addr), 1)
 	res := a.resolveFillSlot(ids.Context(0), path, params, slot, guards)
 	ids.ReserveRendered(0, res.html)
 	res.html = ids.Settle(0)(res.html)
 	return res
 }
 
+// outletIDs opens a deferred outlet's id namespace. It is of its own
+// kind (render.WithIDNamespaceKind, "_l-"), so no island, whatever its
+// id, shares it: island "l-shell-aside" is "l-shell-aside--features",
+// outlet l:shell#aside is "_l-shell-aside--features".
+func outletIDs(ctx context.Context, addr string) context.Context {
+	return render.WithIDNamespaceKind(ctx, 'l', idNamespace(addr))
+}
+
 // idNamespace names a deferred outlet's id namespace after its wire
 // address. The common address, a layout and an outlet whose names are
-// letters and digits only ("l:shell#aside"), reads "l-shell-aside".
-// Any other address is passed as it is, and render.WithIDNamespace
-// spells it in hex escapes ("l:shell#aside-a" is
-// "l_3ashell_23aside-a"), which always hold a "_" the readable form
-// never does. So two outlets never share a namespace: "aside-a" and
+// letters and digits only ("l:shell#aside"), reads "shell-aside". Any
+// other address is passed as it is, and the namespace spells it in hex
+// escapes ("l:shell#aside-a" is "l_3ashell_23aside-a"); every address
+// holds a "#", so that form always holds a "_" the readable form never
+// does. So two outlets never share a namespace: "aside-a" and
 // "aside_a", or "Aside" and "aside", stay apart.
 func idNamespace(addr string) string {
 	alnum := func(s string) bool {
@@ -567,7 +575,7 @@ func idNamespace(addr string) string {
 	}
 	if rest, ok := strings.CutPrefix(addr, "l:"); ok {
 		if layout, outlet, ok := strings.Cut(rest, "#"); ok && alnum(layout) && alnum(outlet) {
-			return "l-" + layout + "-" + outlet
+			return layout + "-" + outlet
 		}
 	}
 	return addr

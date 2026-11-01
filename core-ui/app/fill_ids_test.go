@@ -91,8 +91,8 @@ func TestDeferredPartMatchesPageIDs(t *testing.T) {
 		t.Errorf("deferred outlet ids: page %v, part %v; the part must carry the page's ids", page, part)
 	}
 	// The outlet's namespace keeps it apart from the screen's own id.
-	if got := featureIDs(string(res.HTML)); strings.Join(got, " ") != "features l-shell-aside--features" {
-		t.Errorf("page ids = %v, want [features l-shell-aside--features]", got)
+	if got := featureIDs(string(res.HTML)); strings.Join(got, " ") != "features _l-shell-aside--features" {
+		t.Errorf("page ids = %v, want [features _l-shell-aside--features]", got)
 	}
 }
 
@@ -205,8 +205,8 @@ func TestDeferredOutletNamespacesDiffer(t *testing.T) {
 		}
 		seen[id] = true
 	}
-	if len(got) != len(names) || !seen["l-shell-aside--features"] {
-		t.Errorf("ids = %v, want four, one of them l-shell-aside--features", got)
+	if len(got) != len(names) || !seen["_l-shell-aside--features"] {
+		t.Errorf("ids = %v, want four, one of them _l-shell-aside--features", got)
 	}
 }
 
