@@ -781,6 +781,20 @@ is deliberately weak: any signed-in user, not an editor role. Writes are
 not filtered by it. See
 [entity-declarations](entity-declarations.md) → "Row-level read scoping".
 
+A `BeforeGet` hook that scopes reads does filter writes. A record
+`GET /<entity>/{id}` answers 404 for, because the caller's own
+`BeforeGet` chain appends a clause that excludes it, is one `PUT`,
+`PATCH`, `DELETE`, a transition and each `_batch` update or delete item
+answer the same 404 for, with the bytes a missing id gets, and leave
+untouched. The check reads the row inside the write's transaction under
+the write's own tenant, owner and soft-delete scope, before any other
+step, so a hidden row, another owner's row and a missing one fail at the
+same point even for a body the write would have refused later. A hook
+error hides the row. In process it binds under `crud.WithReadHooks`, as
+`GetOne` does, and covers `RestoreOne`, `PurgeOne` and `UpsertOne`'s
+conflict arm too. See [hooks and transactions](hooks-and-transactions.md)
+→ "A `BeforeGet` scope binds writes too".
+
 Because entity MCP tools dispatch through the router, this gate governs
 their calls automatically, and the framework attaches the entity's
 `Access` permission to each generated tool as its `WithToolGate`, so a

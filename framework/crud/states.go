@@ -554,6 +554,11 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	if _, err := ch.conn(ctx).ExecContext(ctx, lock); err != nil {
 		return nil, err
 	}
+	// A row the caller's BeforeGet hooks hide answers GET's 404, read
+	// under the lock like the move target below (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+		return nil, err
+	}
 	if err := ch.stampRow(ctx, id); err != nil {
 		return nil, err
 	}

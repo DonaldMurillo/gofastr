@@ -16,6 +16,9 @@ import (
 // BeforeGet hook hides: a 409 on a move, or a 422 on a write of the state
 // field, named the stored state of a row GET answers 404 for (2026-11-01
 // bug bash). It now asks the same BeforeGet chain the write responses do.
+// Since the owner decision of the same day the write itself answers 404
+// for such a row before any refusal is built (refuseHiddenTarget), which
+// names no state either.
 func TestStateRefusalHidesFromBeforeGetScope(t *testing.T) {
 	ch, db := statesWorld(t)
 	scope := func(_ context.Context, data any) error {
@@ -47,12 +50,12 @@ func TestStateRefusalHidesFromBeforeGetScope(t *testing.T) {
 	}
 
 	mv := send(http.MethodPost, "/invoices/hidden/transitions/issue", "")
-	if mv.Code != http.StatusConflict || strings.Contains(mv.Body.String(), "paid") {
-		t.Errorf("SECURITY: the move refusal for a row GET answers 404 for = %d %s, want a 409 naming no state", mv.Code, mv.Body.String())
+	if mv.Code != http.StatusNotFound || strings.Contains(mv.Body.String(), "paid") {
+		t.Errorf("SECURITY: the move refusal for a row GET answers 404 for = %d %s, want GET's 404 naming no state", mv.Code, mv.Body.String())
 	}
 	up := send(http.MethodPatch, "/invoices/hidden", `{"status":"draft"}`)
-	if up.Code != http.StatusUnprocessableEntity || strings.Contains(up.Body.String(), "paid") {
-		t.Errorf("SECURITY: the state refusal for a row GET answers 404 for = %d %s, want a 422 naming no state", up.Code, up.Body.String())
+	if up.Code != http.StatusNotFound || strings.Contains(up.Body.String(), "paid") {
+		t.Errorf("SECURITY: the state refusal for a row GET answers 404 for = %d %s, want GET's 404 naming no state", up.Code, up.Body.String())
 	}
 
 	// A row the hook admits still names where it stands.
@@ -61,7 +64,7 @@ func TestStateRefusalHidesFromBeforeGetScope(t *testing.T) {
 	}
 
 	// In process the hook binds only under WithReadHooks, as GetOne.
-	if _, err := ch.RunTransition(WithReadHooks(context.Background()), "hidden", "issue"); err == nil || strings.Contains(err.Error(), "paid") {
+	if _, err := ch.RunTransition(WithReadHooks(context.Background()), "hidden", "issue"); !errors.Is(err, errNotFound) || strings.Contains(err.Error(), "paid") {
 		t.Errorf("SECURITY: in-process move under WithReadHooks = %v, want a refusal naming no state", err)
 	}
 	_, err := ch.RunTransition(context.Background(), "hidden", "issue")

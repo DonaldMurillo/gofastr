@@ -209,6 +209,11 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			return nil, err
 		}
 	}
+	// A row the caller's BeforeGet hooks hide answers GET's 404, before
+	// anything else reads or writes it (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+		return nil, err
+	}
 	// A storage key in a file field must be one this request uploaded or
 	// one already on this row (media_provenance.go).
 	idKey, _ := ch.idVals(id)
@@ -832,7 +837,10 @@ func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any
 // a row an HTTP write just committed (2026-10-27 D4). readScopeHidesRow
 // covers the declared ReadScope; an app that scopes reads with a BeforeGet
 // hook and grants writes more widely handed a writer every column of a row
-// GET answers 404 for, a no-op PATCH being enough to read it.
+// GET answers 404 for, a no-op PATCH being enough to read it. A write to a
+// row the hook already hides now answers 404 before it runs
+// (refuseHiddenTarget); this still covers a create, and a write that moves
+// its row out of the caller's sight.
 //
 // The write routes call it after commit, outside the transaction, where
 // GET would run the chain: a hook that reads the database would otherwise
@@ -878,6 +886,11 @@ func autoUpdatedAtColumn(ent *entity.Entity) string {
 // doDelete runs the BeforeDelete → DELETE/UPDATE → AfterDelete chain for a
 // single record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string) error {
+	// A row the caller's BeforeGet hooks hide answers GET's 404
+	// (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+		return err
+	}
 	// Snapshot the row before deletion so the audit hook can record what
 	// went away. Without this the audit row only carries a record_id,
 	// useful for "who did it" but useless for "what was lost".
