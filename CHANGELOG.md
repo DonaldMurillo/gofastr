@@ -104,6 +104,22 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: an empty query or header value is treated as absent.**
+  `?page=` answered 400 on a number field, and `?q=` bound `""` to a
+  string. Every kind now leaves the field unset, as if the parameter
+  were missing. A `,empty` tag option (`query:"q,empty"`) keeps an
+  explicit empty: `""`, a zero, or a non-nil pointer to one, so a
+  handler can tell `?q=` from no `q`. A generated endpoint's optional
+  `*string` query field now gets nil for `?q=`. An unknown tag option
+  is refused.
+- **Tag binding honours `encoding.TextUnmarshaler`.** A query, path,
+  header or tool parameter whose type implements it is filled through
+  `UnmarshalText`, and its error is a 400. `?status=bogus` used to get
+  past a type that validates in `UnmarshalText`; `time.Time` and UUID
+  types now bind from a query.
+- **A tool call refuses case-folded twin keys across the whole params
+  object.** `{"q":"safe","Q":"danger"}` bound `danger` to a `query:"q"`
+  field while `params["q"]` read `safe`.
 - **`middleware.Tracing` joins a trace from the configured propagator.**
   It injected with the global otel propagator but always extracted W3C,
   so an app on B3 or Jaeger started a new trace per request. It now
