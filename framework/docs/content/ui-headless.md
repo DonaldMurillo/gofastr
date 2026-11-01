@@ -380,7 +380,12 @@ field `<ID>-field` (the root keeps `ID`, so the label names the
 field, not the group), and its `Help` is the field's
 `aria-describedby`. A named `Counter`'s input is an attr binding
 (`data-cui-signal-mode="attr"` writing `value`), so a step moves what
-the form submits. A `Tree` row's link is out of the tab order: the
+the form submits. A stepping `Counter` hands its `Value` to its signal
+when it arrives (`data-hui-counter-value`, bound by
+`headless-controls`): the kernel steps the signal store, so without it
+the first + on a counter showing 4 would show 1. `Seeded: true` leaves
+the seed to the page (`ui.Counter` sets it; its `store.Slice` seeds
+the signal). A `Tree` row's link is out of the tab order: the
 tree is one tab stop and Enter on the row follows the link.
 
 The parts the navigation members draw beyond the shared vocabulary:

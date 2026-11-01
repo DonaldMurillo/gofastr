@@ -19,11 +19,12 @@ const ControlsBehaviorName = "headless-controls"
 
 // The markers are spelled as literals on the call because the runtime's
 // hard-rule-5 gate reads every registry.Markers call in the tree. One
-// per behaviour: the animated counter's root (an unanimated counter
-// needs no module — the signals kernel is the whole increment path),
-// the stepper's root, the slider's output (a bare slider carries no
+// per behaviour: a stepping counter's seed (the signals kernel is the
+// whole increment path, but it steps the store, so the counter's own
+// value has to reach it) and the animated counter's root, the
+// stepper's root, the slider's output (a bare slider carries no
 // mirror and no module), and the range pair's root (its cross-clamp
 // matters even without an output).
 var _ = uiregistry.RegisterBehavior(ControlsBehaviorName, controlsJS,
-	uiregistry.Markers("[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
+	uiregistry.Markers("[data-hui-counter-value]", "[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
 		"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"))

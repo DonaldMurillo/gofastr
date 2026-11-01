@@ -78,6 +78,30 @@
     requestAnimationFrame(frame);
   }
 
+  // ─── counter seed ────────────────────────────────────────────────
+
+  // The kernel's data-cui-signal-inc steps the value the signal store
+  // holds, not the markup: a counter no layer above seeded would step
+  // from zero while it shows its Value. On arrival the counter hands
+  // the store the value it shows (data-hui-counter-value, plain
+  // digits): the fresh markup of an island swap or a navigation is the
+  // number on screen, so it wins over a count stepped on the markup it
+  // replaced. A root seeds once: a rescan of the same markup (an
+  // insertion elsewhere, a navigation that kept it) is not an arrival,
+  // and the count the reader stepped to stands. A counter whose page
+  // seeds the signal itself (ui.Counter over a store.Slice) renders no
+  // hook, so the page's seed stays the only one.
+  const seeded = new WeakSet();
+  function seedCounter(root) {
+    if (seeded.has(root)) return;
+    seeded.add(root);
+    const n = parseFloat(root.getAttribute('data-hui-counter-value'));
+    const value = root.querySelector('[data-cui-signal]');
+    const name = value && value.getAttribute('data-cui-signal');
+    if (!name || !Number.isFinite(n) || typeof NS.setSignal !== 'function') return;
+    if (NS.getSignal(name) !== n) NS.setSignal(name, n);
+  }
+
   // ─── number stepper ──────────────────────────────────────────────
 
   // Steps the input through the browser's own stepUp/stepDown, so the
@@ -177,6 +201,9 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
+    // The seed first: an animation that starts after it walks toward
+    // the value the store already holds.
+    for (const el of within(scope, '[data-hui-counter-value]')) seedCounter(el);
     for (const el of within(scope, '[data-hui-counter-animate]')) animateCounter(el);
     for (const el of within(scope, '[data-hui-slider-output]')) {
       const input = el.closest('[data-hui-slider]');

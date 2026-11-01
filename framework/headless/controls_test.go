@@ -46,7 +46,29 @@ func TestCounterAnimationHooksRenderOnlyWhenAnimated(t *testing.T) {
 	has(t, animated, `data-hui-counter-to="4820"`, "the figure the animation ends on is missing")
 
 	plain := Counter(CounterProps{Signal: "qty", Label: "Qty"}, nil)
-	hasNot(t, plain, "data-hui-counter", "an unanimated counter carries the animation hooks for no one")
+	for _, hook := range []string{"data-hui-counter-animate", "data-hui-counter-from", "data-hui-counter-to", "data-hui-counter-ms"} {
+		hasNot(t, plain, hook, "an unanimated counter carries the animation hooks for no one")
+	}
+}
+
+// A stepping counter carries its Value to the runtime: the kernel steps
+// the signal store, so without the seed the first + steps from zero
+// while the counter shows Value. A display figure steps nothing, and a
+// counter whose page seeds the signal (Seeded) hands over no second
+// seed to race the page's.
+func TestCounterSeedsItsValueOnlyWhenNothingElseDoes(t *testing.T) {
+	has(t, Counter(CounterProps{Signal: "qty", Label: "Qty", Value: 4}, nil),
+		`data-hui-counter-value="4"`, "a stepping counter does not hand the runtime the value it shows")
+	has(t, Counter(CounterProps{Signal: "seats", Label: "Seats", Name: "seats", Value: 7}, nil),
+		`data-hui-counter-value="7"`, "a named counter does not hand the runtime the value it shows")
+	hasNot(t, Counter(CounterProps{Signal: "qty", Label: "Qty", Value: 4, Seeded: true}, nil),
+		"data-hui-counter-value", "a counter whose page seeds the signal still hands over its own value")
+	hasNot(t, Counter(CounterProps{Signal: "n", Value: 4, Display: true}, nil),
+		"data-hui-counter-value", "a display figure, which steps nothing, seeds the signal")
+	if big := int(^uint(0) >> 1); !jsSafeInt(big) {
+		hasNot(t, Counter(CounterProps{Signal: "n", Label: "N", Value: big}, nil),
+			"data-hui-counter-value", "a value past a JavaScript number's exact range was handed to the runtime")
+	}
 }
 
 // A reserved signal name is refused: the kernel drops it, so the

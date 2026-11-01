@@ -4,8 +4,9 @@
 // Left/Right crosses to an adjacent column of the same group, the one
 // on screen to that side in RTL, Space drops, Escape or focus leaving
 // the row cancels) — and the server round trip the pattern shipped,
-// with the server authoritative: non-2xx reverts the DOM unless a
-// newer commit on the list has gone out since.
+// with the server authoritative: non-2xx reverts the DOM to the last
+// order the server confirmed, unless a newer commit on the list has
+// gone out since.
 //
 // The commit contract:
 //   - a same-container reorder POSTs order=<comma-separated keys>,
@@ -36,24 +37,16 @@
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
-  function listOf(item) {
-    return item && item.closest && item.closest('[data-hui-sortable]');
-  }
+  const listOf = (item) => item?.closest?.('[data-hui-sortable]');
 
-  function rowsOf(list) {
-    return Array.from(list.querySelectorAll(':scope > [data-hui-sortable-item]'));
-  }
+  const rowsOf = (list) => Array.from(list.querySelectorAll(':scope > [data-hui-sortable-item]'));
 
-  function attr(el, name) {
-    return el && el.getAttribute ? (el.getAttribute(name) || '') : '';
-  }
+  const attr = (el, name) => el?.getAttribute?.(name) || '';
 
   // fill substitutes the announcement's tokens: {label} the row's
   // name, {list} the list's own name, {position} the 1-based place.
   function fill(tpl, map) {
-    return tpl.replace(/\{\{(label|list|position)\}\}/g, function (_, k) {
-      return map[k] !== undefined ? String(map[k]) : '';
-    });
+    return tpl.replace(/\{\{(label|list|position)\}\}/g, (_, k) => String(map[k] ?? ''));
   }
 
   // canCross: over and src are different lists of the same group.
@@ -67,11 +60,8 @@
   // auth.CSRF middleware accepts this state-changing POST.
   function csrfHeaders() {
     const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    if (meta) {
-      const tok = meta.getAttribute('content');
-      if (tok) headers['X-CSRF-Token'] = tok;
-    }
+    const tok = attr(document.querySelector('meta[name="csrf-token"]'), 'content');
+    if (tok) headers['X-CSRF-Token'] = tok;
     return headers;
   }
 
@@ -82,9 +72,9 @@
   // carries container= (empty when the list has no configured id).
   function post(list, moved) {
     const rpc = attr(list, 'data-hui-sortable-rpc');
-    if (!rpc || !window.__gofastr?._originOK?.(rpc)) return Promise.resolve();
+    if (!rpc || !NS._originOK?.(rpc)) return Promise.resolve();
     const c = attr(list, 'data-hui-sortable-container'), v = attr(list, 'data-hui-sortable-version');
-    let body = 'order=' + encodeURIComponent(rowsOf(list).map(function (r) { return attr(r, 'data-hui-sort-key'); }).join(','));
+    let body = 'order=' + encodeURIComponent(rowsOf(list).map((r) => attr(r, 'data-hui-sort-key')).join(','));
     if (v) body += '&version=' + encodeURIComponent(v);
     if (moved !== undefined) body += '&moved=' + encodeURIComponent(moved);
     if (c || moved !== undefined) body += '&container=' + encodeURIComponent(c);
@@ -94,8 +84,10 @@
   }
 
   // ── aria-live announcements ────────────────────────────────────────
-  // Mirrors the feedback module's copy path: blank then set text after ~30ms so AT re-reads.
-  function announce(list, key, map) {
+  // Mirrors the feedback module's copy path: blank then set text after
+  // ~30ms so AT re-reads. raw is a server-provided message (the bounded
+  // 409 detail), said as it is; every other sentence is the list's own.
+  function announce(list, key, map, raw) {
     let live = document.getElementById('hui-sortable-live');
     if (!live) {
       live = document.createElement('div');
@@ -105,28 +97,26 @@
       live.setAttribute('data-hui-sortable-live', '');
       document.body.appendChild(live);
     }
-    const msg = fill(attr(list, key), map || {});
+    const msg = raw || fill(attr(list, key), map || {});
     live.textContent = '';
-    setTimeout(function () { live.textContent = msg; }, 30);
+    setTimeout(() => { live.textContent = msg; }, 30);
   }
 
   // readBounded: read at most `max` chars from res's body via the
   // stream reader, a hard safety bound so a hostile/buggy server
   // can't make us buffer an unbounded 409 body. cb(txt).
   function readBounded(res, max, cb) {
-    if (!res.body || !res.body.getReader) {
-      res.text().then(function (t) { cb(t.slice(0, max)); }).catch(function () { cb(''); });
-      return;
-    }
-    const r = res.body.getReader(), dec = new TextDecoder();
+    // No stream reader, no read: the caller's generic copy stands.
+    const r = res.body?.getReader?.(), dec = new TextDecoder();
+    if (!r) return cb('');
     let out = '', n = 0;
     (function step() {
-      r.read().then(function (x) {
+      r.read().then((x) => {
         if (x.done) { cb(out.slice(0, max)); return; }
         if (x.value) { out += dec.decode(x.value, { stream: true }); n += x.value.length; }
         if (n >= max) { try { r.cancel(); } catch (_) {} cb(out.slice(0, max)); }
         else step();
-      }).catch(function () { cb(''); });
+      }, () => cb(''));
     })();
   }
 
@@ -135,15 +125,12 @@
   // message capped ~300 chars; malformed/oversized/empty → cb('') so
   // the caller falls back to the generic copy.
   function conflictMessage(res, cb) {
-    let ct = '';
-    try { ct = (res.headers.get('Content-Type') || '').toLowerCase(); } catch (_) {}
-    if (ct.indexOf('application/json') < 0) { cb(''); return; }
-    readBounded(res, 4096, function (txt) {
-      if (!txt) { cb(''); return; }
+    if (!(res.headers.get('Content-Type') || '').toLowerCase().includes('application/json')) return cb('');
+    readBounded(res, 4096, (txt) => {
+      // An empty or malformed body throws in the parse: generic copy.
       try {
-        const j = JSON.parse(txt);
-        const m = j && j.error && typeof j.error.message === 'string' ? j.error.message : '';
-        cb(m ? m.slice(0, 300) : '');
+        const m = JSON.parse(txt)?.error?.message;
+        cb(typeof m === 'string' ? m.slice(0, 300) : '');
       } catch (_) { cb(''); }
     });
   }
@@ -158,91 +145,84 @@
   }
 
   // ── Commit + rollback ──────────────────────────────────────────────
-  // restore reverts the DOM to the pre-move state.
-  function restore(dest, prevOrder, srcList, srcSnap, movedItem) {
-    if (srcList && srcList !== dest) {
-      if (srcSnap) srcSnap.forEach(function (r) { srcList.appendChild(r); });
-      if (movedItem && movedItem.parentNode === dest) dest.removeChild(movedItem);
-    } else if (prevOrder) {
-      prevOrder.forEach(function (r) { dest.appendChild(r); });
-    }
-  }
+  // Drops in quick succession are commits in flight together, settling
+  // in any order, and each one sends its list's whole order. So a
+  // rollback never goes back to the order its own move started from
+  // (that order can hold an earlier move the server never saved): each
+  // list keeps the last order the server confirmed, __huiAck, taken
+  // from the screen when a move starts with nothing in flight and
+  // replaced by every success newer than the one it holds. Whenever
+  // the newest commit on a list has failed, the list shows that order:
+  // a failure superseded by a newer commit changes nothing, and an
+  // older commit that succeeds after the newest failed moves the list
+  // to the order it saved. put restores one list; in a cross-list move
+  // the destination goes first, so the source can take its row back.
+  const put = (l) => l.__huiAck.forEach((r) => l.appendChild(r));
 
-  function commit(dest, prevOrder, srcList, srcSnap, movedItem) {
-    const isCross = srcList && srcList !== dest;
-    const p = isCross
-      ? post(dest, movedItem.getAttribute('data-hui-sort-key'))
-      : post(dest);
-    // Two drops in quick succession are two commits in flight, settling
-    // in any order. A commit sends the list's whole order, so once a
-    // newer commit has gone out the newer one owns the list: an older
-    // commit's late failure reverts nothing (it would paint an order
-    // older than the one the newer commit saved) and says nothing.
-    const lists = isCross ? [dest, srcList] : [dest];
-    const mine = lists.map(function (l) { return (l.__huiSeq = (l.__huiSeq || 0) + 1); });
-    const restoreFn = function () {
-      const newest = lists.every(function (l, i) { return l.__huiSeq === mine[i]; });
-      if (newest) restore(dest, prevOrder, srcList, srcSnap, movedItem);
-      return newest;
-    };
-    p.then(function (res) {
+  function commit(dest, pre, srcList, movedItem) {
+    const lists = srcList ? [dest, srcList] : [dest];
+    const pres = srcList ? [rowsOf(dest).filter((r) => r !== movedItem), pre] : [pre];
+    lists.forEach((l, i) => { if (!l.__huiN) l.__huiAck = pres[i]; l.__huiN = (l.__huiN || 0) + 1; });
+    const sent = lists.map((l) => rowsOf(l));
+    const mine = lists.map((l) => (l.__huiSeq = (l.__huiSeq || 0) + 1));
+    const p = post(dest, srcList ? attr(movedItem, 'data-hui-sort-key') : undefined);
+    // settle records the outcome on every list the commit sent and
+    // reports whether it was the newest on all of them, the one whose
+    // outcome is announced.
+    const settle = (ok) => lists.map((l, i) => {
+      l.__huiN--;
+      if (ok && mine[i] > (l.__huiOk || 0)) { l.__huiAck = sent[i]; l.__huiOk = mine[i]; }
+      if (!ok && mine[i] === l.__huiSeq) l.__huiBad = mine[i];
+      if (l.__huiBad === l.__huiSeq) put(l);
+      return mine[i] === l.__huiSeq;
+    }).every(Boolean);
+    const fail = (key) => { if (settle(false) && key) announce(dest, key); };
+    p.then((res) => {
       // A followed 3xx (an expired session sent the commit to the
       // sign-in page) is another URL's 200, not this commit's: the
       // order was not saved, so it reverts like any failed commit. No
       // navigator hand-off here: the module sits on the shared 3 KB
       // line, and the reverted announcement already says the save
       // failed; the reader's next navigation meets the same redirect.
-      if (!res || !res.ok || res.redirected) {
-        const is409 = res && res.status === 409;
-        if (is409 && dest.hasAttribute('data-hui-sortable-version')) {
-          conflictMessage(res, function (msg) {
-            const crpc = attr(dest, 'data-hui-sortable-conflict');
-            // A real server message is the announcement AND an error
-            // toast — the live region is visually hidden, so without
-            // the toast a sighted reader learns nothing of the
-            // conflict. The generic copies below never toast, and a
-            // message replaces them the way the retired module's
-            // finishConflict did.
-            if (msg) { announceRaw(msg); fireToast(msg); }
-            if (crpc && window.__gofastr?._originOK?.(crpc)) {
-              fetch(crpc, { credentials: 'same-origin' })
-                .then(function (r) {
-                  // Same convention as poll.js/rpc.js: an HTTP error must
-                  // reach .catch, never the innerHTML mount — an error
-                  // body reflects the request URL and would replace live
-                  // page markup with reflected output. A followed 3xx is
-                  // another URL's markup (a sign-in page), never the rows.
-                  if (!r.ok || r.redirected) throw new Error('conflict refresh failed: ' + r.status);
-                  return r.text();
-                })
-                .then(function (html) {
-                  dest.innerHTML = html;
-                  if (srcList && srcList !== dest && srcSnap)
-                    srcSnap.forEach(function (r) { srcList.appendChild(r); });
-                  if (!msg) announce(dest, 'data-hui-sortable-s-conflict-refreshed');
-                })
-                .catch(function () { if (restoreFn() && !msg) announce(dest, 'data-hui-sortable-s-conflict-reverted'); });
-              return;
-            }
-            if (restoreFn() && !msg) announce(dest, 'data-hui-sortable-s-conflict-reverted');
-          });
-          return;
-        }
-        if (restoreFn()) announce(dest, is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
-      } else {
-        window.__gofastr._inval?.(res);
+      if (res && res.ok && !res.redirected) {
+        settle(true);
+        NS._inval?.(res);
         announce(dest, 'data-hui-sortable-s-saved');
+        return;
       }
-    }).catch(function () { if (restoreFn()) announce(dest, 'data-hui-sortable-s-reverted'); });
-  }
-
-  // announceRaw says a server-provided message through the live
-  // region (the bounded 409 detail), never a sentence of our own.
-  function announceRaw(msg) {
-    const live = document.getElementById('hui-sortable-live');
-    if (!live) return; // announce() created it on the first move
-    live.textContent = '';
-    setTimeout(function () { live.textContent = msg; }, 30);
+      const is409 = res && res.status === 409;
+      if (!is409 || !dest.hasAttribute('data-hui-sortable-version')) return fail(is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
+      conflictMessage(res, (msg) => {
+        const crpc = attr(dest, 'data-hui-sortable-conflict');
+        // A real server message is the announcement AND an error
+        // toast — the live region is visually hidden, so without the
+        // toast a sighted reader learns nothing of the conflict. The
+        // generic copies never toast, and a message replaces them the
+        // way the retired module's finishConflict did.
+        if (msg) { announce(dest, '', 0, msg); fireToast(msg); }
+        const reverted = msg ? '' : 'data-hui-sortable-s-conflict-reverted';
+        if (!crpc || !NS._originOK?.(crpc)) return fail(reverted);
+        fetch(crpc, { credentials: 'same-origin' })
+          .then((r) => {
+            // Same convention as poll.js/rpc.js: an HTTP error must
+            // reach .catch, never the innerHTML mount — an error body
+            // reflects the request URL and would replace live page
+            // markup with reflected output. A followed 3xx is another
+            // URL's markup (a sign-in page), never the rows.
+            if (!r.ok || r.redirected) throw new Error('conflict refresh failed: ' + r.status);
+            return r.text();
+          })
+          .then((html) => {
+            // The fresh rows are the server's order: the destination
+            // confirms them, and the settle puts the source back.
+            dest.innerHTML = html;
+            dest.__huiAck = rowsOf(dest);
+            dest.__huiOk = dest.__huiSeq;
+            settle(false);
+            if (!msg) announce(dest, 'data-hui-sortable-s-conflict-refreshed');
+          }, () => fail(reverted));
+      });
+    }, () => fail('data-hui-sortable-s-reverted'));
   }
 
   // fireToast: the visible half of a conflict message, through the
@@ -255,9 +235,9 @@
   // always-on surface, this is the one a sighted reader sees. Never
   // called with the generic copy.
   function fireToast(msg) {
-    NS.loadModule?.('headless-feedback').then(function () {
+    NS.loadModule?.('headless-feedback').then(() => {
       NS.toast?.({ variant: 'danger', title: msg, ttl: 6000 });
-    }).catch(function () {});
+    }, () => {});
   }
 
   // ── Drag and drop ──────────────────────────────────────────────────
@@ -265,8 +245,8 @@
   let dragPrev = null;     // source list snapshot at dragstart
   let dragSrcList = null;
 
-  document.addEventListener('dragstart', function (ev) {
-    const item = ev.target && ev.target.closest && ev.target.closest('[data-hui-sortable-item]');
+  document.addEventListener('dragstart', (ev) => {
+    const item = ev.target.closest?.('[data-hui-sortable-item]');
     if (!item) return;
     dragSrc = item;
     dragSrcList = listOf(item);
@@ -278,17 +258,12 @@
     }
   });
 
-  document.addEventListener('dragover', function (ev) {
+  document.addEventListener('dragover', (ev) => {
     if (!dragSrc) return;
-    const over = ev.target && ev.target.closest && ev.target.closest('[data-hui-sortable-item]');
-    let overList;
-    if (over) {
-      overList = listOf(over);
-    } else {
-      // Empty list: no item to hit-test, so accept the list element
-      // itself as the drop target (dropping into an empty column).
-      overList = ev.target && ev.target.closest && ev.target.closest('[data-hui-sortable]');
-    }
+    const over = ev.target.closest?.('[data-hui-sortable-item]');
+    // Empty list: no item to hit-test, so accept the list element
+    // itself as the drop target (dropping into an empty column).
+    const overList = over ? listOf(over) : ev.target.closest?.('[data-hui-sortable]');
     if (!overList) return;
     const srcList = listOf(dragSrc);
     if (overList !== srcList && !canCross(overList, srcList)) return;
@@ -311,17 +286,15 @@
     const dest = listOf(item);
     if (!dest) return;
     const after = rowsOf(dest);
-    if (dest !== srcList) commit(dest, null, srcList, prev, item);
-    else if (prev.length !== after.length || prev.some(function (r, i) { return r !== after[i]; })) commit(dest, prev, null, null, null);
+    if (dest !== srcList) commit(dest, prev, srcList, item);
+    else if (prev.length !== after.length || prev.some((r, i) => r !== after[i])) commit(dest, prev);
   }
 
-  document.addEventListener('dragend', function () {
+  document.addEventListener('dragend', () => {
     if (!dragSrc) return;
     dragSrc.classList.remove('is-dragging');
     drop(dragSrc, dragSrcList, dragPrev || []);
-    dragSrc = null;
-    dragPrev = null;
-    dragSrcList = null;
+    dragSrc = dragPrev = dragSrcList = null;
   });
 
   // ── Keyboard ───────────────────────────────────────────────────────
@@ -341,7 +314,7 @@
     kbGrab = kbPrev = kbSrcList = null;
   }
   function cancelGrab(t, refocus) {
-    kbPrev.forEach(function (r) { kbSrcList.appendChild(r); });
+    kbPrev.forEach((r) => kbSrcList.appendChild(r));
     endGrab(t);
     if (refocus) t.focus();
     announce(listOf(t), 'data-hui-sortable-s-cancelled');
@@ -350,12 +323,12 @@
   // A move re-inserts the focused row, and the engine may blur it on
   // the way (the move calls focus() straight back): the check waits a
   // task, and a grab whose row has focus again is still a grab.
-  document.addEventListener('focusout', function (ev) {
+  document.addEventListener('focusout', (ev) => {
     const t = ev.target;
-    if (t === kbGrab) setTimeout(function () { if (kbGrab === t && document.activeElement !== t) cancelGrab(t); }, 0);
+    if (t === kbGrab) setTimeout(() => { if (kbGrab === t && document.activeElement !== t) cancelGrab(t); }, 0);
   });
 
-  document.addEventListener('keydown', function (ev) {
+  document.addEventListener('keydown', (ev) => {
     const t = ev.target;
     if (!t || !t.matches || !t.matches('[data-hui-sortable-item]')) return;
 

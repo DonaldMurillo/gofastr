@@ -86,8 +86,13 @@ func Counter(cfg CounterConfig) render.HTML {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
 	return counterStyle.WrapHTML(headless.Counter(headless.CounterProps{
-		Signal:     name,
-		Value:      initial,
+		Signal: name,
+		Value:  initial,
+		// The page owns this signal's seed (Slice auto-seeds it into the
+		// signals block and every partial; a bare SignalName is the
+		// app's to seed): the primitive hands the runtime no second one,
+		// so a server value that changes across an island swap wins.
+		Seeded:     true,
 		Step:       cfg.Step,
 		ID:         scopedID(cfg.Ctx, "counter"),
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
