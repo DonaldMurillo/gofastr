@@ -77,7 +77,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// relation onto an owner/tenant-scoped entity is a write-side trust
 	// boundary exactly as ?include= is a read-side one (issue: order_items
 	// targeting another customer's order).
-	if err := ch.checkBelongsToScope(ctx, ch.createWrite(ctx, body)); err != nil {
+	if err := ch.checkBelongsToScope(ctx, r, ch.createWrite(ctx, body)); err != nil {
 		return nil, err
 	}
 	// The state field starts at an Initial value and no stamp is set
@@ -271,7 +271,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err != nil {
 		return nil, err
 	}
-	if err := ch.checkBelongsToScope(ctx, w); err != nil {
+	if err := ch.checkBelongsToScope(ctx, r, w); err != nil {
 		return nil, err
 	}
 
@@ -397,7 +397,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 // writes and owns the reference. A NULL/absent FK, an unscoped target,
 // or a target the registry does not know is skipped — no registry means
 // no read-side resolver either.
-func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error {
+func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request, w fkWrite) error {
 	if err := ch.checkForeignKeyTuples(w); err != nil {
 		return err
 	}
@@ -448,6 +448,9 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 		}
 		hasReadScope := len(readScopeFilters(ctx, target)) > 0
 		if target.Config.Scope.OwnerField == "" && !target.Config.Scope.MultiTenant && !target.Config.Scope.SoftDelete && !hasReadScope {
+			if err := ch.belongsToHookScope(ctx, r, rel, target, raws, fk); err != nil {
+				return err
+			}
 			continue
 		}
 		table, err := query.SafeIdent(target.GetTable())
@@ -488,6 +491,27 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 			}
 			return fmt.Errorf("relation %q target lookup: %w", rel.Name, err)
 		}
+		if err := ch.belongsToHookScope(ctx, r, rel, target, raws, fk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// belongsToHookScope refuses a reference onto a row the target's own
+// Before hooks hide from this caller (BeforeList, plus BeforeGet with the
+// row's id, as ?include= over a belongs_to applies them) with the
+// not-found a row outside its declared scopes answers. raws are the
+// reference's key values in the target's key order.
+func (ch *CrudHandler) belongsToHookScope(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, raws []any, fk string) error {
+	vals := make([]any, len(raws))
+	for i, c := range target.KeyColumns() {
+		if i < len(raws) {
+			vals[i] = coercePKValue(ch.Registry, target, c, raws[i])
+		}
+	}
+	if ch.childScopeHidesKey(ctx, r, target, rel, vals, fk) {
+		return fmt.Errorf("%w: relation %q target %s/%s is not readable by this caller", errNotFound, rel.Name, rel.Entity, fk)
 	}
 	return nil
 }
@@ -823,22 +847,7 @@ func (ch *CrudHandler) getScopeHidesRow(r *http.Request, row map[string]any) boo
 		return true
 	}
 	id, _ := ch.rowID(row)
-	ctx := r.Context()
-	payload := &hook.GetPayload{Request: r, ID: id}
-	if err := runHooks(ch.Hooks, ctx, hook.BeforeGet, payload); err != nil {
-		return true
-	}
-	if len(payload.Where) == 0 {
-		return false
-	}
-	kc, ka := ch.keyCond(vals)
-	qb := query.Select(ch.keyCols()[0]).From(ch.Entity.GetTable()).Where(kc, ka...)
-	for _, c := range payload.Where {
-		qb.Where(c.SQL, c.Args...)
-	}
-	sqlStr, args := qb.Build()
-	var hit any
-	return ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(&hit) != nil
+	return ch.hookScopeHidesKey(r.Context(), r, vals, id, false)
 }
 
 // scopedReadBack returns row, or only its id when the caller's read scope

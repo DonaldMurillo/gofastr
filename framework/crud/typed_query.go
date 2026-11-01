@@ -507,7 +507,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	// The rows it matches can hold different stored values in a column
 	// it keeps, so part of a multi-column reference cannot move here.
 	sets := func(f schema.Field) bool { return q.handler.updateSets(ctx, f, false) }
-	if err := q.handler.checkBelongsToScope(ctx, fkWrite{body: body, sets: sets, holds: q.handler.scopedHeld(ctx)}); err != nil {
+	if err := q.handler.checkBelongsToScope(ctx, nil, fkWrite{body: body, sets: sets, holds: q.handler.scopedHeld(ctx)}); err != nil {
 		return 0, err
 	}
 	ub := query.Update(q.handler.Entity.GetTable())

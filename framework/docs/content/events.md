@@ -116,6 +116,18 @@ of one Timestamp instant. A record that lacks a scoped column, or holds
 NULL in one, is withheld, so a delete (its payload is the key alone) does
 not reach a restricted caller.
 
+A `BeforeList` or `BeforeGet` hook that scopes reads (the "hide drafts
+from non-editors" shape in [hooks and transactions](hooks-and-transactions.md))
+binds the feed too. Each delivery runs the subscriber's own BeforeList
+chain and its BeforeGet chain, with the row's id, on the context the
+stream's last re-check refreshed, and looks the stored row up under the
+clauses they append, one keyed `SELECT` per delivery and only when a hook
+appended something. A row either route would hide is not sent. A hard
+delete has no row left to look up, so it reaches only a subscriber the
+hooks append no clause for, the way a delete does not reach a caller a
+`ReadScope` restricts; a soft delete leaves the row in place and is
+checked against it. A Before hook that errors withholds the event.
+
 ## Payload shape
 
 ```json

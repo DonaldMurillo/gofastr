@@ -685,7 +685,11 @@ paths now resolve the same predicate. A create or update that sets a
 BelongsTo relation column such as `order_id` or `author_id` is answered
 with **404** when the target row exists but the caller cannot read it
 under the target's own owner, tenant, and read scopes — the exact status
-reading that foreign row gives, so existence is not leaked. The
+reading that foreign row gives, so existence is not leaked. A target
+whose own `BeforeList`/`BeforeGet` hooks scope reads is checked under
+their clauses too, as `?include=` over the relation applies them: a
+reference onto a row they hide, or onto one that does not exist, is
+404. The
 existence check underneath it (`FOREIGN KEY` on both dialects;
 `AutoMigrate` emits the clause and the `sqlite3` driver name defaults
 `_pragma=foreign_keys(1)`) still rejects a fabricated id.

@@ -169,7 +169,9 @@ state field keeps the stored state and the insert arm's `Default` never
 lands on conflict), and the in-process `CreateOne` and `UpdateOne`.
 
 A refusal names the stored state and the open moves only to a caller whose
-`ReadScope` admits the record. One the scope hides gets the same 422 or 409
+read scope admits the record: its `ReadScope`, and the `BeforeGet` chain
+`GET /<entity>/{id}` runs (in process only under `crud.WithReadHooks`, as
+`GetOne` applies it). One the scope hides gets the same 422 or 409
 with neither, so a caller who may write a record but not read it learns
 nothing of its state from the refusal.
 

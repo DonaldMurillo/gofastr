@@ -480,6 +480,13 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 						continue
 					}
 				}
+				// The subscriber's own BeforeList/BeforeGet scope, run as
+				// List and Get run it, on the context authzHeld just
+				// refreshed. Here, not in the filter: the filter runs on
+				// the emitter's goroutine, and the check reads the table.
+				if ch.eventHookScopeHides(r.WithContext(liveCtx()), ev) {
+					continue
+				}
 				// Redact at DELIVERY, not when the event is built. The record
 				// is captured from the write's RETURNING, so it holds stored
 				// values and a subscriber would otherwise read past every mask
@@ -499,6 +506,47 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			}
 		}
 	}
+}
+
+// eventHookScopeHides reports whether the subscriber's own read-scoping
+// hooks hide the row ev is about, so the feed withholds it. The feed is a
+// list of rows and a read of each, so both chains run: BeforeList, as
+// GET /<entity> runs it, and BeforeGet with the row's id, as GET
+// /<entity>/{id} does. A row either route would hide is withheld.
+//
+// A created or updated row is checked where it is stored, after the write
+// committed. A delete has no row left to check on a hard-deleting entity,
+// so it reaches only a subscriber the hooks do not restrict (they append
+// no clause for it); a restricted one is not told, as a delete does not
+// reach a caller a declared ReadScope restricts. A soft delete leaves the
+// row in place, so its delete is checked like any other event. A hook
+// error, or a record with no key, withholds the event.
+func (ch *CrudHandler) eventHookScopeHides(r *http.Request, ev event.Event) bool {
+	if ch.Hooks == nil || (len(ch.Hooks.HooksFor(hook.BeforeList)) == 0 && len(ch.Hooks.HooksFor(hook.BeforeGet)) == 0) {
+		return false
+	}
+	data, _ := ev.Data.(map[string]any)
+	row, ok := data[eventKeyRecord].(map[string]any)
+	if !ok {
+		return true
+	}
+	vals, ok := ch.rowKeyVals(row)
+	if !ok {
+		return true
+	}
+	id, _ := ch.rowID(row)
+	ctx := r.Context()
+	clauses, err := ch.ownBeforeScopes(ctx, r, id, true)
+	if err != nil {
+		return true
+	}
+	if len(clauses) == 0 {
+		return false
+	}
+	if ev.Type == event.EntityDeleted && !ch.Entity.Config.Scope.SoftDelete {
+		return true
+	}
+	return beforeScopeHidesKey(ctx, ch.conn(ctx), ch.Entity.GetTable(), ch.keyCols(), vals, clauses)
 }
 
 // redactEventRecord returns ev with its record run through AfterGet, so an
