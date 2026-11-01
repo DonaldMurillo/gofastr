@@ -33,6 +33,11 @@
     return out;
   }
 
+  function cssEscape(s) {
+    if (window.CSS && CSS.escape) return CSS.escape(s);
+    return String(s).replace(/([!"#$%&'()*+,./:;<=>?@[\]^`{|}~\\])/g, '\\$1');
+  }
+
   function closest(el, sel) {
     return el && el.closest ? el.closest(sel) : null;
   }
@@ -71,7 +76,7 @@
   }
 
   function input(root, which) {
-    return root.querySelector('[data-hui-datepicker-input="' + which + '"]');
+    return root.querySelector('[data-hui-datepicker-input="' + cssEscape(which) + '"]');
   }
 
   function calOf(root) {
@@ -150,7 +155,7 @@
   // nameOf is a day's full name: its button's, when the day is drawn,
   // else the page language's own long date.
   function nameOf(cal, d) {
-    const b = cal && cal.querySelector('[data-hui-date="' + d + '"]');
+    const b = cal && cal.querySelector('[data-hui-date="' + cssEscape(d) + '"]');
     if (b && b.getAttribute('aria-label')) return b.getAttribute('aria-label');
     try {
       return new Date(parse(d)).toLocaleDateString(document.documentElement.lang || undefined,
@@ -198,7 +203,7 @@
   function moveTo(root, target) {
     const cal = calOf(root);
     if (!cal || !target) return;
-    const btn = cal.querySelector('[data-hui-date="' + target + '"]');
+    const btn = cal.querySelector('[data-hui-date="' + cssEscape(target) + '"]');
     if (btn) {
       rove(cal, btn);
       btn.focus();
@@ -208,7 +213,7 @@
     if (!grid) return;
     const diff = monthIndex(target.slice(0, 7)) - monthIndex(grid.getAttribute('data-hui-datepicker-grid') || '');
     const which = { '-1': 'prev-month', '1': 'next-month', '-12': 'prev-year', '12': 'next-year' }[String(diff)];
-    const a = which && cal.querySelector('[data-hui-datepicker-nav="' + which + '"]');
+    const a = which && cal.querySelector('[data-hui-datepicker-nav="' + cssEscape(which) + '"]');
     if (!a || a.getAttribute('aria-disabled') === 'true') return;
     a.click();
     // After the click: the anchor's own click (below) recorded itself,
@@ -281,10 +286,10 @@
     const cap = cal.querySelector('[data-hui-datepicker-caption]');
     if (cap) say(root, cap.textContent);
     if (!p) return;
-    let to = p.date ? cal.querySelector('[data-hui-date="' + p.date + '"]') : null;
+    let to = p.date ? cal.querySelector('[data-hui-date="' + cssEscape(p.date) + '"]') : null;
     if (to) rove(cal, to);
     if (!to && p.nav) {
-      to = cal.querySelector('[data-hui-datepicker-nav="' + p.nav + '"]');
+      to = cal.querySelector('[data-hui-datepicker-nav="' + cssEscape(p.nav) + '"]');
       if (to && to.getAttribute('aria-disabled') === 'true') to = null;
     }
     if (!to) to = cal.querySelector('[data-hui-date][tabindex="0"]');
