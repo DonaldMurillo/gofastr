@@ -274,9 +274,13 @@ func (ds *UIHost) verifySessionToken(token string) (string, bool) {
 // returned HTML is injected alongside any global head tags from
 // WithHeadHTML / WithFavicon / etc.
 //
-// WARNING: the returned HTML is injected verbatim. Implementers must
-// escape any dynamic content (e.g. html.EscapeString for user-supplied
-// titles or descriptions) to prevent XSS.
+// The returned HTML goes through the same head scrub as WithHeadHTML
+// (script, iframe, svg, style and the other active tag families,
+// meta-refresh, on*= handlers, autofocus and script-pulling <link>s are
+// removed, run to a fixpoint; HTML nested to outlast the scrub is dropped
+// whole). The scrub is a backstop, not an escaper: implementers must
+// still escape dynamic content (e.g. html.EscapeString for user-supplied
+// titles or descriptions).
 type SEOScreen interface {
 	HeadHTML() string
 }
@@ -441,9 +445,14 @@ func WithExtraScripts(urls ...string) Option {
 }
 
 // WithHeadHTML injects raw HTML into every page's <head>. This is the
-// escape hatch for arbitrary head content. The HTML is injected verbatim.
-// Callers must ensure it is CSP-compatible (no inline <script> or
-// <style> tags). For safe, auto-escaped alternatives, see WithFavicon,
+// escape hatch for head content the typed options do not cover. It is
+// scrubbed, not injected verbatim: <script>, <style>, <iframe>, <svg> and
+// the other active tag families, <base>/<img>/<embed>, meta-refresh,
+// on*= handlers, autofocus and script-pulling <link>s are removed, and the
+// scrub runs until its output stops changing, so a removal cannot splice
+// a forbidden tag back together. HTML still changing after the pass cap
+// (nesting built to outlast the scrub) is dropped whole and logged once.
+// For safe, auto-escaped alternatives, see WithFavicon,
 // WithThemeColor, WithDescription, WithOpenGraph, WithTwitterCard,
 // WithCanonicalURL, and WithPreconnect.
 func WithHeadHTML(html string) Option {
@@ -5283,10 +5292,44 @@ var linkTagRe = regexp.MustCompile(`(?is)<link\b[^>]*?/?>`)
 // Allowed survivors: <meta> (except http-equiv=refresh), <link> with
 // http(s)/relative href, <title>, and inline text content. Even
 // those have any on*= event-handler / autofocus attribute scrubbed.
+//
+// One pass is not enough: every rule removes bytes, and removing an
+// inner match splices its neighbours together, so
+// `<scr<script></script>ipt>` leaves `<script>` behind and
+// `http-equiv="ref/autofocusresh"` leaves `http-equiv="refresh"`. The
+// pass runs again until its output stops changing. Each changing pass
+// shortens the string, so the loop ends; headScrubMaxPasses bounds the
+// work, and HTML still changing at the cap is nested on purpose to
+// outlast the scrub: it is dropped whole (fail closed) and logged once.
 func stripInlineScripts(s string) string {
 	if s == "" {
 		return s
 	}
+	for range headScrubMaxPasses {
+		next := stripInlineScriptsOnce(s)
+		if next == s {
+			return s
+		}
+		s = next
+	}
+	headScrubCapWarnOnce.Do(func() {
+		slog.Default().Warn("uihost: caller-supplied head HTML still changed after the scrub's pass cap; dropping it",
+			"passes", headScrubMaxPasses,
+			"fix", "remove the nested script, handler or refresh markup from WithHeadHTML / SEOScreen.HeadHTML")
+	})
+	return ""
+}
+
+// headScrubMaxPasses caps stripInlineScripts' fixpoint loop. Honest head
+// HTML converges in one or two passes; each further pass undoes one more
+// level of deliberate nesting.
+const headScrubMaxPasses = 8
+
+// headScrubCapWarnOnce gates stripInlineScripts' one-time WARN.
+var headScrubCapWarnOnce sync.Once
+
+// stripInlineScriptsOnce is one pass of every head-scrub rule.
+func stripInlineScriptsOnce(s string) string {
 	out := scriptTagRe.ReplaceAllString(s, "")
 	out = dangerousHeadTagsRe.ReplaceAllString(out, "")
 	out = voidHeadTagsRe.ReplaceAllString(out, "")
