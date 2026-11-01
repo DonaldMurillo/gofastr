@@ -400,6 +400,15 @@ func New(config AuthConfig) *AuthManager {
 	} else {
 		mgr.sessionStore = NewMemorySessionStore()
 	}
+	// Built here, not in Init: the usual wiring calls
+	// RequireAuth(mgr.JWT()) before App.Start runs Init, and a JWTAuth that
+	// only appeared at Init left that middleware holding nil. Every bearer
+	// request then panicked, and the "no auth is wired" banner never
+	// cleared. Init finishes the wiring on this same value.
+	if config.JWTSecret != "" {
+		mgr.jwtAuth = NewJWTAuth(config.JWTSecret, config.JWTExpiry)
+		mgr.jwtAuth.onResolve = mgr.markResolving
+	}
 
 	return mgr
 }
@@ -589,14 +598,24 @@ func (m *AuthManager) Init(app *framework.App) error {
 		return err
 	}
 
-	// Initialize JWT if secret is configured
+	// A negative JWTExpiry is the same sign or unit error: every login
+	// answered 200 with a token that had already expired.
+	if m.config.JWTExpiry < 0 {
+		return fmt.Errorf("auth: AuthConfig.JWTExpiry is negative (%v): set a positive duration, or leave it zero for the 1-hour default", m.config.JWTExpiry)
+	}
+
+	// Finish the JWTAuth New built (see New for why it is not built here).
 	if m.config.JWTSecret != "" {
 		expiry := m.config.JWTExpiry
 		if expiry == 0 {
 			expiry = time.Hour
 		}
-		m.jwtAuth = NewJWTAuth(m.config.JWTSecret, expiry)
-		m.jwtAuth.onResolve = m.markResolving
+		if m.jwtAuth == nil {
+			m.jwtAuth = NewJWTAuth(m.config.JWTSecret, expiry)
+			m.jwtAuth.onResolve = m.markResolving
+		}
+		m.jwtAuth.Secret = m.config.JWTSecret
+		m.jwtAuth.Expiry = expiry
 		// Verify-only previous secrets for graceful JWTSecret rotation
 		// (sign with current; verify accepts current OR any previous).
 		m.jwtAuth.PreviousSecrets = m.config.JWTPreviousSecrets
