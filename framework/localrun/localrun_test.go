@@ -232,4 +232,9 @@ func writeRaw(t *testing.T, dir, id string, r Record) {
 	if err := os.WriteFile(filepath.Join(dir, id+".json"), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if r.ProcStart != 0 {
+		if err := os.WriteFile(filepath.Join(dir, id+".start"), fmt.Appendf(nil, "%d", r.ProcStart), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

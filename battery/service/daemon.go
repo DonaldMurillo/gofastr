@@ -15,6 +15,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
 const (
@@ -241,10 +242,13 @@ func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time
 
 // controlHandler answers the control channel's ops.
 func (b *Battery) controlHandler(g *gate, addr string, dev bool, started time.Time, stop chan<- struct{}) func(string) controlResponse {
+	// Read once, by the daemon itself: a client that sampled the pid
+	// after a stop could read a newer process that got it.
+	self := procalive.Identify(os.Getpid())
 	return func(op string) controlResponse {
 		switch op {
 		case "status":
-			return controlResponse{OK: true, PID: os.Getpid(), Addr: addr, Version: buildVersion(), Dev: dev,
+			return controlResponse{OK: true, PID: self.PID, ProcStart: self.Start, Addr: addr, Version: buildVersion(), Dev: dev,
 				Started: started.Format(time.RFC3339)}
 		case "token":
 			tok, err := g.mintToken()
@@ -257,7 +261,7 @@ func (b *Battery) controlHandler(g *gate, addr string, dev bool, started time.Ti
 			case stop <- struct{}{}:
 			default:
 			}
-			return controlResponse{OK: true, PID: os.Getpid()}
+			return controlResponse{OK: true, PID: self.PID, ProcStart: self.Start}
 		}
 		return controlResponse{Error: "unknown op"}
 	}

@@ -433,8 +433,7 @@ func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 }
 
 // runningDaemon is the installed daemon's process, pid 0 when nothing
-// answers on its control channel. Its start value is read as soon as it
-// answers, while the pid is still certainly the daemon's.
+// answers on its control channel, as the daemon reports it.
 func (b *Battery) runningDaemon() (procalive.Identity, error) {
 	inst, err := b.layoutFor(false)
 	if err != nil {
@@ -447,7 +446,18 @@ func (b *Battery) runningDaemon() (procalive.Identity, error) {
 	if err != nil {
 		return procalive.Identity{}, err
 	}
-	return procalive.Identify(resp.PID), nil
+	return resp.identity(), nil
+}
+
+// identity is the daemon process a reply names: its pid with the start
+// value the daemon read itself. A daemon built before it reported one
+// sends none, and the pid is sampled now instead; after a stop that
+// sample may already be a newer process's.
+func (r controlResponse) identity() procalive.Identity {
+	if r.ProcStart != 0 {
+		return procalive.Identity{PID: r.PID, Start: r.ProcStart}
+	}
+	return procalive.Identify(r.PID)
 }
 
 // stopWait bounds how long a stop waits for the process to exit: the

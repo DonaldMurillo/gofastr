@@ -22,7 +22,6 @@ Each record is one JSON file in the registry directory:
 | `id` | `<pid>-<8 hex>`, also the file name. |
 | `name` | `AppConfig.Name`, else the executable's base name. |
 | `pid` | The process id. |
-| `proc_start` | The OS's start value for `pid` (clock ticks after boot on Linux, the start time in microseconds on macOS, the creation FILETIME on Windows). Only compared with a later reading of the same pid. Absent when the OS would not say. |
 | `url` | The base URL a local client dials. A wildcard bind (`:8080`, `0.0.0.0`) is recorded as `http://127.0.0.1:<port>`. |
 | `mcp_path` | `/mcp` when the app serves MCP over HTTP (`WithMCP`, the dev loop's auto-mount, or a hand-mounted route); absent otherwise. |
 | `mcp_command` | An argv that speaks stdio MCP to the run. `battery/service` sets `<exe> service mcp --state-dir <dir>`, because its HTTP `/mcp` sits behind the browser sign-in. |
@@ -30,6 +29,15 @@ Each record is one JSON file in the registry directory:
 | `dev` | Set under `gofastr dev` (`GOFASTR_DEV`) and for a service battery's foreground run. |
 | `dir`, `exe` | The working directory and executable path. |
 | `started` | When the record was written (UTC). |
+
+Beside the record sits `<id>.start`, the OS's start value for `pid` as a
+decimal number (clock ticks after boot on Linux, the start time in
+microseconds on macOS, the creation FILETIME on Windows), only ever
+compared with a later reading of the same pid. It is written first, and
+absent when the OS would not say. It lives outside the JSON so the
+record stays the layout readers already know: a reader decodes records
+strictly, and a new field would make one built against an older
+framework drop every record. `Record.ProcStart` carries it in Go.
 
 The directory is `$GOFASTR_RUNS_DIR` when set, else
 `<os.UserConfigDir()>/gofastr/runs`:
@@ -63,9 +71,11 @@ for _, r := range recs {
 (`kill -9`, a crash, a power cut) leaves its file behind; `List` checks
 each record's pid and deletes the file of one that has exited. Once a
 run is gone the OS may hand its pid to a newer process, so `List` also
-compares `proc_start` with the pid's start value now and deletes the
-record when they differ. A record without `proc_start`, or a pid whose
-start value the OS will not report, falls back to the pid check. It skips
+compares the `.start` value with the pid's start value now and deletes
+the record when they differ. A record without a `.start` file, or a pid
+whose start value the OS will not report, falls back to the pid check.
+A `.start` file whose record is gone (a reader that predates it deleted
+the record) is removed once its pid has exited. It skips
 anything that is not a record: a FIFO or other non-regular file, a file
 another user owns (one planted while the directory was loose), a file
 whose name is not `<pid>-<hex>.json`, a body over 16 KiB, a duplicate

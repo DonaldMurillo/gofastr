@@ -247,7 +247,7 @@ func (t taskScheduler) stop(b *Battery) error {
 		_, _ = b.tool.output("schtasks", "/End", "/TN", name)
 		return b.waitExit(procalive.Identity{})
 	}
-	daemon := procalive.Identify(resp.PID)
+	daemon := resp.identity()
 	if b.waitExit(daemon) == nil {
 		return nil
 	}

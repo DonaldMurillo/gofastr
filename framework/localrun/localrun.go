@@ -4,7 +4,8 @@
 // gofastr-runs example, an agent) can list what is running, where, and
 // how to reach its MCP server, with no port scanning.
 //
-// Records live in [Dir], one owner-only JSON file per run. A run that
+// Records live in [Dir], one owner-only JSON file per run, with the
+// run's process start value in a sidecar file beside it. A run that
 // dies without shutting down leaves its file behind; [List] drops a
 // record whose process is gone, a pid now held by a newer process
 // included. Registration is best-effort: a run that
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +45,11 @@ const (
 	// maxRecordBytes bounds one record read; a real record is well
 	// under 2 KiB.
 	maxRecordBytes = 16 << 10
+	// maxStartBytes bounds a sidecar read: a decimal uint64.
+	maxStartBytes = 20
+
+	recordExt = ".json"
+	startExt  = ".start"
 )
 
 // Record is one running app.
@@ -54,8 +61,11 @@ type Record struct {
 	PID  int    `json:"pid"`
 	// ProcStart is the OS's start value for PID (procalive.Identity),
 	// so List can tell the run from a later process that got its pid.
-	// Absent when the OS would not say; the pid alone decides then.
-	ProcStart uint64 `json:"proc_start,omitempty"`
+	// Zero when the OS would not say; the pid alone decides then. It is
+	// kept in "<id>.start" beside the record, not in the JSON: readers
+	// built before it decode records strictly, and an unknown field
+	// would make them drop every record.
+	ProcStart uint64 `json:"-"`
 	// URL is the base URL a local client dials: http://127.0.0.1:<port>
 	// for a wildcard bind.
 	URL string `json:"url"`
@@ -162,13 +172,34 @@ func Register(rec Record) (unregister func(), err error) {
 		return nil, err
 	}
 	defer root.Close()
-	name := rec.ID + ".json"
-	tmp := rec.ID + ".tmp"
+	name := rec.ID + recordExt
+	start := rec.ID + startExt
+	// The sidecar first: a reader that sees the record finds its start
+	// value already there.
+	if rec.ProcStart != 0 {
+		if err := writeFile(root, start, strconv.FormatUint(rec.ProcStart, 10)); err != nil {
+			return nil, err
+		}
+	}
+	if err := writeFile(root, name, string(body)); err != nil {
+		_ = root.Remove(start)
+		return nil, err
+	}
+	return func() {
+		_ = remove(name)
+		_ = remove(start)
+	}, nil
+}
+
+// writeFile writes body to name through an owner-only temp file and a
+// rename, so a reader never sees half of it.
+func writeFile(root *os.Root, name, body string) error {
+	tmp := name + ".tmp"
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("localrun: %w", err)
+		return fmt.Errorf("localrun: %w", err)
 	}
-	_, werr := f.Write(body)
+	_, werr := f.WriteString(body)
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
@@ -177,9 +208,9 @@ func Register(rec Record) (unregister func(), err error) {
 	}
 	if werr != nil {
 		_ = root.Remove(tmp)
-		return nil, fmt.Errorf("localrun: %w", werr)
+		return fmt.Errorf("localrun: %w", werr)
 	}
-	return func() { _ = remove(name) }, nil
+	return nil
 }
 
 // List returns the records of live runs, newest first. A record whose
@@ -207,7 +238,11 @@ func List() ([]Record, error) {
 	slices.Sort(names)
 	var out []Record
 	for _, name := range names {
-		id, ok := strings.CutSuffix(name, ".json")
+		if id, ok := strings.CutSuffix(name, startExt); ok && idPattern.MatchString(id) {
+			dropOrphanStart(root, names, id)
+			continue
+		}
+		id, ok := strings.CutSuffix(name, recordExt)
 		if !ok || !idPattern.MatchString(id) {
 			continue
 		}
@@ -215,8 +250,10 @@ func List() ([]Record, error) {
 		if !ok {
 			continue
 		}
+		rec.ProcStart = readStart(root, id+startExt)
 		if !(procalive.Identity{PID: rec.PID, Start: rec.ProcStart}).Alive() {
 			_ = root.Remove(name)
+			_ = root.Remove(id + startExt)
 			continue
 		}
 		out = append(out, rec)
@@ -264,6 +301,44 @@ func readRecord(root *os.Root, name, id string) (Record, bool) {
 		return Record{}, false
 	}
 	return rec, true
+}
+
+// dropOrphanStart removes the sidecar of a record that is gone (a
+// reader that predates sidecars deleted it) once its process has
+// exited. A live process's sidecar stays: Register writes it just
+// before the record.
+func dropOrphanStart(root *os.Root, names []string, id string) {
+	if _, found := slices.BinarySearch(names, id+recordExt); found {
+		return
+	}
+	pid, err := strconv.Atoi(id[:strings.IndexByte(id, '-')])
+	if err != nil || procalive.Alive(pid) {
+		return
+	}
+	_ = root.Remove(id + startExt)
+}
+
+// readStart reads a record's sidecar start value, 0 when there is none
+// or it is not one: the pid alone decides then. The same checks as a
+// record: a regular file of this user's, read without blocking.
+func readStart(root *os.Root, name string) uint64 {
+	f, err := root.OpenFile(name, openRecordFlags, 0)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || !ownFile(f, fi) {
+		return 0
+	}
+	body, err := io.ReadAll(io.LimitReader(f, maxStartBytes+1))
+	if err != nil || len(body) > maxStartBytes {
+		return 0
+	}
+	v, err := strconv.ParseUint(string(body), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 // openRoot is os.OpenRoot, a variable so a test can swap the directory
