@@ -71,11 +71,12 @@ func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// clientIP extracts the request IP, honouring X-Forwarded-For only when the
-// limiter was configured with TrustForwardedFor=true (and, when set, only
-// from a TrustedProxies peer, read from the right). Delegates to
-// ratelimit.Limiter.ClientIP so the proxy-trust rule has exactly one
-// implementation.
+// clientIP is the per-IP limiter key: the request IP, honouring
+// X-Forwarded-For only when the limiter was configured with
+// TrustForwardedFor=true (and, when set, only from a TrustedProxies peer,
+// read from the right), with an IPv6 address collapsed to its /64.
+// Delegates to ratelimit.Limiter.ClientKey so the proxy-trust and prefix
+// rules each have exactly one implementation.
 func (rl *RateLimiter) clientIP(r *http.Request) string {
-	return rl.Limiter.ClientIP(r)
+	return rl.Limiter.ClientKey(r)
 }

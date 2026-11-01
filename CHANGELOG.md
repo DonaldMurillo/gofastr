@@ -189,6 +189,10 @@ few lines, and link the PR or the docs page for the rest.
   - `EntitySessionStore` indexes `token` (unique) and `user_id` whoever
     created the table; `EraseUserData` reaches the in-memory auth stores.
   - `AuthManager` reports its `BasePath` to the embed host.
+  - **Per-IP limits key IPv6 by its /64** (`ratelimit.IPKey`,
+    `(*Limiter).ClientKey`): one client could rotate source addresses
+    inside its own /64 past every per-IP limit. `Middleware()`, the auth
+    battery's per-IP limiters and `framework.AgentRateLimitKey` use it.
   - Every `AuditSink`, a host's own included, gets the request's context
     minus its cancellation, with a 5-second deadline: a sink doing slow
     remote work is cut off there.

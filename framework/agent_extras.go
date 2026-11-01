@@ -109,7 +109,7 @@ func VerifiedAgent(ctx context.Context) *webbotauth.Agent {
 // budget for agent traffic behind a shared egress.
 func AgentRateLimitKey(trustXFF bool) func(*http.Request) string {
 	return webbotauth.RateLimitKey(func(r *http.Request) string {
-		return ratelimit.ClientIP(r, trustXFF)
+		return ratelimit.IPKey(ratelimit.ClientIP(r, trustXFF))
 	})
 }
 

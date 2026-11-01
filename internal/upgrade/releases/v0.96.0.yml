@@ -732,3 +732,12 @@ notes:
     find:
       uses:
         - gofastr/battery/auth.NewCorePlugin
+  - change: "per-IP rate limits key an IPv6 client by its /64 (ratelimit.IPKey, (*Limiter).ClientKey) in ratelimit Middleware, MiddlewareByKey(nil), the auth battery's per-IP limiters and framework.AgentRateLimitKey"
+    breaking: true
+    hits: review
+    guidance: "One client could rotate source addresses inside its own /64 past every per-IP limit. Clients on one IPv6 LAN now share a budget, as clients behind one IPv4 NAT already do; raise MaxAttempts if a shared /64 legitimately sends more. ClientIP still returns the full address."
+    find:
+      uses:
+        - gofastr/framework/ratelimit.Limiter.Middleware
+        - gofastr/framework/ratelimit.Limiter.MiddlewareByKey
+        - gofastr/framework.AgentRateLimitKey

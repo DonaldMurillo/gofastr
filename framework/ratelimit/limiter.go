@@ -35,6 +35,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"sort"
 	"strings"
 	"sync"
@@ -412,9 +413,7 @@ func (rl *Limiter) evictLocked(now time.Time) {
 // To group by something other than IP (API key, user id, route param), use
 // MiddlewareByKey.
 func (rl *Limiter) Middleware() func(http.Handler) http.Handler {
-	return rl.MiddlewareByKey(func(r *http.Request) string {
-		return rl.ClientIP(r)
-	})
+	return rl.MiddlewareByKey(rl.ClientKey)
 }
 
 // MiddlewareByKey returns an HTTP middleware that rate-limits using keyFunc to
@@ -423,7 +422,7 @@ func (rl *Limiter) Middleware() func(http.Handler) http.Handler {
 // budget headers are intentionally omitted.
 func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http.Handler) http.Handler {
 	if keyFunc == nil {
-		keyFunc = rl.ClientIP
+		keyFunc = rl.ClientKey
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -457,6 +456,35 @@ func ClientIP(r *http.Request, trustXFF bool) string {
 // speak for X-Forwarded-For and listed hops are skipped from the right.
 func (rl *Limiter) ClientIP(r *http.Request) string {
 	return clientIPFor(r, rl.cfg.TrustForwardedFor, rl.proxies)
+}
+
+// ClientKey is the per-client rate-limit key: ClientIP with an IPv6
+// address collapsed to its /64 (IPKey). Middleware and the auth battery's
+// per-IP limiters key on it; ClientIP stays the address itself for logs.
+func (rl *Limiter) ClientKey(r *http.Request) string {
+	return IPKey(rl.ClientIP(r))
+}
+
+// IPKey turns a client address into a per-IP rate-limit key. An IPv4
+// address (an IPv4-mapped IPv6 one included) is itself. An IPv6 address
+// becomes its /64 prefix: one subscriber is routinely handed a whole /64,
+// 2^64 addresses, so keying on the full address let a single client rotate
+// past every per-IP limit (a fresh source address per request). Anything
+// that does not parse as an IP is returned unchanged.
+func IPKey(addr string) string {
+	ip, err := netip.ParseAddr(addr)
+	if err != nil {
+		return addr
+	}
+	ip = ip.Unmap()
+	if ip.Is4() {
+		return ip.String()
+	}
+	p, err := ip.WithZone("").Prefix(64)
+	if err != nil {
+		return addr
+	}
+	return p.String()
 }
 
 func clientIPFor(r *http.Request, trustXFF bool, proxies clientip.Proxies) string {
