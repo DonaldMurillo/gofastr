@@ -151,7 +151,9 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
 Each plugin's `RegisterRoutes` mounts under `AuthConfig.BasePath`
-(default `/auth`).
+(default `/auth`). The `AuthManager` reports that prefix to the embed host
+(`framework.EmbedReserving`), so no embed surface can sit over or reach a
+relocated `BasePath` either.
 
 The three link-minting plugins (`MagicLinkPlugin`,
 `EmailVerificationPlugin`, `PasswordResetPlugin`) validate their
@@ -448,8 +450,8 @@ sessions do, so owner-scoping and `access.Can` work unchanged.
   The `gfsk_` prefix makes leaked tokens greppable by secret scanners the
   way `ghp_` / `xoxb-` are.
 - At rest: only `sha256(full-plaintext)` is stored, plus a display
-  `Prefix` (first 12 chars) so listings can identify a token without
-  revealing it. The same hash-then-lookup grammar now covers every
+  `Prefix` (the brand plus 7 random chars, `gfsk_1a2b3c4`) so listings
+  can identify a token without revealing it. The same hash-then-lookup grammar now covers every
   password-equivalent secret the battery persists: magic-link,
   password-reset, and email-verification tokens, and the session
   rows of `EntitySessionStore` (a read-only dump of the session
@@ -477,7 +479,10 @@ _ = rec // {ID, Name, Prefix, Scopes, ExpiresAt, …}
 ```
 
 Validation: Name/OwnerKind/OwnerID required; OwnerKind ∈ {user, service};
-scopes match `^[a-z0-9_-]+:[a-z0-9_*-]+$`; max 32 scopes.
+scopes match `^[a-z0-9_*-]+:[a-z0-9_*-]+$` (so `*:read` and `*:*` mint);
+max 32 scopes. `POST /auth/tokens` answers 400 for a `ttl_seconds` below
+zero or above 9223372036 (about 292 years, the largest that fits a
+`time.Duration`).
 
 **A user-minted token has no default expiry.** An omitted `ttl_seconds`
 mints a token that never expires — the strongest credential the endpoint
@@ -596,6 +601,17 @@ an API token is rejected with 401, even under the recommended global
 token could mint a `*:*` token for its owner and escape its own scope
 leash, or list/revoke the owner's other tokens. Token holders manage
 their tokens by logging in, not with the token itself.
+
+On an account with a second factor, the endpoints also need the cookie
+session that passed it, the bar passkey add and password change hold. A
+session that predates enrollment answers 403 `auth.2fa_required`, and a
+bearer JWT with no such session answers 401. Without this, a stolen
+pre-enrollment cookie turned into a permanent `*:*` token the new factor
+never touched.
+
+A non-NULL `revoked_at` or `expires_at` that the store cannot parse (on
+SQLite, `unixepoch()` or `julianday('now')` written out of band) reads as
+the epoch: the token is revoked or expired, never live.
 
 ### Service accounts (programmatic-only)
 
