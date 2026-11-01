@@ -15,23 +15,56 @@ import (
 // ran. The check now derives the flag set from the same operator table
 // the emitter uses, so the spec is refused at generate time naming both
 // fields.
+// The IN flag (--status-in) is a flag of its own now, so the same check
+// must catch `status` and `status_in`.
 func TestRenderCLI_SuffixFieldFlagCollision(t *testing.T) {
-	decls := []framework.EntityDeclaration{{
-		Name:  "invoices",
-		Table: "invoices",
-		Fields: []framework.FieldDeclaration{
-			{Name: "status", Type: "string"},
-			{Name: "status_ne", Type: "string"},
-		},
-	}}
-	_, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
-	if err == nil {
-		t.Fatal("expected suffix-collision error for status/status_ne, got nil")
-	}
-	for _, want := range []string{"status", "status_ne", "--status-ne"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should name %q: %v", want, err)
+	for _, op := range []string{"ne", "in"} {
+		decls := []framework.EntityDeclaration{{
+			Name:  "invoices",
+			Table: "invoices",
+			Fields: []framework.FieldDeclaration{
+				{Name: "status", Type: "string"},
+				{Name: "status_" + op, Type: "string"},
+			},
+		}}
+		_, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
+		if err == nil {
+			t.Fatalf("expected suffix-collision error for status/status_%s, got nil", op)
 		}
+		for _, want := range []string{"status", "status_" + op, "--status-" + op} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error should name %q: %v", want, err)
+			}
+		}
+	}
+}
+
+// The bare flag's help promises equality and nothing more: the server
+// reads a bare key as OpEq on the whole value, so a comma there is part
+// of the value. IN is the -in flag, bound to the _in param.
+func TestRenderCLI_InFlagNotFoldedIntoEquality(t *testing.T) {
+	decls := []framework.EntityDeclaration{{
+		Name:   "invoices",
+		Table:  "invoices",
+		Fields: []framework.FieldDeclaration{{Name: "status", Type: "enum", Values: []string{"open", "paid"}}},
+	}}
+	spec, err := buildCLISpec(decls, CliOptions{OutDir: "cli", Binary: "myapp", verbs: "list"}, "example.com/app/entities/client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sb strings.Builder
+	renderCLIListTables(&sb, spec.Entities[0])
+	table := sb.String()
+	for _, want := range []string{
+		`{flag: "status", param: "status", help: "filter: status equals [open|paid]"}`,
+		`{flag: "status-in", param: "status_in", help: "filter: status is one of (comma list)"}`,
+	} {
+		if !strings.Contains(table, want) {
+			t.Errorf("filter table lacks %s:\n%s", want, table)
+		}
+	}
+	if strings.Contains(table, "= IN") {
+		t.Errorf("a bare flag still promises IN:\n%s", table)
 	}
 }
 
@@ -72,11 +105,6 @@ func TestRenderCLI_FilterFlagsMatchOpMatrix(t *testing.T) {
 		renderCLIListTables(&sb, spec.Entities[0])
 		table := sb.String()
 		for _, s := range filter.FilterSuffixes {
-			if s.Op == filter.OpIn {
-				// IN is the bare equality flag's comma-list mode, not a
-				// flag of its own; it suits every type.
-				continue
-			}
 			flagRow := `{flag: "f-` + strings.TrimPrefix(s.Suffix, "_") + `", param: "f` + s.Suffix + `"`
 			if filter.OpSuitsType(s.Op, tpe) {
 				if !strings.Contains(table, flagRow) {

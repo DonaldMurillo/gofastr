@@ -127,19 +127,21 @@ var cliOpHelp = map[filter.FilterOp]string{
 	filter.OpLt:   "less than",
 	filter.OpLte:  "less than or equal",
 	filter.OpLike: "contains",
+	filter.OpIn:   "is one of (comma list)",
 }
 
 // cliFilterOps derives the operator flags a field's list verb offers
 // from filter.FilterSuffixes ∩ filter.OpSuitsType — the one type
 // predicate every server filter surface applies — so the CLI can never
 // offer a flag the list handler answers 400, nor hide one it accepts
-// (the old hardcoded Comparable/Likeable lists did both). OpIn suits
-// every type and is folded into the bare equality flag (a comma list),
-// so it contributes no flag of its own.
+// (the old hardcoded Comparable/Likeable lists did both). OpIn gets its
+// own flag (--status-in a,b → ?status_in=a,b): the bare flag is
+// equality on the whole value, which is how the server reads a bare key,
+// so a comma there is part of the value, never an IN list.
 func cliFilterOps(t schema.FieldType) []cliFilterOp {
 	var ops []cliFilterOp
 	for _, s := range filter.FilterSuffixes {
-		if s.Op == filter.OpIn || !filter.OpSuitsType(s.Op, t) {
+		if !filter.OpSuitsType(s.Op, t) {
 			continue
 		}
 		ops = append(ops, cliFilterOp{
@@ -1993,7 +1995,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		if f.NoQuery || f.NoEq {
 			continue
 		}
-		help := "filter: " + f.Snake + " equals (comma list = IN)"
+		help := "filter: " + f.Snake + " equals"
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}

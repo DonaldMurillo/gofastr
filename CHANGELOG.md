@@ -132,6 +132,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Generated CLI: `--<field>-in` is a real IN filter.** The bare list
+  flag's help said "comma list = IN", but it sent `?status=a,b`, which
+  the server reads as equality on the whole value, so it matched rows
+  whose value is literally `a,b`. The bare flag is now documented as
+  equality only, and every filterable field gets `--<field>-in a,b`
+  (`?<field>_in=a,b`). Re-run `gofastr generate cli`. A field named
+  `<other>_in` beside `<other>` now fails generation for a duplicate
+  `--<other>-in` flag, the way `<other>_ne` already did
+  ([app-cli](framework/docs/content/app-cli.md)).
 - **Core UI runtime bug bash (lazy loading, CSS/HTML/JS chunking).**
   - Asset serving: `/__gofastr/runtime/<name>.js` and `/__gofastr/compute/*`
     cache `immutable` only when `?v=` names the served bytes (otherwise

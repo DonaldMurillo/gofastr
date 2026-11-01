@@ -58,9 +58,12 @@ group usage and exits 2. `version` prints the binary name.
 
 Per verb:
 
-- **list**: an equality filter flag per field (`--status active`,
-  comma list = IN), range flags (`--views-gt/-gte/-lt/-lte`) on
-  numeric/date/timestamp fields, `--<field>-like` on text fields,
+- **list**: an equality filter flag per field (`--status active`;
+  the whole value is matched, so a comma in it is part of the value),
+  `--<field>-in` per field for a comma list (`--status-in draft,published`
+  sends `?status_in=draft,published`), `--<field>-ne`, range flags
+  (`--views-gt/-gte/-lt/-lte`) on numeric/date/timestamp fields,
+  `--<field>-like` on text fields,
   plus `--sort`, `--page`/`--limit`, `--cursor` (keyset; `--cursor ""`
   fetches the first keyset page, since the server switches to keyset
   mode when the key is present), `--include`,

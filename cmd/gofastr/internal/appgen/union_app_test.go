@@ -24,11 +24,13 @@ const unionCatalog = `{"union":{"screens":{"enrollments_crud":{"enrollment_recor
 // then plain `gofastr generate` do, vets the module with go vet and with
 // the repo's vettool (emitted code must pass the repo's own analyzers),
 // and runs the app's own tests (the e2e suite and the catalog check)
-// plus three probes: ownedJoinProbe (an owner-scoped record keyed on two
+// plus four probes: ownedJoinProbe (an owner-scoped record keyed on two
 // foreign keys, read in Spanish, hidden from a second user),
 // editSaveTest (an edit screen whose key values need escaping saves back
-// to its record) and intIDProbe (consumer code passing an integer id
-// between the repo, the id column, events, cascades and the client).
+// to its record), intIDProbe (consumer code passing an integer id
+// between the repo, the id column, events, cascades and the client) and
+// cliInFilterProbe (the generated CLI's --<field>-in flag is an IN and
+// its bare flag an equality on the whole value, against the live app).
 //
 // It is the only build for several features whose own tests check the
 // emitted source in-process and no longer compile it: per-verb access
@@ -101,6 +103,7 @@ func TestUnionApp(t *testing.T) {
 	clitest.WriteTestFile(t, filepath.Join(dir, "owned_join_test.go"), ownedJoinProbe)
 	clitest.WriteTestFile(t, filepath.Join(dir, "edit_save_test.go"), editSaveTest("bookings"))
 	clitest.WriteTestFile(t, filepath.Join(dir, "int_id_test.go"), intIDProbe)
+	clitest.WriteTestFile(t, filepath.Join(dir, "cli_in_filter_test.go"), cliInFilterProbe)
 
 	vettool, err := clitest.RepoVettool()
 	if err != nil {
@@ -115,7 +118,7 @@ func TestUnionApp(t *testing.T) {
 		}
 	}
 
-	tests := []string{"TestE2E", "TestCatalogsMatchPhrases", "TestOwnedJoinRecord", "TestEditSavesToRecord", "TestIntIDRepo"}
+	tests := []string{"TestE2E", "TestCatalogsMatchPhrases", "TestOwnedJoinRecord", "TestEditSavesToRecord", "TestIntIDRepo", "TestCLIInFilter"}
 	cmd := exec.Command("go", "test", "-run", "^("+strings.Join(tests, "|")+")$", "-count=1", "-v", ".")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
