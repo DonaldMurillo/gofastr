@@ -3745,16 +3745,17 @@ few lines, and link the PR or the docs page for the rest.
   a JSON field (`?field=`, `_ne`, `_in`, `?where=`, the DSL, relation and
   include filters, the MCP list tool), and OpenAPI, the generated CLI and
   the SDK readmes stop offering one.
-- **BREAKING: list cursors carry the anchor row's key.** A long Text sort
-  value minted a next cursor over the 16 KiB decode cap, so the following
-  page answered 400. The cursor now carries the anchor row's key and the
-  server reads the sort values back from that row. A single
-  `CursorField` pages on that field plus the key, so rows tied on it are
-  no longer skipped. A cursor whose anchor row is gone answers 400 with
-  reason `cursor_anchor_gone`; a key too long for the cap answers 500
-  with `cursor_key_too_long`. Define refuses a Hidden or NoQuery key
-  behind a `CursorField`. A cursor minted before the upgrade on anything
-  but the key is refused once. See
+- **BREAKING: a list cursor falls back to the anchor row's key when its
+  sort values pass the cap.** A long Text sort value minted a next cursor
+  over the 16 KiB decode cap, so the following page answered 400. The
+  cursor carries the sort values and the key when they fit, and the key
+  alone when they do not; the server then reads the sort values back from
+  that row. A single `CursorField` pages on that field plus the key, so
+  rows tied on it are no longer skipped. A key-only cursor whose anchor
+  row is gone answers 400 with reason `cursor_anchor_gone`; a key too
+  long for the cap answers 500 with `cursor_key_too_long`. Define refuses
+  a Hidden or NoQuery key behind a `CursorField`. A cursor minted before
+  the upgrade on a single `CursorField` is refused once. See
   [cursor pagination](framework/docs/content/cursor-pagination.md).
 - **BREAKING: `pagination.NewCursorPage` returns `(CursorPage, error)`.**
   It refuses, with `pagination.ErrCursorTooLong`, a row whose cursor
@@ -3881,8 +3882,9 @@ few lines, and link the PR or the docs page for the rest.
   derived ids are reserved with it, and an explicit id always wins. Slots
   that render at once settle in slot order. An island renders under its
   own id, so a section in island `cart` is `cart--features` in both the
-  page and the RPC answer; a link to an auto-derived id inside an island
-  needs the prefix. See core-ui/ARCHITECTURE.md.
+  page and the RPC answer, and one in a deferred outlet takes the
+  outlet's address (`l-shell-aside--features`); a link to an auto-derived
+  id inside either needs the prefix. See core-ui/ARCHITECTURE.md.
 - **Local-entity number fields read the page's language.** `3,5` on a
   Spanish page and `12,34,567.8` on an Indian English one were refused.
 - **The API docs' mobile drawer lists entities registered after `Mount`.**
@@ -4453,7 +4455,7 @@ few lines, and link the PR or the docs page for the rest.
   record the creator's tenant, list, get, push-config and stream calls
   check it (`a2a.Config.Tenant`), and the store reads on the request
   context. A custom `a2a.Store` must persist the tenant.
-- **`RequireAPIScopes` reads the resource from the route's entity.** With
+- **BREAKING: `RequireAPIScopes` reads the resource from the route's entity.** With
   a table named `v1`, a record id was checked as the scope resource, and
   `/api/v1/_batch` asked for `_batch:write`. Every route an entity
   registers (CRUD and its subroutes, `Endpoints`, EntityUI's

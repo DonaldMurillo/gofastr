@@ -549,10 +549,10 @@ notes:
     find:
       uses:
         - gofastr/core/schema.JSON
-  - change: "BREAKING - a list cursor carries the anchor row's key and the server reads the CursorField(s) values back from that row, so a long sort value no longer mints a cursor past the 16 KiB cap; a cursor whose anchor row is deleted or out of the caller's reach answers 400 with reason cursor_anchor_gone"
+  - change: "BREAKING - a list cursor carries the anchor row's CursorField(s) values and key when they fit the 16 KiB cap, and the key alone when they do not, so a long sort value no longer mints a cursor past the cap; the server reads a key-only cursor's sort values back from that row, and one whose anchor row is deleted or out of the caller's reach answers 400 with reason cursor_anchor_gone"
     breaking: true
     nodetect: "cursors are opaque tokens a client echoes; nothing in an app's source spells their contents"
-    guidance: "A cursor minted before the upgrade on an entity cursored on anything but its key answers 400 once; the client starts again from the first page (?cursor=). A client that walks a feed while rows are deleted handles the 400 cursor_anchor_gone the same way. An entity cursored on its own key keeps paging past a deleted anchor. See gofastr docs cursor-pagination."
+    guidance: "A cursor minted before the upgrade on a single CursorField answers 400 once; the client starts again from the first page (?cursor=). A client that walks a feed while rows are deleted handles the 400 cursor_anchor_gone the same way. A key-only cursor (sort values past the cap) whose anchor's sort value changes between pages continues from the new value and can skip rows; keep sort columns short where a feed must see every row. See gofastr docs cursor-pagination."
   - change: "BREAKING - the SDK schema hash includes each entity's primary-key columns in declared order, so every app's SchemaHash changes once and the SDK docs site reports drift for SDKs generated before the upgrade"
     breaking: true
     nodetect: "the hash is computed from the live registry; nothing in an app's source spells it"
@@ -611,3 +611,21 @@ notes:
     find:
       uses:
         - gofastr/battery/queue.NewRedisQueue
+  - change: "BREAKING - registry.RegisterStyle panics on a name outside ^[a-z][a-z0-9-]{0,63}$, the grammar RegisterBehavior already enforced"
+    breaking: true
+    hits: review
+    guidance: "A name holding a quote added attributes to every instance of the component. Rename the style to lowercase letters, digits and hyphens, starting with a letter: myCard and my_card become my-card. The panic names the style."
+    find:
+      uses:
+        - gofastr/core-ui/registry.RegisterStyle
+  - change: "BREAKING - auth.RequireAPIScopes checks <table>:<verb> on every route an entity registers (CRUD and its subroutes, Endpoints, EntityUI's _bulk, _export.csv and _pick, the admin entity API), wherever it is mounted, instead of the first path segment after the API prefix"
+    breaking: true
+    hits: review
+    guidance: "A record id or _batch read as the scope resource. A token scoped to a mount path that differs from its table now gets 403: a persons table mounted at /people needs persons:read, not people:read, and an Endpoint at /api/reports/run on entity orders needs orders:write. Re-mint such tokens with the table's scope. Routes no entity registers still take the resource from their path."
+    find:
+      uses:
+        - gofastr/battery/auth.RequireAPIScopes
+  - change: "Derived element ids inside an island or a deferred outlet carry that region's namespace: a section titled Features in island cart is cart--features, and in the deferred outlet l:shell#aside it is l-shell-aside--features, on the full page and in the RPC or part answer alike"
+    breaking: false
+    nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+    guidance: "Two same-titled regions emitted one id, so aria-labelledby and #features hit the first. Update a #features link or an e2e selector that targets a derived id inside an island or a deferred outlet to the prefixed id, or give the component an explicit ID, which always wins."
