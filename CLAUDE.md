@@ -141,6 +141,13 @@ expose them to agents connected to a live app.**
     on a populated table. Each took one mutation to expose and none had cost
     more than a minute to prove.
 
+12. **Watch every PR you open, without asking.** Right after creating a
+    PR, subscribe to its activity (`subscribe_pr_activity`) so review
+    comments, CI results and merge conflicts reach the session, and
+    handle them as they come. Never end with "want me to watch the PR?":
+    the answer is always yes. Resolve a merge conflict with main as soon
+    as it shows up (merge main in, no force-push).
+
 ## Common operations
 
 - **Build / run the example website**: `./scripts/dev-watch.sh` (auto-rebuild + livereload, port `:8082`). Dev-watch writes to `/tmp/` because the watched tree must stay clean.
