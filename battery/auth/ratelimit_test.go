@@ -107,10 +107,12 @@ func newRLAuthManager(t *testing.T, rlCfg RateLimiterConfig) *AuthManager {
 		LoginRateLimit:      &rlCfg,
 	})
 	mgr.Use(NewCorePlugin())
+	// TwoFactorURL: the 2FA plugin below makes Init require it.
 	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
-		BaseURL:   "http://localhost",
-		TokenTTL:  time.Minute,
-		RateLimit: &rlCfg,
+		BaseURL:      "http://localhost",
+		TokenTTL:     time.Minute,
+		RateLimit:    &rlCfg,
+		TwoFactorURL: "/login/2fa",
 	}))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{RateLimit: &rlCfg}))
 	if err := mgr.Init(nil); err != nil {
