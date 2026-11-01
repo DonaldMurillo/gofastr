@@ -64,28 +64,42 @@ type index struct {
 	// own timeout) per write.
 	dim atomic.Int64
 
-	// unregisterErase removes the store eraser a writer on Path registers
-	// (see registerEraser); nil otherwise.
+	// eraseName and unregisterErase are the store eraser registerEraser
+	// added; empty and nil when it added none.
+	eraseName       string
 	unregisterErase func()
 }
 
-// registerEraser makes App.EraseUserData reach a writer's files: the
-// snapshot and the WAL hold every chunk's text, and no SQL eraser can
-// reach a file. A read-only index leaves erasure to the writer, and an
-// index with no Path holds nothing on disk.
+// registerEraser makes App.EraseUserData reach the chunks this process
+// holds: a writer's snapshot and WAL hold every chunk's text, an index
+// with no Path holds it in memory, and no SQL eraser reaches either. A
+// read-only index leaves erasure to the writer. A store shared across
+// processes (PgVectorStore) has its own SQL eraser, and a custom store
+// that cannot list its chunks cannot be searched for the user's.
 func (i *index) registerEraser() {
-	if i.path == "" || i.readOnly {
+	if i.readOnly {
 		return
 	}
-	i.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
-		Name:   "semantic:" + i.path,
+	if _, shared := i.store.(sharedStore); shared {
+		return
+	}
+	if _, ok := i.store.(chunkLister); !ok {
+		return
+	}
+	name := "semantic:memory"
+	if i.path != "" {
+		name = "semantic:" + i.path
+	}
+	i.eraseName, i.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   name,
 		Source: "semantic",
 		Erase:  i.eraseOwner,
 	})
 }
 
 // eraseOwner removes every document whose chunks name owner and then
-// rewrites the snapshot, which empties the WAL. A remove is logged as a
+// rewrites the snapshot, which empties the WAL (an index with no Path has
+// neither, and Snapshot does nothing). A remove is logged as a
 // record that names the documents, so the records that added them, text
 // included, stay in the WAL and the snapshot until one is rewritten. The
 // snapshot is rewritten even when owner has nothing left, since an earlier

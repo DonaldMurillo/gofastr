@@ -386,8 +386,9 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    Search and semantic indexes register an eraser and no exporter: they are
    rebuilt from the records that are exported, not restored. A row a store
    wrote with an empty owner names nobody and stays. Stores outside the
-   database (a file-backed semantic index, a Redis queue) are erased after
-   the transaction commits; see
+   database (a semantic index's files or memory, a Redis or in-memory
+   queue, an in-memory scheduler) are erased after the transaction
+   commits; see
    [Stores outside the database](#stores-outside-the-database).
 3. **Audit plane (built-in).** The audit table is retained, since it is the
    compliance record of who did what, but the user's `actor_id` is
@@ -492,23 +493,32 @@ every registered store eraser after the transaction commits and after the
 stored files are deleted. Each result is listed in `report.Stores` with
 `Mode: "delete"`.
 
-| Store | Registered by | What is erased |
+| Store | Registered by (name) | What is erased |
 |---|---|---|
-| a semantic index opened with `Options.Path` | `semantic.Open` (named `semantic:<path>`) | the chunks whose `Owner` is the user; the snapshot is rewritten and the WAL emptied, so no copy of the text stays on disk |
-| `queue.RedisQueue` | `queue.NewRedisQueue` (named `queue_redis:<queue>`) | every job whose `UserID` is the user, from the main, delayed and dead lists and the pop and processing hashes |
+| a semantic index opened with `Options.Path` | `semantic.Open` (`semantic:<path>`) | the chunks whose `Owner` is the user; the snapshot is rewritten and the WAL emptied, so no copy of the text stays on disk |
+| a semantic index with no `Path` | `semantic.Open` (`semantic:memory`) | the chunks whose `Owner` is the user, from memory |
+| `queue.RedisQueue` | `queue.NewRedisQueue` (`queue_redis:<queue>`) | every job whose `UserID` is the user, from the main, delayed and dead lists and the pop and processing hashes |
+| `queue.MemoryQueue` | `queue.NewMemoryQueue` (`queue_memory`) | every job whose `UserID` is the user: pending, delayed, handed out by `Dequeue`, and dead; the unique keys they held are freed |
+| `queue.Scheduler` (in-memory) | `queue.NewScheduler` (`queue_scheduler_memory`) | every schedule whose `UserID` is the user, so it is neither kept nor fired again |
 
-The store removes its registration when it closes (`Index.Close`,
-`RedisQueue.Close`). An index opened `ReadOnly` registers nothing; the
-process writing the index erases it. Two stores that register the same name
-replace each other, so two `RedisQueue`s with one queue name on different
-Redis servers leave only the later one in the erasure.
+**A store eraser stays registered until the store closes**: `Index.Close`,
+`RedisQueue.Close`, `MemoryQueue.Close` or `Scheduler.Close` removes it.
+Until then the registry holds the store, so it is never garbage-collected,
+and every erasure reaches it. Close each one you are done with, including
+one built for a single request or a test.
 
-Not reached: `MemoryQueue` jobs, an in-memory semantic index (no `Path`),
-and the in-memory `Scheduler`'s schedules. They live in process memory and
-are gone on restart.
+Two stores of one name both stay registered and are both erased; the later
+one is listed under the first free `#n` suffix (`queue_redis:jobs#2` for a
+second `RedisQueue` named `jobs` on another Redis server). An index opened
+`ReadOnly` registers nothing, since the process writing the index erases
+it. A semantic index over a store shared across processes
+(`PgVectorStore`) registers nothing either, since its table has a SQL
+eraser, and neither does one over a custom `Store` that cannot list its
+chunks (`AllChunks`): register a store eraser for it yourself.
 
-A Redis job a worker puts back on the main list after the sweep has passed
-that list survives the sweep; erasing again removes it.
+A job a worker is running when the sweep passes is not stopped. If it fails
+and is retried, or a Redis worker puts it back on the main list after the
+sweep has passed that list, it is back in the queue until the next erasure.
 
 **Failure.** The SQL erasure has committed by the time a store eraser runs,
 so a failure cannot roll it back. Every store eraser runs even when another
@@ -529,12 +539,13 @@ import "github.com/DonaldMurillo/gofastr/core/datexport"
 func eraseFromCache(ctx context.Context, userID string, dryRun bool) (int, error) { return 0, nil }
 -->
 ```go
-unregister := datexport.RegisterStoreEraser(datexport.StoreEraser{
+name, unregister := datexport.RegisterStoreEraser(datexport.StoreEraser{
     Name:   "profile_cache",
     Source: "app",
     Erase:  eraseFromCache, // func(ctx, userID, dryRun) (int, error)
 })
 defer unregister() // when the store closes
+_ = name           // "profile_cache", or "profile_cache#2" beside a live one
 ```
 
 ### Audit retention

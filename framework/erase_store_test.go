@@ -65,7 +65,7 @@ func storeEraseApp(t *testing.T) (*App, *fakeStore) {
 		}
 		return n
 	}
-	datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "files", Source: "test", Erase: store.erase})
+	_, _ = datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "files", Source: "test", Erase: store.erase})
 	return app, store
 }
 
@@ -123,7 +123,7 @@ func TestEraseReportsFailedStoreEraser(t *testing.T) {
 // as the store's error, not a crashed request.
 func TestStoreEraserPanicIsAnError(t *testing.T) {
 	app, _ := storeEraseApp(t)
-	datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "files", Source: "test",
+	_, _ = datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "files", Source: "test",
 		Erase: func(context.Context, string, bool) (int, error) { panic("boom") }})
 
 	_, err := app.EraseUserData(context.Background(), "u1")

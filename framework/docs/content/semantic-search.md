@@ -428,14 +428,14 @@ table filled before this check existed takes whatever model opens it first.
 **Erasure.** `Document.Owner` names the user a document belongs to, and
 `Index.Add` copies it onto every chunk (`Chunk.Owner`). `PgVectorStore`
 registers a data eraser, so `App.EraseUserData` deletes the erased user's
-chunks from the table. An index opened with `Options.Path` registers a
-store eraser (see
+chunks from the table. Any other index registers a store eraser (see
 [Stores outside the database](data-export.md#stores-outside-the-database)):
-after the SQL erasure commits it removes the user's documents and rewrites
-the snapshot, which also empties the WAL, so no copy of their text stays on
-disk. `Close` removes the registration, and an index opened `ReadOnly`
-registers none. An in-memory index (no `Path`) is not reached; remove an
-erased user's documents from it with `Index.Remove`. Hybrid search copies each chunk's text into the keyword
+after the SQL erasure commits it removes the user's documents, and with
+`Options.Path` it rewrites the snapshot, which also empties the WAL, so no
+copy of their text stays on disk. The registration stays until `Close`, so
+close an index you are done with. An index opened `ReadOnly` registers
+none, and neither does one over a custom `Store` that cannot list its
+chunks. Hybrid search copies each chunk's text into the keyword
 backend; a backend that implements `OwnedKeywordBackend`
 (`IndexOwned(ctx, id, owner, text)`) receives the chunk's owner with it.
 `WrapSearchBackend` does, so the copy lands as a `search.Document` with

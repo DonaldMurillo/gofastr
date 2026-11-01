@@ -191,8 +191,10 @@ type RedisQueue struct {
 	// handlers are outliving their visibility timeout.
 	staleClaims atomic.Int64
 
-	// unregisterErase removes the store eraser NewRedisQueue registers;
+	// eraseName is the name the store eraser is listed under, and
+	// unregisterErase removes it;
 	// Close calls it.
+	eraseName       string
 	unregisterErase func()
 }
 
@@ -218,7 +220,9 @@ func NewRedisQueue(client RedisClient, queueName string) *RedisQueue {
 	q.visibilityTimeout.Store(int64(30 * time.Second))
 	// App.EraseUserData reaches the jobs a SQL eraser cannot: every entry
 	// here is json.Marshal(job), its payload included.
-	q.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+	// Two queues of one name (on different servers) are both listed: the
+	// later is queue_redis:<name>#2.
+	q.eraseName, q.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
 		Name:   "queue_redis:" + queueName,
 		Source: "queue",
 		Erase:  q.eraseUser,

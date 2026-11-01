@@ -165,14 +165,18 @@ every later export.
 Leave it empty for infrastructure work — cache warms, sweeps, index
 rebuilds — where there is no subject to erase.
 
-`RedisQueue` is erased too: `NewRedisQueue` registers a store eraser
-(see [Stores outside the database](data-export.md#stores-outside-the-database))
-that removes every job whose `UserID` is the erased user from the main,
-delayed and dead lists and the pop and processing hashes, after the SQL
-erasure commits. `RedisQueue.Close` removes the registration. A worker
-still running an erased job finds nothing to settle, and its `Ack` or
-`Nack` does nothing. `MemoryQueue` holds jobs in process memory only, and
-erasure does not reach them.
+`RedisQueue` and `MemoryQueue` are erased too: each constructor registers a
+store eraser (see
+[Stores outside the database](data-export.md#stores-outside-the-database))
+that removes every job whose `UserID` is the erased user after the SQL
+erasure commits. For `RedisQueue` that is the main, delayed and dead lists
+and the pop and processing hashes; for `MemoryQueue`, the pending jobs
+(delayed ones included), the jobs `Dequeue` handed out, and the dead list,
+with the unique keys they held freed. A worker still running an erased job
+finds nothing to settle, and its `Ack` or `Nack` does nothing. The
+registration stays until `Close`, and it keeps the queue from being
+garbage-collected, so close a queue you are done with. Two `RedisQueue`s
+with one queue name on different servers are both erased.
 
 A schedule sets `UserID` on the jobs it fires with its `UserID` option; see
 [Scheduler](#scheduler).
@@ -562,9 +566,10 @@ A durable schedule with `UserID(id)` keeps its payload in the schedules
 table and fires it on every tick, so `NewDurableScheduler` registers that
 table with `App.EraseUserData`: erasing the user deletes the schedules that
 name them, and the `queue_jobs` eraser deletes the jobs they fired. A
-schedule registered before the option existed names nobody. An in-memory
-`Scheduler` schedule is not erased, since it lives in process memory; its
-fired jobs still carry the `UserID`.
+schedule registered before the option existed names nobody. The in-memory
+`Scheduler` registers a store eraser that drops the user's schedules from
+memory; `Scheduler.Close` removes it (it does not stop `Start`; cancel
+`Start`'s context for that).
 
 Cron field evaluation follows the location of the registration anchor.
 `Register()` anchors in UTC, so `"0 2 * * *"` fires at 02:00 UTC, the

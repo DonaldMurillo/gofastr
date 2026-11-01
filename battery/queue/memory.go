@@ -7,10 +7,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // defaultHandlerTimeout is the handler execution timeout used when none is
@@ -124,6 +127,11 @@ type MemoryQueue struct {
 	dead    []deadJob
 	deadSeq uint64
 
+	// eraseName is the name the store eraser NewMemoryQueue registers is
+	// listed under; unregisterErase removes it, on Close.
+	eraseName       string
+	unregisterErase func()
+
 	// replayEnqueued is a deterministic seam for package tests: Replay
 	// calls it between its re-enqueue and retiring the dead record.
 	// Production code leaves it nil.
@@ -226,7 +234,75 @@ func NewMemoryQueue(workers int, opts ...MemoryQueueOption) *MemoryQueue {
 	for _, opt := range opts {
 		opt(q)
 	}
+	// App.EraseUserData reaches the jobs this process holds: their
+	// payloads are the user's data as much as a queue_jobs row's.
+	q.eraseName, q.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   "queue_memory",
+		Source: "queue",
+		Erase:  q.eraseUser,
+	})
 	return q
+}
+
+// eraserName is the name the queue's store eraser is listed under.
+func (q *MemoryQueue) eraserName() string { return q.eraseName }
+
+// eraseUser removes every job whose UserID is userID from the pending
+// heap (delayed jobs included), the set Dequeue handed out, and the dead
+// list, freeing the unique keys they held, and returns how many it
+// removed (with dryRun, how many it would). A dequeued job's later Ack or
+// Nack finds nothing and does nothing. A job a worker is running when
+// the sweep passes is not stopped; if it fails and is retried, it is
+// back on the heap until the next erasure.
+func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (int, error) {
+	var gone []Job
+	q.pmu.Lock()
+	kept := make([]pendingJob, 0, len(q.pending.items))
+	for _, pj := range q.pending.items {
+		if pj.job.UserID == userID {
+			gone = append(gone, pj.job)
+		} else {
+			kept = append(kept, pj)
+		}
+	}
+	if !dryRun && len(kept) != len(q.pending.items) {
+		q.pending.items = kept
+		heap.Init(&q.pending)
+	}
+	q.pmu.Unlock()
+
+	q.inflightMu.Lock()
+	for _, id := range slices.Sorted(maps.Keys(q.inflight)) {
+		if job := q.inflight[id]; job.UserID == userID {
+			gone = append(gone, job)
+			if !dryRun {
+				delete(q.inflight, id)
+			}
+		}
+	}
+	q.inflightMu.Unlock()
+
+	q.deadMu.Lock()
+	n := len(gone)
+	keptDead := make([]deadJob, 0, len(q.dead))
+	for _, d := range q.dead {
+		if d.job.UserID == userID {
+			n++
+		} else {
+			keptDead = append(keptDead, d)
+		}
+	}
+	if !dryRun {
+		q.dead = keptDead
+	}
+	q.deadMu.Unlock()
+
+	if !dryRun {
+		for _, job := range gone {
+			q.release(job)
+		}
+	}
+	return n, nil
 }
 
 // RegisterHandler registers a handler function for a given job type.
@@ -801,7 +877,13 @@ var (
 // Jobs whose ScheduledAt is still ahead are not run early and not waited
 // for: an in-memory queue cannot keep them past Close, so they are dropped
 // and their count is logged.
+//
+// Close also removes the queue's store eraser, which NewMemoryQueue
+// registered and which otherwise keeps the queue reachable.
 func (q *MemoryQueue) Close() error {
+	if q.unregisterErase != nil {
+		q.unregisterErase()
+	}
 	q.pmu.Lock()
 	if q.closed {
 		q.pmu.Unlock()

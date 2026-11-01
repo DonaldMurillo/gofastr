@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
@@ -53,17 +54,65 @@ type Scheduler struct {
 	// timer immediately, rather than waiting out a coarse (up to a minute)
 	// poll before a newly-registered sub-minute schedule can fire.
 	wake chan struct{}
+
+	// eraseName is the name the store eraser newScheduler registers is
+	// listed under; unregisterErase removes it, on Close.
+	eraseName       string
+	unregisterErase func()
 }
 
 // NewScheduler creates the non-durable, single-process Scheduler that
 // dispatches to the given queues. Enqueue errors are logged via slog.Default().
 // NewInMemoryScheduler is the explicit spelling for new code.
 func NewScheduler(queues ...Queue) *Scheduler {
-	return &Scheduler{
+	return newScheduler(queues, slog.Default())
+}
+
+// newScheduler builds a Scheduler and registers its store eraser:
+// App.EraseUserData drops the schedules whose UserID is the erased user,
+// so their payload is neither kept nor fired again.
+func newScheduler(queues []Queue, logger *slog.Logger) *Scheduler {
+	s := &Scheduler{
 		queues: queues,
-		logger: slog.Default(),
+		logger: logger,
 		wake:   make(chan struct{}, 1),
 	}
+	s.eraseName, s.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   "queue_scheduler_memory",
+		Source: "queue",
+		Erase:  s.eraseUser,
+	})
+	return s
+}
+
+// eraserName is the name the scheduler's store eraser is listed under.
+func (s *Scheduler) eraserName() string { return s.eraseName }
+
+// eraseUser drops every schedule whose UserID is userID and returns how
+// many it dropped (with dryRun, how many it would).
+func (s *Scheduler) eraseUser(_ context.Context, userID string, dryRun bool) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := make([]ScheduledJob, 0, len(s.schedules))
+	for _, sch := range s.schedules {
+		if sch.UserID != userID {
+			kept = append(kept, sch)
+		}
+	}
+	n := len(s.schedules) - len(kept)
+	if !dryRun {
+		s.schedules = kept
+	}
+	return n, nil
+}
+
+// Close removes the scheduler from App.EraseUserData's reach. It does not
+// stop Start; cancel Start's context for that.
+func (s *Scheduler) Close() error {
+	if s.unregisterErase != nil {
+		s.unregisterErase()
+	}
+	return nil
 }
 
 // NewInMemoryScheduler explicitly creates the non-durable, single-process
@@ -79,11 +128,7 @@ func NewSchedulerWithLogger(q Queue, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Scheduler{
-		queues: []Queue{q},
-		logger: logger,
-		wake:   make(chan struct{}, 1),
-	}
+	return newScheduler([]Queue{q}, logger)
 }
 
 // Every returns a ScheduleBuilder that fires on a fixed interval.

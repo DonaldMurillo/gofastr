@@ -117,6 +117,70 @@ func TestEraseRewritesIndexFiles(t *testing.T) {
 	}
 }
 
+// An index with no Path held the user's chunks in process memory, out of
+// every eraser's reach (2026-10-27 S24 follow-up). It registers a store
+// eraser too, and Close removes it.
+func TestEraseReachesMemoryIndex(t *testing.T) {
+	ctx := context.Background()
+	idx, err := Open(Options{Embedder: NewStubEmbedder(16)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	if err := idx.Add(ctx,
+		Document{ID: "v1", Text: "victim diary", Owner: "victim"},
+		Document{ID: "b1", Text: "bystander diary", Owner: "bystander"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	name := idx.(*index).eraseName
+	if !storeRegistered(name) {
+		t.Fatalf("an in-memory index registered no store eraser: %+v", datexport.AllStoreErasers())
+	}
+	rep, err := eraseApp(t).EraseUserData(ctx, "victim")
+	if err != nil {
+		t.Fatalf("EraseUserData: %v", err)
+	}
+	if got := docOwners(t, idx); len(got) != 1 || got[0] != "b1:bystander" {
+		t.Errorf("index after erase: %v, want only b1:bystander", got)
+	}
+	if got, ok := storeResult(rep, name); !ok || got.RowsAffected != 1 {
+		t.Errorf("report stores = %+v, want %s with 1 chunk", rep.Stores, name)
+	}
+	if err := idx.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if storeRegistered(name) {
+		t.Errorf("%s still registered after Close", name)
+	}
+}
+
+// sharedFlat is a FlatStore that says other processes write it, the way
+// PgVectorStore does; listlessStore hides every method but Store's, so the
+// index cannot list its chunks.
+type sharedFlat struct{ *FlatStore }
+
+func (sharedFlat) sharedAcrossProcesses() {}
+
+type listlessStore struct{ Store }
+
+// A store shared across processes has its own SQL eraser, and one that
+// cannot list its chunks cannot be searched for the user's: an index over
+// either registers no store eraser (a failing one would fail every
+// erasure).
+func TestIndexSkipsEraserItCannotRun(t *testing.T) {
+	for _, st := range []Store{sharedFlat{NewFlatStore(16, "stub")}, listlessStore{NewFlatStore(16, "stub")}} {
+		idx, err := Open(Options{Embedder: NewStubEmbedder(16), Store: st})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name := idx.(*index).eraseName; name != "" {
+			t.Errorf("an index over %T registered store eraser %q", st, name)
+		}
+		_ = idx.Close()
+	}
+}
+
 // A read-only index leaves erasure to the process writing the files: its
 // Remove refuses, so an eraser here would fail every erasure.
 func TestReadOnlyIndexRegistersNoEraser(t *testing.T) {
