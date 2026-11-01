@@ -198,7 +198,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 	}
 
 	dialect := migrate.DetectDialect(a.DB)
-	sources, err := a.collectSources()
+	sources, err := a.collectSources(ctx)
 	if err != nil {
 		return err
 	}
@@ -295,7 +295,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 	// registry or a registered exporter may be restored. Archive entries that
 	// don't match a live source are rejected, a malicious archive's table
 	// names never reach this map as keys and therefore never reach SQL.
-	live, err := a.collectSources()
+	live, err := a.collectSources(ctx)
 	if err != nil {
 		return err
 	}
@@ -311,6 +311,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 	type planned struct {
 		src  exportSource // live source (trusted table + columns)
 		cols []string     // archive columns, confirmed ⊆ live.columns
+		keys []string     // the archive columns holding the primary key
 		path string
 		phys string // the table as the catalog spells it (physicalTable)
 	}
@@ -339,6 +340,10 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 			}
 			cols = append(cols, c)
 		}
+		keyCols, err := archiveKeyColumns(src.primaryKey, cols)
+		if err != nil {
+			return fmt.Errorf("framework: import: source %q: %w", ent.Name, err)
+		}
 		ndjsonPath := filepath.Join(dir, ent.Name+".ndjson")
 		data, err := os.ReadFile(ndjsonPath)
 		if err != nil {
@@ -356,7 +361,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		if !exists {
 			return fmt.Errorf("framework: import: source %q table %q is not in the database", ent.Name, src.table)
 		}
-		plans = append(plans, planned{src: src, cols: cols, path: ndjsonPath, phys: phys})
+		plans = append(plans, planned{src: src, cols: cols, keys: keyCols, path: ndjsonPath, phys: phys})
 	}
 	// Parents first, by the live schema (decision D4): the archive's own
 	// listing may predate that order.
@@ -387,6 +392,9 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		rows, err := readNDJSON(p.path)
 		if err != nil {
 			return fmt.Errorf("framework: import: parse %q: %w", p.src.name, err)
+		}
+		if err := rowsHaveKeys(rows, p.keys); err != nil {
+			return fmt.Errorf("framework: import: source %q: %w", p.src.name, err)
 		}
 		canonicalTimes(rows, p.src.timestamps, p.src.dates)
 		var deferred []deferredRef
@@ -446,16 +454,22 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 // Distinct entity names that explicitly target the same physical table are
 // also collapsed to one source (the lex-first name) whose column list is the
 // union across every entity sharing the table, a faithful backup reads every
-// physical column, not just one name's projection.
+// physical column, not just one name's projection. Two entities that spell
+// one table differently (users and public.users) are refused: the
+// grouping keys on the declared spelling, and the database's resolution
+// is what shows them to be one table.
+//
+// Exporters compare with the entity sources and with each other by the
+// table each spelling resolves to (tableIdentity), so an exporter
+// configured as public.users joins the users entity's source.
 //
 // Pivot tables follow (source "pivot"), then every entity and pivot source
 // is ordered parents first (decision D4); battery tables come last, in
 // registration order.
-func (a *App) collectSources() ([]exportSource, error) {
+func (a *App) collectSources(ctx context.Context) ([]exportSource, error) {
 	var out []exportSource
-	seenTable := make(map[string]bool)
+	seenTable := make(map[string]bool) // tableIdentity → claimed by an exporter
 	seenName := make(map[string]bool)
-	entitySource := make(map[string]int) // folded table → index in out
 
 	if a.Registry != nil {
 		g, err := a.buildDataGraph()
@@ -567,14 +581,33 @@ func (a *App) collectSources() ([]exportSource, error) {
 				}
 			}
 			emitted[t] = true
-			entitySource[t] = len(out)
 			out = append(out, src)
-			seenTable[t] = true
 			seenName[n] = true
 		}
 	}
+	// Sources compare by the table their spelling resolves to, so users
+	// and public.users (main.users on SQLite) are one table: comparing the
+	// declared strings exported it twice, and the restore then failed on
+	// the second copy's keys.
+	dialect := migrate.DetectDialect(a.DB)
+	entityByID := make(map[string]int, len(out))
+	for i, src := range out {
+		id, err := tableIdentity(ctx, a.DB, src.table, dialect, true)
+		if err != nil {
+			return nil, err
+		}
+		if j, dup := entityByID[id]; dup {
+			return nil, fmt.Errorf("framework: entities %q and %q name one table (%s and %s)",
+				out[j].name, src.name, out[j].table, src.table)
+		}
+		entityByID[id] = i
+	}
 	for _, ex := range datexport.All() {
-		if i, ok := entitySource[asciicase.Lower(ex.Table)]; ok {
+		id, err := tableIdentity(ctx, a.DB, ex.Table, dialect, false)
+		if err != nil {
+			return nil, err
+		}
+		if i, ok := entityByID[id]; ok {
 			// An entity already exports this table, and its source keeps
 			// it. A battery can own columns the entity does not declare
 			// (auth's name column on an entity user table), so those join
@@ -583,10 +616,9 @@ func (a *App) collectSources() ([]exportSource, error) {
 			out[i].columns = appendFoldUnique(out[i].columns, ex.Columns)
 			continue
 		}
-		if seenTable[asciicase.Lower(ex.Table)] || seenName[ex.Name] {
+		if seenTable[id] || seenName[ex.Name] {
 			// A name collision, or a table an earlier exporter claimed:
-			// the first wins. Tables compare folded, as the entity
-			// sources do.
+			// the first wins.
 			continue
 		}
 		// An empty PrimaryKey means the table has no key: rawReadAll reads
@@ -605,10 +637,42 @@ func (a *App) collectSources() ([]exportSource, error) {
 			table: ex.Table, primaryKey: pk, columns: append([]string(nil), ex.Columns...),
 			raw: true,
 		})
-		seenTable[asciicase.Lower(ex.Table)] = true
+		seenTable[id] = true
 		seenName[ex.Name] = true
 	}
 	return out, nil
+}
+
+// archiveKeyColumns returns the archive column holding each of a source's
+// primary-key columns, matched folded as the unquoted DDL matches them.
+// An archive that leaves a key column out is refused: the restore would
+// write it NULL, which SQLite admits in a non-integer key (the rows can
+// then never be read by key), or let Postgres mint new ids that every
+// reference to the old ones misses. A keyless raw table has nothing to
+// check.
+func archiveKeyColumns(key, cols []string) ([]string, error) {
+	out := make([]string, 0, len(key))
+	for _, k := range key {
+		i := slices.IndexFunc(cols, func(c string) bool { return asciicase.Lower(c) == asciicase.Lower(k) })
+		if i < 0 {
+			return nil, fmt.Errorf("the archive does not carry key column %q", k)
+		}
+		out = append(out, cols[i])
+	}
+	return out, nil
+}
+
+// rowsHaveKeys refuses a row whose key column is null or missing, for the
+// reason archiveKeyColumns refuses the column.
+func rowsHaveKeys(rows []map[string]any, keys []string) error {
+	for i, row := range rows {
+		for _, k := range keys {
+			if row[k] == nil {
+				return fmt.Errorf("row %d has no value for key column %q", i+1, k)
+			}
+		}
+	}
+	return nil
 }
 
 // deferredRef is a reference a cycle of rows kept out of its row's INSERT:
@@ -1139,19 +1203,56 @@ type rowQueryer interface {
 //
 // SQLite identifiers have no case, so the name matches without it.
 func physicalTable(ctx context.Context, db rowQueryer, table string, dialect migrate.Dialect, folded bool) (string, bool, error) {
-	name := query.MustIdent(table)
-	if dialect != migrate.DialectPostgres {
-		var phys string
-		err := db.QueryRowContext(ctx,
-			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = $1 COLLATE NOCASE", name).Scan(&phys)
-		if err == sql.ErrNoRows {
-			return "", false, nil
-		}
-		return phys, err == nil, err
+	physSchema, physRel, ok, err := resolveTable(ctx, db, table, dialect, folded)
+	if !ok || err != nil {
+		return "", ok, err
 	}
+	if !strings.Contains(table, ".") {
+		return physRel, true, nil
+	}
+	return physSchema + "." + physRel, true, nil
+}
+
+// resolveTable is physicalTable's lookup: the schema and name the catalog
+// holds the table under. The schema is filled in for a bare name too
+// (current_schema() on Postgres, main on SQLite), so two spellings of one
+// table, users and public.users, resolve to the same pair.
+//
+// SQLite keeps one sqlite_master per schema, and its rows name each table
+// without the schema, so a qualified name reads its own schema's
+// sqlite_master with the bare name.
+func resolveTable(ctx context.Context, db rowQueryer, table string, dialect migrate.Dialect, folded bool) (string, string, bool, error) {
+	name := query.MustIdent(table)
 	schemaPart, rel := "", name
 	if i := strings.LastIndexByte(name, '.'); i >= 0 {
 		schemaPart, rel = name[:i], name[i+1:]
+	}
+	if dialect != migrate.DialectPostgres {
+		master, physSchema := "sqlite_master", "main"
+		var phys string
+		if schemaPart != "" {
+			physSchema = schemaPart
+			master = query.QuoteFolded(schemaPart) + ".sqlite_master"
+			// A schema the connection has not attached has no
+			// sqlite_master to read, and its table is absent.
+			err := db.QueryRowContext(ctx,
+				"SELECT name FROM pragma_database_list WHERE name = $1 COLLATE NOCASE", schemaPart).Scan(&phys)
+			if err == sql.ErrNoRows {
+				return "", "", false, nil
+			}
+			if err != nil {
+				return "", "", false, err
+			}
+		}
+		err := db.QueryRowContext(ctx,
+			"SELECT name FROM "+master+" WHERE type = 'table' AND name = $1 COLLATE NOCASE", rel).Scan(&phys)
+		if err == sql.ErrNoRows {
+			return "", "", false, nil
+		}
+		if err != nil {
+			return "", "", false, err
+		}
+		return physSchema, phys, true, nil
 	}
 	// spellings is the owner's spelling first, then the folded one.
 	spellings := func(s string) (string, string) {
@@ -1177,15 +1278,31 @@ func physicalTable(ctx context.Context, db rowQueryer, table string, dialect mig
 			schemaA, schemaB, relA, relB).Scan(&physSchema, &physRel)
 	}
 	if err == sql.ErrNoRows {
-		return "", false, nil
+		return "", "", false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
-	if schemaPart == "" {
-		return physRel, true, nil
+	return physSchema, physRel, true, nil
+}
+
+// tableIdentity names the table a declared spelling resolves to, so a bare
+// and a schema-qualified spelling of one table compare equal. A table the
+// database does not hold keys on its folded declared name: it is never
+// exported, and the import refuses it.
+func tableIdentity(ctx context.Context, db rowQueryer, table string, dialect migrate.Dialect, folded bool) (string, error) {
+	physSchema, physRel, ok, err := resolveTable(ctx, db, table, dialect, folded)
+	if err != nil {
+		return "", fmt.Errorf("framework: probe %q: %w", table, err)
 	}
-	return physSchema + "." + physRel, true, nil
+	if !ok {
+		return "declared:" + asciicase.Lower(table), nil
+	}
+	if dialect != migrate.DialectPostgres {
+		// SQLite names have no case: Main.Widgets is main.widgets.
+		return "table:" + asciicase.Lower(physSchema+"."+physRel), nil
+	}
+	return "table:" + physSchema + "." + physRel, nil
 }
 
 // quotePhysical quotes a physicalTable spelling as it is, each

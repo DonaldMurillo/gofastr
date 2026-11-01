@@ -123,6 +123,14 @@ An exporter's columns that the entity does not declare join that source
 (compared case-insensitively), so auth's `name` column on an entity user
 table is exported and restored with the rest of the row.
 
+Tables compare by what the database resolves each spelling to, so an
+exporter configured as `public.users` (or `main.users` on SQLite) is the
+`users` entity's table and joins its source. Two entities that spell one
+table differently are refused with an error naming both. On SQLite a
+schema-qualified table reads the `sqlite_master` of its own schema; a
+schema the connection has not attached holds no table, and its exporter is
+skipped as absent.
+
 ## Archive layout
 
 ```
@@ -208,7 +216,15 @@ these is rejected up front, leaving the database untouched:
 - a source whose table is not in the live database;
 - an archive table name that doesn't match the live table;
 - an archive column absent from the live schema (incompatible column set);
+- a source whose archive columns leave out a primary-key column (a keyless
+  raw table has none to leave out);
 - a per-file `sha256` that doesn't match the `.ndjson` bytes (corrupt/tampered).
+
+A row whose primary-key value is null or missing is refused too, in the
+write phase, and the transaction rolls back. Without these two checks a key
+column was written NULL, which SQLite accepts in a non-integer key (the
+restored rows can never be read by key), or Postgres minted new ids that no
+reference pointed at.
 
 Restore into an empty (or freshly migrated) database. Import uses plain
 `INSERT` and will fail loud on a primary-key conflict if a row already exists,
