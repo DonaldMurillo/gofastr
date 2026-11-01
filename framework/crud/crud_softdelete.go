@@ -204,6 +204,11 @@ func withDeletedAtColumn(cols []string) []string {
 // soft-deleted rows, then the AfterUpdate hooks, the audit row (op
 // "restore" via withAuditOperation) and the staged entity.updated event.
 func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
+	// A row the caller's BeforeGet hooks hide, live or trashed, answers
+	// errNotFound before the live-or-trashed question (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetTrashed); err != nil {
+		return nil, err
+	}
 	pre, err := ch.selectTrashedRow(ctx, r, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -266,6 +271,10 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 // DELETE pinned to soft-deleted rows, the AfterDelete hooks, the audit
 // row (op "purge") and the staged entity.deleted event.
 func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) error {
+	// As doRestore: a hidden row is a missing one (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetTrashed); err != nil {
+		return err
+	}
 	pre, err := ch.selectTrashedRow(ctx, r, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

@@ -19,7 +19,10 @@ import (
 // child, a belongs_to reference, a state refusal naming a stored value.
 // Each of those asks the one question below, for the one row it is about:
 // would the caller's own Before hooks have let a read reach it? Checking
-// only the declared ReadScope there served the rows the hook hid.
+// only the declared ReadScope there served the rows the hook hid. The
+// record writes ask it of their target before they write
+// (refuseHiddenTarget): a row GET answers 404 for is one PUT, PATCH,
+// DELETE, a move, restore or purge answers 404 for too.
 //
 // The check costs a keyed SELECT only when a hook appended a clause, and
 // it fails closed: a hook error, a row with no key, or a failed query
@@ -44,12 +47,102 @@ func beforeScopeHidesKey(ctx context.Context, conn DBExecutor, table string, key
 	for i, k := range key {
 		qb.Where(k+" = $1", vals[i])
 	}
+	return clausesFindNothing(ctx, conn, qb, clauses)
+}
+
+// clausesFindNothing ANDs clauses into qb, a keyed SELECT, and reports
+// whether it finds nothing. A failed query finds nothing: it fails closed.
+func clausesFindNothing(ctx context.Context, conn DBExecutor, qb *query.QueryBuilder, clauses []hook.WhereClause) bool {
 	for _, c := range clauses {
 		qb.Where(c.SQL, c.Args...)
 	}
 	sqlStr, args := qb.Build()
 	var hit any
 	return conn.QueryRowContext(ctx, sqlStr, args...).Scan(&hit) != nil
+}
+
+// The rows a record write may target on a soft-delete entity: the live
+// row an update, delete or move writes, or any row, live or trashed, for
+// restore and purge, which tell the two apart themselves once the
+// visibility question is answered.
+const (
+	targetLive    = false
+	targetTrashed = true
+)
+
+// refuseHiddenTarget answers errNotFound when the caller's own BeforeGet
+// hooks hide record id, the row GET /<entity>/{id} answers 404 for, so a
+// record write answers the 404 a missing row gets and writes nothing
+// (owner decision, 2026-11-01). Before it a caller could PUT, PATCH,
+// DELETE, move, restore or purge a row it could not read; only the
+// response was cut to the id.
+//
+// The write calls it first inside its transaction, before any statement
+// of its own, so the SELECT runs on ctx's tx. The hooks see the request
+// scopeRequest picks: always on an HTTP route, in process only under
+// WithReadHooks, the rule GetOne follows. A WithServerWrites caller is
+// trusted server Go, as on the cascade checks. No BeforeGet hook, or none
+// that appends a clause, costs nothing. Otherwise one keyed SELECT asks
+// for the row under the WHERE the write itself applies (tenant, owner
+// write scope, deleted_at IS NULL unless trashed is set) plus the hooks'
+// clauses. Every row the write would not find answers here, at the same
+// point: hidden, missing, another owner's. They stay indistinguishable
+// even for a body the write would have refused further on. A hook error
+// hides the row: it fails closed.
+func (ch *CrudHandler) refuseHiddenTarget(ctx context.Context, r *http.Request, id string, trashed bool) error {
+	if ch.Hooks == nil || len(ch.Hooks.HooksFor(hook.BeforeGet)) == 0 || serverWrites(ctx) {
+		return nil
+	}
+	hr, apply := scopeRequest(ctx, r)
+	if !apply {
+		return nil
+	}
+	clauses, err := ch.ownBeforeScopes(ctx, hr, id, false)
+	if err != nil {
+		return errNotFound
+	}
+	if len(clauses) == 0 {
+		return nil
+	}
+	table, key := ch.Entity.GetTable(), ch.keyCols()
+	if !isSafeTable(table) || !safeIdentifiers(key) {
+		return errNotFound
+	}
+	kc, ka := ch.keyWhere(id)
+	qb := query.Select(key[0]).From(table).Where(kc, ka...)
+	ch.ApplyTenantScope(qb, r)
+	applyOwnerScope(ch, qb, r, false)
+	if ch.Entity.Config.Scope.SoftDelete && !trashed {
+		qb.Where("deleted_at IS NULL")
+	}
+	if clausesFindNothing(ctx, ch.conn(ctx), qb, clauses) {
+		return errNotFound
+	}
+	return nil
+}
+
+// upsertTargetHidden reports whether the caller's own BeforeGet hooks hide
+// the existing row the upsert body's key names; call it only once the row
+// is known to exist. The conflict arm would overwrite that row, so
+// UpsertOne refuses it with the refusal another owner's row gets
+// (errUpsertForeignRow): the key is taken, which a create of the same key
+// reveals as well, and nothing tells a hidden row from a foreign one.
+// Same gate and cost as refuseHiddenTarget; the key is matched unscoped,
+// as the preflight reads it.
+func (ch *CrudHandler) upsertTargetHidden(ctx context.Context, r *http.Request, body map[string]any) bool {
+	if ch.Hooks == nil || len(ch.Hooks.HooksFor(hook.BeforeGet)) == 0 || serverWrites(ctx) {
+		return false
+	}
+	hr, apply := scopeRequest(ctx, r)
+	if !apply {
+		return false
+	}
+	id, _ := entity.RowKey(body, ch.keyCols(), nil)
+	clauses, err := ch.ownBeforeScopes(ctx, hr, id, false)
+	if err != nil {
+		return true
+	}
+	return beforeScopeHidesKey(ctx, ch.conn(ctx), ch.Entity.GetTable(), ch.keyCols(), ch.colKeyVals(body), clauses)
 }
 
 // ownBeforeScopes runs this handler's BeforeGet chain for a read of record
