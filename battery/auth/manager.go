@@ -350,6 +350,11 @@ type AuthManager struct {
 	// Init alone mounts routes but signs nobody in.
 	app       *framework.App
 	resolving bool
+
+	// unregisterMemoryErase drops the in-memory store eraser a previous
+	// Init registered (memory_erase.go).
+	unregisterMemoryErase func()
+	memoryEraseName       string
 }
 
 // noteIfWired tells the app callers can be signed in, once both halves
