@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -248,6 +249,54 @@ func TestOAuthLoginRefusedAsLinkRemovedStoresNoTokens(t *testing.T) {
 	if _, err := tokens.Get(context.Background(), uid, "corp"); !errors.Is(err, ErrOAuthTokenNotFound) {
 		t.Errorf("SECURITY: a sign-in refused as link_removed stored the squatter's provider tokens (err=%v)", err)
 	}
+}
+
+// The claim lands after the post-mint re-check passed (lookup 2) and before
+// the tokens were stored: the save used to come last, so it wrote the
+// squatter's grant back after the claim had dropped it (2026-11-01 review).
+// The save now precedes the re-check, so the claim's drop always follows it.
+func TestOAuthClaimAfterLinkRecheckLeavesNoTokens(t *testing.T) {
+	const email = "victim@example.com"
+	var hooked *hookedLinks
+	c := newClaimRig(t, func(s *EntityUserStore) UserStore {
+		hooked = &hookedLinks{EntityUserStore: s}
+		return hooked
+	})
+	tokens := newSQLOAuthTokenStore(t)
+	withClaimTokenStore(t, c, tokens)
+	uid, code := c.oauth("corp")
+	if uid == "" {
+		t.Fatalf("setup: squatter sign-in = %d", code)
+	}
+	hooked.arm(2, func() {
+		if got := c.magicLink(email); got != uid {
+			t.Errorf("setup: magic link signed into %s, want %s", got, uid)
+		}
+	})
+	c.oauthStatus("corp")
+	hooked.mustHaveFired(t)
+	if _, err := tokens.Get(context.Background(), uid, "corp"); !errors.Is(err, ErrOAuthTokenNotFound) {
+		t.Errorf("SECURITY: the claimed account still holds the squatter's provider tokens (err=%v)", err)
+	}
+}
+
+// oauthStatus runs one sign-in and returns only the callback's status: the
+// claim purges the session it set, so oauth's session read would fail.
+func (c *claimRig) oauthStatus(provider string) int {
+	c.t.Helper()
+	w1 := httptest.NewRecorder()
+	c.r.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/auth/oauth/"+provider, nil))
+	loc := w1.Header().Get("Location")
+	state := loc[strings.LastIndex(loc, "state=")+len("state="):]
+	req := httptest.NewRequest(http.MethodGet, "/auth/oauth/"+provider+"/callback?state="+url.QueryEscape(state)+"&code=c", nil)
+	for _, ck := range w1.Result().Cookies() {
+		if ck.Name == oauthStateCookie {
+			req.AddCookie(ck)
+		}
+	}
+	w2 := httptest.NewRecorder()
+	c.r.ServeHTTP(w2, req)
+	return w2.Code
 }
 
 // ── 4. The replay map cannot be filled into a global lockout ───────────────

@@ -615,22 +615,29 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, r, http.StatusConflict, reasonProviderLinkedElsewhere)
 				return
 			}
-			// An account claim removes every link and then every session;
+			// The provider tokens are stored before the re-check below, not
+			// after it: a claim whose token drop ran between a passing
+			// re-check and a later save left the squatter's tokens on the
+			// claimed account. Stored first, a claim either drops them
+			// after (its drop follows its session purge and unlink) or has
+			// already purged the session, which the re-check sees.
+			p.saveProviderTokens(r.Context(), linkUserID, providerName, tok)
+			// An account claim removes every session and then every link;
 			// a reset or change moves the hash first. A claim that overtook
 			// this callback between its session check and the upsert has
 			// already run its unlink, so the link just written would
 			// outlive it and sign the squatter back into the claimed
 			// account. Re-check the session and the credential now the link
-			// is stored, and take the link back when either moved.
+			// and tokens are stored, and take both back when either moved.
 			if !p.linkSessionHolds(r, linkUserID) || snap.moved(r.Context(), p.mgr) {
-				if !p.undoLink(r.Context(), userStore, linkUserID, info.Provider) {
+				tokensGone := p.dropProviderTokenRow(r.Context(), linkUserID, providerName)
+				if !p.undoLink(r.Context(), userStore, linkUserID, info.Provider) || !tokensGone {
 					writeAuthError(w, r, http.StatusInternalServerError, reasonLinkFailed)
 					return
 				}
 				writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
 				return
 			}
-			p.saveProviderTokens(r.Context(), linkUserID, providerName, tok)
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{
 				Kind:   "oauth.linked",
 				UserID: linkUserID,
@@ -706,6 +713,13 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
 		}
+		// The provider tokens are stored before the link is resolved
+		// again, not after: a claim whose unlink and token drop ran
+		// between a passing re-check and a later save left the squatter's
+		// tokens on the claimed account. A claim unlinks before it drops
+		// tokens, so with the save first, a link still naming this user
+		// means the drop is still to come, and a link gone drops them here.
+		p.saveProviderTokens(r.Context(), user.GetID(), providerName, tok)
 		// An account claim that removed the link after it was resolved
 		// above revoked sessions before this one existed. Resolve the link
 		// again now the session is stored: a claim unlinks before it
@@ -719,6 +733,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				slog.Warn("auth: dropping a session minted under a removed OAuth link failed",
 					"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
 			}
+			p.dropProviderTokenRow(r.Context(), user.GetID(), providerName)
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{
 				Kind:   "oauth.refused",
 				UserID: user.GetID(),
@@ -729,10 +744,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusUnauthorized, reasonOauthLinkRemoved)
 			return
 		}
-		// Persist the provider tokens only now the link is confirmed: a
-		// sign-in refused as link_removed above must not leave the
-		// squatter's provider credentials on the claimed account.
-		p.saveProviderTokens(r.Context(), user.GetID(), providerName, tok)
 		// Set the session cookie through the one mint helper:
 		// SameSite=Strict, the password-login mint's posture. The state
 		// cookie keeps its own Lax (it must ride the provider's
@@ -882,6 +893,23 @@ func (p *OAuth2Plugin) saveProviderTokens(ctx context.Context, userID, providerK
 		slog.Warn("auth: storing provider tokens failed; refresh unavailable until the next sign-in",
 			"plugin", "oauth2", "user_hash", hashedIdentifier(userID), "err", err)
 	}
+}
+
+// dropProviderTokenRow deletes the token row a refused callback stored,
+// detached from the request (undoContext) so a client that hangs up cannot
+// keep it. False means the row may still be there; the failure is logged.
+func (p *OAuth2Plugin) dropProviderTokenRow(ctx context.Context, userID, providerKey string) bool {
+	if p.tokenStore == nil {
+		return true
+	}
+	undo, cancel := undoContext(ctx)
+	defer cancel()
+	if err := p.tokenStore.Delete(undo, userID, providerKey); err != nil {
+		slog.Error("auth: dropping provider tokens stored under a refused OAuth callback failed",
+			"plugin", "oauth2", "user_hash", hashedIdentifier(userID), "err", err)
+		return false
+	}
+	return true
 }
 
 // errOAuthLookupFailed means a transient/transport error happened during
