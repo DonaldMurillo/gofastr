@@ -268,7 +268,10 @@ If you open a transaction YOURSELF and wrap it with bare `db.WithTx`,
 the framework cannot see your commit, so it learns the outcome by
 polling the live `*sql.Tx` (a `SELECT 1` every few milliseconds until it
 reports done) and then re-checking the row. That poll shares the
-transaction's single connection with your own statements. Prefer
+transaction's single connection with your own statements. The wait is
+capped at two minutes, counted from the write, a statement of yours that
+holds the connection included; past that the event is dropped and
+logged. Prefer
 `db.WithTxQueue`, and call `queue.RunAfterCommit()` after your `Commit`
 succeeds — that removes the poll entirely:
 
@@ -301,11 +304,16 @@ finalizer. It is the same shape `App.InTx` uses internally.
 A handler whose `DB` is your `*sql.Tx` itself (a copy with
 `ch.DB = tx`, the context carrying no transaction) also runs each
 operation under a savepoint, so one that fails, a batch included,
-leaves none of its writes on your transaction. Its events, though, go
-out as soon as the operation succeeds, before your `Commit` and even if
-you roll back: nothing tells the handler how your transaction ends.
-Carry the transaction on the context with `db.WithTxQueue` when events
-must wait for the commit.
+leaves none of its writes on your transaction. Nothing tells such a
+handler how your transaction ends, so it publishes no live-bus events
+of its own: an event sent before your `Commit` would announce a write
+you might roll back. Pass it the context from `db.WithTxQueue` and call
+`queue.RunAfterCommit()` after `Commit`, as in the example above; the
+events then go out once, on commit, and never on rollback.
+
+The same holds for a write in a `db.WithTx` context whose record carries
+no primary key: the framework cannot check it landed, so it is not
+announced. Each dropped event logs one warning per process.
 
 ### Handling validation errors
 

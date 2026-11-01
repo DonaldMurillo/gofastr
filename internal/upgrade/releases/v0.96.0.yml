@@ -553,3 +553,11 @@ notes:
     breaking: true
     nodetect: "the hash is computed from the live registry; nothing in an app's source spells it"
     guidance: "Run gofastr generate sdk once after upgrading to record the new hash in the manifest; the drift banner then clears. From now on, reordering a composite PrimaryKey reports drift, because generated clients take the key as positional arguments in that order."
+  - change: "BREAKING - a CRUD handler bound to your own *sql.Tx (h.DB = tx, a generated repo's WithTx), and a write in a bare db.WithTx context whose record has no primary key, no longer publish live-bus events: nothing tells the framework whether your transaction commits"
+    breaking: true
+    hits: review
+    guidance: "Those events went out before your Commit and even after a Rollback. To keep them, run the write with the context from db.WithTxQueue(ctx, tx) and call queue.RunAfterCommit() after Commit succeeds; inside App.InTx or a hook nothing changes."
+    find:
+      uses:
+        - gofastr/framework/db.WithTx
+        - gofastr/framework/crud.CrudHandler.DB
