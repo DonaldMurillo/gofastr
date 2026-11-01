@@ -3,7 +3,8 @@
 // The failure half of a data-cui-rpc form submission, loaded on demand
 // by rpc.js the first time a form's request answers non-2xx. Like ws
 // and desktop it has no DOM marker. The server's validation envelope
-// ({error, fields: {name: [messages]}}) lands beside each named
+// ({error, fields: {name: [messages]}}, or core/handler's nested
+// {error: {message, fields}}) lands beside each named
 // field's control through the headless layer's hooks, never a kit
 // class: aria-invalid and aria-describedby on the control, the words
 // in the field's error node ([data-hui-field-error], which
@@ -79,7 +80,12 @@
     clear(form);
     let d = null;
     try { d = JSON.parse(txt); } catch (_) { d = null; }
-    const fields = d && d.fields && typeof d.fields === 'object' ? d.fields : {};
+    // Two envelopes carry a refusal. CRUD's is flat ({error: "...",
+    // fields}); core/handler.WriteError, which every typed handler
+    // answers through, nests both under error ({error: {message,
+    // fields}}). Read either, so a typed handler's field errors land.
+    const e = d && d.error && typeof d.error === 'object' ? d.error : d;
+    const fields = e && e.fields && typeof e.fields === 'object' ? e.fields : {};
     let placed = 0;
     for (const name of Object.keys(fields)) {
       let el = form.elements.namedItem(name);
@@ -107,7 +113,7 @@
       placed++;
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
-      const title = (d && typeof d.error === 'string' && d.error) || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status });
+      const title = (d && typeof d.error === 'string' && d.error) || (e && typeof e.message === 'string' && e.message) || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status });
       NS._toastOrFallback({ variant: 'error', title, ttl: 6000 });
     }
   }
