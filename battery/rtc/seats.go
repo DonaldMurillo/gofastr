@@ -11,9 +11,10 @@ package rtc
 // The seat is held for the life of the socket: admitted at the same locked
 // registration that inserts the peer, freed in peerGone (the single leave
 // path) or by whichever path displaces the peer (a rejoin, an eviction).
-// A principal is Join.User; sockets whose host derived no user share one
-// bucket, the posture core/stream's broker takes when it cannot tell
-// callers apart.
+// A principal is Join.User. A socket with no user reaches here only under
+// AnonymousPerSocket and holds no seat: a shared bucket let the 17th
+// anonymous caller evict the first, so each such socket stands alone and
+// MaxPeers bounds it.
 
 import "github.com/DonaldMurillo/gofastr/core/stream"
 
@@ -58,6 +59,11 @@ func (s *Signaler) spliceSeatLocked(seat *socketSeat) {
 // the lock, while AdmitSeat only closes a done channel under the
 // caller's lock and knows nothing about rooms.
 func (s *Signaler) admitSeatLocked(roomName string, p *roomPeer, user string) (displaced []*stream.WebSocketConn) {
+	if user == "" {
+		// AnonymousPerSocket: no principal to count against.
+		p.seat = nil
+		return nil
+	}
 	seat := &socketSeat{user: user, room: roomName, peer: p}
 	p.seat = seat
 	if s.cfg.MaxSocketsPerUser > 0 {

@@ -104,6 +104,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: an rtc join with no user is refused unless the app opts
+  in.** Every caller whose `Join.User` was empty shared one seat bucket,
+  so one anonymous caller opening sockets displaced every other anonymous
+  caller across all rooms. `Authorize` returning an empty `User` now gets
+  a 403 (`rtc.user_required`) before the upgrade. An app whose callers
+  are anonymous sets `Config.AnonymousSeats: rtc.AnonymousPerSocket`:
+  each such socket holds its own seat and is never displaced by another.
+  `examples/rtc-call` opts in.
 - **BREAKING: webhook signatures cover the event name and delivery id.**
   `v1` signed `<ts>.<body>`, so a delivery captured inside the tolerance
   window could be re-sent with another `X-GoFastr-Event` or

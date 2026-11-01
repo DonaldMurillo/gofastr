@@ -658,3 +658,10 @@ notes:
           type: '^func\(secret string, unixTimestamp int64, body \[\]byte\) string$'
         - symbol: gofastr/battery/webhook.VerifyTimestamped
           type: '^func\(secret string, header string, body \[\]byte, tolerance time\.Duration\) bool$'
+  - change: "BREAKING - an rtc join whose Join.User is empty is refused with 403 unless rtc.Config.AnonymousSeats is rtc.AnonymousPerSocket"
+    breaking: true
+    hits: review
+    guidance: "Userless callers shared one seat bucket, so one of them could displace every other. Return the caller's id in Join.User from Authorize. If the callers really have no account (a lobby display name), set AnonymousSeats: rtc.AnonymousPerSocket so each socket holds its own seat."
+    find:
+      uses:
+        - gofastr/battery/rtc.New

@@ -391,6 +391,7 @@ func TestServeHTTPPanicsWithoutAuthorize(t *testing.T) {
 // close the Signaler: sockets drop, Rooms empties, later joins 503.
 func TestInitMountsAndStopsWithApp(t *testing.T) {
 	s := New(Config{
+		AnonymousSeats: AnonymousPerSocket,
 		Authorize: func(r *http.Request) (Join, error) {
 			return Join{}, &HTTPError{Status: http.StatusUnauthorized, Reason: testReasonNoSession}
 		},
