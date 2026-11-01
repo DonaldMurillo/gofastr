@@ -63,6 +63,14 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// class body over one _one helper put back 28 bytes (3609 to
 		// 3637).
 		"core-ui/localdb/localdb.js": 3639,
+		// framework/localentity's form module, 3211 measured (2
+		// clearance). Reading a number typed in a text control in the
+		// page's language (the decimal and group marks from
+		// Intl.NumberFormat, the three-digit group rule, and filling an
+		// edit with the same decimal mark) took it past the goal. It is
+		// one unit: coerce and fill share the marks, and the module is
+		// loaded only on a page with a local form.
+		"framework/localentity/localform.js": 3213,
 	}
 	sources, err := check.RegisteredBehaviorSources(repoRoot)
 	if err != nil {

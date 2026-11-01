@@ -128,6 +128,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		ID:             id,
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class", "role", "aria-roledescription", "aria-label"),
 		Strings:        StringsFor(ctx),
+		Ctx:            ctx,
 	}, classes)
 	return carouselStyle.WrapHTML(out)
 }

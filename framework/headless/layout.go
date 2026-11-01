@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -316,6 +317,12 @@ type SectionProps struct {
 
 	// Parts: attrs and binds on every part the region draws.
 	Parts Parts
+
+	// Ctx is the render context. An id this component derives (no ID
+	// given) is handed out through its id scope (render.UniqueID), so a
+	// repeat on the page gets a -2 suffix; an explicit ID is never
+	// changed. With no Ctx the derived id is used as is.
+	Ctx context.Context
 }
 
 // Section renders the region.
@@ -353,7 +360,7 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	}
 	titleID := p.ID
 	if titleID == "" {
-		titleID = slugID("section", p.Title)
+		titleID = render.UniqueID(p.Ctx, slugID("section", p.Title))
 	}
 	titleID += "-title"
 	own["aria-labelledby"] = titleID

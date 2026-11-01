@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -50,6 +51,12 @@ type TabsConfig struct {
 	// wrapper. Keys the component owns are dropped: class, id, the
 	// data-hui-* wiring, and data-active (the signal mirror).
 	ExtraAttrs html.Attrs
+
+	// Ctx is the render context. With no ID, the id prefix the strip
+	// derives from its signal name goes through the page's id scope
+	// (render.UniqueID), so a second strip on the same signal gets
+	// "<name>-2" ids. With no Ctx the name is used as is.
+	Ctx context.Context
 }
 
 var tabsStyle = registry.RegisterStyle("fui-tabs", tabsCSS)
@@ -99,6 +106,7 @@ func Tabs(cfg TabsConfig) render.HTML {
 		VacateHidden: cfg.VacateHidden,
 		StateAttrs:   cfg.StateAttrs,
 		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "class", "data-active"),
+		Ctx:          cfg.Ctx,
 	}, classes)
 	return tabsStyle.WrapHTML(out)
 }

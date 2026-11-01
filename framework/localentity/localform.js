@@ -63,6 +63,26 @@
     return s.split('{{n}}').join(n === undefined ? '' : NS.formatNumber(n));
   };
   const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
+  // seps is the decimal and group marks of the page's language
+  // (<html lang>), the one NS.formatNumber writes numbers in.
+  const seps = () => {
+    let f;
+    try { f = new Intl.NumberFormat(document.documentElement.lang || undefined); } catch (_) { f = new Intl.NumberFormat(); }
+    const o = { decimal: '.', group: ',' };
+    for (const x of f.formatToParts(12345.6)) if (has(o, x.type)) o[x.type] = x.value;
+    return o;
+  };
+  // num reads a number typed in a text control the reader's way:
+  // "1.234,5" on a Spanish page and "1,234.5" on an English one are both
+  // 1234.5. A group mark counts only before exactly three digits, so
+  // "2.5" still reads 2.5 where "." groups; a space-like mark (French)
+  // also takes a plain space.
+  const num = (raw) => {
+    const o = seps();
+    const g = o.group.replace(/\W/g, '\\$&') + (/\s/.test(o.group) ? '| ' : '');
+    const s = raw.trim().replace(new RegExp('(\\d)(?:' + g + ')(?=\\d{3}(?!\\d))', 'g'), '$1').split(o.decimal).join('.');
+    return s ? Number(s) : NaN;
+  };
   const pad = (n) => String(n).padStart(2, '0');
 
   // day accepts a real calendar date, YYYY-MM-DD, as core/schema's
@@ -117,7 +137,10 @@
     if (raw === null || raw === '') return f.req ? { error: msg(msgs, 'required') } : { empty: true };
     if (typeof raw !== 'string') return { error: msg(msgs, 'required') };
     if (f.t === 'int' || f.t === 'float') {
-      const v = raw.trim() === '' ? NaN : Number(raw.trim());
+      // A type=number control hands over the browser's canonical
+      // spelling already (never blank here: the browser empties a value
+      // it cannot read); a text control holds what the reader typed.
+      const v = live(form, f.name)[0].type === 'number' ? Number(raw) : num(raw);
       if (!Number.isFinite(v)) return { error: msg(msgs, 'number') };
       if (f.t === 'int' && !Number.isSafeInteger(v)) return { error: msg(msgs, 'integer') };
       if (f.min !== undefined && v < f.min) return { error: msg(msgs, 'min', f.min) };
@@ -245,6 +268,9 @@
           shown.set(c, { value: c.value, id: text(rec.id), stored: text(value) });
         }
         else if (c.type === 'radio') c.checked = c.value === text(value);
+        // A number shows with the page's decimal mark in a text
+        // control, so saving the edit untouched reads it back the same.
+        else if (typeof value === 'number' && c.type !== 'number' && c.type !== 'hidden') c.value = String(value).split('.').join(seps().decimal);
         else if (c.type !== 'hidden' || list.length === 1) c.value = text(value);
       }
     }

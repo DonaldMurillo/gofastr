@@ -145,6 +145,13 @@ type SectionConfig struct {
 	// ID), data-cui-*, and the accessible-name contract (role,
 	// aria-label, aria-labelledby).
 	ExtraAttrs html.Attrs
+
+	// Ctx is the render context. The id a Heading derives is handed
+	// out through its id scope (render.UniqueID), so a second
+	// "Features" section on the page is "features-2" and its
+	// aria-labelledby follows. With no Ctx the derived id is used as
+	// is. An explicit ID is never changed.
+	Ctx context.Context
 }
 
 // sectionClasses dresses headless.Section's parts.
@@ -172,11 +179,14 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		cfg.Class += " fui-section--band"
 	}
 	sectionID := cfg.ID
-	if sectionID == "" && cfg.Heading != "" {
+	if sectionID != "" {
+		render.ReserveID(cfg.Ctx, sectionID)
+	} else if cfg.Heading != "" {
 		// Auto-anchor: typical use is in-page rails / scrollspy where the
 		// rail's href="#<slug>" should land on this section without the
-		// caller having to repeat the slug.
-		sectionID = slug(cfg.Heading)
+		// caller having to repeat the slug. A repeat on the page gets a
+		// suffix.
+		sectionID = render.UniqueID(cfg.Ctx, slug(cfg.Heading))
 	}
 	return sectionStyle.WrapHTML(headless.Section(headless.SectionProps{
 		Title:           cfg.Heading,
@@ -188,6 +198,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		ID:              sectionID,
 		ExtraAttrs:      headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-labelledby"),
 		Parts:           rootClassParts(cfg.Class),
+		Ctx:             cfg.Ctx,
 	}, sectionClasses, body...))
 }
 

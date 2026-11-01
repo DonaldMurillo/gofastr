@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // requestContextKey is the unexported type used to store the active
@@ -90,12 +92,14 @@ func OverlayOriginQueryFromContext(ctx context.Context) url.Values {
 
 // WithRequest returns a new context that carries r. The host should
 // call this exactly once per page render, typically inside the HTTP
-// handler that drives the screen.
+// handler that drives the screen. It also starts the render's id scope
+// (render.WithIDScope), so two same-titled sections on the page get
+// distinct ids.
 func WithRequest(ctx context.Context, r *http.Request) context.Context {
 	if r == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, requestContextKey{}, r)
+	return context.WithValue(render.WithIDScope(ctx), requestContextKey{}, r)
 }
 
 // RequestFromContext returns the *http.Request associated with ctx, or

@@ -87,7 +87,11 @@ Members.Form("team-form", ui.Form(ui.FormConfig{
 ))
 ```
 
-Field values follow the declaration: numbers are converted, a checked
+Field values follow the declaration: numbers are converted (a number
+typed into a text control reads in the page's language, the `<html
+lang>` the runtime writes numbers in, so `3,5` is 3.5 on a Spanish page
+and `1.234,5` is 1234.5; a group mark counts only before three digits;
+an edit fills the control the same way), a checked
 box saves `true` whatever its `value` attribute says (an unchecked one
 saves `false`), and string lengths count characters the way Go counts
 runes, so an emoji is one. When editing, an emptied optional field is

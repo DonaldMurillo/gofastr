@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -68,6 +69,12 @@ type TabsProps struct {
 
 	// Parts: attrs on the root, the tabs and the panels.
 	Parts Parts
+
+	// Ctx is the render context. An id this component derives (no ID
+	// given) is handed out through its id scope (render.UniqueID), so a
+	// repeat on the page gets a -2 suffix; an explicit ID is never
+	// changed. With no Ctx the derived id is used as is.
+	Ctx context.Context
 }
 
 // tabsMaxPanels bounds the generated per-index CSS the styled layer
@@ -100,7 +107,9 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 	}
 
 	if p.ID == "" {
-		p.ID = p.Name
+		p.ID = render.UniqueID(p.Ctx, p.Name)
+	} else {
+		render.ReserveID(p.Ctx, p.ID)
 	}
 	b := p.Parts.Box(s)
 	// Roving tabindex: the active tab is in the tab order, the rest

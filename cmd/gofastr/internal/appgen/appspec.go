@@ -3271,7 +3271,7 @@ func renderAppSpecCatalogBlock(bp appspec.AppSpec, screen appspec.AppSpecScreen,
 		}
 		return fmt.Sprintf("ui.Hero(ui.HeroConfig{Eyebrow: %s, Title: %s, Subtitle: %s%s%s})", tx(appspec.AppSpecProp(block, "eyebrow")), tx(title), tx(appspec.AppSpecProp(block, "subtitle")), actions, media), true
 	case "section":
-		cfg := fmt.Sprintf("ui.SectionConfig{Heading: %s, Eyebrow: %s, Description: %s, Label: %s, Class: %q, ID: %q}", tx(appspec.AppSpecProp(block, "heading")), tx(appspec.AppSpecProp(block, "eyebrow")), tx(appspec.AppSpecProp(block, "description")), tx(appspec.AppSpecProp(block, "label")), appspec.AppSpecProp(block, "class"), appspec.AppSpecProp(block, "id"))
+		cfg := fmt.Sprintf("ui.SectionConfig{Ctx: ctx, Heading: %s, Eyebrow: %s, Description: %s, Label: %s, Class: %q, ID: %q}", tx(appspec.AppSpecProp(block, "heading")), tx(appspec.AppSpecProp(block, "eyebrow")), tx(appspec.AppSpecProp(block, "description")), tx(appspec.AppSpecProp(block, "label")), appspec.AppSpecProp(block, "class"), appspec.AppSpecProp(block, "id"))
 		if len(block.Children) > 0 {
 			// Card-like children flow in a responsive ui.Grid; anything else
 			// (a CTA button, prose) flows in a left-aligned ui.Stack so it keeps

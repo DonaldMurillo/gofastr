@@ -1,12 +1,14 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -99,5 +101,24 @@ func TestPageHandlerKeepsColonParamPath(t *testing.T) {
 	}
 	if body := rec.Body.String(); !strings.Contains(body, ">42<") {
 		t.Errorf("param not captured from the real path; got: %s", body)
+	}
+}
+
+// idsComp asks the page's id scope for the same id twice.
+type idsComp struct{ component.ContextOnly }
+
+func (idsComp) RenderCtx(ctx context.Context) render.HTML {
+	return render.HTML("<p>" + render.UniqueID(ctx, "features") + "|" + render.UniqueID(ctx, "features") + "</p>")
+}
+
+// A page render carries an id scope, so a repeated derived id is
+// suffixed on the page.
+func TestPageRenderHasIDScope(t *testing.T) {
+	a := app.NewApp("idscope")
+	a.Register("/ids", &idsComp{}, nil)
+	rec := httptest.NewRecorder()
+	New(a).PageHandler("/ids")(rec, httptest.NewRequest(http.MethodGet, "/ids", nil))
+	if body := rec.Body.String(); !strings.Contains(body, "<p>features|features-2</p>") {
+		t.Errorf("want features|features-2 on the page; got: %s", body)
 	}
 }

@@ -38,6 +38,7 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 		lists = append(lists, ui.Section(ui.SectionConfig{
 			ID:      "eui-related-" + om.name,
 			Compact: true,
+			Ctx:     ctx,
 		}, list.RenderCtx(ctx)))
 	}
 	// The stack owns the rhythm between the lists.

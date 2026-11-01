@@ -509,7 +509,9 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[i] = a.resolveFillSlot(ctx, path, params, slot, guards)
+			// Each slot hands out ids from its own copy of the page's
+			// scope, so the suffixes do not depend on finish order.
+			results[i] = a.resolveFillSlot(render.ForkIDScope(ctx), path, params, slot, guards)
 		}(i, slot)
 	}
 	wg.Wait()
