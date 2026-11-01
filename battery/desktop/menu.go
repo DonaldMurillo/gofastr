@@ -150,7 +150,10 @@ func (it MenuItem) displayID() string {
 // (deviation 4): starts with "/", no scheme, no protocol-relative //,
 // no control characters, no "." or ".." segments. The path part, up
 // to the query or fragment, is also read the way a URL parser reads it:
-// %2e is a dot, so "/a/%2e%2e?x" holds a ".." segment.
+// %2e is a dot, so "/a/%2e%2e?x" holds a ".." segment. A decoded
+// segment may not hold a slash, a backslash or a control character
+// either: Go's ServeMux decodes a wildcard, so "/files/..%2f..%2fx"
+// hands PathValue("name") == "../../x" to a GET /files/{name} route.
 func validNavigatePath(p string) bool {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return false
@@ -168,11 +171,22 @@ func validNavigatePath(p string) bool {
 		path = path[:i]
 	}
 	for _, seg := range strings.Split(path, "/") {
-		if dec, err := url.PathUnescape(seg); err == nil && (dec == "." || dec == "..") {
+		dec, err := url.PathUnescape(seg)
+		if err != nil {
+			continue
+		}
+		if dec == "." || dec == ".." || strings.IndexFunc(dec, refusedDecodedRune) >= 0 {
 			return false
 		}
 	}
 	return true
+}
+
+// refusedDecodedRune reports a rune a decoded path segment may not
+// carry: a separator (/ or \) that splits it into more segments for a
+// handler reading the decoded value, or a control character.
+func refusedDecodedRune(r rune) bool {
+	return r == '/' || r == '\\' || r < 0x20 || r == 0x7f || unicode.IsControl(r)
 }
 
 // validMenuKey accepts +-joined ASCII tokens: one or more known

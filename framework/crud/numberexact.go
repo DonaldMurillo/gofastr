@@ -289,9 +289,33 @@ func boolSpelling(v any) (bool, bool) {
 //     the bug. Non-integral values are left for schema validation, which
 //     already refuses them.
 //
+// An Int column takes the decimal text validation accepts as the int64
+// it spells, as the multipart path's coerceFormValue does.
+//
 // Runs after Before-hooks (so hook-injected values are covered) and
 // before schema validation.
 func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
+	return ch.coerceColumnValues(body, false)
+}
+
+// coerceBeforeHooks is the pass a write body takes before its Before
+// hooks run. A typed hook decodes the body into its struct, so a form's
+// "" or "2" for an int64 field, or "true" for a bool, failed that decode
+// with a 400 before the cleanup that reads them ran. It drops the blanks
+// and converts what it can, and it refuses nothing: a value it cannot
+// read stays as sent, so a hook that rewrites one (a slug resolved to an
+// id) still can. The pass after the hooks refuses whatever is left. Both
+// steps are idempotent, so that second pass only touches values a hook
+// added or changed.
+func (ch *CrudHandler) coerceBeforeHooks(s schema.Schema, body map[string]any, update bool) (cleared []string) {
+	cleared = dropEmptyFormValues(s, body, update)
+	_ = ch.coerceColumnValues(body, true) // lenient: never an error
+	return cleared
+}
+
+// coerceColumnValues is coerceNumberColumnValues. With lenient set, a
+// value it would refuse stays in the body unchanged.
+func (ch *CrudHandler) coerceColumnValues(body map[string]any, lenient bool) error {
 	for _, f := range ch.snapshotFields() {
 		raw, ok := body[f.Name]
 		if !ok {
@@ -328,6 +352,9 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			}
 			s, ok := relationIntText(raw)
 			if !ok {
+				if lenient {
+					continue
+				}
 				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotInteger}}}}
 			}
 			body[f.Name] = s
@@ -338,6 +365,9 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			// the float64 it always was, for validation to judge.
 			fl, err := n.Float64()
 			if err != nil {
+				if lenient {
+					continue
+				}
 				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotFinite}}}}
 			}
 			body[f.Name] = fl
@@ -356,13 +386,16 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			// The digits decide, not the float64 they round to:
 			// 1.0000000000000001 reads as exactly 1.
 			if err != nil || !integerText(x.String()) {
+				if lenient {
+					continue
+				}
 				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotInteger}}}}
 			}
 			if i, ok := exactFloatInt64(fl); ok {
 				body[f.Name] = i
 				continue
 			}
-			if fl == math.Trunc(fl) {
+			if fl == math.Trunc(fl) && !lenient {
 				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		case float64:
@@ -370,7 +403,7 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 				body[f.Name] = i
 				continue
 			}
-			if x == math.Trunc(x) {
+			if x == math.Trunc(x) && !lenient {
 				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		case float32:
@@ -378,12 +411,17 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 				body[f.Name] = i
 				continue
 			}
-			if float64(x) == math.Trunc(float64(x)) {
+			if float64(x) == math.Trunc(float64(x)) && !lenient {
 				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
+		case string:
+			// A form posts the number as text. The spelling validation's
+			// toInt64 accepts binds as the int64 it names.
+			if i, err := strconv.ParseInt(x, 10, 64); err == nil {
+				body[f.Name] = i
+			}
 		default:
-			// int64 already exact; strings bind by affinity / parse in
-			// validation; anything else is validation's call.
+			// int64 already exact; anything else is validation's call.
 		}
 	}
 	return nil
