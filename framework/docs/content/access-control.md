@@ -142,13 +142,19 @@ JWT claims, session cookie, API key lookup. **Service accounts** (see
 hold roles exactly like users and flow through the same `Policy.Can`
 path; an API token's **scopes** (`posts:read`, `*:*`) are an additional
 token-level restriction layered on top, enforced by `auth.HasScope` /
-`auth.RequireScope`. Scopes only narrow: `RequirePermission` also
-refuses a scoped caller (an API token or embed grant) whose scopes do
-not grant the permission, since the token carries its owner's roles.
-The framework's role gates (`framework.MCPRequireRole`, `/.debug`) do
-the same with `access.RoleScope(role)`: a scoped caller acts on a role
-only when it holds `"role:<role>"` (`"role:*"` and `"*:*"` cover every
-role).
+`auth.RequireScope`. Scopes only narrow: `RequirePermission`,
+`access.Can`, `CanResource` and `CanResourceExact` all refuse a scoped
+caller (an API token or embed grant) whose scopes do not grant the
+permission, since the token carries its owner's roles, and a Decider's
+`DecisionAllow` does not lift that. So an `orders:update` token an admin
+minted cannot run an `orders:approve` state transition, and an entity
+whose `Access.Delete` is `plans:admin` needs `plans:admin` in the token's
+scopes on top of the route's `plans:write`. A permission outside the
+`resource:verb` scope vocabulary cannot be minted, so no token passes it.
+The role gates (`framework.MCPRequireRole`, `/.debug`,
+`auth.RequireRole`, `auth.MCPRole`) do the same with
+`access.RoleScope(role)`: a scoped caller acts on a role only when it
+holds `"role:<role>"` (`"role:*"` and `"*:*"` cover every role).
 
 ## API
 

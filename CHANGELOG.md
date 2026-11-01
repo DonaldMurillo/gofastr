@@ -104,6 +104,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: `access.Can`, `CanResource` and `CanResourceExact` check
+  token scopes.** A scoped API token passed them on its owner's roles, so
+  an `orders:update` token an admin minted could run an `orders:approve`
+  transition or the state override. They now also require a scope
+  granting the permission, as `RequirePermission` does, and a Decider's
+  Allow does not lift it.
+  ([access control](framework/docs/content/access-control.md))
 - **BREAKING: `auth.RequireRole` and `auth.MCPRole` need a role scope on
   an API token.** A token carries its owner's roles, so a `customers:read`
   token an admin minted passed `RequireRole("admin")`. A scoped token now

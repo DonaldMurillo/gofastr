@@ -637,3 +637,14 @@ notes:
       uses:
         - gofastr/battery/auth.RequireRole
         - gofastr/battery/auth.MCPRole
+  - change: "BREAKING - access.Can, access.CanResource and access.CanResourceExact refuse a scoped API token or embed grant whose scopes do not grant the permission; a Decider's Allow does not lift it"
+    breaking: true
+    hits: review
+    guidance: "These checks used to read only the token owner's roles. A token that runs a state transition, passes an entity Access permission named other than <table>:read/<table>:write, or relies on an owner-bypass or Unrestricted permission needs that permission in its scopes. Sessions and JWTs are unaffected."
+    find:
+      uses:
+        - gofastr/framework/access.Can
+        - gofastr/framework/access.CanResource
+        - gofastr/framework/access.CanResourceExact
+        - gofastr/framework.Can
+        - gofastr/framework.CanResource
