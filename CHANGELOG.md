@@ -104,6 +104,73 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Query input (`framework/filter`, `framework/dsl`, `framework/pagination`).**
+  Two `_in` keys on one column (its name and its `WireName`) are two
+  ANDed IN lists, at the top level and inside `include=rel(...)`, not one
+  union; new `filter.ParsedFilter.InList` / `SameINList` carry the key.
+  A scalar filter key repeated in one query string is a 400
+  (`filter.repeated_filter`), `LenientFilters` included: before, the
+  first value ran and the rest were dropped. `?where=` decodes strictly
+  (duplicate, case-folded and unknown members, a `value` the op does not
+  read, an empty group: 400). Values Postgres cannot bind are 400s on
+  both dialects: invalid UTF-8 or a NUL (nested `_like` included), a
+  Decimal exponent past ±1000, a year-0 Timestamp or Date. DSL: every
+  `where()` operator follows `filter.OpSuitsType`, `in` is capped at
+  1000 values and `order()` at 16, unbalanced unquoted brackets are
+  refused, `include("x")` keeps the bare name, `ASC`/`DESC` match ASCII
+  only, and `after()` emits one `ORDER BY <cursor> ASC` and refuses an
+  `order()` on another column or `DESC`. `query.Cursor` adds no second
+  ORDER BY key for a column already ordered. `pagination.NewCursorPage`
+  returns `ErrCursorKeyNull` / `ErrCursorKeyMissing` instead of minting a
+  `"null"` cursor or `HasMore` with an empty one.
+- **CRUD.** A `?page=` or `?offset=` whose skip overflows int, or too long
+  to parse, is 400 `offset_too_large` instead of page 1. POST, batch
+  create, `CreateOne` and `UpsertOne` refuse `""` in a one-column
+  caller-chosen key. A batch update item with no key answers
+  `reason: "missing_key"` with a phrase. Batch key-fold and multipart
+  duplicate-key refusals are deterministic and phrased (`keys_fold`,
+  `duplicate_form_key`, `duplicate_file_part`, `malformed_multipart`).
+  llm.md no longer documents a cursor `total`.
+- **UI host.** A `SetStaticFS` directory no longer shadows a screen of the
+  same name (it answered a 301 into a 404). `RenderScreen`'s navigation
+  answer carries the `#gofastr-signals-partial` seed. Navigating to an
+  untitled screen, or a `RenderAlt` alt with no title, titles the tab
+  with the app name instead of keeping the previous page's.
+- **Headless markup.** Enter in a `StepWizard` field submits Next, not
+  Back (a hidden twin of Next, part `default-action`, is the form's first
+  submit); Enter in a `Repeater` field no longer submits row 0's Remove,
+  and `Repeater.Action` is where add/remove post. The Carousel speaks its
+  slide through a live region, off while it rotates. A named `Counter`
+  binds its input's value. Gallery deeplinks survive `&`, `=` and `+`.
+  A `Textarea` value that starts with a line break keeps it. A huge
+  Pagination `Window` keeps the current page. Menu refuses duplicate ids
+  under an id-less submenu and disables a Disabled form row's submit.
+  Combobox Meta is its own part (`combobox-meta`). MultiSelect,
+  NumberInput, Slider, RangeSlider, Rating and TagInput take `Ctx` and
+  get unique ids per page. TagInput's label names its field and Help
+  describes it. A disabled link Button drops its Action wiring. Only the
+  last Href-less breadcrumb is current. JSONTree truncates on character
+  boundaries. Alert names its dismiss from Text without a Title. Tree row
+  links leave the tab order. Carousel and PaneHost words go through
+  Strings (`CarouselRole`, `CarouselSlideRole`, `PaneSecondary`,
+  `PaneTertiary`).
+- **Headless behaviours.** Navigating away from an open phone-width pane
+  drawer no longer leaves the next page scroll-locked. A link click
+  closes only popups (Dismiss, Trap, menus) and only when followed, so a
+  tab or pager inside an accordion no longer collapses it. One Escape
+  closes one level, and Escape outside every disclosure closes popups,
+  never accordion sections. Combobox ignores the Safari IME Enter
+  (keyCode 229). Carousel ignores caret keys in a field and modifier
+  chords, and keeps rotating in kept chrome after a navigation. The
+  animated counter lets a live update stand; the number stepper lands on
+  the step base. The copy button says "Copied" only when the clipboard
+  write succeeds and announces `ui.copy.failed` otherwise. Conditional
+  fields follow a form reset; the leave guard counts `form=` controls.
+  SortableList flips cross-column arrows in RTL, cancels a grab when
+  focus leaves, and a slow failed save no longer reverts a later one.
+  Theme radios flip in RTL. Wizard and repeater focus return survives an
+  unrelated insertion. The selection count uses the page's digits. Menu
+  and tree type-ahead cycle on a repeated letter.
 - **Layout primitives (`framework/ui`).** A bottom-edge `ui.Sticky` with
   an `Offset` takes it from the bottom instead of also pinning to the top,
   and a top Sticky draws its hairline only while stuck (browsers that
@@ -4050,6 +4117,33 @@ few lines, and link the PR or the docs page for the rest.
 - **examples/site's status pill keeps its wording through hydration.**
 
 ### Security
+- **`RedirectPattern` no longer opens an off-origin redirect through a
+  tab, CR or LF in a catch-all value.** `GET /old/%09/evil.example`
+  against `/{rest...}` answered `Location: /\t/evil.example`, which
+  browsers read as `//evil.example`. A resolved target holding any
+  control byte is no redirect, the 308 is gated by
+  `handler.IsSafeRelativePath`, and every Location the UI host writes
+  percent-encodes tab.
+- **The `WithHeadHTML` / `SEOScreen.HeadHTML` scrub runs to a fixpoint**,
+  so removing an inner match can no longer splice a `<script>`, a
+  meta-refresh or an event handler back together. Head HTML still
+  changing after 8 passes is dropped and logged once.
+- **Page markdown is `no-store` with `Vary: Cookie`** (the
+  `Accept: text/markdown` twin, `/<page>/llm.md`, `/llm-pages.md`), like
+  its HTML page: a shared cache could replay a signed-in reader's page.
+- **`WithExtraScripts` holds the `RegisterExternalScript` rules**: an
+  off-origin, protocol-relative or malformed src is dropped with a
+  warning.
+- **BeforeList/BeforeGet read-scope hooks now cover every read surface.**
+  `_events` no longer delivers rows they hide (or hidden rows' delete
+  ids); cascade writes no longer link, update or echo child rows the
+  child's hooks hide, and a hidden child or belongs_to target answers
+  404 like a missing one (closing an existence oracle); a 409/422 state
+  refusal no longer names a hidden row's stored state.
+- **Headless RPC sinks are same-origin.** `MenuItem.RPC`, `RPCAttrs`
+  `data-cui-rpc` (including `/\host`), `TreeNode.LazyPath`, SortableList
+  `RPCPath`/`ConflictRPC` and a static Combobox `NoScriptAction`
+  (`javascript:` shipped) are refused unless same-origin.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

@@ -633,3 +633,47 @@ notes:
     breaking: false
     guidance: "Each such value rendered a class with no rule: an AspectRatio with no ratio collapsed its media to 0px. Use the exported constants; the panic names the value."
     nodetect: "only an invalid value panics, and a valid one is spelled with the exported constants"
+  - change: "A scalar filter key repeated in one query string (?status=a&status=b) is a 400 naming the key, LenientFilters included; only _in keys read every occurrence"
+    breaking: false
+    guidance: "Before, the first value ran and the rest were dropped. Send the key once, or use ?status_in=a,b."
+    nodetect: "the change is in request handling; nothing in an app's source spells the query strings clients send"
+  - change: "?where= decodes strictly: duplicate, case-folded or unknown members, values on a non-in leaf, both value and values on an in leaf, and an empty and/or group are 400s"
+    breaking: false
+    guidance: "Fix a client that sends extra or misspelled members."
+    nodetect: "the JSON comes from clients at request time"
+  - change: "Filter values Postgres cannot bind (invalid UTF-8 or NUL, a Decimal exponent past ±1000, a Timestamp or Date before year 1) are 400s on SQLite too"
+    breaking: false
+    guidance: "These answered 500 on Postgres and an empty 200 on SQLite."
+    nodetect: "the values come from clients at request time"
+  - change: "DSL queries: after() with an order() on another column or DESC, operators ?field_<op>= refuses (an ordered compare on a Bool, anything on a JSON column), more than 1000 in values, more than 16 order() calls and unbalanced unquoted brackets now error"
+    breaking: false
+    guidance: "Drop the order() beside after(); key a cursor walk on its own column."
+    nodetect: "DSL strings are assembled at runtime"
+  - change: "pagination.NewCursorPage returns ErrCursorKeyNull or ErrCursorKeyMissing when a page has more rows and the last row's cursor key is NULL or absent"
+    breaking: false
+    guidance: "It minted a cursor holding the text null, or HasMore with an empty cursor that restarted at page 1. Key the list on a NOT NULL column the query selects."
+    nodetect: "the error depends on row data"
+  - change: "_events drops rows a subscriber's BeforeList/BeforeGet hooks hide; a hook-restricted subscriber no longer receives hard deletes and should re-list"
+    breaking: false
+    guidance: "Matches what GET and the list answer that subscriber."
+    nodetect: "the change is in delivery; hooks are registered at runtime"
+  - change: "A cascade item or belongs_to reference onto an entity whose BeforeList/BeforeGet hooks add clauses answers 404 for a hidden or missing row"
+    breaking: false
+    guidance: "A hidden row was linkable and a hidden child's body was echoed."
+    nodetect: "hooks are registered at runtime"
+  - change: "A ?page= or ?offset= whose skip overflows int, or too long to parse, is 400 offset_too_large; an empty single-column caller-chosen key is 400"
+    breaking: false
+    guidance: "Both were served or stored before: page 1, and a row no record route could name."
+    nodetect: "the values come from clients at request time"
+  - change: "A RedirectPattern target that resolves to a control byte is no redirect (the request falls through, usually to a 404); WithExtraScripts drops an off-origin or malformed src with a warning"
+    breaking: false
+    guidance: "Serve such a script from the app, or load it from app code under a CSP that allows its host."
+    nodetect: "only a hostile catch-all value or an off-origin src is affected"
+  - change: "headless: StepWizard and Repeater render a leading hidden submit; TagInput with an ID names its field <ID>-field; a Repeater posts add/remove to Action; MenuItem.RPC, RPCAttrs data-cui-rpc, TreeNode.LazyPath, SortableList RPCPath/ConflictRPC and a static Combobox NoScriptAction panic unless same-origin; an Alert with DismissHref, no Title or Text and no DismissLabel panics; class maps should map the new PartComboboxMeta (it used to get the option class) and never give PartDefaultAction a display"
+    breaking: false
+    guidance: "New API: PartDefaultAction, PartComboboxMeta, Ctx on MultiSelectProps/NumberInputProps/SliderProps/RangeSliderProps/RatingProps/TagInputProps, PaneHostProps.Strings, ui.PaneHostConfig.Ctx, Strings CarouselRole/CarouselSlideRole/PaneSecondary/PaneTertiary. A catalog that must hold every ui.* key adds ui.carousel.role, ui.carousel.slideRole, ui.paneHost.secondary, ui.paneHost.tertiary and ui.copy.failed."
+    nodetect: "markup and refusals depend on values set at render time"
+  - change: "A plain disclosure (an accordion section) no longer closes on a link click inside it or on an Escape from outside it; only Dismiss, Trap and menu disclosures do"
+    breaking: false
+    guidance: "Give a disclosure Dismiss if it should close when a link inside it is followed."
+    nodetect: "the behaviour is in the browser runtime"
