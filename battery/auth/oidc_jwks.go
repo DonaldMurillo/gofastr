@@ -118,13 +118,13 @@ func (c *jwksCache) getKey(ctx context.Context, jwksURI, kid string) (oidcKey, e
 
 	switch {
 	case set == nil:
-		if err := c.refresh(ctx, jwksURI, true); err != nil {
+		if err := c.refresh(ctx, jwksURI, true, true); err != nil {
 			return oidcKey{}, err
 		}
 	case stale && !backingOff:
 		// Best-effort: on failure, or with a fetch already in flight, the
 		// stale set below still answers.
-		_ = c.refresh(ctx, jwksURI, false)
+		_ = c.refresh(ctx, jwksURI, false, true)
 	}
 	c.mu.Lock()
 	set = c.set
@@ -153,7 +153,11 @@ func (c *jwksCache) getKey(ctx context.Context, jwksURI, kid string) (oidcKey, e
 	}
 	c.mu.Unlock()
 	if force {
-		if err := c.refresh(ctx, jwksURI, true); err != nil {
+		// reuse=false: a stale-TTL refresh already in flight may have
+		// started before the IdP published this kid. Reusing its outcome
+		// spent the kid's slot without a fetch that could see the key, and
+		// every login with it failed until forcedRefetchGap passed.
+		if err := c.refresh(ctx, jwksURI, true, false); err != nil {
 			return oidcKey{}, fmt.Errorf("oidc: no signing key found for kid %q", kid)
 		}
 	} else if c.awaitInFlight(ctx) != nil {
@@ -193,8 +197,9 @@ func (c *jwksCache) awaitInFlight(ctx context.Context) error {
 
 // refresh fetches the key set once, outside mu. wait=false gives up at once
 // when another fetch holds the slot; wait=true queues for it, bounded by
-// ctx, and reuses the outcome of a fetch that completed while it waited.
-func (c *jwksCache) refresh(ctx context.Context, jwksURI string, wait bool) error {
+// ctx. With reuse, a caller that waited takes the outcome of a fetch that
+// completed meanwhile instead of fetching again; without it, it fetches.
+func (c *jwksCache) refresh(ctx context.Context, jwksURI string, wait, reuse bool) error {
 	c.mu.Lock()
 	if c.fetchSlot == nil {
 		c.fetchSlot = make(chan struct{}, 1)
@@ -219,7 +224,7 @@ func (c *jwksCache) refresh(ctx context.Context, jwksURI string, wait bool) erro
 	defer func() { <-slot }()
 
 	c.mu.Lock()
-	if c.gen != gen {
+	if reuse && c.gen != gen {
 		err := c.lastErr
 		c.mu.Unlock()
 		return err

@@ -773,6 +773,58 @@ func TestJWKSDeadlineFailureBacksOff(t *testing.T) {
 	}
 }
 
+// A stale-TTL refresh already in flight answers with the old key set; a
+// login with a freshly rotated kid that waited behind it reused that
+// outcome, spent the kid's forced-refetch slot without a fetch that could
+// see the new key, and failed, as did every later login with that kid
+// until forcedRefetchGap passed (2026-11-01 review, round 2).
+func TestJWKSForcedRefetchDoesNotReuseStaleInFlightFetch(t *testing.T) {
+	keyA := mustRSAKey(t, 2048)
+	keyB := mustRSAKey(t, 2048)
+	var hits atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		keys := []map[string]any{rsaJWKMap("kid-a", &keyA.PublicKey)}
+		switch hits.Add(1) {
+		case 1:
+		case 2: // the stale refresh: started before the rotation
+			close(entered)
+			<-release
+		default:
+			keys = append(keys, rsaJWKMap("kid-b", &keyB.PublicKey))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+	}))
+	t.Cleanup(srv.Close)
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	c := &jwksCache{httpClient: srv.Client(), ttl: time.Millisecond}
+	ctx := context.Background()
+	if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	go func() { _, _ = c.getKey(ctx, srv.URL, "kid-a") }() // starts the stale refresh
+	<-entered
+	rotated := make(chan error, 1)
+	go func() {
+		_, err := c.getKey(ctx, srv.URL, "kid-b")
+		rotated <- err
+	}()
+	time.Sleep(20 * time.Millisecond) // the rotated login queues behind the stale fetch
+	unblock()
+	select {
+	case err := <-rotated:
+		if err != nil {
+			t.Errorf("rotated kid refused although the IdP serves it: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the rotated login never returned")
+	}
+}
+
 // A caller's own deadline bounds its wait for discovery, even while
 // another caller's fetch is in flight.
 func TestOIDCDiscoveryWaitHonoursCallerDeadline(t *testing.T) {
