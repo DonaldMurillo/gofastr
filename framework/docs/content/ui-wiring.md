@@ -172,7 +172,10 @@ Useful options:
   you write yourself must not follow symlinks out of its tree —
   `os.Root.FS()` is the spelling for a disk-backed one; `embed.FS`
   cannot carry symlinks at all. The dotfile and config-file refusal
-  applies here too.
+  applies here too. Only files are served: a directory in the FS falls
+  through to page rendering, as it does under `WithStaticDir`, so a
+  `docs/` directory of images never shadows a `/docs` screen (and a
+  directory with no screen answers 404, never a redirect or a listing).
 - `host.AssetURL("/logo.svg")`: the URL of a static file with its
   content hash appended (`/logo.svg?v=3f2a9c01b7d4`). Use it wherever a
   page links a file from the static directory or static FS. A request

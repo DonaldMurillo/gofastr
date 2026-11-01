@@ -700,7 +700,9 @@ func (ds *UIHost) StaticDir() string {
 // serving symlink-following reads from a directory that was not
 // verifiable at installation time is the worse failure. embed.FS and
 // every other fs.FS pass through unchanged; a custom FS must not
-// follow symlinks (os.Root.FS() is the spelling).
+// follow symlinks (os.Root.FS() is the spelling). Only files are
+// served: a directory falls through to the screens, as under
+// WithStaticDir.
 func (ds *UIHost) SetStaticFS(fsys fs.FS) {
 	ds.staticFS = reRootDirFS(fsys)
 }
@@ -4276,7 +4278,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
-				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					f.Close()
 					return true
 				}
@@ -4381,6 +4383,19 @@ func devStaticNoStore(w http.ResponseWriter) {
 	}
 }
 
+// fsEntryIsDir reports whether an opened static-FS entry is a directory,
+// and closes it when it is: the caller falls through to the screens and
+// never reads it. A Stat error is not a directory, so the handle stays
+// the caller's to serve and close as before.
+func fsEntryIsDir(f fs.File) bool {
+	info, err := f.Stat()
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	_ = f.Close()
+	return true
+}
+
 // serveOrRender is the catch-all NotFound handler. It first tries static
 // file resolution (filesystem or embedded FS), and if no file matches it
 // falls through to page rendering. Resolution steps are mirrored by
@@ -4429,7 +4444,12 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
-				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+				// A directory is no static file: it falls through to the
+				// screens, as the static-dir branch above does. Handed to
+				// http.ServeFileFS it answered a 301 to "docs/", whose
+				// trailing slash fs.ValidPath refuses, so a screen sharing
+				// the directory's name was a redirect into a 404.
+				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					devStaticNoStore(w)
 					// A versioned URL is served from the handle it was
 					// hashed from; see markVersionedStatic.
