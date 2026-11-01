@@ -22,6 +22,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
@@ -183,11 +184,14 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			// Two pages whose paths map to one file (a StaticPaths key
 			// "a/b" beside a route /products/a/b) would leave the later
 			// one in place of the earlier: refuse the export instead.
+			// Files that differ only in case are one file on a
+			// case-insensitive filesystem (APFS, NTFS), so the check
+			// compares case-folded paths.
 			file := filepath.ToSlash(pathToFile(p))
-			if prev, dup := pageOwner[file]; dup {
+			if prev, dup := pageOwner[foldPath(file)]; dup {
 				return fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, p, file)
 			}
-			pageOwner[file] = p
+			pageOwner[foldPath(file)] = p
 			html := b.applyStaticMode(lctx, page)
 			dst := filepath.Join(b.OutDir, pathToFile(p))
 			if err := b.ensureContained(dst); err != nil {
@@ -2095,4 +2099,17 @@ func writeHeadersFile(outDir, policy string) error {
 		"  X-Content-Type-Options: nosniff\n" +
 		"  Referrer-Policy: strict-origin-when-cross-origin\n"
 	return writeUnder(outDir, filepath.Join(outDir, "_headers"), []byte(body))
+}
+
+// foldPath maps every rune of p to the smallest rune in its Unicode
+// simple case-fold orbit, the relation strings.EqualFold uses, so two
+// paths a case-insensitive filesystem treats as one fold to one key.
+func foldPath(p string) string {
+	return strings.Map(func(r rune) rune {
+		least := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			least = min(least, f)
+		}
+		return least
+	}, p)
 }

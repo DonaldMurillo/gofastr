@@ -215,7 +215,9 @@ outside its route's directory: an empty, `.` or `..` path component on
 disk, a NUL, or a backslash (a Windows separator). It also refuses two
 pages that land on one file, such as that key beside a route
 `/orders/a/b`: the error names both paths, where the later page would
-otherwise replace the earlier one without a word.
+otherwise replace the earlier one without a word. Two files that differ
+only in case (`/orders/A` beside `/orders/a`) count as one, since a
+case-insensitive filesystem (macOS, Windows) stores them as one.
 
 Routes whose screen doesn't implement `StaticPathsProvider` (or returns an
 empty slice) are **skipped** at build time, but the builder now logs a

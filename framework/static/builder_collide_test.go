@@ -29,3 +29,23 @@ func TestExportRefusesSharedPageFile(t *testing.T) {
 		t.Fatalf("Build error = %v, want a refusal naming products/a/b/index.html", err)
 	}
 }
+
+// caseProducts exports two records whose keys differ only in case.
+type caseProducts struct{ productScreen }
+
+func (*caseProducts) StaticPaths(context.Context) []map[string]string {
+	return []map[string]string{{"slug": "A"}, {"slug": "a"}}
+}
+
+// Two pages whose files differ only in case are one file on a
+// case-insensitive filesystem (APFS, NTFS by default): the later one
+// replaced the earlier, so the export refuses them too.
+func TestExportRefusesCaseFoldedFile(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/products/:slug", &caseProducts{}, nil)
+	b := &Builder{Host: uihost.New(a), OutDir: t.TempDir()}
+	_, err := b.Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "both export to") {
+		t.Fatalf("Build error = %v, want a refusal of /products/A beside /products/a", err)
+	}
+}
