@@ -687,3 +687,10 @@ notes:
     find:
       uses:
         - gofastr/battery/auth.NewSQLAuditSink
+  - change: "BREAKING - OAuth2Plugin.Init refuses to start when a 2FA plugin is registered and OAuth2Config.TwoFactorURL is empty; an OAuth sign-in of a 2FA account now redirects there instead of to /, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Set OAuth2Config.TwoFactorURL to the page that posts the code to /2fa/challenge, the same page PasskeyConfig.TwoFactorURL and MagicLinkConfig.TwoFactorURL name. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOAuth2Plugin

@@ -94,6 +94,13 @@ type OAuth2Config struct {
 	// ValidOAuthToken. Opt-in: when nil, OAuth login behaves exactly as
 	// before and the provider's refresh token is discarded.
 	TokenStore OAuthTokenStore
+
+	// TwoFactorURL is where a sign-in goes when the account still owes
+	// its second factor: the app's page that posts the code to
+	// /2fa/challenge. Same-origin paths only. Init requires it when a 2FA
+	// plugin is registered: the session an OAuth sign-in mints for such
+	// an account is pending, and "/" would refuse it.
+	TwoFactorURL string
 }
 
 // ─── Plugin ─────────────────────────────────────────────────────────────────
@@ -115,6 +122,8 @@ type OAuth2Plugin struct {
 	providers  map[string]OAuth2Provider
 	stateKey   []byte
 	tokenStore OAuthTokenStore
+	// twoFactorURL is OAuth2Config.TwoFactorURL.
+	twoFactorURL string
 
 	// usedNonces dedup callbacks against replay. Keyed by the random
 	// nonce embedded in the state token; values are the token's
@@ -139,6 +148,8 @@ func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 		providers:  make(map[string]OAuth2Provider),
 		usedNonces: make(map[string]time.Time),
 		tokenStore: cfg.TokenStore,
+		// twoFactorURL: see OAuth2Config.TwoFactorURL.
+		twoFactorURL: cfg.TwoFactorURL,
 	}
 
 	// Copy providers from config. Each key names the provider in the
@@ -200,6 +211,15 @@ func (p *OAuth2Plugin) TokenStore() OAuthTokenStore { return p.tokenStore }
 // callback gets a loud failure, not a silent email-trust login.
 func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
+	// The passkey and magic-link rule: every plugin is registered before
+	// any Init runs, so a 2FA plugin later in the list is already visible.
+	if p.twoFactorURL == "" {
+		for _, name := range mgr.order {
+			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
+				return fmt.Errorf("auth: oauth2 plugin: %q handles two-factor sign-in, so set OAuth2Config.TwoFactorURL to the page that finishes it: an OAuth sign-in of a 2FA account is pending until /2fa/challenge, and \"/\" would refuse it", name)
+			}
+		}
+	}
 	if mgr.UserStore() == nil {
 		// No user store at all, the callback already 500s on this. No
 		// opinion here; let the existing nil-check fire at request time.
@@ -708,7 +728,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// 2FA-enrolled user, so an OAuth login alone produced a
 		// fully-privileged session that could then disable the factor.
 		cfg := p.mgr.Config()
-		sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
+		sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 		if err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
@@ -752,8 +772,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// needed afterwards.
 		mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
-		// Redirect to a sensible landing page
-		http.Redirect(w, r, "/", http.StatusFound)
+		// A pending session is refused everywhere but /2fa/challenge, so
+		// the browser goes to the page that posts the code. Init made sure
+		// TwoFactorURL is set whenever a 2FA plugin can make one pending.
+		target := "/"
+		if pending {
+			target = safeRedirectURL(p.twoFactorURL)
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 	}
 }
 
