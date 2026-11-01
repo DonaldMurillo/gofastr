@@ -226,16 +226,19 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			if !strings.HasPrefix(urlPath, "/") {
 				return res, fmt.Errorf("static: contributor file %q is not a root-absolute path", urlPath)
 			}
+			// Everything below, the record in res.Assets included, uses
+			// the path the write lands on: /about/./index.html is
+			// /about/index.html.
+			body := files[urlPath]
+			urlPath = path.Clean(urlPath)
 			// A contributor file on a page's file, in any case, would
 			// replace the page; a redirect written later checks it too.
-			// The key is the cleaned path, the file the write lands on:
-			// /about/./index.html is about/index.html.
-			rel := strings.TrimPrefix(path.Clean(urlPath), "/")
+			rel := strings.TrimPrefix(urlPath, "/")
 			if prev, dup := pageOwner[foldPath(rel)]; dup {
 				return res, fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, urlPath, rel)
 			}
 			pageOwner[foldPath(rel)] = urlPath
-			if err := b.writeRawAsset(urlPath, files[urlPath]); err != nil {
+			if err := b.writeRawAsset(urlPath, body); err != nil {
 				return res, err
 			}
 			res.Assets = append(res.Assets, urlPath)
@@ -416,7 +419,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if err := b.dumpExtraDirs(&res, rendered); err != nil {
 		return res, err
 	}
-	if err := b.dumpRailScripts(ctx, &res, renderedRoutes); err != nil {
+	if err := b.dumpRailScripts(ctx, &res, renderedRoutes, rendered); err != nil {
 		return res, err
 	}
 	// A reused OutDir holds the previous build's pages: drop the ones
@@ -1591,6 +1594,12 @@ func hashExportTree(outDir string) (string, error) {
 // appropriate rewriter (rewriteBaseURLs for HTML, manual prefixing for JSON)
 // before calling. Guards path containment via ensureContained.
 func (b *Builder) writeRawAsset(urlPath string, body []byte) error {
+	// A backslash is a separator on Windows: /about\index.html would land
+	// on about/index.html there, past every check keyed on the slash
+	// path. A NUL names no file anywhere.
+	if strings.ContainsAny(urlPath, "\\\x00") {
+		return fmt.Errorf("static: file %q holds a backslash or NUL; name it with / only", urlPath)
+	}
 	dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(urlPath, "/")))
 	if err := b.ensureContained(dst); err != nil {
 		return err
@@ -1687,17 +1696,15 @@ func pathToLLMFile(p string) string {
 // is skipped because dumpPWAAssets writes its base-path-aware copy, and
 // a src that is not a same-origin path (a CDN URL, a relative src) is
 // not the app's to serve and is left to the browser.
-func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []string) error {
+func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []string, rendered *fileSet) error {
 	if b.Handler == nil {
 		return nil
 	}
+	// Keyed folded: a script in another case is the same file on a
+	// case-insensitive filesystem.
 	written := make(map[string]bool, len(res.Assets))
 	for _, p := range res.Assets {
-		written[p] = true
-	}
-	pages := make(map[string]bool, len(res.Pages))
-	for _, p := range res.Pages {
-		pages["/"+filepath.ToSlash(pathToFile(p))] = true
+		written[foldPath(p)] = true
 	}
 	for _, src := range b.Host.ExtraScriptSrcs(routes) {
 		u, err := url.Parse(src)
@@ -1706,11 +1713,13 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 		}
 		// The file goes under the decoded path, the name a static host
 		// resolves the request to.
-		urlPath := u.Path
-		if pages[urlPath] {
+		urlPath := path.Clean(u.Path)
+		// rendered holds every page and redirect page, compared in any
+		// case.
+		if rendered.has(strings.TrimPrefix(urlPath, "/")) {
 			return fmt.Errorf("static: extra script %s would overwrite the exported page at the same path", urlPath)
 		}
-		if written[urlPath] || (urlPath == pwaRegisterJS && b.Host.PWAEnabled()) {
+		if written[foldPath(urlPath)] || (urlPath == pwaRegisterJS && b.Host.PWAEnabled()) {
 			continue
 		}
 		target := u.EscapedPath()
@@ -1727,7 +1736,7 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 			return err
 		}
 		res.Assets = append(res.Assets, urlPath)
-		written[urlPath] = true
+		written[foldPath(urlPath)] = true
 		b.log("script %s", urlPath)
 	}
 	return nil

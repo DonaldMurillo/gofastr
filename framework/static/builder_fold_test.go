@@ -3,6 +3,7 @@ package static
 import (
 	"context"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -135,5 +136,62 @@ func TestExtraDirKeepsFrameworkAsset(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(out, "__gofastr", "runtime.js")); string(got) == "BAD" {
 		t.Error("an extra dir replaced the generated runtime.js")
+	}
+}
+
+// A rail script on a page's file, in any case, or on a redirect's page,
+// fails the build instead of replacing the page.
+func TestRailScriptRefusesPageFile(t *testing.T) {
+	for name, c := range map[string]struct {
+		src   string
+		setup func(*coreapp.App)
+	}{
+		"page in another case": {"/INDEX.HTML", func(*coreapp.App) {}},
+		"redirect page":        {"/old/index.html", func(a *coreapp.App) { a.Redirect("/old", "/") }},
+	} {
+		a := coreapp.NewApp("t")
+		a.Register("/", &homeScreen{}, nil)
+		c.setup(a)
+		host := uihost.New(a, uihost.WithExtraScripts(c.src))
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET "+c.src, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("JS")) })
+		_, err := (&Builder{Host: host, OutDir: t.TempDir(), Handler: mux}).Build(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "would overwrite") {
+			t.Errorf("%s: Build error = %v, want a refusal", name, err)
+		}
+	}
+}
+
+// A contributor file is recorded under the path it is written to, so a
+// rebuild that no longer renders the page keeps the contributed file.
+func TestContributorRecordsCleanPath(t *testing.T) {
+	out := t.TempDir()
+	a := coreapp.NewApp("t")
+	a.Register("/about", &homeScreen{}, nil)
+	if _, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	a = coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	res, err := (&Builder{Host: uihost.New(a), OutDir: out, Contributors: []Contributor{fileContributor{"/about/./index.html"}}}).Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(res.Assets, "/about/index.html") {
+		t.Errorf("assets %v do not name /about/index.html", res.Assets)
+	}
+	if got, err := os.ReadFile(filepath.Join(out, "about", "index.html")); err != nil || string(got) != "ASSET" {
+		t.Errorf("contributed file = %q, %v; want ASSET", got, err)
+	}
+}
+
+// A backslash is a separator on Windows, so a contributor path holding
+// one could land on a page there: it is refused everywhere.
+func TestContributorRefusesBackslash(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/about", &homeScreen{}, nil)
+	b := &Builder{Host: uihost.New(a), OutDir: t.TempDir(), Contributors: []Contributor{fileContributor{`/about\index.html`}}}
+	if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "backslash") {
+		t.Fatalf("Build error = %v, want a backslash refusal", err)
 	}
 }

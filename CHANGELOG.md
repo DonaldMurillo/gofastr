@@ -3862,8 +3862,8 @@ few lines, and link the PR or the docs page for the rest.
   for disk; `..`, `.`, `\` and NUL are still refused. Two files that
   differ only in case, or only in Unicode normalization (`café`
   precomposed or with a combining accent), count as one file: a redirect's page, a
-  static-source or `ExtraDirs` copy (`_HEADERS` included) and a
-  contributor file are checked the same way. A rebuild after a
+  static-source or `ExtraDirs` copy (`_HEADERS` included), a contributor
+  file and a rail script are checked the same way. A rebuild after a
   case-only rename keeps the page.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes

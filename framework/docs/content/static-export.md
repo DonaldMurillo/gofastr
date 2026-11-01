@@ -49,7 +49,8 @@ gofastr export --base /gofastr _site
 A registered battery that implements `static.Contributor` sees every
 rendered page and adds files of its own; [site search](site-search.md)
 writes its index this way. A contributor file at a page's path, in any
-case, fails the build. Exports are reproducible: two runs over the
+case, fails the build, and so does a contributor file or rail script
+whose path holds a backslash (a separator on Windows). Exports are reproducible: two runs over the
 same content write the same bytes (a page that shows live data aside).
 
 The example site also wires a `--export <dir>` flag so the same binary
