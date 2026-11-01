@@ -28,16 +28,38 @@ func (a *App) SetLocalRunInfo(info LocalRunInfo) {
 	a.localRunInfo = info
 }
 
+// isLocalRun reports whether this run is one a tool on the same machine
+// looks for: under `gofastr dev`, a host-marked run (battery/service),
+// or a listener on a loopback address (host is the bound IP).
+func (a *App) isLocalRun(host string) bool {
+	if dev.Enabled() || a.localRunInfo.Dev || a.localRunInfo.Service != "" || len(a.localRunInfo.MCPCommand) > 0 {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // registerLocalRun writes the run record for the bound listener and
 // returns the func that removes it. A failure is logged and serving
 // goes on: the registry is a convenience for local tools, never a
 // reason to refuse to start.
+//
+// Unless the environment forces it (localrun.Forced), only a local run
+// registers: a dev run, a battery/service run, or a listener on a
+// loopback address. A server bound to every interface is a deployment
+// (a container, a VM), where the registry has no reader and the home
+// directory is often missing or read-only (#635). A failure of an
+// automatic registration is logged at debug level; a forced one warns.
 func (a *App) registerLocalRun(bound string) func() {
 	if localrun.Disabled() {
 		return func() {}
 	}
 	host, port, err := net.SplitHostPort(bound)
 	if err != nil {
+		return func() {}
+	}
+	forced := localrun.Forced()
+	if !forced && !a.isLocalRun(host) {
 		return func() {}
 	}
 	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
@@ -64,8 +86,12 @@ func (a *App) registerLocalRun(bound string) func() {
 	}
 	unregister, err := localrun.Register(rec)
 	if err != nil {
-		a.Logger().Warn("local run registry: record not written", "error", err.Error(),
-			"opt_out", localrun.EnvOff+"=off")
+		log := a.Logger().Debug
+		if forced {
+			log = a.Logger().Warn
+		}
+		log("local run registry: record not written", "error", err.Error(),
+			"opt_out", localrun.EnvRuns+"=off")
 		return func() {}
 	}
 	a.Logger().Debug("local run registry: recorded", "url", rec.URL)

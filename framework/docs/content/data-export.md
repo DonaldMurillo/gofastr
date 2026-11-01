@@ -313,6 +313,31 @@ datexport.Register(datexport.DataExporter{
   recovery, use your database's own backup tooling. See
   [Backups and restore](backups.md).
 
+## What this does not do
+
+Two jobs look close to export and import and are deliberately left to
+the app:
+
+- **Copying rows in from another database.** `ImportData` reads only
+  archives in the GoFastr archive format (the layout `ExportData`
+  writes), and `core/migrate` never connects to a second database: its
+  SQL files can backfill rows inside the app's own database, not copy
+  them in from another one. Moving rows from a legacy database is a one-time job
+  whose column mapping only the app knows. Write it as a small program:
+  open both databases with `database/sql`, read from the old one, and
+  insert into the new one inside one transaction on the target
+  (`db.BeginTx`), so a failed run leaves nothing half-copied. Run it
+  once, after `AutoMigrate` or `migrate up` has created the tables.
+  Writing through the entity routes instead would run hooks, validation
+  and audit for every row; copy raw unless you want that.
+- **Reading spreadsheets.** GoFastr ships no XLSX (Excel) reader and
+  will not: it is a large file format to parse safely, and maintained Go
+  libraries already do it. Use one such as
+  [excelize](https://github.com/xuri/excelize), turn each row into your
+  entity's fields, and write them as above. Cap the upload size
+  (`http.MaxBytesReader`) before you open the file: an XLSX is a zip, and
+  a small upload can expand to a large one.
+
 ## Common mistakes
 
 - **Importing into a non-empty database.** Import preserves original

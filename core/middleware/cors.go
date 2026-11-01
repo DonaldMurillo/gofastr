@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"golang.org/x/net/http/httpguts"
 )
 
 // CORSConfig holds configuration for the CORS middleware.
@@ -22,6 +23,19 @@ type CORSConfig struct {
 
 	// AllowedHeaders is the list of allowed request headers.
 	AllowedHeaders []string
+
+	// AllowAnyHeader answers a preflight from an allowed origin with the
+	// headers it asked for (Access-Control-Request-Headers) instead of
+	// AllowedHeaders, for a browser client that sends headers the server
+	// does not list one by one (X-Request-Tag, tracing headers). Only
+	// well-formed header names are echoed, at most 64 of them. A
+	// rejected origin still gets nothing.
+	AllowAnyHeader bool
+
+	// AllowAnyMethod answers a preflight from an allowed origin with the
+	// method it asked for (Access-Control-Request-Method) instead of
+	// AllowedMethods, when that method is a well-formed token.
+	AllowAnyMethod bool
 }
 
 // CORS returns middleware that adds CORS headers to responses.
@@ -78,8 +92,21 @@ func CORS(cfg CORSConfig) Middleware {
 			// origin is allowed. Echoing them to rejected origins leaks
 			// API metadata and makes blocked preflights look successful.
 			if allowed {
-				w.Header().Set("Access-Control-Allow-Methods", methods)
-				w.Header().Set("Access-Control-Allow-Headers", headers)
+				m, h := methods, headers
+				if cfg.AllowAnyMethod {
+					w.Header().Add("Vary", "Access-Control-Request-Method")
+					if req := requestedMethod(r); req != "" {
+						m = req
+					}
+				}
+				if cfg.AllowAnyHeader {
+					w.Header().Add("Vary", "Access-Control-Request-Headers")
+					if req := requestedHeaders(r); req != "" {
+						h = req
+					}
+				}
+				w.Header().Set("Access-Control-Allow-Methods", m)
+				w.Header().Set("Access-Control-Allow-Headers", h)
 			}
 
 			// A preflight is OPTIONS carrying Origin and
@@ -166,6 +193,43 @@ func (s stripCredsWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter
 // or Allow-Headers value and smuggle a second header line. The CORS
 // config is developer-supplied, but defense-in-depth against config
 // injection (env-driven lists, template-generated configs) is cheap.
+// maxEchoedHeaders caps how many requested header names a preflight
+// answer echoes.
+const maxEchoedHeaders = 64
+
+// requestedHeaders is the preflight's Access-Control-Request-Headers
+// reduced to well-formed header names, lowercased and de-duplicated, at
+// most maxEchoedHeaders of them: never a byte that could split the
+// response header.
+func requestedHeaders(r *http.Request) string {
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range r.Header.Values("Access-Control-Request-Headers") {
+		for _, name := range strings.Split(line, ",") {
+			name = strings.ToLower(strings.TrimSpace(name))
+			if name == "" || seen[name] || !httpguts.ValidHeaderFieldName(name) {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
+			if len(out) == maxEchoedHeaders {
+				return strings.Join(out, ", ")
+			}
+		}
+	}
+	return strings.Join(out, ", ")
+}
+
+// requestedMethod is the preflight's Access-Control-Request-Method when
+// it is a well-formed method token, else "".
+func requestedMethod(r *http.Request) string {
+	m := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))
+	if m == "" || !httpguts.ValidHeaderFieldName(m) {
+		return ""
+	}
+	return m
+}
+
 func sanitizeCORSTokens(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, t := range in {

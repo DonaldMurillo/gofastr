@@ -57,6 +57,12 @@ func (b *Battery) localUserMiddleware() func(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+			// An open path without the window's cookie is a client the
+			// app authenticates itself; it is not the local user.
+			if b.openPath(r) && !b.requestHasSession(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if _, ok := handler.GetUser(r.Context()); !ok {
 				r = r.WithContext(handler.SetUser(r.Context(), b.user))
 			}

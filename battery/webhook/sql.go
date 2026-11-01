@@ -28,7 +28,8 @@ import (
 //	    secret   TEXT NOT NULL,
 //	    events   TEXT NOT NULL,   -- JSON array
 //	    active   INTEGER NOT NULL,
-//	    created  TIMESTAMP NOT NULL
+//	    created  TIMESTAMP NOT NULL,
+//	    auth     TEXT NOT NULL,   -- Subscriber.Auth, sealed with the codec
 //	)
 //
 //	webhook_deliveries(
@@ -41,7 +42,10 @@ import (
 //	    last_error      TEXT NOT NULL,
 //	    next_attempt_at TIMESTAMP,
 //	    created_at      TIMESTAMP NOT NULL,
-//	    updated_at      TIMESTAMP NOT NULL
+//	    updated_at      TIMESTAMP NOT NULL,
+//	    owner           TEXT NOT NULL,
+//	    response_status INTEGER NOT NULL,
+//	    response_body   TEXT NOT NULL
 //	)
 type SQLStore struct {
 	db       *sql.DB
@@ -138,7 +142,8 @@ func (s *SQLStore) ensureTables() error {
 			secret  TEXT NOT NULL,
 			events  TEXT NOT NULL,
 			active  INTEGER NOT NULL,
-			created %s NOT NULL
+			created %s NOT NULL,
+			auth    TEXT NOT NULL DEFAULT ''
 		)`, s.subTable, ts),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			id              TEXT PRIMARY KEY,
@@ -151,7 +156,9 @@ func (s *SQLStore) ensureTables() error {
 			next_attempt_at %s,
 			created_at      %s NOT NULL,
 			updated_at      %s NOT NULL,
-			owner           TEXT NOT NULL DEFAULT ''
+			owner           TEXT NOT NULL DEFAULT '',
+			response_status INTEGER NOT NULL DEFAULT 0,
+			response_body   TEXT NOT NULL DEFAULT ''
 		)`, s.delTable, blob, ts, ts, ts),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (status, next_attempt_at)",
 			query.IndexOn(s.dialect == "sqlite", s.delTable+"_due_idx", s.delTable)),
@@ -161,7 +168,17 @@ func (s *SQLStore) ensureTables() error {
 			return err
 		}
 	}
-	if err := addOwnerColumn(s.db, s.dialect, s.delTable); err != nil {
+	// Columns later releases added, for a table an earlier one made.
+	for _, def := range []string{
+		"owner TEXT NOT NULL DEFAULT ''",
+		"response_status INTEGER NOT NULL DEFAULT 0",
+		"response_body TEXT NOT NULL DEFAULT ''",
+	} {
+		if err := addColumn(s.db, s.dialect, s.delTable, def); err != nil {
+			return err
+		}
+	}
+	if err := addColumn(s.db, s.dialect, s.subTable, "auth TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if s.dialect == "postgres" {
@@ -218,14 +235,16 @@ func (s *SQLStore) rewriteDueTime(id, read string, at time.Time) error {
 	return err
 }
 
-// addOwnerColumn upgrades a table an earlier release created without
-// the owner column; its rows name nobody.
-func addOwnerColumn(db *sql.DB, dialect, table string) error {
+// addColumn upgrades a table an earlier release created without the
+// column def declares (a constant "name TYPE ..." from ensureTables);
+// existing rows take its default: an owner naming nobody, no recorded
+// response, no auth.
+func addColumn(db *sql.DB, dialect, table, def string) error {
 	if dialect == "postgres" {
-		_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, table))
+		_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s`, table, def))
 		return err
 	}
-	_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN owner TEXT NOT NULL DEFAULT ''`, table))
+	_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s`, table, def))
 	if err != nil && strings.Contains(err.Error(), "duplicate column") {
 		return nil
 	}
@@ -240,7 +259,7 @@ func registerDeliveries(table string) {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, PrimaryKey: "id",
 		Columns: []string{"id", "subscriber_id", "event", "payload", "attempts", "status",
-			"last_error", "next_attempt_at", "created_at", "updated_at", "owner"},
+			"last_error", "next_attempt_at", "created_at", "updated_at", "owner", "response_status", "response_body"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, Column: "owner",
@@ -263,32 +282,34 @@ func (s *SQLStore) AddSubscriber(ctx context.Context, sub Subscriber) error {
 	if err != nil {
 		return fmt.Errorf("webhook: encode secret: %w", err)
 	}
+	encAuth, err := s.encodeAuth(sub.Auth)
+	if err != nil {
+		return err
+	}
 	upsert := s.subUpsert()
-	_, err = s.db.ExecContext(ctx, upsert, sub.ID, sub.URL, encSecret, string(events), active, sub.Created)
+	_, err = s.db.ExecContext(ctx, upsert, sub.ID, sub.URL, encSecret, string(events), active, sub.Created, encAuth)
 	return err
 }
 
 func (s *SQLStore) GetSubscriber(ctx context.Context, id string) (*Subscriber, error) {
 	row := s.db.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT id, url, secret, events, active, created FROM %s WHERE id = %s",
+		fmt.Sprintf("SELECT id, url, secret, events, active, created, auth FROM %s WHERE id = %s",
 			s.subTable, s.placeholder(1)),
 		id,
 	)
-	sub, err := scanSubscriber(row)
+	sub, sealedAuth, err := scanSubscriber(row)
 	if err != nil || sub == nil {
 		return sub, err
 	}
-	plain, err := s.codec.Decode(sub.Secret)
-	if err != nil {
-		return nil, fmt.Errorf("webhook: decode secret: %w", err)
+	if err := s.openSubscriber(sub, sealedAuth); err != nil {
+		return nil, err
 	}
-	sub.Secret = plain
 	return sub, nil
 }
 
 func (s *SQLStore) ListSubscribers(ctx context.Context) ([]Subscriber, error) {
 	rows, err := s.db.QueryContext(ctx,
-		fmt.Sprintf("SELECT id, url, secret, events, active, created FROM %s ORDER BY id", s.subTable),
+		fmt.Sprintf("SELECT id, url, secret, events, active, created, auth FROM %s ORDER BY id", s.subTable),
 	)
 	if err != nil {
 		return nil, err
@@ -296,21 +317,52 @@ func (s *SQLStore) ListSubscribers(ctx context.Context) ([]Subscriber, error) {
 	defer rows.Close()
 	var out []Subscriber
 	for rows.Next() {
-		sub, err := scanSubscriber(rows)
+		sub, sealedAuth, err := scanSubscriber(rows)
 		if err != nil {
 			return nil, err
 		}
 		if sub == nil {
 			continue
 		}
-		plain, err := s.codec.Decode(sub.Secret)
-		if err != nil {
-			return nil, fmt.Errorf("webhook: decode secret for %q: %w", sub.ID, err)
+		if err := s.openSubscriber(sub, sealedAuth); err != nil {
+			return nil, fmt.Errorf("webhook: subscriber %q: %w", sub.ID, err)
 		}
-		sub.Secret = plain
 		out = append(out, *sub)
 	}
 	return out, rows.Err()
+}
+
+// openSubscriber decodes the sealed secret scanned into sub and the
+// sealed auth column beside it.
+func (s *SQLStore) openSubscriber(sub *Subscriber, sealedAuth string) error {
+	plain, err := s.codec.Decode(sub.Secret)
+	if err != nil {
+		return fmt.Errorf("webhook: decode secret: %w", err)
+	}
+	sub.Secret = plain
+	if sealedAuth == "" {
+		return nil
+	}
+	plainAuth, err := s.codec.Decode(sealedAuth)
+	if err != nil {
+		return fmt.Errorf("webhook: decode auth: %w", err)
+	}
+	sub.Auth, err = decodeAuth(plainAuth)
+	return err
+}
+
+// encodeAuth seals a subscriber's credential with the secret codec;
+// no credential is stored as "".
+func (s *SQLStore) encodeAuth(a Auth) (string, error) {
+	plain, err := encodeAuth(a)
+	if err != nil || plain == "" {
+		return "", err
+	}
+	enc, err := s.codec.Encode(plain)
+	if err != nil {
+		return "", fmt.Errorf("webhook: encode auth: %w", err)
+	}
+	return enc, nil
 }
 
 func (s *SQLStore) DeleteSubscriber(ctx context.Context, id string) error {
@@ -331,6 +383,7 @@ func (s *SQLStore) AddDelivery(ctx context.Context, d Delivery) error {
 	_, err := s.db.ExecContext(ctx, s.deliveryInsert(),
 		d.ID, d.SubscriberID, d.Event, d.Payload, d.Attempts,
 		string(d.Status), d.LastError, nextAt, d.CreatedAt.UTC(), d.UpdatedAt.UTC(), d.Owner,
+		d.ResponseStatus, d.ResponseBody,
 	)
 	return err
 }
@@ -351,7 +404,7 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 		nextAt = d.NextAttemptAt.UTC()
 	}
 	q := s.deliveryUpdate(d.unclaimedAttempt)
-	args := []any{string(d.Status), d.LastError, nextAt, d.UpdatedAt.UTC(), d.ID}
+	args := []any{string(d.Status), d.LastError, nextAt, d.UpdatedAt.UTC(), d.ResponseStatus, d.ResponseBody, d.ID}
 	if fence := settleFence(d.Status); len(fence) > 0 {
 		// Fence (settleFence): a worker that overran its lease had the
 		// row re-claimed under it, and its late write must not re-queue
@@ -382,7 +435,7 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 
 func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner FROM %s`, s.delTable)
+		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s`, s.delTable)
 	var args []any
 	if subscriberID != "" {
 		q += " WHERE subscriber_id = " + s.placeholder(1)
@@ -404,7 +457,7 @@ func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limi
 // (StatusDead) deliveries, newest-first.
 func (s *SQLStore) ListDeadDeliveries(ctx context.Context, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
 		WHERE status = %s ORDER BY created_at DESC`, s.delTable, s.placeholder(1))
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
@@ -432,7 +485,7 @@ func (s *SQLStore) ResetDelivery(ctx context.Context, id string) error {
 
 func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
 		WHERE status = %s AND next_attempt_at <= %s
 		ORDER BY next_attempt_at ASC`,
 		s.delTable, s.placeholder(1), s.placeholder(2))
@@ -540,7 +593,7 @@ func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, 
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING id, subscriber_id, event, payload, attempts, status,
-			last_error, next_attempt_at, created_at, updated_at, owner`,
+			last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body`,
 		s.delTable, s.delTable, limit)
 	rows, err := s.db.QueryContext(ctx, q, now.Add(leasePeriod), string(StatusPending), now)
 	if err != nil {
@@ -585,7 +638,7 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 	}
 
 	selQ := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
 		WHERE status = ? AND next_attempt_at <= ?
 		ORDER BY next_attempt_at ASC LIMIT %d`, s.delTable, limit)
 	rows, err := conn.QueryContext(ctx, selQ, string(StatusPending), now)
@@ -636,16 +689,20 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanSubscriber(r rowScanner) (*Subscriber, error) {
+// scanSubscriber reads one subscriber row. The secret is still sealed,
+// and so is the auth column, returned beside it; openSubscriber
+// decodes both.
+func scanSubscriber(r rowScanner) (*Subscriber, string, error) {
 	var sub Subscriber
+	var sealedAuth string
 	var events string
 	var active int
-	err := r.Scan(&sub.ID, &sub.URL, &sub.Secret, &events, &active, &sub.Created)
+	err := r.Scan(&sub.ID, &sub.URL, &sub.Secret, &events, &active, &sub.Created, &sealedAuth)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return nil, nil
+		return nil, "", nil
 	case err != nil:
-		return nil, err
+		return nil, "", err
 	}
 	sub.Active = active != 0
 	if events != "" {
@@ -654,10 +711,10 @@ func scanSubscriber(r rowScanner) (*Subscriber, error) {
 		// match nothing (or everything the caller defaults to), and the
 		// parse failure marches on as zero-value data no longer.
 		if err := json.Unmarshal([]byte(events), &sub.Events); err != nil {
-			return nil, fmt.Errorf("webhook: subscriber %s: corrupt events column: %w", sub.ID, err)
+			return nil, "", fmt.Errorf("webhook: subscriber %s: corrupt events column: %w", sub.ID, err)
 		}
 	}
-	return &sub, nil
+	return &sub, sealedAuth, nil
 }
 
 func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
@@ -667,7 +724,8 @@ func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
 		var status, lastErr string
 		var nextAt sql.NullTime
 		if err := rows.Scan(&d.ID, &d.SubscriberID, &d.Event, &d.Payload, &d.Attempts,
-			&status, &lastErr, &nextAt, &d.CreatedAt, &d.UpdatedAt, &d.Owner); err != nil {
+			&status, &lastErr, &nextAt, &d.CreatedAt, &d.UpdatedAt, &d.Owner,
+			&d.ResponseStatus, &d.ResponseBody); err != nil {
 			return nil, err
 		}
 		d.Status = DeliveryStatus(status)
@@ -686,32 +744,34 @@ func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
 // the old values).
 func (s *SQLStore) subUpsert() string {
 	if s.dialect == "postgres" {
-		return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created)
-			VALUES ($1,$2,$3,$4,$5,$6)
+		return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created, auth)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)
 			ON CONFLICT (id) DO UPDATE SET
 				url     = EXCLUDED.url,
 				secret  = EXCLUDED.secret,
 				events  = EXCLUDED.events,
-				active  = EXCLUDED.active`, s.subTable)
+				active  = EXCLUDED.active,
+				auth    = EXCLUDED.auth`, s.subTable)
 	}
-	return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created)
-		VALUES (?,?,?,?,?,?)
+	return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created, auth)
+		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			url     = excluded.url,
 			secret  = excluded.secret,
 			events  = excluded.events,
-			active  = excluded.active`, s.subTable)
+			active  = excluded.active,
+			auth    = excluded.auth`, s.subTable)
 }
 
 func (s *SQLStore) deliveryInsert() string {
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(`INSERT INTO %s
-			(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, s.delTable)
+			(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, s.delTable)
 	}
 	return fmt.Sprintf(`INSERT INTO %s
-		(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, s.delTable)
+		(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.delTable)
 }
 
 func (s *SQLStore) deliveryUpdate(unclaimed bool) string {
@@ -726,11 +786,13 @@ func (s *SQLStore) deliveryUpdate(unclaimed bool) string {
 	}
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(`UPDATE %s SET
-			status = $1, last_error = $2, next_attempt_at = $3, updated_at = $4%s
-			WHERE id = $5`, s.delTable, bump)
+			status = $1, last_error = $2, next_attempt_at = $3, updated_at = $4,
+			response_status = $5, response_body = $6%s
+			WHERE id = $7`, s.delTable, bump)
 	}
 	return fmt.Sprintf(`UPDATE %s SET
-		status = ?, last_error = ?, next_attempt_at = ?, updated_at = ?%s
+		status = ?, last_error = ?, next_attempt_at = ?, updated_at = ?,
+		response_status = ?, response_body = ?%s
 		WHERE id = ?`, s.delTable, bump)
 }
 

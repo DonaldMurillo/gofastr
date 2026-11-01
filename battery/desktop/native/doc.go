@@ -8,6 +8,12 @@
 // keep desktop.New and pass Shell: native.Shell() itself, or hand its
 // own Shell (the test double) to either. Nothing here registers through
 // init: importing the package changes nothing until New or Shell runs.
+//
+// The build tag gofastr_nodesktop leaves every platform package out, and
+// Shell answers the unsupported shell. Linking the Linux shell makes a
+// CGO_ENABLED=0 binary dynamic (it needs the glibc loader to open GTK),
+// so a server build of an app whose desktop mode is optional, shipped in
+// an Alpine or scratch image, builds with -tags gofastr_nodesktop.
 package native
 
 import (
