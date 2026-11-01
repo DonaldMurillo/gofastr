@@ -107,11 +107,16 @@ type Harness struct {
 	Mux     *multiplex.Mux
 	Catalog *resources.Catalog
 
-	// sessionMu guards sessionRuns. CreateSession and Shutdown may be
-	// called from different goroutines.
+	// sessionMu guards sessionRuns and shutdown. CreateSession and
+	// Shutdown may be called from different goroutines.
 	sessionMu   sync.Mutex
 	sessionRuns []sessionRun
+	// shutdown is set when Shutdown begins; CreateSession refuses after.
+	shutdown bool
 }
+
+// ErrShutdown is CreateSession's error once Shutdown has begun.
+var ErrShutdown = errors.New("harness: shut down")
 
 // shutdownDrainTimeout bounds how long Shutdown waits for the persist
 // loops to write the events already on their buses. A var so tests can
@@ -285,8 +290,18 @@ func New(cfg Config) (*Harness, error) {
 }
 
 // CreateSession wires a fresh EngineRun bound to the given provider.
-// Returns the SessionID for the caller to attach clients to.
-func (h *Harness) CreateSession(prov provider.Provider, model string) ids.SessionID {
+// Returns the SessionID for the caller to attach clients to. Once
+// Shutdown has begun it registers nothing and returns ErrShutdown: a
+// session made after Shutdown took its list would never be torn down and
+// would write to the store Shutdown closed.
+func (h *Harness) CreateSession(prov provider.Provider, model string) (ids.SessionID, error) {
+	// Held through the registration, so a session is either in the list
+	// Shutdown takes or refused.
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+	if h.shutdown {
+		return "", ErrShutdown
+	}
 	session := ids.NewSessionID()
 	bus := engine.NewBus(session)
 	disp := engine.NewDispatcher(bus, h.Tools)
@@ -316,11 +331,9 @@ func (h *Harness) CreateSession(prov provider.Provider, model string) ids.Sessio
 	// persistLoop, cancel its context and unregister the engine. Without
 	// this every session leaks a goroutine + context for the process
 	// lifetime.
-	h.sessionMu.Lock()
 	h.sessionRuns = append(h.sessionRuns, sessionRun{id: session, bus: bus, cancel: cancel, persist: pr})
-	h.sessionMu.Unlock()
 
-	return session
+	return session, nil
 }
 
 // toolSchemas converts the registered tools into provider.ToolSchema
@@ -402,6 +415,7 @@ func (h *Harness) appendEventGuarded(ctx context.Context, env control.EventEnvel
 // limit, comes back in the returned error with the store's Close error.
 func (h *Harness) Shutdown() error {
 	h.sessionMu.Lock()
+	h.shutdown = true
 	runs := h.sessionRuns
 	h.sessionRuns = nil
 	h.sessionMu.Unlock()

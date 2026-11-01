@@ -77,7 +77,7 @@ allow_project_hooks = false
 	}
 	h.Providers = []provider.Provider{prov}
 
-	sess := h.CreateSession(prov, "m")
+	sess := mustSession(t, h, prov, "m")
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)
 	if err := h.Mux.Attach(sess, c); err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ allow_project_hooks = false
 		}},
 	}
 	h.Providers = []provider.Provider{prov}
-	sess := h.CreateSession(prov, "m")
+	sess := mustSession(t, h, prov, "m")
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)
 	_ = h.Mux.Attach(sess, c)
 	defer c.Close()

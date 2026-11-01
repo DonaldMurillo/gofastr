@@ -590,3 +590,10 @@ notes:
     find:
       uses:
         - gofastr/framework/entity.PaginationConfig
+  - change: "BREAKING - harness.Harness.CreateSession returns (ids.SessionID, error) and refuses with harness.ErrShutdown once Shutdown has begun"
+    breaking: true
+    hits: review
+    guidance: "A session created after Shutdown had taken its list was never torn down and wrote to the store Shutdown closed. Handle the error: sess, err := h.CreateSession(prov, model)."
+    find:
+      uses:
+        - gofastr/framework/experimental/harness.Harness.CreateSession

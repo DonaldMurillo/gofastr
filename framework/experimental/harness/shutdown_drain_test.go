@@ -72,7 +72,7 @@ func TestShutdownPersistsQueuedEvents(t *testing.T) {
 	store := &slowStore{delay: 5 * time.Millisecond}
 	_ = h.Sessions.Close()
 	h.Sessions = store
-	h.CreateSession(h.Providers[0], "openrouter:test")
+	mustSession(t, h, h.Providers[0], "openrouter:test")
 	publishN(t, h, 20)
 	if err := h.Shutdown(); err != nil {
 		t.Fatalf("Shutdown: %v", err)
@@ -91,7 +91,7 @@ func TestShutdownReturnsStoreErrors(t *testing.T) {
 	store := &slowStore{fail: boom}
 	_ = h.Sessions.Close()
 	h.Sessions = store
-	h.CreateSession(h.Providers[0], "openrouter:test")
+	mustSession(t, h, h.Providers[0], "openrouter:test")
 	publishN(t, h, 3)
 	if err := h.Shutdown(); !errors.Is(err, boom) {
 		t.Fatalf("Shutdown error = %v, want the store's %v", err, boom)
@@ -108,7 +108,7 @@ func TestShutdownDrainIsBounded(t *testing.T) {
 	store := &slowStore{delay: time.Hour}
 	_ = h.Sessions.Close()
 	h.Sessions = store
-	h.CreateSession(h.Providers[0], "openrouter:test")
+	mustSession(t, h, h.Providers[0], "openrouter:test")
 	publishN(t, h, 2)
 	start := time.Now()
 	err := h.Shutdown()

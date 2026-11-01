@@ -141,7 +141,11 @@ func RunHarness(args []string) {
 	}
 
 	// Spawn one engine for the session.
-	sess := h.CreateSession(prov, modelID)
+	sess, err := h.CreateSession(prov, modelID)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		cli.OsExit(1)
+	}
 
 	// Bundled inproc client.
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)

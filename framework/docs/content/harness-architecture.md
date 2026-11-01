@@ -2129,8 +2129,10 @@ already queued on it, then cancels the loop, unregisters the engine from
 the mux + catalog, and closes the session store. The session event log
 is flushed: an append the store refused, or a loop still writing at the
 limit, comes back in `Shutdown`'s error with the store's `Close` error,
-so a missing transcript event is reported rather than dropped. The
-rest of the graceful contract (broadcast `SessionEnded`, stop the
+so a missing transcript event is reported rather than dropped. Once
+`Shutdown` begins, `Harness.CreateSession` registers nothing and returns
+`harness.ErrShutdown`, so no session is left running against the closed
+store. The rest of the graceful contract (broadcast `SessionEnded`, stop the
 control plane, `shutdown` MCP servers, restore the terminal, re-encrypt
 SQLite, persist the revocation list, zero in-memory tokens) is the
 target, not the present implementation.
