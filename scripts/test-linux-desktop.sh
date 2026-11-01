@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run the real Linux shell tests, not the default no-display suite. Each
-# graphical invocation owns one GTK lifetime, an authenticated Xvfb and a
+# graphical invocation gets its own process, an authenticated Xvfb and a
 # session bus. The activation transport check needs only its private bus.
-# Requires GTK 3, WebKitGTK 4.1, dbus, xvfb, xauth, dunst >= 1.7.0 and xdotool.
+# Requires GTK 3, WebKitGTK 4.1, dbus, xvfb, xauth, dunst >= 1.7.0, xdotool
+# and xcompmgr.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -12,7 +13,7 @@ if [[ ${WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS+x} == x && ${WEBKIT_DISABLE_SAN
   echo "Refusing graphical tests with WebKit's process sandbox disabled." >&2
   exit 1
 fi
-for tool in go dbus-run-session dbus-daemon xvfb-run xauth dunst dunstctl xdotool; do
+for tool in go dbus-run-session dbus-daemon xvfb-run xauth dunst dunstctl xdotool xcompmgr; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Linux desktop tests require $tool on PATH." >&2
     exit 1
@@ -41,16 +42,17 @@ fi
 export GOOS="$host_os" GOARCH="$(go env GOHOSTARCH)"
 output="$PWD/dist/ci/linux-native"
 mkdir -p "$output"
-export CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_ACTIVATION=1 GOFASTR_LINUX_PROFILE=1 GOFASTR_LINUX_TRAY=1 GOFASTR_LINUX_NOTIFICATIONS=1 GDK_BACKEND=x11
+export CGO_ENABLED=0 GOFASTR_LINUX_COMPOSITOR=1 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_ACTIVATION=1 GOFASTR_LINUX_PROFILE=1 GOFASTR_LINUX_TRAY=1 GOFASTR_LINUX_NOTIFICATIONS=1 GOFASTR_LINUX_PICKERS=1 GDK_BACKEND=x11
 # The permission-dialog test selects an English label. Do not inherit the
 # developer's desktop locale (LANGUAGE takes precedence over LANG in gettext).
 export LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=en
 export GOFASTR_LINUX_TEST_OUTPUT="$output"
 
-# Do not combine these in a single go test invocation: GTK currently keeps
-# ownership of its UI thread after a shell exits. -count=1 also forbids a
-# cached success from standing in for actual graphical execution.
-for test in TestNativeGTKWebKit TestNativeGoFastrBridge TestNativeActivation TestNativeActivationGraphical TestNativeProfile TestNativeTray TestNativeTrayGraphical TestNativeNotifications TestNativeNotificationGraphical; do
+# One go test invocation per suite: a native crash then names its suite, and
+# TestNativeGTKLifetimes alone proves several shell lifetimes share a process.
+# -count=1 also forbids a cached success from standing in for actual
+# graphical execution.
+for test in TestNativeGTKWebKit TestNativeGTKLifetimes TestNativeWindowEffects TestNativeGoFastrBridge TestNativeActivation TestNativeActivationGraphical TestNativeProfile TestNativeTray TestNativeTrayGraphical TestNativeNotifications TestNativeNotificationGraphical TestNativePickersAutomated; do
   log="$output/$test.log"
   timeout=90s
   linker=()

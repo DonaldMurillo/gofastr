@@ -218,9 +218,12 @@ type Battery struct {
 	// Capability registry and grants.
 	reg    *registry
 	grants GrantStore
-	// promptMu serializes permission prompts so two concurrent first
-	// calls do not show two dialogs.
-	promptMu sync.Mutex
+	// promptSem serializes permission prompts so two concurrent first
+	// calls do not show two dialogs. It is a one-slot channel, not a
+	// mutex, so a call whose request ends while it waits behind an alert
+	// can give up its place (see promptSlot).
+	promptOnce sync.Once
+	promptSem  chan struct{}
 
 	// Menu (validated copy) and the local identity.
 	menu *Menu

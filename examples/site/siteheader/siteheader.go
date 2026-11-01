@@ -27,6 +27,7 @@ package siteheader
 import (
 	"context"
 
+	brandassets "github.com/DonaldMurillo/gofastr/assets/brand"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
@@ -140,7 +141,7 @@ func actions() render.HTML {
 	)
 }
 
-// brand is the λ mark, the lowercase wordmark and the live version
+// brand is the go-arrow lockup and the live version
 // capsule; the capsule is GoFastr's identity, so it renders from
 // Config.Version, never caller markup.
 func brand(version string) render.HTML {
@@ -151,8 +152,7 @@ func brand(version string) render.HTML {
 			"aria-label": "gofastr, " + version + " (v0.x, APIs may change)",
 		},
 		Content: render.Join(
-			html.Span(html.TextConfig{Class: Style.BrandMark()}, render.Text("λ")),
-			html.Span(html.TextConfig{Class: Style.BrandName()}, render.Text("gofastr")),
+			html.Span(html.TextConfig{Class: Style.BrandMark()}, render.HTML(brandassets.SVG())),
 			html.Span(html.TextConfig{
 				Class:      Style.BrandStatus(),
 				ExtraAttrs: html.Attrs{"title": "v0.x. Pin a version; APIs may change between releases."},

@@ -101,6 +101,14 @@ few lines, and link the PR or the docs page for the rest.
   battery-plane table in
   [data export](framework/docs/content/data-export.md) lists every store
   and how it is erased.
+- **Linux desktop: several shell lifetimes, window effects and drag
+  regions (#605).** A process can run the GTK shell again after `Run`
+  returns. Every lifetime runs on one toolkit thread, because WebKit
+  aborts on a second one. `Transparent` windows work under a
+  compositing manager, materials get a theme tint and blur under KWin
+  on X11, and `data-cui-window-drag` moves the window. CI now drives
+  the real GTK file choosers, including the overwrite confirmation.
+  See [desktop](framework/docs/content/desktop.md#host-support).
 - **Gaps from building on v0.95.0 (#635).**
   `service.Config.OpenPrefixes` and `desktop.Config.OpenPrefixes` skip
   the browser sign-in on the paths they name, for a client with no
@@ -132,6 +140,83 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
+  checks no node, and axe files it as incomplete, which the scan never
+  read. The docs site's header had a `color-mix()` that serialised to
+  `oklch(L C none)`; axe could not parse it, so `color-contrast` checked
+  nothing on any page. Allowlisting the rule still skips it.
+- **`ui.StepRail` links and meta line meet 4.5:1.** They used
+  `--color-text-subtle` on the rail's `--color-surface-soft` (4.39:1 in
+  the default light theme) and now use `--color-text-muted`.
+- **`ui.CodeBlock` word marks keep token colors readable.** The mark
+  tint drops from 28% to 12% of `--color-warning` and gains a
+  warning-colored underline. In dark, 28% put function names at 3.91:1
+  and comments at 2.96:1.
+- **BREAKING: `desktopui.Theme()` is removed (#607).** It returned the
+  macOS theme on every OS. Call `desktopui.ThemeFor(runtime.GOOS)`, or
+  `ThemeFor("darwin")` for the old result. The primary color stays
+  `#0071E3`: macOS's `#007AFF` fails WCAG AA for 13px button labels on
+  white, and `TestPrimaryStaysAAUnderWhite` holds that line.
+- **A queued desktop permission call gives up with its request.** While
+  one permission alert was on screen, a second first-time call waited
+  behind it even after its page aborted the fetch, then read the grant
+  store on a dead context. It now returns `cancelled` as soon as its
+  request ends.
+- **Linux notifications name the current shell.** libnotify keeps the
+  app name from its first `notify_init`, so a second shell lifetime
+  with another title showed the first one's name. `Show` now sets the
+  name every time.
+- **A deep link can no longer carry a path separator or control byte
+  past the navigate grammar.** The grammar decoded each segment but
+  refused only `.` and `..`, so `gofastr-notes://files/..%2f..%2fsecret`
+  reached a `GET /files/{name}` route with `PathValue("name")` set to
+  `../../secret`, and `%00` arrived as a NUL byte. A segment that
+  decodes to `/`, `\` or a control character is now refused, and the
+  link is dropped with a Warn.
+- **A deep link that arrives while the window comes up is no longer
+  lost, and links keep their arrival order.** The battery checked for
+  the window and wrote its pre-window queue under different locks, so a
+  link could land in the queue after its one flush had run. On Windows
+  and macOS each URL also got its own goroutine, so a later URL could
+  reach the battery first. The check, the queue write and the flush now
+  share one lock, and both shells hand URLs to the battery from one
+  goroutine, at most 16 waiting.
+- **On Windows, a second launch's deep link reaches the running app
+  when a Settings window or widget is in front.** Every window the app
+  opens shares one window class, and the second instance forwards to
+  the first match in Z-order, but only the main window accepted the
+  URL. The second instance reported "running app refused the URL" and
+  the link was lost. Any of the app's windows now accepts it, and the
+  main window comes forward and navigates.
+- **`gofastr desktop feed` no longer signs archives the updater
+  refuses.** The feed writer extracts the archive with the updater's
+  own extractor before signing. A stray top-level file (`README.txt`,
+  `.DS_Store`), a missing directory entry for the bundle root or a
+  symlink now fails at release time, not on every client after it
+  ships.
+- **A retried update install no longer deletes the only copy of the
+  app.** When moving the new bundle into place failed and moving the
+  old one back failed too, `<Name>.app.old` was all that remained, and
+  the next install removed it before swapping. An install now refuses
+  when the running bundle is missing, and the log says to rename
+  `<Name>.app.old` back.
+- **Updater log lines no longer carry filesystem paths.** Failed
+  renames, removals, moves and staging-directory creation logged OS
+  errors with absolute paths under the user's home directory, and
+  codesign output named the staging path. They now log the operation
+  and the OS error (`rename: permission denied`), and command output
+  names files relative to the bundle, as the desktop docs already said.
+- **A typed Before hook takes a form post.** `OnBeforeCreate[T]` and
+  `OnBeforeUpdate[T]` decoded the body before the blank and number
+  cleanup, so a blank optional int, a `"2"` or a checkbox's `"true"`
+  failed with a 400 naming the Go struct. The cleanup now runs before
+  the hooks too, an Int column takes decimal text as the integer, and a
+  body that still does not fit `T` gets a plain phrase instead of the
+  `encoding/json` detail.
+- **Shutdown closes connections accepted while it ends streams.** A
+  connection that arrived during the WebSocket close wait (up to 2s)
+  sat idle and held `Server.Shutdown` for five seconds. The close now
+  runs as a shutdown hook, after the listener stops accepting.
 - **Core UI runtime bug bash (lazy loading, CSS/HTML/JS chunking).**
   - Asset serving: `/__gofastr/runtime/<name>.js` and `/__gofastr/compute/*`
     cache `immutable` only when `?v=` names the served bytes (otherwise
