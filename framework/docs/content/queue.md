@@ -172,8 +172,11 @@ that removes every job whose `UserID` is the erased user after the SQL
 erasure commits. For `RedisQueue` that is the main, delayed and dead lists
 and the pop and processing hashes; for `MemoryQueue`, the pending jobs
 (delayed ones included), the jobs `Dequeue` handed out, and the dead list,
-with the unique keys they held freed. A worker still running an erased job
-finds nothing to settle, and its `Ack` or `Nack` does nothing. The
+with the unique keys they held freed. The Redis sweep repeats until a
+whole sweep finds none of the user's jobs, and fails the erasure if
+workers keep moving them (see the data-export page). A worker still
+running an erased job finds nothing to settle, and its `Ack` or `Nack`
+does nothing. The
 registration stays until `Close`, and it keeps the queue from being
 garbage-collected, so close a queue you are done with. Two `RedisQueue`s
 with one queue name on different servers are both erased.

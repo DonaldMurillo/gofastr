@@ -414,7 +414,10 @@ staged with it, so its stored files are deleted and its audit diffs scrubbed
 the same way. The database's own `ON DELETE CASCADE` no longer removes it
 unseen. The eraser's `RowsAffected` counts the rows it matched; the profile
 counts in `Cascaded`. A matched row with a NULL in its key is left to the
-eraser's own delete, since no foreign key can name it.
+eraser's own delete, since no foreign key can name it. On Postgres the
+eraser's table matches the entity's by the table the catalog resolves each
+name to, so an eraser on `public.users` seeds the walk from an entity whose
+table is `users`.
 
 - **Composite keys** are followed column for column: an `order_lines` row is
   reached through `(store, order_no)`, never through one of the two alone.
@@ -517,8 +520,14 @@ eraser, and neither does one over a custom `Store` that cannot list its
 chunks (`AllChunks`): register a store eraser for it yourself.
 
 A job a worker is running when the sweep passes is not stopped. If it fails
-and is retried, or a Redis worker puts it back on the main list after the
-sweep has passed that list, it is back in the queue until the next erasure.
+and is retried after the sweep, it is back in the queue until the next
+erasure. The Redis sweep reads every list and hash again after each place a
+job can move to it from, and repeats until a whole sweep finds none of the
+user's jobs; after five sweeps that still find some it fails the erasure
+instead of reporting success. A job a worker moves twice within one sweep
+can still slip past it. It deletes a pop or processing entry only while the
+entry holds what the sweep read, so a claim another user's job took over in
+between stays (atomically with `CompareAndDeleter`).
 
 **Failure.** The SQL erasure has committed by the time a store eraser runs,
 so a failure cannot roll it back. Every store eraser runs even when another

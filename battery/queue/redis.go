@@ -232,13 +232,11 @@ func NewRedisQueue(client RedisClient, queueName string) *RedisQueue {
 
 // eraseUser removes every job whose UserID is userID from the delayed,
 // main and dead lists and the pop and processing hashes, and returns how
-// many entries it removed (with dryRun, how many it would). The order
-// follows a job's path through the queue, so a job a worker moves on
-// while the sweep runs is met again at its next home: delayed before main
-// (promoteDue pushes onto main, then takes the entry off delayed), main
-// before the pop and processing hashes, and those before the dead list. A
-// job a worker puts back on the main list after the sweep has passed it
-// survives; erasing again removes it. An entry that does not decode names
+// many entries it removed (with dryRun, how many it would). Each pass
+// (erasePass) catches a job one worker step moves while it runs, and
+// passes repeat until one finds nothing, so success means a whole pass
+// found none of the user's jobs. A job a worker moves twice within one
+// pass can still slip past it. An entry that does not decode names
 // nobody and stays. A worker still running an erased claim finds nothing
 // to settle, and its Ack or Nack is a no-op.
 func (q *RedisQueue) eraseUser(ctx context.Context, userID string, dryRun bool) (n int, err error) {
@@ -247,22 +245,59 @@ func (q *RedisQueue) eraseUser(ctx context.Context, userID string, dryRun bool) 
 			err = fmt.Errorf("redis queue: erase panicked: %s", textsafe.Recovered(v))
 		}
 	}()
-	for _, list := range []string{q.delayedQueue, q.queueName} {
-		c, err := q.eraseFromList(ctx, list, userID, dryRun)
+	if dryRun {
+		return q.erasePass(ctx, userID, true)
+	}
+	// Workers keep moving jobs while the sweep reads one key at a time.
+	// Sweep again until a pass finds nothing; a job that keeps escaping
+	// fails the erasure rather than reporting success over it.
+	for range eraseMaxPasses {
+		c, err := q.erasePass(ctx, userID, false)
+		n += c
+		if err != nil || c == 0 {
+			return n, err
+		}
+	}
+	return n, fmt.Errorf("redis queue: the user's jobs were still moving after %d sweeps; erase again", eraseMaxPasses)
+}
+
+// eraseMaxPasses caps the sweeps eraseUser runs before it gives up.
+const eraseMaxPasses = 5
+
+// erasePass reads every key a job can sit in, in an order that catches a
+// job one worker step moves while the pass runs: each key is read again
+// after every key a job can move into it from. The hashes come first, so
+// a claim a worker puts back on the main list (Nack, Reclaim) is still
+// ahead; the main list, the pop hash and the processing hash are read
+// again last, so a job claimed, put back or replayed from the dead list
+// after its first read is caught. A dry run reads each key once.
+func (q *RedisQueue) erasePass(ctx context.Context, userID string, dryRun bool) (int, error) {
+	type step struct {
+		key  string
+		hash bool
+	}
+	steps := []step{
+		{q.poppedQueue, true}, {q.processingQueue, true},
+		{q.delayedQueue, false}, {q.queueName, false}, {q.deadLetterQueue, false},
+	}
+	if !dryRun {
+		steps = append(steps, step{q.poppedQueue, true}, step{q.processingQueue, true}, step{q.queueName, false})
+	}
+	n := 0
+	for _, st := range steps {
+		var c int
+		var err error
+		if st.hash {
+			c, err = q.eraseFromHash(ctx, st.key, userID, dryRun)
+		} else {
+			c, err = q.eraseFromList(ctx, st.key, userID, dryRun)
+		}
 		n += c
 		if err != nil {
 			return n, err
 		}
 	}
-	for _, hash := range []string{q.poppedQueue, q.processingQueue} {
-		c, err := q.eraseFromHash(ctx, hash, userID, dryRun)
-		n += c
-		if err != nil {
-			return n, err
-		}
-	}
-	c, err := q.eraseFromList(ctx, q.deadLetterQueue, userID, dryRun)
-	return n + c, err
+	return n, nil
 }
 
 // jobNames reports whether raw is a job whose UserID is userID.
@@ -322,13 +357,43 @@ func (q *RedisQueue) eraseFromHash(ctx context.Context, hash, userID string, dry
 			fields = append(fields, field)
 		}
 	}
-	if dryRun || len(fields) == 0 {
+	if dryRun {
 		return len(fields), nil
 	}
-	if err := q.client.HDel(ctx, hash, fields...); err != nil {
-		return 0, fmt.Errorf("erase: remove from %s: %w", hash, err)
+	n := 0
+	for _, field := range fields {
+		deleted, err := q.eraseField(ctx, hash, field, entries[field])
+		if err != nil {
+			return n, fmt.Errorf("erase: remove from %s: %w", hash, err)
+		}
+		if deleted {
+			n++
+		}
 	}
-	return len(fields), nil
+	return n, nil
+}
+
+// eraseField deletes field from hash only while it still holds expect,
+// the value the sweep read: between the read and the delete the claim can
+// finish and another user's job take the same field, and an unconditional
+// delete would remove that claim. With [CompareAndDeleter] the check and
+// the delete are one step; without it the field is read again just before
+// the delete, which narrows the window but cannot close it.
+func (q *RedisQueue) eraseField(ctx context.Context, hash, field, expect string) (bool, error) {
+	if cas, ok := q.client.(CompareAndDeleter); ok {
+		return cas.HDelIfEqual(ctx, hash, field, expect)
+	}
+	cur, err := q.client.HGet(ctx, hash, field)
+	if errors.Is(err, ErrRedisEmpty) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if cur != expect {
+		return false, nil
+	}
+	return true, q.client.HDel(ctx, hash, field)
 }
 
 // SetVisibilityTimeout configures how long a job can be in-flight before it

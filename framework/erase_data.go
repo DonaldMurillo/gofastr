@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -562,10 +564,41 @@ type erasePlan struct {
 	// battery plane reads the key, file columns and entity names of the
 	// rows an eraser reaches through it.
 	graph map[string]*dataTable
+	// eraserGraph maps an eraser's name to the graph table it erases from,
+	// matched by name or, on Postgres, by the table the catalog resolves
+	// both to.
+	eraserGraph map[string]string
 	// seededBy holds, per delete eraser whose matches seed the plan, the
 	// rows its match staged. The battery plane adds them to the rows the
 	// eraser's own delete finds left.
 	seededBy map[string]int
+}
+
+// catalogID is the schema-qualified table the catalog resolves name to,
+// lowercased, and whether it exists.
+func catalogID(ctx context.Context, db rowQueryer, dialect migrate.Dialect, name string) (string, bool, error) {
+	s, rel, ok, err := resolveTable(ctx, db, name, dialect, false)
+	if !ok || err != nil {
+		return "", ok, err
+	}
+	return asciicase.Lower(s + "." + rel), true, nil
+}
+
+// catalogNames maps every graph table that exists to its catalogID, so an
+// eraser spelled apart from the entity that registered its table still
+// finds it.
+func catalogNames(ctx context.Context, db rowQueryer, dialect migrate.Dialect, g *dataGraph) (map[string]string, error) {
+	out := map[string]string{}
+	for _, t := range g.sorted {
+		id, ok, err := catalogID(ctx, db, dialect, t)
+		if err != nil {
+			return nil, fmt.Errorf("framework: erase probe %q: %w", t, err)
+		}
+		if ok {
+			out[id] = t
+		}
+	}
+	return out, nil
 }
 
 // planErase builds the erase plan before any transaction opens: the seed
@@ -595,9 +628,29 @@ func (a *App) planErase(ctx context.Context, dialect migrate.Dialect, erasers []
 	for t := range g.tables {
 		graphName[strings.ToLower(t)] = t
 	}
+	eraserGraph := map[string]string{}
+	var byCatalog map[string]string
 	for _, e := range erasers {
 		t, ok := graphName[strings.ToLower(e.eraser.Table)]
-		if !ok || e.eraser.Mode != datexport.EraseDelete {
+		if !ok && dialect == migrate.DialectPostgres {
+			// Spelled apart, one table: an entity's users and an eraser's
+			// public.users. Match by what the catalog resolves both to.
+			if byCatalog == nil {
+				if byCatalog, err = catalogNames(ctx, a.DB, dialect, g); err != nil {
+					return nil, err
+				}
+			}
+			id, found, err := catalogID(ctx, a.DB, dialect, e.eraser.Table)
+			if err != nil {
+				return nil, fmt.Errorf("framework: erase probe %q: %w", e.eraser.Table, err)
+			}
+			t, ok = byCatalog[id], found && byCatalog[id] != ""
+		}
+		if !ok {
+			continue
+		}
+		eraserGraph[e.eraser.Name] = t
+		if e.eraser.Mode != datexport.EraseDelete {
 			continue
 		}
 		// A pivot names no child, and a keyless table has nothing to
@@ -709,7 +762,7 @@ func (a *App) planErase(ctx context.Context, dialect migrate.Dialect, erasers []
 			return nil, fmt.Errorf("framework: erase entity %q: %w", label, err)
 		}
 	}
-	plan := &erasePlan{edges: edges, blockers: blockers, graph: map[string]*dataTable{}, seededBy: map[string]int{}}
+	plan := &erasePlan{edges: edges, blockers: blockers, graph: map[string]*dataTable{}, seededBy: map[string]int{}, eraserGraph: eraserGraph}
 	for t, dt := range g.tables {
 		plan.graph[strings.ToLower(t)] = dt
 	}
@@ -1676,7 +1729,7 @@ func (p *erasePlan) eraseBatteries(ctx context.Context, tx *sql.Tx, dialect migr
 			}
 			anon[t] = append(anon[t], i)
 		}
-		dt := p.graph[strings.ToLower(e.eraser.Table)]
+		dt := p.graph[strings.ToLower(p.eraserGraph[e.eraser.Name])]
 		if dt == nil || dt.pivot || e.eraser.Mode == datexport.EraseRemoveMember {
 			continue
 		}
