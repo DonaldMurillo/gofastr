@@ -234,6 +234,12 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			// A contributor file on a page's file, in any case, would
 			// replace the page; a redirect written later checks it too.
 			rel := strings.TrimPrefix(urlPath, "/")
+			// The build writes _headers over a contributor's and removes
+			// _redirects when the app has no redirects; the static dir's
+			// copy is appended instead.
+			if f := foldPath(rel); f == foldPath("_headers") || f == foldPath("_redirects") {
+				return res, fmt.Errorf("static: contributor file %s: the export writes _headers and _redirects itself; ship extra rules in the static dir, which are appended", urlPath)
+			}
 			if prev, dup := pageOwner[foldPath(rel)]; dup {
 				return res, fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, urlPath, rel)
 			}
@@ -1444,7 +1450,35 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 	// immutable, so every exported page and asset is precached at install
 	// and the whole site works offline. The tree hash makes a
 	// content-only redeploy rotate the cache version.
-	contentHash, err := hashExportTree(b.OutDir)
+	type pwaFile struct {
+		urlPath string
+		relFile string
+		body    []byte
+	}
+	// A locale tree's pages link their own manifest, whose start_url
+	// launches into that tree.
+	var localeManifests []pwaFile
+	if locales, byPrefix := b.Host.PathLocales(); byPrefix {
+		for _, tag := range locales.Prefixed {
+			body, err := b.Host.PWAManifestJSON(localeContext(context.Background(), locales, tag), b.BasePath)
+			if err != nil {
+				return fmt.Errorf("static: pwa manifest %s: %w", tag, err)
+			}
+			localeManifests = append(localeManifests, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
+		}
+	}
+	// The hash leaves out every file this surface writes, in any case:
+	// a rebuild finds them from the last build and a fresh build does
+	// not, and a leftover in another case is respelled only afterwards.
+	generated := map[string]bool{foldPath("manifest.webmanifest"): true, foldPath("service-worker.js"): true}
+	for _, f := range localeManifests {
+		generated[foldPath(filepath.ToSlash(f.relFile))] = true
+	}
+	pwaDir := foldPath("__gofastr/pwa/")
+	contentHash, err := hashExportTree(b.OutDir, func(rel string) bool {
+		f := foldPath(rel)
+		return generated[f] || strings.HasPrefix(f, pwaDir)
+	})
 	if err != nil {
 		return fmt.Errorf("static: fingerprint export: %w", err)
 	}
@@ -1480,28 +1514,13 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 	// no other policy.
 	offline := b.slashPageLinks(b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML())), pageSet(res.Pages))
 	offline = applyStaticCSP(offline, b.policy())
-	type pwaFile struct {
-		urlPath string
-		relFile string
-		body    []byte
-	}
 	files := []pwaFile{
 		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
 		{"/service-worker.js", "service-worker.js", []byte(sw)},
 		{pwaRegisterJS, filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
 		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
 	}
-	// A locale tree's pages link their own manifest, whose start_url
-	// launches into that tree.
-	if locales, byPrefix := b.Host.PathLocales(); byPrefix {
-		for _, tag := range locales.Prefixed {
-			body, err := b.Host.PWAManifestJSON(localeContext(context.Background(), locales, tag), b.BasePath)
-			if err != nil {
-				return fmt.Errorf("static: pwa manifest %s: %w", tag, err)
-			}
-			files = append(files, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
-		}
-	}
+	files = append(files, localeManifests...)
 	for _, f := range files {
 		// User-supplied files win: before this surface moved to the end of
 		// the build, a manifest/worker shipped in the app's static dir
@@ -1561,6 +1580,10 @@ func (b *Builder) staticSourceHas(rel string) bool {
 // spelledIn reports whether fsys holds rel, a slash path, under exactly
 // that spelling: each directory listing names each segment.
 func spelledIn(fsys fs.FS, rel string) bool {
+	// Absent in any spelling is the common answer, and one Stat gives it.
+	if _, err := fs.Stat(fsys, rel); err != nil {
+		return false
+	}
 	dir := "."
 	for _, name := range strings.Split(rel, "/") {
 		ents, err := fs.ReadDir(fsys, dir)
@@ -1580,11 +1603,9 @@ func spelledIn(fsys fs.FS, rel string) bool {
 // with identical content. A content-only redeploy therefore changes
 // the hash → the worker bytes → the cache version, and installed
 // clients re-precache; an unchanged rebuild reproduces the same worker.
-func hashExportTree(outDir string) (string, error) {
-	skip := map[string]bool{
-		"manifest.webmanifest": true,
-		"service-worker.js":    true,
-	}
+//
+// skip reports, for a slash path under outDir, whether it is left out.
+func hashExportTree(outDir string, skip func(string) bool) (string, error) {
 	h := sha256.New()
 	err := filepath.WalkDir(outDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -1595,7 +1616,7 @@ func hashExportTree(outDir string) (string, error) {
 			return err
 		}
 		slashRel := filepath.ToSlash(rel)
-		if skip[slashRel] || strings.HasPrefix(slashRel, "__gofastr/pwa/") {
+		if skip(slashRel) {
 			return nil
 		}
 		h.Write([]byte(slashRel))

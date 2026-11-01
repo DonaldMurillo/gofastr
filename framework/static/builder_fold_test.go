@@ -12,6 +12,7 @@ import (
 	"testing/fstest"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -78,12 +79,20 @@ func (c fileContributor) ExportFiles(context.Context) (map[string][]byte, error)
 // replaced the page.
 func TestContributorRefusesPageFile(t *testing.T) {
 	for _, p := range []string{"/about/index.html", "/ABOUT/index.html", "/about/./index.html", "/x/../about/index.html"} {
-		a := coreapp.NewApp("t")
-		a.Register("/about", &homeScreen{}, nil)
-		b := &Builder{Host: uihost.New(a), OutDir: t.TempDir(), Contributors: []Contributor{fileContributor{p}}}
-		if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "both export to") {
-			t.Errorf("%s: Build error = %v, want a refusal", p, err)
-		}
+		wantContributorRefused(t, "/about", p, "both export to")
+	}
+}
+
+// wantContributorRefused builds an app with a page at route and a
+// contributor writing p, and wants the build refused with an error
+// holding want.
+func wantContributorRefused(t *testing.T, route, p, want string) {
+	t.Helper()
+	a := coreapp.NewApp("t")
+	a.Register(route, &homeScreen{}, nil)
+	b := &Builder{Host: uihost.New(a), OutDir: t.TempDir(), Contributors: []Contributor{fileContributor{p}}}
+	if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("%s: Build error = %v, want %q", p, err, want)
 	}
 }
 
@@ -263,7 +272,7 @@ func TestCopyRefusesBackslash(t *testing.T) {
 // contributor's spelling on a case-insensitive filesystem: _HEADERS
 // left a case-sensitive host with no _headers and no frame-ancestors.
 func TestContributorRefusesCaseTwin(t *testing.T) {
-	for _, p := range []string{"/_HEADERS", "/_Redirects", "/__gofastr/RUNTIME.js", "/LLM.md"} {
+	for _, p := range []string{"/__gofastr/RUNTIME.js", "/LLM.md"} {
 		a := coreapp.NewApp("t")
 		a.Register("/", &homeScreen{}, nil)
 		a.Redirect("/old", "/")
@@ -328,18 +337,14 @@ func TestPWARefusesCaseTwin(t *testing.T) {
 }
 
 // A build into an OutDir writes its own spelling of every file and
-// directory, whatever an earlier build left: a refused build's _HEADERS
-// was truncated in place by the next build's _headers and kept its name
-// on APFS.
+// directory, whatever an earlier run left: a leftover _HEADERS was
+// truncated in place by the build's _headers and kept its name on APFS.
 func TestRebuildRespellsLeftovers(t *testing.T) {
 	out := t.TempDir()
-	a := coreapp.NewApp("t")
-	a.Register("/", &homeScreen{}, nil)
-	b := &Builder{Host: uihost.New(a), OutDir: out, Contributors: []Contributor{fileContributor{"/_HEADERS"}}}
-	if _, err := b.Build(context.Background()); err == nil {
-		t.Fatal("the contributor's _HEADERS was not refused")
+	if err := os.WriteFile(filepath.Join(out, "_HEADERS"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	a = coreapp.NewApp("t")
+	a := coreapp.NewApp("t")
 	a.Register("/", &homeScreen{}, nil)
 	if _, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background()); err != nil {
 		t.Fatal(err)
@@ -375,5 +380,93 @@ func TestExportRefusesCaseTwinDir(t *testing.T) {
 	_, err := (&Builder{Host: host, OutDir: t.TempDir()}).Build(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "differ only in case") {
 		t.Fatalf("Build error = %v, want a case refusal", err)
+	}
+}
+
+// A contributor may not write _headers or _redirects in any case: the
+// build writes the first over it and removes the second when the app
+// has no redirects. The static dir's copy is the way to add rules.
+func TestContributorRefusesHostRules(t *testing.T) {
+	for _, p := range []string{"/_headers", "/_redirects", "/_HEADERS", "/_Redirects"} {
+		wantContributorRefused(t, "/", p, "the export writes")
+	}
+}
+
+// respell renames only an entry that is the build's file under another
+// name. On a case-sensitive disk a stale _REDIRECTS is another file and
+// stays as it is, and so does anything reached through a symlink.
+func TestRespellRenamesOnlyTheSameFile(t *testing.T) {
+	out := t.TempDir()
+	if err := os.WriteFile(filepath.Join(out, "_REDIRECTS"), []byte("/go /old 301\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, statErr := os.Stat(filepath.Join(out, "_redirects"))
+	insensitive := statErr == nil
+	if err := respell(out, []string{"_redirects"}); err != nil {
+		t.Fatal(err)
+	}
+	if insensitive != dirHas(t, out, "_redirects") {
+		t.Errorf("case-insensitive disk %v, but _redirects listed %v after respell", insensitive, !insensitive)
+	}
+
+	shared := filepath.Join(out, "shared", "DOCS")
+	if err := os.MkdirAll(shared, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("shared", filepath.Join(out, "public")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	if err := respell(out, []string{"public/docs/index.html"}); err != nil {
+		t.Fatal(err)
+	}
+	if !dirHas(t, filepath.Join(out, "shared"), "DOCS") {
+		t.Error("respell renamed shared/DOCS through the public symlink")
+	}
+}
+
+// The worker's tree hash leaves out every file the PWA surface writes,
+// in any case, so a rebuild over the same content reproduces the
+// worker: a refused build's MANIFEST.webmanifest was hashed once, a
+// locale tree's manifest only from the second build on, and a page
+// directory left as ABOUT/ under its old name first.
+func TestPWARebuildKeepsWorker(t *testing.T) {
+	build := func(out string) string {
+		t.Helper()
+		a := coreapp.NewApp("t")
+		a.Register("/", &helloScreen{}, nil)
+		a.Register("/about", &helloScreen{}, nil)
+		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+		cat := i18n.NewMapCatalog()
+		cat.Set("es", exportHello.Key(), i18n.Message{Text: "Hola"})
+		tr := i18n.NewTranslator(cat, "en")
+		set, err := i18n.NewPathLocales(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		host.SetPathLocales(set)
+		if _, err := (&Builder{Host: host, OutDir: out}).Build(i18n.WithTranslator(context.Background(), tr)); err != nil {
+			t.Fatal(err)
+		}
+		sw, err := os.ReadFile(filepath.Join(out, "service-worker.js"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(sw)
+	}
+	out := t.TempDir()
+	// Leftovers in another case: a refused build's manifest, and the
+	// page of a route since renamed from /ABOUT.
+	for _, f := range []string{"MANIFEST.webmanifest", "ABOUT/index.html"} {
+		full := filepath.Join(out, filepath.FromSlash(f))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, second := build(out), build(out)
+	if first != second {
+		t.Error("an unchanged rebuild wrote another service worker")
 	}
 }

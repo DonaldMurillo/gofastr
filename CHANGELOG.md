@@ -3869,9 +3869,16 @@ few lines, and link the PR or the docs page for the rest.
   their paths, fails and names both. A static file replaces a generated
   one only when spelled the same. A static-source, static-dir or
   `ExtraDirs` name holding `\`, and an `ExtraDirs` mount holding one, is
-  refused. A rebuild after a case-only rename keeps the page, and every
-  file and directory the build writes is renamed to its spelling when an
-  earlier build left it in another case.
+  refused, and so is a contributor's `_headers` or `_redirects`. A
+  rebuild after a case-only rename keeps the page, and every file and
+  directory the build writes is renamed to its spelling when an earlier
+  build left it in another case.
+- **A rebuilt static export writes the same PWA worker.** The worker's
+  tree hash read a locale tree's `manifest.webmanifest` only once an
+  earlier build had written it, so a second build over unchanged
+  content rotated the worker's cache and every installed client
+  re-downloaded the site. The hash leaves out every file the PWA
+  surface writes, in any case.
 - **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
   `"` added attributes to every instance. It now takes
   `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.

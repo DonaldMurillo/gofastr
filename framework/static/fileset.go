@@ -2,6 +2,7 @@ package static
 
 import (
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path"
@@ -112,16 +113,20 @@ func writtenPaths(res *Result, rendered *fileSet, docs map[string]bool) []string
 // respell renames each directory entry on the build's paths to the
 // build's spelling where the filesystem kept another: a case-insensitive
 // one keeps the name an entry was created with, so a rebuild after a
-// case-only route rename, or over a refused build's _HEADERS, rewrote
-// the content under the old name. An entry already spelled the build's
-// way is left alone, and so is everything else in the directory.
+// case-only route rename, or over a leftover _HEADERS, rewrote the
+// content under the old name. An entry is renamed only when it is the
+// build's file under another name (os.SameFile): on a case-sensitive
+// disk a stale _REDIRECTS is another file and stays. A path is not
+// followed past a symlink, so nothing outside the build's own
+// directories moves.
 func respell(outDir string, paths []string) error {
 	root, err := os.OpenRoot(outDir)
 	if err != nil {
 		return fmt.Errorf("static: open out dir: %w", err)
 	}
 	defer root.Close()
-	listed := map[string][]string{}
+	listed := map[string]*dirNames{}
+	stop := map[string]bool{} // a path at which the walk ends: a symlink or nothing
 	done := map[string]bool{}
 	for _, p := range paths {
 		parent := "."
@@ -129,23 +134,19 @@ func respell(outDir string, paths []string) error {
 			cur := path.Join(parent, name)
 			if !done[cur] {
 				done[cur] = true
-				names, ok := listed[parent]
-				if !ok {
-					names = listNames(root, parent)
-					listed[parent] = names
+				d := listed[parent]
+				if d == nil {
+					d = listNames(root, parent)
+					listed[parent] = d
 				}
-				if !slices.Contains(names, name) {
-					for i, n := range names {
-						if foldPath(n) != foldPath(name) {
-							continue
-						}
-						if err := root.Rename(filepath.FromSlash(path.Join(parent, n)), filepath.FromSlash(cur)); err != nil {
-							return fmt.Errorf("static: respell /%s as /%s: %w", path.Join(parent, n), cur, err)
-						}
-						names[i] = name
-						break
-					}
+				if err := d.respell(root, parent, name); err != nil {
+					return err
 				}
+				fi, err := root.Lstat(filepath.FromSlash(cur))
+				stop[cur] = err != nil || fi.Mode()&fs.ModeSymlink != 0
+			}
+			if stop[cur] {
+				break
 			}
 			parent = cur
 		}
@@ -153,19 +154,54 @@ func respell(outDir string, paths []string) error {
 	return nil
 }
 
-// listNames lists the entry names in dir under root, or none when it
-// cannot be read in full (an asset URL that names no file).
-func listNames(root *os.Root, dir string) []string {
+// dirNames is one directory's listing, by exact and folded name.
+type dirNames struct {
+	exact  map[string]bool
+	folded map[string]string
+}
+
+// listNames lists dir under root. A directory that cannot be read in
+// full lists nothing: a partial listing could miss the entry to rename,
+// and renaming none leaves the build's other checks to judge the tree.
+func listNames(root *os.Root, dir string) *dirNames {
+	d := &dirNames{exact: map[string]bool{}, folded: map[string]string{}}
 	f, err := root.Open(filepath.FromSlash(dir))
 	if err != nil {
-		return nil
+		return d
 	}
 	defer f.Close()
 	names, err := f.Readdirnames(-1)
 	if err != nil {
-		// A partial listing could miss the entry to rename; renaming
-		// none leaves the build's other checks to judge the tree.
+		return d
+	}
+	for _, n := range names {
+		d.exact[n] = true
+		d.folded[foldPath(n)] = n
+	}
+	return d
+}
+
+// respell renames parent's entry for name to name when the directory
+// holds it only under another spelling of the same file.
+func (d *dirNames) respell(root *os.Root, parent, name string) error {
+	if d.exact[name] {
 		return nil
 	}
-	return names
+	old, ok := d.folded[foldPath(name)]
+	if !ok {
+		return nil
+	}
+	from, to := path.Join(parent, old), path.Join(parent, name)
+	a, errA := root.Lstat(filepath.FromSlash(from))
+	b, errB := root.Lstat(filepath.FromSlash(to))
+	if errA != nil || errB != nil || !os.SameFile(a, b) {
+		return nil
+	}
+	if err := root.Rename(filepath.FromSlash(from), filepath.FromSlash(to)); err != nil {
+		return fmt.Errorf("static: respell /%s as /%s: %w", from, to, err)
+	}
+	delete(d.exact, old)
+	d.exact[name] = true
+	d.folded[foldPath(name)] = name
+	return nil
 }
