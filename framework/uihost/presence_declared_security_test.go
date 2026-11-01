@@ -167,3 +167,33 @@ func TestRefusedScreenDeclaresNothing(t *testing.T) {
 		t.Fatalf("SECURITY: the refused screen's topic rode its alternate: %q", sseURL)
 	}
 }
+
+// missingDocComp found no document the viewer may see: it answers 404 and
+// draws its own not-found state, while PresenceTopics still names the id
+// from the URL.
+type missingDocComp struct{ docRoomComp }
+
+func (c *missingDocComp) ScreenStatusCode() int { return http.StatusNotFound }
+
+// A page that answers 404 refused the viewer, so the topics its screen
+// names from the URL stay unsigned.
+func TestNotFoundPageDeclaresNothing(t *testing.T) {
+	a := app.NewApp("rooms-missing")
+	a.Register("/", &testHomeComp{}, nil)
+	a.Register("/docs/{id}", &missingDocComp{}, nil)
+	ds := New(a)
+	req := httptest.NewRequest(http.MethodGet, "/docs/42", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), &testPresenceUser{id: "mallory", email: "mallory@test.com"}))
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("GET /docs/42: %d, want 404", rec.Code)
+	}
+	m := sseMetaRe.FindStringSubmatch(rec.Body.String())
+	if m == nil {
+		t.Fatal("no gofastr-sse meta on the 404 page")
+	}
+	if strings.Contains(m[1], "declared=") {
+		t.Fatalf("SECURITY: the 404 page signed its screen's topic: %q", m[1])
+	}
+}

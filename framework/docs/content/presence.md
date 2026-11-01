@@ -64,7 +64,8 @@ sessions and two viewers.
    lifetime out, and it does not name the stream id, so the runtime's
    in-place session re-mint keeps it. Under a `RenderAlt` decision the
    page drawn is the alternate, so the guarded screen's topics never ride
-   it.
+   it, and a page that answers anything but 2xx (a Load that set 404 for
+   another tenant's record) signs none.
 3. `handleSSE` checks the signature (against the current session key and
    any rotation keys), resolves the identity from `r.Context()` and calls
    `Manager.ServeSSEWithPresence` with the declared topics and any

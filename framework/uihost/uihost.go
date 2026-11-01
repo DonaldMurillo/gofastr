@@ -1762,7 +1762,7 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
 		markup: widgets,
 	}
-	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
+	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline, status)
 	out = injectHeadData(ctx, out)
 	if widgets != "" {
 		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
@@ -2149,7 +2149,7 @@ func (ds *UIHost) injectChromeMode(ctx context.Context, page, pagePath, sessionI
 }
 
 func (ds *UIHost) injectChromeModeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
-	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
+	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil, 0)
 }
 
 // inlineHead is how a live page may inline its head (firstpaint.go).
@@ -2165,8 +2165,10 @@ type inlineHead struct {
 
 // injectChromeDoc is the chrome injector. inline, when set, lets a head
 // small enough for the first round trip carry its resources. A nil
-// inline, or export mode, links every head resource.
-func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
+// inline, or export mode, links every head resource. status is the code
+// the page answers with (0 for 200): only a 2xx page signs the topics
+// its screen declares.
+func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead, status int) string {
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
@@ -2199,7 +2201,12 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 		if presenceTopic != "" {
 			sseURL += "&presence=" + url.QueryEscape(presenceTopic)
 		}
-		sseURL += ds.declaredPresenceQuery(ctx, comp)
+		// A page that answers 403/404/500 refused or failed the viewer
+		// (a Load that found another tenant's record sets 404 and draws
+		// its own not-found state), so its screen's topics stay unsigned.
+		if status == 0 || (status >= 200 && status < 300) {
+			sseURL += ds.declaredPresenceQuery(ctx, comp)
+		}
 		fmt.Fprintf(headClose, `<meta name="gofastr-sse" content="%s">`+"\n", sseURL)
 	}
 	// app.css is injected AFTER component CSS (see further down) so
