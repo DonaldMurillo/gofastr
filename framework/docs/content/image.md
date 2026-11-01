@@ -242,6 +242,14 @@ storage, so `Process` and `ProcessTo` refuse the set before encoding
 anything, and `CheckVariantNames` reports the same error for a list
 you want to check at startup. Same suffix, different `Format` is fine.
 
+A name never passes `image.MaxVariantNameBytes` (255 bytes, the
+filesystem name limit `core/upload` holds uploads to). A `BaseName` too
+long for the set's longest `-<suffix>.<ext>` is cut from the front, by
+the same amount for every variant, so the names stay distinct and keep
+the end of the base, where `upload.UniqueFilename` puts its random
+token. A suffix that alone leaves no room for a base is a
+`CheckVariantNames` error.
+
 `PipelineImage` emits one `<source type="…" srcset="…">` per distinct
 `Type` in input order. Put the modern format first so legacy browsers
 fall through to the `<img>` fallback.
@@ -355,7 +363,9 @@ img, err := image.DecodeBytesWithConfig(data, image.Config{
 Decoding a JPEG records the EXIF orientation tag (`1..8`) on the
 `*Image`. `Metadata().Orientation` exposes it; `AutoOrient()` applies it
 and resets the tag. Only the orientation tag is parsed. Full EXIF
-support is intentionally out of scope.
+support is intentionally out of scope. `VariantSet` renders the raster
+as decoded, so call `AutoOrient()` first when its outputs are for
+display; the image-field pipeline (`framework/imagefield`) does.
 
 **Caveat:** an `*Image` built via `FromImage(...)` carries
 `Orientation = 0`, so `AutoOrient()` is a no-op on it. For EXIF

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"unicode/utf8"
 )
 
 // Variant describes one output produced by a VariantSet. Height is
@@ -47,6 +48,8 @@ type VariantSet struct {
 	BlurHashY int
 
 	// BaseName is the prefix used for VariantOutput.Name. Default "image".
+	// One too long for the set's names to fit MaxVariantNameBytes is cut
+	// from the front.
 	BaseName string
 
 	// AllowUpscale opts back in to producing variants larger than the
@@ -65,6 +68,15 @@ type VariantSet struct {
 	// "first frame wins" behavior.
 	RejectAnimated bool
 }
+
+// MaxVariantNameBytes caps a rendition's file name (VariantOutput.Name,
+// VariantHeader.Name) at the common filesystem name limit, the same 255
+// bytes core/upload.MaxFilenameBytes holds an upload name to. A BaseName
+// too long for its set's longest "-<suffix>.<ext>" is cut from the
+// front, by the same amount for every variant, so the names stay
+// distinct and keep the end of the base, where core/upload.UniqueFilename
+// puts its timestamp and random token.
+const MaxVariantNameBytes = 255
 
 // MaxVariantsPerSet caps Variants to a sane bound. Attacker-controlled
 // variant lists are an obvious DoS vector for upload pipelines: each
@@ -138,10 +150,7 @@ func (s VariantSet) Process(src *Image) (VariantResult, error) {
 		return VariantResult{}, err
 	}
 
-	baseName := s.BaseName
-	if baseName == "" {
-		baseName = "image"
-	}
+	baseName := fitBaseName(s.BaseName, s.Variants)
 
 	bounds := src.Bounds()
 	result := VariantResult{
@@ -297,10 +306,7 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		return StreamResult{}, err
 	}
 
-	baseName := s.BaseName
-	if baseName == "" {
-		baseName = "image"
-	}
+	baseName := fitBaseName(s.BaseName, s.Variants)
 
 	bounds := src.Bounds()
 	result := StreamResult{
@@ -404,12 +410,44 @@ func CheckVariantNames(vs []Variant) error {
 	seen := make(map[string]int, len(vs))
 	for i, v := range vs {
 		name := variantName("", v)
+		if len(name) >= MaxVariantNameBytes {
+			return fmt.Errorf("image: VariantSet.Variants[%d] names %d bytes before any base, over MaxVariantNameBytes=%d", i, len(name), MaxVariantNameBytes)
+		}
 		if j, dup := seen[name]; dup {
 			return fmt.Errorf("image: VariantSet.Variants[%d] and Variants[%d] both name %q", j, i, "<base>"+name)
 		}
 		seen[name] = i
 	}
 	return nil
+}
+
+// fitBaseName returns the base every variant name in vs is built on:
+// "image" when base is empty, and otherwise base cut from the front (on
+// a rune boundary) until the longest name fits MaxVariantNameBytes. One
+// cut for the whole set keeps the names distinct, since their tails
+// differ; cutting the front keeps the base's unique tail.
+func fitBaseName(base string, vs []Variant) string {
+	if base == "" {
+		base = "image"
+	}
+	longest := 0
+	for _, v := range vs {
+		longest = max(longest, len(variantName("", v)))
+	}
+	budget := MaxVariantNameBytes - longest
+	if budget <= 0 || len(base) <= budget {
+		// budget <= 0 is a suffix CheckVariantNames refuses before
+		// any name is built.
+		return base
+	}
+	cut := len(base) - budget
+	for cut < len(base) && !utf8.RuneStart(base[cut]) {
+		cut++
+	}
+	if cut == len(base) {
+		return "image"[:min(budget, len("image"))]
+	}
+	return base[cut:]
 }
 
 // variantName composes a storage-friendly file name for a variant. If

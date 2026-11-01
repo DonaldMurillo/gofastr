@@ -16,7 +16,7 @@ import (
 // StripMetadata returns a [ProcessOption] that removes privacy-bearing
 // metadata from stored image originals: EXIF (GPS coordinates, camera
 // serials, embedded thumbnails), XMP, and equivalent segments — JPEG
-// APPn and COM segments, PNG tEXt/zTXt/iTXt/eXIf chunks, and WebP EXIF
+// APPn (bar the Adobe APP14 colour marker) and COM segments, PNG tEXt/zTXt/iTXt/eXIf chunks, and WebP EXIF
 // and XMP chunks. A non-trivial EXIF orientation is applied first, so
 // the stripped original still displays upright: JPEG and PNG re-encode
 // with the orientation baked into the pixels, WebP (no encoder at this
@@ -86,10 +86,16 @@ func stripImageMetadata(data []byte) ([]byte, error) {
 	return nil, nil
 }
 
+// adobeAPP14Len is the APP14 "Adobe" payload the decoder reads: the
+// "Adobe" tag, version, two flag words and the colour transform byte.
+const adobeAPP14Len = 12
+
 // stripJPEG removes every APPn (EXIF, XMP, ICC, Photoshop IRB, …) and
 // COM segment from a JPEG and drops any post-EOI trailer, without
 // re-encoding: the scan data is copied verbatim, so nothing that did
-// not carry metadata is re-compressed. If the EXIF orientation tag is
+// not carry metadata is re-compressed. The one APPn kept is the Adobe
+// APP14 colour-transform marker, cut to its 12 decoder-read bytes:
+// without it a CMYK JPEG no longer decodes. If the EXIF orientation tag is
 // 2..8 the spliced stream is decoded, rotated into the upright frame,
 // and re-encoded once (quality stripJPEGQuality), because dropping the
 // tag without baking it would leave the photo sideways.
@@ -164,6 +170,14 @@ func stripJPEG(data []byte) ([]byte, error) {
 		}
 		payload := data[segLenAt+2 : segLenAt+segLen]
 		switch {
+		case marker == 0xEE && len(payload) >= adobeAPP14Len && string(payload[:5]) == "Adobe":
+			// APP14 Adobe: the colour transform the decoder needs to
+			// read a four-component (CMYK/YCCK) JPEG, and to tell RGB
+			// from YCbCr in a three-component one. It is not metadata
+			// about the photo, so it survives, rewritten to the 12
+			// bytes the decoder reads so nothing rides in a trailer.
+			out = append(out, 0xFF, 0xEE, 0x00, adobeAPP14Len+2)
+			out = append(out, payload[:adobeAPP14Len]...)
 		case marker >= 0xE0 && marker <= 0xEF: // APPn: metadata, dropped
 			if marker == 0xE1 && orient == 0 && len(payload) >= 6 && string(payload[:6]) == "Exif\x00\x00" {
 				orient = exif.ParseTIFFOrientation(payload[6:])

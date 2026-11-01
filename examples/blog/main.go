@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
@@ -111,7 +112,12 @@ func registerEntities(app *framework.App) {
 		// Mirrors gofastr.yml: readable by anyone, every write gated.
 		// Public: true would also grant anonymous create/update/delete.
 		Read: "", Create: "posts:write", Update: "posts:write", Delete: "posts:admin",
-	}}, Scope: &framework.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
+	},
+		// Readable by anyone means published posts: a draft stays out of
+		// every read (list, get, ?include=, MCP) unless the caller may
+		// write posts.
+		ReadScope: postsReadScope,
+	}, Scope: &framework.ScopeConfig{SoftDelete: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true, Max: new(300.0)},
 		{Name: "body", Type: schema.Text},
 		{Name: "status", Type: schema.Enum, Values: []string{"draft", "published"}, Default: "draft"},
@@ -137,6 +143,36 @@ func registerEntities(app *framework.App) {
 			framework.BelongsTo("post", "posts", "post_id"),
 			framework.BelongsTo("author", "users", "author_id"),
 		},
+	})
+	scopeCommentsToReadablePosts(app)
+}
+
+// commentsOnReadablePosts keeps a comment to the readers of its post. A
+// read scope filters only the entity's own columns, so postsReadScope
+// hides a draft while its comments stayed on /comments and
+// /comments/{id}, telling anyone the draft existed and quoting the
+// discussion of it. The subquery is the posts read scope plus soft
+// delete; the args bind, so nothing is concatenated into the SQL.
+const commentsOnReadablePosts = "post_id IN (SELECT id FROM posts WHERE status = $1 AND deleted_at IS NULL)"
+
+// scopeCommentsToReadablePosts narrows every auto-CRUD comment read
+// (list, count, get, ?include=, a write's response body) for callers
+// that may not read drafts, the same line postsReadScope draws.
+func scopeCommentsToReadablePosts(app *framework.App) {
+	mayReadDrafts := func(ctx context.Context) bool {
+		return framework.Can(ctx, framework.Permission(postsReadScope.Unrestricted))
+	}
+	framework.OnBeforeList(app, "comments", func(ctx context.Context, p *hook.ListPayload) error {
+		if !mayReadDrafts(ctx) {
+			p.AddWhere(commentsOnReadablePosts, "published")
+		}
+		return nil
+	})
+	framework.OnBeforeGet(app, "comments", func(ctx context.Context, p *hook.GetPayload) error {
+		if !mayReadDrafts(ctx) {
+			p.AddWhere(commentsOnReadablePosts, "published")
+		}
+		return nil
 	})
 }
 
@@ -189,14 +225,29 @@ func seed(db *sql.DB) {
 	db.Exec(`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c2', 'Interesting', 'p2', 'u2')`)
 }
 
+// postsReadScope keeps anonymous readers to published posts. A caller
+// holding posts:write (an author) reads drafts too. Mirrors read_scope
+// in gofastr.yml.
+var postsReadScope = &framework.ReadScopeConfig{
+	Filter:       []framework.RowPredicate{{Field: "status", Op: "eq", Value: "published"}},
+	Unrestricted: "posts:write",
+}
+
 // indexPosts fills index from the posts table. ListAll leaves
 // soft-deleted rows out, so a post deleted before a restart stays out
-// of search after it.
+// of search after it. Drafts are indexed too (the public search route
+// filters its answers), so the rebuild reads past postsReadScope as a
+// caller holding its Unrestricted permission.
 func indexPosts(ctx context.Context, app *framework.App, index search.Backend) error {
 	posts, err := app.CrudHandler("posts")
 	if err != nil {
 		return err
 	}
+	policy := framework.NewRolePolicy()
+	if err := policy.Grant("search-indexer", framework.Permission(postsReadScope.Unrestricted)); err != nil {
+		return fmt.Errorf("index posts: %w", err)
+	}
+	ctx = framework.WithRoles(framework.WithPolicy(ctx, policy), []string{"search-indexer"})
 	rows, err := posts.ListAll(ctx, framework.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("index posts: %w", err)

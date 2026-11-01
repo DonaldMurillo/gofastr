@@ -47,6 +47,10 @@ Email is PII, so every operation on users is gated, reads included.
 | PATCH    | `/posts/{id}`         | `posts:write` | Sparse-update post           |
 | DELETE   | `/posts/{id}`         | `posts:admin` | Soft-delete post             |
 
+Anonymous reads see published posts only: a read scope
+(`status = published`) narrows every auto-CRUD read (list, get,
+`?include=`, MCP), and only a caller holding `posts:write` reads drafts.
+
 ### Comments
 
 | Method   | Path                | Auth             | Description           |
@@ -57,6 +61,14 @@ Email is PII, so every operation on users is gated, reads included.
 | PUT      | `/comments/{id}`    | `comments:write` | Update comment        |
 | PATCH    | `/comments/{id}`    | `comments:write` | Sparse-update comment |
 | DELETE   | `/comments/{id}`    | `comments:admin` | Delete comment        |
+
+A comment is as readable as its post: `BeforeList` and `BeforeGet` hooks
+(`scopeCommentsToReadablePosts` in `main.go`) keep comments on a draft
+or deleted post out of every auto-CRUD read for a caller without
+`posts:write`, so `/comments` cannot reveal that a draft exists. A read
+scope cannot say this (it filters the entity's own columns), and the app
+spec has no `before_get` hook, so `gofastr.yml` does not carry it: a
+generated app needs the same two hooks in owned Go.
 
 ### Auth
 

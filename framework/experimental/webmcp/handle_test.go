@@ -251,7 +251,9 @@ func TestHandleOnGroupedRouterKeepsPrefix(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
 		t.Fatalf("manifest not JSON: %v", err)
 	}
-	if m.Tools[0].Path != "/api/echo" {
+	// The bridge fetches the manifest path from the origin, so it must
+	// carry the group prefix the route registered under.
+	if m.Tools[0].Path != "/v1/api/echo" {
 		t.Fatalf("grouped manifest path: %+v", m.Tools[0])
 	}
 	rec = httptest.NewRecorder()

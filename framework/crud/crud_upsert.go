@@ -44,7 +44,9 @@ var errUpsertForeignRow = errors.New("upsert: target row belongs to a different 
 // regular Create/Update endpoints. The lifecycle event does distinguish:
 // entity.created when no row held the key, entity.updated when one did.
 // On conflict only the columns the body carries are written; a Default
-// fills an omitted column on the insert arm alone.
+// fills an omitted column on the insert arm alone. A conflict that
+// writes any column re-stamps an auto updated_at with the server time,
+// as Update does; created_at and the key keep their stored values.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
 	req := syntheticRequest(ctx, http.MethodPost, "/")
 
@@ -301,6 +303,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		placeholders := make([]string, len(cols))
 		for i := range cols {
 			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		}
+
+		// The conflict arm is an update, so it re-stamps updated_at the
+		// way doUpdate does: a fresh server time, bound past the VALUES
+		// parameters, never a value the caller sent. The SET loop above
+		// skips every auto field, which left updated_at frozen at the
+		// row's creation. A SET that names nothing else stays DO NOTHING:
+		// the re-stamp alone is not a write.
+		if col := autoUpdatedAtColumn(ch.Entity); col != "" && len(setParts) > 0 {
+			vals = append(vals, ch.bindJSONValue(col, generateFieldValue(schema.AutoTimestamp)))
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, len(vals)))
 		}
 
 		visFields := ch.visibleFields()

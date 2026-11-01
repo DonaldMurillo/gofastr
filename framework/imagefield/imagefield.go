@@ -154,6 +154,12 @@ func (d *Deriver) DeriveImage(ctx context.Context, store upload.Storage, data []
 		// the point: the column is declared as an image.
 		return nil, fmt.Errorf("imagefield: decoding upload: %w", err)
 	}
+	// Bake the EXIF orientation in: an EXIF-aware viewer shows the
+	// original upright, and the renditions and placeholder carry no EXIF
+	// of their own, so derived from the raw raster they come out
+	// sideways. A no-op when the upload has no orientation (or
+	// StripMetadata already baked it into the stored original).
+	src = src.AutoOrient()
 
 	base := d.set
 	base.BaseName = baseNameFor(primaryRef)
