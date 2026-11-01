@@ -78,6 +78,14 @@ type VariantSet struct {
 // puts its timestamp and random token.
 const MaxVariantNameBytes = 255
 
+// MinVariantBaseBytes is the room a variant's "-<suffix>.<ext>" must
+// leave for the base under MaxVariantNameBytes. The cut keeps the end of
+// the base, and core/upload.UniqueFilename's "_<unixnano>_<16 hex>" tail
+// is 37 bytes: a suffix that left only a few bytes would cut two uploads
+// to the same name, and the later one's renditions would overwrite the
+// earlier one's. CheckVariantNames refuses a suffix that leaves less.
+const MinVariantBaseBytes = 64
+
 // MaxVariantsPerSet caps Variants to a sane bound. Attacker-controlled
 // variant lists are an obvious DoS vector for upload pipelines: each
 // variant is an encode + allocation; a 10k-variant request would
@@ -410,8 +418,8 @@ func CheckVariantNames(vs []Variant) error {
 	seen := make(map[string]int, len(vs))
 	for i, v := range vs {
 		name := variantName("", v)
-		if len(name) >= MaxVariantNameBytes {
-			return fmt.Errorf("image: VariantSet.Variants[%d] names %d bytes before any base, over MaxVariantNameBytes=%d", i, len(name), MaxVariantNameBytes)
+		if len(name) > MaxVariantNameBytes-MinVariantBaseBytes {
+			return fmt.Errorf("image: VariantSet.Variants[%d] names %d bytes before any base, leaving under MinVariantBaseBytes=%d of MaxVariantNameBytes=%d for the base", i, len(name), MinVariantBaseBytes, MaxVariantNameBytes)
 		}
 		if j, dup := seen[name]; dup {
 			return fmt.Errorf("image: VariantSet.Variants[%d] and Variants[%d] both name %q", j, i, "<base>"+name)

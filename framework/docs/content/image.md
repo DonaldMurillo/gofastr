@@ -247,8 +247,9 @@ filesystem name limit `core/upload` holds uploads to). A `BaseName` too
 long for the set's longest `-<suffix>.<ext>` is cut from the front, by
 the same amount for every variant, so the names stay distinct and keep
 the end of the base, where `upload.UniqueFilename` puts its random
-token. A suffix that alone leaves no room for a base is a
-`CheckVariantNames` error.
+token. A suffix that leaves fewer than `image.MinVariantBaseBytes` (64)
+bytes for the base is a `CheckVariantNames` error: a cut that short
+would give two uploads the same rendition name.
 
 `PipelineImage` emits one `<source type="…" srcset="…">` per distinct
 `Type` in input order. Put the modern format first so legacy browsers

@@ -371,8 +371,10 @@ func statementTables(s string) map[string]bool {
 }
 
 // reTableTarget matches a table-name position: FROM x, INSERT INTO x,
-// UPDATE x — the verb spellings that introduce a table.
-var reTableTarget = regexp.MustCompile(`(?:\bfrom|\binto|\bupdate)\s+([a-z_][a-z0-9_$.]*|\?)`)
+// UPDATE x — the verb spellings that introduce a table. Postgres's ONLY
+// (UPDATE ONLY x, DELETE FROM ONLY x) is skipped, so the table matches
+// its SQLite twin's bare name.
+var reTableTarget = regexp.MustCompile(`(?:\bfrom|\binto|\bupdate)(?:\s+only\b)?\s+([a-z_][a-z0-9_$.]*|\?)`)
 
 // sqlKeywords are words the table-target shape can capture that name
 // clauses, not tables (ON CONFLICT DO UPDATE SET …).
@@ -443,10 +445,10 @@ func statementBoundary(before string) bool {
 }
 
 // reSQLShape is what follows a statement verb in SQL: SELECT … FROM or
-// a SELECT of a function call, UPDATE x SET, DELETE FROM, INSERT
+// a SELECT of a function call, UPDATE [ONLY] x [[AS] alias] SET, DELETE FROM, INSERT
 // [OR x | IGNORE] INTO, WITH name AS (, or the verb alone ending the
 // literal (a builder head, "UPDATE " + table + " SET …").
-var reSQLShape = regexp.MustCompile(`(?is)^(?:select\s.*\bfrom\b|select\s+[\w.]+\s*\(|update\s+\S+\s+set\b|delete\s+from\b|insert\s+(?:or\s+\w+\s+|ignore\s+)?into\b|with\s+(?:recursive\s+)?\S+\s+as\s*\(|(?:select|update|delete|insert|with)\s*$)`)
+var reSQLShape = regexp.MustCompile(`(?is)^(?:select\s.*\bfrom\b|select\s+[\w.]+\s*\(|update\s+(?:only\s+)?\S+(?:\s+(?:as\s+)?\w+)?\s+set\b|delete\s+from\b|insert\s+(?:or\s+\w+\s+|ignore\s+)?into\b|with\s+(?:recursive\s+)?\S+\s+as\s*\(|(?:select|update|delete|insert|with)\s*$)`)
 
 // whereAtoms extracts every WHERE clause of the first SQL statement
 // in s and pools their normalized top-level atoms. A dialect twin's

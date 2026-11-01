@@ -275,6 +275,14 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// Build the SET clause for the UPDATE side. Skip pk + auto-generate
 		// fields, those represent identity / immutability.
 		setParts := make([]string, 0, len(cols))
+		// dataSet counts the SET parts the caller's body wrote. The owner
+		// and tenant columns ride in every scoped SET, so they are not one.
+		dataSet := 0
+		ownerCol := ch.Entity.Config.Scope.OwnerField
+		tenantCol := ""
+		if ch.Entity.Config.Scope.MultiTenant {
+			tenantCol = ch.Entity.Config.TenantColumn()
+		}
 		for _, c := range cols {
 			if ch.isKeyCol(c) {
 				continue
@@ -297,6 +305,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", c, c))
+			if c != ownerCol && c != tenantCol {
+				dataSet++
+			}
 		}
 
 		// Render parameter placeholders $1..$N for VALUES.
@@ -309,9 +320,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// way doUpdate does: a fresh server time, bound past the VALUES
 		// parameters, never a value the caller sent. The SET loop above
 		// skips every auto field, which left updated_at frozen at the
-		// row's creation. A SET that names nothing else stays DO NOTHING:
-		// the re-stamp alone is not a write.
-		if col := autoUpdatedAtColumn(ch.Entity); col != "" && len(setParts) > 0 {
+		// row's creation. Only a data column the caller sent re-stamps: a
+		// SET holding just the scope columns (or nothing) is not a write.
+		if col := autoUpdatedAtColumn(ch.Entity); col != "" && dataSet > 0 {
 			vals = append(vals, ch.bindJSONValue(col, generateFieldValue(schema.AutoTimestamp)))
 			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, len(vals)))
 		}

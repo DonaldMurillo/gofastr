@@ -109,9 +109,12 @@ few lines, and link the PR or the docs page for the rest.
   placeholders follow the upload's EXIF orientation. A long upload name
   no longer fails when renditions are stored: rendition names are cut
   from the front and keep the random token (`image.MaxVariantNameBytes`,
-  and `CheckVariantNames` refuses a suffix that leaves no room for a
-  name). EXIF orientation is read past 0xFF fill bytes.
-- **An upsert that updates an existing row refreshes `updated_at`.**
+  and `CheckVariantNames` refuses a suffix that leaves the base fewer
+  than `image.MinVariantBaseBytes`). EXIF orientation is read past 0xFF
+  fill bytes.
+- **An upsert that updates an existing row refreshes `updated_at`.** One
+  that sends only the key leaves it alone, on owner- and tenant-scoped
+  entities too.
 - **WebMCP tools registered with `Handle` on a grouped router advertise
   the prefixed path**, so in-browser agent calls reach the route.
 - **Process modules.** An over-cap request answer no longer blocks the
@@ -136,7 +139,8 @@ few lines, and link the PR or the docs page for the rest.
   `LEAST`, `::int` or a quoted column. GOFASTR1411 and GOFASTR1413 match
   header names in any case. GOFASTR1412 catches single-quoted URL
   attributes and an escaped value held in a variable. GOFASTR1414 counts
-  a literal as SQL only when a statement verb starts it. GOFASTR1415
+  a literal as SQL only when a statement verb starts it, and reads an
+  `UPDATE` with a table alias or `ONLY`. GOFASTR1415
   reads field-assigned eraser tables and `ALTER TABLE … ADD COLUMN`.
 - **A panel opened just before a navigation no longer opens, or writes
   its deep link, on the next page.**
@@ -145,7 +149,8 @@ few lines, and link the PR or the docs page for the rest.
   (`disabled="false"` disabled the control), and `checked`, `selected`
   and `value` keep following the signal after the user edits the field.
   `store.Slice.BindAttr` leaves a false boolean out of the server render
-  too, so the control no longer arrives disabled or hidden.
+  too, so the control no longer arrives disabled or hidden. A named bool
+  type and the string `"false"` count as false there.
 - **Escape closes a popover opened inside a modal before the modal.**
 - **Removing the last live island closes the SSE stream.**
 - **A percent-encoded fragment finds its target** (`#caf%C3%A9` →
@@ -3844,7 +3849,8 @@ few lines, and link the PR or the docs page for the rest.
   `role:admin` before the custom check runs. A Decider still sees every
   role the caller holds. See `access-control.md`.
 - **A password reset or account claim whose passkey, session,
-  magic-link or token purge fails still runs the other purges** before
+  magic-link, token, OAuth unlink or password purge fails still runs the
+  other purges** before
   it fails, so one failing store no longer leaves old sessions or tokens
   working. A failed claim leaves the account unverified, so the next
   proof retries it.
@@ -3863,7 +3869,8 @@ few lines, and link the PR or the docs page for the rest.
   heartbeat can no longer resurrect them.
 - **Process modules: a revoke or upgrade cancels a spawn still starting
   under the old grants.** That child is killed instead of installed
-  beside the new one.
+  beside the new one, and its late failure no longer marks the new one
+  failed.
 - **Sandbox probes test what they claim.** P3 identifies the planted fd
   by device and inode, so the child's own descriptors no longer read as
   a breach on Linux. P4 proves each refusal against listeners the runner
@@ -3871,8 +3878,8 @@ few lines, and link the PR or the docs page for the rest.
   `EAGAIN` and `EMFILE` as a cap, holds every child alive, and reports a
   timeout or a missing binary as unreachable. P3 and P6 have not run on
   Linux CI yet.
-- **An abandoned process-module spawn closes every fd it opened**,
-  including the child-side stdio pipes and the artifact.
+- **An abandoned or failed process-module spawn closes every fd it
+  opened**, including both ends of the stdio pipes and the artifact.
 - **Linear-time markdown for unclosed `[` and `](`.** Input with many
   unclosed brackets took quadratic time to render.
 - **`Accept-Language` entries over 35 characters, or with characters

@@ -24,6 +24,10 @@ func TestLongHeadersFoldUnder998(t *testing.T) {
 		"q specials":    strings.Repeat("a=?_", 400),
 		"short":         "Hello",
 		"leading space": " x " + strings.Repeat("z", 1000),
+		// Two long words in a row: RFC 2047 drops the space between two
+		// adjacent encoded words, so the space must travel inside one.
+		"two long words":            strings.Repeat("a", 80) + " " + strings.Repeat("b", 80),
+		"long then long then short": strings.Repeat("a", 90) + "  " + strings.Repeat("b", 90) + " c",
 	}
 	longFile := strings.Repeat("ré", 400) + ".pdf"
 	asciiFile := strings.Repeat("f", 1200) + ".txt"

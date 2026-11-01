@@ -314,8 +314,9 @@ const indexLockName = "lock"
 // keeps the lock file. Removing the whole directory unlinked the lock a
 // running `semantic watch` held, so the next writer locked a new file
 // and two processes wrote one WAL. A held lock refuses the clear; a
-// writer that starts mid-clear contends for the same file and waits its
-// turn. A missing directory is already clear.
+// writer that starts mid-clear finds the same file locked and fails with
+// semantic.ErrIndexLocked instead of writing. A missing directory is
+// already clear.
 func clearIndexDir(dir string) error {
 	root, err := os.OpenRoot(dir)
 	if errors.Is(err, os.ErrNotExist) {

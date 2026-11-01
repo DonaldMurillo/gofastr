@@ -95,3 +95,55 @@ func TestUpsertNoopKeepsUpdatedAt(t *testing.T) {
 		}
 	})
 }
+
+// TestUpsertScopedNoopKeepsUpdatedAt: on an owner- or tenant-scoped
+// entity the conflict arm's SET always carries the scope column, so a
+// key-only upsert re-stamped updated_at there while the same call on an
+// unscoped entity did not (2026-11-01 review). The scope column is not a
+// write: only a sent data column re-stamps.
+func TestUpsertScopedNoopKeepsUpdatedAt(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	cases := map[string]struct {
+		cfg entity.EntityConfig
+		ctx context.Context
+	}{
+		"owner": {makeEntityConfig("posts", "posts", "owner_id", []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "owner_id", Type: schema.String},
+			{Name: "title", Type: schema.String},
+		}).WithTimestamps(true), upsertSecurityContext("alice", "")},
+		"tenant": {entity.EntityConfig{Table: "posts", Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "tenant_id", Type: schema.String},
+			{Name: "owner_id", Type: schema.String},
+			{Name: "title", Type: schema.String},
+		}, Scope: &entity.ScopeConfig{MultiTenant: true}}.WithTimestamps(true), upsertSecurityContext("", "tenant-a")},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			ch, db := setupSecurityTestHandler(t, c.cfg, `CREATE TABLE posts (id TEXT PRIMARY KEY, owner_id TEXT, tenant_id TEXT, title TEXT, created_at TEXT, updated_at TEXT)`)
+			if _, err := db.Exec(`INSERT INTO posts (id, owner_id, tenant_id, title, created_at, updated_at) VALUES ('p1', 'alice', 'tenant-a', 'orig', $1, $1)`, staleStamp); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+			if _, err := ch.UpsertOne(c.ctx, map[string]any{"id": "p1"}); err != nil {
+				t.Fatalf("key-only upsert: %v", err)
+			}
+			var got string
+			if err := db.QueryRow(`SELECT updated_at FROM posts WHERE id = 'p1'`).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != staleStamp {
+				t.Errorf("updated_at = %q after a key-only upsert, want %q", got, staleStamp)
+			}
+			if _, err := ch.UpsertOne(c.ctx, map[string]any{"id": "p1", "title": "new"}); err != nil {
+				t.Fatalf("data upsert: %v", err)
+			}
+			if err := db.QueryRow(`SELECT updated_at FROM posts WHERE id = 'p1'`).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got == staleStamp {
+				t.Errorf("updated_at unchanged after an upsert that sent title")
+			}
+		})
+	}
+}

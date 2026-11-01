@@ -100,3 +100,19 @@ func TestSuffixOverNameLimitRefused(t *testing.T) {
 		t.Fatal("CheckVariantNames accepted a suffix longer than the name limit")
 	}
 }
+
+// A suffix that fits but leaves the base only a few bytes would cut two
+// uploads' names to the same rendition key (2026-11-01 review): it is
+// refused, and one that leaves exactly MinVariantBaseBytes is not.
+func TestSuffixLeavesRoomForToken(t *testing.T) {
+	t.Parallel()
+	// "-" + suffix + ".jpg" is len(suffix)+5 bytes.
+	tight := []Variant{{Width: 8, Format: FormatJPEG, Suffix: strings.Repeat("s", MaxVariantNameBytes-6)}}
+	if err := CheckVariantNames(tight); err == nil {
+		t.Fatal("CheckVariantNames accepted a suffix leaving one byte for the base")
+	}
+	room := []Variant{{Width: 8, Format: FormatJPEG, Suffix: strings.Repeat("s", MaxVariantNameBytes-MinVariantBaseBytes-5)}}
+	if err := CheckVariantNames(room); err != nil {
+		t.Fatalf("CheckVariantNames refused a suffix leaving MinVariantBaseBytes: %v", err)
+	}
+}

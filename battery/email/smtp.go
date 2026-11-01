@@ -642,24 +642,24 @@ func isASCII(s string) bool {
 // encoder leaves printable ASCII as it is, and the scrub leaves nothing
 // else that is ASCII, so an ASCII value keeps its bytes.
 //
-// A word too long to fit a folded line (foldWidth) is written as encoded
-// words too, which the encoder splits at character boundaries: a
-// 1500-character run with no space otherwise had nowhere to fold, and
-// passed the 998-octet line limit. A reader joins adjacent encoded words
-// without the space between them, so the run reads back whole.
+// A value with a word too long to fit a folded line (foldWidth) is
+// written as encoded words too, which the encoder splits at character
+// boundaries: a 1500-character run with no space otherwise had nowhere to
+// fold, and passed the 998-octet line limit. The whole value is encoded,
+// spaces included, because a reader joins adjacent encoded words without
+// the space between them: two long words encoded one by one read back
+// with the space gone.
 func encodeTextHeader(s string) string {
 	s = scrubHeaderValue(s)
 	enc := mime.QEncoding.Encode("utf-8", s)
-	if enc == s {
-		words := strings.Split(enc, " ")
-		changed := false
-		for i, w := range words {
-			if len(w) > foldWidth-1 {
-				words[i], changed = qWords(w), true
-			}
-		}
-		if changed {
-			enc = strings.Join(words, " ")
+	if enc != s {
+		return enc
+	}
+	for _, w := range strings.Split(s, " ") {
+		if len(w) > foldWidth-1 {
+			// Outer spaces trimmed: a reader drops them from a plain
+			// value, so the encoded one reads back the same.
+			return qWords(strings.Trim(s, " "))
 		}
 	}
 	return enc
