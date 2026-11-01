@@ -110,11 +110,13 @@ func buildAuditManager(t *testing.T, sink AuditSink) (*AuthManager, *userStoreWi
 		TokenTTL:    time.Hour,
 		EmailSender: pwSender,
 	}))
+	// TwoFactorURL: the 2FA plugin above makes Init require it.
 	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
 		BaseURL:      "http://localhost",
 		OnSuccessURL: "/",
 		TokenTTL:     time.Hour,
 		EmailSender:  mlSender,
+		TwoFactorURL: "/login/2fa",
 	}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

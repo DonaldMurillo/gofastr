@@ -132,6 +132,26 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: a magic-link sign-in of a 2FA account reaches the
+  challenge.** The confirm POST always redirected to `OnSuccessURL`,
+  which refuses the pending session it had just minted. It now goes to
+  the new `MagicLinkConfig.TwoFactorURL`, and `Init` refuses to start
+  when a 2FA plugin is registered and that field is empty, as the
+  passkey plugin does. Set it to the page that posts the code to
+  `/2fa/challenge`.
+- **Magic-link send and forgot-password limit each address.** Past 5
+  requests an hour for one address (`AddressRateLimit`), the request
+  gets the same 200 and nothing is minted or mailed, however many IPs
+  ask.
+- **Password hashing follows `auth.DefaultHasher`.** Passwordless and
+  cleared accounts store a placeholder made by it, so login timing no
+  longer tells them from unknown addresses under argon2id; a custom
+  hasher's `Verify` is called; `Argon2Hasher.Hash` refuses parameters
+  its verifier refuses; the 8-character floor counts characters, not
+  bytes. See [auth.md](framework/docs/content/auth.md#password-hashing).
+- **Multipart login and register forms work.** Only `ParseForm` ran,
+  which never reads a multipart body, so every one answered 400. A
+  file part or a repeated `email`/`password` field answers 400.
 - **Images.** `StripMetadata` keeps the Adobe colour marker, so a
   stripped CMYK JPEG still decodes. Image-field renditions and
   placeholders follow the upload's EXIF orientation. A long upload name

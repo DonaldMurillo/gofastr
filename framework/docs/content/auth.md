@@ -28,8 +28,9 @@ mgr := auth.New(auth.AuthConfig{
 })
 mgr.Use(auth.NewCorePlugin())                               // /auth/{login,register,me,logout}
 mgr.Use(auth.NewMagicLinkPlugin(auth.MagicLinkConfig{
-    BaseURL:     "https://app.example.com",
-    EmailSender: mySender,
+    BaseURL:      "https://app.example.com",
+    EmailSender:  mySender,
+    TwoFactorURL: "/login/2fa", // required next to the 2FA plugin
 }))
 mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
 mgr.Use(auth.NewAccountsPlugin())                           // /auth/accounts, /auth/unlink/{provider}
@@ -168,7 +169,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | Plugin | Routes | Notes |
 |---|---|---|
 | `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
-| `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
+| `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. Next to a 2FA plugin, `Init` requires `TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `OnSuccessURL` (see [Following a magic link does not sign you in; confirming does](#following-a-magic-link-does-not-sign-you-in-confirming-does)). `TokenLength` is deprecated and does nothing: the stores mint 32 random bytes. |
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Codes are six digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
@@ -1170,11 +1171,15 @@ auth.AuthConfig{
     RegisterRateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/register
 }
 auth.MagicLinkConfig{
-    RateLimit:       &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/send
-    VerifyRateLimit: &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/verify
+    RateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/send
+    AddressRateLimit: &auth.RateLimiterConfig{...}, // per-address on /auth/magic-link/send
+    VerifyRateLimit:  &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/verify
 }
 auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{...} }     // per-IP on /2fa/{verify,challenge}
-auth.PasswordResetConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on forgot/reset
+auth.PasswordResetConfig{
+    RateLimit:        &auth.RateLimiterConfig{...}, // per-IP on forgot/reset
+    AddressRateLimit: &auth.RateLimiterConfig{...}, // per-address on /auth/forgot-password
+}
 auth.EmailVerificationConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on send-verification
 ```
 
@@ -1201,6 +1206,18 @@ default per-IP floor when its `RateLimit` is left nil:
 Loosening any of them is explicit: pass the plugin's `RateLimit` (or
 `VerifyRateLimit`) with a large `MaxAttempts`.
 
+The two endpoints that mail a link to whatever address they are given,
+`POST /auth/magic-link/send` and `POST /auth/forgot-password`, also
+limit each address however many IPs ask: 5 per hour, then an hour's
+block (`AddressRateLimit` on `MagicLinkConfig` and
+`PasswordResetConfig`). Without it a rotating proxy could flood one
+inbox with links. Past the budget the request gets the same 200 as any
+other and nothing is minted or mailed, so the limit says nothing about
+whether the address has an account; the audit event carries
+`throttled=address`. The limiter key is `address:` plus the SHA-256 of
+the canonical address, so a shared `SQLRateLimitStore` holds no
+addresses.
+
 `/auth/2fa/challenge` also counts attempts per pending session, whatever
 address they come from: a password holder can spread guesses over many
 addresses (one IPv6 /64 is plenty), so the per-IP floor alone does not
@@ -1219,7 +1236,9 @@ and email-verification rows would otherwise accumulate forever. The
 SQL token store (`NewSQLMagicLinkTokenStore`) sweeps expired rows on its
 own mint path (at most once per 15 minutes), and the magic-link plugin
 runs a cleanup ticker from `OnStart` — no operator cron, no scheduled
-`Cleanup` calls to wire.
+`Cleanup` calls to wire. A failed sweep is logged and the mint still
+returns its token (the row is already written); the 15 minutes restart
+only after a sweep that succeeded, so the next mint tries again.
 
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service
@@ -1654,6 +1673,21 @@ is invisible to the cross-site form rejection, and the usual fixes do
 not fit: a browser-binding cookie breaks cross-device links (request on
 a laptop, open on a phone) and refusing `Sec-Fetch-Site: cross-site`
 breaks every webmail client. A confirmation keeps both working.
+
+The confirming POST answers `302` to `OnSuccessURL`. For an account
+with a second factor the session it mints is pending, and every route
+but `/2fa/challenge` refuses it, so the redirect goes to
+`MagicLinkConfig.TwoFactorURL` instead: the app's page that posts the
+code. `Init` refuses to start when a 2FA plugin is registered (before
+or after the magic-link plugin) and `TwoFactorURL` is empty, as the
+passkey plugin does. The `magiclink.consumed` event carries
+`two_factor=pending` on that path. When the 2FA state cannot be read,
+no session is minted: the POST answers 500 and emits `login.failed`
+with `reason=twofa_failclosed`, `via=magic_link`.
+
+The `magiclink.requested` event names the account (`UserID`) when the
+address has one, so an erasure, which scrubs the audit trail by actor
+id, reaches it. The response is the same either way.
 
 Set `MagicLinkConfig.ConfirmPage` to render the screen with your own
 design system:

@@ -71,6 +71,15 @@ type PasswordResetConfig struct {
 	// 10 attempts/min with a 15-minute block (the register floor);
 	// loosen by passing a config with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
+
+	// AddressRateLimit limits /auth/forgot-password per email address,
+	// however many IPs ask: without it a rotating proxy mails a victim an
+	// unbounded stream of reset links. It defaults to 5 per hour with a
+	// one-hour block. Past it the request gets the same {"sent":true} as
+	// any other and nothing is minted or sent. The key is a SHA-256
+	// digest of the canonical address, never the address. Loosen by
+	// passing a config with a large MaxAttempts.
+	AddressRateLimit *RateLimiterConfig
 }
 
 // PasswordResetPlugin wires:
@@ -80,11 +89,12 @@ type PasswordResetConfig struct {
 //   - POST /auth/reset-password (takes {token, password}; verifies the
 //     token; updates the user's password).
 type PasswordResetPlugin struct {
-	cfg      PasswordResetConfig
-	mgr      *AuthManager
-	store    MagicLinkTokenStore
-	limit    *RateLimiter
-	delivery *mailQueue
+	cfg       PasswordResetConfig
+	mgr       *AuthManager
+	store     MagicLinkTokenStore
+	limit     *RateLimiter
+	addrLimit *RateLimiter
+	delivery  *mailQueue
 }
 
 // PasswordResetPlugin participates in AuthManager shutdown to drain its
@@ -112,11 +122,15 @@ func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
 			BlockDuration: 15 * time.Minute,
 		}
 	}
+	if cfg.AddressRateLimit == nil {
+		cfg.AddressRateLimit = defaultAddressRateLimit()
+	}
 	p := &PasswordResetPlugin{
-		cfg:      cfg,
-		store:    store,
-		limit:    newScopedRateLimiter(*cfg.RateLimit, "password_reset"),
-		delivery: newMailQueue("password-reset"),
+		cfg:       cfg,
+		store:     store,
+		limit:     newScopedRateLimiter(*cfg.RateLimit, "password_reset"),
+		addrLimit: newScopedRateLimiter(*cfg.AddressRateLimit, "password_reset_address"),
+		delivery:  newMailQueue("password-reset"),
 	}
 	return p
 }
@@ -201,6 +215,20 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 
 	store := p.mgr.UserStore()
 	if store == nil {
+		return
+	}
+	// Per-address budget, past the per-IP one: spent, the request still
+	// answers {"sent":true} and nothing is minted or mailed. The budget
+	// is the same for every address, known or not, so the skipped work
+	// tells the clock nothing about the account either. The skip is
+	// recorded, so a flood is visible in the audit trail.
+	if !allowAddress(r.Context(), p.addrLimit, body.Email) {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "password.reset_requested",
+			Email:  body.Email,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"throttled": "address"},
+		})
 		return
 	}
 	user, _, err := store.FindByEmail(r.Context(), body.Email)

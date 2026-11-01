@@ -636,3 +636,10 @@ notes:
     find:
       uses:
         - gofastr/framework/experimental/harness/engine.Bus.Replay
+  - change: "BREAKING - MagicLinkPlugin.Init refuses to start when a 2FA plugin is registered and MagicLinkConfig.TwoFactorURL is empty; a magic-link sign-in of a 2FA account now redirects there instead of to OnSuccessURL, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Set MagicLinkConfig.TwoFactorURL to the page that posts the code to /2fa/challenge, the same page PasskeyConfig.TwoFactorURL names. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
