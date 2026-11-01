@@ -68,16 +68,19 @@ type AuthConfig struct {
 	// If nil, an in-memory store is used (dev/test only).
 	SessionStore SessionStore
 
-	// LoginRateLimit, when non-nil, applies a per-IP rate limit to
-	// /auth/login. nil means unlimited (which you almost never want
-	// in production, set defaults if unsure).
+	// LoginRateLimit applies a per-IP rate limit to /auth/login. nil
+	// does NOT mean unlimited: New installs 30 attempts/min with a
+	// 5-minute block, in DevMode too. To loosen it, pass a config with a
+	// large MaxAttempts.
 	LoginRateLimit *RateLimiterConfig
 
-	// LoginRateLimitPerAccount, when non-nil, applies a per-account
-	// (keyed on the submitted email, lowercased) rate limit to
-	// /auth/login. Combined with the per-IP limiter it defeats the
-	// attacker who pivots through a botnet's worth of IPs to pound a
-	// single account. nil disables the per-account limit.
+	// LoginRateLimitPerAccount applies a per-account rate limit to
+	// /auth/login, keyed on the canonical email (see CanonicalEmail).
+	// Combined with the per-IP limiter it defeats the attacker who
+	// pivots through a botnet's worth of IPs to pound a single account.
+	// nil does NOT disable it: New installs 10 attempts/min with a
+	// 15-minute block. To loosen it, pass a config with a large
+	// MaxAttempts.
 	LoginRateLimitPerAccount *RateLimiterConfig
 
 	// RegisterRateLimit applies a per-IP rate limit to /auth/register.
@@ -143,20 +146,19 @@ type AuthConfig struct {
 	// CanonicalizeEmail, when set, replaces the battery's default email
 	// canonicalization at EVERY ingestion point (register, login,
 	// password reset, magic link, OAuth email matching, the per-account
-	// login limiter key). The default (auth.CanonicalEmail) trims,
-	// lowercases, and REFUSES decomposed Unicode input — see its doc
-	// for coverage. x/text/unicode/norm is deliberately not a framework
-	// dependency, so deployments needing full NFC folding install it
-	// here:
-	//
-	//	import "golang.org/x/text/unicode/norm"
-	//
-	//	CanonicalizeEmail: func(e string) (string, error) {
-	//	    return norm.NFC.String(strings.ToLower(strings.TrimSpace(e))), nil
-	//	},
+	// login limiter key). nil uses the default, auth.CanonicalEmail: it
+	// strips zero-width, bidi and C1 control characters, normalizes to
+	// NFC, trims and lowercases, so the composed and decomposed spellings
+	// of one mailbox, and a zero-width twin of it, are one identity. Set
+	// this only for rules the default does not apply (a provider that
+	// ignores dots or plus tags, a legacy store keyed on raw bytes). An
+	// override replaces the default whole, including the strip, so it
+	// owns its own invisible-character policy: wrap auth.CanonicalEmail
+	// rather than starting from scratch.
 	//
 	// The function must be safe for concurrent use. An error from it
-	// fails the request with 400 at every email-ingesting endpoint.
+	// (auth.ErrEmailNotComposed, or any other) fails the request with
+	// 400 at every email-ingesting endpoint.
 	CanonicalizeEmail func(email string) (string, error)
 }
 
