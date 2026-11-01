@@ -824,7 +824,7 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 		tsType, boolType, boolFalse = "TIMESTAMP", "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at %s NOT NULL, expires_at %s NOT NULL, two_factor_verified %s NOT NULL DEFAULT %s, pending_two_factor %s NOT NULL DEFAULT %s)",
+		"CREATE TABLE IF NOT EXISTS %s (id TEXT NOT NULL, token TEXT NOT NULL, user_id TEXT NOT NULL, created_at %s NOT NULL, expires_at %s NOT NULL, two_factor_verified %s NOT NULL DEFAULT %s, pending_two_factor %s NOT NULL DEFAULT %s)",
 		query.QuoteFolded(s.table), tsType, tsType, boolType, boolFalse, boolType, boolFalse,
 	)
 	_, err := s.db.ExecContext(ctx, stmt)
@@ -834,7 +834,9 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "two_factor_verified", "pending_two_factor"); err != nil {
 		return err
 	}
-	// The indexes are created whoever made the table. The documented
+	// The indexes are created whoever made the table, and they are the
+	// only ones: the CREATE TABLE above and SessionEntityFields declare no
+	// UNIQUE of their own, which left two unique indexes on token. The documented
 	// wiring declares app.Entity("sessions", SessionEntityConfig()), so
 	// AutoMigrate creates the table first and the CREATE TABLE above does
 	// nothing: token then had no index, and every cookie lookup (a random
@@ -1004,7 +1006,7 @@ func (s *EntitySessionStore) Cleanup(ctx context.Context) (int, error) {
 // SessionEntityFields returns the standard field definitions for a session entity.
 func SessionEntityFields() []schema.Field {
 	return []schema.Field{
-		{Name: "token", Type: schema.String, Required: true, Unique: true},
+		{Name: "token", Type: schema.String, Required: true},
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "created_at", Type: schema.Timestamp},
 		{Name: "expires_at", Type: schema.Timestamp, Required: true},
