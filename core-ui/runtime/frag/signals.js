@@ -235,7 +235,9 @@
     for (const k in seed) {
       if (!Object.prototype.hasOwnProperty.call(seed, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      if (store[k]) {
+      // Own keys only: store[k] reads the inherited built-in for a
+      // signal named "toString" and wrote the seed onto it.
+      if (own(store, k)) {
         store[k].value = seed[k];
       } else {
         store[k] = { value: seed[k], listeners: [] };

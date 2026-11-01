@@ -302,7 +302,11 @@
   if (!document.__fuiStaticDispatch && !document.__fuiGlobalDispatch) {
     document.__fuiGlobalDispatch = true;
     document.addEventListener('click', async (e) => {
-      if (e.target.closest('[data-cui-widget]')) return;
+      // A MOUNTED widget root (its own listener wired: __fuiW, set and
+      // cleared by the widgets module) owns its RPC clicks. SSR-inlined
+      // chrome the catalog has not mounted yet has no listener, so the
+      // bridge serves it rather than swallow the click.
+      if (e.target.closest('[data-cui-widget]')?.__fuiW) return;
       // Signal mutations win, as they did when one delegator owned both:
       // the old handler set the signal and RETURNED without consulting
       // data-cui-rpc. Two listeners would otherwise both fire on an
