@@ -2,6 +2,7 @@ package render
 
 import (
 	"context"
+	"html"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +29,10 @@ import (
 //
 // Regions (NewRegionBatch) defer the hand-out: a region records the ids
 // it asks for and answers with placeholder tokens, and Settle replays
-// the record once the region has rendered, explicit ids first. An id
+// the record once the region has rendered, explicit ids first.
+// ReserveRendered adds the ids the region's HTML writes in id
+// attributes, so a component that forwards an explicit id without
+// calling ReserveID is covered too. An id
 // with a byte an escaper may rewrite ("cart.view") is emitted as is
 // between two tokens that Settle fills with its namespace and its
 // repeat suffix, so it is settled across regions like the rest. Layout
@@ -382,6 +386,65 @@ func (b *RegionBatch) Settle(i int) func(HTML) HTML {
 	log.reps = append(log.reps, rep)
 	log.mu.Unlock()
 	return func(h HTML) HTML { return HTML(rep.Replace(string(h))) }
+}
+
+// ReserveRendered reserves, for region i, every id attribute written in
+// hs: an element's id="..." with no placeholder in it, read as the page
+// spells it once its character references are decoded. Most components
+// forward an explicit id without calling ReserveID; reading their
+// output catches every one of them, so no derived id lands on an id the
+// region wrote. Call it with each region's output after every region
+// has rendered and before the first Settle; a call after that reserves
+// in the parent scope at once.
+func (b *RegionBatch) ReserveRendered(i int, hs ...HTML) {
+	if b.regions == nil {
+		return
+	}
+	r := b.regions[i]
+	for _, h := range hs {
+		for _, id := range writtenIDs(string(h)) {
+			if b.reserved {
+				ReserveID(b.parent, id)
+				continue
+			}
+			r.mu.Lock()
+			r.rec.ops = append(r.rec.ops, idOp{id: id, reserve: true})
+			r.mu.Unlock()
+		}
+	}
+}
+
+// writtenIDs returns the values of the id attributes in s that hold no
+// placeholder token (those are derived ids Settle fills). An attribute
+// is matched only after whitespace, so data-id and aria-*id are not
+// read, and only double-quoted, the way render writes every attribute.
+func writtenIDs(s string) []string {
+	var out []string
+	for i := 0; ; {
+		k := strings.Index(s[i:], `id="`)
+		if k < 0 {
+			return out
+		}
+		at := i + k
+		i = at + len(`id="`)
+		if at == 0 || !isAttrSpace(s[at-1]) {
+			continue
+		}
+		end := strings.IndexByte(s[i:], '"')
+		if end < 0 {
+			return out
+		}
+		v := s[i : i+end]
+		i += end + 1
+		if v == "" || strings.Contains(v, tokenPrefix) {
+			continue
+		}
+		out = append(out, html.UnescapeString(v))
+	}
+}
+
+func isAttrSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
 }
 
 // SettleIDs replaces the placeholders in s that the regions settled so

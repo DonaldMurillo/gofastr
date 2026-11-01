@@ -524,6 +524,9 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 	}
 	wg.Wait()
 	for i := range results {
+		ids.ReserveRendered(i, results[i].html)
+	}
+	for i := range results {
 		results[i].html = ids.Settle(i)(results[i].html)
 	}
 	return results
@@ -539,6 +542,7 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[string]string, slot fillSlot, guards regionGuards) fillSlotResult {
 	ids := render.NewRegionBatch(render.WithIDNamespace(ctx, idNamespace(slot.addr)), 1)
 	res := a.resolveFillSlot(ids.Context(0), path, params, slot, guards)
+	ids.ReserveRendered(0, res.html)
 	res.html = ids.Settle(0)(res.html)
 	return res
 }
@@ -571,12 +575,17 @@ func idNamespace(addr string) string {
 
 // withPageIDs renders one page answer (a document, a partial, an
 // error or not-found body) as a single id region (render.NewRegionBatch)
-// and settles it: every explicit id on the page is reserved before any
+// and settles it: every explicit id on the page, reserved by its
+// component or only written in the HTML, is reserved before any
 // derived id is handed out, so a section with ID "features" keeps it
 // even when a section titled "Features" rendered first.
 func withPageIDs(ctx context.Context, fn func(context.Context) (RenderResult, error)) (RenderResult, error) {
 	ids := render.NewRegionBatch(ctx, 1)
 	res, err := fn(ids.Context(0))
+	ids.ReserveRendered(0, res.HTML)
+	for _, f := range res.Fills {
+		ids.ReserveRendered(0, f.HTML)
+	}
 	settle := ids.Settle(0)
 	res.HTML = settle(res.HTML)
 	for i := range res.Fills {

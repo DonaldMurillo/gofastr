@@ -80,6 +80,7 @@ func (is *Island) RenderCtx(ctx context.Context) render.HTML {
 		log.Printf("island: render failed for %q: %s", is.ID, textsafe.Recovered(err.Error()))
 		return shell
 	}
+	ids.ReserveRendered(0, inner)
 	inner = ids.Settle(0)(inner)
 	return render.Raw(fmt.Sprintf(`<div data-island="%s">%s</div>`, render.Escape(is.ID), string(inner)))
 }

@@ -49,3 +49,35 @@ func TestRepeaterReservesExplicitID(t *testing.T) {
 		t.Fatalf("explicit repeater id %v, auto repeater id %v; want them to differ", a, b)
 	}
 }
+
+// On a page (one id region), an id a component forwards without
+// reserving it still wins: FormRepeater's Name and AnimatedCounter's ID
+// keep theirs and the auto Repeater and Counter move.
+func TestWrittenIDsWinOnAPage(t *testing.T) {
+	row := func(int) render.HTML { return render.Text("row") }
+	cases := map[string]func(context.Context) (render.HTML, render.HTML){
+		"form repeater": func(ctx context.Context) (render.HTML, render.HTML) {
+			return FormRepeater(FormRepeaterConfig{Name: "rep", Ctx: ctx}),
+				Repeater(RepeaterConfig{Name: "other", Label: "Other", Ctx: ctx, Template: row})
+		},
+		"animated counter": func(ctx context.Context) (render.HTML, render.HTML) {
+			return AnimatedCounter(AnimatedCounterConfig{ID: "counter", To: 1, Ctx: ctx}),
+				Counter(CounterConfig{SignalName: "n", Ctx: ctx})
+		},
+	}
+	for name, render2 := range cases {
+		ids := render.NewRegionBatch(render.WithIDScope(context.Background()), 1)
+		explicit, auto := render2(ids.Context(0))
+		page := explicit + auto
+		ids.ReserveRendered(0, page)
+		page = ids.Settle(0)(page)
+		got := firstID.FindAllStringSubmatch(string(page), -1)
+		seen := map[string]bool{}
+		for _, m := range got {
+			if seen[m[1]] {
+				t.Errorf("%s: id %q repeats on the page", name, m[1])
+			}
+			seen[m[1]] = true
+		}
+	}
+}

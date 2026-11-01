@@ -172,8 +172,10 @@ name holds anything but letters and digits is escaped whole
 (`l:shell#aside-a` is `l_3ashell_23aside-a--features`), so outlets
 `aside-a` and `aside_a` stay apart. Each island and deferred outlet
 renders as its own id region inside its namespace, so an explicit id in
-it wins over a derived one wherever the two sit, as on the page. Explicit
-ids are never namespaced or changed.
+it wins over a derived one wherever the two sit, as on the page. A
+region reads the id attributes its HTML writes (`RegionBatch.ReserveRendered`)
+before it settles, so an explicit id wins whether or not its component
+called `render.ReserveID`. Explicit ids are never namespaced or changed.
 
 The framework primitives live in:
 

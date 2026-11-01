@@ -211,3 +211,23 @@ func TestSettleIDsFollowsNestedRegions(t *testing.T) {
 		t.Errorf("settled = %q, want %q", SettleIDs(ctx, kept), want)
 	}
 }
+
+// An id a component writes without ReserveID still wins over a derived
+// one once the region's output is read for its id attributes.
+func TestRegionReservesRenderedIDs(t *testing.T) {
+	ctx := WithIDScope(context.Background())
+	b := NewRegionBatch(ctx, 2)
+	h0 := HTML(`<b id="` + UniqueID(b.Context(0), "counter") + `"></b>`)
+	h1 := HTML(`<i id="counter"></i><i data-id="plans" id="a&amp;b"></i>`)
+	b.ReserveRendered(0, h0)
+	b.ReserveRendered(1, h1)
+	got := string(b.Settle(0)(h0))
+	if got != `<b id="counter-2"></b>` {
+		t.Errorf("derived id = %s, want counter-2 beside the written counter", got)
+	}
+	// The written ids are reserved as the page spells them, unescaped;
+	// data-id is no id.
+	if UniqueID(ctx, "a&b") != "a&b-2" || UniqueID(ctx, "plans") != "plans" {
+		t.Error("ReserveRendered read the wrong attributes")
+	}
+}

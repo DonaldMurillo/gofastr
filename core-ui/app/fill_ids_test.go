@@ -244,3 +244,32 @@ func TestSeededHTMLCarriesSettledIDs(t *testing.T) {
 		}
 	}
 }
+
+// writtenFill writes id="features" without ReserveID, the way most kit
+// components forward an explicit ID.
+type writtenFill struct{}
+
+func (writtenFill) Render() render.HTML { return "" }
+
+func (writtenFill) RenderCtx(context.Context) render.HTML {
+	return render.Raw(`<p id="features"></p>`)
+}
+
+func TestPageWrittenIDWins(t *testing.T) {
+	a := app.NewApp("t")
+	aside := app.NewOutlet("aside")
+	shell := app.NewLayout("shell", app.LayoutSpec{Outlets: []*app.Outlet{aside}},
+		func(ctx context.Context, l *app.LayoutTree) render.HTML {
+			return render.Join(l.Primary(), l.Place(aside))
+		})
+	a.SetDefaultLayout(shell)
+	a.RegisterScreen(app.NewScreen("/", &idFill{}).Fill(aside, writtenFill{}), nil)
+	res, err := a.RenderPageResult(render.WithIDScope(store.WithValues(context.Background())), "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(res.HTML)
+	if !strings.Contains(s, `<h2 id="features-2">`) || !strings.Contains(s, `<p id="features">`) {
+		t.Errorf("the written id must keep features and the derived one move:\n%s", s)
+	}
+}
