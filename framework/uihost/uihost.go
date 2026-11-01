@@ -3266,6 +3266,14 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
 			title += suffix
 		}
+	} else {
+		// An untitled screen (or a RenderAlt whose alt names no title)
+		// is titled by the app name, as the full page's <title> is. With
+		// no header the runtime keeps document.title, and the tab goes
+		// on naming the page the reader left.
+		title = textsafe.StripInvisible(ds.App.Name)
+	}
+	if title != "" {
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))
 	}
 
