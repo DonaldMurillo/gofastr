@@ -119,7 +119,6 @@ func TestDocsPageGatedUsesRequestView(t *testing.T) {
 
 func TestDocsHandlerWithRefusesBadPaths(t *testing.T) {
 	for _, cfg := range []DocsConfig{
-		{BasePath: "javascript:"},
 		{BasePath: "/docs", SpecPath: "openapi.json"},
 		{BasePath: "/docs", SpecPath: "/a/../b"},
 		{BasePath: "/docs", SpecPath: "/a b"},

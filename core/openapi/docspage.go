@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
@@ -65,15 +66,9 @@ const docsCSP = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-
 // viewers such as Swagger UI, Insomnia or Postman. It is plain
 // semantic HTML: no script, no stylesheet and no inline style, so it
 // works under the default Content-Security-Policy and reads in the
-// browser's own styles. It panics on a BasePath that does not start
-// with "/", on a SpecPath or PagePath that is not an absolute clean path
-// of plain segments, and on the two colliding.
+// browser's own styles. It panics on a SpecPath or PagePath that is not
+// an absolute clean path of plain segments, and on the two colliding.
 func DocsHandlerWith(spec *Spec, cfg DocsConfig) http.Handler {
-	if cfg.BasePath != "" && !strings.HasPrefix(cfg.BasePath, "/") {
-		// A mount path is absolute; anything else would put a scheme
-		// ("javascript:") in front of the spec link.
-		panic(fmt.Sprintf("openapi: DocsConfig.BasePath %q must start with /", cfg.BasePath))
-	}
 	if cfg.SpecPath == "" {
 		cfg.SpecPath = "/openapi.json"
 	}
@@ -88,8 +83,14 @@ func DocsHandlerWith(spec *Spec, cfg DocsConfig) http.Handler {
 		specHandler = PublicHandler(spec)
 	}
 	// BasePath is developer config but reaches an href and visible
-	// text; escape it so a quote or angle bracket cannot break out.
-	specURL := html.EscapeString(cfg.BasePath + cfg.SpecPath)
+	// text. Escaping keeps it inside the attribute and does nothing about
+	// its scheme, so the href also passes the shared anchor allow-list: a
+	// "javascript:" base links to the bare SpecPath instead.
+	specText := html.EscapeString(cfg.BasePath + cfg.SpecPath)
+	specHref := html.EscapeString(urlsafe.Clean(cfg.BasePath+cfg.SpecPath, urlsafe.Anchor))
+	if specHref == "" {
+		specHref = html.EscapeString(cfg.SpecPath)
+	}
 
 	page := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Security headers first, so the 401 carries them too.
@@ -112,7 +113,7 @@ func DocsHandlerWith(spec *Spec, cfg DocsConfig) http.Handler {
 			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(renderDocsPage(r.Context(), view, specURL)))
+		_, _ = w.Write([]byte(renderDocsPage(r.Context(), view, specHref, specText)))
 	})
 
 	mux := http.NewServeMux()
@@ -132,7 +133,7 @@ var methodOrder = []string{"get", "put", "post", "patch", "delete", "options", "
 
 // renderDocsPage writes the page for view. Every value from the spec
 // is escaped; the only markup is the page's own.
-func renderDocsPage(ctx context.Context, view *Spec, specURL string) string {
+func renderDocsPage(ctx context.Context, view *Spec, specHref, specText string) string {
 	doc := view.Build()
 	info, _ := doc["info"].(map[string]any)
 	title, _ := info["title"].(string)
@@ -183,7 +184,7 @@ func renderDocsPage(ctx context.Context, view *Spec, specURL string) string {
 			fmt.Fprintf(&b, "<p>%s</p>\n", esc(para))
 		}
 	}
-	fmt.Fprintf(&b, "<p><a href=\"%s\">%s</a> <code>%s</code></p>\n", specURL, esc(phraseDocsSpec.Text(ctx)), specURL)
+	fmt.Fprintf(&b, "<p><a href=\"%s\">%s</a> <code>%s</code></p>\n", specHref, esc(phraseDocsSpec.Text(ctx)), specText)
 
 	if len(groups) == 0 {
 		fmt.Fprintf(&b, "<p>%s</p>\n", esc(phraseDocsNoneShown.Text(ctx)))
