@@ -200,21 +200,5 @@ func TestBootRefusesTakenUniqueName(t *testing.T) {
 // pgUniqueNames lists the UNIQUE constraints on table, sorted.
 func pgUniqueNames(t *testing.T, db *sql.DB, table string) []string {
 	t.Helper()
-	rows, err := db.Query("SELECT conname FROM pg_constraint WHERE conrelid = $1::regclass AND contype = 'u' ORDER BY conname", table)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var got []string
-	for rows.Next() {
-		var n string
-		if err := rows.Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, n)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return got
+	return queryStrings(t, db, "SELECT conname FROM pg_constraint WHERE conrelid = $1::regclass AND contype = 'u' ORDER BY conname", table)
 }

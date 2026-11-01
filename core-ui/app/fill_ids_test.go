@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -152,23 +153,27 @@ func (namedFill) RenderCtx(ctx context.Context) render.HTML {
 	return render.Raw(`<p id="features"></p>`)
 }
 
+// An explicit id in an outlet keeps its name, whether the component
+// reserves it or only writes it; the screen's derived id moves.
 func TestPageExplicitIDWins(t *testing.T) {
-	a := app.NewApp("t")
-	aside := app.NewOutlet("aside")
-	shell := app.NewLayout("shell", app.LayoutSpec{Outlets: []*app.Outlet{aside}},
-		func(ctx context.Context, l *app.LayoutTree) render.HTML {
-			return render.Join(l.Primary(), l.Place(aside))
-		})
-	a.SetDefaultLayout(shell)
-	// The screen derives "features" before the outlet names it.
-	a.RegisterScreen(app.NewScreen("/", &idFill{}).Fill(aside, namedFill{}), nil)
-	res, err := a.RenderPageResult(render.WithIDScope(store.WithValues(context.Background())), "/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(res.HTML)
-	if !strings.Contains(s, `<h2 id="features-2">`) || !strings.Contains(s, `<p id="features">`) {
-		t.Errorf("the explicit id must keep features and the derived one move:\n%s", s)
+	for name, fill := range map[string]component.Component{"reserved": namedFill{}, "written": writtenFill{}} {
+		a := app.NewApp("t")
+		aside := app.NewOutlet("aside")
+		shell := app.NewLayout("shell", app.LayoutSpec{Outlets: []*app.Outlet{aside}},
+			func(ctx context.Context, l *app.LayoutTree) render.HTML {
+				return render.Join(l.Primary(), l.Place(aside))
+			})
+		a.SetDefaultLayout(shell)
+		// The screen derives "features" before the outlet names it.
+		a.RegisterScreen(app.NewScreen("/", &idFill{}).Fill(aside, fill), nil)
+		res, err := a.RenderPageResult(render.WithIDScope(store.WithValues(context.Background())), "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(res.HTML)
+		if !strings.Contains(s, `<h2 id="features-2">`) || !strings.Contains(s, `<p id="features">`) {
+			t.Errorf("%s: the explicit id must keep features and the derived one move:\n%s", name, s)
+		}
 	}
 }
 
@@ -253,23 +258,4 @@ func (writtenFill) Render() render.HTML { return "" }
 
 func (writtenFill) RenderCtx(context.Context) render.HTML {
 	return render.Raw(`<p id="features"></p>`)
-}
-
-func TestPageWrittenIDWins(t *testing.T) {
-	a := app.NewApp("t")
-	aside := app.NewOutlet("aside")
-	shell := app.NewLayout("shell", app.LayoutSpec{Outlets: []*app.Outlet{aside}},
-		func(ctx context.Context, l *app.LayoutTree) render.HTML {
-			return render.Join(l.Primary(), l.Place(aside))
-		})
-	a.SetDefaultLayout(shell)
-	a.RegisterScreen(app.NewScreen("/", &idFill{}).Fill(aside, writtenFill{}), nil)
-	res, err := a.RenderPageResult(render.WithIDScope(store.WithValues(context.Background())), "/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(res.HTML)
-	if !strings.Contains(s, `<h2 id="features-2">`) || !strings.Contains(s, `<p id="features">`) {
-		t.Errorf("the written id must keep features and the derived one move:\n%s", s)
-	}
 }

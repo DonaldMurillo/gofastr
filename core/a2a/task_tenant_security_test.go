@@ -189,24 +189,12 @@ func TestStoresFilterTasksByTenant(t *testing.T) {
 // A task table from before the tenant column gains it on open, and its
 // rows read as made in no tenant.
 func TestSQLStoreAddsTenantColumn(t *testing.T) {
-	db := openSQLite(t)
-	if _, err := db.Exec(`CREATE TABLE a2a_tasks (
+	st := openOlderTaskStore(t, `CREATE TABLE a2a_tasks (
 		id TEXT PRIMARY KEY, owner TEXT NOT NULL, context_id TEXT NOT NULL DEFAULT '',
 		skill_id TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
 		status_ts DATETIME NOT NULL, version BIGINT NOT NULL DEFAULT 0, task_json TEXT NOT NULL,
-		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO a2a_tasks VALUES ('old', 'alice', '', 'echo', '', 'TASK_STATE_COMPLETED', ?, 0, '{"id":"old","contextId":"","status":{"state":"TASK_STATE_COMPLETED"}}', ?, ?)`, t0, t0, t0); err != nil {
-		t.Fatal(err)
-	}
-	st, err := NewSQLStore(db)
-	if err != nil {
-		t.Fatalf("NewSQLStore over the older table: %v", err)
-	}
-	if _, err := NewSQLStore(db); err != nil {
-		t.Fatalf("second open: %v", err)
-	}
+		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
+		`INSERT INTO a2a_tasks VALUES ('old', 'alice', '', 'echo', '', 'TASK_STATE_COMPLETED', ?, 0, '{"id":"old","contextId":"","status":{"state":"TASK_STATE_COMPLETED"}}', ?, ?)`)
 	got, err := st.GetTask(context.Background(), "alice", "old")
 	if err != nil || got.Tenant != "" {
 		t.Fatalf("older row = %+v, %v; want no tenant", got, err)
