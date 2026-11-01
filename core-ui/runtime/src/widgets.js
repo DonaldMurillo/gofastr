@@ -75,7 +75,10 @@
   // The epoch an open was issued under, on its registry entry: the
   // navigate listener below closes a modal unless its open was issued
   // during the navigation now committing.
-  const stamp = (name, e) => { const r = NS._widgets[name]; if (r) r.ep = e; };
+  // A registry read as an own property: an attribute-borne name like
+  // "constructor" must not resolve to an Object.prototype member.
+  const own = n => Object.prototype.hasOwnProperty.call(NS._widgets, n) ? NS._widgets[n] : null;
+  const stamp = (name, e) => { const r = own(name); if (r) r.ep = e; };
 
   const catalogEntry = name => NS._widgetCatalog && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name) ? NS._widgetCatalog[name] : null;
 
@@ -119,7 +122,7 @@
   NS._mountByName = async function (name, ctx) {
     const entry = catalogEntry(name);
     if (!entry) return;
-    if (Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name]) return; // already mounted
+    if (own(name)) return; // already mounted
     const cfg = entry.cfg;
     const epoch = NS._navEpoch;
     const existing = document.querySelector('[data-cui-widget="' + CSS.escape(name) + '"]');
@@ -213,9 +216,7 @@
   };
 
   NS.closeWidget = function (name) {
-    const w = Object.prototype.hasOwnProperty.call(NS._widgets, name)
-      ? NS._widgets[name]
-      : undefined;
+    const w = own(name);
     if (w && typeof w.dismiss === 'function') w.dismiss();
   };
 
@@ -234,9 +235,7 @@
       // openWidget's pushUrl defaults to falsy, so syncing FROM the URL
       // cannot write back to it, no explicit opt-out needed.
       const hit = url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue;
-      const mounted = Object.prototype.hasOwnProperty.call(NS._widgets, name)
-        ? !!NS._widgets[name]
-        : false;
+      const mounted = !!own(name);
       if (hit !== mounted) {
         if (hit) NS.openWidget(name);
         else if (pend.get(name) !== here()) NS.closeWidget(name);
@@ -544,7 +543,7 @@
   window.addEventListener('gofastr:navigate', () => {
     NS._chromeCache = {};
     navAt = NS._navEpoch;
-    for (const name of [...NS._modalStack]) if (NS._widgets[name]?.ep !== navAt) NS.closeWidget(name);
+    for (const name of [...NS._modalStack]) if (own(name)?.ep !== navAt) NS.closeWidget(name);
   });
 
   // #409: app-wide widget roots survive the SPA full-shell swap. A

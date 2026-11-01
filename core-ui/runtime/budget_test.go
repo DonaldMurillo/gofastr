@@ -1453,7 +1453,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// deep-link module, lands after a navigation neither mounts nor
 		// applies its deep link on the next page (2026-11-01 bug hunt S31,
 		// TestStaleChromeSkipsNextPage).
-		// 3426 measured (3424 + 2): "the reader left" is now a
+		// 3424 measured (3422 + 2): "the reader left" is now a
 		// navigation begun AFTER the open committing (the epoch the last
 		// gofastr:navigate committed under), not any commit swapping the
 		// chrome cache, so an open issued while a navigation was already
@@ -1465,8 +1465,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// modal opened during the committing navigation (2026-11-01, the
 		// TestTrackerBellPopoverE2E flake,
 		// TestOpenDuringNavigationSurvivesCommit). No smaller spelling:
-		// the minifier keeps identifiers, already shortened here.
-		"widgets": 3426,
+		// the minifier keeps identifiers, already shortened here, and the
+		// module's own-property _widgets reads share one helper (own).
+		"widgets": 3424,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top

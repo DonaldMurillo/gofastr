@@ -642,8 +642,13 @@ func TestWidget_InjectSignalAria_TextModeOnly(t *testing.T) {
 		// The definition site has '=' immediately after the identifier name
 		// (const _injectSignalAria = or _injectSignalAria=) and contains
 		// querySelectorAll in the next ~300 chars.
+		// A call site can sit within 300 chars of an unrelated
+		// querySelectorAll (moving the modal-close loop out of boot put
+		// one there), so the '=' is checked too.
 		peek := js[abs:min(abs+300, len(js))]
-		if strings.Contains(peek, "querySelectorAll") {
+		after := strings.TrimLeft(js[abs+len(defMarker):], " ")
+		if strings.HasPrefix(after, "=") && !strings.HasPrefix(after, "==") &&
+			strings.Contains(peek, "querySelectorAll") {
 			defIdx = abs
 			break
 		}
