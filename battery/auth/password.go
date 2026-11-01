@@ -336,11 +336,18 @@ var dummyBcryptHash string
 // does.
 var dummyHashes sync.Map
 
-// hasherKey names a hasher configuration: its type and its field values,
-// so two differently tuned Argon2Hashers each get a cached hash at their
-// own cost.
+// hasherKey names a hasher configuration. The built-ins are keyed by type
+// and field values, so two differently tuned Argon2Hashers each get a
+// cached hash at their own cost. A custom hasher is keyed by its type
+// only: its fields may be mutable (a counter, a pointer) or secret (a
+// pepper), and keying on them made every call a new key, paying a full
+// KDF run and growing the caches without bound.
 func hasherKey(h PasswordHasher) string {
-	return fmt.Sprintf("%T|%+v", h, h)
+	switch h.(type) {
+	case BcryptHasher, *BcryptHasher, Argon2Hasher, *Argon2Hasher:
+		return fmt.Sprintf("%T|%+v", h, h)
+	}
+	return fmt.Sprintf("%T", h)
 }
 
 // dummyHashFor returns a dummy hash produced by the CONFIGURED hasher, so

@@ -244,19 +244,32 @@ func TestSQLMagicLinkCreateTokenSurvivesSweepFailure(t *testing.T) {
 		t.Fatalf("returned token does not resolve: %q, %v", got, err)
 	}
 
-	// The failed sweep did not count: once deletes work again, the next
-	// mint sweeps instead of waiting out the interval.
+	// The failed sweep did not count as a sweep, and does not retry on
+	// every mint either (a lock-timeout DELETE would then run on each):
+	// it retries after magicLinkSweepRetry, not the full interval.
 	if _, err := db.Exec(`DROP TRIGGER no_delete`); err != nil {
 		t.Fatal(err)
+	}
+	staleRows := func() int {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM magic_link_tokens WHERE token = 'stale'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
 	}
 	if _, err := s.CreateToken(ctx, "next@example.com", time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	var stale int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM magic_link_tokens WHERE token = 'stale'`).Scan(&stale); err != nil {
+	if staleRows() != 1 {
+		t.Error("the mint right after a failed sweep swept again: a failing DELETE would run on every mint")
+	}
+	s.sweepMu.Lock()
+	s.lastSweep = s.lastSweep.Add(-magicLinkSweepRetry)
+	s.sweepMu.Unlock()
+	if _, err := s.CreateToken(ctx, "later@example.com", time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if stale != 0 {
-		t.Error("the failed sweep advanced lastSweep: the expired row waits out the full interval")
+	if staleRows() != 0 {
+		t.Error("a failed sweep waited out the full interval instead of retrying after magicLinkSweepRetry")
 	}
 }
