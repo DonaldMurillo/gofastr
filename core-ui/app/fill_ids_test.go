@@ -209,3 +209,38 @@ func TestDeferredOutletNamespacesDiffer(t *testing.T) {
 		t.Errorf("ids = %v, want four, one of them l-shell-aside--features", got)
 	}
 }
+
+var seedPanel = store.New("idseed").String("panel", "")
+
+// idSeedFill seeds HTML holding a derived id into a slice and binds it.
+type idSeedFill struct{ ns string }
+
+func (idSeedFill) Render() render.HTML { return "" }
+
+func (f idSeedFill) RenderCtx(ctx context.Context) render.HTML {
+	if f.ns != "" {
+		ctx = render.WithIDNamespace(ctx, f.ns)
+		ids := render.NewRegionBatch(ctx, 1)
+		h := idSeedFill{}.RenderCtx(ids.Context(0))
+		return ids.Settle(0)(h)
+	}
+	seedPanel.Seed(ctx, `<h2 id="`+render.UniqueID(ctx, "features")+`"></h2>`)
+	return seedPanel.BindHTML(ctx, "div", nil)
+}
+
+func TestSeededHTMLCarriesSettledIDs(t *testing.T) {
+	for _, ns := range []string{"", "cart"} {
+		a := app.NewApp("t")
+		a.Register("/", idSeedFill{ns: ns}, nil)
+		ctx := render.WithIDScope(store.WithValues(context.Background()))
+		res, err := a.RenderPageResult(ctx, "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, _ := store.SeedFor(ctx, string(res.HTML))["idseed.panel"].(string)
+		want := featureIDs(string(res.HTML))
+		if len(want) != 1 || !strings.Contains(v, `id="`+want[0]+`"`) {
+			t.Errorf("ns %q: seed = %q, page ids %v", ns, v, want)
+		}
+	}
+}

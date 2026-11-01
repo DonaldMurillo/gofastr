@@ -35,7 +35,9 @@ import (
 // outlet fills render concurrently as regions settled in outlet order,
 // so the output is the same bytes whichever goroutine finished first;
 // core-ui/app renders a whole page as one region, so an explicit id
-// wins over a derived one wherever the two sit.
+// wins over a derived one wherever the two sit. A value that leaves the
+// render other than as the HTML a Settle rewrites (a signal seed) goes
+// through SettleIDs, which replays every settle the request ran.
 
 type idScopeKey struct{}
 
@@ -52,10 +54,30 @@ type idScope struct {
 	// reserved in outer, the scope the namespace was opened in.
 	ns    string
 	outer context.Context
+	// settled is the request's record of every placeholder Settle has
+	// replaced, shared by every scope opened under the one WithIDScope
+	// started (SettleIDs reads it).
+	settled *settledLog
 }
 
-func newIDScope() *idScope {
-	return &idScope{taken: map[string]bool{}, last: map[string]int{}}
+// settledLog keeps each Settle's replacer, in the order they ran: an
+// inner region's tokens become its parent region's tokens before
+// those become ids, so replaying them in order resolves both.
+type settledLog struct {
+	mu   sync.Mutex
+	reps []*strings.Replacer
+}
+
+// newIDScope returns a scope under parent's settled log, or a new log
+// with no parent scope.
+func newIDScope(parent *idScope) *idScope {
+	s := &idScope{taken: map[string]bool{}, last: map[string]int{}}
+	if parent != nil {
+		s.settled = parent.settled
+	} else {
+		s.settled = &settledLog{}
+	}
+	return s
 }
 
 // regionLog is one concurrent region's record of id requests.
@@ -97,7 +119,7 @@ func tokenSafe(id string, children []string) bool {
 
 // WithIDScope returns a context carrying a fresh id scope.
 func WithIDScope(ctx context.Context) context.Context {
-	return context.WithValue(ctx, idScopeKey{}, newIDScope())
+	return context.WithValue(ctx, idScopeKey{}, newIDScope(nil))
 }
 
 // WithIDNamespace returns a context carrying a fresh id scope for a
@@ -115,7 +137,7 @@ func WithIDScope(ctx context.Context) context.Context {
 // scope as well. Explicit ids are kept as they are. An empty ns gives a
 // plain fresh scope.
 func WithIDNamespace(ctx context.Context, ns string) context.Context {
-	s := newIDScope()
+	s := newIDScope(scopeOf(ctx))
 	s.ns, s.outer = encodeNamespace(ns), ctx
 	return context.WithValue(ctx, idScopeKey{}, s)
 }
@@ -300,7 +322,7 @@ func NewRegionBatch(ctx context.Context, n int) *RegionBatch {
 	seq := strconv.FormatUint(batchSeq.Add(1), 10)
 	b.regions = make([]*idScope, n)
 	for i := range b.regions {
-		s := newIDScope()
+		s := newIDScope(scopeOf(ctx))
 		s.rec = &regionLog{prefix: tokenPrefix + seq + "x" + strconv.Itoa(i) + "x"}
 		b.regions[i] = s
 	}
@@ -355,7 +377,32 @@ func (b *RegionBatch) Settle(i int) func(HTML) HTML {
 		return keep
 	}
 	rep := strings.NewReplacer(pairs...)
+	log := r.settled
+	log.mu.Lock()
+	log.reps = append(log.reps, rep)
+	log.mu.Unlock()
 	return func(h HTML) HTML { return HTML(rep.Replace(string(h))) }
+}
+
+// SettleIDs replaces the placeholders in s that the regions settled so
+// far under ctx's scope stand for. A value a component built during a
+// region's render (HTML seeded into a signal slice, say) holds the
+// region's placeholders, and the region's Settle only rewrote the HTML
+// it was handed: the host runs a value that leaves the render some
+// other way through SettleIDs once the render is done. With no scope s
+// is returned as is.
+func SettleIDs(ctx context.Context, s string) string {
+	sc := scopeOf(ctx)
+	if sc == nil || !strings.Contains(s, tokenPrefix) {
+		return s
+	}
+	sc.settled.mu.Lock()
+	reps := sc.settled.reps
+	sc.settled.mu.Unlock()
+	for _, r := range reps {
+		s = r.Replace(s)
+	}
+	return s
 }
 
 func (s *idScope) record() []idOp {

@@ -192,3 +192,22 @@ func TestNamespaceIsTokenSafe(t *testing.T) {
 		t.Errorf("settled id %q carries unsafe bytes: %s", id, got)
 	}
 }
+
+func TestSettleIDsFollowsNestedRegions(t *testing.T) {
+	ctx := WithIDScope(context.Background())
+	UniqueID(ctx, "a")
+	outer := NewRegionBatch(ctx, 1)
+	inner := NewRegionBatch(WithIDNamespace(outer.Context(0), "cart"), 1)
+	plain := NewRegionBatch(outer.Context(0), 1)
+	kept := UniqueID(inner.Context(0), "b") + " " + UniqueID(outer.Context(0), "a") + " " +
+		UniqueID(inner.Context(0), "c.d") + " " + UniqueID(plain.Context(0), "a")
+	if got := SettleIDs(ctx, kept); got != kept {
+		t.Errorf("before any settle: %q", got)
+	}
+	inner.Settle(0)("")
+	plain.Settle(0)("")
+	outer.Settle(0)("")
+	if want := "cart--b a-2 cart--c.d a-3"; SettleIDs(ctx, kept) != want {
+		t.Errorf("settled = %q, want %q", SettleIDs(ctx, kept), want)
+	}
+}
