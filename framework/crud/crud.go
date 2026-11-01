@@ -610,7 +610,11 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// and append them as Where clauses. They feed the count, data,
 		// cursor, and stream sinks uniformly because listPayload.Where is
 		// applied to each. Zero signature changes.
-		searchWheres := ch.searchWhereClausesQ(q)
+		searchWheres, err := ch.searchWhereClausesQ(q)
+		if err != nil {
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidFilters)
+			return
+		}
 
 		// ?where=<json> nested predicate tree (OR-groups / nested AND-OR).
 		// Compiles to ONE parenthesized WHERE clause that AND-composes with
@@ -834,27 +838,27 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 // (back-compat). The conditions AND-compose safely with owner/tenant/
 // soft-delete scopes because the query builder wraps each Where clause
 // in parens.
-func (ch *CrudHandler) searchWhereClauses(r *http.Request) []hook.WhereClause {
+func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, error) {
 	return ch.searchWhereClausesQ(r.URL.Query())
 }
 
 // searchWhereClausesQ is the no-reparse variant. Accepts a pre-parsed
 // url.Values so the List handler can share its single parse across every
 // helper that previously called r.URL.Query() itself.
-func (ch *CrudHandler) searchWhereClausesQ(q url.Values) []hook.WhereClause {
+func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
 	if len(ch.Entity.Config.SearchFields) == 0 {
-		return nil
+		return nil, nil
 	}
 	qVal := q.Get("q")
-	conds := filter.SearchConditions(ch.Entity.Config.SearchFields, qVal)
-	if len(conds) == 0 {
-		return nil
+	conds, err := filter.SearchConditions(ch.Entity.Config.SearchFields, qVal)
+	if err != nil || len(conds) == 0 {
+		return nil, err
 	}
 	wheres := make([]hook.WhereClause, len(conds))
 	for i, c := range conds {
 		wheres[i] = hook.WhereClause{SQL: c.SQL, Args: c.Args}
 	}
-	return wheres
+	return wheres, nil
 }
 
 // whereTreeClauses parses a ?where=<json> nested predicate tree, validates

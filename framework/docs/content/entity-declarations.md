@@ -1127,7 +1127,15 @@ scopes; the query builder wraps each WHERE clause in parens.
 **Case contract.** `LOWER()` is ASCII-only on SQLite and locale-aware on
 Postgres, so matching is ASCII-case-insensitive everywhere. Unicode case
 folding is a Postgres bonus. The token is lowercased before building the
-LIKE pattern so the comparison is consistent across dialects.
+LIKE pattern so the comparison is consistent across dialects. The
+lowering is Unicode-aware on purpose, so an accented capital (`É`) finds a
+stored `é` on Postgres; the same rule folds compatibility look-alikes onto
+ASCII (the Kelvin sign `K` finds `kilo`), on `?q=` and `_like` alike. That
+is accepted, not refused.
+
+**Unstorable text is a 400.** A `?q=` holding invalid UTF-8 or a NUL byte
+answers 400 naming `q`, like any other filter value: Postgres refuses it
+in a text bind. `filter.SearchConditions` returns that error.
 
 **Back-compat.** An entity WITHOUT `SearchFields` ignores `?q=` exactly
 as before: no behavioural change.

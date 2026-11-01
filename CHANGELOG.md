@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`?q=` refuses text Postgres cannot bind.** A search term holding
+  invalid UTF-8 or a NUL byte answers 400 naming `q` on both dialects
+  (Postgres answered 500, SQLite an empty 200). BREAKING for direct
+  callers: `filter.SearchConditions` returns `([]Condition, error)`. The
+  search case contract now says that Unicode lowering also folds
+  compatibility look-alikes (the Kelvin sign finds `k`), on purpose.
 - **Query input (`framework/filter`, `framework/dsl`, `framework/pagination`).**
   Two `_in` keys on one column (its name and its `WireName`) are two
   ANDed IN lists, at the top level and inside `include=rel(...)`, not one

@@ -415,7 +415,10 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", op, err)
 	}
-	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
+	searchConds, err := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
+	}
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
 	// Where joins the caller filters as one parenthesized clause; the
@@ -608,7 +611,10 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 			return 0, fmt.Errorf("CountAll: %w", err)
 		}
 	}
-	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
+	searchConds, err := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
+	if err != nil {
+		return 0, fmt.Errorf("CountAll: %w", err)
+	}
 	cb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(cb, filters)
 	if c := filter.BuildPredicate(where); c.SQL != "" {

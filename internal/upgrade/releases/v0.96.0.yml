@@ -677,3 +677,11 @@ notes:
     breaking: false
     guidance: "Give a disclosure Dismiss if it should close when a link inside it is followed."
     nodetect: "the behaviour is in the browser runtime"
+  - change: "BREAKING - filter.SearchConditions returns ([]Condition, error); a ?q= term that is not storable text (invalid UTF-8 or a NUL) is an error, and the list route answers 400"
+    breaking: true
+    hits: edit
+    guidance: "Take the error: conds, err := filter.SearchConditions(fields, term), and answer 400 when it is non-nil. Postgres refused such a term with a 500 while SQLite answered an empty 200."
+    find:
+      shapes:
+        - symbol: gofastr/framework/filter.SearchConditions
+          type: '^func\(fields \[\]string, term string\) \(\[\]filter\.Condition, error\)$'

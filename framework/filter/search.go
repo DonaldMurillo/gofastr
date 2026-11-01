@@ -3,6 +3,8 @@ package filter
 import (
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // Condition is a single WHERE fragment (SQL + args) produced by
@@ -27,7 +29,8 @@ const MaxSearchTerms = 8
 // OR-group: (LOWER(f1) LIKE $1 ESCAPE '\' OR LOWER(f2) LIKE $2 ESCAPE
 // '\'). Every Condition must match (AND); within one Condition, any field
 // may match (OR). A blank/whitespace-only term returns nil (no
-// conditions).
+// conditions). A term that is not storable text (invalid UTF-8 or a NUL
+// byte) returns an error naming "q": Postgres refuses it in a text bind.
 //
 // Case contract: LOWER() is ASCII-only on SQLite and locale-aware on
 // Postgres, so matching is ASCII-case-insensitive everywhere. Unicode
@@ -40,20 +43,30 @@ const MaxSearchTerms = 8
 // finds rows containing "50%", not every row with any character sequence.
 // The args are ordered to match the $N placeholders left-to-right; the
 // crud query builder renumbers $N on Build.
-func SearchConditions(fields []string, term string) []Condition {
+func SearchConditions(fields []string, term string) ([]Condition, error) {
 	term = strings.TrimSpace(term)
 	if term == "" || len(fields) == 0 {
-		return nil
+		return nil, nil
+	}
+	// The term binds as text: invalid UTF-8 or a NUL is Postgres's 22021
+	// (a 500) while SQLite answered an empty 200, so it is refused like
+	// every other filter value.
+	if !storableText(term) {
+		return nil, valueTypeError("q", schema.Text)
 	}
 	tokens := tokenizeSearch(term)
 	if len(tokens) == 0 {
-		return nil
+		return nil, nil
 	}
 	if len(tokens) > MaxSearchTerms {
 		tokens = tokens[:MaxSearchTerms]
 	}
 	conditions := make([]Condition, 0, len(tokens))
 	for _, tok := range tokens {
+		// Unicode lowering on purpose: LOWER on Postgres folds Unicode
+		// too, so an accented capital (É) finds a stored é on both
+		// dialects. Compatibility look-alikes fold the same way (the
+		// Kelvin sign finds k); that is documented, not refused.
 		lowered := strings.ToLower(tok)
 		pattern := escapeLikePattern(lowered)
 		parts := make([]string, len(fields))
@@ -65,7 +78,7 @@ func SearchConditions(fields []string, term string) []Condition {
 		sql := "(" + strings.Join(parts, " OR ") + ")"
 		conditions = append(conditions, Condition{SQL: sql, Args: args})
 	}
-	return conditions
+	return conditions, nil
 }
 
 // tokenizeSearch splits term on whitespace, dedupes, and drops empties.
