@@ -35,9 +35,14 @@ type fakeUpdatePlatform struct {
 	verified   []string
 	relaunched []string
 	verifyErr  error
+	identifier string
+	// verifyHook, when set, runs inside VerifySignature (outside mu).
+	verifyHook func()
 }
 
 func (f *fakeUpdatePlatform) Version() string { return f.version }
+
+func (f *fakeUpdatePlatform) Identifier() string { return f.identifier }
 
 func (f *fakeUpdatePlatform) Bundle() (string, string, bool) {
 	if f.name == "" {
@@ -47,6 +52,9 @@ func (f *fakeUpdatePlatform) Bundle() (string, string, bool) {
 }
 
 func (f *fakeUpdatePlatform) VerifySignature(appDir string) error {
+	if f.verifyHook != nil {
+		f.verifyHook()
+	}
 	f.mu.Lock()
 	f.verified = append(f.verified, appDir)
 	f.mu.Unlock()

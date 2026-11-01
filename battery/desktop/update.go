@@ -82,6 +82,13 @@ var (
 	errUpdateArchive       = &Error{Code: CodeInternal, Message: "the update archive failed verification"}
 	errUpdateApply         = &Error{Code: CodeInternal, Message: "the update could not be applied"}
 	errUpdateNotAvailable  = &Error{Code: CodeInvalidInput, Message: "no newer version is available"}
+	errUpdateInProgress    = &Error{Code: CodeInvalidInput, Message: "an update install is already running"}
+	errUpdateInstalled     = &Error{Code: CodeInvalidInput, Message: "the update is installed; the app is restarting"}
+
+	// errUpdateRunningVersion is Unsupported, not Internal: no feed can
+	// fix a bundle built with a version the updater cannot compare, so
+	// the scheduled loop stops instead of failing every interval.
+	errUpdateRunningVersion = &Error{Code: CodeUnsupported, Message: "this app's version is not major.minor.patch; rebuild it with a semantic --version"}
 )
 
 // validateUpdateConfig is Config.Update's construction-time check New
@@ -116,6 +123,16 @@ type updater struct {
 
 	mu       sync.Mutex
 	notified string // last version an update_available event named
+
+	// installMu single-flights install: two runs would share
+	// <Name>.app.new and .old, and the second's RemoveAll(old) could
+	// delete the first's only copy of the running bundle between its
+	// renames. A second call while one runs is refused, never queued.
+	installMu sync.Mutex
+	// installed is set once a swap succeeds: the process is quitting
+	// and the running version is still the old one, so a later call
+	// would reinstall over the new bundle. Guarded by installMu.
+	installed bool
 }
 
 // updaterFor returns (creating once) the battery's updater. The public
@@ -212,6 +229,13 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 		// updates.
 		return resolved{}, errUpdateNeedsBundle
 	}
+	// A running version the updater cannot parse is the bundle's fault,
+	// never the feed's: report it as such instead of "the feed is
+	// invalid" on every check.
+	if _, err := update.ParseVersion(running); err != nil {
+		u.b.logger.Warn("desktop: running app version is not a semantic version; updates are off")
+		return resolved{}, errUpdateRunningVersion
+	}
 	newer, err := update.IsNewer(rel.Version, running)
 	if err != nil {
 		u.b.logger.Warn("desktop: update feed version comparison failed", "error", err.Error())
@@ -246,8 +270,17 @@ func (b *Battery) InstallUpdate(ctx context.Context) error {
 	return b.updaterFor().install(ctx)
 }
 
-// install is InstallUpdate's body.
+// install is InstallUpdate's body. One install runs at a time per
+// battery; a concurrent call gets errUpdateInProgress, and every call
+// after a successful swap gets errUpdateInstalled.
 func (u *updater) install(ctx context.Context) error {
+	if !u.installMu.TryLock() {
+		return errUpdateInProgress
+	}
+	defer u.installMu.Unlock()
+	if u.installed {
+		return errUpdateInstalled
+	}
 	platform := u.platformOrDefault()
 	name, bundleDir, ok := platform.Bundle()
 	if !ok {
@@ -287,15 +320,37 @@ func (u *updater) install(ctx context.Context) error {
 		u.b.logger.Warn("desktop: update archive extraction refused", "error", err.Error())
 		return errUpdateArchive
 	}
+	// The bundle must be the release the signed feed names, for this
+	// app: a 0.1.0 build labelled 1.2.0 would reinstall on every check,
+	// an old archive under a new label is a silent downgrade, and
+	// another app's bundle must never replace this one. The plist
+	// values stay out of the log (they come from the download).
+	info, err := update.ReadBundleInfo(newApp)
+	if err != nil {
+		u.b.logger.Warn("desktop: update bundle Info.plist refused", "error", err.Error())
+		return errUpdateArchive
+	}
+	if info.ShortVersion != r.release.Version {
+		u.b.logger.Warn("desktop: update bundle version does not match the feed",
+			"feed_version", r.release.Version) // semver-validated: no control bytes
+		return errUpdateArchive
+	}
+	if id := platform.Identifier(); id == "" || info.Identifier != id {
+		u.b.logger.Warn("desktop: update bundle identifier does not match the running app")
+		return errUpdateArchive
+	}
 	if err := platform.VerifySignature(newApp); err != nil {
 		u.b.logger.Warn("desktop: update bundle signature check failed", "error", err.Error())
 		return errUpdateArchive
 	}
 
 	// Swap: beside the running bundle first (same volume), then the
-	// two renames, then relaunch and quit. A crash between the
-	// renames leaves the old bundle at <Name>.app.old, which the next
-	// launch's startUpdater removes.
+	// two renames, then relaunch and quit. A failed second rename
+	// moves the old bundle back. A crash between the two renames
+	// leaves no <Name>.app at all, only <Name>.app.old and
+	// <Name>.app.new beside it: the app cannot start to repair that,
+	// so the user renames one back. After a completed swap the next
+	// launch's startUpdater removes <Name>.app.old.
 	beside := filepath.Join(bundleDir, name+".new")
 	if err := os.RemoveAll(beside); err != nil {
 		u.b.logger.Error("desktop: clearing the previous staged bundle failed", "error", err.Error())
@@ -322,6 +377,9 @@ func (u *updater) install(ctx context.Context) error {
 		}
 		return errUpdateApply
 	}
+	// The new bundle is in place: from here a second install would
+	// swap over it, relaunched or not.
+	u.installed = true
 	if err := platform.Relaunch(current); err != nil {
 		u.b.logger.Error("desktop: relaunching the updated bundle failed", "error", err.Error())
 		return errUpdateApply
@@ -468,4 +526,15 @@ func (u *updater) notifyOnce(res Update) {
 // tests share the exact format with the verifier.
 func SignUpdateFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
 	return update.WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL)
+}
+
+// ValidateAppVersion reports whether version is one the updater can
+// compare: semver major.minor.patch with an optional pre-release, no
+// build metadata, no leading zeros. `gofastr desktop build` refuses a
+// macOS --version that fails it, since the bundle's
+// CFBundleShortVersionString is the running version every update check
+// compares against the feed.
+func ValidateAppVersion(version string) error {
+	_, err := update.ParseVersion(version)
+	return err
 }

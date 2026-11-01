@@ -333,7 +333,14 @@ func (s *darwinShell) WindowState(id string) (desktop.WindowState, error) {
 		return desktop.WindowState{}, errWindowClosed()
 	}
 	var st desktop.WindowState
+	closed := false
 	if err := s.Main(func() {
+		// Re-read on the main thread: a close since the check above
+		// released the window.
+		if win, _ = w.ids(); win == 0 {
+			closed = true
+			return
+		}
 		st.Title = objc.GoString(objc.ID(objc.Send(win, objc.Sel("title"))))
 		st.Visible = objc.Send(win, objc.Sel("isVisible")) != 0
 		st.Key = objc.Send(win, objc.Sel("isKeyWindow")) != 0
@@ -359,6 +366,9 @@ func (s *darwinShell) WindowState(id string) (desktop.WindowState, error) {
 	}); err != nil {
 		return desktop.WindowState{}, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
+	if closed {
+		return desktop.WindowState{}, errWindowClosed()
+	}
 	return st, nil
 }
 
@@ -381,7 +391,11 @@ func (s *darwinShell) MakeKey(id string) error {
 		return errWindowClosed()
 	}
 	if err := s.onMain(func() {
-		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
+		// Re-read on the main thread: a close since the check above
+		// released the window.
+		if win, _ = w.ids(); win != 0 {
+			objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
+		}
 	}); err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}

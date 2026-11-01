@@ -43,6 +43,9 @@ type Platform interface {
 	// CFBundleShortVersionString on darwin). "" when unbundled, and an
 	// empty version never updates.
 	Version() string
+	// Identifier returns the running app's CFBundleIdentifier. ""
+	// when unbundled; an update bundle must declare the same one.
+	Identifier() string
 	// Bundle returns the running bundle's file name ("Notes.app") and
 	// its parent directory. ok is false when the process is not
 	// running from a bundle.

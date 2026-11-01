@@ -370,8 +370,15 @@ func (p *browserProfile) writeOrigin(port int) error {
 	closeErr = dir.Close()
 	return errors.Join(err, closeErr)
 }
+
+// checkCookieDatabase opens the jar read-write (mode=rw never creates the
+// file). A crash mid-write leaves a hot rollback journal, and a read-only
+// connection answers SQLITE_READONLY_ROLLBACK instead of recovering it, which
+// would refuse every later launch. The caller holds the profile lock, so no
+// WebKit process is writing: rolling the journal back here is the same
+// recovery WebKit's own first open would run.
 func checkCookieDatabase(path string) error {
-	u := &url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+	u := &url.URL{Scheme: "file", Path: path, RawQuery: "mode=rw"}
 	db, err := sql.Open("sqlite3", u.String())
 	if err != nil {
 		return fmt.Errorf("desktop/linux: open persistent cookies: %w", err)

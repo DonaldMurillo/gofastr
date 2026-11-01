@@ -415,6 +415,14 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		cli.OsExit(1)
 		return
 	}
+	// Info.plist's CFBundleShortVersionString is the running version the
+	// updater compares as semver: a bundle built with "1.0" would fail
+	// every update check, so refuse it before building.
+	if err := desktop.ValidateAppVersion(f.version); err != nil || len(f.version) > 64 {
+		cli.Fail("--version %q must be major.minor.patch with an optional -pre-release (no build metadata, no leading zeros), at most 64 characters", f.version)
+		cli.OsExit(1)
+		return
+	}
 
 	appDir := filepath.Join(f.out, name+".app")
 	contents := filepath.Join(appDir, "Contents")

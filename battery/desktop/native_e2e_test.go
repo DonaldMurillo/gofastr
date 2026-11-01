@@ -561,6 +561,28 @@ func phaseTwoWindows(t desktoptest.TB, h *desktoptest.NativeHarness) {
 
 	wantCallOK(t, h.Call("windows", "close", map[string]any{"id": opened.ID}), "windows.close")
 	h.Wait("the second window to close", func() bool { return h.Window(opened.ID) == nil })
+
+	// The closed window's handle is still held here. Close released its
+	// web view, so an eval through the stale handle must report an error
+	// rather than message a freed object, and a fresh open/close cycle
+	// after it still works.
+	if _, err := nw.EvalQuiet(`return 1`); err == nil {
+		t.Fatal("eval on a closed window succeeded; want a closed-window error")
+	}
+	var again struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(wantCallOK(t, h.Call("windows", "open", map[string]any{"path": "/two"}), "windows.open again"), &again); err != nil {
+		t.Fatalf("windows.open again: %v", err)
+	}
+	h.Wait("the reopened window", func() bool { return h.Window(again.ID) != nil })
+	rw := h.Window(again.ID)
+	h.Wait("the reopened page to answer", func() bool {
+		raw, err := rw.EvalQuiet(`return 2`)
+		return err == nil && string(raw) == "2"
+	})
+	wantCallOK(t, h.Call("windows", "close", map[string]any{"id": again.ID}), "windows.close again")
+	h.Wait("the reopened window to close", func() bool { return h.Window(again.ID) == nil })
 }
 
 // phaseWidgetSpec: the launch widget spec opened an NSPanel with no

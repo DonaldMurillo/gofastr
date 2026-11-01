@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Menu is the native menu bar (or platform equivalent) declared in Go.
@@ -39,8 +40,11 @@ type MenuItem struct {
 	// reads. A separator needs none; a role item gets the OS default
 	// when it is zero.
 	Title i18n.Phrase
-	// Key is a loosely validated accelerator ("cmd+n", "ctrl+shift+t");
-	// the shell maps it to the platform spelling.
+	// Key is an accelerator ("cmd+n", "ctrl+shift+t"): known modifiers
+	// (cmd/command/meta, ctrl/control, alt/option/opt, shift) then one
+	// key, with at least one modifier other than shift. A bare key is
+	// refused: the shell would take that keystroke from the page. The
+	// shell maps it to the platform spelling.
 	Key  string
 	Role string
 	// Navigate is a same-origin absolute path; exclusive with Handler.
@@ -79,7 +83,7 @@ func validateMenu(m *Menu) (*Menu, error) {
 				return nil, fmt.Errorf("desktop: menu item %q: a separator cannot Navigate or Handler", it.displayID())
 			}
 			if it.Key != "" && !validMenuKey(it.Key) {
-				return nil, fmt.Errorf("desktop: menu item %q: Key %q must be a +-separated accelerator (letters, digits, cmd/ctrl/alt/shift)", it.displayID(), it.Key)
+				return nil, fmt.Errorf("desktop: menu item %q: Key %q must be modifiers then one key with at least one of cmd/ctrl/alt (\"cmd+n\", \"ctrl+shift+t\"): a bare or shift-only key fires on plain typing, so the page never receives it", it.displayID(), it.Key)
 			}
 			if len(it.Children) > 0 {
 				kids, err := assign(it.Children)
@@ -171,13 +175,23 @@ func validNavigatePath(p string) bool {
 	return true
 }
 
-// validMenuKey accepts lowercase/uppercase +-joined tokens: modifiers
-// and one final key.
+// validMenuKey accepts +-joined ASCII tokens: one or more known
+// modifiers, then exactly one key, with at least one of cmd/ctrl/alt
+// among the modifiers. Every shell matches menu accelerators before the
+// page sees the keystroke (AppKit key equivalents, GTK accel groups,
+// the Windows message loop), so a bare or shift-only key would swallow
+// that character in every text field. An unknown modifier token is not
+// accepted either: the planner would drop it and leave the bare key.
 func validMenuKey(k string) bool {
 	if len(k) > 64 {
 		return false
 	}
-	for _, part := range strings.Split(k, "+") {
+	parts := strings.Split(k, "+")
+	if len(parts) < 2 {
+		return false
+	}
+	command := false
+	for i, part := range parts {
 		if part == "" {
 			return false
 		}
@@ -186,8 +200,31 @@ func validMenuKey(k string) bool {
 				return false
 			}
 		}
+		mod, isMod := menuKeyModifier(asciicase.Lower(part))
+		if i == len(parts)-1 {
+			if isMod {
+				return false // modifiers with no key
+			}
+			continue
+		}
+		if !isMod {
+			return false
+		}
+		command = command || mod
 	}
-	return true
+	return command
+}
+
+// menuKeyModifier reports whether tok is a modifier keyEquivalent maps,
+// and whether it is a command modifier (anything but shift).
+func menuKeyModifier(tok string) (command, ok bool) {
+	switch tok {
+	case "cmd", "command", "meta", "ctrl", "control", "alt", "option", "opt":
+		return true, true
+	case "shift":
+		return false, true
+	}
+	return false, false
 }
 
 // find returns the item with the given id (searching children).
