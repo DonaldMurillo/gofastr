@@ -347,9 +347,14 @@ func DatePickerDemo(month string) ui.DatePickerConfig {
 	if month == "" {
 		month = "2026-11"
 	}
+	// The picker holds the shown month at Min's (November 2026), so the
+	// days are built for the month it will actually show: a stale or
+	// hand-made ?month= before Min must not mark November with another
+	// month's nights.
+	first := time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
 	shown, err := time.Parse("2006-01", month)
-	if err != nil {
-		shown = time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
+	if err != nil || shown.Before(first) {
+		shown = first
 	}
 	days := map[string]ui.DatePickerDay{}
 	for d := shown; d.Month() == shown.Month(); d = d.AddDate(0, 0, 1) {
