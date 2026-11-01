@@ -857,7 +857,13 @@ the queue, but erasing a user's data from it fails with an error naming
 The script reads every entry of the main, delayed and dead lists and the
 pop and processing hashes, and the server serves no other client while it
 runs, so it takes longer the more jobs the queue holds. It matches a job
-by the `user_id` key `json.Marshal` writes. It names all five keys, so on
+by the `user_id` key `json.Marshal` writes at the top of the job, compared
+byte for byte with `json.Marshal(userID)`, and never decodes the payload:
+Redis's `cjson` refuses JSON nested past 1,000 levels, which `Enqueue`
+accepts, and a job it could not decode would have been kept. A user id
+that is not valid UTF-8 is refused with an error, because `json.Marshal`
+stores every such id as `"�"` and the script cannot tell those
+users' jobs apart. It names all five keys, so on
 Redis Cluster use the same hash-tagged queue name as for
 `CompareAndMover`. Return an integer reply as an integer type (go-redis
 returns `int64`).

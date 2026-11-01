@@ -152,3 +152,21 @@ func TestEraseRefusesWithoutScripts(t *testing.T) {
 		t.Error("the dry run reported a count the erasure cannot deliver")
 	}
 }
+
+// json.Marshal stores both "\xff" and "\xfe" as "�", so the queue
+// cannot tell those users' jobs apart: an erasure for one would take the
+// other's. It refuses instead.
+func TestEraseRefusesInvalidUTF8ID(t *testing.T) {
+	ctx := context.Background()
+	q := NewRedisQueue(newMockRedis(), "utf8-q")
+	t.Cleanup(func() { _ = q.Close() })
+	if err := q.Enqueue(ctx, secretJob("x", "\xfe")); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := q.eraseUser(ctx, "\xff", false); err == nil || n != 0 {
+		t.Errorf("erase of an invalid UTF-8 id = %d, %v; want a refusal", n, err)
+	}
+	if n, err := q.eraseUser(ctx, "\xfe", true); err == nil {
+		t.Errorf("dry run of an invalid UTF-8 id counted %d with no error", n)
+	}
+}

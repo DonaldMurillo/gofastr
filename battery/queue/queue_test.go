@@ -458,9 +458,11 @@ func (m *mockRedis) Eval(_ context.Context, script string, keys []string, args .
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	uid, dry := fmt.Sprint(args[0]), fmt.Sprint(args[1]) == "1"
+	// Like the script: the raw top-level user_id token is compared with
+	// ARGV[1], json.Marshal(userID), and the payload is never decoded.
 	names := func(raw string) bool {
-		var v map[string]any
-		return json.Unmarshal([]byte(raw), &v) == nil && v["user_id"] == uid
+		var v map[string]json.RawMessage
+		return json.Unmarshal([]byte(raw), &v) == nil && string(v["user_id"]) == uid
 	}
 	var n int64
 	for i, key := range keys[:2] {

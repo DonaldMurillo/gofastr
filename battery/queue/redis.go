@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -273,13 +274,22 @@ func (q *RedisQueue) eraseUser(ctx context.Context, userID string, dryRun bool) 
 	if !ok {
 		return 0, errors.New("redis queue: erasing a user's jobs needs a client that runs Lua scripts (queue.ScriptRunner); a key-by-key sweep cannot prove them gone")
 	}
+	// json.Marshal writes invalid UTF-8 as U+FFFD, so two such ids are
+	// stored as one: matching either would erase the other's jobs.
+	if !utf8.ValidString(userID) {
+		return 0, errors.New("redis queue: erase: the user id is not valid UTF-8, and the queue stores ids as JSON, which cannot tell such ids apart")
+	}
+	token, err := json.Marshal(userID)
+	if err != nil {
+		return 0, fmt.Errorf("redis queue: erase: %w", err)
+	}
 	dry := "0"
 	if dryRun {
 		dry = "1"
 	}
 	reply, err := runner.Eval(ctx, eraseScript,
 		[]string{q.poppedQueue, q.processingQueue, q.delayedQueue, q.queueName, q.deadLetterQueue},
-		userID, dry)
+		string(token), dry)
 	if err != nil {
 		return 0, fmt.Errorf("redis queue: erase: %w", err)
 	}
@@ -295,14 +305,65 @@ func (q *RedisQueue) eraseUser(ctx context.Context, userID string, dryRun bool) 
 // eraseScript removes the jobs of user ARGV[1] from the pop and processing
 // hashes (KEYS[1], KEYS[2]) and the delayed, main and dead lists (KEYS[3]
 // to KEYS[5]), and returns how many entries it removed; with ARGV[2] "1"
-// it only counts them. A job names its user in the user_id key json.Marshal
-// writes; a processing entry wraps the job JSON in its job key. An entry
-// that does not decode is left.
+// it only counts them. ARGV[1] is json.Marshal(userID), and a job is the
+// user's when the user_id key at the top of its JSON holds exactly that
+// string token: json.Marshal writes both, so the bytes agree. A processing
+// entry wraps the job JSON in its job key.
+//
+// The script never decodes a job. Redis's cjson refuses JSON nested past
+// 1,000 levels, a payload Go encodes and decodes (its limit is 10,000), and
+// a decode error read as "not this user" kept the job. userOf walks the
+// top level instead, skipping strings and counting brackets, so a payload
+// of any depth is passed over. Only the processing wrapper is decoded, and
+// its value is a string, one level deep. An entry userOf cannot read (not
+// an object, or cut short) names nobody and stays; Dequeue cannot decode it
+// either.
 const eraseScript = `
 local uid, dry = ARGV[1], ARGV[2] == '1'
+local function strEnd(s, i)
+  local j = i + 1
+  while true do
+    local k = string.find(s, '["\\]', j)
+    if not k then return nil end
+    if string.byte(s, k) == 92 then j = k + 2 else return k end
+  end
+end
+local function userOf(s)
+  local i = string.find(s, '[^ \t\r\n]')
+  if not i or string.byte(s, i) ~= 123 then return nil end
+  local depth, wantKey, key, user = 1, true, nil, nil
+  i = i + 1
+  while true do
+    local k = string.find(s, '[{}%[%],:"]', i)
+    if not k then return nil end
+    local c = string.byte(s, k)
+    if c == 34 then
+      local e = strEnd(s, k)
+      if not e then return nil end
+      if depth == 1 then
+        if wantKey then
+          key, wantKey = string.sub(s, k, e), false
+          if key == '"user_id"' then user = nil end
+        elseif key == '"user_id"' then
+          user, key = string.sub(s, k, e), nil
+        end
+      end
+      i = e + 1
+    else
+      if c == 123 or c == 91 then
+        depth = depth + 1
+      elseif c == 125 or c == 93 then
+        depth = depth - 1
+        if depth == 0 then return user end
+      elseif c == 44 and depth == 1 then
+        wantKey, key = true, nil
+      end
+      i = k + 1
+    end
+  end
+end
 local function names(raw)
-  local ok, v = pcall(cjson.decode, raw)
-  return ok and type(v) == 'table' and v['user_id'] == uid
+  return userOf(raw) == uid
 end
 local function claimNames(raw)
   local ok, v = pcall(cjson.decode, raw)

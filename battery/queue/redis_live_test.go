@@ -3,6 +3,7 @@ package queue
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -243,7 +244,7 @@ func TestEraseScriptOnLiveRedis(t *testing.T) {
 	dup := string(mustJSON(t, secretJob("m3", "u1")))
 	for _, kv := range [][2]string{
 		{name, dup}, {name, dup}, {name, "not json"}, {name, `{"user_id":5,"to":"num-secret"}`},
-		{name, `{"user_id":"u1x","to":"uix-secret"}`},
+		{name, `{"user_id":"u1x","to":"uix-secret"}`}, {name, `{"user_id":["u1"],"to":"arr-secret"}`},
 	} {
 		if err := c.LPush(ctx, kv[0], kv[1]); err != nil {
 			t.Fatal(err)
@@ -295,12 +296,127 @@ func TestEraseScriptOnLiveRedis(t *testing.T) {
 	if got := holds("u1-secret"); got != 0 {
 		t.Errorf("%d of u1's entries survive the erasure", got)
 	}
-	for _, s := range []string{"u2-secret", "not json", "num-secret", "uix-secret"} {
+	for _, s := range []string{"u2-secret", "not json", "num-secret", "uix-secret", "arr-secret"} {
 		if holds(s) != 1 {
 			t.Errorf("the entry holding %q was removed; it names nobody or another user", s)
 		}
 	}
 	if h, _ := c.HGetAll(ctx, name+":popped"); h["2:tok"] != "{" {
 		t.Errorf("the pop record that does not decode is gone: %v", h)
+	}
+}
+
+// deepJob is a job whose payload nests depth arrays: Go encodes and
+// decodes it (its limit is 10,000), Redis's cjson refuses past 1,000.
+func deepJob(id, user string, depth int) Job {
+	j := secretJob(id, user)
+	j.Payload = json.RawMessage(`{"to":"` + user + `-secret","deep":` + strings.Repeat("[", depth) + strings.Repeat("]", depth) + `}`)
+	return j
+}
+
+// A job whose payload nested past cjson's depth limit made the script's
+// decode throw, pcall read that as "not this user", and the erasure
+// returned 0 with the job kept; the dry run counted 0 too (2026-10-31
+// review). The script reads a job's top-level user_id without decoding
+// the payload, so no nesting depth hides a job from it.
+func TestEraseDeepPayloadOnLiveRedis(t *testing.T) {
+	ctx := context.Background()
+	c := dialLiveRedis(t)
+	name := "live-deep-" + redisRandomID()
+	q := NewRedisQueue(c, name)
+	keys := []string{name, name + ":processing", name + ":dead", name + ":delayed", name + ":popped"}
+	t.Cleanup(func() {
+		_ = q.Close()
+		_ = c.Del(context.Background(), keys...)
+	})
+	dead := deepJob("d1", "u1", 1500)
+	dead.MaxAttempts = 1
+	if err := q.Enqueue(ctx, dead); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Nack(ctx, claimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Enqueue(ctx, deepJob("p1", "u1", 1500)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Dequeue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	later := deepJob("l1", "u1", 1500)
+	later.ScheduledAt = time.Now().Add(time.Hour)
+	for _, j := range []Job{deepJob("m1", "u1", 1500), deepJob("m2", "u2", 1500), later} {
+		if err := q.Enqueue(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The user_id inside the payload is not the job's: u2's job stays.
+	nested := secretJob("n1", "u2")
+	nested.Payload = json.RawMessage(`{"user_id":"u1","inner":{"user_id":"u1"}}`)
+	if err := q.Enqueue(ctx, nested); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.HSet(ctx, name+":popped", "1:tok", string(mustJSON(t, deepJob("o1", "u1", 1500)))); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = 5 // d1 dead, p1 processing, m1 main, l1 delayed, o1 popped
+	dry, err := q.eraseUser(ctx, "u1", true)
+	if err != nil || dry != want {
+		t.Fatalf("dry run = %d, %v; want %d", dry, err, want)
+	}
+	n, err := q.eraseUser(ctx, "u1", false)
+	if err != nil || n != want {
+		t.Fatalf("erase = %d, %v; want %d", n, err, want)
+	}
+	again, err := q.eraseUser(ctx, "u2", true)
+	if err != nil || again != 2 {
+		t.Errorf("u2's jobs counted %d, %v; want 2 (m2 and n1) left", again, err)
+	}
+}
+
+// The script reads strings without decoding them: brackets, escaped
+// quotes and a "user_id" inside a string value must not move its idea of
+// the top level, and an id json.Marshal escapes matches its own jobs.
+func TestEraseScanSkipsStringsOnLiveRedis(t *testing.T) {
+	ctx := context.Background()
+	c := dialLiveRedis(t)
+	name := "live-scan-" + redisRandomID()
+	q := NewRedisQueue(c, name)
+	t.Cleanup(func() {
+		_ = q.Close()
+		_ = c.Del(context.Background(), name, name+":processing", name+":dead", name+":delayed", name+":popped")
+	})
+	tricky := json.RawMessage(`{"s":"\"user_id\":\"u1\" ]}{[,:","k":"\\","t":"}"}`)
+	odd := `u"<1\` + " "
+	jobs := []Job{secretJob("a", "u1"), secretJob("b", "u2"), secretJob("c", odd), secretJob("d", "u1x")}
+	for i := range jobs {
+		jobs[i].Payload = tricky
+	}
+	// No user at all, and a payload that names u1: the payload is not the job.
+	jobs = append(jobs, Job{ID: "e", Type: "t", Payload: tricky},
+		Job{ID: "f", Type: "t", Payload: json.RawMessage(`{"user_id":"u1"}`)})
+	for _, j := range jobs {
+		if err := q.Enqueue(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		user string
+		want int
+	}{{"u1", 1}, {odd, 1}, {"u2", 1}, {"u", 0}, {"", 0}} {
+		if n, err := q.eraseUser(ctx, tc.user, true); err != nil || n != tc.want {
+			t.Errorf("eraseUser(%q) counted %d, %v; want %d", tc.user, n, err, tc.want)
+		}
+	}
+	if n, err := q.eraseUser(ctx, odd, false); err != nil || n != 1 {
+		t.Fatalf("erase %q = %d, %v; want 1", odd, n, err)
+	}
+	if l, _ := c.LRange(ctx, name, 0, -1); len(l) != 5 {
+		t.Errorf("main list holds %d jobs, want 5", len(l))
 	}
 }
