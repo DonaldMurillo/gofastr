@@ -21,11 +21,13 @@ import (
 // them. Hidden fields never reach this package (the row read drops
 // them); masked fields and fields the caller cannot read are left out of
 // the change list, so the tab never shows what the API would refuse the
-// same caller.
+// same caller. A masked field is a NoQuery one, or one an AfterGet hook
+// rewrites on this record (rewrittenFields): the audit row stored the
+// column as written, so its values would print what the hook hides.
 // activityCap is how many trail entries the tab draws.
 const activityCap = 50
 
-func (b *RecordBuilder) activityTab(ctx context.Context, m *meta) render.HTML {
+func (b *RecordBuilder) activityTab(ctx context.Context, m *meta, masked map[string]bool) render.HTML {
 	reader := b.ui.host.Audit()
 	if reader == nil {
 		return ""
@@ -41,8 +43,8 @@ func (b *RecordBuilder) activityTab(ctx context.Context, m *meta) render.HTML {
 	for _, e := range entries {
 		rows = append(rows, e.Before, e.After)
 	}
-	s := &listState{m: m}
-	labels := b.ui.resolveRowLabels(ctx, s, rows, m.changeColumns(entries))
+	s := &listState{m: m, masked: masked}
+	labels := b.ui.resolveRowLabels(ctx, s, rows, m.changeColumns(entries, masked))
 	now := time.Now()
 	events := make([]ui.TimelineEvent, len(entries))
 	for i, e := range entries {
@@ -206,7 +208,7 @@ func (u *UI) Changes(ctx context.Context, entityName string, before, after map[s
 	}
 	e := AuditEntry{Before: before, After: after}
 	s := &listState{m: m}
-	labels := u.resolveRowLabels(ctx, s, []map[string]any{before, after}, m.changeColumns([]AuditEntry{e}))
+	labels := u.resolveRowLabels(ctx, s, []map[string]any{before, after}, m.changeColumns([]AuditEntry{e}, nil))
 	changes := u.changes(ctx, s, labels, before, after)
 	if len(changes) == 0 {
 		return ""
@@ -222,7 +224,7 @@ func (u *UI) changes(ctx context.Context, s *listState, labels labelResolver, be
 		return nil
 	}
 	var out []ui.Change
-	for _, f := range s.m.changeFields(before, after) {
+	for _, f := range s.m.changeFields(before, after, s.masked) {
 		out = append(out, ui.Change{
 			Label: s.m.label(ctx, f.Name),
 			From:  u.changeValue(ctx, s, labels, f, before),
@@ -247,10 +249,12 @@ func (u *UI) changeValue(ctx context.Context, s *listState, labels labelResolver
 // JSON API's casing, so each side is read the way a list row is. The
 // primary key and generated stamps (created and updated at) are left
 // out: every edit moves updatedAt, and saying so on each entry is noise.
-func (m *meta) changeFields(before, after map[string]any) []schema.Field {
+// masked names the fields a read hook rewrites on the record, left out
+// too.
+func (m *meta) changeFields(before, after map[string]any, masked map[string]bool) []schema.Field {
 	var out []schema.Field
 	for _, f := range m.fields {
-		if m.isKey(f.Name) || f.AutoGenerate != schema.AutoNone || m.hiddenFromCaller(f) {
+		if m.isKey(f.Name) || f.AutoGenerate != schema.AutoNone || m.hiddenFromCaller(f) || masked[f.Name] {
 			continue
 		}
 		if cell(m.rowValue(before, f.Name)) == cell(m.rowValue(after, f.Name)) {
@@ -263,14 +267,14 @@ func (m *meta) changeFields(before, after map[string]any) []schema.Field {
 
 // changeColumns are the relation fields any of entries changed: the
 // columns whose related titles one label read resolves.
-func (m *meta) changeColumns(entries []AuditEntry) []string {
+func (m *meta) changeColumns(entries []AuditEntry, masked map[string]bool) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, e := range entries {
 		if e.Before == nil || e.After == nil {
 			continue
 		}
-		for _, f := range m.changeFields(e.Before, e.After) {
+		for _, f := range m.changeFields(e.Before, e.After, masked) {
 			if f.Type == schema.Relation && !seen[f.Name] {
 				seen[f.Name] = true
 				out = append(out, f.Name)

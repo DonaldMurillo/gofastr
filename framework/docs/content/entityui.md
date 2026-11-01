@@ -162,7 +162,9 @@ keeps the UI unchanged; without a callback the default stays
   way the list's cell draws it (a badge, a money figure, a related
   record's title). An update that changed no field the caller may see
   reads "… saved this invoice". Masked (`NoQuery`) and `Hidden` fields
-  never appear, and an override's reason shows under it. The form's
+  never appear, nor does a field an `AfterGet` hook rewrites on the
+  record (the audit row stored what was written, which the hook hides),
+  and an override's reason shows under it. The form's
   side column holds Details: the id with a copy button, the created and
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears

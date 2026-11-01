@@ -4365,6 +4365,13 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A record's Activity tab no longer prints a value a read hook
+  masks.** The change list drew each audit row's stored before and
+  after values for every field but `NoQuery` ones, so a field an
+  `AfterGet` hook rewrites (`****` on the record and in the JSON API)
+  showed its written values to anyone who could open the record. A
+  field the hook rewrites on that record is now left out, locked fields
+  included (`framework/entityui`).
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

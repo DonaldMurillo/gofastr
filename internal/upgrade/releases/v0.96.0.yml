@@ -643,3 +643,7 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
+  - change: "A record's Activity tab leaves out every field an AfterGet hook rewrites on that record; its change list used to draw the audit row's stored values for them"
+    breaking: false
+    guidance: "Nothing to change. An entry that changed only such a field now reads as a save. To show a masked field's history to some callers, give them a read the hook does not mask."
+    nodetect: "the change is in the Activity tab's rendering; nothing in an app's source spells it"

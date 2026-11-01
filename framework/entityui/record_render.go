@@ -579,7 +579,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	}
 	if b.activity && b.ui.host.Audit() != nil {
 		tabs = append(tabs, tab{key: "activity", label: i18nui.EntityTabActivity.Text(ctx), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
-			return b.activityTab(ctx, m), nil
+			return b.activityTab(ctx, m, rewrittenFields(m, raw, row)), nil
 		}})
 	}
 	if b.apiTab {
