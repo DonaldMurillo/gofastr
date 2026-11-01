@@ -101,6 +101,11 @@ type WebSocketConn struct {
 	// written out of order or lost behind our Close frame.
 	takeMu sync.Mutex
 
+	// writeFailed is set by the write pump when a frame write fails: the
+	// socket is dead or stalled past WriteTimeout, so Close writes no
+	// queued messages to it, only the Close frame.
+	writeFailed atomic.Bool
+
 	// readMsgs delivers decoded data messages from the internal read
 	// pump to Read(). Buffered (cap 8): beyond that, TCP backpressure
 	// applies. A push-only server that never drains still receives
@@ -518,7 +523,9 @@ func checkOrigin(r *http.Request, custom func(*http.Request) bool) bool {
 // writes every queued message before its Close frame, within the
 // WriteTimeout bound described on Close, so a message Write accepted
 // before Close reaches the peer unless the peer is too slow to take it
-// in that time or the socket already failed.
+// in that time, the socket already failed, or the peer started the
+// close. A Write running concurrently with Close may return nil for a
+// message that lands after the drain and is dropped.
 func (c *WebSocketConn) Write(data []byte) error {
 	if !utf8.Valid(data) {
 		return ErrInvalidUTF8
@@ -632,9 +639,13 @@ func (c *WebSocketConn) Read() ([]byte, error) {
 // Before the Close frame, Close stops accepting writes (Write returns
 // ErrClosed) and writes the messages Write already queued, oldest
 // first. The drain is bounded by WriteTimeout from the moment Close is
-// called (10s when WriteTimeout is zero or negative), so a peer that
-// stopped reading cannot hold Close open; what is still queued when
-// the bound passes or a write fails is dropped.
+// called (10s when WriteTimeout is zero or negative), and the same bound
+// is set as the socket's write deadline, so a frame the pump is still
+// writing to a peer that stopped reading cannot hold Close open either;
+// what is still queued when the bound passes or a write fails is
+// dropped. There is no drain when the peer started the close (it
+// discards data once it sent its Close frame) or a write already failed:
+// the Close frame goes out at once.
 //
 // If the peer initiated the close, the echo Close frame preserves the
 // peer's 2-byte status code per RFC 6455 §5.5.1, sanitized per §7.4.1
@@ -651,8 +662,19 @@ func (c *WebSocketConn) Close() error {
 		// it and the wire keeps Write's order.
 		by := time.Now().Add(c.drainBound())
 		close(c.closed)
+		// The frame the pump is writing carries no deadline when
+		// WriteTimeout is disabled; one stalled peer would then hold
+		// takeMu, and Close, forever. Cut it at the drain's bound.
+		if sd, ok := c.conn.(interface{ SetWriteDeadline(time.Time) error }); ok {
+			_ = sd.SetWriteDeadline(by)
+		}
 		c.takeMu.Lock()
-		c.drainQueued(by)
+		// Drain only a Close this side started. After the peer's Close
+		// frame the peer discards data (RFC 6455 5.5.1: reply as soon as
+		// practical), and after a failed write the socket takes nothing.
+		if c.peerClosePayload.Load() == nil && !c.writeFailed.Load() {
+			c.drainQueued(by)
+		}
 
 		// If readFrame already captured a peer Close payload, echo the
 		// (already-sanitized) bytes back. Otherwise send an empty Close.
@@ -888,6 +910,7 @@ func (c *WebSocketConn) writePump() {
 		// goroutine on closeOnce for that whole wait. Close takes
 		// takeMu, so it is called only after the unlock above.
 		if err != nil && !errors.Is(err, ErrClosed) {
+			c.writeFailed.Store(true)
 			c.Close()
 		}
 		return

@@ -196,8 +196,11 @@ inside one, a close reason that is not valid UTF-8, a payload length in
 a longer form than it needs). No data frame goes out after the
 connection's own Close frame, and `Close` first writes the messages
 `Write` already queued, oldest first, for up to `WriteTimeout` (10s
-when it is zero or negative); `Write` returns `ErrClosed` once `Close`
-has started. One read pump owns the socket and hands each message to `Read`
+when it is zero or negative), the same bound cutting a frame the pump is
+still writing to a stalled peer; `Write` returns `ErrClosed` once `Close`
+has started (a `Write` racing `Close` may still be accepted and
+dropped). A close the peer started, or one after a failed write, sends
+the Close frame at once with no drain. One read pump owns the socket and hands each message to `Read`
 through a small buffer. An app that reads must take a message at least
 once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
 (the keepalive cannot run while a message waits). `PongTimeout` counts

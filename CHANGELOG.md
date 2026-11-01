@@ -185,9 +185,11 @@ few lines, and link the PR or the docs page for the rest.
   `WriteError` sends a nil `*Error` or a code outside 400–599 as 500.
   Numbers under an unexported embedded struct settle to `float64`.
 - **`core/stream`.** WebSocket `Close` writes the messages `Write`
-  already accepted before its Close frame, bounded by `WriteTimeout`.
-  Every protocol error closes with 1002 (1009 for a message past
-  `ReadLimit`) instead of an empty status. The upgrade refuses
+  already accepted before its Close frame, bounded by `WriteTimeout`,
+  which also cuts a frame stalled on a peer that stopped reading; a
+  close the peer started replies at once. A malformed frame closes with
+  1002 and a message past `ReadLimit` with 1009, instead of an empty
+  status. The upgrade refuses
   HTTP/1.0 and reads `Connection` and `Sec-WebSocket-Protocol` across
   every header line. A negative `SendBuffer` means the default instead
   of panicking after the hijack. `Hub` and `StateChannel` stop a

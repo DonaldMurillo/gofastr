@@ -237,3 +237,107 @@ func TestUpgradeNegativeSendBufferUsesDefault(t *testing.T) {
 		t.Fatal("handler never returned")
 	}
 }
+
+// stallConn's Write blocks until a write deadline is set (the kernel
+// cutting a write to a peer that stopped reading), then times out.
+type stallConn struct {
+	entered chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	dl      time.Time
+	writes  int
+}
+
+func (s *stallConn) Read([]byte) (int, error) { select {} }
+func (s *stallConn) Close() error             { return nil }
+func (s *stallConn) SetWriteDeadline(t time.Time) error {
+	s.mu.Lock()
+	s.dl = t
+	s.mu.Unlock()
+	return nil
+}
+func (s *stallConn) Write(p []byte) (int, error) {
+	s.once.Do(func() { close(s.entered) })
+	for {
+		s.mu.Lock()
+		dl := s.dl
+		s.writes++
+		s.mu.Unlock()
+		if !dl.IsZero() {
+			return 0, timeoutErr{}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// With WriteTimeout disabled the pump's frame carried no deadline, so
+// Close waited on takeMu as long as the peer stalled. Close now sets its
+// bound as the socket's write deadline.
+func TestCloseCutsStalledPumpWriteWhenWriteTimeoutDisabled(t *testing.T) {
+	sc := &stallConn{entered: make(chan struct{})}
+	c := &WebSocketConn{conn: sc, sendBuffer: make(chan wsMessage, 4), closed: make(chan struct{}), peerClosed: make(chan struct{}),
+		config: WSConfig{WriteTimeout: -1, CloseTimeout: time.Millisecond}}
+	go c.writePump()
+	if err := c.WriteString("stalls"); err != nil {
+		t.Fatal(err)
+	}
+	<-sc.entered
+	done := make(chan struct{})
+	go func() { c.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close stayed blocked behind the pump's undeadlined write")
+	}
+}
+
+// A Close the peer started replies with its Close frame at once: the
+// peer discards data after its own Close, so draining the queue only
+// delayed the handshake.
+func TestPeerInitiatedCloseSkipsDrain(t *testing.T) {
+	sc := &slowConn{slow: 20 * time.Millisecond}
+	const n = 40
+	c := &WebSocketConn{conn: sc, sendBuffer: make(chan wsMessage, n), closed: make(chan struct{}), peerClosed: make(chan struct{}),
+		config: WSConfig{WriteTimeout: 2 * time.Second, CloseTimeout: time.Millisecond}}
+	for i := range n {
+		if err := c.WriteString("queued"); err != nil {
+			t.Fatalf("Write %d: %v", i, err)
+		}
+	}
+	status := []byte{0x03, 0xE8} // what readFrame stores for the peer's Close(1000)
+	c.peerClosePayload.Store(&status)
+	c.peerCloseOnce.Do(func() { close(c.peerClosed) })
+	c.Close()
+	sc.mu.Lock()
+	written := len(sc.deadlines)
+	sc.mu.Unlock()
+	if written != 1 {
+		t.Fatalf("peer-initiated Close wrote %d frames, want only the Close reply", written)
+	}
+}
+
+// After the pump's write failed, Close writes no queued messages to the
+// dead socket before its Close frame.
+func TestCloseAfterFailedWriteSkipsDrain(t *testing.T) {
+	sc := &stallConn{entered: make(chan struct{})}
+	c := &WebSocketConn{conn: sc, sendBuffer: make(chan wsMessage, 8), closed: make(chan struct{}), peerClosed: make(chan struct{}),
+		config: WSConfig{WriteTimeout: 50 * time.Millisecond, CloseTimeout: time.Millisecond}}
+	for range 5 {
+		if err := c.WriteString("queued"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pumped := make(chan struct{})
+	go func() { c.writePump(); close(pumped) }()
+	select {
+	case <-pumped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("pump never gave up on the stalled write")
+	}
+	if !c.writeFailed.Load() {
+		t.Fatal("a failed pump write did not mark the connection")
+	}
+	if got := len(c.sendBuffer); got != 4 {
+		t.Fatalf("Close drained %d queued messages into a failed socket, want them left (4 queued)", 4-got)
+	}
+}
