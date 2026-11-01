@@ -150,8 +150,12 @@ func scopedClauseKey(parsed []filter.ParsedFilter) string {
 		// The term an IN value came from: a_in=1|2,a[in]=2 and
 		// a_in=1,a[in]=2|2 spell one value run but are different
 		// predicates (two lists ANDed, split at different places).
-		b.WriteByte(' ')
-		b.WriteString(strconv.Quote(f.Key()))
+		// Only IN needs it: a scalar term is one predicate whichever
+		// spelling (column or wire alias) named it.
+		if f.Op == filter.OpIn {
+			b.WriteByte(' ')
+			b.WriteString(strconv.Quote(f.Key()))
+		}
 		b.WriteByte(';')
 	}
 	return b.String()

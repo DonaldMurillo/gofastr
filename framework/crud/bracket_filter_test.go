@@ -257,3 +257,20 @@ func TestNestedFilterRepeatedScalarKeyRefused(t *testing.T) {
 		}
 	}
 }
+
+// A scalar scoped term spelled by its column and by its wire alias is one
+// predicate, so a second mention of the relation dedupes onto one node.
+func TestScopedClauseDedupIgnoresAliasSpelling(t *testing.T) {
+	fields := []schema.Field{{Name: "content", Type: schema.String, WireName: "body"}}
+	a, err := parseScopedFilters("content=x", fields, "r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := parseScopedFilters("body=x", fields, "r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scopedClauseKey(a) != scopedClauseKey(b) {
+		t.Fatalf("content=x and body=x keyed apart: %q vs %q", scopedClauseKey(a), scopedClauseKey(b))
+	}
+}

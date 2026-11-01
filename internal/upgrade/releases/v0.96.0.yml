@@ -763,3 +763,7 @@ notes:
     find:
       strings:
         match: ':checked[[:space:]]*~'
+  - change: "Derived ids keep non-ASCII letters: a ui.Section anchor and the headless Section, Table and Fieldset ids (and segmented, toggle, tooltip and filter-toolbar option ids) keep every script's letters and digits, lowercased, instead of dropping them"
+    breaking: false
+    guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
+    nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
