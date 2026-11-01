@@ -102,9 +102,13 @@ auth.DefaultHasher = auth.Argon2Hasher{} // argon2id: 64 MiB, t=3, p=2
 - `CheckPassword` reads the stored hash's prefix: `$argon2id$` verifies
   with argon2id, anything else with bcrypt. Rows hashed before a switch
   keep signing in.
-- A custom `PasswordHasher` (a pepper, scrypt) works the same way:
-  `CheckPassword` asks its `Verify` first, then falls back to the prefix
-  rule, so old bcrypt and argon2id rows still verify.
+- A custom `PasswordHasher` (a pepper, scrypt) works too: sign-in and
+  password change ask its `Verify` first, then fall back to the prefix
+  rule, so old bcrypt and argon2id rows still verify. `CheckPassword`
+  itself knows only the two built-in formats, so a custom `Verify` may
+  call it for legacy rows. A wrong password under a peppered bcrypt
+  hasher costs two bcrypt runs, the custom one and the fallback; an
+  unknown address costs the same.
 - `Argon2Hasher.Hash` returns an error for parameters past what its
   verifier accepts from a stored hash (1 GiB of memory, 100 iterations,
   16 threads, a 128-byte key). A hash made with them could never sign in.

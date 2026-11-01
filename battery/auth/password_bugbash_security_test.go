@@ -118,7 +118,7 @@ func (h shaHasher) Verify(pw, hash string) bool {
 // bcrypt, so a custom hasher's Verify was never called and every login
 // failed, and the not-found dummy it produced was rejected by bcrypt's
 // format check in microseconds.
-func TestCheckPasswordConsultsCustomDefaultHasher(t *testing.T) {
+func TestVerifyPasswordConsultsCustomDefaultHasher(t *testing.T) {
 	var calls atomic.Int64
 	for _, h := range []PasswordHasher{pepperHasher{pepper: "p3pp3r", verifies: &calls}, shaHasher{}} {
 		withDefaultHasher(t, h)
@@ -126,11 +126,11 @@ func TestCheckPasswordConsultsCustomDefaultHasher(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%T hash: %v", h, err)
 		}
-		if !CheckPassword("correct horse", hash) {
-			t.Errorf("%T: CheckPassword refused the password DefaultHasher just hashed", h)
+		if !verifyPassword("correct horse", hash) {
+			t.Errorf("%T: verifyPassword refused the password DefaultHasher just hashed", h)
 		}
-		if CheckPassword("wrong horse", hash) {
-			t.Errorf("%T: CheckPassword accepted a wrong password", h)
+		if verifyPassword("wrong horse", hash) {
+			t.Errorf("%T: verifyPassword accepted a wrong password", h)
 		}
 	}
 
@@ -138,24 +138,24 @@ func TestCheckPasswordConsultsCustomDefaultHasher(t *testing.T) {
 	// Verify, so it costs what a real row costs.
 	withDefaultHasher(t, pepperHasher{pepper: "p3pp3r", verifies: &calls})
 	before := calls.Load()
-	_ = CheckPassword("guess", dummyHashFor(DefaultHasher))
+	_ = verifyPassword("guess", dummyHashFor(DefaultHasher))
 	if calls.Load() == before {
 		t.Error("SECURITY: [timing] the not-found dummy never reached the custom hasher's Verify")
 	}
 
 	// Rows made before the switch keep verifying.
 	old, _ := BcryptHasher{}.Hash("legacy-pass")
-	if !CheckPassword("legacy-pass", old) {
+	if !verifyPassword("legacy-pass", old) {
 		t.Error("a bcrypt row stopped verifying under a custom DefaultHasher")
 	}
 	a2, _ := fastArgon2.Hash("argon-pass")
-	if !CheckPassword("argon-pass", a2) {
+	if !verifyPassword("argon-pass", a2) {
 		t.Error("an argon2id row stopped verifying under a custom DefaultHasher")
 	}
 	// And a peppered hash never verifies without the pepper.
 	withDefaultHasher(t, BcryptHasher{})
 	peppered, _ := pepperHasher{pepper: "p3pp3r"}.Hash("pw-with-pepper")
-	if CheckPassword("pw-with-pepper", peppered) {
+	if verifyPassword("pw-with-pepper", peppered) {
 		t.Error("a peppered hash verified under bare bcrypt")
 	}
 }
@@ -224,5 +224,33 @@ func TestCustomHasherDummyCachedOnce(t *testing.T) {
 	b := dummyHashFor(countingHasher{calls: new(int)})
 	if a != b || n != 1 {
 		t.Errorf("custom hasher dummy derived %d times (same=%v), want once per type", n, a == b)
+	}
+}
+
+// recursingHasher's Verify calls CheckPassword, the natural spelling of a
+// custom hasher written against "verification auto-detects the format".
+// With the custom hasher asked from inside CheckPassword, that recursed
+// until the stack overflowed: any anonymous login killed the process
+// (2026-11-01 review, round 2).
+type recursingHasher struct{ depth *atomic.Int64 }
+
+func (h recursingHasher) Hash(p string) (string, error) { return BcryptHasher{}.Hash(p) }
+func (h recursingHasher) Verify(p, hash string) bool {
+	if h.depth.Add(1) > 3 {
+		return false // the guard a real hasher would not have
+	}
+	return CheckPassword(p, hash)
+}
+
+func TestCustomVerifyCallingCheckPasswordDoesNotRecurse(t *testing.T) {
+	withDefaultBcryptCost(t)
+	var depth atomic.Int64
+	withDefaultHasher(t, recursingHasher{depth: &depth})
+	hash, _ := HashPassword("pw-12345678")
+	if !verifyPassword("pw-12345678", hash) {
+		t.Error("the right password was refused")
+	}
+	if got := depth.Load(); got != 1 {
+		t.Errorf("SECURITY: the custom Verify was re-entered %d times through CheckPassword, want 1", got)
 	}
 }

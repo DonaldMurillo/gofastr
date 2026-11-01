@@ -126,7 +126,7 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 			}
 		}
 		_, hash, err := store.FindByEmail(ctx, user.GetEmail())
-		if err != nil || !CheckPassword(body.Current, hash) {
+		if err != nil || !verifyPassword(body.Current, hash) {
 			c.mgr.emitSecurity(ctx, SecurityEvent{
 				Kind: "password.change_failed", UserID: sess.UserID, Remote: remoteHost(r),
 				Meta: map[string]string{"reason": "bad_credentials"},
