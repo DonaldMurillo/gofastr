@@ -24,6 +24,7 @@ func TestDequeueHoldsFutureJobs(t *testing.T) {
 		}},
 		{"redis", func(now func() time.Time) Queue {
 			q := NewRedisQueue(newMockRedis(), "test")
+			t.Cleanup(func() { _ = q.Close() })
 			q.now = now
 			return q
 		}},
@@ -142,6 +143,7 @@ func TestRedisPromotesPastFirstPage(t *testing.T) {
 	ctx := context.Background()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	q := NewRedisQueue(newMockRedis(), "test")
+	t.Cleanup(func() { _ = q.Close() })
 	q.now = func() time.Time { return clock }
 	for range maxSkipDrain + 10 {
 		if err := q.Enqueue(ctx, Job{Type: "t", ScheduledAt: clock.Add(time.Hour)}); err != nil {
@@ -175,6 +177,7 @@ func TestRedisLostPromoteRaceSkips(t *testing.T) {
 	ctx := context.Background()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	q := NewRedisQueue(lostPromoteRedis{newMockRedis()}, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	q.now = func() time.Time { return clock }
 	if err := q.Enqueue(ctx, Job{Type: "t", ScheduledAt: clock.Add(time.Minute)}); err != nil {
 		t.Fatal(err)
@@ -202,6 +205,7 @@ func TestRedisFailedPromoteRestores(t *testing.T) {
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	r := newMockRedis()
 	q := NewRedisQueue(mainPushFailRedis{r}, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	q.now = func() time.Time { return clock }
 	if err := q.Enqueue(ctx, Job{Type: "t", ScheduledAt: clock.Add(time.Minute)}); err != nil {
 		t.Fatal(err)
@@ -233,6 +237,7 @@ func TestRedisPromoteCrashKeepsJob(t *testing.T) {
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	r := newMockRedis()
 	q := NewRedisQueue(mainPushDiesRedis{r}, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	q.now = func() time.Time { return clock }
 	if err := q.Enqueue(ctx, Job{Type: "t", ScheduledAt: clock.Add(time.Minute)}); err != nil {
 		t.Fatal(err)

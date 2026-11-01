@@ -525,13 +525,13 @@ chunks (`AllChunks`): register a store eraser for it yourself.
 
 A job a worker is running when the sweep passes is not stopped. If it fails
 and is retried after the sweep, it is back in the queue until the next
-erasure. The Redis sweep reads every list and hash again after each place a
-job can move to it from, and repeats until a whole sweep finds none of the
-user's jobs; after five sweeps that still find some it fails the erasure
-instead of reporting success. A job a worker moves twice within one sweep
-can still slip past it. It deletes a pop or processing entry only while the
-entry holds what the sweep read, so a claim another user's job took over in
-between stays (atomically with `CompareAndDeleter`).
+erasure. The Redis erasure is one Lua script, which the server runs with
+no other command in between, so no worker step lands between its reads and
+its deletes. It needs an adapter that implements
+[`queue.ScriptRunner`](queue.md#optional-scriptrunner); with one that does
+not, the store fails and nothing is removed from it. While it runs the
+server serves no other client, for a time that grows with the queue's
+length.
 
 **Failure.** The SQL erasure has committed by the time a store eraser runs,
 so a failure cannot roll it back. Every store eraser runs even when another

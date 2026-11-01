@@ -179,6 +179,7 @@ func TestDeathAfterClaimDeliversOnce(t *testing.T) {
 func TestClaimLeavesNoPopRecord(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	for _, id := range []string{"a", "b", "c"} {
 		if err := q.Enqueue(ctx, Job{ID: id, Type: id}); err != nil {
@@ -251,6 +252,7 @@ func TestHomedEntryLeavesNoPopRecord(t *testing.T) {
 			f := tc.f
 			f.mockRedis = r
 			q := NewRedisQueue(&f, "test")
+			t.Cleanup(func() { _ = q.Close() })
 			if tc.job != nil {
 				if err := q.Enqueue(context.Background(), *tc.job); err != nil {
 					t.Fatal(err)
@@ -281,6 +283,7 @@ func TestHomedEntryLeavesNoPopRecord(t *testing.T) {
 func TestBadPopFieldGoesBack(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	_ = r.HSet(context.Background(), "test:popped", "junk", `{"id":"j","type":"x","max_attempts":3}`)
 	if n, err := q.Reclaim(context.Background()); err != nil || n != 1 {
 		t.Fatalf("reclaim = %d, %v; want 1, nil", n, err)
@@ -294,6 +297,7 @@ func TestBadPopFieldGoesBack(t *testing.T) {
 func TestCorruptClaimDoesNotStopReclaim(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	_ = r.HSet(ctx, "test:popped", "junk", `{"id":"j","type":"x","max_attempts":3}`)
 	_ = r.HSet(ctx, "test:processing", "j", "{corrupt")
@@ -328,6 +332,7 @@ func (b *bareClient) HDel(ctx context.Context, key string, fields ...string) err
 func TestBareClientSendsNoRecordDelete(t *testing.T) {
 	b := &bareClient{RedisClient: newMockRedis()}
 	q := NewRedisQueue(b, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	for _, id := range []string{"a", "b"} {
 		if err := q.Enqueue(ctx, Job{ID: id, Type: id}); err != nil {

@@ -53,6 +53,7 @@ func TestRedisDequeueRestoresJobOnHSetFailure(t *testing.T) {
 	// Wrap the healthy mock so the very first HSet (the processing write) fails.
 	fail := &opFailingRedis{RedisClient: r, hsetErr: errors.New("hset down")}
 	q := NewRedisQueue(fail, "test")
+	t.Cleanup(func() { _ = q.Close() })
 
 	if _, err := q.Dequeue(ctx); err == nil {
 		t.Fatal("expected Dequeue to surface an error when the processing write fails")
@@ -75,6 +76,7 @@ func TestRedisDequeueRestoresJobOnHSetFailure(t *testing.T) {
 	// A healthy queue over the same backing store must be able to recover it.
 	fail.hsetErr = nil
 	q2 := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q2.Close() })
 	recovered, err := q2.Dequeue(ctx)
 	if err != nil {
 		t.Fatalf("restored job was not re-dequeueable: %v", err)
@@ -95,6 +97,7 @@ func TestRedisDequeueRestoresJobOnHSetFailure(t *testing.T) {
 func TestRedisClaimCrashLoopRespectsMaxAttempts(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	q.SetVisibilityTimeout(time.Minute)
 
 	// Fake clock: no background goroutine runs (Start is never called), so the
@@ -165,6 +168,7 @@ func TestRedisDequeueSurfacesBackendError(t *testing.T) {
 	ctx := context.Background()
 	fail := &opFailingRedis{RedisClient: r, rpopErr: errors.New("connection lost")}
 	q := NewRedisQueue(fail, "test")
+	t.Cleanup(func() { _ = q.Close() })
 
 	_, err := q.Dequeue(ctx)
 	if err == nil {
@@ -189,6 +193,7 @@ func TestRedisDequeueSurfacesBackendError(t *testing.T) {
 func TestRedisVisTimeoutVsDequeueNoRace(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "race")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 
 	// Keep the queue non-empty so Dequeue does real work reading the timeout.

@@ -448,6 +448,55 @@ func (m *mockRedis) MoveIfEqual(_ context.Context, key, field, expect, list, val
 	return true, nil
 }
 
+// Eval implements [ScriptRunner] for the one script the queue runs,
+// eraseScript, in Go under the single mutex: the atomicity EVAL gives on a
+// real server. redis_live_test.go runs the Lua itself against one.
+func (m *mockRedis) Eval(_ context.Context, script string, keys []string, args ...any) (any, error) {
+	if script != eraseScript || len(keys) != 5 || len(args) != 2 {
+		return nil, fmt.Errorf("mockRedis: unknown script call")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	uid, dry := fmt.Sprint(args[0]), fmt.Sprint(args[1]) == "1"
+	names := func(raw string) bool {
+		var v map[string]any
+		return json.Unmarshal([]byte(raw), &v) == nil && v["user_id"] == uid
+	}
+	var n int64
+	for i, key := range keys[:2] {
+		for f, raw := range m.hashes[key] {
+			if i == 1 {
+				var e map[string]any
+				if json.Unmarshal([]byte(raw), &e) != nil {
+					continue
+				}
+				job, _ := e["job"].(string)
+				raw = job
+			}
+			if names(raw) {
+				n++
+				if !dry {
+					delete(m.hashes[key], f)
+				}
+			}
+		}
+	}
+	for _, key := range keys[2:] {
+		kept := m.lists[key][:0:0]
+		for _, raw := range m.lists[key] {
+			if names(raw) {
+				n++
+				if !dry {
+					continue
+				}
+			}
+			kept = append(kept, raw)
+		}
+		m.lists[key] = kept
+	}
+	return n, nil
+}
+
 func (m *mockRedis) Del(_ context.Context, keys ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -172,9 +172,10 @@ that removes every job whose `UserID` is the erased user after the SQL
 erasure commits. For `RedisQueue` that is the main, delayed and dead lists
 and the pop and processing hashes; for `MemoryQueue`, the pending jobs
 (delayed ones included), the jobs `Dequeue` handed out, and the dead list,
-with the unique keys they held freed. The Redis sweep repeats until a
-whole sweep finds none of the user's jobs, and fails the erasure if
-workers keep moving them (see the data-export page). A worker still
+with the unique keys they held freed. The Redis erasure is one Lua script,
+so it needs an adapter that implements
+[`ScriptRunner`](#optional-scriptrunner); with one that does not, the
+erasure fails with an error and removes nothing. A worker still
 running an erased job finds nothing to settle, and its `Ack` or `Nack`
 does nothing. The
 registration stays until `Close`, and it keeps the queue from being
@@ -822,6 +823,40 @@ Two cases deliver a job twice, which the at-least-once contract allows:
 a record whose delete failed, once its job has finished and left the
 processing hash, and a record that a `Dequeue` slower than the visibility
 timeout still holds.
+
+### Optional: `ScriptRunner`
+
+```go
+type ScriptRunner interface {
+    Eval(ctx context.Context, script string, keys []string, args ...any) (any, error)
+}
+```
+
+`App.EraseUserData` removes a user's jobs from the queue through the
+store eraser `NewRedisQueue` registers, and that erasure runs as one Lua
+script the queue owns. The adapter passes it through; with go-redis:
+
+```go
+func (c adapter) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
+    return c.rdb.Eval(ctx, script, keys, args...).Result()
+}
+```
+
+Redis runs a script with no other command in between. A sweep that reads
+one key at a time cannot prove a job gone, since a worker's `Dequeue` or
+`Nack` can move it into each key just after the sweep read that key, and
+a hash field read in one round trip and deleted in the next can belong to
+another user's claim by then. So an adapter without `Eval` keeps running
+the queue, but erasing a user's data from it fails with an error naming
+`queue.ScriptRunner` and removes nothing.
+
+The script reads every entry of the main, delayed and dead lists and the
+pop and processing hashes, and the server serves no other client while it
+runs, so it takes longer the more jobs the queue holds. It matches a job
+by the `user_id` key `json.Marshal` writes. It names all five keys, so on
+Redis Cluster use the same hash-tagged queue name as for
+`CompareAndMover`. Return an integer reply as an integer type (go-redis
+returns `int64`).
 
 **`RPop` must report an empty list as `queue.ErrRedisEmpty`.** Drivers
 signal "nothing there" with their own sentinel (go-redis returns
