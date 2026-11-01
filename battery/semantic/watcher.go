@@ -216,8 +216,16 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 // is refused by the kernel, never followed. Symlinks, devices, sockets
 // and pipes are skipped at the walk: a link's own Lstat says nothing
 // about its target, which could be ~/.ssh/id_ed25519 or /dev/zero.
+//
+// A root that names a file (ScanOnce(ctx, "README.md")) is confined to
+// its parent directory, since os.OpenRoot opens only a directory; the
+// walk still visits that one file.
 func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]struct{}) error {
-	root, err := os.OpenRoot(abs)
+	dir := abs
+	if fi, lerr := os.Lstat(abs); lerr == nil && !fi.IsDir() {
+		dir = filepath.Dir(abs)
+	}
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return fmt.Errorf("semantic: open root %q: %w", abs, err)
 	}
@@ -246,7 +254,7 @@ func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]stru
 		if w.opts.MaxFileSize > 0 && info.Size() > w.opts.MaxFileSize {
 			return nil
 		}
-		rel, rerr := filepath.Rel(abs, path)
+		rel, rerr := filepath.Rel(dir, path)
 		if rerr != nil {
 			return fmt.Errorf("semantic: rel(%q): %w", path, rerr)
 		}
@@ -259,8 +267,13 @@ func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]stru
 // MaxFileSize bytes even when the file grew since the walk measured it.
 // skip reports a file that is no longer one to index (gone, replaced by
 // something that is not a regular file, or grown past the limit).
+//
+// The open does not wait (openNonblock): a file swapped for a FIFO after
+// the walk would otherwise block the open until a writer appeared, and
+// no context reaches an open(2). The regular-file check on the handle
+// then skips it; a regular file reads the same with the flag set.
 func (w *Watcher) readCapped(root *os.Root, rel string) (data []byte, skip bool, err error) {
-	f, err := root.Open(rel)
+	f, err := root.OpenFile(rel, os.O_RDONLY|openNonblock, 0)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, true, nil // racing deletion
@@ -282,11 +295,18 @@ func (w *Watcher) readCapped(root *os.Root, rel string) (data []byte, skip bool,
 		data, err = io.ReadAll(f)
 		return data, false, err
 	}
-	data, err = io.ReadAll(io.LimitReader(f, w.opts.MaxFileSize+1))
+	return readLimited(f, w.opts.MaxFileSize)
+}
+
+// readLimited reads at most max+1 bytes of src: max or fewer is the
+// file, one more says it grew past the limit (skip), and the rest of a
+// file that keeps growing is never read.
+func readLimited(src io.Reader, max int64) (data []byte, skip bool, err error) {
+	data, err = io.ReadAll(io.LimitReader(src, max+1))
 	if err != nil {
 		return nil, false, err
 	}
-	if int64(len(data)) > w.opts.MaxFileSize {
+	if int64(len(data)) > max {
 		return nil, true, nil
 	}
 	return data, false, nil
@@ -369,16 +389,16 @@ func (w *Watcher) upsert(ctx context.Context, root *os.Root, rel, path string, i
 		return fmt.Errorf("semantic: read %q: %w", path, err)
 	}
 	if skip {
-		// No longer a file to index; drop the version indexed before,
-		// the way the next scan's deletion pass would for a file gone.
-		if ok {
-			if err := w.idx.Remove(ctx, prior.docID); err != nil {
-				return fmt.Errorf("semantic: watcher remove %q: %w", path, err)
-			}
-			w.mu.Lock()
-			delete(w.known, path)
-			w.mu.Unlock()
+		// No longer a file to index; drop any version indexed before.
+		// The document ID is the path's, so this holds for one an
+		// earlier process indexed too: the walk already marked the path
+		// seen, so reconcile will not remove it.
+		if err := w.idx.Remove(ctx, pathDocID(path)); err != nil {
+			return fmt.Errorf("semantic: watcher remove %q: %w", path, err)
 		}
+		w.mu.Lock()
+		delete(w.known, path)
+		w.mu.Unlock()
 		return nil
 	}
 	docID := pathDocID(path)
