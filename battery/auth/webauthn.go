@@ -366,6 +366,15 @@ func parseCOSEKey(b []byte) (coseKey, error) {
 		if mod.BitLen() < 2048 || len(eb) == 0 || len(eb) > 4 {
 			return coseKey{}, errors.New("COSE key: RS256 needs a modulus of at least 2048 bits")
 		}
+		// Verification cost grows with the square of the modulus, and
+		// attestation "none" checks nothing about the key: a 4-Mbit modulus
+		// registered once made every anonymous sign-in attempt against it
+		// burn about a minute of CPU. crypto/tls caps peer RSA keys at 8192
+		// bits for the same reason (CVE-2023-29409). Login re-parses the
+		// stored key, so an oversized key already stored is refused too.
+		if mod.BitLen() > maxCOSERSABits || mod.Bit(0) == 0 {
+			return coseKey{}, errors.New("COSE key: RS256 needs an odd modulus of at most 8192 bits")
+		}
 		e := int(new(big.Int).SetBytes(eb).Int64())
 		if e < 3 || e%2 == 0 {
 			return coseKey{}, errors.New("COSE key: RS256 exponent must be odd and at least 3")
@@ -374,6 +383,9 @@ func parseCOSEKey(b []byte) (coseKey, error) {
 	}
 	return coseKey{}, fmt.Errorf("COSE key: unsupported kty %d / alg %d", kty, alg)
 }
+
+// maxCOSERSABits is the largest RSA modulus a passkey may register.
+const maxCOSERSABits = 8192
 
 func (k coseKey) verify(msg, sig []byte) bool {
 	switch pub := k.pub.(type) {
