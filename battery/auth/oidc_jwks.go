@@ -153,16 +153,42 @@ func (c *jwksCache) getKey(ctx context.Context, jwksURI, kid string) (oidcKey, e
 	}
 	c.mu.Unlock()
 	if force {
-		if err := c.refresh(ctx, jwksURI, true); err == nil {
-			c.mu.Lock()
-			set = c.set
-			c.mu.Unlock()
-			if k, ok := set.lookup(kid); ok {
-				return k, nil
-			}
+		if err := c.refresh(ctx, jwksURI, true); err != nil {
+			return oidcKey{}, fmt.Errorf("oidc: no signing key found for kid %q", kid)
 		}
+	} else if c.awaitInFlight(ctx) != nil {
+		return oidcKey{}, fmt.Errorf("oidc: no signing key found for kid %q", kid)
+	}
+	// Look again either way. With the kid's slot spent, a fetch another
+	// login started for this same freshly rotated kid may still be in
+	// flight: awaitInFlight waited for it. Failing at once instead
+	// refused every concurrent login during an IdP key rotation.
+	c.mu.Lock()
+	set = c.set
+	c.mu.Unlock()
+	if k, ok := set.lookup(kid); ok {
+		return k, nil
 	}
 	return oidcKey{}, fmt.Errorf("oidc: no signing key found for kid %q", kid)
+}
+
+// awaitInFlight waits, bounded by ctx, for a fetch another caller holds the
+// slot for, and starts none itself. With no fetch in flight it returns at
+// once.
+func (c *jwksCache) awaitInFlight(ctx context.Context) error {
+	c.mu.Lock()
+	if c.fetchSlot == nil {
+		c.fetchSlot = make(chan struct{}, 1)
+	}
+	slot := c.fetchSlot
+	c.mu.Unlock()
+	select {
+	case slot <- struct{}{}:
+		<-slot
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // refresh fetches the key set once, outside mu. wait=false gives up at once
@@ -205,9 +231,13 @@ func (c *jwksCache) refresh(ctx context.Context, jwksURI string, wait bool) erro
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err != nil {
-		if ctx.Err() != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			// This caller went away; that says nothing about the IdP, so
-			// no backoff and no shared outcome for waiters to reuse.
+			// no backoff and no shared outcome for waiters to reuse. A
+			// deadline is different: a request timeout shorter than the
+			// HTTP client's means a hanging IdP only ever fails this way,
+			// and without the backoff every stale period made one login
+			// pay its whole deadline.
 			return err
 		}
 		c.gen++
