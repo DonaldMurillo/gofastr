@@ -366,7 +366,9 @@ base)` for one whose screens live elsewhere (an empty base draws it with
 `NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
 `Duplicate()`, `Steps(list)`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
-page keeps one `<h1>`.
+page keeps one `<h1>`. The Related tab's count is the rows those lists
+draw: each list's default view, and the filter, search and facets the URL
+sets on it, narrow the count the way they narrow the list.
 
 A builder name that is wrong — an unknown entity, a bad `As`, an unknown
 column — fails that slot with a generic message and a log line, never a
@@ -692,7 +694,9 @@ _ = list.RenderCtx(ctx)
   per caller, in a `SavedViewStore` the host backs with a table
   (`battery/admin` provides it). `?saved=<id>` opens one: its filter
   and columns apply as if they were the `filter` and `cols` params,
-  with an explicit param in the URL winning, and both are re-parsed
+  with an explicit param in the URL winning (an empty `filter=` is the
+  reader clearing the view's filter, and sort, page, column and chip
+  links keep it empty), and both are re-parsed
   and re-checked on every open — a view that no longer applies (or an
   unknown or foreign id) draws a callout and lists the All view,
   revealing nothing. The save form ("Save view", a name; shown once the

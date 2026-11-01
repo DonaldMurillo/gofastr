@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -115,14 +116,10 @@ func rowTerms(m *meta, fields, ops, values []string) []string {
 		}) {
 			continue
 		}
-		out = append(out, f.Name+" "+ops[i]+" "+dslQuote(v))
+		out = append(out, f.Name+" "+ops[i]+" "+dsl.Quote(v))
 	}
 	return out
 }
-
-// dslQuote quotes a value the way predicateText does, so a row's term
-// round-trips through the parser.
-func dslQuote(v string) string { return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"` }
 
 // composeFilter joins the rows' terms and the box's text with and. The
 // box's text is grouped whenever rows join it, so the and binds the

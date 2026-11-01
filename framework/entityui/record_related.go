@@ -8,7 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
-	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -31,43 +30,13 @@ import (
 func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) render.HTML {
 	var lists []render.HTML
 	for _, rl := range b.related {
-		other, err := b.ui.entityFor(rl.name)
-		if err != nil {
-			lists = append(lists, slotFailed(ctx))
-			continue
-		}
-		_, fks := relationTo(other, m.name)
-		pins, ok := relatedPins(fks, b.id)
+		list, om, ok := b.relatedListFor(ctx, m, rl, base)
 		if !ok {
 			lists = append(lists, slotFailed(ctx))
 			continue
 		}
-		otherBase := rl.base
-		if !rl.fixed {
-			otherBase = relatedBase(ctx, base, other.GetName())
-		}
-		om, err := b.ui.meta(other.GetName())
-		if err != nil {
-			lists = append(lists, slotFailed(ctx))
-			continue
-		}
-		// The list's own header names the section, one level below the
-		// record's title.
-		list := b.ui.List(other.GetName()).
-			Key(other.GetName()).
-			Heading(om.plural(ctx), 2).
-			Embedded()
-		for _, pin := range pins {
-			list = list.Where(pin.Field, pin.Value)
-		}
-		if otherBase == "" {
-			// No screen of its own: rows without links and no New.
-			list = list.NoLinks()
-		} else {
-			list = list.Base(otherBase)
-		}
 		lists = append(lists, ui.Section(ui.SectionConfig{
-			ID:      "eui-related-" + other.GetName(),
+			ID:      "eui-related-" + om.name,
 			Compact: true,
 		}, list.RenderCtx(ctx)))
 	}
@@ -75,29 +44,66 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL}, lists...)
 }
 
+// relatedListFor builds the list the Related tab draws for rl: the other
+// entity's rows pinned to this record, keyed by its name, with its
+// section heading. ok is false when the entity, its relation or its
+// meta cannot be resolved.
+func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedList, base string) (*ListBuilder, *meta, bool) {
+	other, err := b.ui.entityFor(rl.name)
+	if err != nil {
+		return nil, nil, false
+	}
+	_, fks := relationTo(other, m.name)
+	pins, ok := relatedPins(fks, b.id)
+	if !ok {
+		return nil, nil, false
+	}
+	otherBase := rl.base
+	if !rl.fixed {
+		otherBase = relatedBase(ctx, base, other.GetName())
+	}
+	om, err := b.ui.meta(other.GetName())
+	if err != nil {
+		return nil, nil, false
+	}
+	// The list's own header names the section, one level below the
+	// record's title.
+	list := b.ui.List(other.GetName()).
+		Key(other.GetName()).
+		Heading(om.plural(ctx), 2).
+		Embedded()
+	for _, pin := range pins {
+		list = list.Where(pin.Field, pin.Value)
+	}
+	if otherBase == "" {
+		// No screen of its own: rows without links and no New.
+		list = list.NoLinks()
+	} else {
+		list = list.Base(otherBase)
+	}
+	return list, om, true
+}
+
 // relatedCount is the Related tab's count: the rows its lists draw,
-// summed. Each entity counts through its own read gate and scope, the
-// list's, so a row the caller could not see is never counted; an
-// entity that refuses or fails adds nothing, and none readable is "".
-func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta) string {
+// summed. Each list resolves its read the way it does to draw (the
+// relation pins, its default view, and the filter, search and facets
+// the URL sets on it), and counts through its entity's read gate and
+// scope, so a row the caller could not see, or one the list hides, is
+// never counted; an entity that refuses or fails adds nothing, and
+// none readable is "".
+func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta, base string) string {
 	total, any := 0, false
 	for _, rl := range b.related {
-		other, err := b.ui.entityFor(rl.name)
+		list, om, ok := b.relatedListFor(ctx, m, rl, base)
+		if !ok || !canRead(ctx, om.ch) {
+			continue
+		}
+		_, read, err := list.state(ctx, om)
 		if err != nil {
+			slog.WarnContext(ctx, "entityui: related count", "entity", om.name, "error", err)
 			continue
 		}
-		_, fks := relationTo(other, m.name)
-		pins, ok := relatedPins(fks, b.id)
-		if !ok {
-			continue
-		}
-		om, err := b.ui.meta(other.GetName())
-		if err != nil || !canRead(ctx, om.ch) {
-			continue
-		}
-		n, err := om.ch.CountAll(crud.WithReadHooks(ctx), crud.ListOptions{
-			Where: &filter.Predicate{Children: pins},
-		})
+		n, err := om.ch.CountAll(crud.WithReadHooks(ctx), read)
 		if err != nil {
 			slog.WarnContext(ctx, "entityui: related count", "entity", om.name, "error", err)
 			continue

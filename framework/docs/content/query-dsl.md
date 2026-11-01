@@ -152,6 +152,12 @@ status in ["open", "past_due"] and due_on < "2026-10-01"
 (kind = "company" or vat_number != "") and active = true
 ```
 
+A quoted value knows two escapes, `\"` and `\\`; any other backslash is
+refused. Code that writes filter text quotes a value with
+`dsl.Quote(v)`, which escapes the backslash before the quote, so
+`C:\reports` is written `"C:\\reports"` and parses back to itself. A
+value holding a line break cannot be written as a term.
+
 Keywords are case-insensitive and `and` binds tighter than `or`.
 `contains` is a literal substring match: the `%`, `_` and escape
 characters in the value are escaped and the clause carries `ESCAPE`, so
