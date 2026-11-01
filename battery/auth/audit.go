@@ -113,15 +113,27 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 					"kind", ev.Kind, "panic", textsafe.Recovered(r))
 			}
 		}()
-		sink.SecurityEvent(ctx, ev)
+		// Every event is emitted after the change it records committed.
+		// On the request's own context, a client that hung up (or a
+		// request timeout) between the two cancelled the audit write: a
+		// stolen session could disable 2FA, drop the connection and leave
+		// no row. The write keeps the request's values, not its
+		// cancellation (the settlectx shape).
+		sink.SecurityEvent(context.WithoutCancel(ctx), ev)
 	}()
 }
+
+// auditWriteTimeout bounds the built-in sink's insert now that it no
+// longer inherits the request's cancellation.
+const auditWriteTimeout = 5 * time.Second
 
 // sqlAuditSink is the built-in AuditSink: it writes each SecurityEvent as a
 // row in the framework's audit_log table via framework.AppendAuditEvent.
 // entity is always "auth"; op is ev.Kind; record_id is ev.UserID (or "-"
 // when empty, since the column is NOT NULL); actor_id is ev.UserID; and the
-// diff JSON carries {email, remote, …meta} with empty members omitted.
+// diff JSON carries {email, remote, …meta} with empty members omitted. A
+// row with no UserID carries email_hash (a short sha256 prefix) instead of
+// the address, since erasure cannot reach a row with no actor.
 type sqlAuditSink struct {
 	db    *sql.DB
 	table string
@@ -160,8 +172,17 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 		recordID = "-"
 	}
 	diff := make(map[string]any, 2+len(ev.Meta))
-	if ev.Email != "" {
+	switch {
+	case ev.Email == "":
+	case ev.UserID != "":
 		diff["email"] = ev.Email
+	default:
+		// A row with no actor is out of reach of EraseUserData, which
+		// scrubs the rows a user acted from: an address kept here
+		// (magic-link requests, refused OAuth sign-ins, unknown-account
+		// login failures) survived the erasure of its owner. A short
+		// digest still correlates repeated attempts on one address.
+		diff["email_hash"] = hashedIdentifier(ev.Email)
 	}
 	if ev.Remote != "" {
 		diff["remote"] = ev.Remote
@@ -169,6 +190,8 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 	for k, v := range ev.Meta {
 		diff[k] = v
 	}
+	ctx, cancel := context.WithTimeout(ctx, auditWriteTimeout)
+	defer cancel()
 	if err := framework.AppendAuditEvent(ctx, s.db, s.table, "auth", ev.Kind, recordID, ev.UserID, diff); err != nil {
 		slog.Warn("auth: failed to write security audit row",
 			"kind", ev.Kind, "error", err)
