@@ -104,6 +104,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The harness MCP server cancels a request from another POST.** Over
+  Streamable HTTP each POST had its own in-flight table, so the
+  `notifications/cancelled` an MCP client sends as a separate POST found
+  nothing and the turn ran on. POSTs now share one table, owned by the
+  token principal plus `Mcp-Session-Id`, so another caller's cancel finds
+  nothing. The duplicate-id check and the 32-request cap count per owner
+  across POSTs.
 - **BREAKING: a presence topic named in the URL needs `AuthorizeTopic`.**
   With no hook, any `?presence=` topic joined, so anyone who could guess a
   topic read its roster, emails included. A screen now declares its topics

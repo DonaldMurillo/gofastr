@@ -50,6 +50,12 @@ type HTTPHandler struct {
 	// sessions maps Mcp-Session-Id → live GET stream state.
 	mu       sync.Mutex
 	sessions map[string]*httpMCPSession
+
+	// inflight is the running-request table every POST shares. An MCP
+	// client sends notifications/cancelled as its own POST, which must
+	// reach a request another POST is still serving. Entries are owned
+	// by token principal plus Mcp-Session-Id (see inflightOwner).
+	inflight *inflightTable
 }
 
 type httpMCPSession struct {
@@ -76,6 +82,7 @@ func NewHTTPHandler(s *Server, enc *auth.Encoder, rl *auth.RevocationList) *HTTP
 		Encoder:     enc,
 		Revocations: rl,
 		sessions:    make(map[string]*httpMCPSession),
+		inflight:    newInflightTable(),
 	}
 }
 
@@ -233,6 +240,8 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 	s.IdentityClass = h.Server.IdentityClass
 	s.RequiredToken = h.Server.RequiredToken
 	s.Claims = claims
+	s.inflight = h.inflight
+	s.owner = inflightOwner{principal: string(claims.JTI), session: sessID}
 	s.WithIO(in, &out)
 	if err := s.Serve(r.Context()); err != nil && !errors.Is(err, context.Canceled) {
 		// Serve returns nil on EOF; only log unexpected errors.
