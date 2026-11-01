@@ -188,7 +188,8 @@ the module applies:
   first focusable when focus sits outside it, so a drawer the server
   rendered open (`SecondaryOpen`) on a phone-width first load, or a
   window narrowed under an open pane, does not leave focus behind the
-  scrim. Tab with focus outside the drawer re-enters it at the first
+  scrim; an open modal widget keeps focus instead. Tab with focus
+  outside the drawer re-enters it at the first
   focusable, Shift+Tab at the last,
 - a refcounted **scroll lock**: `__gofastr.doc.lockScroll('panehost:<id>')`,
   released on close / widen / navigate,

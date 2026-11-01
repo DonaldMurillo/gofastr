@@ -248,9 +248,10 @@
   // on a closed page would paint a scrim over everything); it is
   // REMOVED otherwise. Entering overlay mode takes the kernel's
   // refcounted scroll lock, leaving releases it, and moves focus into
-  // the drawer when it sits outside: a drawer the server rendered open
-  // on a phone-width first load, or a window narrowed under an open
-  // pane, would otherwise leave focus behind the scrim.
+  // the drawer when it sits outside, unless an open modal holds it: a
+  // drawer the server rendered open on a phone-width first load, or a
+  // window narrowed under an open pane, would otherwise leave focus
+  // behind the scrim.
   function syncMode(host) {
     const wantOverlay = window.matchMedia(MQ).matches && !!topmost(host);
     const isOverlay = host.getAttribute('data-hui-pane-mode') === 'overlay';
@@ -259,7 +260,9 @@
       host.setAttribute('data-hui-pane-mode', 'overlay');
       if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
       const pane = paneOf(host, topmost(host));
-      if (pane && !pane.contains(document.activeElement)) focusIn(pane, false);
+      // An open modal keeps focus: the drawer is behind it.
+      const modal = NS._modalStack && NS._modalStack.length > 0;
+      if (pane && !modal && !pane.contains(document.activeElement)) focusIn(pane, false);
     } else {
       host.removeAttribute('data-hui-pane-mode');
       if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));

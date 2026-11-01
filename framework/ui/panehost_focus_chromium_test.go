@@ -58,3 +58,36 @@ func TestSSROpenDrawerTakesFocus(t *testing.T) {
 		t.Errorf("Shift+Tab from the body went to %q, want p-last", afterShiftTab)
 	}
 }
+
+// Narrowing the window under an open pane while a modal holds focus
+// leaves focus in the modal: the drawer opening behind it must not take
+// focus, the same deference the keys already give an open modal.
+func TestResizeKeepsModalFocus(t *testing.T) {
+	body := render.Join(
+		PaneHost(PaneHostConfig{
+			Primary: render.Text("The list"),
+			Secondary: render.Join(
+				render.Tag("a", map[string]string{"id": "p-first", "href": "#a"}, render.Text("first")),
+			),
+			SecondaryOpen: true,
+		}),
+		render.Tag("button", map[string]string{"id": "modal-btn", "type": "button"}, render.Text("In the modal")),
+	)
+	srv := paneHostTestPage(t, string(body))
+	ctx := chromedptest.Context(t)
+	var before, after string
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(1280, 900),
+		chromedp.Navigate(srv.URL),
+		chromedp.Poll(paneHostDrawerLoaded, nil, chromedp.WithPollingTimeout(15*time.Second)),
+		chromedp.Evaluate(`window.__gofastr._modalStack.push('m'); document.getElementById('modal-btn').focus(); document.activeElement.id`, &before),
+		chromedp.EmulateViewport(390, 844),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`document.activeElement.id`, &after),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if before != "modal-btn" || after != "modal-btn" {
+		t.Errorf("focus before %q, after the resize %q; want modal-btn both times", before, after)
+	}
+}
