@@ -625,8 +625,9 @@ Register at package init: the host builds the behaviours block once, so
 first manifest), the same rule `RegisterStyle` keeps. A requirement
 graph the loader cannot satisfy (a cycle, an unknown module) stops a
 `framework.App` at boot (`ValidateBoot`); a host mounted without an App
-answers every request with a 500 naming the cycle, never an empty
-manifest.
+answers every request that builds the manifest (a page,
+`/__gofastr/manifest.js`) with a 500, its log line naming the cycle,
+never an empty manifest.
 
 The module route (`/__gofastr/runtime/<name>.js`) and the compute asset
 route (`/__gofastr/compute/<name>.js|.wasm`) cache `immutable` only when

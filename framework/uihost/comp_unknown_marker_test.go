@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -52,14 +53,22 @@ func TestUnknownMarkerDoesNotBreakTheBundle(t *testing.T) {
 
 // A bundle URL another replica built can name a component this one does
 // not have. The bundle serves the sheets it knows rather than refusing
-// them all, and an answer that cannot match the URL's version is never
-// cached as immutable.
+// them all, and a bundle that skipped a name is never cached as
+// immutable, even when its v is the hash of the names it did serve.
 func TestBundleSkipsUnknownNames(t *testing.T) {
 	registry.IsolateForTest(t)
 	a := registerTestStyle(t, "skip-a")
 	ds := newTestUIHostFor(a)
+	theme := ds.activeTheme()
+	e, _ := registry.Lookup(a.Name())
+	known := hashStrings(e.VersionForHash(theme, style.ThemeHash(theme)))
 	w := httptest.NewRecorder()
-	ds.ServeHTTP(w, httptest.NewRequest("GET", "/__gofastr/comp-bundle.css?names="+a.Name()+",gone-in-this-build&v=abc", nil))
+	ds.ServeHTTP(w, httptest.NewRequest("GET", "/__gofastr/comp-bundle.css?names="+a.Name()+"&v="+known, nil))
+	if cc := w.Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
+		t.Fatalf("control: the known-only bundle at its own hash is %q, want immutable (the hash spelling drifted)", cc)
+	}
+	w = httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest("GET", "/__gofastr/comp-bundle.css?names="+a.Name()+",gone-in-this-build&v="+known, nil))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), a.Name()) {
 		t.Fatalf("status %d body %q, want 200 with the known sheet", w.Code, truncate(w.Body.String(), 300))
 	}

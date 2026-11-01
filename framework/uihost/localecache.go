@@ -82,14 +82,20 @@ type perLocale[T any] struct {
 type perLocaleEntry[T any] struct {
 	once sync.Once
 	v    T
-	// panicked holds a build's panic value. sync.Once counts a
-	// panicking call as done, so without it every later get returned
-	// the zero value: a refused behaviour graph answered 500 once and
-	// then served an empty manifest.js, every page linked ?v= with no
-	// hash, and nothing was logged again.
-	panicked any
+	// failed: the build panicked. sync.Once counts a panicking call as
+	// done, so without this every later get returned the zero value: a
+	// refused behaviour graph answered 500 once and then served an empty
+	// manifest.js, every page linked ?v= with no hash, and nothing was
+	// logged again.
+	failed bool
 }
 
+// get returns the memoized value for key, building it once. A build that
+// panics is not memoized: its entry is dropped and the panic goes on
+// unrecovered, so the recovery middleware logs the stack where it
+// happened, the next get builds again (a transient failure heals, a
+// persistent one panics on every request with its own stack), and a
+// caller that waited on the failed build retries it.
 func (p *perLocale[T]) get(key string, build func() T) T {
 	p.mu.Lock()
 	if p.m == nil {
@@ -102,15 +108,23 @@ func (p *perLocale[T]) get(key string, build func() T) T {
 	}
 	p.mu.Unlock()
 	e.once.Do(func() {
+		ok := false
 		defer func() {
-			if r := recover(); r != nil {
-				e.panicked = r
+			if ok {
+				return
 			}
+			e.failed = true
+			p.mu.Lock()
+			if p.m[key] == e {
+				delete(p.m, key)
+			}
+			p.mu.Unlock()
 		}()
 		e.v = build()
+		ok = true
 	})
-	if e.panicked != nil {
-		panic(e.panicked)
+	if e.failed {
+		return p.get(key, build)
 	}
 	return e.v
 }

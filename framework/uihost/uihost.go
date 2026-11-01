@@ -5441,9 +5441,11 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 // Cache policy mirrors handleComponentCSS: `immutable` only when
 // the supplied v matches the freshly-computed combined hash;
 // otherwise no-cache to avoid pinning a stale URL to fresh bytes.
-// Unknown names 404: the contract is that the client requests
-// names it learned from the SSR-emitted <link>, which by
-// construction lists only registered entries.
+// An unknown name is skipped, not refused: a page another replica
+// rendered mid-deploy can name a component this one lacks, and a 404
+// would drop every sheet in the bundle. A bundle that skipped a name is
+// never immutable, whatever its v says. Only names that are all unknown
+// 404.
 func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	namesParam := r.URL.Query().Get("names")
 	if namesParam == "" {
@@ -5464,6 +5466,7 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	versions := make([]string, 0, len(names))
 	bodies := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
+	skipped := false
 	for _, n := range names {
 		n = strings.TrimSpace(n)
 		if !validNameRe.MatchString(n) {
@@ -5478,8 +5481,9 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			// Skip, don't refuse: a page another replica rendered can
 			// name a component this one lacks mid-deploy, and a 404
-			// would drop every other sheet in the bundle. The version
-			// then cannot match ?v=, so the answer is no-cache.
+			// would drop every other sheet in the bundle. Such an
+			// answer is never immutable (skipped, below).
+			skipped = true
 			continue
 		}
 		versions = append(versions, e.VersionForHash(theme, th))
@@ -5491,7 +5495,7 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	wantV := hashStrings(versions...)
-	if v := r.URL.Query().Get("v"); v != "" && v == wantV {
+	if v := r.URL.Query().Get("v"); v != "" && v == wantV && !skipped {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")

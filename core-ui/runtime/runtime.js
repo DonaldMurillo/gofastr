@@ -284,7 +284,8 @@
       return false;
     },
     /* The screen title a response names. uihost percent-encodes the
-       header and omits it for an untitled screen; document.title is
+       header (an untitled screen's carries the app name, its full
+       document's title); a host that omits it keeps document.title, which is
        never encoded, so only the header is decoded (a "50% Off" title
        threw out of navigation). */
     _title(r) {
