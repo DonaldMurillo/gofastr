@@ -685,6 +685,7 @@
     "copy": {
       "copied": "Copiado",
       "copy": "Copiar",
+      "failed": "No se pudo copiar al portapapeles",
       "link": "Copiar enlace",
       "status": "Copiado: {{name}}",
       "toClipboard": "Copiar al portapapeles"
