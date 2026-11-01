@@ -166,6 +166,48 @@ func TestEnvelopeReplayRestoresPageSignals(t *testing.T) {
 	}
 }
 
+// A page whose cache entry was invalidated while it was live still
+// leaves with its own page-scoped seed. The leave capture had only the
+// route.* fold to fall back on, so Forward replayed /a's markup with the
+// quantity Back had restored (#614).
+func TestInvalidatedPageKeepsSeed(t *testing.T) {
+	srv := envelopeSeedServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var back, fwd string
+	var soft bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`window.__softMark = 1; true`, nil),
+		chromedp.Click(`#goA`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Sleep(200*time.Millisecond),
+		// An RPC write on /a drops its entry, as rpc.js does.
+		chromedp.Evaluate(`__gofastr.invalidate('/a'); true`, nil),
+		chromedp.Evaluate(`history.back(); true`, nil),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`String(__gofastr.getSignal('quantity'))`, &back),
+		chromedp.Evaluate(`history.forward(); true`, nil),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`String(__gofastr.getSignal('quantity'))`, &fwd),
+		chromedp.Evaluate(`window.__softMark === 1`, &soft),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !soft {
+		t.Fatal("a navigation reloaded the document; the test needs soft swaps")
+	}
+	if back != "1" {
+		t.Fatalf("Back to the boot page: quantity = %s, want 1", back)
+	}
+	if fwd != "10" {
+		t.Errorf("Forward to the invalidated /a: quantity = %s, want its envelope's 10", fwd)
+	}
+}
+
 // A plain partial (no envelope) the envelope navigator applied keeps its
 // seed when the page is re-captured on leave. Its cache entry carries the
 // island inline in its bytes, and the live DOM has merged it away, so the

@@ -1403,7 +1403,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// navigator has swapped the DOM keys no capture on the served
 		// URL (2026-10-29 bug bash R29,
 		// TestLateEnvelopeKeepsTheBootPage).
-		"envelope": 8034,
+		// 8091 measured (8089 + 2) after a leave capture with no entry
+		// to carry forward falls back to the page's whole page-scoped
+		// seed, not its route.* keys, and a deferred part's seed adds to
+		// it (#614, TestInvalidatedPageKeepsSeed,
+		// TestPartSeedKeepsPageSeed). The dead routeFold seam went.
+		"envelope": 8091,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

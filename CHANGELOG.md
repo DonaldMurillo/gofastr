@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A page whose cache entry was dropped keeps its own signals on Back
+  and Forward.** When an RPC write invalidated the page's entry, leaving
+  it captured only its `route.*` signals, so a replay showed the page's
+  markup with the previous page's values (a cart quantity, a selected
+  tab). The envelope navigator now tracks the page's whole page-scoped
+  seed, and a deferred part's seed adds to it instead of replacing it.
 - **BREAKING: auth's own screens draw with the design system.** The
   magic-link confirmation and the same-site hop (the page a cross-site
   OAuth link callback or webmail verification click lands on) were
