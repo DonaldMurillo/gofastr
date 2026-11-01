@@ -28,6 +28,8 @@ const CSRFHeaderName = "X-CSRF-Token"
 //     (JSON path) OR a hidden _csrf form field (HTML form path) matches
 //     the cookie value AND has a valid HMAC signature.
 //   - Bearer-token / X-API-Key requests are skipped (not cookie-based).
+//     Any other Authorization scheme (Basic, Negotiate) is one the
+//     browser attaches by itself, so it is checked.
 //
 // Auth defaults: cookie name "auth_csrf", header X-CSRF-Token, form
 // field "_csrf". Pair with CSRFInputHTML in your templates.
@@ -136,8 +138,9 @@ func CSRFToken(r *http.Request) string {
 	if tok := middleware.TokenFromContext(r.Context()); tok != "" {
 		return middleware.MaskCSRFToken(tok)
 	}
-	// Also try the __Host- prefixed variant when running secure.
-	for _, name := range []string{CSRFCookieName, "__Host-" + CSRFCookieName} {
+	// The __Host- variant first: on HTTPS it is the one the middleware set,
+	// and a sibling subdomain can plant the bare name but never that one.
+	for _, name := range []string{"__Host-" + CSRFCookieName, CSRFCookieName} {
 		if c, err := r.Cookie(name); err == nil && c.Value != "" {
 			return middleware.MaskCSRFToken(c.Value)
 		}

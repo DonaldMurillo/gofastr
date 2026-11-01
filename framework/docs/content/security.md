@@ -248,8 +248,11 @@ middleware.CSRF(middleware.CSRFConfig{
 Issues a cookie on safe requests; requires the matching header on
 mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
 `SkipBearerAuth()` is the shipped helper that bypasses CSRF on
-requests with `Authorization: Bearer …`, appropriate for pure API
-deployments where the browser is not involved.
+requests with `Authorization: Bearer …` or `X-API-Key`, appropriate for
+pure API deployments where the browser is not involved. Other
+`Authorization` schemes (Basic, Negotiate) are not skipped: the browser
+attaches them by itself. A verified mutating request carries its token on
+the context (`TokenFromContext`), so a re-rendered form can embed it.
 
 **Always set `SecretKey` explicitly in production.** The middleware
 will autogenerate one if omitted, but that key rotates every process
