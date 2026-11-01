@@ -104,6 +104,99 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Images.** `StripMetadata` keeps the Adobe colour marker, so a
+  stripped CMYK JPEG still decodes. Image-field renditions and
+  placeholders follow the upload's EXIF orientation. A long upload name
+  no longer fails when renditions are stored: rendition names are cut
+  from the front and keep the random token (`image.MaxVariantNameBytes`,
+  and `CheckVariantNames` refuses a suffix that leaves no room for a
+  name). EXIF orientation is read past 0xFF fill bytes.
+- **An upsert that updates an existing row refreshes `updated_at`.**
+- **WebMCP tools registered with `Handle` on a grouped router advertise
+  the prefixed path**, so in-browser agent calls reach the route.
+- **Process modules.** An over-cap request answer no longer blocks the
+  read loop; a peer that stops reading faults with `ErrStalled`. A
+  proxied request whose base64 frame would pass `Limits.FrameBytes` gets
+  413 instead of a retryable 503. A cancelled MCP tool call sends
+  `module.cancel` to the module.
+- **YAML quotes.** `name: O'Reilly # note` drops the comment, and
+  `[O'Reilly, Jane]` parses as a list.
+- **Kiln keeps integers past 2^53 exactly** in tool calls through the
+  agent loop, MCP and ACP.
+- **Sub-millisecond theme durations emit valid CSS** (`0.5ms`, `2.5ms`).
+- **The notify email channel accepts what the SMTP sender accepts**
+  (`o'brien@example.com`, `App <noreply@example.com>`) and refuses a
+  comma list. New `email.ValidateAddress`.
+- **Contracts rules.** GOFASTR1410 catches `os.WriteFile` and `os.Root`
+  writes and storage types declared in another file, and an unrelated
+  Fold-named call no longer silences it. GOFASTR1409 no longer accepts
+  `IS NOT NULL` or a token clear as a fence, checks the whole package,
+  and accepts reversed lease bounds and cancelled or expired statuses.
+  GOFASTR1408 catches counters written through `CAST`, `COALESCE`,
+  `LEAST`, `::int` or a quoted column. GOFASTR1411 and GOFASTR1413 match
+  header names in any case. GOFASTR1412 catches single-quoted URL
+  attributes and an escaped value held in a variable. GOFASTR1414 counts
+  a literal as SQL only when a statement verb starts it. GOFASTR1415
+  reads field-assigned eraser tables and `ALTER TABLE … ADD COLUMN`.
+- **A panel opened just before a navigation no longer opens, or writes
+  its deep link, on the next page.**
+- **Signal attributes.** A signal bound to `disabled`, `hidden`,
+  `checked`, `open` or `selected` removes the attribute on false
+  (`disabled="false"` disabled the control), and `checked`, `selected`
+  and `value` keep following the signal after the user edits the field.
+  `store.Slice.BindAttr` leaves a false boolean out of the server render
+  too, so the control no longer arrives disabled or hidden.
+- **Escape closes a popover opened inside a modal before the modal.**
+- **Removing the last live island closes the SSE stream.**
+- **A percent-encoded fragment finds its target** (`#caf%C3%A9` →
+  `id="café"`).
+- **Client navigation honours `:int`, `:uuid`, `:alpha` and `:alnum`
+  route constraints**, so it judges the document boundary on the route
+  the server serves. It decodes each segment first, as the server does,
+  so `/orders/%31` is the `:int` route on both sides.
+- **A corner or unanchored popover, and a `FloatingPanel`, render their
+  panel surface.** New `widget.Builder.Surface()`.
+- **Toasts.** The timer runs only while the row is neither hovered nor
+  holding focus, and a row keeps one timer at most.
+- **Combobox, SearchInput and `data-cui-clear-on-esc` leave IME
+  composition keys alone.**
+- **Lightbox arrow keys step the gallery only while the lightbox is the
+  top modal.** Alt, Ctrl, Meta or Shift with an arrow stays the
+  browser's (history, word jumps, selection), including while the
+  lightbox module is still loading.
+- **MultiSelect keeps focus after a chip is removed** (next chip,
+  previous chip, or the trigger).
+- **SearchInput, FileDropzone, autogrow textareas, dropdowns, the form
+  helpers (`data-cui-clear-on-esc`, `-persist-storage`, `-tick-elapsed`
+  and the rest) and local forms wire up when a swap hands over the marked
+  element itself.**
+- **Rail re-resolves a swapped region, targets or links** on the next
+  arrival.
+- **TagInput applies its maxlength in code points, before the duplicate
+  check.**
+- **The mobile sidebar drawer is announced as "Navigation"**
+  (`ui.sidebar.drawer`).
+- **Desktop.** Linux apps start after a crash left the cookie database's
+  rollback journal behind. A double-clicked Install no longer runs two
+  updates at once. Closing a secondary macOS window frees its web view,
+  and a call on a closed window reports it closed. On Windows, a
+  forwarded deep link keeps a maximized window maximized, and window
+  titles longer than 1023 UTF-16 units read back whole.
+- **BREAKING: a desktop menu `Key` needs cmd, ctrl or alt.** A bare or
+  shift-only key (`n`, `shift+n`) took that keystroke from every text
+  field; `New` now refuses it.
+- **CLI.** `gofastr verify --sarif --json` (any valued flag followed by
+  a flag) errors instead of writing a file named `--json`. The removed
+  `gofastr migrate diff` exits non-zero. `gofastr semantic clear`
+  refuses while `index` or `watch` holds the index, and keeps the lock
+  file.
+- **Kiln.** A `delete_entity` that SQLite refuses leaves the CRUD rows
+  in place. Generated seed ids are journaled, so a restart, reset or
+  undo rebuilds them with the same ids; journals written before this
+  still get fresh ids.
+- **Repo tooling.** `make bench` and the tier targets fail when a
+  benchmark fails, and the pre-commit hook builds vettool in a private
+  temp dir.
 - **An offset with no limit runs on SQLite.** `query.Build` wrote
   `OFFSET $n` alone, which SQLite refuses, so `TypedQuery.Offset`
   without `Limit` failed there and ran on Postgres. An offset alone now
@@ -3741,6 +3834,86 @@ few lines, and link the PR or the docs page for the rest.
   answers expired.
 
 ### Security
+- **A scoped API token no longer passes a permission or role gate on its
+  owner's roles.** `RequirePermission` now also needs a scope granting
+  the permission, so a `customers:read` token minted by an admin no
+  longer passes `RequirePermission("posts:write")`. `MCPRequireRole`
+  (the control and log tools) and the default `/.debug` check need
+  `role:<role>` in the token's scopes; `access.RoleScope("admin")`
+  spells it. With `WithDebugAuthorize` installed, a token also needs
+  `role:admin` before the custom check runs. A Decider still sees every
+  role the caller holds. See `access-control.md`.
+- **A password reset or account claim whose passkey, session,
+  magic-link or token purge fails still runs the other purges** before
+  it fails, so one failing store no longer leaves old sessions or tokens
+  working. A failed claim leaves the account unverified, so the next
+  proof retries it.
+- **print's built-in gates refuse an API token without `print:read`**
+  (`print.Scope`).
+- **An OAuth link that lands during an account claim, reset or password
+  change is taken back.** The link callback re-checks the session and
+  password hash after the upsert and unlinks with a 401 if either
+  moved, and `claimAccount` purges sessions before and after its
+  unlink. A password change that a reset overtakes deletes the
+  changer's fresh session.
+- **Presence: another replica can no longer push live topics out of the
+  cross-replica roster.** A full topic table takes a new topic only in
+  place of one whose every entry has expired. A member's leave is
+  queued under the same lock as the roster it reads, so an older
+  heartbeat can no longer resurrect them.
+- **Process modules: a revoke or upgrade cancels a spawn still starting
+  under the old grants.** That child is killed instead of installed
+  beside the new one.
+- **Sandbox probes test what they claim.** P3 identifies the planted fd
+  by device and inode, so the child's own descriptors no longer read as
+  a breach on Linux. P4 proves each refusal against listeners the runner
+  reached itself, and reports unreachable with none. P6 counts only
+  `EAGAIN` and `EMFILE` as a cap, holds every child alive, and reports a
+  timeout or a missing binary as unreachable. P3 and P6 have not run on
+  Linux CI yet.
+- **An abandoned process-module spawn closes every fd it opened**,
+  including the child-side stdio pipes and the artifact.
+- **Linear-time markdown for unclosed `[` and `](`.** Input with many
+  unclosed brackets took quadratic time to render.
+- **`Accept-Language` entries over 35 characters, or with characters
+  outside a-z, 0-9 and `-`, are skipped.** A huge header no longer
+  allocates megabytes per request.
+- **`.env` expansion stops at its budget while it builds the value.** A
+  line with many `${VAR}` references used to allocate the whole value
+  first.
+- **A `sensitive` config value is redacted in its escaped spellings
+  too**: `%q`, `%+q`, JSON and URL encodings, up to two layers deep.
+- **Email headers are folded.** No header line passes 998 octets, and
+  long subject words and attachment names are encoded so they split
+  cleanly.
+- **`gofastr desktop keygen` refuses to write through a symlink** at the
+  key or `.pub` path, and never leaves half a pair. An existing `.pub`
+  is now refused instead of overwritten. New
+  `fileperm.WriteNewOwnerOnly`.
+- **The desktop updater refuses a mislabelled bundle.** `install`
+  refuses an archive whose Info.plist version differs from the feed's
+  or whose bundle identifier is another app's, and `gofastr desktop
+  feed` refuses a `--version` that doesn't match the bundle.
+- **`gofastr desktop build` on macOS refuses a `--version` that is not
+  major.minor.patch** (new `desktop.ValidateAppVersion`). A bundle whose
+  own version does not parse reports that, instead of "the update feed
+  is invalid", and its scheduled update checks stop.
+- **An exported static redirect page refuses unsafe schemes.** Its
+  meta refresh, canonical link and anchor carried a `javascript:` or
+  `data:` target live; a refused target becomes `#`.
+- **The OpenAPI docs page link refuses unsafe schemes.** A base path of
+  `javascript:` or `data:` produced a live `href`; it now falls back to
+  `/openapi.json`.
+- **CI's secret scan catches `key: "value"`** (YAML, struct literals),
+  not only `key = "value"`.
+- **Uploads refuse HTML or SVG markup saved as UTF-16 or UTF-32**, which
+  the content check missed because the markup is NUL-interleaved and an
+  XML parser decodes and renders it.
+- **An ACP server with `AuthMethods` refuses `session/new`,
+  `session/load` and `session/prompt` until `authenticate` succeeds.**
+- **The blog example hides draft posts, and comments on them, from
+  anonymous auto-CRUD reads**; callers holding `posts:write` still see
+  them.
 - **Deleting a record, or replacing its file, deletes the stored
   object.** A hard delete, a purge, `TypedQuery.DeleteAll`, and an update
   or upsert that replaced an `Image`/`File` value left the old object
