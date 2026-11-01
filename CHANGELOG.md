@@ -104,6 +104,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: WebSocket text writes must be valid UTF-8.** `Write`,
+  `WriteString` and `Hub.Broadcast` sent any bytes as a TEXT frame, and
+  a browser then dropped the connection with 1007. They now return
+  `stream.ErrInvalidUTF8` and send nothing; `Hub.Broadcast` and
+  `BroadcastWait` return `error` for it. New `WriteBinary`,
+  `BroadcastBinary` and `BroadcastBinaryWait` send BINARY frames, in
+  order with text, through `Close`'s drain too. A `StateChannel`
+  snapshot that is not valid UTF-8 closes the connection; such an event
+  is dropped for that role.
 - **BREAKING: an empty query or header value is treated as absent.**
   `?page=` answered 400 on a number field, and `?q=` bound `""` to a
   string. Every kind now leaves the field unset, as if the parameter
