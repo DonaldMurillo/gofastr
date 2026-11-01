@@ -3739,6 +3739,155 @@ few lines, and link the PR or the docs page for the rest.
   looks up the grant its first exchange stored, while that grant
   lives. It never mints one: a nonce that was never exchanged still
   answers expired.
+- **BREAKING: a JSON field takes no filter.** SQLite compared the stored
+  JSON text and Postgres compared JSONB values, so one filter matched
+  different rows on each engine. Every filter surface now answers 400 on
+  a JSON field (`?field=`, `_ne`, `_in`, `?where=`, the DSL, relation and
+  include filters, the MCP list tool), and OpenAPI, the generated CLI and
+  the SDK readmes stop offering one.
+- **BREAKING: list cursors carry the anchor row's key.** A long Text sort
+  value minted a next cursor over the 16 KiB decode cap, so the following
+  page answered 400. The cursor now carries the anchor row's key and the
+  server reads the sort values back from that row. A single
+  `CursorField` pages on that field plus the key, so rows tied on it are
+  no longer skipped. A cursor whose anchor row is gone answers 400 with
+  reason `cursor_anchor_gone`; a key too long for the cap answers 500
+  with `cursor_key_too_long`. Define refuses a Hidden or NoQuery key
+  behind a `CursorField`. A cursor minted before the upgrade on anything
+  but the key is refused once. See
+  [cursor pagination](framework/docs/content/cursor-pagination.md).
+- **BREAKING: `pagination.NewCursorPage` returns `(CursorPage, error)`.**
+  It refuses, with `pagination.ErrCursorTooLong`, a row whose cursor
+  would pass the decode cap, instead of handing out a token the next
+  request refuses.
+- **BREAKING: the SDK schema hash includes the ordered primary key.**
+  Swapping a composite key's columns reversed the generated client's
+  positional key arguments while `sdkdocs` still reported it in sync.
+  Every app's hash changes once; run `gofastr generate sdk` after
+  upgrading.
+- **An `Int` field is `BIGINT` on Postgres.** Validation accepted any
+  int64 and Postgres stored a 32-bit `INTEGER`, so `2147483648` saved on
+  SQLite and failed on Postgres. An `INTEGER` column an older build made
+  stays and reports in sync; the upgrade note has the `ALTER` for wider
+  values.
+- **Integer foreign keys are `INTEGER` on SQLite.** They were `TEXT`, so
+  `?parent_id_gt=2` left out 10 and a sort put 10 before 2. Any integer
+  spelling of the parent key (`INT`, `int8`, `SMALLSERIAL`, …) counts.
+- **Long index and constraint names stay distinct on Postgres.** Names
+  past 63 bytes were truncated by Postgres, so two indexes sharing a long
+  prefix got one name and `CREATE UNIQUE INDEX IF NOT EXISTS` skipped the
+  second, leaving a table with no uniqueness check. Long default index
+  names and `<table>_<col>_key` names now end in a hash of their parts;
+  shorter names are unchanged. A name already taken by another table's
+  index fails boot with the column and index named. Clearing Unique on
+  Postgres drops the constraint the catalog holds on that exact column.
+- **A `NoTransaction` migration runs each statement on its own.**
+  Postgres ran a multi-statement body as one implicit transaction, so
+  two `CREATE INDEX CONCURRENTLY` statements failed.
+- **Data import refuses an archive with no key.** An archive missing a
+  primary-key column, or with a null key, wrote rows nothing could reach.
+- **Data export finds `main.`-qualified SQLite tables and writes an
+  aliased table once.** A schema-qualified table on SQLite was skipped as
+  absent, and `users` beside an exporter's `public.users` exported one
+  table twice, so the restore failed on duplicate keys.
+- **BREAKING: a CRUD handler bound to your own `*sql.Tx` announces events
+  after commit only.** Its events went out before the caller's Commit,
+  and even after a Rollback, and a failed batch item left earlier ones
+  written. Run the write with `db.WithTxQueue(ctx, tx)` and call
+  `RunAfterCommit` after Commit; with no queue the event is dropped with a
+  warning.
+- **The ambient-transaction probe keeps its two-minute limit.** A
+  statement holding the transaction's connection blocked the probe, and
+  its commit check, past the limit and past shutdown.
+- **Erasure reaches rows a database cascade removes, and stores outside
+  SQL.** A profile row deleted by `ON DELETE CASCADE` from a battery-owned
+  user kept its uploaded files and audit diffs. Battery delete erasers now
+  seed the same cascade plan, matched to entity tables by catalog
+  identity on both dialects. The new `datexport.StoreEraser` runs after
+  the SQL commits: the semantic index's snapshot and WAL are rewritten
+  without the user's chunks, and `RedisQueue`, `MemoryQueue` and the
+  in-memory `Scheduler` drop the user's jobs and schedules. Results land
+  in `EraseReport.Stores`; a store that fails is reported, never counted
+  as erased. `DurableScheduleBuilder.UserID` and `ScheduleBuilder.UserID`
+  stamp the jobs a schedule fires. See
+  [data export](framework/docs/content/data-export.md).
+- **BREAKING: Redis erasure needs `queue.ScriptRunner`.** The erasure is
+  one Lua script over the queue's five keys, and each move a worker makes
+  between keys is a script that checks its source still holds the job, so
+  a running worker cannot write an erased job back. A client without
+  `Eval` fails the erasure. On Redis Cluster give the queue a hash-tagged
+  name.
+- **`Harness.Shutdown` writes queued session events before it closes the
+  store.** It cancelled the writes and returned nil with events missing.
+  It now drains within 10 s and returns the store's errors.
+  **BREAKING:** `Harness.CreateSession` returns `(ids.SessionID, error)`
+  and refuses with `ErrShutdown` once Shutdown has begun.
+- **An rtc signal lost on the way to another replica closes the sender.**
+  A failed or dropped cross-replica publish left both sockets open and
+  the call waiting for an answer that never came. `core/fanout` gains
+  `PublishQueueReporting`.
+- **`gofastr generate cli --from-openapi` reports an `allOf`
+  self-reference.** It overflowed the stack instead of returning the
+  "$ref cycle" error.
+- **App spec generation refuses two items with one Go name.** A helper
+  named `register_generated` redeclared `RegisterGenerated` and the app
+  failed to compile after a successful generate. The check covers the
+  whole package and import names.
+- **Generated UI configs pass the request context.** Pricing cards,
+  forms, text areas, sidebars, content rows, action buttons, data tables
+  and sections said their built-in words in English on every locale.
+- **`App.Shutdown` ends open streams when the drain starts.** An SSE
+  response, a `core/stream` WebSocket (closed with 1001) or a hijacked
+  connection held Shutdown to its deadline. A stream is known by its
+  response, not its `Accept` header. `stream.WithUpgradeHook` is new.
+- **`gofastr dev` lets the app shut down.** It killed the app 100 ms
+  after SIGTERM on every save; it now waits up to 5 s and returns as soon
+  as the app exits. A signal during a build kills the build's process
+  tree. The watcher skips dot-directories, and `dist`, `gen` and `tmp` at
+  the project root unless the build imports from them.
+- **Kiln ends options before the chat message.** A message starting with
+  `-` reached omp, claude-code or a custom agent as a flag.
+- **A recycled pid no longer reads as a live daemon or run.** `service
+  stop`, `service uninstall` and `localrun.List` pair the pid with the
+  process start time; the daemon reports its own.
+- **`PageHandler` takes colon-style paths.** Given `/thing/:id` it set
+  `id=":id"` on every request.
+- **The static export writes a `StaticPaths` key holding `/`, and refuses
+  two pages that write one file.** The key is checked after it is encoded
+  for disk; `..`, `.`, `\` and NUL are still refused.
+- **BREAKING: `registry.RegisterStyle` checks its name.** A name holding
+  `"` added attributes to every instance. It now takes
+  `^[a-z][a-z0-9-]{0,63}$`, as `RegisterBehavior` does.
+- **A theme missing a breakpoint fails at boot, not on a request.**
+  `app.WithTheme` compiles every owned style sheet against the theme and
+  names the one that fails; at serve time a sheet that does not compile
+  is logged and served empty.
+- **`SectionMenu`'s default label is translated.** It said "Menu" on
+  every locale.
+- **Pane-host keys act on the focused host, and an open drawer takes
+  focus.** Escape and the Tab trap went to the first overlay host on the
+  page. A drawer rendered open on a phone-width load now moves focus
+  inside, and Tab from outside goes into it.
+- **A backslash in a filter value keeps the filter.** `C:\reports` made
+  the rebuilt DSL unparseable and the list showed unfiltered. `dsl.Quote`
+  is the one serializer.
+- **A cleared saved-view filter stays cleared.** The next sort, page or
+  columns click brought it back.
+- **Related-list counts match the list.** The badge counted without the
+  child list's default view and filters.
+- **Auto-derived ids are unique on a page.** Two same-titled sections,
+  tabs or carousels emitted the same `id`, so `aria-labelledby` and
+  `#features` hit the first. Repeats get `features-2`, a component's
+  derived ids are reserved with it, and an explicit id always wins. Slots
+  that render at once settle in slot order. An island renders under its
+  own id, so a section in island `cart` is `cart--features` in both the
+  page and the RPC answer; a link to an auto-derived id inside an island
+  needs the prefix. See core-ui/ARCHITECTURE.md.
+- **Local-entity number fields read the page's language.** `3,5` on a
+  Spanish page and `12,34,567.8` on an Indian English one were refused.
+- **The API docs' mobile drawer lists entities registered after `Mount`.**
+  `interactive.SectionMenuDrawerFunc` builds a drawer's items per render.
+- **examples/site's status pill keeps its wording through hydration.**
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
@@ -4291,6 +4440,52 @@ few lines, and link the PR or the docs page for the rest.
   first such refusal logs a warning. `Manager.ConnectSession` takes the
   client key as a second argument (`Manager.ClientKey`; `""` for a
   server-side subscription).
+
+- **BREAKING: idempotency replays are keyed on the tenant and the held
+  scopes.** A credential that switched its server-side tenant and resent
+  the same key, path and body got tenant A's response, and tenant B's
+  write never ran. `WithIdempotency` now runs inside the app's middleware,
+  after tenant resolution, and keys a replay on the resolved user, tenant
+  and sorted scopes (`IdempotencyConfig.Scope`), so a narrower token gets
+  its own replays. Responses cached before the upgrade miss once.
+- **BREAKING: A2A tasks are bound to the tenant they ran in.** A user
+  who left a tenant could still read that tenant's task results. Tasks
+  record the creator's tenant, list, get, push-config and stream calls
+  check it (`a2a.Config.Tenant`), and the store reads on the request
+  context. A custom `a2a.Store` must persist the tenant.
+- **`RequireAPIScopes` reads the resource from the route's entity.** With
+  a table named `v1`, a record id was checked as the scope resource, and
+  `/api/v1/_batch` asked for `_batch:write`. Every route an entity
+  registers (CRUD and its subroutes, `Endpoints`, EntityUI's
+  `_bulk`/`_export.csv`/`_pick`, the admin entity API) now requires
+  `<table>:<verb>` wherever it is mounted, through the new
+  `router.ResourceGroup`, `router.RouteResource` and `crud.EntityRouter`.
+  A custom mount whose path differs from its table (`/people` on
+  `persons`) now needs the table's scope.
+- **The `_events` stream re-checks read scope at delivery.** The first
+  private row emitted after an `Unrestricted` role was removed still
+  reached the subscriber.
+- **The sdkdocs drawer follows `Config.Policy`.** An anonymous caller
+  under a denying policy got the drawer's list of every documented
+  entity.
+- **Embed framing keeps every CSP policy.** A second
+  `Content-Security-Policy` field was dropped and a comma-joined second
+  policy was rewritten as part of `frame-ancestors`. Each policy now keeps
+  its own directives.
+- **The semantic watcher stays inside its root.** A symlink to
+  `~/.ssh/id_ed25519` was indexed and searchable, and one to `/dev/zero`
+  read without bound. The watcher opens regular files through `os.Root`,
+  never blocks on a FIFO, and stops at `MaxFileSize`.
+- **The duplicate-registration notice goes through a bounded queue.** A
+  stalled mail provider piled up one goroutine per duplicate signup. The
+  notice and password reset share a queue with a 30 s deadline per send,
+  stopped by the new `CorePlugin.OnStop`.
+- **`gofastr dev` on a non-loopback bind hides build output and
+  livereload.** A LAN peer read the hold page's build log (absolute paths,
+  quoted source) and could open unlimited `/__livereload` streams.
+  `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` keeps livereload on.
+- **webmcp-remote-assist closes an expired credential's sockets and
+  limits incoming frames.**
 
 ## [0.95.0] - 2026-10-26
 
