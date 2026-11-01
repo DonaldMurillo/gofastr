@@ -874,6 +874,19 @@ func (ds *UIHost) pageDocsOn() bool {
 	return ds.App != nil && ds.llmMDPublic && !ds.App.NoLLMMD
 }
 
+// setPageMarkdownHeaders marks a page-doc response (the negotiated
+// markdown, /llm-pages.md, a screen's llm.md) the way the HTML twin is
+// marked: private, no-store and Vary: Cookie. Each is rendered for the
+// caller (policy, Load and the session the cookie names decide what it
+// holds), and the no-cache it used to carry still lets a shared cache
+// store the body, keyed on the URL and Accept alone. Vary is added,
+// never set, so a Vary an earlier layer wrote survives.
+func setPageMarkdownHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Add("Vary", "Cookie")
+}
+
 // serveMarkdownForPage renders the markdown for the requested path via
 // the per-screen LLM doc renderer. Returns false if no screen matches.
 func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) bool {
@@ -924,8 +937,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		}
 	}
 	w.Header().Add("Vary", "Accept")
-	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+	setPageMarkdownHeaders(w)
 	if status != 0 {
 		w.WriteHeader(status)
 	}

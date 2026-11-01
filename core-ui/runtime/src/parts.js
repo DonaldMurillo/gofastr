@@ -49,6 +49,8 @@
     landed: new Map(),   // addr → {html, seed} waiting for the commit
     parts: new Map(),    // addr → applied/landed html (cache record)
     retried: new Set(),  // addrs that used their one session-reset retry
+    failRetried: new Set(), // addrs that used their one failure retry
+    failed: new Set(),   // addrs that failed twice before the commit
     sessRetry: new Set(), // addrs waiting for the commit to re-request (session reset)
     committed: false, pending: false, dead: false, reset: false, resetPending: false, launched: false,
     enqueue: null,       // set by launchParts: re-queue one addr on this nav's pump
@@ -82,6 +84,7 @@
     for (const addr of st.addrs) {
       const el = E && E.target(addr);
       if (!el) continue;
+      if (st.failed.has(addr)) { partError(st, addr); continue; }
       const prev = st.entries.get(addr);
       if (prev && prev.shown) continue;
       if (prev && L) L.claim(prev);
@@ -96,6 +99,27 @@
       el.setAttribute('data-cui-loadstate', 'shown');
     }
   };
+  // partError is a deferred region whose part failed twice: the
+  // runtime's phrase replaces the loading content (a skeleton left in
+  // place reads as still loading, for good) and data-cui-loadstate
+  // names the state for author CSS. The state lasts while the phrase
+  // stands: a later navigation that refills the region drops the mark.
+  const errs = new Map(); // region → the phrase node its error state stands for
+  const partError = (st, addr) => {
+    const el = NS._navHooks.envelope?.target(addr);
+    if (!el) return;
+    const n = document.createTextNode(NS.say('runtime.part_failed', 'This section could not load.'));
+    el.replaceChildren(n);
+    el.setAttribute('data-cui-loadstate', 'error');
+    errs.set(el, n);
+  };
+  window.addEventListener('gofastr:navigate', () => {
+    for (const [el, n] of errs) {
+      if (n.isConnected) continue; // still the region's, and the region still in the page
+      errs.delete(el);
+      if (el.getAttribute('data-cui-loadstate') === 'error') el.removeAttribute('data-cui-loadstate');
+    }
+  });
   const findLoadingTpl = (addr) => {
     if (!addr) return null;
     for (const el of document.querySelectorAll('template[data-cui-loading]')) {
@@ -248,7 +272,25 @@
       }
       // A followed 3xx is another URL's answer: applying or caching it
       // under st.path would serve the target's fill for this address.
-      if (failed || !resp.ok || resp.redirected) { restore(addr); return; }
+      if (resp && resp.redirected) { restore(addr); return; }
+      // A transport failure (a proxy 502/503/429, a dropped connection;
+      // a loader's own error renders a fill server-side) is retried
+      // once, after a short pause. A second failure is the region's
+      // error state: at once after the commit, at the commit before it.
+      if (failed || !resp.ok) {
+        if (!st.failRetried.has(addr)) {
+          st.failRetried.add(addr);
+          setTimeout(() => st.enqueue(addr), 300);
+          return;
+        }
+        // The entry goes too: a later kill must not settle the error
+        // state's mark away.
+        restore(addr);
+        st.entries.delete(addr);
+        if (st.committed) partError(st, addr);
+        else st.failed.add(addr);
+        return;
+      }
       // text(), never a stream reader: DevTools keeps the body.
       let text = '';
       try { text = await resp.text(); } catch (_) { restore(addr); return; }
@@ -331,6 +373,7 @@
       if (failed) { commitParts(st, false); return; }
       st.committed = true;
       if (st.resetPending) { resetParts(st); return; }
+      for (const a of st.failed) partError(st, a);
       flushSessRetries(st);
     },
 

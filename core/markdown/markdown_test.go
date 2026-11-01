@@ -204,3 +204,32 @@ A paragraph with **bold**.
 		}
 	}
 }
+
+// An underscore inside a word is text (CommonMark's intraword rule):
+// snake_case names and env vars render as written.
+func TestIntrawordUnderscoreIsText(t *testing.T) {
+	cases := map[string]string{
+		"XDG_DATA_HOME":         "XDG_DATA_HOME",
+		"many_to_many and more": "many_to_many and more",
+		"a__b__c":               "a__b__c",
+		"set _x_ and y_":        "set <em>x</em> and y_",
+		"_em_ ok":               "<em>em</em> ok",
+		"__strong__.":           "<strong>strong</strong>.",
+		"snake_case_":           "snake_case_",
+		"_foo_bar_":             "<em>foo_bar</em>",
+	}
+	for in, want := range cases {
+		if got := renderInline(in); got != want {
+			t.Errorf("renderInline(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// An emphasis closer never sits inside a link: the link binds first.
+func TestEmphasisCloserSkipsLinks(t *testing.T) {
+	in := "*see [docs](http://x/a*) here*"
+	want := `<em>see <a href="http://x/a*">docs</a> here</em>`
+	if got := renderInline(in); got != want {
+		t.Errorf("renderInline(%q) = %q, want %q", in, got, want)
+	}
+}

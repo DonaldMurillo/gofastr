@@ -91,6 +91,16 @@ The comment must precede the first rule. `rendering/ownerless-stylesheet`
 can replace the ID, and `allow-file` also works. A missing reason does
 not suppress the finding.
 
+`GOFASTR1802` (hard navigation) and `GOFASTR1803` (bespoke
+`EventSource`) also read the app's own `.js`, `.mjs` and `.cjs` files,
+such as `static/app.js`, not only scripts emitted from Go strings.
+Assigning `location.href`, `location.search`, `location.pathname` or
+`window.location` counts whatever the right-hand side is. Minified
+scripts (`.min.js`, or a line over 1000 bytes), generated files and the
+kit's own runtime (`core-ui/runtime`, `framework/headless`, which
+implement navigation and the SSE bus) are skipped. In a script, a
+trailing `// gofastr:allow(GOFASTR1802) reason` waives its own line.
+
 `GOFASTR1814` checks the owned-styles pair: every `*.style.css` must
 carry its generated sibling `<name>_style.gen.go` (every `*.tokens.css`
 its `<name>_tokens.gen.go`), and the sibling's
@@ -119,7 +129,7 @@ code.
 | `GOFASTR1806` | error | `var(--name)` naming a token neither the theme nor a `*.tokens.css` declares (in a `*.style.css`, reported once, by the owned-style check; a `var()` fallback does not waive it there) |
 | `GOFASTR1807` | error | a value that is exactly a theme or app token's value: `font-size: 0.75rem` where `--text-xs` is `0.75rem`, `font-weight: 600` where `--font-weight-semibold` is `600`, `max-width: 66rem` where `--size-page-width` is `66rem`, `outline-offset: 2px` where `--stroke-focus-offset` is `2px` |
 | `GOFASTR1808` | error | a `var()` fallback that restates a spacing, radius, stroke, text or duration token at a value the theme does not declare. Colour fallbacks in an owned style follow the app's theme and are not judged; in design-system Go code they are (`gofastr verify --explain GOFASTR1808`) |
-| `GOFASTR1810` | error | a selector naming a kit class (`.cui-*`, `.hui-*`, `.fui-*`) or a `[data-cui-*]` attribute |
+| `GOFASTR1810` | error | a selector naming a kit class (`.cui-*`, `.hui-*`, `.fui-*`, escapes decoded, so `.\66 ui-card` counts), a `[class…]` match on one (`[class~="fui-card"]`, `[class^="fui-"]`, `[class\|="hui"]`, `[class*="ui-"]`), or a `[data-cui-*]` attribute |
 | `GOFASTR1811` | error | `!important` |
 | `GOFASTR1812` | error | a raw width in `@media` (`min-width: 768px`); write `(--above-md)` or `(--below-lg)`. Raw widths stay legal in `@container` |
 | `GOFASTR1813` | warn | `animation` with no `@media (--reduced-motion)` block for the same selector |
@@ -715,6 +725,13 @@ it does not have them. `contracts_fix` takes one rule at a time on
 purpose: a single rule's edits are reviewable in a way a whole-tree
 rewrite is not. Rules with no autofix are refused with the reason,
 rather than silently doing nothing.
+
+A refused argument (an unknown rule, with its "did you mean"
+suggestion; an unknown capability; a rule with no autofix) answers as
+JSON-RPC invalid params carrying that message. A `contracts_fix` that
+stops part way answers with an `isError` tool result naming the files it
+had already rewritten, so the agent knows its last read of the tree is
+out of date.
 
 ## Fixing
 

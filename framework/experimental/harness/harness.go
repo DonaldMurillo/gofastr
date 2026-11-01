@@ -322,8 +322,15 @@ func (h *Harness) CreateSession(prov provider.Provider, model string) (ids.Sessi
 	// Subscribe the session store to the bus for persistence.
 	// Subscription must happen synchronously before this function
 	// returns; otherwise an early SendInput races the goroutine.
+	// SubscribeAll: the log also records what sub-agents (the Agent
+	// tool) run on their private buses, tagged with the sub-agent id.
+	// SetLog lets a reconnecting client replay from the log what the
+	// bus's in-memory window no longer holds.
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := bus.Subscribe(ctx)
+	ch := bus.SubscribeAll(ctx)
+	if h.Sessions != nil {
+		bus.SetLog(h.Sessions)
+	}
 	pr := &persistRun{done: make(chan struct{})}
 	go h.persistLoop(ctx, ch, pr)
 

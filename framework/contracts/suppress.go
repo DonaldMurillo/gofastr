@@ -2,6 +2,7 @@ package contracts
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/contracts/internal/codetext"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 	"regexp"
 	"sort"
@@ -125,6 +126,16 @@ func commentRanges(p *Pass, rel string, lines []string) []commentText {
 					text: c.Text,
 				})
 			}
+		}
+		return out
+	}
+	if IsScriptPath(rel) {
+		// A script's comments come from the lexer, so a directive trailing
+		// a statement counts (the line scan below only sees comments that
+		// open a line) and a "//" inside a string does not.
+		var out []commentText
+		for _, c := range codetext.Comments(strings.Join(lines, "\n"), true) {
+			out = append(out, commentText{line: c.Line, text: c.Text})
 		}
 		return out
 	}

@@ -3,8 +3,10 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -92,12 +94,19 @@ func newScheduler(queues []Queue, logger *slog.Logger) *Scheduler {
 func (s *Scheduler) eraserName() string { return s.eraseName }
 
 // eraseUser drops every schedule whose UserID is userID and returns how
-// many it dropped (with dryRun, how many it would). It takes s.mu, which
-// dispatchDue holds across its Enqueue calls, so a dispatch in progress
-// has finished before it returns.
-func (s *Scheduler) eraseUser(_ context.Context, userID string, dryRun bool) (int, error) {
+// many items it removed (with dryRun, how many schedules it would). It
+// takes s.mu, which dispatchDue holds across its Enqueue calls, so a
+// dispatch in progress has finished before the schedules go.
+//
+// Then it sweeps the user's jobs out of every DBQueue it feeds, and counts
+// them. App.EraseUserData deletes queue_jobs rows in its SQL plan and runs
+// store erasers only after the commit, so a tick between the two put the
+// user's job back in the table; with the schedules gone first, the sweep
+// leaves nothing a later tick re-creates. Stores erased after this one
+// (MemoryQueue, RedisQueue) need no sweep: Producer orders this eraser
+// ahead of them.
+func (s *Scheduler) eraseUser(ctx context.Context, userID string, dryRun bool) (int, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	kept := make([]ScheduledJob, 0, len(s.schedules))
 	for _, sch := range s.schedules {
 		if sch.UserID != userID {
@@ -108,7 +117,29 @@ func (s *Scheduler) eraseUser(_ context.Context, userID string, dryRun bool) (in
 	if !dryRun {
 		s.schedules = kept
 	}
-	return n, nil
+	queues := slices.Clone(s.queues)
+	s.mu.Unlock()
+	if dryRun {
+		return n, nil
+	}
+	var errs []error
+	for _, q := range queues {
+		sw, ok := q.(userJobSweeper)
+		if !ok {
+			continue
+		}
+		swept, err := sw.sweepUserJobs(ctx, userID)
+		n += swept
+		errs = append(errs, err)
+	}
+	return n, errors.Join(errs...)
+}
+
+// userJobSweeper is a SQL-backed queue whose rows the erasure's SQL plan
+// already deleted once; the in-memory Scheduler sweeps it again after its
+// own schedules are gone.
+type userJobSweeper interface {
+	sweepUserJobs(ctx context.Context, userID string) (int, error)
 }
 
 // Close removes the scheduler from App.EraseUserData's reach. It does not

@@ -558,14 +558,15 @@
   // the pre-layout behaviour, behind the supersede rule's check.
   // css: the incoming markup. Its component sheets load while the old
   // page is still on screen (kernel _cssReady), before the title, the
-  // route announcement or the swap move to the new page.
+  // route announcement or the swap move to the new page; the
+  // transition module reads the incoming vocabulary off it.
   const _swapCommit = async (epoch, from, to, apply, pickSrc, css, title) => {
     await window.__gofastr._cssReady(css);
     if (!_navLive(epoch)) return;
     document.title = title;
     announceRoute(title);
     const T = window.__gofastr._navHooks.transition;
-    if (T) return T.commit(epoch, from, to, apply, pickSrc);
+    if (T) return T.commit(epoch, from, to, apply, pickSrc, css);
     apply();
   };
 

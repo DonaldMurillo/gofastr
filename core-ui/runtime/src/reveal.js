@@ -31,10 +31,14 @@
     }
   }, { threshold: 0.1 });
 
+  // The observed set is in memory, not an attribute: a cached screen
+  // replays a copy of the markup, and a copy carrying an "observed"
+  // attribute would never be observed again and stay hidden.
+  const observed = new WeakSet();
   const setupOne = (el) => {
     if (el.classList.contains(REVEALED_CLASS)) return; // already revealed
-    if (el.dataset._cuiRevealObserved) return;         // idempotent
-    el.dataset._cuiRevealObserved = '1';
+    if (observed.has(el)) return;                      // idempotent
+    observed.add(el);
 
     el.classList.add(HIDDEN_CLASS);
     observer.observe(el);

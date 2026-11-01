@@ -273,7 +273,10 @@ func (s *webhookSink) postOnce(body []byte) error {
 		return retryableError{code: resp.StatusCode}
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("log: webhook %d", resp.StatusCode)
+		// A 3xx (redirects are refused, so it cannot be followed) or a
+		// 4xx is the receiver's answer to this batch: a 401 after a key
+		// rotation or a 413 says the same thing on every attempt.
+		return nonRetryableError{fmt.Errorf("log: webhook %d", resp.StatusCode)}
 	}
 	return nil
 }
@@ -316,9 +319,8 @@ func isRetryable(err error) bool {
 	return err != nil && !errors.As(err, &nonRetryableError{})
 }
 
-// nonRetryableError is reserved for future 4xx classifications; currently
-// 4xx returns a plain error and we don't retry. Kept so isRetryable has a
-// path to distinguish later without an API change.
+// nonRetryableError marks a final answer from the receiver (a 3xx or
+// 4xx): the batch is dropped instead of posted again.
 type nonRetryableError struct{ error }
 
 func (e nonRetryableError) Unwrap() error { return e.error }

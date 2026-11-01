@@ -156,7 +156,10 @@ first-read intermediary parsed differently.
   position would skip or repeat rows without saying so. A cursor naming
   a row the caller may not read (another owner's or tenant's, or one a
   read scope or `BeforeList` hook excludes) gets the same answer, so a
-  crafted cursor never reveals where such a row sorts. If a key-only
+  crafted cursor never reveals where such a row sorts. The client's
+  own `?q=` and `?where=` do not apply to that lookup: an anchor row
+  edited so it no longer matches the search still marks the position,
+  the same as with a plain `?status=open` filter. If a key-only
   cursor's anchor changed its sort value, the next page continues after
   the new value, so rows between the old and the new position are
   skipped (moved forward) or served again (moved back). Keep sort

@@ -67,9 +67,12 @@ var Analyzers = []string{
 // marker spelling: a rule that reads files, not types, and drops its
 // own finding at a marked site. layerprefix (core-ui/check) hunts kit
 // vocabulary in kernel and headless sources; its markers sit at the
-// refusal filters and the lightbox wiring.
+// refusal filters and the lightbox wiring. runtimeprose (core-ui/check)
+// holds runtime prose to say(); its markers sit in runtime scripts, which
+// gofastr verify reads for GOFASTR1802/1803 and their directives.
 var Lints = []string{
 	"layerprefix",
+	"runtimeprose",
 }
 
 // Known reports whether name is a registered repo analyzer or a source

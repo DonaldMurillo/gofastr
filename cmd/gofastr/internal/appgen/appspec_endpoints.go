@@ -58,11 +58,13 @@ func renderAppSpecEndpoints(bp appspec.AppSpec, decls []framework.EntityDeclarat
 		byFile[file] = append(byFile[file], e)
 	}
 	entityStructs := map[string]string{}
+	entityTables := map[string]string{}
 	for _, d := range decls {
 		entityStructs[d.Name] = appspec.ToCamelCase(d.Name)
+		entityTables[d.Name] = declTable(d)
 	}
 	for _, file := range order {
-		content, err := renderEndpointStubFile(byFile[file], entityStructs)
+		content, err := renderEndpointStubFile(byFile[file], entityStructs, entityTables)
 		if err != nil {
 			return nil, "", err
 		}
@@ -101,7 +103,7 @@ func renderAppSpecEndpoints(bp appspec.AppSpec, decls []framework.EntityDeclarat
 // handler that answers 501 Not Implemented. The output is the entity the
 // endpoint hangs under; the developer changes either type as the handler
 // takes shape, and `gofastr generate` reads the new ones.
-func renderEndpointStubFile(eps []settings.Endpoint, entityStructs map[string]string) (string, error) {
+func renderEndpointStubFile(eps []settings.Endpoint, entityStructs, entityTables map[string]string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("package entities\n\nimport (\n\t\"context\"\n\t\"net/http\"\n\n\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n)\n")
 	for _, e := range eps {
@@ -113,7 +115,8 @@ func renderEndpointStubFile(eps []settings.Endpoint, entityStructs map[string]st
 			return "", fmt.Errorf("app spec: endpoint %s: handler %q is not an exported Go name", e.Name, name)
 		}
 		input := name + "Input"
-		route := "/" + e.Entity + "/" + e.Path
+		// The endpoint mounts under its entity's table, not the raw name.
+		route := "/" + entityTables[e.Entity] + "/" + e.Path
 		fmt.Fprintf(&sb, "\n// %s is what endpoint %s takes. A path value is tagged path and\n", input, e.Name)
 		sb.WriteString("// json:\"-\"; every other field is a JSON body key (a query value on a\n// GET or DELETE).\n")
 		fmt.Fprintf(&sb, "type %s struct {\n", input)

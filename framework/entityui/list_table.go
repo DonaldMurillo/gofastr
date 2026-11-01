@@ -350,7 +350,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	}
 	switch f.Type {
 	case schema.Decimal, schema.Float:
-		return render.Text(decimal(ctx, val))
+		return render.Text(decimal(ctx, f, val))
 	case schema.Int:
 		return render.Text(integer(ctx, val))
 	case schema.Date:
@@ -403,7 +403,7 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		if val == "" {
 			return ""
 		}
-		return decimal(ctx, val)
+		return decimal(ctx, f, val)
 	case schema.Int:
 		if val == "" {
 			return ""
