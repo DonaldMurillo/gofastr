@@ -104,6 +104,18 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A Group's `NotFound` and `MethodNotAllowed` answer misses under its
+  prefix.** They ran only when the group itself was served, and every
+  app serves the root, so a group's custom 404 was silently ignored. A
+  miss now runs the handler of the longest-prefix group that set one
+  (`{name}` segments and host groups match), else the root's.
+  `WrapNotFound` on a group wraps the handler it would inherit.
+- **BREAKING: a top-level `Group` prefix starts with `/` or names a
+  host.** `Group("v1")` registered routes for Host `v1`, so `/v1/x`
+  answered 404 with no error. It now panics with the fix (`"/v1"`). A
+  host group needs a dot or `localhost`, and no port, since the mux
+  matches the request host without its port and `Group("localhost:8080")`
+  could never match. Nested groups are not checked.
 - **The SQL idempotency store runs on Postgres.** Its table declared
   `body BLOB`, which Postgres has no type for, and its key joins its
   parts with NUL bytes, which Postgres text refuses, so

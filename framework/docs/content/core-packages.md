@@ -72,8 +72,12 @@ A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 /pattern` registration with `{id}` path capture, concurrency-safe
 middleware chaining after registration (`Use` adds outside-in, the first
 added is outermost; `UseInner` adds middleware that runs after every `Use`
-and `Group` middleware in the tree, next to the handler), route groups,
-and sanitized path
+and `Group` middleware in the tree, next to the handler), route groups
+(a top-level `Group` prefix starts with `/` or names a host with a dot
+or `localhost`, without a port; `Group("v1")` panics, since the mux
+would read `v1` as a host; a group's `NotFound` and `MethodNotAllowed`
+answer the misses under its prefix, the longest matching prefix
+winning, even when the root serves the request), and sanitized path
 params (`Param` strips CR/LF/NUL, a decoded `/`, smuggled `..`, and in a
 `{name...}` catch-all a leading or doubled `/`, which only `%2F` produces;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
