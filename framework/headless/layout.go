@@ -325,9 +325,15 @@ type SectionProps struct {
 	Ctx context.Context
 }
 
+// SectionIDChildren are the suffixes of the ids a section builds from
+// its id (the heading's "<id>-title"), the family a caller deriving or
+// reserving the id passes to render.UniqueID and render.ReserveID.
+var SectionIDChildren = []string{"-title"}
+
 // Section renders the region.
 func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	b := p.Parts.Box(s)
+	render.ReserveID(p.Ctx, p.ID, SectionIDChildren...)
 	own := Merge(Safe(p.ExtraAttrs, "aria-label"), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap)
 	// The body holds only the caller's children; with none passed it
@@ -360,7 +366,7 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	}
 	titleID := p.ID
 	if titleID == "" {
-		titleID = render.UniqueID(p.Ctx, slugID("section", p.Title))
+		titleID = render.UniqueID(p.Ctx, slugID("section", p.Title), SectionIDChildren...)
 	}
 	titleID += "-title"
 	own["aria-labelledby"] = titleID

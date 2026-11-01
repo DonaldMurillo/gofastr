@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -47,5 +48,53 @@ func TestSameSignalTabsGetUniqueIDs(t *testing.T) {
 	}
 	if !strings.Contains(b, `id="view-2-tab-0"`) || !strings.Contains(b, `aria-controls="view-2-panel-0"`) || !strings.Contains(b, `id="view-2-panel-0"`) {
 		t.Errorf("second strip:\n%s", b)
+	}
+}
+
+var idAttrRe = regexp.MustCompile(` id="([^"]+)"`)
+
+func noDuplicateIDs(t *testing.T, html string) {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, m := range idAttrRe.FindAllStringSubmatch(html, -1) {
+		if seen[m[1]] {
+			t.Errorf("id %q appears twice:\n%s", m[1], html)
+		}
+		seen[m[1]] = true
+	}
+}
+
+// A heading slug that equals another section's heading id moves aside:
+// "Features" owns features and features-title.
+func TestTitleSlugSkipsHeadingID(t *testing.T) {
+	ctx := render.WithIDScope(context.Background())
+	out := string(Section(SectionConfig{Heading: "Features", Ctx: ctx})) +
+		string(Section(SectionConfig{Heading: "Features title", Ctx: ctx}))
+	noDuplicateIDs(t, out)
+	if !strings.Contains(out, `id="features-title-2"`) {
+		t.Errorf("second section's root should be features-title-2:\n%s", out)
+	}
+	// The other order: "Features" may not take a heading id that
+	// "Features title" already owns.
+	ctx = render.WithIDScope(context.Background())
+	out = string(Section(SectionConfig{Heading: "Features title", Ctx: ctx})) +
+		string(Section(SectionConfig{Heading: "Features", Ctx: ctx}))
+	noDuplicateIDs(t, out)
+	if !strings.Contains(out, `id="features-2"`) {
+		t.Errorf("second section's root should be features-2:\n%s", out)
+	}
+}
+
+// An explicit id wins on the page even when a derived one asked first.
+func TestExplicitSectionIDWins(t *testing.T) {
+	ids := render.NewRegionBatch(render.WithIDScope(context.Background()), 1)
+	ctx := ids.Context(0)
+	auto := Section(SectionConfig{Heading: "Features", Ctx: ctx})
+	named := Section(SectionConfig{Heading: "Pricing", ID: "features", Ctx: ctx})
+	settle := ids.Settle(0)
+	a, b := string(settle(auto)), string(settle(named))
+	noDuplicateIDs(t, a+b)
+	if !strings.Contains(b, `id="features"`) || !strings.Contains(a, `id="features-2"`) {
+		t.Errorf("explicit features must stay, derived must move:\n%s\n%s", a, b)
 	}
 }

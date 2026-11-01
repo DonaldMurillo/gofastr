@@ -95,11 +95,18 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	w := p.Strings.Resolve()
 
 	b := p.Parts.Box(s)
+	// The family: the track and every slide without its own id.
+	family := []string{"-track"}
+	for i, sl := range p.Slides {
+		if sl.ID == "" {
+			family = append(family, "-track-slide-"+strconv.Itoa(i))
+		}
+	}
 	id := p.ID
 	if id == "" {
-		id = render.UniqueID(p.Ctx, "hui-carousel-"+menuShortHash(p.Label))
+		id = render.UniqueID(p.Ctx, "hui-carousel-"+menuShortHash(p.Label), family...)
 	} else {
-		render.ReserveID(p.Ctx, id)
+		render.ReserveID(p.Ctx, id, family...)
 	}
 	trackID := id + "-track"
 

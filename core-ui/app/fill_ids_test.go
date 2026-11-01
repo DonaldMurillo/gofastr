@@ -137,3 +137,33 @@ func TestKeptAreaMatchesPageIDs(t *testing.T) {
 		t.Errorf("partial ids %v (kept area, then rendered layers), full page %v", got, want)
 	}
 }
+
+// namedFill renders an explicit id="features".
+type namedFill struct{}
+
+func (namedFill) Render() render.HTML { return "" }
+
+func (namedFill) RenderCtx(ctx context.Context) render.HTML {
+	render.ReserveID(ctx, "features")
+	return render.Raw(`<p id="features"></p>`)
+}
+
+func TestPageExplicitIDWins(t *testing.T) {
+	a := app.NewApp("t")
+	aside := app.NewOutlet("aside")
+	shell := app.NewLayout("shell", app.LayoutSpec{Outlets: []*app.Outlet{aside}},
+		func(ctx context.Context, l *app.LayoutTree) render.HTML {
+			return render.Join(l.Primary(), l.Place(aside))
+		})
+	a.SetDefaultLayout(shell)
+	// The screen derives "features" before the outlet names it.
+	a.RegisterScreen(app.NewScreen("/", &idFill{}).Fill(aside, namedFill{}), nil)
+	res, err := a.RenderPageResult(render.WithIDScope(store.WithValues(context.Background())), "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(res.HTML)
+	if !strings.Contains(s, `<h2 id="features-2">`) || !strings.Contains(s, `<p id="features">`) {
+		t.Errorf("the explicit id must keep features and the derived one move:\n%s", s)
+	}
+}

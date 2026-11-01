@@ -106,10 +106,15 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		}
 	}
 
+	// The family: every tab's and panel's id is built from p.ID.
+	family := make([]string, 0, 2*len(p.Tabs))
+	for i := range p.Tabs {
+		family = append(family, "-tab-"+strconv.Itoa(i), "-panel-"+strconv.Itoa(i))
+	}
 	if p.ID == "" {
-		p.ID = render.UniqueID(p.Ctx, p.Name)
+		p.ID = render.UniqueID(p.Ctx, p.Name, family...)
 	} else {
-		render.ReserveID(p.Ctx, p.ID)
+		render.ReserveID(p.Ctx, p.ID, family...)
 	}
 	b := p.Parts.Box(s)
 	// Roving tabindex: the active tab is in the tab order, the rest

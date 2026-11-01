@@ -514,27 +514,47 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[i] = a.resolveFillSlot(fillIDContext(ids.Context(i), ctx, slot), path, params, slot, guards)
+			if slot.spec.Deferred {
+				results[i] = a.resolveDeferredSlot(ctx, path, params, slot, guards)
+				return
+			}
+			results[i] = a.resolveFillSlot(ids.Context(i), path, params, slot, guards)
 		}(i, slot)
 	}
 	wg.Wait()
 	for i := range results {
-		results[i].html = ids.Settle(i, results[i].html)
+		results[i].html = ids.Settle(i)(results[i].html)
 	}
 	return results
 }
 
-// fillIDContext is the render context a slot's fill hands element ids
-// out from. A deferred outlet also renders alone, as a part request
+// resolveDeferredSlot resolves a deferred outlet's fill with element ids
+// of its own. A deferred outlet also renders alone, as a part request
 // (RenderPartResult), where nothing else on the page has rendered: it
-// gets a fresh id scope on the page too, so the part answer carries the
-// ids the full page gave the same content. Its ids are unique within
-// the outlet, not against the rest of the page.
-func fillIDContext(region, page context.Context, slot fillSlot) context.Context {
-	if slot.spec.Deferred {
-		return render.WithIDScope(page)
+// gets a fresh id scope on the full page too, so the part answer
+// carries the ids the full page gave the same content. Its ids are
+// unique within the outlet, not against the rest of the page.
+func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[string]string, slot fillSlot, guards regionGuards) fillSlotResult {
+	ids := render.NewRegionBatch(render.WithIDScope(ctx), 1)
+	res := a.resolveFillSlot(ids.Context(0), path, params, slot, guards)
+	res.html = ids.Settle(0)(res.html)
+	return res
+}
+
+// withPageIDs renders one page answer (a document, a partial, an
+// error or not-found body) as a single id region (render.NewRegionBatch)
+// and settles it: every explicit id on the page is reserved before any
+// derived id is handed out, so a section with ID "features" keeps it
+// even when a section titled "Features" rendered first.
+func withPageIDs(ctx context.Context, fn func(context.Context) (RenderResult, error)) (RenderResult, error) {
+	ids := render.NewRegionBatch(ctx, 1)
+	res, err := fn(ids.Context(0))
+	settle := ids.Settle(0)
+	res.HTML = settle(res.HTML)
+	for i := range res.Fills {
+		res.Fills[i].HTML = settle(res.Fills[i].HTML)
 	}
-	return region
+	return res, err
 }
 
 // containedFillError renders the degraded outlet of a contained fill

@@ -180,13 +180,14 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	}
 	sectionID := cfg.ID
 	if sectionID != "" {
-		render.ReserveID(cfg.Ctx, sectionID)
+		render.ReserveID(cfg.Ctx, sectionID, headless.SectionIDChildren...)
 	} else if cfg.Heading != "" {
 		// Auto-anchor: typical use is in-page rails / scrollspy where the
 		// rail's href="#<slug>" should land on this section without the
 		// caller having to repeat the slug. A repeat on the page gets a
-		// suffix.
-		sectionID = render.UniqueID(cfg.Ctx, slug(cfg.Heading))
+		// suffix, and so does a slug that would land on another
+		// section's heading id ("Features title" after "Features").
+		sectionID = render.UniqueID(cfg.Ctx, slug(cfg.Heading), headless.SectionIDChildren...)
 	}
 	return sectionStyle.WrapHTML(headless.Section(headless.SectionProps{
 		Title:           cfg.Heading,
