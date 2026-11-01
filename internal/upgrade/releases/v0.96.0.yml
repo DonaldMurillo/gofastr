@@ -694,3 +694,25 @@ notes:
     find:
       uses:
         - gofastr/battery/auth.NewOAuth2Plugin
+  - change: "magic-link send and forgot-password mail one link per address every two minutes (AddressRateLimit, kept in memory per replica); a request inside the cooldown gets the usual 200 and nothing is mailed"
+    breaking: true
+    hits: review
+    guidance: "A user's resend within two minutes sends nothing; the link already mailed still works. An end-to-end test that asks twice for one address passes AddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to the plugin."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+        - gofastr/battery/auth.NewPasswordResetPlugin
+  - change: "auth.ValidatePasswordStrength counts characters, not bytes, for the 8-character floor"
+    breaking: true
+    hits: review
+    guidance: "A password of fewer than 8 characters that passed on its byte length (three CJK characters are 9 bytes) is refused at registration, reset and change. Existing passwords keep signing in."
+    find:
+      uses:
+        - gofastr/battery/auth.ValidatePasswordStrength
+        - gofastr/battery/auth.NewCorePlugin
+  - change: "a custom auth.DefaultHasher's Verify is asked first at sign-in and password change; auth.CheckPassword keeps knowing only the bcrypt and argon2id formats"
+    breaking: false
+    guidance: "A custom hasher's own hashes now sign in; before, every login failed. Its Verify may call auth.CheckPassword for rows written before the switch."
+    find:
+      uses:
+        - gofastr/battery/auth.DefaultHasher

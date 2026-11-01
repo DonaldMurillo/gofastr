@@ -151,6 +151,17 @@ few lines, and link the PR or the docs page for the rest.
   - `EntitySessionStore` indexes `token` (unique) and `user_id` whoever
     created the table; `EraseUserData` reaches the in-memory auth stores.
   - `AuthManager` reports its `BasePath` to the embed host.
+  - Every `AuditSink`, a host's own included, gets the request's context
+    minus its cancellation, with a 5-second deadline: a sink doing slow
+    remote work is cut off there.
+  - `middleware.CSRF` puts the verified token on the context for a
+    mutating request too (`TokenFromContext`), and `auth.CSRFToken`
+    reads `__Host-auth_csrf` before `auth_csrf`.
+  - `auth.CheckPassword` knows only the two built-in formats again; the
+    battery's sign-in asks a custom `DefaultHasher` first.
+  - Passwords: the 8-character floor counts characters, so a short CJK
+    password that passed on bytes is refused; placeholders for
+    passwordless accounts are made by `DefaultHasher`.
 - **BREAKING: a magic-link sign-in of a 2FA account reaches the
   challenge.** The confirm POST always redirected to `OnSuccessURL`,
   which refuses the pending session it had just minted. It now goes to
