@@ -104,6 +104,49 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **battery/auth bug bash (2026-11-01).** Details in
+  [auth.md](framework/docs/content/auth.md):
+  - **BREAKING: token management needs the second factor.** On a 2FA
+    account `POST/GET/DELETE /auth/tokens` need the cookie session that
+    passed it; a session from before enrollment answers 403 and a bare
+    bearer JWT 401. Either minted a permanent `*:*` token before.
+  - **BREAKING: the 2FA challenge replaces the session.** A passing code
+    deletes the pending session and sets a new cookie, so a planted
+    pending token never becomes a verified one.
+  - **BREAKING: CSRF skips only `Authorization: Bearer` and `X-API-Key`.**
+    Basic, Negotiate and NTLM, which the browser attaches by itself, no
+    longer skip the check (`middleware.SkipBearerAuth`).
+  - **BREAKING: OAuth.** Provider keys must be 1-64 letters, digits, `-`
+    or `_` (a dotted key never completed a flow). An identity with no
+    email and no existing link answers 400 `auth.oauth_no_email` (two
+    such identities merged into one account). OIDC `email_verified`
+    counts only when the same claim set's `email` is the kept address,
+    so a remapped `EmailClaim` no longer auto-links on another
+    address's flag.
+  - OAuth: an account claim deletes the squatter's stored provider
+    tokens; callbacks without a code no longer fill the replay table
+    and lock every login out; concurrent refreshes spend a refresh token
+    once; tokens with no `expires_in` stay usable; the `/link` flow
+    stores tokens and refuses a binding it lost to another account; a
+    JWKS or discovery outage no longer refetches under a lock on every
+    login. New `(*OAuth2Plugin).ValidOAuthToken` and
+    `RefreshOAuthToken` read the row under the registry key.
+  - `ttl_seconds` past the `time.Duration` range answers 400 (a wrapped
+    negative minted a permanent token); an unreadable SQLite
+    `revoked_at`/`expires_at` reads as revoked/expired; token display
+    prefixes keep 7 random chars after a long brand.
+  - Passkey RSA keys are capped at 8192 bits (a 4-Mbit key cost a minute
+    of CPU per anonymous sign-in attempt).
+  - At most 8 distinct session cookies are looked up per request (2999
+    copies drove 2999 queries).
+  - `RequireAuth(mgr.JWT())` works when wired before `Init`;
+    `RequireAuth(nil)` panics at wiring; a negative `JWTExpiry` fails
+    `Init`.
+  - Audit rows survive a client that hangs up after the change, and an
+    actor-less SQL audit row stores `email_hash`, not the address.
+  - `EntitySessionStore` indexes `token` (unique) and `user_id` whoever
+    created the table; `EraseUserData` reaches the in-memory auth stores.
+  - `AuthManager` reports its `BasePath` to the embed host.
 - **BREAKING: a magic-link sign-in of a 2FA account reaches the
   challenge.** The confirm POST always redirected to `OnSuccessURL`,
   which refuses the pending session it had just minted. It now goes to

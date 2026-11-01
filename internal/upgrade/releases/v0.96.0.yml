@@ -636,3 +636,40 @@ notes:
     find:
       uses:
         - gofastr/battery/auth.NewMagicLinkPlugin
+  - change: "BREAKING - on an account with a second factor, POST/GET/DELETE /auth/tokens need the cookie session that passed it; a session from before enrollment answers 403 and a bearer JWT with no such session 401"
+    breaking: true
+    hits: review
+    guidance: "Either credential minted a permanent *:* token the new factor never touched. A client that manages tokens for a 2FA user signs in, completes /auth/2fa/challenge, and calls the token routes with that session cookie."
+    find:
+      uses:
+        - gofastr/battery/auth.NewTokensPlugin
+  - change: "BREAKING - a passing /auth/2fa/challenge deletes the pending session and sets a new session cookie instead of marking the pending one verified"
+    breaking: true
+    hits: review
+    guidance: "Browsers follow the Set-Cookie on their own. A client that carries the session token by hand takes the new value from the challenge response's Set-Cookie; the pre-challenge token answers 401."
+    find:
+      uses:
+        - gofastr/battery/auth.NewTwoFAPlugin
+  - change: "BREAKING - middleware.SkipBearerAuth (auth.CSRF's default skip) skips only Authorization: Bearer and X-API-Key; Basic, Digest, Negotiate and NTLM requests are CSRF-checked"
+    breaking: true
+    hits: review
+    guidance: "The browser attaches those schemes by itself, to a cross-site form too. A non-browser client that authenticates with Basic on a CSRF-protected route either moves to a bearer token or is exempted with WithCSRFSkipPaths for its routes."
+    find:
+      uses:
+        - gofastr/core/middleware.SkipBearerAuth
+        - gofastr/battery/auth.CSRF
+  - change: "BREAKING - OAuth provider registry keys must be 1-64 letters, digits, - or _ (NewOAuth2Plugin and RegisterProvider panic otherwise); an identity with no email and no existing link answers 400 auth.oauth_no_email; OIDC email_verified counts only when the same claim set's email equals the kept address"
+    breaking: true
+    hits: review
+    guidance: "A dotted key (login.gov) never completed a flow: rename it, and its stored links and tokens with it. Ask email-less providers for the email scope. An app that maps OIDCClaimsMapping.EmailClaim to upn or preferred_username sees those sign-ins arrive unverified, so they no longer auto-link into an existing account by address."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOAuth2Plugin
+        - gofastr/battery/auth.OIDCClaimsMapping
+  - change: "BREAKING - auth.RequireAuth(nil) panics at wiring time, and AuthManager.Init refuses a negative AuthConfig.JWTExpiry"
+    breaking: true
+    hits: review
+    guidance: "mgr.JWT() is non-nil as soon as auth.New returns with a JWTSecret (or DevMode), so RequireAuth(mgr.JWT()) works before App.Start. A nil there means the manager has no secret; set AuthConfig.JWTSecret. Replace a negative JWTExpiry with a positive duration or zero for the 1-hour default."
+    find:
+      uses:
+        - gofastr/battery/auth.RequireAuth
