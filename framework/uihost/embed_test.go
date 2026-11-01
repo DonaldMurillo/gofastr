@@ -1030,6 +1030,52 @@ func TestWithFrameAncestors(t *testing.T) {
 	}
 }
 
+// An app may send several CSP fields, or several comma-joined policies in
+// one field; the browser enforces every one. The rewrite kept only the
+// first field and read a comma-joined second policy as part of the
+// frame-ancestors directive, so both shapes lost the app's restrictions.
+func TestEmbedFramingKeepsEveryCSPField(t *testing.T) {
+	origins := []string{"https://a.example"}
+	rec := httptest.NewRecorder()
+	h := rec.Header()
+	h.Add("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+	h.Add("Content-Security-Policy", "frame-ancestors 'none', script-src 'none'")
+	h.Add("Content-Security-Policy", "img-src 'self'")
+	applyEmbedFraming(rec, origins)
+	got := h.Values("Content-Security-Policy")
+	want := []string{
+		"default-src 'self'; frame-ancestors https://a.example",
+		"frame-ancestors https://a.example, script-src 'none'",
+		"img-src 'self'",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("CSP fields =\n  %q\nwant\n  %q", got, want)
+	}
+}
+
+// With no frame-ancestors in any policy, the directive is added once, to
+// the first policy, and the other fields pass through untouched.
+func TestEmbedFramingAddsDirectiveOnce(t *testing.T) {
+	rec := httptest.NewRecorder()
+	h := rec.Header()
+	h.Add("Content-Security-Policy", "default-src 'self', img-src 'self'")
+	h.Add("Content-Security-Policy", "script-src 'none'")
+	applyEmbedFraming(rec, nil)
+	got := h.Values("Content-Security-Policy")
+	want := []string{
+		"default-src 'self'; frame-ancestors 'none', img-src 'self'",
+		"script-src 'none'",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("CSP fields =\n  %q\nwant\n  %q", got, want)
+	}
+	empty := httptest.NewRecorder()
+	applyEmbedFraming(empty, []string{"https://a.example"})
+	if v := empty.Header().Values("Content-Security-Policy"); len(v) != 1 || v[0] != "frame-ancestors https://a.example" {
+		t.Fatalf("no CSP: got %q", v)
+	}
+}
+
 // None of the embed URLs is content-addressed, so none may carry a long
 // max-age: a cached loader pins a customer's page to an old build, including
 // past a security fix, and a cached shell demand-loads component CSS at hashes

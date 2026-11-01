@@ -200,6 +200,46 @@ func TestPG_NoTransactionConcurrentIndex(t *testing.T) {
 	}
 }
 
+// Two statements sent in one Exec reach Postgres as one simple-query
+// message, which it runs as one implicit transaction: the second CREATE
+// INDEX CONCURRENTLY failed with "cannot run inside a transaction block"
+// and left the migration dirty (2026-10-27 M10). Each statement runs on
+// its own now, Up and Down.
+func TestPG_NoTxRunsEachStatement(t *testing.T) {
+	db := pgtest.DB(t)
+	ctx := context.Background()
+	m := pgMigrator(t, db)
+	m.Register(migrate.Migration{Version: 1, Name: "tbl", Up: "CREATE TABLE widgets (id INT, name TEXT, code TEXT)", Down: "DROP TABLE widgets"})
+	m.Register(migrate.Migration{
+		Version: 2,
+		Name:    "idx",
+		Up: `-- two indexes; a ; in a comment is no boundary
+CREATE INDEX CONCURRENTLY widgets_name_idx ON widgets (name);
+CREATE INDEX CONCURRENTLY widgets_code_idx ON widgets (code) WHERE code <> ';';`,
+		Down:          "DROP INDEX CONCURRENTLY widgets_name_idx; DROP INDEX CONCURRENTLY widgets_code_idx;",
+		NoTransaction: true,
+	})
+	if err := m.Up(ctx); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	count := func() int {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pg_indexes WHERE indexname IN ('widgets_name_idx', 'widgets_code_idx')`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := count(); n != 2 {
+		t.Fatalf("%d of 2 indexes created", n)
+	}
+	if err := m.Down(ctx, 1); err != nil {
+		t.Fatalf("Down: %v", err)
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("%d indexes left after Down", n)
+	}
+}
+
 func TestPG_ForceBaseline(t *testing.T) {
 	db := pgtest.DB(t)
 	ctx := context.Background()

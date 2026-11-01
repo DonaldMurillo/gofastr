@@ -74,6 +74,14 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 	}); err != nil {
 		return err
 	}
+	// user_id: the person a schedule's payload is about, copied onto every
+	// job it fires and matched by App.EraseUserData. Additive NOT NULL
+	// DEFAULT '', so existing schedules name nobody.
+	if err := s.ensureScheduleColumns([]scheduleColumn{
+		{"user_id", "TEXT", "''"},
+	}); err != nil {
+		return err
+	}
 	for _, statement := range []string{
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (schedule_id, enqueued_job_id)",
 			s.queue.indexOn("scheduler_occurrences_schedule_job_idx", s.queue.schedulerOccurrencesTable())),

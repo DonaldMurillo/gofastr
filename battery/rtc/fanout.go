@@ -79,15 +79,20 @@ type remoteEntry struct {
 
 // publishFanout marshals one message through the (async, non-blocking)
 // send. Marshal of a plain struct cannot fail in a way the program can
-// recover from; a failure is silently dropped (lossy lane).
-func publishFanout(send func([]byte), nodeID string, msg fanoutMsg) {
+// recover from. failed, when non-nil, runs if the message is not
+// published (see fanout.PublishQueueReporting), a marshal failure
+// included; nil leaves the loss to the lossy lane.
+func publishFanout(send func([]byte, func(error)), nodeID string, msg fanoutMsg, failed func(error)) {
 	msg.Node = nodeID
 	msg.At = time.Now().UnixNano()
 	body, err := json.Marshal(msg)
 	if err != nil {
+		if failed != nil {
+			failed(err)
+		}
 		return
 	}
-	send(fanout.Wrap(nodeID, body))
+	send(fanout.Wrap(nodeID, body), failed)
 }
 
 // SetFanout wires cross-replica relay. Duck-typed to the framework's
@@ -100,7 +105,7 @@ func (s *Signaler) SetFanout(f fanout.Fanout) (func(), error) {
 		return nil, errors.New("rtc: SetFanout: nil fanout")
 	}
 	nodeID := fanout.NewNodeID()
-	send, stopQ := fanout.PublishQueue(f, rtcFanoutTopic, 0)
+	send, stopQ := fanout.PublishQueueReporting(f, rtcFanoutTopic, 0)
 
 	s.mu.Lock()
 	if s.closed {
@@ -309,7 +314,7 @@ func (s *Signaler) broadcastRosterLocked(roomName string) {
 			msg.Members = append(msg.Members, rm.peers[id].info)
 		}
 	}
-	publishFanout(s.fanoutSend, s.nodeID, msg)
+	publishFanout(s.fanoutSend, s.nodeID, msg, nil)
 }
 
 // onFanoutMessage integrates one lane message. Own-node envelopes are
@@ -369,7 +374,7 @@ func (s *Signaler) mirrorLocked(roomName string, msg fanoutMsg) {
 		return
 	}
 	msg.Room = roomName
-	publishFanout(s.fanoutSend, s.nodeID, msg)
+	publishFanout(s.fanoutSend, s.nodeID, msg, nil)
 }
 
 // localRoomLocked returns the room when it has local members to tell.

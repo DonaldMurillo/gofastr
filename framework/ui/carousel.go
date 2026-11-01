@@ -109,12 +109,14 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		slides[i] = headless.CarouselSlide{Content: s.Content, Label: s.Label}
 	}
 	id := cfg.ID
-	if id == "" {
-		// autoID is process-global + atomic, so concurrent renders
-		// across goroutines (or HTTP requests) never collide — the
-		// primitive's content-hash fallback is deterministic by design
-		// (identical content shares it), which is wrong for two
-		// identical carousels on one page.
+	if id == "" && !render.HasIDScope(ctx) {
+		// With an id scope the primitive derives the id itself
+		// (render.UniqueID over its content hash, with the track and
+		// slide ids as its family), so two identical carousels get -2
+		// and an island's carousel keeps one id on the page and in the
+		// RPC answer. With none, the content hash alone would repeat
+		// for identical carousels: autoID's process-wide counter keeps
+		// them apart.
 		id = autoID("ui-carousel")
 	}
 	out := headless.Carousel(headless.CarouselProps{
@@ -128,6 +130,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		ID:             id,
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class", "role", "aria-roledescription", "aria-label"),
 		Strings:        StringsFor(ctx),
+		Ctx:            ctx,
 	}, classes)
 	return carouselStyle.WrapHTML(out)
 }

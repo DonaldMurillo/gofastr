@@ -754,6 +754,8 @@ func canonicalType(s string, dialect Dialect) string {
 			t = "integer" // SERIAL is an integer column + a sequence
 		case "bigserial":
 			t = "bigint"
+		case "smallserial":
+			t = "smallint"
 		}
 	}
 	return t
@@ -763,8 +765,19 @@ func canonicalType(s string, dialect Dialect) string {
 // same after per-dialect canonicalization. Conservative by design: it only
 // asserts equality, never "close enough". A real type change always differs
 // canonically, and a dialect-naming variant never does.
+//
+// One widening is taken as in sync: an Int is BIGINT on Postgres, and a
+// table an older build made holds it as INTEGER (or a SERIAL key's
+// integer). Proposing a retype of every Int column in every app, plus
+// the int4 sequence behind each SERIAL that ALTER COLUMN TYPE leaves
+// alone, is not a change the declaration asked for; widening an old
+// column is a hand-written migration (see migrations.md).
 func typesEquivalent(declared, live string, dialect Dialect) bool {
-	return canonicalType(declared, dialect) == canonicalType(live, dialect)
+	d, l := canonicalType(declared, dialect), canonicalType(live, dialect)
+	if dialect == DialectPostgres && d == "bigint" && l == "integer" {
+		return true
+	}
+	return d == l
 }
 
 // alterColumnTypeSQL renders the Postgres DDL for a column type change: an
@@ -865,7 +878,7 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 		liveLower[strings.ToLower(k)] = v
 	}
 
-	defs, err := columnDefs(ent, nil, dialect)
+	defs, err := columnDefs(ent, all, dialect, false)
 	if err != nil {
 		return SchemaChange{}, err
 	}
@@ -1142,7 +1155,7 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 	if len(ent.GetFields()) == 0 {
 		return "", fmt.Errorf("entity %s has no fields", ent.GetName())
 	}
-	columns, err := columnDefs(ent, all, dialect)
+	columns, err := columnDefs(ent, all, dialect, all != nil)
 	if err != nil {
 		return "", fmt.Errorf("entity %s: %w", ent.GetName(), err)
 	}
@@ -1155,8 +1168,11 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 }
 
 // columnDefs builds the per-column DDL fragments (validated name + type +
-// column constraints) plus the FK clauses (when all is non-nil). Shared by
-// buildCreateTableSQL so there is exactly one column-rendering path.
+// column constraints) plus the FK clauses (when withFKs is set; all must
+// then be non-nil). all also resolves a foreign key's type from the key it
+// references, so the SQLite rebuild, which re-adds the live foreign keys
+// itself, passes all with withFKs off. Shared by buildCreateTableSQL so
+// there is exactly one column-rendering path.
 //
 // Identifiers are VALIDATED (SafeIdent rejects anything but [A-Za-z0-9_.]) but
 // NOT quoted, to match the runtime SQL the query builder / crud emit, which is
@@ -1167,7 +1183,7 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 // A one-column key is marked inline (`id TEXT PRIMARY KEY`). A composite
 // key is a table constraint, `PRIMARY KEY (a, b)`, and each of its columns
 // is NOT NULL: SQLite lets a NULL into a composite key column otherwise.
-func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]string, error) {
+func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, withFKs bool) ([]string, error) {
 	var columns []string
 	keys := ent.KeyColumns()
 	for _, f := range ent.GetFields() {
@@ -1181,6 +1197,17 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			col += " PRIMARY KEY"
 		}
 		if f.Unique {
+			// Past 63 bytes Postgres trims the name it picks, and numbers
+			// a second column trimmed to the same one, so the constraint
+			// is named here: the name UniqueKeyName gives, which the clear,
+			// the boot check and the crud conflict mapping all use.
+			uq, err := uniqueIndexName(ent, f.Name)
+			if err != nil {
+				return nil, err
+			}
+			if dialect == DialectPostgres && uq != entity.LegacyUniqueKeyName(ent.GetTable(), f.Name) {
+				col += " CONSTRAINT " + uq
+			}
 			col += " UNIQUE"
 		}
 		c := declaredConstraint(f, keys, dialect)
@@ -1201,7 +1228,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		columns = append(columns, "PRIMARY KEY ("+strings.Join(safe, ", ")+")")
 	}
-	if all != nil {
+	if withFKs {
 		fks, err := foreignKeyClauses(ent, all, dialect)
 		if err != nil {
 			return nil, err

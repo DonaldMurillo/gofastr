@@ -63,6 +63,29 @@
     return s.split('{{n}}').join(n === undefined ? '' : NS.formatNumber(n));
   };
   const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
+  // seps is the decimal and group marks of the page's language
+  // (<html lang>), the one NS.formatNumber writes numbers in.
+  const seps = () => {
+    let f;
+    try { f = new Intl.NumberFormat(document.documentElement.lang || undefined); } catch (_) { f = new Intl.NumberFormat(); }
+    const o = { decimal: '.', group: ',', g: [] };
+    for (const x of f.formatToParts(1234567890.5)) if (x.type === 'integer') o.g.push(x.value.length); else if (has(o, x.type)) o[x.type] = x.value;
+    return o;
+  };
+  // num reads a number typed in a text control the reader's way:
+  // "1.234,5" on a Spanish page, "1,234.5" on an English one and
+  // "12,34,567.8" on an Indian English one. Group marks count only where
+  // they match the locale's grouping (the last group and the ones before
+  // it), so "2.5" still reads 2.5 where "." groups; a space-like mark
+  // (French) also takes a plain space.
+  const num = (raw) => {
+    const o = seps(), s = raw.trim(), at = s.lastIndexOf(o.decimal), p = o.g.at(-1), q = o.g.at(-2) || p;
+    let i = at < 0 ? s : s.slice(0, at);
+    const g = i.split(/\s/.test(o.group) ? /\s/ : o.group);
+    if (g.length > 1 && g.every((x, k) => new RegExp(k ? '^\\d{' + (k < g.length - 1 ? q : p) + '}$' : '^-?\\d{1,' + q + '}$').test(x))) i = g.join('');
+    const n = at < 0 ? i : i + '.' + s.slice(at + 1);
+    return n ? Number(n) : NaN;
+  };
   const pad = (n) => String(n).padStart(2, '0');
 
   // day accepts a real calendar date, YYYY-MM-DD, as core/schema's
@@ -117,7 +140,10 @@
     if (raw === null || raw === '') return f.req ? { error: msg(msgs, 'required') } : { empty: true };
     if (typeof raw !== 'string') return { error: msg(msgs, 'required') };
     if (f.t === 'int' || f.t === 'float') {
-      const v = raw.trim() === '' ? NaN : Number(raw.trim());
+      // A type=number control hands over the browser's canonical
+      // spelling already (never blank here: the browser empties a value
+      // it cannot read); a text control holds what the reader typed.
+      const v = live(form, f.name)[0].type === 'number' ? Number(raw) : num(raw);
       if (!Number.isFinite(v)) return { error: msg(msgs, 'number') };
       if (f.t === 'int' && !Number.isSafeInteger(v)) return { error: msg(msgs, 'integer') };
       if (f.min !== undefined && v < f.min) return { error: msg(msgs, 'min', f.min) };
@@ -245,6 +271,9 @@
           shown.set(c, { value: c.value, id: text(rec.id), stored: text(value) });
         }
         else if (c.type === 'radio') c.checked = c.value === text(value);
+        // A number shows with the page's decimal mark in a text
+        // control, so saving the edit untouched reads it back the same.
+        else if (typeof value === 'number' && c.type !== 'number' && c.type !== 'hidden') c.value = String(value).split('.').join(seps().decimal);
         else if (c.type !== 'hidden' || list.length === 1) c.value = text(value);
       }
     }
@@ -282,9 +311,7 @@
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     const sel = FORM + ' form';
-    const forms = [...scope.querySelectorAll(sel)];
-    if (scope.matches && scope.matches(sel)) forms.push(scope);
-    forms.forEach((f) => f.setAttribute('enctype', 'application/json'));
+    [scope, ...scope.querySelectorAll(sel)].forEach((f) => f.matches?.(sel) && f.setAttribute('enctype', 'application/json'));
   }
   scan(document);
   NS._moduleScanners = NS._moduleScanners || {};

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=169a4f7e088340ff
+//gofastr:generated generator=app kind=scaffold version=dev sum=aee6ded36f65e6b3
 
 package main
 
@@ -76,7 +76,7 @@ var fontFaceCSS = style.FontFaceCSS("")
 
 // sidebarConfig returns the navigation sidebar configuration.
 func sidebarConfig(ctx context.Context) ui.SidebarConfig {
-	cfg := ui.SidebarConfig{Title: "ShopFront", Items: []ui.SidebarItem{
+	cfg := ui.SidebarConfig{Ctx: ctx, Title: "ShopFront", Items: []ui.SidebarItem{
 		{Label: chromeTextHome.Text(ctx), Href: "/", Icon: ui.Icon("home", ui.IconConfig{})},
 		{Label: chromeTextProducts.Text(ctx), Href: "/products", Icon: ui.Icon("package", ui.IconConfig{})},
 		{Label: chromeTextCategories.Text(ctx), Href: "/categories", Icon: ui.Icon("folder", ui.IconConfig{})},
@@ -120,7 +120,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 		nav, _ := component.SafeRenderCtx(ctx, sbComponent)
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
+			ui.ContentRow(ui.ContentRowConfig{Ctx: ctx, Sidebar: nav}, l.Primary()))
 	})
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)

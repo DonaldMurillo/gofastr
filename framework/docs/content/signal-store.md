@@ -37,6 +37,10 @@ title  := CompanyName.BindAttr(ctx, "a", "title", map[string]string{"href": "/"}
 ctx-aware render interface) so it stamps the **resolved** value: the per-request
 value if a producer seeded one, else the declared default. The same resolved
 value goes into the SSR seed, so the DOM and the client store can never drift.
+That holds for an element id inside a seeded value too: HTML a producer renders
+during the page (a section whose id the page derives, `features-2`) is seeded
+with the id the page's markup shows, never the placeholder the id stood in as
+while the page rendered (`render.SettleIDs`).
 
 ## Declaring slices
 

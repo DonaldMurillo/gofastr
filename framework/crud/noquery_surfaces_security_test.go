@@ -301,16 +301,23 @@ func TestNoQueryPKRejectedAsCompositeTiebreak(t *testing.T) {
 	})
 }
 
-// TestSingleCursorFieldDoesNotPullInPK is the false-positive guard: the
-// single-field CursorField branch does NOT append the primary key, so a
-// NoQuery id must not make an otherwise-valid entity panic.
-func TestSingleCursorFieldDoesNotPullInPK(t *testing.T) {
+// TestCursorFieldNoQueryKeyPanics: the single-field CursorField branch
+// appends the primary key as its tiebreak, and the cursor token carries
+// the anchor row's key, so a NoQuery id is refused behind a CursorField
+// the same way it is behind CursorFields. This was the false-positive
+// guard while the single branch paged on its one column alone and
+// skipped rows tied on it (round 3 review of D33).
+func TestCursorFieldNoQueryKeyPanics(t *testing.T) {
 	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("Define panicked on a valid single-field cursor: %v", r)
+		r := recover()
+		if r == nil {
+			t.Fatal("Define accepted a NoQuery primary key behind a single CursorField")
+		}
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, `cursor field "id" is NoQuery`) {
+			t.Fatalf("panic = %v, want it to name the key column", r)
 		}
 	}()
-	entity.Define("nq_single_cursor_ok", entity.EntityConfig{Fields: []schema.Field{
+	entity.Define("nq_single_cursor", entity.EntityConfig{Fields: []schema.Field{
 		{Name: "id", Type: schema.String, NoQuery: true},
 		{Name: "seq", Type: schema.Int, Required: true},
 	}, Pagination: &entity.PaginationConfig{CursorField: "seq"},

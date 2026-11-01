@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -108,5 +109,21 @@ func TestCarouselSlideStatusThroughStrings(t *testing.T) {
 		if !strings.Contains(h, want) {
 			t.Errorf("translated carousel words missing %q:\n%s", want, h)
 		}
+	}
+}
+
+// An explicit slide id is reserved: an auto "Features" section beside a
+// slide named "section-features-title" moves its heading id, not the
+// slide's.
+func TestCarouselReservesSlideIDs(t *testing.T) {
+	ids := render.NewRegionBatch(render.WithIDScope(context.Background()), 1)
+	ctx := ids.Context(0)
+	sec := Section(SectionProps{Title: "Features", Ctx: ctx}, nil)
+	car := Carousel(CarouselProps{Label: "Tour", Ctx: ctx, Slides: []CarouselSlide{
+		{Content: render.Text("One"), ID: "section-features-title"},
+	}}, nil)
+	out := string(ids.Settle(0)(sec + car))
+	if n := strings.Count(out, `id="section-features-title"`); n != 1 {
+		t.Errorf("id section-features-title appears %d times:\n%s", n, out)
 	}
 }

@@ -1,7 +1,10 @@
 package ownstyle
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -36,12 +39,13 @@ func (s *Sheet) OwnedSheet() *Sheet { return s }
 // CSS has been checked; a panic therefore means the generated source
 // was hand-edited or is stale: regenerate with `gofastr gen styles`.
 //
-// The name must match ^[a-z][a-z0-9-]*$ and not start with "ui-" (kit
+// The name must match ^[a-z][a-z0-9-]{0,63}$ and not start with "ui-" (kit
 // names). "app" is reserved for the one app sheet (Kind App), and the
 // app sheet must be named "app". A duplicate name panics — owned names
 // are unique across the program (GOFASTR1816). Must also compiles once
 // against the default theme, so an unknown custom medium or a missing
-// breakpoint panics here, not at first request.
+// breakpoint panics here, not at first request; App.WithTheme checks a
+// custom app theme the same way (CheckTheme).
 func Must(name string, kind Kind, css string) *Sheet {
 	if kind == KindApp && name != "app" {
 		panic(fmt.Sprintf("ownstyle: Must(%q, KindApp): the app owner's name is \"app\"", name))
@@ -50,7 +54,7 @@ func Must(name string, kind Kind, css string) *Sheet {
 		panic(`ownstyle: Must("app", …): "app" is reserved for the app sheet; pass KindApp`)
 	}
 	if !styleNameOK(name) {
-		panic(fmt.Sprintf("ownstyle: Must: %q is not a valid style name: ^[a-z][a-z0-9-]*$ and not the ui- prefix", name))
+		panic(fmt.Sprintf("ownstyle: Must: %q is not a valid style name: ^[a-z][a-z0-9-]{0,63}$ and not the ui- prefix", name))
 	}
 	sheet, diags := Parse(css)
 	if len(diags) > 0 {
@@ -75,17 +79,56 @@ func Must(name string, kind Kind, css string) *Sheet {
 		opts = append(opts, registry.WithLoad(registry.LoadAlways))
 	}
 	s.entry = registry.RegisterStyle(name, s.buildCSS, opts...).Entry()
+	sheetsMu.Lock()
+	sheets[s.entry] = s
+	sheetsMu.Unlock()
 	return s
 }
 
+// sheets maps each registry entry Must created to its sheet, so
+// CheckTheme compiles exactly the owned sheets the (possibly
+// test-isolated) registry holds.
+var (
+	sheetsMu sync.Mutex
+	sheets   = map[*registry.Entry]*Sheet{}
+)
+
+// CheckTheme compiles every registered owned sheet against t and
+// returns one error per sheet that does not compile: a theme that
+// renames or drops a breakpoint a sheet's custom media names
+// (--above-md with no md breakpoint). Must checks the default theme;
+// App.WithTheme in core-ui/app calls CheckTheme so an app theme fails
+// at boot.
+func CheckTheme(t style.Theme) error {
+	tokens := style.ThemeToTokens(t)
+	var errs []error
+	for _, e := range registry.All() {
+		sheetsMu.Lock()
+		s := sheets[e]
+		sheetsMu.Unlock()
+		if s == nil {
+			continue
+		}
+		if _, err := Compile(s.sheet, s.name, s.kind, tokens); err != nil {
+			errs = append(errs, fmt.Errorf("ownstyle: %s: %w", s.name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // buildCSS is the registry's StyleFn: compile per theme, so theme
-// variants and breakpoint changes flow through.
+// variants and breakpoint changes flow through. A theme the sheet does
+// not compile against (a breakpoint it names is missing) reaches here
+// only through a variant registered after boot, since Must checks the
+// default theme and App.WithTheme the app theme. The request does not
+// panic: the error is logged and the sheet ships empty under that
+// theme (the registry caches the result per theme).
 func (s *Sheet) buildCSS(t style.Theme) string {
 	out, err := Compile(s.sheet, s.name, s.kind, style.ThemeToTokens(t))
 	if err != nil {
-		// Caught eagerly in Must against the default theme; a custom
-		// theme reaching here is missing a breakpoint the sheet names.
-		panic(fmt.Sprintf("ownstyle: %s: %v", s.name, err))
+		slog.Error("ownstyle: owned sheet does not compile against this theme; serving it empty",
+			"sheet", s.name, "theme", t.Name, "err", err)
+		return ""
 	}
 	return out
 }

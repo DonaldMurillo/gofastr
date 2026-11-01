@@ -1,12 +1,14 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -81,5 +83,42 @@ func TestPageHandlerKeepsDynamicRequestPath(t *testing.T) {
 	}
 	if body := rec.Body.String(); !strings.Contains(body, ">42<") {
 		t.Errorf("param not captured from the real path; got: %s", body)
+	}
+}
+
+// The router stores dynamic paths in the ":id" spelling, so a handler
+// built from a registered screen's Path must not force that pattern
+// into the dispatch either.
+func TestPageHandlerKeepsColonParamPath(t *testing.T) {
+	a := app.NewApp("pagehandler")
+	a.Register("/thing/{id}", &paramJSONComp{}, nil)
+	ds := New(a)
+
+	rec := httptest.NewRecorder()
+	ds.PageHandler("/thing/:id")(rec, httptest.NewRequest(http.MethodGet, "/thing/42", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, ">42<") {
+		t.Errorf("param not captured from the real path; got: %s", body)
+	}
+}
+
+// idsComp asks the page's id scope for the same id twice.
+type idsComp struct{ component.ContextOnly }
+
+func (idsComp) RenderCtx(ctx context.Context) render.HTML {
+	return render.HTML("<p>" + render.UniqueID(ctx, "features") + "|" + render.UniqueID(ctx, "features") + "</p>")
+}
+
+// A page render carries an id scope, so a repeated derived id is
+// suffixed on the page.
+func TestPageRenderHasIDScope(t *testing.T) {
+	a := app.NewApp("idscope")
+	a.Register("/ids", &idsComp{}, nil)
+	rec := httptest.NewRecorder()
+	New(a).PageHandler("/ids")(rec, httptest.NewRequest(http.MethodGet, "/ids", nil))
+	if body := rec.Body.String(); !strings.Contains(body, "<p>features|features-2</p>") {
+		t.Errorf("want features|features-2 on the page; got: %s", body)
 	}
 }

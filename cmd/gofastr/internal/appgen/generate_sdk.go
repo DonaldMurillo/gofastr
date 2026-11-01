@@ -741,9 +741,9 @@ func renderSDKGoReadme(spec sdkSpec) string {
 // operator: the first queryable field whose type accepts a range
 // comparison (filter.OpSuitsType, the one predicate every filter
 // surface applies, via the CLI model's derived operator set) with
-// "_gte", else the first queryable field with "" (equality suits every
-// type), else nil. A `_gte` example on a Bool or JSON column would be
-// a request the server answers 400.
+// "_gte", else the first queryable field whose type takes equality with
+// "" (a JSON column takes no filter), else nil. A `_gte` example on a
+// Bool or JSON column would be a request the server answers 400.
 func sdkExampleFilter(fields []cliField) (field *cliField, op string) {
 	for i := range fields {
 		if !fields[i].NoQuery && cliFieldAcceptsGte(fields[i]) {
@@ -752,7 +752,7 @@ func sdkExampleFilter(fields []cliField) (field *cliField, op string) {
 		}
 	}
 	for i := range fields {
-		if !fields[i].NoQuery {
+		if !fields[i].NoQuery && !fields[i].NoEq {
 			f := fields[i]
 			return &f, ""
 		}

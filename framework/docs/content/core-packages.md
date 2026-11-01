@@ -56,7 +56,10 @@ needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
 A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 /pattern` registration with `{id}` path capture, concurrency-safe
-middleware chaining after registration, route groups, and sanitized path
+middleware chaining after registration (`Use` adds outside-in, the first
+added is outermost; `UseInner` adds middleware that runs after every `Use`
+and `Group` middleware in the tree, next to the handler), route groups,
+and sanitized path
 params (`Param` strips CR/LF/NUL, a decoded `/`, and smuggled `..`;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
 reader of `r.PathValue` should go through `Param` or the exported
@@ -66,7 +69,13 @@ first request that reaches it (a 500 through the recovery middleware)
 instead of returning `""`. A request built by hand with `SetPathValue`
 and no pattern is not checked. `handler.Bind` does not panic: a
 `path:"..."` field the route does not declare stays zero, so one input
-struct can serve both `POST /users` and `PUT /users/{id}`. The
+struct can serve both `POST /users` and `PUT /users/{id}`.
+`ResourceGroup(name)` returns a sub-router whose routes name the REST
+resource they serve; `RouteResource(ctx)` reads the name in middleware,
+before the handler runs; a route outside any ResourceGroup clears a
+name its request inherited from a route that redispatched it. Entity
+routes use it so `auth.RequireAPIScopes` scopes `/_batch`, the other
+subroutes and the entity's Endpoints to its table. The
 framework owns the root `*Router` and hands it to batteries and authors
 to mount routes. Direct. Start at `core/router/router.go`: `Router`.
 
@@ -118,6 +127,12 @@ HTTP status off a failed handshake but can read a close code. The
 reason is kept to printable ASCII and 123 bytes; a reserved or
 out-of-range code goes out as 1002 and is returned as an error; a
 close the peer began first still echoes the peer's own code.
+`stream.WithUpgradeHook(ctx, fn)` makes `Upgrade`, serving a request
+whose context carries it, hand `fn` each connection it opens: a server
+reaches the WebSockets its handlers own that way. `framework.App` uses
+it to close every open one with 1001 when `Shutdown` starts, since
+`http.Server.Shutdown` neither waits for nor closes a hijacked
+connection.
 
 `WebSocketConn` follows RFC 6455's strict readings: a text message
 that is not valid UTF-8 closes with 1007, a close reason that is not
@@ -152,7 +167,11 @@ packaged StateChannel consumer for rooms of peers (see
 The lossy, best-effort cross-replica transport behind real-time
 delivery. A `Fanout` interface (`Publish` / `Subscribe`) with an
 in-process backend and a Redis adapter (`NewRedis`), plus a node-id
-envelope that stops broadcasts from re-broadcasting. Indirect by
+envelope that stops broadcasts from re-broadcasting. `PublishQueue`
+publishes from hot paths without blocking; `PublishQueueReporting` is
+the same queue with a per-payload callback that runs when the payload
+is not published (backend error, timeout, or `ErrPublishDropped` on
+overflow), for a caller that must act on a loss. Indirect by
 default: the framework wires it under the event bus, the island
 manager, and `SSEBroker`. Reach for it directly only to span a new
 real-time surface across replicas. Start at `core/fanout/fanout.go`:

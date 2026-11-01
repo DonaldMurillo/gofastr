@@ -152,9 +152,27 @@ drains in-flight requests on `SIGINT`/`SIGTERM` via `App.Shutdown`, so
 rolling deploys don't cut active requests.
 
 The drain is **bounded**: `AppConfig.ShutdownTimeout` (default 15s) caps
-it, and anything still open at the deadline, say an SSE stream that
-never goes idle, is force-closed so the process exits well inside Kubernetes'
-30s SIGTERM→SIGKILL window. A connection that was accepted but never sent
+it, and anything still open at the deadline is force-closed so the process
+exits well inside Kubernetes' 30s SIGTERM→SIGKILL window. Long-lived
+connections never go idle, so the drain does not wait on them; it ends
+them when it starts, and the client reconnects to another replica or to
+the restarted process:
+
+- An event stream (a GET whose response goes out as `text/event-stream`,
+  whatever the request's `Accept` said) has its request context
+  cancelled, so its handler returns. A POST answered as a stream (MCP's
+  streamable HTTP) is one call's reply and drains like any other request.
+- A WebSocket opened with `core/stream`'s `Upgrade` (the `battery/rtc`
+  signaler included) gets a close frame with code 1001, going away,
+  even if the handler that opened it has returned. A connection a
+  handler hijacked by hand is closed. Neither would end otherwise:
+  `http.Server.Shutdown` does not wait for or close a hijacked
+  connection. A hijack attempted after the drain started is refused,
+  and its connection closed. The drain gives the close handshakes up to
+  2s (less if the `Shutdown` context ends first), then closes any
+  connection whose peer has not answered.
+
+A connection that was accepted but never sent
 a request (a browser's speculative preconnect) is closed at the start of
 the drain, so it cannot hold the drain to its deadline. In-flight cron jobs are joined under the
 same deadline (their contexts are cancelled when the drain starts).

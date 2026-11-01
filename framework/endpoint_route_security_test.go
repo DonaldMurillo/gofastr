@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
@@ -73,5 +74,34 @@ func TestEndpointRouteGates(t *testing.T) {
 	plain.Router().ServeHTTP(rec, req.WithContext(handler.SetUser(req.Context(), "u1")))
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("gated endpoint Cache-Control = %q, want no-store", got)
+	}
+}
+
+// An Endpoint answers to its entity's scope, "<table>:<verb>", the one its
+// MCP twin checks. Registered on the bare router, a relative endpoint on a
+// table named v1 (/v1/refresh) carried no resource, so RequireAPIScopes
+// fell back to the path and read the version-shaped v1 as a version,
+// asking for refresh:write.
+func TestEndpointsNameTheirTable(t *testing.T) {
+	eps := []entity.Endpoint{{Method: "POST", Path: "refresh", Name: "refresh", Handler: http.HandlerFunc(noContent)}}
+	fields := []schema.Field{{Name: "name", Type: schema.String}}
+	plain := NewApp()
+	plain.Entity("v1", entity.EntityConfig{Fields: fields, Endpoints: eps})
+	grouped := NewApp()
+	grouped.GroupEntity(grouped.Group("/v2"), "v3", entity.EntityConfig{Fields: fields, Endpoints: eps})
+
+	for path, app := range map[string]*App{"/v1/refresh": plain, "/v2/v3/refresh": grouped} {
+		var got string
+		app.Use(func(http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got, _ = router.RouteResource(r.Context())
+				w.WriteHeader(http.StatusNoContent)
+			})
+		})
+		app.Router().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, path, nil))
+		want := strings.Split(path, "/")[len(strings.Split(path, "/"))-2]
+		if got != want {
+			t.Errorf("POST %s: route resource %q, want %q", path, got, want)
+		}
 	}
 }

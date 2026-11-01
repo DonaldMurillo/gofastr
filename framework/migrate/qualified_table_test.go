@@ -65,10 +65,17 @@ func pgIndexDef(t *testing.T, db *sql.DB, s, name string) string {
 // pgKeyCols lists the primary-key columns of a (qualified) table, in key order.
 func pgKeyCols(t *testing.T, db *sql.DB, table string) []string {
 	t.Helper()
-	rows, err := db.Query(`SELECT a.attname FROM pg_constraint con
+	return queryStrings(t, db, `SELECT a.attname FROM pg_constraint con
 		CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS k(n, ord)
 		JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.n
 		WHERE con.contype = 'p' AND con.conrelid = $1::regclass ORDER BY k.ord`, table)
+}
+
+// queryStrings runs a query selecting one text column and returns its
+// values in row order.
+func queryStrings(t *testing.T, db *sql.DB, q string, args ...any) []string {
+	t.Helper()
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		t.Fatal(err)
 	}

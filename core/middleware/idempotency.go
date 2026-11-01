@@ -98,6 +98,22 @@ var (
 // each other's cached responses, closing a cross-tenant replay leak.
 // Without one, or for a request it returns "" for, nothing is cached;
 // return a constant such as "anon" to share one namespace on purpose.
+//
+// Tenant, when set, returns the tenant the request acts in ("" for
+// none). A non-empty tenant joins the principal in the storage key, so
+// one credential that switches its active tenant and resends the same
+// key, path and body runs the write in the second tenant instead of
+// being served the first tenant's response. The principal alone stays
+// the row's owner for export and erasure.
+//
+// Scope, when set, returns what narrows the request below its
+// principal's full authority ("" for nothing): a scope-restricted API
+// token or embed grant. It joins the storage key the way Tenant does, so
+// a narrow token of one user resending the key a session or a broader
+// token used runs its own request instead of being served a response its
+// scopes would not allow. framework.WithIdempotency sets it from the
+// request's held scopes.
+//
 // FailOpen flips behaviour on store error: true falls through to the
 // handler (availability-first), false returns 503 to the client
 // (correctness-first). Default false; a broken store no longer
@@ -116,6 +132,8 @@ type IdempotencyConfig struct {
 	Methods          []string
 	Required         bool
 	Principal        func(r *http.Request) string
+	Tenant           func(r *http.Request) string
+	Scope            func(r *http.Request) string
 	FailOpen         bool
 	Logger           *slog.Logger
 	// MaxStoreEntries caps how many entries the DEFAULT in-memory store
@@ -267,7 +285,15 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			// only user of — a cross-principal cache-poisoning DoS for
 			// any Principal function that can return NUL-bearing
 			// subjects.
-			storeKey := idemStoreKey(principal, key)
+			tenant := ""
+			if cfg.Tenant != nil {
+				tenant = cfg.Tenant(r)
+			}
+			scope := ""
+			if cfg.Scope != nil {
+				scope = cfg.Scope(r)
+			}
+			storeKey := idemStoreKey(principal, tenant, scope, key)
 
 			replay, ok, beginErr := cfg.Store.Begin(r.Context(), storeKey, fp)
 			switch {
@@ -363,9 +389,13 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 }
 
 // idemStoreKey is the key the store sees: the principal's byte length,
-// NUL, the principal, then the client's key.
-func idemStoreKey(principal, key string) string {
-	return strconv.Itoa(len(principal)) + "\x00" + principal + key
+// NUL, the principal, the tenant and the scope the same way, then the
+// client's key. The length prefixes keep it injective over (principal,
+// tenant, scope, key).
+func idemStoreKey(principal, tenant, scope, key string) string {
+	return strconv.Itoa(len(principal)) + "\x00" + principal +
+		strconv.Itoa(len(tenant)) + "\x00" + tenant +
+		strconv.Itoa(len(scope)) + "\x00" + scope + key
 }
 
 // idemPrincipal reads the principal back out of an idemStoreKey key,

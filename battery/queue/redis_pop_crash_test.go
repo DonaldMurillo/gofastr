@@ -14,11 +14,51 @@ import (
 // the chosen call it ends the calling goroutine with runtime.Goexit, so
 // nothing after the call runs. The job must still be found by Reclaim on a
 // restarted queue, once, and never sit on no list at all.
+//
+// crashAt runs the queue's paths for a client without scripts; crashScripts
+// adds Eval for the scripted ones.
 type crashAt struct {
 	*mockRedis
-	step  string // "pop#<n>", "HSet <key>" or "HDel <key>"
+	noScripts
+	step  string // "pop#<n>", "HSet <key>", "HDel <key>" or "Eval <destination key>"
 	pops  int
 	fired bool
+}
+
+// crashScripts is crashAt with Eval: the step "Eval <key>" dies before a
+// move script whose destination is key runs.
+type crashScripts struct{ *crashAt }
+
+func (c crashScripts) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
+	if len(keys) > 1 {
+		c.die("Eval " + keys[1])
+	}
+	return c.mockRedis.Eval(ctx, script, keys, args...)
+}
+
+// client is c for the paths without scripts, or c with Eval.
+func (c *crashAt) client(scripts bool) RedisClient {
+	if scripts {
+		return crashScripts{c}
+	}
+	return c
+}
+
+// Each wrapper that hides mockRedis's Eval behind noScripts is no
+// ScriptRunner, so its test covers the paths of a client without scripts.
+func TestNoScriptsHidesEval(t *testing.T) {
+	for _, c := range []RedisClient{
+		&crashAt{}, &failingWrites{}, lostPromoteRedis{}, mainPushFailRedis{}, mainPushDiesRedis{},
+	} {
+		if _, ok := c.(ScriptRunner); ok {
+			t.Errorf("%T runs scripts", c)
+		}
+	}
+	for _, c := range []RedisClient{crashScripts{&crashAt{}}, &failingScripts{&failingWrites{}}} {
+		if _, ok := c.(ScriptRunner); !ok {
+			t.Errorf("%T does not run scripts", c)
+		}
+	}
 }
 
 func (c *crashAt) die(step string) {
@@ -96,11 +136,17 @@ func mustBeEmpty(t *testing.T, q *RedisQueue, types ...string) {
 }
 
 func TestDeathAfterPopKeepsJob(t *testing.T) {
+	t.Run("plain", func(t *testing.T) { deathAfterPop(t, false, "HSet test:processing") })
+	t.Run("scripts", func(t *testing.T) { deathAfterPop(t, true, "Eval test:processing") })
+}
+
+func deathAfterPop(t *testing.T, scripts bool, step string) {
 	r := newMockRedis()
 	now := time.Now()
-	c := &crashAt{mockRedis: r, step: "HSet test:processing"}
+	c := &crashAt{mockRedis: r, step: step}
 	q := restarted(r, &now)
-	q.client = c
+	q.client = c.client(scripts)
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	if err := q.Enqueue(ctx, Job{ID: "j", Type: "x"}); err != nil {
 		t.Fatal(err)
@@ -122,11 +168,17 @@ func TestDeathAfterPopKeepsJob(t *testing.T) {
 }
 
 func TestDeathWhileSkippingKeepsJob(t *testing.T) {
+	t.Run("plain", func(t *testing.T) { deathWhileSkipping(t, false) })
+	t.Run("scripts", func(t *testing.T) { deathWhileSkipping(t, true) })
+}
+
+func deathWhileSkipping(t *testing.T, scripts bool) {
 	r := newMockRedis()
 	now := time.Now()
 	c := &crashAt{mockRedis: r, step: "pop#2"}
 	q := restarted(r, &now)
-	q.client = c
+	q.client = c.client(scripts)
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	if err := q.Enqueue(ctx, Job{ID: "a", Type: "a"}); err != nil {
 		t.Fatal(err)
@@ -154,6 +206,7 @@ func TestDeathAfterClaimDeliversOnce(t *testing.T) {
 	c := &crashAt{mockRedis: r, step: "HDel test:popped"}
 	q := restarted(r, &now)
 	q.client = c
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	if err := q.Enqueue(ctx, Job{ID: "j", Type: "x"}); err != nil {
 		t.Fatal(err)
@@ -179,6 +232,7 @@ func TestDeathAfterClaimDeliversOnce(t *testing.T) {
 func TestClaimLeavesNoPopRecord(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	for _, id := range []string{"a", "b", "c"} {
 		if err := q.Enqueue(ctx, Job{ID: id, Type: id}); err != nil {
@@ -201,8 +255,20 @@ func TestClaimLeavesNoPopRecord(t *testing.T) {
 // failing. Its HDel honours a cancelled context, as a real client does.
 type failingWrites struct {
 	*mockRedis
+	noScripts
 	hsetFail bool
 	pushFail string // the list whose LPush fails
+}
+
+// failingScripts is failingWrites with Eval: a move script fails where the
+// write it stands for would.
+type failingScripts struct{ *failingWrites }
+
+func (f *failingScripts) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
+	if script == moveScript && ((f.hsetFail && keys[1] == "test:processing") || keys[1] == f.pushFail) {
+		return nil, errors.New("script down")
+	}
+	return f.mockRedis.Eval(ctx, script, keys, args...)
 }
 
 func (f *failingWrites) HSet(ctx context.Context, key string, values ...any) error {
@@ -246,33 +312,48 @@ func TestHomedEntryLeavesNoPopRecord(t *testing.T) {
 		{name: "quarantine failed", f: failingWrites{pushFail: "test:dead"}, main: 1},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			r := newMockRedis()
-			f := tc.f
-			f.mockRedis = r
-			q := NewRedisQueue(&f, "test")
-			if tc.job != nil {
-				if err := q.Enqueue(context.Background(), *tc.job); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				_ = r.LPush(context.Background(), "test", "{not json")
+		for _, scripts := range []bool{false, true} {
+			name := tc.name
+			if scripts {
+				name += ", scripts"
 			}
-			ctx, cancel := context.WithCancel(context.Background())
-			if tc.cancelled {
-				cancel()
-			}
-			defer cancel()
-			_, _ = q.Dequeue(ctx)
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			if n := len(r.hashes["test:popped"]); n != 0 {
-				t.Fatalf("%d pop records left behind", n)
-			}
-			if m, d := len(r.lists["test"]), len(r.lists["test:dead"]); m != tc.main || d != tc.dead {
-				t.Fatalf("main %d, dead %d; want %d, %d", m, d, tc.main, tc.dead)
-			}
-		})
+			t.Run(name, func(t *testing.T) { homedEntry(t, tc.job, tc.f, tc.cancelled, scripts, tc.main, tc.dead) })
+		}
+	}
+}
+
+// homedEntry dequeues job (nil: a malformed entry) through f, with Eval
+// when scripts, and checks no pop record is left and the main and dead
+// lists hold wantMain and wantDead entries.
+func homedEntry(t *testing.T, job *Job, f failingWrites, cancelled, scripts bool, wantMain, wantDead int) {
+	r := newMockRedis()
+	f.mockRedis = r
+	var c RedisClient = &f
+	if scripts {
+		c = &failingScripts{&f}
+	}
+	q := NewRedisQueue(c, "test")
+	t.Cleanup(func() { _ = q.Close() })
+	if job != nil {
+		if err := q.Enqueue(context.Background(), *job); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		_ = r.LPush(context.Background(), "test", "{not json")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if cancelled {
+		cancel()
+	}
+	defer cancel()
+	_, _ = q.Dequeue(ctx)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if n := len(r.hashes["test:popped"]); n != 0 {
+		t.Fatalf("%d pop records left behind", n)
+	}
+	if m, d := len(r.lists["test"]), len(r.lists["test:dead"]); m != wantMain || d != wantDead {
+		t.Fatalf("main %d, dead %d; want %d, %d", m, d, wantMain, wantDead)
 	}
 }
 
@@ -281,6 +362,7 @@ func TestHomedEntryLeavesNoPopRecord(t *testing.T) {
 func TestBadPopFieldGoesBack(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	_ = r.HSet(context.Background(), "test:popped", "junk", `{"id":"j","type":"x","max_attempts":3}`)
 	if n, err := q.Reclaim(context.Background()); err != nil || n != 1 {
 		t.Fatalf("reclaim = %d, %v; want 1, nil", n, err)
@@ -294,6 +376,7 @@ func TestBadPopFieldGoesBack(t *testing.T) {
 func TestCorruptClaimDoesNotStopReclaim(t *testing.T) {
 	r := newMockRedis()
 	q := NewRedisQueue(r, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	_ = r.HSet(ctx, "test:popped", "junk", `{"id":"j","type":"x","max_attempts":3}`)
 	_ = r.HSet(ctx, "test:processing", "j", "{corrupt")
@@ -328,6 +411,7 @@ func (b *bareClient) HDel(ctx context.Context, key string, fields ...string) err
 func TestBareClientSendsNoRecordDelete(t *testing.T) {
 	b := &bareClient{RedisClient: newMockRedis()}
 	q := NewRedisQueue(b, "test")
+	t.Cleanup(func() { _ = q.Close() })
 	ctx := context.Background()
 	for _, id := range []string{"a", "b"} {
 		if err := q.Enqueue(ctx, Job{ID: id, Type: id}); err != nil {

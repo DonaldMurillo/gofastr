@@ -29,7 +29,13 @@ type CorePlugin struct {
 	loginLimit        *RateLimiter
 	loginLimitAccount *RateLimiter
 	registerLimit     *RateLimiter
+	// notices sends the duplicate-registration notice off the timed
+	// path, bounded and stopped with the manager (OnStop).
+	notices *mailQueue
 }
+
+// CorePlugin drains its notice queue at shutdown.
+var _ AuthPluginOnStop = (*CorePlugin)(nil)
 
 // loginAccountScope is the per-account login limiter's Scope when the
 // host sets none. The erasure matches its keys by it (erase.go).
@@ -37,7 +43,13 @@ const loginAccountScope = "login_account"
 
 // NewCorePlugin creates the core auth plugin.
 func NewCorePlugin() *CorePlugin {
-	return &CorePlugin{}
+	return &CorePlugin{notices: newMailQueue("core")}
+}
+
+// OnStop cancels the duplicate-registration notices in flight and waits
+// for the queue's workers; ctx bounds the wait.
+func (c *CorePlugin) OnStop(ctx context.Context) error {
+	return c.notices.stop(ctx)
 }
 
 // Name returns the plugin name.
@@ -623,14 +635,15 @@ const duplicateRegisterNoticeBody = "Someone tried to create an account with thi
 	"if not, you can ignore this message."
 
 // deliverRegisterDuplicateNotice mails the existing account holder off
-// the timed path: the goroutine is started once the uniform response is
-// already decided, so the client cannot clock the known/unknown
-// branches apart — the same posture forgotHandler documents for its
-// delivery. context.WithoutCancel keeps the send alive after the
-// request context is torn down. The sender is a host-supplied
-// interface called from our goroutine, so the call runs under a
-// recover guard: a panicking Send becomes a WARN, not a process kill
-// (the recovercallback contract).
+// the timed path: the send is queued once the uniform response is
+// already decided, so the client cannot clock the known/unknown branches
+// apart — the same posture forgotHandler documents for its delivery. The
+// queue (mailQueue) is the one password reset uses: a fixed worker pool,
+// a bounded queue that drops rather than blocks, a deadline on every
+// send, and OnStop cancelling what is in flight. A stalled provider costs
+// at most the pool, not a goroutine per duplicate registration. The
+// sender is host code, so its panic is recovered and logged scrubbed (the
+// recovercallback contract); the notice body carries no secret.
 func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail string) {
 	if holderEmail == "" {
 		return
@@ -639,8 +652,7 @@ func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail
 	if sender == nil {
 		return
 	}
-	ctx := context.WithoutCancel(r.Context())
-	go func() {
+	c.notices.enqueue(r.Context(), holderEmail, func(ctx context.Context) {
 		defer func() {
 			if p := recover(); p != nil {
 				// Scrub before the log (textsafe.Recovered): the panic
@@ -654,7 +666,7 @@ func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail
 			slog.Warn("register duplicate-notice send failed",
 				"plugin", "core", "email_hash", hashedIdentifier(holderEmail), "err", err)
 		}
-	}()
+	})
 }
 
 // writeAuthError is the shared error helper: it emits the canonical flat

@@ -139,13 +139,50 @@ func TestWaitExitWatchesThePID(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
-	if err := b.waitExit(child.Process.Pid); err == nil {
+	daemon := procalive.Identify(child.Process.Pid)
+	if err := b.waitExit(daemon); err == nil {
 		t.Fatal("waitExit returned nil with no control channel but a live pid")
 	}
 	_ = child.Process.Kill()
 	_ = child.Wait()
-	if err := b.waitExit(child.Process.Pid); err != nil {
+	if err := b.waitExit(daemon); err != nil {
 		t.Fatalf("waitExit after the exit: %v", err)
+	}
+}
+
+// Once the daemon exits its pid may go to a newer process. That process
+// is not the daemon: stop must not wait it out and report "did not
+// exit", and uninstall must not refuse over it.
+func TestWaitExitIgnoresRecycledPID(t *testing.T) {
+	b, _, _ := testBattery(t, "darwin", Config{})
+	shortStopWait(t)
+	newcomer := exec.Command("sleep", "60")
+	if err := newcomer.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = newcomer.Process.Kill(); _ = newcomer.Wait() })
+	now := procalive.Identify(newcomer.Process.Pid)
+	if now.Start == 0 {
+		t.Fatal("no start value: the recycled-pid check is vacuous here")
+	}
+	// The daemon held this pid before and started at another moment.
+	daemon := procalive.Identity{PID: now.PID, Start: now.Start - 1}
+	if err := b.waitExit(daemon); err != nil {
+		t.Fatalf("waitExit on a recycled pid: %v", err)
+	}
+}
+
+// The daemon's start value is read when it answers, while its pid is
+// still certainly its own; read later, it could be a newcomer's.
+func TestRunningDaemonReadsStart(t *testing.T) {
+	b, _, _ := testBattery(t, "darwin", Config{})
+	d := startFakeDaemon(t, b, false)
+	got, err := b.runningDaemon()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PID != d.pid || got.Start == 0 || got.Start != procalive.Identify(d.pid).Start {
+		t.Fatalf("runningDaemon = %+v; want pid %d with its start value", got, d.pid)
 	}
 }
 

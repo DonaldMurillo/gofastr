@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
@@ -208,5 +209,36 @@ func TestEntityUIRoutesInOpenAPI(t *testing.T) {
 	}
 	if p[base+"/_export.csv"]["get"] == nil {
 		t.Errorf("spec has no GET %s/_export.csv: %v", base, p[base+"/_export.csv"])
+	}
+}
+
+// The EntityUI routes beside a CRUD mount name the mount's resource, so
+// a scope gate reads the table from the route, not from the path.
+func TestEntityUIRoutesNameTheirResource(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	app := entityUIAuditApp(t, db, "notes", false)
+	app.EntityUI(entityui.Extensions{})
+	got := map[string]string{}
+	app.Use(func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got[r.URL.Path], _ = router.RouteResource(r.Context())
+			w.WriteHeader(http.StatusNoContent)
+		})
+	})
+	base := app.entityMountPath("notes")
+	for _, rt := range []struct{ method, path string }{
+		{http.MethodPost, base + "/_bulk"},
+		{http.MethodGet, base + "/_export.csv"},
+		{http.MethodPost, base + "/_pick"},
+		{http.MethodPost, base + "/_batch"},
+	} {
+		app.Router().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(rt.method, rt.path, nil))
+		if got[rt.path] != "notes" {
+			t.Errorf("%s %s: route resource %q, want notes", rt.method, rt.path, got[rt.path])
+		}
 	}
 }

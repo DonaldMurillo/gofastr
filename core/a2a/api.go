@@ -92,6 +92,12 @@ type TaskRecord struct {
 	// session, server code), a JSON array otherwise. A scoped caller sees
 	// only the tasks whose Scope equals its own; see Config.Scopes.
 	Scope string
+	// Tenant is the tenant the creating request acted in (Config.Tenant),
+	// "" for none. A server with a Tenant hook shows a caller only the
+	// tasks made in its current tenant, so a member who leaves a tenant,
+	// or switches to another, stops reading the results its tasks there
+	// returned. Owner stays the user id alone: erasure deletes by it.
+	Tenant string
 	// Version is bumped on every UpdateTask; an update whose Version does
 	// not match the stored row fails with ErrConflict.
 	Version   int64
@@ -117,8 +123,13 @@ type ListQuery struct {
 	// scoped caller may see. False lists every task of the owner.
 	Scoped bool
 	Scope  string
-	Limit  int
-	Offset int
+	// Tenanted filters to tasks whose Tenant equals Tenant ("" included:
+	// a tenant-less caller sees only tenant-less tasks). False lists
+	// every tenant's tasks of the owner.
+	Tenanted bool
+	Tenant   string
+	Limit    int
+	Offset   int
 }
 
 // Store persists tasks and push configs. Every read and write is scoped
@@ -151,6 +162,16 @@ type Store interface {
 // per list. Both built-in stores implement it.
 type ScopeFilter interface {
 	FiltersByScope()
+}
+
+// TenantFilter is the optional Store capability that says ListTasks
+// applies ListQuery.Tenanted and Tenant in its query. The server lists
+// through a Store without it, when Config.Tenant is set, the way it
+// lists a scoped caller through a Store without ScopeFilter: it walks
+// the owner's tasks and counts the caller's tenant's alone. Both
+// built-in stores implement it.
+type TenantFilter interface {
+	FiltersByTenant()
 }
 
 // RetentionTrimmer is the optional Store capability that bounds the

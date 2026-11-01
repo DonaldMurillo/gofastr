@@ -1,6 +1,7 @@
 package interactive
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -159,6 +160,35 @@ func TestSectionMenuDrawerRequiresName(t *testing.T) {
 	cfg := sampleMenu()
 	cfg.DrawerName = ""
 	SectionMenuDrawer(cfg)
+}
+
+// SectionMenuDrawerFunc rebuilds the items on every render and keeps the
+// sheet name it was mounted under, which its routes and title id use.
+func TestDrawerFuncRebuildsKeepsName(t *testing.T) {
+	calls := 0
+	build := func(context.Context) SectionMenuConfig {
+		calls++
+		cfg := sampleMenu()
+		if calls > 1 {
+			cfg.DrawerName = "renamed"
+			cfg.Groups[0].Items = append(cfg.Groups[0].Items, SectionItem{Label: "Late", Href: "/docs/late"})
+		}
+		return cfg
+	}
+	def := SectionMenuDrawerFunc(build).Build()
+	if def.Name != "docs-section-menu" {
+		t.Fatalf("mounted as %q; want docs-section-menu", def.Name)
+	}
+	if len(def.Slots) != 1 {
+		t.Fatalf("%d slots; want the body", len(def.Slots))
+	}
+	h := string(def.Slots[0].Component.(sectionMenuDrawerSlot).RenderCtx(context.Background()))
+	if !strings.Contains(h, `href="/docs/late"`) {
+		t.Errorf("render did not rebuild the items:\n%s", h)
+	}
+	if !strings.Contains(h, `id="docs-section-menu-title"`) || strings.Contains(h, "renamed") {
+		t.Errorf("render dropped the mount-time sheet name:\n%s", h)
+	}
 }
 
 func TestSectionMenuCSSScopedRailAndTrigger(t *testing.T) {

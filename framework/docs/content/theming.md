@@ -20,7 +20,9 @@ warning when one arrives too late.
 `style.Theme` is a struct made of typed token groups. Every field is
 required except `Strokes`, `Leading`, `Tracking`, `Opacities`, `Code` and
 `Knobs`; `WithTheme` panics at startup and
-names any token you left out. Each group writes CSS variables with a
+names any token you left out. It also panics, naming the sheet, when an
+owned style sheet's custom media (`(--above-md)`) names a breakpoint
+the theme renamed or dropped. Each group writes CSS variables with a
 fixed prefix:
 
 | Theme group | Emits | Examples |

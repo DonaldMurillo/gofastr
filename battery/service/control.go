@@ -46,14 +46,19 @@ type controlRequest struct {
 }
 
 type controlResponse struct {
-	OK      bool   `json:"ok"`
-	Error   string `json:"error,omitempty"`
-	PID     int    `json:"pid,omitempty"`
-	Addr    string `json:"addr,omitempty"`
-	Version string `json:"version,omitempty"`
-	Dev     bool   `json:"dev,omitempty"`
-	Started string `json:"started,omitempty"`
-	Token   string `json:"token,omitempty"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+	PID   int    `json:"pid,omitempty"`
+	// ProcStart is the daemon's own OS start value for PID
+	// (procalive.Identity), so a client watching for its exit knows it
+	// from a later process given the same pid. Read by the daemon
+	// itself; a client never has to sample the pid after a stop.
+	ProcStart uint64 `json:"proc_start,omitempty"`
+	Addr      string `json:"addr,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Dev       bool   `json:"dev,omitempty"`
+	Started   string `json:"started,omitempty"`
+	Token     string `json:"token,omitempty"`
 }
 
 // acceptRetryDelay paces control-channel Accept retries.

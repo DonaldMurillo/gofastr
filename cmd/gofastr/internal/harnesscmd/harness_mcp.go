@@ -102,7 +102,10 @@ func runHarnessMCP(args []string) {
 		fmt.Fprintf(os.Stderr, "harness mcp: no provider matches %q\n", prof.DefaultModel)
 		cli.OsExit(1)
 	}
-	_ = h.CreateSession(prov, modelID)
+	if _, err := h.CreateSession(prov, modelID); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		cli.OsExit(1)
+	}
 
 	// Boot the MCP server.
 	srv := mcpserver.New(h.Mux, h.Catalog)

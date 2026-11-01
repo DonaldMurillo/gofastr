@@ -301,6 +301,9 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	}
 	api := b.apiBase(e)
 	rec := api + crud.KeyPath(e.KeyColumns())
+	// Every route below answers to the entity's resource, so a scope gate
+	// over this tree reads it from the route, not from the path.
+	r = crud.EntityRouter(r, e)
 	r.Post(api, elevated(ch.Create()))
 	r.Put(rec, elevated(ch.Update()))
 	r.Patch(rec, elevated(ch.Update()))

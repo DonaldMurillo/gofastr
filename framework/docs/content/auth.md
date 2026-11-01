@@ -165,9 +165,9 @@ address answers as fast as an unknown one. Forgot-password puts the
 message on a bounded queue (1,024 entries) drained by eight workers;
 `BodyTemplate` and `EmailSender.Send` run on a worker, each send with
 a 30-second deadline. The client already has its 200 by then, so a
-delivery can be dropped, with a `password-reset email delivery queue
-full` or `... delivery stopped` warning (hashed address only), when
-the queue is full or the plugin has stopped. `PasswordResetPlugin.OnStop`
+delivery can be dropped, with an `email delivery queue full` or
+`email delivery stopped` warning (`plugin="password-reset"` and the
+hashed address only), when the queue is full or the plugin has stopped. `PasswordResetPlugin.OnStop`
 (an `AuthPluginOnStop`, so `AuthManager.OnStop` calls it at app
 shutdown) cancels sends in flight, closes the queue and waits for the
 workers, bounded by the context it is given. Once stopped, the plugin
@@ -314,7 +314,11 @@ login already pin). Consequences:
 - A registration attempt on an existing address creates nothing and,
   when `AuthConfig.RegisterEmailSender` is wired, emails the existing
   *holder* ("someone tried to register with your address") off the
-  timed path.
+  timed path, through the same kind of queue password reset uses: 1,024
+  entries, eight workers, a 30-second deadline per send, dropped with a
+  warning (`plugin="core"`) when full. `CorePlugin.OnStop` cancels the
+  notices in flight and waits for the workers, so a stalled provider
+  holds at most eight sends and never outlives shutdown.
 - Both branches burn the same bcrypt work (the hash is computed before
   the branch), so a clock cannot tell them apart either.
 
@@ -546,6 +550,26 @@ real across `/api`:
 app.Use(auth.TokenMiddleware(users, accounts, tokens))
 app.Use(auth.RequireAPIScopes("/api")) // ["customers:*"] token ⇒ 403 off /api/invoices
 ```
+
+Every route an entity registers names the entity's table as its resource
+(`crud.EntityRouter`, built on `router.ResourceGroup`), and the middleware
+takes that name first. The CRUD routes and their subroutes (`/{id}`,
+`/_batch`, `/_events`, `/llm.md`), the entity's `Endpoints`, and EntityUI's
+`/_bulk`, `/_export.csv` and `/_pick` all answer to the table, wherever
+they are mounted: `POST /api/v1/_batch` on a table named `v1` needs
+`v1:write`, never `_batch:write`, and an `orders` handler mounted at
+`/api/orders/v1` needs `orders:read`. An Endpoint's HTTP route and its MCP
+twin ask the same `<table>:<verb>`.
+
+For any other route, a version segment (`v1`, `v2`, `v1.2`) is skipped, so
+`/api/v1/posts` and `/api/v2/posts` both need `posts`. Whether a segment is
+a version or a table comes from the route that matched, not from how the
+path is spelled:
+with a table named `v1` mounted at `/api`, `GET /api/v1/orders` is record
+`orders` of table `v1` (route `/api/v1/{id}`) and needs `v1:read`, never
+`orders:read`. Mounted outside a router (no matched route on the request),
+the path alone cannot tell the two apart, so the middleware requires every
+candidate: `v1:read` and `orders:read`.
 
 Without it (or per-route `RequireScope`), a token's scope list is
 **advisory only**: the token still authenticates as its owner everywhere.

@@ -30,14 +30,15 @@ import (
 
 // zooNotes maps a marker tag to the start of the note's change text.
 var zooNotes = map[string]string{
-	"finish":       "IdempotencyStore.Finish takes the request fingerprint",
-	"gomod":        "the module requires Go 1.27",
-	"disabled":     "disabled belongs to ButtonConfig.Disabled",
-	"button-class": "the button classes are fui-button*",
-	"action":       "an unsafe FormConfig.Action panics",
-	"sorthref":     "ui.DataTableConfig loses SortHrefPattern",
-	"tokens":       "the ten legacy token aliases",
-	"siteheader":   "ui.SiteHeader, ui.SiteFooter and ui.DocLayout are deleted",
+	"finish":        "IdempotencyStore.Finish takes the request fingerprint",
+	"gomod":         "the module requires Go 1.27",
+	"disabled":      "disabled belongs to ButtonConfig.Disabled",
+	"button-class":  "the button classes are fui-button*",
+	"action":        "an unsafe FormConfig.Action panics",
+	"sorthref":      "ui.DataTableConfig loses SortHrefPattern",
+	"tokens":        "the ten legacy token aliases",
+	"siteheader":    "ui.SiteHeader, ui.SiteFooter and ui.DocLayout are deleted",
+	"registerstyle": "BREAKING - registry.RegisterStyle panics on a name outside",
 }
 
 var zooFixture = fixture{"shape-zoo", "v0.63.0"}
