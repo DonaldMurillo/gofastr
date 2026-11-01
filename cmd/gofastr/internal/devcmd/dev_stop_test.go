@@ -62,21 +62,26 @@ func TestKillServerReturnsOnExit(t *testing.T) {
 	<-waited
 }
 
-// An app that ignores SIGTERM is killed when the grace ends.
+// An app that ignores SIGTERM is killed when the grace ends, and not
+// before: a kill sent early cuts a drain short the same way.
 func TestKillServerKillsAfterGrace(t *testing.T) {
 	skipOnWindows(t)
 	prev := killGrace
-	killGrace = 200 * time.Millisecond
+	killGrace = 400 * time.Millisecond
 	t.Cleanup(func() { killGrace = prev })
 	c := exec.Command("sh", "-c", `trap '' TERM; while :; do sleep 0.05; done`)
 	waited := startReaped(t, c)
 	time.Sleep(100 * time.Millisecond)
 	var mu sync.Mutex
+	start := time.Now()
 	KillServer(&mu, &c)
 	select {
 	case err := <-waited:
 		if err == nil {
 			t.Fatal("an app ignoring SIGTERM exited cleanly; it should have been killed")
+		}
+		if took := time.Since(start); took < killGrace {
+			t.Fatalf("killed after %v, inside the %v grace", took, killGrace)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("an app ignoring SIGTERM outlived the grace")

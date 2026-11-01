@@ -106,7 +106,11 @@ func runDesktopRun(args []string) {
 	// --watch owns SIGINT/SIGTERM from the start, so a signal during a
 	// build ends the build (devcmd.RunBuildWithHeartbeat) instead of
 	// waiting for it and the app it starts. shutdown closes on the first.
+	// Without --watch nothing owns the signal: the build gets a nil
+	// interrupt and stays in the terminal's process group, where Ctrl-C
+	// reaches it directly.
 	shutdown := make(chan struct{})
+	var buildInterrupt <-chan struct{}
 	if f.watch {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -114,6 +118,7 @@ func runDesktopRun(args []string) {
 			<-signals
 			close(shutdown)
 		}()
+		buildInterrupt = shutdown
 	}
 
 	launch := func() bool {
@@ -122,7 +127,7 @@ func runDesktopRun(args []string) {
 		buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		buildCmd.Stdout = os.Stdout
 		buildCmd.Stderr = os.Stderr
-		if err := devcmd.RunBuildWithHeartbeat(buildCmd, f.pkg, shutdown); err != nil {
+		if err := devcmd.RunBuildWithHeartbeat(buildCmd, f.pkg, buildInterrupt); err != nil {
 			if !errors.Is(err, devcmd.ErrBuildInterrupted) {
 				cli.Fail("Build failed: %v", err)
 			}
@@ -181,8 +186,9 @@ func runDesktopRun(args []string) {
 
 	reload := make(chan struct{}, 1)
 	stop := make(chan struct{})
+	watch := devcmd.NewWatch(f.dir, f.pkg)
 	go func() {
-		prev := devcmd.ScanModTimes(f.dir)
+		prev := watch.Scan()
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -190,7 +196,7 @@ func runDesktopRun(args []string) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				curr := devcmd.ScanModTimes(f.dir)
+				curr := watch.Scan()
 				if devcmd.Changed(prev, curr) {
 					prev = curr
 					select {
@@ -219,6 +225,7 @@ func runDesktopRun(args []string) {
 			devcmd.KillServer(&mu, &child)
 			if launch() {
 				cli.Success("Reloaded!")
+				go watch.Refresh()
 			} else {
 				select {
 				case <-shutdown: // the next turn shuts down

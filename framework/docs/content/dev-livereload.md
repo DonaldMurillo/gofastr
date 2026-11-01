@@ -175,13 +175,20 @@ process-module drain and outbox flushes finish. It moves on as soon as
 the app exits, which with livereload's streams ended at the start of
 the drain is usually at once. A `SIGINT` or `SIGTERM` to `gofastr dev`
 during a build kills the build and exits; it does not wait for the build
-and the app it would start.
+and the app it would start. The build runs in a process group of its
+own, so the kill reaches the compiler, the linker and cgo's C toolchain
+as well as `go` (on Windows, `taskkill /T` ends the tree).
 
 The watcher walks the project for `.go`, `.js`, `.css`, `.html` and
 `.md` changes. It skips every dot-directory (`.git`, `.gofastr`, editor
-state, agent worktrees under `.claude/worktrees`), `vendor`,
-`node_modules`, `tmp`, `dist` and `gen`, so a save in a sibling worktree
-or a build writing to `dist/` does not restart the app.
+state, agent worktrees under `.claude/worktrees`), `vendor` and
+`node_modules` at any depth, and `dist`, `gen` and `tmp` at the project
+root, so a save in a sibling worktree or a build writing to `dist/` does
+not restart the app. A directory the built package imports from is
+always walked, whatever its name: an `internal/gen` package, app spec
+output in `gen/` that `main` imports, or `--pkg ./gen` itself. The
+import graph comes from `go list -deps`, read at start and again after
+each rebuild.
 
 A build that runs longer than ten seconds prints a progress line every
 ten seconds (`Building <dir> (20s)...`). `go build` itself is silent
