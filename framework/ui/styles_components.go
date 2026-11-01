@@ -398,8 +398,15 @@ func codeBlockCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed::before {
   inset-inline-start: var(--spacing-lg, 16px);
 }
+/* The word mark keeps the token's own color, so its tint has to stay
+   light enough for every token color to hold 4.5:1 on top of it. The
+   code surface is dark in both schemes while --color-warning is a
+   bright amber in dark: 28% sank --tk-fn to 3.91:1 and --tk-com to
+   2.96:1. 12% matches the line bands, and the underline carries the
+   emphasis the lighter tint gives up. */
 [data-cui-comp="ui-code-block"] .fui-code-block__mark {
-  background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #854D0E) 28%, transparent));
+  background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #854D0E) 12%, transparent));
+  box-shadow: inset 0 calc(-1 * var(--stroke-thick, 2px)) 0 var(--color-warning, #854D0E);
   color: inherit;
   border-radius: var(--radii-sm, 6px);
 }

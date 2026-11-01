@@ -157,7 +157,7 @@ The pieces, for a gate that needs more than one load-and-scan per page:
 | `NewBrowser(t)` / `NewTab(t, browser)` | One headless Chrome per test, a fresh tab (30 s deadline) per page so the previous page's SSE socket closes. |
 | `WaitReady()` | Waits until the page has settled: the load event fired, web fonts loaded, the runtime booted, no client navigation is in flight, and every runtime module the page asked for has registered. It fails after 10 s and names what is still missing, for example `runtime module tabs has not registered`. |
 | `Prepare(scheme)` | Freezes transitions and forces `light` or `dark` on the current page. It returns once `<html data-color-scheme>` and the color-scheme meta name the scheme and the page's colors have stopped changing. It can run again on the same page to switch schemes. |
-| `Scan(tab, scheme, allowlist, opts...)` | Runs axe on the page as it is right now, so you can open a modal first and then scan. The axe engine is injected once per page; a second scan reuses it. A `window.axe` the page defines itself is replaced, never used. |
+| `Scan(tab, scheme, allowlist, opts...)` | Runs axe on the page as it is right now, so you can open a modal first and then scan. The axe engine is injected once per page; a second scan reuses it. A `window.axe` the page defines itself is replaced, never used. A rule that crashes (axe throws, for example on a color it cannot parse) is an error naming the rule, since it checked nothing; a rule in the allowlist is skipped either way. |
 | `ScanSchemes(tab, schemes, allowlist, opts...)` | `Prepare` then `Scan` for each scheme on one loaded page. An empty scheme list is an error. |
 
 Scan both schemes on one page load with `ScanSchemes` instead of opening a

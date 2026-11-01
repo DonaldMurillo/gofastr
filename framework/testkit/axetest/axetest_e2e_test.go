@@ -112,6 +112,38 @@ func TestScanIgnoresAPageDefinedAxe(t *testing.T) {
 	}
 }
 
+// A rule that throws checks nothing, so it is an error, never a pass.
+// Mixing two achromatic colors in oklch leaves the hue powerless, and
+// Chrome serialises the result as oklch(L C none), which axe-core cannot
+// parse: color-contrast throws and lands in axe's incomplete list. The
+// docs site's header carried exactly this background, which silenced
+// color-contrast on every page it rendered on.
+func TestScanFailsOnACrashedRule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("axe e2e: -short")
+	}
+	url, _ := schemeFixture(t, "dark",
+		`<style>main { background: color-mix(in oklch, #000 14%, #fff); }</style>`)
+	ctx, cancel := NewTab(t, NewBrowser(t))
+	defer cancel()
+	if err := chromedp.Run(ctx, chromedp.Navigate(url), WaitReady()); err != nil {
+		t.Fatalf("load fixture: %v", err)
+	}
+	vs, err := ScanSchemes(ctx, Schemes, nil)
+	if err == nil {
+		t.Fatalf("ScanSchemes passed with %d violations while color-contrast could not parse the page's colors", len(vs))
+	}
+	if !strings.Contains(err.Error(), "color-contrast crashed") {
+		t.Errorf("error = %v, want it to name the crashed color-contrast rule", err)
+	}
+
+	// Allowlisting the rule is the caller saying it does not apply, so
+	// its crash is not an error either.
+	if _, err := ScanSchemes(ctx, Schemes, map[string]string{"color-contrast": "fixture"}); err != nil {
+		t.Errorf("ScanSchemes with color-contrast allowlisted: %v", err)
+	}
+}
+
 // WaitReady names the unmet condition instead of hanging: a runtime
 // module script that never registers keeps the page unready until the
 // bound, and the error says which module.

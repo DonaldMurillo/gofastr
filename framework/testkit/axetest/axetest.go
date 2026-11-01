@@ -428,17 +428,38 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 				resultTypes: ['violations'],
 				rules: `+rulesJS+`
 			});
-			return JSON.stringify(r.violations);
+			const crashed = r.incomplete.filter(x => x.error).map(x => ({
+				id: x.id,
+				error: String((x.error && x.error.message) || x.error)
+			}));
+			return JSON.stringify({violations: r.violations, crashed});
 		})()`, &raw, evalAwaitPromise),
 	); err != nil {
 		return nil, fmt.Errorf("axe scan (%s scheme): %w", scheme, err)
 	}
-	var vs []Violation
-	if err := json.Unmarshal([]byte(raw), &vs); err != nil {
+	var res struct {
+		Violations []Violation `json:"violations"`
+		Crashed    []struct {
+			ID    string `json:"id"`
+			Error string `json:"error"`
+		} `json:"crashed"`
+	}
+	if err := json.Unmarshal([]byte(raw), &res); err != nil {
 		return nil, fmt.Errorf("parse axe violations (%s scheme): %w\nraw=%s", scheme, err, raw)
 	}
+	// A rule that threw checked no node on the page, and axe files it
+	// under incomplete, which a violations-only read never sees. The
+	// docs site's header once carried a color-mix() that serialised to
+	// oklch(... none); axe could not parse it, color-contrast threw on
+	// every page, and the gate passed contrast it never measured.
+	for _, c := range res.Crashed {
+		if _, ok := ruleAllowlist[c.ID]; ok {
+			continue
+		}
+		return nil, fmt.Errorf("axe scan (%s scheme): rule %s crashed and checked nothing: %s", scheme, c.ID, c.Error)
+	}
 	var kept []Violation
-	for _, v := range vs {
+	for _, v := range res.Violations {
 		if _, ok := ruleAllowlist[v.ID]; ok {
 			continue
 		}
