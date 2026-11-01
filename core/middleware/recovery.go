@@ -132,26 +132,39 @@ func unwrapPanic(v any) (val any, stack []byte, cut bool) {
 type recoveryWriter struct {
 	http.ResponseWriter
 	started bool
+	// status is the final status that reached the client (200 for an
+	// implicit one), 0 before that or after a bare hijack. Metrics and
+	// Tracing read it for a panicked request (panickedStatus).
+	status int
 }
 
 func (w *recoveryWriter) WriteHeader(code int) {
-	// An informational status (103 Early Hints) is not the response: the
+	// net/http panics on a code outside 100-999 before sending anything,
+	// so the response starts only once the call returned. An
+	// informational status (103 Early Hints) is not the response: the
 	// final status, a 500 included, can still follow it.
-	if code < 100 || code >= 200 || code == http.StatusSwitchingProtocols {
-		w.started = true
-	}
 	w.ResponseWriter.WriteHeader(code)
+	if code >= 200 || code == http.StatusSwitchingProtocols {
+		w.markStarted(code)
+	}
+}
+
+func (w *recoveryWriter) markStarted(code int) {
+	w.started = true
+	if w.status == 0 {
+		w.status = code
+	}
 }
 
 func (w *recoveryWriter) Write(b []byte) (int, error) {
-	w.started = true
+	w.markStarted(http.StatusOK)
 	return w.ResponseWriter.Write(b)
 }
 
 // FlushError sends the headers (200 unless a status was set) and the
 // buffered body.
 func (w *recoveryWriter) FlushError() error {
-	w.started = true
+	w.markStarted(http.StatusOK)
 	return http.NewResponseController(w.ResponseWriter).Flush()
 }
 
@@ -172,7 +185,7 @@ func (w *recoveryWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // ReaderFrom when it has one): hiding it would turn every file a handler
 // serves through Recovery into a userspace copy.
 func (w *recoveryWriter) ReadFrom(src io.Reader) (int64, error) {
-	w.started = true
+	w.markStarted(http.StatusOK)
 	return io.Copy(w.ResponseWriter, src)
 }
 

@@ -241,6 +241,15 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyTooLong)
 				return
 			}
+			// A key is printable ASCII (RFC 9110 field-value bytes a
+			// client mints; the IETF draft recommends a UUID). A byte
+			// past 0x7e is not UTF-8 a Postgres text column accepts, so
+			// it reached the store and answered 503 "store down" for a
+			// client's malformed header.
+			if !printableASCII(key) {
+				i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyInvalid)
+				return
+			}
 
 			body, tooLarge, err := readBodyLimit(r, cfg.MaxBodyBytes)
 			if err != nil {
@@ -798,4 +807,15 @@ func (s *memoryIdempotencyStore) reapLocked(now time.Time) {
 			delete(s.entries, k)
 		}
 	}
+}
+
+// printableASCII reports whether s holds only bytes 0x21-0x7e and
+// spaces, the bytes a client-minted Idempotency-Key is made of.
+func printableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x20 || c > 0x7e {
+			return false
+		}
+	}
+	return true
 }

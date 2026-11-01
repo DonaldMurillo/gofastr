@@ -42,7 +42,9 @@ HTTP metrics (always present with `WithMetrics()`):
 
 A request whose handler panicked is counted too: under `500` (the status
 `Recovery` sends), or under the status already sent when the response had
-started before the panic. A `Flush` before any `WriteHeader` counts as the
+started before the panic. With `Recovery` outside, the status is read off
+its writer, which sees what reached the client, so a status `Compress`
+held back is not counted as sent. A `Flush` before any `WriteHeader` counts as the
 `200` it sends.
 
 Subsystem metrics appear on the same `/metrics` endpoint as the components

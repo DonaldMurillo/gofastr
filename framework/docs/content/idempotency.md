@@ -149,6 +149,7 @@ yourself before returning.
 | Unsafe method without header (Required=false)     | Pass through, no caching                       |
 | Unsafe method without header (Required=true)      | `400 Bad Request`                              |
 | Header > 255 chars                                | `400 Bad Request`                              |
+| Header outside printable ASCII                    | `400 Bad Request`                              |
 | First request for a key                           | Handler runs; 2xx response is cached           |
 | Duplicate key + same body (cached)                | Cached response replayed, `Idempotent-Replay: true` |
 | Duplicate key + different body                    | `422 Unprocessable Entity`                     |

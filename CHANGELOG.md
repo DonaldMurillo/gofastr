@@ -175,6 +175,8 @@ few lines, and link the PR or the docs page for the rest.
   first write or flush latches 200). `Compress` maps its `-gzip` ETag
   back for `If-Match` too. A body cap of `math.MaxInt64` no longer reads
   an empty body. `WarnIfCSRFUnconfigured` accepts a nil `*slog.Logger`.
+  An `Idempotency-Key` outside printable ASCII answers 400; on Postgres
+  it reached the store and answered 503.
 - **`core/handler`.** A pointer input (`Handler[*T, O]`,
   `ToolAdapter[*T]`) gets the struct rules: duplicate, case-folded and
   unknown keys are refused and query, path and header tags bind. A body

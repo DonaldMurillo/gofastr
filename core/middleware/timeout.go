@@ -182,14 +182,27 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 	tw.hijacking = true
 	tw.mu.Unlock()
-	conn, rw, err := http.NewResponseController(tw.w).Hijack()
-	tw.mu.Lock()
-	tw.hijacking = false
-	if err == nil {
-		tw.streaming = true
-	}
-	tw.hijackDone.Broadcast()
-	tw.mu.Unlock()
+	var (
+		conn net.Conn
+		rw   *bufio.ReadWriter
+		err  error
+		ok   bool
+	)
+	// Deferred so a Hijack that panics (a wrapper asserting
+	// http.Hijacker unchecked) still clears hijacking: expire waits on
+	// it, and a handler that recovers and keeps running would otherwise
+	// leave the request goroutine waiting forever.
+	defer func() {
+		tw.mu.Lock()
+		tw.hijacking = false
+		if ok && err == nil {
+			tw.streaming = true
+		}
+		tw.hijackDone.Broadcast()
+		tw.mu.Unlock()
+	}()
+	conn, rw, err = http.NewResponseController(tw.w).Hijack()
+	ok = true
 	if errors.Is(err, http.ErrNotSupported) {
 		return nil, nil, fmt.Errorf("timeout middleware: underlying ResponseWriter does not support hijacking")
 	}
@@ -260,6 +273,10 @@ type handlerPanic struct {
 }
 
 func (p handlerPanic) Error() string { return fmt.Sprint(p.v) }
+
+// Unwrap hands an outer recover the handler's own error, so errors.Is
+// and errors.As still see it through Timeout's goroutine hop.
+func (p handlerPanic) Unwrap() error { e, _ := p.v.(error); return e }
 
 // reraise is the value the request goroutine re-panics with for the
 // handler goroutine's panic v. When the response was already streaming

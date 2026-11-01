@@ -547,6 +547,9 @@ type abortedStream struct{ v any }
 
 func (a abortedStream) Error() string { return fmt.Sprint(a.v) }
 
+// Unwrap hands an outer recover the handler's own error.
+func (a abortedStream) Unwrap() error { e, _ := a.v.(error); return e }
+
 // addVary appends a token to Vary unless it is already listed.
 func addVary(h http.Header, token string) {
 	for _, v := range h.Values("Vary") {

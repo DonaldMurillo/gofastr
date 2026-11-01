@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -342,6 +343,11 @@ func (s *SQLIdempotencyStore) columnKey(key string) string {
 // errPrincipalNUL refuses a principal Postgres TEXT cannot store.
 var errPrincipalNUL = errors.New("idempotency: principal holds a NUL byte, which a postgres TEXT column cannot store")
 
+// errKeyNotUTF8 refuses a store key Postgres TEXT cannot store: a
+// principal, tenant or scope that is not valid UTF-8. The middleware
+// already refuses a client key outside printable ASCII.
+var errKeyNotUTF8 = errors.New("idempotency: store key is not valid UTF-8, which a postgres TEXT column cannot store")
+
 // columnPrincipal is the value bound to the principal column: the
 // principal read out of the store key, stored as is, so
 // App.EraseUserData, which matches the raw user id, reaches it (a
@@ -353,6 +359,9 @@ func (s *SQLIdempotencyStore) columnPrincipal(key string) (string, error) {
 	p := idemPrincipal(key)
 	if s.dialect == "postgres" && strings.IndexByte(p, 0) >= 0 {
 		return "", errPrincipalNUL
+	}
+	if s.dialect == "postgres" && !utf8.ValidString(key) {
+		return "", errKeyNotUTF8
 	}
 	return p, nil
 }

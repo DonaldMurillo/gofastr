@@ -100,7 +100,7 @@ func Tracing() Middleware {
 			// event, so no RecordError here (it would add a second one).
 			defer func() {
 				if v := recover(); v != nil {
-					finish(panickedStatus(ww.wroteHeader, ww.status))
+					finish(panickedStatus(w, ww.wroteHeader, ww.status))
 					span.SetStatus(codes.Error, textsafe.Recovered(v))
 					panic(v)
 				}

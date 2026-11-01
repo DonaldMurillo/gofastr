@@ -718,7 +718,14 @@ func TestIdemShardAmbiguousUnderNULPrincipal(t *testing.T) {
 	if code := send("a\x00b", "c"); code != http.StatusOK {
 		t.Fatalf("first pair: %d", code)
 	}
-	if code := send("a", "b\x00c"); code != http.StatusOK {
+	// A key carrying NUL is now refused outright (printable ASCII only),
+	// before any shard lookup, which closes the same collision from the
+	// key side; it must not reach the first pair's shard as a 409.
+	if code := send("a", "b\x00c"); code != http.StatusBadRequest {
+		t.Fatalf("a NUL-bearing key got %d, want 400 before any shard lookup", code)
+	}
+	// The principal side still separates on its own.
+	if code := send("a\x00", "bc"); code != http.StatusOK {
 		t.Fatalf("distinct (principal,key) pair collided onto the first pair's shard and was denied: got %d, want 200", code)
 	}
 }
