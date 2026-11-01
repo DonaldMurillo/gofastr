@@ -272,6 +272,10 @@ type EventEnvelope struct {
 	Originator ids.ClientID    `json:"originator,omitempty"`
 	TS         time.Time       `json:"ts"`
 	Payload    json.RawMessage `json:"payload"`
+	// SubAgent names the sub-agent (Agent tool) run that published the
+	// event; empty for the session's own events. Sub-agent events go to
+	// the session log and export, not to the live client stream.
+	SubAgent string `json:"subAgent,omitempty"`
 }
 
 // --- Event payload types ---
@@ -369,7 +373,7 @@ type Error struct {
 type StreamGap struct {
 	From   uint64 `json:"from"`
 	To     uint64 `json:"to"`
-	Reason string `json:"reason"` // "ttl" | "compaction"
+	Reason string `json:"reason"` // "ttl" | "compaction" | "unavailable"
 }
 
 type TokenExpiring struct {
