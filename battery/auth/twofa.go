@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -691,10 +692,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		if !p.swapTwoFAState(w, r, userID, state, consumed) {
 			return
 		}
-		if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
-			// The session is still pending: answering 200 here
-			// would report a step-up that did not happen.
-			writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp)
+		if !p.completeStepUp(w, r, sess) {
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -715,10 +713,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if consumed {
-		if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
-			// The session is still pending: answering 200 here
-			// would report a step-up that did not happen.
-			writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp)
+		if !p.completeStepUp(w, r, sess) {
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -752,6 +747,50 @@ func (p *TwoFAPlugin) HasTwoFactorEnabled(ctx context.Context, userID string) (b
 		return false, nil
 	}
 	return state.Enabled, nil
+}
+
+// completeStepUp replaces the pending session the challenge judged with a
+// fresh one that has passed the second factor, and sets its cookie. Marking
+// the judged token in place kept a token that existed before the factor was
+// proven: a pending session an attacker who knows the password minted and
+// planted in the victim's browser (a sibling-subdomain cookie, a plain-HTTP
+// hop) became fully verified when the victim typed their code, the fixation
+// that password login already rotates against.
+//
+// The judged session must still exist once the fresh one is stored: a
+// reset or a 2FA disable that deleted it mid-request deletes the fresh one
+// too, or this refuses. It answers the error itself and reports false.
+func (p *TwoFAPlugin) completeStepUp(w http.ResponseWriter, r *http.Request, sess *Session) bool {
+	ctx := r.Context()
+	store := p.mgr.SessionStore()
+	fail := func(status int, reason i18n.Phrase, fresh *Session) bool {
+		if fresh != nil {
+			undo, cancel := undoContext(ctx)
+			_ = store.Delete(undo, fresh.Token)
+			cancel()
+		}
+		writeAuthError(w, r, status, reason)
+		return false
+	}
+	fresh, _, err := p.mgr.MintSession(ctx, sess.UserID, p.mgr.Config().SessionTTL)
+	if err != nil {
+		return fail(http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp, nil)
+	}
+	// The fresh session is pending (the account has a factor); mark it.
+	// An error leaves it pending, and answering 200 would report a
+	// step-up that did not happen.
+	if err := p.markSessionTwoFA(ctx, fresh.Token); err != nil {
+		return fail(http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp, fresh)
+	}
+	if still, err := store.Get(ctx, sess.Token); err != nil || still == nil || still.UserID != sess.UserID {
+		return fail(http.StatusUnauthorized, reasonNotAuthenticated, fresh)
+	}
+	if err := store.Delete(ctx, sess.Token); err != nil {
+		return fail(http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp, fresh)
+	}
+	writeCredentialHeaders(w)
+	mintSessionCookie(w, p.mgr.Config(), fresh.Token, fresh.ExpiresAt)
+	return true
 }
 
 // markSessionTwoFA records that the session behind token cleared its second

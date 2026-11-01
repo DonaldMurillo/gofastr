@@ -740,10 +740,11 @@ func TestPendingTwoFA_Me_AllowedAfterChallenge(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("challenge: expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
+	stepped := steppedUpSessionCookie(t, w, "session_id", tok)
 
-	// Same session, /auth/me now passes.
+	// The stepped-up session, /auth/me now passes.
 	req2 := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
-	req2.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
+	req2.AddCookie(&http.Cookie{Name: "session_id", Value: stepped})
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
@@ -977,10 +978,11 @@ func TestTwoFA_RequireMiddleware_AllowsAfterChallenge(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 from challenge, got %d (body=%s)", w.Code, w.Body.String())
 	}
+	stepped := steppedUpSessionCookie(t, w, "session_id", sess.Token)
 
-	// Same session should now pass RequireTwoFA.
+	// The stepped-up session should now pass RequireTwoFA.
 	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, reqWithSession(http.MethodGet, "/protected", sess.Token, nil))
+	r.ServeHTTP(w2, reqWithSession(http.MethodGet, "/protected", stepped, nil))
 	if w2.Code != http.StatusOK {
 		t.Fatalf("expected 200 after successful challenge, got %d (body=%s)", w2.Code, w2.Body.String())
 	}
