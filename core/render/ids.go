@@ -28,7 +28,10 @@ import (
 //
 // Regions (NewRegionBatch) defer the hand-out: a region records the ids
 // it asks for and answers with placeholder tokens, and Settle replays
-// the record once the region has rendered, explicit ids first. Layout
+// the record once the region has rendered, explicit ids first. An id
+// with a byte an escaper may rewrite ("cart.view") is emitted as is
+// between two tokens that Settle fills with its namespace and its
+// repeat suffix, so it is settled across regions like the rest. Layout
 // outlet fills render concurrently as regions settled in outlet order,
 // so the output is the same bytes whichever goroutine finished first;
 // core-ui/app renders a whole page as one region, so an explicit id
@@ -64,7 +67,12 @@ type regionLog struct {
 type idOp struct {
 	id       string
 	children []string
-	reserve  bool // keep id as is (ReserveID, or an id no token stands in for)
+	reserve  bool // an explicit id (ReserveID): kept as is
+	// split marks an id no token can stand in for (see tokenSafe): the
+	// region emitted it between two tokens, prefix and suffix, which
+	// Settle fills with the namespace ("<ns>--" or nothing) and the
+	// repeat suffix ("-2" or nothing).
+	split bool
 }
 
 // tokenPrefix starts every placeholder token.
@@ -98,14 +106,49 @@ func WithIDScope(ctx context.Context) context.Context {
 // derived id in it is "<ns>--<id>" ("cart--features"), suffixed within
 // the namespace only, so the part's ids are the same whether it renders
 // inside the page or alone: render it under the same ns both times.
-// A slug never holds "--", so a namespaced id does not meet a derived
-// id of the page around it, and each id the namespace hands out or
-// reserves is reserved in ctx's scope as well. Explicit ids are kept as
-// they are. An empty ns gives a plain fresh scope.
+// ns is spelled in id-safe bytes first: letters, digits and single
+// inner hyphens stay, any other byte is "_" and its hex ("cart.v2" is
+// "cart_2ev2"), so no namespace puts markup in an attribute and two
+// namespaces never meet in one id. A slug never holds "--", so a
+// namespaced id does not meet a derived id of the page around it, and
+// each id the namespace hands out or reserves is reserved in ctx's
+// scope as well. Explicit ids are kept as they are. An empty ns gives a
+// plain fresh scope.
 func WithIDNamespace(ctx context.Context, ns string) context.Context {
 	s := newIDScope()
-	s.ns, s.outer = ns, ctx
+	s.ns, s.outer = encodeNamespace(ns), ctx
 	return context.WithValue(ctx, idScopeKey{}, s)
+}
+
+// encodeNamespace spells ns in the bytes tokenSafe accepts, so a
+// namespace (an island id, which nothing validates) never brings a
+// quote or a space into an attribute, and so that "<ns>--" ends where
+// the first "--" of a namespaced id is: ASCII letters and digits are
+// kept, a hyphen is kept between two of them, and every other byte is
+// "_" and two lowercase hex digits ("a--b" is "a_2d_2db"). The result
+// holds no "--" and does not end in "-", and decoding it is unique, so
+// two namespaces never give one id: island "a" deriving "b--c" is
+// "a--b--c", island "a--b" deriving "c" is "a_2d_2db--c".
+func encodeNamespace(ns string) string {
+	alnum := func(c byte) bool {
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+	}
+	var b strings.Builder
+	for i := 0; i < len(ns); i++ {
+		c := ns[i]
+		switch {
+		case alnum(c):
+			b.WriteByte(c)
+		case c == '-' && i > 0 && alnum(ns[i-1]) && i+1 < len(ns) && alnum(ns[i+1]):
+			b.WriteByte(c)
+		default:
+			const hex = "0123456789abcdef"
+			b.WriteByte('_')
+			b.WriteByte(hex[c>>4])
+			b.WriteByte(hex[c&15])
+		}
+	}
+	return b.String()
 }
 
 // UniqueID returns id the first time ctx's scope sees it and id-2,
@@ -121,27 +164,40 @@ func UniqueID(ctx context.Context, id string, children ...string) string {
 	if s == nil || id == "" {
 		return id
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rec != nil {
-		if !tokenSafe(id, children) {
-			// No token can stand in for it: suffix against this
-			// region's own ids now and reserve the result at Settle.
-			final := s.next(id, children)
-			s.rec.ops = append(s.rec.ops, idOp{id: final, children: children, reserve: true})
-			return final
-		}
+	if s.rec != nil && tokenSafe(id, children) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		s.rec.ops = append(s.rec.ops, idOp{id: id, children: children})
 		return s.rec.prefix + strconv.Itoa(len(s.rec.ops)-1) + "z"
 	}
+	pre, suf := s.split(id, children)
+	return pre + id + suf
+}
+
+// split hands id out and returns what goes before and after it: the
+// namespace ("<ns>--") and the repeat suffix ("-2"). On a region the
+// two are tokens Settle fills, so an id no single token can stand in
+// for (one with a dot, which an escaper may rewrite) still keeps the
+// bytes its escaper gives it and is settled across regions like any
+// other.
+func (s *idScope) split(id string, children []string) (pre, suf string) {
+	s.mu.Lock()
+	if s.rec != nil {
+		k := strconv.Itoa(len(s.rec.ops))
+		s.rec.ops = append(s.rec.ops, idOp{id: id, children: children, split: true})
+		s.mu.Unlock()
+		return s.rec.prefix + k + "p", s.rec.prefix + k + "s"
+	}
 	if s.ns != "" {
-		id = s.ns + "--" + id
+		pre = s.ns + "--"
 	}
-	final := s.next(id, children)
-	if s.outer != nil {
-		ReserveID(s.outer, final, children...)
+	final := s.next(pre+id, children)
+	outer := s.outer
+	s.mu.Unlock()
+	if outer != nil {
+		ReserveID(outer, final, children...)
 	}
-	return final
+	return pre, final[len(pre)+len(id):]
 }
 
 func (s *idScope) free(id string, children []string) bool {
@@ -277,8 +333,14 @@ func (b *RegionBatch) Settle(i int) func(HTML) HTML {
 	r := b.regions[i]
 	var pairs []string
 	for k, op := range r.record() {
-		if !op.reserve {
-			pairs = append(pairs, r.rec.prefix+strconv.Itoa(k)+"z", UniqueID(b.parent, op.id, op.children...))
+		tok := r.rec.prefix + strconv.Itoa(k)
+		switch {
+		case op.reserve:
+		case op.split:
+			pre, suf := scopeOf(b.parent).split(op.id, op.children)
+			pairs = append(pairs, tok+"p", pre, tok+"s", suf)
+		default:
+			pairs = append(pairs, tok+"z", UniqueID(b.parent, op.id, op.children...))
 		}
 	}
 	if len(pairs) == 0 {

@@ -543,29 +543,30 @@ func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[s
 	return res
 }
 
-// idNamespace folds a wire address ("l:shell#aside") into an id
-// namespace ("l-shell-aside"): ASCII letters and digits kept, every
-// other run one hyphen.
+// idNamespace names a deferred outlet's id namespace after its wire
+// address. The common address, a layout and an outlet whose names are
+// letters and digits only ("l:shell#aside"), reads "l-shell-aside".
+// Any other address is passed as it is, and render.WithIDNamespace
+// spells it in hex escapes ("l:shell#aside-a" is
+// "l_3ashell_23aside-a"), which always hold a "_" the readable form
+// never does. So two outlets never share a namespace: "aside-a" and
+// "aside_a", or "Aside" and "aside", stay apart.
 func idNamespace(addr string) string {
-	var b strings.Builder
-	dash := false
-	for i := 0; i < len(addr); i++ {
-		c := addr[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
-			b.WriteByte(c)
-			dash = false
-		case c >= 'A' && c <= 'Z':
-			b.WriteByte(c + 'a' - 'A')
-			dash = false
-		default:
-			if !dash && b.Len() > 0 {
-				b.WriteByte('-')
-				dash = true
+	alnum := func(s string) bool {
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+				return false
 			}
 		}
+		return s != ""
 	}
-	return strings.TrimSuffix(b.String(), "-")
+	if rest, ok := strings.CutPrefix(addr, "l:"); ok {
+		if layout, outlet, ok := strings.Cut(rest, "#"); ok && alnum(layout) && alnum(outlet) {
+			return "l-" + layout + "-" + outlet
+		}
+	}
+	return addr
 }
 
 // withPageIDs renders one page answer (a document, a partial, an

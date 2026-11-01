@@ -171,3 +171,41 @@ func TestPageExplicitIDWins(t *testing.T) {
 		t.Errorf("the explicit id must keep features and the derived one move:\n%s", s)
 	}
 }
+
+func TestDeferredOutletNamespacesDiffer(t *testing.T) {
+	a := app.NewApp("t")
+	names := []string{"aside-a", "aside_a", "Aside", "aside"}
+	var outlets []*app.Outlet
+	for _, n := range names {
+		outlets = append(outlets, app.NewOutlet(n, app.OutletOptions{Deferred: true}))
+	}
+	shell := app.NewLayout("shell", app.LayoutSpec{Outlets: outlets},
+		func(ctx context.Context, l *app.LayoutTree) render.HTML {
+			parts := []render.HTML{l.Primary()}
+			for _, o := range outlets {
+				parts = append(parts, l.Place(o))
+			}
+			return render.Join(parts...)
+		})
+	a.SetDefaultLayout(shell)
+	s := app.NewScreen("/", &stubComp{html: "home"})
+	for _, o := range outlets {
+		s = s.Fill(o, &idFill{})
+	}
+	a.RegisterScreen(s, nil)
+	res, err := a.RenderPageResult(render.WithIDScope(store.WithValues(context.Background())), "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := featureIDs(string(res.HTML))
+	seen := map[string]bool{}
+	for _, id := range got {
+		if seen[id] {
+			t.Errorf("two deferred outlets derived %q: %v", id, got)
+		}
+		seen[id] = true
+	}
+	if len(got) != len(names) || !seen["l-shell-aside--features"] {
+		t.Errorf("ids = %v, want four, one of them l-shell-aside--features", got)
+	}
+}

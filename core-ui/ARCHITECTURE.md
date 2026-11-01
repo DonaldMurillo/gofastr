@@ -159,10 +159,21 @@ So an island renders under its own id namespace in both places:
 island `cart` is `cart--features` on the page and in the RPC answer
 alike, with repeats suffixed inside the namespace only. A slug never
 holds `--`, so the namespace never meets a page id, and the page scope
-reserves every id the island hands out. A deferred layout outlet is the
-same shape (it renders inline on a first load and alone as a part
-request) and gets the namespace of its address (`l-shell-aside--features`).
-Explicit ids are never namespaced or changed.
+reserves every id the island hands out. The namespace is spelled in
+id-safe bytes: letters, digits and single inner hyphens stay, any other
+byte becomes `_` and two hex digits (island `cart.v2` gives
+`cart_2ev2--features`). The spelling holds no `--`, so the first `--`
+of a namespaced id is always the boundary and two namespaces never give
+one id, and no island id puts markup into an attribute. A deferred layout
+outlet is the same shape (it renders inline on a first load and alone as
+a part request) and gets the namespace of its address: `l:shell#aside`
+reads `l-shell-aside--features`, and an address whose layout or outlet
+name holds anything but letters and digits is escaped whole
+(`l:shell#aside-a` is `l_3ashell_23aside-a--features`), so outlets
+`aside-a` and `aside_a` stay apart. Each island and deferred outlet
+renders as its own id region inside its namespace, so an explicit id in
+it wins over a derived one wherever the two sit, as on the page. Explicit
+ids are never namespaced or changed.
 
 The framework primitives live in:
 

@@ -58,7 +58,9 @@ func (is *Island) Render() (out render.HTML) {
 // ID), so an id it derives ("cart--features" for a section titled
 // "Features" in island "cart") is the same on the page and in the RPC
 // handler that re-renders the island, and apart from the page's own
-// ids. Render the island with RenderCtx in both places. A panicking
+// ids. The island is one id region (render.NewRegionBatch) inside its
+// namespace, so an explicit id in it wins over a derived one wherever
+// the two sit. Render the island with RenderCtx in both places. A panicking
 // component gives the empty shell, as Render does.
 func (is *Island) RenderCtx(ctx context.Context) render.HTML {
 	if is == nil {
@@ -68,10 +70,16 @@ func (is *Island) RenderCtx(ctx context.Context) render.HTML {
 	if is.Component == nil {
 		return shell
 	}
-	inner, err := component.SafeRenderCtx(render.WithIDNamespace(ctx, is.ID), is.Component)
+	// One id region inside the namespace: its explicit ids are reserved
+	// before its derived ones are handed out, so Section{ID:
+	// "cart--features"} keeps its id below an auto "Features" section,
+	// on the page and in the RPC answer alike.
+	ids := render.NewRegionBatch(render.WithIDNamespace(ctx, is.ID), 1)
+	inner, err := component.SafeRenderCtx(ids.Context(0), is.Component)
 	if err != nil {
 		log.Printf("island: render failed for %q: %s", is.ID, textsafe.Recovered(err.Error()))
 		return shell
 	}
+	inner = ids.Settle(0)(inner)
 	return render.Raw(fmt.Sprintf(`<div data-island="%s">%s</div>`, render.Escape(is.ID), string(inner)))
 }
