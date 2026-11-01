@@ -1,7 +1,9 @@
 package framework
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,5 +51,27 @@ func TestLiveReloadOffOnExposedBind(t *testing.T) {
 	optIn.guardDevLiveReloadBind("0.0.0.0:8080")
 	if code, _ := liveReloadStatus(t, optIn); code != http.StatusOK {
 		t.Fatalf("the opt-in did not keep livereload: %d", code)
+	}
+}
+
+// A host that served its own /__livereload kept it on an exposed bind,
+// and Start still logged "livereload is off". The warning says the
+// host's stream stays on, and the route keeps answering.
+func TestExposedBindWarnsHostStream(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "")
+	t.Setenv(dev.LiveReloadExposeEnv, "")
+	var logs bytes.Buffer
+	a := NewApp(WithoutDefaultMiddleware(), WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	a.router.Get(dev.LiveReloadStreamURL, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	dev.RegisterLiveReload(a.router)
+	a.guardDevLiveReloadBind("0.0.0.0:8080")
+	if code, _ := liveReloadStatus(t, a); code != http.StatusTeapot {
+		t.Fatalf("host stream answered %d, want it left serving", code)
+	}
+	out := logs.String()
+	if strings.Contains(out, "livereload is off") || !strings.Contains(out, "stays on") {
+		t.Fatalf("exposed bind with a host stream logged:\n%s", out)
 	}
 }

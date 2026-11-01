@@ -141,9 +141,14 @@ func (a *App) guardDevLiveReloadBind(addr string) {
 	if bindIsLoopback(addr) || config.EnvBool(dev.LiveReloadExposeEnv) {
 		return
 	}
-	if dev.WithdrawLiveReload(a.router) {
+	switch dev.WithdrawLiveReload(a.router) {
+	case dev.Withdrawn:
 		a.Logger().Warn(fmt.Sprintf(
 			"gofastr dev: livereload is off on %s: it is not a loopback bind, and the stream has no limit on how many clients hold it open. "+
 				"Bind to localhost, or set %s=1 to keep it.", addr, dev.LiveReloadExposeEnv), "addr", addr)
+	case dev.HostOwned:
+		a.Logger().Warn(fmt.Sprintf(
+			"gofastr dev: %s is not a loopback bind, and the app serves its own %s, which stays on. "+
+				"Turn it off on such a bind, or bind to localhost.", addr, dev.LiveReloadStreamURL), "addr", addr)
 	}
 }

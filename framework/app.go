@@ -3340,9 +3340,10 @@ func (a *App) shutdown(ctx context.Context) error {
 		// A connection that never sent a request would hold the drain
 		// for five seconds; it carries no work, so it goes first.
 		a.closeNewConns()
-		// An event stream never goes idle: end each one now rather than
-		// wait out the deadline on it (shutdown_streams.go).
-		a.streams.endAll()
+		// An event stream never goes idle and a WebSocket is outside the
+		// drain: end each one now rather than wait out the deadline on
+		// it or leave it serving past Shutdown (shutdown_streams.go).
+		a.streams.endAll(ctx)
 		if err := srv.Shutdown(ctx); err != nil {
 			// Bounded drain: the deadline expired with connections still
 			// open (an SSE stream never goes idle, so Server.Shutdown

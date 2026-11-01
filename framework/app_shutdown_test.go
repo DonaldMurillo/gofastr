@@ -5,6 +5,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
 	"strings"
@@ -222,18 +223,20 @@ func TestShutdownEndsEventStreams(t *testing.T) {
 	<-done
 }
 
-// A POST that may answer with a stream (MCP's streamable HTTP) is
-// request-bounded work: Shutdown drains it, it does not cancel it.
+// A POST answered as a stream (MCP's streamable HTTP) is one call's
+// reply, request-bounded work: Shutdown drains it, it does not cancel it.
 func TestShutdownDrainsStreamPOST(t *testing.T) {
 	a := &App{}
 	saw := make(chan error, 1)
 	h := a.endStreamsOnShutdown(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		a.streams.endAll()
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		a.streams.endAll(context.Background())
 		saw <- r.Context().Err()
 	}))
 	req, _ := http.NewRequest(http.MethodPost, "/mcp", nil)
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	h.ServeHTTP(nil, req)
+	h.ServeHTTP(httptest.NewRecorder(), req)
 	if err := <-saw; err != nil {
 		t.Fatalf("a POST's context was cancelled by the stream ending: %v", err)
 	}

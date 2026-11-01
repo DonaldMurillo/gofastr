@@ -80,6 +80,14 @@ Set `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` (`dev.LiveReloadExposeEnv`) to keep
 it on such a bind, say to reload a phone on your network. The dev MCP
 follows the same rule with its own opt-in, `GOFASTR_DEV_MCP_EXPOSE`.
 
+An app that registered its own `/__livereload` before the framework's
+keeps it: the framework installed nothing there and does not touch the
+host's handler. On an exposed bind the warning then says so (the app's
+stream stays on) instead of claiming it was turned off.
+`dev.WithdrawLiveReload` reports which case it hit: `dev.Withdrawn`,
+`dev.HostOwned`, or `dev.NotRegistered` when the router has no
+livereload at all.
+
 ### Project static assets are served uncached
 
 Framework assets are content-versioned (`/__gofastr/runtime.js?v=…`),

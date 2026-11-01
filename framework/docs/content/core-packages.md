@@ -127,6 +127,12 @@ HTTP status off a failed handshake but can read a close code. The
 reason is kept to printable ASCII and 123 bytes; a reserved or
 out-of-range code goes out as 1002 and is returned as an error; a
 close the peer began first still echoes the peer's own code.
+`stream.WithUpgradeHook(ctx, fn)` makes `Upgrade`, serving a request
+whose context carries it, hand `fn` each connection it opens: a server
+reaches the WebSockets its handlers own that way. `framework.App` uses
+it to close every open one with 1001 when `Shutdown` starts, since
+`http.Server.Shutdown` neither waits for nor closes a hijacked
+connection.
 
 `WebSocketConn` follows RFC 6455's strict readings: a text message
 that is not valid UTF-8 closes with 1007, a close reason that is not
