@@ -47,7 +47,9 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 - A `cursor` longer than 16 KiB, or a multi-field cursor carrying more
   than 64 fields, is rejected as invalid (400 on the list routes).
   Cursors are client-echoed input, so decode work is bounded by these
-  fixed caps, never by the payload size the client chose.
+  fixed caps, never by the payload size the client chose. A cursor the
+  server mints carries only the last row's key, so a long sort value
+  (a Text column) never pushes it past the cap.
 - `direction` defaults to `"forward"`; only `"forward"` and
   `"backward"` are accepted.
 
@@ -90,20 +92,26 @@ minting a cursor that compares against `null`.
 ## Wire format
 
 The cursor is opaque base64 JSON. Clients must not decode or modify
-it, only echo it back on the next request. A timestamp keyset value is
-written in the layout crud stores timestamps with, UTC with six
+it, only echo it back on the next request. It carries the key of the
+last row served (the anchor), never that row's sort values: on the
+next request the server reads the anchor's `CursorField(s)` values back
+from the table by that key and pages after them. An entity cursored on
+its own key needs no lookup; any other cursor field costs one indexed
+read by key per page. A single-column key uses the single-field
+encoding, a composite key the multi-field one.
+
+The values read back are bound the way crud stores them. A timestamp
+is written in the layout crud stores timestamps with, UTC with six
 fractional digits kept (`2026-10-27T07:05:07.500000Z`), so on SQLite,
-which compares `DATETIME` columns as text, the cursor compares against
+which compares `DATETIME` columns as text, the keyset compares against
 the stored string byte for byte. crud writes every Timestamp in that
 layout, a client's `2026-10-27T09:05:07+02:00` included (same instant,
 stored as `2026-10-27T07:05:07.000000Z`); a row written in another
 spelling before v0.96.0, or by SQL outside crud, still compares as its
-own text on SQLite. A Date keyset value is the date
-(`2026-10-27`). A value that is not of its column's
-type (an edited token naming `id` `"abc"` on an integer key) is a 400,
-the same check a filter value gets. The exact encoding
-(single-field vs multi-field) is chosen by the server based on the
-entity's `CursorField` / `CursorFields` config. A token the server
+own text on SQLite. A Date value is the date (`2026-10-27`). A key
+value that is not of its column's type (an edited token naming `id`
+`"abc"` on an integer key) is a 400, the same check a filter value
+gets. A token the server
 did not mint is decoded under the same no-ambiguity rule as every
 other client-borne JSON: duplicate and case-folded keys, at any
 depth of the token, are rejected as invalid (the 16 KiB / 64-field
@@ -115,6 +123,21 @@ first-read intermediary parsed differently.
 
 - **Consistent under inserts.** Rows inserted after the current page
   appear on a later page, never as duplicates on the current one.
+- **A gone anchor is a 400.** When the anchor row is deleted (or
+  soft-deleted) between pages, the next request answers 400 with reason
+  `cursor_anchor_gone`: start again from the first page (`?cursor=`).
+  The server cannot tell where the next page starts once the row it
+  continues from is gone, and serving a page from a guessed position
+  would skip or repeat rows without saying so. A cursor naming a row the
+  caller may not read (another owner's or tenant's, or one a read scope
+  or `BeforeList` hook excludes) gets the same answer, so a crafted
+  cursor never reveals where such a row sorts. An entity cursored on its
+  own key keeps paging past a deleted anchor, since the key is the
+  position.
+- **An anchor that moved pages from where it is now.** If the anchor's
+  sort value changed between pages, the next page continues after its
+  new value, so rows between the old and the new position are skipped
+  (moved forward) or served again (moved back).
 - **`?sort=` is ignored in cursor mode.** Keyset pagination requires
   the ORDER BY to match the cursor key. Configure cursor fields
   instead.
@@ -146,8 +169,9 @@ first-read intermediary parsed differently.
   the endpoint serves offset mode. The empty string is the opt-in
   signal.
 - **Caching cursors across schema changes.** A cursor is tied to the
-  entity's `CursorField(s)`. Changing the config invalidates every
-  outstanding cursor.
+  entity's key columns. Changing the key invalidates every outstanding
+  cursor; changing `CursorField(s)` makes an outstanding cursor page
+  from its anchor under the new order.
 - **Trying to "jump to page N" with cursor mode.** You can't. Cursors
   are sequential by design.
 - **Configuring a non-unique single cursor field.** Use `CursorFields`

@@ -348,6 +348,12 @@ func parseIntDefault(r *http.Request, key string, def int) int {
 	return n
 }
 
+// KeysetString is the text a cursor carries for one keyset value, the
+// spelling EncodeCursor and EncodeMultiCursor write. A caller that reads a
+// keyset value from a row itself (crud looks up the anchor row's sort
+// values) turns it into the same text before binding it back.
+func KeysetString(v any) string { return toString(v) }
+
 // toString converts any value to its string representation for cursor encoding.
 //
 // A time.Time keyset value is written in schema.TimestampLayout, the

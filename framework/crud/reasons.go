@@ -59,6 +59,7 @@ var (
 	reasonCursorNotComposite   = i18n.Define("error.cursor_not_composite", "cursor shape mismatch: single-field cursor, expected {{expected}} fields")
 	reasonCursorFieldMismatch  = i18n.Define("error.cursor_field_mismatch", "cursor field {{field}} does not match expected keyset field {{expected}}")
 	reasonCursorFormat         = i18n.Define("error.cursor_format", "cursor format not recognised")
+	reasonCursorAnchorGone     = i18n.Define("error.cursor_anchor_gone", "the row this cursor continues from is gone; start again from the first page")
 
 	reasonStateSetByMove = i18n.Define("error.state_set_by_move", "{{field}} is set by a move, not on create")
 	reasonStateInitial   = i18n.Define("error.state_initial", "a new record starts at {{initial}}")

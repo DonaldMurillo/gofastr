@@ -1175,9 +1175,9 @@ a row whose column is NULL matches neither `=` nor `!=`, and no
 `OR column IS NULL` arm is added. Combine with `_in` (or a `?where=`
 `ne`/`in` leaf) when you want "everything except these".
 
-`_like` on a number, date, Bool or JSON column, or `_gt`/`_gte`/`_lt`/`_lte`
-on a Bool or JSON column, is a 400: see "Operators must suit the field's
-type" below. `_like` follows the `?q=` case contract (see "Case
+`_like` on a number, date or Bool column, `_gt`/`_gte`/`_lt`/`_lte`
+on a Bool column, and any filter on a JSON column is a 400: see
+"Operators must suit the field's type" below. `_like` follows the `?q=` case contract (see "Case
 contract" above): `?status_like=OPEN` matches `open` on both dialects,
 where a bare `LIKE` was case-sensitive on Postgres only.
 
@@ -1280,10 +1280,15 @@ like, in` — `ne` is the `!=` twin of `_ne` above, NULL semantics included.
 
 **Operators must suit the field's type.** `like` works only on a
 String, Text, Enum or UUID column, and the ordered comparisons (`gt`,
-`lt`, `gte`, `lte`) are refused on Bool and JSON: SQL orders
-`false < true`, but no caller means that, and a JSON blob has no order
-a request value can compare against. `eq`, `ne` and `in` suit every
-type. The rule is `filter.CheckOpType` (one predicate,
+`lt`, `gte`, `lte`) are refused on Bool: SQL orders `false < true`, but
+no caller means that. A JSON column takes no operator at all, plain
+equality included: SQLite stores JSON as text and compared the text,
+while Postgres compares JSONB values, so `?meta={"x":1.0}` found a stored
+`{"x":1}` on Postgres and nothing on SQLite, and key order and spacing
+split them the same way. Neither engine can give the other's answer in
+SQL, so both refuse. Filter on a scalar column instead, or promote the
+JSON key you query into its own field. `eq`, `ne` and `in` suit every
+other type. The rule is `filter.CheckOpType` (one predicate,
 `filter.OpSuitsType`, behind every surface), and every filter surface
 applies it: the flat `?field_<op>=` params, `?where=`, Go-built
 predicates (`filter.ValidatePredicate` below), the filter DSL, relation
@@ -1307,7 +1312,6 @@ value with `filter.CoerceValue` and binds it as that type:
 | Bool | exactly what `strconv.ParseBool` accepts: `1 t T TRUE true True` and `0 f F FALSE false False` | `bool` |
 | Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
 | Date | `YYYY-MM-DD` | the text sent |
-| JSON | a JSON value (`{"a":1}`, `"x"`, `3`) | the text sent |
 
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).

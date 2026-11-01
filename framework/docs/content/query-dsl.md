@@ -68,7 +68,7 @@ ASCII only, so a bare `LIKE` answered differently per dialect. The case
 contract is the one `?q=` documents: ASCII-case-insensitive everywhere,
 Unicode folding a Postgres bonus (SQLite's `LOWER` folds ASCII only, so
 a stored `É` is not matched there). `contains` on a column that is not text (a number,
-date, Bool or JSON) is refused.
+date or Bool) is refused, and a JSON column takes no operator at all.
 
 `in` accepts either `field in ["a","b"]` or `field in [1,2,3]`. Every
 value, under every operator but `contains`, must be of the field's

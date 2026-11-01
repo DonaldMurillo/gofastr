@@ -85,9 +85,15 @@ var textualColumnTypes = map[schema.FieldType]bool{
 // it quietly depends on dialect-specific text coercion). The ordered
 // comparisons are refused on Bool: SQL orders false < true, but no
 // caller means that, and accepting it invites accidental always-true
-// predicates. OpEq, OpNe and OpIn suit every type; their values are
-// bound parameters.
+// predicates. A JSON column takes no operator at all: equality compared
+// the stored text on SQLite and the parsed value on Postgres (JSONB),
+// so {"x":1.0} matched a stored {"x":1} on one engine and not the other,
+// and neither engine can put the other's answer into SQL. OpEq, OpNe
+// and OpIn suit every other type; their values are bound parameters.
 func OpSuitsType(op FilterOp, t schema.FieldType) bool {
+	if t == schema.JSON {
+		return false
+	}
 	switch op {
 	case OpLike:
 		return textualColumnTypes[t]

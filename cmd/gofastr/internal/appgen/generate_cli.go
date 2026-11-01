@@ -103,7 +103,10 @@ type cliField struct {
 	// FilterOps are the suffixed operator flags the list verb offers,
 	// derived once from filter.FilterSuffixes ∩ filter.OpSuitsType.
 	FilterOps []cliFilterOp
-	Values    []string
+	// NoEq marks a type that refuses equality (a JSON column takes no
+	// filter at all), so the list verb offers no bare flag for it.
+	NoEq   bool
+	Values []string
 }
 
 // cliFilterOp is one suffixed operator flag behind `<command> list`:
@@ -791,6 +794,7 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 				sf = schema.Field{Type: schema.String}
 			}
 			f.FilterOps = cliFilterOps(sf.Type)
+			f.NoEq = !filter.OpSuitsType(filter.OpEq, sf.Type)
 		}
 		ent.Fields = append(ent.Fields, f)
 	}
@@ -1992,7 +1996,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q, isBool: true},\n", "trashed", "trashed", "include soft-deleted rows")
 	}
 	for _, f := range ent.Fields {
-		if f.NoQuery {
+		if f.NoQuery || f.NoEq {
 			continue
 		}
 		help := "filter: " + f.Snake + " equals (comma list = IN)"

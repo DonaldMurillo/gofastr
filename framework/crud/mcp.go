@@ -193,17 +193,22 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				continue
 			}
 			// Plain equality first (the suffix table carries no ""
-			// entry, and every field accepts equals), then one key per
-			// operator from filter.FilterSuffixes ∩ OpSuitsType — the
-			// same predicate the HTTP list handler applies — so the tool
-			// forwards exactly the params listToolSchema advertises and
-			// the route accepts. An operator the field's type refuses
-			// (a _gt on a Bool) is dropped, not forwarded: the same
+			// entry), then one key per operator from
+			// filter.FilterSuffixes ∩ OpSuitsType — the same predicate
+			// the HTTP list handler applies — so the tool forwards
+			// exactly the params listToolSchema advertises and the route
+			// accepts. An operator the field's type refuses (a _gt on a
+			// Bool) is dropped, not forwarded: the same
 			// wider-not-narrower posture as the Hidden/NoQuery skip
 			// above, and it was never advertised, so a well-formed call
-			// never sends one.
+			// never sends one. The plain key on a JSON field is refused
+			// instead: older schemas advertised it, so a client may
+			// still send it and must learn it no longer filters.
 			if v, ok := params[mcpFieldKey(field)]; ok {
-				vs, err := toolFilterValues(mcpFieldKey(field), field, false, v)
+				if !filter.OpSuitsType(filter.OpEq, field.Type) {
+					return nil, fmt.Errorf("param %q: a json field takes no filter", mcpFieldKey(field))
+				}
+				vs, err := toolFilterValues(mcpFieldKey(field), false, v)
 				if err != nil {
 					return nil, err
 				}
@@ -215,7 +220,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				}
 				key := mcpFieldKey(field) + s.Suffix
 				if v, ok := params[key]; ok {
-					vs, err := toolFilterValues(key, field, s.Op == filter.OpIn, v)
+					vs, err := toolFilterValues(key, s.Op == filter.OpIn, v)
 					if err != nil {
 						return nil, err
 					}
@@ -264,25 +269,15 @@ func toolParamValues(v any) []string {
 // toolFilterValues renders one filter parameter of the list tool for the
 // re-dispatch query, in the shape the list route reads it.
 //
-// A JSON field compares against JSON text, so its value is sent encoded:
-// {"payload":[1,2]} filters on the array [1,2], not on its first element,
-// and an object on itself, not on fmt.Sprint's map[x:1]. An _in key's
-// array is the list. An empty one is refused: in no values matches no
-// row, and leaving the key out would list every row. An element holding
-// a comma is refused too, because the route splits _in values on commas
-// and would read "Doe, Jane" as two values; a JSON field's _in value is
-// refused for the same reason. Any other key takes one value, and a
-// list or an object for it is refused rather than cut to its first
-// element.
-func toolFilterValues(key string, field schema.Field, in bool, v any) ([]string, error) {
+// An _in key's array is the list. An empty one is refused: in no values
+// matches no row, and leaving the key out would list every row. An
+// element holding a comma is refused too, because the route splits _in
+// values on commas and would read "Doe, Jane" as two values. Any other
+// key takes one value, and a list or an object for it is refused rather
+// than cut to its first element. A JSON field never gets here: it takes
+// no filter (filter.OpSuitsType).
+func toolFilterValues(key string, in bool, v any) ([]string, error) {
 	one := func(e any) (string, error) {
-		if field.Type == schema.JSON {
-			b, err := json.Marshal(e)
-			if err != nil {
-				return "", fmt.Errorf("param %q: %w", key, err)
-			}
-			return string(b), nil
-		}
 		switch e.(type) {
 		case []any, map[string]any:
 			return "", fmt.Errorf("param %q takes one value, not a list or an object", key)
@@ -294,9 +289,6 @@ func toolFilterValues(key string, field schema.Field, in bool, v any) ([]string,
 		s, err := one(v)
 		if err != nil {
 			return nil, err
-		}
-		if in && field.Type == schema.JSON && strings.Contains(s, ",") {
-			return nil, fmt.Errorf("param %q: the value holds a comma, which the list route reads as a separator", key)
 		}
 		return []string{s}, nil
 	}
@@ -605,7 +597,9 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 		if field.Hidden || field.NoQuery {
 			continue
 		}
-		props[mcpFieldKey(field)] = mcpFieldSchema(field)
+		if filter.OpSuitsType(filter.OpEq, field.Type) {
+			props[mcpFieldKey(field)] = mcpFieldSchema(field)
+		}
 		// One prop per operator the field's type accepts, from the same
 		// filter.FilterSuffixes ∩ OpSuitsType derivation the forwarding
 		// loop uses: the schema advertises exactly the field/operator

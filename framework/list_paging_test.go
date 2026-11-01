@@ -87,9 +87,9 @@ func TestCursorWalksCreatedAtKeyset(t *testing.T) {
 	}
 }
 
-// A timestamp cursor value is the fixed-width layout the framework stores,
-// so SQLite's text comparison and Postgres's TIMESTAMPTZ comparison agree.
-func TestCursorTimestampTokenFixedWidth(t *testing.T) {
+// A cursor on created_at carries the last row's key, not its timestamp:
+// the timestamp is read back from that row on the next page.
+func TestCursorTimestampTokenCarriesKey(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 		app.Entity("notes", entity.EntityConfig{
@@ -105,13 +105,16 @@ func TestCursorTimestampTokenFixedWidth(t *testing.T) {
 			ta.Post("/notes", map[string]any{"title": fmt.Sprintf("n%d", i)}).AssertStatus(t, http.StatusCreated)
 		}
 		page := decodeCursorPage(t, ta.Get("/notes?cursor=&limit=1").Body())
+		// The token carries the last row's key; the server reads the
+		// created_at it pages after back from that row, in the stored
+		// layout (pagination.KeysetString), so no timestamp spelling
+		// travels through the client at all.
 		field, value, err := pagination.DecodeCursor(page.Cursor)
-		if err != nil || field != "created_at" {
+		if err != nil || field != "id" {
 			t.Fatalf("decode cursor: field=%q err=%v", field, err)
 		}
-		// 2006-01-02T15:04:05.000000Z: 27 bytes, no quotes.
-		if len(value) != 27 || strings.ContainsRune(value, '"') || !strings.HasSuffix(value, "Z") {
-			t.Fatalf("cursor value %q is not the fixed-width UTC layout", value)
+		if len(page.Data) != 1 || page.Data[0]["id"] != value {
+			t.Fatalf("cursor names %q, want the last row's id (page %v)", value, page.Data)
 		}
 	})
 }

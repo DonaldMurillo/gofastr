@@ -718,8 +718,8 @@ await api.%s.watch((event) => console.log(event), { signal });`,
 // _gte comparison reads best on one), else the first such field whose
 // type accepts a range comparison (filter.OpSuitsType — the one
 // predicate every filter surface applies), else the first such field
-// with "" (equality suits every type), else created_at, else the
-// primary key.
+// whose type accepts equality, with "" (a JSON column takes no filter),
+// else created_at, else the primary key.
 func exampleFilter(cfg entity.EntityConfig) (field, op string) {
 	first, anyGte := "", ""
 	for _, f := range cfg.Fields {
@@ -742,7 +742,7 @@ func exampleFilter(cfg entity.EntityConfig) (field, op string) {
 		if filter.OpSuitsType(filter.OpGte, f.Type) && anyGte == "" {
 			anyGte = f.Name
 		}
-		if first == "" {
+		if first == "" && filter.OpSuitsType(filter.OpEq, f.Type) {
 			first = f.Name
 		}
 	}
