@@ -1122,7 +1122,15 @@ const (
 	// The interaction bridge skipping a modified key measures 18266 at
 	// level 1. The bridge is core's own retention path, so it does not
 	// carve. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 18268
+	// 2026-11-01: the close-modals-on-navigate loop moved from core's
+	// boot fragment into the widgets module, the only one that mounts
+	// modals, so it can spare a modal opened during the committing
+	// navigation (TestOpenDuringNavigationSurvivesCommit). Core measures
+	// 15683/18178, SMALLER on both, and the padded fixture reaches
+	// 18267, short of 18268 (the bracket had gone vacuous). As on
+	// 2026-10-29 the line moves DOWN to 18266: the bracket [real 18178,
+	// fixture 18267], verified by running TestCoreBudgetRejectsCliffOverflow.
+	coreCongestionWindowGZ = 18266
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1445,7 +1453,20 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// deep-link module, lands after a navigation neither mounts nor
 		// applies its deep link on the next page (2026-11-01 bug hunt S31,
 		// TestStaleChromeSkipsNextPage).
-		"widgets": 3283,
+		// 3426 measured (3424 + 2): "the reader left" is now a
+		// navigation begun AFTER the open committing (the epoch the last
+		// gofastr:navigate committed under), not any commit swapping the
+		// chrome cache, so an open issued while a navigation was already
+		// in flight lands on the page it was asked on instead of being
+		// dropped; _syncDeepLinks spares a widget whose open has not
+		// written its deep link yet under the same epoch and URL; and the
+		// close-modals-on-navigate loop moved here from core's boot
+		// fragment (core shrinks by the same loop) so it can spare a
+		// modal opened during the committing navigation (2026-11-01, the
+		// TestTrackerBellPopoverE2E flake,
+		// TestOpenDuringNavigationSurvivesCommit). No smaller spelling:
+		// the minifier keeps identifiers, already shortened here.
+		"widgets": 3426,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top

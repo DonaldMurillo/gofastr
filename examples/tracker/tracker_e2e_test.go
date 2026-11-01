@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
@@ -694,8 +695,15 @@ func TestTrackerBellPopoverE2E(t *testing.T) {
 			t.Errorf("%s: popover arrow sits %.1fpx from the bell centre (want ≤4)", tc.name, d)
 		}
 
-		// Escape closes and returns focus to the bell.
+		// Escape closes and returns focus to the bell. Opening demand-
+		// loads the widgetfocus module, the popover's only Escape
+		// handler, and does not wait for it: an Escape sent before it
+		// registers is lost (a loaded runner saw exactly that), so wait
+		// for every module the page requested — and for the client
+		// navigation the first case's bell click may have landed
+		// during — before pressing it.
 		if err := chromedp.Run(ctx,
+			axetest.WaitReady(),
 			chromedp.KeyEvent(kb.Escape),
 			chromedp.Sleep(200*time.Millisecond),
 			chromedp.Evaluate(`(() => {
