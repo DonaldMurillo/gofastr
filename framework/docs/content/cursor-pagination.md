@@ -96,7 +96,7 @@ pages on `(created_at, id)`. Without a unique tiebreak, the second of
 two rows with identical sort keys would be skipped. The key columns are
 cursor columns like any other, so `entity.Define` refuses a `Hidden` or
 `NoQuery` key column behind a `CursorField` too: the token carries the
-key.
+key. A `CursorFields` list that names one column twice fails `Define`.
 
 **A cursor column must never hold NULL.** The keyset comparison
 `(created_at, id) > ($1, $2)` is never true for a row whose
@@ -193,8 +193,11 @@ first-read intermediary parsed differently.
   signal.
 - **Caching cursors across schema changes.** A cursor is tied to the
   entity's key columns. Changing the key invalidates every outstanding
-  cursor. After a change to `CursorField(s)`, a cursor that carries
-  sort values answers 400 (start again with `cursor=`), and a key-only
-  one pages from its anchor under the new order.
+  cursor. After a change to which columns `CursorField(s)` names, a
+  cursor that carries sort values answers 400 (start again with
+  `cursor=`), and a key-only one pages from its anchor under the new
+  order. Reordering the same columns keeps a cursor working: it names
+  the anchor row's values by column, and the next page starts after
+  that row in the new order.
 - **Trying to "jump to page N" with cursor mode.** You can't. Cursors
   are sequential by design.

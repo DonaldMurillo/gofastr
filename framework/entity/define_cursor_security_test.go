@@ -190,3 +190,12 @@ func TestCursorFieldHiddenKeyPanics(t *testing.T) {
 		Pagination: &PaginationConfig{CursorField: "name"},
 	})
 }
+
+// A composite naming one column twice is refused: its token would carry
+// the name twice and the decoder refuses that, so page two answered 400.
+func TestCursorFieldsListedTwicePanics(t *testing.T) {
+	expectCursorPanic(t, "is listed twice", EntityConfig{
+		Fields:     []schema.Field{{Name: "body", Type: schema.Text, Required: true}},
+		Pagination: &PaginationConfig{CursorFields: []string{"body", "body"}},
+	})
+}

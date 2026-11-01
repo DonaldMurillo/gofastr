@@ -675,6 +675,14 @@ func Define(name string, config EntityConfig) *Entity {
 	// validating only the declared members missed a NoQuery `id` entirely.
 	// The key columns are the tiebreak and the default.
 	// normalizeSubConfigs has populated Pagination by here.
+	// A composite naming one column twice mints a token carrying that
+	// name twice, which the decoder refuses as a duplicate key: every
+	// second page would answer 400.
+	for i, cf := range config.Pagination.CursorFields {
+		if slices.Contains(config.Pagination.CursorFields[:i], cf) {
+			panic(fmt.Sprintf("entity %q: cursor field %q is listed twice", name, cf))
+		}
+	}
 	var cursorCols []string
 	switch {
 	case len(config.Pagination.CursorFields) > 0:
