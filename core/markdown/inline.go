@@ -26,6 +26,21 @@ func renderInline(input string) string {
 }
 
 func renderInlineDepth(input string, depth int) string {
+	// links indexes bracket matches and ')' positions for the whole block
+	// once, so a '[' that never closes costs a lookup, not a scan to end of
+	// input. Nested link text and emphasis content are windows of the same
+	// block and share it: rebuilding it per level cost a full pass for
+	// every nesting level.
+	var links *linkIndex
+	if strings.IndexByte(input, '[') >= 0 {
+		links = buildLinkIndex(input)
+	}
+	return renderInlineAt(input, depth, links, 0)
+}
+
+// renderInlineAt renders input, which sits at offset base of the block
+// links was built for.
+func renderInlineAt(input string, depth int, links *linkIndex, base int) string {
 	if depth >= maxInlineDepth {
 		// Bail out: emit the rest of this block as escaped plain text
 		// rather than recursing further into nested constructs.
@@ -46,12 +61,6 @@ func renderInlineDepth(input string, depth int) string {
 	var runs *backtickRuns
 	if strings.IndexByte(input, '`') >= 0 {
 		runs = buildBacktickRuns(input)
-	}
-	// links indexes bracket matches and ')' positions the same way, so a
-	// '[' that never closes costs a lookup, not a scan to end of input.
-	var links *linkIndex
-	if strings.IndexByte(input, '[') >= 0 {
-		links = buildLinkIndex(input)
 	}
 	i := 0
 	for i < len(input) {
@@ -109,7 +118,7 @@ func renderInlineDepth(input string, depth int) string {
 			sb.WriteString(input[i : i+open])
 			i += open
 		case ch == '!' && i+1 < len(input) && input[i+1] == '[':
-			alt, url, end, ok := links.parseLink(input, i+1)
+			alt, url, end, ok := links.parseLink(input, base, i+1)
 			if ok {
 				sb.WriteString("<img src=\"")
 				sb.WriteString(escapeAttr(safeImageURL(url)))
@@ -122,12 +131,12 @@ func renderInlineDepth(input string, depth int) string {
 			sb.WriteString("!")
 			i++
 		case ch == '[':
-			text, url, end, ok := links.parseLink(input, i)
+			text, url, end, ok := links.parseLink(input, base, i)
 			if ok {
 				sb.WriteString("<a href=\"")
 				sb.WriteString(escapeAttr(safeLinkURL(url)))
 				sb.WriteString("\">")
-				sb.WriteString(renderInlineDepth(text, depth+1))
+				sb.WriteString(renderInlineAt(text, depth+1, links, base+i+1))
 				sb.WriteString("</a>")
 				i = end
 				continue
@@ -152,15 +161,15 @@ func renderInlineDepth(input string, depth int) string {
 				switch run {
 				case 1:
 					sb.WriteString("<em>")
-					sb.WriteString(renderInlineDepth(inner, depth+1))
+					sb.WriteString(renderInlineAt(inner, depth+1, links, base+i+run))
 					sb.WriteString("</em>")
 				case 2:
 					sb.WriteString("<strong>")
-					sb.WriteString(renderInlineDepth(inner, depth+1))
+					sb.WriteString(renderInlineAt(inner, depth+1, links, base+i+run))
 					sb.WriteString("</strong>")
 				default:
 					sb.WriteString("<strong><em>")
-					sb.WriteString(renderInlineDepth(inner, depth+1))
+					sb.WriteString(renderInlineAt(inner, depth+1, links, base+i+run))
 					sb.WriteString("</em></strong>")
 				}
 				i = closeIdx + run
@@ -341,29 +350,34 @@ func buildLinkIndex(s string) *linkIndex {
 // parseLink parses [text](url) starting at the '[' at position i.
 // Returns the link text, URL, the index immediately after the closing ')',
 // and a success flag. Used for both links and (with caller adjustments)
-// images. s must be the block this index was built for.
-func (l *linkIndex) parseLink(s string, i int) (text, url string, end int, ok bool) {
+// images. s is the window at offset base of the block this index was
+// built for. A '[' match is found by counting forward from that '[', so
+// the block's answer holds inside the window when the match falls inside
+// it; a match or ')' past the window's end is no match, as a scan of the
+// window alone would find.
+func (l *linkIndex) parseLink(s string, base, i int) (text, url string, end int, ok bool) {
 	if l == nil || i >= len(s) || s[i] != '[' {
 		return "", "", 0, false
 	}
-	o := sort.SearchInts(l.opens, i)
-	if o == len(l.opens) || l.opens[o] != i {
+	limit := base + len(s)
+	o := sort.SearchInts(l.opens, base+i)
+	if o == len(l.opens) || l.opens[o] != base+i {
 		return "", "", 0, false
 	}
-	j := l.match[o]
-	if j < 0 {
+	if m := l.match[o]; m < 0 || m >= limit {
 		return "", "", 0, false
 	}
+	j := l.match[o] - base
 	text = s[i+1 : j]
 	if j+1 >= len(s) || s[j+1] != '(' {
 		return "", "", 0, false
 	}
 	urlStart := j + 2
-	p := sort.SearchInts(l.parens, urlStart)
-	if p == len(l.parens) {
+	p := sort.SearchInts(l.parens, base+urlStart)
+	if p == len(l.parens) || l.parens[p] >= limit {
 		return "", "", 0, false
 	}
-	k := l.parens[p]
+	k := l.parens[p] - base
 	url = strings.TrimSpace(s[urlStart:k])
 	return text, url, k + 1, true
 }
