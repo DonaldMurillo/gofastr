@@ -6,6 +6,8 @@ import (
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Page is one searchable document: a rendered route, or an entry a
@@ -226,8 +228,20 @@ func textOf(n *html.Node) string {
 func noindex(doc *html.Node, counts func(*html.Node) bool) bool {
 	return find(doc, func(n *html.Node) bool {
 		return n.DataAtom == atom.Meta && strings.EqualFold(attr(n, "name"), "robots") &&
-			strings.Contains(strings.ToLower(attr(n, "content")), "noindex") && counts(n) && !inIgnored(n)
+			robotsNoindex(attr(n, "content")) && counts(n) && !inIgnored(n)
 	}) != nil
+}
+
+// robotsNoindex reports a robots content list holding noindex, or none
+// (noindex plus nofollow). Each comma-separated directive is read whole.
+func robotsNoindex(content string) bool {
+	for d := range strings.SplitSeq(content, ",") {
+		switch asciicase.Lower(strings.TrimSpace(d)) {
+		case "noindex", "none":
+			return true
+		}
+	}
+	return false
 }
 
 // inIgnored reports a node inside an IgnoreAttr subtree: content the page

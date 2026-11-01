@@ -1103,7 +1103,7 @@ func patternAttr(p string) html.Attrs {
 // as SQLite keeps. A step of 0.01 made a stored 19.995 fail the
 // browser's step check, so the form could not be saved untouched.
 func decimalStep(val string) float64 {
-	return fractionStep(val, 4)
+	return fractionStep(val, defaultScale)
 }
 
 // fractionStep is 10^-digits, or finer when val holds more fraction

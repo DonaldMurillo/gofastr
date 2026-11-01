@@ -83,6 +83,16 @@ func TestUnionApp(t *testing.T) {
 			t.Errorf("gofastr.settings.yml's codegen did not write %s: %v", f, err)
 		}
 	}
+	// BlogPost declares no table, so the server mounts blog_post. The
+	// generated CLI and JS SDK must route on that, not on the raw name.
+	for f, want := range map[string]string{"cmd/union/blog-post.gen.go": `"/blog_post"`, "gen/js/client.js": `"blog_post"`} {
+		b, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil {
+			t.Errorf("read %s: %v", f, err)
+		} else if !strings.Contains(string(b), want) || strings.Contains(string(b), `"BlogPost"`) {
+			t.Errorf("%s does not route BlogPost on %s", f, want)
+		}
+	}
 	if t.Failed() {
 		return
 	}

@@ -88,7 +88,7 @@ An app with subcommands of its own checks for them before calling
 |------|--------------|
 | `install [--port N]` | Copies the running binary to the managed path, writes the service definition, starts it, and waits up to 15 s for the daemon to answer. Reinstalling stops the old copy and waits for it to exit first; if it will not stop, `install` fails and replaces nothing. |
 | `uninstall [--purge]` | Stops and unregisters, waits for the daemon to exit, then deletes the installed binary. Data stays unless `--purge`. If the daemon is still running after the wait, nothing is deleted. |
-| `start` / `stop` / `restart` | Through the service manager. `stop` is a clean exit, which no backend restarts, and returns once the process has exited (up to 20 s), so a `start` right after it is not dropped. The wait watches the daemon's pid together with its start time, which the daemon reads itself and sends in its reply, so a newer process the OS gave the same pid, even right after the stop, does not count as the daemon. |
+| `start` / `stop` / `restart` | Through the service manager. `stop` is a clean exit, which no backend restarts, and returns once the process has exited (up to 20 s), so a `start` right after it is not dropped. The wait watches the daemon's pid together with its start time, which the daemon reads itself and sends in its reply, so a newer process the OS gave the same pid, even right after the stop, does not count as the daemon. A daemon still building its app answers nothing yet: `stop` and `uninstall` give it up to 15 s to answer, then stop it anyway and wait for its control socket to close. On macOS that `stop` boots the job out of launchd (a signal before the daemon is ready would count as a crash and restart it); `start` loads it again. |
 | `status` | Installed or not, running or not, pid, address, version, data directory. Asked of the daemon, never parsed from manager output. |
 | `logs [-n N] [-f]` | The service log. journald on Linux; `logs/service.log` in the state directory on macOS and Windows. Control bytes are stripped before printing. |
 | `open [--dev] [--print]` | Signs the browser in (see below). `--dev` targets the dev run. |
@@ -359,6 +359,9 @@ owns. Restore the file, or delete it to start a new identity.
 The battery owns signal handling (it sets
 `AppConfig.DisableSignalHandling`). SIGINT, SIGTERM, a control-channel
 `stop`, and a cancelled `Run` context all drain the App and exit 0.
+A drain that runs past its deadline or an `OnStop` hook that fails is
+logged at Error and the exit stays 0: launchd restarts a daemon that
+exits non-zero, which would undo the stop.
 The whole stop (MCP sessions, the drain and the control channel)
 shares one 10 s deadline, inside systemd's `TimeoutStopSec=20`,
 launchd's exit timeout and the 20 s that `service stop` waits.

@@ -165,19 +165,20 @@ sched.Start(ctx)
 ```
 
 Pick a fixed `key` that does not collide with the framework's own
-advisory locks (the migration advisory lock). Pool sizing matters: each
-tick pins one connection for the lock's lifetime, held until the tick's
-jobs finish, so the pool should allow at least two open connections when
-the jobs themselves touch the database, otherwise the leader holds the
-only connection and the jobs deadlock on it.
+advisory locks (the migration advisory lock).
 
-The lock is released as soon as the tick's jobs finish, so the lock alone
-does not stop a second replica whose timer fires for the same minute a
-moment later. `NewPostgresAdvisoryLease` also records the minute it fired
-in a `gofastr_cron_ticks` table (one row per key, created on first use)
-with a conditional upsert, and a replica that finds the minute, or a later
-one, already claimed skips the tick. Each tick fires **at most once**
-across replicas:
+A lock alone does not stop a second replica whose timer fires for the
+same minute a moment after the leader let go. `NewPostgresAdvisoryLease`
+also records the minute it fired in a `gofastr_cron_ticks` table (one row
+per key, created on first use) with a conditional upsert, and a replica
+that finds the minute, or a later one, already claimed skips the tick.
+That claim is what keeps the minute from running twice, so the scheduler
+releases the lock as soon as the claim is made, before the jobs start. A
+long job does not hold the lock: a 20-minute `@hourly` report runs while
+the `* * * * *` jobs keep firing every minute, and its own next firing
+starts concurrently if it overruns (see "No overlap protection" above).
+The lock's connection is pinned only for the lock and the claim. Each
+tick fires **at most once** across replicas:
 
 - It is not exactly once. A replica that claims a minute and then crashes
   leaves that minute unrun, and a failed claim skips the tick (reported to
@@ -194,9 +195,12 @@ instead. A custom lease (Redis, etcd, …) only needs to satisfy the
 `LeaderElection` interface; to get the at-most-once tick it also
 implements `TickLeaderElection`, whose `AcquireTick(ctx, tick)` receives
 the tick minute (UTC) and must hold only when it took the lease and
-atomically recorded that minute as newer than the last claim. A lease
-with `Acquire` alone keeps mutual exclusion while it is held, and nothing
-more.
+atomically recorded that minute as newer than the last claim; the
+scheduler releases it as soon as `AcquireTick` holds. A lease with
+`Acquire` alone keeps mutual exclusion while it is held, and nothing
+more: the scheduler holds it until that tick's jobs finish (never a job
+from an earlier tick), so on such a lease a long job can block the
+ticks that come due while it runs.
 
 A custom lease's `Acquire` and the per-tick `release` it returns are
 treated like every other scheduler callback: a panic in either is

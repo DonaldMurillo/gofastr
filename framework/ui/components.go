@@ -1026,8 +1026,15 @@ type AvatarConfig struct {
 	// busy / offline). Empty renders no dot.
 	Status AvatarStatus
 	// StatusLabel overrides the dot's accessible name. Defaults to the
-	// status value (e.g. "online"). Ignored when Status is empty.
+	// status word ("Online", "Away", "Busy", "Offline") in the language
+	// of Ctx; a status outside those four defaults to its own value.
+	// Ignored when Status is empty.
 	StatusLabel string
+
+	// Ctx carries the per-request context the status dot's default name
+	// is said in. When nil, English applies. AvatarGroup hands its own
+	// Ctx to an avatar that sets none.
+	Ctx context.Context
 
 	ID    string
 	Class string
@@ -1078,7 +1085,7 @@ func Avatar(cfg AvatarConfig) render.HTML {
 		)
 	}
 	if cfg.Status != AvatarStatusNone {
-		inner = append(inner, avatarStatusDot(cfg.Status, cfg.StatusLabel))
+		inner = append(inner, avatarStatusDot(cfg.Ctx, cfg.Status, cfg.StatusLabel))
 	}
 	return avatarStyle.WrapHTML(html.Span(spanCfg, inner...))
 }
@@ -1087,9 +1094,9 @@ func Avatar(cfg AvatarConfig) render.HTML {
 // aria-label so the status is announced (a bare aria-label on a span is
 // rejected by axe: the implicit role doesn't accept a name), matching
 // the AvatarGroup overflow-chip pattern.
-func avatarStatusDot(status AvatarStatus, label string) render.HTML {
+func avatarStatusDot(ctx context.Context, status AvatarStatus, label string) render.HTML {
 	if label == "" {
-		label = string(status)
+		label = avatarStatusLabel(ctx, status)
 	}
 	return html.Span(html.TextConfig{
 		Class: "fui-avatar__status fui-avatar__status--" + string(status),
@@ -1099,6 +1106,23 @@ func avatarStatusDot(status AvatarStatus, label string) render.HTML {
 			"data-cui-internal": "",
 		},
 	})
+}
+
+// avatarStatusLabel is the dot's default name: the status word in the
+// language of ctx, or the raw value for a status outside the four the
+// kit names.
+func avatarStatusLabel(ctx context.Context, status AvatarStatus) string {
+	switch status {
+	case AvatarOnline:
+		return i18nui.AvatarStatusOnline.Text(ctx)
+	case AvatarAway:
+		return i18nui.AvatarStatusAway.Text(ctx)
+	case AvatarBusy:
+		return i18nui.AvatarStatusBusy.Text(ctx)
+	case AvatarOffline:
+		return i18nui.AvatarStatusOffline.Text(ctx)
+	}
+	return string(status)
 }
 
 func initials(name string) string {

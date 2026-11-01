@@ -67,7 +67,11 @@ var (
 	// body keeps the match short, we just need to know IT EXISTS.
 	// Case-insensitive: HTML attribute names are, and a browser applies
 	// STYLE="…" exactly as it applies style="…".
-	inlineStyleAttrRe = regexp.MustCompile(`(?si)(?:^|[\s/])style\s*=\s*("[^"]*"|'[^']*'|[^\s>]*:[^\s>]*)`)
+	//
+	// The last arm is the concatenated attribute: "<div style=\"" + css
+	// + "\">" leaves `style="` (or a bare `style=`) at the very end of
+	// its literal, the value arriving from the next operand.
+	inlineStyleAttrRe = regexp.MustCompile(`(?si)(?:^|[\s/])style\s*=\s*("[^"]*"|'[^']*'|[^\s>]*:[^\s>]*|["']?$)`)
 )
 
 // LintNoInlineStyles scans every .go file in dir (non-recursive) for
@@ -75,7 +79,9 @@ var (
 // attrs to render.Tag / html.Attrs literals. Returns one violation
 // per offending source location.
 func LintNoInlineStyles(dir string) (*Result, error) {
-	return lintGoDir(dir, scanInlineStyles)
+	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, _ []byte, result *Result) {
+		scanInlineStyles(fset, file, filename, result)
+	})
 }
 
 // LintNoInlineStylesRecursive walks dir and every subdirectory.

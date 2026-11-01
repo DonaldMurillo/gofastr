@@ -216,7 +216,13 @@
         }
         // The server refused the new member, so the sibling it
         // displaced is still the committed one: put it back, unless
-        // something else moved it or it left the page meanwhile.
+        // something else moved it or it left the page meanwhile. A
+        // member that committed inside this round trip is the group's
+        // answer now; restoring over it would leave two committed.
+        const members = groups.get(spec.group);
+        if (members) for (const m of members) {
+          if (m !== el && m.isConnected && m.getAttribute('data-state') === 'committed') revoked.length = 0;
+        }
         for (const other of revoked) {
           if (other.isConnected && other.getAttribute('data-state') === 'idle') {
             setState(other, specs.get(other), 'committed');

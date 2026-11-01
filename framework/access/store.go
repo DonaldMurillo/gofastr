@@ -320,6 +320,14 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	if err != nil {
 		return err
 	}
+	// The grant rows and the tombstones they lift are one transaction: a
+	// grant row written behind a tombstone that failed to lift is a grant
+	// every reload cancels, and the caller was told it failed.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("access: persist grant %q: begin: %w", role, err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	// One INSERT per (role, perm) with ON CONFLICT DO NOTHING. A batch
 	// VALUES clause would be marginally faster but complicates the
 	// placeholder math; the grant matrix is small and admin-driven, so
@@ -329,7 +337,7 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
 			query.QuoteFolded(s.table),
 		)
-		if _, err := s.db.ExecContext(ctx, q, role, string(permission)); err != nil {
+		if _, err := tx.ExecContext(ctx, q, role, string(permission)); err != nil {
 			return fmt.Errorf("access: persist grant %q→%q: %w", role, permission, err)
 		}
 	}
@@ -341,9 +349,12 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
 			query.QuoteFolded(s.revokedTable()),
 		)
-		if _, err := s.db.ExecContext(ctx, q, role, string(permission)); err != nil {
+		if _, err := tx.ExecContext(ctx, q, role, string(permission)); err != nil {
 			return fmt.Errorf("access: clear revoke tombstone %q→%q: %w", role, permission, err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("access: persist grant %q: commit: %w", role, err)
 	}
 	// The DB write succeeded, apply the grant DIRECTLY to the live policy. A
 	// local grant/revoke is an authoritative admin action on THIS replica and
@@ -442,12 +453,20 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	// and undo it.
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
+	// The row deletes and the tombstones are one transaction: rows deleted
+	// behind a tombstone that failed to write left this replica granting
+	// (its policy is untouched on error) while a fresh boot denied.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("access: persist revoke %q: begin: %w", role, err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	for _, p := range prepared {
 		q := fmt.Sprintf(
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
 			query.QuoteFolded(s.table),
 		)
-		if _, err := s.db.ExecContext(ctx, q, role, string(p)); err != nil {
+		if _, err := tx.ExecContext(ctx, q, role, string(p)); err != nil {
 			return fmt.Errorf("access: persist revoke %q→%q: %w", role, p, err)
 		}
 	}
@@ -461,9 +480,12 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
 			query.QuoteFolded(s.revokedTable()),
 		)
-		if _, err := s.db.ExecContext(ctx, q, role, string(p)); err != nil {
+		if _, err := tx.ExecContext(ctx, q, role, string(p)); err != nil {
 			return fmt.Errorf("access: persist revoke tombstone %q→%q: %w", role, p, err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("access: persist revoke %q: commit: %w", role, err)
 	}
 	// The captured code baseline is deliberately NOT narrowed here. The
 	// tombstone above is shared state and every reload computes

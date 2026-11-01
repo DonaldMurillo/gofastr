@@ -27,9 +27,10 @@ each command to the doc that covers it.
   `.env` never relaxes a deployment. `init .` refuses to run when git
   already tracks `.env` (untrack it with `git rm --cached .env` first),
   since the new secret would land in the next commit. `init .` names the
-  project after its directory (module `local/<dir>` unless `--module` is
-  given), and refuses, writing nothing, when the directory already holds
-  a file it would replace (`main.go`, `screens.go`, `.env`,
+  project after its directory. Its module is the one an existing
+  `go.mod` declares (a `--module` that disagrees is refused), else
+  `--module`, else `local/<dir>`. It refuses, writing nothing, when the
+  directory already holds a file it would replace (`main.go`, `screens.go`, `.env`,
   `gofastr.settings.yml`, the onboarding files, and with the sample
   entity `screens_auth.go` and `entities/entities.go`); `--force`
   overwrites them, each through a temporary file renamed over the old

@@ -788,3 +788,13 @@ func TestMemoryCache_NegativeTTLNotImmortal(t *testing.T) {
 		t.Errorf("SECURITY: [cache-negttl] GetOrSet(ttl<0) stored a live entry; nothing may be stored")
 	}
 }
+
+// X-API-Key is a framework credential like the other three: every other
+// credential list in the framework (the per-caller fingerprint, the broker
+// snapshot, the MCP re-dispatch, the CSRF skip) names it. A cache check
+// that left it out stored an API-key-authenticated GET under the shared
+// key and served it to the next key holder as a HIT (round 7 R7-059).
+func TestCacheSkipsAPIKeyRequests(t *testing.T) {
+	cacheHeaderPair(t, "middleware cached an X-API-Key-authenticated request by default",
+		"X-API-Key", "/me", "ak-alice", "ak-bob", "key=", false, true)
+}

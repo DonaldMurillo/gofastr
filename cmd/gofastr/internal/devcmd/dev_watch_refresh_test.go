@@ -140,3 +140,61 @@ func TestWatchUsesBuildEnv(t *testing.T) {
 		t.Fatalf("with CGO_ENABLED=1, watched %v; gen/ is not imported there", got)
 	}
 }
+
+// A save that added the first import of a root gen/ package restarted
+// the app twice: after the reload's Refresh, the next scan saw gen/'s
+// files for the first time and counted them as a change. Files a graph
+// change brings into (or takes out of) the walk are the new baseline;
+// a later save in gen/ still rebuilds.
+func TestRefreshIsNotAChange(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{"main.go": "package main\n", "gen/api.go": "package gen\n"})
+	old := time.Now().Add(-time.Hour)
+	for _, f := range []string{"main.go", "gen/api.go"} {
+		if err := os.Chtimes(filepath.Join(root, f), old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var graph []string
+	var mu sync.Mutex
+	prev := listDeps
+	listDeps = func(context.Context, string, string, []string) ([]string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return graph, nil
+	}
+	t.Cleanup(func() { listDeps = prev })
+	setGraph := func(dirs ...string) { mu.Lock(); graph = dirs; mu.Unlock() }
+	touch := func(f string, at time.Time) {
+		t.Helper()
+		if err := os.Chtimes(filepath.Join(root, f), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	setGraph(root)
+	before := ScanModTimes(root)
+	w := NewWatch(context.Background(), root, ".", nil)
+	poll := w.Poller(before, time.Now())
+	if poll.Changed() {
+		t.Fatal("an untouched tree changed")
+	}
+	touch("main.go", time.Now()) // the save that adds the import
+	if !poll.Changed() {
+		t.Fatal("the save did not change")
+	}
+	setGraph(root, filepath.Join(root, "gen"))
+	w.Refresh() // after the reload
+	if poll.Changed() {
+		t.Fatal("gen/ coming into the walk restarted the app a second time")
+	}
+	touch("gen/api.go", time.Now().Add(time.Second))
+	if !poll.Changed() {
+		t.Fatal("a save in the now-watched gen/ did not change")
+	}
+	setGraph(root)
+	w.Refresh() // the import is gone again
+	if poll.Changed() {
+		t.Fatal("gen/ leaving the walk restarted the app")
+	}
+}

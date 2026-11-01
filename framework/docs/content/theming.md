@@ -147,7 +147,10 @@ Three entry points produce a `style.Theme` you pass to
 - **`gofastr theme init`**: writes `theme/theme.go`, the full adaptive
   default as a literal you own and can edit directly. Use this for apps
   that will keep changing their theme over time; edit `Colors` and
-  `DarkColors` together.
+  `DarkColors` together. `--out=<path>` writes it elsewhere; the file
+  takes the package of the Go files already in that directory
+  (`--out=theme.go` beside `main.go` is `package main`), or the
+  directory's name when it has none.
 
 Check the result at `/__gofastr/app.css`; your values should show up
 as `:root` custom properties.

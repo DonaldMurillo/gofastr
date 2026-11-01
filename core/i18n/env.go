@@ -3,6 +3,8 @@ package i18n
 import (
 	"os"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // EnvLocale is the locale the process environment asks for, for text a
@@ -10,9 +12,10 @@ import (
 // writes for the browser. It reads the GNU LANGUAGE list, then LC_ALL,
 // LC_MESSAGES and LANG, the order gettext uses, and takes the first
 // entry the catalog of tr has (a region falls back to its language:
-// "fr_CA.UTF-8" picks "fr"). "C" and "POSIX" state no preference. With
-// nothing matched it is tr's fallback; with tr nil, the first entry
-// that parses as a tag.
+// "fr_CA.UTF-8" picks "fr"; a script modifier names the script:
+// "sr_RS@latin" reads as sr-Latn-RS). "C" and "POSIX" state no
+// preference. With nothing matched it is tr's fallback; with tr nil,
+// the first entry that parses as a tag.
 func EnvLocale(tr *Translator) Locale {
 	wants := strings.Split(os.Getenv("LANGUAGE"), ":")
 	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
@@ -59,13 +62,36 @@ func Match(tr *Translator, wants ...string) (Locale, bool) {
 
 // posixTag reads a POSIX locale name ("fr_CA.UTF-8@euro") as a bounded
 // BCP 47 tag ("fr-ca"), or "" for "C", "POSIX" and anything that does
-// not parse.
+// not parse. A script modifier becomes the script subtag
+// ("sr_RS.UTF-8@latin" → "sr-latn-rs"): dropping it read a Latin-script
+// Serbian reader as Cyrillic. Other modifiers (@euro) are dropped.
 func posixTag(v string) string {
-	if i := strings.IndexAny(v, ".@"); i >= 0 {
+	var modifier string
+	if i := strings.IndexByte(v, '@'); i >= 0 {
+		v, modifier = v[:i], v[i+1:]
+	}
+	if i := strings.IndexByte(v, '.'); i >= 0 {
 		v = v[:i]
 	}
 	if v == "C" || v == "POSIX" {
 		return ""
 	}
-	return sanitizeTag(strings.ReplaceAll(v, "_", "-"))
+	tag := strings.ReplaceAll(v, "_", "-")
+	if script, ok := posixScripts[asciicase.Lower(modifier)]; ok {
+		lang, rest, _ := strings.Cut(tag, "-")
+		tag = lang + "-" + script
+		if rest != "" {
+			tag += "-" + rest
+		}
+	}
+	return sanitizeTag(tag)
+}
+
+// posixScripts maps the glibc locale modifiers that name a script to
+// the BCP 47 script subtag.
+var posixScripts = map[string]string{
+	"latin":      "latn",
+	"cyrillic":   "cyrl",
+	"devanagari": "deva",
+	"arabic":     "arab",
 }

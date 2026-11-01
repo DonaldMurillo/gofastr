@@ -92,6 +92,9 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		if a.Size == AvatarMd && cfg.Size != AvatarMd {
 			a.Size = cfg.Size
 		}
+		if a.Ctx == nil {
+			a.Ctx = cfg.Ctx
+		}
 		if a.Class == "" {
 			a.Class = "fui-avatar-group__item"
 		} else {

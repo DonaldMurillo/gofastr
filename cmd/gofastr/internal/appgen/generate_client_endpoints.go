@@ -176,10 +176,7 @@ func renderClientEndpoint(ep framework.Endpoint, route string) string {
 // endpointRoute is an entity's table reduced to one inert path segment,
 // as renderClientEntity spells it.
 func endpointRoute(decl framework.EntityDeclaration) string {
-	table := decl.Table
-	if table == "" {
-		table = decl.Name
-	}
+	table := declTable(decl)
 	return url.PathEscape(table)
 }
 

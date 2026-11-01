@@ -303,3 +303,53 @@ func TestWebhookRefusesRedirects(t *testing.T) {
 		t.Fatalf("the redirect target got %d requests carrying the key and batch", n)
 	}
 }
+
+// A 3xx or 4xx is the receiver's final word (a rotated key's 401, a 413
+// for an oversize batch): posting it again cannot succeed. postOnce
+// returned a plain error, which isRetryable counts as transport trouble,
+// so every batch went out MaxRetries+1 times (round 7 R7-073). A 5xx
+// still retries.
+func TestWebhookNoRetryOn4xx(t *testing.T) {
+	for _, code := range []int{http.StatusMultipleChoices, http.StatusUnauthorized, http.StatusRequestEntityTooLarge, 499} {
+		var hits atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			w.WriteHeader(code)
+		}))
+		s := WebhookSink(srv.URL, WebhookOpts{BatchSize: 1, BatchInterval: time.Hour, MaxRetries: 3})
+		_ = s.Write([]byte(`{"i":1}`))
+		deadline := time.Now().Add(2 * time.Second)
+		for hits.Load() == 0 && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		// The first backoff is 250ms; give a retry room to land.
+		time.Sleep(600 * time.Millisecond)
+		_ = s.Close()
+		srv.Close()
+		if n := hits.Load(); n != 1 {
+			t.Errorf("status %d: posted %d times, want 1", code, n)
+		}
+	}
+}
+
+func TestWebhookRetriesOn5xx(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	s := WebhookSink(srv.URL, WebhookOpts{BatchSize: 1, BatchInterval: time.Hour, MaxRetries: 3})
+	_ = s.Write([]byte(`{"i":1}`))
+	deadline := time.Now().Add(3 * time.Second)
+	for hits.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	_ = s.Close()
+	if n := hits.Load(); n != 2 {
+		t.Fatalf("posted %d times, want 2 (a 502 then a retry)", n)
+	}
+}

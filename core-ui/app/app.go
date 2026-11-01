@@ -644,6 +644,11 @@ func (a *App) renderErrorFromResultIDs(ctx context.Context, path, fromPath strin
 	if err != nil {
 		return res, err
 	}
+	// As the not-found twin: an empty Title let the host fall back to
+	// the failed route's own registered title over the error body.
+	if res.Title == "" {
+		res.Title = target.Title
+	}
 	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
 		return res, nil
 	}

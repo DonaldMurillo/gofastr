@@ -2213,7 +2213,15 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 			}
 		}
 		c := cfgOf(call, 0)
-		return block("card", props2("heading", appspec.AstString(c["Heading"]), "text", appspec.AstString(c["Description"]))), true
+		b := block("card", props2("heading", appspec.AstString(c["Heading"]), "text", appspec.AstString(c["Description"])))
+		// The generator passes a card's children after the config:
+		// ui.Card(cfg, children...).
+		for _, arg := range call.Args[1:] {
+			if child, ok := reverseBlock(arg, helpers); ok {
+				b.Children = append(b.Children, child)
+			}
+		}
+		return b, true
 	case "ui.BarChart", "ui.PieChart", "lineChart":
 		// Untitled chart (no wrapping ui.Card).
 		if b, ok := reverseChartCall(call); ok {

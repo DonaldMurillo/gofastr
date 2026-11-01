@@ -150,3 +150,50 @@ func TestExportNamedRows(t *testing.T) {
 		t.Fatalf("a repeated name past the cap: status %d, want 422", rec.Code)
 	}
 }
+
+// A negative number in a numeric column stays a number a spreadsheet
+// can sum; text columns, and a numeric cell that is no number, are
+// still quoted.
+func TestExportKeepsNegativeNumbers(t *testing.T) {
+	rows := invoiceRows()
+	rows["invoices"] = append(rows["invoices"],
+		map[string]any{"id": "inv-2", "number": "INV-2", "amount": "-12.50", "memo": "-2", "status": "draft"},
+		map[string]any{"id": "inv-3", "number": "INV-3", "amount": "=1+1", "memo": "x", "status": "draft"})
+	x := newTestUI(t, invoiceEntities(), rows, withAPI(map[string]string{"invoices": "/api/invoices"}))
+	rec, got := getExport(t, x, bulkCtx("u1", nil), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	col := map[string]int{}
+	for i, h := range got[0] {
+		col[h] = i
+	}
+	byID := map[string][]string{}
+	for _, row := range got[1:] {
+		byID[row[0]] = row
+	}
+	if v := byID["inv-2"][col["Amount"]]; v != "-12.5" {
+		t.Errorf("negative amount exported as %q, want -12.5", v)
+	}
+	if v := byID["inv-2"][col["Memo"]]; v != "'-2" {
+		t.Errorf("text memo exported as %q, want it quoted", v)
+	}
+	if v := byID["inv-3"][col["Amount"]]; v != "'=1+1" {
+		t.Errorf("a formula in a numeric column exported as %q, want it quoted", v)
+	}
+}
+
+// plainNumber passes a decimal number and nothing a spreadsheet could
+// read as a formula.
+func TestPlainNumberForms(t *testing.T) {
+	for _, v := range []string{"0", "-1", "-12.5", ".5", "5.", "1e9", "-1.5E-3", "2e+4"} {
+		if !plainNumber(v) {
+			t.Errorf("plainNumber(%q) = false", v)
+		}
+	}
+	for _, v := range []string{"", "-", ".", "+1", "--1", "1.2.3", "1e", "1e+-2", "-1+1", "=1", "-1,5", " 1", "NaN", "-Inf", "0x10"} {
+		if plainNumber(v) {
+			t.Errorf("plainNumber(%q) = true", v)
+		}
+	}
+}

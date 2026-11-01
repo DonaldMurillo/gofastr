@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -24,6 +25,12 @@ import (
 // by a descendant the adapter forked and did not reap. Same shape and
 // rationale as codegen's extensionWaitDelay and the harness bash tool.
 var agentTurnWaitDelay = 2 * time.Second
+
+// agentShutdownWait bounds how long runAgentWatcher waits, once its
+// context ends, for in-flight turns to finish: the group kill, the
+// WaitDelay-bounded drain and the closing journal note. It sits above
+// agentTurnWaitDelay so a turn whose pipe is held still gets its drain.
+var agentShutdownWait = agentTurnWaitDelay + 3*time.Second
 
 // maxAgentStdout caps the captured adapter stdout: an adapter that
 // streams unbounded output must not grow the kiln process without
@@ -131,6 +138,12 @@ func formatTurnDuration(d time.Duration) string {
 // note so the panel's thinking indicator clears and the user sees what
 // happened. Anything the cancelled turn already wrote to the journal
 // stays; Kiln's world is append-only, so partial work persists.
+//
+// It returns only after its turns have ended (bounded by
+// agentShutdownWait). The turn's process-group kill runs on exec's own
+// goroutine, and the adapter has its own group, so the terminal's
+// SIGINT never reaches it: returning at once let kiln serve exit with
+// the agent CLI still running and editing the checkout.
 func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tools *protocol.Tools, store *AdapterStore, addr string) {
 	host := addr
 	if strings.HasPrefix(host, ":") {
@@ -141,11 +154,17 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 	ch, unsub := l.Subscribe()
 	defer unsub()
 
+	var turns sync.WaitGroup
+	defer func() {
+		// Process exit (or a closed bus): cancel any in-flight turn
+		// through the store, then wait for it to be killed and reaped.
+		store.Set(store.Get())
+		waitTurns(&turns, agentShutdownWait, logger)
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
-			// Process exit: cancel any in-flight turn through the store.
-			store.Set(store.Get())
 			return
 		case ev, ok := <-ch:
 			if !ok {
@@ -178,7 +197,9 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 			// agent switch) has since taken the slot.
 			reg := store.SetTurnCancel(cancel)
 
+			turns.Add(1)
 			go func(turnCtx context.Context, cancel context.CancelCauseFunc, reg *turnCancel, text string, adapter Adapter) {
+				defer turns.Done()
 				defer cancel(nil)
 				l.Notify("agent_turn_started", adapter.Name)
 				start := time.Now()
@@ -193,6 +214,20 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 				l.Notify("agent_turn_ended", adapter.Name)
 			}(turnCtx, cancel, reg, text, adapter)
 		}
+	}
+}
+
+// waitTurns waits for turns to finish, up to limit.
+func waitTurns(turns *sync.WaitGroup, limit time.Duration, logger *log.Logger) {
+	done := make(chan struct{})
+	go func() {
+		turns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(limit):
+		logger.Printf("agent: a turn was still ending after %v; exiting without it", limit)
 	}
 }
 

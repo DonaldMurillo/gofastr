@@ -104,6 +104,14 @@ type ComboboxProps struct {
 	// is refused.
 	DebounceMS int
 
+	// Inline says the listbox is the surface's own content, laid out
+	// in flow (a command palette's result list), not a popup over the
+	// page. Escape then belongs to the surface: one press closes the
+	// dialog around the combobox. A popup listbox keeps Escape to
+	// itself, so closing the list never also closes a dialog, overlay
+	// or disclosure the combobox sits in.
+	Inline bool
+
 	ExtraAttrs html.Attrs
 
 	// Parts: attrs on the root, the input and the listbox. The
@@ -185,6 +193,9 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 		"spellcheck":        "false",
 	})
 	Mark(inputAttrs, "data-hui-combobox-input")
+	if p.Inline {
+		Mark(inputAttrs, "data-hui-combobox-inline")
+	}
 	if p.Placeholder != "" {
 		inputAttrs["placeholder"] = scrubControlBytes(p.Placeholder)
 	}
@@ -381,7 +392,7 @@ func init() {
 			"data-hui-combobox-loader", "data-hui-combobox-status",
 			"data-hui-combobox-count", "data-hui-combobox-no-results",
 			"data-hui-combobox-loading", "data-hui-combobox-pick",
-			"data-hui-combobox-value"},
+			"data-hui-combobox-value", "data-hui-combobox-inline"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Combobox(ComboboxProps{ID: "q", Name: "q", Label: "Search",
 				Options: []ComboboxOption{{Label: "Docs"}, {Label: "Examples"}}, Parts: parts}, s)
@@ -409,6 +420,11 @@ func init() {
 					Island:  &Island{Endpoint: "/api/invoices/_options/customer_id", Signal: "pick-customer"},
 					Pick:    &ComboboxPick{Name: "customer_id", Value: "c1", Label: "Ada"},
 					Options: []ComboboxOption{{Value: "c1", Label: "Ada"}}}, s),
+			}, {
+				Name: "an inline combobox",
+				Why:  "the listbox is the surface's own content, a command palette's result list, so Escape goes on to close the dialog instead of stopping at the list",
+				HTML: Combobox(ComboboxProps{ID: "cmd", Name: "q", Label: "Commands", Inline: true,
+					Options: []ComboboxOption{{Label: "New invoice"}}}, s),
 			}}
 		},
 	})

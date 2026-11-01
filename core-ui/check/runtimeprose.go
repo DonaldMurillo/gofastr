@@ -25,10 +25,11 @@ import (
 // Prose is a literal holding two words, or one capitalised word
 // ("Notifications"): a variant name ('error'), a key, a selector or a
 // class stays quiet. The English argument of a say() call is the
-// sanctioned spelling and stays quiet, as does any literal on a line
-// carrying //gofastr:allow(runtimeprose) <reason>, or the line above:
-// developer-facing text (a plugin host's diagnostics, a dev overlay)
-// is not the reader's language.
+// sanctioned spelling and stays quiet, as does any literal on a line a
+// //gofastr:allow(runtimeprose) <reason> marker covers (trailing the
+// line, or alone on the line above; see allowmarker.go): developer-facing
+// text (a plugin host's diagnostics, a dev overlay) is not the reader's
+// language.
 func LintRuntimeProse(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -36,7 +37,7 @@ func LintRuntimeProse(roots ...string) (*Result, error) {
 		return nil, err
 	}
 	for _, f := range files {
-		lines := strings.Split(f.Src, "\n")
+		allowed := allowedLines(jsComments(f), "runtimeprose")
 		for _, span := range proseSinkSpans(f) {
 			for _, lit := range jsStringLiterals(f.Code[span[0]:span[1]]) {
 				pos := span[0] + lit.pos
@@ -44,7 +45,7 @@ func LintRuntimeProse(roots ...string) (*Result, error) {
 					continue
 				}
 				line := f.lineOf(pos)
-				if markerAllowed(lines, line, runtimeProseMarker) {
+				if allowed[line] {
 					continue
 				}
 				text := lit.text
@@ -57,8 +58,6 @@ func LintRuntimeProse(roots ...string) (*Result, error) {
 	}
 	return res, nil
 }
-
-const runtimeProseMarker = "gofastr:allow(runtimeprose)"
 
 // Sinks, matched on the blank view so a sink spelled in a comment or a
 // string never counts. A toast call matches its optional-call spelling
@@ -191,20 +190,4 @@ func literalEnd(code string, pos int) int {
 // argument of a say() call.
 func saysEnglish(code string, pos int) bool {
 	return reSaidAs.MatchString(code[max(0, pos-120):pos])
-}
-
-// markerAllowed reports whether line (1-based) of a source, or the line
-// above it, carries marker WITH a reason.
-func markerAllowed(lines []string, line int, marker string) bool {
-	for _, n := range []int{line, line - 1} {
-		if n < 1 || n > len(lines) {
-			continue
-		}
-		if i := strings.Index(lines[n-1], marker); i >= 0 {
-			if strings.TrimSpace(lines[n-1][i+len(marker):]) != "" {
-				return true
-			}
-		}
-	}
-	return false
 }

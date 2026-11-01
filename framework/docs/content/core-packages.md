@@ -49,7 +49,8 @@ duplicate and matches tags case-insensitively, so the same body can
 mean two things to two readers; refusing it is the only resolution that
 privileges neither. Cap the size first (`http.MaxBytesReader`). The
 contracts rule GOFASTR1407 reports any raw `json.NewDecoder`/`Unmarshal`
-of request or frame bytes, so a site that does not use these helpers
+of request or frame bytes, and the repo's own `jsonexact.Unmarshal`/`Decode`
+(exact numbers, the same duplicate and case rules), so a site that does not use these helpers
 needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
 ### router
