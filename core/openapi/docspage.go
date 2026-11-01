@@ -144,8 +144,14 @@ func renderDocsPage(ctx context.Context, view *Spec, specURL string) string {
 	for _, p := range slices.Sorted(maps.Keys(paths)) {
 		ops := paths[p]
 		for _, m := range methodOrder {
-			op, ok := ops[m].(map[string]any)
-			if !ok {
+			raw, present := ops[m]
+			if !present {
+				continue
+			}
+			// AddPath stores Operation.ToMap, always this type; a value
+			// of another type has no row to show.
+			op, isOp := raw.(map[string]any)
+			if !isOp {
 				continue
 			}
 			tag := ""

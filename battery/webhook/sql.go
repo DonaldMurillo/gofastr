@@ -169,15 +169,17 @@ func (s *SQLStore) ensureTables() error {
 		}
 	}
 	// Columns later releases added, for a table an earlier one made.
-	for _, c := range []struct{ table, def string }{
-		{s.delTable, "owner TEXT NOT NULL DEFAULT ''"},
-		{s.delTable, "response_status INTEGER NOT NULL DEFAULT 0"},
-		{s.delTable, "response_body TEXT NOT NULL DEFAULT ''"},
-		{s.subTable, "auth TEXT NOT NULL DEFAULT ''"},
+	for _, def := range []string{
+		"owner TEXT NOT NULL DEFAULT ''",
+		"response_status INTEGER NOT NULL DEFAULT 0",
+		"response_body TEXT NOT NULL DEFAULT ''",
 	} {
-		if err := addColumn(s.db, s.dialect, c.table, c.def); err != nil {
+		if err := addColumn(s.db, s.dialect, s.delTable, def); err != nil {
 			return err
 		}
+	}
+	if err := addColumn(s.db, s.dialect, s.subTable, "auth TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
 	}
 	if s.dialect == "postgres" {
 		return nil
