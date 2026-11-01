@@ -50,6 +50,9 @@ func TestSessionTableIndexedUnderDocumentedWiring(t *testing.T) {
 			}
 			plan.WriteString(detail)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
 		rows.Close()
 		if !strings.Contains(plan.String(), want) {
 			t.Errorf("%s: plan %q, want an index", q, plan.String())

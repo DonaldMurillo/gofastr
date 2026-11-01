@@ -24,13 +24,15 @@ import (
 var memoryEraseMu sync.Mutex
 
 // registerMemoryStoreEraser (re)registers the manager's in-memory store
-// eraser. A later Init replaces the earlier registration.
+// eraser. A later Init replaces the earlier registration. memoryEraseMu
+// guards the manager's two fields; the unregister func runs outside it.
 func registerMemoryStoreEraser(mgr *AuthManager) {
 	memoryEraseMu.Lock()
-	defer memoryEraseMu.Unlock()
-	if mgr.unregisterMemoryErase != nil {
-		mgr.unregisterMemoryErase()
-		mgr.unregisterMemoryErase = nil
+	prev := mgr.unregisterMemoryErase
+	mgr.unregisterMemoryErase, mgr.memoryEraseName = nil, ""
+	memoryEraseMu.Unlock()
+	if prev != nil {
+		prev()
 	}
 	var (
 		sessions *MemorySessionStore
@@ -62,7 +64,7 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 	if sessions == nil && twofa == nil && passkeys == nil && len(tokens) == 0 {
 		return
 	}
-	mgr.memoryEraseName, mgr.unregisterMemoryErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+	name, unregister := datexport.RegisterStoreEraser(datexport.StoreEraser{
 		Name:   "auth_memory",
 		Source: "auth",
 		Erase: func(_ context.Context, userID string, dryRun bool) (int, error) {
@@ -82,6 +84,9 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 			return n, nil
 		},
 	})
+	memoryEraseMu.Lock()
+	mgr.memoryEraseName, mgr.unregisterMemoryErase = name, unregister
+	memoryEraseMu.Unlock()
 }
 
 func (m *MemorySessionStore) eraseUser(userID string, dryRun bool) int {
