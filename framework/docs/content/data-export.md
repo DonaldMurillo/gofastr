@@ -561,6 +561,13 @@ defer unregister() // when the store closes
 _ = name           // "profile_cache", or "profile_cache#2" beside a live one
 ```
 
+Store erasers run in name order, except that a store which puts items into
+other stores sets `Producer: true` and runs first. The in-memory `Scheduler`
+is one: erased after the queue it feeds, a tick between the two put the
+user's job back into a queue already erased. A producer's `Erase` returns
+only after any dispatch it had already started has finished; the
+`Scheduler` holds the lock its tick enqueues under.
+
 ### Audit retention
 
 Audit rows are **not deleted**. This is deliberate and is the industry-standard

@@ -175,7 +175,11 @@ and the pop and processing hashes; for `MemoryQueue`, the pending jobs
 with the unique keys they held freed. The Redis erasure is one Lua script,
 so it needs an adapter that implements
 [`ScriptRunner`](#optional-scriptrunner); with one that does not, the
-erasure fails with an error and removes nothing. A worker still
+erasure fails with an error and removes nothing. The `MemoryQueue` erasure
+holds the queue still while it runs: a `Dequeue`, `Nack` or `Replay` waits
+for it, so none carries a job from a store the erasure has not read yet
+into one it already has. The in-memory `Scheduler` is erased before the
+queues it feeds, so a tick cannot enqueue the user's job again. A worker still
 running an erased job finds nothing to settle, and its `Ack` or `Nack`
 does nothing. The
 registration stays until `Close`, and it keeps the queue from being

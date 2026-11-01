@@ -1527,8 +1527,9 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 	return report, errors.Join(objErr, a.eraseStores(ctx, userID, false, &report))
 }
 
-// eraseStores runs every registered datexport.StoreEraser and adds the
-// ones that succeed to the report. Every one runs even when another fails,
+// eraseStores runs every registered datexport.StoreEraser, producers
+// first (AllStoreErasers' order), and adds the ones that succeed to the
+// report. Every one runs even when another fails,
 // so one unreachable store does not keep the user's data in the others.
 // The SQL part is committed by now (or rolled back, on a dry run), so a
 // failure is reported with the store's name, never folded into success:

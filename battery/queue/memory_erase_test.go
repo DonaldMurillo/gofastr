@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -138,6 +140,38 @@ func TestEraseDropsInMemorySchedules(t *testing.T) {
 	}
 }
 
+// Store erasers ran by name, so queue_memory ran before
+// queue_scheduler_memory, and a scheduler tick between the two enqueued
+// the erased user's job into the queue already erased (2026-10-31 review).
+// A store registered between the two names stands in for that tick. The
+// scheduler is a producer now and is erased first.
+func TestEraseRunsSchedulerBeforeQueue(t *testing.T) {
+	ctx := context.Background()
+	q := NewMemoryQueue(0)
+	t.Cleanup(func() { _ = q.Close() })
+	sched := NewScheduler(q)
+	t.Cleanup(func() { _ = sched.Close() })
+	base := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	if err := sched.Every(time.Minute).Job("digest", map[string]string{"to": "u1-secret"}).UserID("u1").RegisterAt(base); err != nil {
+		t.Fatal(err)
+	}
+	_, unregister := datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name: "queue_n_tick", Source: "test",
+		Erase: func(ctx context.Context, _ string, _ bool) (int, error) {
+			sched.dispatchDue(ctx, base.Add(time.Minute))
+			return 0, nil
+		},
+	})
+	t.Cleanup(unregister)
+
+	if _, err := eraseQueueApp(t).EraseUserData(ctx, "u1"); err != nil {
+		t.Fatalf("EraseUserData: %v", err)
+	}
+	if got := memHolds(q, "u1-secret"); len(got) != 0 {
+		t.Errorf("a tick during the erasure left the user's job in %v", got)
+	}
+}
+
 // Two RedisQueues with one queue name on different servers shared one
 // eraser name, and the later registration replaced the earlier, so the
 // first server kept the user's jobs. Both are erased now.
@@ -181,5 +215,130 @@ func TestCloseUnregistersMemoryStores(t *testing.T) {
 		if storeRegistered(n) {
 			t.Errorf("%s still registered after Close", n)
 		}
+	}
+}
+
+// The erasure read the pending heap, the dequeued set and the dead list
+// under three locks taken one after another. A Nack between the first two
+// reads moved the victim's job from the dequeued set back to the heap, and
+// a Replay moved it from the dead list to the heap; both reads missed it
+// and the erasure reported success (2026-10-31 review). The erasure now
+// holds the queue still: Dequeue, Nack and Replay wait for it, and find
+// nothing of the user's to move once it is done.
+func TestEraseHoldsMemoryQueueStill(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name     string
+		attempts int
+		setup    func(q *MemoryQueue) Job
+		move     func(q *MemoryQueue, j Job) error
+	}{
+		{"nack", 3, func(q *MemoryQueue) Job {
+			j, _ := q.Dequeue(ctx)
+			return j
+		}, func(q *MemoryQueue, j Job) error { return q.Nack(ctx, j) }},
+		{"replay", 1, func(q *MemoryQueue) Job {
+			j, _ := q.Dequeue(ctx)
+			_ = q.Nack(ctx, j) // out of attempts: onto the dead list
+			return j
+		}, func(q *MemoryQueue, j Job) error { return q.Replay(ctx, j.ID) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := NewMemoryQueue(0)
+			t.Cleanup(func() { _ = q.Close() })
+			victim := userJob("v1", "u1")
+			victim.MaxAttempts = tc.attempts
+			if err := q.Enqueue(ctx, victim); err != nil {
+				t.Fatal(err)
+			}
+			j := tc.setup(q)
+			moved := make(chan error, 1)
+			q.eraseScanned = func() {
+				go func() { moved <- tc.move(q, j) }()
+				select { // the move lands here unless the erasure holds it off
+				case err := <-moved:
+					moved <- err
+				case <-time.After(200 * time.Millisecond):
+				}
+			}
+			if _, err := q.eraseUser(ctx, "u1", false); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-moved; err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if got := memHolds(q, "u1-secret"); len(got) != 0 {
+				t.Errorf("the job a %s moved mid-erasure survives in %v", tc.name, got)
+			}
+		})
+	}
+}
+
+// pauseCtx stops the move that checks it in the step between taking the
+// job out of one store and putting it into the next: enqueue's first act
+// is to check its context.
+type pauseCtx struct {
+	context.Context
+	arrived, release chan struct{}
+	once             sync.Once
+}
+
+func (c *pauseCtx) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.arrived); <-c.release })
+	return nil
+}
+
+// A Nack or Replay that had taken the job out of one store and not yet put
+// it into the next held it in no store at all; an erasure that ran then
+// found nothing, and the move put the job back after it (2026-10-31
+// review). The erasure waits for a move in progress.
+func TestEraseWaitsForMoveInTransit(t *testing.T) {
+	for _, name := range []string{"nack", "replay"} {
+		t.Run(name, func(t *testing.T) {
+			q := NewMemoryQueue(0)
+			t.Cleanup(func() { _ = q.Close() })
+			victim := userJob("v1", "u1")
+			victim.MaxAttempts = 3
+			if name == "replay" {
+				victim.MaxAttempts = 1
+			}
+			if err := q.Enqueue(context.Background(), victim); err != nil {
+				t.Fatal(err)
+			}
+			j, err := q.Dequeue(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name == "replay" {
+				_ = q.Nack(context.Background(), j) // out of attempts: dead
+			}
+			ctx := &pauseCtx{Context: context.Background(), arrived: make(chan struct{}), release: make(chan struct{})}
+			moved := make(chan error, 1)
+			go func() {
+				if name == "replay" {
+					moved <- q.Replay(ctx, j.ID)
+				} else {
+					moved <- q.Nack(ctx, j)
+				}
+			}()
+			<-ctx.arrived
+			erased := make(chan error, 1)
+			go func() { _, err := q.eraseUser(context.Background(), "u1", false); erased <- err }()
+			select { // an erasure that does not wait finishes here
+			case err := <-erased:
+				erased <- err
+			case <-time.After(200 * time.Millisecond):
+			}
+			close(ctx.release)
+			if err := <-moved; err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if err := <-erased; err != nil {
+				t.Fatal(err)
+			}
+			if got := memHolds(q, "u1-secret"); len(got) != 0 {
+				t.Errorf("the job a %s held in transit survives the erasure in %v", name, got)
+			}
+		})
 	}
 }

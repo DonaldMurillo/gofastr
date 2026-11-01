@@ -23,14 +23,20 @@ import (
 //   - Erase removes everything in the store that names userID and returns
 //     how many items it removed. With dryRun it removes nothing and returns
 //     how many it would. A re-run finds nothing and returns 0.
+//   - Producer marks a store that puts items into other stores, such as an
+//     in-memory scheduler enqueueing jobs. Producers are erased first, so
+//     one cannot refill a store already erased with the user's data. A
+//     producer's Erase also waits out a dispatch already in progress
+//     before it returns.
 //
 // Erase runs after the commit, so its failure cannot roll the SQL erasure
 // back: EraseUserData returns an error naming the store, and the caller
 // erases again once the store is reachable.
 type StoreEraser struct {
-	Name   string
-	Source string
-	Erase  func(ctx context.Context, userID string, dryRun bool) (int, error)
+	Name     string
+	Source   string
+	Erase    func(ctx context.Context, userID string, dryRun bool) (int, error)
+	Producer bool
 }
 
 // storeErasers holds the registered entries. Each is a distinct pointer,
@@ -67,8 +73,9 @@ func RegisterStoreEraser(e StoreEraser) (name string, unregister func()) {
 	}
 }
 
-// AllStoreErasers returns a copy of the registered store erasers sorted by
-// Name.
+// AllStoreErasers returns a copy of the registered store erasers in the
+// order an erasure runs them: producers first, then the rest, each part
+// sorted by Name.
 func AllStoreErasers() []StoreEraser {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -76,6 +83,11 @@ func AllStoreErasers() []StoreEraser {
 	for _, e := range storeErasers {
 		out = append(out, *e)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Producer != out[j].Producer {
+			return out[i].Producer
+		}
+		return out[i].Name < out[j].Name
+	})
 	return out
 }

@@ -81,6 +81,9 @@ func newScheduler(queues []Queue, logger *slog.Logger) *Scheduler {
 		Name:   "queue_scheduler_memory",
 		Source: "queue",
 		Erase:  s.eraseUser,
+		// Erased before the queues it feeds: a tick between a queue's
+		// erasure and this one enqueued the user's job again.
+		Producer: true,
 	})
 	return s
 }
@@ -89,7 +92,9 @@ func newScheduler(queues []Queue, logger *slog.Logger) *Scheduler {
 func (s *Scheduler) eraserName() string { return s.eraseName }
 
 // eraseUser drops every schedule whose UserID is userID and returns how
-// many it dropped (with dryRun, how many it would).
+// many it dropped (with dryRun, how many it would). It takes s.mu, which
+// dispatchDue holds across its Enqueue calls, so a dispatch in progress
+// has finished before it returns.
 func (s *Scheduler) eraseUser(_ context.Context, userID string, dryRun bool) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

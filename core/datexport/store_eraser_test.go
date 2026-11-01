@@ -2,6 +2,7 @@ package datexport
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -56,5 +57,21 @@ func TestStoreEraserNeedsNameAndErase(t *testing.T) {
 			}()
 			RegisterStoreEraser(e)
 		}()
+	}
+}
+
+// A producer (a scheduler that enqueues jobs) is listed, and so erased,
+// before every store it could refill, whatever the names.
+func TestProducersListedFirst(t *testing.T) {
+	Reset(t)
+	t.Cleanup(func() { Reset(t) })
+	RegisterStoreEraser(StoreEraser{Name: "b", Source: "q", Erase: nopErase})
+	RegisterStoreEraser(StoreEraser{Name: "z", Source: "p", Erase: nopErase, Producer: true})
+	RegisterStoreEraser(StoreEraser{Name: "a", Source: "q", Erase: nopErase})
+	RegisterStoreEraser(StoreEraser{Name: "y", Source: "p", Erase: nopErase, Producer: true})
+	got := storeNames()
+	want := []string{"y/p", "z/p", "a/q", "b/q"}
+	if !slices.Equal(got, want) {
+		t.Errorf("store erasers in order %v, want %v", got, want)
 	}
 }

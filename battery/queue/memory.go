@@ -87,6 +87,15 @@ type MemoryQueue struct {
 	// disabled module.
 	gate func(jobType string) bool
 
+	// moveMu holds the queue still for an erasure. The manual moves that
+	// carry a job from one store to the next (Dequeue: heap to dequeued
+	// set; Nack: dequeued set to heap or dead list; Replay: dead list to
+	// heap) hold its read side across the whole move, so between their
+	// steps the job is in no store; eraseUser holds the write side, so no
+	// such move is half done while it reads. Taken before pmu, inflightMu
+	// and deadMu, never after.
+	moveMu sync.RWMutex
+
 	// pmu guards the pending store, the sequence counter, the closed flag,
 	// and the wake cond. cond is bound to pmu.
 	pmu     sync.Mutex
@@ -136,6 +145,10 @@ type MemoryQueue struct {
 	// calls it between its re-enqueue and retiring the dead record.
 	// Production code leaves it nil.
 	replayEnqueued func()
+
+	// eraseScanned is a seam for package tests: eraseUser calls it after it
+	// has read the pending heap, to put a worker step in that gap.
+	eraseScanned func()
 }
 
 // deadJob is one retained dead-letter record. gen identifies this
@@ -250,13 +263,25 @@ func (q *MemoryQueue) eraserName() string { return q.eraseName }
 // eraseUser removes every job whose UserID is userID from the pending
 // heap (delayed jobs included), the set Dequeue handed out, and the dead
 // list, freeing the unique keys they held, and returns how many it
-// removed (with dryRun, how many it would). A dequeued job's later Ack or
+// removed (with dryRun, how many it would). It holds all three stores and
+// moveMu, so no Dequeue, Nack or Replay carries a job from a store it has
+// not read yet into one it already has. A dequeued job's later Ack or
 // Nack finds nothing and does nothing. A job a worker is running when
 // the sweep passes is not stopped; if it fails and is retried, it is
 // back on the heap until the next erasure.
 func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (int, error) {
-	var gone []Job
+	// No manual move is half done, and none starts, until the erasure has
+	// read and cleared all three stores.
+	q.moveMu.Lock()
+	defer q.moveMu.Unlock()
 	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	q.inflightMu.Lock()
+	defer q.inflightMu.Unlock()
+	q.deadMu.Lock()
+	defer q.deadMu.Unlock()
+
+	var gone []Job
 	kept := make([]pendingJob, 0, len(q.pending.items))
 	for _, pj := range q.pending.items {
 		if pj.job.UserID == userID {
@@ -269,9 +294,10 @@ func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (
 		q.pending.items = kept
 		heap.Init(&q.pending)
 	}
-	q.pmu.Unlock()
+	if q.eraseScanned != nil {
+		q.eraseScanned()
+	}
 
-	q.inflightMu.Lock()
 	for _, id := range slices.Sorted(maps.Keys(q.inflight)) {
 		if job := q.inflight[id]; job.UserID == userID {
 			gone = append(gone, job)
@@ -280,9 +306,7 @@ func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (
 			}
 		}
 	}
-	q.inflightMu.Unlock()
 
-	q.deadMu.Lock()
 	n := len(gone)
 	keptDead := make([]deadJob, 0, len(q.dead))
 	for _, d := range q.dead {
@@ -294,12 +318,11 @@ func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (
 	}
 	if !dryRun {
 		q.dead = keptDead
-	}
-	q.deadMu.Unlock()
-
-	if !dryRun {
+		// release, inline: pmu is held.
 		for _, job := range gone {
-			q.release(job)
+			if job.UniqueKey != "" {
+				delete(q.held, uniqueSlot{job.Type, job.UniqueKey})
+			}
 		}
 	}
 	return n, nil
@@ -626,6 +649,8 @@ func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error)
 		return Job{}, ctx.Err()
 	default:
 	}
+	q.moveMu.RLock()
+	defer q.moveMu.RUnlock()
 	q.pmu.Lock()
 	if q.closed {
 		q.pmu.Unlock()
@@ -712,6 +737,8 @@ func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
 // context destroyed the job outright: not pending, not dead, not in-flight,
 // and a retried Nack is the documented no-op against a vanished job.
 func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
+	q.moveMu.RLock()
+	defer q.moveMu.RUnlock()
 	stored, ok := q.takeInflight(job.ID)
 	if !ok {
 		// Unknown job (auto-pool retry, or already acked), nothing to requeue.
@@ -815,6 +842,8 @@ func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
 // again. Idempotent and safe: replaying an unknown or non-failed id matches no
 // retained job and is a no-op (nil), never a double-enqueue.
 func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
+	q.moveMu.RLock()
+	defer q.moveMu.RUnlock()
 	q.deadMu.Lock()
 	idx := -1
 	for i, d := range q.dead {
