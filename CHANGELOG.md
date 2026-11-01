@@ -37,6 +37,16 @@ few lines, and link the PR or the docs page for the rest.
   `ProbeResult.Reported` says whether a probe child ran the probe body.
   `examples/processmodule-demo/host` hosts the demo module untrusted. See
   [Process modules](framework/docs/content/process-modules.md#hosting-an-untrusted-module).
+- **The Linux sandbox passes every conformance probe**, so untrusted
+  process modules now run on Linux with bubblewrap and util-linux
+  `prlimit`. The child runs as uid 65534 in its own user namespace, sees no
+  `/etc` beyond the loader cache and timezone, has a read-only root and no
+  `/tmp` (it writes to its working directory), and runs under fd, process
+  and memory rlimits (default 1024 / 256 / 1 GiB). On a root host bwrap
+  itself starts as uid 65534. `prlimit` is now required on Linux. The P6
+  memory probe maps memory directly and asks for 256 MiB (was 64 MiB, below
+  what a cgo-linked Go binary needs to start). See
+  [What the Linux sandbox gives a module](framework/docs/content/process-modules.md#what-the-linux-sandbox-gives-a-module).
 - **`embedskip` analyzer.** `gofastr verify` and `make analyze` report a
   struct field walk (`NumField()` or the `Fields()` iterator) that maps
   fields to keys by their tags and never handles an embedded struct, so

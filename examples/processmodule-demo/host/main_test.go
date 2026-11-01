@@ -42,6 +42,12 @@ func binaries(t *testing.T) (host, module string) {
 	}
 	buildOnce.Do(func() {
 		dir, err := os.MkdirTemp("", "processmodule-demo-host-test-*")
+		if err == nil {
+			// Readable by the sandbox account: on a root host the bwrap
+			// backend runs the child as uid 65534, which must be able to
+			// mount and exec what is built here.
+			err = os.Chmod(dir, 0o755)
+		}
 		if err != nil {
 			buildErr = err
 			return
@@ -120,6 +126,9 @@ func TestHostBinaryAnswersSandboxProbe(t *testing.T) {
 func TestHostUntrustedModule(t *testing.T) {
 	host, module := binaries(t)
 	rep := runCheckSandbox(t, host)
+	if !rep.Conforms && os.Getenv("GOFASTR_REQUIRE_SANDBOX_CONFORMANCE") != "" {
+		t.Fatalf("the %s backend does not conform and GOFASTR_REQUIRE_SANDBOX_CONFORMANCE is set", rep.Backend)
+	}
 	if rep.Conforms {
 		srv := startHost(t, host, module, "untrusted")
 		body := getUntil200(t, srv.url+"/demo/hello")

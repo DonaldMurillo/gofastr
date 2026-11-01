@@ -189,13 +189,48 @@ confinement, resource limits, no privilege re-escalation). **An untrusted
 module with no probe-passing backend does not run**; there is no silent
 downgrade to the trusted runner.
 
-The backends are per-OS wrapper commands (Linux: `bwrap` + cgroup v2;
-macOS: `sandbox-exec`; Windows: AppContainer + Job Object). Some probe
-properties are **structurally unreachable on a stock host**: distinct-uid
-on macOS, network-egress denial on Windows. So: **an untrusted module may
-be unrunnable on stock macOS/Windows/some-Linux until the operator installs
-a conforming backend or provisions the missing rule.** Fail-closed refusal
-is the correct, honest enforcement, not a gap to paper over.
+The backends are per-OS wrapper commands (Linux: `bwrap` + `prlimit`;
+macOS: `sandbox-exec`; Windows: AppContainer + Job Object). **Linux is the
+platform where an untrusted module runs**: the bwrap backend passes every
+probe on a host with bubblewrap, util-linux `prlimit` and unprivileged user
+namespaces. Some probe properties are **structurally unreachable on a
+stock host** elsewhere: distinct-uid and resource caps on macOS,
+network-egress denial on Windows. So: **an untrusted module is unrunnable
+on stock macOS/Windows until the operator installs a conforming backend.**
+Fail-closed refusal is the correct, honest enforcement, not a gap to paper
+over.
+
+### What the Linux sandbox gives a module
+
+The child runs as uid/gid 65534 in its own user, pid, network, IPC and
+UTS namespaces, with every capability dropped. It sees a read-only `/usr`
+(plus `/bin`, `/lib*`, `/sbin`), `/etc/ld.so.cache` and `/etc/localtime`
+and nothing else of `/etc`, its package directory read-only, and its
+scratch directory read-write as its working directory. Everything else,
+the root and `/tmp` included, is read-only or absent: **a module writes
+only to its working directory**. It has no network but loopback inside its
+own namespace.
+
+Resource caps are rlimits set inside the namespaces: open files, processes
+(threads count), and data memory. `SandboxOpts` sets them; a zero takes the
+backend default of 1024 files, 256 processes and 1 GiB. The memory cap
+counts every writable mapping, the Go runtime's own and each cgo thread's
+stack included, so a cgo-linked Go module needs about 128 MiB before its
+`main` runs. CPU is not capped (that needs a delegated cgroup v2).
+
+On a **root host**, bwrap itself starts as host uid 65534: the kernel never
+applies the process cap to host root, namespace or not. The child is then
+a separate host account as well as a separate namespace uid. That account
+owns the spawn's scratch directory, and it must be able to read the
+package directory and the binary; one only root can read fails the spawn,
+closed. On a non-root host the child is the host user outside its
+namespaces, kept away from the host's files and processes by the mounts
+and the pid namespace.
+
+Unprivileged user namespaces are off on some distros and restricted by
+AppArmor on others (Ubuntu 24.04 ships an AppArmor profile that lets
+`bwrap` create them). Where they are unavailable, bwrap fails at spawn,
+every probe fails and untrusted modules are refused.
 
 A probe passes only when it proves the property, never because a test
 could not run. P3 looks for the planted fd by device and inode, so the
@@ -262,9 +297,8 @@ the backend.
 
 [`examples/processmodule-demo/host`](../../../examples/processmodule-demo/host)
 hosts the demo module as an untrusted module, and its `-check-sandbox`
-flag prints this host's report as JSON. In v1 neither built-in backend
-passes every probe (bwrap does not map a distinct uid or apply resource
-caps; macOS has no distinct principal), so on a stock machine the example
+flag prints this host's report as JSON. On Linux with bubblewrap it runs
+the module confined; on macOS (no distinct uid, no resource caps) it
 refuses the module and prints which probes failed. `-trust=trusted` runs
 the same module with crash isolation only.
 
@@ -553,9 +587,13 @@ bookkeeping.
   `MigrationsAppliedAt`; it looks "stuck disabled" with proxy 503s. The
   same holds after every artifact upgrade: the new artifact clears the
   stamp, so run the coordinator as part of the deploy.
-- **Expecting an untrusted module to run on stock macOS / Windows / some
-  Linux.** Sandbox backends need a probe-passing conforming wrapper; until
-  the operator provisions one, fail-closed refusal is correct, not a bug.
+- **Expecting an untrusted module to run on stock macOS / Windows, or on a
+  Linux host without bubblewrap, `prlimit` or unprivileged user
+  namespaces.** Sandbox backends need a probe-passing conforming wrapper;
+  until the operator provisions one, fail-closed refusal is correct, not a
+  bug.
+- **Writing to `/tmp` from an untrusted module.** There is no writable
+  `/tmp` in the Linux sandbox; write to the working directory.
 - **Registering an untrusted module the host may not be able to confine,
   with nothing to catch the refusal.** `RegisterProcessModule` panics on a
   host without a conforming sandbox. Call `app.ProcessModuleSandbox()`

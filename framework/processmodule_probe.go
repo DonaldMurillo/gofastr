@@ -39,7 +39,7 @@ import (
 // NOTHING is written into the repo tree by the probes. The probe child IS
 // the test binary itself, re-executed under an env gate
 // (GOFASTR_SANDBOX_PROBE=<id>) with context env vars describing the
-// planted secrets / host pid / targets. Scratch lives under t.TempDir().
+// planted secrets / host pid / targets. Scratch lives in a fresh temp dir the run removes.
 
 // ProbeID names one of the §6 sandbox properties P1–P7. The numeric value
 // matches the design's table numbering so a log line "probe=P1" is
@@ -371,9 +371,9 @@ const (
 // is recorded as Unreachable with the backend's MissingReason, this is
 // NOT a pass; Conforms() returns false and the supervisor fail-closes.
 //
-// t is used only for scratch-dir provisioning (t.TempDir); pass nil to use
-// an os.MkdirTemp under the system temp dir (for non-test callers like the
-// SandboxRunner constructor probing at startup).
+// t may be nil (non-test callers like the SandboxRunner constructor). The
+// scratch dir is always an os.MkdirTemp under the system temp dir, removed
+// when the run ends, so its mode is the probe's to set (see below).
 func RunConformance(ctx context.Context, b SandboxBackend, t testingTB) ConformanceReport {
 	report := ConformanceReport{Backend: backendName(b), Results: make([]ProbeResult, 0, len(allProbes))}
 	if b == nil {
@@ -396,23 +396,26 @@ func RunConformance(ctx context.Context, b SandboxBackend, t testingTB) Conforma
 		return report
 	}
 
-	// Scratch dir for the probe children + planted secrets.
-	var scratch string
-	if t != nil {
-		scratch = t.TempDir()
-	} else {
-		dir, err := os.MkdirTemp("", "gofastr-sandbox-probe-*")
-		if err != nil {
-			report.Available = false
-			report.MissingReason = "scratch dir: " + err.Error()
-			for _, p := range allProbes {
-				report.Results = append(report.Results, ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: report.MissingReason})
-			}
-			return report
-		}
-		scratch = dir
-		defer os.RemoveAll(scratch)
+	// Scratch dir for the probe children + planted secrets. Always a
+	// fresh dir under the system temp dir, mode 0711: a backend that runs
+	// the child as another host account (bwrap on a root host) must be
+	// able to reach the per-probe scratch inside it, while the planted
+	// secrets (0600) and the listing stay the host's.
+	dir, err := os.MkdirTemp("", "gofastr-sandbox-probe-*")
+	if err == nil {
+		//gofastr:allow(worldreadable) traverse-only (0711, no read bit): the sandbox account reaches its own per-probe scratch inside, never the listing or the 0600 secrets
+		err = os.Chmod(dir, 0o711)
 	}
+	if err != nil {
+		report.Available = false
+		report.MissingReason = "scratch dir: " + err.Error()
+		for _, p := range allProbes {
+			report.Results = append(report.Results, ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: report.MissingReason})
+		}
+		return report
+	}
+	scratch := dir
+	defer os.RemoveAll(scratch)
 
 	for _, p := range allProbes {
 		select {
@@ -535,10 +538,17 @@ var probeTimeout = 15 * time.Second
 // the child can do damage, and loose enough for the probe child's own
 // runtime. P6 holds processes and fds open, and allocates memory, up to
 // twice each limit; a backend that lets it get there reports BREACH.
+//
+// The memory limit is 256 MiB, not lower, because the probe child is the
+// host's own binary: a cap that counts a process's writable mappings
+// (RLIMIT_DATA, what the bwrap backend sets) charges the Go runtime's
+// arena index and every cgo thread stack before main runs, and a
+// cgo-linked Go binary does not start under about 128 MiB. 256 MiB leaves
+// room to start and still refuses the 512 MiB allocation.
 const (
 	defaultProbePidLimit      = 64
 	defaultProbeFdLimit       = 32
-	defaultProbeMemLimitBytes = 64 * 1024 * 1024
+	defaultProbeMemLimitBytes = 256 * 1024 * 1024
 )
 
 // parseProbeOutput maps the probe child's single output line to a

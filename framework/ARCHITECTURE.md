@@ -531,8 +531,11 @@ MCP (MCP is an optional module *surface* only). The load-bearing rules:
   defines the P1–P7 conformance suite; per-OS wrapper backends
   (`bwrap`/`sandbox-exec`/Job-Object, build-tagged linux-vs-not) each
   declare which probes they enforce on the host and fail closed on the rest.
-  v1 is honest that P6 (resource caps) and stock macOS/Windows do not fully
-  conform. Untrusted modules simply refuse to run there.
+  The Linux backend (bwrap for namespaces and mounts, `prlimit` inside
+  them for the rlimits) conforms; stock macOS/Windows do not, and
+  untrusted modules simply refuse to run there. On a root host bwrap
+  starts as uid 65534, because the kernel exempts host root from
+  RLIMIT_NPROC whatever namespace it is in.
 - **The probe child is the host binary, dispatched from package init
   (#608).** The suite re-executes `os.Executable()`, so in production the
   probe child is the app itself. `processmodule_probe_child.go`'s `init`

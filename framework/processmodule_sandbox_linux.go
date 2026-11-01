@@ -5,14 +5,16 @@ package framework
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 )
 
 // This file is the Linux arm of the §6 sandbox backend: bubblewrap
-// (`bwrap`) for P1–P5 + P7, with cgroup v2 for P6 left as an operator-
-// provisioning concern (honest: the probe reports P6's status, it does
-// not assume enforcement).
+// (`bwrap`) for P1–P5 + P7 and util-linux `prlimit` for P6, both run as
+// wrapper commands: bwrap builds the namespaces and mounts, then execs
+// prlimit inside them, which sets the rlimits and execs the child.
 //
 // Why bwrap (wrapper-command, not native): golang.org/x/sys ships
 // landlock/seccomp *syscalls* but no BPF assembler (CONFIRMED in the
@@ -21,41 +23,73 @@ import (
 // repo's bash tool wires (`framework/experimental/harness/tool/builtins/bash.go`
 // SandboxFn comment), mirroring it keeps one Linux sandbox story.
 //
-// Honest limits (probed, not assumed, design §6):
-//   - unprivileged userns is disabled on several distros (Debian older
-//     kernels, some RHEL) → bwrap --unshare-user fails → the constructor
-//     reports the backend unavailable or P1/P4 breach → fail closed;
-//   - non-root cgroup v2 needs delegation → P6 is UNREACHABLE in v1
-//     (the cgroup/prlimit wiring is deferred; the probe reports BREACH,
-//     which is the honest enforcement, not a hand-wave).
+// How each probe is met (the probes, not this comment, are the proof):
+//   - P1: a user namespace maps the child to uid/gid 65534. Outside the
+//     namespace the kernel still charges the child to the host user, so
+//     the separation is the namespaces': the child sees only its own pid
+//     namespace and only the mounts below, so it cannot signal or read
+//     the host's processes or files. It is not a separate host account.
+//   - P5: the sandbox root is bwrap's tmpfs, remounted read-only once the
+//     mounts are in place; the system tree is read-only and only scratch
+//     is writable. /etc is NOT mounted, only the two files a dynamically
+//     linked child needs (ld.so.cache, localtime): /etc/passwd and the
+//     rest stay out. There is no /tmp: a module writes to its working
+//     directory, which is scratch.
+//   - P6: RLIMIT_NOFILE, RLIMIT_NPROC and RLIMIT_DATA, set by prlimit
+//     after the user namespace exists, so NPROC counts the sandbox's own
+//     processes and threads only. RLIMIT_DATA caps the child's heap: the
+//     Go runtime fails "out of memory" past it. CPU is not capped (that
+//     needs a delegated cgroup v2; the probe does not check CPU).
+//   - P7: all capabilities dropped and uid 0 unmapped, so setuid(0)
+//     fails; bwrap sets no_new_privs.
+//   - A root host starts bwrap as host uid 65534 (runBwrapAsSandboxUser):
+//     the kernel never applies RLIMIT_NPROC to host root, so P6 needs it.
 //
-// Both ⇒ the backend does not conform ⇒ untrusted fails closed on this
-// host. Fail-closed is correct but means untrusted modules may be
-// unrunnable on Linux until the operator enables userns + delegates a
-// cgroup (design §11 risk 1).
+// Honest limits (probed, not assumed, design §6): unprivileged user
+// namespaces are disabled on some distros and restricted by AppArmor on
+// others. bwrap then fails at spawn, every probe child dies unreported,
+// the backend does not conform, and untrusted modules fail closed on that
+// host (design §11 risk 1).
 
-// bwrapBackend is the Linux SandboxBackend. It wraps the child exec in a
-// bwrap invocation that unshares net/pid/uts, drops all caps, and bind-
-// mounts the system tree read-only with scratch writable. cgroup-based
-// limits (P6) are NOT applied in v1. DeclaredProbes omits P6 and the
-// conformance suite reports it BREACH.
+// bwrap backend defaults for a module spawn whose SandboxOpts leave a
+// limit at zero. Generous enough for an ordinary Go module (NPROC counts
+// threads), tight enough to stop a fork bomb or a runaway heap.
+const (
+	bwrapDefaultPidLimit    = 256
+	bwrapDefaultFdLimit     = 1024
+	bwrapDefaultMemoryBytes = 1 << 30
+	// bwrapSandboxID is the uid and gid the child runs as inside its user
+	// namespace: the conventional "nobody", never the host's own. A root
+	// host also runs bwrap itself as this id (see runBwrapAsSandboxUser).
+	bwrapSandboxID  = "65534"
+	bwrapSandboxUID = 65534
+)
+
+// bwrapBackend is the Linux SandboxBackend: bwrap for the namespaces and
+// mounts, prlimit for the resource caps.
 type bwrapBackend struct {
-	bwrapPath string
-	available bool
-	missing   string
+	bwrapPath   string
+	prlimitPath string
+	available   bool
+	missing     string
 }
 
 // defaultSandboxBackend returns the Linux bwrap backend, or an
-// unavailable instance if bwrap is not on PATH (the caller,
+// unavailable instance if bwrap or prlimit is not on PATH (the caller,
 // HostSandboxBackend, filters the latter to nil).
 func defaultSandboxBackend() SandboxBackend {
 	b := &bwrapBackend{}
-	if p, err := exec.LookPath("bwrap"); err == nil {
-		b.bwrapPath = p
-		b.available = true
-	} else {
+	bw, err := exec.LookPath("bwrap")
+	if err != nil {
 		b.missing = "bwrap not on PATH (install bubblewrap)"
+		return b
 	}
+	pl, err := exec.LookPath("prlimit")
+	if err != nil {
+		b.missing = "prlimit not on PATH (install util-linux)"
+		return b
+	}
+	b.bwrapPath, b.prlimitPath, b.available = bw, pl, true
 	return b
 }
 
@@ -63,10 +97,8 @@ func (b *bwrapBackend) Name() string          { return "bwrap" }
 func (b *bwrapBackend) Available() bool       { return b != nil && b.available }
 func (b *bwrapBackend) MissingReason() string { return b.missing }
 
-// DeclaredProbes is the honest ceiling: bwrap's flags enforce P1–P5 +
-// P7 WHEN unprivileged userns is enabled (probed at construction). P6
-// (cgroup/prlimit) is NOT enforced in v1, omitted from the declaration,
-// and the conformance suite runs P6 anyway and reports BREACH/UNREACHABLE.
+// DeclaredProbes is every probe: each is met by the mechanism named in the
+// file comment, and the conformance run still checks each one on the host.
 func (b *bwrapBackend) DeclaredProbes() []ProbeID {
 	return []ProbeID{
 		ProbeDistinctPrincipal,
@@ -74,14 +106,16 @@ func (b *bwrapBackend) DeclaredProbes() []ProbeID {
 		ProbeNoInheritedFD,
 		ProbeNoNetworkEgress,
 		ProbeFilesystemConfinement,
+		ProbeResourceLimits,
 		ProbeNoPrivReEscalation,
 	}
 }
 
-// Wrap rewrites cmd to run the child under bwrap. The original cmd.Path
-// becomes the last bwrap argument; cmd.Path becomes the bwrap binary.
-// Stdio assignment (cmd.Stdin/Stdout/Stderr set by prepareChildForSpawn)
-// is inherited by bwrap and passed through to the child unchanged.
+// Wrap rewrites cmd to run the child under bwrap and prlimit. The
+// original cmd.Path becomes the last command; cmd.Path becomes the bwrap
+// binary. Stdio and ExtraFiles (the verified artifact fd the runner execs
+// through /dev/fd/3) are inherited by bwrap and prlimit and reach the
+// child unchanged.
 func (b *bwrapBackend) Wrap(cmd *exec.Cmd, opts SandboxOpts) error {
 	if b == nil || !b.available {
 		return errors.New("bwrap unavailable")
@@ -90,47 +124,82 @@ func (b *bwrapBackend) Wrap(cmd *exec.Cmd, opts SandboxOpts) error {
 	if child == "" {
 		return errors.New("bwrap: cmd.Path is empty")
 	}
+	args := append([]string{b.bwrapPath}, bwrapArgs(opts)...)
+	// P6: prlimit runs inside the namespaces, sets the caps, execs the child.
+	args = append(args, b.prlimitPath)
+	args = append(args, prlimitArgs(opts)...)
+	args = append(args, "--", child)
+	args = append(args, cmd.Args[1:]...)
 
-	// Build the bwrap argument vector. Ordering matters: flags first,
-	// then the child + its args at the end (bwrap exec's the last token
-	// chain).
+	if err := runBwrapAsSandboxUser(cmd, opts.ScratchDir); err != nil {
+		return err
+	}
+	cmd.Path = b.bwrapPath
+	cmd.Args = args
+	return nil
+}
+
+// runBwrapAsSandboxUser starts bwrap as host uid/gid 65534 when the host
+// runs as root. The kernel exempts every process whose real uid is root
+// from RLIMIT_NPROC, user namespace or not, and bwrap run by root maps
+// the sandbox's 65534 back to host root, so P6's process cap would never
+// fire. Run as 65534 instead, the child is a separate host account as
+// well as a separate namespace uid. Scratch is the one host path it
+// writes, so this spawn's scratch directory is handed to that account;
+// every other mount source must already be readable by it (a package dir
+// only root can read fails the spawn, closed). A non-root host is left as
+// it is: unprivileged bwrap already maps the child away from it.
+func runBwrapAsSandboxUser(cmd *exec.Cmd, scratch string) error {
+	if os.Geteuid() != 0 {
+		return nil
+	}
+	if scratch != "" {
+		if err := os.Lchown(scratch, bwrapSandboxUID, bwrapSandboxUID); err != nil {
+			return fmt.Errorf("bwrap: hand scratch to uid %d: %w", bwrapSandboxUID, err)
+		}
+	}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: bwrapSandboxUID, Gid: bwrapSandboxUID}
+	return nil
+}
+
+// bwrapArgs is the bwrap flag vector, everything before the command.
+// Ordering matters: bwrap applies the mount operations in order, so the
+// read-only remount of the root comes after every mount point under it
+// exists.
+func bwrapArgs(opts SandboxOpts) []string {
 	args := []string{
-		b.bwrapPath,
-		// P7 + crash isolation: die with the parent, no new privileges.
+		// Crash isolation: die with the parent, own session (no TIOCSTI
+		// into the host's terminal).
 		"--die-with-parent",
 		"--new-session",
-		// P1: distinct PID + UTS namespace (uid mapping needs userns;
-		// if the host disables unprivileged userns, bwrap fails at
-		// Start and the probe records BREACH on P1, honest).
+		// P1: own user namespace, mapped to nobody.
+		"--unshare-user", "--uid", bwrapSandboxID, "--gid", bwrapSandboxID,
 		"--unshare-pid",
 		"--unshare-uts",
-		// P4: no network namespace egress. (When the probe dials, every
-		// connect() fails with ENETUNREACH.)
+		"--unshare-ipc",
+		"--unshare-cgroup-try",
+		// P4: own network namespace with no interfaces but loopback.
 		"--unshare-net",
-		// P5: minimal read-only system tree. /usr, /lib, /bin, /sbin
-		// are ro-bind so the child can exec tools; /etc is ro-bind for
-		// name resolution / passwd lookups the runtime needs. /dev and
-		// /proc are mounted fresh inside the namespace so the child
-		// sees only its own pids.
+		// P5: read-only system tree, enough to exec and dynamically link.
 		"--ro-bind", "/usr", "/usr",
 		"--ro-bind-try", "/lib", "/lib",
 		"--ro-bind-try", "/lib64", "/lib64",
-		"--ro-bind", "/bin", "/bin",
+		"--ro-bind-try", "/lib32", "/lib32",
+		"--ro-bind-try", "/bin", "/bin",
 		"--ro-bind-try", "/sbin", "/sbin",
-		"--ro-bind", "/etc", "/etc",
+		"--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache",
+		"--ro-bind-try", "/etc/localtime", "/etc/localtime",
 		"--proc", "/proc",
 		"--dev", "/dev",
-		"--tmpfs", "/tmp",
 	}
 	// P5: the child's package dir is read-only (the artifact + static
 	// assets live here); scratch is read-write (the child's own work).
 	if opts.PackageDir != "" {
 		abs, _ := filepath.Abs(opts.PackageDir)
 		args = append(args, "--ro-bind", abs, abs)
-	}
-	if opts.ScratchDir != "" {
-		abs, _ := filepath.Abs(opts.ScratchDir)
-		args = append(args, "--bind", abs, abs)
 	}
 	for _, d := range opts.ReadOnlyDirs {
 		if d == "" {
@@ -139,19 +208,37 @@ func (b *bwrapBackend) Wrap(cmd *exec.Cmd, opts SandboxOpts) error {
 		abs, _ := filepath.Abs(d)
 		args = append(args, "--ro-bind-try", abs, abs)
 	}
-	// P7: drop all capabilities. Combined with --new-session this gives
-	// the no-new-privileges property the probe checks (setuid-up fails).
+	if opts.ScratchDir != "" {
+		abs, _ := filepath.Abs(opts.ScratchDir)
+		args = append(args, "--bind", abs, abs, "--chdir", abs)
+	}
+	// P5: nothing outside scratch is writable, the tmpfs root included.
+	args = append(args, "--remount-ro", "/")
+	// P7: drop every capability inside the namespace.
 	args = append(args, "--cap-drop", "ALL")
-	// The child + its original args. bwrap exec's this token chain.
-	args = append(args, child)
-	args = append(args, cmd.Args[1:]...)
+	return args
+}
 
-	cmd.Path = b.bwrapPath
-	cmd.Args = args
-	// Note: P6 (memory/pids/cpu/fd caps) needs cgroup v2 delegation or
-	// prlimit wrapping. NOT applied in v1. The probe reports this
-	// honestly; see DeclaredProbes.
-	return nil
+// prlimitArgs sets the P6 caps, soft and hard alike so the child cannot
+// raise its own soft limit back up.
+func prlimitArgs(opts SandboxOpts) []string {
+	pids := opts.PidLimit
+	if pids <= 0 {
+		pids = bwrapDefaultPidLimit
+	}
+	fds := opts.FdLimit
+	if fds <= 0 {
+		fds = bwrapDefaultFdLimit
+	}
+	mem := opts.MemoryLimitBytes
+	if mem <= 0 {
+		mem = bwrapDefaultMemoryBytes
+	}
+	return []string{
+		fmt.Sprintf("--nofile=%d:%d", fds, fds),
+		fmt.Sprintf("--nproc=%d:%d", pids, pids),
+		fmt.Sprintf("--data=%d:%d", mem, mem),
+	}
 }
 
 // String renders the backend for logs.
@@ -159,5 +246,5 @@ func (b *bwrapBackend) String() string {
 	if b == nil {
 		return "bwrap(nil)"
 	}
-	return fmt.Sprintf("bwrap(%s, available=%v)", b.bwrapPath, b.available)
+	return fmt.Sprintf("bwrap(%s, prlimit=%s, available=%v)", b.bwrapPath, b.prlimitPath, b.available)
 }
