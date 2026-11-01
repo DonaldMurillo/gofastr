@@ -78,7 +78,14 @@ read`. Each part is a phrase, so a catalog translates the whole message.
 `JSONTrailingData()` for more bytes after the one value) gives you the
 same phrase for a decode you run yourself: pass it as the
 `{{detail}}` of your own frame, or call `.Error()` for English (a
-JSON-RPC message).
+JSON-RPC message). The framework's own JSON decodes outside a body do
+the same: a `?where=` tree (`filter.where_invalid_json`,
+`filter.where_invalid_node`), a `?cursor=` token
+(`pagination.cursor_token`, which a token whose JSON is the wrong shape
+now answers too, in place of the decoder's text naming the token's Go
+struct), and a `_batch` envelope's key refusals (`invalid_body`, its
+detail one of `error.envelope.not_object`, `malformed_key`,
+`duplicate_key`, `unknown_key`).
 
 ### router
 

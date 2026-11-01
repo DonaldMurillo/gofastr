@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -67,7 +68,7 @@ func checkEnvelopeKeys(raw []byte, allowed []string) error {
 		return bodyDecodeError(err)
 	}
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
-		return fmt.Errorf("invalid JSON: request body must be a JSON object")
+		return envelopeError(reasonEnvelopeNotObject, nil)
 	}
 	seen := map[string]bool{}
 	for dec.More() {
@@ -77,15 +78,18 @@ func checkEnvelopeKeys(raw []byte, allowed []string) error {
 		}
 		key, ok := kt.(string)
 		if !ok {
-			return fmt.Errorf("invalid JSON: malformed object key")
+			return envelopeError(reasonEnvelopeBadKey, nil)
 		}
 		if seen[key] {
-			return fmt.Errorf("duplicate key %q in request body", key)
+			return envelopeError(reasonEnvelopeDuplicateKey, map[string]any{"key": strconv.Quote(key)})
 		}
 		seen[key] = true
 		if !slices.Contains(allowed, key) {
-			return fmt.Errorf("unknown key %q in request body (expected %s)",
-				key, strings.Join(allowed, ", "))
+			quoted := make([]string, len(allowed))
+			for i, a := range allowed {
+				quoted[i] = strconv.Quote(a)
+			}
+			return envelopeError(reasonEnvelopeUnknownKey, map[string]any{"key": strconv.Quote(key), "expected": strings.Join(quoted, ", ")})
 		}
 		var skip json.RawMessage
 		if err := dec.Decode(&skip); err != nil {
@@ -93,6 +97,13 @@ func checkEnvelopeKeys(raw []byte, allowed []string) error {
 		}
 	}
 	return nil
+}
+
+// envelopeError is checkEnvelopeKeys' refusal: invalid_body, its detail
+// the phrase naming what is wrong with the envelope, so the message
+// translates and the reason code a client branches on stays invalid_body.
+func envelopeError(detail i18n.Phrase, params map[string]any) error {
+	return &i18n.Error{Reason: reasonInvalidBody, Params: map[string]any{"detail": i18n.NewError(detail, params)}}
 }
 
 // errBatchAborted is the sentinel returned from inside inTx when a batch

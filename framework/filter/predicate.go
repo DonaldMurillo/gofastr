@@ -102,7 +102,7 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 	idx := newPredicateFieldIndex(fields)
 	var msg json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
-		return nil, &i18n.Error{Reason: reasonWhereInvalidJSON, Params: map[string]any{"detail": err.Error()}, Err: err}
+		return nil, &i18n.Error{Reason: reasonWhereInvalidJSON, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 	}
 	count := 0
 	p, err := parseNode(msg, idx, 1, &count)
@@ -131,7 +131,7 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 	// case-folded member names on the node itself.
 	var rp rawPred
 	if err := handler.UnmarshalStrict(msg, &rp); err != nil {
-		return Predicate{}, &i18n.Error{Reason: reasonWhereInvalidNode, Params: map[string]any{"detail": err.Error()}, Err: err}
+		return Predicate{}, &i18n.Error{Reason: reasonWhereInvalidNode, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 	}
 
 	// A member sent empty counts as sent: {"and":[],"field":"x"} is not
