@@ -1246,7 +1246,10 @@ one `IN (...)` only while `f.SameINList(next)` holds.
 
 **A filter key is sent once.** A key other than `_in` repeated in one
 query string (`?price_lt=100&price_lt=5`) is a **400** naming the key,
-`LenientFilters` included. Before, the first value ran and the rest were
+`LenientFilters` included (`filter.repeated_filter`). A nested relation
+filter follows the same rule: `?author.age_lt=100&author.age_lt=5`, or
+the bracket form `?author.age[lt]=…` twice, is the same 400 naming the
+dotted key. Before, the first value ran and the rest were
 dropped without a word, so the result was wider than asked and a proxy
 that reads the last value saw a different query from the one the
 database ran. Only `_in` reads every occurrence (below). A field whose

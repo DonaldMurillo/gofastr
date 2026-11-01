@@ -2,11 +2,14 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -216,5 +219,42 @@ func TestMCPListToolSpellsCollidingKeys(t *testing.T) {
 	}
 	if gotQuery.Has("stage_in") {
 		t.Fatalf("forwarded the ambiguous bare key: %v", gotQuery)
+	}
+}
+
+// ?rel.field= repeated with a scalar operator is the top-level parser's
+// filter.repeated_filter, the bracket form included: keeping values[0]
+// ran ?author.id_lt=100&author.id_lt=5 as id < 100 while a proxy
+// reading the last occurrence saw < 5. A repeated IN key still reads
+// every occurrence.
+func TestNestedFilterRepeatedScalarKeyRefused(t *testing.T) {
+	users := mkEntity("users", "", bracketTargetFields())
+	reg := versionedReg{m: map[string]*entity.Entity{"users|": users}}
+	posts := mkRelEntity("posts", "", "users")
+	for _, key := range []string{"author.id_lt", "author.id[lt]", "author.stage", "author.stage[eq]", "author.stage_in[eq]", "author.opt_in"} {
+		v1, v2 := "100", "5"
+		if key == "author.opt_in" {
+			v1, v2 = "true", "false"
+		}
+		got, err := parseNestedFiltersValues(url.Values{key: {v1, v2}}, posts, reg)
+		if err == nil {
+			t.Fatalf("?%s twice: accepted as %+v; a repeated scalar key must be refused", key, got)
+		}
+		var ie *i18n.Error
+		if !errors.As(err, &ie) || ie.Reason.Key() != "filter.repeated_filter" {
+			t.Fatalf("?%s twice: %v, want filter.repeated_filter", key, err)
+		}
+		if !strings.Contains(err.Error(), strconv.Quote(key)) || !strings.Contains(err.Error(), "2 times") {
+			t.Fatalf("?%s twice: %q does not name the key and its count", key, err)
+		}
+	}
+	got, err := parseNestedFiltersValues(url.Values{"author.stage[in]": {"a", "b,c"}, "author.id_gt": {"1"}}, posts, reg)
+	if err != nil {
+		t.Fatalf("repeated IN key: %v", err)
+	}
+	for _, nf := range got {
+		if nf.Op == filter.OpIn && len(nf.Values) != 3 {
+			t.Fatalf("repeated IN key kept %v, want every occurrence", nf.Values)
+		}
 	}
 }
