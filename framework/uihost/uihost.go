@@ -4462,12 +4462,12 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" && staticServable(cleanPath) {
-				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				// A directory is no static file: it falls through to the
 				// screens, as the static-dir branch above does. Handed to
 				// http.ServeFileFS it answered a 301 to "docs/", whose
 				// trailing slash fs.ValidPath refuses, so a screen sharing
 				// the directory's name was a redirect into a 404.
+				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					devStaticNoStore(w)
 					// A versioned URL is served from the handle it was
