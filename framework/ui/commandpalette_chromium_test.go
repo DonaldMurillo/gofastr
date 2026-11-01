@@ -656,7 +656,9 @@ func TestPaletteHoldsItsHeightWhileTyping(t *testing.T) {
 	srv := paletteTestServer(t)
 	ctx := paletteChromeCtx(t, 1280, 800)
 	openPalette(t, ctx, srv.URL, 1280, 800)
-	const height = `document.querySelector('[data-cui-comp="ui-cmd-palette"]').getBoundingClientRect().height`
+	// offsetHeight, not getBoundingClientRect: the overlay scales in from
+	// 0.96, and a rect read mid-animation (a slow CI runner) reads 461 of 480.
+	const height = `document.querySelector('[data-cui-comp="ui-cmd-palette"]').offsetHeight`
 	var full, one, none float64
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(height, &full),
