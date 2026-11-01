@@ -51,6 +51,7 @@ func isFormRequest(r *http.Request) bool {
 // server-side in the handler from a configured default.
 func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize func(string) (string, error)) (email, password string, form bool, ok bool) {
 	if isFormRequest(r) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 		if !parseAuthFormOrRefuse(w, r) {
 			return "", "", true, false
 		}
@@ -95,16 +96,17 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize 
 // no auth form takes one.
 var errAuthFormFile = errors.New("auth: form carries a file part")
 
-// parseAuthForm caps the body at maxAuthBodyBytes and parses it into
-// r.PostForm, urlencoded or multipart. ParseForm alone never reads a
-// multipart body, so a multipart login used to arrive with no fields at
-// all. Multipart values land in r.PostForm too (ParseMultipartForm copies
-// them there), so the duplicate-field check and PostFormValue read both
-// encodings the same way. A file part is refused and its temporary files
-// removed: no auth form takes a file, and the body cap means nothing
-// reaches disk in the first place.
-func parseAuthForm(w http.ResponseWriter, r *http.Request) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+// parseAuthForm parses the body into r.PostForm, urlencoded or multipart.
+// The caller caps r.Body with http.MaxBytesReader(w, r.Body,
+// maxAuthBodyBytes) first, on its own path, where the unboundedbody
+// analyzer looks for it. ParseForm alone never reads a multipart body,
+// so a multipart login used to arrive with no fields at all. Multipart
+// values land in r.PostForm too (ParseMultipartForm copies them there),
+// so the duplicate-field check and PostFormValue read both encodings the
+// same way. A file part is refused and its temporary files removed: no
+// auth form takes a file, and with the body capped at maxAuthBodyBytes,
+// which is also the in-memory budget, nothing reaches disk anyway.
+func parseAuthForm(r *http.Request) error {
 	if bareContentType(r) != "multipart/form-data" {
 		return r.ParseForm()
 	}
@@ -119,9 +121,9 @@ func parseAuthForm(w http.ResponseWriter, r *http.Request) error {
 }
 
 // parseAuthFormOrRefuse runs parseAuthForm and, on failure, writes 413
-// for an over-cap body and 400 otherwise.
+// for an over-cap body and 400 otherwise. The caller caps r.Body first.
 func parseAuthFormOrRefuse(w http.ResponseWriter, r *http.Request) bool {
-	err := parseAuthForm(w, r)
+	err := parseAuthForm(r)
 	if err == nil {
 		return true
 	}
@@ -252,7 +254,8 @@ func emailWithinLimit(w http.ResponseWriter, r *http.Request, email string) bool
 func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) string {
 	next := r.URL.Query().Get("next")
 	if next == "" {
-		if err := parseAuthForm(w, r); err == nil {
+		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+		if err := parseAuthForm(r); err == nil {
 			next = r.PostFormValue("next")
 		}
 	}
