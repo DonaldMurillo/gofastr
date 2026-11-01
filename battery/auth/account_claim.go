@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 )
 
@@ -37,7 +38,8 @@ type PasswordClearer interface {
 //     passkey registration) finds its session gone when it re-checks after
 //     writing, even when its write lands after the steps below read the
 //     account;
-//  2. every OAuth link is removed (AccountLister + AccountUnlinker);
+//  2. every OAuth link is removed (AccountLister + AccountUnlinker), and
+//     the provider tokens stored for the account are deleted;
 //  3. with clearPassword, the password is removed (PasswordClearer, or
 //     PasswordSetter with the placeholder hash);
 //  4. every passkey is removed and every API token issued through
@@ -69,6 +71,7 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 	// A missing extension is configuration, refused before any step runs.
 	var lister AccountLister
 	var unlinker AccountUnlinker
+	var unlinkedProviders []string
 	if _, isLinker := store.(OAuthLinker); isLinker {
 		var lok, uok bool
 		lister, lok = store.(AccountLister)
@@ -105,8 +108,13 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 				continue
 			}
 			unlinked++
+			unlinkedProviders = append(unlinkedProviders, a.Provider)
 		}
 	}
+	// The squatter's provider tokens go with their links, as on unlink.
+	// A failure here does not stop the purges below: the claim fails
+	// after them, before the mark, so the next proof retries it.
+	tokenErr := m.dropProviderTokens(ctx, userID, unlinkedProviders)
 
 	if clearPassword {
 		if err := clearOrPlaceholder(ctx, clearer, setter, userID); err != nil {
@@ -125,6 +133,9 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 	late, err := purger.DeleteByUser(ctx, userID)
 	if err != nil {
 		failed = append(failed, fmt.Errorf("revoke sessions: %w", err))
+	}
+	if tokenErr != nil {
+		failed = append(failed, fmt.Errorf("drop provider tokens: %w", tokenErr))
 	}
 	if len(failed) > 0 {
 		return errors.Join(failed...)
@@ -162,4 +173,31 @@ func clearOrPlaceholder(ctx context.Context, clearer PasswordClearer, setter Pas
 		return err
 	}
 	return setter.SetPassword(ctx, userID, placeholder)
+}
+
+// dropProviderTokens deletes the OAuthTokenStore rows a claimed account
+// holds: one per provider the claim unlinked, and one per provider the
+// OAuth2 plugin registers. The registered set is what makes a retry
+// complete: once the links are gone the claim cannot list them again,
+// and a row left by a failed earlier attempt still has to go. Every
+// delete runs; the failures come back joined. A wiring with no OAuth2
+// plugin, or no TokenStore, never stored provider tokens.
+func (m *AuthManager) dropProviderTokens(ctx context.Context, userID string, unlinked []string) error {
+	op, err := PluginAs[*OAuth2Plugin](m, "oauth2")
+	if err != nil {
+		return nil
+	}
+	ts := op.TokenStore()
+	if ts == nil {
+		return nil
+	}
+	keys := append(op.providerKeys(), unlinked...)
+	slices.Sort(keys)
+	var errs []error
+	for _, key := range slices.Compact(keys) {
+		if err := ts.Delete(ctx, userID, key); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", key, err))
+		}
+	}
+	return errors.Join(errs...)
 }

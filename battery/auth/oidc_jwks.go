@@ -61,9 +61,24 @@ type jwksCache struct {
 	httpClient *http.Client
 	ttl        time.Duration
 
+	// mu guards the fields below. It is never held across the network:
+	// fetches run outside it, admitted one at a time by fetchSlot.
 	mu        sync.Mutex
 	set       *jwksSet
 	fetchedAt time.Time
+	// retryAt is the earliest time a refresh is attempted again after one
+	// failed while a stale set was still usable. Without it an IdP outage
+	// turned every login into a JWKS fetch, each one paying the full HTTP
+	// timeout before falling back to the stale set it already had.
+	retryAt time.Time
+	// gen counts completed fetches and lastErr holds the last one's
+	// failure, so a caller that waited for the slot reuses the outcome of
+	// the fetch it waited behind instead of repeating it.
+	gen     uint64
+	lastErr error
+	// fetchSlot is a one-slot semaphore admitting a single fetch at a time.
+	// Created lazily under mu.
+	fetchSlot chan struct{}
 	// forcedByKid rate-limits rotation refetches PER kid. A single global
 	// timestamp would let one unknown kid's spent slot block every other
 	// kid's refetch for the whole window, so a token signed by a freshly
@@ -77,38 +92,72 @@ type jwksCache struct {
 // small; the cap is a belt-and-suspenders guard against unbounded growth.
 const maxForcedKids = 128
 
+// jwksRetryBackoff is how long a failed refresh with a usable stale set
+// waits before the next attempt.
+const jwksRetryBackoff = time.Minute
+
+// errJWKSFetchBusy reports that another caller's fetch holds the slot and
+// this caller chose not to wait for it.
+var errJWKSFetchBusy = errors.New("oidc: jwks fetch already in flight")
+
 // getKey resolves the signing key for kid, fetching/refreshing the JWKS as
 // needed. A forced refetch on an unknown kid is rate-limited to once per
 // forcedRefetchGap so a flood of unknown-kid tokens cannot hammer the IdP.
+//
+// With no key set at all a caller waits (bounded by its ctx) for a fetch.
+// With a stale but usable set it never waits: it starts a refresh only
+// when none is in flight and the last failure's backoff has passed, and
+// otherwise verifies against the stale set.
 func (c *jwksCache) getKey(ctx context.Context, jwksURI, kid string) (oidcKey, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	now := time.Now()
-	if c.set == nil || now.Sub(c.fetchedAt) > c.ttl {
-		if err := c.fetchLocked(ctx, jwksURI); err != nil {
-			// Fall back to a stale set if we have one; otherwise fail.
-			if c.set == nil {
-				return oidcKey{}, err
-			}
+	c.mu.Lock()
+	set := c.set
+	stale := set == nil || now.Sub(c.fetchedAt) > c.ttl
+	backingOff := now.Before(c.retryAt)
+	c.mu.Unlock()
+
+	switch {
+	case set == nil:
+		if err := c.refresh(ctx, jwksURI, true); err != nil {
+			return oidcKey{}, err
 		}
+	case stale && !backingOff:
+		// Best-effort: on failure, or with a fetch already in flight, the
+		// stale set below still answers.
+		_ = c.refresh(ctx, jwksURI, false)
 	}
-	if k, ok := c.set.lookup(kid); ok {
+	c.mu.Lock()
+	set = c.set
+	c.mu.Unlock()
+	if set == nil {
+		return oidcKey{}, errors.New("oidc: jwks unavailable")
+	}
+	if k, ok := set.lookup(kid); ok {
 		return k, nil
 	}
 	// Unknown kid: a key rotation may have just published it. Force one
 	// refetch, rate-limited PER kid so repeated attempts for one kid don't
 	// amplify to the IdP yet a different (legitimately rotated) kid is never
-	// blocked by another kid's spent slot.
-	if last, seen := c.forcedByKid[kid]; !seen || now.Sub(last) >= forcedRefetchGap {
+	// blocked by another kid's spent slot. A refresh that just failed holds
+	// every kid off until its backoff passes.
+	c.mu.Lock()
+	last, seen := c.forcedByKid[kid]
+	force := (!seen || now.Sub(last) >= forcedRefetchGap) && !now.Before(c.retryAt)
+	if force {
 		if c.forcedByKid == nil || len(c.forcedByKid) >= maxForcedKids {
 			// Reset rather than grow without bound. kids aren't attacker-
 			// controlled, so this only ever trips under extreme rotation.
 			c.forcedByKid = make(map[string]time.Time, 8)
 		}
 		c.forcedByKid[kid] = now
-		if err := c.fetchLocked(ctx, jwksURI); err == nil {
-			if k, ok := c.set.lookup(kid); ok {
+	}
+	c.mu.Unlock()
+	if force {
+		if err := c.refresh(ctx, jwksURI, true); err == nil {
+			c.mu.Lock()
+			set = c.set
+			c.mu.Unlock()
+			if k, ok := set.lookup(kid); ok {
 				return k, nil
 			}
 		}
@@ -116,31 +165,83 @@ func (c *jwksCache) getKey(ctx context.Context, jwksURI, kid string) (oidcKey, e
 	return oidcKey{}, fmt.Errorf("oidc: no signing key found for kid %q", kid)
 }
 
-func (c *jwksCache) fetchLocked(ctx context.Context, jwksURI string) error {
+// refresh fetches the key set once, outside mu. wait=false gives up at once
+// when another fetch holds the slot; wait=true queues for it, bounded by
+// ctx, and reuses the outcome of a fetch that completed while it waited.
+func (c *jwksCache) refresh(ctx context.Context, jwksURI string, wait bool) error {
+	c.mu.Lock()
+	if c.fetchSlot == nil {
+		c.fetchSlot = make(chan struct{}, 1)
+	}
+	slot := c.fetchSlot
+	gen := c.gen
+	c.mu.Unlock()
+
+	if wait {
+		select {
+		case slot <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	} else {
+		select {
+		case slot <- struct{}{}:
+		default:
+			return errJWKSFetchBusy
+		}
+	}
+	defer func() { <-slot }()
+
+	c.mu.Lock()
+	if c.gen != gen {
+		err := c.lastErr
+		c.mu.Unlock()
+		return err
+	}
+	c.mu.Unlock()
+
+	set, err := c.fetch(ctx, jwksURI)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err != nil {
+		if ctx.Err() != nil {
+			// This caller went away; that says nothing about the IdP, so
+			// no backoff and no shared outcome for waiters to reuse.
+			return err
+		}
+		c.gen++
+		c.lastErr = err
+		c.retryAt = time.Now().Add(jwksRetryBackoff)
+		return err
+	}
+	c.gen++
+	c.lastErr = nil
+	c.set = set
+	c.fetchedAt = time.Now()
+	c.retryAt = time.Time{}
+	return nil
+}
+
+func (c *jwksCache) fetch(ctx context.Context, jwksURI string) (*jwksSet, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURI, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("oidc: jwks returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("oidc: jwks returned %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, jwksMaxBody))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	set, err := parseJWKS(body)
-	if err != nil {
-		return err
-	}
-	c.set = set
-	c.fetchedAt = time.Now()
-	return nil
+	return parseJWKS(body)
 }
 
 // rawJWK is the JSON shape of a single JWK.

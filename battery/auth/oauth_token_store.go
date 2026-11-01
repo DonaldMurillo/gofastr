@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
@@ -101,8 +103,11 @@ type OAuthTokenRecord struct {
 	// RefreshToken is the long-lived token used to mint new access tokens.
 	// May be empty when the provider did not issue one.
 	RefreshToken string
-	// Expiry is when AccessToken stops being valid. Zero means "unknown";
-	// callers treat a zero expiry as already-expired so a refresh is forced.
+	// Expiry is when AccessToken stops being valid. Zero means the provider
+	// stated no expiry (no expires_in, as with GitHub's classic OAuth-app
+	// tokens, which never expire): ValidOAuthToken returns such a token as
+	// it is, and a caller whose provider call is refused with it calls
+	// RefreshOAuthToken (or re-authenticates when no refresh token exists).
 	Expiry time.Time
 }
 
@@ -409,9 +414,24 @@ const refreshSkew = 60 * time.Second
 // token for a fresh access token via the provider, and writes the result
 // back to the store. It returns the updated record.
 //
+// The row is read and written under provider.Name(). The login callback
+// stores a row under the provider's REGISTRY key, the {provider} of
+// /auth/oauth/{provider}; when that differs from Name() (an OIDCProvider
+// registered as "keycloak" reports Name() "oidc") this function finds no
+// row. (*OAuth2Plugin).RefreshOAuthToken takes the registry key and is the
+// spelling that always matches the callback.
+//
 // The provider must implement OAuthTokenRefresher (the built-in Google and
 // GitHub providers do). If the stored token has no refresh token, refresh
 // is impossible and an error is returned, the user must re-authenticate.
+//
+// Concurrent refreshes of one (user, provider) in this process run one at
+// a time, and one that finds the row already moved on by the refresh it
+// waited behind returns that record without spending the refresh token
+// again: under a provider with single-use refresh tokens a second POST of
+// the same token fails, or revokes the grant. When the exchange fails and
+// the row has meanwhile moved on (another replica refreshed first), the
+// newer record is returned instead of the error.
 //
 // The final write is a compare-and-swap on the refresh token refreshed
 // FROM (SaveIfRefreshUnchanged): when a concurrent login callback
@@ -422,28 +442,156 @@ const refreshSkew = 60 * time.Second
 // resolved session), never a value taken from request input. Passing a
 // client-supplied id is an IDOR, it reads/refreshes another user's tokens.
 func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, userID string) (OAuthTokenRecord, error) {
-	if store == nil {
-		return OAuthTokenRecord{}, errors.New("auth: oauth token store not configured")
+	if err := checkTokenArgs(store, provider); err != nil {
+		return OAuthTokenRecord{}, err
 	}
-	if provider == nil {
-		return OAuthTokenRecord{}, errors.New("auth: nil oauth provider")
-	}
-	refresher, ok := provider.(OAuthTokenRefresher)
-	if !ok {
-		return OAuthTokenRecord{}, fmt.Errorf("auth: provider %q does not support token refresh", provider.Name())
-	}
+	return refreshOAuthToken(ctx, store, provider, provider.Name(), userID)
+}
 
-	rec, err := store.Get(ctx, userID, provider.Name())
+// ValidOAuthToken returns a currently-valid access token for the user,
+// refreshing transparently when the stored token is expired or within
+// refreshSkew of expiry. A token stored with a zero Expiry (the provider
+// stated none, GitHub's classic tokens) is returned as it is. It is the
+// recommended entry point for code making calls on the user's behalf.
+//
+// Like RefreshOAuthToken it reads the row under provider.Name(); see there
+// for when to use (*OAuth2Plugin).ValidOAuthToken instead.
+//
+// SECURITY: as with RefreshOAuthToken, userID MUST be the authenticated
+// principal's id, never request-supplied, or it is an IDOR.
+func ValidOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, userID string) (string, error) {
+	if err := checkTokenArgs(store, provider); err != nil {
+		return "", err
+	}
+	return validOAuthToken(ctx, store, provider, provider.Name(), userID)
+}
+
+// ValidOAuthToken is the package ValidOAuthToken for the provider
+// registered under providerKey (the {provider} of /auth/oauth/{provider}),
+// on the plugin's OAuth2Config.TokenStore. It reads the row under the key
+// the login callback stored it under, whatever the provider's Name().
+//
+// SECURITY: userID MUST be the authenticated principal's id.
+func (p *OAuth2Plugin) ValidOAuthToken(ctx context.Context, providerKey, userID string) (string, error) {
+	provider, err := p.tokenProvider(providerKey)
+	if err != nil {
+		return "", err
+	}
+	return validOAuthToken(ctx, p.tokenStore, provider, providerKey, userID)
+}
+
+// RefreshOAuthToken is the package RefreshOAuthToken for the provider
+// registered under providerKey, on the plugin's OAuth2Config.TokenStore.
+//
+// SECURITY: userID MUST be the authenticated principal's id.
+func (p *OAuth2Plugin) RefreshOAuthToken(ctx context.Context, providerKey, userID string) (OAuthTokenRecord, error) {
+	provider, err := p.tokenProvider(providerKey)
 	if err != nil {
 		return OAuthTokenRecord{}, err
 	}
+	return refreshOAuthToken(ctx, p.tokenStore, provider, providerKey, userID)
+}
+
+// tokenProvider resolves providerKey for the plugin's token methods.
+func (p *OAuth2Plugin) tokenProvider(providerKey string) (OAuth2Provider, error) {
+	provider, ok := p.providers[providerKey]
+	if !ok {
+		return nil, fmt.Errorf("auth: no oauth provider registered under %q", providerKey)
+	}
+	if err := checkTokenArgs(p.tokenStore, provider); err != nil {
+		return nil, err
+	}
+	return provider, nil
+}
+
+func checkTokenArgs(store OAuthTokenStore, provider OAuth2Provider) error {
+	if store == nil {
+		return errors.New("auth: oauth token store not configured")
+	}
+	if provider == nil {
+		return errors.New("auth: nil oauth provider")
+	}
+	return nil
+}
+
+// tokenUsable reports whether rec's access token can be used as it is.
+func tokenUsable(rec OAuthTokenRecord) bool {
+	return rec.AccessToken != "" && (rec.Expiry.IsZero() || time.Until(rec.Expiry) > refreshSkew)
+}
+
+func validOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, key, userID string) (string, error) {
+	rec, err := store.Get(ctx, userID, key)
+	if err != nil {
+		return "", err
+	}
+	if tokenUsable(rec) {
+		return rec.AccessToken, nil
+	}
+	refreshed, err := refreshFrom(ctx, store, provider, key, userID, rec)
+	if err != nil {
+		return "", err
+	}
+	return refreshed.AccessToken, nil
+}
+
+func refreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, key, userID string) (OAuthTokenRecord, error) {
+	if _, ok := provider.(OAuthTokenRefresher); !ok {
+		return OAuthTokenRecord{}, fmt.Errorf("auth: provider %q does not support token refresh", key)
+	}
+	seen, err := store.Get(ctx, userID, key)
+	if err != nil {
+		return OAuthTokenRecord{}, err
+	}
+	return refreshFrom(ctx, store, provider, key, userID, seen)
+}
+
+// tokenMovedOn reports whether cur is a different grant than seen: another
+// refresh or a login stored it after seen was read.
+func tokenMovedOn(seen, cur OAuthTokenRecord) bool {
+	return !sameSecret(cur.RefreshToken, seen.RefreshToken) || !sameSecret(cur.AccessToken, seen.AccessToken) ||
+		cur.Expiry.After(seen.Expiry)
+}
+
+// sameSecret compares two stored credentials in constant time.
+func sameSecret(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// refreshFrom refreshes the row the caller read as seen, one refresh per
+// (user, provider) at a time in this process.
+func refreshFrom(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, key, userID string, seen OAuthTokenRecord) (OAuthTokenRecord, error) {
+	refresher, ok := provider.(OAuthTokenRefresher)
+	if !ok {
+		return OAuthTokenRecord{}, fmt.Errorf("auth: provider %q does not support token refresh", key)
+	}
+	release, err := oauthRefreshGates.acquire(ctx, oauthRefreshKey{userID: userID, provider: key})
+	if err != nil {
+		return OAuthTokenRecord{}, err
+	}
+	defer release()
+
+	rec, err := store.Get(ctx, userID, key)
+	if err != nil {
+		return OAuthTokenRecord{}, err
+	}
+	if tokenMovedOn(seen, rec) {
+		// The refresh this call waited behind (or a login) already
+		// replaced the grant: spending the refresh token again would
+		// fail under rotation, or revoke the grant.
+		return rec, nil
+	}
 	if rec.RefreshToken == "" {
-		return OAuthTokenRecord{}, fmt.Errorf("auth: no refresh token stored for user %q provider %q", userID, provider.Name())
+		return OAuthTokenRecord{}, fmt.Errorf("auth: no refresh token stored for user %q provider %q", userID, key)
 	}
 
 	refreshedFrom := rec.RefreshToken
 	tok, err := refresher.RefreshToken(ctx, rec.RefreshToken)
 	if err != nil {
+		// Another replica may have spent this refresh token first; its
+		// newer record is then the answer, not the failure.
+		if cur, gerr := store.Get(ctx, userID, key); gerr == nil && tokenMovedOn(rec, cur) {
+			return cur, nil
+		}
 		return OAuthTokenRecord{}, fmt.Errorf("auth: refresh failed: %w", err)
 	}
 
@@ -471,7 +619,7 @@ func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAut
 		return OAuthTokenRecord{}, err
 	}
 	if !saved {
-		current, err := store.Get(ctx, userID, provider.Name())
+		current, err := store.Get(ctx, userID, key)
 		if err != nil {
 			// The row vanished (unlink) rather than moved on; hand back
 			// our refreshed record rather than failing the caller.
@@ -482,30 +630,55 @@ func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAut
 	return rec, nil
 }
 
-// ValidOAuthToken returns a currently-valid access token for the user,
-// refreshing transparently when the stored token is expired or within
-// refreshSkew of expiry. It is the recommended entry point for code making
-// calls on the user's behalf.
-//
-// SECURITY: as with RefreshOAuthToken, userID MUST be the authenticated
-// principal's id, never request-supplied, or it is an IDOR.
-func ValidOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAuth2Provider, userID string) (string, error) {
-	if store == nil {
-		return "", errors.New("auth: oauth token store not configured")
+// oauthRefreshKey names one stored grant for the refresh gate.
+type oauthRefreshKey struct {
+	userID   string
+	provider string
+}
+
+// oauthRefreshGate admits one refresh per (user, provider) at a time in
+// this process. Each key's slot lives only while someone holds or waits
+// for it, so the map stays as small as the refreshes in flight, and a
+// refresh for one user never waits on another's.
+type oauthRefreshGate struct {
+	mu    sync.Mutex
+	slots map[oauthRefreshKey]*oauthRefreshSlot
+}
+
+type oauthRefreshSlot struct {
+	ch   chan struct{}
+	refs int
+}
+
+var oauthRefreshGates = &oauthRefreshGate{slots: map[oauthRefreshKey]*oauthRefreshSlot{}}
+
+// acquire waits, bounded by ctx, for k's slot and returns its release.
+func (g *oauthRefreshGate) acquire(ctx context.Context, k oauthRefreshKey) (func(), error) {
+	g.mu.Lock()
+	s := g.slots[k]
+	if s == nil {
+		s = &oauthRefreshSlot{ch: make(chan struct{}, 1)}
+		g.slots[k] = s
 	}
-	if provider == nil {
-		return "", errors.New("auth: nil oauth provider")
+	s.refs++
+	g.mu.Unlock()
+	select {
+	case s.ch <- struct{}{}:
+		return func() {
+			<-s.ch
+			g.drop(k, s)
+		}, nil
+	case <-ctx.Done():
+		g.drop(k, s)
+		return nil, ctx.Err()
 	}
-	rec, err := store.Get(ctx, userID, provider.Name())
-	if err != nil {
-		return "", err
+}
+
+func (g *oauthRefreshGate) drop(k oauthRefreshKey, s *oauthRefreshSlot) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s.refs--
+	if s.refs == 0 {
+		delete(g.slots, k)
 	}
-	if rec.AccessToken != "" && time.Until(rec.Expiry) > refreshSkew {
-		return rec.AccessToken, nil
-	}
-	refreshed, err := RefreshOAuthToken(ctx, store, provider, userID)
-	if err != nil {
-		return "", err
-	}
-	return refreshed.AccessToken, nil
 }
