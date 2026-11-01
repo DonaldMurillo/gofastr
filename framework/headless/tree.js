@@ -185,15 +185,19 @@
     }
     // Type-ahead: a printable single-character key jumps to the next
     // visible treeitem whose label starts with the accumulated
-    // prefix.
+    // prefix; the same letter again moves to the next one starting
+    // with it.
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const now = Date.now();
       if (now - typeAt > 800) typeBuf = '';
       typeAt = now;
       typeBuf += e.key.toLowerCase();
+      // One letter pressed again ("b", "b") cycles through the items
+      // that start with it, as a listbox does; no label starts "bb".
+      const q = typeBuf.split('').every(function (c) { return c === typeBuf[0]; }) ? typeBuf[0] : typeBuf;
       for (let i = 1; i <= rows.length; i++) {
         const cand = rows[(idx + i) % rows.length];
-        if (itemLabel(cand).startsWith(typeBuf)) {
+        if (itemLabel(cand).startsWith(q)) {
           e.preventDefault();
           focusItem(tree, cand);
           return;

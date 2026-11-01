@@ -222,7 +222,17 @@
     const scope = root && root.querySelectorAll ? root : document;
     const rep = within(scope, '[data-hui-repeater]')[0] ||
       (scope.closest ? scope.closest('[data-hui-repeater]') : null);
-    if (!rep || repOp.root == null) { repOp = null; return; }
+    if (repOp.root == null) { repOp = null; return; }
+    // The record belongs to the answer, not to the next insertion: an
+    // unrelated node landing while the request is in flight (a toast,
+    // another region's poll) leaves it while the clicked repeater is
+    // still on the page; once that repeater has gone (the answer
+    // replaced it in a swap this pass did not see) the record goes too.
+    const pending = repOp.root.isConnected;
+    if (!rep || (pending && rep !== repOp.root)) {
+      if (!pending) repOp = null;
+      return;
+    }
     if (repOp.action === 'remove' && repOp.index >= 0) {
       const rows = rep.querySelectorAll('[data-hui-repeater-index]');
       const target = rows[repOp.index] || rows[rows.length - 1];

@@ -306,8 +306,44 @@
 
   // The target stays readable and selectable; without script the page
   // promises nothing about the clipboard. The words (button label,
-  // copied label, status sentence with {name}) travel on the wrapper
-  // from Strings.
+  // copied label, status sentence with {name}, the failure sentence)
+  // travel on the wrapper from Strings. Success is the clipboard's
+  // answer, not the click: the copied label, the status sentence and
+  // the toast wait for writeText to resolve, and a refused or missing
+  // clipboard (a permission prompt declined, an insecure origin) says
+  // the failure sentence instead.
+  function announce(wrap, sentence) {
+    const status = wrap.querySelector('[data-hui-copy-status]');
+    if (!status) return;
+    status.textContent = '';
+    requestAnimationFrame(() => { status.textContent = sentence; });
+  }
+  function copied(wrap, id) {
+    wrap.setAttribute('data-hui-copy-state', 'done');
+    const btn = wrap.querySelector('[data-hui-copy-label]');
+    const fmts = wrap.getAttribute('data-hui-copy-copied') || '';
+    if (btn && fmts) btn.textContent = fmts;
+    const name = wrap.getAttribute('data-hui-copy-name') || id || '';
+    announce(wrap, (wrap.getAttribute('data-hui-copy-sentence') || '').replaceAll('{{name}}', () => name));
+    const back = wrap.getAttribute('data-hui-copy-back') || '';
+    clearTimeout(wrap.__huiCopyBack);
+    wrap.__huiCopyBack = setTimeout(() => {
+      wrap.removeAttribute('data-hui-copy-state');
+      if (btn && back) btn.textContent = back;
+    }, 1200);
+    // A toast on copy rides this module's own toast runtime; the
+    // config JSON is read from the wrapper itself (a menu's copy row)
+    // or whichever element under it carries it (ui.CopyButton puts it
+    // on the button).
+    const toastCfg = (wrap.querySelector('[data-hui-copy-toast]') || wrap).getAttribute('data-hui-copy-toast');
+    if (toastCfg) {
+      try { NS.toast(JSON.parse(toastCfg)); } catch (_) {}
+    }
+  }
+  function failed(wrap, id) {
+    const name = wrap.getAttribute('data-hui-copy-name') || id || '';
+    announce(wrap, (wrap.getAttribute('data-hui-copy-failed') || '').replaceAll('{{name}}', () => name));
+  }
   document.addEventListener('click', (e) => {
     const t = e.target;
     const wrap = t && t.closest && t.closest('[data-hui-copy]');
@@ -322,33 +358,14 @@
     const text = (target.tagName === 'PRE' ? target.textContent
       : (target.innerText || target.textContent) || '').trim();
     if (!text) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {});
+    let write = null;
+    try {
+      write = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : null;
+    } catch (_) {
+      write = null;
     }
-    wrap.setAttribute('data-hui-copy-state', 'done');
-    const btn = wrap.querySelector('[data-hui-copy-label]');
-    const fmts = wrap.getAttribute('data-hui-copy-copied') || '';
-    if (btn && fmts) btn.textContent = fmts;
-    const status = wrap.querySelector('[data-hui-copy-status]');
-    if (status) {
-      const name = wrap.getAttribute('data-hui-copy-name') || id || '';
-      const sentence = (wrap.getAttribute('data-hui-copy-sentence') || '').replaceAll('{{name}}', () => name);
-      status.textContent = '';
-      requestAnimationFrame(() => { status.textContent = sentence; });
-    }
-    const back = wrap.getAttribute('data-hui-copy-back') || '';
-    setTimeout(() => {
-      wrap.removeAttribute('data-hui-copy-state');
-      if (btn && back) btn.textContent = back;
-    }, 1200);
-    // A toast on copy rides this module's own toast runtime; the
-    // config JSON is read from the wrapper itself (a menu's copy row)
-    // or whichever element under it carries it (ui.CopyButton puts it
-    // on the button).
-    const toastCfg = (wrap.querySelector('[data-hui-copy-toast]') || wrap).getAttribute('data-hui-copy-toast');
-    if (toastCfg) {
-      try { NS.toast(JSON.parse(toastCfg)); } catch (_) {}
-    }
+    if (!write || typeof write.then !== 'function') { failed(wrap, id); return; }
+    write.then(() => copied(wrap, id), () => failed(wrap, id));
   });
 
   // ─── network retry ───────────────────────────────────────────────

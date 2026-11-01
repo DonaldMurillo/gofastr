@@ -630,18 +630,21 @@ func TestE2E_DisclosureNavigateClosesAndRestores(t *testing.T) {
 }
 
 // A link that opens a widget (data-cui-open) is no navigation: the
-// disclosure holding it stays open, so the widget's return focus lands
-// on the visible trigger. An ordinary link still closes it.
+// popup disclosure holding it stays open, so the widget's return focus
+// lands on the visible trigger. An ordinary link still closes it.
 func TestE2E_DisclosureKeepsWidgetLinkOpen(t *testing.T) {
-	d := Disclosure(DisclosureProps{Summary: render.Text("Menu"), Open: true,
-		Content: render.Raw(`<a id="w" href="/search" data-cui-open="palette">Search</a><a id="o" href="#o">Docs</a>`)}, nil)
+	d := Disclosure(DisclosureProps{Summary: render.Text("Menu"), Open: true, Dismiss: true,
+		Content: render.Raw(`<a id="w" href="#search" data-cui-open="palette">Search</a><a id="o" href="#docs">Docs</a>`)}, nil)
 	b := startBehaviorServer(t, string(d))
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, disclosureLoaded) {
 		t.Fatal("the disclosure marker never loaded headless-disclosure")
 	}
+	// Same-page hrefs, so neither click leaves the test page and the
+	// widget link's click arrives uncancelled: it is data-cui-open that
+	// keeps the popup open.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.addEventListener('click', e => e.preventDefault()); document.getElementById('w').click()`, nil),
+		chromedp.Evaluate(`document.getElementById('w').click()`, nil),
 	); err != nil {
 		t.Fatal(err)
 	}

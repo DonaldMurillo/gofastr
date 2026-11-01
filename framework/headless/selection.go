@@ -70,7 +70,7 @@ func Selection(p SelectionProps, s Classes) render.HTML {
 	bar := []render.HTML{
 		b.El("span", PartStatus, Internal(nil),
 			render.Text(before),
-			render.Tag("span", map[string]string{"data-hui-selection-count": ""}, render.Text("0")),
+			render.Tag("span", map[string]string{"data-hui-selection-count": ""}, render.Text(w.Number(0))),
 			render.Text(after)),
 		p.Bar,
 	}

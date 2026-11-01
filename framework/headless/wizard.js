@@ -29,7 +29,16 @@
   // answers 200 with the region's HTML (the errors ARE the answer), so
   // the record survives into the swap for both outcomes and the step
   // the answer carries says which one it was.
+  //
+  // The record belongs to the answer, not to the next insertion: an
+  // unrelated node landing while the step is in flight (a toast, a poll
+  // swap elsewhere) is handed to scan too. An arrival with no wizard in
+  // it, or with a different wizard while the submitting one is still
+  // on the page, leaves the record for the answer; one that lands after
+  // the submitting form left the page (the answer replaced it in a swap
+  // this pass did not see) drops it.
   let fromStep = null;
+  let fromForm = null;
   document.addEventListener('click', function (ev) {
     const t = ev.target;
     if (!t || !t.closest) return;
@@ -37,13 +46,18 @@
     if (!btn) return;
     const form = btn.closest('[data-hui-step-wizard]');
     fromStep = form ? form.getAttribute('data-hui-step-wizard-current') : null;
+    fromForm = form;
   }, true);
 
   function scan(root) {
     if (fromStep === null) return;
     const scope = root && root.querySelectorAll ? root : document;
     const form = within(scope, '[data-hui-step-wizard]')[0];
-    if (!form) { fromStep = null; return; }
+    const pending = fromForm && fromForm.isConnected;
+    if (!form || (pending && form !== fromForm)) {
+      if (!pending) { fromStep = null; fromForm = null; }
+      return;
+    }
     // The summary of a failed submit first: it is what the reader must
     // hear. A step that did not move is a failed submit, and the
     // step-of sentence is not re-said for it.
@@ -64,6 +78,7 @@
       }
     }
     fromStep = null;
+    fromForm = null;
   }
 
   NS._moduleScanners = NS._moduleScanners || {};

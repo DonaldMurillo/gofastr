@@ -237,6 +237,7 @@ var adapterHooks = map[string]string{
 	"data-hui-copy-copied":         "the button's copied label, rendered by ui.CopyButton",
 	"data-hui-copy-back":           "the label restored after the copied flash, rendered by ui.CopyButton",
 	"data-hui-copy-sentence":       "the status sentence shape with {name}, rendered by ui.CopyButton",
+	"data-hui-copy-failed":         "the status sentence said when the clipboard refuses the write, rendered by ui.CopyButton",
 	"data-hui-copy-status":         "the polite status region, rendered by ui.CopyButton",
 	"data-hui-theme-toggle":        "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
 	"data-hui-theme-option":        "one scheme option control, rendered by ui.ThemeToggle",

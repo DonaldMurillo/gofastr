@@ -245,7 +245,9 @@
 
   // Arrow keys move through a theme radio group the way a native radio
   // set does: the next option takes focus and is chosen, wrapping at
-  // either end; Home and End jump to the first and last.
+  // either end; Home and End jump to the first and last. The group is
+  // a row, so in a right-to-left page ArrowLeft is the next option, as
+  // in a native radio set; Up and Down keep document order.
   document.addEventListener('keydown', function (e) {
     if (e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target;
@@ -255,10 +257,14 @@
     const attr = opt.hasAttribute('data-hui-theme-pick') ? 'data-hui-theme-pick' : 'data-hui-theme-option';
     const opts = [...group.querySelectorAll(RADIO_SEL[attr])];
     const i = opts.indexOf(opt);
+    const rtl = getComputedStyle(group).direction === 'rtl';
+    const next = (i + 1) % opts.length, prev = (i - 1 + opts.length) % opts.length;
     let j;
     switch (e.key) {
-      case 'ArrowRight': case 'ArrowDown': j = (i + 1) % opts.length; break;
-      case 'ArrowLeft': case 'ArrowUp': j = (i - 1 + opts.length) % opts.length; break;
+      case 'ArrowDown': j = next; break;
+      case 'ArrowUp': j = prev; break;
+      case 'ArrowRight': j = rtl ? prev : next; break;
+      case 'ArrowLeft': j = rtl ? next : prev; break;
       case 'Home': j = 0; break;
       case 'End': j = opts.length - 1; break;
       default: return;

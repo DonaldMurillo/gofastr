@@ -228,8 +228,15 @@
     }
   });
 
+  // Each host element is its own lock owner: two hosts with no id, or
+  // a detached host and the next page's host under the same id, never
+  // release each other's lock.
+  const owners = new WeakMap();
+  let ownerSeq = 0;
   function scrollOwner(host) {
-    return 'panehost:' + (host.id || '');
+    let o = owners.get(host);
+    if (!o) { o = 'panehost:' + (++ownerSeq); owners.set(host, o); }
+    return o;
   }
 
   // The pane's tabbables, over the kernel's shared focus selector.
@@ -252,20 +259,35 @@
   // drawer the server rendered open on a phone-width first load, or a
   // window narrowed under an open pane, would otherwise leave focus
   // behind the scrim.
+  //
+  // lockers holds the hosts that took the lock, so the navigation pass
+  // below can release the lock of a host that is no longer in the
+  // document: a client navigation detaches the old page BEFORE it
+  // announces itself, so a query of the document finds nothing to
+  // unlock and the next page would stay scroll-locked.
+  const lockers = new Set();
+  function lock(host) {
+    lockers.add(host);
+    if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
+  }
+  function unlock(host) {
+    lockers.delete(host);
+    if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
+  }
   function syncMode(host) {
     const wantOverlay = window.matchMedia(MQ).matches && !!topmost(host);
     const isOverlay = host.getAttribute('data-hui-pane-mode') === 'overlay';
     if (wantOverlay === isOverlay) return;
     if (wantOverlay) {
       host.setAttribute('data-hui-pane-mode', 'overlay');
-      if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
+      lock(host);
       const pane = paneOf(host, topmost(host));
       // An open modal keeps focus: the drawer is behind it.
       const modal = NS._modalStack && NS._modalStack.length > 0;
       if (pane && !modal && !pane.contains(document.activeElement)) focusIn(pane, false);
     } else {
       host.removeAttribute('data-hui-pane-mode');
-      if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
+      unlock(host);
     }
   }
 
@@ -353,14 +375,19 @@
     for (const host of document.querySelectorAll('[data-hui-pane-deeplink]')) syncFromURL(host);
   });
 
-  // Release every overlay lock and clear the mode on a client-side
-  // navigation, so the next page is not left scroll-locked by a host
-  // that is now detached.
+  // Release the lock of every host a client-side navigation took away,
+  // so the next page is not left scroll-locked: the hosts that took the
+  // lock are walked from the module's own record, because a detached
+  // one is no longer in a document query's answer. A host the
+  // navigation kept (layout chrome) is re-synced: its open drawer is
+  // still on screen and keeps its lock.
   window.addEventListener('gofastr:navigate', function () {
-    for (const host of document.querySelectorAll('[data-hui-panehost]')) {
-      if (host.getAttribute('data-hui-pane-mode') === 'overlay') {
+    for (const host of Array.from(lockers)) {
+      if (!host.isConnected) {
         host.removeAttribute('data-hui-pane-mode');
-        if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
+        unlock(host);
+      } else {
+        syncMode(host);
       }
     }
   });

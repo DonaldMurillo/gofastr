@@ -407,7 +407,9 @@ What it does, one line per behaviour:
 
 - **selection** writes how many of a floating `Selection`'s rows are
   checked into its `data-hui-selection-count` slot on every change, on
-  a form reset and on each scan; a select-all box is not a row. A CSS
+  a form reset and on each scan, written in the page's digits (the
+  server's first `0` is the reader's zero too); a select-all box is
+  not a row. A CSS
   counter cannot do it: a table is a size container, and the style
   containment that brings walls the counter in.
 - **reveal** retypes the password input, swaps the button's text and
@@ -432,7 +434,8 @@ What it does, one line per behaviour:
   nest: a region is shown only when its own condition holds and no
   enclosing `data-hui-when` region is hidden, and the controls inside
   any hidden region stay disabled no matter what an inner region's
-  own condition says.
+  own condition says. A form reset moves the watched controls with no
+  input event, so the regions re-sync once the reset has run.
 - **form-errors** moves focus to the summary inside
   `data-hui-form-errors`, once per form element — and the once-mark
   is spent only when a summary was found, so a form whose `Errors`
@@ -483,12 +486,16 @@ same way and each owning one family of the stateful controls:
 
 - **headless-controls** (`[data-hui-counter-animate]`,
   `[data-hui-number-input-decrement]`, `[data-hui-slider-output]`,
-  `[data-hui-range-slider]`): steps the number input inside the bounds
-  its own attributes declare and reports a real input event; mirrors
+  `[data-hui-range-slider]`): steps the number input through the
+  browser's own `stepUp`/`stepDown`, so the next value is one the input
+  accepts (inside `min`/`max` and on the step base: `min=1 step=5`
+  walks 1, 6, 11), and reports real input and change events; mirrors
   the slider's thumb into its output; cross-clamps the range pair and
   re-formats its sentence through the shape the output carries; and
   animates a counter from its recorded start to the SSR value, never
-  touching the number the signals kernel owns. It replaced the retired
+  touching the number the signals kernel owns: a live write to the
+  signal mid-walk stops the walk, and a rescan of the same counter is
+  not a second arrival. It replaced the retired
   `numberinput`, `slider`, `rangeslider` and `animatedcounter`
   runtime modules (the unanimated counter needs no module at all —
   the signals kernel is its whole increment path).
@@ -498,14 +505,18 @@ same way and each owning one family of the stateful controls:
   or Backspace-on-empty; returns focus to the field; announces
   through the `data-hui-tag-input-added`/`-removed` sentences; and
   after a repeater's island swap puts focus back on the row's control
-  or the add control and says the server's status. It replaced the
+  or the add control and says the server's status. The click record
+  waits for its own answer: an unrelated insertion that lands first (a
+  toast, another region's poll) leaves it in place. It replaced the
   retired `taginput` and `formrepeater` runtime modules, and the IME
   guard (an Enter that confirms a composition candidate commits
   nothing) moved with it.
 - **headless-wizard** (`[data-hui-step-wizard]`): owns only the
   island path — it records the step the reader left, and after the
   swap focuses the failed submit's summary or the new step's heading
-  and says the step-of sentence when the step moved. The plain POST
+  and says the step-of sentence when the step moved. An unrelated
+  insertion that lands while the step is in flight leaves the record
+  for the answer. The plain POST
   wizard needs none of it.
 
 Two attributes are the `headless` module's own, written by it and
@@ -557,7 +568,14 @@ registered the same way:
   runtime module.
 - **headless-disclosure** (`[data-hui-disclosure]`): the exclusive
   accordion group and the trap-and-inert Escape path, with optional
-  session restore through a storage key. It replaced the retired
+  session restore through a storage key. Escape closes one level, and
+  a key something inside already answered (a combobox closing its
+  listbox, a pane, a modal widget) is not answered twice; with focus
+  in no disclosure it closes only the open popups (`Dismiss`, every
+  menu). A followed link closes the popup or trapped drawer it sits in;
+  a reading section (an accordion, an FAQ) stays open, and a click a
+  handler took, a modified or middle click, `target`, `download` and
+  `data-cui-open` links close nothing. It replaced the retired
   `disclosure` runtime module.
 - **headless-menu** (`[data-hui-menu]`): the menu's open/close, arrow
   traversal, typeahead and focus return, on top of the disclosure
@@ -567,7 +585,9 @@ registered the same way:
   list whose input already has focus when the module binds opens that
   list at once (the command palette focuses its input before the module
   loads). The arrow keys, Home and End scroll the list to keep the
-  active option in sight. It replaced the retired `combobox` runtime
+  active option in sight. A key that belongs to an input method (the
+  composition's own, flagged `isComposing` or sent with keyCode 229 by
+  Safari) never picks an option. It replaced the retired `combobox` runtime
   module.
 - **headless-navigation** also carries the keyboard-shortcut family
   (`data-hui-shortcut-*`), and **headless-tabs**

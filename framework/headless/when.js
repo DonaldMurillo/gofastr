@@ -181,6 +181,12 @@
   document.addEventListener('change', function () {
     syncWhenRegions(document.querySelectorAll('[data-hui-when]'));
   });
+  // A form reset puts the watched controls back with no input or change
+  // event, and the reset event fires BEFORE the values move: the regions
+  // follow once the reset has run.
+  document.addEventListener('reset', function () {
+    setTimeout(function () { syncWhenRegions(document.querySelectorAll('[data-hui-when]')); }, 0);
+  });
 
   scan(document);
   NS._moduleScanners = NS._moduleScanners || {};

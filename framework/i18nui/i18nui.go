@@ -217,6 +217,7 @@ var (
 	// CopyButton
 	CopyCopy        = i18n.Define("ui.copy.copy", "Copy")
 	CopyCopied      = i18n.Define("ui.copy.copied", "Copied")
+	CopyFailed      = i18n.Define("ui.copy.failed", "Could not copy to the clipboard")
 	CopyToClipboard = i18n.Define("ui.copy.toClipboard", "Copy to clipboard")
 	CopyLink        = i18n.Define("ui.copy.link", "Copy link")
 	DrawerOpenPage  = i18n.Define("ui.drawer.open_page", "Open as page")

@@ -295,13 +295,23 @@
   });
 
   // Keyboard on the focused track: the arrows step (RTL-aware),
-  // Home/End jump.
+  // Home/End jump. A field inside a slide (a signup input, a select)
+  // owns its caret and option keys, and a chord (Shift+Arrow selects
+  // text, Alt+Arrow is history) is the browser's: neither moves the
+  // carousel.
+  function editable(el) {
+    if (!el || !el.closest) return false;
+    if (el.isContentEditable) return true;
+    return !!el.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+  }
   document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const track = e.target && e.target.closest && e.target.closest('[data-hui-carousel-track]');
     if (!track) return;
     const root = track.closest('[data-hui-carousel]');
     if (!root) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+    if (editable(e.target)) return;
     const rtl = getComputedStyle(track).direction === 'rtl';
     const cur = currentOf(root);
     let to = -1;
@@ -369,10 +379,11 @@
     syncDetachWatcher();
   }
 
+  // A client navigation disarms the carousels it took away; one in the
+  // chrome the navigation kept (a layout header) is still on screen and
+  // keeps rotating.
   window.addEventListener('gofastr:navigate', function () {
-    for (const root of Array.from(document.querySelectorAll('[data-hui-carousel-rotate-ms]'))) {
-      disarmRotation(root);
-    }
+    disarmDetached();
     syncDetachWatcher();
   });
 
