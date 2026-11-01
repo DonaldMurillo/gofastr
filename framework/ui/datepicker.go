@@ -110,6 +110,8 @@ var datePickerClasses = headless.Classes{
 	headless.PartDatePickerInputs:   "fui-datepicker__inputs",
 	headless.PartDatePickerInput:    "fui-input",
 	headless.PartDatePickerCalendar: "fui-datepicker__calendar",
+	headless.PartDatePickerMonth:    "fui-datepicker__month",
+	headless.PartVisuallyHidden:     "fui-visually-hidden",
 	headless.PartDatePickerHeader:   "fui-datepicker__header",
 	headless.PartDatePickerNav:      "fui-datepicker__nav",
 	headless.PartDatePickerCaption:  "fui-datepicker__caption",

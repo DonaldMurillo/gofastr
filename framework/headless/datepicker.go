@@ -41,6 +41,7 @@ const (
 	PartDatePickerInputs   Part = "datepicker-inputs"
 	PartDatePickerInput    Part = "datepicker-input"
 	PartDatePickerCalendar Part = "datepicker-calendar"
+	PartDatePickerMonth    Part = "datepicker-month"
 	PartDatePickerHeader   Part = "datepicker-header"
 	PartDatePickerNav      Part = "datepicker-nav"
 	PartDatePickerCaption  Part = "datepicker-caption"
@@ -378,8 +379,8 @@ func validDate(s string) string {
 }
 
 // datePickerMonth renders one month: the header (four nav anchors
-// around the caption) and the grid. Each is a root of an endpoint's
-// answer, so their children carry the mark.
+// around the caption) and the grid, in the month's own root, which is
+// an endpoint's whole answer.
 func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 	month := p.shownMonth()
 	ctx := w.ctx
@@ -395,8 +396,13 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 		// anchor is disabled only when it would not move at all.
 		tFirst := clampMonth(target, lo, hi)
 		disabled := p.Disabled || tFirst.Equal(month)
-		attrs := Attrs(map[string]string{"aria-label": label})
-		attrs["data-hui-datepicker-nav"] = which
+		// Named by its own (visually hidden) text, never aria-label: a
+		// disabled anchor has no href, so it is no link, and a name
+		// given by aria-label to an element with no role is one
+		// assistive technology may not read (axe aria-prohibited-attr);
+		// Pagination's disabled ends are named by their text the same
+		// way.
+		attrs := html.Attrs{"data-hui-datepicker-nav": which}
 		if disabled {
 			attrs["aria-disabled"] = "true"
 		} else {
@@ -414,16 +420,17 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 			// swap alone would leave the old month and say nothing.
 			attrs["data-cui-rpc-error-toast"] = w.DatePickerMonthFailed
 		}
-		return b.El("a", PartDatePickerNav, Internal(attrs),
-			render.Tag("span", map[string]string{"aria-hidden": "true"}, render.Text(glyph)))
+		return b.El("a", PartDatePickerNav, attrs,
+			render.Tag("span", map[string]string{"aria-hidden": "true"}, render.Text(glyph)),
+			b.El("span", PartVisuallyHidden, nil, render.Text(label)))
 	}
 
 	captionAttrs := Attrs(map[string]string{"id": captionID})
 	Mark(captionAttrs, "data-hui-datepicker-caption")
-	header := b.El("div", PartDatePickerHeader, nil,
+	header := b.El("div", PartDatePickerHeader, Internal(nil),
 		nav("prev-year", w.DatePickerPrevYear, "«", month.AddDate(-1, 0, 0)),
 		nav("prev-month", w.DatePickerPrevMonth, "‹", month.AddDate(0, -1, 0)),
-		b.El("span", PartDatePickerCaption, Internal(captionAttrs),
+		b.El("span", PartDatePickerCaption, captionAttrs,
 			render.Text(i18n.Date(ctx, month, i18n.DateYearMonthLong))),
 		nav("next-month", w.DatePickerNextMonth, "›", month.AddDate(0, 1, 0)),
 		nav("next-year", w.DatePickerNextYear, "»", month.AddDate(1, 0, 0)))
@@ -491,10 +498,13 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 		// A range selects many cells; without this a grid allows one.
 		gridAttrs["aria-multiselectable"] = "true"
 	}
-	grid := b.El("table", PartDatePickerGrid, gridAttrs,
-		render.Tag("thead", map[string]string{"data-cui-internal": ""}, render.Tag("tr", nil, heads...)),
-		render.Tag("tbody", map[string]string{"data-cui-internal": ""}, rows...))
-	return render.Join(header, grid)
+	grid := b.El("table", PartDatePickerGrid, Internal(gridAttrs),
+		render.Tag("thead", nil, render.Tag("tr", nil, heads...)),
+		render.Tag("tbody", nil, rows...))
+	// One root for the month, so an endpoint's answer is one element
+	// whose children carry the mark, and no control inside it carries
+	// a data-cui-* attribute it does not act on.
+	return b.El("div", PartDatePickerMonth, nil, header, grid)
 }
 
 // refused reports whether day d cannot be picked: outside Min..Max,
@@ -569,8 +579,8 @@ func init() {
 	Register(Spec{
 		Name: "DatePicker",
 		Anatomy: []Part{PartRoot, PartLabel, PartDatePickerInputs, PartDatePickerInput,
-			PartDatePickerCalendar, PartDatePickerHeader, PartDatePickerNav,
-			PartDatePickerCaption, PartDatePickerGrid, PartDatePickerWeekday,
+			PartDatePickerCalendar, PartDatePickerMonth, PartDatePickerHeader, PartDatePickerNav,
+			PartVisuallyHidden, PartDatePickerCaption, PartDatePickerGrid, PartDatePickerWeekday,
 			PartDatePickerCell, PartDatePickerDay, PartDatePickerNote, PartDatePickerStatus},
 		Hooks: []string{"data-hui-datepicker", "data-hui-datepicker-input",
 			"data-hui-datepicker-calendar", "data-hui-datepicker-nav",
@@ -607,8 +617,8 @@ func init() {
 	})
 	Register(Spec{
 		Name: "DatePickerMonth",
-		Anatomy: []Part{PartDatePickerHeader, PartDatePickerNav, PartDatePickerCaption,
-			PartDatePickerGrid, PartDatePickerWeekday, PartDatePickerCell, PartDatePickerDay},
+		Anatomy: []Part{PartDatePickerMonth, PartDatePickerHeader, PartDatePickerNav, PartVisuallyHidden,
+			PartDatePickerCaption, PartDatePickerGrid, PartDatePickerWeekday, PartDatePickerCell, PartDatePickerDay},
 		Cases: func(k Kit) []Case {
 			return []Case{{
 				Name: "a month an endpoint answers",

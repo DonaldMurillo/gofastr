@@ -382,9 +382,12 @@ The parts the navigation members draw beyond the shared vocabulary:
   `ComboboxRows` renders an island answer's rows.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),
-  `datepicker-calendar` (the island region), `datepicker-header`,
+  `datepicker-calendar` (the island region), `datepicker-month` (one
+  month, the island answer's single root), `datepicker-header`,
   `datepicker-nav` (four anchors, each a real href to the page with the
-  month in its query beside a `data-cui-rpc` GET, no push-state),
+  month in its query beside a `data-cui-rpc` GET, no push-state, named
+  by visually hidden text so a disabled one, which has no href, is
+  still named),
   `datepicker-caption`, `datepicker-grid` (`role=grid`,
   `aria-multiselectable` for a range), `datepicker-weekday`,
   `datepicker-cell` (`aria-selected`), `datepicker-day` (a button named
