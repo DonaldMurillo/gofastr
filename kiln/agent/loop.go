@@ -37,7 +37,13 @@ type Loop struct {
 }
 
 // Run feeds userText to the loop and drives provider turns until the
-// provider stops or MaxTurns is reached.
+// provider stops or MaxTurns is reached. A cancelled ctx stops it with
+// ctx's error and nothing changes behind the cancel: a turn the provider
+// returns after it journals no text and runs no tool calls, and the calls
+// left in a turn when ctx ends between dispatches are answered "not run"
+// so the next Run never sends a tool call without a result. The protocol
+// mutations ignore ctx, so these checks are the only stop. kiln/acp's
+// runTurns keeps the same guards.
 func (l *Loop) Run(ctx context.Context, userText string) error {
 	if l.Provider == nil {
 		return fmt.Errorf("agent: nil Provider")
@@ -52,6 +58,9 @@ func (l *Loop) Run(ctx context.Context, userText string) error {
 	l.Tools.Chat(ctx, protocol.ChatArgs{Role: "user", Text: userText})
 	l.messages = append(l.messages, Message{Role: "user", Text: userText})
 	for turn := range l.MaxTurns {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		system := BuildPromptLive(l.Tools.Live(), l.Tools.List()).String()
 		if l.ContextHook != nil {
 			if extra := l.ContextHook(ctx, lastUserText(l.messages)); extra != "" {
@@ -65,6 +74,9 @@ func (l *Loop) Run(ctx context.Context, userText string) error {
 			OnEvent:  l.OnEvent,
 		}
 		t, err := l.Provider.Stream(ctx, req)
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
 		if err != nil {
 			return fmt.Errorf("provider turn %d: %w", turn, err)
 		}
@@ -79,7 +91,11 @@ func (l *Loop) Run(ctx context.Context, userText string) error {
 			return nil
 		}
 		// Dispatch each tool call and append its result.
-		for _, call := range t.ToolCalls {
+		for i, call := range t.ToolCalls {
+			if err := ctx.Err(); err != nil {
+				l.messages = append(l.messages, notRun(t.ToolCalls[i:])...)
+				return err
+			}
 			res := l.dispatchTool(ctx, call)
 			l.messages = append(l.messages, Message{
 				Role:      "tool_result",
@@ -89,6 +105,16 @@ func (l *Loop) Run(ctx context.Context, userText string) error {
 		}
 	}
 	return fmt.Errorf("agent: exceeded MaxTurns (%d)", l.MaxTurns)
+}
+
+// notRun answers the tool calls a cancelled run never dispatched.
+func notRun(calls []ToolCall) []Message {
+	out := make([]Message, 0, len(calls))
+	for _, call := range calls {
+		res := protocol.Result{OK: false, Kind: "cancelled", Error: "not run: the run was cancelled"}
+		out = append(out, Message{Role: "tool_result", ToolUseID: call.CallID, Result: &res})
+	}
+	return out
 }
 
 // dispatchTool routes a tool call by name through the Tools surface.

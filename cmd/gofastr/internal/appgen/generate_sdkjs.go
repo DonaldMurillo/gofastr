@@ -294,7 +294,8 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 }
 
 // dtsRuntimeTypes are the names client.d.ts declares for every app.
-var dtsRuntimeTypes = []string{"ApiError", "ListParams", "CursorParams", "ListResponse", "CursorPage", "BatchResult", "BatchResponse", "Resource", "Client"}
+// TestDTSRuntimeTypesListsEveryExport holds it to the runtime block.
+var dtsRuntimeTypes = []string{"ApiError", "ListParams", "CursorParams", "ListResponse", "CursorPage", "BatchResult", "NoBlob", "BatchResponse", "Resource", "Client"}
 
 // checkDTSTypeNames refuses an endpoint whose <Method>Request interface
 // would take a name client.d.ts already declares: TypeScript merges two

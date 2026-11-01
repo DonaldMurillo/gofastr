@@ -34,14 +34,16 @@ func runFreeze(args []string) int {
 		fmt.Fprintf(os.Stderr, "[kiln freeze] journal %s not found: %v\n", *journalPath, err)
 		return 1
 	}
-	jj, err := journal.OpenJSONL(*journalPath)
+	// Read-only, no torn-tail heal: kiln serve may be appending to this
+	// journal right now, and a heal could truncate an entry it just
+	// committed.
+	entries, err := journal.ReadFile(*journalPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[kiln freeze] open: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[kiln freeze] read: %v\n", err)
 		return 1
 	}
-	defer jj.Close()
 
-	sess, err := journal.Replay(jj)
+	sess, err := journal.ReplayEntries(entries)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[kiln freeze] replay: %v\n", err)
 		return 1
