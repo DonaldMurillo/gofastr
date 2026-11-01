@@ -89,6 +89,33 @@ Production mode still requires a non-empty `JWTSecret`: a previous-only
 configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
 `Init`, because a verify-only setup cannot sign new tokens.
 
+## Password hashing
+
+`auth.DefaultHasher` hashes every new password. It is `auth.BcryptHasher{}`
+by default; set it before `Init`:
+
+```go
+auth.DefaultHasher = auth.Argon2Hasher{} // argon2id: 64 MiB, t=3, p=2
+```
+
+- `CheckPassword` reads the stored hash's prefix: `$argon2id$` verifies
+  with argon2id, anything else with bcrypt. Rows hashed before a switch
+  keep signing in.
+- A custom `PasswordHasher` (a pepper, scrypt) works the same way:
+  `CheckPassword` asks its `Verify` first, then falls back to the prefix
+  rule, so old bcrypt and argon2id rows still verify.
+- `Argon2Hasher.Hash` returns an error for parameters past what its
+  verifier accepts from a stored hash (1 GiB of memory, 100 iterations,
+  16 threads, a 128-byte key). A hash made with them could never sign in.
+- Accounts created without a password (OAuth, magic link) and cleared
+  passwords store a hash of a random secret made by `DefaultHasher`. A
+  login against them costs what a login against an unknown address costs,
+  so timing does not show which addresses hold a passwordless account.
+  Rows written before the switch keep their bcrypt placeholder.
+- `ValidatePasswordStrength` refuses fewer than
+  `RecommendedMinPasswordBytes` (8) characters. It counts characters, not
+  bytes: `"🔑🔑"` is two.
+
 ## Changing the password
 
 `POST /auth/password` takes `{"current_password": "…", "password": "…"}`
@@ -101,8 +128,8 @@ refuses:
 - a session still owed its second factor (403), whether pending or
   minted before the user enrolled one;
 - a cross-site form post (`rejectCrossSiteForm`);
-- a wrong current password, a new one shorter than
-  `RecommendedMinPasswordBytes` or longer than 128 bytes, and a new one
+- a wrong current password, a new one with fewer than
+  `RecommendedMinPasswordBytes` characters or longer than 128 bytes, and a new one
   equal to the current one, and a confirmation that differs. These answer 422 with the form-errors
   envelope, `{"error", "fields": {<field>: [message]}}`, so a form draws the message beside its field.
 
