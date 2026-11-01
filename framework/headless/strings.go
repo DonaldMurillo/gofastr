@@ -359,6 +359,29 @@ type Strings struct {
 	// moment one is.
 	MultiSelectPlaceholder string
 
+	// ─── DatePicker ─────────────────────────────────────────────────
+
+	// DatePickerPrevMonth, DatePickerNextMonth, DatePickerPrevYear and
+	// DatePickerNextYear name the calendar's four nav anchors, which
+	// show a glyph and no word. A short phrase each.
+	DatePickerPrevMonth string
+	DatePickerNextMonth string
+	DatePickerPrevYear  string
+	DatePickerNextYear  string
+	// DatePickerStart and DatePickerEnd label a range's two native
+	// inputs when the caller names neither. Two words each.
+	DatePickerStart string
+	DatePickerEnd   string
+	// DatePickerChosen is said when a day is picked, with {{date}} for
+	// the day's full date, written in by the runtime.
+	DatePickerChosen string
+	// DatePickerChooseEnd is said when a range's start is picked, with
+	// {{date}} for it: it says what was picked and what comes next.
+	DatePickerChooseEnd string
+	// DatePickerRange is said when a range's end is picked, with
+	// {{start}} and {{end}} for the two full dates.
+	DatePickerRange string
+
 	// ctx is the request the words were resolved for, set by ForRequest:
 	// a count, a step number or a slider value is written the way its
 	// reader writes numbers. It is the one field that is not a word, so
@@ -502,6 +525,16 @@ var defaultStrings = Strings{
 	JSONEmptyObject:        "{}",
 	JSONEmptyArray:         "[]",
 	JSONTruncated:          "…",
+
+	DatePickerPrevMonth: "Previous month",
+	DatePickerNextMonth: "Next month",
+	DatePickerPrevYear:  "Previous year",
+	DatePickerNextYear:  "Next year",
+	DatePickerStart:     "Start date",
+	DatePickerEnd:       "End date",
+	DatePickerChosen:    "{{date}} selected.",
+	DatePickerChooseEnd: "{{date}} selected. Choose the end date.",
+	DatePickerRange:     "{{start}} to {{end}} selected.",
 }
 
 // DefaultStrings returns a fresh copy of the English defaults, every

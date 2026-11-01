@@ -54,7 +54,9 @@ func behaviorGzipSize(t *testing.T, file string) int {
 // the conflict toast returned to sortablelist: tree 1347 (row 1536,
 // 189 bytes of room), sortablelist 3027 (row 3072, the walk's own
 // line — no extra room to give), multiselect 865 (row 1024, 159
-// bytes of room).
+// bytes of room). datepicker joined 2026-11-01 at 2521 (row 2816, 295
+// bytes of room): the grid keyboard, the range pick and the swap's
+// focus restore are one module because each needs the others' state.
 func TestBehaviorModuleSizeBudgets(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -64,6 +66,7 @@ func TestBehaviorModuleSizeBudgets(t *testing.T) {
 		{TreeBehaviorName, "tree.js", 1536},
 		{SortableListBehaviorName, "sortablelist.js", 3072},
 		{MultiSelectBehaviorName, "multiselect.js", 1024},
+		{DatePickerBehaviorName, "datepicker.js", 2816},
 	} {
 		got := behaviorGzipSize(t, tc.file)
 		t.Logf("%s (%s) gzip = %d bytes (budget %d)", tc.name, tc.file, got, tc.budget)

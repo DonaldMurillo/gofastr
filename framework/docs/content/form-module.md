@@ -44,6 +44,7 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | NumberField | `ui.NumberField(NumberFieldConfig)` | Self-labelled native number input; use `NumberInput` for +/- controls |
 | DateField | `ui.DateField(DateFieldConfig)` | Self-labelled native date input with typed min/max bounds |
 | DateTimeField | `ui.DateTimeField(DateTimeFieldConfig)` | Self-labelled native date-and-time input with min/max bounds and a step in seconds (`float64`; `0.001` shows milliseconds) |
+| DatePicker | `ui.DatePicker(DatePickerConfig)` | A calendar beside the native date input, only for what the native picker cannot do: a range, refused days, notes on days (see "When the native picker is not enough") |
 
 The typed field wrappers compose `FormField`'s builder with the styled
 native control and own the `for`/`id`, `aria-describedby`, and
@@ -79,6 +80,73 @@ submitting, but a request that skips the form reaches the handler
 unchecked.
 For a date range, use two fields (`starts_on`, `ends_on`) and reject
 an end before the start in the handler.
+
+### When the native picker is not enough
+
+`ui.DatePicker` is a calendar that stays on the page beside the native
+date input it fills. Reach for it only for what `DateField` cannot do:
+
+- picking a range (a start and an end) in one control;
+- a calendar that stays visible instead of a popup;
+- refusing specific days (booked, closed, holidays), not just a min and max;
+- writing data on the days ("3 left", "Full").
+
+For one ordinary date, keep `DateField`. The picker does not replace
+it, and there is no popup version.
+
+The native `<input type="date">` is still the value. It is rendered,
+named and submitted whatever the calendar does, so the form posts
+`2026-11-12` without script, and a reader can always type the date.
+The calendar is the WAI-ARIA date grid: arrow keys move a day or a week
+(mirrored on a right-to-left page), Home and End go to the week's ends,
+Page Up and Page Down move a month and, with Shift, a year; Enter or
+Space picks. Each day is named by its full date in the reader's
+language, today is `aria-current="date"`, and a refused day is
+`aria-disabled` but still reachable. The week starts on the reader's
+first day (`i18n.FirstWeekday`).
+
+Changing the month is an island. Each month anchor keeps a real href to
+the same page with the month in its query (the no-script path) and
+GETs `Endpoint` with script; the endpoint answers `ui.DatePickerMonth`
+and the calendar swaps in place, with focus kept on the day or anchor
+it was on. Build the page and the endpoint from one function, so they
+agree on the days:
+
+<!-- gofastr:compile
+import "net/http"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+func today(*http.Request) string { return "2026-11-02" }
+-->
+```go
+func stay(r *http.Request) ui.DatePickerConfig {
+	return ui.DatePickerConfig{
+		ID: "stay", Label: "Your stay", Endpoint: "/book/month",
+		Range: &ui.DatePickerRange{StartName: "check_in", EndName: "check_out"},
+		Month: r.URL.Query().Get("month"), // the endpoint's month; empty on the page
+		Today: today(r), Min: today(r),    // the reader's today, in their zone
+		Days: map[string]ui.DatePickerDay{
+			"2026-11-13": {Disabled: true, Note: "Full"},
+			"2026-11-14": {Note: "2 left"},
+		},
+		Ctx: r.Context(),
+	}
+}
+
+// The page: ui.DatePicker(stay(r)) inside the booking form.
+// The endpoint, a read with no state:
+func bookMonth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(ui.DatePickerMonth(stay(r))))
+}
+```
+
+A single date takes `Name` and `Value` instead of `Range`, and renders
+as a `FormField` (its `Help` and `Error` describe the input); a range
+renders as a fieldset named by `Label`, its inputs labelled
+`StartLabel` and `EndLabel` (default "Start date" and "End date" in the
+reader's language). The handler still validates what it receives: a
+refused day is refused in the calendar, not in a request that skips
+it.
 
 ## Validation
 
@@ -317,7 +385,9 @@ headless counterpart, so it ships as framework/ui's own module.
   `ui.DateTimeField` already open the platform's picker. A hand-rolled
   calendar has to rebuild its keyboard grid, screen-reader
   announcements, locale week start and phone behavior, and still
-  submit the HTML date format. See "Dates and times" above.
+  submit the HTML date format. For a range, refused days or notes on
+  days, use `ui.DatePicker`, which enhances the native input instead
+  of replacing it. See "Dates and times" above.
 
 ## E2E test coverage
 

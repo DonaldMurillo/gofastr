@@ -25,6 +25,9 @@ const (
 	DateMonthDay
 	// DateWeekdayMonthDay is "Thu, Mar 5" in English.
 	DateWeekdayMonthDay
+	// DateYearMonthLong is "March 2026" in English: DateYearMonth with
+	// the month written out, what a calendar's caption says.
+	DateYearMonthLong
 )
 
 // TimeStyle picks a time format. The zero value is TimeShort.
@@ -74,6 +77,8 @@ func (l *cldrLocale) datePattern(s DateStyle) string {
 		return l.skeletons[1]
 	case DateWeekdayMonthDay:
 		return l.skeletons[2]
+	case DateYearMonthLong:
+		return lengthenMonth(l.skeletons[0])
 	}
 	return l.date[s.lengthIndex()]
 }

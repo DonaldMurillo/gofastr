@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
+  A calendar that stays on the page beside the native date input it
+  fills, for a range in one control, refused days, or notes on days. The
+  native input is the value and posts without script; the
+  `headless-datepicker` module owns the date-grid keyboard, and a month
+  change is an island the page serves with `ui.DatePickerMonth`. An
+  ordinary date stays `ui.DateField`. Built on `headless.DatePicker`;
+  `core/i18n` gains `DateYearMonthLong`, `WeekdayName`, `WeekdayAbbr` and
+  `FirstWeekday` for it. See `form-module.md`, "When the native picker is
+  not enough".
 - **`embedskip` analyzer.** `gofastr verify` and `make analyze` report a
   struct field walk (`NumField()` or the `Fields()` iterator) that maps
   fields to keys by their tags and never handles an embedded struct, so

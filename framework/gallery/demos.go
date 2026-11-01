@@ -18,6 +18,7 @@ package gallery
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
@@ -329,3 +330,44 @@ func DemoSectionMenuConfig() interactive.SectionMenuConfig {
 // demo: one producer renames it, every bound consumer updates client-side.
 // Exported so hosts that want to inspect or reset the demo's slice can.
 var DemoCompany = store.New("sitedemo").String("company", "Acme Corp")
+
+// =============================================================================
+// Date picker demo (catalog slug: datepicker)
+// =============================================================================
+
+// DatePickerDemoEndpoint is the path examples/site serves the demo's
+// month changes on: it answers ui.DatePickerMonth(DatePickerDemo(month)).
+const DatePickerDemoEndpoint = "/__site/datepicker/month"
+
+// DatePickerDemo is the gallery's booking calendar: a stay picked as a
+// range, with some nights full and a few nearly so, for the month asked
+// (empty is November 2026, so the seed view never moves). The page and
+// the endpoint both build it here, so they agree on every day.
+func DatePickerDemo(month string) ui.DatePickerConfig {
+	if month == "" {
+		month = "2026-11"
+	}
+	shown, err := time.Parse("2006-01", month)
+	if err != nil {
+		shown = time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
+	}
+	days := map[string]ui.DatePickerDay{}
+	for d := shown; d.Month() == shown.Month(); d = d.AddDate(0, 0, 1) {
+		switch {
+		case d.Day()%9 == 4:
+			days[d.Format("2006-01-02")] = ui.DatePickerDay{Disabled: true, Note: "Full"}
+		case d.Day()%7 == 5:
+			days[d.Format("2006-01-02")] = ui.DatePickerDay{Note: "2 left"}
+		}
+	}
+	return ui.DatePickerConfig{
+		ID: "demo-stay", Label: "Your stay",
+		Range:    &ui.DatePickerRange{StartName: "check_in", EndName: "check_out", Start: "2026-11-10", End: "2026-11-12", StartLabel: "Check-in", EndLabel: "Check-out"},
+		Endpoint: DatePickerDemoEndpoint,
+		Month:    month,
+		Today:    "2026-11-02",
+		Min:      "2026-11-01",
+		Days:     days,
+		Help:     "Full nights cannot be booked.",
+	}
+}
