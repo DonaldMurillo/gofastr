@@ -12,7 +12,8 @@ import (
 
 func TestServeComputeWorker(t *testing.T) {
 	compute.RegisterWorker("route-worker", []byte("self.onmessage=function(){}"))
-	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-worker.js?v=hash", nil)
+	asset, _ := compute.LookupWorker("route-worker")
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-worker.js?v="+asset.Hash(), nil)
 	rec := httptest.NewRecorder()
 
 	ServeComputeAsset(rec, req)
@@ -37,7 +38,8 @@ func TestServeComputeWorker(t *testing.T) {
 func TestServeComputeWASM(t *testing.T) {
 	wasm := []byte("\x00asm\x01\x00\x00\x00")
 	compute.RegisterWASM("route-wasm", wasm)
-	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-wasm.wasm?v=hash", nil)
+	asset, _ := compute.LookupWASM("route-wasm")
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-wasm.wasm?v="+asset.Hash(), nil)
 	rec := httptest.NewRecorder()
 
 	ServeComputeAsset(rec, req)
@@ -109,5 +111,31 @@ func TestComputeManifestEscapesClosingScript(t *testing.T) {
 	}
 	if got["x"].JS != "</script><script>alert(1)</script>" {
 		t.Fatalf("escaped value=%q", got["x"].JS)
+	}
+}
+
+// Immutable only for the ?v= that names these bytes: a page from a newer
+// replica asking for ?v=<new> and landing on an older one must not pin
+// the old bytes under the new URL for a year. A stale or missing ?v= is
+// no-cache with the ETag, and a matching If-None-Match is a 304.
+func TestServeComputeStaleVersionIsNotImmutable(t *testing.T) {
+	compute.RegisterWorker("route-stale", []byte("self.onmessage=null"))
+	asset, _ := compute.LookupWorker("route-stale")
+	for _, q := range []string{"?v=0123456789abcdef", ""} {
+		rec := httptest.NewRecorder()
+		ServeComputeAsset(rec, httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-stale.js"+q, nil))
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("%q: Cache-Control=%q, want no-cache", q, got)
+		}
+		if got := rec.Header().Get("ETag"); got != `"`+asset.Hash()+`"` {
+			t.Errorf("%q: ETag=%q", q, got)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-stale.js", nil)
+	req.Header.Set("If-None-Match", `"`+asset.Hash()+`"`)
+	rec := httptest.NewRecorder()
+	ServeComputeAsset(rec, req)
+	if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+		t.Errorf("conditional request: status=%d body=%d bytes, want a bodyless 304", rec.Code, rec.Body.Len())
 	}
 }

@@ -3,6 +3,7 @@ package registry
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -458,4 +459,22 @@ func TestVersionCoversServedBytes(t *testing.T) {
 	if got, want := e.VersionForHash(theme, th), hex.EncodeToString(sum[:6]); got != want {
 		t.Fatalf("version %s, want %s (the served bytes' hash)", got, want)
 	}
+}
+
+// A behaviour registered after the host built its manifest is missing
+// from the behaviours block the kernel scans: it is preloaded and served
+// but its marker never loads it. Registration past Freeze fails loudly,
+// as a late style does.
+func TestRegisterBehaviorAfterFreezePanics(t *testing.T) {
+	IsolateForTest(t)
+	RegisterBehavior("before-freeze", `(function(){})();`, Markers("[data-bf]"))
+	Freeze()
+	RegisterBehavior("before-freeze", `(function(){})();`, Markers("[data-bf]")) // identical: no-op
+	defer func() {
+		r := recover()
+		if r == nil || !strings.Contains(fmt.Sprint(r), "registered after the host built its manifest") {
+			t.Fatalf("panic = %v, want the late-registration refusal", r)
+		}
+	}()
+	RegisterBehavior("late-behavior", `(function(){})();`, Markers("[data-late]"))
 }

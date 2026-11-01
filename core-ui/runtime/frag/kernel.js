@@ -276,7 +276,8 @@
       return false;
     },
     /* The screen title a response names. uihost percent-encodes the
-       header and omits it for an untitled screen; document.title is
+       header (an untitled screen's carries the app name, its full
+       document's title); a host that omits it keeps document.title, which is
        never encoded, so only the header is decoded (a "50% Off" title
        threw out of navigation). */
     _title(r) {
@@ -498,7 +499,18 @@
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-cui-style', name);
       link.id = 'cui-css-' + name;
-      document.head.appendChild(link);
+      // A failed fetch (a deploy's 503, a blip) must not pin the name:
+      // drop the link, and the claim after a cooldown, so a later scan
+      // asks again without a poll or push region re-requesting a sheet
+      // that keeps failing on every swap.
+      link.onerror = () => { link.remove(); setTimeout(() => this._pendingLinks.delete(name), 3e3); };
+      this._insertSheet(link);
+    },
+    // Component sheets go before app.css (#cui-app-css), the order the
+    // server's head keeps, so the host's own rules win cascade ties.
+    _insertSheet(link) {
+      const app = document.getElementById('cui-app-css');
+      app ? app.before(link) : document.head.appendChild(link);
     },
     // Loads the sheet each kit root (data-cui-comp) and owned-style
     // root (data-cui-scope) under root names. Descendants only: a

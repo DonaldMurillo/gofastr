@@ -1652,6 +1652,12 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 
 type renderAltKey struct{}
 
+// staticExportKey marks a render for a static export (RenderStaticPage*,
+// RenderStaticNotFoundPage). The head built for it differs from the PWA
+// offline shell's, which shares the export mode but runs the live
+// runtime: the export's static runtime never loads rpc.js.
+type staticExportKey struct{}
+
 // withRenderAlt marks ctx when res is a RenderAlt answer, for the head
 // built after it (screenOwns).
 func withRenderAlt(ctx context.Context, res app.RenderResult) context.Context {
@@ -2315,7 +2321,10 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 			_, cssHash := ds.appCSSCached()
 			href += "?v=" + cssHash
 		}
-		headClose.WriteString(`<link rel="stylesheet" href="` + href + `">`)
+		// The id is the cascade anchor: the runtime inserts every
+		// lazily loaded component sheet before it, so app.css keeps
+		// winning ties against the kit (the inline form carries it too).
+		headClose.WriteString(`<link rel="stylesheet" href="` + href + `" id="cui-app-css">`)
 		headClose.WriteByte('\n')
 	}
 	if bundle {
@@ -2354,7 +2363,13 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// the rendered page. Lets the browser parallel-fetch modules with
 	// initial render instead of stalling on hover/click. Content-
 	// addressed ?v=<hash> URLs match the immutable cache headers.
-	if preloads := runtimeModulePreloadLinks(page); preloads != "" {
+	// A static export's runtime answers data-cui-rpc with its rpc stub and
+	// boot never loads the rpc module, so its preload was a wasted fetch.
+	skip := ""
+	if ctx.Value(staticExportKey{}) != nil {
+		skip = "rpc"
+	}
+	if preloads := runtimeModulePreloadLinks(page, skip); preloads != "" {
 		headClose.WriteString(preloads)
 		headClose.WriteByte('\n')
 	}
@@ -3246,10 +3261,15 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// the runtime writes the decoded header straight into document.title,
 	// so the header is the tab title. Strip before the suffix is appended.
 	title = textsafe.StripInvisible(title)
+	if title == "" {
+		// An untitled screen's full document is titled with the app name
+		// (core-ui/app renderPage); the partial says the same, or the
+		// runtime keeps the previous page's title and announcement.
+		title = textsafe.StripInvisible(ds.App.Name)
+	} else if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
+		title += suffix
+	}
 	if title != "" {
-		if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
-			title += suffix
-		}
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))
 	}
 
@@ -4614,6 +4634,7 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 // this record and refuses. Same rendering semantics as
 // RenderStaticPage.
 func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (string, []app.FillFailure, error) {
+	ctx = context.WithValue(ctx, staticExportKey{}, true)
 	// The chrome renders with the same context a live request gets. A
 	// layout component that reads the path from the request, such as a
 	// sidebar for the section being read or a header whose language follows
@@ -4679,6 +4700,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 	if ds.App == nil || ds.App.Router.GetDefaultLayout() == nil {
 		return "", false
 	}
+	ctx = context.WithValue(ctx, staticExportKey{}, true)
 	if app.RequestFromContext(ctx) == nil {
 		if req, err := pageRequest(ctx, path); err == nil {
 			ctx = app.WithRequest(ctx, req)
@@ -4788,6 +4810,13 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 // pageSheetNames returns the sorted component sheets a page's first
 // paint needs (rendered markers plus every LoadAlways entry) and the
 // sheets only its <template> content needs.
+//
+// Only registered, path-safe names are kept. A marker can name nothing
+// (host markup, a typo, a CMS field, a component this replica does not
+// have mid-deploy), and every name here goes into the bundle URL and
+// its data-cui-bundle list: an unknown one made the bundle answer 404
+// while the runtime, seeded from the list, never fetched the real
+// sheets on its own, so the whole page stayed unstyled.
 func pageSheetNames(page string) (names, held []string) {
 	used, held := registry.ScanSplit(page)
 	eager := registry.EagerNames()
@@ -4797,7 +4826,9 @@ func pageSheetNames(page string) (names, held []string) {
 	}
 	names = make([]string, 0, len(seen))
 	for n := range seen {
-		names = append(names, n)
+		if _, ok := registry.Lookup(n); ok && safeComponentName(n) {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
 	return names, held
@@ -5144,13 +5175,16 @@ func runtimeModuleManifestScript() string {
 // priority and competes with the stylesheets and the document itself
 // for the first-paint bandwidth. Modules hydrate after paint, so the
 // hint only has to land before the kernel asks for them.
-func runtimeModulePreloadLinks(pageHTML string) string {
+func runtimeModulePreloadLinks(pageHTML string, skip ...string) string {
 	mods := runtime.NeededModules(pageHTML)
 	if len(mods) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	for _, name := range mods {
+		if slices.Contains(skip, name) {
+			continue
+		}
 		hash := widget.RuntimeModuleHash(name)
 		href := "/__gofastr/runtime/" + name + ".js"
 		if hash != "" {
@@ -5407,9 +5441,11 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 // Cache policy mirrors handleComponentCSS: `immutable` only when
 // the supplied v matches the freshly-computed combined hash;
 // otherwise no-cache to avoid pinning a stale URL to fresh bytes.
-// Unknown names 404: the contract is that the client requests
-// names it learned from the SSR-emitted <link>, which by
-// construction lists only registered entries.
+// An unknown name is skipped, not refused: a page another replica
+// rendered mid-deploy can name a component this one lacks, and a 404
+// would drop every sheet in the bundle. A bundle that skipped a name is
+// never immutable, whatever its v says. Only names that are all unknown
+// 404.
 func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	namesParam := r.URL.Query().Get("names")
 	if namesParam == "" {
@@ -5430,6 +5466,7 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	versions := make([]string, 0, len(names))
 	bodies := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
+	skipped := false
 	for _, n := range names {
 		n = strings.TrimSpace(n)
 		if !validNameRe.MatchString(n) {
@@ -5442,15 +5479,23 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		seen[n] = struct{}{}
 		e, ok := registry.Lookup(n)
 		if !ok {
-			http.NotFound(w, r)
-			return
+			// Skip, don't refuse: a page another replica rendered can
+			// name a component this one lacks mid-deploy, and a 404
+			// would drop every other sheet in the bundle. Such an
+			// answer is never immutable (skipped, below).
+			skipped = true
+			continue
 		}
 		versions = append(versions, e.VersionForHash(theme, th))
 		bodies = append(bodies, e.ServedCSSForHash(theme, th))
 	}
+	if len(bodies) == 0 {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	wantV := hashStrings(versions...)
-	if v := r.URL.Query().Get("v"); v != "" && v == wantV {
+	if v := r.URL.Query().Get("v"); v != "" && v == wantV && !skipped {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
