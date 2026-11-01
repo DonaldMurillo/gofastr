@@ -88,7 +88,7 @@ func bindToolParams(params map[string]any, dst any) error {
 	}
 	body, err := json.Marshal(rest)
 	if err != nil {
-		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
+		return Fail(400, ReasonInvalidParams, map[string]any{"detail": JSONErrorDetail(err)})
 	}
 	// UseNumber, then Settle, as Bind does: MCP hands an integer past 2^53
 	// over as a json.Number, and a float64 decode would round it.
@@ -96,7 +96,7 @@ func bindToolParams(params map[string]any, dst any) error {
 		return err
 	}
 	if err := jsonexact.Settle(dst); err != nil {
-		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
+		return Fail(400, ReasonInvalidParams, map[string]any{"detail": JSONErrorDetail(err)})
 	}
 	return nil
 }

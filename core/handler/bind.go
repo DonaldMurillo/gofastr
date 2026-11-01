@@ -122,7 +122,7 @@ func bindBody(r *http.Request, dst any) error {
 	limited := http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": BodyReadDetail(err)})
 	}
 	if len(body) == 0 {
 		return nil
@@ -143,7 +143,7 @@ func bindBody(r *http.Request, dst any) error {
 	// map[string]any field) keeps its digits past 2^53.
 	decoder.UseNumber()
 	if err := decoder.Decode(dst); err != nil {
-		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": JSONErrorDetail(err)})
 	}
 	// Exactly one value: a second Decode must find nothing. '{"a":1}{"b":2}'
 	// decodes its first value and hides the second, leaving two parsers (or
@@ -154,7 +154,7 @@ func bindBody(r *http.Request, dst any) error {
 		return Fail(400, ReasonJSONMultipleValues)
 	}
 	if err := jsonexact.Settle(dst); err != nil {
-		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": JSONErrorDetail(err)})
 	}
 	return nil
 }

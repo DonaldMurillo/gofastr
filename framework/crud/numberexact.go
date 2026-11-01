@@ -184,12 +184,12 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 	dec.UseNumber()
 	var body map[string]any
 	if err := dec.Decode(&body); err != nil {
-		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": handler.JSONErrorDetail(err)})
 	}
 	// A body is one JSON value: a second object after the first was
 	// dropped while the request succeeded.
 	if _, err := dec.Token(); err != io.EOF {
-		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": "unexpected data after the JSON object"})
+		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": handler.JSONTrailingData()})
 	}
 	normalizeJSONNumbers(body)
 	return body, nil

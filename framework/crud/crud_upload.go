@@ -174,9 +174,25 @@ func readBodyBytes(r *http.Request) ([]byte, error) {
 		if strings.Contains(err.Error(), "request body too large") {
 			return nil, errBodyTooLarge
 		}
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return nil, bodyReadError(err)
 	}
 	return data, nil
+}
+
+// bodyDecodeError is a tokenise failure on a body crud walks by hand,
+// under the invalid_body frame. The detail is the phrased
+// handler.JSONErrorDetail, never the decoder's text: that names Go types
+// ("Go value of type map[string]interface {}") and reads as English in
+// every locale. err stays reachable for logs; it is not Phrased, so the
+// body's reason remains invalid_body.
+func bodyDecodeError(err error) error {
+	return &i18n.Error{Reason: reasonInvalidBody, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
+}
+
+// bodyReadError is bodyDecodeError for a read that failed before any
+// decode ran (handler.BodyReadDetail).
+func bodyReadError(err error) error {
+	return &i18n.Error{Reason: reasonInvalidBody, Params: map[string]any{"detail": handler.BodyReadDetail(err)}, Err: err}
 }
 
 // decodeJSONBody decodes r.Body into v with the request's body already
