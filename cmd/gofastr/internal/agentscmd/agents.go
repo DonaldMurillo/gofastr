@@ -77,13 +77,11 @@ func runAgentsInit(args []string) {
 		dir = args[0]
 	}
 	target := filepath.Join(dir, "AGENTS.md")
+	// Lstat sees a link itself, dangling or not, so an AGENTS.md linked
+	// out of the project is refused here as one that already exists: the
+	// os.WriteFile below only ever creates a new file.
 	if _, err := os.Lstat(target); err == nil {
 		cli.Fail("%s already exists. Use `gofastr agents sync` to refresh.", target)
-		cli.OsExit(1)
-		return
-	}
-	if err := project.RefuseEscape(dir, "AGENTS.md"); err != nil {
-		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}

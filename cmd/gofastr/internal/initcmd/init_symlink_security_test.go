@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/agentscmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 )
 
 // The scaffold and onboarding writers followed symlinks out of the
@@ -37,6 +39,7 @@ func TestOnboardingWritersRefuseLinksOutOfTheProject(t *testing.T) {
 		}},
 		{".env", ".env", false, func(p string) error { return writeEnvFile(p, ".env", "JWT_SECRET=s3cret\n") }},
 		{".gitignore", ".gitignore", false, func(p string) error { return writeGitignore(p, ".gitignore", ".env\n") }},
+		{"settings file", settings.FileName, false, func(p string) error { return exitAsError(t, func() { writeSettingsFile(p, "") }) }},
 	}
 	for _, s := range surfaces {
 		for _, dangling := range []bool{false, true} {
@@ -196,5 +199,49 @@ func TestInitRefusesGitDirLinkedOutside(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(outsideRepo); len(entries) > 0 {
 		t.Errorf("init . (exit %d) put %d entries in %s through the linked .git", code, len(entries), outsideRepo)
+	}
+}
+
+// exitAsError runs a writer that reports failure through cli.OsExit and
+// turns a non-zero exit into an error, so it fits the surfaces table.
+func exitAsError(t *testing.T, fn func()) error {
+	t.Helper()
+	var code int
+	clitest.CovT_capStdout(t, func() { code = clitest.CovT_capExit(t, fn) })
+	if code != -1 && code != 0 {
+		return fmt.Errorf("exit %d", code)
+	}
+	return nil
+}
+
+// init . creates static/, entities/ and migrations/ with os.MkdirAll and
+// writes the scaffold into them, so a cloned directory whose entities/
+// links out of it took the generated entity files wherever the link
+// pointed. The directory loop refuses such a link before any scaffold
+// file is written, so a refused init leaves no half-written project
+// (the per-file writers would refuse the link too, but only after
+// main.go and its siblings were already in place).
+func TestInitRefusesALinkedScaffoldDir(t *testing.T) {
+	for _, linked := range []string{"static", "entities", "migrations"} {
+		t.Run(linked, func(t *testing.T) {
+			dir := inPlaceDir(t, "linkdirapp")
+			outside := filepath.Join(filepath.Dir(dir), "outside")
+			if err := os.Mkdir(outside, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(dir, linked)); err != nil {
+				t.Fatal(err)
+			}
+			code := runInitCode(t, ".")
+			if code != 1 {
+				t.Errorf("init . over a linked %s/ exited %d, want 1", linked, code)
+			}
+			if entries, _ := os.ReadDir(outside); len(entries) > 0 {
+				t.Errorf("init . (exit %d) put %d entries outside the project through the linked %s/", code, len(entries), linked)
+			}
+			if _, err := os.Lstat(filepath.Join(dir, "main.go")); err == nil {
+				t.Errorf("init . refused the linked %s/ only after writing main.go", linked)
+			}
+		})
 	}
 }
