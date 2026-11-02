@@ -912,6 +912,14 @@ few lines, and link the PR or the docs page for the rest.
     line.
   - `core/config.Load` binds `encoding.TextUnmarshaler` fields
     (`time.Time`, `slog.Level`, `netip.Addr`, validated enums).
+  - Option pairs that break an invariant together: `NewDBQueue` refuses
+    a `WithDBHandlerTimeout` no shorter than the claim lease (a handler
+    inside its budget was re-claimed and run twice); webhook `New` raises
+    a `LeasePeriod` no longer than the HTTP client timeout to twice that
+    timeout (a second Manager re-sent a slow delivery); a `RequestTimeout`
+    raised past the write deadline raises an unset `WriteTimeout`, and an
+    explicit conflicting pair fails `Start` (slow buffered responses were
+    lost at the write deadline).
   - admin: the Audit log and dashboard activity no longer print the
     title or changed values of a record a `BeforeGet`/`BeforeList` hook
     hides from the admin; they show its id only.
