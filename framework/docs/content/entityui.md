@@ -687,7 +687,10 @@ _ = list.RenderCtx(ctx)
   The handlers run the CRUD handler's `RestoreOne` / `PurgeOne` under
   the caller's own context, so permission, the Decider and owner and
   tenant scope are the write route's own gates; a purge of a live row
-  answers 409 and touches nothing. A form-RPC caller gets a status and
+  answers 409 and touches nothing. Before the write each handler reads
+  the row through the caller's read hooks (`crud.WithReadHooks`), as the
+  trash view and the bulk restore do, so a row a `BeforeList` hook hides
+  answers 404 and is not restored or purged. A form-RPC caller gets a status and
   a toast; a plain form post gets a 303 back to the Deleted view, along
   a same-origin relative return path the form carried — never an
   absolute URL. Cross-site posts are refused, the body is capped and

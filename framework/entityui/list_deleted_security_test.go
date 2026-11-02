@@ -1,6 +1,7 @@
 package entityui
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 // The trash view's security posture: another owner's trashed row is
@@ -168,5 +170,35 @@ func TestPurgeLiveRowAnswers409AndKeepsRow(t *testing.T) {
 	var n int
 	if err := x.db.QueryRow(`SELECT COUNT(*) FROM notes WHERE id = 'u1-live'`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("SECURITY: a refused purge hard-deleted the live row (count=%d err=%v)", n, err)
+	}
+}
+
+// A trashed row a BeforeList hook hides is neither listed in the trash
+// view nor restorable or purgeable through its routes: the routes read
+// the row through the caller's hooked read first, the way the bulk
+// restore's re-read already drops it.
+func TestTrashWritesHonorBeforeListScope(t *testing.T) {
+	for _, op := range []string{"_restore", "_purge"} {
+		x := deletedUI(t)
+		ch, err := x.host.Crud(mustEntity(t, x, "notes"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch.Hooks = hook.NewHookRegistry()
+		ch.Hooks.RegisterHook(hook.BeforeList, func(_ context.Context, data any) error {
+			data.(*hook.ListPayload).AddWhere("status = $1", "open")
+			return nil
+		})
+		if html := listHTML(t, x.ui.List("notes").Deleted(), x.userCtx("/notes", "?view=deleted", "u1")); strings.Contains(html, "dead one") {
+			t.Fatalf("the hook did not hide n2 from the trash view, so the route check proves nothing:\n%s", html)
+		}
+		w := postDeletedWrite(t, x, "/api/notes/n2/"+op, "/notes?view=deleted")
+		if w.Code != http.StatusNotFound {
+			t.Errorf("SECURITY: %s of a row the hook hides answered %d, want 404", op, w.Code)
+		}
+		var n int
+		if err := x.db.QueryRow(`SELECT COUNT(*) FROM notes WHERE id = 'n2' AND deleted_at IS NOT NULL`).Scan(&n); err != nil || n != 1 {
+			t.Errorf("SECURITY: %s changed the hidden row (trashed count=%d err=%v)", op, n, err)
+		}
 	}
 }

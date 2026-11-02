@@ -4372,6 +4372,12 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The trash view's Restore and Delete permanently routes honor read
+  hooks.** `entityui.RestoreHandler` and `PurgeHandler` wrote any
+  trashed row the caller's scope reached by id, including one a
+  `BeforeList` hook hides from the trash view itself; the bulk restore
+  already dropped such a row. Both now read the row with
+  `crud.WithReadHooks` first and answer 404 for a hidden one (#645).
 - **A record's Activity tab no longer prints a value a read hook
   masks.** The change list drew each audit row's stored before and
   after values for every field but `NoQuery` ones, so a field an
