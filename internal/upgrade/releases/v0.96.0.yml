@@ -755,3 +755,9 @@ notes:
     breaking: false
     guidance: "Nothing to change. A caller that passed a negative ttl got a never-expiring entry before; it now reads a miss, which is what the Cache contract always said."
     nodetect: "the ttl is a runtime value; no spelling in an app's source marks a negative one"
+  - change: "battery/relay forwards Referer to the upstream as the page's origin (https://app.example/) instead of the full page URL, and drops a Referer that is not an absolute http(s) URL"
+    breaking: false
+    guidance: "Nothing to change. A vendor that read the page path from Referer reads it from its own payload (analytics scripts send the page URL in the body). Send what the vendor needs in the request yourself if it relied on the header."
+    find:
+      uses:
+        - gofastr/battery/relay.New

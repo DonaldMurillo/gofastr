@@ -35,7 +35,8 @@ base := r.Base() // point SDKs/templates here, don't hard-code the path
   `/__gofastr/...` route.
 - Credentials are stripped both directions (Cookie/Authorization and the
   app's own X-Gofastr-* headers, the embed grant among them, in;
-  Set-Cookie out) and inbound `X-Forwarded-*` is never trusted. Do
+  Set-Cookie out) and inbound `X-Forwarded-*` is never trusted.
+  `Referer` reaches the vendor as its origin only. Do
   not "fix" a vendor integration by re-adding headers.
 - Bodies are capped (8 MiB default, `MaxBodyBytes` per route);
   responses default to `Cache-Control: no-store` unless

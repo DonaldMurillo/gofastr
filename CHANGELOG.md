@@ -140,6 +140,20 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The relay sends the vendor the page's origin, not its URL, as
+  `Referer`.** A relayed request is same-origin, so the browser sends
+  the full page URL as `Referer`, and a reset or magic-link page that
+  loaded a vendor script through the relay handed its token to the
+  vendor; a request straight to the vendor would have carried the origin
+  alone. The relay now cuts `Referer` to `scheme://host/` and drops one
+  that is not an absolute http(s) URL.
+- **The relay's `Link` strip reads a target the way the browser does.**
+  It looked for `://` and `<//` only, so `<\\vendor.example/x>`,
+  `</\vendor.example/x>` and a tab between the slashes, which a browser
+  parses as `//vendor.example/x`, reached it as a preload or preconnect
+  to the vendor. A target with a scheme or an authority after tab and
+  newline removal and `\` to `/` now drops the value. See
+  [relay](framework/docs/content/relay.md).
 - **`RedisCache` stores nothing for a negative TTL.** The `Cache`
   contract says a negative `ttl` stores nothing and drops what the key
   held, and `MemoryCache` does that. `RedisCache.Set` handed the
