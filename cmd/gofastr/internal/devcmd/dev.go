@@ -87,6 +87,12 @@ func RunDev(args []string) {
 		return
 	}
 
+	if err := checkDevDir(dir); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+
 	runtimeIsolation, resolvedAddr, err := resolveDevIsolation(dir, addr)
 	if err != nil {
 		cli.Fail("Isolation failed: %v", err)
@@ -280,6 +286,20 @@ func checkDevAddr(addr string) error {
 	}
 	if err != nil {
 		return fmt.Errorf("invalid listen address %q: %v (want host:port, :port or -p <port>)", addr, err)
+	}
+	return nil
+}
+
+// checkDevDir refuses a --dir that is not a directory. The loop used to
+// start on one anyway: the first build failed, and "Fixing and saving
+// will retry" waited on a tree that does not exist.
+func checkDevDir(dir string) error {
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("--dir %s: %w", dir, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("--dir %s is not a directory", dir)
 	}
 	return nil
 }
