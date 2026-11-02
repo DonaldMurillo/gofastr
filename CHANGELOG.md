@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Docs search excerpts hold the match in whole characters.**
+  `framework_docs_search` and `gofastr docs --grep` cut a long line at
+  byte offsets, splitting an em dash or accented letter, and located the
+  match in the lowercased line, which is longer or shorter than the line
+  itself when it holds a character such as `İ`, so the excerpt could miss
+  the match.
 - **`gofastr pack` prints no terminal escapes.** A string from the app's
   source with an ESC, a C1 control, a bidi override or a zero-width
   space went into the YAML bare, so `gofastr pack` in a cloned repo
