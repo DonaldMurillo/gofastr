@@ -178,6 +178,11 @@ few lines, and link the PR or the docs page for the rest.
   subscribed to and switch `notifications/resources/updated` off for
   everyone who had. Each subscribe is now recorded under its caller
   (the resolved user, else the TCP peer's host); delivery is unchanged.
+  That record is capped at 4096 caller/`uri` subscriptions across all
+  callers, beside the existing 1024 distinct uris: an anonymous caller
+  is its peer host, so without the cap a client with many addresses
+  grew it without end. A subscribe that would add one past the cap
+  fails.
 - **An idle MCP notification stream re-checks its caller.** The GET
   stream `ServeSSE` holds re-checked the caller only before a
   notification, and notifications are rare, so a revoked session's

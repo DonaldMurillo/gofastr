@@ -428,8 +428,10 @@ one of the same caller's (the resolved user, else the TCP peer's host),
 and delivery stops only when the count for that `uri` reaches zero. An
 unsubscribe for a `uri` the caller never subscribed to is a no-op, even
 when other callers did. A `uri` longer than 2048 bytes is refused, the server retains at
-most 1024 distinct subscribed uris (a `resources/subscribe` past that
-fails), and when the last stream disconnects the retained
+most 1024 distinct subscribed uris and 4096 caller/`uri` subscriptions
+across all callers (a `resources/subscribe` that would add one past
+either bound fails; re-subscribing to a `uri` the caller already holds
+always works), and when the last stream disconnects the retained
 subscriptions are dropped — with no stream there is nobody to deliver
 to. Raising one from server code:
 

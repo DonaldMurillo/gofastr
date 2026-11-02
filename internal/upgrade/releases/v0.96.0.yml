@@ -643,7 +643,7 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
-  - change: "MCP resources/unsubscribe releases only a subscription the same caller (resolved user, else TCP peer host) made; an unsubscribe for a uri only other callers subscribed to is a no-op"
+  - change: "MCP resources/unsubscribe releases only a subscription the same caller (resolved user, else TCP peer host) made; an unsubscribe for a uri only other callers subscribed to is a no-op; at most 4096 caller/uri subscriptions are retained across all callers, and a subscribe that would add one past that fails"
     breaking: false
     guidance: "Clients that subscribe and unsubscribe under one identity see no change. A client that unsubscribed on another identity's behalf must send the unsubscribe as that identity."
     nodetect: "the change is in the server's handling of a wire method; nothing in an app's source spells it"

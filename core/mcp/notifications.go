@@ -29,6 +29,19 @@ const maxResourceURIBytes = 2048
 // (expireResourceSubsIfIdleLocked) frees room.
 const maxResourceSubscriptions = 1024
 
+// maxResourceSubscriptionPairs caps how many (caller, uri) subscriptions
+// the per-caller record (Server.resourceSubsBy) retains, across every
+// caller. The record exists so an unsubscribe releases only its own
+// caller's count, and the caller is the TCP peer host for an anonymous
+// client: without a bound of its own, a client with many addresses (an
+// IPv6 prefix) minted a fresh caller per address, and since subscribe
+// needs no open stream the record was never expired. A subscribe that
+// would add a pair past the cap fails like one past
+// maxResourceSubscriptions; a caller re-subscribing to a uri it already
+// holds is not growth and always works. With uris capped at
+// maxResourceURIBytes the record holds at most about 8 MiB of uri text.
+const maxResourceSubscriptionPairs = 4 * maxResourceSubscriptions
+
 // sseNotification is one server-initiated MCP notification queued for
 // delivery to the SSE subscriber streams.
 type sseNotification struct {
@@ -358,8 +371,17 @@ func (s *Server) handleResourcesSubscribe(ctx context.Context, req Request) Resp
 	if s.resourceSubsBy == nil {
 		s.resourceSubsBy = make(map[resourceSubKey]int)
 	}
+	// The per-caller record is bounded as a whole too: a caller is a
+	// peer host when anonymous, and addresses are cheap. Counted in
+	// pairs, so a caller re-subscribing to a uri it holds is not growth.
+	key := resourceSubKey{caller: subscriptionCaller(ctx), uri: params.URI}
+	if _, exists := s.resourceSubsBy[key]; !exists && len(s.resourceSubsBy) >= maxResourceSubscriptionPairs {
+		s.sseMu.Unlock()
+		return newErrorResponse(req.ID, ErrInvalidParams,
+			fmt.Sprintf("too many resource subscriptions (max %d)", maxResourceSubscriptionPairs))
+	}
 	s.resourceSubs[params.URI]++
-	s.resourceSubsBy[resourceSubKey{caller: subscriptionCaller(ctx), uri: params.URI}]++
+	s.resourceSubsBy[key]++
 	s.sseMu.Unlock()
 	return newSuccessResponse(req.ID, map[string]any{})
 }
