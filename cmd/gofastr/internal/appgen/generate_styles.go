@@ -525,7 +525,7 @@ func printDiagnostics(rel, src string, diags []ownstyle.Diagnostic) (hasErr bool
 		if ownstyle.Suppressed(src, d) {
 			continue
 		}
-		fmt.Printf("%s:%d:%d: %s %s %s\n", rel, d.Line, d.Col, d.Severity, d.Rule, d.Message)
+		cli.Printf("%s:%d:%d: %s %s %s\n", rel, d.Line, d.Col, d.Severity, d.Rule, d.Message)
 		if d.Severity == ownstyle.SeverityError {
 			hasErr = true
 		}
@@ -622,7 +622,7 @@ func printRepeatedLiterals(srcOf map[string]string, found []ownstyle.FileDiagnos
 		if ownstyle.Suppressed(srcOf[d.File], d.Diag) {
 			continue
 		}
-		fmt.Printf("%s:%d:%d: %s %s %s\n", d.File, d.Diag.Line, d.Diag.Col, d.Diag.Severity, d.Diag.Rule, d.Diag.Message)
+		cli.Printf("%s:%d:%d: %s %s %s\n", d.File, d.Diag.Line, d.Diag.Col, d.Diag.Severity, d.Diag.Rule, d.Diag.Message)
 	}
 }
 

@@ -276,7 +276,7 @@ func RunVerify(args []string) {
 				"accepted":        b.Total(),
 			})
 			if marshalErr == nil {
-				fmt.Println(string(data))
+				cli.Println(string(data))
 			}
 		} else {
 			cli.Success("baseline written to %s: %d finding(s) accepted", baselineFile, b.Total())
@@ -349,7 +349,7 @@ func RunVerify(args []string) {
 			cli.OsExit(2)
 			return
 		}
-		fmt.Println(string(data))
+		cli.Println(string(data))
 	case opts.sarifPath != "":
 		// The success line above plus, on failure, the verdict: a
 		// failing run must not end on a green line alone.
@@ -526,7 +526,7 @@ func emitVetFailureJSON(root string, cfg *contracts.Config, vet *contracts.VetRe
 		cli.Fail("render JSON: %v", err)
 		return
 	}
-	fmt.Println(string(data))
+	cli.Println(string(data))
 }
 
 func explainRule(idOrSlug string, asJSON bool) {
@@ -547,7 +547,7 @@ func explainRule(idOrSlug string, asJSON bool) {
 			cli.OsExit(2)
 			return
 		}
-		fmt.Println(string(data))
+		cli.Println(string(data))
 		return
 	}
 	fmt.Print(contracts.FormatExplain(rule, cli.StdoutIsTTY))
@@ -575,7 +575,7 @@ func listRules(asJSON bool, capabilities []contracts.Capability) {
 			cli.OsExit(2)
 			return
 		}
-		fmt.Println(string(data))
+		cli.Println(string(data))
 		return
 	}
 	fmt.Printf("\n%s: %d rules\n", cli.Bold("GoFastr contracts"), len(rules))
@@ -583,10 +583,10 @@ func listRules(asJSON bool, capabilities []contracts.Capability) {
 	for _, r := range rules {
 		if r.Capability != current {
 			current = r.Capability
-			fmt.Printf("\n%s\n", cli.Bold(current.Title()))
+			cli.Printf("\n"+cli.Bold("%s")+"\n", current.Title())
 		}
-		fmt.Printf("  %s  %-8s %-34s %s\n",
-			r.ID, cli.Dim(r.Severity.String()), r.Slug, r.Title)
+		cli.Printf("  %s  "+cli.Dim("%-8s")+" %-34s %s\n",
+			r.ID, r.Severity.String(), r.Slug, r.Title)
 	}
 	fmt.Printf("\n%s\n", cli.Dim("gofastr verify --explain <id>   full description, why it matters, and the fix"))
 }
@@ -781,13 +781,13 @@ func failRun(jsonMode bool, format string, args ...any) {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "  ✗ %s\n", msg)
+	cli.Fprintf(os.Stderr, "  ✗ %s\n", msg)
 	data, err := json.Marshal(map[string]string{"error": msg})
 	if err != nil {
 		// A string map cannot fail to marshal; belt for the impossible.
 		data = []byte(`{"error":"verify failed and the message could not be encoded"}`)
 	}
-	fmt.Println(string(data))
+	cli.Println(string(data))
 }
 
 // partialWriteNote names the files an aborted fix pass already rewrote.

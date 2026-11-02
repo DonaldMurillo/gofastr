@@ -147,7 +147,7 @@ func runHarnessCredsList(args []string) {
 	fmt.Printf("  %-20s  %s\n", "PROVIDER", "ACCOUNT")
 	fmt.Printf("  %-20s  %s\n", "--------", "-------")
 	for _, e := range entries {
-		fmt.Printf("  %-20s  %s\n", e.Provider, e.Account)
+		cli.Printf("  %-20s  %s\n", e.Provider, e.Account)
 	}
 	fmt.Println()
 }

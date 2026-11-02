@@ -3,6 +3,7 @@ package upgradecmd
 import (
 	"fmt"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"golang.org/x/mod/semver"
 )
@@ -12,7 +13,7 @@ import (
 func printUnmountedForUpgrade(root, target string) {
 	_, entries, err := project.UnmountedSettings(root)
 	if err != nil {
-		fmt.Printf("NOTE: could not read the unmounted packages: %v\n\n", err)
+		cli.Printf("NOTE: could not read the unmounted packages: %v\n\n", err)
 		return
 	}
 	if len(entries) == 0 {
@@ -20,12 +21,12 @@ func printUnmountedForUpgrade(root, target string) {
 	}
 	fmt.Println("Unmounted packages (upgrade never changes them; carry what you need by hand):")
 	for _, e := range entries {
-		fmt.Printf("  %s\n", project.DescribeUnmounted(e))
+		cli.Printf("  %s\n", project.DescribeUnmounted(e))
 		switch {
 		case project.UnmountedBehind(e.Version, target):
-			fmt.Printf("    changes upstream since: %s\n", project.UnmountedCompareURL(e.Version, target))
+			cli.Printf("    changes upstream since: %s\n", project.UnmountedCompareURL(e.Version, target))
 		case !project.IsReleaseTag(e.Version) || !semver.IsValid(e.Version):
-			fmt.Printf("    copied from a checkout, not a release: compare it with %s by hand\n", target)
+			cli.Printf("    copied from a checkout, not a release: compare it with %s by hand\n", target)
 		}
 	}
 	fmt.Println()

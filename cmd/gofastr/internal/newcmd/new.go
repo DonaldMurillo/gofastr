@@ -142,7 +142,7 @@ func runNewRoute(args []string) {
 	method = strings.ToUpper(method)
 
 	cli.Info("Add this to your app setup:")
-	fmt.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
+	cli.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
 }
 
 // routeSnippet returns the canonical app.Router().Handle(...) line for

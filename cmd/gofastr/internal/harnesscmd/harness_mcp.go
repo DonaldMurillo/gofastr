@@ -41,7 +41,7 @@ func runHarnessMCP(args []string) {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
@@ -59,7 +59,7 @@ func runHarnessMCP(args []string) {
 
 	prof, err := loadProfile(*useFramework, *profilePath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -69,7 +69,7 @@ func runHarnessMCP(args []string) {
 
 	machineKey, err := machineKeyFromEnv()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 		return
 	}
@@ -94,7 +94,7 @@ func runHarnessMCP(args []string) {
 	}
 	h, err := xharness.New(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	defer h.Shutdown()
@@ -102,11 +102,11 @@ func runHarnessMCP(args []string) {
 	// Create one default session bound to the profile's default model.
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
-		fmt.Fprintf(os.Stderr, "harness mcp: no provider matches %q\n", prof.DefaultModel)
+		cli.Fprintf(os.Stderr, "harness mcp: no provider matches %q\n", prof.DefaultModel)
 		cli.OsExit(1)
 	}
 	if _, err := h.CreateSession(prov, modelID); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -114,7 +114,7 @@ func runHarnessMCP(args []string) {
 	srv := mcpserver.New(h.Mux, h.Catalog)
 	srv.RequiredToken = *requiredToken
 	if err := srv.Serve(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 }

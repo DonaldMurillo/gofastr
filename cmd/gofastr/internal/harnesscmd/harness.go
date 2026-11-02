@@ -65,17 +65,17 @@ func RunHarness(args []string) {
 	// Resolve XDG paths.
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
+		cli.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
 		cli.OsExit(1)
 	}
 	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
 	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
 	if err := os.MkdirAll(xdgConfig, 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	if err := os.MkdirAll(xdgState, 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -90,7 +90,7 @@ func RunHarness(args []string) {
 	// Pick profile.
 	prof, err := loadProfile(*useFramework, *profilePath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -100,7 +100,7 @@ func RunHarness(args []string) {
 
 	machineKey, err := machineKeyFromEnv()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -126,7 +126,7 @@ func RunHarness(args []string) {
 	}
 	h, err := xharness.New(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
+		cli.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
 		cli.OsExit(1)
 	}
 	defer h.Shutdown()
@@ -139,21 +139,21 @@ func RunHarness(args []string) {
 	// Resolve provider from the profile's default_model "provider:id".
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
-		fmt.Fprintf(os.Stderr, "harness: no provider matches %q\n", prof.DefaultModel)
+		cli.Fprintf(os.Stderr, "harness: no provider matches %q\n", prof.DefaultModel)
 		cli.OsExit(1)
 	}
 
 	// Spawn one engine for the session.
 	sess, err := h.CreateSession(prov, modelID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
 	// Bundled inproc client.
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)
 	if err := h.Mux.Attach(sess, c); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	defer c.Close()
@@ -175,7 +175,7 @@ func RunHarness(args []string) {
 		}
 		url, token, shutdown, err := startHTTPListener(h, sess, bind)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "harness: http listener:", err)
+			cli.Fprintln(os.Stderr, "harness: http listener:", err)
 			cli.OsExit(1)
 		}
 		defer shutdown()
@@ -198,7 +198,7 @@ func RunHarness(args []string) {
 		t.WebURL = webURL
 		t.WebToken = webToken
 		if err := t.Run(context.Background()); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			cli.Fprintln(os.Stderr, err)
 		}
 		return
 	}
@@ -317,7 +317,7 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 		SessionID: sess,
 		Content:   engine.SimpleInput(prompt),
 	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		return
 	}
 	for env := range sub {
@@ -337,7 +337,7 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 		}
 		if env.Kind == "Error" {
 			e, _ := control.DecodeEvent(env)
-			fmt.Fprintf(os.Stderr, "\n[error] %v\n", e)
+			cli.Fprintf(os.Stderr, "\n[error] %v\n", e)
 			return
 		}
 	}
@@ -357,7 +357,7 @@ func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
 			// Scan reports EOF and a read failure the same way; only Err
 			// separates "user pressed ctrl-D" from "input was lost".
 			if err := scanner.Err(); err != nil {
-				fmt.Fprintf(os.Stderr, "\nread input: %v\n", err)
+				cli.Fprintf(os.Stderr, "\nread input: %v\n", err)
 			}
 			return
 		}
@@ -369,7 +369,7 @@ func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
 			SessionID: sess,
 			Content:   engine.SimpleInput(line),
 		}); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			cli.Fprintln(os.Stderr, err)
 			continue
 		}
 		streamOneTurn(sub)
@@ -391,7 +391,7 @@ func streamOneTurn(sub <-chan control.EventEnvelope) {
 			return
 		case "Error":
 			e, _ := control.DecodeEvent(env)
-			fmt.Fprintf(os.Stderr, "\n[error] %v\n", e)
+			cli.Fprintf(os.Stderr, "\n[error] %v\n", e)
 			return
 		}
 	}

@@ -283,7 +283,7 @@ func reportPackCheck(c packCheck, toStderr bool) {
 func packNote(toStderr bool, format string, args ...any) {
 	msg := packMessage(format, args...)
 	if toStderr {
-		fmt.Fprintf(os.Stderr, "  ⚠ %s\n", msg)
+		cli.Fprintf(os.Stderr, "  ⚠ %s\n", msg)
 		return
 	}
 	cli.Warn("%s", msg)
@@ -293,7 +293,7 @@ func packNote(toStderr bool, format string, args ...any) {
 func packFail(toStderr bool, format string, args ...any) {
 	msg := packMessage(format, args...)
 	if toStderr {
-		fmt.Fprintf(os.Stderr, "  ✗ %s\n", msg)
+		cli.Fprintf(os.Stderr, "  ✗ %s\n", msg)
 	} else {
 		cli.Fail("%s", msg)
 	}

@@ -101,6 +101,36 @@ func Warn(format string, args ...interface{}) {
 	fmt.Printf("  %s %s\n", Yellow("⚠"), scrubbedf(format, args...))
 }
 
+// Printf, Print, Println, Fprintf and Fprintln are their fmt namesakes
+// with every argument scrubbed the way the status helpers scrub theirs
+// (owner decision, 2026-11: the CLI never lets repo-derived text reach
+// the terminal live). They are for the lines that are not a status: a
+// list of written paths, a next-steps block, an error on stderr. The
+// format string is the caller's constant and is not scrubbed, so
+// styling goes in the format, as it does for the helpers. Print and
+// Println have no format and scrub their whole output.
+// TestNoRawRepoTextReachesTheTerminal walks the CLI for a raw fmt print
+// that should be one of these.
+func Printf(format string, args ...interface{}) {
+	fmt.Print(scrubbedf(format, args...))
+}
+
+func Print(args ...interface{}) {
+	fmt.Print(ScrubTerminalOutput(fmt.Sprint(args...)))
+}
+
+func Println(args ...interface{}) {
+	fmt.Print(ScrubTerminalOutput(fmt.Sprintln(args...)))
+}
+
+func Fprintf(w io.Writer, format string, args ...interface{}) {
+	_, _ = io.WriteString(w, scrubbedf(format, args...))
+}
+
+func Fprintln(w io.Writer, args ...interface{}) {
+	_, _ = io.WriteString(w, ScrubTerminalOutput(fmt.Sprintln(args...)))
+}
+
 // scrubbedf is fmt.Sprintf with every argument passed through
 // ScrubTerminalOutput after it is formatted with its own verb, width and
 // flags, so %q, %v, %s and %x read the value the way they always did.

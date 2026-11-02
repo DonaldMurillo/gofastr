@@ -188,7 +188,7 @@ func RunInit(args []string) {
 		dbURL = "postgres://user:password@localhost:5432/" + projName + "?sslmode=disable"
 	}
 
-	fmt.Printf("\n  Creating %s project %s...\n\n", cli.Bold("GoFastr"), cli.Bold(projName))
+	cli.Printf("\n  Creating "+cli.Bold("GoFastr")+" project "+cli.Bold("%s")+"...\n\n", projName)
 
 	// Create directory structure: the project directory itself (the one
 	// the user named), then its subdirectories through an os.Root on it,
@@ -425,7 +425,7 @@ bin/
 	cli.Info("    gofastr build         : Build production binary")
 	fmt.Println()
 	if pinnedVersion != "" {
-		fmt.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
+		cli.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
 		fmt.Println("  resolve that release. Use `gofastr upgrade` when you want to move.")
 	} else {
 		fmt.Println("  This development CLI has no release version to pin. Before `go mod tidy`, run:")
@@ -511,7 +511,7 @@ func scaffoldGoRequirements(dir string) (minimum, preferred string, err error) {
 // scaffolding a whole project.
 func printInitNextSteps(name string, noEntity bool) {
 	fmt.Printf("  %s:\n", cli.Bold("Next steps"))
-	fmt.Printf("    cd %s\n", name)
+	cli.Printf("    cd %s\n", name)
 	fmt.Println("    go mod tidy          : Resolve dependencies")
 	fmt.Println("    gofastr dev          : Start development server with hot-reload")
 	if !noEntity {
@@ -1350,7 +1350,7 @@ capability upstream.
 //   - CLAUDE.md:  overwrites if unmodified; prompts if user changed it
 //   - DESIGN.md:  created when missing, never overwrites app-owned direction
 func runReinit(dir string, force bool) {
-	fmt.Printf("\n  %s AI onboarding files in %s\n\n", cli.Bold("Refreshing"), cli.Bold(dir))
+	cli.Printf("\n  "+cli.Bold("Refreshing")+" AI onboarding files in "+cli.Bold("%s")+"\n\n", dir)
 
 	// 1. .agents/ detail files: always overwrite.
 	if err := agentscmd.WriteAgentDetailFiles(dir); err != nil {

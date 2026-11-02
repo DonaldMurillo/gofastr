@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -24,6 +23,6 @@ func OpenBrowser(url string) {
 		return
 	}
 	if err := c.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "  (could not auto-open browser: %v)\n", err)
+		Fprintf(os.Stderr, "  (could not auto-open browser: %v)\n", err)
 	}
 }

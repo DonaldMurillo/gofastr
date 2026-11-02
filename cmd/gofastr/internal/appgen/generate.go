@@ -553,7 +553,7 @@ func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery cod
 		}
 		cli.Info("Would generate %d files in %s:", len(files), cfg.Codegen.Output)
 		for _, file := range files {
-			fmt.Printf("    %s\n", filepath.Join(cfg.Codegen.Output, file.Path))
+			cli.Printf("    %s\n", filepath.Join(cfg.Codegen.Output, file.Path))
 		}
 		return
 	}
@@ -1009,12 +1009,12 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			}
 			cli.Info("Would add %d file(s) in %s:", len(written), displayDir)
 			for _, file := range written {
-				fmt.Printf("    %s\n", filepath.Join(outDir, file.Name))
+				cli.Printf("    %s\n", filepath.Join(outDir, file.Name))
 			}
 			if len(skipNames) > 0 {
 				cli.Info("Would skip %d existing:", len(skipNames))
 				for _, name := range skipNames {
-					fmt.Printf("    %s\n", filepath.Join(outDir, name))
+					cli.Printf("    %s\n", filepath.Join(outDir, name))
 				}
 			}
 			return
@@ -1060,7 +1060,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			if rebuilt, err := RefreshAppClient(writeRoot, false, options.json); err != nil {
 				// stderr under --json: stdout is the document.
 				if options.json {
-					fmt.Fprintf(os.Stderr, "warning: could not rebuild %s: %v\n", appClientPath, err)
+					cli.Fprintf(os.Stderr, "warning: could not rebuild %s: %v\n", appClientPath, err)
 				} else {
 					cli.Warn("could not rebuild %s: %v", appClientPath, err)
 				}
@@ -1101,7 +1101,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			cli.Success("Added %d file(s) in %s (skipped %d existing)", len(written), displayDir, len(skipNames))
 			cli.Info("Skipped existing files:")
 			for _, name := range skipNames {
-				fmt.Printf("    %s\n", filepath.Join(outDir, name))
+				cli.Printf("    %s\n", filepath.Join(outDir, name))
 			}
 		} else {
 			cli.Success("Added %d file(s) in %s", len(written), displayDir)
@@ -1115,7 +1115,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		}
 		cli.Info("Would generate %d files in %s:", len(files), displayDir)
 		for _, file := range files {
-			fmt.Printf("    %s\n", filepath.Join(outDir, file.Name))
+			cli.Printf("    %s\n", filepath.Join(outDir, file.Name))
 		}
 		return
 	}
@@ -1229,11 +1229,11 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		if len(LintModuleCollision(bp)) > 0 {
 			fmt.Println("    (set app.module to a path you own first: see the warning above)")
 		} else {
-			fmt.Printf("    go mod init %s\n", bp.App.Module)
+			cli.Printf("    go mod init %s\n", bp.App.Module)
 		}
 		printFrameworkGetStep(project.InstalledFrameworkVersion())
 		fmt.Println("    go mod tidy          : the generated code pulls new imports")
-		fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
+		cli.Printf("    %-20s : dev server with hot-reload\n", devCmd)
 		return
 	}
 	fmt.Println("  Next steps:")
@@ -1241,7 +1241,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		printFrameworkGetStep("")
 	}
 	fmt.Println("    go mod tidy          : the generated code pulls new imports")
-	fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
+	cli.Printf("    %-20s : dev server with hot-reload\n", devCmd)
 }
 
 // printFrameworkGetStep prints the `go get` that must precede `go mod
@@ -1252,7 +1252,7 @@ func printFrameworkGetStep(release string) {
 	if release == "" {
 		release = "vX.Y.Z"
 	}
-	fmt.Printf("    go get %s@%s : pin the framework before tidy\n", project.GofastrModule, release)
+	cli.Printf("    go get %s@%s : pin the framework before tidy\n", project.GofastrModule, release)
 }
 
 // frameworkPin reports what pinFrameworkRequire did to the enclosing
@@ -2499,7 +2499,7 @@ func printGeneratedFilesJSON(files []GeneratedFile) {
 		if i == len(files)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
+		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
 	}
 	fmt.Println(`]}`)
 }
@@ -2517,7 +2517,7 @@ func printAdditiveFilesJSON(written []GeneratedFile, skipped, updated []string) 
 		if i == len(written)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
+		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
 	}
 	fmt.Print("]")
 	printJSONNames("skipped_existing", skipped)
@@ -2528,16 +2528,16 @@ func printAdditiveFilesJSON(written []GeneratedFile, skipped, updated []string) 
 // printJSONNames continues a JSON object with key holding names.
 func printJSONNames(key string, names []string) {
 	if len(names) == 0 {
-		fmt.Printf(",%q:[]", key)
+		cli.Printf(",%q:[]", key)
 		return
 	}
-	fmt.Printf(",%q:[\n", key)
+	cli.Printf(",%q:[\n", key)
 	for i, name := range names {
 		comma := ","
 		if i == len(names)-1 {
 			comma = ""
 		}
-		fmt.Printf("  %q%s\n", name, comma)
+		cli.Printf("  %q%s\n", name, comma)
 	}
 	fmt.Print("]")
 }
@@ -2554,7 +2554,7 @@ func printCodegenFilesJSON(files []codegen.GeneratedFile) {
 		if i == len(files)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Path, len(file.Content), comma)
+		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Path, len(file.Content), comma)
 	}
 	fmt.Println(`]}`)
 }
@@ -2570,7 +2570,7 @@ func printGeneratedErrorsJSON(errs ...error) {
 		// or \a, which no JSON parser reads, and an error can carry one
 		// from a spec it refused.
 		msg, _ := json.Marshal(err.Error())
-		fmt.Printf("  {\"message\":%s}%s\n", msg, comma)
+		cli.Printf("  {\"message\":%s}%s\n", msg, comma)
 	}
 	fmt.Println(`]}`)
 }

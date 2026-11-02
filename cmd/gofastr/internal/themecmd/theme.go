@@ -26,7 +26,8 @@ func RunTheme(args []string) {
 	case "--help", "-h", "help":
 		printThemeHelp()
 	default:
-		fmt.Printf("%s Unknown theme subcommand: %s\n\n", cli.Red("✗"), args[0])
+		cli.Fail("Unknown theme subcommand: %s", args[0])
+		fmt.Println()
 		printThemeHelp()
 		cli.OsExit(1)
 	}
@@ -62,7 +63,7 @@ func runThemeInit(args []string) {
 			fmt.Println("Refuses to overwrite an existing file unless --force is set.")
 			return
 		default:
-			fmt.Printf("%s Unknown flag: %s\n", cli.Red("✗"), a)
+			cli.Fail("Unknown flag: %s", a)
 			cli.OsExit(1)
 		}
 	}
@@ -73,18 +74,18 @@ func runThemeInit(args []string) {
 	// Lstat, not Stat: a dangling theme.go link is a file already there.
 	rootDir, rel, err := projectfs.UserPath(dest)
 	if err != nil {
-		fmt.Printf("%s mkdir %s: %v\n", cli.Red("✗"), filepath.Dir(dest), err)
+		cli.Fail("mkdir %s: %v", filepath.Dir(dest), err)
 		cli.OsExit(1)
 		return
 	}
 	if _, err := projectfs.LstatFile(rootDir, rel); err == nil && !force {
-		fmt.Printf("%s %s already exists. Pass --force to overwrite.\n", cli.Red("✗"), dest)
+		cli.Fail("%s already exists. Pass --force to overwrite.", dest)
 		cli.OsExit(1)
 		return
 	}
 
 	if err := projectfs.MkdirAll(rootDir, path.Dir(rel), 0o755); err != nil {
-		fmt.Printf("%s mkdir %s: %v\n", cli.Red("✗"), filepath.Dir(dest), err)
+		cli.Fail("mkdir %s: %v", filepath.Dir(dest), err)
 		cli.OsExit(1)
 		return
 	}
@@ -100,11 +101,11 @@ func runThemeInit(args []string) {
 	// --force replaces an existing theme through a temporary file, so a
 	// crash mid-write leaves the old one, not an empty one.
 	if err := projectfs.WriteFile(rootDir, rel, []byte(src), 0o644); err != nil {
-		fmt.Printf("%s write %s: %v\n", cli.Red("✗"), dest, err)
+		cli.Fail("write %s: %v", dest, err)
 		cli.OsExit(1)
 	}
 
-	fmt.Printf("%s wrote %s: edit values to customize your theme.\n", cli.Green("✓"), dest)
+	cli.Success("wrote %s: edit values to customize your theme.", dest)
 	fmt.Println()
 	if pkg == "main" {
 		fmt.Println("Next: the theme is in package main, so main.go uses App directly:")
@@ -122,11 +123,11 @@ func runThemeInit(args []string) {
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/core-ui/app\"")
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework\"")
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework/uihost\"")
-	fmt.Println("        \"<your-module>/" + importDir + "\"")
+	cli.Println("        \"<your-module>/" + importDir + "\"")
 	fmt.Println("    )")
 	fmt.Println()
 	fmt.Println("    func main() {")
-	fmt.Println("        site := app.NewApp(\"MyApp\").WithTheme(" + pkg + ".App)")
+	cli.Println("        site := app.NewApp(\"MyApp\").WithTheme(" + pkg + ".App)")
 	fmt.Println("        site.Register(\"/\", &HomeScreen{}, nil) // HomeScreen implements component.Component + ScreenSpec")
 	fmt.Println()
 	fmt.Println("        host := uihost.New(site)")

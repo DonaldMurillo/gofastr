@@ -66,7 +66,7 @@ func Resolve(root *os.Root, name string) (string, error) {
 				if lastLink != "" {
 					return "", outErr(lastLink, lastTarget)
 				}
-				return "", fmt.Errorf("%s leaves the project", name)
+				return "", fmt.Errorf("%q leaves the project", name)
 			}
 			done = done[:len(done)-1]
 			continue
@@ -91,7 +91,7 @@ func Resolve(root *os.Root, name string) (string, error) {
 		}
 		hops++
 		if hops > maxLinkHops {
-			return "", fmt.Errorf("%s: too many levels of symbolic links", name)
+			return "", fmt.Errorf("%q: too many levels of symbolic links", name)
 		}
 		target, err := root.Readlink(filepath.FromSlash(cur))
 		if err != nil {
@@ -115,7 +115,7 @@ func Resolve(root *os.Root, name string) (string, error) {
 }
 
 func outErr(link, target string) error {
-	return fmt.Errorf("%s is a symlink out of the project (to %q); move it, then re-run", link, target)
+	return fmt.Errorf("%q is a symlink out of the project (to %q); move it, then re-run", link, target)
 }
 
 // Check refuses name (relative to dir) when a symlink on the way to it,
