@@ -389,7 +389,9 @@ few lines, and link the PR or the docs page for the rest.
   `entity_list` of an entity with no `entity_detail` screen linked each
   row, and its row menu's View, to `<list>/<id>`, a page no screen
   serves (every Categories and Reviews row in the ecommerce example).
-  Such a list without `create: true` now renders with `.NoLinks()`.
+  Such a list without `create: true` now renders with `.NoLinks()`,
+  and `gofastr pack` reads that call back as part of the spec, so a
+  packed app regenerates it.
 - **A skipped navigation transition no longer logs a page error.** A
   view transition the runtime skipped before it was ready (the next
   navigation committing over it, or a click during the animation)

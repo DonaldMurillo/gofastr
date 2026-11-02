@@ -2594,10 +2594,14 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 			for _, a := range c.Args {
 				omit = append(omit, appspec.AstString(a))
 			}
-		case "Key", "Base", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
+		case "Key", "Base", "NoLinks", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
 			// structural: no app spec key (RenderCtx turns the builder
 			// into the HTML the screen's stack takes; Actions, Related and
-			// RelatedAt are app-side extensions pack does not declare)
+			// RelatedAt are app-side extensions pack does not declare).
+			// NoLinks follows from the spec: the generator emits it on a
+			// list without create when the entity has no record screen,
+			// so the packed spec regenerates it; a NoLinks written by hand
+			// on a list that has one is a difference pack check reports.
 		default:
 			return appspec.AppSpecBlock{}, false
 		}

@@ -76,7 +76,7 @@ func TestRenderAppSpecFilesContentCoversAllSections(t *testing.T) {
 	clitest.AssertContains(t, screenContent, `"data-action": "save_click"`)
 	// The list renders through the appUI builder; the list follows the
 	// screen's heading block, so its title drops to a section (level 2).
-	clitest.AssertContains(t, screenContent, `appUI.List("posts").Columns("title", "status").PageSize(5).NoCreate().Heading("Latest posts", 2).Empty("No posts yet.")`)
+	clitest.AssertContains(t, screenContent, `appUI.List("posts").Columns("title", "status").PageSize(5).NoCreate().NoLinks().Heading("Latest posts", 2).Empty("No posts yet.")`)
 	clitest.AssertContains(t, byName[filepath.Join("entities", "posts_endpoints.go")], `func PublishPost(ctx context.Context, in PublishPostInput) (*Posts, error)`)
 	clitest.AssertContains(t, byName["stubs.go"], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	clitest.AssertContains(t, byName["stubs.go"], `type AnalyticsPlugin struct{}`)
