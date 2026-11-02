@@ -311,7 +311,7 @@ func declaredField(ent *entity.Entity, col string) (schema.Field, bool) {
 // deferred, for the caller to run once every table has converged.
 func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, pre liveKey, deferred *[]SchemaChange) error {
 	declared := ent.KeyColumns()
-	if sameKey(pre.cols, declared) {
+	if sameKey(uncutKey(ent, pre.cols, dialect), declared) {
 		return nil
 	}
 	table := ent.GetTable()
@@ -324,6 +324,7 @@ func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all 
 		return fmt.Errorf("re-read primary key of %s: %w", table, err)
 	}
 	cur := keys[table]
+	cur.cols = uncutKey(ent, cur.cols, dialect)
 	if sameKey(cur.cols, declared) {
 		return nil
 	}

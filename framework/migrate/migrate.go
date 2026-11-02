@@ -267,6 +267,9 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		if err != nil {
 			return err
 		}
+		if err := checkIndexNames(ordered, all); err != nil {
+			return err
+		}
 	}
 	dialect, err := detectDialectFailClosed(db)
 	if err != nil {

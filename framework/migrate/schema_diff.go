@@ -96,6 +96,9 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	if err != nil {
 		return nil, err
 	}
+	if err := checkIndexNames(ordered, all); err != nil {
+		return nil, err
+	}
 
 	var out []SchemaChange
 	tables := make([]string, 0, len(ordered))
@@ -324,6 +327,10 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	qtable, err := query.SafeIdent(ent.GetTable())
 	if err != nil {
 		return nil, fmt.Errorf("invalid table name %q: %w", ent.GetTable(), err)
+	}
+	live = uncutLiveColumns(ent, live, dialect)
+	if lk != nil {
+		lk = &liveKey{constraint: lk.constraint, cols: uncutKey(ent, lk.cols, dialect)}
 	}
 
 	if len(live) == 0 {
@@ -772,12 +779,37 @@ func canonicalType(s string, dialect Dialect) string {
 // the int4 sequence behind each SERIAL that ALTER COLUMN TYPE leaves
 // alone, is not a change the declaration asked for; widening an old
 // column is a hand-written migration (see migrations.md).
+//
+// A VARCHAR's width counts on Postgres, which enforces it: a String whose
+// Max went from 50 to 200 kept its VARCHAR(50), validation passed a
+// 150-character value, and the insert failed. A side that names no width
+// (an older snapshot, a catalog read without one) is not compared. SQLite
+// ignores the width, so a change there rebuilds nothing.
 func typesEquivalent(declared, live string, dialect Dialect) bool {
 	d, l := canonicalType(declared, dialect), canonicalType(live, dialect)
 	if dialect == DialectPostgres && d == "bigint" && l == "integer" {
 		return true
 	}
-	return d == l
+	if d != l {
+		return false
+	}
+	if dialect == DialectPostgres && (d == "varchar" || d == "character" || d == "char") {
+		dw, dok := typeWidth(declared)
+		lw, lok := typeWidth(live)
+		return !dok || !lok || dw == lw
+	}
+	return true
+}
+
+// typeWidth returns the parenthesized size of a type ("VARCHAR(255)",
+// "character varying(255)"), and whether it names one.
+func typeWidth(t string) (string, bool) {
+	open := strings.IndexByte(t, '(')
+	end := strings.LastIndexByte(t, ')')
+	if open < 0 || end < open {
+		return "", false
+	}
+	return strings.ReplaceAll(t[open+1:end], " ", ""), true
 }
 
 // alterColumnTypeSQL renders the Postgres DDL for a column type change: an
@@ -1078,16 +1110,17 @@ func readLiveColumnsPostgresQ(ctx context.Context, q queryer, table string, fold
 	// A qualified app.widgets is widgets in schema app; the bare name is
 	// in the search-path schema.
 	schema, name := splitTable(table)
+	name = pgIdentCut(name)
 	var schemaArg any
 	if schema != "" {
-		schemaArg = schema
+		schemaArg = pgIdentCut(schema)
 	}
 	where := `lower(table_schema) = lower(coalesce($2, current_schema())) AND lower(table_name) = lower($1)`
 	if foldedOnly {
 		where = `table_schema = coalesce(lower($2), current_schema()) AND table_name = lower($1) AND column_name = lower(column_name)`
 	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT column_name, data_type
+		SELECT column_name, `+pgColumnType("")+`
 		FROM information_schema.columns
 		WHERE `+where, name, schemaArg)
 	if err != nil {

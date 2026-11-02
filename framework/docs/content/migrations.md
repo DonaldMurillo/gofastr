@@ -96,7 +96,13 @@ required, not defaulted: directives are case-sensitive, and a file whose
 `-- +migrate Up` line is missing or misspelled (lower-case `up`) is
 rejected at parse time instead of registering a migration whose SQL was
 silently discarded while the tracking table records it applied.
-Programmatic `Register` refuses an empty `Up` for the same reason.
+Programmatic `Register` refuses an empty `Up` for the same reason. Any
+other `-- +migrate` line that is not one of `Version`, `Name`, `Group`,
+`Up`, `Down` or `NoTransaction`, and a comment that reads as a directive
+with its spacing or case off (`--+migrate Down`, `-- +Migrate Down`),
+is refused too: the parser used to pass over it with the section above
+still open, so a misspelled `Down` put the Down statements into `Up` and
+the rollback ran as part of the apply.
 
 ### Non-transactional migrations
 
@@ -356,7 +362,11 @@ numeric text converts and anything else fails the migration; a text
 default is dropped before the retype and the declared default set
 after it, since Postgres cannot cast the old one; other
 changes may still need a data-specific `USING` clause, so review and
-hand-tighten. On SQLite,
+hand-tighten. A `String` whose `Max` changed is a type change on
+Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
+VARCHAR(200)` widens it, and a narrower width fails on a row that no
+longer fits rather than cutting it. SQLite ignores the width, so the
+same change there rebuilds nothing. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
@@ -383,7 +393,11 @@ transaction, where the pragma has no effect: it refuses a rebuild that a
 `CASCADE` or `SET NULL` key references and names those tables. It reads
 those keys from the declared relations and from the snapshot's recorded
 table DDL, so a key the database still holds counts even after its
-relation changed or went away. Write that
+relation changed or went away. It refuses a rebuild that any other
+foreign key the snapshot records references too, one with no `ON
+DELETE` action included: SQLite empties the table before dropping it,
+and a child row still pointing at it fails the `DROP`, so such a file
+applied where the child was empty and failed where it held rows. Write that
 migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
 foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
 Rows are carried over, not regenerated. A column added in the same change
@@ -461,6 +475,22 @@ the index under the new name and never drops the old one, since a
 foreign key you added by hand may depend on a unique index and the drop
 would fail. The snapshot keeps recording the old index while the new
 one is declared, so removing or changing the index later drops both.
+
+A table or column named past 63 bytes works on Postgres, which cuts it
+to its first 63 bytes in DDL and in queries alike, so the catalog holds
+the cut name. The migrator reads the catalog by the cut name too, so
+such a table gains its new columns at boot and such a column is not
+added a second time, proposed for a drop, or read as a key change.
+
+An index name belongs to the schema, not the table, on both engines, and
+the migrator creates every index with `CREATE INDEX IF NOT EXISTS`. Two
+tables whose indexes share a name, whether set in `Index.Name` or
+derived (table `a_b` on `c` and table `a` on `b_c` are both
+`idx_a_b_c`), would get one index between them, so boot, `DiffSchema`
+and `migrate generate` refuse the pair and name both tables, as they do
+one table declaring two different indexes under one name. Names are
+compared folded and cut at 63 bytes, the way Postgres stores them, on
+both dialects. Give one of the indexes its own `Name`.
 
 A `Unique` field's `<table>_<column>_key` is the name Postgres gives
 the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
@@ -994,7 +1024,11 @@ app.View(migrate.View{
   materialized view and refreshes its rows. Postgres refuses to drop a
   materialized view another view reads, so boot first drops the plan's
   views that depend on it, deepest first, and recreates them after it. A
-  view outside the plan that reads it still fails the boot. Changing a
+  view outside the plan that reads it still fails the boot. A plain view
+  whose columns changed other than by new ones added at the end (one
+  dropped, renamed or retyped) is one `CREATE OR REPLACE VIEW` refuses,
+  so boot drops it (its dependents in the plan first) and creates it
+  again; its grants go with the drop. Changing a
   view between plain and `Materialized` drops the live object of the
   other kind (and its dependents) first. `migrate generate` tracks
   the definition by checksum and writes a reversible migration when it
@@ -1318,7 +1352,10 @@ development convenience. What it guarantees:
   in the meantime still gets this version's columns and key.
   The lock is acquired by polling `pg_try_advisory_lock` so a cancelled
   context (shutdown) returns promptly instead of hanging on a stuck
-  holder. SQLite gets the same cross-process serialization from a twin:
+  holder. When the unlock fails, as it does on a session a
+  `NoTransaction` migration left inside its own failed `BEGIN`, the
+  connection is retired rather than returned to the pool, so ending its
+  session releases the lock. SQLite gets the same cross-process serialization from a twin:
   a leased lock row in `_gofastr_migrate_lock` (one atomic upsert,
   released on completion, expired by the next boot if the holder
   crashed) — SQLite's file-level locking serializes statements, not the

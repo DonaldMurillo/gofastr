@@ -90,7 +90,10 @@ app.Entity("docs", framework.EntityConfig{
 A `TenantField` that isn't a valid SQL identifier fails loud at
 definition time. If you configure tenancy via `tenant.WithMultiTenant(ent,
 TenantConfig{Field: "org_id"})`, the `Field` flows into `TenantField`
-automatically.
+automatically, and the column is added to the entity's fields the way
+`Define` adds it, so auto-migrate creates it. A `tenant_id` column
+`Define` already injected is renamed to the custom one rather than kept
+beside it.
 
 > The standalone helpers `framework.ApplyTenantFilter` / `InjectTenantID`
 > always use the default `tenant_id` column (they have no entity context).

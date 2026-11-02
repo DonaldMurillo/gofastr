@@ -4447,6 +4447,62 @@ few lines, and link the PR or the docs page for the rest.
   errors. Every shell now refuses an extension containing `;` and a
   default name containing `\`. On Windows a `*` extension matches
   everything, and so does a filter with no extensions.
+- **BREAKING: two indexes that share a name are refused.** Index names
+  belong to the schema on both engines and every index is created with
+  `IF NOT EXISTS`, so the second table's index was skipped and a
+  `Unique` one let that table take duplicates. A default name collides
+  too (table `a_b` on `c` and table `a` on `b_c` are both `idx_a_b_c`).
+  Boot, `DiffSchema` and `migrate generate` now name both tables; give
+  one index its own `Name`.
+- **A `String` whose `Max` changed migrates on Postgres.** Neither
+  `DiffSchema` nor `migrate generate` compared the `VARCHAR` width, so
+  a `Max` raised from 50 to 200 left `VARCHAR(50)` in place, validation
+  passed a 150-character value and the insert failed. Both now emit
+  `ALTER COLUMN … TYPE VARCHAR(n)` (a destructive change, like every
+  retype); the live Postgres column read carries the width. SQLite
+  ignores widths and is unchanged.
+- **`tenant.WithMultiTenant` adds the tenant column.** It runs after
+  `entity.Define`, which is where a multi-tenant entity's column is
+  injected, so it set `MultiTenant` and `TenantField` on an entity with
+  no such field: auto-migrate created no tenant column and the first
+  create failed on the column CRUD writes. It now adds the column, and
+  renames the `tenant_id` that `Define` injected to a custom `Field`.
+- **BREAKING: a misspelled `-- +migrate` directive is refused.** The
+  parser skipped a directive it did not know and kept the section above
+  it open, so `-- +migrate down` under `Up` put the Down statements into
+  `Up`: the rollback ran as part of the apply (a `DELETE` or `DROP` with
+  it) and the version was recorded applied. An unknown directive, and a
+  comment that reads as one with its spacing or case off
+  (`--+migrate Down`, `-- +Migrate Down`), now fail the parse.
+- **Tables and columns named past 63 bytes migrate on Postgres.**
+  Postgres cuts such a name to 63 bytes and the catalog holds the cut
+  one, which the migrator compared with the whole name. A long table
+  read as absent on every boot and never gained a column; a long column
+  read as missing, so the next boot with a column to add failed on a
+  duplicate `ADD COLUMN`, `DiffSchema` proposed dropping it, and a long
+  key column read as a key change. The catalog is now read by the cut
+  name.
+- **BREAKING: `migrate generate` refuses a SQLite rebuild of a table
+  another table references.** SQLite empties a table before dropping it,
+  and with foreign keys on, a child row still pointing at it fails the
+  `DROP`. The generated file applied on a database whose child was empty
+  and failed with `FOREIGN KEY constraint failed` wherever it held rows.
+  It was refused only for `CASCADE` and `SET NULL` keys; every key the
+  snapshot records now counts. Write the rebuild by hand, or apply it with
+  `ApplySchemaDiffWithOptions`.
+- **A Postgres view whose columns changed boots.** Boot applies a plain
+  view with `CREATE OR REPLACE VIEW`, which refuses a body that drops,
+  renames or retypes a column, so such a view failed every boot from
+  then on while SQLite booted. Boot now drops the view, and the plan's
+  views that read it, and creates them again when Postgres refuses the
+  replace. A view outside the plan that reads it still stops the boot.
+- **A failed unlock no longer leaves the Postgres migration lock held.**
+  The unlock's error was dropped and the connection went back to the
+  pool still holding the session lock, so after a `NoTransaction`
+  migration failed inside its own `BEGIN` (an aborted session refuses
+  the unlock) every other replica waited on the lock for the life of
+  the process. Such a connection is now retired, which ends its session
+  and releases the lock.
 
 ### Security
 - **The trash view's Restore and Delete permanently routes honor read

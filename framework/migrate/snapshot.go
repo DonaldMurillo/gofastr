@@ -192,6 +192,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		if err != nil {
 			return "", "", SchemaSnapshot{}, err
 		}
+		if err := checkIndexNames(ordered, all); err != nil {
+			return "", "", SchemaSnapshot{}, err
+		}
 	}
 	prev = respellTables(prev, declaredTableNames(all), dialect)
 
@@ -377,6 +380,27 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			sort.Strings(refs)
 			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite table rebuild: it drops the table, "+
 				"and the ON DELETE CASCADE / SET NULL foreign keys in %s would delete or unlink their rows; "+
+				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
+				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",
+				c.sqliteRebuildOf, strings.Join(refs, ", "))
+		}
+	}
+	// A plain foreign key (no ON DELETE action, or RESTRICT) onto the table
+	// fails the DROP instead: SQLite's implicit DELETE FROM finds the child
+	// rows still referencing it. The file applied on a database whose child
+	// tables were empty and failed with "FOREIGN KEY constraint failed" on
+	// every one where a child held a row, the database it was written for.
+	// A child this file drops still exists when the rebuild runs, since the
+	// drops come last, so it counts too.
+	for _, c := range changes {
+		if c.sqliteRebuildOf == "" {
+			continue
+		}
+		ent := all[c.sqliteRebuildOf]
+		refs := slices.Sorted(maps.Keys(recordedReferencesOnto(dialect, prev.TableDDL, ent.GetTable())))
+		if len(refs) > 0 {
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite table rebuild: it drops the table, "+
+				"and the foreign keys in %s that reference it fail the DROP while any of their rows do; "+
 				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
 				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",
 				c.sqliteRebuildOf, strings.Join(refs, ", "))
