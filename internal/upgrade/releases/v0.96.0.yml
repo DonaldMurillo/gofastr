@@ -950,9 +950,9 @@ notes:
     find:
       uses:
         - gofastr/battery/cache.NewRedisCache
-  - change: "The slow-query line's sql attr (slowquery.TrimSQL) prints every SQL string literal as '?' and cuts at 240 bytes on a rune boundary"
+  - change: "The slow-query line's sql attr (slowquery.TrimSQL) prints every SQL string and number literal as ?, drops comments, and cuts at 240 bytes on a rune boundary; without slowquery.WithDialect it masks under every engine's quoting rules"
     breaking: false
-    guidance: "A value spelled inline in a statement (a password in ALTER ROLE, a token in a hand-built WHERE) went to every log sink verbatim. A log search or alert that matched a literal inside the sql attr now sees '?'; match on the statement's shape instead."
+    guidance: "A value spelled inline in a statement (a password in ALTER ROLE, a token in a hand-built WHERE) went to every log sink verbatim. A log search or alert that matched a literal inside the sql attr now sees ?; match on the statement's shape instead. Pass slowquery.WithDialect(\"postgres\") (or \"sqlite3\", \"mysql\") to NewSlowQueryLogger to keep PostgreSQL \"quoted\" identifiers, which the engine-blind default prints as ?."
     find:
       uses:
         - gofastr/framework/slowquery.TrimSQL

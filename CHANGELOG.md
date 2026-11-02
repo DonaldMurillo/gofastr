@@ -5431,8 +5431,18 @@ few lines, and link the PR or the docs page for the rest.
   (the `sql` attr of every `slow query` line) printed a statement
   verbatim, so a value spelled inline (`ALTER ROLE … PASSWORD '…'`,
   `SET app.key = '…'`, a hand-built `WHERE token = '…'`) reached every
-  log sink. Literals now print as `'?'`; placeholders, identifiers and
-  numbers stay. The 240-byte cut also no longer splits a UTF-8 rune.
+  log sink. The line now uses the masker behind tracing's
+  `db.query.text` (shared in `internal/sqlredact`): string and number
+  literals print as `?` and comments are dropped; placeholders and
+  identifiers stay. `slowquery.WithDialect("postgres" | "sqlite3" |
+  "mysql")` picks the engine's quoting rules; without it the line masks
+  under all of them, so a SQLite `"double-quoted"` string, a MySQL
+  `'a\'b'` escape or `#` comment, and a PostgreSQL nested `/* /* */ */`
+  comment no longer leak, at the cost of PostgreSQL quoted identifiers
+  printing as `?`. Tracing's `db.query.text` now nests PostgreSQL
+  comments, reads MySQL `#` comments and `$é$` dollar tags, and masks
+  under every engine's rules for a `db.system.name` it does not know.
+  The 240-byte cut also no longer splits a UTF-8 rune.
 - **The log console sink escapes control and bidi runes in the message
   and keys.** Only attr values were escaped; the message, attr keys,
   the time and level fields, and an entry that was not JSON were

@@ -110,10 +110,24 @@ app.Metrics().RegisterCollector("webhook", mgr.MetricsCollector())
 app.Metrics().RegisterCollector("slow_queries", slowquery.MetricsCollector(slowDB))
 ```
 
-A `SlowQueryLogger` line logs the statement's shape: whitespace collapsed,
-cut at 240 bytes, every string literal (`'…'`, `E'…'`, `$tag$…$tag$`)
-printed as `'?'`, and bound arguments as a count only. A value spelled
-inline, such as `ALTER ROLE … PASSWORD '…'`, never reaches the log.
+A `SlowQueryLogger` line logs the statement's shape, masked by the same
+code as a trace span's `db.query.text`: every string and number literal
+(`'…'`, `E'…'`, `$tag$…$tag$`, `42`) printed as `?`, comments dropped,
+whitespace collapsed, cut at 240 bytes, and bound arguments as a count
+only. A value spelled inline, such as `ALTER ROLE … PASSWORD '…'`, never
+reaches the log. Where a literal ends depends on the engine, so name it:
+
+```go
+slowDB := slowquery.NewSlowQueryLogger(db, 200*time.Millisecond, logger,
+	slowquery.WithDialect("postgres")) // or "sqlite3", "mysql"
+```
+
+Without `WithDialect` (and with a name it does not know) the line masks
+under every engine's rules at once: `"double-quoted"` text prints as `?`
+(SQLite and MySQL can read it as a string), `#` starts a comment (MySQL),
+block comments nest (PostgreSQL), and a string whose end depends on
+whether a backslash escapes hides the rest of the statement. Naming
+PostgreSQL keeps its `"Quoted"` identifiers.
 
 `RegisterCollector` replaces by name, so re-registration never duplicates.
 Collectors must be cheap and must not panic; a transient DB error should emit
@@ -287,7 +301,11 @@ None of these spans carry data values. `db.query.text` has every string
 and number literal replaced by `?` (placeholders such as `$1` stay). On
 SQLite and MySQL, `"double-quoted"` text is replaced too: MySQL reads it
 as a string, and SQLite does when no column has that name, so a quoted
-identifier shows as `?` there. `url.full` drops the query string, fragment and user info. A failure sets
+identifier shows as `?` there. Comments are dropped (PostgreSQL's nest;
+MySQL's `#` counts). For a `db.system.name` other than `postgresql`,
+`sqlite` and `mysql`, every one of those rules applies at once, and a
+string whose end depends on whether a backslash escapes hides the rest
+of the statement. `url.full` drops the query string, fragment and user info. A failure sets
 the span status to `codes.Error` with `error.type` holding the error's Go
 type (or the HTTP status code, or `panic`), never its message, since
 driver and handler errors routinely quote row values.
