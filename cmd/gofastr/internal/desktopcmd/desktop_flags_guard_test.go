@@ -25,6 +25,8 @@ func TestDesktopBuildRefusesMisplacedSigningFlags(t *testing.T) {
 		{"timestamp-url without sign", "windows", []string{"--timestamp-url=http://ts.example"}, "--timestamp-url needs --sign"},
 		{"zip with a two-part version", "windows", []string{"--zip", "--version=1.0"}, "to build an update archive with --zip"},
 		{"zip with a four-part version", "windows", []string{"--zip", "--version=1.2.3.4"}, "to build an update archive with --zip"},
+		// Valid semver, so only the 64-character cap refuses it.
+		{"zip with an over-long version", "windows", []string{"--zip", "--version=1.0.0-" + strings.Repeat("a", 60)}, "to build an update archive with --zip"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := fakeRunTool(t, nil)

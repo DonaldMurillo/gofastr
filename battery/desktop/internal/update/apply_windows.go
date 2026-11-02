@@ -51,18 +51,27 @@ func (p *windowsPlatform) load() {
 		if err != nil {
 			return
 		}
-		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-			exe = resolved
-		}
-		info, err := ReadExeInfo(exe)
-		if err != nil {
-			return
-		}
-		if st, err := os.Lstat(filepath.Join(filepath.Dir(exe), WebView2LoaderName)); err != nil || !st.Mode().IsRegular() {
-			return
-		}
-		p.exe, p.info, p.ok = exe, info, true
+		p.exe, p.info, p.ok = readRunningBuild(exe)
 	})
+}
+
+// readRunningBuild decides whether exe is an updatable build: it
+// carries the version resource `gofastr desktop build` embeds, and a
+// regular WebView2Loader.dll file sits beside it. A missing loader, a
+// directory or a link in its place means the install is not the layout
+// the updater swaps, so it reports no bundle.
+func readRunningBuild(exe string) (string, BundleInfo, bool) {
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	info, err := ReadExeInfo(exe)
+	if err != nil {
+		return "", BundleInfo{}, false
+	}
+	if st, err := os.Lstat(filepath.Join(filepath.Dir(exe), WebView2LoaderName)); err != nil || !st.Mode().IsRegular() {
+		return "", BundleInfo{}, false
+	}
+	return exe, info, true
 }
 
 // Version implements Platform: the executable's ProductVersion, "" when

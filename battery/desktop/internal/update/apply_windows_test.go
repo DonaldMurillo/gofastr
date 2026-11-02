@@ -71,17 +71,81 @@ func fakeBuild(t *testing.T, dir, name, id, version string) string {
 }
 
 // bundledPlatform is a windowsPlatform pinned to exe instead of the
-// test binary.
+// test binary, loaded through the same readRunningBuild check.
 func bundledPlatform(t *testing.T, exe string) *windowsPlatform {
 	t.Helper()
-	info, err := ReadExeInfo(exe)
-	if err != nil {
-		t.Fatal(err)
-	}
 	p := &windowsPlatform{}
 	p.once.Do(func() {})
-	p.exe, p.info, p.ok = exe, info, true
+	p.exe, p.info, p.ok = readRunningBuild(exe)
+	if !p.ok {
+		t.Fatalf("%s is not a running build", exe)
+	}
 	return p
+}
+
+// The running build counts as bundled only with a regular loader file
+// beside an executable that carries the version resource.
+func TestReadRunningBuildRefusesABrokenLayout(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, dir, loader string)
+	}{
+		{"missing loader", func(t *testing.T, dir, loader string) {
+			if err := os.Remove(loader); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"loader is a directory", func(t *testing.T, dir, loader string) {
+			if err := os.Remove(loader); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(loader, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"loader is a symlink", func(t *testing.T, dir, loader string) {
+			target := filepath.Join(t.TempDir(), "real.dll")
+			if err := os.Rename(loader, target); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, loader); err != nil {
+				t.Skipf("symlinks need Developer Mode or elevation here: %v", err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			exe := fakeBuild(t, dir, "Notes", "dev.gofastr.notes", "1.2.0")
+			if _, _, ok := readRunningBuild(exe); !ok {
+				t.Fatal("the intact layout was refused")
+			}
+			tc.setup(t, dir, filepath.Join(dir, WebView2LoaderName))
+			if got, _, ok := readRunningBuild(exe); ok || got != "" {
+				t.Fatalf("readRunningBuild = %q, %v; want no bundle", got, ok)
+			}
+		})
+	}
+	t.Run("executable without a version resource", func(t *testing.T) {
+		dir := t.TempDir()
+		self, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(self)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exe := filepath.Join(dir, "Notes.exe")
+		if err := os.WriteFile(exe, data, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, WebView2LoaderName), []byte("loader"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, ok := readRunningBuild(exe); ok {
+			t.Fatal("an executable with no version resource counts as a build")
+		}
+	})
 }
 
 func TestWindowsPlatformUnbundledTestBinary(t *testing.T) {
