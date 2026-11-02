@@ -1,3 +1,7 @@
+// check-csp:ignore-file
+// The analyzer's diagnostic quotes the <script> reassembly it detects;
+// the directive exempts this file from the inline-script lint.
+
 // Package sanitizefix catches a scrub that removes a multi-character
 // match in one pass: the removal splices the match's neighbours
 // together, and they can spell the very thing it removed.
