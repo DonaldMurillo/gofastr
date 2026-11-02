@@ -194,8 +194,10 @@ few lines, and link the PR or the docs page for the rest.
   four seconds at 64 MP, through `framework/image` decode, the image
   field pipeline and `file.StripMetadata`'s orientation bake. Past
   `Config.MaxJPEGScans` (default `DefaultMaxJPEGScans`, 64) decode returns
-  `ErrDecompressionBomb` before any pixel is decoded; see
-  [image](framework/docs/content/image.md).
+  `ErrDecompressionBomb` before any pixel is decoded. The count walks
+  the marker segments to the first EOI, so a motion photo (a one-scan
+  JPEG with a video clip after EOI) and a large APPn payload are not
+  read as scans; see [image](framework/docs/content/image.md).
 - **`email.SMTPSender` refuses a `Headers` key that is not one field
   name, or that names a field the `Email` carries.** A key went out as
   the field name with only a CR/LF check: `"X-A: b"` or `"X A"` wrote a
@@ -216,7 +218,9 @@ few lines, and link the PR or the docs page for the rest.
   or on a dropped connection the submit did nothing at all unless the
   form set `data-cui-rpc-error-toast`. It now always toasts ("Request
   failed", or that attribute's title) and reports `gofastr:formresult`
-  `{ok: false}`. See [Runtime contract](framework/docs/content/runtime-contract.md).
+  `{ok: false}`. A save the server answered is never reported this way,
+  even when its 2xx body does not parse. See
+  [Runtime contract](framework/docs/content/runtime-contract.md).
 - **A programmatic navigation no longer forces the focus ring.**
   `__gofastr.navigate()` (an RPC form's `data-cui-rpc-navigate`, a
   widget, app code) focused the swapped region with `focusVisible: true`,
@@ -236,7 +240,7 @@ few lines, and link the PR or the docs page for the rest.
   table, field or index name that bare SQL cannot carry (`order`, `on`,
   `user`, `first-name`, a name over 63 bytes), two entities on one
   table, and an entity on a battery's table (`auth_users`,
-  `auth_sessions`, `audit_log`, …) used to generate an app that compiled
+  `auth_sessions`, `audit_log`, …, bare or as `public.` / `main.`) used to generate an app that compiled
   and then failed at boot, 500ed on every request, shared one Postgres
   table between two entities, or served the accounts table through CRUD.
   `gofastr validate` and `generate` now name each one. See

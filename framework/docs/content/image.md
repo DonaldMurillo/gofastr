@@ -61,7 +61,11 @@ not how many times the decoder walks it: a progressive scan of one
 end-of-band run costs about ten bytes and revisits every block, so a
 10 KB file of 100 scans took four seconds of CPU at 64 MP. Common
 encoders write a few dozen scans at most. The count runs on the bytes,
-before any pixel is decoded, and `file.StripMetadata`'s orientation
+before any pixel is decoded: it walks the marker segments from SOI to
+the first EOI, skipping each segment by its length, so an APPn payload
+(an ICC profile, a MakerNote preview) and a motion photo's video clip
+after EOI are not counted as scans. `file.StripMetadata`'s orientation
+bake counts the SOS segments its own walk keeps, and `file.StripMetadata`'s orientation
 bake applies the same cap.
 
 `Open(path)` rejects paths containing `..` segments that escape the

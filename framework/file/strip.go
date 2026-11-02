@@ -124,7 +124,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 	orient := 0
 	out := make([]byte, 0, len(data))
 	out = append(out, data[0], data[1])
-	i, inScan := 2, false
+	i, inScan, scans := 2, false, 0
 	for i < len(data) {
 		if inScan {
 			// Entropy-coded scan data: copy bytes until the next
@@ -197,6 +197,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 			}
 		case marker == 0xFE: // COM: comment, dropped
 		case marker == 0xDA: // SOS: header copied, scan data follows
+			scans++
 			out = append(out, data[i:segLenAt+segLen]...)
 			i = segLenAt + segLen
 			inScan = true
@@ -209,7 +210,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 	if orient >= 2 && orient <= 8 {
 		// The pixel cap bounds the frame, not how often a progressive
 		// decode walks it; see stripMaxJPEGScans.
-		if scans := bytes.Count(out, []byte{0xFF, 0xDA}); scans > stripMaxJPEGScans {
+		if scans > stripMaxJPEGScans {
 			return nil, fmt.Errorf("strip: JPEG carries %d scans, over the %d-scan decode cap", scans, stripMaxJPEGScans)
 		}
 		cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))

@@ -225,11 +225,7 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 		if maxScans <= 0 {
 			maxScans = DefaultMaxJPEGScans
 		}
-		// Every scan the decoder runs starts at an FF DA marker, and
-		// entropy-coded data never holds one (a data FF is stuffed), so
-		// counting the byte pair over-counts at worst (metadata payloads)
-		// and never misses a scan.
-		if scans := bytes.Count(data, jpegSOS); scans > maxScans {
+		if scans := countJPEGScans(data); scans > maxScans {
 			return nil, fmt.Errorf("%w: JPEG carries %d scans (max %d)", ErrDecompressionBomb, scans, maxScans)
 		}
 	}
@@ -248,8 +244,43 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	return &Image{img: img, format: format, orient: orient, frames: frames, cfg: cfg}, nil
 }
 
-// jpegSOS is the JPEG start-of-scan marker.
-var jpegSOS = []byte{0xFF, 0xDA}
+// countJPEGScans counts the SOS markers image/jpeg would act on: it walks
+// the marker segments from SOI, skips each segment's payload by its length
+// field, steps over entropy-coded data (stuffed FF 00, RSTn, fill bytes)
+// and stops at the first EOI, where the decoder stops. Counting FF DA byte
+// pairs over the whole file instead counted an APPn payload (an ICC
+// profile, a MakerNote preview) and a motion photo's video clip after EOI,
+// and refused a one-scan phone photo as a bomb. A stray FF DA inside
+// entropy data still counts, so the walk over-counts at worst and never
+// misses a scan the decoder runs.
+func countJPEGScans(d []byte) int {
+	n := 0
+	for i := 2; i+1 < len(d); {
+		if d[i] != 0xFF {
+			i++ // entropy-coded data
+			continue
+		}
+		m := d[i+1]
+		switch {
+		case m == 0xFF: // fill byte
+			i++
+			continue
+		case m == 0x00 || m == 0x01 || m == 0xD8 || (m >= 0xD0 && m <= 0xD7): // no length field
+			i += 2
+			continue
+		case m == 0xD9: // EOI
+			return n
+		}
+		if m == 0xDA {
+			n++
+		}
+		if i+3 >= len(d) {
+			return n
+		}
+		i += 2 + (int(d[i+2])<<8 | int(d[i+3]))
+	}
+	return n
+}
 
 // countGIFFrames returns the frame count of a GIF byte stream without
 // materialising any pixel buffer. It walks the GIF block structure
