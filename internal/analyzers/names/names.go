@@ -74,6 +74,7 @@ var Analyzers = []string{
 	"listheader",
 	// 2026-11 bug-bash rules (request-misc)
 	"authpresence",
+	"fanoutreq",
 	"multipartparse",
 	"rsakeysize",
 }
