@@ -205,7 +205,8 @@ Path, query, and header parameters become typed flags (arrays of
 strings repeat the flag; typed arrays are rejected rather than left
 unvalidated). A query array sends `tags=a&tags=b` by default and with
 `explode: true`, and `tags=a,b` with `style: form, explode: false`,
-each item escaped. Generation refuses any other array style
+each item escaped. An array header parameter goes out as one line,
+`X-Tags: a,b` (`simple`, a header's one style). Generation refuses any other array style
 (`spaceDelimited`, `pipeDelimited`, `deepObject`, a path or header
 parameter that is not `simple`) rather than send what the server
 does not expect. A parameter's `description` leads its flag's help text,

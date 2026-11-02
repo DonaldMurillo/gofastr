@@ -532,6 +532,9 @@ few lines, and link the PR or the docs page for the rest.
     multipart or form-urlencoded body with a `format: binary` schema now
     fails generation; it sent the file raw under `multipart/form-data`
     with no boundary.
+  - An array header parameter is sent as one line, `X-Tags: a,b`; each
+    item went on its own line, and a server reading the header's value
+    saw the first item only.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

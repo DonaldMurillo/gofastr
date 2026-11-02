@@ -497,7 +497,9 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	for i, p := range op.HeaderParams {
 		v := fmt.Sprintf("hp%d", i)
 		if p.Repeated {
-			fmt.Fprintf(sb, "\tfor _, item := range %s {\n\t\thdr.Add(%q, item)\n\t}\n", v, p.Name)
+			// simple style, a header's only one: one line, a,b. Two lines
+			// read as the first item to a server taking the value.
+			fmt.Fprintf(sb, "\tif len(%s) > 0 {\n\t\thdr.Set(%q, strings.Join(%s, \",\"))\n\t}\n", v, p.Name, v)
 			continue
 		}
 		fmt.Fprintf(sb, "\tif visited[%q] {\n\t\thdr.Set(%q, %s)\n\t}\n", p.Flag, p.Name, paramString(v, p))
