@@ -180,6 +180,16 @@ few lines, and link the PR or the docs page for the rest.
   every test while `make analyze` and CI stopped running them. The test
   now reads every exported `&analysis.Analyzer{}` in every file of each
   package, and only a `<name> — <reason>` line holds one back.
+- **An analyzer change selects the generated-code vet gates.** The gates
+  that vet emitted code with the repo vettool (`TestUnionApp`, the
+  generated-CLI and styles gates in `appgen` and `generatecmd`) build
+  `./cmd/vettool` in a subprocess, which no import edge shows, so
+  `cmd/affected` never selected them for a change under
+  `internal/analyzers/`: a widened rule that fired on emitted code passed
+  the pull request and failed main. Each now declares
+  `//gofastr:test-reads internal/analyzers/ cmd/vettool/`, and
+  `TestRepoVettoolCallersDeclareTheirReads` holds every future caller of
+  `clitest.RepoVettool` to the same directive.
 - **`core-ui/check.LintNumberFill` reads every spelling of the `{{n}}`
   pattern.** It matched only a quoted `'{{n}}'` and a regex with escaped
   braces, so `.replace(` + "`{{n}}`" + `, String(n))` (a template

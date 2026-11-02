@@ -17,6 +17,8 @@ import (
 // the repo through a replace directive, and (3) vetted whole by the
 // repo vettool, so a finding anywhere in the emitted shape is a
 // finding in the generator, not in the customer's code.
+//
+//gofastr:test-reads internal/analyzers/ cmd/vettool/
 func TestGeneratedStylesPassRepoVettool(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("no go toolchain to vet the generated module: %v", err)
