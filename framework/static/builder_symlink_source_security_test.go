@@ -18,9 +18,11 @@ import (
 // published the target's bytes into the public tree, so
 // static/config.json -> ../config/prod.json (or a key, an .env under a
 // harmless name) went out with the site. A symlink that stays in the
-// tree is served live and still ships; a symlinked directory, which the
-// walk does not descend, no longer fails the build halfway through
-// with an empty file left behind.
+// tree is served live and still ships. So does a symlinked directory
+// that stays in the tree (static/images -> img): the live host follows
+// it through os.Root, and an export that dropped it 404'd on every
+// asset under it. A directory link that escapes is refused like a file
+// link, and a link back up the tree (loop -> .) is not walked forever.
 func TestExportRefusesSymlinkOutOfStaticDir(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, "static")
@@ -48,7 +50,9 @@ func TestExportRefusesSymlinkOutOfStaticDir(t *testing.T) {
 	link(filepath.Join("..", "private", "prod.json"), "config.json") // escapes
 	link(filepath.Join(outside, "prod.json"), "abs.json")           // escapes, absolute
 	link("app.css", "theme.css")                                     // stays in the tree
-	link("img", "images")                                            // a directory
+	link("img", "images")                                            // a directory in the tree
+	link(outside, "secrets")                                         // a directory out of it
+	link(".", "loop")                                                // a cycle
 
 	for name, host := range map[string]func() *uihost.UIHost{
 		"dir": func() *uihost.UIHost { return uihost.New(newSymlinkApp(), uihost.WithStaticDir(dir)) },
@@ -62,7 +66,10 @@ func TestExportRefusesSymlinkOutOfStaticDir(t *testing.T) {
 			// The parity this test holds the export to: the live host
 			// refuses the escaping links and serves the in-tree one.
 			live := host()
-			for u, want := range map[string]int{"/config.json": http.StatusNotFound, "/abs.json": http.StatusNotFound, "/theme.css": http.StatusOK} {
+			for u, want := range map[string]int{
+				"/config.json": http.StatusNotFound, "/abs.json": http.StatusNotFound, "/secrets/prod.json": http.StatusNotFound,
+				"/theme.css": http.StatusOK, "/images/logo.svg": http.StatusOK,
+			} {
 				rec := httptest.NewRecorder()
 				live.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, u, nil))
 				if rec.Code != want {
@@ -73,7 +80,7 @@ func TestExportRefusesSymlinkOutOfStaticDir(t *testing.T) {
 			if _, err := (&Builder{Host: host(), OutDir: out}).Build(context.Background()); err != nil {
 				t.Fatalf("build: %v", err)
 			}
-			for _, rel := range []string{"config.json", "abs.json"} {
+			for _, rel := range []string{"config.json", "abs.json", filepath.Join("secrets", "prod.json")} {
 				if b, err := os.ReadFile(filepath.Join(out, rel)); err == nil {
 					t.Errorf("SECURITY: [static] the export published %s, a symlink out of the static dir (%q); the live host answers 404 for it", rel, b)
 				}
@@ -83,6 +90,15 @@ func TestExportRefusesSymlinkOutOfStaticDir(t *testing.T) {
 			}
 			if fi, err := os.Lstat(filepath.Join(out, "images")); err == nil && !fi.IsDir() {
 				t.Errorf("the export wrote images as a %v file; a symlinked directory is not a file", fi.Mode())
+			}
+			if b, err := os.ReadFile(filepath.Join(out, "images", "logo.svg")); err != nil || string(b) != "<svg/>" {
+				t.Errorf("images/logo.svg (under an in-tree directory symlink the live host serves) = %q, %v; want <svg/>", b, err)
+			}
+			// The cycle is cut at its first link: without the cut the
+			// walk recursed until the kernel's symlink limit and shipped
+			// loop/app.css, loop/loop/app.css, ... dozens deep.
+			if _, err := os.Lstat(filepath.Join(out, "loop")); err == nil {
+				t.Errorf("the export walked loop -> . (a link back up the tree) and published copies under loop/")
 			}
 		})
 	}

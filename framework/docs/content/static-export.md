@@ -183,10 +183,13 @@ go build -o site ./examples/site/
   refused: one the UI host would not serve (a path with a dot segment
   such as `.env` or `.git/config`, a server config file name such
   as `web.config`, or a symlink whose target leaves the static dir or
-  is not a regular file), and one at the path of a page the build rendered,
-  in any case (`about/index.html` or `About/index.html` beside an
-  `/about` route). The build log names
-  each. Files under a leading `.well-known/`, unless they are dotfiles
+  is neither a regular file nor a directory), and one at the path of a
+  page the build rendered, in any case (`about/index.html` or
+  `About/index.html` beside an `/about` route). The build log names
+  each. A symlinked directory that stays inside the static dir
+  (`static/images -> img`) is copied under its own name, as the UI host
+  serves it; a link back to a directory it sits in (`loop -> .`) is
+  skipped and logged. Files under a leading `.well-known/`, unless they are dotfiles
   themselves, and the root `.nojekyll` GitHub Pages reads are copied.
   A static-dir
   `_headers` or `_redirects` is appended to the generated one, so its
