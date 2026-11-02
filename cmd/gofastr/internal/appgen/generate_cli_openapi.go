@@ -957,10 +957,17 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 					if slices.ContainsFunc(op.PathParams, func(p cliOpParam) bool { return p.Name == n }) {
 						continue
 					}
+					// A property is wire data, and --json sends any of
+					// them: one whose name derives no usable flag (@type),
+					// a reserved one (url, token) or one a parameter or an
+					// earlier property holds goes by --json alone rather
+					// than failing the document over a name nobody can
+					// change.
 					f := cliOpBodyField{Wire: n, Flag: oaKebab(n), GoType: goType, Required: requiredSet[n]}
-					if err := claim(f.Flag, "body field "+n); err != nil {
-						return op, err
+					if _, taken := flagSeen[f.Flag]; taken || !oaValidFlag(f.Flag) || oaReservedFlags[f.Flag] {
+						continue
 					}
+					flagSeen[f.Flag] = "body field " + n
 					op.BodyFields = append(op.BodyFields, f)
 				}
 			}

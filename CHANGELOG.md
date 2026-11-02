@@ -523,6 +523,9 @@ few lines, and link the PR or the docs page for the rest.
     `getUserByID` is `get-user-by-id` and `HTTPCode` `--http-code`, where
     every capital started a word (`get-user-by-i-d`). Scripts calling the
     old spelling need the new one.
+  - A JSON body property named `url`, `token`, `file` or `json`, one whose
+    flag a parameter holds, or one that is no flag name (`@type`) goes by
+    `--json`; it failed generation of the whole document.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

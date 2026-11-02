@@ -214,7 +214,11 @@ An operation's parameter overrides a path-level one with the same `name`
 and `in`, as OpenAPI defines it, so the flag takes the operation's type
 and description;
 `application/json` object bodies get a flag per top-level scalar
-property plus the `--json` raw escape. An OpenAPI 3.1 type list
+property plus the `--json` raw escape. A property whose flag the CLI
+reserves (`url`, `token`, `file`, `json`), that a parameter or an
+earlier property by name already holds, or whose name is no flag at all
+(`@type`) gets no flag and goes by `--json`, since a body field's name
+is the API's and cannot be renamed. An OpenAPI 3.1 type list
 `[T, "null"]` reads as `T` (an unset flag sends nothing, and `--json`
 can send the `null`); a list naming two value types gets no flag.
 A body property named exactly
