@@ -21,11 +21,13 @@ func TestTrimSQLMasksStringLiterals(t *testing.T) {
 	cases := []struct {
 		in, secret, want string
 	}{
-		{"ALTER ROLE app WITH PASSWORD 's3cr3t-pw'", "s3cr3t-pw", "ALTER ROLE app WITH PASSWORD '?'"},
-		{"SELECT * FROM t WHERE token = 'tok''en-value' AND id = $1", "en-value", "SELECT * FROM t WHERE token = '?' AND id = $1"},
-		{"SET app.key = E'k\\'ey-secret'", "ey-secret", "SET app.key = E'?'"},
-		{"SELECT $tag$dollar-secret$tag$", "dollar-secret", "SELECT $tag$?$tag$"},
-		{"SELECT 'unterminated-secret", "unterminated-secret", "SELECT '?"},
+		{"ALTER ROLE app WITH PASSWORD 's3cr3t-pw'", "s3cr3t-pw", "ALTER ROLE app WITH PASSWORD ?"},
+		{"SELECT * FROM t WHERE token = 'tok''en-value' AND id = $1", "en-value", "SELECT * FROM t WHERE token = ? AND id = $1"},
+		{"SET app.key = E'k\\'ey-secret'", "ey-secret", "SET app.key = E?"},
+		{"SELECT $tag$dollar-secret$tag$", "dollar-secret", "SELECT ?"},
+		{"SELECT $é$dollar-secret$é$", "dollar-secret", "SELECT ?"},
+		{"SELECT 'unterminated-secret", "unterminated-secret", "SELECT ?"},
+		{"SELECT a /* key=comment-secret */ FROM t LIMIT 10", "comment-secret", "SELECT a FROM t LIMIT ?"},
 	}
 	for _, c := range cases {
 		got := TrimSQL(c.in)
@@ -36,9 +38,17 @@ func TestTrimSQLMasksStringLiterals(t *testing.T) {
 			t.Errorf("TrimSQL(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
-	// Identifiers and placeholders are the shape and stay.
-	if got := TrimSQL(`SELECT "Name" FROM posts WHERE id = $1 AND x = ?`); got != `SELECT "Name" FROM posts WHERE id = $1 AND x = ?` {
+	// Identifiers and placeholders are the shape and stay; a quoted
+	// identifier stays once the engine is named as PostgreSQL, where
+	// "double-quoted" text is never a string.
+	if got := TrimSQL(`SELECT name FROM posts WHERE id = $1 AND x = ?`); got != `SELECT name FROM posts WHERE id = $1 AND x = ?` {
 		t.Errorf("TrimSQL changed a literal-free statement: %q", got)
+	}
+	var buf bytes.Buffer
+	s := NewSlowQueryLogger(nil, time.Nanosecond, slog.New(slog.NewJSONHandler(&buf, nil)), WithDialect("postgres"))
+	s.observe(context.Background(), "query", `SELECT "Name" FROM posts WHERE id = $1`, nil, time.Second, nil)
+	if !strings.Contains(buf.String(), `"sql":"SELECT \"Name\" FROM posts WHERE id = $1"`) {
+		t.Errorf("a PostgreSQL quoted identifier did not survive WithDialect(postgres): %s", buf.String())
 	}
 }
 
@@ -64,5 +74,42 @@ func TestSlowQueryLineMasksLiteral(t *testing.T) {
 	s.observe(context.Background(), "exec", "ALTER ROLE app PASSWORD 'hunter2-secret'", nil, time.Second, sql.ErrNoRows)
 	if strings.Contains(buf.String(), "hunter2-secret") {
 		t.Errorf("slow-query line leaked the literal: %s", buf.String())
+	}
+}
+
+// TestTrimSQLMasksEveryDialectsLiterals: the first masker read every
+// statement as PostgreSQL, so spellings other engines (or Postgres
+// itself) read as literals reached the line. SQLite falls back to a
+// string for "double-quoted" text no column is named; MySQL reads a
+// backslash as an escape in every string, so 'a\'secret-tail' is one
+// literal, and # opens a comment there; Postgres nests block comments,
+// so the quote in "it's" sits inside the comment and 'secret2' is a
+// literal. TrimSQL does not know the engine, so it masks under every
+// reading at once.
+func TestTrimSQLMasksEveryDialectsLiterals(t *testing.T) {
+	cases := []struct{ in, secret string }{
+		{`SELECT * FROM t WHERE token = "secret-dq"`, "secret-dq"},
+		{`SELECT * FROM t WHERE a = 'a\'secret-tail' AND b = 1`, "secret-tail"},
+		{`/* a /* b */ it's */ SELECT 'secret2'`, "secret2"},
+		{"SELECT 1 # it's\nFROM t WHERE a = 'secret-hash'", "secret-hash"},
+	}
+	for _, c := range cases {
+		if got := TrimSQL(c.in); strings.Contains(got, c.secret) {
+			t.Errorf("TrimSQL(%q) = %q: literal value reached the log line", c.in, got)
+		}
+	}
+	// Named, each engine masks its own spelling.
+	for _, c := range []struct{ dialect, in, secret string }{
+		{"sqlite3", `SELECT * FROM t WHERE token = "secret-dq"`, "secret-dq"},
+		{"mysql", `SELECT * FROM t WHERE a = 'a\'secret-tail' AND b = 1`, "secret-tail"},
+		{"mysql", "SELECT 1 # it's\nFROM t WHERE a = 'secret-hash'", "secret-hash"},
+		{"postgres", `/* a /* b */ it's */ SELECT 'secret2'`, "secret2"},
+	} {
+		var buf bytes.Buffer
+		s := NewSlowQueryLogger(nil, time.Nanosecond, slog.New(slog.NewJSONHandler(&buf, nil)), WithDialect(c.dialect))
+		s.observe(context.Background(), "query", c.in, nil, time.Second, nil)
+		if strings.Contains(buf.String(), c.secret) {
+			t.Errorf("WithDialect(%s): %q leaked to the line: %s", c.dialect, c.in, buf.String())
+		}
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
+	"github.com/DonaldMurillo/gofastr/framework/localrun"
 )
 
 // ReadinessCheck is a named probe run by GET /readyz. Implementations
@@ -40,6 +42,87 @@ type healthState struct {
 	checks  []ReadinessCheck
 	timeout time.Duration
 	verbose bool // when true, /readyz includes error.Error() strings
+	// drain is the WithReadinessDrain grace; nil keeps the default.
+	drain *time.Duration
+}
+
+// productionReadinessDrain is the default grace between /readyz turning
+// 503 and the listener closing. Load balancers probe every few seconds
+// (Kubernetes' default readiness period is 10s with endpoint removal
+// usually inside 5s; an AWS ALB target's deregistration starts on the
+// first failed check), so five seconds covers a typical probe interval
+// without stretching every rollout.
+const productionReadinessDrain = 5 * time.Second
+
+// WithReadinessDrain sets how long Shutdown keeps serving after /readyz
+// starts answering 503, so a load balancer that probes /readyz notices
+// and stops routing new requests here before the listener closes. During
+// the grace the server accepts and serves as before, and /healthz stays
+// 200 (a failed liveness probe restarts the process; it does not drain
+// it). Zero skips the wait; a negative value is zero. The default is 5s
+// in production and 0 in a Go test binary and under `gofastr dev`. The
+// grace ends early when Shutdown's context does. The default SIGTERM
+// handler adds the grace to AppConfig.ShutdownTimeout, so the drain
+// after it keeps its full budget.
+func WithReadinessDrain(d time.Duration) AppOption {
+	d = max(d, 0)
+	return func(a *App) {
+		if a.health == nil {
+			a.health = &healthState{}
+		}
+		a.health.drain = &d
+	}
+}
+
+// readinessDrain returns the grace Shutdown waits after flipping /readyz.
+func (a *App) readinessDrain() time.Duration {
+	if a.health != nil && a.health.drain != nil {
+		return *a.health.drain
+	}
+	return defaultReadinessDrain(localrun.UnderTest(), dev.Enabled())
+}
+
+// defaultReadinessDrain is the grace when WithReadinessDrain was not
+// given: none in a test binary or under `gofastr dev`, where no
+// balancer is probing and every stop would otherwise wait it out.
+func defaultReadinessDrain(underTest, devMode bool) time.Duration {
+	if underTest || devMode {
+		return 0
+	}
+	return productionReadinessDrain
+}
+
+// drainReadiness turns /readyz to 503 and, when the app is serving,
+// keeps serving for the readiness grace before Shutdown closes the
+// listener. The wait ends early when ctx does.
+func (a *App) drainReadiness(ctx context.Context) {
+	a.draining.Store(true)
+	a.serverMu.Lock()
+	serving := a.server != nil
+	a.serverMu.Unlock()
+	grace := a.readinessDrain()
+	if !serving || grace <= 0 {
+		return
+	}
+	a.Logger().Info("readiness draining: /readyz answers 503; serving until the grace ends",
+		"grace", grace.String())
+	t := time.NewTimer(grace)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+	}
+}
+
+// signalShutdownTimeout is the deadline the default SIGTERM handler
+// gives Shutdown: AppConfig.ShutdownTimeout (15s when unset) for the
+// drain, plus the readiness grace spent before it.
+func (a *App) signalShutdownTimeout() time.Duration {
+	timeout := a.Config.ShutdownTimeout
+	if timeout <= 0 {
+		timeout = defaultShutdownTimeout
+	}
+	return timeout + a.readinessDrain()
 }
 
 // defaultReadinessTimeout bounds how long /readyz will wait for the
@@ -154,6 +237,17 @@ func (a *App) healthHandlers() (liveness, readiness http.HandlerFunc) {
 		_, _ = w.Write([]byte("ok"))
 	}
 	readiness = func(w http.ResponseWriter, r *http.Request) {
+		if a.draining.Load() {
+			// Shutdown has begun: say so at once, without running the
+			// checks, so the balancer stops routing here while the
+			// server still serves what it sends during the grace.
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(ReadinessResponse{Status: "draining", Checks: []ReadinessResult{}})
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), a.readinessTimeout())
 		defer cancel()
 		results := runReadinessChecks(ctx, a.readinessChecks(), a.readinessVerbose())

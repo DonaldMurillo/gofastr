@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
-	"strings"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/internal/sqlredact"
 )
 
 // SlowQueryLogger emits a slog warning for any DB query whose execution time
@@ -27,6 +27,21 @@ type SlowQueryLogger struct {
 	threshold time.Duration
 	getLogger func() *slog.Logger
 	hits      atomic.Uint64
+	dialect   sqlredact.Dialect
+}
+
+// Option configures a SlowQueryLogger.
+type Option func(*SlowQueryLogger)
+
+// WithDialect names the database engine, so the sql attr masks its
+// literals by that engine's quoting rules: "postgres" (or "postgresql",
+// "pgx"), "sqlite3" (or "sqlite"), "mysql" (or "mariadb"). The values
+// of framework.DetectDialect are accepted as they are. Without it, or
+// with a name it does not know, the line masks under every engine's
+// rules at once (see TrimSQL), which also hides PostgreSQL's
+// "quoted identifiers".
+func WithDialect(name string) Option {
+	return func(s *SlowQueryLogger) { s.dialect = sqlredact.ForSystem(name) }
 }
 
 // NewSlowQueryLogger wraps inner with a slow-query observer. When threshold
@@ -37,15 +52,11 @@ type SlowQueryLogger struct {
 // lifetime of the wrapper. To follow App.Logger swaps (battery/log replaces
 // it during plugin Init), use NewSlowQueryLoggerFn instead and pass
 // app.Logger as the accessor.
-func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog.Logger) *SlowQueryLogger {
+func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog.Logger, opts ...Option) *SlowQueryLogger {
 	if logger == nil {
-		return NewSlowQueryLoggerFn(inner, threshold, nil)
+		return NewSlowQueryLoggerFn(inner, threshold, nil, opts...)
 	}
-	return &SlowQueryLogger{
-		inner:     inner,
-		threshold: threshold,
-		getLogger: func() *slog.Logger { return logger },
-	}
+	return NewSlowQueryLoggerFn(inner, threshold, func() *slog.Logger { return logger }, opts...)
 }
 
 // NewSlowQueryLoggerFn is like NewSlowQueryLogger but takes a per-call
@@ -55,11 +66,17 @@ func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog
 //
 // If getLogger is nil or returns nil, slog.Default is used as a safety
 // fallback (slow-query lines never disappear silently).
-func NewSlowQueryLoggerFn(inner db.Executor, threshold time.Duration, getLogger func() *slog.Logger) *SlowQueryLogger {
+func NewSlowQueryLoggerFn(inner db.Executor, threshold time.Duration, getLogger func() *slog.Logger, opts ...Option) *SlowQueryLogger {
 	if getLogger == nil {
 		getLogger = func() *slog.Logger { return slog.Default() }
 	}
-	return &SlowQueryLogger{inner: inner, threshold: threshold, getLogger: getLogger}
+	s := &SlowQueryLogger{inner: inner, threshold: threshold, getLogger: getLogger}
+	for _, o := range opts {
+		if o != nil {
+			o(s)
+		}
+	}
+	return s
 }
 
 // Hits returns the running count of queries that crossed the threshold.
@@ -122,7 +139,7 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	attrs := []any{
 		slog.String("kind", kind),
 		slog.Duration("dur", dur),
-		slog.String("sql", TrimSQL(query)),
+		slog.String("sql", trimSQL(query, s.dialect)),
 		slog.Int("args", len(args)),
 	}
 	if err != nil {
@@ -138,37 +155,32 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 // maxLoggedSQL caps the printed statement, in bytes.
 const maxLoggedSQL = 240
 
-// TrimSQL masks the statement's literal values, collapses internal
-// whitespace so log lines stay readable, and caps the printed query at
-// 240 bytes (cut on a rune boundary, then "…") to keep logs from
-// exploding on big builders.
+// TrimSQL is the statement's shape, as the slow-query line prints it
+// when no dialect was named: every string and number literal replaced by
+// ?, comments dropped, whitespace collapsed, control bytes escaped, and
+// the result capped at 240 bytes (cut on a rune boundary, then "…") to
+// keep logs from exploding on big builders. Placeholders ($1, ?, :n)
+// and identifiers stay. Bound arguments were never logged, only their
+// count.
 //
-// A string literal ('…', E'…', $tag$…$tag$) prints as '?' (E'?',
-// $tag$?$tag$): a slow-query line is for the statement's shape, and a
-// value spelled inline (ALTER ROLE … PASSWORD '…', SET app.key = '…') went
-// to every sink verbatim. Placeholders, numbers, identifiers and quoted
-// identifiers stay. Bound arguments were never logged, only their count.
+// A slow-query line is for the statement's shape, and a value spelled
+// inline (ALTER ROLE … PASSWORD '…', SET app.key = '…') went to every
+// sink verbatim. Where a literal ends depends on the engine, and TrimSQL
+// does not know it, so it masks under every engine's rules at once:
+// "double-quoted" text prints as ? too (SQLite and MySQL can read it as
+// a string), # opens a comment (MySQL), block comments nest
+// (PostgreSQL), and a string whose end depends on whether a backslash
+// escapes masks the rest of the statement. Name the engine with
+// WithDialect to keep quoted identifiers on PostgreSQL. It is the masker
+// core/tracing puts on db.query.text.
 func TrimSQL(q string) string {
-	q = maskLiterals(q)
-	out := make([]byte, 0, min(len(q), maxLoggedSQL+1))
-	lastSpace := false
-	for i := 0; i < len(q) && len(out) <= maxLoggedSQL; i++ {
-		c := q[i]
-		if c < 0x20 || c == 0x7f {
-			c = ' '
-		}
-		if c == ' ' {
-			if lastSpace {
-				continue
-			}
-			lastSpace = true
-		} else {
-			lastSpace = false
-		}
-		out = append(out, c)
-	}
+	return trimSQL(q, sqlredact.Unknown)
+}
+
+func trimSQL(q string, d sqlredact.Dialect) string {
+	out := sqlredact.Text(q, d)
 	if len(out) <= maxLoggedSQL {
-		return string(out)
+		return out
 	}
 	// Over the cap: cut at maxLoggedSQL, backed off to the start of the
 	// rune that straddles it, so the line stays valid UTF-8.
@@ -176,133 +188,7 @@ func TrimSQL(q string) string {
 	for cut > 0 && !utf8.RuneStart(out[cut]) {
 		cut--
 	}
-	return string(out[:cut]) + "…"
-}
-
-// maskLiterals replaces the body of every SQL string literal in q with
-// "?": standard '…' strings (a doubled quote escapes one), E'…' strings
-// (backslash escapes too) and Postgres dollar-quoted $tag$…$tag$ bodies.
-// Quoted identifiers ("…") and comments are copied through so a quote
-// inside one does not open a literal. An unterminated literal masks to
-// the end of the statement.
-func maskLiterals(q string) string {
-	if !strings.ContainsAny(q, "'$") {
-		return q
-	}
-	var b strings.Builder
-	b.Grow(len(q))
-	for i := 0; i < len(q); {
-		c := q[i]
-		switch {
-		case c == '-' && i+1 < len(q) && q[i+1] == '-':
-			end := strings.IndexByte(q[i:], '\n')
-			if end < 0 {
-				end = len(q) - i
-			}
-			b.WriteString(q[i : i+end])
-			i += end
-		case c == '/' && i+1 < len(q) && q[i+1] == '*':
-			end := strings.Index(q[i+2:], "*/")
-			if end < 0 {
-				b.WriteString(q[i:])
-				return b.String()
-			}
-			b.WriteString(q[i : i+2+end+2])
-			i += 2 + end + 2
-		case c == '"':
-			j := i + 1
-			for j < len(q) {
-				if q[j] == '"' {
-					if j+1 < len(q) && q[j+1] == '"' {
-						j += 2
-						continue
-					}
-					j++
-					break
-				}
-				j++
-			}
-			b.WriteString(q[i:j])
-			i = j
-		case c == '\'':
-			escapes := i > 0 && (q[i-1] == 'E' || q[i-1] == 'e') && (i < 2 || !isIdentByte(q[i-2]))
-			j := i + 1
-			closed := false
-			for j < len(q) {
-				if escapes && q[j] == '\\' {
-					j += 2
-					continue
-				}
-				if q[j] == '\'' {
-					if j+1 < len(q) && q[j+1] == '\'' {
-						j += 2
-						continue
-					}
-					closed = true
-					j++
-					break
-				}
-				j++
-			}
-			if !closed {
-				b.WriteString("'?")
-				return b.String()
-			}
-			b.WriteString("'?'")
-			i = j
-		case c == '$' && (i == 0 || !isIdentByte(q[i-1])):
-			tag, ok := dollarTag(q[i:])
-			if !ok {
-				b.WriteByte(c)
-				i++
-				continue
-			}
-			body := q[i+len(tag):]
-			end := strings.Index(body, tag)
-			b.WriteString(tag)
-			b.WriteByte('?')
-			if end < 0 {
-				return b.String()
-			}
-			b.WriteString(tag)
-			i += len(tag) + end + len(tag)
-		default:
-			b.WriteByte(c)
-			i++
-		}
-	}
-	return b.String()
-}
-
-// dollarTag returns the opening "$tag$" (or "$$") at the start of s. A
-// "$" followed by a digit is a placeholder ($1), not a dollar quote.
-func dollarTag(s string) (string, bool) {
-	if len(s) < 2 {
-		return "", false
-	}
-	if s[1] == '$' {
-		return "$$", true
-	}
-	if !isIdentStart(s[1]) {
-		return "", false
-	}
-	for j := 2; j < len(s); j++ {
-		switch {
-		case s[j] == '$':
-			return s[:j+1], true
-		case !isIdentByte(s[j]):
-			return "", false
-		}
-	}
-	return "", false
-}
-
-func isIdentStart(c byte) bool {
-	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
-}
-
-func isIdentByte(c byte) bool {
-	return isIdentStart(c) || (c >= '0' && c <= '9') || c == '$'
+	return out[:cut] + "…"
 }
 
 // asSlogAttrs converts our []any (alternating slog.Attr) into the expected

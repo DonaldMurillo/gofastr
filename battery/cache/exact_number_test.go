@@ -58,3 +58,31 @@ func TestCacheKeepsLargeIntegersExactUnderInterface(t *testing.T) {
 		})
 	}
 }
+
+// TestCacheNumberTypeBoundaryIsMagnitude pins the rule cache.md states:
+// the line between float64 and json.Number under an interface is the
+// magnitude 2^53, not whether a float64 holds the value. 1e20 and a
+// UnixNano timestamp are exact float64 values and still come back as
+// json.Number; 2^53-1 comes back as float64. The first cut of the docs
+// said "a float64 when a float64 holds it", which code type-asserting a
+// cached UnixNano to float64 would have trusted.
+func TestCacheNumberTypeBoundaryIsMagnitude(t *testing.T) {
+	ctx := context.Background()
+	c := NewMemoryCache(WithCleanupInterval(0))
+	in := map[string]any{"e20": 1e20, "nano": int64(1_700_000_000_000_000_000), "below": int64(1)<<53 - 1, "neg": -1e20}
+	if err := c.Set(ctx, "b", in, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := c.Get(ctx, "b", &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"e20", "nano", "neg"} {
+		if _, ok := m[k].(json.Number); !ok {
+			t.Errorf("%s = %T %v, want json.Number (|v| >= 2^53)", k, m[k], m[k])
+		}
+	}
+	if f, ok := m["below"].(float64); !ok || f != float64(int64(1)<<53-1) {
+		t.Errorf("below = %T %v, want float64 2^53-1", m["below"], m["below"])
+	}
+}

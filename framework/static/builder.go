@@ -2048,19 +2048,9 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 		return err
 	}
 	defer srcRoot.Close()
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		// ToSlash first: on Windows the separators are the path's own.
-		if err := refuseSeparatorName(filepath.ToSlash(rel)); err != nil {
+	return walkStatic(srcRoot.FS(), log, func(slashRel string, d fs.DirEntry) error {
+		rel := filepath.FromSlash(slashRel)
+		if err := refuseSeparatorName(slashRel); err != nil {
 			return err
 		}
 		if !publishable(filepath.ToSlash(rel)) {
@@ -2104,11 +2094,68 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 	})
 }
 
+// walkStatic walks a static tree the way the UI host serves it, calling
+// fn for every entry that is not a directory, slash-separated and
+// relative to the tree's root. fsys is an os.Root view (or an embed.FS,
+// which holds no links), so a symlink resolves only inside the tree.
+// fs.WalkDir does not descend a symlinked directory, and the live host
+// serves static/images/logo.svg through static/images -> img all the
+// same: the export dropped every asset under such a link and the
+// published site 404'd on them. A directory link that resolves inside
+// the tree is walked under its own name; one that escapes, or names
+// nothing, reaches fn like any other link, which refuses it. A link to
+// a directory the walk is already inside (loop -> .) is skipped: the
+// host would serve loop/loop/... forever, and no export holds that.
+func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.DirEntry) error) error {
+	rootInfo, err := fs.Stat(fsys, ".")
+	if err != nil {
+		return err
+	}
+	var walk func(dir string, chain []fs.FileInfo) error
+	walk = func(dir string, chain []fs.FileInfo) error {
+		entries, err := fs.ReadDir(fsys, dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			rel := e.Name()
+			if dir != "." {
+				rel = path.Join(dir, e.Name())
+			}
+			var sub fs.FileInfo
+			switch {
+			case e.IsDir():
+				if sub, err = e.Info(); err != nil {
+					return err
+				}
+			case e.Type()&fs.ModeSymlink != 0:
+				if fi, err := fs.Stat(fsys, rel); err == nil && fi.IsDir() {
+					sub = fi
+				}
+			}
+			if sub == nil {
+				if err := fn(rel, e); err != nil {
+					return err
+				}
+				continue
+			}
+			if slices.ContainsFunc(chain, func(a fs.FileInfo) bool { return os.SameFile(a, sub) }) {
+				log("skipped %s (a link back to a directory it is in)", rel)
+				continue
+			}
+			if err := walk(rel, append(slices.Clip(chain), sub)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return walk(".", []fs.FileInfo{rootInfo})
+}
+
 // openSourceFile opens rel, a walked static-dir entry, through srcRoot.
 // A non-empty reason means the entry is not published, the way the UI
 // host answers 404 for it: a symlink whose target leaves the tree (or
-// no longer exists), and anything that is not a regular file, such as a
-// symlinked directory the walk does not descend.
+// no longer exists), and anything that is not a regular file.
 func openSourceFile(srcRoot *os.Root, rel string, d fs.DirEntry) (*os.File, string, error) {
 	f, err := srcRoot.Open(rel)
 	if err != nil {
@@ -2135,13 +2182,7 @@ func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(str
 		return err
 	}
 	defer root.Close()
-	return fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
+	return walkStatic(fsys, log, func(path string, d fs.DirEntry) error {
 		if err := refuseSeparatorName(path); err != nil {
 			return err
 		}
@@ -2152,7 +2193,9 @@ func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(str
 		// A symlink in a disk-backed FS (SetStaticFS re-roots os.DirFS
 		// through os.Root) is published only when it resolves to a regular
 		// file inside the tree, as openSourceFile decides for the static
-		// dir; a read of one that escapes failed the whole build.
+		// dir; a read of one that escapes failed the whole build. One that
+		// resolves to a directory in the tree never reaches here:
+		// walkStatic walks it.
 		if d.Type()&fs.ModeSymlink != 0 {
 			fi, err := fs.Stat(fsys, path)
 			if err != nil {

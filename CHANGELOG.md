@@ -179,6 +179,28 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`core/static` redirects `/dir` to `/dir/`.** A request without the
+  trailing slash for a directory that has an `IndexFile` used to get the
+  index at `/dir`, so its relative links resolved against the parent.
+  It now answers `301` to `./dir/` (query kept), like `net/http`'s
+  `FileServer`; the relative `Location` keeps the prefix and cannot
+  name another host.
+- **`core/static`'s SPA fallback answers only client routes.** With
+  `SPA: true`, a missing path whose last segment has a file extension
+  (`/app.3f2a.js`, `/x.css`, `/logo.png`) now gets `404` instead of the
+  index: the browser ran the HTML as a script or a stylesheet, and a
+  CDN could store it under the asset's URL. Extensionless paths
+  (`/dashboard/settings`) still get the index. See
+  [core packages](framework/docs/content/core-packages.md#static).
+- **`/readyz` drains before shutdown.** `App.Shutdown` now turns
+  `/readyz` to `503` (`{"status":"draining"}`) at once and keeps serving
+  for a grace period, so a load balancer stops routing here before the
+  listener closes; `/healthz` stays `200` until exit. The grace is 5s by
+  default, set with `framework.WithReadinessDrain` (`0` skips it), and
+  `0` in a Go test binary and under `gofastr dev`. A stop now takes up
+  to the grace longer: the default SIGTERM handler's deadline is
+  `ShutdownTimeout` plus the grace. See
+  [Health and readiness](framework/docs/content/health-checks.md#draining-on-shutdown).
 - **BREAKING for custom A2A stores: retention counts per tier.**
   `a2a.Config.TerminalTaskRetention` and `PausedTaskRetention` now bound
   one owner's tasks per tier (`a2a.RetentionTier`: the tenant and scope
@@ -521,8 +543,10 @@ few lines, and link the PR or the docs page for the rest.
   `MemoryCache`, `RedisCache` and `GetOrSet` decoded with
   `json.Unmarshal`, so a value read into `map[string]any` or `*any` had
   every number as float64 and a cached id `9007199254740993` came back
-  as `9007199254740992`. An integer past 2^53 now reads back as a
-  `json.Number`; every other number is still a float64.
+  as `9007199254740992`. A number whose magnitude is 2^53 or more now
+  reads back as a `json.Number`, even one a float64 holds exactly
+  (`1e20`, a `UnixNano` timestamp); every smaller number is still a
+  float64.
 - **`cache.GetOrSet` returns a loaded value whose entry was already
   evicted.** Every waiter read its value back from the cache after the
   fill, so an entry an LRU bound or Redis `maxmemory` evicted (or a short
@@ -5456,14 +5480,28 @@ few lines, and link the PR or the docs page for the rest.
   `server.log` an older build, a `touch` or a provisioning step left
   `0644` stayed world-readable, while every file the sink rotated in
   was `0600`. Opening now clears the bits `FileMode` lacks (it never
-  adds any). Set `FileOpts.FileMode: 0o640` if a shipper reads the file
-  through its group.
+  adds any) on a file this process owns. A file another user owns (a
+  provisioned `0664 root:app` log the app appends to through its group)
+  keeps its mode, and a chmod the OS refuses is one stderr warning, not
+  a failed open; Windows skips the tighten. Set
+  `FileOpts.FileMode: 0o640` if a shipper reads the file through its
+  group.
 - **Slow-query lines mask SQL string literals.** `slowquery.TrimSQL`
   (the `sql` attr of every `slow query` line) printed a statement
   verbatim, so a value spelled inline (`ALTER ROLE … PASSWORD '…'`,
   `SET app.key = '…'`, a hand-built `WHERE token = '…'`) reached every
-  log sink. Literals now print as `'?'`; placeholders, identifiers and
-  numbers stay. The 240-byte cut also no longer splits a UTF-8 rune.
+  log sink. The line now uses the masker behind tracing's
+  `db.query.text` (shared in `internal/sqlredact`): string and number
+  literals print as `?` and comments are dropped; placeholders and
+  identifiers stay. `slowquery.WithDialect("postgres" | "sqlite3" |
+  "mysql")` picks the engine's quoting rules; without it the line masks
+  under all of them, so a SQLite `"double-quoted"` string, a MySQL
+  `'a\'b'` escape or `#` comment, and a PostgreSQL nested `/* /* */ */`
+  comment no longer leak, at the cost of PostgreSQL quoted identifiers
+  printing as `?`. Tracing's `db.query.text` now nests PostgreSQL
+  comments, reads MySQL `#` comments and `$é$` dollar tags, and masks
+  under every engine's rules for a `db.system.name` it does not know.
+  The 240-byte cut also no longer splits a UTF-8 rune.
 - **The log console sink escapes control and bidi runes in the message
   and keys.** Only attr values were escaped; the message, attr keys,
   the time and level fields, and an entry that was not JSON were
@@ -5482,8 +5520,12 @@ few lines, and link the PR or the docs page for the rest.
   copied it with `os.Open`, so the target's bytes went out with the
   site. Both the static dir and a disk-backed static FS now skip such a
   link (and any entry that is not a regular file) and log it; an
-  in-tree symlink still ships. A symlinked directory in the static dir
-  used to fail the build halfway with an empty file left behind.
+  in-tree symlink still ships. A symlinked directory that stays in the
+  tree (`static/images -> img`) is walked under its own name, as the
+  live host serves it; one that leaves the tree is skipped, and so is a
+  link back to a directory the walk is in (`loop -> .`). A symlinked
+  directory used to fail the build halfway with an empty file left
+  behind.
 - **`core/static` refuses a hidden file named with a backslash.** The
   dot-segment and config-file checks split on `/` only, so
   `/sub%5C.env` read as one harmless segment, while a disk `FS` on

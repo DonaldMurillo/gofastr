@@ -230,9 +230,14 @@ in the path cannot forge log lines or repaint an operator's tail.
   is removed.
 - Default rotation: 100 MiB cap, 5 backups.
 - File mode: `FileMode`, default `0600`. A log file that already exists
-  is tightened to `FileMode` when the sink opens it (bits `FileMode`
-  lacks are cleared, none are added), so a `server.log` an older build
-  left `0644` does not stay world-readable. Set `FileMode: 0o640` when a
+  and that this process owns is tightened to `FileMode` when the sink
+  opens it (bits `FileMode` lacks are cleared, none are added), so a
+  `server.log` an older build left `0644` does not stay world-readable.
+  A file another user owns keeps its mode: a provisioned
+  `/var/log/app/server.log` at `0664 root:app` that the app appends to
+  through group `app` is the operator's choice. If the OS refuses the
+  chmod anyway, the sink prints one warning to stderr and keeps
+  appending. Windows skips the tighten. Set `FileMode: 0o640` when a
   log shipper reads the file through its group.
 
 ### `WebhookSink(url, opts)`

@@ -1,6 +1,28 @@
 version: v0.96.0
 title: unreleased
 notes:
+  - change: "core/static.Handler with SPA true serves IndexFile only for a missing path whose last segment has no file extension; a missing /app.3f2a.js, /x.css or /logo.png gets 404 instead of the index"
+    breaking: false
+    guidance: "The index served as a missing script or stylesheet was HTML the browser could not run, and a cache could store it under the asset's URL. Client routes without a dot in their last segment (/dashboard/settings, /users/42) still get the index. A client route whose last segment has a dot (/files/report.pdf) now 404s: give it a server route that serves the index, or drop the dot from the route."
+    find:
+      uses:
+        - gofastr/core/static.Handler
+        - gofastr/core/static.Mount
+  - change: "core/static.Handler answers a directory request without the trailing slash (/docs) with 301 to ./docs/ (query kept) when the directory has an IndexFile; it used to serve the index at /docs"
+    breaking: false
+    guidance: "Relative links in a directory's index.html now resolve under the directory, as net/http's FileServer has them. A client or test that expected 200 at /docs follows the redirect or requests /docs/."
+    find:
+      uses:
+        - gofastr/core/static.Handler
+        - gofastr/core/static.Mount
+  - change: "App.Shutdown answers /readyz with 503 at once and keeps serving for a readiness grace (default 5s, framework.WithReadinessDrain) before it stops accepting; a stop takes up to the grace longer"
+    breaking: false
+    guidance: "A load balancer probing /readyz stops routing here before the listener closes; /healthz stays 200 until exit. The default SIGTERM handler's deadline is AppConfig.ShutdownTimeout plus the grace, so keep both inside the orchestrator's kill window (Kubernetes' terminationGracePeriodSeconds, 30s by default). Pass framework.WithReadinessDrain(0) to stop at once, as before, or a longer grace to match a slow balancer. Test binaries and gofastr dev default to 0."
+    find:
+      uses:
+        - gofastr/framework.App.Shutdown
+        - gofastr/framework.App.Start
+        - gofastr/framework.App.RunWithSignals
   - change: "BREAKING for direct callers of the llm.md index - crud.RegistryLLMMD / RegistryLLMMDHandler take a trailing pagesIndex string, the path the app serves its page index at; empty drops the index's Pages section, which used to link /llm-pages.md even when nothing served it"
     breaking: true
     hits: review
@@ -950,26 +972,26 @@ notes:
     find:
       uses:
         - gofastr/battery/cache.NewRedisCache
-  - change: "The slow-query line's sql attr (slowquery.TrimSQL) prints every SQL string literal as '?' and cuts at 240 bytes on a rune boundary"
+  - change: "The slow-query line's sql attr (slowquery.TrimSQL) prints every SQL string and number literal as ?, drops comments, and cuts at 240 bytes on a rune boundary; without slowquery.WithDialect it masks under every engine's quoting rules"
     breaking: false
-    guidance: "A value spelled inline in a statement (a password in ALTER ROLE, a token in a hand-built WHERE) went to every log sink verbatim. A log search or alert that matched a literal inside the sql attr now sees '?'; match on the statement's shape instead."
+    guidance: "A value spelled inline in a statement (a password in ALTER ROLE, a token in a hand-built WHERE) went to every log sink verbatim. A log search or alert that matched a literal inside the sql attr now sees ?; match on the statement's shape instead. Pass slowquery.WithDialect(\"postgres\") (or \"sqlite3\", \"mysql\") to NewSlowQueryLogger to keep PostgreSQL \"quoted\" identifiers, which the engine-blind default prints as ?."
     find:
       uses:
         - gofastr/framework/slowquery.TrimSQL
         - gofastr/framework/slowquery.NewSlowQueryLogger
         - gofastr/framework/slowquery.NewSlowQueryLoggerFn
-  - change: "battery/log's file sink tightens an existing log file to FileOpts.FileMode (default 0600) when it opens it; it used to keep whatever mode the file had"
+  - change: "battery/log's file sink tightens an existing log file it owns to FileOpts.FileMode (default 0600) when it opens it; it used to keep whatever mode the file had"
     breaking: false
-    guidance: "A server.log left 0644 by an older build or a provisioning step was world-readable. If a log shipper reads the file through its group, set FileOpts.FileMode: 0o640 (or the mode it needs); the sink clears only the bits FileMode lacks and never adds any."
+    guidance: "A server.log left 0644 by an older build or a provisioning step was world-readable. If a log shipper reads the file through its group, set FileOpts.FileMode: 0o640 (or the mode it needs); the sink clears only the bits FileMode lacks and never adds any. A log file another user owns (a provisioned 0664 root:app file) keeps its mode, and a refused chmod is a stderr warning, not a failed open."
     find:
       uses:
         - gofastr/battery/log.FileSink
         - gofastr/battery/log.MustFileSink
         - gofastr/battery/log.DefaultFileSink
         - gofastr/battery/log.New
-  - change: "battery/cache reads a value back into an interface (map[string]any, *any, []any) with integers past 2^53 as json.Number instead of a rounded float64"
+  - change: "battery/cache reads a value back into an interface (map[string]any, *any, []any) with every number of magnitude 2^53 or more as json.Number instead of a float64"
     breaking: false
-    guidance: "A cached id 9007199254740993 came back as 9007199254740992. Numbers a float64 holds exactly are still float64, so most code sees no change; code that type-asserts a large integer under an interface to float64 should accept json.Number (or decode into a typed struct)."
+    guidance: "A cached id 9007199254740993 came back as 9007199254740992. Numbers below 2^53 in magnitude are still float64, so most code sees no change; code that type-asserts a number at or past 2^53 under an interface to float64 (a large id, a UnixNano timestamp, 1e20) should accept json.Number (or decode into a typed struct)."
     find:
       uses:
         - gofastr/battery/cache.NewMemoryCache
@@ -997,7 +1019,7 @@ notes:
         - gofastr/core/static.Mount
   - change: "A static export (App.ExportStatic, gofastr build) skips a static-dir symlink whose target leaves the static dir, dangles, or is not a regular file, and logs it; it used to publish the target, which the live host answers 404 for"
     breaking: false
-    guidance: "A file the export now skips was never served by the running app. Copy the file into the static dir, or point the link at a file inside it, if it is meant to be public."
+    guidance: "A file the export now skips was never served by the running app. Copy the file into the static dir, or point the link at a file inside it, if it is meant to be public. A symlinked directory that stays inside the static dir (static/images -> img) is copied under its own name, as the running app serves it; a link back to a directory it sits in (loop -> .) is skipped."
     nodetect: "symlinks live in the static directory on disk, not in the app source"
   - change: "gofastr build's check-embed gate reads a template literal's ${...} in ClientJS as code, so a G.serverAction call inside one on an embeddable surface fails the build"
     breaking: false
