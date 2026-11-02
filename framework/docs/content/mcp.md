@@ -397,7 +397,10 @@ client implements. In a framework app,
 On `tools/call` the checks run in order: resolve the tool (unknown name:
 method-not-found), the framework call gate (disabled module: a generic
 internal error), the tool's own gate (invalid-params carrying the gate's
-error), then the handler. The handler runs under a recover guard, so a panic
+error), then the handler. Every gate (`SetGate`, `WithToolGate`,
+`Gated`, `WithResourceGate`, `WithPromptGate`) answers the same way: a
+plain error is invalid-params carrying its message, and a gate that
+returns its own `*RPCError` keeps that error's code and message. The handler runs under a recover guard, so a panic
 in handler code becomes an internal error with no detail echoed, instead of
 unwinding the transport loop; the same guard covers resource contents funcs
 and prompt handlers.

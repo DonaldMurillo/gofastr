@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An MCP gate's own `*RPCError` keeps its code on every gate.**
+  `WithToolGate` and the server-wide gate (`SetGate`, and
+  `CallToolFor`'s run of it) wrapped a gate's `*RPCError` in a second
+  invalid-params error reading `RPC error -32001: ...`, while `Gated`,
+  `WithResourceGate` and `WithPromptGate` passed it through. All five now
+  pass it through.
 - **MCP `resources/unsubscribe` releases only the caller's own
   subscription.** The per-`uri` count was shared by every caller, so
   any caller past the server gate could unsubscribe a `uri` it never
