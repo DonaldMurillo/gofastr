@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A gated DBQueue job survives a shutdown during its hand-back.** A
+  worker that claimed a job and then found its type gated released it on
+  the worker's context; a shutdown at that moment left the row claimed
+  with an attempt spent, and on a last attempt the dead-letter sweep
+  failed a job that never ran. The release now settles on a detached
+  context, as Ack and Nack do.
 - **Outbox options keep their defaults for zero or less.**
   `outbox.WithPollInterval(0)` crashed the process when the relay
   started (`time.NewTicker` panics on its goroutine); `WithBatchSize(0)`
