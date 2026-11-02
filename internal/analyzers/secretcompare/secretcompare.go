@@ -26,8 +26,9 @@
 // the token, and stay quiet).
 //
 // The compare has more spellings than ==/!=, and each short-circuits
-// the same way: bytes.Equal, bytes.Compare and strings.Compare on the
-// pair (bytes.Equal on a MAC is the textbook timing bug), a switch whose
+// the same way: bytes.Equal on the pair (bytes.Equal on a MAC is the
+// textbook timing bug), bytes.Compare or strings.Compare whose result is
+// tested == 0 / != 0, a switch whose
 // tag is compared against each case, and an operand behind parentheses
 // or a string <-> []byte conversion (`string(sig) == want`). A type
 // parameter whose every constraint term is a string or []byte counts as
@@ -51,6 +52,11 @@
 //     attacker-steerable information;
 //   - hash- and digest-named operands (content digests, not
 //     credentials; see credentialWords below);
+//   - a bytes.Compare / strings.Compare used to ORDER, not to match: a
+//     sort comparator returning it (battery/auth's nonce eviction sorts
+//     by nonce), or a `< 0` test. Ordering two values decides no match
+//     an attacker can probe for; only a result tested against zero is
+//     an equality check;
 //   - the fix posture itself: subtle.ConstantTimeCompare(x, y) == 1
 //     compares a call result against a literal and never names a
 //     credential operand;
@@ -83,16 +89,21 @@ func run(pass *analysis.Pass) (any, error) {
 			switch v := n.(type) {
 			case *ast.BinaryExpr:
 				if v.Op == token.EQL || v.Op == token.NEQ {
-					check(pass, v.X, v.Y, v.Pos())
+					// bytes.Compare / strings.Compare tested against
+					// zero is == spelled as a call. A Compare whose
+					// result orders (a sort comparator returning it, a
+					// `< 0`) decides no match and stays quiet.
+					if call, name := compareAgainstZero(pass, v.X, v.Y); call != nil {
+						check(pass, call.Args[0], call.Args[1], v.Pos(), name+"(...) == 0")
+						return true
+					}
+					check(pass, v.X, v.Y, v.Pos(), "==/!=")
 				}
 			case *ast.CallExpr:
-				// bytes.Equal and strings.Compare are == spelled as a
-				// call: the same byte-at-a-time short circuit.
-				switch pathflow.QualifiedFunc(pass, v.Fun) {
-				case "bytes.Equal", "bytes.Compare", "strings.Compare":
-					if len(v.Args) == 2 {
-						check(pass, v.Args[0], v.Args[1], v.Pos())
-					}
+				// bytes.Equal is == spelled as a call: the same
+				// byte-at-a-time short circuit.
+				if pathflow.QualifiedFunc(pass, v.Fun) == "bytes.Equal" && len(v.Args) == 2 {
+					check(pass, v.Args[0], v.Args[1], v.Pos(), "bytes.Equal")
 				}
 			case *ast.SwitchStmt:
 				// `switch token { case want: }` compares the tag with ==
@@ -106,7 +117,7 @@ func run(pass *analysis.Pass) (any, error) {
 						continue
 					}
 					for _, e := range cc.List {
-						check(pass, v.Tag, e, e.Pos())
+						check(pass, v.Tag, e, e.Pos(), "a switch case")
 					}
 				}
 			}
@@ -116,9 +127,32 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
+// compareAgainstZero returns the bytes.Compare / strings.Compare call
+// on one side of an ==/!= whose other side is the constant 0, and the
+// call's name; nil when the pair is anything else.
+func compareAgainstZero(pass *analysis.Pass, x, y ast.Expr) (*ast.CallExpr, string) {
+	for _, pair := range [2][2]ast.Expr{{x, y}, {y, x}} {
+		call, ok := ast.Unparen(pair[0]).(*ast.CallExpr)
+		if !ok || len(call.Args) != 2 {
+			continue
+		}
+		name := pathflow.QualifiedFunc(pass, call.Fun)
+		if name != "bytes.Compare" && name != "strings.Compare" {
+			continue
+		}
+		tv, ok := pass.TypesInfo.Types[pair[1]]
+		if !ok || tv.Value == nil || tv.Value.String() != "0" {
+			continue
+		}
+		return call, name
+	}
+	return nil, ""
+}
+
 // check reports a compare of x against y at pos when one side is
-// credential-shaped and the other is guessable.
-func check(pass *analysis.Pass, x, y ast.Expr, pos token.Pos) {
+// credential-shaped and the other is guessable. how names the compare's
+// spelling for the message.
+func check(pass *analysis.Pass, x, y ast.Expr, pos token.Pos, how string) {
 	x, y = unwrap(pass, x), unwrap(pass, y)
 	if !stringish(pass, x) || !stringish(pass, y) {
 		return
@@ -152,8 +186,8 @@ func check(pass *analysis.Pass, x, y ast.Expr, pos token.Pos) {
 		named = yName
 	}
 	pass.Reportf(pos,
-		"%s compared with ==/!=: a short-circuit compare on a credential leaks match status through timing; use subtle.ConstantTimeCompare or hmac.Equal",
-		named)
+		"%s compared with %s: a short-circuit compare on a credential leaks match status through timing; use subtle.ConstantTimeCompare or hmac.Equal",
+		named, how)
 }
 
 // unwrap strips what does not change the bytes compared: parentheses

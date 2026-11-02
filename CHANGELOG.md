@@ -200,7 +200,10 @@ few lines, and link the PR or the docs page for the rest.
   - `timestampid`: an id bound in `Session{ID: …}`, `var token = …` or
     a multi-value assignment, built with `fmt.Sprint`, or made from
     `time.Now().Format(…)` / `.String()`. A `make([]byte, 16)` rand
-    buffer now silences it as a `[16]byte` array always did;
+    buffer now silences it as a `[16]byte` array always did. A trailing
+    `key` counts only behind a credential word (`apiKey`, `signingKey`):
+    a date-bucketed storage `Key` or `cacheKey` names a place, not a
+    capability, and stays quiet;
   - `errleak`: `fmt.Sprintf("query failed: %v", err)` and
     `fmt.Sprint(err)` on a 5xx;
   - `discardeddecode`: a discarded `handler.UnmarshalStrict`,
@@ -213,11 +216,15 @@ few lines, and link the PR or the docs page for the rest.
   - `unboundedbody` and `unboundedresp`: `ioutil.ReadAll`,
     `io.CopyBuffer`, `buf.ReadFrom(body)`, a body read through
     `bufio.NewReader` or a `body := r.Body` alias, and for responses
-    `io.Copy` into anything but `io.Discard`;
+    `io.Copy` / `ReadFrom` into a writer that keeps the bytes
+    (`bytes.Buffer`, `strings.Builder`, a `[]byte` writer). A streaming
+    copy into a `ResponseWriter`, a file or an `io.Writer` stays quiet;
   - `GOFASTR1413`: `Header().Del("Vary")` and `h["Vary"] = …`, which
-    clobber the earlier entries as `Set` does;
-  - `secretcompare`: `bytes.Equal` / `bytes.Compare` / `strings.Compare`
-    on a credential pair, a `switch token { case stored: }`, a
+    clobber the earlier entries as `Set` does. `h["Vary"] =
+    append(h["Vary"], …)` keeps them and stays quiet;
+  - `secretcompare`: `bytes.Equal` on a credential pair, a
+    `bytes.Compare` / `strings.Compare` tested `== 0` / `!= 0` (one that
+    sorts stays quiet), a `switch token { case stored: }`, a
     `string(sig)` conversion, and a `~string` type parameter;
   - `credfetch`: `req.SetBasicAuth`, which writes `Authorization`;
   - `keytrim`: `strings.Trim` / `TrimLeft` / `TrimRight` / `TrimFunc`
@@ -554,8 +561,10 @@ few lines, and link the PR or the docs page for the rest.
   (each makes a text node), `nodeValue`, and the ARIA text attributes
   and properties beyond `aria-label` (`aria-valuetext`,
   `aria-roledescription`, `aria-placeholder`, `ariaDescription`, …)
-  all put English in front of a reader with the lint silent. The
-  shipped JavaScript stays clean under the wider rule.
+  all put English in front of a reader with the lint silent. An
+  `append(name, value)` whose first literal is a bare field name
+  (`Headers`, `FormData`, `URLSearchParams`) adds no text node and stays
+  quiet. The shipped JavaScript stays clean under the wider rule.
 - **`AppConfig.JSONCase: crud.CaseSnake` reaches the entity routes
   again.** Since v0.94.0 every `App.Entity`, `App.GroupEntity` and
   `App.View` route answered camelCase keys in a snake_case app: the

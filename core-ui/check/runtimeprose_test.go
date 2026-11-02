@@ -115,9 +115,20 @@ const runtimeProseSinksFixture = `(() => {
   headers.append('Content-Type', 'application/json');
   root.append(make('div', { 'font-weight': '600' }, 'layout layer'));
   card.setAttribute('aria-roledescription', say('k.card', 'Draggable card'));
+  h.append('Accept', 'text/event-stream');
+  fd.append('Title', t);
+  fd.append('Avatar', blob, 'Profile photo.png');
+  new URLSearchParams().append('Sort', 'Newest first');
+  row.append('Last saved: ', when);
+  row.append(icon, 'Nothing here yet');
 })();
 `
 
+// TestLintRuntimeProseReadsEveryReaderSink also pins the round-3
+// review's false positives: Headers, FormData and URLSearchParams share
+// the name append(name, value[, filename]), and a header or form field
+// name ('Accept', 'Title') is no text node. A DOM append whose first
+// literal is prose, or whose literal follows a node, still fires.
 func TestLintRuntimeProseReadsEveryReaderSink(t *testing.T) {
 	dir := t.TempDir()
 	writeJS(t, dir, "sinks.js", runtimeProseSinksFixture)
@@ -125,7 +136,7 @@ func TestLintRuntimeProseReadsEveryReaderSink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertLines(t, res, []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11})
+	assertLines(t, res, []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 21, 22})
 }
 
 func TestLintRuntimeProseRepoIsClean(t *testing.T) {

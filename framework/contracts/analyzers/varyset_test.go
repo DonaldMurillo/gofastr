@@ -95,3 +95,33 @@ func mark(w http.ResponseWriter, h http.Header) {
 		t.Fatalf("want 2 findings (map write + Del), got %d: %v", len(found), found)
 	}
 }
+
+// h["Vary"] = append(h["Vary"], v) is Add spelled as a map write: it
+// keeps every entry the slice already held and clobbers nothing (the
+// round-3 review's false positive). An append onto a DIFFERENT slice,
+// or onto an empty one, still replaces what earlier middlewares added.
+func TestVaryMapAppendToItselfIsQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"cache.go": `package middleware
+
+import "net/http"
+
+func mark(w http.ResponseWriter, h http.Header, other []string) {
+	h["Vary"] = append(h["Vary"], "Origin")
+	w.Header()["Vary"] = append(w.Header()["Vary"], "Accept", "Cookie")
+	h["Vary"] = append(other, "Origin")
+	h["Vary"] = append([]string(nil), "Origin")
+	h["Vary"] = append(w.Header()["Vary"], "Origin")
+}
+`,
+	})
+	found := countRule(t, ds, contracts.RuleVarySet)
+	if len(found) != 3 {
+		t.Fatalf("want 3 findings (append onto another slice, onto nil, onto another header), got %d: %v", len(found), found)
+	}
+	for _, d := range found {
+		if d.Line <= 7 {
+			t.Errorf("self-append on line %d must stay quiet: %v", d.Line, d)
+		}
+	}
+}

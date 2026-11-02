@@ -2,7 +2,8 @@
 // time: a time.Now().Unix()/.UnixMilli()/.UnixNano() value formatted
 // into a string (fmt.Sprintf, strconv.FormatInt/FormatUint/Itoa, or +
 // concatenation) and bound to a name ending in id, token, session,
-// key, nonce, secret, or capability.
+// a credential-qualified key (apiKey, signingKey), nonce, secret, or
+// capability.
 //
 // The bug class: a wall-clock id has zero unpredictable bits, so a
 // second client that can reach the surface enumerates it without ever
@@ -43,6 +44,14 @@
 //   - a clock passed as a parameter (now time.Time): the injectable
 //     clock of ulid.NewAt and the test seams; only time.Now() itself
 //     is wall-clock here;
+//   - a bare or place-qualified key: a storage object's Key field, a
+//     cacheKey, an objectKey. Date-bucketed keys
+//     (Object{Key: "backups/" + time.Now().Format(...)}) name WHERE a
+//     thing lives, and the store's own access control decides who may
+//     read it; guessing the name grants nothing. Round 3's Format and
+//     struct-literal arms fired on exactly these. A trailing "key"
+//     counts only behind a credential word (apiKey, signingKey,
+//     sessionKey, secretKey: credentialKeyWords below);
 //   - names in the observability family — buildID, logID, traceID,
 //     spanID, requestID, reqID, runID, batchID, debugID, devID — label
 //     work for humans; guessing them grants nothing;
@@ -195,7 +204,21 @@ func capabilityName(name string) bool {
 	if last == "id" && len(words) >= 2 && observabilityWords[strings.ToLower(words[len(words)-2])] {
 		return false
 	}
+	// "key" alone names a place as often as a credential: a storage
+	// object's Key, a cacheKey, a date-bucketed objectKey. Only a key a
+	// credential word qualifies (apiKey, signingKey, sessionKey) is one.
+	if last == "key" {
+		return len(words) >= 2 && credentialKeyWords[strings.ToLower(words[len(words)-2])]
+	}
 	return true
+}
+
+// credentialKeyWords qualify a trailing "key" as a credential.
+var credentialKeyWords = map[string]bool{
+	"api": true, "access": true, "secret": true, "private": true,
+	"signing": true, "session": true, "auth": true, "encryption": true,
+	"hmac": true, "master": true, "license": true, "invite": true,
+	"share": true, "capability": true,
 }
 
 // minted reports whether e is a string mint whose assembly includes a

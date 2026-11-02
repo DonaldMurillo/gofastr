@@ -2,6 +2,7 @@ package analyzers
 
 import (
 	"go/ast"
+	"go/types"
 	"net/textproto"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -35,6 +36,10 @@ import (
 // Deliberately silent on:
 //   - .Add("Vary", …), the append-only spelling every correct site
 //     uses (cors.go, wellknown.go, embed/middleware.go, uihost, bff);
+//   - h["Vary"] = append(h["Vary"], …): Add spelled as a map write onto
+//     the same header's own slice keeps every earlier entry (the
+//     round-3 review's false positive). An append onto another slice,
+//     nil, or a different header's Vary still reports;
 //   - Set of any other header (this rule is about Vary only);
 //   - _test.go and generated files (AppFiles already excludes both);
 //   - any site annotated //gofastr:allow(GOFASTR1413) <why>.
@@ -45,9 +50,12 @@ func ruleVarySet(p *contracts.Pass, rel string, file *ast.File) []contracts.Diag
 		// exactly as Set does. Only the canonical key is the same entry;
 		// h["vary"] is a second header line, not a clobber.
 		if as, ok := n.(*ast.AssignStmt); ok {
-			for _, lhs := range as.Lhs {
+			for i, lhs := range as.Lhs {
 				ix, ok := lhs.(*ast.IndexExpr)
 				if !ok {
+					continue
+				}
+				if len(as.Rhs) == len(as.Lhs) && appendsToItself(ix, as.Rhs[i]) {
 					continue
 				}
 				if key, ok := stringLit(ix.Index); ok && key == "Vary" {
@@ -78,4 +86,25 @@ func ruleVarySet(p *contracts.Pass, rel string, file *ast.File) []contracts.Diag
 		return true
 	})
 	return out
+}
+
+// appendsToItself reports whether rhs is append(<same map>["Vary"], …)
+// for the map write lhs: h["Vary"] = append(h["Vary"], "Origin") is Add
+// spelled as a map write. It keeps every entry the slice held and
+// clobbers nothing. The receiver is compared as written, so an append
+// onto another header's Vary, another slice, or nil still reports.
+func appendsToItself(lhs *ast.IndexExpr, rhs ast.Expr) bool {
+	call, ok := ast.Unparen(rhs).(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return false
+	}
+	if fn, ok := call.Fun.(*ast.Ident); !ok || fn.Name != "append" {
+		return false
+	}
+	src, ok := ast.Unparen(call.Args[0]).(*ast.IndexExpr)
+	if !ok {
+		return false
+	}
+	key, ok := stringLit(src.Index)
+	return ok && key == "Vary" && types.ExprString(src.X) == types.ExprString(lhs.X)
 }
