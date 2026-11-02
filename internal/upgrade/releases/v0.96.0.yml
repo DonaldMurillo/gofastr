@@ -729,3 +729,7 @@ notes:
     breaking: false
     guidance: "Only names that start with an upper-case letter or an underscore change, and their values were silently dropped before. Regenerate the clients (gofastr generate, gofastr generate sdk). An app spec with such a field fails validation: rename it in snake_case and add the old name under renames: so the column moves."
     nodetect: "the keys change in regenerated files; an app's own code reads them through the generated types"
+  - change: "gofastr validate and generate app refuse a screen route that does not start with /, holds ?, #, a backslash, whitespace or a control character, has an empty, . or .. segment, names a parameter twice, or equals an entity's CRUD mount"
+    breaking: false
+    guidance: "Each such screen was unreachable from a browser, or (on the CRUD mount) stopped the app at boot. Fix the route in the app spec before regenerating."
+    nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"

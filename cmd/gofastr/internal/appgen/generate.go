@@ -895,6 +895,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			cli.Fail("Failed to load app spec: %v", cerr)
 			cli.OsExit(1)
 		}
+		bp.MarkFragment()
 		if verr := appspec.ValidateAppSpec(bp); verr != nil {
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(verr)

@@ -1650,6 +1650,15 @@ The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
+- a screen route a browser cannot ask for: one that does not start with
+  `/`, has an empty, `.` or `..` segment (`//evil.com` is a
+  protocol-relative link, `/x/../admin` is `/admin` to a browser), holds
+  `?`, `#`, a backslash, a space or a control character, or names one
+  parameter twice (`/x/{id}/{id}`)
+- a screen route equal to an entity's CRUD mount (`/api/posts`, or
+  `/posts` with `api_prefix: ""`): the framework refuses to boot on that
+  collision. A fragment with no `app:` section (`generate app --add`) is
+  not checked for it, since it does not carry the project's `api_prefix`
 - two screen routes that differ only in parameter names or syntax
   (`/posts/{id}` and `/posts/{slug}` or `/posts/:id`): the router tries
   dynamic routes in registration order, so the second would never render
