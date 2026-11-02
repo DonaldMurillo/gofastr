@@ -4628,6 +4628,13 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The `gofastr harness` chat page refuses to be framed.** It holds a
+  24 h human-class token and the permission modal, and it sent no
+  framing policy, so a page on any site could load it in an iframe and
+  overlay its own content to steer the operator's click onto "Allow for
+  session". It now sends `X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'`. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 - **`gofastr harness` no longer loads its built-in profile from the
   working directory.** It preferred a
   `framework/experimental/harness/profile/<name>.toml` relative to the

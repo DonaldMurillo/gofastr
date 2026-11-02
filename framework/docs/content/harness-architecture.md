@@ -1349,7 +1349,10 @@ it never sees how clients are wired.
   token for whoever loads it, and the `Host` check stops DNS
   rebinding, not a peer that reaches the port and sends
   `Host: localhost`. The check reads the address the listener bound,
-  not the spelling passed. There is no LAN mode.
+  not the spelling passed. There is no LAN mode. The chat page is
+  never framed (`X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`):
+  a page on another site could otherwise load it in an iframe and steer
+  the operator's click onto the permission modal.
 - **`--no-listen`**: in-process clients only (engine speaks only
   through `inproc`). Useful for tests or pure-CLI use.
 - **`gofastr harness mcp`** (v0.2): launches a one-shot stdio MCP
