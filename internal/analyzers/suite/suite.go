@@ -92,6 +92,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/poisonedconn"
 	// 2026-11 bug-bash rules (response)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/doublewrite"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/listheader"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverwrite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/statusrange"
 )
@@ -186,6 +187,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(recoverwrite.Analyzer),
 	allow.Guard(statusrange.Analyzer),
 	allow.Guard(doublewrite.Analyzer),
+	allow.Guard(listheader.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

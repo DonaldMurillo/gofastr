@@ -71,6 +71,7 @@ var Analyzers = []string{
 	"recoverwrite",
 	"statusrange",
 	"doublewrite",
+	"listheader",
 }
 
 // Lints is every source lint outside the vettool that shares the
