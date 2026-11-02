@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Rotating a secret that ends in a newline keeps sessions.**
+  `GOFASTR_SECRET` is used as set, so a value read from a file (a
+  Kubernetes secret made with `--from-file`) signs with its trailing
+  newline. `GOFASTR_SECRET_PREVIOUS` trimmed its entries, so moving that
+  same value there on rotation derived a different verify key and every
+  session and embed grant the old secret signed stopped verifying. An
+  entry ending in a line break is now also accepted as written.
 - **`ImportData` refuses a source the manifest lists twice.** The file
   was restored once per listing: a keyed table failed on its key, but a
   keyless one took every row twice and committed.

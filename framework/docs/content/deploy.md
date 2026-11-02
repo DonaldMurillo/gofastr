@@ -111,7 +111,10 @@ one token lifetime, after which you drop the old one.
   `GOFASTR_SECRET_PREVIOUS` to the old (comma-separated to roll through
   several; each ≥32 chars). In code: `framework.WithSecretRotation(newSecret,
   oldSecret)`. Deploy to every replica, wait one session TTL, then unset
-  `GOFASTR_SECRET_PREVIOUS` and redeploy.
+  `GOFASTR_SECRET_PREVIOUS` and redeploy. `GOFASTR_SECRET` is used exactly as set,
+  trailing newline included; an old value that ends in one (a secret read
+  from a file) is accepted in `GOFASTR_SECRET_PREVIOUS` both with and
+  without it.
 - **`AuthConfig.JWTSecret`**: set `JWTSecret` to the new value and move the
   old into `JWTPreviousSecrets`. Wait one `JWTExpiry` (default 1h), then
   remove it and redeploy.
