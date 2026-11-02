@@ -36,7 +36,7 @@ func TestEnrollURLCarriesPeriod(t *testing.T) {
 		SessionTTL:          time.Hour,
 		UserStore:           userStore,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: NewMemoryTwoFAStore(), Period: 60}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

@@ -76,7 +76,7 @@ func (s *bannerSource) set(banner string) {
 func newChannelConn(buf int) *WebSocketConn {
 	return &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, buf),
+		sendBuffer: make(chan wsMessage, buf),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -86,8 +86,11 @@ func newChannelConn(buf int) *WebSocketConn {
 func recvRaw(t *testing.T, conn *WebSocketConn) []byte {
 	t.Helper()
 	select {
-	case data := <-conn.sendBuffer:
-		return data
+	case msg := <-conn.sendBuffer:
+		if msg.opcode != wsopcodeText {
+			t.Fatalf("state channel queued opcode 0x%X, want text 0x1", msg.opcode)
+		}
+		return msg.data
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for a wire message")
 		return nil
@@ -353,8 +356,8 @@ func TestStateChannelFilterHidesRoleEntirely(t *testing.T) {
 
 		recvEnvelope(t, admin)
 		select {
-		case data := <-guest.sendBuffer:
-			t.Fatalf("guest received %q despite ok=false", data)
+		case msg := <-guest.sendBuffer:
+			t.Fatalf("guest received %q despite ok=false", msg.data)
 		default:
 		}
 	})
@@ -493,7 +496,7 @@ func TestStateChannelFullBufferClosesConn(t *testing.T) {
 		c := startChannel(t, src)
 
 		conn := newChannelConn(1)
-		conn.sendBuffer <- []byte("occupied")
+		conn.sendBuffer <- wsMessage{opcode: wsopcodeText, data: []byte("occupied")}
 
 		c.Connect("admin", conn)
 		synctest.Wait()
@@ -561,7 +564,7 @@ func TestCloseWithStatusWritesCodeAndReason(t *testing.T) {
 		out := &bytes.Buffer{}
 		conn := &WebSocketConn{
 			conn:       &nopConn{r: bytes.NewReader(nil), w: out},
-			sendBuffer: make(chan []byte, 1),
+			sendBuffer: make(chan wsMessage, 1),
 			closed:     make(chan struct{}),
 			peerClosed: make(chan struct{}),
 			config:     WSConfig{ReadLimit: 1 << 20},
@@ -600,14 +603,15 @@ func (b *blockedConn) Close() error { return nil }
 
 // TestStateChannelOverflowClosesOncePerConn: with CloseOnOverflow, a
 // stalled socket costs one closing goroutine however many events pile
-// up behind it. c.closed is closed only once Close acquires c.mu, which
-// the stalled writePump holds for up to WriteTimeout, so the Closed()
-// guard alone let every further event spawn another blocked Close.
+// up behind it. c.closed was once closed only after Close acquired the
+// write lock the stalled writePump holds for up to WriteTimeout, so the
+// Closed() guard alone let every further event spawn another blocked
+// Close; the closing flag holds however Close orders its work.
 func TestStateChannelOverflowClosesOncePerConn(t *testing.T) {
 	bc := &blockedConn{release: make(chan struct{})}
 	conn := &WebSocketConn{
 		conn:       bc,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		readMsgs:   make(chan []byte, 8),
@@ -657,7 +661,7 @@ func TestCloseWithStatusRefusesReservedCodes(t *testing.T) {
 			out := &bytes.Buffer{}
 			conn := &WebSocketConn{
 				conn:       &nopConn{r: bytes.NewReader(nil), w: out},
-				sendBuffer: make(chan []byte, 1),
+				sendBuffer: make(chan wsMessage, 1),
 				closed:     make(chan struct{}),
 				peerClosed: make(chan struct{}),
 				config:     WSConfig{ReadLimit: 1 << 20},
@@ -670,5 +674,30 @@ func TestCloseWithStatusRefusesReservedCodes(t *testing.T) {
 				t.Fatalf("code %d: frame %x, want close code 1002", code, got)
 			}
 		})
+	}
+}
+
+// Property: Unregister stops the close watcher Connect started, and a
+// connection connected again (a role change) keeps one watcher. The
+// watcher used to wait for the connection to close and nothing else,
+// so each Connect of a live connection left one more goroutine behind.
+func TestStateChannelUnregisterStopsCloseWatcher(t *testing.T) {
+	src := newBannerSource()
+	c := NewStateChannel[string, bannerState, bannerEvent](src)
+	go c.Run()
+	defer c.Stop()
+	conn := newChannelConn(4)
+
+	runtime.GC()
+	base := runtime.NumGoroutine()
+	for range 200 {
+		c.Connect("admin", conn)
+		recvEnvelope(t, conn)
+		c.Connect("viewer", conn) // role change: no second watcher
+		recvEnvelope(t, conn)
+		c.Unregister(conn)
+	}
+	if grew := goroutineGrowth(base, 20); grew > 20 {
+		t.Fatalf("200 connect/unregister cycles on one live conn left %d goroutines behind", grew)
 	}
 }

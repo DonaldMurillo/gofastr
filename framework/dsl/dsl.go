@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // maxDSLLimit caps the value the parser will accept from `limit(N)`.
@@ -169,17 +170,23 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 			}
 			out.Filters = append(out.Filters, filters...)
 		case "include":
-			includes := splitDSLArgs(args)
+			includes, err := splitDSLArgs(args)
+			if err != nil {
+				return DSLQuery{}, err
+			}
 			for _, inc := range includes {
 				// include() arguments may have been quoted by the
 				// caller; trimDSLValue strips the wrapping quotes so
-				// the allow-list compares against the bare identifier.
+				// the allow-list compares against the bare identifier,
+				// and the bare identifier is what is kept: storing the
+				// quoted spelling made BuildDSLQuery look up a
+				// relation named `"author"`.
 				name := trimDSLValue(inc)
 				if !dslIdentRe.MatchString(name) {
 					return DSLQuery{}, i18n.NewError(reasonInvalidInclude, map[string]any{"name": strconv.Quote(name)})
 				}
+				out.Includes = append(out.Includes, name)
 			}
-			out.Includes = append(out.Includes, includes...)
 		case "order":
 			order, err := parseDSLOrder(args)
 			if err != nil {
@@ -208,6 +215,11 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 			return DSLQuery{}, i18n.NewError(reasonUnknownCall, map[string]any{"name": strconv.Quote(name)})
 		}
 		rest = strings.TrimPrefix(tail, ".")
+	}
+	// The same 16-key bound ?sort= and ParseSort apply: one order()
+	// per clause, so a chain of them is the only way to grow ORDER BY.
+	if len(out.Orders) > maxSortTerms {
+		return DSLQuery{}, i18n.NewError(reasonOrderTooMany, map[string]any{"count": len(out.Orders), "max": maxSortTerms})
 	}
 	return out, nil
 }
@@ -257,6 +269,10 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		}
 		qb.Where(condition, args...)
 	}
+	cursorField, after, err := dslAfter(ent, entitySchema, parsed)
+	if err != nil {
+		return nil, err
+	}
 	for _, order := range parsed.Orders {
 		orderField, ok := entitySchema.FieldByName(order.Field)
 		if !ok || orderField.Hidden {
@@ -265,21 +281,45 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		if orderField.NoQuery {
 			return nil, i18n.NewError(reasonFieldNotSortable, map[string]any{"field": strconv.Quote(order.Field), "entity": parsed.Entity})
 		}
+		if cursorField != "" {
+			// after() keysets on the cursor column, so the rows must be
+			// in that column's ascending order. order(seq).after(<id>)
+			// sorted by seq while the predicate cut on id: walking it
+			// skipped and repeated rows. Spelling the cursor's own order
+			// is allowed and adds nothing; the ORDER BY below is the one.
+			if order.Field != cursorField || order.Direction != "ASC" {
+				return nil, i18n.NewError(reasonAfterOrderMismatch, map[string]any{"field": strconv.Quote(cursorField), "order": strconv.Quote(order.Field + " " + order.Direction)})
+			}
+			continue
+		}
 		qb.Order(order.Field, order.Direction)
 	}
 	if parsed.Limit > 0 {
 		qb.Limit(parsed.Limit)
 	}
-	// Wire after(cursor) into a forward keyset predicate. The DSL is the
-	// agent-facing surface: after() carries the bare keyset value (e.g.
-	// after(1024) → "rows after id 1024"), NOT the opaque base64 token the
-	// HTTP cursor layer round-trips. Resolve the keyset column from the
-	// entity config (CursorField, else the primary key); composite cursors
-	// (CursorFields) have no single-value form in the DSL, so refuse them
-	// with a clear error rather than silently paging from page 1.
+	if cursorField != "" {
+		// The keyset predicate and one ORDER BY on the cursor column,
+		// the shape crud's cursor path emits. query.Cursor appended its
+		// own ORDER BY after any order(), so order(id).after(…) ordered
+		// by id twice.
+		qb.Where(cursorField+" > $1", after)
+		qb.Order(cursorField, "ASC")
+	}
+	return qb, nil
+}
+
+// dslAfter resolves after(cursor) to its keyset column and typed value,
+// or ("", nil, nil) when the query has no after(). The DSL is the
+// agent-facing surface: after() carries the bare keyset value (e.g.
+// after(1024) → "rows after id 1024"), NOT the opaque base64 token the
+// HTTP cursor layer round-trips. The keyset column comes from the entity
+// config (CursorField, else the primary key); composite cursors
+// (CursorFields) have no single-value form in the DSL, so they are
+// refused with a clear error rather than silently paging from page 1.
+func dslAfter(ent *entity.Entity, entitySchema schema.Schema, parsed DSLQuery) (string, any, error) {
 	if parsed.After != "" {
 		if len(ent.Config.Pagination.CursorFields) > 0 {
-			return nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
+			return "", nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
 		}
 		// The default cursor is the primary key; a key of more than one
 		// column is a composite cursor, refused the same way.
@@ -287,33 +327,33 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		cursorField := ent.Config.Pagination.CursorField
 		if cursorField == "" {
 			if len(keys) > 1 {
-				return nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
+				return "", nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
 			}
 			cursorField = keys[0]
 		}
 		cf, ok := entitySchema.FieldByName(cursorField)
 		if !ok || cf.Hidden {
-			return nil, i18n.NewError(reasonAfterFieldNotFound, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
+			return "", nil, i18n.NewError(reasonAfterFieldNotFound, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
 		if cf.NoQuery {
-			return nil, i18n.NewError(reasonAfterFieldNotQueryable, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
+			return "", nil, i18n.NewError(reasonAfterFieldNotQueryable, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
 		// after() keysets on this one column, so rows tied on its value
 		// with the one it resumes after would never be served. Only the
 		// sole key or a Unique field cannot tie; anything else is refused
 		// rather than paged with silent gaps.
 		if !cf.Unique && (len(keys) != 1 || keys[0] != cursorField) {
-			return nil, i18n.NewError(reasonAfterNotUnique, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
+			return "", nil, i18n.NewError(reasonAfterNotUnique, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
 		// after() is a bare keyset value: of the cursor column's type, or
 		// refused, the same as a filter value.
 		after, err := filter.CoerceValue(cursorField, cf.Type, parsed.After)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		qb.Cursor(cursorField, after, "forward")
+		return cursorField, after, nil
 	}
-	return qb, nil
+	return "", nil, nil
 }
 
 func nextDSLCall(input string) (name, args, tail string, err error) {
@@ -350,7 +390,10 @@ func nextDSLCall(input string) (name, args, tail string, err error) {
 }
 
 func parseDSLFilters(args string) ([]DSLFilter, error) {
-	parts := splitDSLArgs(args)
+	parts, err := splitDSLArgs(args)
+	if err != nil {
+		return nil, err
+	}
 	filters := make([]DSLFilter, 0, len(parts))
 	for _, part := range parts {
 		filter, err := parseDSLFilter(part)
@@ -393,15 +436,26 @@ func parseDSLOrder(input string) (DSLOrder, error) {
 	}
 	dir := "ASC"
 	if len(parts) == 2 {
-		dir = strings.ToUpper(parts[1])
-	}
-	if dir != "ASC" && dir != "DESC" {
-		return DSLOrder{}, i18n.NewError(reasonInvalidDirection, map[string]any{"dir": strconv.Quote(dir)})
+		// ASCII folding only: strings.ToUpper maps ſ (U+017F) onto S, so
+		// "deſc" read as DESC.
+		switch asciicase.Lower(parts[1]) {
+		case "asc":
+		case "desc":
+			dir = "DESC"
+		default:
+			return DSLOrder{}, i18n.NewError(reasonInvalidDirection, map[string]any{"dir": strconv.Quote(parts[1])})
+		}
 	}
 	return DSLOrder{Field: parts[0], Direction: dir}, nil
 }
 
-func splitDSLArgs(args string) []string {
+// splitDSLArgs splits a call's arguments at the commas that sit outside
+// quotes, parens and brackets. A bracket or paren that closes more than
+// was opened, or one left open at the end, is refused: unquoted, `a]`
+// drove the depth negative and `a[` left it positive, and either way
+// every comma after it stopped splitting, so where(title=a], seq=1)
+// folded the seq predicate into the title value.
+func splitDSLArgs(args string) ([]string, error) {
 	var out []string
 	start := 0
 	inQuote := rune(0)
@@ -422,6 +476,9 @@ func splitDSLArgs(args string) []string {
 		}
 		if r == ')' || r == ']' {
 			depth--
+			if depth < 0 {
+				return nil, i18n.NewError(reasonUnbalancedBrackets, map[string]any{"input": strconv.Quote(args)})
+			}
 		}
 		if r == ',' && depth == 0 {
 			if part := strings.TrimSpace(args[start:i]); part != "" {
@@ -430,10 +487,13 @@ func splitDSLArgs(args string) []string {
 			start = i + 1
 		}
 	}
+	if depth != 0 {
+		return nil, i18n.NewError(reasonUnbalancedBrackets, map[string]any{"input": strconv.Quote(args)})
+	}
 	if part := strings.TrimSpace(args[start:]); part != "" {
 		out = append(out, part)
 	}
-	return out
+	return out, nil
 }
 
 func trimDSLValue(value string) string {
@@ -446,7 +506,24 @@ func trimDSLValue(value string) string {
 	return value
 }
 
+// dslOps maps each where() operator to the filter operator whose type
+// rule it follows, so every DSL operator answers filter.CheckOpType the
+// way ?field_<op>= and ?where= do: an ordered compare on a Bool, or any
+// operator on a JSON column, is refused here too.
+var dslOps = map[string]filter.FilterOp{
+	"=": filter.OpEq, "!=": filter.OpNe,
+	">": filter.OpGt, "<": filter.OpLt, ">=": filter.OpGte, "<=": filter.OpLte,
+	"contains": filter.OpLike, "in": filter.OpIn,
+}
+
 func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
+	fop, ok := dslOps[op]
+	if !ok {
+		return "", nil, i18n.NewError(reasonUnsupportedOperator, map[string]any{"op": strconv.Quote(op)})
+	}
+	if err := filter.CheckOpType(field.Name, fop, field.Type); err != nil {
+		return "", nil, err
+	}
 	switch op {
 	case "=", "!=", ">", "<", ">=", "<=":
 		value, err := filter.CoerceValue(field.Name, field.Type, raw)
@@ -457,16 +534,27 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 	case "contains":
 		// Case-insensitive on both dialects, the ?q= and ?field_like=
 		// shape (filter.LikeClause). On a non-text column the substring
-		// match means nothing and Postgres refuses LOWER(integer).
-		if err := filter.CheckOpType(field.Name, filter.OpLike, field.Type); err != nil {
+		// match means nothing and Postgres refuses LOWER(integer), which
+		// CheckOpType above refused. The substring is not coerced, but it
+		// is a text bind, so CoerceValue on the (textual) column still
+		// refuses bytes Postgres cannot store.
+		if _, err := filter.CoerceValue(field.Name, field.Type, raw); err != nil {
 			return "", nil, err
 		}
 		clause, arg := filter.LikeClause(field.Name, 1, raw)
 		return clause, []any{arg}, nil
 	case "in":
-		values := splitDSLArgs(strings.Trim(raw, "[]"))
+		values, err := splitDSLArgs(strings.Trim(raw, "[]"))
+		if err != nil {
+			return "", nil, err
+		}
 		if len(values) == 0 {
 			return "", nil, i18n.NewError(reasonInNeedsValue)
+		}
+		// The cap every other in-list surface applies (?f_in=, ?where=,
+		// ?filter=).
+		if len(values) > filter.MaxINListEntries {
+			return "", nil, i18n.NewError(reasonInListOverCap, map[string]any{"field": strconv.Quote(field.Name), "count": len(values), "max": filter.MaxINListEntries})
 		}
 		placeholders := make([]string, len(values))
 		args := make([]any, len(values))

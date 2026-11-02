@@ -3085,14 +3085,10 @@
     }
   });
 
-  // Close any open modal widgets on SPA navigation. Toasts/panels
-  // (non-backdrop'd widgets) survive, they're page-independent
-  // UI like build-progress banners.
-  window.addEventListener('gofastr:navigate', () => {
-    const G = window.__gofastr;
-    if (!G || !G._modalStack) return;
-    for (const name of [...G._modalStack]) G.closeWidget(name);
-  });
+  // Closing open modals on SPA navigation is the widgets module's own
+  // gofastr:navigate listener (src/widgets.js): only that module
+  // mounts them, and which ones close depends on the epoch each open
+  // was issued under, which it records.
 
   const _bootstrapComponentCSS = () => {
     const G = window.__gofastr;

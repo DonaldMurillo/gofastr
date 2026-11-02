@@ -89,6 +89,7 @@ func Slider(cfg SliderConfig) render.HTML {
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class", "id"),
 		Parts:          parts,
 		Strings:        StringsFor(cfg.Ctx),
+		Ctx:            cfg.Ctx,
 	}, sliderClasses))
 }
 

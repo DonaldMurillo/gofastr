@@ -37,7 +37,8 @@ type PaneHostProps struct {
 	SecondaryOpen bool
 	TertiaryOpen  bool
 	// SecondaryLabel / TertiaryLabel label each side pane's region.
-	// Empty takes "Secondary" / "Tertiary".
+	// Empty takes Strings.PaneSecondary / Strings.PaneTertiary
+	// ("Secondary" / "Tertiary").
 	SecondaryLabel string
 	TertiaryLabel  string
 	// DeepLinkParam names the query parameter that carries pane state
@@ -50,6 +51,10 @@ type PaneHostProps struct {
 
 	// Parts: attrs on the root and each pane.
 	Parts Parts
+	// Strings are the strings this component says: the side panes'
+	// default region names. Nil means the English defaults; a layer
+	// above sets them from the request's language.
+	Strings *Strings
 }
 
 // PaneHost renders the shell.
@@ -95,19 +100,17 @@ func PaneHost(p PaneHostProps, s Classes) render.HTML {
 		primaryOwn["class"] = cls
 	}
 	children := []render.HTML{b.El("div", PartPane, primaryOwn, p.Primary)}
+	w := p.Strings.Resolve()
 	if p.Secondary != "" {
-		children = append(children, paneHostSlot(b, "secondary", "Secondary", p.SecondaryLabel, secondaryOpen, p.Secondary))
+		children = append(children, paneHostSlot(b, "secondary", w.PaneSecondary, p.SecondaryLabel, secondaryOpen, p.Secondary))
 	}
 	if p.Tertiary != "" {
-		children = append(children, paneHostSlot(b, "tertiary", "Tertiary", p.TertiaryLabel, tertiaryOpen, p.Tertiary))
+		children = append(children, paneHostSlot(b, "tertiary", w.PaneTertiary, p.TertiaryLabel, tertiaryOpen, p.Tertiary))
 	}
 	return b.El("div", PartRoot, rootAttrs, children...)
 }
 
 func paneHostSlot(b Box, slot, defLabel string, label string, open bool, content render.HTML) render.HTML {
-	// A label that is blank once trimmed is neither the default nor a
-	// label: a caller who typed spaces meant something, and the region
-	// must not ship an accessible name of spaces.
 	// A label that is blank once trimmed is neither the default nor a
 	// label: a caller who typed spaces meant something, and the region
 	// must not ship an accessible name of spaces.
@@ -185,6 +188,14 @@ func init() {
 							"data-hui-pane-host-target":  "host",
 						},
 					}, k.For("Button"))),
+			}, {
+				Name: "two side panes named by Strings",
+				Why:  "a side pane with no label of its own is named by the Strings default (Secondary, Tertiary), so a translated page names its regions in its own language",
+				HTML: PaneHost(PaneHostProps{
+					Primary:   render.Text("Customers"),
+					Secondary: render.Text("Ticket detail"),
+					Tertiary:  render.Text("Customer detail"),
+				}, s),
 			}}
 		},
 	})

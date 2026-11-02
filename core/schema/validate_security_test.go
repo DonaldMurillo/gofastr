@@ -77,9 +77,13 @@ func TestStringLengthRuneCount(t *testing.T) {
 // Decimal Min/Max must be enforced in exact decimal space; round-tripping the
 // value through float64 loses precision above 2^53 and admits over-cap values.
 func TestDecimalBoundPrecision(t *testing.T) {
+	// The default DECIMAL(19,4) column holds neither 2^53 (16 integer
+	// digits) nor a 16th fraction digit, so the bound is probed on a
+	// column wide enough that the bound, not the column, decides.
+	const wideDecimal = "NUMERIC(38,20)"
 	// Max = 2^53; "2^53 + 1" parses to exactly 2^53 in float64, so a float
 	// comparison would let the over-cap value through.
-	capped := Field{Name: "amount", Type: Decimal, Max: new(float64(9007199254740992))}
+	capped := Field{Name: "amount", Type: Decimal, RawType: wideDecimal, Max: new(float64(9007199254740992))}
 	if err := validateField(capped, "9007199254740993"); err == nil {
 		t.Error("Decimal Max:2^53 accepted 2^53+1 (float64 precision bypass)")
 	}
@@ -89,12 +93,12 @@ func TestDecimalBoundPrecision(t *testing.T) {
 	}
 	// Min precision bypass: 2^53-1 is strictly under a 2^53 floor but the float
 	// round-trip of the floor must not admit it.
-	floored := Field{Name: "amount", Type: Decimal, Min: new(float64(9007199254740992))}
+	floored := Field{Name: "amount", Type: Decimal, RawType: wideDecimal, Min: new(float64(9007199254740992))}
 	if err := validateField(floored, "9007199254740991"); err == nil {
 		t.Error("Decimal Min:2^53 accepted 2^53-1 (float64 precision bypass)")
 	}
 	// Sub-precision fraction strictly over an integral Max must be rejected.
-	hundred := Field{Name: "amount", Type: Decimal, Max: new(float64(1000))}
+	hundred := Field{Name: "amount", Type: Decimal, RawType: wideDecimal, Max: new(float64(1000))}
 	if err := validateField(hundred, "1000.0000000000000001"); err == nil {
 		t.Error("Decimal Max:1000 accepted 1000.0000000000000001 (fraction over cap)")
 	}

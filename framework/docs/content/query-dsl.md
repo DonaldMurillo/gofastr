@@ -70,7 +70,9 @@ Unicode folding a Postgres bonus (SQLite's `LOWER` folds ASCII only, so
 a stored `É` is not matched there). `contains` on a column that is not text (a number,
 date or Bool) is refused, and a JSON column takes no operator at all.
 
-`in` accepts either `field in ["a","b"]` or `field in [1,2,3]`. Every
+`in` accepts either `field in ["a","b"]` or `field in [1,2,3]`, at most
+1000 values (`filter.MaxINListEntries`, the cap `?field_in=`, `?where=`
+and `?filter=` apply). Every
 value, under every operator but `contains`, must be of the field's
 declared `schema.FieldType` and is bound as that type
 (`filter.CoerceValue`: an integer for Int, a decimal literal for Float
@@ -78,6 +80,10 @@ and Decimal, exactly the `strconv.ParseBool` spellings for Bool, RFC 3339
 or a bare date for Timestamp, `YYYY-MM-DD` for Date). A value of another
 type is an error naming the field, never a text bind that Postgres
 refuses at query time while SQLite compares it as text.
+
+Every operator follows `filter.OpSuitsType`, the rule `?field_<op>=` and
+`?where=` follow: `>` `<` `>=` `<=` on a Bool and any operator on a JSON
+column are errors, as `contains` on a non-text column is.
 
 ## Clauses
 
@@ -92,7 +98,8 @@ supports it, or use the lower-level `core/query` builder.
 
 ### `include(relation, ...)`
 
-Validates each relation exists on the entity. **Validation only**;
+Validates each relation exists on the entity. A name may be quoted
+(`include("author")`); the bare name is what the query keeps. **Validation only**;
 includes do not currently translate into SQL joins. Resolve eager
 loading through the CRUD list endpoint's `?include=` query parameter, or
 the `crud.EagerLoad` helper, not through the DSL.
@@ -100,7 +107,9 @@ the `crud.EagerLoad` helper, not through the DSL.
 ### `order(field [ASC|DESC])`
 
 One ordering per `.order()` call. Chain multiple `.order()` calls for
-multi-column ordering. Direction defaults to `ASC` when omitted.
+multi-column ordering, at most 16, the cap `?sort=` applies. Direction
+defaults to `ASC` when omitted; `asc`/`desc` match in any ASCII case
+(a look-alike such as `deſc` is an error, not `DESC`).
 
 ### `limit(N)`
 
@@ -119,8 +128,18 @@ gets: `after("abc")` on an integer key is an error.
 
 ```
 posts.where(status="published").order(id).after(1024).limit(20)
-→ … WHERE (status = $1) AND (id > $2) ORDER BY id LIMIT $3
+→ … WHERE (status = $1) AND (id > $2) ORDER BY id ASC LIMIT $3
 ```
+
+`after()` orders the rows by the cursor column ascending itself, so
+`order()` is optional beside it. An `order()` that names any other
+column, or the cursor column `DESC`, is an error: the keyset cut and
+the sort would disagree, and walking the pages would skip and repeat
+rows. A key on a column that is not unique skips rows: `after(5)` on a
+non-unique `CursorField` resumes after EVERY row holding 5, so the
+second of two tied rows is never served. The HTTP cursor API pages on
+(`CursorField`, primary key) and has no such gap; page a non-unique
+column through it.
 
 Composite cursors (`EntityConfig.Pagination.CursorFields`) have no single-value
 DSL form, so `after()` on such an entity returns an error rather than
@@ -165,7 +184,9 @@ A quoted value knows two escapes, `\"` and `\\`; any other backslash is
 refused. Code that writes filter text quotes a value with
 `dsl.Quote(v)`, which escapes the backslash before the quote, so
 `C:\reports` is written `"C:\\reports"` and parses back to itself. A
-value holding a line break cannot be written as a term.
+value holding a line break cannot be written as a term, and one that is
+not valid UTF-8 or holds a NUL byte is refused like any value Postgres
+cannot bind.
 
 Keywords are case-insensitive and `and` binds tighter than `or`.
 `contains` is a literal substring match: the `%`, `_` and escape
@@ -189,6 +210,10 @@ under the same field rules as `?sort=`, ASC by default, at most 16 keys.
 - Unsupported operator.
 - `limit(0)` or negative limits.
 - Unclosed parens or unterminated strings.
+- An unquoted `[` or `]` that does not balance (`where(title=a], seq=1)`):
+  quote a value that holds a bracket.
+- More than 1000 `in` values or more than 16 `order()` calls.
+- An `order()` beside `after()` that sorts by another column or `DESC`.
 
 All errors are returned as plain Go errors with `dsl:` prefix.
 
@@ -206,6 +231,28 @@ Drop down to `core/query` directly when:
 - You need joins, subqueries, raw SQL fragments, or window functions.
 - You need `OR` between predicates.
 - You need projections beyond `SELECT * FROM entity_table`.
+
+`Where` ANDs a condition with everything before it and `OrWhere` ORs
+it, in call order. The builder wraps each condition in parens, and an
+AND that follows an OR wraps everything before it too, so a tenant,
+owner or soft-delete scope the framework appends after your `OrWhere`
+covers the whole predicate:
+
+```go
+qb := query.Select("id").From("posts").
+	Where("status = $1", "draft").
+	OrWhere("status = $1", "pub").
+	Where("tenant_id = $1", tenant)
+// SELECT id FROM posts WHERE ((status = $1) OR (status = $2)) AND (tenant_id = $3)
+```
+
+Builds before v0.96.0 wrote that chain flat, as
+`(status = $1) OR (status = $2) AND (tenant_id = $3)`, which SQL reads
+as `draft OR (pub AND tenant)`, so every tenant's drafts matched. A
+chain with no `OrWhere` before a `Where` builds the same SQL as before.
+
+A condition may end in a `--` comment; the builder ends the line
+before its closing paren.
 
 `core/query` builds writes too. `query.Update` and `query.Delete` take
 the same `Where` conditions, and `Returning(cols...)` ends either in a

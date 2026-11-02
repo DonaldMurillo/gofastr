@@ -319,7 +319,7 @@ func (ch *CrudHandler) checkStateUpdate(ctx context.Context, r *http.Request, id
 	}
 	current, _ := stored[ch.convertKey(st.Field)].(string)
 	e := &StateError{Field: changed[0]}
-	e.Current, e.Moves, e.hidden = ch.refusalState(ctx, id, st, current)
+	e.Current, e.Moves, e.hidden = ch.refusalState(ctx, r, id, st, current)
 	return ctx, e
 }
 
@@ -560,6 +560,11 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	if _, err := ch.conn(ctx).ExecContext(ctx, lock); err != nil {
 		return nil, err
 	}
+	// A row the caller's BeforeGet hooks hide answers GET's 404, read
+	// under the lock like the move target below (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+		return nil, err
+	}
 	if err := ch.stampRow(ctx, id); err != nil {
 		return nil, err
 	}
@@ -574,7 +579,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	current, _ := pre[ch.convertKey(st.Field)].(string)
 	if !slices.Contains(t.From, current) {
 		e := &TransitionConflictError{Key: t.Key}
-		e.Current, e.Moves, e.hidden = ch.refusalState(ctx, id, st, current)
+		e.Current, e.Moves, e.hidden = ch.refusalState(ctx, r, id, st, current)
 		return nil, e
 	}
 	ctx = WithAuditPreImage(ctx, pre)
@@ -630,7 +635,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		}
 		cur, _ := now[ch.convertKey(st.Field)].(string)
 		e := &TransitionConflictError{Key: t.Key}
-		e.Current, e.Moves, e.hidden = ch.refusalState(ctx, id, st, cur)
+		e.Current, e.Moves, e.hidden = ch.refusalState(ctx, r, id, st, cur)
 		return nil, e
 	}
 	if err != nil {
@@ -668,13 +673,23 @@ func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id
 }
 
 // refusalState is the stored state and open moves a refusal of a write
-// to record id names: both, when the caller's ReadScope admits the record,
-// and neither (hidden) when it hides it or the check fails, so a caller who
-// may write but not read a record learns nothing of its state from a 409
-// or 422.
-func (ch *CrudHandler) refusalState(ctx context.Context, id string, st *entity.StatesConfig, current string) (string, []string, bool) {
+// to record id names: both, when the caller's read scope admits the
+// record, and neither (hidden) when it hides it or the check fails, so a
+// caller who may write but not read a record learns nothing of its state
+// from a 409 or 422. The read scope is the declared ReadScope and the
+// BeforeGet chain GET /<entity>/{id} runs (getScopeHidesRow); an in-process
+// write honours the hook only under WithReadHooks, as GetOne does.
+func (ch *CrudHandler) refusalState(ctx context.Context, r *http.Request, id string, st *entity.StatesConfig, current string) (string, []string, bool) {
 	if hidden, err := ch.readScopeHidesRow(ctx, ch.keyPayload(id)); hidden || err != nil {
 		return "", nil, true
+	}
+	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.BeforeGet)) > 0 {
+		if hr, apply := scopeRequest(ctx, r); apply {
+			vals, ok := ch.idVals(id)
+			if !ok || ch.hookScopeHidesKey(ctx, hr, vals, id, false) {
+				return "", nil, true
+			}
+		}
 	}
 	return current, openMoves(st, current), false
 }
@@ -717,7 +732,9 @@ func (ch *CrudHandler) Transition() http.HandlerFunc {
 			writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		result, err := ch.RunTransition(WithAuditRequest(r.Context(), r), id, key)
+		// Tagged with the route's own request, so a refusal hides the
+		// state of a row the caller's BeforeGet hides (refusalState).
+		result, err := ch.RunTransition(withRealRequest(WithAuditRequest(r.Context(), r), r), id, key)
 		if err != nil {
 			writeCRUDError(w, r, err)
 			return

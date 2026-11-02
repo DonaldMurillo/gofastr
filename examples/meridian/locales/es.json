@@ -640,7 +640,9 @@
       "next": "Diapositiva siguiente",
       "pagination": "Paginación de diapositivas",
       "previous": "Diapositiva anterior",
-      "slide": "Diapositiva {{n}} de {{total}}"
+      "role": "carrusel",
+      "slide": "Diapositiva {{n}} de {{total}}",
+      "slideRole": "diapositiva"
     },
     "change": {
       "from": "de",
@@ -689,6 +691,7 @@
     "copy": {
       "copied": "Copiado",
       "copy": "Copiar",
+      "failed": "No se pudo copiar al portapapeles",
       "link": "Copiar enlace",
       "status": "Copiado: {{name}}",
       "toClipboard": "Copiar al portapapeles"
@@ -697,6 +700,18 @@
       "decrement": "Restar",
       "increment": "Sumar",
       "label": "Contador"
+    },
+    "datepicker": {
+      "chooseEnd": "{{date}} seleccionado. Elige la fecha de fin.",
+      "chosen": "{{date}} seleccionado.",
+      "end": "Fecha de fin",
+      "monthFailed": "No se pudo cargar el mes.",
+      "nextMonth": "Mes siguiente",
+      "nextYear": "Año siguiente",
+      "prevMonth": "Mes anterior",
+      "prevYear": "Año anterior",
+      "range": "Seleccionado del {{start}} al {{end}}.",
+      "start": "Fecha de inicio"
     },
     "dialog": {
       "cancel": "Cancelar",
@@ -1008,9 +1023,11 @@
       "results": "resultados",
       "showing": "Mostrando"
     },
+    "paneHost": {
+      "secondary": "Secundario",
+      "tertiary": "Terciario"
+    },
     "passwordInput": {
-      "hide": "Ocultar contraseña",
-      "revealHide": "Ocultar",
       "revealShow": "Mostrar",
       "show": "Mostrar contraseña"
     },

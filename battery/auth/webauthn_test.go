@@ -331,11 +331,31 @@ func TestCOSEKeyRefusals(t *testing.T) {
 		"RSA 1024 bits":     {{1, 3}, {3, -257}, {-1, small.N.Bytes()}, {-2, []byte{1, 0, 1}}},
 		"RSA even exponent": {{1, 3}, {3, -257}, {-1, large.N.Bytes()}, {-2, []byte{2}}},
 		"missing alg":       {{1, 2}, {-1, 1}, {-2, x}, {-3, y}},
+		// Verification cost grows with the square of the modulus: one
+		// sign-in against a 4-Mbit key took 54s (2026-11-01 bug bash).
+		"RSA past 8192 bits": {{1, 3}, {3, -257}, {-1, oversizeModulus(8193)}, {-2, []byte{1, 0, 1}}},
+		"RSA even modulus":   {{1, 3}, {3, -257}, {-1, evenModulus(large.N)}, {-2, []byte{1, 0, 1}}},
 	}
 	for name, m := range cases {
 		if _, err := parseCOSEKey(cborEnc(m)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// oversizeModulus returns an odd modulus of exactly bits bits.
+func oversizeModulus(bits int) []byte {
+	n := new(big.Int).Lsh(big.NewInt(1), uint(bits-1))
+	return n.SetBit(n, 0, 1).Bytes()
+}
+
+func evenModulus(n *big.Int) []byte {
+	return new(big.Int).SetBit(n, 0, 0).Bytes()
+}
+
+func TestCOSEKeyAcceptsRSAAtTheCap(t *testing.T) {
+	if _, err := parseCOSEKey(cborEnc(cborMap{{1, 3}, {3, -257}, {-1, oversizeModulus(maxCOSERSABits)}, {-2, []byte{1, 0, 1}}})); err != nil {
+		t.Errorf("%d-bit modulus refused: %v", maxCOSERSABits, err)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -135,6 +136,7 @@ func TestClassifyMemHog(t *testing.T) {
 		{"allocated", nil, false, probeMemHogDone + " 8", ProbeStatusFail},
 		{"oom killed", killed, false, "", ProbeStatusPass},
 		{"runtime refused", failed, false, "fatal error: runtime: out of memory", ProbeStatusPass},
+		{"mapping refused", nil, false, probeMemHogRefused + " 4", ProbeStatusPass},
 		// A timeout kill is SIGKILL too, and proves nothing.
 		{"timeout kill", killed, true, "", ProbeStatusUnreachable},
 		{"other exit", failed, false, "no such file", ProbeStatusUnreachable},
@@ -148,6 +150,7 @@ func TestClassifyMemHog(t *testing.T) {
 
 // The allocating child really allocates: unconfined, twice the limit is
 // reached and reported, so the memory sub-probe breaches.
+// TestMemHogRefusedUnderDataCap is its confined twin.
 func TestMemHogUnconfinedBreaches(t *testing.T) {
 	t.Setenv(probeEnvName, strconv.Itoa(int(ProbeResourceLimits)))
 	if st, detail := probeMemoryCap(4 << 20); st != ProbeStatusFail {
@@ -163,4 +166,32 @@ func exitErrorFrom(t *testing.T, script string) error {
 		t.Fatalf("sh -c %q: %v, want an exit error", script, err)
 	}
 	return fmt.Errorf("probe child: %w", err)
+}
+
+// Under a data cap the allocating child is refused a mapping and says so
+// cleanly, rather than the Go runtime faulting in its GC: the mmap path
+// is what makes RLIMIT_DATA provable. Runs the child under prlimit; skips
+// where prlimit is not installed.
+func TestMemHogRefusedUnderDataCap(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("RLIMIT_DATA via prlimit is the linux backend's cap")
+	}
+	if raceEnabled {
+		t.Skip("-race build: ThreadSanitizer cannot start under a data cap")
+	}
+	prlimit, err := exec.LookPath("prlimit")
+	if err != nil {
+		t.Skip("prlimit not installed")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const limit = 256 << 20
+	cmd := exec.Command(prlimit, fmt.Sprintf("--data=%d:%d", limit, limit), "--", exe)
+	cmd.Env = append(os.Environ(), probeEnvName+"="+strconv.Itoa(int(ProbeResourceLimits)), probeMemHogEnv+"="+strconv.Itoa(2*limit))
+	out, runErr := cmd.CombinedOutput()
+	if st, detail := classifyMemHog(runErr, false, string(out), 2*limit, limit); st != ProbeStatusPass {
+		t.Fatalf("capped allocating child: %s (%s), want pass\n%s", st, detail, out)
+	}
 }

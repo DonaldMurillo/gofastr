@@ -117,6 +117,7 @@ type cliFilterOp struct {
 	Flag  string
 	Param string
 	Help  string
+	Op    filter.FilterOp
 }
 
 // cliOpHelp names each operator in help text.
@@ -147,6 +148,7 @@ func cliFilterOps(t schema.FieldType) []cliFilterOp {
 			Flag:  "-" + strings.TrimPrefix(s.Suffix, "_"),
 			Param: s.Suffix,
 			Help:  cliOpHelp[s.Op],
+			Op:    s.Op,
 		})
 	}
 	return ops
@@ -175,6 +177,13 @@ type cliEntity struct {
 	Endpoints   []cliEndpoint   // gofastr.settings.yml endpoints, one command each
 	Search      bool
 	SoftDelete  bool
+	// filterKeys spells each filter param: the suffix key, or the
+	// bracket key where the bare key reads two ways (a stage field
+	// beside stage_in), which the server answers 400. It knows every
+	// name the server's filter parser reads, not only Fields: the key
+	// column and the upload fields can make a key ambiguous too. The
+	// zero value spells every key with its suffix.
+	filterKeys filter.KeySpeller
 }
 
 // cliEndpoint is one settings endpoint's command: `<entity> <Command>`
@@ -773,6 +782,17 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 	stamps, _ := statesWriteDrops(decl.States)
 	uploads := uploadFields(decl)
 	keyIsID := appspec.DeclKeyIsID(decl)
+	// Every name the server's filter parser reads for this entity: the
+	// declared non-Hidden fields plus the columns the framework adds.
+	// A false positive only costs a bracket spelling, which the server
+	// reads the same way, so the added columns are named unconditionally.
+	filterNames := []string{"id", "created_at", "updated_at"}
+	for _, fd := range decl.Fields {
+		if !fd.Hidden {
+			filterNames = append(filterNames, fd.Name)
+		}
+	}
+	ent.filterKeys = filter.NewKeySpeller(filterNames...)
 	for _, fd := range decl.Fields {
 		if (keyIsID && fd.Name == "id") || fd.Hidden {
 			continue
@@ -2026,13 +2046,13 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
-		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, f.Snake, help)
+		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, ent.filterKeys.Key(f.Snake, filter.OpEq), help)
 		// One row per operator the field's type accepts, from the same
 		// FilterOps derivation: the table cannot name a param the server
 		// refuses, and a new operator in filter.FilterSuffixes lands
 		// here without a second list.
 		for _, op := range f.FilterOps {
-			fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+op.Flag, f.Snake+op.Param, "filter: "+f.Snake+" "+op.Help)
+			fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+op.Flag, ent.filterKeys.Key(f.Snake, op.Op), "filter: "+f.Snake+" "+op.Help)
 		}
 	}
 	sb.WriteString("}\n\n")

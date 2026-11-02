@@ -421,6 +421,13 @@ func (src *entitiesSource) inputParam(field string, typ ast.Expr, tag reflect.St
 		if isQuery {
 			in, name = "query", queryName
 		}
+		// handler.Bind treats an empty query value as absent; `,empty`
+		// keeps it (a "" or a non-nil pointer). A path value is never
+		// empty, so it takes no option.
+		name, opts, hasOpts := strings.Cut(name, ",")
+		if hasOpts && (isPath || opts != "empty") {
+			return endpointParam{}, fmt.Errorf("%s option %q is not supported: a query tag takes only \"empty\", a path tag none", in, opts)
+		}
 		if !snakeOrCamelName(name) {
 			return endpointParam{}, fmt.Errorf("%s name %q must be a plain name", in, name)
 		}

@@ -46,7 +46,10 @@ func TestUpgradeRejectsNonRFCHandshake(t *testing.T) {
 
 	// One case per RFC condition, not a matrix.
 	for name, mut := range map[string]func(*http.Request){
-		"non-GET method":    func(r *http.Request) { r.Method = "POST" },
+		"non-GET method": func(r *http.Request) { r.Method = "POST" },
+		// RFC 6455 §4.1 needs HTTP/1.1; RFC 9110 §7.8 has a server
+		// ignore Upgrade on HTTP/1.0. It used to be accepted.
+		"HTTP/1.0":          func(r *http.Request) { r.Proto, r.ProtoMajor, r.ProtoMinor = "HTTP/1.0", 1, 0 },
 		"no Connection hdr": func(r *http.Request) { r.Header.Del("Connection") },
 		"wrong version":     func(r *http.Request) { r.Header.Set("Sec-WebSocket-Version", "8") },
 		"key not 16 bytes":  func(r *http.Request) { r.Header.Set("Sec-WebSocket-Key", "c2hvcnQ=") },
@@ -110,7 +113,7 @@ func TestRejectsBareContinuationAndReservedOpcode(t *testing.T) {
 func wsConnFromBytes(b []byte) *WebSocketConn {
 	return &WebSocketConn{
 		conn:       readOnlyConn{Reader: bytes.NewReader(b)},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -220,7 +223,7 @@ func TestCloseFrameAbortsFragmentedMsg(t *testing.T) {
 	// conn fully: readFrame closes peerClosed when it parses the Close.
 	c := &WebSocketConn{
 		conn:       readOnlyConn{Reader: bytes.NewReader(frames)},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
@@ -249,7 +252,7 @@ func TestUnmaskedCloseIsProtocolError(t *testing.T) {
 	unmaskedClose := []byte{0x88, 0x02, 0x03, 0xE9} // CLOSE, code 1001, no mask
 	c := &WebSocketConn{
 		conn:       readOnlyConn{Reader: bytes.NewReader(unmaskedClose)},
-		sendBuffer: make(chan []byte, 8),
+		sendBuffer: make(chan wsMessage, 8),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20, requireMask: true},
@@ -377,4 +380,97 @@ func TestNonMinimalLengthRejected(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Property: a list header split across several field lines (legal,
+// RFC 9110 §5.3) reads as the whole list. Connection and
+// Sec-WebSocket-Protocol used to read only their first line, so a
+// handshake sending "Connection: keep-alive" then "Connection: Upgrade"
+// was refused and a subprotocol offered on a second line never matched.
+func TestUpgradeReadsEveryHeaderLine(t *testing.T) {
+	t.Run("Connection split across lines", func(t *testing.T) {
+		r := validUpgradeReq()
+		r.Header["Connection"] = []string{"keep-alive", "Upgrade"}
+		if err := CheckUpgradeRequest(r, nil); err != nil {
+			t.Fatalf("valid handshake refused: %v", err)
+		}
+	})
+	t.Run("Sec-WebSocket-Protocol split across lines", func(t *testing.T) {
+		r := validUpgradeReq()
+		r.Header["Sec-Websocket-Protocol"] = []string{"v1.other", "x, chat"}
+		if got := pickSubprotocol(r, []string{"chat"}); got != "chat" {
+			t.Fatalf("pickSubprotocol = %q, want chat", got)
+		}
+	})
+}
+
+// Property: a protocol violation fails the connection with a Close
+// frame that says why: 1002 for a malformed frame, 1009 for a message
+// past ReadLimit (RFC 6455 §7.4.1). These used to close with an empty
+// body, which the peer reads as 1005, "no status", while bad UTF-8
+// already said 1007. One row per check in readFrame.
+func TestProtocolErrorsCloseWithStatus(t *testing.T) {
+	rsv := maskedClientFrame(wsopcodeText, []byte("hi"))
+	rsv[0] |= 0x40
+	fragPing := maskedClientFrame(wsopcodePing, nil)
+	fragPing[0] &^= 0x80
+	openText := maskedClientFrame(wsopcodeText, []byte("a"))
+	openText[0] &^= 0x80
+	bigCont := maskedClientFrame(wsopcodeContinuation, bytes.Repeat([]byte("x"), 16)) // 1+16 > 16
+	for name, tc := range map[string]struct {
+		frames [][]byte
+		want   uint16
+	}{
+		"rsv bit set":              {[][]byte{rsv}, 1002},
+		"reserved opcode":          {[][]byte{maskedClientFrame(0x3, []byte("x"))}, 1002},
+		"unmasked client frame":    {[][]byte{{0x81, 0x02, 'h', 'i'}}, 1002},
+		"fragmented control frame": {[][]byte{fragPing}, 1002},
+		"oversized control frame":  {[][]byte{oversizedMaskedPing()}, 1002},
+		"bare continuation":        {[][]byte{maskedClientFrame(wsopcodeContinuation, []byte("x"))}, 1002},
+		"data frame mid-fragment":  {[][]byte{openText, maskedClientFrame(wsopcodeText, []byte("b"))}, 1002},
+		"frame past ReadLimit":     {[][]byte{maskedClientFrame(wsopcodeText, bytes.Repeat([]byte("x"), 32))}, 1009},
+		"message past ReadLimit":   {[][]byte{openText, bigCont}, 1009},
+	} {
+		t.Run(name, func(t *testing.T) {
+			conn, cli := newReadPumpConn(t, WSConfig{
+				ReadLimit:       16,
+				ReadIdleTimeout: -1,
+				PongTimeout:     -1,
+				WriteTimeout:    time.Second,
+				CloseTimeout:    200 * time.Millisecond,
+				requireMask:     true,
+			})
+			t.Cleanup(func() { conn.Close(); cli.Close() })
+			for _, f := range tc.frames {
+				if _, err := cli.Write(f); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_ = cli.SetReadDeadline(time.Now().Add(2 * time.Second))
+			hdr := make([]byte, 2)
+			if _, err := readFull(cli, hdr); err != nil {
+				t.Fatalf("no Close frame: %v", err)
+			}
+			if hdr[0]&0x0F != wsopcodeClose {
+				t.Fatalf("opcode 0x%X, want Close", hdr[0]&0x0F)
+			}
+			body := make([]byte, hdr[1]&0x7F)
+			if _, err := readFull(cli, body); err != nil {
+				t.Fatalf("short Close body: %v", err)
+			}
+			if len(body) < 2 {
+				t.Fatalf("Close body %x carries no status, want %d", body, tc.want)
+			}
+			if got := binary.BigEndian.Uint16(body); got != tc.want {
+				t.Fatalf("close status %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// oversizedMaskedPing is a masked Ping declaring 126 payload bytes in
+// the 16-bit length form: one byte past the control-frame limit.
+func oversizedMaskedPing() []byte {
+	f := []byte{0x80 | wsopcodePing, 0x80 | 126, 0, 126, 1, 2, 3, 4}
+	return append(f, make([]byte, 126)...)
 }

@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
@@ -206,6 +207,18 @@ func TestSearch_QColumnEdge(t *testing.T) {
 	if !strings.Contains(body, "e1") {
 		t.Fatalf("q-column edge: e1 missing from title search: %s", body)
 	}
+
+	// ?q[eq]= names the column explicitly, so it filters q beside the
+	// search: title "quality" AND q = "quantity" matches no row.
+	req = withTestUser(httptest.NewRequest(http.MethodGet, "/api/sedge?q=quality&q%5Beq%5D=quantity", nil), "alice")
+	rec = httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); strings.Contains(body, "e1") || strings.Contains(body, "e2") {
+		t.Fatalf("q[eq]= was dropped as the search term instead of filtering the q column: %s", body)
+	}
 }
 
 // TestSearch_MultiTokenAND: multiple tokens AND together.
@@ -384,3 +397,22 @@ func TestSearch_TenantScopeHolds(t *testing.T) {
 
 // Ensure filter import is used.
 var _ = filter.MaxSearchTerms
+
+// TestSearch_QRefusesUnstorableText: a ?q= that is not storable text
+// (invalid UTF-8, a NUL) answers 400 on every dialect, as any other filter
+// value does; Postgres answered 500 and SQLite an empty 200.
+func TestSearch_QRefusesUnstorableText(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, _ := setupSearchHandler(t)
+	for _, q := range []string{"a%FFb", "a%00b"} {
+		req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/sarticles?q="+q, nil), "alice")
+		rec := httptest.NewRecorder()
+		ch.List()(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("?q=%s: status %d %s, want 400", q, rec.Code, rec.Body.String())
+		}
+	}
+	if _, err := ch.ListAll(context.Background(), ListOptions{Search: "a\xffb"}); err == nil {
+		t.Errorf("in-process ListAll accepted an unstorable search term")
+	}
+}

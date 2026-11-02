@@ -65,7 +65,7 @@ func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) (ok,
 			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return false, false
 		}
-		writeEnvelopeError(w, newErrorResponse(nil, ErrParse, "invalid JSON: "+err.Error()))
+		writeEnvelopeError(w, newErrorResponse(nil, ErrParse, "invalid JSON: "+handler.BodyReadDetail(err).Error()))
 		return false, false
 	}
 	notification, errResp := decodeEnvelope(raw, req)
@@ -116,7 +116,7 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 	}
 	//gofastr:allow(GOFASTR1407) raw already passed handler.UnmarshalStrict above, so both decodes read the one "id" key; this pass only reads whether it is present
 	if err := json.Unmarshal(raw, &env); err != nil {
-		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+err.Error())
+		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+handler.JSONErrorDetail(err).Error())
 		return false, &resp
 	}
 	if env.ID == nil {

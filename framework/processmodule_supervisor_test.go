@@ -519,16 +519,15 @@ var (
 	_ = strings.Contains
 )
 
-// TestMain dispatches three modes of the test binary:
-//   - probe child (GOFASTR_SANDBOX_PROBE=<id>): runs one §6 conformance
-//     probe body, prints its result line, exits.
+// TestMain dispatches two modes of the test binary:
 //   - module child (GOFASTR_PROCESS_MODULE_CHILD=<mode>): wires a
 //     moduleproto Peer for the supervisor integration tests.
 //   - test runner: m.Run() (the default).
+//
+// The third mode, the sandbox probe child (GOFASTR_SANDBOX_PROBE=<id>),
+// never reaches TestMain: the package init in processmodule_probe_child.go
+// runs it and exits first, the same dispatch a host app binary gets.
 func TestMain(m *testing.M) {
-	if probeChildMaybeRun() {
-		return
-	}
 	if childTestMain(m) {
 		return
 	}

@@ -178,8 +178,22 @@
         if (bar > 0) {
           const fmt = pack.slice(0, bar);
           const total = pack.slice(bar + 1);
-          track.setAttribute('data-hui-carousel-status',
-            fmt.replace(/\{\{n\}\}/g, () => NS.formatNumber(idx + 1)).replace(/\{\{total\}\}/g, () => total));
+          const sentence = fmt.replace(/\{\{n\}\}/g, () => NS.formatNumber(idx + 1)).replace(/\{\{total\}\}/g, () => total);
+          track.setAttribute('data-hui-carousel-status', sentence);
+          // The live region says it. Quiet while the carousel rotates
+          // on its own (APG: aria-live off during rotation), polite
+          // when the rotation is paused or absent, so the reader's own
+          // step is heard and a timer's is not. Written only when it
+          // changed, so the boot pass's mark of slide one is silent.
+          let live = null;
+          for (const el of root.querySelectorAll('[data-hui-carousel-live]')) {
+            if (el.closest('[data-hui-carousel]') === root) { live = el; break; }
+          }
+          if (live) {
+            const rotates = root.hasAttribute('data-hui-carousel-rotate-ms') && !paused(root);
+            live.setAttribute('aria-live', rotates ? 'off' : 'polite');
+            if (live.textContent !== sentence) live.textContent = sentence;
+          }
         }
       }
     }
@@ -295,13 +309,23 @@
   });
 
   // Keyboard on the focused track: the arrows step (RTL-aware),
-  // Home/End jump.
+  // Home/End jump. A field inside a slide (a signup input, a select)
+  // owns its caret and option keys, and a chord (Shift+Arrow selects
+  // text, Alt+Arrow is history) is the browser's: neither moves the
+  // carousel.
+  function editable(el) {
+    if (!el || !el.closest) return false;
+    if (el.isContentEditable) return true;
+    return !!el.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+  }
   document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const track = e.target && e.target.closest && e.target.closest('[data-hui-carousel-track]');
     if (!track) return;
     const root = track.closest('[data-hui-carousel]');
     if (!root) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+    if (editable(e.target)) return;
     const rtl = getComputedStyle(track).direction === 'rtl';
     const cur = currentOf(root);
     let to = -1;
@@ -369,10 +393,11 @@
     syncDetachWatcher();
   }
 
+  // A client navigation disarms the carousels it took away; one in the
+  // chrome the navigation kept (a layout header) is still on screen and
+  // keeps rotating.
   window.addEventListener('gofastr:navigate', function () {
-    for (const root of Array.from(document.querySelectorAll('[data-hui-carousel-rotate-ms]'))) {
-      disarmRotation(root);
-    }
+    disarmDetached();
     syncDetachWatcher();
   });
 

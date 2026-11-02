@@ -45,13 +45,24 @@ Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
 
 `framework/ui.Counter` renders a numeric counter with +/− buttons.
 Uses `data-cui-signal-inc`. Configurable `Step` for
-non-unit increments.
+non-unit increments. The kernel steps the signal store, not the
+markup: `ui.Counter` over a `Slice` steps from the page's seed. A bare
+`headless.Counter` hands its own `Value` to the signal when it arrives
+(`data-hui-counter-value`, bound by `headless-controls`), so its first
++ steps from the number on screen; set `Seeded` when the page seeds
+the signal itself.
 
 ### Tabs
 
 `framework/ui.Tabs` renders a signal-driven tab strip. Clicking a tab
 sets the signal to the tab's index; CSS attribute selectors show/hide
 the matching panel. No JavaScript beyond the runtime's click delegation.
+
+With `Slice`, the strip selects the slice's value for the request. A
+value that names no tab (negative, or 5 on a three-tab strip) selects
+tab 0, and when the `headless-tabs` module loads it writes 0 back into
+the signal, so the store and anything else bound to the signal read
+the tab the page shows. An in-range value is left as it is.
 
 Three opt-in config knobs add the contracts a port from a component
 library usually needs (every zero value keeps the default output
@@ -110,10 +121,13 @@ ui.Collapsible(ui.CollapsibleConfig{Summary: "Security", Name: "faq"}, security)
 ### Copy to clipboard
 
 `framework/ui.CopyButton` renders a button that copies text to the
-clipboard via `navigator.clipboard.writeText()`. The feedback module
-(`headless-feedback`, through the `data-hui-copy*` hooks) shows a
-brief "Copied!" state and announces it to screen readers. Without
-script the page promises nothing about the clipboard.
+clipboard via `navigator.clipboard.writeText()`. The copy module
+(`headless-copy`, through the `data-hui-copy*` hooks) shows a
+brief "Copied!" state and announces it to screen readers once the
+clipboard has taken the text. A write the browser refuses (a declined
+permission, an insecure origin with no clipboard) announces the
+`ui.copy.failed` sentence instead, with no copied state and no toast.
+Without script the page promises nothing about the clipboard.
 
 `CopyButtonConfig.Target` is the source element's id, with or without
 a leading `#` (`"code-1"` and `"#code-1"` are the same). It is not a

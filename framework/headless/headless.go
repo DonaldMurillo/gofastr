@@ -80,6 +80,14 @@ const (
 	// clipped, never display: none, which would take it out of the
 	// accessibility tree along with the view.
 	PartVisuallyHidden Part = "visually-hidden"
+	// PartDefaultAction is a form's default button: a hidden submit
+	// placed before every other submit control of the component, so
+	// implicit submission (Enter in a text field) clicks it and not the
+	// first visible control in tree order — a wizard's Back, a
+	// repeater row's Remove. It renders with the hidden attribute, out
+	// of the tab order and the accessibility tree; a class map must not
+	// give it a display, which would put it back on screen.
+	PartDefaultAction Part = "default-action"
 )
 
 // Classes maps parts to class names. Nil is valid and renders unstyled.

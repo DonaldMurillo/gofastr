@@ -26,7 +26,7 @@ func TestRangeSliderRequiresLabel(t *testing.T) {
 func TestRangeSliderEmitsTwoInputs(t *testing.T) {
 	h := string(RangeSlider(RangeSliderConfig{
 		Name: "price", Label: "Price", Min: 0, Max: 1000,
-		ValueLow: 100, ValueHigh: 800,
+		ValueLow: new(100), ValueHigh: new(800),
 	}))
 	if c := strings.Count(h, `type="range"`); c != 2 {
 		t.Errorf("expected 2 range inputs, got %d:\n%s", c, h)
@@ -50,13 +50,24 @@ func TestRangeSliderEmitsTwoInputs(t *testing.T) {
 func TestRangeSliderOrdersCrossedPostedValues(t *testing.T) {
 	h := string(RangeSlider(RangeSliderConfig{
 		Name: "x", Label: "x", Min: 0, Max: 100,
-		ValueLow: 80, ValueHigh: 20,
+		ValueLow: new(80), ValueHigh: new(20),
 	}))
 	if !strings.Contains(h, `name="x-min" step="1" type="range" value="20"`) {
 		t.Errorf("crossed Low/High should order to the smaller value first:\n%s", h)
 	}
 	if !strings.Contains(h, `name="x-max" step="1" type="range" value="80"`) {
 		t.Errorf("crossed Low/High should order to the larger value second:\n%s", h)
+	}
+}
+
+// A set 0..0 pair is honoured through the kit config: nil, not zero,
+// is the unset value.
+func TestRangeSliderZeroPairRoundTrips(t *testing.T) {
+	h := string(RangeSlider(RangeSliderConfig{
+		Name: "x", Label: "x", ValueLow: new(0), ValueHigh: new(0), ShowValue: true,
+	}))
+	if !strings.Contains(h, `name="x-max" step="1" type="range" value="0"`) || !strings.Contains(h, ">0 to 0</output>") {
+		t.Errorf("a set 0..0 pair should render as posted, not widen to Min..Max:\n%s", h)
 	}
 }
 

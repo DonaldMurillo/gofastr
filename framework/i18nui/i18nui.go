@@ -89,7 +89,6 @@ var (
 
 	// PasswordInput
 	PasswordInputShow = i18n.Define("ui.passwordInput.show", "Show password")
-	PasswordInputHide = i18n.Define("ui.passwordInput.hide", "Hide password")
 
 	// Lightbox
 	LightboxLabel    = i18n.Define("ui.lightbox.label", "Image viewer")
@@ -217,6 +216,7 @@ var (
 	// CopyButton
 	CopyCopy        = i18n.Define("ui.copy.copy", "Copy")
 	CopyCopied      = i18n.Define("ui.copy.copied", "Copied")
+	CopyFailed      = i18n.Define("ui.copy.failed", "Could not copy to the clipboard")
 	CopyToClipboard = i18n.Define("ui.copy.toClipboard", "Copy to clipboard")
 	CopyLink        = i18n.Define("ui.copy.link", "Copy link")
 	DrawerOpenPage  = i18n.Define("ui.drawer.open_page", "Open as page")
@@ -309,7 +309,6 @@ var (
 	ActionFailed            = i18n.Define("ui.action.failed", "Could not save. Try again.")
 	ColorPick               = i18n.Define("ui.color.pick", "Pick {{name}}")
 	PasswordRevealShow      = i18n.Define("ui.passwordInput.revealShow", "Show")
-	PasswordRevealHide      = i18n.Define("ui.passwordInput.revealHide", "Hide")
 	ToneInfo                = i18n.Define("ui.tone.info", "Information")
 	ToneSuccess             = i18n.Define("ui.tone.success", "Success")
 	ToneWarning             = i18n.Define("ui.tone.warning", "Warning")
@@ -338,6 +337,10 @@ var (
 	HuiTableOfContentsLabel = i18n.Define("ui.toc.label", "On this page")
 	HuiCarouselSlide        = i18n.Define("ui.carousel.slide", "Slide {{n}} of {{total}}")
 	HuiCarouselGoToSlide    = i18n.Define("ui.carousel.goToSlide", "Go to slide {{n}}")
+	HuiCarouselRole         = i18n.Define("ui.carousel.role", "carousel")
+	HuiCarouselSlideRole    = i18n.Define("ui.carousel.slideRole", "slide")
+	HuiPaneSecondary        = i18n.Define("ui.paneHost.secondary", "Secondary")
+	HuiPaneTertiary         = i18n.Define("ui.paneHost.tertiary", "Tertiary")
 
 	HuiJSONObject                = i18n.Define("ui.json.object", "Object")
 	HuiJSONArray                 = i18n.Define("ui.json.array", "Array")
@@ -366,6 +369,21 @@ var (
 	HuiSortableConflictReverted  = i18n.Define("ui.sortable.conflictReverted", "Conflict. Reverted.")
 	HuiSortableConflictRefreshed = i18n.Define("ui.sortable.conflictRefreshed", "Conflict. List refreshed from server.")
 	HuiMultiSelectPlaceholder    = i18n.Define("ui.multiselect.placeholder", "Choose…")
+)
+
+// DatePicker's nav anchors, a range's default input labels, and what
+// the module says when a day is picked.
+var (
+	HuiDatePickerPrevMonth = i18n.Define("ui.datepicker.prevMonth", "Previous month")
+	HuiDatePickerNextMonth = i18n.Define("ui.datepicker.nextMonth", "Next month")
+	HuiDatePickerPrevYear  = i18n.Define("ui.datepicker.prevYear", "Previous year")
+	HuiDatePickerNextYear  = i18n.Define("ui.datepicker.nextYear", "Next year")
+	HuiDatePickerStart     = i18n.Define("ui.datepicker.start", "Start date")
+	HuiDatePickerEnd       = i18n.Define("ui.datepicker.end", "End date")
+	HuiDatePickerChosen    = i18n.Define("ui.datepicker.chosen", "{{date}} selected.")
+	HuiDatePickerChooseEnd = i18n.Define("ui.datepicker.chooseEnd", "{{date}} selected. Choose the end date.")
+	HuiDatePickerRange     = i18n.Define("ui.datepicker.range", "{{start}} to {{end}} selected.")
+	HuiDatePickerFailed    = i18n.Define("ui.datepicker.monthFailed", "The month could not be loaded.")
 )
 
 // CodeBlock's accessible name, its line count and its copy control,

@@ -17,7 +17,10 @@ import (
 // sanitizeHeaderValue pins for every other outbound header.
 
 // TestRedirect308LocationScrubbed: a pattern-redirect target substituted
-// with control bytes still 308s, percent-encoded.
+// with control bytes fails closed. No 308 fires (core-ui/app's
+// safeResolvedTarget refuses the substituted value, and the emit site's
+// handler.IsSafeRelativePath gate would refuse it again), and no Location
+// carries a raw control byte.
 func TestRedirect308LocationScrubbed(t *testing.T) {
 	a := app.NewApp("redirect-ctl")
 	a.Register("/", &testHomeComp{}, nil)
@@ -29,15 +32,15 @@ func TestRedirect308LocationScrubbed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, req)
 
-	loc := rec.Header().Get("Location")
-	if rec.Code != http.StatusPermanentRedirect || loc == "" {
-		t.Fatalf("setup: expected 308 + Location from the pattern redirect, got %d %q (body %.200s)",
-			rec.Code, loc, rec.Body.String())
+	if rec.Code == http.StatusPermanentRedirect {
+		t.Errorf("SECURITY: [uihost] a pattern redirect whose substituted target holds control bytes "+
+			"still 308s (Location %q); it must fail closed", rec.Header().Get("Location"))
 	}
+	loc := rec.Header().Get("Location")
 	for i := range len(loc) {
 		c := loc[i]
-		if (c < 0x20 && c != '\t') || c == 0x7f {
-			t.Errorf("SECURITY: [uihost] 308 Location %q carries raw control byte 0x%02x at %d — "+
+		if c < 0x20 || c == 0x7f {
+			t.Errorf("SECURITY: [uihost] Location %q carries raw control byte 0x%02x at %d — "+
 				"percent-decoded request-path params flow through substituteRedirect into the "+
 				"Location header; the emit site must scrubCtl them like every other header sink",
 				loc, c, i)
@@ -67,7 +70,7 @@ func TestTrailingSlashLocationScrubbed(t *testing.T) {
 	}
 	for i := range len(loc) {
 		c := loc[i]
-		if (c < 0x20 && c != '\t') || c == 0x7f {
+		if c < 0x20 || c == 0x7f {
 			t.Errorf("SECURITY: [uihost] trailing-slash Location %q carries raw control byte 0x%02x at %d — "+
 				"the redirect target is built from the percent-decoded request path and must be "+
 				"scrubbed before it reaches the Location header", loc, c, i)

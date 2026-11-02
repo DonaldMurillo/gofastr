@@ -8,6 +8,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // PromptMessage is one message of a prompts/get result: the speaker role
@@ -230,7 +232,7 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 	}
 	var params promptsGetParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+handler.JSONErrorDetail(err).Error())
 	}
 	if params.Name == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing prompt name")

@@ -46,8 +46,16 @@
   // a display from the recorded start to it, written the page's way
   // (formatNumber), so the SSR text is never parsed: "4,820" reads as 4.
   // Reduced motion, or a non-numeric either end, leaves the SSR text
-  // untouched.
+  // untouched. The animation never owns the number: a live write to
+  // the signal (setSignal, a poll, a swap) that lands mid-walk changes
+  // the text from the frame last written, and the walk stops there
+  // instead of painting over it. A root animates once: a rescan of the
+  // same markup (an insertion elsewhere, a navigation that kept it) is
+  // not an arrival.
+  const animated = new WeakSet();
   function animateCounter(root) {
+    if (animated.has(root)) return;
+    animated.add(root);
     const from = parseFloat(root.getAttribute('data-hui-counter-from'));
     const to = parseFloat(root.getAttribute('data-hui-counter-to'));
     const value = root.querySelector('[data-cui-signal]');
@@ -57,42 +65,67 @@
     let ms = parseFloat(root.getAttribute('data-hui-counter-ms'));
     if (!Number.isFinite(ms) || ms <= 0) ms = 800;
     const t0 = performance.now();
+    let written = null;
     function frame(now) {
+      if (!value.isConnected) return;
+      if (written !== null && value.textContent !== written) return;
       const k = Math.min(1, (now - t0) / ms);
       const eased = 1 - Math.pow(1 - k, 3);
-      value.textContent = formatNumber(Math.round(from + (to - from) * eased));
+      written = formatNumber(k < 1 ? Math.round(from + (to - from) * eased) : to);
+      value.textContent = written;
       if (k < 1) requestAnimationFrame(frame);
-      else value.textContent = formatNumber(to);
     }
     requestAnimationFrame(frame);
   }
 
+  // ─── counter seed ────────────────────────────────────────────────
+
+  // The kernel's data-cui-signal-inc steps the value the signal store
+  // holds, not the markup: a counter no layer above seeded would step
+  // from zero while it shows its Value. On arrival the counter hands
+  // the store the value it shows (data-hui-counter-value, plain
+  // digits): the fresh markup of an island swap or a navigation is the
+  // number on screen, so it wins over a count stepped on the markup it
+  // replaced. A root seeds once: a rescan of the same markup (an
+  // insertion elsewhere, a navigation that kept it) is not an arrival,
+  // and the count the reader stepped to stands. A counter whose page
+  // seeds the signal itself (ui.Counter over a store.Slice) renders no
+  // hook, so the page's seed stays the only one.
+  const seeded = new WeakSet();
+  function seedCounter(root) {
+    if (seeded.has(root)) return;
+    seeded.add(root);
+    const n = parseFloat(root.getAttribute('data-hui-counter-value'));
+    const value = root.querySelector('[data-cui-signal]');
+    const name = value && value.getAttribute('data-cui-signal');
+    if (!name || !Number.isFinite(n) || typeof NS.setSignal !== 'function') return;
+    if (NS.getSignal(name) !== n) NS.setSignal(name, n);
+  }
+
   // ─── number stepper ──────────────────────────────────────────────
 
-  // Steps the input inside the bounds its own attributes declare, then
-  // reports the change as a real input event so every pipeline that
-  // watches the control sees it. The declared bounds are the server's;
-  // contradictory props are refused at render, never repaired here.
-  // The input is the button's sibling in the control's own row. The id
-  // defaults to the field's name, so two forms with one field share
-  // it, and a page-wide getElementById answers the first form's input.
+  // Steps the input through the browser's own stepUp/stepDown, so the
+  // next value is one the input accepts: inside min/max and on the
+  // step base (min=1 step=5 walks 1, 6, 11, never 8), the rules the
+  // form's validity checks. The change is then reported as real input
+  // and change events so every pipeline that watches the control sees
+  // it. The declared bounds are the server's; contradictory props are
+  // refused at render, never repaired here. The input is the button's
+  // sibling in the control's own row. The id defaults to the field's
+  // name, so two forms with one field share it, and a page-wide
+  // getElementById answers the first form's input.
   function step(btn, dir) {
     const id = btn.getAttribute('data-hui-number-input-for');
     const row = btn.parentElement;
     const input = id && row && [...row.children].find((el) => el.id === id);
-    if (!input || input.disabled) return;
-    const stepAttr = parseFloat(input.getAttribute('step') || '1');
-    const delta = (Number.isFinite(stepAttr) && stepAttr > 0 ? stepAttr : 1) * dir;
-    const cur = parseFloat(input.value);
-    let next = Number.isFinite(cur) ? cur + delta : delta;
-    const min = parseFloat(input.getAttribute('min'));
-    const max = parseFloat(input.getAttribute('max'));
-    if (Number.isFinite(min) && next < min) next = min;
-    if (Number.isFinite(max) && next > max) next = max;
-    if (Number.isFinite(stepAttr) && stepAttr > 0 && (input.getAttribute('step') || '').indexOf('.') === -1) {
-      next = Math.round(next);
+    if (!input || input.disabled || input.readOnly) return;
+    const before = input.value;
+    try {
+      if (dir > 0) input.stepUp(); else input.stepDown();
+    } catch (_) {
+      return; // not a stepping input type: nothing the browser would accept
     }
-    input.value = String(next);
+    if (input.value === before) return;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
@@ -168,6 +201,9 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
+    // The seed first: an animation that starts after it walks toward
+    // the value the store already holds.
+    for (const el of within(scope, '[data-hui-counter-value]')) seedCounter(el);
     for (const el of within(scope, '[data-hui-counter-animate]')) animateCounter(el);
     for (const el of within(scope, '[data-hui-slider-output]')) {
       const input = el.closest('[data-hui-slider]');

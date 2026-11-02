@@ -31,7 +31,7 @@ func captureSlog(t *testing.T, fn func()) string {
 // AllowInMemoryStores.
 func TestProdMemorySessionStoreFailsClosed(t *testing.T) {
 	mgr := auth.New(auth.AuthConfig{JWTSecret: "k"}) // prod mode, default memory session store
-	mgr.Use(auth.NewCorePlugin())
+	mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	err := mgr.Init(nil)
 	if err == nil {
 		t.Fatal("production Init with the default in-memory session store must fail closed")
@@ -46,7 +46,7 @@ func TestProdMemorySessionStoreFailsClosed(t *testing.T) {
 func TestNoMemoryStoreWarnWhenOptedIn(t *testing.T) {
 	out := captureSlog(t, func() {
 		mgr := auth.New(auth.AuthConfig{JWTSecret: "k", AllowInMemoryStores: true})
-		mgr.Use(auth.NewCorePlugin())
+		mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 		if err := mgr.Init(nil); err != nil {
 			t.Fatalf("Init: %v", err)
 		}
@@ -59,7 +59,7 @@ func TestNoMemoryStoreWarnWhenOptedIn(t *testing.T) {
 func TestNoMemoryStoreWarnInDevMode(t *testing.T) {
 	out := captureSlog(t, func() {
 		mgr := auth.New(auth.AuthConfig{DevMode: true})
-		mgr.Use(auth.NewCorePlugin())
+		mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 		if err := mgr.Init(nil); err != nil {
 			t.Fatalf("Init: %v", err)
 		}
@@ -75,7 +75,7 @@ func TestNoMemoryStoreWarnInDevMode(t *testing.T) {
 // warning-grade, production must refuse to boot.
 func TestProdRefusesMemoryTwoFAStore(t *testing.T) {
 	mgr := auth.New(auth.AuthConfig{JWTSecret: "k", SessionStore: stubDurableSessions{}}) // durable sessions → Init reaches the 2FA gate, not the session gate
-	mgr.Use(auth.NewCorePlugin())
+	mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
 	err := mgr.Init(nil)
 	if err == nil {
@@ -91,7 +91,7 @@ func TestProdRefusesMemoryTwoFAStore(t *testing.T) {
 func TestProdMemoryTwoFAStoreOptIn(t *testing.T) {
 	out := captureSlog(t, func() {
 		mgr := auth.New(auth.AuthConfig{JWTSecret: "k", AllowInMemoryStores: true})
-		mgr.Use(auth.NewCorePlugin())
+		mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 		mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
 		if err := mgr.Init(nil); err != nil {
 			t.Fatalf("Init with AllowInMemoryStores: %v", err)
@@ -107,7 +107,7 @@ func TestProdMemoryTwoFAStoreOptIn(t *testing.T) {
 func TestDevModeAllowsMemoryTwoFAStore(t *testing.T) {
 	out := captureSlog(t, func() {
 		mgr := auth.New(auth.AuthConfig{DevMode: true})
-		mgr.Use(auth.NewCorePlugin())
+		mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 		mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
 		if err := mgr.Init(nil); err != nil {
 			t.Fatalf("Init: %v", err)
@@ -150,7 +150,7 @@ func TestProdRefusesMemorySessionStoreInstalledByPlugin(t *testing.T) {
 	mgr := auth.New(auth.AuthConfig{JWTSecret: "k"})
 	mgr.SetSessionStore(durableStoreStub{})
 	mgr.Use(storeSwappingPlugin{})
-	mgr.Use(auth.NewCorePlugin())
+	mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 
 	err := mgr.Init(nil)
 	if err == nil {

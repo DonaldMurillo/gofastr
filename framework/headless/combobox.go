@@ -26,6 +26,11 @@ const (
 	PartComboboxListbox Part = "combobox-listbox"
 	PartComboboxOption  Part = "combobox-option"
 	PartComboboxStatus  Part = "combobox-status"
+	// PartComboboxMeta is an option's secondary line (ComboboxOption
+	// Meta). Its own part: rendered as a second PartComboboxOption it
+	// took the option's class (padding, hover, active fill) inside the
+	// option itself.
+	PartComboboxMeta Part = "combobox-meta"
 )
 
 // ComboboxOption is one row in the listbox.
@@ -149,12 +154,15 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 		if p.NoScriptAction == "" && p.Pick == nil {
 			panic("headless: Combobox requires NoScriptAction when Island is set — a reader without script must still reach the results")
 		}
+	}
+	if p.NoScriptAction != "" {
+		// Whenever it is set, island or static: it becomes the wrapping
+		// form's action, and a static combobox's once shipped with no
+		// check at all (a javascript: URL was the form action).
 		if p.NoScriptAction == "#" {
 			panic("headless: Combobox NoScriptAction must be a real same-origin destination, not #")
 		}
-		if p.Pick == nil {
-			checkSameOrigin("Combobox", "NoScriptAction", p.NoScriptAction)
-		}
+		checkSameOrigin("Combobox", "NoScriptAction", p.NoScriptAction)
 	}
 	if p.DebounceMS < 0 {
 		panic("headless: Combobox DebounceMS " + strconv.Itoa(p.DebounceMS) + " is negative — a negative debounce fires before the keystroke")
@@ -377,7 +385,7 @@ func comboboxOptionEl(b Box, o ComboboxOption, labelled, root bool) render.HTML 
 	}
 	kids := []render.HTML{b.El("span", PartText, own, render.Text(scrubControlBytes(o.Label)))}
 	if o.Meta != "" {
-		kids = append(kids, b.El("span", PartComboboxOption, own, render.Text(scrubControlBytes(o.Meta))))
+		kids = append(kids, b.El("span", PartComboboxMeta, own, render.Text(scrubControlBytes(o.Meta))))
 	}
 	return b.El("li", PartComboboxOption, attrs, kids...)
 }
@@ -386,7 +394,7 @@ func init() {
 	Register(Spec{
 		Name: "Combobox",
 		Anatomy: []Part{PartRoot, PartLabel, PartComboboxForm, PartComboboxInput,
-			PartComboboxListbox, PartComboboxOption, PartComboboxStatus, PartText},
+			PartComboboxListbox, PartComboboxOption, PartComboboxStatus, PartText, PartComboboxMeta},
 		Hooks: []string{"data-hui-combobox", "data-hui-combobox-input",
 			"data-hui-combobox-listbox", "data-hui-combobox-static",
 			"data-hui-combobox-loader", "data-hui-combobox-status",
@@ -430,13 +438,13 @@ func init() {
 	})
 	Register(Spec{
 		Name:    "ComboboxRows",
-		Anatomy: []Part{PartComboboxOption, PartText},
+		Anatomy: []Part{PartComboboxOption, PartText, PartComboboxMeta},
 		Cases: func(k Kit) []Case {
 			return []Case{{
 				Name: "an island answer",
 				Why:  "the rows an endpoint swaps into a listbox carry the listbox's ids and each label a picker writes back",
 				HTML: render.Tag("ul", map[string]string{"role": "listbox", "id": "f-listbox", "aria-label": "Customers"},
-					ComboboxRows("f-listbox", []ComboboxOption{{Value: "c1", Label: "Ada"}}, k.Classes)),
+					ComboboxRows("f-listbox", []ComboboxOption{{Value: "c1", Label: "Ada", Meta: "ada@example.com"}}, k.Classes)),
 			}}
 		},
 	})

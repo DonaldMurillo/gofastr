@@ -76,7 +76,10 @@ func Tabs(cfg TabsConfig) render.HTML {
 	active := 0
 	if cfg.Slice != nil {
 		name = cfg.Slice.Name()
-		active = cfg.Slice.Default()
+		// The request's value (a producer's Seed on Ctx), the same index
+		// the page's seed hands the runtime, so the server's selected tab
+		// is the one the client shows.
+		active = cfg.Slice.Value(cfg.Ctx)
 	}
 	if name == "" {
 		panic("ui: Tabs requires SignalName or Slice")

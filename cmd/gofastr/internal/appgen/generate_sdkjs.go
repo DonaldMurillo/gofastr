@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/file"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // renderSDKJSFiles emits the JS/TS SDK: one handrolled ESM client.js plus a
@@ -426,12 +427,24 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	// from the snippet meant to show the casing contract working. A
 	// spec with no range-able column shows plain equality.
 	if picked, filterOp := sdkExampleFilter(first.Fields); picked != nil {
+		// A bare key that reads two ways (a field beside its name plus a
+		// suffix) is a 400; the example then names the operator in
+		// brackets, the spelling the server reads one way.
 		if filterOp == "" {
-			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s]: \"x\" } });\n```\n\n", prop, prop, prop, picked.Wire)
+			eq := ""
+			if first.filterKeys.Ambiguous(picked.Snake, filter.OpEq) {
+				eq = ` + "[eq]"`
+			}
+			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s%s]: \"x\" } });\n```\n\n", prop, prop, prop, picked.Wire, eq)
 		} else {
-			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + \"_gte\"]: \"10\" } });\n```\n\n", prop, prop, prop, picked.Wire)
+			op := `"_gte"`
+			if first.filterKeys.Ambiguous(picked.Snake, filter.OpGte) {
+				op = `"[gte]"`
+			}
+			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + %s]: \"10\" } });\n```\n\n", prop, prop, prop, picked.Wire, op)
 		}
 	}
+	sb.WriteString(sdkBracketKeysNote(spec))
 	sb.WriteString("## Surface per entity\n\n`list(params)`, `listCursor(params)`, `get(id, opts)`, `create(body)`,\n`update(id, body)`, `patch(id, body)` (send only the keys you mean;\nJS objects are presence-faithful), `remove(id)`, `batchCreate(items)`,\n`batchUpdate(items)` (each item carries `id`), `batchDelete(ids)`, and\n`watch(onEvent, { signal })` for the live SSE feed (uses fetch streaming so\nthe Authorization header works; EventSource can't send it).\n\nErrors throw `ApiError` with `status`, `code`, `reason` (the stable error\ncode to branch on), `fields`, `fieldReasons`, and the raw `body`.\nBatch rollbacks (HTTP 400 with a decodable envelope) resolve normally:\ninspect `committed` and per-item `error`.\n")
 	return sb.String()
 }

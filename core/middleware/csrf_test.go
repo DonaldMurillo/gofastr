@@ -54,6 +54,29 @@ func TestCSRF_PostAllowedWithMatchingHeader(t *testing.T) {
 	}
 }
 
+// A verified unsafe request exposes its token on ctx, so a handler that
+// re-renders the form (a validation error) renders a token under any
+// CookieName. Readers that guessed the default cookie name rendered none
+// under a custom one (2026-11-01 battery/auth bug bash).
+func TestCSRF_VerifiedPostExposesToken(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	var seen string
+	h := CSRF(CSRFConfig{SecretKey: secret, CookieName: "my_csrf"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = TokenFromContext(r.Context())
+	}))
+	tok, err := generateSignedCSRFToken(secret)
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "my_csrf", Value: tok})
+	r.Header.Set("X-CSRF-Token", tok)
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if seen != tok {
+		t.Errorf("TokenFromContext on a verified POST = %q, want the cookie's token", seen)
+	}
+}
+
 func TestCSRF_PostBlockedOnMismatch(t *testing.T) {
 	h := CSRF(CSRFConfig{})(csrfHandler())
 	w := httptest.NewRecorder()
@@ -74,6 +97,37 @@ func TestCSRF_SkipPredicateBypasses(t *testing.T) {
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected bearer-authed POST to bypass CSRF, got %d", w.Code)
+	}
+}
+
+// SkipBearerAuth skipped on ANY Authorization value. Basic, Negotiate and
+// NTLM are credentials the browser attaches by itself to a cross-site form
+// POST once a proxy challenged for them, so behind an HTTP-auth gate every
+// cookie-authenticated form went through unchecked (2026-11-01 battery/auth
+// bug bash).
+func TestSkipBearerAuthOnlyBearerScheme(t *testing.T) {
+	skip := SkipBearerAuth()
+	for header, want := range map[string]bool{
+		"Bearer xyz":            true,
+		"bearer xyz":            true,
+		"  Bearer xyz":          true,
+		"Basic dXNlcjpwYXNz":    false,
+		"Negotiate YIIGhgYJKo":  false,
+		"NTLM TlRMTVNTUAAB":     false,
+		"Digest username=\"a\"": false,
+		"Bearer":                false,
+		"BearerX y":             false,
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r.Header.Set("Authorization", header)
+		if got := skip(r); got != want {
+			t.Errorf("Authorization %q: skip=%v, want %v", header, got, want)
+		}
+	}
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.Header.Set("X-API-Key", "k")
+	if !skip(r) {
+		t.Error("X-API-Key request not skipped")
 	}
 }
 

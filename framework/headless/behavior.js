@@ -77,9 +77,9 @@
     if (!input) return;
     const shown = input.type === 'text';
     input.type = shown ? 'password' : 'text';
+    // A toggle button: the name and the word stay as rendered and
+    // aria-pressed carries the state (the APG pattern).
     btn.setAttribute('aria-pressed', String(!shown));
-    btn.setAttribute('aria-label', shown ? btn.dataset.huiShowLabel : btn.dataset.huiHideLabel);
-    btn.textContent = shown ? btn.dataset.huiShowText : btn.dataset.huiHideText;
     const at = input.value.length;
     input.focus();
     try { input.setSelectionRange(at, at); } catch (e) { /* type=password forbids it in Safari */ }
@@ -403,7 +403,10 @@
       const f = box.closest('form');
       if (!f || !sel.contains(f)) n++;
     }
-    for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = String(n);
+    // Written the page's way, like the server's i18n.Number "0" it
+    // replaces: "٣" on an Egyptian Arabic page.
+    const text = NS.formatNumber(n);
+    for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = text;
   }
 
   // ─── delegated listeners ────────────────────────────────────────

@@ -88,6 +88,34 @@ app.HookRegistry("posts").RegisterHook(framework.BeforeGet,
     })
 ```
 
+**A `BeforeGet` scope binds writes too.** A row `GET /posts/{id}`
+answers 404 for is one the record writes answer 404 for, with the same
+body a missing id gets, and leave untouched: `PUT`, `PATCH` and
+`DELETE /posts/{id}`, `POST /posts/{id}/transitions/{key}`, every item
+of `PATCH` and `DELETE /posts/_batch` (the item fails, and the batch
+rolls back, exactly as for a missing id), and the MCP tools that
+dispatch to them. Before the write touches the row, inside its
+transaction, the framework runs the `BeforeGet` chain with the record's
+id and, when the chain appends a clause, one keyed `SELECT` for the row
+under the write's own tenant, owner and soft-delete scope plus those
+clauses. A chain that appends nothing costs nothing. A hook error hides
+the row (a write fails closed; `GET` answers that error with a 400). In
+process the rule is `GetOne`'s: `UpdateOne`, `DeleteOne`,
+`BatchUpdateMany`, `BatchDeleteMany`, `RunTransition`, `RestoreOne`,
+`PurgeOne` and an update under `WithStateOverride` honour the hooks
+only under `crud.WithReadHooks(ctx)`, and answer the not-found error a
+missing id gets. `WithServerWrites` skips the check. `UpsertOne` under
+`WithReadHooks` refuses a key whose existing row the hooks hide with the
+error another owner's row gets: the key is taken, which a create of it
+reveals too, and nothing is written. The hooks run inside the write
+transaction, so a hook that reads the database reaches it through the
+`ctx` it is given (`framework.TxFromContext`, or the in-process API on
+that `ctx`), never a separate pool connection. Only `BeforeGet` decides
+this: a `BeforeList`-only scope narrows lists, not record writes. A
+caller who must still write a row cannot be one the `BeforeGet` chain
+hides it from: gate that caller with `Access` permissions instead, or
+stop hiding the row.
+
 `AfterList` and `AfterGet` see the fetched rows on the payload and
 may mutate them in place; handy for redaction. The rows are keyed by
 the response's wire names, the handler's `JSONCase` (camelCase by
@@ -368,8 +396,9 @@ paths that skip hooks entirely; by design, not accident:
 | Streaming list (`?stream=true`) | AfterList (blocked when any AfterList hook is registered; auto-falls back to buffered path for large `limit`) | Rows stream directly to wire; slice unavailable for redaction |
 | Cursor list (`?cursor=`) | none: AfterList fires over the page | The continue-cursor is derived from the stored keyset values first, so a hook that masks the keyset column cannot corrupt paging |
 | Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire: its BeforeList scope (plus BeforeGet for to-one relations, with an empty ID because the load is batched) narrows the child query, a nested `?rel.field=` filter honours the same scope, a hook error answers 400 with the same body the child's own route sends, and AfterList always runs over the rows, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
-| `_events` payloads | none: AfterGet fires at delivery | Redacting per subscriber keeps the hook out of the write transaction and runs it once per delivery. Delete stubs pass through untouched; a hook error omits the record rather than publishing it raw. |
-| Create/update/patch responses | none; BeforeGet and AfterGet fire over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. After the commit the route also runs the BeforeGet chain GET would, with the written row's id, and answers with the id alone when its clauses exclude the row: a caller allowed to write a row it may not read gets nothing a GET would 404. This covers create, update, `_batch` create and update, transitions, and the MCP tools that dispatch to them. Rows a cascade write nests in the body run their own entity's AfterList (plus AfterGet for a to-one relation) at every written level, so a grandchild is masked the same way `?include=` masks it. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. In-process writes (`UpdateOne` and the rest) return the stored row, as `GetOne` does without `WithReadHooks`. |
+| `_events` payloads | none: BeforeList, BeforeGet and AfterGet fire at delivery | Each delivery runs the subscriber's own BeforeList chain and its BeforeGet chain (with the row's id) on the stream's refreshed context, and checks the stored row against their clauses with one keyed `SELECT`: a row either route would hide is not sent. A hard delete leaves no row to check, so it reaches only a subscriber the hooks append no clause for; a soft delete is checked against the row it left. A Before hook error withholds the event. AfterGet then redacts per subscriber, which keeps the hook out of the write transaction and runs it once per delivery. Delete stubs pass AfterGet untouched; an AfterGet error omits the record rather than publishing it raw. |
+| Record writes (`PUT`/`PATCH`/`DELETE /{id}`, transitions, `_batch` update and delete) | none; BeforeGet also fires before the write | Inside the write's transaction, before it touches the row, the route runs the BeforeGet chain GET would, with the record's id. When the chain appends a clause, one keyed `SELECT` under the write's own scope plus those clauses must find the row, or the write answers the 404 a missing id gets and writes nothing; a `_batch` item fails as a missing one does and the batch rolls back. A hook error hides the row. In process (`UpdateOne`, `DeleteOne`, the batch helpers, `RunTransition`, `RestoreOne`, `PurgeOne`, an update under `WithStateOverride`) the check runs only under `WithReadHooks`, and `UpsertOne` there refuses a hidden existing key as it refuses another owner's row. See "A `BeforeGet` scope binds writes too" above. |
+| Create/update/patch responses | none; BeforeGet and AfterGet fire over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. After the commit the route also runs the BeforeGet chain GET would, with the written row's id, and answers with the id alone when its clauses exclude the row: a create, or a write that moves its row out of the caller's sight, returns nothing a GET would 404 (a write to a row the chain already hides answers 404 before it runs, the row above). This covers create, update, `_batch` create and update, transitions, and the MCP tools that dispatch to them. Rows a cascade write nests in the body run their own entity's AfterList (plus AfterGet for a to-one relation) at every written level, so a grandchild is masked the same way `?include=` masks it. A nested child the child entity's own BeforeList scope (plus BeforeGet for a to-one relation, as `?include=` picks them) hides comes back as its id alone, and a cascade item or `belongs_to` reference that names an existing row that scope hides answers 404, the same as a row that is not there, without writing it. A 409 or 422 state refusal names the stored state only when the BeforeGet chain admits the row. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. In-process writes (`UpdateOne` and the rest) return the stored row, as `GetOne` does without `WithReadHooks`. |
 | In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | every read hook, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user: the read then runs the chain the HTTP route runs. `BeforeList` scopes `ListAll`, `CountAll` and the typed query, `BeforeGet` scopes `GetOne`, and AfterList/AfterGet mask the result. A before hook that errors fails the read. |
 | `_batch` requests | none: per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
 

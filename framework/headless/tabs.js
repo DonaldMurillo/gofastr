@@ -102,9 +102,28 @@
     }
   }
 
+  // settleSignal puts the strip's index back into its signal when the
+  // store holds no tab of this strip. A seed past the last tab (5 on a
+  // three-tab strip) or a stale value from another page is painted by
+  // the server as tab 0 (headless.TabsProps.Active: out of range takes
+  // 0), while the store kept 5: anything else bound to the signal, or
+  // reading it, disagreed with the selected tab. An in-range value is
+  // left alone, and an unset signal stays unset.
+  function settleSignal(w) {
+    const name = w.getAttribute('data-cui-signal');
+    if (!name || typeof NS.getSignal !== 'function' || typeof NS.setSignal !== 'function') return;
+    const v = NS.getSignal(name);
+    if (v === undefined || v === null) return;
+    const n = Number(v);
+    const count = own(w, '[role="tab"]').length;
+    if (String(v).trim() !== '' && Number.isInteger(n) && n >= 0 && n < count) return;
+    NS.setSignal(name, parseInt(w.getAttribute('data-active') || '0', 10) || 0);
+  }
+
   function wire(w) {
     if (wired.has(w) || !w.isConnected) return;
     wired.add(w);
+    settleSignal(w);
     const obs = new MutationObserver(function () { apply(w); });
     obs.observe(w, { attributes: true, attributeFilter: ['data-active'] });
     apply(w);

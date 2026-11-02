@@ -111,16 +111,29 @@ node still recomputing, instead of recursing until the stack overflows.
 
 `ui.Counter`, `ui.Tabs`, and `ui.SignalToggle` accept a typed `Slice` (their
 `Slice` field) in addition to the legacy `SignalName` string. With a slice they
-derive the signal name and stamp the slice's declared default, one source of
-truth instead of a hardcoded initial value:
+derive the signal name and stamp the slice's value for the request on their
+`Ctx`: what a producer passed to `Seed`, else the declared default. That is
+the value the page's seed carries, so a counter seeded to 7 renders 7 on the
+server (and without script) and its first + makes it 8. Pass the request
+context, or the component stamps the default:
 
 <!-- gofastr:compile
+import "context"
 import "github.com/DonaldMurillo/gofastr/framework/ui"
 import "github.com/DonaldMurillo/gofastr/core-ui/store"
+var ctx context.Context
 -->
 ```go
-ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
+var cartCount = store.New("cart").Int("count", 0)
+
+cartCount.Seed(ctx, 7) // in the screen's Load(ctx)
+ui.Counter(ui.CounterConfig{Slice: cartCount, Ctx: ctx}) // renders 7
 ```
+
+A component of your own that renders its own `data-cui-signal` binding
+reads the same value with `slice.Value(ctx)`. `Default()` is the
+declaration and never sees a seed, so stamping it shows the wrong value
+on any request that seeded another.
 
 ## Attribute bindings
 

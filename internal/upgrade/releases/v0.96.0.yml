@@ -714,6 +714,119 @@ notes:
     breaking: true
     guidance: "The server returns a NULL column as null, which the old types hid. Regenerate the JS SDK (gofastr sdk). TypeScript that reads an optional field checks for null first (v ?? fallback, or if (v !== null)). A required, generated or key field keeps its plain type."
     nodetect: "the change lands in regenerated SDK files; caller code that reads an optional field has no fixed spelling to search for"
+  - change: "BREAKING - MagicLinkPlugin.Init refuses to start when a 2FA plugin is registered and MagicLinkConfig.TwoFactorURL is empty; a magic-link sign-in of a 2FA account now redirects there instead of to OnSuccessURL, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Set MagicLinkConfig.TwoFactorURL to the page that posts the code to /2fa/challenge, the same page PasskeyConfig.TwoFactorURL names. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+  - change: "BREAKING - on an account with a second factor, POST/GET/DELETE /auth/tokens need the cookie session that passed it; a session from before enrollment answers 403 and a bearer JWT with no such session 401"
+    breaking: true
+    hits: review
+    guidance: "Either credential minted a permanent *:* token the new factor never touched. A client that manages tokens for a 2FA user signs in, completes /auth/2fa/challenge, and calls the token routes with that session cookie."
+    find:
+      uses:
+        - gofastr/battery/auth.NewTokensPlugin
+  - change: "BREAKING - a passing /auth/2fa/challenge deletes the pending session and sets a new session cookie instead of marking the pending one verified"
+    breaking: true
+    hits: review
+    guidance: "Browsers follow the Set-Cookie on their own. A client that carries the session token by hand takes the new value from the challenge response's Set-Cookie; the pre-challenge token answers 401."
+    find:
+      uses:
+        - gofastr/battery/auth.NewTwoFAPlugin
+  - change: "BREAKING - middleware.SkipBearerAuth (auth.CSRF's default skip) skips only Authorization: Bearer and X-API-Key; Basic, Digest, Negotiate and NTLM requests are CSRF-checked"
+    breaking: true
+    hits: review
+    guidance: "The browser attaches those schemes by itself, to a cross-site form too. A non-browser client that authenticates with Basic on a CSRF-protected route either moves to a bearer token or is exempted with WithCSRFSkipPaths for its routes."
+    find:
+      uses:
+        - gofastr/core/middleware.SkipBearerAuth
+        - gofastr/battery/auth.CSRF
+  - change: "BREAKING - OAuth provider registry keys must be 1-64 letters, digits, - or _ (NewOAuth2Plugin and RegisterProvider panic otherwise); an identity with no email and no existing link answers 400 auth.oauth_no_email; OIDC email_verified counts only when the same claim set's email equals the kept address"
+    breaking: true
+    hits: review
+    guidance: "A dotted key (login.gov) never completed a flow: rename it, and its stored links and tokens with it. Ask email-less providers for the email scope. An app that maps OIDCClaimsMapping.EmailClaim to upn or preferred_username sees those sign-ins arrive unverified, so they no longer auto-link into an existing account by address."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOAuth2Plugin
+        - gofastr/battery/auth.OIDCClaimsMapping
+  - change: "BREAKING - auth.RequireAuth(nil) panics at wiring time, and AuthManager.Init refuses a negative AuthConfig.JWTExpiry"
+    breaking: true
+    hits: review
+    guidance: "mgr.JWT() is non-nil as soon as auth.New returns with a JWTSecret (or DevMode), so RequireAuth(mgr.JWT()) works before App.Start. A nil there means the manager has no secret; set AuthConfig.JWTSecret. Replace a negative JWTExpiry with a positive duration or zero for the 1-hour default."
+    find:
+      uses:
+        - gofastr/battery/auth.RequireAuth
+  - change: "BREAKING for audit consumers - a SQL audit row from battery/auth with no user id (an unknown address, a magic-link request, a refused OAuth sign-in) carries diff.email_hash, a 12-hex-char sha256 prefix of the canonical address, instead of diff.email"
+    breaking: true
+    hits: review
+    guidance: "EraseUserData scrubs the rows a user acted from and cannot reach a row with no actor, so the raw address outlived the user's erasure. A query or alert that reads diff.email on such rows matches on diff.email_hash instead: the first 12 hex chars of the sha256 of auth.CanonicalEmail(address), the default canonicalizer even when AuthConfig.CanonicalizeEmail is set. Rows with a user id keep diff.email."
+    find:
+      uses:
+        - gofastr/battery/auth.NewSQLAuditSink
+  - change: "BREAKING - OAuth2Plugin.Init refuses to start when a 2FA plugin is registered and OAuth2Config.TwoFactorURL is empty; an OAuth sign-in of a 2FA account now redirects there instead of to /, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Set OAuth2Config.TwoFactorURL to the page that posts the code to /2fa/challenge, the same page PasskeyConfig.TwoFactorURL and MagicLinkConfig.TwoFactorURL name. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOAuth2Plugin
+  - change: "magic-link send and forgot-password mail one link per address every two minutes (AddressRateLimit, kept in memory per replica); a request inside the cooldown gets the usual 200 and nothing is mailed"
+    breaking: true
+    hits: review
+    guidance: "A user's resend within two minutes sends nothing; the link already mailed still works. An end-to-end test that asks twice for one address passes AddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to the plugin."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+        - gofastr/battery/auth.NewPasswordResetPlugin
+  - change: "auth.ValidatePasswordStrength counts characters, not bytes, for the 8-character floor"
+    breaking: true
+    hits: review
+    guidance: "A password of fewer than 8 characters that passed on its byte length (three CJK characters are 9 bytes) is refused at registration, reset and change. Existing passwords keep signing in."
+    find:
+      uses:
+        - gofastr/battery/auth.ValidatePasswordStrength
+        - gofastr/battery/auth.NewCorePlugin
+  - change: "a custom auth.DefaultHasher's Verify is asked first at sign-in and password change; auth.CheckPassword keeps knowing only the bcrypt and argon2id formats"
+    breaking: false
+    guidance: "A custom hasher's own hashes now sign in; before, every login failed. Its Verify may call auth.CheckPassword for rows written before the switch."
+    find:
+      uses:
+        - gofastr/battery/auth.DefaultHasher
+  - change: "the OIDC, Google and GitHub OAuth providers send PKCE (S256 code_challenge and code_verifier); new auth.OAuth2PKCEProvider lets a custom provider do the same"
+    breaking: true
+    hits: review
+    guidance: "Every mainstream IdP accepts PKCE on a confidential client. If yours rejects the authorize or token request after upgrading, set OIDCConfig.DisablePKCE (or DisablePKCE on the Google or GitHub provider). A custom OAuth2Provider is unchanged until it implements AuthURLWithChallenge and ExchangeCodeWithVerifier."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOIDCProvider
+        - gofastr/battery/auth.NewGoogleProvider
+        - gofastr/battery/auth.NewGitHubProvider
+  - change: "BREAKING - CorePlugin.Init refuses to start when a 2FA plugin is registered and no NewCorePlugin().WithTwoFactorURL(path) was set; an HTML form login of a 2FA account now redirects there instead of to its next page, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Write mgr.Use(auth.NewCorePlugin().WithTwoFactorURL(\"/login/2fa\")), naming the page that posts the code to /2fa/challenge, the same page the passkey, magic-link and OAuth plugins' TwoFactorURL names. JSON logins are unaffected. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewCorePlugin
+  - change: "per-IP rate limits key an IPv6 client by its /64 (ratelimit.IPKey, (*Limiter).ClientKey) in ratelimit Middleware, MiddlewareByKey(nil), the auth battery's per-IP limiters and framework.AgentRateLimitKey"
+    breaking: true
+    hits: review
+    guidance: "One client could rotate source addresses inside its own /64 past every per-IP limit. Clients on one IPv6 LAN now share a budget, as clients behind one IPv4 NAT already do; raise MaxAttempts if a shared /64 legitimately sends more. ClientIP still returns the full address."
+    find:
+      uses:
+        - gofastr/framework/ratelimit.Limiter.Middleware
+        - gofastr/framework/ratelimit.Limiter.MiddlewareByKey
+        - gofastr/framework.AgentRateLimitKey
+  - change: "RefreshOAuthToken and ValidOAuthToken on a SQLOAuthTokenStore lease the grant before spending its refresh token, and can fail with auth.ErrOAuthRefreshInProgress when another replica's refresh does not land within 10 seconds; the store adds a refresh_lease_ms column to an existing table on first use"
+    breaking: true
+    hits: review
+    guidance: "Two replicas refreshing one grant both spent its refresh token, and a provider that detects reuse revoked the grant. Treat ErrOAuthRefreshInProgress as retryable: the token was not spent. The column is added automatically; nothing to migrate by hand."
+    find:
+      uses:
+        - gofastr/battery/auth.RefreshOAuthToken
+        - gofastr/battery/auth.ValidOAuthToken
   - change: "BREAKING - desktopui.Theme() is removed; it returned the macOS theme on every OS"
     breaking: true
     hits: edit
@@ -843,3 +956,127 @@ notes:
     breaking: false
     guidance: "Regenerate to pick it up. To keep record links, add an entity_detail screen at <list route>/{id}; a create: true list keeps its links."
     nodetect: "the change is in regenerated screen files; an app's Go source already generated is unaffected"
+  - change: "ui.AspectRatioComponent (empty or unknown Ratio), ui.Sticky (unknown Edge or Offset), ui.Box (unknown Pad) and ui.Center (MinHeight other than viewport or screen) panic, as Sticky's ZIndexTier already did"
+    breaking: false
+    guidance: "Each such value rendered a class with no rule: an AspectRatio with no ratio collapsed its media to 0px. Use the exported constants; the panic names the value."
+    nodetect: "only an invalid value panics, and a valid one is spelled with the exported constants"
+  - change: "A scalar filter key repeated in one query string (?status=a&status=b) is a 400 naming the key, LenientFilters included; only _in keys read every occurrence"
+    breaking: false
+    guidance: "Before, the first value ran and the rest were dropped. Send the key once, or use ?status_in=a,b."
+    nodetect: "the change is in request handling; nothing in an app's source spells the query strings clients send"
+  - change: "?where= decodes strictly: duplicate, case-folded or unknown members, values on a non-in leaf, both value and values on an in leaf, and an empty and/or group are 400s"
+    breaking: false
+    guidance: "Fix a client that sends extra or misspelled members."
+    nodetect: "the JSON comes from clients at request time"
+  - change: "Filter values Postgres cannot bind (invalid UTF-8 or NUL, a Decimal exponent past ±1000, a Timestamp or Date before year 1) are 400s on SQLite too"
+    breaking: false
+    guidance: "These answered 500 on Postgres and an empty 200 on SQLite."
+    nodetect: "the values come from clients at request time"
+  - change: "DSL queries: after() with an order() on another column or DESC, operators ?field_<op>= refuses (an ordered compare on a Bool, anything on a JSON column), more than 1000 in values, more than 16 order() calls and unbalanced unquoted brackets now error"
+    breaking: false
+    guidance: "Drop the order() beside after(); key a cursor walk on its own column."
+    nodetect: "DSL strings are assembled at runtime"
+  - change: "pagination.NewCursorPage returns ErrCursorKeyNull or ErrCursorKeyMissing when a page has more rows and the last row's cursor key is NULL or absent"
+    breaking: false
+    guidance: "It minted a cursor holding the text null, or HasMore with an empty cursor that restarted at page 1. Key the list on a NOT NULL column the query selects."
+    nodetect: "the error depends on row data"
+  - change: "_events drops rows a subscriber's BeforeList/BeforeGet hooks hide; a hook-restricted subscriber no longer receives hard deletes and should re-list"
+    breaking: false
+    guidance: "Matches what GET and the list answer that subscriber."
+    nodetect: "the change is in delivery; hooks are registered at runtime"
+  - change: "A cascade item or belongs_to reference onto an entity whose BeforeList/BeforeGet hooks add clauses answers 404 for a hidden or missing row"
+    breaking: false
+    guidance: "A hidden row was linkable and a hidden child's body was echoed."
+    nodetect: "hooks are registered at runtime"
+  - change: "A ?page= or ?offset= whose skip overflows int, or too long to parse, is 400 offset_too_large; an empty single-column caller-chosen key is 400"
+    breaking: false
+    guidance: "Both were served or stored before: page 1, and a row no record route could name."
+    nodetect: "the values come from clients at request time"
+  - change: "A RedirectPattern target that resolves to a control byte is no redirect (the request falls through, usually to a 404); WithExtraScripts drops an off-origin or malformed src with a warning"
+    breaking: false
+    guidance: "Serve such a script from the app, or load it from app code under a CSP that allows its host."
+    nodetect: "only a hostile catch-all value or an off-origin src is affected"
+  - change: "headless: StepWizard and Repeater render a leading hidden submit; TagInput with an ID names its field <ID>-field; a Repeater posts add/remove to Action; MenuItem.RPC, RPCAttrs data-cui-rpc, TreeNode.LazyPath, SortableList RPCPath/ConflictRPC and a static Combobox NoScriptAction panic unless same-origin; an Alert with DismissHref, no Title or Text and no DismissLabel panics; class maps should map the new PartComboboxMeta (it used to get the option class) and never give PartDefaultAction a display"
+    breaking: false
+    guidance: "New API: PartDefaultAction, PartComboboxMeta, Ctx on MultiSelectProps/NumberInputProps/SliderProps/RangeSliderProps/RatingProps/TagInputProps, PaneHostProps.Strings, ui.PaneHostConfig.Ctx, Strings CarouselRole/CarouselSlideRole/PaneSecondary/PaneTertiary. An e2e selector such as button[name=\"wizard_action\"][value=\"next\"] now also matches the hidden default twin first; add :not([hidden]). A catalog that must hold every ui.* key adds ui.carousel.role, ui.carousel.slideRole, ui.paneHost.secondary, ui.paneHost.tertiary and ui.copy.failed."
+    nodetect: "markup and refusals depend on values set at render time"
+  - change: "A plain disclosure (an accordion section) no longer closes on a link click inside it or on an Escape from outside it; only Dismiss, Trap and menu disclosures do"
+    breaking: false
+    guidance: "Give a disclosure Dismiss if it should close when a link inside it is followed."
+    nodetect: "the behaviour is in the browser runtime"
+  - change: "BREAKING - filter.SearchConditions returns ([]Condition, error); a ?q= term that is not storable text (invalid UTF-8 or a NUL) is an error, and the list route answers 400"
+    breaking: true
+    hits: edit
+    guidance: "Take the error: conds, err := filter.SearchConditions(fields, term), and answer 400 when it is non-nil. Postgres refused such a term with a 500 while SQLite answered an empty 200."
+    find:
+      shapes:
+        - symbol: gofastr/framework/filter.SearchConditions
+          type: '^func\(fields \[\]string, term string\) \(\[\]filter\.Condition, error\)$'
+  - change: "BREAKING - a BeforeGet hook that hides a row now also blocks writes to it: PUT, PATCH, DELETE, transitions, _batch items, restore and purge answer 404 (in process only under crud.WithReadHooks), and BeforeGet hooks run inside the write transaction"
+    breaking: true
+    guidance: "If a hook hides rows from callers who still need to write them, move that rule to Access permissions or stop hiding the row. A hook that reads the database must use the ctx it is given (framework.TxFromContext), not a separate pool connection, or it can deadlock on a one-connection pool."
+    nodetect: "hooks are registered and decide at runtime"
+  - change: "BREAKING - a filter key that reads two ways (one field's name and another field's name plus a suffix, check_in beside check) is a 400 filter.ambiguous_filter on every surface, LenientFilters included; entities may now declare such a pair, which registration used to refuse"
+    breaking: true
+    guidance: "Send ?check[in]= for the operator on check, ?check_in[eq]= for equality on check_in. Regenerate the OpenAPI document, CLI and SDK: those keys are spelled in bracket form."
+    nodetect: "query strings come from clients at request time"
+  - change: "Decimal writes are checked against the column: an exponent past ±1000, more than 15 integer or 4 fraction digits on a default decimal field (or past a RawType DECIMAL(p,s)) is a 400; a decimal Default past the scale fails at registration"
+    breaking: false
+    guidance: "Round to the column's scale before sending, or declare a wider column with RawType NUMERIC(p,s). Rows already stored past the column on SQLite still read back."
+    nodetect: "values come from clients at request time"
+  - change: "A malformed JSON body's error text names the JSON path and type instead of Go types; reason codes are unchanged"
+    breaking: false
+    guidance: "A client or test that parsed the old text (cannot unmarshal, invalid character, unexpected EOF) should branch on reason or expect the new phrase."
+    nodetect: "the wording is produced at request time"
+  - change: "A non-GET request to a screen path answers 405 with Allow: GET, HEAD instead of rendering the page; OPTIONS answers 204"
+    breaking: false
+    guidance: "Point a form's action at a handler registered for its method, or register the page for that method with r.Post(path, host.PageHandler(path))."
+    nodetect: "forms and clients that post to page URLs live in templates and other sites"
+  - change: "Generated CLIs: --<field> a,b on a list command filters with IN (<field>_in=a,b)"
+    breaking: false
+    guidance: "Filter on a literal comma with --param <field>=a,b; re-run gofastr generate to refresh committed *.gen.go."
+    nodetect: "the change is in generated code"
+  - change: "ui.FormRepeater's private --ui-form-repeater-action-min-height knob is removed; its Remove and Add are kit buttons"
+    breaking: false
+    guidance: "Set button density through the theme's button tokens instead."
+    nodetect: "a CSS custom property set in a stylesheet"
+  - change: "BREAKING - headless.RangeSliderProps and ui.RangeSliderConfig ValueLow / ValueHigh are *int (were int): nil is the unset end (low on Min, high on Max), and any set value is honoured, so a 0..0 pair renders as posted instead of widening to Min..Max"
+    breaking: true
+    hits: edit
+    guidance: "Both zero used to mean unset, so a real 0..0 range could not round-trip. Take the address of a set value: ValueLow: new(20), ValueHigh: new(80) (or &lo, &hi from posted values). Drop a pair you set only to mean the whole range: nil already means Min..Max. A posted value still clamps into Min..Max and a crossed pair still renders ordered."
+    find:
+      shapes:
+        - symbol: gofastr/framework/headless.RangeSliderProps.ValueLow
+          type: '^int$'
+        - symbol: gofastr/framework/headless.RangeSliderProps.ValueHigh
+          type: '^int$'
+        - symbol: gofastr/framework/ui.RangeSliderConfig.ValueLow
+          type: '^int$'
+        - symbol: gofastr/framework/ui.RangeSliderConfig.ValueHigh
+          type: '^int$'
+  - change: "BREAKING - the password reveal button is a toggle button with one name: headless.Strings.HidePassword and RevealHide, i18nui.PasswordInputHide and PasswordRevealHide, and the data-hui-show-label / -hide-label / -show-text / -hide-text hooks are removed"
+    breaking: true
+    hits: edit
+    guidance: "The reveal button's name (Strings.ShowPassword) and visible word (Strings.RevealShow) no longer change; aria-pressed says whether the password shows, and ui.PasswordInput paints the pressed state. Delete any HidePassword / RevealHide you set on a Strings, and the ui.passwordInput.hide and ui.passwordInput.revealHide entries from your catalogs. A stylesheet or script keyed on the removed hooks keys on [data-hui-reveal][aria-pressed=true] instead."
+    find:
+      uses:
+        - gofastr/framework/headless.Strings.HidePassword
+        - gofastr/framework/headless.Strings.RevealHide
+        - gofastr/framework/i18nui.PasswordInputHide
+        - gofastr/framework/i18nui.PasswordRevealHide
+      strings:
+        match: 'data-hui-(show|hide)-(label|text)|ui\.passwordInput\.(hide|revealHide)'
+  - change: "A ToggleAction's accessible name is its IdleLabel in both states (rendered as aria-label unless the caller set one); aria-pressed carries the state and only the visible label flips"
+    breaking: false
+    guidance: "Keep the idle label's words inside CommittedLabel (Follow / Following) so a voice user who reads the button aloud still matches its name. A test that read the committed button's name as the CommittedLabel reads the IdleLabel now."
+    nodetect: "the change is in rendered markup; the source that configures a ToggleAction is unchanged"
+  - change: "headless.Rating renders its choices in reading order (1..Max); ui.RatingInput fills stars with :has() instead of a reverse-order ~ cascade"
+    breaking: false
+    guidance: "Arrow keys now move the way the stars read. A stylesheet that filled headless.Rating stars with input:checked ~ label relied on the reverse order: fill a choice with label:has(~ input:checked) and the checked one with input:checked + label."
+    find:
+      strings:
+        match: ':checked[[:space:]]*~'
+  - change: "Derived ids keep non-ASCII letters: a ui.Section anchor and the headless Section, Table and Fieldset ids (and segmented, toggle, tooltip and filter-toolbar option ids) keep every script's letters and digits, lowercased, instead of dropping them"
+    breaking: false
+    guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
+    nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"

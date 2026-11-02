@@ -332,9 +332,9 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 		UserStore:           users,
 		SessionStore:        sessions,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twofaRows}))
-	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{TokenStore: magicLinks, DevMode: true}))
+	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{TokenStore: magicLinks, DevMode: true, TwoFactorURL: "/login/2fa"}))
 	// Non-canonical names, so only the configured-store wiring reaches them.
 	passkeys, err := NewSQLPasskeyStore(db, "passkeys")
 	if err != nil {

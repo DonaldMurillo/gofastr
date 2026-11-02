@@ -106,6 +106,10 @@ type StateChannel[Role comparable, Snapshot any, Event any] struct {
 
 	mu    sync.RWMutex
 	conns map[*WebSocketConn]Role
+	// watchers holds the stop channel of each registered connection's
+	// close watcher, guarded by mu; Unregister closes it so the watcher
+	// exits with the registration instead of with the connection.
+	watchers map[*WebSocketConn]chan struct{}
 
 	// queue is the job FIFO, guarded by qmu; wake (capacity 1) tells
 	// the Run loop it is non-empty. A slice rather than a buffered
@@ -199,10 +203,11 @@ func NewStateChannel[Role comparable, Snapshot any, Event any](
 	source SnapshotSource[Role, Snapshot, Event],
 ) *StateChannel[Role, Snapshot, Event] {
 	return &StateChannel[Role, Snapshot, Event]{
-		source: source,
-		conns:  make(map[*WebSocketConn]Role),
-		wake:   make(chan struct{}, 1),
-		stop:   make(chan struct{}),
+		source:   source,
+		conns:    make(map[*WebSocketConn]Role),
+		watchers: make(map[*WebSocketConn]chan struct{}),
+		wake:     make(chan struct{}, 1),
+		stop:     make(chan struct{}),
 	}
 }
 
@@ -309,6 +314,10 @@ func (c *StateChannel[Role, Snapshot, Event]) Unregister(conn *WebSocketConn) {
 	c.mu.Lock()
 	if c.conns != nil {
 		delete(c.conns, conn)
+	}
+	if stop, ok := c.watchers[conn]; ok {
+		close(stop)
+		delete(c.watchers, conn)
 	}
 	c.mu.Unlock()
 }
@@ -434,11 +443,29 @@ func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Sna
 		return
 	}
 	c.conns[job.conn] = job.role
+	// One close watcher per registration: a reconnect under a new role
+	// keeps the running one, and Unregister stops it, so a connection
+	// that is unregistered and connected again leaves no goroutine
+	// behind.
+	var stop chan struct{}
+	if _, watched := c.watchers[job.conn]; !watched {
+		if c.watchers == nil {
+			c.watchers = make(map[*WebSocketConn]chan struct{})
+		}
+		stop = make(chan struct{})
+		c.watchers[job.conn] = stop
+	}
 	c.mu.Unlock()
-	go func() {
-		<-job.conn.Closed()
-		c.Unregister(job.conn)
-	}()
+	if stop != nil {
+		go func(conn *WebSocketConn) {
+			select {
+			case <-conn.Closed():
+				c.Unregister(conn)
+			case <-stop:
+			case <-c.stop:
+			}
+		}(job.conn)
+	}
 
 	data, err := json.Marshal(SequencedEnvelope[Snapshot]{
 		Sequence: seq,
@@ -446,10 +473,18 @@ func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Sna
 		Payload:  snap,
 		SentAt:   time.Now(),
 	})
+	var msg wsMessage
+	if err == nil {
+		// json.Marshal passes a json.RawMessage or a Marshaler's
+		// bytes through without a UTF-8 check, and the envelope goes
+		// out as a text frame a browser fails the connection over.
+		msg, err = textMessage(data)
+	}
 	if err != nil {
-		// The snapshot does not serialize; this connection can never
-		// hydrate. Close it so the client reconnects and the failure
-		// surfaces, rather than leaving a silently blind connection.
+		// The snapshot does not serialize to valid UTF-8 JSON; this
+		// connection can never hydrate. Close it so the client
+		// reconnects and the failure surfaces, rather than leaving a
+		// silently blind connection.
 		go job.conn.Close()
 		return
 	}
@@ -457,7 +492,7 @@ func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Sna
 	case <-job.conn.Closed():
 	default:
 		select {
-		case job.conn.sendBuffer <- data:
+		case job.conn.sendBuffer <- msg:
 		default:
 			// Buffer full: the connection cannot accept hydration, and
 			// every later event is newer than the snapshot it missed.
@@ -546,6 +581,12 @@ func (c *StateChannel[Role, Snapshot, Event]) deliver(conns []*WebSocketConn, ro
 		Payload:  payload,
 		SentAt:   time.Now(),
 	})
+	var msg wsMessage
+	if err == nil {
+		// A RawMessage or Marshaler can carry bytes that are not
+		// UTF-8; as a text frame they would fail every connection.
+		msg, err = textMessage(data)
+	}
 	if err != nil {
 		// An event the source cannot serialize is dropped for this role;
 		// the snapshot path is where an unserializable payload is fatal.
@@ -554,7 +595,7 @@ func (c *StateChannel[Role, Snapshot, Event]) deliver(conns []*WebSocketConn, ro
 	for _, conn := range conns {
 		select {
 		case <-conn.Closed():
-		case conn.sendBuffer <- data:
+		case conn.sendBuffer <- msg:
 		default:
 			// Buffer full: drop for this connection, as Hub.Run does,
 			// or close it when the source asked (CloseOnOverflow).

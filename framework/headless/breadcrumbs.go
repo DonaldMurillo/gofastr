@@ -30,7 +30,9 @@ type Breadcrumb struct {
 	Text string
 	// Href is the step's destination. Empty on the last step (the
 	// current page names itself, it does not link to itself); a value
-	// on the last step links it unless Current is also set.
+	// on the last step links it unless Current is also set. Empty on a
+	// middle step renders plain text that is not the current page (a
+	// grouping level with no page of its own).
 	Href string
 	// Current marks the step as the current page whatever its Href:
 	// rendered as text with aria-current="page" rather than a link,
@@ -81,11 +83,12 @@ func Breadcrumbs(p BreadcrumbsProps, s Classes) render.HTML {
 		// A dangerous Href (javascript:, vbscript:, data:, a
 		// protocol-relative host, a smuggled control byte) is dropped
 		// and the step degrades to plain text rather than a clickable
-		// XSS vector. A step with no Href is the current page; a
-		// refused Href is plain text but not current, so the trail
-		// keeps exactly one current step.
+		// XSS vector. The LAST step with no Href is the current page;
+		// a middle step with none (a grouping level with no page of its
+		// own) and a refused Href are plain text but not current, so
+		// the trail keeps exactly one current step.
 		href := urlsafe.CleanAnchor(c.Href)
-		current := c.Current || c.Href == ""
+		current := c.Current || (c.Href == "" && i == len(p.Items)-1)
 		refused := !current && href == ""
 		kids := []render.HTML{}
 		if i > 0 {

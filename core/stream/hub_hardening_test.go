@@ -3,6 +3,7 @@ package stream
 import (
 	"bytes"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestHubStopFastWithSlowClose(t *testing.T) {
 	// One slow-closing conn
 	slow := &WebSocketConn{
 		conn:       &blockingClose{closed: make(chan struct{}), release: release},
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		config:     WSConfig{},
 	}
@@ -160,3 +161,48 @@ func TestHubAllUnregisterOnMassClose(t *testing.T) {
 
 // ensure unused import safety
 var _ = bytes.NewReader
+
+// Property: Unregister stops the close watcher Register started. The
+// watcher used to wait for the connection to close and nothing else,
+// so every room move of a live connection (Unregister from one hub,
+// Register on another) left one goroutine behind until it closed.
+func TestHubUnregisterStopsCloseWatcher(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	defer hub.Stop()
+	conn := newTestConn()
+
+	runtime.GC()
+	base := runtime.NumGoroutine()
+	for range 500 {
+		hub.Register(conn)
+		hub.Register(conn) // a repeat Register adds no second watcher
+		hub.Unregister(conn)
+	}
+	if grew := goroutineGrowth(base, 20); grew > 20 {
+		t.Fatalf("500 register/unregister cycles on one live conn left %d goroutines behind", grew)
+	}
+	// The watcher still does its job for a registered connection.
+	hub.Register(conn)
+	go conn.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for hub.Count() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("closed conn was never unregistered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// goroutineGrowth reports how many goroutines more than base are
+// running, giving exiting ones up to a second to get under limit.
+func goroutineGrowth(base, limit int) int {
+	deadline := time.Now().Add(time.Second)
+	for {
+		grew := runtime.NumGoroutine() - base
+		if grew <= limit || time.Now().After(deadline) {
+			return grew
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

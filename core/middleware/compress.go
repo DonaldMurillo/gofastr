@@ -40,9 +40,10 @@ const (
 //
 // The gzip representation gets its own entity tag: a strong "x"
 // becomes "x-gzip" (weak tags keep their W/ prefix). An If-None-Match
-// naming the gzip tag is rewritten back to the handler's tag before
-// the handler runs, so a handler's own ETag comparison still answers
-// 304, and the 304 echoes the gzip tag.
+// or If-Match naming the gzip tag is rewritten back to the handler's
+// tag before the handler runs, so a handler's own ETag comparison still
+// answers 304 (which echoes the gzip tag), and a conditional write that
+// names the tag the client was handed is not refused with 412.
 //
 // A Flush from the handler flushes the gzip stream, so progressive
 // rendering keeps painting. A body under a strong ETag is held until
@@ -72,6 +73,14 @@ func Compress() Middleware {
 					revalidatingGzip = true
 					//gofastr:allow(controlbytes) rewrites the inbound request's own header, already CTL-checked by net/http; it never reaches a response or a log.
 					r.Header.Set("If-None-Match", stripGzipETags(inm))
+				}
+				// If-Match too: a client that read the gzip representation
+				// echoes its tag on the PUT that follows, and the handler
+				// compares against its own tag, so without the rewrite every
+				// optimistic-concurrency write from that client was 412.
+				if im := r.Header.Get("If-Match"); strings.Contains(im, gzipETagSuffix) {
+					//gofastr:allow(controlbytes) rewrites the inbound request's own header, already CTL-checked by net/http; it never reaches a response or a log.
+					r.Header.Set("If-Match", stripGzipETags(im))
 				}
 			}
 			cw := &compressWriter{rw: w, accepts: accepts, revalidatingGzip: revalidatingGzip, status: http.StatusOK}
@@ -143,8 +152,8 @@ func acceptsGzip(header string) bool {
 	return starQ > 0
 }
 
-// stripGzipETags turns every gzip entity tag in an If-None-Match list
-// back into the handler's tag ("x-gzip" → "x").
+// stripGzipETags turns every gzip entity tag in an If-None-Match or
+// If-Match list back into the handler's tag ("x-gzip" → "x").
 func stripGzipETags(inm string) string {
 	return strings.ReplaceAll(inm, gzipETagSuffix, `"`)
 }
@@ -537,6 +546,9 @@ func (w *compressWriter) abort() bool {
 type abortedStream struct{ v any }
 
 func (a abortedStream) Error() string { return fmt.Sprint(a.v) }
+
+// Unwrap hands an outer recover the handler's own error.
+func (a abortedStream) Unwrap() error { e, _ := a.v.(error); return e }
 
 // addVary appends a token to Vary unless it is already listed.
 func addVary(h http.Header, token string) {

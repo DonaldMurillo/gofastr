@@ -387,7 +387,7 @@ func (f *sentinelFiller) value(t reflect.Type, depth int) reflect.Value {
 // zero (its default), and every other field gets distinct text, so
 // optional text parts render and ids stay unique.
 func (f *sentinelFiller) stringFor(field string) string {
-	for _, suf := range []string{"Endpoint", "Action", "Href", "URL", "Src", "Path"} {
+	for _, suf := range []string{"Endpoint", "Action", "Href", "URL", "Src", "Path", "RPC"} {
 		if strings.HasSuffix(field, suf) {
 			return "/x"
 		}
@@ -395,7 +395,7 @@ func (f *sentinelFiller) stringFor(field string) string {
 	switch field {
 	case "Tone", "Direction", "State", "Type", "Align", "Method", "TitleTag", "ZIndexTier",
 		"GroupMarkup", "Machine", "Variant", "Radio", "Mode", "Collapse", "Attr",
-		"DismissMethod", "DismissBody":
+		"DismissMethod", "DismissBody", "MinHeight":
 		return ""
 	}
 	f.texts++
@@ -642,7 +642,7 @@ var kitComponents = []kitComponent{
 	{name: "ActionList", fn: ActionList, prep: prepSet("Items", []ActionListItem{{Label: "Account", Href: "/account"}})},
 	{name: "AnchoredRail", fn: AnchoredRail},
 	{name: "AnimatedCounter", fn: AnimatedCounter},
-	{name: "AspectRatioComponent", fn: AspectRatioComponent},
+	{name: "AspectRatioComponent", fn: AspectRatioComponent, prep: prepSet("Ratio", AspectRatio16_9)},
 	{name: "AuthCard", fn: AuthCard},
 	{name: "Avatar", fn: Avatar},
 	{name: "AvatarGroup", fn: AvatarGroup},
@@ -730,6 +730,8 @@ var kitComponents = []kitComponent{
 		prepZero("TriggerHTML", "TriggerElement", "IconOnly", "Icon")(args)
 	}},
 	{name: "MetricBand", fn: MetricBand},
+	{name: "DatePicker", fn: DatePicker, prep: prepDatePicker},
+	{name: "DatePickerMonth", fn: DatePickerMonth, prep: prepDatePicker},
 	{name: "MultiSelect", fn: MultiSelect},
 	{name: "Muted", fn: Muted},
 	{name: "NetworkRetryBanner", fn: NetworkRetryBanner},
@@ -864,6 +866,8 @@ var kitComponents = []kitComponent{
 	{name: "headless.JSONTree", fn: headless.JSONTree},
 	{name: "headless.LightboxViewer", fn: headless.LightboxViewer},
 	{name: "headless.Menu", fn: headless.Menu, prep: prepSet("Href", "", "RPC", "", "Action", nil, "RPCAttrs", nil, "Copy", nil)},
+	{name: "headless.DatePicker", fn: headless.DatePicker, prep: prepDatePicker},
+	{name: "headless.DatePickerMonth", fn: headless.DatePickerMonth, prep: prepDatePicker},
 	{name: "headless.MultiSelect", fn: headless.MultiSelect},
 	{name: "headless.NotificationBell", fn: headless.NotificationBell, prep: prepSet("Attr", "")},
 	{name: "headless.NumberInput", fn: headless.NumberInput},
@@ -912,4 +916,16 @@ var kitComponents = []kitComponent{
 	{name: "headless.ToolbarSpacer", fn: headless.ToolbarSpacer},
 	{name: "headless.Tree", fn: headless.Tree},
 	{name: "headless.ValidationSummary", fn: headless.ValidationSummary},
+}
+
+// prepDatePicker gives the reflection-filled picker the shape it
+// renders with: a single date (the filled Range would ask for two
+// names and refuse the single Name), real dates where dates go, a
+// same-origin endpoint and path, a valid weekday, and no field control
+// whose id would not be the input's.
+func prepDatePicker(args []reflect.Value) {
+	prepSet("Range", nil, "Control", nil, "WeekStart", nil, "Value", "2026-11-05",
+		"Month", "2026-11", "Today", "2026-11-02", "Min", "", "Max", "", "Days", nil,
+		"Endpoint", "/island/cal", "Path", "", "Query", nil,
+		"Island", headless.Island{Endpoint: "/island/cal", Signal: "cal"})(args)
 }

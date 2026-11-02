@@ -57,36 +57,40 @@ func TestEnumJSONSchemaOwnsValues(t *testing.T) {
 	}
 }
 
+// wideBoundColumn holds every value the bound tests below probe, so the
+// bound decides rather than the default DECIMAL(19,4) column.
+const wideBoundColumn = "NUMERIC(60,20)"
+
 // An integral bound written as a short decimal is that decimal, not its
 // binary expansion: Min 1e30 was 1000000000000000019884624838656, so
 // "1e30" itself failed the minimum (C22).
 func TestDecimalShortIntegralBoundAsWritten(t *testing.T) {
 	b := 1e30
-	if e := Validate(Field{Type: Decimal, Min: &b, Max: &b}, "1e30"); e != nil {
+	if e := Validate(Field{Type: Decimal, RawType: wideBoundColumn, Min: &b, Max: &b}, "1e30"); e != nil {
 		t.Fatal(e)
 	}
-	if Validate(Field{Type: Decimal, Max: &b}, "1000000000000000000000000000001") == nil {
+	if Validate(Field{Type: Decimal, RawType: wideBoundColumn, Max: &b}, "1000000000000000000000000000001") == nil {
 		t.Fatal("accepted a value above Max 1e30")
 	}
 	// Fifteen digits are still as written; the exponent is not a digit.
 	wide := 1.23456789012345e20
-	if e := Validate(Field{Type: Decimal, Min: &wide, Max: &wide}, "123456789012345000000"); e != nil {
+	if e := Validate(Field{Type: Decimal, RawType: wideBoundColumn, Min: &wide, Max: &wide}, "123456789012345000000"); e != nil {
 		t.Fatal(e)
 	}
 	// A fraction keeps its shortest spelling at any length.
 	sum := 0.1
 	sum += 0.2
-	if e := Validate(Field{Type: Decimal, Min: &sum, Max: &sum}, "0.30000000000000004"); e != nil {
+	if e := Validate(Field{Type: Decimal, RawType: wideBoundColumn, Min: &sum, Max: &sum}, "0.30000000000000004"); e != nil {
 		t.Fatal(e)
 	}
 }
 
 func TestDecimalIntegralBoundPreservesExactInteger(t *testing.T) {
 	b := math.Exp2(60)
-	if Validate(Field{Type: Decimal, Max: &b}, "1152921504606846977") == nil {
+	if Validate(Field{Type: Decimal, RawType: wideBoundColumn, Max: &b}, "1152921504606846977") == nil {
 		t.Fatal("accepted amount above exact integer cap")
 	}
-	if e := Validate(Field{Type: Decimal, Min: &b, Max: &b}, "1152921504606846976"); e != nil {
+	if e := Validate(Field{Type: Decimal, RawType: wideBoundColumn, Min: &b, Max: &b}, "1152921504606846976"); e != nil {
 		t.Fatal(e)
 	}
 }

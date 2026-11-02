@@ -82,7 +82,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// relation onto an owner/tenant-scoped entity is a write-side trust
 	// boundary exactly as ?include= is a read-side one (issue: order_items
 	// targeting another customer's order).
-	if err := ch.checkBelongsToScope(ctx, ch.createWrite(ctx, body)); err != nil {
+	if err := ch.checkBelongsToScope(ctx, r, ch.createWrite(ctx, body)); err != nil {
 		return nil, err
 	}
 	// The state field starts at an Initial value and no stamp is set
@@ -214,6 +214,11 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			return nil, err
 		}
 	}
+	// A row the caller's BeforeGet hooks hide answers GET's 404, before
+	// anything else reads or writes it (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+		return nil, err
+	}
 	// A storage key in a file field must be one this request uploaded or
 	// one already on this row (media_provenance.go).
 	idKey, _ := ch.idVals(id)
@@ -280,7 +285,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err != nil {
 		return nil, err
 	}
-	if err := ch.checkBelongsToScope(ctx, w); err != nil {
+	if err := ch.checkBelongsToScope(ctx, r, w); err != nil {
 		return nil, err
 	}
 
@@ -406,7 +411,20 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 // writes and owns the reference. A NULL/absent FK, an unscoped target,
 // or a target the registry does not know is skipped — no registry means
 // no read-side resolver either.
-func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error {
+//
+// relationReachable is NOT applied here, unlike checkTargetRowScope's
+// many_to_many link, and on purpose. It refuses every row of a target
+// with Exposure.CRUD=false, or one whose "<table>:read" a held-scope
+// token lacks, so an ordinary reference (posts.author_id onto auth's
+// users, CRUD off by default; an items-only token filing an item under
+// its own order) would stop working. An m2m link writes a pivot row, a
+// generated write surface onto the target; an FK is a column of the
+// caller's own row, and the write returns that row, never the target's
+// fields. Nor is it an oracle: a scoped target answers the same 404 for
+// a hidden row and a missing one, and an unscoped target is not looked
+// up, so both write. TestBelongsToFKSkipsRelationReachableOnPurpose pins
+// this.
+func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request, w fkWrite) error {
 	if err := ch.checkForeignKeyTuples(w); err != nil {
 		return err
 	}
@@ -457,6 +475,9 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 		}
 		hasReadScope := len(readScopeFilters(ctx, target)) > 0
 		if target.Config.Scope.OwnerField == "" && !target.Config.Scope.MultiTenant && !target.Config.Scope.SoftDelete && !hasReadScope {
+			if err := ch.belongsToHookScope(ctx, r, rel, target, raws, fk); err != nil {
+				return err
+			}
 			continue
 		}
 		table, err := query.SafeIdent(target.GetTable())
@@ -497,6 +518,27 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 			}
 			return fmt.Errorf("relation %q target lookup: %w", rel.Name, err)
 		}
+		if err := ch.belongsToHookScope(ctx, r, rel, target, raws, fk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// belongsToHookScope refuses a reference onto a row the target's own
+// Before hooks hide from this caller (BeforeList, plus BeforeGet with the
+// row's id, as ?include= over a belongs_to applies them) with the
+// not-found a row outside its declared scopes answers. raws are the
+// reference's key values in the target's key order.
+func (ch *CrudHandler) belongsToHookScope(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, raws []any, fk string) error {
+	vals := make([]any, len(raws))
+	for i, c := range target.KeyColumns() {
+		if i < len(raws) {
+			vals[i] = coercePKValue(ch.Registry, target, c, raws[i])
+		}
+	}
+	if ch.childScopeHidesKey(ctx, r, target, rel, vals, fk) {
+		return fmt.Errorf("%w: relation %q target %s/%s is not readable by this caller", errNotFound, rel.Name, rel.Entity, fk)
 	}
 	return nil
 }
@@ -817,7 +859,10 @@ func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any
 // a row an HTTP write just committed (2026-10-27 D4). readScopeHidesRow
 // covers the declared ReadScope; an app that scopes reads with a BeforeGet
 // hook and grants writes more widely handed a writer every column of a row
-// GET answers 404 for, a no-op PATCH being enough to read it.
+// GET answers 404 for, a no-op PATCH being enough to read it. A write to a
+// row the hook already hides now answers 404 before it runs
+// (refuseHiddenTarget); this still covers a create, and a write that moves
+// its row out of the caller's sight.
 //
 // The write routes call it after commit, outside the transaction, where
 // GET would run the chain: a hook that reads the database would otherwise
@@ -832,22 +877,7 @@ func (ch *CrudHandler) getScopeHidesRow(r *http.Request, row map[string]any) boo
 		return true
 	}
 	id, _ := ch.rowID(row)
-	ctx := r.Context()
-	payload := &hook.GetPayload{Request: r, ID: id}
-	if err := runHooks(ch.Hooks, ctx, hook.BeforeGet, payload); err != nil {
-		return true
-	}
-	if len(payload.Where) == 0 {
-		return false
-	}
-	kc, ka := ch.keyCond(vals)
-	qb := query.Select(ch.keyCols()[0]).From(ch.Entity.GetTable()).Where(kc, ka...)
-	for _, c := range payload.Where {
-		qb.Where(c.SQL, c.Args...)
-	}
-	sqlStr, args := qb.Build()
-	var hit any
-	return ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(&hit) != nil
+	return ch.hookScopeHidesKey(r.Context(), r, vals, id, false)
 }
 
 // scopedReadBack returns row, or only its id when the caller's read scope
@@ -878,6 +908,11 @@ func autoUpdatedAtColumn(ent *entity.Entity) string {
 // doDelete runs the BeforeDelete → DELETE/UPDATE → AfterDelete chain for a
 // single record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string) error {
+	// A row the caller's BeforeGet hooks hide answers GET's 404
+	// (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+		return err
+	}
 	// Snapshot the row before deletion so the audit hook can record what
 	// went away. Without this the audit row only carries a record_id,
 	// useful for "who did it" but useless for "what was lost".
