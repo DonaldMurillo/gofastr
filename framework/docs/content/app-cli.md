@@ -77,7 +77,9 @@ Per verb:
   the cursor line and API error lines drop control bytes (C0 but tab,
   DEL and C1) and the bidi overrides and zero-width characters that
   reorder or hide text, so a stored `\x1b[2J` cannot clear the reader's
-  screen and a `U+202E` cannot flip a column. JSON
+  screen and a `U+202E` cannot flip a column. A cell holding an object
+  or array prints it as compact JSON, and a tab or line break in a value
+  prints as a space, so every row stays on one line. JSON
   output keeps numbers exact: a value past 2^53 in a `--json` body, a
   json-field flag or a response prints with every digit.
 - **create / update / patch**: per-field flags OR `--json`

@@ -1646,12 +1646,30 @@ func printListTable(headers, keys []string, rows []map[string]any) {
 		cells := make([]string, len(keys))
 		for i, k := range keys {
 			if v, ok := row[k]; ok && v != nil {
-				cells[i] = scrubTerminal(fmt.Sprintf("%v", v))
+				cells[i] = tableCell(v)
 			}
 		}
 		fmt.Fprintln(w, strings.Join(cells, "\t"))
 	}
 	w.Flush()
+}
+
+// tableCell is one table cell's text: an object or array in its compact
+// JSON spelling (fmt's %v printed a Go map[a:[1 2]]), each tab and line
+// break a space, so a multi-line value keeps its words apart and a tab
+// does not open a column of its own, then scrubbed for the terminal.
+func tableCell(v any) string {
+	s := fmt.Sprintf("%v", v)
+	switch v.(type) {
+	case map[string]any, []any:
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if enc.Encode(v) == nil {
+			s = strings.TrimSuffix(buf.String(), "\n")
+		}
+	}
+	return scrubTerminal(strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(s))
 }
 
 // apiFail prints err and maps it to an exit code: 4 for auth failures

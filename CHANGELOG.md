@@ -533,6 +533,9 @@ few lines, and link the PR or the docs page for the rest.
     `login --url`, `--url`, `<BINARY>_URL` or the stored config. `login
     --url 127.0.0.1:8080` stored it, and every later call failed on a
     URL parse error with the stored token withheld.
+  - `list -o table` prints a json field's object or array as JSON and a
+    tab or line break as a space. It printed Go's `map[a:[1 2]]`, glued
+    `line1\nline2` into `line1line2`, and a tab opened a phantom column.
 - **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
   in [app-cli.md](framework/docs/content/app-cli.md):
   - **BREAKING: an acronym is one word in command and flag names.**
