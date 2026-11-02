@@ -292,6 +292,7 @@
     if (guardBusy) _rpcBusy.add(node);
     node.classList.add('cui-loading');
     node.setAttribute('aria-busy', 'true');
+    let answered = false; // a later throw is no network failure
     try {
       if (!NS._originOK(resolvedPath)) return;
       const r = await fetch(NS._lp?.(resolvedPath) ?? resolvedPath, {
@@ -301,6 +302,7 @@
         signal: ctl.signal,
         credentials: 'same-origin',
       });
+      answered = true;
       if (stale()) return;
       // fetch followed a 3xx (an expired session sends the action to the
       // sign-in page), so this 200 is another URL's answer, not the
@@ -445,12 +447,11 @@
       }
     } catch (err) {
       if ((err && err.name === 'AbortError') || stale()) return;
-      // A form never fails silently: a refusal paints its fields, a
-      // redirect toasts, and a fetch that never answered (offline, a
-      // dropped connection) toasts too, with or without an opted-in
-      // title. The leave guard keeps the edits unsaved.
-      if (formSource) formResult(formSource, false);
-      if (formSource || errToast !== null) {
+      // A form fetch that never answered (offline) toasts, opted in or
+      // not, and the leave guard keeps the edits unsaved.
+      const lost = formSource && !answered;
+      if (lost) formResult(formSource, false);
+      if (lost || errToast !== null) {
         NS._toastOrFallback?.({ variant: 'error', title: errToast || NS.say('runtime.request_failed', 'Request failed'), body: NS.say('runtime.network_error', 'Network error: please try again'), ttl: 6000 });
       }
       if (responseSignal) {

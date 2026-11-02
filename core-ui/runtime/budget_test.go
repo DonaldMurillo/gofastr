@@ -1695,7 +1695,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// without opting in to data-cui-rpc-error-toast (2026-11-02,
 		// TestDispatchRPC_FormNetworkErrorIsNotSilent): an offline submit
 		// did nothing at all. The catch arm is this dispatcher's.
-		"rpc": 3718,
+		// 3747 measured (3745 + 2) after that report is limited to a
+		// fetch that never answered (2026-11-02,
+		// TestDispatchRPC_FormAnsweredSaveIsNotANetworkError): a 2xx with
+		// an unparsable body threw into the same catch and toasted
+		// "Network error" over a save the server committed.
+		"rpc": 3747,
 	}
 	const coreOverride = 0
 

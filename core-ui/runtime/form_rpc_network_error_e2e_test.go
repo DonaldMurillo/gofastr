@@ -90,3 +90,62 @@ func TestDispatchRPC_FormNetworkErrorIsNotSilent(t *testing.T) {
 		})
 	}
 }
+
+// TestDispatchRPC_FormAnsweredSaveIsNotANetworkError: the network-error
+// toast and the failed form result belong to a fetch that never
+// answered. A 2xx whose JSON body does not parse (a saved record answered
+// with no body under a JSON content type) threw from the same try after
+// the form had already reported ok, so the user saw "Network error" for a
+// save the server committed and the leave guard kept the edits unsaved.
+func TestDispatchRPC_FormAnsweredSaveIsNotANetworkError(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(js))
+	})
+	mux.HandleFunc("/__gofastr/runtime/", func(w http.ResponseWriter, r *http.Request) {
+		src, ok := Module(strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/__gofastr/runtime/"), ".js"))
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(src))
+	})
+	mux.HandleFunc("/rpc/save", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK) // saved; no body
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><head><title>net</title></head><body>
+<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <input id="title" name="title" value="x"><button type="submit">Save</button>
+</form><script src="/__gofastr/runtime.js"></script></body></html>`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	var got string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#f`, chromedp.ByID),
+		chromedp.Evaluate(`(() => {
+  window.__toasts = []; window.__results = [];
+  document.addEventListener('gofastr:formresult', (e) => window.__results.push(e.detail.ok));
+  window.__gofastr._toastOrFallback = (o) => window.__toasts.push(o);
+  document.getElementById('f').requestSubmit();
+})()`, nil),
+		chromedp.Sleep(1500*time.Millisecond),
+		chromedp.Evaluate(`JSON.stringify({toasts: window.__toasts.map(o => [o.variant, o.title, o.body]), results: window.__results})`, &got),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if want := `{"toasts":[],"results":[true]}`; got != want {
+		t.Errorf("after a 2xx save:\n got %s\nwant %s", got, want)
+	}
+}
