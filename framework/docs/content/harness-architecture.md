@@ -659,7 +659,10 @@ Read, Glob, Ls (anywhere under the repo)
 ```
 
 Never prompts for these. `--strict-permissions` disables the
-preset for users who want every call gated. `git branch` counts
+preset for users who want every call gated. Because they never
+prompt, `Read` (like `Grep`) opens regular files only: a FIFO, a
+device such as `/dev/tty`, or a symlink to one is refused, since the
+open would block past `CancelTurn`. `Edit` applies the same rule. `git branch` counts
 only when it lists: listing flags alone (`-a`, `-r`, `-v`, `-vv`,
 `--show-current`), and patterns only behind `--list`.
 

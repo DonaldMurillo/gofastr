@@ -4628,6 +4628,14 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The harness `Read` and `Edit` tools refuse a path that is not a
+  regular file.** `Grep` already skipped FIFOs and devices; `Read` opened
+  any path, and opening a FIFO blocks until a writer appears with no
+  regard for the turn's context. A quiet-mode `Read` of one (no prompt)
+  wedged the turn past `CancelTurn`, and the session with it; `/dev/tty`
+  never ends, and `Edit` read `/dev/zero` without bound. Both now refuse
+  a FIFO, device, socket, directory or symlink to one with an error
+  result. See [harness architecture](framework/docs/content/harness-architecture.md).
 - **The `gofastr harness` chat page refuses to be framed.** It holds a
   24 h human-class token and the permission modal, and it sent no
   framing policy, so a page on any site could load it in an iframe and
