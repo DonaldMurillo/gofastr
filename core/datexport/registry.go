@@ -136,14 +136,17 @@ const (
 //     the id alone. Each column is SafeIdent-checked before SQL and must
 //     exist on the table; each value is a bound argument.
 //   - MemberSeparator (EraseRemoveMember only) lets a member carry a
-//     qualifier ahead of the value: a member is removed when the part
-//     after its FIRST MemberSeparator equals the value, or, holding no
-//     separator, when the whole member does. A feature flag's user
-//     allow list writes "acme:42" for tenant acme's user 42, so its
-//     eraser sets ":" and erasing user 42 removes "42", ":42" and
-//     every tenant's "<tenant>:42". The qualifier must not contain the
-//     separator (featureflag percent-escapes it). Empty matches the
-//     whole member.
+//     tenant qualifier ahead of the value. A feature flag's user allow
+//     list writes "acme:42" for tenant acme's user 42 and sets ":".
+//     A member equal to the whole value is always removed. When the
+//     erasure carries a tenant (framework.WithEraseTenant, or the
+//     request's), so are the bare ":42" and that tenant's "acme:42",
+//     the tenant written with '%' and the separator percent-escaped,
+//     and another tenant's "beta:42" stays: ids are per tenant. With
+//     no tenant, every member whose part after its FIRST separator
+//     equals the value goes, so every tenant's entry. The qualifier
+//     must not contain the separator (featureflag percent-escapes it).
+//     Empty matches the whole member only.
 type DataEraser struct {
 	Name            string
 	Source          string

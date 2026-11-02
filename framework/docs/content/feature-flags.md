@@ -163,9 +163,12 @@ Two stores are bundled:
 
 The SQL store registers its table with `App.ExportData` and
 `App.EraseUserData`. Erasing a user removes their id from every flag's
-`users` list and keeps the flag: the bare entry and every tenant's
-`<tenant>:<id>` entry, since `EraseUserData` names a user, not a tenant.
-The `tenants` list names tenants, not users, and is left alone. See [data export](data-export.md).
+`users` list and keeps the flag. With a tenant (`WithEraseTenant`, or
+the request's resolved tenant) it removes the bare entries and that
+tenant's `<tenant>:<id>` only, since another tenant's `beta:42` is a
+different user. With no tenant it removes every tenant's entry. An entry
+equal to the whole erased id (a pre-upgrade `google:42`) always goes.
+The `tenants` list names tenants, not users, and is left alone. See [data export](data-export.md#registering-an-eraser).
 
 For Redis or other backends, wrap `featureflag.Store`. Only `Get` is
 required; add `MutableStore` for admin-edit support.

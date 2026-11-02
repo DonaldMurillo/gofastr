@@ -84,9 +84,13 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 // App.EraseUserData under its configured name. A flag's user allow list
 // is shared by everyone on it, so an erasure removes the user from the
 // list and keeps the flag. An entry names the user after its first ':'
-// ("acme:42", see UserEntry), so the eraser compares that part and
-// erasing user 42 removes "42", ":42" and every tenant's "<tenant>:42".
-// The tenants list names tenants, not users.
+// ("acme:42", see UserEntry). Erasing tenant acme's user 42
+// (framework.WithEraseTenant, or the request's tenant) removes "42",
+// ":42" and "acme:42", and leaves "beta:42", another tenant's user;
+// erasing user 42 with no tenant removes every tenant's "<tenant>:42".
+// An entry equal to the whole erased id always goes, so a pre-upgrade
+// bare "google:42" goes with user google:42. The tenants list names
+// tenants, not users.
 func (s *SQLStore) registerData() {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("feature_flags", s.table), Source: "featureflag", Table: s.table, PrimaryKey: "key",

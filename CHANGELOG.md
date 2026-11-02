@@ -472,8 +472,13 @@ few lines, and link the PR or the docs page for the rest.
   `featureflag.ParseUserEntry`, and both stores refuse malformed ones.
   A tenant's user is bucketed for `Rollout` on the pair, so partial
   rollouts in a multi-tenant app reshuffle once. `EraseUserData` removes
-  the user's entries in every tenant's spelling, through the new
-  `datexport.DataEraser.MemberSeparator`. Rewrite bare entries as
+  the user's entries through the new
+  `datexport.DataEraser.MemberSeparator`: with a tenant (the new
+  `framework.WithEraseTenant`, or the request's resolved tenant) the bare
+  entries and that tenant's `tenant:user` only, so another tenant's user
+  with the same id keeps theirs; with no tenant, every tenant's spelling.
+  An entry equal to the whole erased id (a pre-upgrade bare `google:42`)
+  always goes. Rewrite bare entries as
   `tenant:user`. See [feature-flags.md](framework/docs/content/feature-flags.md#user-entries).
 
 
