@@ -185,6 +185,13 @@ few lines, and link the PR or the docs page for the rest.
   stayed quiet, and a half-open connection was never written to and
   never freed. The stream now re-checks the caller every 15 seconds and
   writes an SSE comment line (`: keep-alive`) that clients ignore.
+- **A queued admin bulk run over a CRUD-off entity finishes.** The admin
+  bound `Config.BulkJobs` to `Config.UI`, which sees no write routes for
+  a named entity with CRUD off, so every run the admin's bulk route
+  queued over one stopped before its first record. The bound UI now
+  counts the admin's routes for the entities it exposes and the app's
+  for the rest. New `entityui.UI.WritePath(e)` reports a UI's write
+  base.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
@@ -4410,6 +4417,19 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The trash view's Restore and Delete permanently routes honor read
+  hooks.** `entityui.RestoreHandler` and `PurgeHandler` wrote any
+  trashed row the caller's scope reached by id, including one a
+  `BeforeList` hook hides from the trash view itself; the bulk restore
+  already dropped such a row. Both now read the row with
+  `crud.WithReadHooks` first and answer 404 for a hidden one (#645).
+- **A record's Activity tab no longer prints a value a read hook
+  masks.** The change list drew each audit row's stored before and
+  after values for every field but `NoQuery` ones, so a field an
+  `AfterGet` hook rewrites (`****` on the record and in the JSON API)
+  showed its written values to anyone who could open the record. A
+  field the hook rewrites on that record is now left out, locked fields
+  included (`framework/entityui`).
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

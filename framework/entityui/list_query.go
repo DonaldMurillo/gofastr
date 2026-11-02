@@ -71,6 +71,9 @@ type listState struct {
 	// inlineDrawn is set once a cell's editor is drawn, so the table
 	// says how to edit in place.
 	inlineDrawn bool
+	// masked names the fields a read hook rewrites on the record whose
+	// Activity tab this state draws: its change list leaves them out.
+	masked map[string]bool
 
 	view string // "" = All
 	// implicitView is the view shown with no ?view= param, "" when that

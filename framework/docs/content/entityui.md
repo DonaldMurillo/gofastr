@@ -162,7 +162,9 @@ keeps the UI unchanged; without a callback the default stays
   way the list's cell draws it (a badge, a money figure, a related
   record's title). An update that changed no field the caller may see
   reads "… saved this invoice". Masked (`NoQuery`) and `Hidden` fields
-  never appear, and an override's reason shows under it. The form's
+  never appear, nor does a field an `AfterGet` hook rewrites on the
+  record (the audit row stored what was written, which the hook hides),
+  and an override's reason shows under it. The form's
   side column holds Details: the id with a copy button, the created and
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
@@ -415,6 +417,9 @@ Extensions whose writes (save, delete, moves, bulk, export) post to
 draws that entity read-only. A back office uses it to send writes through
 routes it gates itself: `battery/admin` mounts the CRUD handler's write
 routes under `/admin/api/<entity>` this way. Reads are unchanged.
+`appUI.WritePath(e)` reports where a UI's screens send `e`'s writes, and
+false when they draw it read-only, so a host that wraps a UI again can
+fall back on the base it had.
 
 `appUI.WithRecordPath(path)` returns a UI whose list cells draw a
 relation's title as a chip linking to `path(e) + "/" + id`, the related
@@ -682,7 +687,10 @@ _ = list.RenderCtx(ctx)
   The handlers run the CRUD handler's `RestoreOne` / `PurgeOne` under
   the caller's own context, so permission, the Decider and owner and
   tenant scope are the write route's own gates; a purge of a live row
-  answers 409 and touches nothing. A form-RPC caller gets a status and
+  answers 409 and touches nothing. Before the write each handler reads
+  the row through the caller's read hooks (`crud.WithReadHooks`), as the
+  trash view and the bulk restore do, so a row a `BeforeList` hook hides
+  answers 404 and is not restored or purged. A form-RPC caller gets a status and
   a toast; a plain form post gets a 303 back to the Deleted view, along
   a same-origin relative return path the form carried — never an
   absolute URL. Cross-site posts are refused, the body is capped and

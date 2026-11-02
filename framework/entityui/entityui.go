@@ -218,6 +218,17 @@ func (u *UI) WithActorName(name func(ctx context.Context, id string) string) *UI
 	return &c
 }
 
+// WritePath reports where this UI's screens send e's writes: the
+// entity's REST base, or path(e) on a UI WithAPIPath rebuilt. False
+// means the screens draw e read-only. A host that wraps the UI again
+// with WithAPIPath reads the original base here, to fall back on it.
+func (u *UI) WritePath(e *entity.Entity) (string, bool) {
+	if e == nil {
+		return "", false
+	}
+	return u.host.APIPath(e)
+}
+
 // apiPathHost is a Host whose write routes live elsewhere.
 type apiPathHost struct {
 	Host

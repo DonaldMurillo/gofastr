@@ -9,7 +9,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -132,6 +134,13 @@ func formFields(body, formID string) map[string]string {
 
 func maskToken(t *testing.T, x *testUI) {
 	t.Helper()
+	maskInvoiceField(t, x, "token")
+}
+
+// maskInvoiceField installs an AfterGet hook on invoices that answers
+// "****" for field.
+func maskInvoiceField(t *testing.T, x *testUI, field string) {
+	t.Helper()
 	ch, err := x.host.Crud(mustEntity(t, x, "invoices"))
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +148,7 @@ func maskToken(t *testing.T, x *testUI) {
 	ch.Hooks = hook.NewHookRegistry()
 	ch.Hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
 		if p, ok := data.(*hook.GetPayload); ok && p.Result != nil {
-			p.Result["token"] = "****"
+			p.Result[field] = "****"
 		}
 		return nil
 	})
@@ -230,5 +239,38 @@ func TestMaskedTextReplaceForm(t *testing.T) {
 	}
 	if got := storedToken(t, x); got != "tok-new" {
 		t.Fatalf("the Replace form did not write the new value: %q", got)
+	}
+}
+
+// The Activity tab never draws a value an AfterGet hook masks on the
+// record: the audit log stored the column as written, and the JSON API
+// answers the same caller "****" for it. A locked masked field is held
+// back the same way as an editable one.
+func TestActivityHidesHookMaskedField(t *testing.T) {
+	for _, locked := range []bool{false, true} {
+		ents := invoiceEntities()
+		if locked {
+			inv := ents["invoices"]
+			d := *inv.Display
+			d.Fields = map[string]entity.FieldDisplay{"memo": {Locked: true}}
+			inv.Display = &d
+			ents["invoices"] = inv
+		}
+		x := newTestUI(t, ents, invoiceRows(), withAPI(map[string]string{
+			"invoices": "/api/invoices", "payments": "/api/payments", "customers": "/api/customers",
+		}), withAudit(fakeAudit{entries: []AuditEntry{{
+			At: time.Now(), Actor: "u1", Operation: "update",
+			Before: map[string]any{"memo": "old-secret-memo", "issuedOn": "2026-01-05"},
+			After:  map[string]any{"memo": "new-secret-memo", "issuedOn": "2026-02-09"},
+		}}}))
+		// memo is queryable (no NoQuery): the hook alone keeps it off the API.
+		maskInvoiceField(t, x, "memo")
+		body := activityBody(t, x)
+		if strings.Contains(body, "secret-memo") {
+			t.Fatalf("SECURITY (locked=%v): the Activity tab drew a hook-masked value:\n%s", locked, body)
+		}
+		if !strings.Contains(body, `data-cui-internal="">Issued On</span>`) {
+			t.Fatalf("locked=%v: an unmasked change is missing:\n%s", locked, body)
+		}
 	}
 }
