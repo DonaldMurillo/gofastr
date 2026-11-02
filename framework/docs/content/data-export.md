@@ -761,12 +761,30 @@ datexport.RegisterEraser(datexport.DataEraser{
 
 `EraseRemoveMember` reads `Column` as a TEXT column holding a JSON array of
 strings and rewrites only the rows that list the user, without the user;
-the row stays. Set `MemberSeparator` when a member carries a qualifier
-ahead of the id: a member is then compared by the part after its first
-separator (the whole member when it has none). The feature-flag store
-sets `":"`, so erasing user `42` removes `42`, `:42` and every tenant's
-`acme:42`, and keeps `42:x` (tenant `42`'s user `x`). The qualifier must
-never contain the separator. `Where` narrows any mode: each column is `SafeIdent`-checked
+the row stays. Set `MemberSeparator` when a member carries a tenant
+qualifier ahead of the id; the feature-flag store sets `":"`. A member
+equal to the whole id always goes. What else goes depends on the
+erasure's tenant:
+
+- **With a tenant** (`framework.WithEraseTenant("acme")`, or, without
+  that option, the tenant the request's context resolved,
+  `handler.GetTenantID`): the bare `:42` and that tenant's `acme:42`.
+  Another tenant's `beta:42` names a different user, since ids are per
+  tenant, and stays. The tenant is matched with `%` and the separator
+  percent-escaped, `featureflag.UserEntry`'s spelling.
+- **With no tenant** (or `WithEraseTenant("")`, which overrides the
+  request's): every member whose part after its first separator is the
+  id, so every tenant's `acme:42`, `beta:42`, and `:42`. Use this from a
+  job or an operator tool where ids are global.
+
+Either way `42:x` (tenant `42`'s user `x`) stays. A list written before
+entries were qualified may hold a bare id with a separator,
+`google:42`; erasing user `google:42` removes it, though the entry also
+reads as tenant `google`'s user `42`: the erased id never survives, and
+the cost of the ambiguity is a flag entry another user may need
+re-adding. The qualifier must never contain the separator.
+`WithEraseTenant` affects only these member lists; every other eraser
+matches the user id. `Where` narrows any mode: each column is `SafeIdent`-checked
 and must exist on the table, and each value is bound, so a service account
 that shares a user's id survives that user's erasure.
 
