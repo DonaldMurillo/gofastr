@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The MCP notification stream's `endpoint` event names its mount
+  path.** `ServeSSE(path)` opened every GET stream with
+  `event: endpoint` / `data: /sse` whatever `path` was, so a client that
+  follows the event posted to a path nothing serves (the framework
+  mounts `/mcp`). It now carries `path`.
 - **MCP `tools/call` always answers a `content` array.** A handler
   returning a nil `[]mcp.Content`, or an `mcp.ToolResult` flagging
   `IsError` with no blocks, put `"content": null` on the wire; the MCP

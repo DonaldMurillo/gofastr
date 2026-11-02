@@ -427,7 +427,7 @@ func (s *Server) ServeSSE(path string) http.Handler {
 		}
 
 		if r.Method == http.MethodGet {
-			s.sseGetHandler(w, r)
+			s.sseStream(w, r, path)
 			return
 		}
 
@@ -480,11 +480,19 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(encodeResponse(resp))
 }
 
-// sseGetHandler sets up an SSE connection for streaming and then HOLDS
+// sseGetHandler serves the held stream for a handler not built by
+// ServeSSE, which knows no mount path: its endpoint event keeps the
+// historical "/sse".
+func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
+	s.sseStream(w, r, "/sse")
+}
+
+// sseStream sets up an SSE connection for streaming and then HOLDS
 // it: the connection stays open for the life of the client, carrying
 // the server-initiated MCP notifications (notifications/*) fanned out
-// to the per-subscriber registry in notifications.go.
-func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
+// to the per-subscriber registry in notifications.go. Its opening
+// endpoint event names path, where ServeSSE mounted the POST half.
+func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) {
 	// Same gate as ssePostHandler. This handler used to discard the
 	// request entirely, so the origin/Host check simply did not run on
 	// the GET half of the pair, a guard hole rather than a disclosure
@@ -570,7 +578,7 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send initial connection event
-	if !writeSSEEvent("endpoint", "/sse") {
+	if !writeSSEEvent("endpoint", path) {
 		return
 	}
 
