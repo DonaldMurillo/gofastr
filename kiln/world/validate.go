@@ -33,7 +33,9 @@ import (
 // validateNodeGraduation, and nowhere at all in replay), which is how
 // replay ended up without it.
 func ValidatePageTree(n Node) error {
-	for key := range n.Props {
+	// Sorted, so a node with two forbidden props is refused naming the
+	// same one on every call.
+	for _, key := range slices.Sorted(maps.Keys(n.Props)) {
 		normalized := strings.ToLower(strings.TrimSpace(key))
 		if normalized == "class" || normalized == "style" || strings.HasPrefix(normalized, "on") {
 			return fmt.Errorf("node kind %q uses forbidden styling or handler prop %q", n.Kind, key)
