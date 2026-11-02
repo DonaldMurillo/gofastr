@@ -193,6 +193,30 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: every route answers errors in one envelope** ([#652](https://github.com/DonaldMurillo/gofastr/issues/652)).
+  `core/handler.WriteError` nested its refusal,
+  `{"error": {"code", "reason", "message", "fields"}, "success": false}`,
+  while the crud routes wrote it flat, so a client parsed two shapes and
+  the generated JS client read a gate's 401 as `api: 401: [object
+  Object]` with no `reason`. `WriteError` now writes the crud shape:
+  `{"error": "<message>", "code", "reason", "fields", "field_reasons",
+  "success": false}`. That covers a declared endpoint's auth gate (401)
+  and cross-site refusal (403), `RequirePermission`'s 403, the auth
+  battery's session and bearer middleware, every typed handler's error
+  (`handler.Fail`, `Errorf`, `ValidationError`) and its bind 400 and
+  body-cap 413. The message is still the request's translation of an
+  `i18n.Phrase`, with its code in `reason`. `success: false` stays: both
+  old shapes sent it and clients branch on it. In `/openapi.json` the
+  gate's 401 and 403 reference the shared `Error` schema. The
+  runtime's form-error and error-toast readers and `ui.SortableList`'s
+  versioned-409 reader read only the flat `error`; a move handler that
+  hand-wrote `{"error": {"message": …}}` for its 409, as the docs used to
+  say, answers through `handler.WriteError(w, r, handler.Errorf(409, …))`
+  or writes `{"error": "…"}`. An unmatched path under the API prefix
+  still answers an RFC 9457 problem document, and the JSON-RPC (MCP, A2A,
+  ACP), desktop-bridge and service-control envelopes are protocols and
+  keep their own shapes. See
+  [i18n → The error contract](framework/docs/content/i18n.md#the-error-contract).
 - **BREAKING: `core/yaml` resolves plain scalars by the YAML 1.2 core
   schema.** It read Go's spellings instead: a hex float (`0x1.8p1`) as
   3, any casing of `true`/`false`/`null` (`tRuE`), and `1_000.5` as a
@@ -1137,9 +1161,8 @@ few lines, and link the PR or the docs page for the rest.
   entity's page size.** The CRUD writes gain 409 (a unique value or a
   client-supplied key taken, a missing or still-referencing record), 413
   and 415; a declared endpoint gains its gate's 401 and its cross-site
-  403, typed by a new `GateError` schema, since that gate nests the
-  refusal under `error` where the CRUD routes' `Error` keeps it flat. The
-  SDK docs' errors page names 409, 415 and the second shape. The `limit`
+  403, typed by the shared `Error` schema (one envelope since #652). The
+  SDK docs' errors page names 409 and 415. The `limit`
   parameter said "default 20, max 100" whatever `Pagination.MaxListLimit`
   set, and `llm.md` said default 20 under a smaller cap; both now state
   the numbers the list applies (new `crud.ListLimits`).

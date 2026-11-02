@@ -399,18 +399,24 @@ func (sc *errorsScreen) Render() render.HTML {
 	}
 	return s.page("errors", "Errors",
 		heading(1, "Errors"),
-		para(text("Every non-2xx JSON response from the CRUD routes uses one envelope. Validation errors key the "),
+		para(text("Every non-2xx JSON response uses one envelope: the CRUD routes, an endpoint the app declares beside them and that endpoint's gate (401 without a session, 403 for a cross-site form post) alike. "),
+			code("error"), text(" is the message in the request's locale, "), code("reason"),
+			text(" its stable code (branch on this, not the text), "), code("code"), text(" the HTTP status, and "),
+			code("success"), text(" is always false. Validation errors key the "),
 			code("fields"), text(" map by the "), html.Strong(html.TextConfig{}, text("snake_case column name")),
-			text(": not the camelCase response casing. Both SDKs surface the envelope (Go: "),
+			text(": not the camelCase response casing; "), code("field_reasons"),
+			text(" holds each message's code in the same order. Both SDKs surface the envelope (Go: "),
 			code("*APIError"), text("; JS: "), code("ApiError"), text(").")),
 		ui.CodeBlock(ui.CodeBlockConfig{
 			Language: "json",
 			ShowCopy: true,
 			Lines: ui.HighlightLines(`{
   "error": "validation failed",
+  "reason": "validation_failed",
   "success": false,
   "code": 400,
-  "fields": { "author_name": ["is required"] }
+  "fields": { "author_name": ["is required"] },
+  "field_reasons": { "author_name": ["required"] }
 }`, "json"),
 		}),
 		heading(2, "Status codes"),
@@ -424,9 +430,9 @@ func (sc *errorsScreen) Render() render.HTML {
 		}),
 		para(text("Batch endpoints are the one exception: a rolled-back batch answers 400 with the normal batch envelope ("),
 			code("committed: false"), text(" plus per-item errors), and both SDKs return it as a result, not an error.")),
-		para(text("An endpoint the app declares beside the CRUD routes refuses at its gate (401 without a session, 403 for a cross-site form post) in another shape: the refusal nested under "),
-			code("error"), text(", as "), code(`{"error": {"code": 401, "reason": "authentication_required", "message": "…"}, "success": false}`),
-			text(". /openapi.json documents it as the GateError schema.")),
+		para(text("A path under the API prefix that matches no route answers 404 as an RFC 9457 problem document ("),
+			code("application/problem+json"), text(" with "), code("title"), text(", "), code("detail"),
+			text(" and "), code("reason"), text("), the standard format for a miss no route owns.")),
 	)
 }
 

@@ -332,8 +332,8 @@ func TestErrorResponseCorrectStatus(t *testing.T) {
 
 			var body errorResponse
 			json.NewDecoder(resp.Body).Decode(&body)
-			if body.Error.Message != tt.wantMsg {
-				t.Errorf("expected message %q, got %q", tt.wantMsg, body.Error.Message)
+			if body.Error != tt.wantMsg {
+				t.Errorf("expected message %q, got %q", tt.wantMsg, body.Error)
 			}
 			if body.Success {
 				t.Error("expected success=false")
@@ -359,17 +359,17 @@ func TestValidationError(t *testing.T) {
 
 	var body errorResponse
 	json.NewDecoder(resp.Body).Decode(&body)
-	if body.Error.Fields["email"][0] != "is required" {
-		t.Errorf("expected field error 'is required', got %v", body.Error.Fields)
+	if body.Fields["email"][0] != "is required" {
+		t.Errorf("expected field error 'is required', got %v", body.Fields)
 	}
-	if body.Error.Fields["name"][0] != "is required" {
-		t.Errorf("expected field error 'is required', got %v", body.Error.Fields)
+	if body.Fields["name"][0] != "is required" {
+		t.Errorf("expected field error 'is required', got %v", body.Fields)
 	}
-	if got := body.Error.FieldReasons["email"]; len(got) != 2 || got[0] != "required" || got[1] != "not_string" {
+	if got := body.FieldReasons["email"]; len(got) != 2 || got[0] != "required" || got[1] != "not_string" {
 		t.Errorf("field_reasons[email] = %v", got)
 	}
-	if body.Error.Reason != "validation_failed" || body.Error.Message != "validation failed" {
-		t.Errorf("reason %q message %q", body.Error.Reason, body.Error.Message)
+	if body.Reason != "validation_failed" || body.Error != "validation failed" {
+		t.Errorf("reason %q message %q", body.Reason, body.Error)
 	}
 }
 

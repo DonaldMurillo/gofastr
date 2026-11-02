@@ -143,7 +143,8 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 	}
 	s.AddServer("/", "current")
 
-	// Add common error response schema
+	// The one error envelope every route answers with: the CRUD routes,
+	// a declared endpoint's gate and core/handler.WriteError alike.
 	s.AddSchema("Error", objectSchemaWith(map[string]any{
 		"error":         map[string]any{"type": "string"},
 		"success":       map[string]any{"type": "boolean"},
@@ -222,9 +223,6 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 	// Track whether any entity is auth-gated so the shared security
 	// schemes are registered once after the loop, not per entity.
 	anyGated := false
-	// gateRefusals records whether a declared endpoint's gate can refuse,
-	// so the GateError schema its 401 and 403 reference is registered.
-	gateRefusals := false
 	// components names every unversioned entity this document emits a
 	// schema for, so an endpoint's Returns can reference it.
 	components := map[string]bool{}
@@ -342,9 +340,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")
 			}
-			gatedEP, refusing := addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components)
-			anyGated = anyGated || gatedEP
-			gateRefusals = gateRefusals || refusing
+			anyGated = addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) || anyGated
 			continue
 		}
 
@@ -825,9 +821,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
-		gatedEP, refusing := addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components)
-		anyGated = anyGated || gatedEP
-		gateRefusals = gateRefusals || refusing
+		anyGated = addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) || anyGated
 	}
 
 	// When at least one entity is auth-gated, advertise how callers
@@ -837,22 +831,6 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 	// entities unmarked. This is deliberately NOT a global security
 	// requirement (Spec.AddSecurityRequirement), that would hide the
 	// fact that ungated entities are anonymously reachable.
-	if gateRefusals {
-		// endpointRoute refuses through core/handler.WriteError, whose
-		// envelope nests the refusal under "error"; the CRUD routes'
-		// Error schema keeps it flat.
-		detail := objectSchemaWith(map[string]any{
-			"code":          map[string]any{"type": "integer"},
-			"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); message is its text in the request's locale."},
-			"message":       map[string]any{"type": "string"},
-			"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-			"field_reasons": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-		})
-		detail["required"] = []string{"code", "message"}
-		gateErr := objectSchemaWith(map[string]any{"error": detail, "success": map[string]any{"type": "boolean"}})
-		gateErr["required"] = []string{"error", "success"}
-		s.AddSchema("GateError", gateErr)
-	}
 	if anyGated {
 		// "__Host-session" is the production default the auth battery
 		// sets in battery/auth/manager.go AuthConfig.defaults()
@@ -1266,10 +1244,10 @@ func addBodyRefusals(op *openapi.Operation, errorRef map[string]any) {
 // of the main loop because it runs on both sides of the auto-CRUD
 // opt-out: the router mounts these endpoints regardless of
 // Exposure.CRUD, so the spec advertises them regardless too. It reports
-// whether any operation it emitted requires a caller, and whether any
-// references the GateError schema its gate refuses with.
-func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) (gated, refusing bool) {
-	gateErrRef := map[string]any{"$ref": "#/components/schemas/GateError"}
+// whether any operation it emitted requires a caller. The gate's 401 and
+// 403 answer in the Error envelope every route shares.
+func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) (gated bool) {
+	errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
 	for _, endpoint := range ent.Config.Endpoints {
 		if endpoint.Method == "" || endpoint.Path == "" {
 			continue
@@ -1314,16 +1292,15 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		if !endpoint.Public {
 			customOp.AddSecurity("bearerAuth", nil)
 			customOp.AddSecurity("cookieAuth", nil)
-			customOp.AddResponse(401, "Authentication required", gateErrRef)
-			gated, refusing = true, true
+			customOp.AddResponse(401, "Authentication required", errorRef)
+			gated = true
 		}
 		// Every method but GET, HEAD and OPTIONS refuses a forged
 		// cross-site form post first, Public or not.
 		switch strings.ToUpper(endpoint.Method) {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
-			customOp.AddResponse(403, "A cross-site form post", gateErrRef)
-			refusing = true
+			customOp.AddResponse(403, "A cross-site form post", errorRef)
 		}
 		out := EndpointOutputSchema(endpoint)
 		if len(endpoint.OutputSchema) == 0 {
@@ -1338,5 +1315,5 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		customOp.AddResponse(200, "OK", out)
 		s.AddPath(endpoint.Method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
 	}
-	return gated, refusing
+	return gated
 }

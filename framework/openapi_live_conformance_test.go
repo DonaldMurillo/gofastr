@@ -353,8 +353,8 @@ func TestOpenAPI_RelationFieldsTypedByTargetKey(t *testing.T) {
 // body shape it sends. The CRUD writes answered 415 (a body that is not
 // JSON), 413 (a body over the cap) and 409 (a unique value taken, a
 // record still referenced) undocumented, and a declared endpoint's gate
-// answered 401 and 403 in core/handler's nested envelope while its
-// operation listed 200 alone.
+// answered 401 and 403 while its operation listed 200 alone. Both answer
+// in the one Error envelope (issue #652).
 func TestOpenAPI_DocumentsEveryRefusalTheRoutesAnswer(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db), WithPublicOpenAPI())

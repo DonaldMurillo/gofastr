@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
@@ -265,7 +267,7 @@ func TestE2E_SortablePlainListWithoutScript(t *testing.T) {
 // Ported from the retired core-ui/runtime sortablelist e2e suite,
 // which died with the module: these are the browser proofs of the
 // hard bounds on the 409 body (JSON content-type, ~4 KB read, the
-// {"error":{"message"}} shape), the conflict refresh that replaces a
+// {"error": "<message>"} envelope), the conflict refresh that replaces a
 // column with the server's own rows, and the DragEvent sequence the
 // pointer path runs — none of which the keyboard tests above touch.
 
@@ -294,6 +296,15 @@ func sortableConflictPage() string {
 	// The stack the conflict toast lands in, with a probe-classed row
 	// template: the module mounts no region and names no class.
 	return a + b + toastStackWithTemplate()
+}
+
+// conflictBody is the 409 a move handler answers with through
+// core/handler.WriteError: the one error envelope every route sends,
+// {"error": msg, "code": 409, "success": false}.
+func conflictBody(msg string) string {
+	w := httptest.NewRecorder()
+	handler.WriteError(w, nil, handler.Errorf(http.StatusConflict, "%s", msg))
+	return w.Body.String()
 }
 
 // conflict409Server serves the two versioned columns plus a /rpc
@@ -497,11 +508,11 @@ func TestE2E_Sortable409FiresConflictPath(t *testing.T) {
 }
 
 // TestE2E_Sortable409ConflictMessageAnnounced: a 409 with a valid
-// JSON problem-detail body surfaces error.message through the polite
+// JSON error envelope surfaces its "error" message through the polite
 // live region AND still runs the authoritative refresh.
 func TestE2E_Sortable409ConflictMessageAnnounced(t *testing.T) {
 	msg := "Cannot move ORB-12 to Done because ORB-9 is incomplete."
-	body := `{"error":{"code":"transition_blocked","message":` + strconv.Quote(msg) + `}}`
+	body := conflictBody(msg)
 	b := conflict409Server(t, "application/json; charset=utf-8", body)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, sortableLoaded) {
@@ -534,7 +545,7 @@ func TestE2E_Sortable409ConflictMessageAnnounced(t *testing.T) {
 // copy the way the retired module's finishConflict did.
 func TestE2E_Sortable409InvariantMessage(t *testing.T) {
 	msg := "ORB-9 is incomplete; complete it before moving dependents."
-	body := `{"error":{"code":"dependency_blocked","message":` + strconv.Quote(msg) + `}}`
+	body := conflictBody(msg)
 	b := conflict409Server(t, "application/json", body)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, sortableLoaded) {
@@ -587,7 +598,7 @@ func TestE2E_Sortable409MalformedFallback(t *testing.T) {
 // the parse); nothing of the body leaks.
 func TestE2E_Sortable409OversizedFallback(t *testing.T) {
 	big := strings.Repeat("x", 8000)
-	body := `{"error":{"message":"` + big + `"}}`
+	body := `{"error":"` + big + `"}`
 	b := conflict409Server(t, "application/json", body)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, sortableLoaded) {
@@ -615,7 +626,7 @@ func TestE2E_Sortable409OversizedFallback(t *testing.T) {
 // text/html — so the content-type check is the only thing standing
 // between the body and the live region.
 func TestE2E_Sortable409HTMLFallback(t *testing.T) {
-	b := conflict409Server(t, "text/html; charset=utf-8", `{"error":{"message":"<html>boom</html>"}}`)
+	b := conflict409Server(t, "text/html; charset=utf-8", `{"error":"<html>boom</html>"}`)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, sortableLoaded) {
 		t.Fatal("the sortable marker never loaded headless-sortablelist")
@@ -819,7 +830,7 @@ func TestE2E_SortableDragIntoEmptyColumn(t *testing.T) {
 // 6 s lifetime. The toast module loads on demand through the kernel.
 func TestE2E_SortableConflictToastShowsTheMessage(t *testing.T) {
 	msg := "Cannot move ORB-12 to Done because ORB-9 is incomplete."
-	body := `{"error":{"code":"transition_blocked","message":` + strconv.Quote(msg) + `}}`
+	body := conflictBody(msg)
 	b := conflict409Server(t, "application/json; charset=utf-8", body)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, sortableLoaded) {

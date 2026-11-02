@@ -352,8 +352,8 @@
           let msg = '';
           try {
             const d = JSON.parse(txt);
-            // CRUD's flat {error: "..."} or core/handler's {error: {message}}.
-            const m = d?.error?.message ?? d?.error;
+            // The one error envelope every route answers: {error: "..."}.
+            const m = d?.error;
             if (typeof m === 'string') msg = m.slice(0, 300);
           } catch (_) {}
           NS._toastOrFallback?.({ variant: 'error', title: errToast || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status: r.status }), body: msg, ttl: 6000 });

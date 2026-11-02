@@ -2273,6 +2273,9 @@ record miss (e.g. `GET /api/posts/404-nope`) answers
 `{"error":"not found","reason":"not_found","success":false,"code":404}`.
 `reason` is the stable code a client branches on; `error` is the text in
 the request's locale (see [i18n](i18n.md) → "The error contract").
+Every route answers in this one envelope: a declared endpoint, the auth
+gate in front of it and any typed handler (`core/handler.WriteError`)
+send the same keys, so a client parses one shape.
 A write the database refuses on a constraint answers `409 Conflict`, not
 `500`: a UNIQUE violation (a duplicate key) and a FOREIGN KEY violation
 (a create or update that points at a missing row, or a delete of a row that
@@ -2296,7 +2299,9 @@ A path no route ever owned — `/api/anything/else`, including on apps with
 no DB and therefore no CRUD routes — answers `404` with an RFC 9457
 `application/problem+json` document (`type`/`title`/`status`/`detail`)
 instead of the UI host's HTML 404 page, so every machine client probing the
-API gets a machine-readable answer. The guarded namespace is
+API gets a machine-readable answer. It stays a problem document, the
+standard format for a miss no route owns, and carries the same `reason`
+member the envelope does. The guarded namespace is
 `AppConfig.APIPrefix` (`WithAPIPrefix`), `/api` by default; misses outside
 it keep the host's normal 404 rendering.
 
