@@ -193,6 +193,14 @@ few lines, and link the PR or the docs page for the rest.
   POST is in flight, so a double click plus Ctrl+S no longer creates
   three rows. PUT and PATCH forms, input-triggered forms, buttons and
   controls still send every dispatch, the newest winning.
+- **FilterToolbar Reset follows the submit (D-37).** Without
+  `ClientNavigation`, Reset carries `data-cui-nav="off"` and loads the
+  whole document, as the native GET submit does, so a kept layout that
+  renders query-dependent content clears too. `ui.LinkButton` and
+  `headless.Button` links accept `data-cui-nav="off"`. The `layoutfunc`
+  lint also flags `app.QueryFromContext` in a layout build, and a
+  `Key.Get` there whose same-package resolver reads the query or the
+  request, outside a `RouteArea`.
 
 ### Fixed
 

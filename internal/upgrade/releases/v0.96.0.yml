@@ -1084,3 +1084,7 @@ notes:
     breaking: false
     guidance: "A double click plus Ctrl+S sent three POSTs and an entity with no unique key got three rows. A form that relied on a second POST while the first was out (a resend from a gofastr:formresult listener, say) sends it after the first answers, or uses data-cui-rpc-method=\"PUT\" or \"PATCH\" to keep the newest-value rule."
     nodetect: "the change is in the browser runtime; a form's markup is unchanged"
+  - change: "ui.FilterToolbar without ClientNavigation renders Reset with data-cui-nav=off, a whole document load like its native GET submit; the layoutfunc lint flags app.QueryFromContext, and Key.Get of a same-package resolver that reads the query or the request, in a layout build outside a RouteArea"
+    breaking: false
+    guidance: "A kept layout that drew query-dependent content stayed filtered after Reset, because the client router swapped only the screen cell. Nothing to change for that. If the lint now flags your layout build, read the value inside l.RouteArea's fn, or give the region to an outlet a screen fills."
+    nodetect: "the Reset change is in rendered markup and the lint finds its own sites; the source that configures a FilterToolbar is unchanged"
