@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
+  reloads every role from the database every 5 minutes by default, so a
+  replica that missed a refresh signal stops honouring a revoked
+  permission within one interval. A full reload also covers a role whose
+  last grant was revoked (only tombstones left), which it used to skip.
+  Zero or negative turns it off. See
+  [access control](framework/docs/content/access-control.md#cross-replica-grant-propagation).
 - **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
   A calendar that stays on the page beside the native date input it
   fills, for a range in one control, refused days, or notes on days. The

@@ -1084,3 +1084,9 @@ notes:
     breaking: false
     guidance: "Nothing to change. An archive gains gofastr_modules.ndjson and gofastr_process_modules.ndjson when those tables exist; ImportData restores them into a fresh database like any other registered table. Restart after an import so the module manager and the process supervisor read the restored rows."
     nodetect: "the change is in what ExportData writes; nothing in an app's source spells it"
+  - change: "A GrantStore with a fanout reloads every role from the database every 5 minutes (access.DefaultReconcileInterval), so a replica that missed a refresh signal stops honouring a revoked permission"
+    breaking: false
+    guidance: "Nothing to change. Each replica runs one full grants and tombstones read per interval. Tune it with access.WithReconcileInterval(d) on NewGrantStore, or pass 0 to turn it off."
+    find:
+      uses:
+        - gofastr/framework/access.NewGrantStore

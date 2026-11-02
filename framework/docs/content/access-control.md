@@ -616,6 +616,15 @@ rebuilds the role as `(code baseline ∪ DB grants) − revocation tombstones`).
 The message body is never trusted: a crafted payload can only trigger a
 re-read, never pollute the policy directly.
 
+A refresh signal is best effort: a stalled bus drops frames. So every
+replica with a fanout also reloads every role from the database on a
+timer, every 5 minutes by default (`access.DefaultReconcileInterval`). A
+replica that missed a revoke stops honouring it within one interval
+instead of keeping it until the next change to that role or a restart.
+Set the interval with `access.WithReconcileInterval(d)`; zero or negative
+turns the reconcile off. The timer starts with `SetFanout` and stops with
+the stop function it returns, so a store without a fanout runs none.
+
 ### Revocation tombstones
 
 A `Revoke` does more than delete the grant row: it also inserts a
