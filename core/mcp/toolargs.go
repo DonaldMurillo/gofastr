@@ -3,9 +3,11 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"math/big"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -346,7 +348,11 @@ func validateObject(node map[string]any, obj map[string]any, path string) error 
 	}
 
 	// properties: present keys must conform to their declared subschema.
-	for name, sub := range props {
+	// Every walk below goes in sorted key order, so arguments with two
+	// faults are refused naming the same one on every call; ranging the
+	// maps named whichever the iteration reached first.
+	for _, name := range slices.Sorted(maps.Keys(props)) {
+		sub := props[name]
 		val, present := obj[name]
 		if !present {
 			continue
@@ -367,14 +373,15 @@ func validateObject(node map[string]any, obj map[string]any, path string) error 
 		switch apv := ap.(type) {
 		case bool:
 			if !apv {
-				for name := range obj {
+				for _, name := range slices.Sorted(maps.Keys(obj)) {
 					if _, declared := props[name]; !declared {
 						return fmt.Errorf("%s: unknown argument %q (schema declares additionalProperties: false)", path, name)
 					}
 				}
 			}
 		case map[string]any:
-			for name, val := range obj {
+			for _, name := range slices.Sorted(maps.Keys(obj)) {
+				val := obj[name]
 				if _, declared := props[name]; !declared {
 					if err := validateValue(apv, val, path+"."+name); err != nil {
 						return err
