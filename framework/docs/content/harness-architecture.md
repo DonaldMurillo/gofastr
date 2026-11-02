@@ -740,6 +740,12 @@ id) in the envelope, so the audit log and `sessions export` show what
 a sub-agent ran. They stay off the parent's client streams (SSE, WS,
 MCP, TUI): those carry the parent session's own conversation.
 
+**Sub-agent tools.** A sub-agent gets the parent's tools minus the
+meta tools, `TaskList` and `Agent`, so it cannot re-plan the
+parent's task list or spawn more agents. Its dispatcher refuses a
+call to either by name too, with an error result the model reads,
+since a model can name a tool its catalog never showed.
+
 ### 4. Pluggable backends
 
 Single interface per concern. Backends are wired by the profile or by

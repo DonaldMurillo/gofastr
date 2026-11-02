@@ -25,6 +25,10 @@ type Dispatcher struct {
 	bus      *Bus
 	registry *tool.Registry
 	mws      []tool.Middleware
+	// refused names registry tools this dispatcher never runs: a
+	// sub-agent's leaves out the meta tools its catalog hides, since a
+	// model can name a tool it was never shown.
+	refused map[string]bool
 }
 
 // NewDispatcher builds a Dispatcher for one session.
@@ -42,6 +46,12 @@ func (d *Dispatcher) Registry() *tool.Registry { return d.registry }
 // PermissionRequested events so the multiplexer can address answers
 // correctly and so identity_class self-approval guards apply.
 func (d *Dispatcher) Dispatch(ctx context.Context, originator ids.ClientID, call tool.ToolCall) (*tool.ToolResult, error) {
+	if d.refused[call.Name] {
+		return &tool.ToolResult{
+			IsError: true,
+			Content: []control.ContentBlock{{Type: "text", Text: call.Name + " is not available here: a sub-agent cannot call it"}},
+		}, nil
+	}
 	t, err := d.registry.Lookup(call.Name)
 	if err != nil {
 		return nil, err

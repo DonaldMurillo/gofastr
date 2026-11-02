@@ -4502,6 +4502,12 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A harness sub-agent can no longer call `TaskList` or `Agent`.** The
+  sub-agent's catalog left both out, but its dispatcher ran any tool in
+  the shared registry, so a tool_use naming one (a page the sub-agent
+  fetched asking for it) rewrote the parent's task list or spawned
+  another agent. The sub-agent's dispatcher now refuses them with an
+  error result. See [harness architecture](framework/docs/content/harness-architecture.md).
 - **A harness Grep or Glob approval covers only the directory it was
   approved for.** The permission engine decides a call from its argv
   summary, and the Grep and Glob summaries named the pattern only, so
