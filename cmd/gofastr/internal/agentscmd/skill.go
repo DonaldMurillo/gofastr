@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
 // gofastrHostSkill is the source for the gofastr-host Claude Code
@@ -23,6 +25,11 @@ var gofastrHostSkill string
 // WriteHostSkill drops the gofastr-host skill into <dir>/.claude/skills/
 // gofastr-host/SKILL.md. Idempotent: overwrites any existing copy.
 func WriteHostSkill(dir string) error {
+	// Before MkdirAll: a symlinked .claude/ would have it create the
+	// skill tree, and then the skill, outside the project.
+	if err := project.RefuseEscape(dir, filepath.Join(".claude", "skills", "gofastr-host", "SKILL.md")); err != nil {
+		return err
+	}
 	target := filepath.Join(dir, ".claude", "skills", "gofastr-host")
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return fmt.Errorf("create skill dir: %w", err)

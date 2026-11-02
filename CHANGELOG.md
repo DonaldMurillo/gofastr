@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr init` and `gofastr agents` no longer write through a
+  symlink out of the project.** In a cloned repo carrying
+  `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, `gofastr agents
+  skill` and `gofastr init . --reinit` replaced the developer's file with
+  the skill; a linked `.agents/` received every detail file, and a
+  linked `.env` received the generated signing key. Each writer refuses
+  a path that leaves the project or names nothing, before creating any
+  directory; a link inside the project is still followed.
 - **The `gofastr dev` hold page keeps its build output from a rebound
   page.** On a loopback bind the hold answered any `Host`, so a page on
   another site whose name a rebinding DNS server pointed at 127.0.0.1

@@ -38,7 +38,12 @@ each command to the doc that covers it.
   replaced file keeps its mode. An existing `.gitignore` is kept and gains the entries
   it lacks. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
-  your edits); no Go code or git changes. An unknown flag is an error
+  your edits); no Go code or git changes. `init`, `init --reinit` and
+  `gofastr agents init|sync|skill` refuse to write through a symlink
+  that leaves the project or names nothing (a cloned repo's
+  `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, a linked
+  `.agents/` or `.env`), creating nothing on the way; a link inside the
+  project is followed. An unknown flag is an error
   (exit 2). A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
