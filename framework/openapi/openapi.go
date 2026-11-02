@@ -224,8 +224,15 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 	// components names every unversioned entity this document emits a
 	// schema for, so an endpoint's Returns can reference it.
 	components := map[string]bool{}
+	// emitted names the component of every entity this document emits,
+	// versioned or not, so a relation can reference the record it loads.
+	emitted := map[*entity.Entity]string{}
 	for _, ent := range registry.AllSorted() {
-		if (keep == nil || keep(ent)) && ent.Version == "" {
+		if keep != nil && !keep(ent) {
+			continue
+		}
+		emitted[ent] = componentName(ent)
+		if ent.Version == "" {
 			components[ent.GetName()] = true
 		}
 	}
@@ -292,7 +299,10 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 				openapi.Nullable(wireProps[wireFields[i].Name].(map[string]any))
 			}
 		}
-		s.AddSchema(schemaName, entitySchema)
+		// The request schemas below derive from entitySchema; the
+		// component is the read view, where ?include= puts a related
+		// record under its relation's key.
+		s.AddSchema(schemaName, readSchema(registry, ent, entitySchema, jc, emitted))
 
 		// The router mounts auto-CRUD only when Exposure.CRUD is unset
 		// ("auto" ⇒ on) or explicitly true, so an entity that opted out
@@ -1040,6 +1050,72 @@ func columnKey(col string, jc crud.JSONCase) string {
 		return col
 	}
 	return casing.ToCamel(col)
+}
+
+// componentName is the schema component an entity's records are
+// documented under: its name, plus the version slug for a versioned one.
+func componentName(ent *entity.Entity) string {
+	if ent.Version == "" {
+		return ent.GetName()
+	}
+	return ent.GetName() + "_" + versionSlug(ent.Version)
+}
+
+// readSchema is the read view of an entity's schema: base plus what
+// ?include=<relation> puts in a record. crud attaches each included
+// relation under its name's wire key (applyIncludeTree): a has-many or
+// many-to-many as an array of records, any other as one record or null.
+// A belongs_to derived from a relation field shares the field's key, so
+// there the include replaces the key the field holds with the record it
+// names, and the property is either. A relation the caller did not
+// include is absent, so none is required. The record is the target's
+// component when this document emits it, else a bare object.
+func readSchema(reg entity.Registry, ent *entity.Entity, base map[string]any, jc crud.JSONCase, emitted map[*entity.Entity]string) map[string]any {
+	if len(ent.Config.Relations) == 0 {
+		return base
+	}
+	props, ok := base["properties"].(map[string]any)
+	if !ok {
+		return base
+	}
+	out := maps.Clone(base)
+	props = maps.Clone(props)
+	out["properties"] = props
+	wire := map[string]string{}
+	for _, f := range ent.GetFields() {
+		wire[f.Name] = wireKeyOf(f, jc)
+	}
+	for _, rel := range ent.Config.Relations {
+		key, ok := wire[rel.Name]
+		if !ok {
+			key = columnKey(rel.Name, jc)
+		}
+		record := map[string]any{"type": "object"}
+		if target, err := entity.ResolveTarget(reg, ent, rel.Entity); err == nil && target != nil {
+			if name, ok := emitted[target]; ok {
+				record = map[string]any{"$ref": "#/components/schemas/" + name}
+			}
+		}
+		desc := "With ?include=" + rel.Name + ": the related " + rel.Entity + " record"
+		var loaded map[string]any
+		switch rel.Type {
+		case entity.RelHasMany, entity.RelManyToMany:
+			loaded = map[string]any{"type": "array", "items": record, "description": desc + "s."}
+		default:
+			loaded = map[string]any{"anyOf": []any{record, map[string]any{"type": "null"}}, "description": desc + ", or null when none is readable."}
+		}
+		if own, ok := props[key].(map[string]any); ok {
+			loaded = map[string]any{
+				"anyOf":       []any{own, record, map[string]any{"type": "null"}},
+				"description": "The key of the " + rel.Entity + " record; " + strings.ToLower(desc[:1]) + desc[1:] + " itself, or null when it is not readable.",
+			}
+			if x, ok := own["x-relation"]; ok {
+				loaded["x-relation"] = x
+			}
+		}
+		props[key] = loaded
+	}
+	return out
 }
 
 // typeRelationKey types a relation field's property by the key of the

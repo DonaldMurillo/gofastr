@@ -294,7 +294,7 @@ func TestOpenAPI_RelationFieldsTypedByTargetKey(t *testing.T) {
 		})
 		doc := servedSpecApp(t, db, app)
 		props := doc["components"].(map[string]any)["schemas"].(map[string]any)["gadgets"].(map[string]any)["properties"].(map[string]any)
-		if p := props["ownerId"].(map[string]any); p["format"] != "uuid" {
+		if p := relationKeyAlt(props["ownerId"].(map[string]any)); p["format"] != "uuid" {
 			t.Errorf("a relation to a uuid key lost its format: %v", p)
 		}
 		create := specOp(t, doc, "/gadgets", "post")["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
@@ -424,6 +424,64 @@ func TestOpenAPI_DocumentsEveryRefusalTheRoutesAnswer(t *testing.T) {
 				continue
 			}
 			conformsResponse(t, doc, c.path, c.method, c.resp)
+		}
+	})
+}
+
+// ?include= is documented on every read, and crud answers it by putting
+// the related record under the relation's key: for a belongs_to derived
+// from a relation field that is the field's own key, so the uuid string
+// the document promised became an object, and a has-many arrived under a
+// key the document never named.
+func TestOpenAPI_IncludedRelationsConformToSpec(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithPublicOpenAPI())
+		app.Entity("people", entity.EntityConfig{
+			Table:     "people",
+			Fields:    []schema.Field{{Name: "name", Type: schema.String, Required: true}},
+			Relations: []entity.Relation{entity.HasMany("pets", "pets", "owner_id")},
+		})
+		app.Entity("pets", entity.EntityConfig{
+			Table: "pets",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String, Required: true},
+				{Name: "owner_id", Type: schema.Relation, To: "people", Required: true},
+			},
+		})
+		doc := servedSpecApp(t, db, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+
+		var person, pet map[string]any
+		_ = ta.Post("/people", map[string]any{"name": "Ann"}).JSON(&person)
+		pid := person["data"].(map[string]any)["id"].(string)
+		_ = ta.Post("/pets", map[string]any{"name": "rex", "ownerId": pid}).JSON(&pet)
+		petID := pet["data"].(map[string]any)["id"].(string)
+
+		withOwner := ta.Get("/pets/" + petID + "?include=owner_id")
+		var got map[string]any
+		_ = withOwner.JSON(&got)
+		if _, isRecord := got["data"].(map[string]any)["ownerId"].(map[string]any); !isRecord {
+			t.Fatalf("the fixture no longer includes the owner record: %s", withOwner.Body())
+		}
+		conformsResponse(t, doc, "/pets/{id}", "get", withOwner)
+		conformsResponse(t, doc, "/pets/{id}", "get", ta.Get("/pets/"+petID))
+
+		withPets := ta.Get("/people/" + pid + "?include=pets")
+		got = nil
+		_ = withPets.JSON(&got)
+		if pets, _ := got["data"].(map[string]any)["pets"].([]any); len(pets) != 1 {
+			t.Fatalf("the fixture no longer includes the pets: %s", withPets.Body())
+		}
+		conformsResponse(t, doc, "/people/{id}", "get", withPets)
+		props := doc["components"].(map[string]any)["schemas"].(map[string]any)["people"].(map[string]any)["properties"].(map[string]any)
+		if _, ok := props["pets"]; !ok {
+			t.Errorf("the people schema does not name the pets an include adds: %v", specKeys(props))
+		}
+
+		// The include widens the read view only: a write still takes the key.
+		create := specOp(t, doc, "/pets", "post")["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+		if msg := specCheck(doc, create, map[string]any{"name": "x", "ownerId": map[string]any{"id": pid}}, ""); msg == "" {
+			t.Error("the create schema takes a related record where the route takes its key")
 		}
 	})
 }

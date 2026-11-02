@@ -26,6 +26,19 @@ func getNestedMap(m map[string]any, key string) map[string]any {
 	return v
 }
 
+// relationKeyAlt is a read-schema property's own value: a belongs_to
+// field the read view widens to anyOf [key, related record, null] (the
+// ?include= shape) answers its key alternative; any other property is
+// itself.
+func relationKeyAlt(prop map[string]any) map[string]any {
+	if alts, ok := prop["anyOf"].([]any); ok && len(alts) > 0 {
+		if key, ok := alts[0].(map[string]any); ok {
+			return key
+		}
+	}
+	return prop
+}
+
 // getNestedSlice extracts a nested []any from a parent map.
 func getNestedSlice(m map[string]any, key string) []any {
 	v, _ := m[key].([]any)
@@ -142,7 +155,7 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 	}
 
 	for _, tc := range typeChecks {
-		prop := getNestedMap(props, tc.field)
+		prop := relationKeyAlt(getNestedMap(props, tc.field))
 		if prop == nil {
 			t.Errorf("field %q: missing property", tc.field)
 			continue
@@ -613,7 +626,7 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	}
 
 	// Relation: single → string with format uuid
-	authorProp := getNestedMap(props, "authorId")
+	authorProp := relationKeyAlt(getNestedMap(props, "authorId"))
 	assertEqual(t, "authorId type", opt("string"), authorProp["type"])
 	assertEqual(t, "authorId format", "uuid", authorProp["format"])
 	assertEqual(t, "authorId x-relation", "users", authorProp["x-relation"])

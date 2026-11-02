@@ -647,3 +647,7 @@ notes:
     breaking: false
     nodetect: "the case is AppConfig data and the keys live in the app's clients"
     guidance: "A snake_case app's REST bodies use the column names again, as entity-declarations.md documents. A client written against the camelCase keys those routes served since v0.94.0 reads and sends the column names instead. Apps on the default camelCase change nothing."
+  - change: "/openapi.json documents the ?include= read view: a relation field's property in an entity's schema component is anyOf its key, the related record or null, and a relation with no field of its own is an optional property; request bodies still take the key"
+    breaking: false
+    nodetect: "the document is generated at runtime; what reads it is a client generator outside the app"
+    guidance: "Nothing to change in the app. A client generated from the document types each relation field as a union where it was a uuid string; regenerate it, and read the key alternative where the code did not ask for an include."

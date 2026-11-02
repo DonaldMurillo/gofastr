@@ -36,6 +36,15 @@ The response embeds the loaded relations inline under each parent row:
 }
 ```
 
+A relation sits under its name's wire key. A `belongs_to` derived from
+a relation field (`author_id` → `relation` to `users`) shares the
+field's key, so `?include=author_id` replaces the `authorId` key with
+the record it names. `/openapi.json` documents the read view that way:
+such a property is `anyOf` the key, the related record's schema, or
+null, and a relation with no field of its own is an optional property
+(an array of records for has-many and many-to-many). Request bodies
+still take the key.
+
 ## Path syntax
 
 ```

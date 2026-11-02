@@ -129,6 +129,13 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`/openapi.json` documents what `?include=` returns.** An entity's
+  schema component is its read view: a relation field's property is
+  `anyOf` its key, the related record or null, since an include replaces
+  the key with the record, and each other relation is an optional
+  property (a record or null, or an array of records). Request bodies
+  still take the key. A generated client reads the field as a union
+  (see `includes.md`).
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
