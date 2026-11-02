@@ -110,6 +110,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/growmap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nullarray"
 	// 2026-11 bug-bash rules (request-data)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/sanitizefix"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/textbind"
 )
 
@@ -224,6 +225,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(nullarray.Analyzer),
 	// 2026-11 bug-bash rules (request-data): one per repeated bug shape.
 	allow.Guard(textbind.Analyzer),
+	allow.Guard(sanitizefix.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

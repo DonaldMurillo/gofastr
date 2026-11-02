@@ -55,6 +55,7 @@ var Analyzers = []string{
 	"recoverlog",
 	"reflectset",
 	"reqparamlimit",
+	"sanitizefix",
 	"resolvedial",
 	"rootread",
 	"rootwrite",
