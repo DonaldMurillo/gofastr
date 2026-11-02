@@ -193,7 +193,9 @@ func (fi *FormItem) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("form item must be a field name string or an object: %w", err)
 	}
-	for key := range raw {
+	// Sorted, so an item with two unknown keys is refused naming the
+	// same one on every decode.
+	for _, key := range slices.Sorted(maps.Keys(raw)) {
 		switch key {
 		case "row", "section", "help", "collapsed", "items":
 		default:
