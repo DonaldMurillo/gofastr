@@ -10,5 +10,5 @@ import (
 )
 
 func TestEmbedSkip(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), allow.Guard(embedskip.Analyzer), "a")
+	analysistest.Run(t, analysistest.TestData(), allow.Guard(embedskip.Analyzer), "a", "arms", "armsfixed", "notags")
 }
