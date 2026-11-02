@@ -696,7 +696,7 @@ func setupServer() *framework.App {
 	registerPrintDemos(fwApp)
 
 	// ── Live-dashboard demo wiring (additive) ───────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo, a queue
+	// /examples/live-dashboard, a queue
 	// ops dashboard fed by SSE island push. The demo state lives in
 	// the package-level liveDash value (screen_livedash.go); this block
 	// starts the ticker that advances it, registers the four island
@@ -873,12 +873,12 @@ func registerScreens(site *app.App) {
 	examples.Screen(groupScreen("/examples/catalog/:id", &CatalogItemScreen{},
 		app.InterceptFrom("/examples/catalog", app.ScreenDrawer)), nil)
 	// ── Presence demo ──────────────────────────────────────────────
-	// /examples/presence?presence=presence-demo, a live avatar roster.
-	// The ?presence= param is threaded into the SSE <meta> tag by
-	// handlePage so the connection joins the topic.
+	// /examples/presence, a live avatar roster. The screen declares its
+	// topic (PresenceTopics), and handlePage signs it into the SSE <meta>
+	// tag so the connection joins it.
 	examples.Screen(groupScreen("/examples/presence", &PresenceScreen{}), nil)
 	// ── Live-dashboard demo ────────────────────────────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo, an ops
+	// /examples/live-dashboard, an ops
 	// dashboard fed by SSE island push. The ticker that advances the
 	// demo state is wired in setupServer; see screen_livedash.go.
 	examples.Screen(groupScreen("/examples/live-dashboard", &LiveDashboardScreen{}), nil)

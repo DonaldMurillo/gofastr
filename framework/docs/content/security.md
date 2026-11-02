@@ -793,16 +793,19 @@ for every operation on an entity that declares none of `OwnerField`,
    requires an authenticated owner for every operation; the new
    session gate is redundant there and steps aside.
 2. **`Access` declared** (any operation, even a partial block): RBAC
-   governs the entity "as today": a blank permission for an operation
-   leaves it un-gated by RBAC, and the new session gate does not layer
-   an extra requirement on top.
+   governs the entity. A blank `Read` leaves reads open to every caller;
+   a blank `Create`, `Update` or `Delete` is refused to every caller
+   (403), a wildcard role included. `framework.Anyone` opens an
+   operation on purpose (`Create: framework.Anyone` for a contact form
+   on an otherwise gated entity). The session gate does not layer an
+   extra requirement on top.
 3. **`Public: true`**: a deliberate, full opt-out. Every operation,
    reads and writes, is open to anonymous callers: the framework's
    pre-secure-by-default behaviour for that entity. Meant for content
    that's genuinely public (a contact form, a blog's comments), not as
    a workaround for a 401 during development. An entity that wants
    public reads but gated writes uses `Access` instead (a blank
-   `Read` + a real `Create` permission).
+   `Read` and a real permission for each write).
 
 The read posture has two questions, and `Public` answers only the first
 (may this caller read the entity). **Which rows** they see is

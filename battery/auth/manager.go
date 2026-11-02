@@ -160,6 +160,13 @@ type AuthConfig struct {
 	// (auth.ErrEmailNotComposed, or any other) fails the request with
 	// 400 at every email-ingesting endpoint.
 	CanonicalizeEmail func(email string) (string, error)
+
+	// Pages renders the screens the battery answers with itself: the
+	// magic-link confirmation and the same-site hop a cross-site OAuth
+	// link callback or verification link lands on. A UIHost app sets
+	// it to authui.Pages(host) (battery/auth/authui) so they carry the
+	// app's chrome and theme. nil keeps the plain built-in documents.
+	Pages Pages
 }
 
 // defaults fills in zero values with sensible defaults.

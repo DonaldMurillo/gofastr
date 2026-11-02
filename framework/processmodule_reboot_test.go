@@ -117,12 +117,22 @@ func TestProcessModuleRebootKeepsState(t *testing.T) {
 		wantGrants         []access.Permission
 		wantWarn           bool
 		wantReadyAfterBoot bool
+		// revokeBetween is revoked at runtime after boot one.
+		revokeBetween []access.Permission
 	}
 	cases := []tc{
 		{name: "same", bootOneGrants: read, bootTwoGrants: read, wantEnabled: true, wantGen: 1, wantGrants: read, wantReadyAfterBoot: true},
 		{name: "new_artifact", bootOneGrants: read, bootOneSHA: oldSHA, bootTwoGrants: read, wantEnabled: true, wantGen: 2, wantGrants: read},
 		{name: "grants_widened", bootOneGrants: read, bootTwoGrants: readWrite, wantEnabled: false, wantGen: 2, wantGrants: readWrite, wantWarn: true},
-		{name: "grants_narrowed", bootOneGrants: readWrite, bootTwoGrants: read, wantEnabled: false, wantGen: 2, wantGrants: read, wantWarn: true},
+		// A narrower descriptor takes grants away and adds none: nothing new
+		// runs unseen, so the module stays enabled (issue #614).
+		{name: "grants_narrowed", bootOneGrants: readWrite, bootTwoGrants: read, wantEnabled: true, wantGen: 2, wantGrants: read},
+		// A runtime revoke outlives the next boot: the descriptor still
+		// requests the revoked grant, and the stored revoke wins.
+		{name: "revoke_survives", bootOneGrants: readWrite, revokeBetween: []access.Permission{"articles:create"}, bootTwoGrants: readWrite, wantEnabled: true, wantGen: 2, wantGrants: read},
+		// A grant the descriptor adds after a revoke still disables, and the
+		// revoked grant stays out.
+		{name: "revoke_then_widen", bootOneGrants: readWrite, revokeBetween: []access.Permission{"articles:create"}, bootTwoGrants: []access.Permission{"articles:read", "articles:create", "articles:update"}, wantEnabled: false, wantGen: 3, wantGrants: []access.Permission{"articles:read", "articles:update"}, wantWarn: true},
 		{name: "grants_and_artifact", bootOneGrants: read, bootOneSHA: oldSHA, bootTwoGrants: readWrite, wantEnabled: false, wantGen: 2, wantGrants: readWrite, wantWarn: true},
 		{name: "grants_reordered", bootOneGrants: readWrite, bootTwoGrants: []access.Permission{"articles:create", "articles:read", "articles:read"}, wantEnabled: true, wantGen: 1, wantGrants: readWrite},
 	}
@@ -145,6 +155,11 @@ func TestProcessModuleRebootKeepsState(t *testing.T) {
 					}
 					if err := app1.ProcessModules().Enable(ctx, d1.Name); err != nil {
 						t.Fatalf("first boot enable: %v", err)
+					}
+					if c.revokeBetween != nil {
+						if _, err := app1.ProcessModules().RevokeGrants(ctx, d1.Name, c.revokeBetween); err != nil {
+							t.Fatalf("first boot revoke: %v", err)
+						}
 					}
 					closeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 					_ = app1.ProcessModules().Close(closeCtx)

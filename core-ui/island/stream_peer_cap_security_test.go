@@ -132,7 +132,7 @@ func TestSSEPeerCapAnswers429(t *testing.T) {
 	}
 	defer held()
 	rec := httptest.NewRecorder()
-	mgr.ServeSSEWithPresence(rec, r, PresenceIdentity{}, nil)
+	mgr.ServeSSEWithPresence(rec, r, PresenceIdentity{}, PresenceTopics{})
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
 		t.Fatalf("over the client cap: %d Retry-After=%q, want 429 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
 	}
@@ -160,7 +160,7 @@ func TestPeerCapHintsAtAnUnlistedProxy(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer held()
-		m.ServeSSEWithPresence(httptest.NewRecorder(), r, PresenceIdentity{}, nil)
+		m.ServeSSEWithPresence(httptest.NewRecorder(), r, PresenceIdentity{}, PresenceTopics{})
 	}
 	refuse(NewManager(WithPeerStreamCap(1)), "203.0.113.7:1")
 	refuse(NewManager(WithPeerStreamCap(1), WithTrustedProxies("192.0.2.1")), "10.0.0.1:1")

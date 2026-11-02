@@ -289,6 +289,7 @@ entities:
     # (fail-closed 403 for anonymous). See app-spec.md "Unscoped PII".
     access:
       read: contacts:read
+      create: anyone
       update: contacts:write
       delete: contacts:admin
     indices:

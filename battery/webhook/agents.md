@@ -44,8 +44,8 @@ stop and use `Manager` instead:
 
 `Manager` handles signing, retry-with-backoff, delivery-state, and
 dead-letter parking. Receiver verification uses
-`webhook.VerifyTimestamped(secret, sigHeader, body, 5*time.Minute)`
-(returns `bool`).
+`webhook.VerifyTimestamped(secret, sigHeader, eventHeader, deliveryIDHeader, body, 5*time.Minute)`
+(returns `bool`); the event and delivery id are part of the signature.
 
 **Security:**
 - Leave `AllowPrivateNetworks: false`. Setting it true allows

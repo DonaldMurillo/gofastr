@@ -41,15 +41,16 @@ func sectionAfter(t *testing.T, doc, anchor string, window int) string {
 	return doc[i:min(i+window, len(doc))]
 }
 
-// ConfirmPageData.CSRFField exists because a custom ConfirmPage rendered no
-// CSRF field and its only button 403'd under auth.CSRF() (WithBFFPosture
-// mounts that app-wide). auth.md is the one place a host learns to write a
-// custom ConfirmPage, so its example MUST embed d.CSRFField.
+// ConfirmPageData.CSRFField exists because a custom confirmation page
+// rendered no CSRF field and its only button 403'd under auth.CSRF()
+// (WithBFFPosture mounts that app-wide). auth.md is the one place a host
+// learns to write its own auth.Pages, so its example MUST embed
+// d.CSRFField.
 func TestAuthConfirmPageDocRendersCSRFField(t *testing.T) {
-	section := sectionAfter(t, readDoc(t, "auth.md"), "MagicLinkConfig.ConfirmPage", 2000)
+	section := sectionAfter(t, readDoc(t, "auth.md"), "To draw them some other way, implement `auth.Pages`", 2500)
 	if !strings.Contains(section, "CSRFField") {
-		t.Errorf("auth.md's ConfirmPage example never names ConfirmPageData.CSRFField; " +
-			"battery/auth/magiclink.go says a custom ConfirmPage MUST render it, and " +
+		t.Errorf("auth.md's auth.Pages example never names ConfirmPageData.CSRFField; " +
+			"battery/auth/pages.go says a Pages implementation MUST render it, and " +
 			"battery/auth/bff.go mounts CSRF app-wide under WithBFFPosture")
 	}
 }

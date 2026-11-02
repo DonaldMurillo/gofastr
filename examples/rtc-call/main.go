@@ -121,6 +121,9 @@ func buildApp() *framework.App {
 		ICEServers: iceServersFromEnv(),
 		TURN:       turnFromEnv(),
 		Authorize:  authorize,
+		// Callers are anonymous (a lobby display name, no account), so
+		// each socket gets its own seat instead of the join refusal.
+		AnonymousSeats: rtc.AnonymousPerSocket,
 	})
 	fwApp.RegisterPlugin(sig)
 
