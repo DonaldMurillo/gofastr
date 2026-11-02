@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`ExportData` reads one snapshot on Postgres.** Each table was read on
+  its own, so an export of an app taking writes held comments whose post
+  committed after the posts were read: the archive named parents it did
+  not hold and its restore tripped the foreign key. Keyset paging could
+  also chase rows inserted ahead of its cursor for as long as the writes
+  kept coming. Every table is read in one read-only `REPEATABLE READ`
+  transaction now. SQLite still reads table by table.
 - **`/metrics` carries the `db_pool` and `outbox` series with no battery.**
   Start mounted the bare metrics store, and the framework-owned
   collectors attach only inside `app.Metrics()`, so an app with `WithDB`

@@ -305,6 +305,12 @@ datexport.Register(datexport.DataExporter{
   and import share the same database (each pool connection otherwise gets its
   own private `:memory:`). A file-backed SQLite or Postgres DB has no such
   constraint.
+- **Exporting a live app**: on Postgres the export reads every table in one
+  read-only `REPEATABLE READ` snapshot, so the archive is the database at a
+  single moment, however busy the app is, and writers are never blocked. On
+  SQLite each table is read on its own: stop writes during the export, or a
+  child row written after its parent's table was read can land in the archive
+  without its parent.
 - **Cross-dialect restore**: an archive is portable across SQLite and Postgres
   at the row level, but Postgres enforces column types strictly: bind a string
   into a `TIMESTAMPTZ` column and it parses; bind a JSON number into a typed
