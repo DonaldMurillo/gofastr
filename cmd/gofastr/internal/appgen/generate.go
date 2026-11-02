@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -2553,7 +2554,11 @@ func printGeneratedErrorsJSON(errs ...error) {
 		if i == len(errs)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"message\":%q}%s\n", err.Error(), comma)
+		// json.Marshal, not %q: Go's quoting spells a control byte \x1b
+		// or \a, which no JSON parser reads, and an error can carry one
+		// from a spec it refused.
+		msg, _ := json.Marshal(err.Error())
+		fmt.Printf("  {\"message\":%s}%s\n", msg, comma)
 	}
 	fmt.Println(`]}`)
 }

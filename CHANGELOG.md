@@ -163,6 +163,13 @@ few lines, and link the PR or the docs page for the rest.
   cross-site 403, typed by a new `GateError` schema, since that gate
   nests the refusal under `error` where the CRUD routes' `Error` keeps it
   flat. The SDK docs' errors page names 409, 415 and the second shape.
+- **`gofastr generate cli --from-openapi` keeps spec bytes off the
+  terminal.** A binary body's content type reached the generated
+  `--file` help raw, so a spec could write ESC or C1 sequences to
+  whoever ran `<cli> <op> --help`; it must now be a media type with no
+  control byte. A refused spec's error encodes control bytes instead of
+  printing them, and `--dry-run --json` errors are valid JSON (they were
+  spelled with Go's `%q`, whose `\x1b` no JSON parser reads).
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
