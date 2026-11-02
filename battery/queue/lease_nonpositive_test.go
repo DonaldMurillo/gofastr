@@ -74,6 +74,30 @@ func TestNonPositiveLeaseKeepsDefault(t *testing.T) {
 	}
 }
 
+// RedisQueue.SetVisibilityTimeout had the same shape: a zero or negative
+// timeout made Reclaim re-deliver a job its worker had just claimed.
+func TestRedisNonPositiveVisibilityKeepsTimeout(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Minute} {
+		t.Run(d.String(), func(t *testing.T) {
+			q := NewRedisQueue(newMockRedis(), "jobs")
+			now := time.Now()
+			q.now = func() time.Time { return now }
+			q.SetVisibilityTimeout(d)
+			ctx := context.Background()
+			if err := q.Enqueue(ctx, Job{ID: "j", Type: "t"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := q.Dequeue(ctx); err != nil {
+				t.Fatalf("claim: %v", err)
+			}
+			now = now.Add(time.Second) // the handler is still running
+			if n, err := q.Reclaim(ctx); err != nil || n != 0 {
+				t.Fatalf("Reclaim re-delivered %d live jobs (%v), want 0", n, err)
+			}
+		})
+	}
+}
+
 func countJobs(t *testing.T, db *sql.DB, table string) int {
 	t.Helper()
 	var n int

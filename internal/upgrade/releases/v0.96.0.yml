@@ -656,10 +656,11 @@ notes:
     find:
       uses:
         - gofastr/battery/queue.Scheduler.Every
-  - change: "queue.WithLeaseTimeout and DBQueue.SetLeaseTimeout ignore a zero or negative lease and keep the five-minute default"
+  - change: "queue.WithLeaseTimeout, DBQueue.SetLeaseTimeout and RedisQueue.SetVisibilityTimeout ignore a zero or negative value and keep the current lease (five minutes and 30 seconds by default)"
     breaking: false
-    guidance: "A lease of zero or less made every claimed job look abandoned at once, so a running job ran again on the next poll. If you passed 0 meaning no lease, pass a lease longer than your slowest handler instead."
+    guidance: "A lease of zero or less made every claimed job look abandoned at once, so a running job ran again on the next poll or Reclaim. If you passed 0 meaning no lease, pass a lease longer than your slowest handler instead."
     find:
       uses:
         - gofastr/battery/queue.WithLeaseTimeout
         - gofastr/battery/queue.DBQueue.SetLeaseTimeout
+        - gofastr/battery/queue.RedisQueue.SetVisibilityTimeout

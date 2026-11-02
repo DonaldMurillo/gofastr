@@ -145,7 +145,9 @@ few lines, and link the PR or the docs page for the rest.
   written: the next poll ran a live job a second time, and on a job's
   last attempt the dead-letter sweep failed it while it was still
   running. `WithLeaseTimeout` and `SetLeaseTimeout` now ignore
-  `d <= 0`, as the durable scheduler's `LeaseDuration` already did.
+  `d <= 0`, as the durable scheduler's `LeaseDuration` already did, and
+  so does `RedisQueue.SetVisibilityTimeout`, whose zero window made
+  `Reclaim` re-deliver a job its worker had just claimed.
 - **The in-memory `queue.Scheduler` refuses an interval below one
   millisecond.** `Every(5)` (five nanoseconds) made the scheduler's
   timer loop enqueue a job per iteration, over 12,000 in 20ms. `Register`
