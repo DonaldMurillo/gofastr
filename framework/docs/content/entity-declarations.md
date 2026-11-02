@@ -85,7 +85,12 @@ declaration's full shape. `App.View` entities and any registration built
 with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
 batch and Create/Update-column sections — those routes answer 404/405 —
 and the `limit` row reports the same cap the List route clamps `?limit`
-with (`Pagination.MaxListLimit`, never above 1000, 100 when unset). A doc
+with (`Pagination.MaxListLimit`, never above 1000, 100 when unset), and
+the default page size, 20 or the cap when that is smaller.
+`/openapi.json` states the same two numbers on its `limit` parameter
+(`crud.ListLimits` returns them), and lists the 409 a write answers when
+it collides with a unique field or a client-supplied key and the 415 a
+non-JSON body gets. A doc
 that advertises routes or limits the server refuses sends agents into
 404s; the generators read the mount, not the declaration.
 The type column of its field tables and the SDK reference screens

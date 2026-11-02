@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`/openapi.json` lists the 409 and 415 writes answer, and the
+  entity's page size.** A write colliding with a unique field or a
+  client-supplied key answers 409 naming the field, and a body without
+  the JSON content type answers 415; neither was documented. The `limit`
+  parameter said "default 20, max 100" whatever `Pagination.MaxListLimit`
+  set, and `llm.md` said default 20 under a smaller cap; both now state
+  the numbers the list applies (new `crud.ListLimits`).
 - **`/openapi.json` lists only a view's read routes.** `App.View`
   mounts its entity read-only, and `llm.md` says so, but the spec
   documented create, update, delete and the `_batch` family on every

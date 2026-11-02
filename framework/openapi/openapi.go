@@ -423,13 +423,27 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		}
 		fieldsSchema := map[string]any{"type": "string"}
 
+		// conflicts reports whether a write can collide with a stored row:
+		// a Unique field, or a key the client supplies. The route answers
+		// that collision 409 with the field named.
+		conflicts := false
+		for _, f := range fields {
+			if f.Unique || (slices.Contains(ent.KeyColumns(), f.Name) && f.AutoGenerate == schema.AutoNone) {
+				conflicts = true
+			}
+		}
+
 		// --- GET /{table}: List ---
 		listOp := openapi.NewOperation()
 		listOp.Summary = "List " + entityName
 		listOp.OperationID = "list_" + schemaName
 		listOp.Tags = []string{tagName}
 		listOp.AddParameter("page", "query", "Page number (offset mode)", false, map[string]any{"type": "integer", "default": 1})
-		listOp.AddParameter("limit", "query", "Items per page (max 100)", false, map[string]any{"type": "integer", "default": 20})
+		// The entity's own cap, the numbers the list clamps with: a larger
+		// ?limit is cut to it, not refused, so it is described, not a
+		// schema maximum a strict client would refuse to send.
+		defLimit, maxLimit := crud.ListLimits(ent.Config.Pagination.MaxListLimit)
+		listOp.AddParameter("limit", "query", fmt.Sprintf("Items per page (max %d; a larger limit is cut to it)", maxLimit), false, map[string]any{"type": "integer", "default": defLimit})
 		listOp.AddParameter("sort", "query", "Sort field (offset mode only; ignored when ?cursor is present)", false, map[string]any{"type": "string"})
 		listOp.AddParameter("cursor", "query", "Opaque cursor; presence (even empty) switches the response to CursorPage shape and uses keyset pagination by primary key.", false, map[string]any{"type": "string"})
 		listOp.AddParameter("direction", "query", "Cursor walk direction: forward (default) or backward.", false, map[string]any{"type": "string", "enum": []string{"forward", "backward"}, "default": "forward"})
@@ -515,6 +529,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
+		addWriteRefusals(createOp, conflicts, errorRef)
 		if statesGuarded {
 			createOp.AddResponse(422, "Tried to set the state field to a non-initial value, or to set a stamp", stateErrRef)
 		}
@@ -554,6 +569,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, scopeSkip, true), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
+		addWriteRefusals(updateOp, conflicts, errorRef)
 		if statesGuarded {
 			updateOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
 		}
@@ -575,6 +591,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
+		addWriteRefusals(patchOp, conflicts, errorRef)
 		if statesGuarded {
 			patchOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
 		}
@@ -670,6 +687,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		batchCreateOp.SetRequestBody("application/json", batchCreateBody, true)
 		batchCreateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchCreateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		batchCreateOp.AddResponse(415, "Content-Type must be application/json", errorRef)
 		if gated {
 			batchCreateOp.AddResponse(401, "Authentication required", errorRef)
 			batchCreateOp.AddResponse(403, "Forbidden", errorRef)
@@ -720,6 +738,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		batchUpdateOp.SetRequestBody("application/json", batchUpdateBody, true)
 		batchUpdateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchUpdateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		batchUpdateOp.AddResponse(415, "Content-Type must be application/json", errorRef)
 		if gated {
 			batchUpdateOp.AddResponse(401, "Authentication required", errorRef)
 			batchUpdateOp.AddResponse(403, "Forbidden", errorRef)
@@ -769,6 +788,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		batchDeleteOp.SetRequestBody("application/json", batchDeleteBody, true)
 		batchDeleteOp.AddResponse(200, "All items committed", batchRespRef)
 		batchDeleteOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		batchDeleteOp.AddResponse(415, "Content-Type must be application/json", errorRef)
 		if gated {
 			batchDeleteOp.AddResponse(401, "Authentication required", errorRef)
 			batchDeleteOp.AddResponse(403, "Forbidden", errorRef)
@@ -812,6 +832,17 @@ func entityOpenAPI(registry entity.Registry, title, version string, opts Options
 		})
 	}
 	return s
+}
+
+// addWriteRefusals documents the refusals every JSON-body write shares:
+// 415 for a body without the JSON content type, and, when the entity has
+// a Unique field or a client-supplied key, 409 for a write that collides
+// with a stored row (fields names the column, field_reasons unique_taken).
+func addWriteRefusals(op *openapi.Operation, conflicts bool, errorRef map[string]any) {
+	if conflicts {
+		op.AddResponse(409, "Conflicts with a stored row: a unique field or the key is already in use", errorRef)
+	}
+	op.AddResponse(415, "Content-Type must be application/json", errorRef)
 }
 
 // requestSchema returns the write-request view of the entity schema:

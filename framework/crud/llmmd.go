@@ -179,8 +179,8 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	// same reality-drift as advertising unmounted routes, one column over.
 	// listLimitCap is the function the request path actually clamps with, so
 	// the doc and the clamp cannot disagree.
-	fmt.Fprintf(&b, "| `limit` | integer | Items per page (default 20, max %d) |\n",
-		listLimitCap(ent.Config.Pagination.MaxListLimit))
+	defLimit, maxLimit := ListLimits(ent.Config.Pagination.MaxListLimit)
+	fmt.Fprintf(&b, "| `limit` | integer | Items per page (default %d, max %d) |\n", defLimit, maxLimit)
 	b.WriteString("| `sort` | string | Sort field (prefix with `-` for descending, e.g. `-created_at`) |\n")
 	b.WriteString("| `cursor` | string | Opaque cursor for keyset pagination. Presence switches to cursor mode. |\n")
 	b.WriteString("| `direction` | string | Cursor walk direction: `forward` (default) or `backward` |\n")
