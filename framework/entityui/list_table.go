@@ -104,6 +104,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		}
 	}
 	if known && total > 0 && len(rows) > 0 && !b.top {
+		//gofastr:allow(intwrap) page is clampPage'd to the total's page count before table runs (list_render.go), and s.limit is one of the offered page sizes under maxListLimit (list_query.go)
 		from := (page-1)*s.limit + 1
 		dt.Summary = i18nui.EntityRange.Text(ctx, map[string]any{
 			"from":  from,
