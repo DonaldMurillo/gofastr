@@ -129,10 +129,16 @@ func userFeed(w http.ResponseWriter, r *http.Request) {
 func topicFeed(w http.ResponseWriter, r *http.Request, topics []string) {
 	topics = authorizeTopics(r.Context(), topics) // want `connect-time decision authorizeTopics is never re-run`
 	sse := stream.NewSSEWriter(w)
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-tick.C:
+			if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+				return
+			}
 		case ev := <-feed():
 			if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
 				return
@@ -160,6 +166,10 @@ func tenantFeed(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-time.After(time.Second):
+			if !held() {
+				return
+			}
 		case ev := <-feed():
 			if !held() {
 				return
@@ -169,15 +179,18 @@ func tenantFeed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ---- quiet: the fix spellings ----------------------------------------
+// ---- firing: identity re-checked only when an event arrives -----------
 
-// recheckPerDelivery is the crud / mcp GET spelling.
-func recheckPerDelivery(w http.ResponseWriter, r *http.Request) {
+// deliveryOnly is core/mcp's GET stream before 2bb698d2e: the caller is
+// re-established before each delivery and at no other time, so an idle
+// stream for a revoked session holds its seat until a notification
+// happens to arrive.
+func deliveryOnly(w http.ResponseWriter, r *http.Request) {
 	if _, ok := handler.GetUser(r.Context()); !ok {
 		return
 	}
 	sse := stream.NewSSEWriter(w)
-	for {
+	for { // want `re-checks its principal only when this select delivers an event`
 		select {
 		case <-r.Context().Done():
 			return
@@ -190,20 +203,26 @@ func recheckPerDelivery(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// recheckViaClosure re-checks through a closure the loop calls.
-func recheckViaClosure(w http.ResponseWriter, r *http.Request) {
+// heartbeatOnly has a ticker, but the tick only writes a comment: a
+// matcher that asks "is there a time case" rather than "does a time case
+// reach the re-check" would pass it.
+func heartbeatOnly(w http.ResponseWriter, r *http.Request) {
 	if _, ok := handler.GetUser(r.Context()); !ok {
 		return
 	}
 	sse := stream.NewSSEWriter(w)
+	beat := time.NewTicker(time.Second)
+	defer beat.Stop()
 	held := func() bool {
 		_, ok := handler.RecheckPrincipal(r.Context())
 		return ok
 	}
-	for {
+	for { // want `re-checks its principal only when this select delivers an event`
 		select {
 		case <-r.Context().Done():
 			return
+		case <-beat.C:
+			_ = sse.WriteComment("hb")
 		case ev := <-feed():
 			if !held() {
 				return
@@ -213,7 +232,111 @@ func recheckViaClosure(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// tokenServer re-runs its resolver inside the loop (harness REST).
+// tokenEvents re-runs its resolver per delivery only: the same idle gap.
+type tokenEvents struct{}
+
+func (s *tokenEvents) verifyToken(r *http.Request) error { return nil }
+
+func (s *tokenEvents) events(w http.ResponseWriter, r *http.Request) {
+	if s.verifyToken(r) != nil {
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	for { // want `re-checks its principal only when this select delivers an event`
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-feed():
+			if s.verifyToken(r) != nil {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+	}
+}
+
+// ---- quiet: the fix spellings ----------------------------------------
+
+// recheckPerDelivery is the crud / mcp GET spelling: before each
+// delivery and on a keep-alive tick.
+func recheckPerDelivery(w http.ResponseWriter, r *http.Request) {
+	if _, ok := handler.GetUser(r.Context()); !ok {
+		return
+	}
+	sse := stream.NewSSEWriter(w)
+	keepAlive := time.NewTicker(time.Second)
+	defer keepAlive.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-keepAlive.C:
+			if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+				return
+			}
+			_ = sse.WriteComment("keep-alive")
+		case ev := <-feed():
+			if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+				return
+			}
+			_ = sse.WriteEvent("e", ev)
+		}
+	}
+}
+
+// recheckViaClosure re-checks through a closure both cases call (the
+// post-2bb698d2e core/mcp spelling, callerHeld).
+func recheckViaClosure(w http.ResponseWriter, r *http.Request) {
+	if _, ok := handler.GetUser(r.Context()); !ok {
+		return
+	}
+	sse := stream.NewSSEWriter(w)
+	held := func() bool {
+		_, ok := handler.RecheckPrincipal(r.Context())
+		return ok
+	}
+	keepAlive := time.NewTicker(time.Second)
+	defer keepAlive.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-keepAlive.C:
+			if !held() {
+				return
+			}
+		case ev := <-feed():
+			if !held() {
+				return
+			}
+			_ = sse.WriteEvent("e", ev)
+		}
+	}
+}
+
+// recheckEachIteration re-checks at the top of the loop body beside a
+// select holding a tick: every tick runs the body again.
+func recheckEachIteration(w http.ResponseWriter, r *http.Request) {
+	if _, ok := handler.GetUser(r.Context()); !ok {
+		return
+	}
+	sse := stream.NewSSEWriter(w)
+	for {
+		if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(time.Second):
+		case ev := <-feed():
+			_ = sse.WriteEvent("e", ev)
+		}
+	}
+}
+
+// tokenServer re-runs its resolver inside the loop (harness REST), on
+// every event and every idle tick.
 type tokenServer struct{}
 
 func (s *tokenServer) verifyToken(r *http.Request) error { return nil }
@@ -223,10 +346,16 @@ func (s *tokenServer) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
+	idle := time.NewTicker(time.Second)
+	defer idle.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-idle.C:
+			if s.verifyToken(r) != nil {
+				return
+			}
 		case ev := <-feed():
 			if s.verifyToken(r) != nil {
 				return
@@ -285,10 +414,17 @@ func (c *watchedSocket) pump() {
 func topicFeedFixed(w http.ResponseWriter, r *http.Request, topics []string) {
 	topics = authorizeTopics(r.Context(), topics)
 	sse := stream.NewSSEWriter(w)
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-tick.C:
+			live, ok := handler.RecheckPrincipal(r.Context())
+			if !ok || len(authorizeTopics(live, topics)) != len(topics) {
+				return
+			}
 		case ev := <-feed():
 			live, ok := handler.RecheckPrincipal(r.Context())
 			if !ok {
@@ -311,10 +447,16 @@ func tenantFeedFixed(w http.ResponseWriter, r *http.Request) {
 		fresh, ok := handler.RecheckPrincipal(r.Context())
 		return ok && handler.GetTenantID(fresh) == tenantID
 	}
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-tick.C:
+			if !held() {
+				return
+			}
 		case ev := <-feed():
 			if !held() {
 				return
