@@ -94,6 +94,22 @@ func TestCLIKeepsBigIntegers(t *testing.T) {
 	}
 }
 
+// A 2xx response past the client's 1 MiB cap says so: the decode read a
+// truncated body and the CLI printed "unexpected EOF", which names
+// neither the cap nor the response.
+func TestCLINamesAnOversizedResponse(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliValuesFixtureYAML)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"w1","title":"` + strings.Repeat("y", 2<<20) + `"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	out, code := runCLICode(t, bin, env, "widgets", "list", "--url", srv.URL)
+	if code != 1 || !strings.Contains(out, "exceeds 1048576 bytes") {
+		t.Errorf("an oversized list exited %d, want 1 naming the cap:\n%.300s", code, out)
+	}
+}
+
 // list prints the envelope the server sent: a keyset page has no total,
 // but decoding it through a struct printed "total": 0, "page": 0 and
 // "totalPages": 0, so `jq .total` read a count of zero, and a key the

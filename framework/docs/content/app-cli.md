@@ -83,7 +83,10 @@ Per verb:
   or array prints it as compact JSON, and a tab or line break in a value
   prints as a space, so every row stays on one line. JSON
   output keeps numbers exact: a value past 2^53 in a `--json` body, a
-  json-field flag or a response prints with every digit.
+  json-field flag or a response prints with every digit. The client
+  reads at most 1 MiB of a response: a bigger page fails with
+  `response body exceeds 1048576 bytes` (exit 1), so ask for fewer rows
+  with `--limit` or fewer columns with `--fields`.
 - **create / update / patch**: per-field flags OR `--json`
   (inline, `@file`, or `-` for stdin); the two are mutually exclusive.
   Field flags are presence-faithful: only explicitly-set flags enter

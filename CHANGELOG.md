@@ -542,6 +542,9 @@ few lines, and link the PR or the docs page for the rest.
   - `list` prints the envelope the server sent. A keyset page printed
     `"total": 0`, `"page": 0` and `"totalPages": 0` it never sent, and a
     key the CLI did not know was dropped.
+  - A 2xx response past the generated client's 1 MiB cap fails with
+    `response body exceeds 1048576 bytes` (`entities/client` and the Go
+    SDK). The truncated decode said `unexpected EOF`.
 - **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
   in [app-cli.md](framework/docs/content/app-cli.md):
   - **BREAKING: an acronym is one word in command and flag names.**

@@ -189,7 +189,17 @@ func (c *Client) send(ctx context.Context, method, path string, body io.Reader, 
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	dec := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes))
+	// One byte past the cap tells a body cut at the cap from one that
+	// ends there: a cut body decoded to "unexpected EOF", which named
+	// neither the cap nor the response.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > maxBodyBytes {
+		return fmt.Errorf("response body exceeds %d bytes", maxBodyBytes)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	return dec.Decode(out)
 }
