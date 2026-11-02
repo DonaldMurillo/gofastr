@@ -28,9 +28,15 @@ type MemoryQueueOption func(*MemoryQueue)
 // worker stops waiting there: a handler that ignores its context cannot
 // wedge its worker forever (one stuck job would otherwise stall the whole
 // queue); the job is retried as a failure and a late side effect counts
-// as the at-least-once duplicate. Defaults to 30 s.
+// as the at-least-once duplicate. Defaults to 30 s; d <= 0 keeps the
+// default. (A zero budget failed every job at once; DBQueue's
+// WithDBHandlerTimeout reads zero as "no timeout" instead.)
 func WithHandlerTimeout(d time.Duration) MemoryQueueOption {
-	return func(q *MemoryQueue) { q.handlerTimeout = d }
+	return func(q *MemoryQueue) {
+		if d > 0 {
+			q.handlerTimeout = d
+		}
+	}
 }
 
 // WithLogger sets the logger used for handler-failure (WARN) and
@@ -127,6 +133,11 @@ type MemoryQueue struct {
 	inflightMu sync.Mutex
 	inflight   map[string]Job
 
+	// running holds the jobs Start workers popped and are running, so an
+	// erasure can count them and mark them erased; the worker then drops
+	// the job instead of settling it. Guarded by inflightMu.
+	running []*runningJob
+
 	// dead retains jobs that exhausted MaxAttempts (terminally failed) so they
 	// can be inspected via Browsable and re-queued via Replay, instead of being
 	// silently dropped. Ordered oldest-first. It is BOUNDED at maxDeadJobs:
@@ -154,6 +165,13 @@ type MemoryQueue struct {
 // deadJob is one retained dead-letter record. gen identifies this
 // retention: a replayed job that fails again gets a new gen under the same
 // ID, so Replay retires only the record it replayed.
+// runningJob is a job a Start worker took off the heap. erased is set by
+// eraseUser, under inflightMu, when the job belongs to the erased user.
+type runningJob struct {
+	job    Job
+	erased bool
+}
+
 type deadJob struct {
 	job Job
 	gen uint64
@@ -266,9 +284,10 @@ func (q *MemoryQueue) eraserName() string { return q.eraseName }
 // removed (with dryRun, how many it would). It holds all three stores and
 // moveMu, so no Dequeue, Nack or Replay carries a job from a store it has
 // not read yet into one it already has. A dequeued job's later Ack or
-// Nack finds nothing and does nothing. A job a worker is running when
-// the sweep passes is not stopped; if it fails and is retried, it is
-// back on the heap until the next erasure.
+// Nack finds nothing and does nothing. A job a Start worker is running
+// when the sweep passes is counted and not stopped: the worker drops it
+// when its handler returns, instead of retrying, dead-lettering or
+// deferring it, the way a DBQueue or RedisQueue settle finds no row.
 func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (int, error) {
 	// No manual move is half done, and none starts, until the erasure has
 	// read and cleared all three stores.
@@ -303,6 +322,14 @@ func (q *MemoryQueue) eraseUser(_ context.Context, userID string, dryRun bool) (
 			gone = append(gone, job)
 			if !dryRun {
 				delete(q.inflight, id)
+			}
+		}
+	}
+	for _, rj := range q.running {
+		if rj.job.UserID == userID && !rj.erased {
+			gone = append(gone, rj.job)
+			if !dryRun {
+				rj.erased = true
 			}
 		}
 	}
@@ -379,11 +406,11 @@ func (q *MemoryQueue) sortedLanes() []string {
 func (q *MemoryQueue) worker(lane string) {
 	defer q.wg.Done()
 	for {
-		job, ok := q.waitAndPop(lane)
+		rj, ok := q.waitAndPop(lane)
 		if !ok {
 			return
 		}
-		q.processJob(job)
+		q.processJob(rj)
 	}
 }
 
@@ -394,19 +421,26 @@ func (q *MemoryQueue) worker(lane string) {
 // lane holds no due job (shared workers pick up the rest). A job whose
 // ScheduledAt is still ahead is not claimable: the worker arms the wake
 // timer for it and sleeps, and Close does not wait for it.
-func (q *MemoryQueue) waitAndPop(lane string) (Job, bool) {
+func (q *MemoryQueue) waitAndPop(lane string) (*runningJob, bool) {
 	q.pmu.Lock()
 	defer q.pmu.Unlock()
 	for {
 		pj, nextDue, ok := q.pending.removeMatching(matchLane(lane), q.now())
 		if ok {
-			return pj.job, true
+			// Registered before pmu is released, so an erasure (which
+			// takes pmu, then inflightMu) sees the job in one store or
+			// the other, never in neither.
+			rj := &runningJob{job: pj.job}
+			q.inflightMu.Lock()
+			q.running = append(q.running, rj)
+			q.inflightMu.Unlock()
+			return rj, true
 		}
 		if q.closed {
 			// Nothing claimable remains for this worker. Shared workers
 			// already drained every due job via removeMatching above; lane
 			// workers leave other lanes to the shared pool.
-			return Job{}, false
+			return nil, false
 		}
 		if !nextDue.IsZero() {
 			q.armWakeLocked(nextDue)
@@ -466,7 +500,26 @@ func matchTypes(types []string) func(Job) bool {
 	}
 }
 
-func (q *MemoryQueue) processJob(job Job) {
+// settleRunning ends rj's run and, unless an erasure took the job while
+// it ran, settles it with settle. It holds moveMu's read side across both
+// steps, as Nack does, so an erasure never runs between the check and the
+// settle that puts the job back in a store.
+func (q *MemoryQueue) settleRunning(rj *runningJob, settle func()) {
+	q.moveMu.RLock()
+	defer q.moveMu.RUnlock()
+	q.inflightMu.Lock()
+	erased := rj.erased
+	if i := slices.Index(q.running, rj); i >= 0 {
+		q.running = slices.Delete(q.running, i, i+1)
+	}
+	q.inflightMu.Unlock()
+	if !erased {
+		settle()
+	}
+}
+
+func (q *MemoryQueue) processJob(rj *runningJob) {
+	job := rj.job
 	q.mu.RLock()
 	handler, ok := q.handlers[job.Type]
 	gate := q.gate
@@ -479,10 +532,12 @@ func (q *MemoryQueue) processJob(job Job) {
 		// and ListJobs/Stats showed nothing to reconcile from. Retain it
 		// as terminally failed instead, where Browsable can see it and
 		// Replay can re-run it once the handler ships.
-		q.logger.Error("queue: no handler registered; job dead-lettered",
-			"job_id", job.ID,
-			"job_type", job.Type)
-		q.retainDead(job)
+		q.settleRunning(rj, func() {
+			q.logger.Error("queue: no handler registered; job dead-lettered",
+				"job_id", job.ID,
+				"job_type", job.Type)
+			q.retainDead(job)
+		})
 		return
 	}
 
@@ -490,7 +545,7 @@ func (q *MemoryQueue) processJob(job Job) {
 	// a short delay so the job runs when the module re-enables without
 	// hot-looping the worker.
 	if gate != nil && !gateAllows(q.logger, gate, job.Type, job.ID) {
-		q.deferGated(job)
+		q.settleRunning(rj, func() { q.deferGated(job) })
 		return
 	}
 
@@ -498,8 +553,10 @@ func (q *MemoryQueue) processJob(job Job) {
 	defer cancel()
 	err := q.awaitHandler(ctx, handler, job)
 	if err == nil {
-		q.release(job)
-	} else {
+		q.settleRunning(rj, func() { q.release(job) })
+		return
+	}
+	q.settleRunning(rj, func() {
 		job.Attempts++
 		q.logger.Warn("queue: handler failed",
 			"job_id", job.ID,
@@ -532,7 +589,7 @@ func (q *MemoryQueue) processJob(job Job) {
 				"err", err)
 			q.retainDead(job)
 		}
-	}
+	})
 }
 
 // awaitHandler runs the handler with the per-job budget and returns its

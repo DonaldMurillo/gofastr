@@ -91,7 +91,8 @@ comma-joined value (`"provider,provider_id"`) is a composite key.
 `battery/queue` (queue_jobs) register themselves this way; importing the battery == including its tables.
 A store whose table name is configurable registers from its constructor
 instead, under the name it was given, so a renamed table is the one
-exported and erased: the auth API-token and OAuth-token stores, admin saved
+exported and erased: `queue.NewDBQueue` (a `WithTable` name), the auth
+API-token and OAuth-token stores, admin saved
 views, the A2A task and push-config stores, feature flags, the SQL
 idempotency store, the event outbox, the webhook delivery and inbound
 stores, and the entity admin's bulk jobs. Registration replaces an entry
@@ -385,7 +386,8 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    verification and passkey-registration token minted for the user; the
    magic-link one matches by email via the `IdentityEmail` resolver, see
    [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
-   `battery/queue` registers `queue_jobs` (delete by `user_id`), which reaches
+   `battery/queue` registers `queue_jobs`, and `NewDBQueue` the table it
+   was built with (delete by `user_id`), which reaches
    a job only when the producer set `Job.UserID` — see
    [the queue reference](queue.md). A job whose payload is personal data but
    which names no user is not erasable, and its payload column is exported
@@ -548,9 +550,10 @@ it. A semantic index over a store shared across processes
 eraser, and neither does one over a custom `Store` that cannot list its
 chunks (`AllChunks`): register a store eraser for it yourself.
 
-A job a worker is running when the sweep passes is not stopped. If it fails
-and is retried after the sweep, it is back in the queue until the next
-erasure. The Redis erasure is one Lua script, which the server runs with
+A job a worker is running when the sweep passes is not stopped, but it is
+counted, and when its handler returns the queue drops it instead of
+retrying, dead-lettering or deferring it: a `DBQueue` or `RedisQueue`
+settle finds the job gone, and a `MemoryQueue` worker skips the settle. The Redis erasure is one Lua script, which the server runs with
 no other command in between, so no worker step lands between its reads and
 its deletes. A worker that read a job just before the script ran (a job
 `Dequeue` popped but has not claimed, a `Nack`, a `Replay`) does not write

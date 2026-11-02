@@ -510,9 +510,14 @@ return n
 `
 
 // SetVisibilityTimeout configures how long a job can be in-flight before it
-// is considered abandoned and eligible for re-delivery. Safe for concurrent
-// use with Dequeue.
+// is considered abandoned and eligible for re-delivery. Defaults to 30
+// seconds; d <= 0 leaves the timeout unchanged, since a zero window made
+// Reclaim re-deliver a job the moment its worker claimed it. Safe for
+// concurrent use with Dequeue.
 func (q *RedisQueue) SetVisibilityTimeout(d time.Duration) {
+	if d <= 0 {
+		return
+	}
 	q.visibilityTimeout.Store(int64(d))
 }
 

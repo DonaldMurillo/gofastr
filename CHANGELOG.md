@@ -224,6 +224,90 @@ few lines, and link the PR or the docs page for the rest.
   gates in `evals/upgrade-fixtures` now refuse both shapes of mistake
   (`TestRegistryShapesMatchTheirRelease`, and the edit arm of
   `TestRegistrySymbolsExistedAtPriorTag`).
+- **A DBQueue built `WithTable` is exported and erased.** The queue
+  registered only the default `queue_jobs` table, so a queue on
+  `billing_jobs` sat outside `App.ExportData` and `App.EraseUserData`: an
+  erasure left that user's jobs, payloads included. `NewDBQueue` now
+  registers its own table under `datexport.ScopedName("queue_jobs",
+  table)`, as the outbox and the durable scheduler do. A host that
+  registered the renamed table by hand can drop that registration, or
+  the table is exported twice.
+- **A DBQueue job claimed as shutdown lands is handed back unstarted.**
+  The worker ran its handler on the already-cancelled context, the
+  handler failed at once, and the job spent an attempt on a run that
+  never happened; a `MaxAttempts: 1` job was dead-lettered. The worker
+  now returns it to pending with the attempt refunded, as the outbox
+  relay does with the rest of a batch.
+- **A DBQueue that cannot claim jobs says so.** The worker loop read every
+  claim error as an empty queue, so a lost database, a renamed table or a
+  row the claim cannot decode stopped every job with no log line. The
+  onset is now logged once at ERROR and the recovery once at INFO, as the
+  outbox relay already did.
+- **The outbox no longer drops an event for a consumer whose delivery
+  was not created yet.** Each consumer's deliveries are expanded in their
+  own batch, so with two relays, or a backlog older than the handler
+  grace (any outage past 15 minutes), a parent could hold consumer `a`'s
+  delivery and not yet `b`'s. Dispatching `a` completed the parent, and
+  expansion only visits pending parents, so `b` never received the event
+  and no dead letter recorded it: two relays over a 300-event backlog
+  lost up to five of 600 deliveries. A parent now completes only once
+  every consumer the relay declares for its type has a delivery.
+- **`queue.WithHandlerTimeout(0)` keeps the MemoryQueue's 30s budget.** A
+  zero budget failed every job the moment it started ("exceeded its 0s
+  budget"), retried it and dead-lettered it, though its handler may have
+  run each time. `WithDBHandlerTimeout(0)` means no timeout, so the same
+  value meant opposite things on the two queues.
+- **A skipped durable schedule no longer spins `DurableScheduler.Start`.**
+  A schedule the pass skips (a corrupted row, a stored interval under the
+  floor, a cron spec that no longer parses) keeps its past `next_run`,
+  and the loop woke for it every 10ms: a hundred passes a second, each
+  writing the lease row and logging the skip at ERROR. It now waits for
+  the next schedule that is not yet due, or the heartbeat.
+- **A DBQueue job dead-lettered by lease expiry says so.** The sweep that
+  fails a final-attempt claim whose worker died wrote only the status: the
+  job listed with its claim's `updated_at` and an earlier attempt's
+  `last_error`, or none. It now records the sweep time and a `last_error`
+  naming the lease expiry.
+- **An erasure drops the job a `MemoryQueue` worker is running.** A job a
+  `Start` worker had taken off the heap sat in no store the erasure read,
+  so it was not counted, and when its handler failed the worker put the
+  user's payload back on the heap or the dead list after an erasure that
+  had reported success. The erasure now counts it, and the worker drops
+  it when the handler returns, as a `DBQueue` or `RedisQueue` settle
+  already did.
+- **A gated DBQueue job survives a shutdown during its hand-back.** A
+  worker that claimed a job and then found its type gated released it on
+  the worker's context; a shutdown at that moment left the row claimed
+  with an attempt spent, and on a last attempt the dead-letter sweep
+  failed a job that never ran. The release now settles on a detached
+  context, as Ack and Nack do.
+- **Outbox options keep their defaults for zero or less.**
+  `outbox.WithPollInterval(0)` crashed the process when the relay
+  started (`time.NewTicker` panics on its goroutine); `WithBatchSize(0)`
+  delivered nothing, and a negative size was unlimited on SQLite but an
+  error on every Postgres pump; `WithMaxAttempts(0)` dead-lettered a
+  delivery on its first failure.
+- **`queue.WithLeaseTimeout(0)` keeps the five-minute lease.** A zero or
+  negative lease made every claim count as abandoned the moment it was
+  written: the next poll ran a live job a second time, and on a job's
+  last attempt the dead-letter sweep failed it while it was still
+  running. `WithLeaseTimeout` and `SetLeaseTimeout` now ignore
+  `d <= 0`, as the durable scheduler's `LeaseDuration` already did, and
+  so does `RedisQueue.SetVisibilityTimeout`, whose zero window made
+  `Reclaim` re-deliver a job its worker had just claimed.
+- **The in-memory `queue.Scheduler` refuses an interval below one
+  millisecond.** `Every(5)` (five nanoseconds) made the scheduler's
+  timer loop enqueue a job per iteration, over 12,000 in 20ms. `Register`
+  now returns an error for a negative interval or a positive one under
+  1ms, the floor `DurableScheduler` already had; `Every(0)` still
+  registers.
+- **An outbox handler budget longer than the claim lease no longer runs
+  twice.** The relay's lease is a fixed five minutes, but
+  `outbox.WithHandlerTimeout` took any budget: a handler allowed ten
+  minutes was re-claimed by another relay at minute five and ran
+  concurrently, and its own success was then fenced out. The lease is
+  now twice the handler budget plus the settle window when that is
+  longer than five minutes.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

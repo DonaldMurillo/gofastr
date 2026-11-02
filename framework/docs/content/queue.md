@@ -70,8 +70,15 @@ q.Start(ctx)
 defer q.Close()
 ```
 
+`WithLeaseTimeout` (default 5 minutes) is how long a claimed job may run
+before another worker treats its worker as dead and claims it again.
+Keep it longer than your slowest handler. A zero or negative value keeps
+the default, as does the same value passed to `SetLeaseTimeout`.
+
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
-exist. Pass `WithTable("my_jobs")` to use a custom table name. An
+exist. Pass `WithTable("my_jobs")` to use a custom table name; it is
+exported and erased under that name like the default (`App.ExportData`,
+`App.EraseUserData`). An
 index name longer than Postgres's 63-byte limit ends in a hash of the
 table name, so a long table name still gets each of its indexes. The
 durable scheduler's tables and indexes (`<table>_scheduler_schedules`,
@@ -386,6 +393,14 @@ a row in `claimed` status whose `claimed_at` has passed the configured
 lease timeout (default 5 min) becomes eligible again. No extra
 configuration needed.
 
+On shutdown (the context passed to `Start` cancelled), a DBQueue worker
+that has claimed a job but not started its handler hands the job back
+with its attempt refunded, so the next process runs it; a handler that
+is already running gets the cancelled context, and its result settles as
+usual. A worker that finds a claimed job's type gated hands it back the
+same way. A claim the database committed while the shutdown cancelled the
+query cannot be handed back; that job reruns when its lease expires.
+
 **RedisQueue** uses a visibility timeout: while a job is in-flight it
 sits in a processing hash with an expiry timestamp. Call
 `RedisQueue.Start(ctx, interval)` to run an auto-reclaim ticker:
@@ -471,7 +486,10 @@ single occurrence may retry before dead-lettering. `UserID(id)` sets
 `Job.UserID` on every fired job, so `App.EraseUserData` reaches the jobs
 of a schedule whose payload is about one person (a per-user digest).
 
-`Every(d)` schedules fire on a fixed interval; `Cron(spec)` schedules
+`Every(d)` schedules fire on a fixed interval of one millisecond or more
+(`Register` refuses a negative interval or a shorter positive one, the
+same floor as the durable scheduler; `Every(0)` fires on every tick of
+the one-minute floor); `Cron(spec)` schedules
 fire when the cron expression's next time arrives; use it for
 time-of-day work like "every day at 02:00" that an interval cannot
 express. The spec is parsed by [`framework/cron`](cron.md) (`cron.Parse`),
@@ -552,7 +570,9 @@ row.
 the remaining due schedules still fire, and a transient database failure is
 logged and retried at the next heartbeat instead of ending the loop. The
 loop only exits when `ctx` is cancelled, so one poison row cannot stop
-every schedule on the replica.
+every schedule on the replica. A skipped row is tried again at the next
+heartbeat (a third of `LeaseDuration`), not on every wake, so it logs once
+per heartbeat and does not keep the loop busy.
 
 The same `Lane` / `Priority` / `MaxAttempts` options exist on the durable
 builder. They PERSIST alongside the schedule definition: re-registering
@@ -673,7 +693,8 @@ audit or reconciliation process.
 black-holed dependency (an SMTP host that never answers, a hung HTTP
 call) wedges the worker forever, and with the default single worker
 that stalls the whole queue. Pass `WithDBHandlerTimeout(d)`
-(`WithHandlerTimeout(d)` on MemoryQueue, 30s default there) and the
+(`WithHandlerTimeout(d)` on MemoryQueue, 30s default there, kept for a
+zero or negative `d`; on DBQueue zero means no timeout) and the
 worker stops *waiting* at the deadline even if the handler ignores its
 cancelled context: the invocation runs on its own goroutine, the job is
 nacked at the deadline (retried/dead-lettered), and the worker keeps

@@ -689,3 +689,44 @@ notes:
     breaking: true
     guidance: "SQLite empties a table before dropping it, so the generated file failed with FOREIGN KEY constraint failed wherever a child row pointed at the table. Write the rebuild by hand under -- +migrate NoTransaction with PRAGMA foreign_keys=OFF before it and ON after it, or apply the change with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild."
     nodetect: "the refusal depends on the relations between entities and the snapshot, not on a spelling in the source"
+  - change: "An outbox relay's claim lease is twice the handler budget plus the 10s settle window when outbox.WithHandlerTimeout makes that longer than five minutes"
+    breaking: false
+    guidance: "A handler allowed longer than the five-minute lease was re-claimed by another relay while it still ran. Nothing to change; a relay that crashes holding such a claim now hands it on after the longer lease, so keep handler budgets as short as the work allows."
+    find:
+      uses:
+        - gofastr/framework/outbox.WithHandlerTimeout
+  - change: "BREAKING - the in-memory queue.Scheduler's Register refuses an Every interval that is negative or below one millisecond"
+    breaking: true
+    hits: review
+    guidance: "Every(5) is five nanoseconds and enqueued a job on every spin of the scheduler loop. Check the error Register returns and write the unit: Every(5 * time.Second). Every(0) still registers."
+    find:
+      uses:
+        - gofastr/battery/queue.Scheduler.Every
+  - change: "queue.WithLeaseTimeout, DBQueue.SetLeaseTimeout and RedisQueue.SetVisibilityTimeout ignore a zero or negative value and keep the current lease (five minutes and 30 seconds by default)"
+    breaking: false
+    guidance: "A lease of zero or less made every claimed job look abandoned at once, so a running job ran again on the next poll or Reclaim. If you passed 0 meaning no lease, pass a lease longer than your slowest handler instead."
+    find:
+      uses:
+        - gofastr/battery/queue.WithLeaseTimeout
+        - gofastr/battery/queue.DBQueue.SetLeaseTimeout
+        - gofastr/battery/queue.RedisQueue.SetVisibilityTimeout
+  - change: "outbox.WithPollInterval, WithBatchSize and WithMaxAttempts keep their defaults (1s, 100, 10) when given zero or less"
+    breaking: false
+    guidance: "A zero poll interval crashed the relay at start, a zero batch delivered nothing, and zero attempts dead-lettered on the first failure. Pass a positive value, or drop the option for the default."
+    find:
+      uses:
+        - gofastr/framework/outbox.WithPollInterval
+        - gofastr/framework/outbox.WithBatchSize
+        - gofastr/framework/outbox.WithMaxAttempts
+  - change: "queue.WithHandlerTimeout (MemoryQueue) keeps its 30s default when given zero or less"
+    breaking: false
+    guidance: "A zero budget failed every job at once and dead-lettered it after its retries. If you passed 0 meaning no timeout, pass a budget longer than your slowest handler; only DBQueue's WithDBHandlerTimeout reads 0 as no timeout."
+    find:
+      uses:
+        - gofastr/battery/queue.WithHandlerTimeout
+  - change: "queue.NewDBQueue registers the table it was built with (WithTable) for App.ExportData and App.EraseUserData, under datexport.ScopedName(\"queue_jobs\", table)"
+    breaking: false
+    guidance: "A renamed jobs table used to be skipped by both, so an erasure kept that user's jobs. If you registered the renamed table yourself with datexport.Register or RegisterEraser, remove that registration, or the table is exported and erased twice under two names."
+    find:
+      uses:
+        - gofastr/battery/queue.WithTable

@@ -194,7 +194,7 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 			settleCtx, cancel := o.settleContext(ctx)
 			defer cancel()
 			o.markDeliveryFailure(settleCtx, d, fmt.Errorf("unmarshal payload: %w", err))
-			o.completeParent(settleCtx, d.RowID)
+			o.completeParent(settleCtx, d.RowID, d.Type)
 			return
 		}
 	}
@@ -217,11 +217,11 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 	defer cancel()
 	if herr != nil {
 		o.markDeliveryFailure(settleCtx, d, herr)
-		o.completeParent(settleCtx, d.RowID)
+		o.completeParent(settleCtx, d.RowID, d.Type)
 		return
 	}
 	o.markDeliveryDispatched(settleCtx, d)
-	o.completeParent(settleCtx, d.RowID)
+	o.completeParent(settleCtx, d.RowID, d.Type)
 }
 
 // settleContext returns the context for one delivery's bookkeeping writes
