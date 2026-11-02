@@ -207,7 +207,9 @@ few lines, and link the PR or the docs page for the rest.
   line that reads as another field, a leading space folded it into the
   header above, and `To`, `Cc`, `From` or `Subject` gave the message two
   of that field, so a reader showed one recipient list while the envelope
-  used the other. `Bcc` published the blind list the sender never writes.
+  used the other. `Bcc` (and `Resent-Bcc`) published the blind list the
+  sender never writes, and two keys differing only in case (`Date` and
+  `DATE`) wrote one field twice.
   These now fail with `ErrSendFailed`; see [email](framework/docs/content/email.md).
 - **Local storage no longer lists a directory to serve one file.** The
   fold check behind both local backends (`upload.RefuseFoldedKey`) read

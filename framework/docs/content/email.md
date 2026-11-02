@@ -48,7 +48,9 @@ err := sender.Send(ctx, email.Email{
 |               |                  | `Content-Type`, `Content-Transfer-Encoding` and  |
 |               |                  | `MIME-Version` are refused in any ASCII case:    |
 |               |                  | the sender writes them from the `Email` (and     |
-|               |                  | never writes `Bcc`).                             |
+|               |                  | never writes `Bcc`; `Resent-Bcc` is refused for  |
+|               |                  | the same reason). Two keys that differ only in   |
+|               |                  | case name one field and are refused.             |
 
 `Attachment` carries `Filename`, `Content` (`[]byte`), and `ContentType`.
 A message with attachments is `multipart/mixed`: the body comes first

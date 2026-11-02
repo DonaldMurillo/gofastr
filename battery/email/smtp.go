@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // defaultSMTPDialTimeout bounds the TCP+TLS connect, and, as the
@@ -294,16 +295,25 @@ func buildMessage(email Email) ([]byte, error) {
 	// A key is written as the field name, so it must be one: a colon or a
 	// space made the line read as another field, and a leading space
 	// folded it into the header above.
-	for k := range email.Headers {
+	// Field names compare case-insensitively, so two keys that fold to one
+	// name would write that field twice.
+	seen := make(map[string]string, len(email.Headers))
+	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
 		if !isFieldName(k) {
 			return nil, fmt.Errorf("%w: Headers key %q is not a header field name (printable ASCII, no colon or space)", ErrSendFailed, k)
 		}
+		folded := asciicase.Lower(k)
+		if prev, dup := seen[folded]; dup {
+			return nil, fmt.Errorf("%w: Headers keys %q and %q name one field", ErrSendFailed, prev, k)
+		}
+		seen[folded] = k
 	}
 	// The MIME structure headers are written below, and the address and
 	// subject fields come from the Email itself; a caller's copy would
 	// give the message two that disagree. Bcc is never written: the
-	// envelope carries it, and a header would publish the blind list.
-	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version", "From", "To", "Cc", "Bcc", "Subject"} {
+	// envelope carries it, and a header would publish the blind list;
+	// Resent-Bcc would publish its own the same way.
+	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version", "From", "To", "Cc", "Bcc", "Resent-Bcc", "Subject"} {
 		if hasHeader(email.Headers, name) {
 			return nil, fmt.Errorf("%w: Headers cannot set %s; the sender writes it from the Email", ErrSendFailed, name)
 		}
