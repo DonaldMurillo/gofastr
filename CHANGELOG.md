@@ -140,6 +140,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The outbox no longer drops an event for a consumer whose delivery
+  was not created yet.** Each consumer's deliveries are expanded in their
+  own batch, so with two relays, or a backlog older than the handler
+  grace (any outage past 15 minutes), a parent could hold consumer `a`'s
+  delivery and not yet `b`'s. Dispatching `a` completed the parent, and
+  expansion only visits pending parents, so `b` never received the event
+  and no dead letter recorded it: two relays over a 300-event backlog
+  lost up to five of 600 deliveries. A parent now completes only once
+  every consumer the relay declares for its type has a delivery.
 - **`queue.WithHandlerTimeout(0)` keeps the MemoryQueue's 30s budget.** A
   zero budget failed every job the moment it started ("exceeded its 0s
   budget"), retried it and dead-lettered it, though its handler may have

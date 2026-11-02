@@ -67,7 +67,7 @@ func TestPGReplayRaceKeepsLiveChild(t *testing.T) {
 		// call until Replay commits, which waits on this seam.
 		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		o.completeParent(cctx, id)
+		o.completeParent(cctx, id, "t")
 	}
 	if err := o.Replay(ctx, id); err != nil {
 		t.Fatalf("replay: %v", err)

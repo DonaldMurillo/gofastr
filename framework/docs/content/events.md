@@ -381,9 +381,13 @@ handler)` + `ob.StartRelay(ctx)`.
   row, retried and dead-lettered independently. One consumer that errors
   or panics never blocks its siblings or fails the whole row. A parent row
   is marked `dispatched` once it has no `pending` deliveries left (all
-  `dispatched`/`dead`/`abandoned`) **and** it is older than the handler
-  grace. It may complete with some deliveries dead; `Replay` /
-  `ReplayConsumer` resurrects them.
+  `dispatched`/`dead`/`abandoned`), **and** every consumer the relay
+  declares for its type has a delivery row, **and** it is older than the
+  handler grace. The middle check matters on a backlog: each consumer's
+  deliveries are created in its own batch, so a parent can hold one
+  consumer's delivery before another's exists, and completing it then
+  would skip the other consumer for good. It may complete with some
+  deliveries dead; `Replay` / `ReplayConsumer` resurrects them.
 - **Handler budget (30s default).** Each handler invocation gets a
   wall-clock budget (`outbox.WithHandlerTimeout`, 30s by default, the
   same posture as both queue backends). At the deadline the handler's

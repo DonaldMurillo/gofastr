@@ -2,6 +2,9 @@ package outbox
 
 import (
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
@@ -96,6 +99,37 @@ func (o *Outbox) declaredSnapshot() []consumerEntry {
 		}
 	}
 	return out
+}
+
+// declaredPairs is declaredSnapshot ordered by event type, then consumer
+// name, so the SQL built from it is the same on every call.
+func (o *Outbox) declaredPairs() []consumerEntry {
+	out := o.declaredSnapshot()
+	slices.SortFunc(out, func(a, b consumerEntry) int {
+		if c := strings.Compare(a.eventType, b.eventType); c != 0 {
+			return c
+		}
+		return strings.Compare(a.name, b.name)
+	})
+	return out
+}
+
+// declaredFor returns the names of the consumers declared here for
+// eventType, sorted.
+//
+// consumerCoverage: a parent completes only once each of them holds a
+// delivery. Expansion creates each consumer's deliveries in its own
+// batch-limited INSERT, so two relays, or a consumer catching up on a
+// backlog, leave a parent holding one consumer's delivery before
+// another's exists; completing it then (no pending delivery, older than
+// the grace) let expansion, which visits pending parents only, skip it
+// for the lagging consumer for good. The check reads this relay's
+// declared set, so it only ever delays completion: a replica that lacks a
+// consumer mid rolling deploy completes as before, under the grace.
+func (o *Outbox) declaredFor(eventType string) []string {
+	o.consumerMu.RLock()
+	defer o.consumerMu.RUnlock()
+	return slices.Sorted(maps.Keys(o.consumers[eventType]))
 }
 
 // consumerEntry is one declared durable consumer.
