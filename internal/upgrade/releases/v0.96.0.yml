@@ -759,3 +759,7 @@ notes:
     breaking: false
     guidance: "A hook on a snake-tagged T now reads the client's value where it read the zero value, and its writes to that field take effect. Check hooks that relied on the field reading as zero."
     nodetect: "which hooks are affected depends on the json tags of the type a hook is instantiated with"
+  - change: "An EventBus.EmitAsync subscriber's context no longer carries the emitter's database transaction; its writes through App.InTx or CRUD calls run in a transaction of their own"
+    breaking: false
+    guidance: "A subscriber whose write used to fail with \"transaction has already been committed\" now succeeds. A subscriber that needs the emitter's transaction runs synchronously (Emit), on the emitter's goroutine."
+    nodetect: "whether a subscriber writes through the inherited context is runtime behaviour"

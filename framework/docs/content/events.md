@@ -161,7 +161,10 @@ order reads it from the data (a timestamp or version column), not from
 arrival. The subscriber's context
 keeps the emitter's values (the user, the tenant, the request id) but not
 its cancel, because CRUD emits on the request context and the handler
-has usually returned by the time a subscriber runs. Each run is bounded
+has usually returned by the time a subscriber runs. Nor does it keep the
+emitter's transaction: a subscriber that writes through `App.InTx` or a
+CRUD call opens a transaction of its own rather than joining one another
+goroutine owns, which may already have committed. Each run is bounded
 by `event.AsyncHandlerTimeout` (one minute); work longer than that starts
 its own job. A payload whose
 `MarshalJSON` panics skips the fanout and still reaches local

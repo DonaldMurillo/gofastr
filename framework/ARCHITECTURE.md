@@ -421,6 +421,7 @@ L5  framework/  (facade)                     (re-exports everything for
 The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate.
 Today's intra-L3 edges: `slowquery → db`, `softdelete → db`, `outbox → event + db`,
+`event → db` (EmitAsync masks the emitter's transaction with `db.WithoutTx`),
 `embed → db + migrate + tenant`, `imagefield → file + image`,
 `contracts → agentsinv`, `headless → agentsinv`, `contracts/analyzers → access` (the one
 Levenshtein, `access.EditDistance`, behind both the capability

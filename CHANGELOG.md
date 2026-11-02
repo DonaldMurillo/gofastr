@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An `EmitAsync` subscriber no longer joins the emitter's
+  transaction.** The subscriber's context kept every emitter value,
+  the open `*sql.Tx` included, so a subscriber that wrote through
+  `App.InTx` or a CRUD call for an event emitted inside a transaction
+  joined it from another goroutine: after the commit its write failed
+  with "transaction has already been committed" and was lost, and before
+  it the write shared the request's connection and its fate. The
+  subscriber's context drops the transaction and keeps the other values.
 - **Typed hooks see fields tagged in snake_case.** `OnBeforeCreate[T]`
   and the other typed write hooks decoded the payload with camelCase
   keys only, so a `T` field tagged `json:"is_admin"` read its zero value.
