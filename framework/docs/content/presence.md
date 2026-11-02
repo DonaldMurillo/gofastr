@@ -22,9 +22,9 @@ The `{userID, displayName}` in a roster entry come exclusively from the
 request context's authenticated user, resolved at SSE-connect time via
 `island.PresenceIdentityFromContext(ctx)`: a READ of the
 `handler.GetUser(ctx)` value that battery/auth's `SessionMiddleware`
-(or JWT `RequireAuth`) seeds. A client may **name a topic** (the
-`?presence=` query param, it is untrusted and bounded) but may **never
-claim an identity**. There is no `?user=` or `?name=` parameter; any
+(or JWT `RequireAuth`) seeds. A client may **ask for a topic** (the
+`?presence=` query param, untrusted, bounded, and refused unless an
+`AuthorizeTopic` hook admits it) but may **never claim an identity**. There is no `?user=` or `?name=` parameter; any
 such value is ignored.
 
 This is the invariant that makes the roster trustworthy: a user cannot
@@ -45,13 +45,32 @@ sessions and two viewers.
 
 ## How it works
 
-1. A page links with `?presence=<topic>` in its URL.
-2. `handlePage` threads that value into the SSE `<meta>` tag, so the
-   client's `EventSource` opens
-   `/__gofastr/sse?session=X&presence=<topic>`.
-3. `handleSSE` resolves the identity from `r.Context()` and calls
-   `Manager.ServeSSEWithPresence`, which joins the connection onto the
-   topic for the lifetime of the SSE stream.
+1. The screen declares its topics by implementing
+   `uihost.PresenceScreen`:
+
+   ```go
+   func (s *DocScreen) PresenceTopics(ctx context.Context) []string {
+       return []string{"doc:" + s.doc.ID}
+   }
+   ```
+
+   The host asks the loaded instance, after `SetParams` and `Load`, so a
+   detail screen can name the record it shows.
+2. `handlePage` signs the list into the SSE `<meta>` tag for the viewer it
+   rendered the page for, so the client's `EventSource` opens
+   `/__gofastr/sse?session=X&declared=<topics>&dsig=<signature>`. The
+   signature is an HMAC under a key derived from the session key. It
+   covers the topics, the viewer's user id and an expiry one session
+   lifetime out, and it does not name the stream id, so the runtime's
+   in-place session re-mint keeps it. Under a `RenderAlt` decision the
+   page drawn is the alternate, so the guarded screen's topics never ride
+   it, and a page that answers anything but 2xx (a Load that set 404 for
+   another tenant's record) signs none.
+3. `handleSSE` checks the signature (against the current session key and
+   any rotation keys), resolves the identity from `r.Context()` and calls
+   `Manager.ServeSSEWithPresence` with the declared topics and any
+   `?presence=` requests. The connection joins for the lifetime of the
+   SSE stream.
 4. On join/leave the manager fires `SetOnPresenceChange`'s callback. The host
    wires that callback to re-render the roster island and push it to
    every session on the topic via the existing `PushUpdate` lane; no
@@ -62,24 +81,32 @@ sessions and two viewers.
 
 ### Topic bounds (invariant #2)
 
-`?presence=` is client-supplied, so it is bounded by
-`island.ParsePresenceTopics`:
-- at most **16** topics per connection,
+Declared and requested topics share one set of bounds
+(`island.ParsePresenceTopics`):
+- at most **16** topics per connection, the two lists counted together,
 - at most **128** bytes per topic,
-- duplicates collapse, empty/oversize entries drop.
+- duplicates collapse, empty/oversize entries drop. A declared topic
+  holding a comma is dropped too, since the list travels comma-separated.
 
-The raw value is also length-capped (`maxPresenceParamLen`) before it
-enters the HTML `<meta>` tag, and `url.QueryEscape`d to prevent
-attribute injection.
+The raw `?presence=` value is also length-capped (`maxPresenceParamLen`)
+before it enters the HTML `<meta>` tag, and every value is
+`url.QueryEscape`d to prevent attribute injection.
 
 ### Topic authorization (invariant #3)
 
 Bounding a topic string is not the same as *authorizing* it. A client may
-name **any** topic within the bounds, including one it should not see. Since
-a roster can contain emails (the display name), an ungated private topic
-(`org:42:admins`) is a roster-disclosure vector to anyone who can guess it.
+name **any** topic within the bounds, including one it should not see, and a
+roster can contain emails (the display name). So a topic the client names
+joins only when an app hook says yes:
 
-Call `Manager.SetAuthorizeTopic` to gate joins:
+- **Declared topics** join with no hook. Rendering the page for this viewer
+  was the authorization, and the signature keeps the list from moving to
+  another user or growing.
+- **Requested topics** (`?presence=`, anything the browser builds) are
+  refused when no hook is installed. Apps that build topics in the browser
+  install one.
+
+Call `Manager.SetAuthorizeTopic` to admit requested topics:
 
 ```go
 mgr.SetAuthorizeTopic(func(ctx context.Context, topic string) bool {
@@ -94,14 +121,20 @@ mgr.SetAuthorizeTopic(func(ctx context.Context, topic string) bool {
 })
 ```
 
-The hook runs once per requested topic at SSE-connect time, **before** any
-subscription or roster emission: an unauthorized topic is dropped, so the
-viewer never receives the roster or join/leave events for it. Rejection is
+Once installed, the hook answers for **every** topic, declared ones too. It
+runs at SSE-connect time, **before** any subscription or roster emission,
+and again on each stream heartbeat: an unauthorized topic is dropped, so the
+viewer never receives the roster or join/leave events for it, and a viewer
+whose access was removed leaves the roster on the next beat. Rejection is
 **silent** (the topic is simply not joined): there is no distinguishable
-error, so the gate is not a private-topic existence oracle. A **nil** hook
-(the default) authorizes every topic; presence stays public unless you opt
-in, so existing apps are unaffected. Keep an ergonomic public path (e.g. a
-`public:` prefix) so only genuinely private topics pay the check.
+error, so the gate is not a private-topic existence oracle. Keep an
+ergonomic public path (e.g. a `public:` prefix) so only genuinely private
+topics pay the check.
+
+Without a hook, removing a viewer's access to a declared topic takes effect
+when the signature expires (one session lifetime) or when the viewer next
+loads the page without that access. Install the hook when access to a
+declared topic can change while a page stays open.
 
 ---
 
@@ -115,8 +148,14 @@ push):
 // Returns zero (anonymous) when no user is present.
 id := island.PresenceIdentityFromContext(r.Context())
 
-// Parse + bound the client-supplied topic list.
-topics := island.ParsePresenceTopics(r.URL.Query().Get("presence"))
+// Parse + bound a client-supplied topic list.
+requested := island.ParsePresenceTopics(r.URL.Query().Get("presence"))
+
+// A custom transport passes both lists; with no hook only Declared joins.
+mgr.ServeSSEWithPresence(w, r, id, island.PresenceTopics{
+    Declared:  declared, // topics your server vouches for
+    Requested: requested,
+})
 
 // Read the roster (deduped by UserID, sorted).
 members := mgr.PresenceRoster("doc:42") // []PresenceMember
@@ -168,8 +207,8 @@ html.Div(html.DivConfig{
 2. Wire `SetOnPresenceChange` (once, at startup) to push the re-rendered
    roster to every session on the topic; see the API example above.
 
-3. Link the page with the topic: `<a href="/my-page?presence=my-topic">`.
-   The SSE meta tag picks it up automatically.
+3. Declare the topic on the screen (`PresenceTopics`, step 1 of "How it
+   works"). The SSE meta tag carries it, signed, automatically.
 
 That's it: no client-side JavaScript. The existing `sse.js` module
 delivers the roster island updates; the runtime swaps the slot's
@@ -180,8 +219,9 @@ innerHTML.
 ## Demo
 
 `examples/site` ships a live presence demo at
-`/examples/presence?presence=presence-demo` (`screen_presence.go`). It
-renders a `ui.AvatarGroup` with `AvatarOnline` status dots.
+`/examples/presence` (`screen_presence.go`), whose screen declares the
+`presence-demo` topic. It renders a `ui.AvatarGroup` with `AvatarOnline`
+status dots.
 
 **To see two viewers:** open that URL in two browsers (or one normal +
 one private window; they get distinct sessions). Each appears in the
@@ -260,8 +300,11 @@ where it sits in the ladder.
   to the TTL (~45s) to disappear after a replica crash. This is by design
   (lossy, self-healing); wire `WithFanout` for aggregation; without it the
   roster stays single-replica.
-- **Re-threading presence on SPA navigation.** The SSE topic is set from
-  the page's `?presence=` on initial load; a client-side nav to a presence
+- **Linking with `?presence=` and no hook.** A topic in the URL is a
+  request, refused unless `AuthorizeTopic` admits it. Declare the topic on
+  the screen instead.
+- **Re-threading presence on SPA navigation.** The SSE topics are set from
+  the page's declared list on initial load; a client-side nav to a presence
   page won't re-join a NEW topic (the meta is not rewritten). The stream
   itself now follows the page: it closes when the last push target
   leaves (so navigating away drops the viewer from the roster) and a

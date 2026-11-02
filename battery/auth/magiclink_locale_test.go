@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
-	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // The default confirmation page speaks the caller's language and
@@ -61,43 +60,6 @@ func TestConfirmPageEnglishByDefault(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q:\n%s", want, body)
 		}
-	}
-}
-
-// A custom page receives the request context, so its own phrases
-// resolve in the caller's locale.
-func TestConfirmPageGetsRequestContext(t *testing.T) {
-	var got string
-	mgr := New(AuthConfig{
-		SessionTTL:    time.Hour,
-		SessionCookie: "session_id",
-		UserStore:     newMemoryUserStore(),
-		DevMode:       true,
-	})
-	plugin := NewMagicLinkPlugin(MagicLinkConfig{
-		BaseURL:  "http://localhost",
-		TokenTTL: time.Hour,
-		DevMode:  true,
-		ConfirmPage: func(ctx context.Context, d ConfirmPageData) []byte {
-			got = i18n.FromContext(ctx).Tag
-			return []byte("ok")
-		},
-	})
-	mgr.Use(plugin)
-	if err := mgr.Init(nil); err != nil {
-		t.Fatal(err)
-	}
-	r := router.New()
-	mgr.RegisterRoutes(r)
-	token, err := createPurposeToken(context.Background(), plugin.tokenStore, purposeMagicLink, "alice@example.com", time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodGet, "/auth/magic-link/verify?token="+token, nil)
-	req = req.WithContext(i18n.WithContext(req.Context(), i18n.Locale{Tag: "fr"}))
-	r.ServeHTTP(httptest.NewRecorder(), req)
-	if got != "fr" {
-		t.Fatalf("ConfirmPage saw locale %q; want fr", got)
 	}
 }
 

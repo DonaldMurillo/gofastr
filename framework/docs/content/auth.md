@@ -146,7 +146,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Codes are six digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the passkey, session, magic-link or token store errors, the reset still runs the other purges, then answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`), every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`) and every OAuth link with its stored provider tokens (`oauth.unlinked`, `reason=password_reset`), so an IdP identity linked from a stolen session cannot sign back in. If any of these stores errors, the reset still runs the other purges, then answers 500 and asks for another link instead of reporting success. On success it mails the account's address a notice naming the unlinked providers (`NoticeTemplate` overrides the body). On an account whose address was unverified it also claims the account and marks the address verified. |
 | `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
@@ -434,6 +434,15 @@ gates) and by `RequireRole`, `MCPUser`, and `MCPRole` (with the zero Ref
 and the caller's roles), and a `DecisionDeny` refuses before the role
 policy runs. `DecisionAbstain` falls through to the role check.
 
+A scoped API token carries its owner's roles, but `RequireRole` and
+`MCPRole` count a role for it only when the token also holds the role
+scope `role:<name>` (`access.RoleScope`; `role:*` and `*:*` cover every
+role), the rule `framework.MCPRequireRole` follows. A `customers:read`
+token an admin minted does not pass `RequireRole("admin")`; a token meant
+to call admin routes is minted with `role:admin` in its scopes. Sessions
+and JWTs carry no scopes and are unaffected. The Decider still sees the
+owner's full role set, so a deny keyed on a role holds either way.
+
 
 Non-human identities such as CI runners, background workers, and internal scripts
 authenticate with **API tokens** (`gfsk_`-prefixed PATs) instead of session
@@ -601,7 +610,9 @@ their tokens by logging in, not with the token itself.
 
 A service account authenticates **only** via tokens. There is no login
 path. Create one in Go; its roles flow to `RequireRole` / `access.Can`
-through the `User` interface:
+through the `User` interface. Its tokens still need the matching scope:
+`role:deploy` for `RequireRole("deploy")`, and the permission itself for
+`access.Can`:
 
 ```go
 sa := auth.NewServiceAccount("ci-runner", []string{"deploy", "reader"})
@@ -1496,9 +1507,11 @@ supported way to add that provider is the **authenticated link flow**:
    browser withholds the `SameSite=Strict` session cookie. When a
    cross-site callback carries a valid, unspent link state and its
    state cookie but no session, it answers a small page that reloads the
-   same callback from this site (a meta refresh plus a "Continue" link,
-   phrases `auth.oauth_hop_title` and `auth.oauth_hop_continue`). That
-   second request carries the session cookie and completes the link.
+   same callback from this site: a `Refresh: 0;url=…` header plus a
+   "Continue" link (phrases `auth.oauth_hop_title` and
+   `auth.oauth_hop_continue`), drawn by `AuthConfig.Pages` when set.
+   That second request carries the session cookie and completes the
+   link.
 
 The user has proven ownership of both the account (session) and the
 provider (the OAuth round-trip), so this is the ONLY path that may link a
@@ -1579,57 +1592,74 @@ not fit: a browser-binding cookie breaks cross-device links (request on
 a laptop, open on a phone) and refusing `Sec-Fetch-Site: cross-site`
 breaks every webmail client. A confirmation keeps both working.
 
-Set `MagicLinkConfig.ConfirmPage` to render the screen with your own
-design system:
+Set `AuthConfig.Pages` to draw this screen, and the same-site hop
+below, with the design system. `authui.Pages`
+(`battery/auth/authui`) renders both as a `ui.AuthCard` through the
+app's UIHost, so they carry its layout, theme and runtime:
 
 ```go
-var (
-    confirmTitle  = i18n.Define("app.confirm_title", "Confirm sign-in")
-    confirmAs     = i18n.Define("app.confirm_as", "Continue as {{email}}?")
-    confirmSubmit = i18n.Define("app.confirm_submit", "Sign in")
-)
+import "github.com/DonaldMurillo/gofastr/battery/auth/authui"
 
-auth.MagicLinkConfig{
-    // ctx is the request's, so the phrases answer in the caller's locale.
-    ConfirmPage: func(ctx context.Context, d auth.ConfirmPageData) []byte {
-        return render(ui.AuthCard(ui.AuthCardConfig{
-            Title: confirmTitle.Text(ctx),
-            Body: ui.Form(ui.FormConfig{
-                Action:      d.Action,
-                SubmitLabel: confirmSubmit.Text(ctx),
-            },
-                // Email and Token are escaped, never concatenated into
-                // render.HTML. A magic-link request accepts any address, so
-                // d.Email is caller-supplied: pasting it into trusted HTML
-                // reflects whatever the requester typed into the page.
-                html.Paragraph(html.TextConfig{}, render.Text(confirmAs.Text(ctx, map[string]any{"email": d.Email}))),
-                // token is the credential, posted back to d.Action.
-                html.Input(html.InputConfig{
-                    Type:  "hidden",
-                    Name:  "token",
-                    Value: d.Token,
-                }),
-                // CSRFField is required: without it the submit 403s
-                // under auth.CSRF(), which WithBFFPosture mounts app-wide.
-                render.HTML(d.CSRFField)),
-        }))
-    },
+host := uihost.New(site)
+mgr := auth.New(auth.AuthConfig{
+    // ...
+    Pages: authui.Pages(host),
+})
+```
+
+To draw them some other way, implement `auth.Pages`. Its two methods
+get the response writer, the request and the page data; the battery
+has already set `Cache-Control: no-store` and `Referrer-Policy:
+no-referrer`, because both URLs carry a credential:
+
+```go
+type myPages struct{ host *uihost.UIHost }
+
+func (p myPages) MagicLinkConfirm(w http.ResponseWriter, r *http.Request, d auth.ConfirmPageData) {
+    p.host.RenderScreen(w, r, confirmScreen{d: d}, uihost.ScreenResponse{})
+}
+
+func (p myPages) Hop(w http.ResponseWriter, r *http.Request, d auth.HopPageData) {
+    p.host.RenderScreen(w, r, hopScreen{d: d}, uihost.ScreenResponse{})
+}
+
+func (s confirmScreen) RenderCtx(ctx context.Context) render.HTML {
+    return ui.AuthCard(ui.AuthCardConfig{
+        Title: s.d.Words.Title,
+        Body: ui.Form(ui.FormConfig{
+            Action:      s.d.Action,
+            SubmitLabel: s.d.Words.Submit,
+        },
+            // Words.Ask is escaped already, the address included. Any
+            // other dynamic value (d.Email, d.Token) goes through an
+            // escaping builder, never into render.HTML: a magic-link
+            // request accepts any address, so d.Email is
+            // caller-supplied.
+            html.Paragraph(html.TextConfig{}, render.HTML(s.d.Words.Ask)),
+            html.Paragraph(html.TextConfig{}, render.Text(s.d.Words.Warning)),
+            // token is the credential, posted back to d.Action.
+            html.Input(html.InputConfig{Type: "hidden", Name: "token", Value: s.d.Token}),
+            // CSRFField is required: without it the submit 403s
+            // under auth.CSRF(), which WithBFFPosture mounts app-wide.
+            render.HTML(s.d.CSRFField)),
+    })
 }
 ```
 
 Render `d.CSRFField` inside the form. Omit it and the submit 403s
 under `auth.CSRF()`, which `WithBFFPosture` mounts app-wide, so
-passwordless sign-in stops at the confirmation step. `ctx` is the
-request's context: it carries the caller's locale for your phrases,
-and `i18n.DocLang(ctx)` with `i18n.Dir` give a full document its
-`<html lang dir>`.
+passwordless sign-in stops at the confirmation step. (`authui` passes
+the request context to `ui.Form`, which stamps the same field itself,
+and adds `d.CSRFField` only when the context carries no token.)
+`d.Words` holds the screen's words in the caller's locale: the phrases
+are `auth.confirm_title`, `auth.confirm_as`,
+`auth.confirm_this_account`, `auth.confirm_warning` and
+`auth.confirm_submit`.
 
-Leave it nil and you get an unstyled but correct fallback, in the
-caller's language when the app has a translator (the phrases are
-`auth.confirm_title`, `auth.confirm_as`, `auth.confirm_this_account`,
-`auth.confirm_warning` and `auth.confirm_submit`). The battery
-does not import `framework/ui` itself: API-only apps use auth too and
-should not pay for the design system.
+Leave `Pages` nil and you get plain but correct documents with no CSS
+and no script, in the caller's language when the app has a
+translator. The battery does not import `framework/ui` itself:
+API-only apps use auth too and should not pay for the design system.
 
 The emails follow the same rule. `BodyTemplate` on
 `MagicLinkConfig`, `EmailVerificationConfig` and
