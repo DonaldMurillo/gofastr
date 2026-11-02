@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`Relation.Hidden` keeps a relation out of reads.** A has-many or
+  has-one whose foreign key is Hidden on the target (users has_many notes
+  through a Hidden `notes.owner_ref`) stays includable by default, since
+  that is usually a caller's own rows. Setting `Hidden: true` on the
+  relation (`hidden: true` in `gofastr.yml`) refuses it on `?include=`
+  and nested filters the way an unknown relation is refused, and leaves
+  it out of `/openapi.json` and llm.md (`entity.HidesRelation`).
 - **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
   A calendar that stays on the page beside the native date input it
   fills, for a range in one control, refused days, or notes on days. The

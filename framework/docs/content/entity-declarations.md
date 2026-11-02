@@ -509,6 +509,7 @@ field) declare how entities associate with one another:
 - `foreign_key_target`: for `many_to_many`, the column referencing the target entity in the pivot table.
 - `on_delete`: optional foreign key referential integrity action (`no_action`, `restrict`, `cascade`, `set_null`).
 - `cascade_write`: optional boolean enabling atomic nested mutations within a single transaction.
+- `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`).
 
 ### Cascade Writes & Atomic Nested Mutations
 When `cascade_write: true` (or `.WithCascadeWrite(true)`) is enabled, nested child maps or slices can be sent directly inside parent `POST` and `PUT`/`PATCH` payloads.

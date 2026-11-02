@@ -356,6 +356,9 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			if r.CascadeWrite {
 				putBool(rm, "cascade_write", r.CascadeWrite)
 			}
+			if r.Hidden {
+				putBool(rm, "hidden", r.Hidden)
+			}
 			rels[i] = rm
 		}
 		m["relations"] = rels
@@ -1030,7 +1033,7 @@ var (
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
 	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
-	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write"}
+	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write", "hidden"}
 	indexOrder     = []string{"name", "columns", "unique"}
 	navOrder       = []string{"label", "href", "icon", "role", "items"}
 	accessOrder    = []string{"auth", "role", "read", "create", "update", "delete"}

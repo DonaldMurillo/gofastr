@@ -54,6 +54,14 @@ filter across it (`?owner_ref.email=`) answers `nested_unknown_relation`,
 and no near-miss hint names it. `entity.HidesRelation` is the rule;
 `/openapi.json` and llm.md leave such a relation out too.
 
+A has-many or has-one whose foreign key is Hidden on the *target* stays
+includable: `users` has_many `notes` through a Hidden `notes.owner_ref`
+still answers `?include=notes` with the user's notes, which is usually
+the point ("my notes"). To keep such a relation out of reads, set
+`Hidden: true` on the relation (`hidden: true` under the relation in
+`gofastr.yml`): it is then refused like any hidden relation, on every
+surface above.
+
 ## Path syntax
 
 ```

@@ -1669,7 +1669,7 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "name": true, "entity": true, "foreign_key": true, "through": true, "local_key": true, "foreign_key_target": true, "on_delete": true, "cascade_write": true}
+		allowed := map[string]bool{"type": true, "name": true, "entity": true, "foreign_key": true, "through": true, "local_key": true, "foreign_key_target": true, "on_delete": true, "cascade_write": true, "hidden": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("relations[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -1714,6 +1714,7 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
 			OnDelete:         onDelete,
 			CascadeWrite:     cascadeWrite,
+			Hidden:           boolValue(m["hidden"]),
 		})
 	}
 	return out, nil

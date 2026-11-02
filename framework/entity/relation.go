@@ -37,6 +37,14 @@ type Relation struct {
 	ForeignKeyTarget string         `json:"foreign_key_target,omitempty"`
 	OnDelete         OnDeleteAction `json:"on_delete,omitempty"`     // referential action on delete (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	CascadeWrite     bool           `json:"cascade_write,omitempty"` // allows atomic parent-child creation/updates
+	// Hidden keeps the relation out of every read surface: ?include= and
+	// nested filters answer it as a relation that does not exist, and
+	// /openapi.json and llm.md leave it out. It is the opt-out for a
+	// relation no Hidden field of this entity covers, such as a has_many
+	// whose foreign key is Hidden on the target: users has_many notes
+	// through a Hidden notes.owner_ref still loads a user's notes unless
+	// the relation sets Hidden. See HidesRelation.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // OnDeleteAction sets the ON DELETE referential action.
@@ -86,14 +94,18 @@ func BelongsTo(name, ent, foreignKey string, more ...string) Relation {
 	return Relation{Type: RelManyToOne, Name: name, Entity: ent, ForeignKey: append([]string{foreignKey}, more...)}
 }
 
-// HidesRelation reports whether rel sits behind a Hidden field of e: rel
-// is named after one (the belongs_to a Hidden relation field derives), or
-// it is a belongs_to whose foreign key holds a Hidden column. Loading such
+// HidesRelation reports whether rel is hidden from reads: it is marked
+// Relation.Hidden, or it sits behind a Hidden field of e (it is named
+// after one, as the belongs_to a Hidden relation field derives, or it is a
+// belongs_to whose foreign key holds a Hidden column). Loading such
 // a relation puts the related record, and with it the hidden key, under
 // the relation's name, so crud answers ?include= and nested filters on it
 // as it answers a relation that does not exist, and neither /openapi.json
 // nor llm.md names it.
 func (e *Entity) HidesRelation(rel Relation) bool {
+	if rel.Hidden {
+		return true
+	}
 	for _, f := range e.Config.Fields {
 		if !f.Hidden {
 			continue
