@@ -4502,6 +4502,15 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A harness Grep or Glob approval covers only the directory it was
+  approved for.** The permission engine decides a call from its argv
+  summary, and the Grep and Glob summaries named the pattern only, so
+  approving `Grep:TODO` at argv scope also allowed the same pattern over
+  `~/.ssh` (Grep's `path` and `glob`, Glob's `root`). The summary now
+  carries them, `Grep:TODO --path /home/u/.ssh`, and quotes any word
+  holding whitespace or a quote so no pattern spells another call's
+  summary. A saved rule for a pattern with a space or a quote prompts
+  once more. See [harness architecture](framework/docs/content/harness-architecture.md).
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.
