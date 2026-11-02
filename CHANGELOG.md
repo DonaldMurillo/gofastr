@@ -593,6 +593,10 @@ few lines, and link the PR or the docs page for the rest.
   and paths its routes do not answer. It now serves the new
   `App.OpenAPISpec(title)`, the document `App.Start` serves, built from
   the app's `APIPrefix`, `JSONCase` and mounted routes.
+- **`/openapi.json` names no relation behind a Hidden field.** The
+  `?include=` read view published a Hidden relation field (or a
+  `belongs_to` whose foreign key is Hidden) as a property under its wire
+  key, and the `include` parameter listed it among the relations.
 - **`/openapi.json` types a relation field by the key it names.** Every
   relation was a `uuid` string. A foreign key to an `int` key is an
   `integer` property and filter now, as crud stores, answers and parses
