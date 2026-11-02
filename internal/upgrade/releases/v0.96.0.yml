@@ -751,3 +751,7 @@ notes:
     breaking: false
     guidance: "Each such screen was unreachable from a browser, stopped the app at boot (on the CRUD mount), or was answered by the CRUD API (under it). Fix the route in the app spec before regenerating."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "dotenv.Load and NewApp's .env auto-load expand ${NAME} against an earlier file's value, then the same file's earlier keys, then os.Environ, as documented; they used to read the same file's keys only, so ${HOME} loaded empty and a later file's ${DB_HOST} kept the value an earlier file shadowed"
+    breaking: false
+    guidance: "A dotfile value that references a variable the file does not define now gets the environment's value instead of an empty string, and one built from a key a higher-precedence file overrides now uses the override. Check any value that relied on the empty result."
+    nodetect: "the change is in how .env files are read at boot; nothing in an app's Go source spells it"

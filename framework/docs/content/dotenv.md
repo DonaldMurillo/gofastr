@@ -53,12 +53,28 @@ Hard rules:
 Only inside double-quoted values. Bracket form **only**: bare `$VAR`
 is left verbatim (less ambiguous, fewer footguns).
 
-Lookup order for `${NAME}`:
+Lookup order for `${NAME}` when `Load` (and so `NewApp`) reads the files:
 
-1. Other keys already parsed from the same file (or earlier file in
-   the precedence chain).
-2. `os.Environ`.
-3. Empty string (no error, matching shell behaviour).
+1. The value an earlier file in the precedence chain set. That is the
+   value `Load` keeps, so a `.env` line
+   `DATABASE_URL="postgres://${DB_HOST}/app"` follows the `DB_HOST`
+   from `.env.local`, not the one `.env` itself shadowed.
+2. Keys parsed earlier in the same file.
+3. `os.Environ`.
+4. Empty string (no error, matching shell behaviour).
+
+`dotenv.Parse` on its own reads no environment: it expands against the
+keys earlier in the same input only.
+
+A process variable set by the operator still wins over a dotfile key
+of the same name when `Apply` runs, but a dotfile value built from it
+reads the file's own spelling first (steps 1 and 2 come before 3).
+Reference a name the files do not define when you want the
+environment's value.
+
+A value read from an earlier file or the environment counts as input
+for the expansion budget once, so one `${PATH}` in a short file is
+fine; the budget still refuses a line that repeats it many times.
 
 Each value is substituted as stored and never expanded a second time,
 the way a shell substitutes a variable. A single-quoted literal or an

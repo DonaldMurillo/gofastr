@@ -43,8 +43,8 @@ var errTrailingBackslash = errors.New("trailing backslash in double-quoted value
 // reports ok=false: Parse's expansion budget refuses a value while it is
 // being built, not after a single line of many references to a large
 // key has already allocated gigabytes.
-func expandDouble(s string, local map[string]string, limit int) (out string, ok bool, err error) {
-	e := &expander{local: local, limit: limit, quoted: true}
+func expandDouble(s string, src *sources, limit int) (out string, ok bool, err error) {
+	e := &expander{local: src.local, limit: limit, quoted: true, src: src}
 	e.expand(s)
 	if e.err != nil {
 		return "", true, e.err
@@ -61,7 +61,8 @@ type expander struct {
 	local  map[string]string
 	envFn  func(string) (string, bool)
 	limit  int
-	quoted bool // interpret the double-quoted escapes (expandDouble)
+	quoted bool     // interpret the double-quoted escapes (expandDouble)
+	src    *sources // Parse/Load lookups, in place of local+envFn (expandDouble)
 	over   bool
 	err    error
 	b      strings.Builder
@@ -146,6 +147,10 @@ func (e *expander) expand(s string) {
 
 // lookup writes name's value verbatim (see Expand).
 func (e *expander) lookup(name string) {
+	if e.src != nil {
+		e.lookupSources(name)
+		return
+	}
 	if v, ok := e.local[name]; ok {
 		e.write(v)
 		return
@@ -154,6 +159,39 @@ func (e *expander) lookup(name string) {
 		//gofastr:allow(recovercallback) envFn is Expand's caller-supplied lookup (os.LookupEnv in practice), called synchronously on the caller's goroutine exactly as it was as a parameter; no dispatch loop runs it
 		if v, ok := e.envFn(name); ok {
 			e.write(v)
+		}
+	}
+}
+
+// lookupSources resolves name in the order Load documents: the value a
+// higher-precedence file set (the one Load keeps) first, then this
+// file's earlier keys, then the process environment. A value from
+// outside the file counts as input for the budget, once per name (see
+// parse), so the limit grows with it before the value is written.
+func (e *expander) lookupSources(name string) {
+	src := e.src
+	outside := func(v string) {
+		if !src.external[name] {
+			src.external[name] = true
+			src.credited += len(v)
+			if e.limit >= 0 {
+				e.limit += expansionFactor * len(v)
+			}
+		}
+		e.write(v)
+	}
+	if v, ok := src.shadow[name]; ok {
+		outside(v)
+		return
+	}
+	if v, ok := src.local[name]; ok {
+		e.write(v)
+		return
+	}
+	if src.envFn != nil {
+		//gofastr:allow(recovercallback) envFn is os.LookupEnv from Load, called synchronously on the caller's goroutine; no dispatch loop runs it
+		if v, ok := src.envFn(name); ok {
+			outside(v)
 		}
 	}
 }

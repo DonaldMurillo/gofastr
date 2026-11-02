@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`.env` `${NAME}` expansion follows its documented lookup order.**
+  `dotenv.Load` (and `NewApp`'s auto-load) expanded each file against
+  its own keys only, so the docs' own `PATH_TPL="${HOME}/bin"` loaded
+  as `/bin`, and a `.env` `DATABASE_URL="postgres://${DB_HOST}/app"`
+  kept the `.env` host while `.env.local`'s `DB_HOST` was the one
+  applied. A reference now reads an earlier file's value, then the same
+  file's earlier keys, then `os.Environ`. `dotenv.Parse` alone still
+  reads no environment. See [dotenv](framework/docs/content/dotenv.md).
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
