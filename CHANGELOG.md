@@ -140,6 +140,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The app generator refuses names its app could not boot with.** A
+  table, field or index name that bare SQL cannot carry (`order`, `on`,
+  `user`, `first-name`, a name over 63 bytes), two entities on one
+  table, and an entity on a battery's table (`auth_users`,
+  `auth_sessions`, `audit_log`, …) used to generate an app that compiled
+  and then failed at boot, 500ed on every request, shared one Postgres
+  table between two entities, or served the accounts table through CRUD.
+  `gofastr validate` and `generate` now name each one. See
+  [app spec validation](framework/docs/content/app-spec.md#validation).
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

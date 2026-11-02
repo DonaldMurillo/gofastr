@@ -1663,6 +1663,23 @@ The generator rejects:
   generated typed client emits it into Go string literals, and the runtime
   interpolates it into DDL as a bare SQL identifier. The entity `name:` is
   already constrained to a Go identifier; `table:` was the way around that.
+- a table, field or index name that bare SQL cannot carry. AutoMigrate
+  writes these names unquoted, so the app would build and then fail at
+  boot or on its first query. The generator refuses a name with a hyphen,
+  space or dot (`first-name`, `last name`), a name over 63 bytes
+  (Postgres keeps only the first 63, so two longer names that share them
+  name one table or column), and an SQL word that SQLite or Postgres
+  refuses as a bare name, such as `order`, `group`, `default`, `values`,
+  `limit`, `on`, `select`, `user` and `desc`. Go words such as `type`,
+  `func` and `range` are fine.
+- two entities on one table, compared the way Postgres folds an unquoted
+  name (`table: Items` and an entity named `items`): the second entity's
+  routes collide with the first's, or both entities share rows
+- an entity on a table a battery of the generated app keeps for itself:
+  `auth_users`, `auth_users_oauth_links`, `auth_sessions`, `audit_log`,
+  `admin_saved_views`, `gofastr_modules` and `_gofastr_migrate_lock`. An
+  entity named `auth_users` was migrated onto the accounts table and
+  served it to every signed-in user through its CRUD routes.
 - enum `values:` entries carrying a quote, backtick, backslash, or newline
   (they break the generated Go), or carrying a terminal-invisible character —
   a C1 control (U+0080–U+009F), a bidi override, or a zero-width/BOM rune:

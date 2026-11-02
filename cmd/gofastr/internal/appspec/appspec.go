@@ -2636,6 +2636,7 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
 		}
 	}
+	errs.add(validateAppSpecSQLNames(bp))
 	for _, decl := range bp.Entities {
 		// Relation-TYPED FIELDS (`type: relation, to: X`) become BelongsTo
 		// relations at runtime. Catch a dangling target here so the failure

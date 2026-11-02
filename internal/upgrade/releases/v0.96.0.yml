@@ -721,3 +721,7 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
+  - change: "gofastr validate and generate app refuse an app spec table, field or index name that is an SQL reserved word on SQLite or Postgres, is not letters, digits and underscores, or is over 63 bytes; two entities on one table; and an entity on a battery's table (auth_users, auth_sessions, audit_log and the rest)"
+    breaking: false
+    guidance: "Each such spec generated an app that failed at boot or on its first query, or on Postgres shared a table between entities. A few words, such as user, desc, end, left and right, only Postgres refuses: an app on SQLite worked with them and now fails validation, so rename the field (or set table:) before regenerating, and migrate the column with renames: on the entity."
+    nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
