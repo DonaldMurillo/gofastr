@@ -41,6 +41,12 @@ func RunMigrate(args []string) {
 		cli.OsExit(1)
 		return
 	}
+	if err := migratePositionalError(subcmd, rest); err != nil {
+		cli.Fail("%v", err)
+		printMigrateUsage()
+		cli.OsExit(2)
+		return
+	}
 
 	switch subcmd {
 	case "up":
@@ -85,6 +91,41 @@ var migrateFlags = map[string]struct{ valued, bare []string }{
 	"force":    {[]string{"--db-url", "--db", "--driver", "--group"}, []string{"--not-applied"}},
 	"repair":   {[]string{"--db-url", "--db", "--driver", "--from"}, []string{"--apply"}},
 	"generate": {[]string{"--db", "--driver", "--from", "--group", "--migrations", "--snapshot"}, nil},
+}
+
+// migratePositional is how many positional arguments each subcommand
+// takes. up, status and repair take none, so `migrate up 3` read like
+// "apply three" and applied everything; generate takes its one name and
+// dropped a second. down and force check their own value as well.
+var migratePositional = map[string]int{
+	"up": 0, "status": 0, "repair": 0, "down": 1, "force": 1, "generate": 1,
+}
+
+// migratePositionalError refuses more positional arguments than the
+// subcommand takes. It runs before anything opens the database.
+func migratePositionalError(subcmd string, args []string) error {
+	limit, ok := migratePositional[subcmd]
+	if !ok {
+		return nil
+	}
+	var extra []string
+	n := 0
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		n++
+		if n > limit {
+			extra = append(extra, a)
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	if limit == 0 {
+		return fmt.Errorf("migrate %s takes no arguments, got %q", subcmd, extra)
+	}
+	return fmt.Errorf("migrate %s takes one argument, got extra %q", subcmd, extra)
 }
 
 // migrateFlagsError refuses a flag the subcommand does not read, a valued
@@ -542,13 +583,34 @@ func hasFlag(args []string, flag string) bool {
 // --driver=, through canonicalDBDriver. Before --db= was read here,
 // `migrate --db=postgres` fell through to the sqlite3 default and
 // created a SQLite file named after the Postgres URL.
+//
+// With no flag, a database URL that starts with postgres:// or
+// postgresql:// picks the postgres driver: a Postgres DATABASE_URL with
+// no --db opened the URL as a SQLite file name and failed with a SQLite
+// error that never said the driver was the problem.
 func getMigrateDriver(args []string) string {
 	for _, a := range args {
 		if v, ok := migrateDriverFlag(a); ok {
 			return project.CanonicalDBDriver(v)
 		}
 	}
+	if isPostgresURL(getMigrateDBURL(args)) {
+		return "postgres"
+	}
 	return "sqlite3"
+}
+
+// isPostgresURL reports whether url names a Postgres server by scheme.
+func isPostgresURL(url string) bool {
+	scheme, _, ok := strings.Cut(url, "://")
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(scheme) {
+	case "postgres", "postgresql":
+		return true
+	}
+	return false
 }
 
 // migrateDriverFlag reports the value of a --db= or --driver= argument.

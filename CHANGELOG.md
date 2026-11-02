@@ -5263,6 +5263,13 @@ few lines, and link the PR or the docs page for the rest.
   errors. Every shell now refuses an extension containing `;` and a
   default name containing `\`. On Windows a `*` extension matches
   everything, and so does a filter with no extensions.
+- **BREAKING: `gofastr migrate` and `gofastr validate` refuse extra
+  arguments.** `migrate up 3` applied every pending migration, `migrate
+  status x` and `migrate generate a b` dropped the extras, and `validate
+  a.yml b.yml` checked only `a.yml`. Each is now a usage error, exit 2,
+  before anything opens. `migrate` with a `postgres://` or
+  `postgresql://` database URL and no `--db` uses the Postgres driver
+  instead of failing with a SQLite error. See `migrations.md`.
 
 ### Security
 - **`core/static` contains a root directory created after the handler.**

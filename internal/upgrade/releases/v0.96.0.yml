@@ -1080,3 +1080,7 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "BREAKING - gofastr migrate and gofastr validate refuse a positional argument they do not take with a usage error (exit 2): migrate up 3, migrate status x, migrate generate a b and validate a.yml b.yml; migrate with a postgres:// or postgresql:// URL and no --db uses the postgres driver"
+    breaking: true
+    guidance: "migrate up applied every pending migration whatever number followed it, and validate checked only its first path. Drop the extra argument from deploy scripts (migrate down N rolls back N), and run validate once per app spec. A script that passed a Postgres URL with no --db failed with a SQLite error and now migrates the Postgres database it names; pass --db=sqlite to keep the old driver."
+    nodetect: "the arguments live in shell scripts, Makefiles and CI config, not in the app's Go source"
