@@ -528,6 +528,10 @@ few lines, and link the PR or the docs page for the rest.
     `--json`; it failed generation of the whole document.
   - An `allOf` wrapping one scalar schema (FastAPI's enum parameter with
     a default) is that scalar; it failed generation as non-scalar.
+  - A binary body's schema may be a `$ref`; it failed generation. A
+    multipart or form-urlencoded body with a `format: binary` schema now
+    fails generation; it sent the file raw under `multipart/form-data`
+    with no boundary.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

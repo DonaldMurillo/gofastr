@@ -225,7 +225,7 @@ A body property named exactly
 like a path parameter gets no flag of its own: it repeats the record the
 path names, as a composite key's columns do in a GoFastr app's PUT body,
 and `--json` can still send it. Binary bodies
-(`application/octet-stream` / `format: binary`) take `--file` with `-`
+(`application/octet-stream` / `format: binary`, inline or by `$ref`) take `--file` with `-`
 for stdin; a body offering several binary types is sent as
 `application/octet-stream`, else the first type by name. The chosen
 type must be a media type with no control byte (it is the request's
@@ -270,8 +270,9 @@ of objects shallow-merges, and an `allOf` whose members name one scalar
 type reads as that scalar, the way FastAPI wraps an enum parameter that
 has a default; `oneOf`/`anyOf` bodies fall back to
 `--json`), JSON or YAML documents. Cookie parameters, external refs,
-`$ref` cycles, path/template mismatches, and multipart bodies fail
-generation with a precise error instead of guessing. A spec whose
+`$ref` cycles, path/template mismatches, and multipart or form-urlencoded bodies
+(even under a `format: binary` schema, which would send a file with no
+multipart boundary) fail generation with a precise error instead of guessing. A spec whose
 *only* security scheme is unsupported (OAuth2 flows, apiKey outside a
 header) fails too; a spec offering bearer alongside OAuth2 generates
 against bearer.

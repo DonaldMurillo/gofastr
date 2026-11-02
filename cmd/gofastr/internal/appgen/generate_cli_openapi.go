@@ -993,8 +993,19 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				types[0] = "application/octet-stream"
 			}
 			for _, ct := range types {
+				// A multipart or form-urlencoded body is encoded fields,
+				// not a file sent as is: raw, multipart has no boundary.
+				base := strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0]))
+				if strings.HasPrefix(base, "multipart/") || base == "application/x-www-form-urlencoded" {
+					continue
+				}
 				mm, _ := content[ct].(map[string]any)
 				schema, _ := orEmpty(mm)["schema"].(map[string]any)
+				// A component schema is as binary as an inline one.
+				schema, err = oaResolve(root, orEmpty(schema))
+				if err != nil {
+					return op, err
+				}
 				format, _ := orEmpty(schema)["format"].(string)
 				if ct == "application/octet-stream" || format == "binary" {
 					// The content type is sent as the Content-Type header

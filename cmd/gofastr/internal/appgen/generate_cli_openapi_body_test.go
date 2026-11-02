@@ -50,3 +50,33 @@ func TestOpenAPIBodyFieldWithoutFlagUsesJSON(t *testing.T) {
 		t.Errorf("body fields = %+v, want userId alone on --user-id", f)
 	}
 }
+
+// A binary body names its schema however the document likes: a $ref to a
+// component {type: string, format: binary} is the same binary body as the
+// schema written inline. A multipart or form-urlencoded body is a set of
+// encoded fields, never a file sent as is, so it fails generation even
+// when its schema says format: binary: sent raw, a multipart body has no
+// boundary and the server cannot read it.
+func TestOpenAPIBinaryBodySchema(t *testing.T) {
+	body := func(ct, schema string) map[string]any {
+		return mustDecodeDoc(t, `{"openapi":"3.0.3",
+		  "components":{"schemas":{"Upload":{"type":"string","format":"binary"}}},
+		  "paths":{"/up":{"post":{"operationId":"up","requestBody":{"content":{`+
+			`"`+ct+`":{"schema":`+schema+`}}}}}}}`)
+	}
+	spec, err := BuildOpenAPICLISpec(body("image/png", `{"$ref":"#/components/schemas/Upload"}`), CliOptions{Binary: "x"}, "c")
+	if err != nil {
+		t.Fatalf("a $ref to a binary schema must generate: %v", err)
+	}
+	if op := spec.Ops[0]; op.BodyKind != "binary" || op.BodyContentType != "image/png" {
+		t.Errorf("body = %q %q, want binary image/png", op.BodyKind, op.BodyContentType)
+	}
+	for _, ct := range []string{"multipart/form-data", "multipart/mixed", "application/x-www-form-urlencoded"} {
+		for _, schema := range []string{`{"type":"string","format":"binary"}`, `{"$ref":"#/components/schemas/Upload"}`} {
+			_, err := BuildOpenAPICLISpec(body(ct, schema), CliOptions{Binary: "x"}, "c")
+			if err == nil || !strings.Contains(err.Error(), "request body offers "+ct) {
+				t.Errorf("%s with %s: err = %v, want the unsupported-body refusal", ct, schema, err)
+			}
+		}
+	}
+}
