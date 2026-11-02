@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -266,6 +267,14 @@ func deleteHandler(idx Index) http.Handler {
 		}
 		if id == "" {
 			writeErr(w, r, http.StatusBadRequest, reasonDocIdIsRequired)
+			return
+		}
+		// The id arrives percent-decoded. One that is not storable text
+		// (invalid UTF-8 or a NUL) names no document, and a Postgres-
+		// backed index refuses it in a text bind (22021, a 500): removing
+		// it is the no-op removing any absent id is.
+		if !utf8.ValidString(id) || strings.IndexByte(id, 0) >= 0 {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if err := idx.Remove(r.Context(), id); err != nil {
