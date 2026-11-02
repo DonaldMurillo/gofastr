@@ -229,6 +229,11 @@ in the path cannot forge log lines or repaint an operator's tail.
   backups shift up (`.1` → `.2`, …), and anything past `MaxBackups`
   is removed.
 - Default rotation: 100 MiB cap, 5 backups.
+- File mode: `FileMode`, default `0600`. A log file that already exists
+  is tightened to `FileMode` when the sink opens it (bits `FileMode`
+  lacks are cleared, none are added), so a `server.log` an older build
+  left `0644` does not stay world-readable. Set `FileMode: 0o640` when a
+  log shipper reads the file through its group.
 
 ### `WebhookSink(url, opts)`
 

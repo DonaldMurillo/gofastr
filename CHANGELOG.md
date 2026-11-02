@@ -4382,6 +4382,13 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The log file sink tightens an existing file to `FileMode`.** The
+  `0600` default applied only when the sink created the file, so a
+  `server.log` an older build, a `touch` or a provisioning step left
+  `0644` stayed world-readable, while every file the sink rotated in
+  was `0600`. Opening now clears the bits `FileMode` lacks (it never
+  adds any). Set `FileOpts.FileMode: 0o640` if a shipper reads the file
+  through its group.
 - **Slow-query lines mask SQL string literals.** `slowquery.TrimSQL`
   (the `sql` attr of every `slow query` line) printed a statement
   verbatim, so a value spelled inline (`ALTER ROLE … PASSWORD '…'`,

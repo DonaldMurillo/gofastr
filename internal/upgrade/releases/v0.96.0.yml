@@ -657,3 +657,12 @@ notes:
         - gofastr/framework/slowquery.TrimSQL
         - gofastr/framework/slowquery.NewSlowQueryLogger
         - gofastr/framework/slowquery.NewSlowQueryLoggerFn
+  - change: "battery/log's file sink tightens an existing log file to FileOpts.FileMode (default 0600) when it opens it; it used to keep whatever mode the file had"
+    breaking: false
+    guidance: "A server.log left 0644 by an older build or a provisioning step was world-readable. If a log shipper reads the file through its group, set FileOpts.FileMode: 0o640 (or the mode it needs); the sink clears only the bits FileMode lacks and never adds any."
+    find:
+      uses:
+        - gofastr/battery/log.FileSink
+        - gofastr/battery/log.MustFileSink
+        - gofastr/battery/log.DefaultFileSink
+        - gofastr/battery/log.New
