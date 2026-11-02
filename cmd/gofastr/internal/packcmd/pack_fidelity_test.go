@@ -1,6 +1,8 @@
 package packcmd
 
 import (
+	"go/ast"
+	"go/parser"
 	"maps"
 	"testing"
 
@@ -35,6 +37,25 @@ func TestPack_AccessAnyoneRoundTrips(t *testing.T) {
 	want := framework.AccessDeclaration{Read: "contacts:read", Create: framework.Anyone, Update: "contacts:write", Delete: "contacts:admin"}
 	if *acc != want {
 		t.Errorf("access = %+v, want %+v", *acc, want)
+	}
+}
+
+// The generator writes a section's label, class and id into its
+// SectionConfig; pack read only heading, eyebrow and description, so a
+// labelled, classed section (examples/lms's Featured Courses) packed bare.
+func TestPack_SectionLabelClassIDRoundTrip(t *testing.T) {
+	src := `ui.Section(ui.SectionConfig{Ctx: ctx, Heading: "", Eyebrow: "", Description: "", Label: "Featured Courses", Class: "featured-courses", ID: "featured"}, ui.Stack(ui.StackConfig{Align: ui.AlignStart}))`
+	e, err := parser.ParseExpr(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, ok := reverseBlock(e.(*ast.CallExpr), nil)
+	if !ok || b.Kind != "section" {
+		t.Fatalf("reverseBlock = %+v, %v; want a section", b, ok)
+	}
+	want := map[string]any{"label": "Featured Courses", "class": "featured-courses", "id": "featured"}
+	if !maps.Equal(b.Props, want) {
+		t.Errorf("section props = %v, want %v", b.Props, want)
 	}
 }
 

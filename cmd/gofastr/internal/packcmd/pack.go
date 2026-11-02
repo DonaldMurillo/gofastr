@@ -2680,7 +2680,9 @@ func reverseHero(call *ast.CallExpr) appspec.AppSpecBlock {
 
 func reverseSection(call *ast.CallExpr, helpers map[string]ast.Expr) appspec.AppSpecBlock {
 	c := cfgOf(call, 0)
-	b := appspec.AppSpecBlock{Kind: "section", Props: props2("heading", appspec.AstString(c["Heading"]), "eyebrow", appspec.AstString(c["Eyebrow"]), "description", appspec.AstString(c["Description"]))}
+	b := appspec.AppSpecBlock{Kind: "section", Props: props2(
+		"heading", appspec.AstString(c["Heading"]), "eyebrow", appspec.AstString(c["Eyebrow"]), "description", appspec.AstString(c["Description"]),
+		"label", appspec.AstString(c["Label"]), "class", appspec.AstString(c["Class"]), "id", appspec.AstString(c["ID"]))}
 	// The section's children are wrapped in ui.Grid/ui.Stack(cfg, children…).
 	for _, arg := range call.Args[1:] {
 		wrap, ok := arg.(*ast.CallExpr)
