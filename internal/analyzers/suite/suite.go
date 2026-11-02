@@ -95,6 +95,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/listheader"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverwrite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/statusrange"
+
+	// 2026-11 bug-bash rules (request-misc)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/rsakeysize"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -188,6 +191,10 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(statusrange.Analyzer),
 	allow.Guard(doublewrite.Analyzer),
 	allow.Guard(listheader.Analyzer),
+
+	// 2026-11 bug-bash rules (request-misc): request-shaped trust and
+	// cost mistakes, one per bug the battery/auth bash found.
+	allow.Guard(rsakeysize.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means
