@@ -421,8 +421,10 @@ resource updates it must also send `resources/subscribe` with the `uri` —
 `NotifyResourceUpdated` is a no-op until at least one subscription is
 active. Subscriptions are refcounted per `uri`: every
 `resources/subscribe` adds one, every `resources/unsubscribe` releases
-one, and delivery stops only when the count for that `uri` reaches
-zero. A `uri` longer than 2048 bytes is refused, the server retains at
+one of the same caller's (the resolved user, else the TCP peer's host),
+and delivery stops only when the count for that `uri` reaches zero. An
+unsubscribe for a `uri` the caller never subscribed to is a no-op, even
+when other callers did. A `uri` longer than 2048 bytes is refused, the server retains at
 most 1024 distinct subscribed uris (a `resources/subscribe` past that
 fails), and when the last stream disconnects the retained
 subscriptions are dropped — with no stream there is nobody to deliver

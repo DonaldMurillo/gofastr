@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **MCP `resources/unsubscribe` releases only the caller's own
+  subscription.** The per-`uri` count was shared by every caller, so
+  any caller past the server gate could unsubscribe a `uri` it never
+  subscribed to and switch `notifications/resources/updated` off for
+  everyone who had. Each subscribe is now recorded under its caller
+  (the resolved user, else the TCP peer's host); delivery is unchanged.
 - **An idle MCP notification stream re-checks its caller.** The GET
   stream `ServeSSE` holds re-checked the caller only before a
   notification, and notifications are rare, so a revoked session's

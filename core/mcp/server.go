@@ -221,6 +221,11 @@ type Server struct {
 	// positive. Connection-agnostic by transport necessity: there is no
 	// session id linking a POST to a GET stream.
 	resourceSubs map[string]int
+	// resourceSubsBy splits resourceSubs by the caller that subscribed
+	// (sseSeatKey's identity): resources/unsubscribe releases only the
+	// caller's own count, so one caller cannot switch off another's
+	// updates. Delivery still reads the per-uri total above.
+	resourceSubsBy map[resourceSubKey]int
 	// SSE subscriber seat policy (seats.go): how many concurrent
 	// notification streams one caller may hold, and what happens past
 	// the cap. sseSeatOrder is the per-caller FIFO the EvictOldest
