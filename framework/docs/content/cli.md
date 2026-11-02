@@ -167,7 +167,7 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 
 - `gofastr validate <yml>`: validate an app spec without generating
   (exit 0 = valid; includes the unscoped-PII lint). One app spec per run:
-  a second path is a usage error, exit 2.
+  a second path or a flag is a usage error, exit 2.
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
