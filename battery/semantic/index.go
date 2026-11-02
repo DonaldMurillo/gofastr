@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -875,7 +876,12 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 	// width hits, and K cuts its output: cutting to K first left it
 	// nothing to promote (at K=1 it could only confirm the top hit).
 	if q.MMRLambda > 0 && len(candidates) > 0 {
-		candidates = mmr(qv, candidates, q.MMRLambda, k)
+		// mmr weighs relevance against the stored vectors, which the
+		// store normalized: the query vector must be unit length too, or
+		// its length scales relevance against the redundancy penalty.
+		unit := slices.Clone(qv)
+		normalize(unit)
+		candidates = mmr(unit, candidates, q.MMRLambda, k)
 	} else if q.Rerank && len(candidates) > width {
 		candidates = candidates[:width]
 	} else if !q.Rerank && len(candidates) > k {

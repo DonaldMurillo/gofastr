@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **MMR diversity no longer depends on the embedder's vector length.**
+  The stores normalize what they keep, but `Query` passed the query
+  vector to MMR as the embedder returned it, so an embedder that does
+  not normalize (a query vector ten units long) made relevance swamp the
+  redundancy penalty and `MMRLambda` picked near-duplicates. The query
+  vector is normalized for MMR now.
 - **A semantic index refuses an empty vector.** With an embedder whose
   `Dim()` is 0 until first use, an empty vector fixed no dimension and
   was stored; the next real vector set one, and every query after
