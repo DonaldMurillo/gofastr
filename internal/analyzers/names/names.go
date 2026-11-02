@@ -70,6 +70,7 @@ var Analyzers = []string{
 	// 2026-11 bug-bash rules (response)
 	"recoverwrite",
 	"statusrange",
+	"doublewrite",
 }
 
 // Lints is every source lint outside the vettool that shares the
