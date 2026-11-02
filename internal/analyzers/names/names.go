@@ -15,6 +15,7 @@ import "slices"
 // suppression check leaves them to the analyzers.
 var Analyzers = []string{
 	"asciifold",
+	"bareduration",
 	"callbackunderlock",
 	"clienttimeout",
 	"compositekey",

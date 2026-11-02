@@ -82,6 +82,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unseated"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/worldreadable"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/wrapwriter"
+
+	// 2026-11 bug-bash rules (numbers)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/bareduration"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -159,6 +162,10 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(wrapwriter.Analyzer),
 	allow.Guard(unseated.RecheckAnalyzer),
 	allow.Guard(unseated.WriteDeadlineAnalyzer),
+
+	// 2026-11 bug-bash rules (numbers): unit and zero-value mistakes on
+	// numeric configuration and the integer math that bounds it.
+	allow.Guard(bareduration.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means
