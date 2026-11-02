@@ -4376,6 +4376,12 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The log console sink escapes control and bidi runes in the message
+  and keys.** Only attr values were escaped; the message, attr keys,
+  the time and level fields, and an entry that was not JSON were
+  written raw, and slog escapes C0 only, so a C1 CSI or a right-to-left
+  override in a message built from request data reached the terminal
+  live. A quote in a message also printed as `\"`.
 - **The log webhook sink no longer writes its URL to stderr.** When a
   batch was given up on a transport error, the warning quoted net/http's
   error, which carries the full URL, so a Slack incoming-webhook secret
