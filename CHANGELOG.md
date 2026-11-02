@@ -529,6 +529,10 @@ few lines, and link the PR or the docs page for the rest.
     at `false`, sent `published: true`, dropped `--views` and exited 0.
   - `list -o` other than `json` or `table` exits 2 before the request.
     A typo printed JSON and exited 0.
+  - A server URL that is not an absolute `http(s)` URL exits 2, from
+    `login --url`, `--url`, `<BINARY>_URL` or the stored config. `login
+    --url 127.0.0.1:8080` stored it, and every later call failed on a
+    URL parse error with the stored token withheld.
 - **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
   in [app-cli.md](framework/docs/content/app-cli.md):
   - **BREAKING: an acronym is one word in command and flag names.**

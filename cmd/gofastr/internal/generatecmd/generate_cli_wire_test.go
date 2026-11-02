@@ -83,6 +83,36 @@ func runWireCLI(t *testing.T, bin string, env []string, stdin string, args ...st
 	return string(out)
 }
 
+// A server URL with no http(s) scheme is refused where it enters: login
+// stored `127.0.0.1:8080` as given, and every later call then failed on a
+// URL parse error, the stored token withheld under an empty origin.
+func TestCLIRefusesSchemelessServerURL(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliWireFixtureYAML)
+	for _, bad := range []string{"127.0.0.1:8080", "app.example.com", "ftp://app.example.com", "https://"} {
+		cmd := exec.Command(bin, "login", "--url", bad, "--with-token")
+		cmd.Env = env
+		cmd.Stdin = strings.NewReader("gfsk_x\n")
+		out, err := cmd.CombinedOutput()
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 2 || !strings.Contains(string(out), "http(s)") {
+			t.Errorf("login --url %s: %v, want exit 2 naming http(s)\n%s", bad, err, out)
+		}
+		cmd = exec.Command(bin, "widgets", "list")
+		cmd.Env = append(env, "MYAPP_URL="+bad, "MYAPP_TOKEN=t")
+		out, err = cmd.CombinedOutput()
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 2 || !strings.Contains(string(out), "http(s)") {
+			t.Errorf("MYAPP_URL=%s list: %v, want exit 2 naming http(s)\n%s", bad, err, out)
+		}
+	}
+	rec := newWireRecorder(t)
+	runWireCLI(t, bin, env, "gfsk_x\n", "login", "--url", strings.Replace(rec.URL, "http://", "HTTP://", 1)+"/", "--with-token")
+	if out := runWireCLI(t, bin, env, "", "widgets", "list"); !strings.Contains(out, `"data"`) {
+		t.Errorf("list after login printed %s", out)
+	}
+	if auth, _, _ := rec.last(); auth != "Bearer gfsk_x" {
+		t.Errorf("the stored token did not reach its own origin: %q", auth)
+	}
+}
+
 // The stored login token belongs to the origin it was stored for: a --url
 // or $MYAPP_URL naming another host must not receive it.
 func TestCLITokenOnlyToItsOrigin(t *testing.T) {

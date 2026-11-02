@@ -1361,6 +1361,10 @@ func runLogin(args []string) int {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url https://your-app.example.com\n")
 		return 2
 	}
+	if err := checkServerURL(cfg.URL); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	var token string
 	if *withToken {
 		data, err := io.ReadAll(os.Stdin)
@@ -1489,6 +1493,10 @@ func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url, set %s_URL, or run ` + "`%s login`" + `\n", envPrefix, binaryName)
 		return nil, 2
 	}
+	if err := checkServerURL(base); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return nil, 2
+	}
 	// $<APP>_TOKEN is the caller's explicit choice and goes wherever
 	// the call does. The stored token is tied to the URL it was stored
 	// with: sending it to whatever --url names would hand a production
@@ -1519,6 +1527,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// checkServerURL refuses a server URL the client cannot call: anything but
+// an absolute http(s) URL with a host. "127.0.0.1:8080" parses with the
+// scheme "127.0.0.1", so login stored it and every later call failed on a
+// URL parse error, the stored token withheld under an empty origin.
+func checkServerURL(raw string) error {
+	if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+		return nil
+	}
+	return fmt.Errorf("server URL %q is not an absolute http(s) URL: write it as https://app.example.com", raw)
 }
 
 // apiBase is base with the API prefix joined on. A base whose path

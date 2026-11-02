@@ -121,7 +121,10 @@ Connection resolution, in order: the `--url` flag →
 create and on every overwrite). A config file that exists but does
 not parse is refused with an error naming the file (delete it or
 `login` again) rather than silently treated as "not logged in",
-which would send every request unauthenticated. The stored token goes
+which would send every request unauthenticated. The URL must be an
+absolute `http://` or `https://` URL with a host, from whichever source
+it comes: `login --url 127.0.0.1:8080` and `<BINARY>_URL=app.example.com`
+exit 2 rather than store or call it. The stored token goes
 only to the origin (scheme, host and port) `login` stored it with:
 when `--url` or `<BINARY>_URL` points somewhere else, the request goes
 without it and stderr says why, so a production token never reaches a
