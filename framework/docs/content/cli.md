@@ -105,6 +105,8 @@ scrubbed the same way.
   relative or absolute (`--out=$PWD/theme/theme.go`): a `theme/` or
   `theme.go` symlinked out of it is refused. An `--out` outside it names
   its own directory, and only the file in it is checked.
+  The theme verbs take a value as `--out=x` or `--out x` (`theme edit`'s
+  `--addr` too) and refuse an unknown flag.
 
 ### Windows init reports an existing directory
 
