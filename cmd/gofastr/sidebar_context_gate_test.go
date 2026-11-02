@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -163,15 +164,24 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 		t.Fatalf("the sidebar rendered no ordinary nav entry:\n%s", html)
 	}
 
-	// This app spec enables auth but routes no login screen, the shape six
-	// of the seven shipped app specs have. The sidebar is the app shell's
-	// only auth affordance, so offering "Sign in" here would send a
-	// first-time visitor to a route nothing serves. Nothing else in this file
-	// pins that branch: without this check the guard around the Sign-in
-	// emission can be deleted and every assertion still passes.
-	if strings.Contains(html, "Sign in") {
-		t.Errorf("anonymous visitor is offered Sign in, but no screen routes a login form — the link goes nowhere:\n%s",
-			snippetAround(html, "Sign in"))
+	// This app spec enables auth but declares no login form, the shape six
+	// of the seven shipped app specs have. Since decision D-35 the generator
+	// writes a /login screen for exactly this shape, so the sidebar's Sign in
+	// is the app shell's auth affordance and must lead somewhere real: a link
+	// to a route nothing serves would send a first-time visitor to a 404.
+	// Check both halves, the link and the form behind it.
+	if !strings.Contains(html, `href="/login"`) || !strings.Contains(html, "Sign in") {
+		t.Fatalf("anonymous visitor is not offered Sign in to /login, though the generator writes a login screen for this app spec:\n%s", html)
+	}
+	loginPage, err := http.Get(baseURL + "/login")
+	if err != nil {
+		t.Fatalf("GET /login: %v", err)
+	}
+	loginHTML, _ := io.ReadAll(io.LimitReader(loginPage.Body, 1<<20))
+	loginPage.Body.Close()
+	if loginPage.StatusCode != http.StatusOK || !strings.Contains(string(loginHTML), `action="/auth/login"`) {
+		t.Errorf("the Sign in link leads to GET /login = %d with no login form; the link goes nowhere:\n%s",
+			loginPage.StatusCode, snippetAround(string(loginHTML), "<form"))
 	}
 
 	// THE DISCRIMINATING ASSERTION. A sidebar built once at startup resolves
