@@ -140,6 +140,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr upgrade` handles vendored apps and release candidates.**
+  `--apply` runs `go mod vendor` after `go mod tidy` when the app has
+  `vendor/modules.txt`; its `go build` used to fail on inconsistent
+  vendoring. Resolving the newest release without `--to` no longer
+  fails inside a vendored module ("offline?") and picks the newest
+  release over a newer prerelease, the way `go get …@latest` does. A
+  prerelease `--to v0.96.0-rc.1` shows v0.96.0's notes instead of none,
+  and `--to v0.95.0+meta` on a v0.95.0 app is the same release, not a
+  downgrade.
 - **`gofastr upgrade` stops telling a ported app to edit correct lines.**
   Thirteen `hits: edit` notes named a symbol that survives its release
   with a new shape (`app.ScreenLLMMD`, `pagination.NewCursorPage`,

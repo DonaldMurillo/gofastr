@@ -38,6 +38,10 @@ out clearly), and where a change has a known code signature, the report
 points at the affected `file:line` in *your* project: the same guided
 style as `gofastr audit a11y`. `--apply` then runs the mechanical
 steps and stops at the first failure so you fix with the notes in hand.
+An app that vendors its dependencies (`vendor/modules.txt`) gets a
+`go mod vendor` step after `go mod tidy`; without it every later go
+command refuses the stale `vendor/`. A release candidate target
+(`--to v0.96.0-rc.1`) shows the notes of the release it precedes.
 
 ## The manual workflow
 

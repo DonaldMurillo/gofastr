@@ -286,7 +286,11 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   points at the exact lines each change affects — Go through the type
   checker, CSS through its tokenizer, `gofastr.yml` through its parser;
   the registry format is documented under "The migration registry"
-  below. `--apply` runs the steps ([upgrading](upgrading.md)). If
+  below. `--apply` runs the steps ([upgrading](upgrading.md)), with
+  `go mod vendor` after `go mod tidy` when the app vendors
+  (`vendor/modules.txt`). Without `--to` the newest release is picked,
+  never a newer prerelease; a prerelease `--to` (`v0.96.0-rc.1`) shows
+  the notes of the release it precedes. If
   `go.mod` was bumped before the run, pass `--from vX.Y.Z` (the release
   the code was written for); otherwise the range is empty.
 
@@ -559,8 +563,9 @@ does not cover: a runtime browser scan, and the dependency report.
 
 - **Updating `go.mod` but not the CLI** (or the other way around). They
   version independently. After `go get …@vX.Y.Z`, also
-  `go install …/cmd/gofastr@vX.Y.Z`. `gofastr upgrade --apply` keeps
-  them in step ([upgrading](upgrading.md)).
+  `go install …/cmd/gofastr@vX.Y.Z`. `gofastr upgrade --apply` moves
+  `go.mod` only and prints the `go install` as the step left to you
+  ([upgrading](upgrading.md)).
 - **`generate app --force` on an app you've edited.** It regenerates the
   *entire* set and discards your changes. To add to an existing app use
   `generate app --add` / `generate entity <name>`; owned files are never
