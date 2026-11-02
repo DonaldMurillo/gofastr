@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A slow module answer no longer kills the module.** A `moduleproto`
+  peer remembered the last 1,024 calls it gave up on, answered or not,
+  so 1,024 timed-out calls answered in time pushed out a slow call still
+  owed, and its answer faulted the peer as unsolicited; the supervisor
+  then killed the module and every request in flight. The window now
+  counts only ids still owed an answer.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

@@ -1,8 +1,10 @@
 package moduleproto
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"reflect"
 	"runtime"
@@ -432,6 +434,86 @@ func TestAbandonedWindowEvictionStaysFatal(t *testing.T) {
 			t.Fatal("response for an evicted tombstone must stay fatal")
 		}
 	})
+}
+
+// Property: the abandonment window bounds the late responses still OWED,
+// not the abandonments ever made. A tombstone a late response already
+// consumed holds nothing, so it must not count toward the window: before
+// the fix every abandonment, answered or not, pushed one id through the
+// FIFO, and 1024 abandoned-then-answered calls evicted the tombstone of
+// one slow call still outstanding. A conforming child (one that ignores
+// module.cancel and finishes its work) then answered that call, the peer
+// read the answer as unsolicited, and the supervisor killed the module
+// and every request it was serving.
+func TestAbandonedWindowCountsOnlyUnansweredIDs(t *testing.T) {
+	connX, connY := net.Pipe()
+	codecX, _ := NewCodec(connX, connX, 0)
+	h := NewPeer(codecX, RoleHost)
+	h.Start()
+	defer func() {
+		_ = h.Close()
+		_ = connX.Close()
+		_ = connY.Close()
+		<-h.Done()
+	}()
+
+	ids := make(chan uint64, 1)
+	go func() {
+		sc := bufio.NewScanner(connY)
+		for sc.Scan() {
+			var f Frame
+			if err := json.Unmarshal(sc.Bytes(), &f); err == nil && f.ID != nil {
+				ids <- *f.ID
+			}
+		}
+	}()
+	abandon := func() uint64 {
+		t.Helper()
+		ctx, cancel := context.WithCancel(context.Background())
+		res := make(chan error, 1)
+		go func() {
+			_, err := h.Call(ctx, "slow", nil)
+			res <- err
+		}()
+		var id uint64
+		select {
+		case id = <-ids:
+		case <-time.After(2 * time.Second):
+			t.Fatal("request frame never written")
+		}
+		cancel()
+		if err := <-res; !errors.Is(err, context.Canceled) {
+			t.Fatalf("abandoned call: err = %v, want context.Canceled", err)
+		}
+		return id
+	}
+	answer := func(id uint64) {
+		t.Helper()
+		raw, _ := json.Marshal(NewSuccessResponse(id, json.RawMessage(`{}`)))
+		if _, err := connY.Write(append(raw, '\n')); err != nil {
+			t.Fatalf("write late response %d: %v", id, err)
+		}
+	}
+
+	slow := abandon() // its handler outlives the window
+	for range 2*maxAbandonedIDs + 1 {
+		answer(abandon()) // each answered late, consuming its tombstone
+	}
+	// Consumed ids leave the FIFO too, so a peer that keeps abandoning and
+	// being answered holds a bounded record, not one entry per call ever.
+	h.mu.Lock()
+	fifo, live := len(h.abandonedFIFO), len(h.abandoned)
+	h.mu.Unlock()
+	if fifo > 2*maxAbandonedIDs || live > maxAbandonedIDs {
+		t.Fatalf("abandonment record grew without bound: fifo=%d live=%d", fifo, live)
+	}
+	answer(slow)
+
+	select {
+	case <-h.FatalDone():
+		t.Fatalf("SECURITY: [moduleproto-abandoned-window] the late answer to the one call still owed faulted the peer: %v; consumed tombstones counted toward the abandonment window and evicted the live one", h.FatalError())
+	case <-time.After(300 * time.Millisecond):
+	}
 }
 
 // Property: guard clauses refuse bad input without consuming shared

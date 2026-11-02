@@ -420,6 +420,13 @@ sent) works the same way, with its own cap: at most `Limits.Inflight`
 notification writes wait on a peer that stopped reading, and a `Notify`
 past that returns `moduleproto.ErrInflightCap` without writing.
 
+A call that gave up still expects its answer: the peer remembers the id
+and drops the late response instead of faulting on it. It remembers up to
+1,024 ids still owed an answer; an answer that arrives frees its slot, so
+a long-running handler that ignores `module.cancel` keeps its slot however
+many other calls are given up and answered meanwhile. A response naming an
+id the peer never sent, or one already answered, is still a fault.
+
 ```go
 codec, _ := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
 peer := moduleproto.NewPeer(codec, moduleproto.RoleChild)
