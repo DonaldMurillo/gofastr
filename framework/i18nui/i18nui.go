@@ -371,6 +371,21 @@ var (
 	HuiMultiSelectPlaceholder    = i18n.Define("ui.multiselect.placeholder", "Choose…")
 )
 
+// DatePicker's nav anchors, a range's default input labels, and what
+// the module says when a day is picked.
+var (
+	HuiDatePickerPrevMonth = i18n.Define("ui.datepicker.prevMonth", "Previous month")
+	HuiDatePickerNextMonth = i18n.Define("ui.datepicker.nextMonth", "Next month")
+	HuiDatePickerPrevYear  = i18n.Define("ui.datepicker.prevYear", "Previous year")
+	HuiDatePickerNextYear  = i18n.Define("ui.datepicker.nextYear", "Next year")
+	HuiDatePickerStart     = i18n.Define("ui.datepicker.start", "Start date")
+	HuiDatePickerEnd       = i18n.Define("ui.datepicker.end", "End date")
+	HuiDatePickerChosen    = i18n.Define("ui.datepicker.chosen", "{{date}} selected.")
+	HuiDatePickerChooseEnd = i18n.Define("ui.datepicker.chooseEnd", "{{date}} selected. Choose the end date.")
+	HuiDatePickerRange     = i18n.Define("ui.datepicker.range", "{{start}} to {{end}} selected.")
+	HuiDatePickerFailed    = i18n.Define("ui.datepicker.monthFailed", "The month could not be loaded.")
+)
+
 // CodeBlock's accessible name, its line count and its copy control,
 // lower-case in the block's header.
 var (

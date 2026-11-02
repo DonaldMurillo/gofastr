@@ -230,3 +230,35 @@ func TestSSE_WriteData_StripsInjectedIDNUL(t *testing.T) {
 		t.Fatalf("SECURITY: [sse] queued ID retained NUL/control payload via WriteData: %q", body)
 	}
 }
+
+// An id made only of control bytes strips to "" and must emit no id
+// field at all: an empty "id:" line resets the client's Last-Event-ID,
+// so its next reconnect resumes from nothing. WriteData and WriteEvent
+// used to check the raw id, then strip, and write "id: " (Encode
+// already stripped first).
+func TestSSE_ControlOnlyIDEmitsNoIDField(t *testing.T) {
+	for name, write := range map[string]func(*SSEWriter) error{
+		"WriteData":  func(s *SSEWriter) error { return s.WriteData("x") },
+		"WriteEvent": func(s *SSEWriter) error { return s.WriteEvent("e", "x") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := newFlushRecorder()
+			s := NewSSEWriter(rec)
+			s.SetID("\nid: forged")
+			if err := write(s); err != nil {
+				t.Fatal(err)
+			}
+			if body := rec.Body.String(); strings.Contains(body, "id:") {
+				t.Fatalf("control-only id emitted an id field: %q", body)
+			}
+			// The queued id is spent either way: the next event carries
+			// none.
+			if err := write(s); err != nil {
+				t.Fatal(err)
+			}
+			if body := rec.Body.String(); strings.Contains(body, "id:") {
+				t.Fatalf("control-only id leaked into the next event: %q", body)
+			}
+		})
+	}
+}

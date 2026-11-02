@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
@@ -16,8 +18,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// RecommendedMinPasswordBytes is the minimum length application
-// registration flows should enforce on new passwords. Applications use
+// RecommendedMinPasswordBytes is the minimum length, in characters
+// (Unicode code points, not bytes, whatever the name says), that
+// application registration flows should enforce on new passwords.
+// Applications use
 // [ValidatePasswordStrength] to check it; [HashPassword] itself only
 // rejects the empty string because hashing logic shouldn't dictate
 // product policy (PIN flows, recovery tokens, machine accounts, etc.
@@ -30,7 +34,7 @@ const RecommendedMinPasswordBytes = 8
 var ErrPasswordEmpty error = i18n.NewError(reasonPasswordEmpty)
 
 // ErrPasswordTooShort is returned by ValidatePasswordStrength when the
-// input is shorter than RecommendedMinPasswordBytes.
+// input has fewer than RecommendedMinPasswordBytes characters.
 var ErrPasswordTooShort error = i18n.NewError(reasonPasswordTooShortField)
 
 // PasswordHasher hashes and verifies passwords. The package ships two
@@ -40,7 +44,13 @@ var ErrPasswordTooShort error = i18n.NewError(reasonPasswordTooShortField)
 // To change the algorithm used for NEW passwords, set [DefaultHasher] before
 // auth.Init. Verification auto-detects the stored hash's format from its PHC
 // prefix, so an existing user base migrates gradually: old bcrypt rows keep
-// verifying, new rows use the configured hasher.
+// verifying, new rows use the configured hasher. A custom hasher (a
+// pepper, scrypt) works too: the battery's sign-in and password-change
+// paths ask DefaultHasher.Verify first whenever it is not one of the two
+// built-ins, then fall back to [CheckPassword], which knows only the
+// built-in formats (so a custom Verify may call it). Passwordless
+// accounts (OAuth, magic link) store a placeholder made by the
+// configured hasher, so their verify costs what any other row's does.
 type PasswordHasher interface {
 	Hash(password string) (string, error)
 	Verify(password, hash string) bool
@@ -69,15 +79,16 @@ func HashPassword(password string) (string, error) {
 }
 
 // ValidatePasswordStrength returns ErrPasswordEmpty for an empty input
-// and ErrPasswordTooShort for anything shorter than
-// RecommendedMinPasswordBytes. Use it from registration / password-
-// change handlers to enforce a length floor without baking policy
-// into the hash function.
+// and ErrPasswordTooShort for anything with fewer than
+// RecommendedMinPasswordBytes characters. It counts characters (code
+// points), as its message says, not bytes: "🔑🔑" is two characters.
+// Use it from registration / password-change handlers to enforce a
+// length floor without baking policy into the hash function.
 func ValidatePasswordStrength(password string) error {
 	if password == "" {
 		return ErrPasswordEmpty
 	}
-	if len(password) < RecommendedMinPasswordBytes {
+	if utf8.RuneCountInString(password) < RecommendedMinPasswordBytes {
 		return ErrPasswordTooShort
 	}
 	return nil
@@ -91,11 +102,45 @@ func ValidatePasswordStrength(password string) error {
 // For bcrypt hashes, the same SHA-256 pre-hash applied in [BcryptHasher.Hash]
 // is applied here for inputs longer than 72 bytes, so a long passphrase that
 // was hashed at registration time still verifies at login time.
+//
+// CheckPassword knows the two built-in formats only, so a custom
+// [PasswordHasher]'s Verify may call it for rows written before the switch.
+// The battery's own sign-in paths also ask a custom [DefaultHasher] first
+// (see verifyPassword).
 func CheckPassword(password, hash string) bool {
 	if strings.HasPrefix(hash, "$argon2id$") {
 		return Argon2Hasher{}.Verify(password, hash)
 	}
 	return BcryptHasher{}.Verify(password, hash)
+}
+
+// verifyPassword is the battery's own password check: login, password
+// change, and the unknown-account dummy. When [DefaultHasher] is a custom
+// hasher (neither [BcryptHasher] nor [Argon2Hasher]), its Verify is asked
+// first: a peppered bcrypt hash looks like any other bcrypt hash, so the
+// prefix cannot route it. A hash it does not accept goes through
+// [CheckPassword], so rows written before the switch keep verifying.
+//
+// It is not CheckPassword itself: a custom Verify written against the
+// documented contract ("verification auto-detects the format") calls
+// CheckPassword, and asking the custom hasher from inside CheckPassword
+// recursed until the stack overflowed, killing the process on any
+// anonymous login attempt.
+func verifyPassword(password, hash string) bool {
+	if isCustomHasher(DefaultHasher) && DefaultHasher.Verify(password, hash) {
+		return true
+	}
+	return CheckPassword(password, hash)
+}
+
+// isCustomHasher reports whether h is a host-supplied hasher rather than
+// one of the two built-ins (by value or by pointer).
+func isCustomHasher(h PasswordHasher) bool {
+	switch h.(type) {
+	case nil, BcryptHasher, *BcryptHasher, Argon2Hasher, *Argon2Hasher:
+		return false
+	}
+	return true
 }
 
 // BcryptHasher hashes with bcrypt at DefaultCost and a SHA-256 pre-hash for
@@ -155,11 +200,20 @@ type Argon2Hasher struct {
 
 // Hash produces an argon2id hash in PHC string format with a random 16-byte
 // salt.
+//
+// Parameters past the caps [Argon2Hasher.Verify] enforces on a stored hash
+// (1 GiB of memory, 100 iterations, 16 threads, a 128-byte key) are refused
+// with an error: no hash made with them could ever verify, so every account
+// created under them would be locked out.
 func (h Argon2Hasher) Hash(password string) (string, error) {
 	if password == "" {
 		return "", ErrPasswordEmpty
 	}
 	time, memory, threads, keyLen := h.params()
+	if memory > maxArgon2MemoryKiB || time > maxArgon2Time || threads > maxArgon2Threads || keyLen > maxArgon2KeyLen {
+		return "", fmt.Errorf("auth: argon2 parameters m=%d,t=%d,p=%d,keylen=%d exceed what Verify accepts (m<=%d, t<=%d, p<=%d, keylen<=%d), so no hash made with them could sign in",
+			memory, time, threads, keyLen, maxArgon2MemoryKiB, maxArgon2Time, maxArgon2Threads, maxArgon2KeyLen)
+	}
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("auth: argon2 salt: %w", err)
@@ -214,6 +268,8 @@ type argon2PHC struct {
 // (memory is KiB) or spin for unbounded CPU (time) on every verify, a per-login
 // DoS. Legitimate hashes from this hasher (defaults 64 MiB / t=3 / p=2) sit far
 // below these; anything larger is not a plausible password hash.
+// Argon2Hasher.Hash refuses parameters past them, so the hasher never makes
+// a hash its own verifier refuses.
 const (
 	maxArgon2MemoryKiB uint32 = 1 << 20 // 1 GiB
 	maxArgon2Time      uint32 = 100
@@ -291,11 +347,25 @@ var bcryptCost = bcrypt.DefaultCost
 // [dummyHashFor] derives one per configured hasher instead.
 var dummyBcryptHash string
 
-// dummyHashes caches one dummy per hasher, keyed by the algorithm prefix a
-// hash carries ("$2a$", "$argon2id$"). Deriving it costs a full KDF run, so
-// doing it per failed login would hand an attacker a cheap way to make the
-// server work harder than a real login does.
+// dummyHashes caches one dummy per hasher configuration (hasherKey).
+// Deriving it costs a full KDF run, so doing it per failed login would hand
+// an attacker a cheap way to make the server work harder than a real login
+// does.
 var dummyHashes sync.Map
+
+// hasherKey names a hasher configuration. The built-ins are keyed by type
+// and field values, so two differently tuned Argon2Hashers each get a
+// cached hash at their own cost. A custom hasher is keyed by its type
+// only: its fields may be mutable (a counter, a pointer) or secret (a
+// pepper), and keying on them made every call a new key, paying a full
+// KDF run and growing the caches without bound.
+func hasherKey(h PasswordHasher) string {
+	switch h.(type) {
+	case BcryptHasher, *BcryptHasher, Argon2Hasher, *Argon2Hasher:
+		return fmt.Sprintf("%T|%+v", h, h)
+	}
+	return fmt.Sprintf("%T", h)
+}
 
 // dummyHashFor returns a dummy hash produced by the CONFIGURED hasher, so
 // the not-found branch spends the same algorithm and cost a real row does.
@@ -305,7 +375,7 @@ func dummyHashFor(h PasswordHasher) string {
 	if h == nil {
 		return dummyBcryptHash
 	}
-	key := fmt.Sprintf("%T", h)
+	key := hasherKey(h)
 	if v, ok := dummyHashes.Load(key); ok {
 		return v.(string)
 	}
@@ -317,30 +387,67 @@ func dummyHashFor(h PasswordHasher) string {
 	return hash
 }
 
-// passwordPlaceholderHash is stored as the password_hash for users created
-// via OAuth or magic-link (they never log in via password). It's a real
-// bcrypt hash of an unguessable random secret, recording it once at init
-// avoids a per-signup ~50ms bcrypt + 64-byte allocation that previously
-// happened for every first-time auto-create.
+// passwordPlaceholderHash is the bcrypt placeholder made at init: a real
+// bcrypt hash of an unguessable random secret. It is what
+// [placeholderPasswordHash] answers under the default BcryptHasher, and its
+// fallback when the configured hasher cannot hash.
 //
 // Because the input is random and discarded, no password the user types
 // can match. CheckPassword always returns false against this hash.
-// Because the hash IS a real bcrypt structure, CheckPassword still spends
-// real bcrypt time on it, preserving timing safety on the login path.
 var passwordPlaceholderHash string
 
-// newPlaceholderHash is an unusable bcrypt hash of a fresh random secret.
-// Clearing a password writes one instead of passwordPlaceholderHash: an
-// account created without a password already holds the shared
-// placeholder, so writing it back would leave the stored hash, and the
-// credential tag of every JWT issued before the clear, unchanged.
+// placeholderHashes caches one shared placeholder per hasher configuration
+// (hasherKey), so an auto-create does not pay a full KDF run per signup.
+var placeholderHashes sync.Map
+
+// placeholderPasswordHash is the password_hash stored for users created
+// via OAuth or magic link (they never log in via password): a hash of an
+// unguessable random secret, made by the CONFIGURED hasher.
+//
+// The hasher matters. A login verifies a stored hash with that hash's own
+// algorithm, and an unknown email burns a dummy made by DefaultHasher. A
+// bcrypt placeholder under DefaultHasher = Argon2Hasher answered in bcrypt
+// time while an unknown email answered in argon2 time, and the gap told an
+// attacker which addresses hold a passwordless account (CWE-208).
+func placeholderPasswordHash() string {
+	h := DefaultHasher
+	if h == nil {
+		return passwordPlaceholderHash
+	}
+	key := hasherKey(h)
+	if v, ok := placeholderHashes.Load(key); ok {
+		return v.(string)
+	}
+	hash, err := newPlaceholderHashWith(h)
+	if err != nil {
+		return passwordPlaceholderHash
+	}
+	v, _ := placeholderHashes.LoadOrStore(key, hash)
+	return v.(string)
+}
+
+// newPlaceholderHash is an unusable hash of a fresh random secret, made by
+// DefaultHasher for the reason placeholderPasswordHash gives. Clearing a
+// password writes one instead of the shared placeholder: an account
+// created without a password already holds that, so writing it back would
+// leave the stored hash, and the credential tag of every JWT issued before
+// the clear, unchanged.
 func newPlaceholderHash() (string, error) {
+	h := DefaultHasher
+	if h == nil {
+		h = BcryptHasher{}
+	}
+	return newPlaceholderHashWith(h)
+}
+
+// newPlaceholderHashWith hashes 32 random bytes, hex-encoded (64 bytes,
+// under bcrypt's 72-byte limit), with h.
+func newPlaceholderHashWith(h PasswordHasher) (string, error) {
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return "", err
 	}
-	h, err := bcrypt.GenerateFromPassword(secret, bcryptCost)
-	return string(h), err
+	return h.Hash(hex.EncodeToString(secret))
 }
 
 func init() {
@@ -359,4 +466,5 @@ func init() {
 		panic(fmt.Sprintf("auth: precomputing placeholder hash: %v", err))
 	}
 	passwordPlaceholderHash = string(hp)
+	placeholderHashes.Store(hasherKey(BcryptHasher{}), passwordPlaceholderHash)
 }

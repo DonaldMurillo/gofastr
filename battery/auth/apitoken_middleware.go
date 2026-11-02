@@ -240,14 +240,20 @@ func shouldTouchLastUsed(last *time.Time) bool {
 // (The last-used touch is performed synchronously in the success path
 // above; there is no async helper.)
 
-// emitTokenEvent forwards a token security event to sink (no-op when sink
+// emitTokenEvent forwards a token security event to sink through
+// deliverAudit (no-op when sink
 // is nil). The credential reaches only tokenDisplayPrefix (12 chars), so
 // no plaintext is ever placed in the audit trail.
 func emitTokenEvent(sink AuditSink, ctx context.Context, r *http.Request, kind, reason, cred string) {
 	if sink == nil {
 		return
 	}
-	sink.SecurityEvent(ctx, SecurityEvent{
+	// Through the one delivery path: panic-isolated, uncancellable by the
+	// caller hanging up, bounded by auditWriteTimeout. Called on the sink
+	// directly, a replayed token whose sender disconnected after the
+	// lookup left no token.auth_failed row.
+	deliverAudit(ctx, sink, SecurityEvent{
+		At:     time.Now().UTC(),
 		Kind:   kind,
 		Remote: remoteHost(r),
 		Meta: map[string]string{

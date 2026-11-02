@@ -57,7 +57,11 @@ func behaviorGzipSize(t *testing.T, file string) int {
 // bytes of room). Measured 2026-11-01, the day the copy control split
 // out of headless-feedback (the clipboard-outcome fix took feedback to
 // 3155, past the walk's line): feedback 2711 (row 3072, the walk's own
-// line), copy 789 (row 1024, 235 bytes of room).
+// line), copy 789 (row 1024, 235 bytes of room). datepicker joined 2026-11-01 at 2862 (row 2944, 82
+// bytes of room; first measured 2521, then its review added the in-flight
+// key queue, the failed-month listener and the year 1-99 date math): the
+// grid keyboard, the range pick and the swap's focus restore are one
+// module because each needs the others' state.
 func TestBehaviorModuleSizeBudgets(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -69,6 +73,7 @@ func TestBehaviorModuleSizeBudgets(t *testing.T) {
 		{MultiSelectBehaviorName, "multiselect.js", 1024},
 		{FeedbackBehaviorName, "feedback.js", 3072},
 		{CopyBehaviorName, "copy.js", 1024},
+		{DatePickerBehaviorName, "datepicker.js", 2944},
 	} {
 		got := behaviorGzipSize(t, tc.file)
 		t.Logf("%s (%s) gzip = %d bytes (budget %d)", tc.name, tc.file, got, tc.budget)

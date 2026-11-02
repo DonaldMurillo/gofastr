@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -61,6 +62,14 @@ type PasswordResetConfig struct {
 	// your phrases with it (i18n.Phrase.Text).
 	BodyTemplate func(ctx context.Context, url string) string
 
+	// NoticeTemplate, when non-nil, builds the body of the email a
+	// completed reset sends to the account's address. unlinked names the
+	// sign-in providers the reset removed (a reset unlinks every OAuth
+	// identity, so one planted from a stolen session cannot sign back
+	// in). nil sends the default text from this package's phrases. The
+	// notice goes through EmailSender and is skipped when it is nil.
+	NoticeTemplate func(ctx context.Context, unlinked []string) string
+
 	// DevMode logs the reset URL when EmailSender is nil. NEVER enable in
 	// production, anyone with log read access then resets arbitrary
 	// passwords. The log entry uses hashed identifiers to limit exposure,
@@ -71,6 +80,15 @@ type PasswordResetConfig struct {
 	// 10 attempts/min with a 15-minute block (the register floor);
 	// loosen by passing a config with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
+
+	// AddressRateLimit limits /auth/forgot-password per email address,
+	// however many IPs ask: without it a rotating proxy mails a victim an
+	// unbounded stream of reset links. It defaults to one mail per
+	// address every two minutes. Past it the request gets the same {"sent":true} as
+	// any other and nothing is minted or sent. The key is a SHA-256
+	// digest of the canonical address, never the address. Loosen by
+	// passing a config with a large MaxAttempts.
+	AddressRateLimit *RateLimiterConfig
 }
 
 // PasswordResetPlugin wires:
@@ -80,11 +98,12 @@ type PasswordResetConfig struct {
 //   - POST /auth/reset-password (takes {token, password}; verifies the
 //     token; updates the user's password).
 type PasswordResetPlugin struct {
-	cfg      PasswordResetConfig
-	mgr      *AuthManager
-	store    MagicLinkTokenStore
-	limit    *RateLimiter
-	delivery *mailQueue
+	cfg       PasswordResetConfig
+	mgr       *AuthManager
+	store     MagicLinkTokenStore
+	limit     *RateLimiter
+	addrLimit *RateLimiter
+	delivery  *mailQueue
 }
 
 // PasswordResetPlugin participates in AuthManager shutdown to drain its
@@ -112,11 +131,15 @@ func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
 			BlockDuration: 15 * time.Minute,
 		}
 	}
+	if cfg.AddressRateLimit == nil {
+		cfg.AddressRateLimit = defaultAddressRateLimit()
+	}
 	p := &PasswordResetPlugin{
-		cfg:      cfg,
-		store:    store,
-		limit:    newScopedRateLimiter(*cfg.RateLimit, "password_reset"),
-		delivery: newMailQueue("password-reset"),
+		cfg:       cfg,
+		store:     store,
+		limit:     newScopedRateLimiter(*cfg.RateLimit, "password_reset"),
+		addrLimit: newScopedRateLimiter(*cfg.AddressRateLimit, "password_reset_address"),
+		delivery:  newMailQueue("password-reset"),
 	}
 	return p
 }
@@ -181,6 +204,12 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		}
 		body.Email = ce
 	}
+	// The length bound answers 400 for the same reason and must run
+	// before the defer for the same reason: run after it, an over-long
+	// address answered 400 {...} followed by {"sent":true} in one body.
+	if !emailWithinLimit(w, r, body.Email) {
+		return
+	}
 
 	// ALWAYS return 200, even when email is empty or unknown, so the
 	// response can't be used to enumerate registered accounts.
@@ -193,11 +222,22 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		_ = json.NewEncoder(w).Encode(map[string]any{"sent": true})
 	}()
 
-	if !emailWithinLimit(w, r, body.Email) {
-		return
-	}
 	store := p.mgr.UserStore()
 	if store == nil {
+		return
+	}
+	// Per-address budget, past the per-IP one: spent, the request still
+	// answers {"sent":true} and nothing is minted or mailed. The budget
+	// is the same for every address, known or not, so the skipped work
+	// tells the clock nothing about the account either. The skip is
+	// recorded, so a flood is visible in the audit trail.
+	if !allowAddress(r.Context(), p.addrLimit, body.Email) {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "password.reset_requested",
+			Email:  body.Email,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"throttled": "address"},
+		})
 		return
 	}
 	user, _, err := store.FindByEmail(r.Context(), body.Email)
@@ -416,6 +456,30 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
 		})
 	}
+	// A verified account keeps no IdP identity either: one linked from a
+	// stolen session signs the attacker back in after the owner's reset.
+	// The notice below names what was removed, so the owner can link a
+	// provider of their own again. Unlinked before the session revoke, the
+	// same order as the passkeys: an IdP sign-in that lands mid-unlink
+	// mints a session the revoke then catches.
+	var unlinked []string
+	lister, unlinker, err := oauthUnlinkTools(p.mgr.UserStore())
+	if err == nil {
+		unlinked, err = p.mgr.unlinkAllOAuth(r.Context(), userID, lister, unlinker)
+	}
+	for _, provider := range unlinked {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "oauth.unlinked",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"provider": provider, "reason": "password_reset"},
+		})
+	}
+	if err != nil {
+		slog.Warn("password-reset OAuth unlink failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		incomplete = true
+	}
 	// A failed purge left the attacker's live cookie working behind a
 	// reset that answered success.
 	if err := p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r)); err != nil {
@@ -467,6 +531,47 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	p.queueResetNotice(r.Context(), userID, unlinked)
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
+}
+
+// queueResetNotice mails the account's address that its password was reset
+// and which sign-in providers the reset unlinked. It is skipped when no
+// EmailSender is set, and a lookup or send failure is logged, never
+// returned: the reset itself has already succeeded.
+func (p *PasswordResetPlugin) queueResetNotice(requestCtx context.Context, userID string, unlinked []string) {
+	if p.cfg.EmailSender == nil {
+		return
+	}
+	user, err := p.mgr.UserStore().FindByID(requestCtx, userID)
+	if err != nil || user == nil || user.GetEmail() == "" {
+		slog.Warn("password-reset notice skipped: no address for the account",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		return
+	}
+	to := user.GetEmail()
+	p.delivery.enqueue(requestCtx, to, func(ctx context.Context) {
+		var body string
+		if p.cfg.NoticeTemplate != nil {
+			body = p.cfg.NoticeTemplate(ctx, unlinked)
+		} else {
+			body = defaultResetNotice(ctx, unlinked)
+		}
+		if err := p.cfg.EmailSender.Send(ctx, to, body); err != nil {
+			slog.Warn("password-reset notice send failed",
+				"plugin", "password-reset", "email_hash", hashedIdentifier(to), "err", err)
+		}
+	})
+}
+
+// defaultResetNotice is the notice body when NoticeTemplate is nil.
+func defaultResetNotice(ctx context.Context, unlinked []string) string {
+	parts := []string{resetNoticeDone.Text(ctx)}
+	if len(unlinked) > 0 {
+		parts = append(parts, resetNoticeUnlinked.Text(ctx, map[string]any{"providers": strings.Join(unlinked, ", ")}))
+	}
+	parts = append(parts, resetNoticeWarning.Text(ctx))
+	return strings.Join(parts, "\n\n")
 }

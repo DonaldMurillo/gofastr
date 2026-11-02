@@ -31,14 +31,16 @@ the shape.
 - **Calendar component**
   ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)). Dates use the native picker through
   `ui.DateField` and `ui.DateTimeField`, and that stays the recommended
-  path (`framework/docs/content/form-module.md`, "Dates and times"). A
-  calendar is built only for what the native input cannot do: a range in
-  one control, an always-visible calendar, disabled specific days, or data
-  on the days. It needs the full loop: `core-ui/runtime/src/datepicker.js`,
-  an RPC handler, and an e2e test asserting that selecting a day
-  round-trips.
+  path (`framework/docs/content/form-module.md`, "Dates and times").
+  `ui.DatePicker` covers what the native input cannot do: a range in one
+  control, an always-visible calendar, disabled specific days, and data
+  on the days. It enhances the native input (built on
+  `headless.DatePicker`, bound by the `headless-datepicker` module, month
+  changes an island answered by `ui.DatePickerMonth`), and its e2e tests
+  post a picked day and a picked range through a real form.
 
-**Status:** not started; waits for an app that needs one of those cases.
+**Status:** shipped. Not built, on purpose: a popup calendar for an
+ordinary single date.
 
 ---
 

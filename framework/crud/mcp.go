@@ -136,6 +136,11 @@ func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Contex
 		if ch.MCPRouteScoped {
 			return nil
 		}
+		// A blank write in a declared Access block is refused to every
+		// caller; that needs no user, policy or route to decide.
+		if ch.permissionForOp(op) == permRefused && !ch.accessAllows(ctx, permRefused, "") {
+			return errMCPToolForbidden
+		}
 		if _, ok := handler.GetUser(ctx); !ok {
 			return nil
 		}

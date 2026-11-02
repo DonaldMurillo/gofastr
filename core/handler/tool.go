@@ -26,6 +26,9 @@ import (
 // an unknown or duplicate key is an error. As in Bind, the body applies
 // last. A path value no route could match (a "/", a ".." segment, a
 // control byte) is refused, where the router would have cut it short.
+// No two keys anywhere in params may fold to one name ("q" and "Q"), and
+// a tagged param given as "" is absent unless its tag carries `,empty`,
+// the rules Bind applies to a query string.
 //
 // The handler's context carries no *http.Request: RequestFromContext
 // returns nil on this path. Header-tagged fields stay zero.
@@ -50,13 +53,37 @@ func ToolAdapter[I, O any](h Handler[I, O]) func(ctx context.Context, params map
 
 // bindToolParams fills dst from MCP tool params: tagged query and path
 // fields first, then the rest as a strict JSON body.
+//
+// The key rules run over the whole params object first, before it is
+// split. Split first, a tagged key and its case-folded twin landed in
+// different halves and each passed its own check: for `Q string
+// query:"q"` (no json tag), {"q":"safe","Q":"danger"} bound "safe" from
+// the tag half, then the body half's "Q" matched the Go field name and
+// overwrote it, so the handler ran "danger" while params["q"] read
+// "safe".
+//
+// An empty tagged value ("") is absence, as an empty query value is in
+// Bind, unless the tag carries `,empty`.
 func bindToolParams(params map[string]any, dst any) error {
+	whole, err := json.Marshal(params)
+	if err != nil {
+		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
+	}
+	if err := CheckObjectKeys(whole, FoldJSONKey); err != nil {
+		return err
+	}
 	rest := maps.Clone(params)
+	// A pointer-typed input (Handler[*T, O]) reads T's tags; settableField
+	// allocates the pointer when a tagged param arrives.
 	rv := reflect.ValueOf(dst).Elem()
-	if rv.Kind() == reflect.Struct {
+	if st := derefType(rv.Type()); st.Kind() == reflect.Struct {
 		for _, source := range []string{"query", "path"} {
-			for _, tf := range taggedFields(rv.Type(), source) {
-				tag := tf.tag
+			fields, err := taggedFields(st, source)
+			if err != nil {
+				return err
+			}
+			for _, tf := range fields {
+				tag := tf.name
 				raw, ok := rest[tag]
 				if !ok {
 					continue
@@ -73,11 +100,14 @@ func bindToolParams(params map[string]any, dst any) error {
 				if clean != s {
 					return Fail(400, ReasonParameterControlByte, map[string]any{"source": source, "name": strconv.Quote(tag)})
 				}
+				if tf.absent(s) {
+					continue
+				}
 				fv := settableField(rv, tf.index)
 				if !fv.IsValid() {
 					continue
 				}
-				if err := setField(fv, s); err != nil {
+				if err := setTagged(fv, s); err != nil {
 					return Fail(400, ReasonInvalidParameter, map[string]any{"source": source, "name": strconv.Quote(tag), "detail": err.Error()})
 				}
 			}

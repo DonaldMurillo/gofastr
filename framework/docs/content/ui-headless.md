@@ -366,8 +366,9 @@ DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
 Repeater, Toast, ToastStack, ToastTemplate, NotificationBell,
 StepWizard and BackToTop. The navigation-behaviour members: Rail, TableOfContents,
-Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar and
-SidebarRegion, and the two pure-render trees JSONTree and Gallery.
+Disclosure, Menu, Combobox, DatePicker (with DatePickerMonth, its
+island answer), Tabs, Carousel, PaneHost, Sidebar and SidebarRegion,
+and the two pure-render trees JSONTree and Gallery.
 
 A stateful control with no `ID` builds its ids from its `Name`.
 `MultiSelect`, `NumberInput`, `Slider`, `RangeSlider`, `Rating` and
@@ -426,6 +427,23 @@ The parts the navigation members draw beyond the shared vocabulary:
   listbox that is the surface's own content, the command palette's
   result list, whose Escape goes on to close the dialog in one press.
   `ComboboxRows` renders an island answer's rows.
+- **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
+  native `<input type=date>`, or a `Range`'s two, which are the value),
+  `datepicker-calendar` (the island region), `datepicker-month` (one
+  month, the island answer's single root), `datepicker-header`,
+  `datepicker-nav` (four anchors, each a real href to the page with the
+  month in its query beside a `data-cui-rpc` GET, no push-state, named
+  by visually hidden text so a disabled one, which has no href, is
+  still named),
+  `datepicker-caption`, `datepicker-grid` (`role=grid`,
+  `aria-multiselectable` for a range), `datepicker-weekday`,
+  `datepicker-cell` (`aria-selected`), `datepicker-day` (a button named
+  by its full date, `aria-pressed` mirroring the selection, one in the
+  tab order), `datepicker-note` and `datepicker-status`. The shown
+  month is held between `Min`'s and `Max`'s months; a nav anchor that
+  would not move is disabled. `Control` hands a single date's input to
+  a host `Field`. `DatePickerMonth` renders the island answer from the
+  same props.
 - **JSONTree**: under each value's shared parts, one part per JSON
   scalar kind so a class map can colour a string without colouring a
   number: `json-colon`, `json-type`, `json-count`, `json-str`,
@@ -666,6 +684,13 @@ registered the same way:
   composition's own, flagged `isComposing` or sent with keyCode 229 by
   Safari) never picks an option. It replaced the retired `combobox` runtime
   module.
+- **headless-datepicker** (`[data-hui-datepicker]`): the pick into the
+  native inputs (a range's start then end), the APG date-grid keyboard
+  with one tab stop, and focus across the month swap. Keys pressed
+  while a month loads count from the day the last one asked for and
+  the arrival walks on to it; a reader who left the calendar keeps
+  their place; a failed month is toasted by the anchor and ends the
+  wait. It is new, not a port.
 - **headless-navigation** also carries the keyboard-shortcut family
   (`data-hui-shortcut-*`), and **headless-tabs**
   (`[data-hui-tabs]`) owns the roving tabindex and the vacate stash;

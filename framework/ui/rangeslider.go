@@ -103,6 +103,7 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
 		Parts:      parts,
 		Strings:    StringsFor(cfg.Ctx),
+		Ctx:        cfg.Ctx,
 	}, rangeSliderClasses))
 }
 

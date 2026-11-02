@@ -50,6 +50,36 @@
 
   NS._chromeCache = NS._chromeCache || {};
 
+  // The epoch of the last navigation that committed (set on
+  // gofastr:navigate below). An open is stale once a navigation that
+  // BEGAN after it commits: that reader left the page they opened it
+  // on. A navigation already in flight when the open was issued is not
+  // that: the URL already named its destination and the trigger lives
+  // in chrome both pages share, so its commit lands the open on the
+  // page it was asked on. Comparing chrome-cache objects (the earlier
+  // test) read every commit as a leave and dropped those opens
+  // silently. Epochs only grow, and both navigators bump the shared
+  // slot synchronously at entry, so "began after" is one comparison.
+  let navAt = NS._navEpoch || 0;
+  const left = e => navAt > e;
+  // name -> (epoch + URL) of an open that has not written its deep
+  // link yet. _syncDeepLinks run by the commit of the navigation the
+  // open was issued during (widgets-boot's catalog re-fetch) reads a
+  // URL that does not carry the open's key YET — the widgetlinks
+  // module is still loading — which is not the URL saying "closed", so
+  // it must not close the widget. The pass holds only while both the
+  // epoch and the URL are the ones the open was issued under: a Back,
+  // a query-only popstate or a newer navigation closes it as before.
+  const pend = new Map();
+  const here = () => NS._navEpoch + location.href;
+  // The epoch an open was issued under, on its registry entry: the
+  // navigate listener below closes a modal unless its open was issued
+  // during the navigation now committing.
+  // A registry read as an own property: an attribute-borne name like
+  // "constructor" must not resolve to an Object.prototype member.
+  const own = n => Object.prototype.hasOwnProperty.call(NS._widgets, n) ? NS._widgets[n] : null;
+  const stamp = (name, e) => { const r = own(name); if (r) r.ep = e; };
+
   const catalogEntry = name => NS._widgetCatalog && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name) ? NS._widgetCatalog[name] : null;
 
   NS.openWidget = async function (name, opts) {
@@ -73,24 +103,28 @@
     // whatever context is mounted (undefined), a trigger names its own.
     const ctx = o.btn && (o.btn.getAttribute('data-cui-ctx') || '');
     const cfg = entry.cfg;
-    // A navigate while the chrome loads swaps NS._chromeCache: the
-    // reader left the page this open belongs to, so its deep link
-    // must not land on the next one (_mountByName skips the mount).
-    const page = NS._chromeCache;
+    // A navigation begun after this open committing while the chrome
+    // loads: the reader left the page this open belongs to, so its
+    // deep link must not land on the next one (_mountByName skips the
+    // mount). See `left` above.
+    const epoch = NS._navEpoch;
+    const m = here();
+    pend.set(name, m);
     await NS._mountByName(name, ctx);
-    if (page !== NS._chromeCache) return;
-    if ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
+    if (!left(epoch) && ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue)) {
       if (!NS._deepLinkOpen) await NS.loadModule('widgetlinks');
       // The module load is a second wait the reader can navigate during.
-      if (page !== NS._chromeCache) return;
-      NS._deepLinkOpen(cfg, o);
+      if (!left(epoch)) NS._deepLinkOpen(cfg, o);
     }
+    // A later open of the same name owns the entry. One left behind by a
+    // throw is harmless: the next navigation or URL change voids it.
+    if (pend.get(name) === m) pend.delete(name);
   };
 
   NS._mountByName = async function (name, ctx) {
     const entry = catalogEntry(name);
     if (!entry) return;
-    const m = Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name];
+    const m = own(name);
     if (m) {
       // Already mounted. A trigger for another entity (#321 ctx: row
       // 2's while row 1's chrome is open) replaces it; the outside-click
@@ -102,6 +136,7 @@
     // earlier open whose chrome lands later mounts nothing.
     const tok = entry.tok = {};
     const cfg = entry.cfg;
+    const epoch = NS._navEpoch;
     const existing = document.querySelector('[data-cui-widget="' + CSS.escape(name) + '"]');
     if (existing) {
       // #321: SSR-inlined chrome is ctx-less by construction — the
@@ -117,7 +152,7 @@
       // click on a catalog-gated widget. So whatever is still in the DOM
       // here is un-mounted chrome nobody is looking at.
       if (ctx) existing.remove();
-      else { NS.mountWidget(cfg, null, existing); return; }
+      else { NS.mountWidget(cfg, null, existing); stamp(name, epoch); return; }
     }
     const path = cfg.chromePath || ('/core-ui/widget/' + name + '/chrome');
     // #321: key by (name, ctx) so triggers carrying different contexts
@@ -160,13 +195,12 @@
           // telling. This runs exactly once per fetch.
           //
           // #339/#345: only if the user is still on the page they
-          // clicked on. `cache` is the object this fetch started
-          // against; gofastr:navigate swaps NS._chromeCache, so a
-          // mismatch means they walked away — and in the worst case
+          // clicked on: a navigation begun after this open committed
+          // means they walked away (see `left`) — and in the worst case
           // they re-opened the panel successfully after navigating, and
           // the toast would deny an open panel.
           console.error('[gofastr] widget chrome fetch failed', err);
-          if (cache === NS._chromeCache) {
+          if (!left(epoch)) {
             NS._toastOrFallback?.({ variant: 'error', title: NS.say('runtime.panel_failed', 'Could not open that panel.'), ttl: 6000 });
           }
           throw err;
@@ -184,19 +218,17 @@
     // silent: it runs per awaiter, and a shared in-flight promise can have
     // several. Rethrowing here would surface an unhandled rejection for a
     // failure already reported once.
-    // Same page check as the failure toast above: a gofastr:navigate
-    // while the chrome loaded swapped NS._chromeCache, and mounting the
-    // answer now opens the panel on a page the reader never opened it
-    // on. The cached branch awaits a promise too, so both are covered.
-    const page = NS._chromeCache;
-    try { html = await page[key]; } catch (_) {}
-    if (html && page === NS._chromeCache && entry.tok === tok) NS.mountWidget(cfg, html, null, ctx);
+    // Same page check as the failure toast above: a navigation begun
+    // after this open committed while the chrome loaded, and mounting
+    // the answer now opens the panel on a page the reader never opened
+    // it on. The cached branch awaits a promise too, so both are
+    // covered.
+    try { html = await NS._chromeCache[key]; } catch (_) {}
+    if (html && !left(epoch) && entry.tok === tok) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch); }
   };
 
   NS.closeWidget = function (name) {
-    const w = Object.prototype.hasOwnProperty.call(NS._widgets, name)
-      ? NS._widgets[name]
-      : undefined;
+    const w = own(name);
     if (w && typeof w.dismiss === 'function') w.dismiss();
   };
 
@@ -215,12 +247,10 @@
       // openWidget's pushUrl defaults to falsy, so syncing FROM the URL
       // cannot write back to it, no explicit opt-out needed.
       const hit = url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue;
-      const mounted = Object.prototype.hasOwnProperty.call(NS._widgets, name)
-        ? !!NS._widgets[name]
-        : false;
+      const mounted = !!own(name);
       if (hit !== mounted) {
         if (hit) NS.openWidget(name);
-        else NS.closeWidget(name);
+        else if (pend.get(name) !== here()) NS.closeWidget(name);
       }
     }
   };
@@ -516,7 +546,24 @@
   // only) principal flip is outside this guarantee — nothing fires
   // gofastr:navigate, so chrome cached before the flip survives it; see
   // framework/docs/content/widgets.md § Chrome context.
-  window.addEventListener('gofastr:navigate', () => { NS._chromeCache = {}; });
+  // The same event records the committed epoch `left` reads: a
+  // navigation commits under its own live epoch (both navigators check
+  // _navLive before the swap that dispatches this).
+  //
+  // And it closes the open modals: toasts and panels (non-backdrop'd
+  // widgets) survive, they are page-independent UI like build-progress
+  // banners, but a modal opened on the page being left must not sit
+  // over the next one. A modal whose open was issued WHILE this
+  // navigation was in flight belongs to the page it lands on, the same
+  // rule `left` applies to an open still loading, so it stays: closing
+  // it would depend on whether its chrome happened to land before the
+  // commit or after. (Core's boot fragment owned this loop before; only
+  // this module mounts modals.)
+  window.addEventListener('gofastr:navigate', () => {
+    NS._chromeCache = {};
+    navAt = NS._navEpoch;
+    for (const name of [...NS._modalStack]) if (own(name)?.ep !== navAt) NS.closeWidget(name);
+  });
 
   // #409: app-wide widget roots survive the SPA full-shell swap. A
   // root the runtime fetched is appended to <body> and the swap never

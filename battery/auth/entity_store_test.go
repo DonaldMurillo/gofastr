@@ -355,7 +355,7 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 		SessionStore:        NewEntitySessionStore(db, "sessions"),
 	})
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(twofa)
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -392,10 +392,11 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("challenge: expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
+	stepped := steppedUpSessionCookie(t, w, "session_id", sess.Token)
 
 	// Now hit RequireTwoFA, must succeed because EntitySessionStore.MarkTwoFactorVerified ran.
 	req2 := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req2.AddCookie(&http.Cookie{Name: "session_id", Value: sess.Token})
+	req2.AddCookie(&http.Cookie{Name: "session_id", Value: stepped})
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {

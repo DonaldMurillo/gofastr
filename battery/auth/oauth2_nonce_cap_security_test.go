@@ -6,23 +6,35 @@ import (
 	"time"
 )
 
+// The map is capped, and at the cap it evicts its earliest-expiring
+// entries instead of refusing the callback. This test pinned the old
+// fail-closed answer until the 2026-11-01 bug bash: anyone can mint a
+// valid bound state, so two requests per entry filled the map and locked
+// every user out of OAuth sign-in for the state TTL.
 func TestOAuth2NonceMapHasHardCap(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-state-secret-01"})
-	liveUntil := time.Now().Add(time.Hour)
+	now := time.Now()
 	for i := 0; i < nonceMaxEntries; i++ {
-		p.usedNonces[fmt.Sprintf("used-%d", i)] = liveUntil
+		p.usedNonces[fmt.Sprintf("used-%d", i)] = now.Add(time.Hour)
 	}
-	p.lastNonceSweep = time.Now()
+	p.usedNonces["used-0"] = now.Add(time.Minute) // closest to expiry
+	p.lastNonceSweep = now
 
 	state, err := p.generateState("mock", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := p.validateAndConsumeState(state, "mock"); ok {
-		t.Fatal("callback was accepted while the replay-protection map was full")
+	if _, ok := p.validateAndConsumeState(state, "mock"); !ok {
+		t.Fatal("callback refused while the replay-protection map was full")
 	}
-	if got := len(p.usedNonces); got != nonceMaxEntries {
+	if got := len(p.usedNonces); got > nonceMaxEntries {
 		t.Fatalf("nonce map grew past its cap: got %d entries", got)
+	}
+	if _, kept := p.usedNonces["used-0"]; kept {
+		t.Error("the earliest-expiring entry survived eviction")
+	}
+	if got, want := len(p.usedNonces), nonceMaxEntries-nonceEvictBatch+1; got != want {
+		t.Errorf("after eviction the map holds %d entries, want %d", got, want)
 	}
 }
 

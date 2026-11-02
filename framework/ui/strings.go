@@ -191,6 +191,20 @@ var stringsKeys = map[string]i18n.Phrase{
 	// MultiSelect's empty-state word. Its chips' remove controls say
 	// RemoveLabelled, filled by the module when it builds the chip.
 	"MultiSelectPlaceholder": i18nui.HuiMultiSelectPlaceholder,
+
+	// DatePicker's nav names, a range's input labels and the module's
+	// pick announcements, {{date}}/{{start}}/{{end}} filled at say-time.
+	"DatePickerPrevMonth": i18nui.HuiDatePickerPrevMonth,
+	"DatePickerNextMonth": i18nui.HuiDatePickerNextMonth,
+	"DatePickerPrevYear":  i18nui.HuiDatePickerPrevYear,
+	"DatePickerNextYear":  i18nui.HuiDatePickerNextYear,
+	"DatePickerStart":     i18nui.HuiDatePickerStart,
+	"DatePickerEnd":       i18nui.HuiDatePickerEnd,
+	"DatePickerChosen":    i18nui.HuiDatePickerChosen,
+	"DatePickerChooseEnd": i18nui.HuiDatePickerChooseEnd,
+	"DatePickerRange":     i18nui.HuiDatePickerRange,
+
+	"DatePickerMonthFailed": i18nui.HuiDatePickerFailed,
 }
 
 // StringsFor resolves a headless.Strings from the request's context:

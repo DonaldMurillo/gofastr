@@ -290,6 +290,11 @@ type App struct {
 	// loops and [App.Shutdown] drains it.
 	processModules *ProcessModuleSupervisor
 
+	// sandbox is the untrusted-tier runner state: the backend
+	// WithSandboxBackend chose (nil = the host default) and the result
+	// of probing it, resolved once by [App.ProcessModuleSandbox].
+	sandbox processModuleSandbox
+
 	// moduleTools is the MCP tool registry shared across every process
 	// module (design §5.1). Lazily constructed alongside processModules;
 	// nil when the app has no process modules. The supervisor uses it as

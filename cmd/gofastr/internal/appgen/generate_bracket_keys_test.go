@@ -22,35 +22,14 @@ func stageDecls() []framework.EntityDeclaration {
 	}}
 }
 
-// The CLI's filter table sends the bracket key exactly where the bare
-// key reads two ways, and the suffix key everywhere else.
-func TestRenderCLI_CollidingFilterKeyUsesBracket(t *testing.T) {
-	spec, err := buildCLISpec(stageDecls(), CliOptions{OutDir: "cli", Binary: "myapp", verbs: "list"}, "example.com/app/entities/client")
-	if err != nil {
-		t.Fatalf("buildCLISpec: %v", err)
-	}
-	var sb strings.Builder
-	renderCLIListTables(&sb, spec.Entities[0])
-	table := sb.String()
-	for _, want := range []string{
-		`{flag: "stage-in", param: "stage_in[eq]"`,
-		`{flag: "stage", param: "stage"`,
-		`{flag: "stage-ne", param: "stage_ne"`,
-		`{flag: "stage-in-ne", param: "stage_in_ne"`,
-		`{flag: "title", param: "title"`,
-		`{flag: "title-like", param: "title_like"`,
-		// A comma list on an equality flag goes to the field's IN key,
-		// itself bracket-spelled where the suffix key reads two ways.
-		`{flag: "stage", param: "stage", inParam: "stage[in]"`,
-		`{flag: "stage-in", param: "stage_in[eq]", inParam: "stage_in_in"`,
-		`{flag: "title", param: "title", inParam: "title_in"`,
-	} {
-		if !strings.Contains(table, want) {
-			t.Errorf("filter table lacks %s:\n%s", want, table)
-		}
-	}
-	if strings.Contains(table, `param: "stage_in"`) {
-		t.Errorf("filter table sends the ambiguous bare key stage_in:\n%s", table)
+// The CLI cannot reach a key that reads two ways: stage's --stage-in
+// (its IN list) is the same flag as stage_in's equality flag, so the
+// generator refuses the entity and names both fields. The SDKs below
+// still spell the bracket keys.
+func TestRenderCLI_CollidingInFlagRefused(t *testing.T) {
+	_, err := buildCLISpec(stageDecls(), CliOptions{OutDir: "cli", Binary: "myapp", verbs: "list"}, "example.com/app/entities/client")
+	if err == nil || !strings.Contains(err.Error(), `fields "stage" and "stage_in" both derive CLI flag --stage-in`) {
+		t.Fatalf("buildCLISpec err = %v, want the --stage-in collision", err)
 	}
 }
 

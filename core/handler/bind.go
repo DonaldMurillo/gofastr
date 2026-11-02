@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
@@ -27,6 +29,16 @@ import (
 // Sources are applied in the order above; later present values overwrite
 // earlier values. An absent JSON property preserves the lower-priority value.
 //
+// A tagged field whose type implements encoding.TextUnmarshaler
+// (time.Time, a UUID, a validated enum), directly or through a pointer,
+// binds through UnmarshalText; its error is a 400 for that parameter.
+// An empty query or header value (`?page=`) is the same as an absent
+// one: the field keeps its zero value and a pointer stays nil. The tag
+// option `,empty` (`query:"q,empty"`) binds an explicit empty instead:
+// "" for a string, the zero value for any other kind, and a non-nil
+// pointer to it for a pointer field. Any other tag option, or ,empty
+// on a path tag, is an error on every bind.
+//
 // If the body is present but not valid JSON, a 400 error is returned.
 // If dst is not a pointer, Bind panics.
 func Bind(r *http.Request, dst any) error {
@@ -39,8 +51,13 @@ func Bind(r *http.Request, dst any) error {
 		return errors.New("bind: destination must be a non-nil pointer")
 	}
 
+	// A pointer-typed input (Handler[*T, O] binds into a **T) gets the
+	// struct rules too: the tags are read off the struct the pointer
+	// levels end at, and settableField allocates the levels only when a
+	// tagged value arrives, as encoding/json allocates them for a body.
 	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
+	st := derefType(rv.Type())
+	if st.Kind() != reflect.Struct {
 		// Non-struct pointer (e.g. *string); only the JSON body applies,
 		// under the same Content-Type gate as the struct branch. text/plain
 		// is a CORS-simple content type, so a cross-site form can post it
@@ -55,17 +72,17 @@ func Bind(r *http.Request, dst any) error {
 	}
 
 	// 1. Bind header fields first (lowest priority)
-	if err := bindHeaders(r, rv); err != nil {
+	if err := bindHeaders(r, rv, st); err != nil {
 		return err
 	}
 
 	// 2. Bind query fields
-	if err := bindQuery(r, rv); err != nil {
+	if err := bindQuery(r, rv, st); err != nil {
 		return err
 	}
 
 	// 3. Bind path fields
-	if err := bindPath(r, rv); err != nil {
+	if err := bindPath(r, rv, st); err != nil {
 		return err
 	}
 
@@ -122,7 +139,15 @@ func bindBody(r *http.Request, dst any) error {
 	limited := http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": BodyReadDetail(err)})
+		// A body past the cap is a 413, not malformed JSON. Either way the
+		// read error stays reachable through errors.As, as DecodeStrict
+		// keeps it.
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return WrapError(http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge), err)
+		}
+		e := Fail(400, ReasonInvalidJSON, map[string]any{"detail": BodyReadDetail(err)})
+		e.Err = err
+		return e
 	}
 	if len(body) == 0 {
 		return nil
@@ -160,8 +185,9 @@ func bindBody(r *http.Request, dst any) error {
 }
 
 // validateBodyKeys enforces strict top-level key handling for the JSON
-// body decoded into dst. It is a no-op when dst is not a struct pointer
-// or when the body isn't a top-level object. Both shapes flow through
+// body decoded into dst. It is a no-op when dst is not a pointer to a
+// struct (through any number of pointer levels: **T for a Handler[*T, O]
+// input) or when the body isn't a top-level object. Both shapes flow through
 // the decoder unchanged. For struct destinations it requires every
 // top-level key to exact-match a json tag on the struct (rejecting
 // case-folded variants) and rejects duplicate keys.
@@ -170,11 +196,11 @@ func validateBodyKeys(body []byte, dst any) error {
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return nil
 	}
-	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
+	st := derefType(rv.Type().Elem())
+	if st.Kind() != reflect.Struct {
 		return nil
 	}
-	allowed := jsonTagSet(rv.Type())
+	allowed := jsonTagSet(st)
 
 	dec := json.NewDecoder(bytes.NewReader(body))
 	first, err := dec.Token()
@@ -289,24 +315,38 @@ func sanitizeQueryParam(s string) string {
 }
 
 // taggedField is a struct field carrying a binding tag, reached from the
-// top-level struct through index (an embedded struct adds a step).
+// top-level struct through index (an embedded struct adds a step). name
+// is the tag's part before the first comma; empty records the `,empty`
+// option, which lets an explicit empty value through.
 type taggedField struct {
-	tag   string
+	name  string
+	empty bool
 	index []int
 }
 
+// tagOptionEmpty is the one binding-tag option: `query:"q,empty"` or
+// `header:"X-Foo,empty"` binds an explicit empty value (a string gets
+// "", a pointer a non-nil pointer to the zero value, any other kind its
+// zero value) where the default treats an empty value as absent.
+const tagOptionEmpty = "empty"
+
 // taggedFields lists t's fields tagged with key, descending into an
 // untagged embedded struct (value or pointer) the way encoding/json
-// promotes its fields. A struct already on the path is skipped.
-func taggedFields(t reflect.Type, key string) []taggedField {
+// promotes its fields. A struct already on the path is skipped. A tag
+// option the source does not know is a programming error, returned as a
+// plain error (a 500, like a nil destination) on every bind, so the
+// typo shows up on the first request rather than binding nothing.
+func taggedFields(t reflect.Type, key string) ([]taggedField, error) {
 	var out []taggedField
-	collectTagged(t, key, nil, map[reflect.Type]bool{}, &out)
-	return out
+	if err := collectTagged(t, key, nil, map[reflect.Type]bool{}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-func collectTagged(t reflect.Type, key string, prefix []int, active map[reflect.Type]bool, out *[]taggedField) {
+func collectTagged(t reflect.Type, key string, prefix []int, active map[reflect.Type]bool, out *[]taggedField) error {
 	if active[t] {
-		return
+		return nil
 	}
 	active[t] = true
 	defer delete(active, t)
@@ -320,24 +360,54 @@ func collectTagged(t reflect.Type, key string, prefix []int, active map[reflect.
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {
-				collectTagged(ft, key, index, active, out)
+				if err := collectTagged(ft, key, index, active, out); err != nil {
+					return err
+				}
 			}
 			continue
 		}
 		if tag == "" || tag == "-" {
 			continue
 		}
-		*out = append(*out, taggedField{tag: tag, index: index})
+		name, opts, hasOpts := strings.Cut(tag, ",")
+		if name == "" {
+			return fmt.Errorf("bind: field %s: tag %s:%q has no name", f.Name, key, tag)
+		}
+		tf := taggedField{name: name, index: index}
+		if hasOpts {
+			for opt := range strings.SplitSeq(opts, ",") {
+				// Path binding takes no option: a matched route's {name}
+				// is never empty, so ",empty" there can only be a mistake.
+				if opt == tagOptionEmpty && key != "path" {
+					tf.empty = true
+					continue
+				}
+				return fmt.Errorf("bind: field %s: tag %s:%q has unknown option %q", f.Name, key, tag, opt)
+			}
+		}
+		*out = append(*out, tf)
 	}
+	return nil
+}
+
+// derefType follows t's pointer levels to the type they end at, so *T
+// and **T name T. A pointer type that names itself (type P *P) ends at
+// the pointer.
+func derefType(t reflect.Type) reflect.Type {
+	for t.Kind() == reflect.Pointer && t.Elem() != t {
+		t = t.Elem()
+	}
+	return t
 }
 
 // settableField returns the field at index under rv, allocating a nil
-// embedded pointer on the way, or an invalid Value when the field (or a
-// nil unexported embedded pointer before it) cannot be set.
+// pointer level (the input's own, or an embedded one) on the way, or an
+// invalid Value when the field (or a nil unexported embedded pointer
+// before it) cannot be set.
 func settableField(rv reflect.Value, index []int) reflect.Value {
 	v := rv
 	for _, i := range index {
-		if v.Kind() == reflect.Pointer {
+		for v.Kind() == reflect.Pointer {
 			if v.IsNil() {
 				if !v.CanSet() {
 					return reflect.Value{}
@@ -355,12 +425,22 @@ func settableField(rv reflect.Value, index []int) reflect.Value {
 }
 
 // bindQuery binds query parameters to struct fields tagged with `query:"name"`.
-func bindQuery(r *http.Request, rv reflect.Value) error {
+// An empty value (`?page=`, `?q=`) binds as if the parameter were absent,
+// whatever the field's kind, unless the tag carries `,empty`.
+func bindQuery(r *http.Request, rv reflect.Value, st reflect.Type) error {
 	q := r.URL.Query()
 
-	for _, tf := range taggedFields(rv.Type(), "query") {
-		values, ok := q[tf.tag]
+	fields, err := taggedFields(st, "query")
+	if err != nil {
+		return err
+	}
+	for _, tf := range fields {
+		values, ok := q[tf.name]
 		if !ok || len(values) == 0 {
+			continue
+		}
+		value := sanitizeQueryParam(values[0])
+		if tf.absent(value) {
 			continue
 		}
 
@@ -369,8 +449,8 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 			continue
 		}
 
-		if err := setField(fv, sanitizeQueryParam(values[0])); err != nil {
-			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "query", "name": strconv.Quote(tf.tag), "detail": err.Error()})
+		if err := setTagged(fv, value); err != nil {
+			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "query", "name": strconv.Quote(tf.name), "detail": err.Error()})
 		}
 	}
 
@@ -389,18 +469,22 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 // input struct often serves both POST /users and PUT /users/{id}. So a
 // matched request reads through router.Params, which holds only the
 // declared names, rather than router.Param, which panics on the others.
-func bindPath(r *http.Request, rv reflect.Value) error {
+func bindPath(r *http.Request, rv reflect.Value, st reflect.Type) error {
 	var declared map[string]string
 	if r.Pattern != "" {
 		declared = router.Params(r)
 	}
 
-	for _, tf := range taggedFields(rv.Type(), "path") {
+	fields, err := taggedFields(st, "path")
+	if err != nil {
+		return err
+	}
+	for _, tf := range fields {
 		var value string
 		if declared != nil {
-			value = declared[tf.tag]
+			value = declared[tf.name]
 		} else {
-			value = router.Param(r, tf.tag)
+			value = router.Param(r, tf.name)
 		}
 		if value == "" {
 			continue
@@ -412,7 +496,7 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 		}
 
 		if err := setField(fv, value); err != nil {
-			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "path", "name": strconv.Quote(tf.tag), "detail": err.Error()})
+			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "path", "name": strconv.Quote(tf.name), "detail": err.Error()})
 		}
 	}
 
@@ -420,10 +504,16 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 }
 
 // bindHeaders binds header values to struct fields tagged with `header:"X-Request-ID"`.
-func bindHeaders(r *http.Request, rv reflect.Value) error {
-	for _, tf := range taggedFields(rv.Type(), "header") {
-		value := r.Header.Get(tf.tag)
-		if value == "" {
+// An empty header value binds as if the header were absent, the same rule
+// as a query value, unless the tag carries `,empty`.
+func bindHeaders(r *http.Request, rv reflect.Value, st reflect.Type) error {
+	fields, err := taggedFields(st, "header")
+	if err != nil {
+		return err
+	}
+	for _, tf := range fields {
+		values := r.Header.Values(tf.name)
+		if len(values) == 0 || tf.absent(values[0]) {
 			continue
 		}
 
@@ -432,12 +522,67 @@ func bindHeaders(r *http.Request, rv reflect.Value) error {
 			continue
 		}
 
-		if err := setField(fv, value); err != nil {
-			return Fail(400, ReasonInvalidHeader, map[string]any{"name": strconv.Quote(tf.tag), "detail": err.Error()})
+		if err := setTagged(fv, values[0]); err != nil {
+			return Fail(400, ReasonInvalidHeader, map[string]any{"name": strconv.Quote(tf.name), "detail": err.Error()})
 		}
 	}
 
 	return nil
+}
+
+// absent reports whether a value the request carried for tf binds as if
+// it were missing: an empty value does, unless the tag carries `,empty`.
+// Callers check it before settableField, so an empty value allocates no
+// pointer level (a Handler[*T, O] input stays nil on `?q=`).
+func (tf taggedField) absent(s string) bool {
+	return s == "" && !tf.empty
+}
+
+// setTagged fills a tagged field from a value absent let through. An
+// empty one (only under `,empty`) gets the field's explicit zero value,
+// and a pointer field a non-nil pointer to it, so a handler can tell
+// `?q=` from no q at all.
+func setTagged(fv reflect.Value, s string) error {
+	if s == "" {
+		return setEmpty(fv)
+	}
+	return setField(fv, s)
+}
+
+// setEmpty stores the explicit zero value setTagged binds for an empty
+// value under `,empty`, refusing a kind setField could not bind either.
+func setEmpty(fv reflect.Value) error {
+	if fv.Kind() == reflect.Pointer {
+		pt := reflect.New(fv.Type().Elem())
+		if err := setEmpty(pt.Elem()); err != nil {
+			return err
+		}
+		fv.Set(pt)
+		return nil
+	}
+	if !isTextUnmarshaler(fv) && !scalarKind(fv.Kind()) {
+		return errors.New("unsupported type " + fv.Kind().String())
+	}
+	fv.SetZero()
+	return nil
+}
+
+// isTextUnmarshaler reports whether fv's address implements
+// encoding.TextUnmarshaler (time.Time, a UUID, a validated enum).
+func isTextUnmarshaler(fv reflect.Value) bool {
+	return fv.CanAddr() && fv.Addr().Type().Implements(textUnmarshalerType)
+}
+
+// scalarKind reports whether setField's kind switch binds k.
+func scalarKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	}
+	return false
 }
 
 // setField sets a reflect.Value from a string, converting to the appropriate type.
@@ -450,6 +595,15 @@ func setField(fv reflect.Value, s string) error {
 		}
 		fv.Set(pt)
 		return nil
+	}
+
+	// A type that parses its own text (time.Time, a UUID, an enum whose
+	// UnmarshalText allows only its members) binds through that parser,
+	// ahead of the kind switch: `type Status string` with an UnmarshalText
+	// that refuses "bogus" was refused in a JSON body while ?status=bogus
+	// bound it raw through the string case.
+	if isTextUnmarshaler(fv) {
+		return fv.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText([]byte(s))
 	}
 
 	switch fv.Kind() {

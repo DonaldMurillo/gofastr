@@ -137,26 +137,3 @@ func TestCLIEmptyCursorStartsKeyset(t *testing.T) {
 		t.Errorf("--cursor abc sent query %q", query)
 	}
 }
-
-// The equality flag's help promises "a comma list sends title_in, IN",
-// and the flag keeps it: the server reads ?title=a,b as equality on the
-// literal "a,b", so a value holding a comma goes to the IN key. One
-// value stays equality.
-func TestCLIEqualityFlagCommaListSendsIN(t *testing.T) {
-	bin, env := buildFixtureCLI(t, cliWireFixtureYAML)
-	srv := newWireRecorder(t)
-	env = append(env, "MYAPP_URL="+srv.URL)
-
-	runWireCLI(t, bin, env, "", "widgets", "list", "--title", "a,b")
-	if _, query, _ := srv.last(); query != "title_in=a%2Cb" {
-		t.Errorf("--title a,b sent query %q, want title_in=a%%2Cb", query)
-	}
-	runWireCLI(t, bin, env, "", "widgets", "list", "--title", "a")
-	if _, query, _ := srv.last(); query != "title=a" {
-		t.Errorf("--title a sent query %q, want title=a", query)
-	}
-	help := runWireCLI(t, bin, env, "", "widgets", "list", "--help")
-	if !strings.Contains(help, "a comma list sends title_in, IN") {
-		t.Errorf("list --help does not say where a comma list goes:\n%s", help)
-	}
-}

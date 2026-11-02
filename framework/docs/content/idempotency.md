@@ -149,11 +149,13 @@ yourself before returning.
 | Unsafe method without header (Required=false)     | Pass through, no caching                       |
 | Unsafe method without header (Required=true)      | `400 Bad Request`                              |
 | Header > 255 chars                                | `400 Bad Request`                              |
+| Header outside printable ASCII                    | `400 Bad Request`                              |
 | First request for a key                           | Handler runs; 2xx response is cached           |
 | Duplicate key + same body (cached)                | Cached response replayed, `Idempotent-Replay: true` |
 | Duplicate key + different body                    | `422 Unprocessable Entity`                     |
 | Duplicate key while first is still running        | `409 Conflict` + `Retry-After: 1`              |
 | First request returned non-2xx                    | Claim released; retry runs the handler again   |
+| Handler panicked (`http.ErrAbortHandler` included) | Claim released, then the panic goes on to `Recovery`; retry runs the handler again |
 | Body larger than `MaxBodyBytes`                   | Pass through with `Idempotent-Bypass: body-too-large`; handler still sees full body. The bypass response appends `Vary: Idempotency-Key` (Add, not Set — an upstream middleware such as CORS may already have written `Vary`) so a shared cache cannot serve one caller's bypassed response at another's key |
 | Store backend failure (FailOpen=false, default)   | `503 Service Unavailable`, fail closed         |
 | Store backend failure (FailOpen=true)             | Pass through, fail open (legacy availability) |
@@ -179,7 +181,13 @@ on boot to a table an older build created) and registers the table with
 `App.ExportData` and `App.EraseUserData`. Erasure deletes the cached
 responses whose principal is the erased user id, so it reaches them when
 `Principal` returns the user id. A tenant-keyed principal is left to the
-tenant's own lifecycle and to the TTL.
+tenant's own lifecycle and to the TTL. The column holds the principal
+exactly as `Principal` returned it. Postgres `TEXT` cannot store a NUL
+byte, so on Postgres a principal holding one is refused: the keyed write
+gets the store-failure answer (`503`, or the handler runs unkeyed under
+`FailOpen`) and nothing is written. The store does not escape it, since
+an escaped `a<NUL>b` would read the same as another user's literal
+`a\0b`, and erasing that user would delete the first one's rows.
 
 `IdempotencyStore` is a two-method interface:
 
@@ -219,7 +227,12 @@ Two stores are bundled:
   reaches another replica runs again, so `NewApp` logs a warning when
   `WithIdempotency` keeps the default store beside `WithFanout`.
 - `NewSQLIdempotencyStore(db, opts...)`: SQL-backed (sqlite + postgres),
-  creates `idempotency_keys` on first use. Options:
+  creates `idempotency_keys` on first use (`body` is `BLOB` on SQLite,
+  `BYTEA` on Postgres). The middleware's store key joins its parts with
+  NUL bytes, which Postgres `TEXT` refuses, so on Postgres the key column
+  holds it with `\` written as `\\` and NUL as `\0`; SQLite keeps the
+  key as is. The `principal` column is never encoded (a NUL-bearing
+  principal is refused on Postgres, see above). Options:
   - `WithSQLIdempotencyTable(name)`: override the default table name.
   - `WithSQLIdempotencyTTL(d)`: override the 24h cached-response TTL.
   - `WithSQLIdempotencyInFlightTTL(d)`: override the 30s in-flight

@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -45,8 +46,14 @@ type timeoutWriter struct {
 	wroteHeader bool
 	code        int
 	streaming   bool // committed to passthrough (Flush/Hijack used)
-	timedOut    bool
-	returned    bool // the handler returned; every later call is refused
+	// hijacking marks a Hijack in progress: the handler is asking for the
+	// connection and the answer is not in yet. expire waits it out (on
+	// hijackDone) instead of writing a 504 underneath a hijack that is
+	// about to succeed, or shedding the deadline for one that fails.
+	hijacking  bool
+	hijackDone *sync.Cond
+	timedOut   bool
+	returned   bool // the handler returned; every later call is refused
 }
 
 // timeoutBodies recycles the body buffers. A page-sized response grew a
@@ -64,12 +71,14 @@ const maxPooledBody = 1 << 20
 var errWriteAfterReturn = errors.New("timeout middleware: write after the handler returned")
 
 func newTimeoutWriter(w http.ResponseWriter) *timeoutWriter {
-	return &timeoutWriter{
+	tw := &timeoutWriter{
 		w:    w,
 		h:    w.Header().Clone(),
 		body: timeoutBodies.Get().(*bytes.Buffer),
 		code: http.StatusOK,
 	}
+	tw.hijackDone = sync.NewCond(&tw.mu)
+	return tw
 }
 
 // release returns the body buffer to the pool once the handler has
@@ -153,9 +162,14 @@ func (tw *timeoutWriter) Flush() {
 	_ = http.NewResponseController(tw.w).Flush()
 }
 
-// Hijack flips into streaming mode (no buffer to commit because hijack
-// implies the handler owns the raw connection from this point on) and
-// hands off the underlying writer.
+// Hijack hands off the underlying connection and, once that succeeded,
+// flips into streaming mode (no buffer to commit: the handler owns the
+// raw connection from here on). A hijack that FAILED (HTTP/2, a writer
+// that cannot hijack) leaves the writer buffered and the deadline armed:
+// the handler answers through the writer after all, so its headers must
+// commit and a hung handler still owes the client its 504. The attempt
+// runs outside the lock with hijacking set, so expire cannot decide
+// either way until the answer is in.
 func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	tw.mu.Lock()
 	if tw.timedOut {
@@ -166,9 +180,29 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		tw.mu.Unlock()
 		return nil, nil, errWriteAfterReturn
 	}
-	tw.streaming = true
+	tw.hijacking = true
 	tw.mu.Unlock()
-	conn, rw, err := http.NewResponseController(tw.w).Hijack()
+	var (
+		conn net.Conn
+		rw   *bufio.ReadWriter
+		err  error
+		ok   bool
+	)
+	// Deferred so a Hijack that panics (a wrapper asserting
+	// http.Hijacker unchecked) still clears hijacking: expire waits on
+	// it, and a handler that recovers and keeps running would otherwise
+	// leave the request goroutine waiting forever.
+	defer func() {
+		tw.mu.Lock()
+		tw.hijacking = false
+		if ok && err == nil {
+			tw.streaming = true
+		}
+		tw.hijackDone.Broadcast()
+		tw.mu.Unlock()
+	}()
+	conn, rw, err = http.NewResponseController(tw.w).Hijack()
+	ok = true
 	if errors.Is(err, http.ErrNotSupported) {
 		return nil, nil, fmt.Errorf("timeout middleware: underlying ResponseWriter does not support hijacking")
 	}
@@ -218,11 +252,51 @@ func (tw *timeoutWriter) finish() {
 func (tw *timeoutWriter) expire() bool {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
+	for tw.hijacking {
+		tw.hijackDone.Wait()
+	}
 	if tw.streaming || tw.timedOut {
 		return false
 	}
 	tw.timedOut = true
 	return true
+}
+
+// handlerPanic carries a panic out of Timeout's handler goroutine with
+// the stack captured there. Recovery unwraps it and logs that stack: the
+// re-raise runs on the request goroutine, whose own stack shows only
+// Timeout. http.ErrAbortHandler is never wrapped, so net/http and
+// Recovery still see the sentinel itself.
+type handlerPanic struct {
+	v     any
+	stack []byte
+}
+
+func (p handlerPanic) Error() string { return fmt.Sprint(p.v) }
+
+// Unwrap hands an outer recover the handler's own error, so errors.Is
+// and errors.As still see it through Timeout's goroutine hop.
+func (p handlerPanic) Unwrap() error { e, _ := p.v.(error); return e }
+
+// reraise is the value the request goroutine re-panics with for the
+// handler goroutine's panic v. When the response was already streaming
+// (flushed or hijacked), v rides in an abortedStream as well, so
+// Recovery cuts the connection instead of appending a 500 to a response
+// that is on the wire. Call it after the handler returned.
+func (tw *timeoutWriter) reraise(v any, stack []byte) any {
+	if v == http.ErrAbortHandler {
+		return v
+	}
+	if inner, ok := v.(handlerPanic); ok { // a nested Timeout: keep the innermost stack
+		v, stack = inner.v, inner.stack
+	}
+	tw.mu.Lock()
+	streamed := tw.streaming
+	tw.mu.Unlock()
+	if _, ok := v.(abortedStream); streamed && !ok {
+		v = abortedStream{v}
+	}
+	return handlerPanic{v: v, stack: stack}
 }
 
 // timeoutCtx is the request context handed to the wrapped handler. It
@@ -429,6 +503,10 @@ func Timeout(d time.Duration) Middleware {
 			// because the parent's defer recover lives in a different
 			// goroutine.
 			var childPanic any
+			// childStack is the handler goroutine's stack at the panic,
+			// captured there: the re-raise below runs on this goroutine,
+			// whose stack names only the re-raise site.
+			var childStack []byte
 			// finishedAt records when the handler returned, so the deadline
 			// branch can tell "finished inside the budget, and this
 			// goroutine was late to notice" from "finished after the
@@ -442,6 +520,9 @@ func Timeout(d time.Duration) Middleware {
 				defer func() {
 					if v := recover(); v != nil {
 						childPanic = v
+						if v != http.ErrAbortHandler {
+							childStack = debug.Stack()
+						}
 					}
 					finishedAt = time.Now()
 					close(done)
@@ -473,7 +554,7 @@ func Timeout(d time.Duration) Middleware {
 					<-done
 					tw.release()
 					if childPanic != nil {
-						panic(childPanic)
+						panic(tw.reraise(childPanic, childStack))
 					}
 					return false
 				}
@@ -493,6 +574,7 @@ func Timeout(d time.Duration) Middleware {
 							"error", textsafe.Truncate(textsafe.ScrubControlBytes(fmt.Sprint(childPanic)), maxRecoveryPanicLen),
 							"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 							"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
+							"stack", textsafe.Truncate(string(childStack), maxRecoveryStackLen),
 						)
 					}
 				}()
@@ -503,7 +585,7 @@ func Timeout(d time.Duration) Middleware {
 			case <-done:
 				if childPanic != nil {
 					tw.release()
-					panic(childPanic)
+					panic(tw.reraise(childPanic, childStack))
 				}
 				if !finishedAt.Before(deadline) {
 					abandon(context.DeadlineExceeded)
@@ -533,7 +615,7 @@ func Timeout(d time.Duration) Middleware {
 				if handlerBeatTheDeadline(done, &finishedAt, deadline) {
 					if childPanic != nil {
 						tw.release()
-						panic(childPanic)
+						panic(tw.reraise(childPanic, childStack))
 					}
 					tw.finish()
 					return

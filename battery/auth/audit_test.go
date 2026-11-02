@@ -103,18 +103,20 @@ func buildAuditManager(t *testing.T, sink AuditSink) (*AuthManager, *userStoreWi
 	})
 	pwSender := &stubEmailSender{}
 	mlSender := &mockEmailSender{}
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
 	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
 		BaseURL:     "http://localhost",
 		TokenTTL:    time.Hour,
 		EmailSender: pwSender,
 	}))
+	// TwoFactorURL: the 2FA plugin above makes Init require it.
 	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
 		BaseURL:      "http://localhost",
 		OnSuccessURL: "/",
 		TokenTTL:     time.Hour,
 		EmailSender:  mlSender,
+		TwoFactorURL: "/login/2fa",
 	}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -459,7 +461,7 @@ func TestAudit_NilSinkNoPanic(t *testing.T) {
 		JWTSecret: "test-secret", SessionTTL: time.Hour,
 		SessionCookie: "session_id", UserStore: store, DevMode: true,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}

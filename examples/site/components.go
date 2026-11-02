@@ -209,6 +209,12 @@ func (s *ComponentShowcaseScreen) renderDemo(ctx context.Context) render.HTML {
 		return gallery.RenderIconCatalog(gallery.IconCatalogConfig{
 			Action: "/components/icon", Search: query.Get("q"), Category: query.Get("category"),
 		})
+	case "datepicker":
+		// The month anchors' no-script href is this page with ?month=:
+		// the page reads it, so a reader without script turns months too.
+		cfg := gallery.DatePickerDemo(app.QueryFromContext(ctx).Get("month"))
+		cfg.Ctx = ctx
+		return ui.DatePicker(cfg)
 	case "sortablelist":
 		return kanbanDemo(ctx)
 	case "optimisticcreate":

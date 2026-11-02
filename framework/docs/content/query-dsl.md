@@ -232,6 +232,28 @@ Drop down to `core/query` directly when:
 - You need `OR` between predicates.
 - You need projections beyond `SELECT * FROM entity_table`.
 
+`Where` ANDs a condition with everything before it and `OrWhere` ORs
+it, in call order. The builder wraps each condition in parens, and an
+AND that follows an OR wraps everything before it too, so a tenant,
+owner or soft-delete scope the framework appends after your `OrWhere`
+covers the whole predicate:
+
+```go
+qb := query.Select("id").From("posts").
+	Where("status = $1", "draft").
+	OrWhere("status = $1", "pub").
+	Where("tenant_id = $1", tenant)
+// SELECT id FROM posts WHERE ((status = $1) OR (status = $2)) AND (tenant_id = $3)
+```
+
+Builds before v0.96.0 wrote that chain flat, as
+`(status = $1) OR (status = $2) AND (tenant_id = $3)`, which SQL reads
+as `draft OR (pub AND tenant)`, so every tenant's drafts matched. A
+chain with no `OrWhere` before a `Where` builds the same SQL as before.
+
+A condition may end in a `--` comment; the builder ends the line
+before its closing paren.
+
 `core/query` builds writes too. `query.Update` and `query.Delete` take
 the same `Where` conditions, and `Returning(cols...)` ends either in a
 `RETURNING` clause naming the changed rows' columns. `Matching(cols...)`

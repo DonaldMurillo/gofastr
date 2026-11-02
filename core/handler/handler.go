@@ -22,8 +22,22 @@ type Handler[I, O any] func(ctx context.Context, in I) (O, error)
 // It handles input binding, panic recovery, and output serialization.
 func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// started turns true once a status has gone out. A panic after
+		// that (a ResponseType's WriteBody) cannot become a 500: the
+		// client already has a 200 and part of a body, and an error
+		// document written now would be spliced onto it as if it were
+		// that body. Abort the connection instead, so the client sees a
+		// broken response rather than a successful one.
+		var started bool
 		defer func() {
 			if rec := recover(); rec != nil {
+				if started {
+					slog.Default().Error("panic recovered in handler after the response started; aborting it",
+						"error", textsafe.Recovered(rec),
+						"stack", textsafe.Truncate(string(debug.Stack()), maxStackLogLen),
+					)
+					panic(http.ErrAbortHandler)
+				}
 				// The raw panic value (driver strings, internal paths,
 				// wrapped DB errors) must stay out of the client body.
 				// Log it server-side and return a fixed generic 500,
@@ -54,7 +68,7 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 			return
 		}
 
-		Respond(w, r, out)
+		respond(w, r, out, &started)
 	}
 }
 
@@ -193,9 +207,13 @@ func ViolationBodies(ctx context.Context, fields map[string][]schema.Violation) 
 // This prevents accidental leaks of database errors, driver-specific
 // strings ("pq: password authentication failed for user \"admin\""),
 // or wrapped stack traces. r may be nil; the message is then English.
+//
+// A nil *Error is the generic 500, and a Code outside 400-599 (a
+// forgotten zero, a 1xx or 2xx) is sent as 500: an error never goes out
+// under a status that reads as success.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	herr, ok := err.(*Error)
-	if !ok {
+	if !ok || herr == nil {
 		herr = &Error{
 			Code:   http.StatusInternalServerError,
 			Reason: i18n.StatusPhrase(http.StatusInternalServerError),
@@ -209,9 +227,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(herr.Code)
+	code := herr.Code
+	if code < 400 || code > 599 {
+		code = http.StatusInternalServerError
+	}
+	w.WriteHeader(code)
 
-	detail := errorResponseDetail{Code: herr.Code, Message: herr.Message}
+	detail := errorResponseDetail{Code: code, Message: herr.Message}
 	if !herr.Reason.IsZero() {
 		detail.Reason = herr.Reason.Code()
 		detail.Message = herr.Reason.Text(ctx, herr.Params)

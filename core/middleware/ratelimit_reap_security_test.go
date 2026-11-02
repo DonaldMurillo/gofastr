@@ -10,6 +10,8 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -71,6 +73,62 @@ func TestEvictKeepsExhaustedBucket(t *testing.T) {
 	}
 	if ok, _, _, _ := s.take("attacker"); ok {
 		t.Fatal("SECURITY: [ratelimit-evict] the cap's eviction shed an exhausted bucket before the flood's fuller ones")
+	}
+}
+
+// TestEvictKeepsExhaustedBucketDefaultRefill is the same property under
+// the default RefillBy (== Capacity, the 60/60 zero config). The shed
+// ranked by time to full, which is counted in refill ticks; when one
+// tick refills the whole bucket an exhausted key and a one-token-spent
+// flood key both owe one tick, and the older one, the exhausted key that
+// was there first, owed less and was shed first, coming back with a
+// full budget. With a per-username KeyFunc a spray of junk usernames
+// reset a victim account's login budget. The shed now ranks by tokens
+// left first.
+func TestEvictKeepsExhaustedBucketDefaultRefill(t *testing.T) {
+	h := RateLimit(RateLimitConfig{
+		Capacity:    2,
+		RefillEvery: time.Hour, // RefillBy left 0: defaults to Capacity
+		MaxKeys:     10,
+		KeyFunc:     func(r *http.Request) string { return r.Header.Get("X-User") },
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	hit := func(user string) int {
+		r := httptest.NewRequest(http.MethodPost, "/login", nil)
+		r.Header.Set("X-User", user)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	hit("alice")
+	hit("alice")
+	if code := hit("alice"); code != http.StatusTooManyRequests {
+		t.Fatalf("setup: third request should be limited, got %d", code)
+	}
+	for i := range 20 {
+		hit(fmt.Sprintf("junk-%d", i))
+	}
+	if code := hit("alice"); code != http.StatusTooManyRequests {
+		t.Fatalf("SECURITY: [ratelimit-evict] exhausted key got a fresh budget (status %d) after a junk-key flood under the default RefillBy", code)
+	}
+}
+
+// TestEvictRanksRefilledTokens: the tokens rank counts the refill ticks
+// that have landed, not the stored count. A key that spent its budget
+// long ago is full again and loses nothing when shed; ranking it by its
+// stored zero kept it and shed the flood's live buckets instead.
+func TestEvictRanksRefilledTokens(t *testing.T) {
+	s := newBucketStoreCapped(2, time.Minute, 1, 10)
+	for i := range 10 {
+		s.take(fmt.Sprintf("k-%d", i))
+	}
+	s.mu.Lock()
+	s.buckets["k-0"].tokens, s.buckets["k-0"].lastSeen = 0, time.Now().Add(-10*time.Minute)
+	s.mu.Unlock()
+	s.take("k-10") // 11 > cap: shed two, down to 9
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, kept := s.buckets["k-0"]; kept {
+		t.Fatal("the shed kept a bucket the refill has made full and dropped live ones")
 	}
 }
 

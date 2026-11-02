@@ -70,6 +70,8 @@ func (qb *QueryBuilder) From(table string) *QueryBuilder {
 }
 
 // Where appends a WHERE condition (ANDed with previous conditions).
+// After an OrWhere it ANDs with the whole OR group:
+// Where(a).OrWhere(b).Where(c) builds ((a) OR (b)) AND (c).
 func (qb *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
 	qb.wheres = append(qb.wheres, whereClause{
 		connector: "AND",
@@ -80,7 +82,9 @@ func (qb *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
 	return qb
 }
 
-// OrWhere appends a WHERE condition (ORed with previous conditions).
+// OrWhere appends a WHERE condition (ORed with previous conditions,
+// taken together: Where(a).Where(b).OrWhere(c) builds (a) AND (b) OR (c),
+// which SQL reads as (a AND b) OR c).
 func (qb *QueryBuilder) OrWhere(condition string, args ...any) *QueryBuilder {
 	qb.wheres = append(qb.wheres, whereClause{
 		connector: "OR",
@@ -262,19 +266,60 @@ func (qb *QueryBuilder) Build() (string, []any) {
 // visibility = 'pub' OR author_id = Y AND owner_id = Z` group as
 // `(... AND pub) OR (... AND Z)`, bypassing tenant scope on the OR
 // branch). Wrapping each condition makes the AND/OR tree reflect the
-// caller's intent. It replaces the two verbatim copies of this loop in
-// QueryBuilder.Build and UpdateBuilder.Build.
+// caller's intent. It is the one WHERE loop: QueryBuilder.Build,
+// UpdateBuilder.Build and buildFiltered (Count, Delete, Matching) all
+// call it.
+//
+// The connectors fold left to right, as Where and OrWhere document
+// ("ANDed/ORed with previous conditions"): an AND that follows an OR
+// parenthesizes everything before it, so Where(a).OrWhere(b).Where(c)
+// renders ((a) OR (b)) AND (c). Written flat it was (a) OR (b) AND (c),
+// which SQL reads as a OR (b AND c): a tenant, owner or soft-delete
+// scope appended after a caller's OrWhere bound only to the last
+// condition, and every row matching a came back unscoped. A chain with
+// no OR before an AND (every chain the framework builds itself) writes
+// no extra parens, byte for byte what it wrote before.
+//
+// A condition that ends inside a -- line comment gets a newline before
+// its closing paren, or the comment would swallow the paren and every
+// clause written after it.
 func appendWhereClauses(sb *strings.Builder, wheres []whereClause, paramIdx int) {
+	// Each AND that ends an OR run closes one group, so open that many
+	// up front.
+	groups, sawOr := 0, false
+	for i, w := range wheres {
+		switch {
+		case i == 0:
+		case w.connector == "OR":
+			sawOr = true
+		case sawOr:
+			groups++
+			sawOr = false
+		}
+	}
+	for range groups {
+		sb.WriteByte('(')
+	}
+	sawOr = false
 	for i, w := range wheres {
 		if i > 0 {
+			if w.connector == "OR" {
+				sawOr = true
+			} else if sawOr {
+				sb.WriteByte(')')
+				sawOr = false
+			}
 			sb.WriteString(" ")
 			sb.WriteString(w.connector)
 			sb.WriteString(" ")
 		}
-		condition := renumberPlaceholders(w.condition, paramIdx)
+		condition, inLineComment := renumberCondition(w.condition, paramIdx)
 		paramIdx += len(w.args)
 		sb.WriteByte('(')
 		sb.WriteString(condition)
+		if inLineComment {
+			sb.WriteByte('\n')
+		}
 		sb.WriteByte(')')
 	}
 }
@@ -298,6 +343,15 @@ func appendWhereClauses(sb *strings.Builder, wheres []whereClause, paramIdx int)
 // that does not close the literal). This is the one behavior the older
 // positional renumberer got wrong: it rewrote digits inside literals.
 func renumberPlaceholders(condition string, startIdx int) string {
+	out, _ := renumberCondition(condition, startIdx)
+	return out
+}
+
+// renumberCondition is renumberPlaceholders that also reports whether
+// the condition ends inside an unterminated -- line comment, which is
+// still open when the caller writes the next byte.
+func renumberCondition(condition string, startIdx int) (string, bool) {
+	inLineComment := false
 	var sb strings.Builder
 	next := startIdx
 	i := 0
@@ -334,6 +388,7 @@ func renumberPlaceholders(condition string, startIdx int) string {
 			if j < 0 {
 				sb.WriteString(condition[i:])
 				i = len(condition)
+				inLineComment = true
 				continue
 			}
 			sb.WriteString(condition[i : i+j+1])
@@ -341,6 +396,17 @@ func renumberPlaceholders(condition string, startIdx int) string {
 		case c == '/' && i+1 < len(condition) && condition[i+1] == '*':
 			// Block comments nest in PostgreSQL, so track the depth rather
 			// than scanning for the first */.
+			//
+			// SQLite does not nest: it closes the comment at the first */.
+			// A comment whose text holds a /* (a glob like /api/*) never
+			// reaches depth 0 here, so the nesting scan read the rest of
+			// the condition as comment and left its placeholders
+			// unrenumbered, while SQLite ran that rest as SQL with the
+			// wrong binds. Postgres refuses such a fragment as an
+			// unterminated comment, so when the nesting scan runs off the
+			// end SQLite's reading is the only one that executes: close at
+			// the first */ instead. A fragment whose comments balance
+			// keeps the nesting reading.
 			depth, j := 1, i+2
 			for j < len(condition) && depth > 0 {
 				if j+1 < len(condition) && condition[j] == '/' && condition[j+1] == '*' {
@@ -354,6 +420,11 @@ func renumberPlaceholders(condition string, startIdx int) string {
 					continue
 				}
 				j++
+			}
+			if depth > 0 {
+				if k := strings.Index(condition[i+2:], "*/"); k >= 0 {
+					j = i + 2 + k + 2
+				}
 			}
 			sb.WriteString(condition[i:j])
 			i = j
@@ -384,7 +455,7 @@ func renumberPlaceholders(condition string, startIdx int) string {
 			i++
 		}
 	}
-	return sb.String()
+	return sb.String(), inLineComment
 }
 
 func isASCIIDigit(b byte) bool { return b >= '0' && b <= '9' }
@@ -398,8 +469,15 @@ func isIdentByte(b byte) bool {
 // the end of the string.
 func copyStringLiteral(sb *strings.Builder, s string, i int) int {
 	// E'…' (Postgres escape-string syntax) treats backslash as an escape;
-	// a plain '…' does not.
-	escapes := i > 0 && (s[i-1] == 'E' || s[i-1] == 'e')
+	// a plain '…' does not. The E is a prefix only when it starts a token:
+	// an E that ends a keyword or identifier (ESCAPE'\', LIKE'x\',
+	// ELSE'\') is part of that word, and the quote opens a plain
+	// literal. Reading it as E'…' took \' for an escaped quote, kept the
+	// lexer in the literal to the end, and left every later placeholder
+	// unrenumbered. The byte before the E is judged the way the $N case
+	// judges the byte before a $.
+	escapes := i > 0 && (s[i-1] == 'E' || s[i-1] == 'e') &&
+		(i == 1 || (!isIdentByte(s[i-2]) && s[i-2] != '$' && s[i-2] < 0x80))
 	sb.WriteByte('\'')
 	i++
 	for i < len(s) {

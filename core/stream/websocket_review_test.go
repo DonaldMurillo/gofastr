@@ -46,7 +46,7 @@ func TestWriteTimeoutDefaultStopsBlockedPeer(t *testing.T) {
 		// fake time inside the bubble, so the timeout elapses instantly.
 		conn := &WebSocketConn{
 			conn:       bw,
-			sendBuffer: make(chan []byte, 1),
+			sendBuffer: make(chan wsMessage, 1),
 			closed:     make(chan struct{}),
 			config:     WSConfig{WriteTimeout: 10 * time.Second},
 		}
@@ -86,7 +86,7 @@ func TestNegativeReadIdleDisablesKeepalive(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{ReadIdleTimeout: -1},
@@ -122,7 +122,7 @@ func TestCloseEchoesPeerStatus(t *testing.T) {
 
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{CloseTimeout: 500 * time.Millisecond, requireMask: true},
@@ -190,7 +190,7 @@ func driveCloseEcho(t *testing.T, peerBody []byte) []byte {
 
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, 1),
+		sendBuffer: make(chan wsMessage, 1),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		config:     WSConfig{CloseTimeout: 500 * time.Millisecond, requireMask: true},
@@ -307,7 +307,7 @@ func TestBroadcastSkipsDeadConn(t *testing.T) {
 	// the conn's sendBuffer should not accumulate broadcasts.
 	conn := &WebSocketConn{
 		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-		sendBuffer: make(chan []byte, 1), // small buffer: would fill
+		sendBuffer: make(chan wsMessage, 1), // small buffer: would fill
 		closed:     make(chan struct{}),
 		config:     WSConfig{ReadLimit: 1 << 20},
 	}
@@ -344,7 +344,7 @@ func TestOnCloseRaceFiresOnce(t *testing.T) {
 	for trial := range 10 {
 		conn := &WebSocketConn{
 			conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
-			sendBuffer: make(chan []byte, 1),
+			sendBuffer: make(chan wsMessage, 1),
 			closed:     make(chan struct{}),
 			peerClosed: make(chan struct{}),
 			config:     WSConfig{CloseTimeout: 1 * time.Millisecond},

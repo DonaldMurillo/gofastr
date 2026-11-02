@@ -362,6 +362,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
 | `data-hui-multiselect` / `data-hui-multiselect-chips` / `data-hui-multiselect-placeholder="<text>"` / `data-hui-multiselect-remove-label="<fmt>"` / `data-hui-multiselect-remove="<input-id>"` | On a `framework/ui.MultiSelect` (headless.MultiSelect anatomy; the disclosure itself is `data-hui-disclosure`'s): the registered `headless-multiselect` module (framework/headless, `Requires("headless-disclosure")`) rebuilds the chips strip from the checkboxes' own state after every change, names each chip's × from the remove-label format ({label} substituted), unchecks the checkbox a × names inside that ×'s own multiselect (option ids derive from the instance id, which defaults to the field name, so two multiselects for one field share them), and closes the disclosure on click-outside. The placeholder is the sheet's `:empty::before` content. The submit contract is the plain form: every checkbox shares the field name, no script needed. |
+| `data-hui-datepicker` / `-input="single\|start\|end"` / `-calendar` / `-nav="prev-year\|prev-month\|next-month\|next-year"` / `-caption` / `-grid="<YYYY-MM>"` / `data-hui-date="<YYYY-MM-DD>"` / `-range="start\|end\|inside"` / `-range-mode` / `-status` / `-chosen` / `-choose-end` / `-ranged` | On a `framework/ui.DatePicker` (headless.DatePicker anatomy): the registered `headless-datepicker` module (framework/headless) writes a clicked day into the native `<input type=date>` (a range's first pick is the start, the second the end, a pick before the start restarts it), dispatching `input` and `change`, and keeps `aria-selected` and the range place on each cell in step with whatever the inputs hold, a typed date included. It owns the date-grid keyboard (arrows a day or a week, mirrored when the computed direction is rtl; Home/End the row's ends; PageUp/PageDown a month, with Shift a year) with one day in the tab order; a move past the shown month clicks the matching nav anchor, whose `data-cui-rpc` GET the kernel fetches and swaps into the calendar (`data-cui-signal` mode html, no push-state), and when the swap lands the module focuses the day the key named or the anchor that was clicked and says the new caption in the status region. The pick sentences travel on the root (`-chosen`, `-choose-end`, `-ranged`, `{{date}}`/`{{start}}`/`{{end}}` filled at say-time). Each day button carries `aria-pressed` mirroring its cell's selection, so the element focus lands on says it; a range's grid is `aria-multiselectable`. Keys pressed while a month is in flight count from the day the last one asked for, and the arrival walks on toward it (a year, then a month, at a time); a reader whose focus left the calendar keeps it; the module listens on the calendar's signal slot, so a failed month (the anchor's `data-cui-rpc-error-toast` says it) ends the wait at once, with a 5 s expiry as the backstop. A day or nav anchor clicked while the module is cold is replayed once it registers. The server holds the shown month between Min's and Max's months, and an anchor that would not move is disabled. Without script the inputs submit and the nav anchors are plain links. |
 | `data-cui-dropdown` | On a dropdown trigger button. The `dropdown` runtime module toggles `aria-expanded` and shows/hides the paired panel on click. Outside-click and SPA navigation close all dropdowns without moving focus. Escape defers to the modal stack, then closes only the focused (or topmost) dropdown layer; when focus was inside its panel, focus returns to that dropdown's trigger. Opening one dropdown still closes the others by default. |
 | `data-cui-dropdown-wrap` | On the wrapper around a `data-cui-dropdown` trigger + `data-cui-dropdown-panel`. Scopes open/close to one dropdown instance; the runtime sets/clears `data-cui-dropdown-open` on it to track state. |
 | `data-cui-dropdown-panel` | On the floating panel sibling of a `data-cui-dropdown` trigger. The runtime toggles its `hidden` attribute as the dropdown opens/closes. |
@@ -2539,12 +2540,30 @@ page), the stale instance is dismissed instead (`fui:widget-close`,
 root lifted out) and the navigate catalog pass hydrates the fresh
 node, so two live roots for one registration never coexist.
 
-Closing is unchanged: the navigate listener closes every open modal
-widget (backdrop'd drawers and modals ride `_modalStack`), a fetched
-root is removed from the DOM, an SSR-hydrated root is re-hidden, the
-chrome cache is cleared, and the next open re-fetches and fires
+Closing is unchanged: the widgets module's navigate listener closes
+every open modal widget (backdrop'd drawers and modals ride
+`_modalStack`) opened on the page being left, a fetched root is
+removed from the DOM, an SSR-hydrated root is re-hidden, the chrome
+cache is cleared, and the next open re-fetches and fires
 `fui:widget-open` again. Consumers that bind into chrome rebind on
 every `fui:widget-open` rather than assuming a root mounts once.
+
+**An open belongs to the navigation it was issued under.** Both
+navigators bump the shared `_navEpoch` synchronously at entry, and
+every commit dispatches `gofastr:navigate` under its own live epoch.
+An open is stale only when a navigation that BEGAN after it commits:
+then a chrome or deep-link module that lands late mounts nothing and
+writes no deep link, and a chrome failure raises no toast. An open
+issued while a navigation was already in flight (the reader clicked a
+link, then a trigger in chrome both pages share before the page
+painted) lands on the destination: the commit neither drops it nor,
+for a modal, closes it, and the catalog re-fetch's `_syncDeepLinks`
+does not close it while its deep link is still being written under the
+same epoch and URL. Comparing chrome-cache objects, the earlier test,
+read every commit as a leave and dropped such opens without a word
+(the `TestTrackerBellPopoverE2E` flake; pinned by
+`TestOpenDuringNavigationSurvivesCommit` and, for the stale side,
+`TestStaleChromeSkipsNextPage`).
 
 ---
 
@@ -2764,6 +2783,7 @@ your need:
 | Markdown rendered as HTML | `framework/ui.Markdown` | Themed prose wrapper over `core/markdown`. Headings, lists, code blocks get theme tokens. |
 | Keyboard shortcut hint | `framework/ui.ShortcutHint` | Platform-aware mod-key glyphs (⌘ vs Ctrl) via `data-cui-os`. |
 | Theme override for a subtree | `framework/ui.Themed` | Wraps any content in a `.cui-theme-<hash>` div for section-level theming. |
+| Calendar for a range, refused days or notes on days | `framework/ui.DatePicker` | Enhances the native `<input type=date>` (the value, posted without script); the registered `headless-datepicker` module owns the date-grid keyboard and the pick, and a month change is an island the page serves with `ui.DatePickerMonth`. An ordinary date stays `ui.DateField`. |
 | Sortable drag-and-drop list | `framework/ui.SortableList` | Drag reorder + keyboard reorder on the headless primitive; the registered `headless-sortablelist` module POSTs the new order and reverts on non-2xx. |
 | Expandable tree view | `framework/ui.Tree` | WAI-ARIA treeview on the headless primitive; lazy-load children via the toggle's `data-cui-rpc` on expand. Arrow-key nav, `data-hui-tree`. |
 

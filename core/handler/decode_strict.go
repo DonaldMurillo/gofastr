@@ -264,7 +264,10 @@ func keyRefusal(path []pathSeg, prev, key string) *Error {
 	return Fail(400, reasonJSONFoldedKeysAt, params)
 }
 
+// isStructPointer reports whether dst points at a struct through one or
+// more pointer levels: UnmarshalStrict(data, &p) with p a *T is the
+// struct case, not a lax one.
 func isStructPointer(dst any) bool {
 	rv := reflect.ValueOf(dst)
-	return rv.Kind() == reflect.Pointer && !rv.IsNil() && rv.Elem().Kind() == reflect.Struct
+	return rv.Kind() == reflect.Pointer && !rv.IsNil() && derefType(rv.Type().Elem()).Kind() == reflect.Struct
 }

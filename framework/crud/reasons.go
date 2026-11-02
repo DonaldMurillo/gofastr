@@ -30,6 +30,7 @@ var (
 	reasonDupFormKey       = i18n.Define("error.duplicate_form_key", "form key {{key}} is repeated for a single-valued field")
 	reasonDupFilePart      = i18n.Define("error.duplicate_file_part", "file part {{key}} is repeated: an image or file field holds one upload")
 	reasonBadMultipart     = i18n.Define("error.malformed_multipart", "malformed multipart body")
+	reasonOpRefused        = i18n.Define("error.operation_refused", "access denied: this entity declares no permission for the operation")
 
 	// The {{detail}} of a _batch envelope's invalid_body refusal
 	// (checkEnvelopeKeys). The frame's code stays invalid_body: these sit

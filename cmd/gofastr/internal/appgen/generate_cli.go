@@ -128,20 +128,20 @@ var cliOpHelp = map[filter.FilterOp]string{
 	filter.OpLt:   "less than",
 	filter.OpLte:  "less than or equal",
 	filter.OpLike: "contains",
+	filter.OpIn:   "in (comma list)",
 }
 
 // cliFilterOps derives the operator flags a field's list verb offers
 // from filter.FilterSuffixes ∩ filter.OpSuitsType — the one type
 // predicate every server filter surface applies — so the CLI can never
 // offer a flag the list handler answers 400, nor hide one it accepts
-// (the old hardcoded Comparable/Likeable lists did both). OpIn suits
-// every type and is folded into the bare equality flag: a value holding
-// a comma goes to the IN key (filterFlag.inParam), so it contributes no
-// flag of its own.
+// (the old hardcoded Comparable/Likeable lists did both). OpIn gets its
+// own -in flag: the server reads a bare key as equality with the whole
+// value, so a comma list on the bare flag matched the literal "a,b".
 func cliFilterOps(t schema.FieldType) []cliFilterOp {
 	var ops []cliFilterOp
 	for _, s := range filter.FilterSuffixes {
-		if s.Op == filter.OpIn || !filter.OpSuitsType(s.Op, t) {
+		if !filter.OpSuitsType(s.Op, t) {
 			continue
 		}
 		ops = append(ops, cliFilterOp{
@@ -332,11 +332,27 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		return
 	}
 
-	// custom.go is the dev-owned seam: created when absent, NEVER
-	// overwritten, not even under --force.
+	// custom.go is the dev-owned seam: created when absent, never
+	// overwritten. One written for the other generation mode imports a
+	// client this run does not build against, so the run refuses; --force
+	// moves it to custom.go.bak (never over an earlier backup) and writes
+	// a fresh one.
+	backupCustom := false
+	if stale := staleCustomClient(opts.OutDir, opts.OutDir, spec); stale != "" {
+		customPath := filepath.Join(opts.OutDir, cliCustomFile)
+		if !opts.force {
+			failWith(fmt.Errorf("%s imports %s, the client of the other `gofastr generate cli` mode, so it does not build beside the CLI this run generates from %s. Re-run with --force: it moves the file to %s and writes a fresh custom.go. Then copy your customCommands entries and configureClient body from the backup and delete it", customPath, stale, cliSourceName(spec), cliCustomBackup))
+			return
+		}
+		if fileExistsUnder(opts.OutDir, cliCustomBackup) {
+			failWith(fmt.Errorf("%s was written for the other `gofastr generate cli` mode, and --force would move it to %s, which already exists. Move or delete %s, then re-run", customPath, filepath.Join(opts.OutDir, cliCustomBackup), cliCustomBackup))
+			return
+		}
+		backupCustom = true
+	}
 	kept := files[:0]
 	for _, f := range files {
-		if f.Name == cliCustomFile && fileExistsUnder(opts.OutDir, f.Name) {
+		if f.Name == cliCustomFile && !backupCustom && fileExistsUnder(opts.OutDir, f.Name) {
 			continue
 		}
 		kept = append(kept, f)
@@ -372,6 +388,9 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 			printGeneratedFilesJSON(files)
 			return
 		}
+		if backupCustom {
+			cli.Info("Would move %s to %s", filepath.Join(opts.OutDir, cliCustomFile), cliCustomBackup)
+		}
 		cli.Info("Would generate %d file(s) in %s:", len(files), opts.OutDir)
 		for _, f := range files {
 			fmt.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
@@ -403,6 +422,15 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 	if err != nil {
 		failWith(fmt.Errorf("CLI code generation failed: %w", err))
 		return
+	}
+	if backupCustom {
+		if err := backupCLICustom(opts.OutDir); err != nil {
+			failWith(err)
+			return
+		}
+		if !opts.json {
+			cli.Warn("%s was written for the other `gofastr generate cli` mode; moved it to %s and wrote a fresh one. Copy your commands across, then delete the backup", filepath.Join(opts.OutDir, cliCustomFile), cliCustomBackup)
+		}
 	}
 	writeOpts := codegen.WriteOptions{
 		OutputRoot:   opts.OutDir,
@@ -2014,15 +2042,11 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		if f.NoQuery || f.NoEq {
 			continue
 		}
-		// The server reads ?status=a,b as equality on the literal "a,b",
-		// so the help's "comma list = IN" is kept true by the flag: a
-		// value holding a comma goes to the IN key instead (inParam).
-		inKey := ent.filterKeys.Key(f.Snake, filter.OpIn)
-		help := "filter: " + f.Snake + " equals (a comma list sends " + inKey + ", IN)"
+		help := "filter: " + f.Snake + " equals"
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
-		fmt.Fprintf(sb, "\t{flag: %q, param: %q, inParam: %q, help: %q},\n", f.Flag, ent.filterKeys.Key(f.Snake, filter.OpEq), inKey, help)
+		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, ent.filterKeys.Key(f.Snake, filter.OpEq), help)
 		// One row per operator the field's type accepts, from the same
 		// FilterOps derivation: the table cannot name a param the server
 		// refuses, and a new operator in filter.FilterSuffixes lands
@@ -2289,8 +2313,8 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if uploads {
 		imports = append(imports, "\t\"path/filepath\"")
 	}
-	if endpoint || list {
-		imports = append(imports, "\t\"strings\"") // list: a comma list on an equality flag sends its IN key
+	if endpoint {
+		imports = append(imports, "\t\"strings\"")
 	}
 	if watch || uploads {
 		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
@@ -2301,16 +2325,12 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list {
 		sb.WriteString(`// filterFlag binds one list flag to the query param it sets. String
 // filters (the default) only set their param when non-empty; isBool
-// filters (soft-delete trashed) set theirs to "true" when given. An
-// equality flag carries inParam, the field's IN key: a value holding a
-// comma goes there (--status a,b sends status_in=a,b), since the server
-// reads ?status=a,b as equality on the literal "a,b".
+// filters (soft-delete trashed) set theirs to "true" when given.
 type filterFlag struct {
-	flag    string
-	param   string
-	inParam string
-	help    string
-	isBool  bool
+	flag   string
+	param  string
+	help   string
+	isBool bool
 }
 
 // runListVerb is the shared list body: the pagination/output flags, the
@@ -2363,8 +2383,6 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 			if *boolVals[i] {
 				q.Set(f.param, "true")
 			}
-		} else if f.inParam != "" && strings.Contains(*strVals[i], ",") {
-			set(f.inParam, *strVals[i])
 		} else {
 			set(f.param, *strVals[i])
 		}

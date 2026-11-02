@@ -117,9 +117,18 @@ and the CRUD event stream) caps concurrent signaling sockets per
 `Join.User` across every room. A principal's next socket past the
 cap displaces their oldest one, mirroring rtc's own
 replace-on-rejoin behaviour, and a peer's departure frees its seat.
-Callers with no `Join.User` share one bucket. A negative value is
-refused at `New`; set it explicitly when a host legitimately derives
-no per-user identity.
+A negative value is refused at `New`.
+
+**A join with no user is refused by default.** When `Authorize` returns
+a `Join` with an empty `User`, the signaler answers 403
+(`rtc.user_required`) before the upgrade. There is no per-user seat to
+charge such a socket to, and a shared bucket let one anonymous caller
+evict every other one. An app whose callers really are anonymous (a
+lobby display name, no account) opts in with
+`AnonymousSeats: rtc.AnonymousPerSocket`: each anonymous socket then
+holds its own seat, outside the per-user cap, and is never displaced by
+another. `MaxPeers` still bounds each room. `examples/rtc-call` runs
+this way.
 
 The frame envelopes themselves decode strictly: duplicate or
 case-folded keys in a signaling frame are refused, the same

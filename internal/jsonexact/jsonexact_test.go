@@ -3,6 +3,7 @@ package jsonexact
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestUnmarshalKeepsBigIntegers(t *testing.T) {
@@ -74,5 +75,64 @@ func TestSettleAfterStreamDecode(t *testing.T) {
 	m := v.Data.(map[string]any)
 	if m["id"] != json.Number("9007199254740993") || m["n"] != float64(2) {
 		t.Errorf("settled = %#v", m)
+	}
+}
+
+type embeddedMeta struct {
+	Data any
+	hide any
+}
+
+type embeddedPtrMeta struct {
+	More any
+}
+
+// Settle skipped an embedded struct of an unexported type because the
+// embed itself is not settable, though encoding/json fills its exported
+// fields and those are settable through it. It descends now, value or
+// pointer embed, and an unexported leaf is still left alone.
+func TestSettleDescendsUnexportedEmbed(t *testing.T) {
+	var v struct {
+		embeddedMeta
+		*embeddedPtrMeta
+	}
+	v.Data = json.Number("3")
+	v.hide = json.Number("4")
+	v.embeddedPtrMeta = &embeddedPtrMeta{More: json.Number("5")}
+	if err := Settle(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Data != float64(3) {
+		t.Errorf("promoted Data = %#v, want float64(3)", v.Data)
+	}
+	if v.More != float64(5) {
+		t.Errorf("promoted More through a pointer embed = %#v, want float64(5)", v.More)
+	}
+	if v.hide != json.Number("4") {
+		t.Errorf("unexported leaf changed: %#v", v.hide)
+	}
+}
+
+// A value that points back into itself through an unexported embedded
+// pointer (which Settle now descends into) settles and ends.
+func TestSettleEndsOnPointerCycle(t *testing.T) {
+	type node struct {
+		*node
+		V any `json:"v"`
+	}
+	n := &node{V: json.Number("3")}
+	n.node = n
+	done := make(chan error, 1)
+	go func() { done <- Settle(n) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Settle never returned on a pointer cycle")
+	}
+	if _, ok := n.V.(float64); !ok {
+		t.Fatalf("V = %T, want float64", n.V)
 	}
 }

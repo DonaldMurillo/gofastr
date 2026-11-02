@@ -687,6 +687,17 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
+	// DatePicker demo (/components/datepicker): a month change GETs the
+	// calendar for the month in the query, built from the same config the
+	// gallery tile renders, so the page and the island agree on the days.
+	// A read with no state, like the workspace lookups below.
+	fwApp.Router().Get(gallery.DatePickerDemoEndpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := gallery.DatePickerDemo(r.URL.Query().Get("month"))
+		cfg.Ctx = r.Context()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(ui.DatePickerMonth(cfg)))
+	}))
+
 	// Multi-step wizard round-trip demo (self-contained full-page form that
 	// POSTs to itself, no site chrome). GET renders step 0; POST advances.
 	fwApp.Router().Get(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))
@@ -696,7 +707,7 @@ func setupServer() *framework.App {
 	registerPrintDemos(fwApp)
 
 	// ── Live-dashboard demo wiring (additive) ───────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo, a queue
+	// /examples/live-dashboard, a queue
 	// ops dashboard fed by SSE island push. The demo state lives in
 	// the package-level liveDash value (screen_livedash.go); this block
 	// starts the ticker that advances it, registers the four island
@@ -873,12 +884,12 @@ func registerScreens(site *app.App) {
 	examples.Screen(groupScreen("/examples/catalog/:id", &CatalogItemScreen{},
 		app.InterceptFrom("/examples/catalog", app.ScreenDrawer)), nil)
 	// ── Presence demo ──────────────────────────────────────────────
-	// /examples/presence?presence=presence-demo, a live avatar roster.
-	// The ?presence= param is threaded into the SSE <meta> tag by
-	// handlePage so the connection joins the topic.
+	// /examples/presence, a live avatar roster. The screen declares its
+	// topic (PresenceTopics), and handlePage signs it into the SSE <meta>
+	// tag so the connection joins it.
 	examples.Screen(groupScreen("/examples/presence", &PresenceScreen{}), nil)
 	// ── Live-dashboard demo ────────────────────────────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo, an ops
+	// /examples/live-dashboard, an ops
 	// dashboard fed by SSE island push. The ticker that advances the
 	// demo state is wired in setupServer; see screen_livedash.go.
 	examples.Screen(groupScreen("/examples/live-dashboard", &LiveDashboardScreen{}), nil)

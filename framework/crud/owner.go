@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -23,20 +24,34 @@ const (
 	opDelete
 )
 
-// permissionForOp returns the declared RBAC permission for op, or "" when the
-// operation is not RBAC-gated.
+// permRefused is what permissionForOp answers for a write a declared
+// Access block leaves blank. accessAllows refuses it to every caller but
+// elevated server code: no role grants it, a wildcard included.
+const permRefused = "(none)"
+
+// permissionForOp returns the declared RBAC permission for op, "" when the
+// operation is not RBAC-gated (no Access block, a blank Read, or
+// entity.Anyone), and permRefused for a blank write in a declared block.
 func (ch *CrudHandler) permissionForOp(op crudOp) string {
 	a := ch.Entity.Config.Exposure.Access
+	var perm string
 	switch op {
 	case opCreate:
-		return a.Create
+		perm = a.Create
 	case opUpdate:
-		return a.Update
+		perm = a.Update
 	case opDelete:
-		return a.Delete
+		perm = a.Delete
 	default:
-		return a.Read
+		perm = a.Read
 	}
+	switch {
+	case perm == entity.Anyone:
+		return ""
+	case perm == "" && op != opRead && a.Declared():
+		return permRefused
+	}
+	return perm
 }
 
 // CanRead reports whether ctx carries the permission EntityConfig.Access
@@ -222,6 +237,10 @@ func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request,
 		return true
 	}
 	if !ch.accessAllows(r.Context(), perm, recordID) {
+		if perm == permRefused {
+			writeJSONError(w, r, http.StatusForbidden, reasonOpRefused)
+			return false
+		}
 		writeJSONError(w, r, http.StatusForbidden, handler.ReasonMissingPermission, map[string]any{"permission": string(perm)})
 		return false
 	}

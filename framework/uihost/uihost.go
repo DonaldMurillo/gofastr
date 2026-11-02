@@ -1820,7 +1820,7 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
 		markup: widgets,
 	}
-	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
+	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline, status)
 	out = injectHeadData(ctx, out)
 	if widgets != "" {
 		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
@@ -2207,7 +2207,7 @@ func (ds *UIHost) injectChromeMode(ctx context.Context, page, pagePath, sessionI
 }
 
 func (ds *UIHost) injectChromeModeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
-	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
+	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil, 0)
 }
 
 // inlineHead is how a live page may inline its head (firstpaint.go).
@@ -2223,8 +2223,10 @@ type inlineHead struct {
 
 // injectChromeDoc is the chrome injector. inline, when set, lets a head
 // small enough for the first round trip carry its resources. A nil
-// inline, or export mode, links every head resource.
-func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
+// inline, or export mode, links every head resource. status is the code
+// the page answers with (0 for 200): only a 2xx page signs the topics
+// its screen declares.
+func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead, status int) string {
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
@@ -2247,14 +2249,21 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	defer returnBuilder(scripts)
 
 	if sessionID != "" && !ds.noLiveChannel {
-		// The SSE connection URL. presenceTopic (from the page's ?presence=
-		// query param) is appended so the SSE handler joins the connection
-		// onto the named topic. This is what binds a live roster island to
-		// the viewers of the page. QueryEscaped to keep the value safe inside
-		// the HTML attribute and the downstream URL.
+		// The SSE connection URL. The topics the screen declares
+		// (PresenceScreen) ride signed for this viewer and join with no
+		// hook. presenceTopic (the page's own ?presence= query value) rides
+		// as a request the SSE handler admits only through AuthorizeTopic.
+		// QueryEscaped to keep the values safe inside the HTML attribute
+		// and the downstream URL.
 		sseURL := "/__gofastr/sse?session=" + sessionID
 		if presenceTopic != "" {
 			sseURL += "&presence=" + url.QueryEscape(presenceTopic)
+		}
+		// A page that answers 403/404/500 refused or failed the viewer
+		// (a Load that found another tenant's record sets 404 and draws
+		// its own not-found state), so its screen's topics stay unsigned.
+		if status == 0 || (status >= 200 && status < 300) {
+			sseURL += ds.declaredPresenceQuery(ctx, comp)
 		}
 		fmt.Fprintf(headClose, `<meta name="gofastr-sse" content="%s">`+"\n", sseURL)
 	}
@@ -3447,13 +3456,18 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the SERVER-DERIVED identity from the request context (a
-	// READ of the middleware-seeded ctx user, never a client param) and
-	// the bounded ?presence= topic list, then delegate to the
-	// presence-aware SSE handler. Anonymous (nil user) is fine: the
-	// manager synthesizes a stable per-session pseudo-identity.
+	// READ of the middleware-seeded ctx user, never a client param), the
+	// page's declared topics (only when their signature verifies for this
+	// user) and the bounded ?presence= requests, then delegate to the
+	// presence-aware SSE handler, which admits requested topics only
+	// through AuthorizeTopic. Anonymous (nil user) is fine: the manager
+	// synthesizes a stable per-session pseudo-identity.
 	identity := island.PresenceIdentityFromContext(r.Context())
-	topics := island.ParsePresenceTopics(r.URL.Query().Get("presence"))
-	ds.Islands.ServeSSEWithPresence(w, r, identity, topics)
+	q := r.URL.Query()
+	ds.Islands.ServeSSEWithPresence(w, r, identity, island.PresenceTopics{
+		Declared:  ds.verifiedDeclaredTopics(q, identity.UserID, time.Now()),
+		Requested: island.ParsePresenceTopics(q.Get("presence")),
+	})
 }
 
 // maxPresenceParamLen caps the raw ?presence= query value threaded from the
@@ -4662,22 +4676,32 @@ func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (stri
 	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
 		return "", false
 	}
+	return ds.LLMMDWithSEO(ctx, base, scr, res), true
+}
+
+// LLMMDWithSEO is the llm.md the host serves for res, the doc
+// app.ScreenLLMMDForPath rendered for the concrete URL base of screen
+// scr: its markdown behind the screen's SEO front matter. The static
+// export writes it too, so an exported doc matches the served one. ctx
+// is the context the doc rendered under.
+func (ds *UIHost) LLMMDWithSEO(ctx context.Context, base string, scr *app.Screen, res app.ScreenLLMMDResult) string {
 	md := res.MD
 	// SEO front matter ONLY for an allowed render, resolved against the
 	// LOADED instance (the registration instance is a zero-value template
 	// for dynamic routes, and for a non-Allow decision, all
 	// component-supplied metadata is policy-protected).
-	if res.Allowed {
-		title := res.Title
-		if title == "" {
-			title = scr.Title
-		}
-		seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
-		if fm := screenSEOFrontMatter(title, seo); fm != "" {
-			md = fm + "\n" + md
-		}
+	if !res.Allowed {
+		return md
 	}
-	return md, true
+	title := res.Title
+	if title == "" {
+		title = scr.Title
+	}
+	seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
+	if fm := screenSEOFrontMatter(title, seo); fm != "" {
+		md = fm + "\n" + md
+	}
+	return md
 }
 
 // PageHandler returns an http.HandlerFunc that renders the registered

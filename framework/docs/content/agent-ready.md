@@ -318,7 +318,10 @@ opens with a YAML front-matter block mirroring the same screen's HTML
 `ScreenRobots`, `ScreenHreflangs`, `ScreenSchema`) the head renders from,
 so a crawler and an LLM see one consistent metadata set per route.
 Screens with no SEO declarations get no front-matter, and the markdown is
-unchanged. See [SEO](/docs/seo) for the per-screen interfaces.
+unchanged. A static export writes the same front matter:
+`UIHost.LLMMDWithSEO(ctx, path, screen, doc)` turns the doc
+`app.ScreenLLMMDForPath` rendered into the served one. See
+[SEO](/docs/seo) for the per-screen interfaces.
 
 ### Every URL gets its own doc
 

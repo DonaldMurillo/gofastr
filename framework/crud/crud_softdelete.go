@@ -113,7 +113,7 @@ func (ch *CrudHandler) RestoreOne(ctx context.Context, id string) error {
 		return err
 	}
 	if !serverWrites(ctx) && !ch.itemPermitted(ctx, opUpdate, id) {
-		return fmt.Errorf("%w: missing permission %s", ErrForbidden, ch.permissionForOp(opUpdate))
+		return ch.errForbiddenOp(opUpdate)
 	}
 	req := syntheticRequest(ctx, http.MethodPatch, "/")
 	var result map[string]any
@@ -153,7 +153,7 @@ func (ch *CrudHandler) PurgeOne(ctx context.Context, id string) error {
 		return err
 	}
 	if !serverWrites(ctx) && !ch.itemPermitted(ctx, opDelete, id) {
-		return fmt.Errorf("%w: missing permission %s", ErrForbidden, ch.permissionForOp(opDelete))
+		return ch.errForbiddenOp(opDelete)
 	}
 	req := syntheticRequest(ctx, http.MethodDelete, "/")
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
@@ -334,4 +334,14 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 		return fmt.Errorf("stage event: %w", err)
 	}
 	return nil
+}
+
+// errForbiddenOp is RestoreOne and PurgeOne's refusal for op: it names the
+// missing permission, or says the entity declares none (a blank write in a
+// declared Access block), never the internal sentinel.
+func (ch *CrudHandler) errForbiddenOp(op crudOp) error {
+	if perm := ch.permissionForOp(op); perm != permRefused {
+		return fmt.Errorf("%w: missing permission %s", ErrForbidden, perm)
+	}
+	return fmt.Errorf("%w: the entity declares no permission for the operation", ErrForbidden)
 }

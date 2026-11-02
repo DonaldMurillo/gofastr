@@ -147,13 +147,7 @@ func (s *SSEWriter) WriteEvent(event, data string) error {
 
 	var b strings.Builder
 
-	// queued id
-	if s.nextID != "" {
-		b.WriteString("id: ")
-		b.WriteString(stripSSEControlChars(s.nextID))
-		b.WriteByte('\n')
-		s.nextID = ""
-	}
+	s.writeQueuedID(&b)
 
 	b.WriteString("event: ")
 	b.WriteString(event)
@@ -184,13 +178,7 @@ func (s *SSEWriter) WriteData(data string) error {
 
 	var b strings.Builder
 
-	// queued id
-	if s.nextID != "" {
-		b.WriteString("id: ")
-		b.WriteString(stripSSEControlChars(s.nextID))
-		b.WriteByte('\n')
-		s.nextID = ""
-	}
+	s.writeQueuedID(&b)
 
 	for line := range strings.SplitSeq(scrubSSEDataLines(data), "\n") {
 		b.WriteString("data: ")
@@ -200,6 +188,23 @@ func (s *SSEWriter) WriteData(data string) error {
 	b.WriteByte('\n')
 
 	return s.send(b.String())
+}
+
+// writeQueuedID emits the id SetID queued, if any, and clears it. The
+// id is stripped first and checked after: one made only of control
+// bytes strips to "", and an empty "id:" field is not "no id" to the
+// client, it resets the EventSource's Last-Event-ID (WHATWG HTML
+// §9.2.6), so a reconnect would resume from nothing. Encode makes the
+// same check in the same order. The caller holds s.mu.
+func (s *SSEWriter) writeQueuedID(b *strings.Builder) {
+	id := stripSSEControlChars(s.nextID)
+	s.nextID = ""
+	if id == "" {
+		return
+	}
+	b.WriteString("id: ")
+	b.WriteString(id)
+	b.WriteByte('\n')
 }
 
 // scrubSSEDataLines strips CR and NUL bytes from a multi-line data

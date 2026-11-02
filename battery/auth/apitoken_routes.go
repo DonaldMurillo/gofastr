@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math"
 	"net/http"
 	"time"
 
@@ -50,14 +51,17 @@ func (p *TokensPlugin) WithPrefix(prefix string) *TokensPlugin {
 
 func (p *TokensPlugin) Name() string { return "api-tokens" }
 
-// ReservedEmbedPrefixes reports the prefix this plugin actually mounted. These
-// routes mint permanent API tokens, so no embed surface may sit over them or
-// reach them, whatever WithPrefix moved them to. See framework.EmbedReserving.
+// ReservedEmbedPrefixes reports the prefix this plugin's routes sit under:
+// the manager's BasePath. These routes mint permanent API tokens, so no embed
+// surface may sit over them or reach them. It used to return the token
+// brand set by WithPrefix ("acme_"), which is not a path and which the embed
+// host dropped. The framework reads the battery, so the AuthManager reports
+// the same prefix; see framework.EmbedReserving.
 func (p *TokensPlugin) ReservedEmbedPrefixes() []string {
-	if p.prefix == "" {
+	if p.mgr == nil {
 		return []string{"/auth"}
 	}
-	return []string{p.prefix}
+	return p.mgr.ReservedEmbedPrefixes()
 }
 
 func (p *TokensPlugin) Init(mgr *AuthManager) error {
@@ -100,6 +104,44 @@ func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 		writeAuthError(w, r, http.StatusUnauthorized, reasonTokensNeedSessionEmbed)
 		return "", false
 	}
+	// A token is a permanent way in, so on an account with a second factor
+	// only a session that passed it may manage tokens, the bar passkey add
+	// and password change already hold. A session that predates enrollment
+	// (a stolen cookie the owner never knew about) is never stepped up, and
+	// a bearer JWT carries no step-up at all: either minted a permanent
+	// `*:*` token that outlived the session and ignored the new factor.
+	if p.mgr != nil {
+		on, err := p.mgr.twoFactorEnabled(r.Context(), u.GetID())
+		if err != nil {
+			writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
+			return "", false
+		}
+		if on {
+			// Any of the principal's own session cookies that passed the
+			// factor will do, as RequireTwoFA judges it: judging only the
+			// first refused a browser whose stale pre-enrollment cookie
+			// (a parent-domain scope) came before its verified one.
+			mine, verified := false, false
+			for _, sess := range p.mgr.requestSessions(r) {
+				if sess.UserID != u.GetID() {
+					continue
+				}
+				mine = true
+				if !sess.PendingTwoFactor && sess.TwoFactorVerified {
+					verified = true
+					break
+				}
+			}
+			if !mine {
+				writeAuthError(w, r, http.StatusUnauthorized, reasonTokensNeedSession)
+				return "", false
+			}
+			if !verified {
+				writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
+				return "", false
+			}
+		}
+	}
 	return u.GetID(), true
 }
 
@@ -122,6 +164,10 @@ type createTokenRequest struct {
 	OwnerID    string   `json:"owner_id"`   // ignored: forced to session user
 }
 
+// maxTokenTTLSeconds is the largest ttl_seconds whose Duration does not
+// wrap an int64 (about 292 years).
+const maxTokenTTLSeconds = int64(math.MaxInt64 / int64(time.Second))
+
 func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := p.requireSessionUserID(w, r)
@@ -138,6 +184,15 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 		}
 		var body createTokenRequest
 		if !decodeJSONLimited(w, r, &body) {
+			return
+		}
+		// Seconds become a Duration by multiplying by 1e9, which wraps an
+		// int64: -2^55 wrapped to 0 (a permanent token past the negative
+		// refusal) and 584 years wrapped to 290ms. Refuse both before the
+		// multiply.
+		if body.TTLSeconds < 0 || body.TTLSeconds > maxTokenTTLSeconds {
+			writeAuthError(w, r, http.StatusBadRequest, reasonTokenTTLOutOfRange,
+				map[string]any{"ttl": body.TTLSeconds, "max": maxTokenTTLSeconds})
 			return
 		}
 		// Owner is ALWAYS the session user, body owner_kind/owner_id are
