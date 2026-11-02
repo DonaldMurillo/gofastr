@@ -746,7 +746,7 @@ func renderSDKGoReadme(spec sdkSpec) string {
 		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // ne/gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", eqKey, first.filterKeys.Key(filterField, filter.OpGte), first.Struct)
 	}
 	sb.WriteString(sdkBracketKeysNote(spec))
-	sb.WriteString("Validation errors return `*APIError`; its `Body` holds the JSON envelope\n`{\"error\", \"success\", \"code\", \"reason\", \"fields\", \"field_reasons\"}`: `error` is the\nmessage in the request's locale and `reason` its stable code; `fields` keys are\nsnake_case column names and `field_reasons` holds each message's code.\n\n")
+	sb.WriteString("Every non-2xx answer returns `*APIError`; its `Body` holds the JSON envelope every\nroute (CRUD, a declared endpoint, its auth gate) shares,\n`{\"error\", \"success\", \"code\", \"reason\", \"fields\", \"field_reasons\"}`: `error` is the\nmessage in the request's locale and `reason` its stable code; `fields` keys are\nsnake_case column names and `field_reasons` holds each message's code.\n\n")
 	sb.WriteString("`Do(ctx, method, path, body, out)` is the escape hatch for custom endpoints\nand presence-faithful `map[string]any` bodies. `Watch<Entity>` subscribes to\nthe live SSE feed. `Batch*` methods hit the atomic `_batch` routes.\n")
 	return sb.String()
 }

@@ -29,7 +29,12 @@ part of the body went out) is logged and aborts the connection with
 `http.ErrAbortHandler`, so the client sees a broken response, never an
 error document spliced onto a success. `WriteError` sends an `*Error`'s
 `Code` when it is in 400-599; a nil `*Error`, or a `Code` outside that
-range (a forgotten zero, a 1xx, a 2xx), is sent as 500.
+range (a forgotten zero, a 1xx, a 2xx), is sent as 500. Its body is the
+one error envelope every route shares, crud's included:
+`{"error": "<message>", "code": 400, "reason": "<stable code>",
+"fields": {...}, "field_reasons": {...}, "success": false}`, with
+`reason` absent for `Errorf`'s own wording and `fields`/`field_reasons`
+absent with no violations.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
 A present higher-priority value replaces an earlier value, including a JSON

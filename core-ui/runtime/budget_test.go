@@ -1705,7 +1705,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// cold module load both POSTed. The guard reads dispatch state only
 		// this module holds.
 		// 3709 measured (3707 + 2) after its error parse reads
-		// core/handler's nested {error: {message, fields}} envelope and
+		// core/handler's then-nested {error: {message, fields}} envelope
+		// (flat again since issue #652) and
 		// any other dispatch of a node cancels its pending debounced
 		// input request (2026-11-01, TestRPCErrorToastReadsTypedHandlerEnvelope,
 		// TestSubmitCancelsPendingInputRPC, TestDetachedFormSkipsPendingInputRPC).

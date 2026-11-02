@@ -1453,3 +1453,22 @@ notes:
     breaking: false
     guidance: "An audit log that showed no field changes for an entity whose AfterGet hook looks the record up by id, or masks unless the caller owns the row, now shows every change but the masked fields. The hooks now see the record's real id, its stored row (through the caller's read hooks) and a copy with only its empty fields set to probe values, as the signed-in admin, once per record on each page that draws changes; a deleted record still gets the old probe with an empty ID. Keep AfterGet hooks free of side effects (read counters, last-viewed stamps, notifications). A host drawing many entries with UI.Changes wraps the render's context in entityui.WithChangeCache once."
     nodetect: "the change is in how the change list calls the app's hooks at render time; nothing in an app's source spells it"
+  - change: "BREAKING for API clients - core/handler.WriteError answers in the flat envelope the crud routes use, {\"error\": \"<message>\", \"code\", \"reason\", \"fields\", \"field_reasons\", \"success\": false}, instead of nesting code, reason, message and fields under \"error\"; a declared endpoint's auth gate (401) and cross-site refusal (403), RequirePermission's 403, the auth middleware's 401s and every typed handler's error, bind 400 and body-cap 413 change with it"
+    breaking: true
+    hits: review
+    guidance: "Nothing in the app's Go changes: handler.Fail, Errorf, ValidationError and WriteError keep their signatures. What changes is the body its clients read. A client that read body.error.message reads body.error (the message), body.error.code reads body.code, body.error.reason reads body.reason, and body.error.fields reads body.fields; success stays false. Regenerate the Go and JS clients with gofastr generate (they already parse the flat shape), and update any hand-written client, test or schema that read the nested keys."
+    find:
+      uses:
+        - gofastr/core/handler.WriteError
+        - gofastr/core/handler.HandlerAdapter
+        - gofastr/core/handler.Fail
+        - gofastr/core/handler.Errorf
+        - gofastr/core/handler.ValidationError
+  - change: "BREAKING for ui.SortableList conflict handlers - a versioned list reads its 409 message from the error envelope's \"error\" string; a body hand-written as {\"error\": {\"message\": ...}} now falls back to the generic conflict copy"
+    breaking: true
+    hits: review
+    guidance: "The docs used to tell a move handler to answer {\"error\":{\"code\",\"message\"}}. Answer the 409 through handler.WriteError(w, r, handler.Fail(http.StatusConflict, phrase)) (or handler.Errorf for the app's own wording), which writes {\"error\": \"<message>\", \"code\": 409, ...}, or write {\"error\": \"<message>\"} yourself."
+    find:
+      uses:
+        - gofastr/framework/ui.SortableList
+        - gofastr/framework/headless.SortableList
