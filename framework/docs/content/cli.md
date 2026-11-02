@@ -56,7 +56,11 @@ each command to the doc that covers it.
   `--path` and `--handler` take `--method=POST` or `--method POST`; an
   unknown flag is an error.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
-  and the per-battery detail files under `.agents/`.
+  and the per-battery detail files under `.agents/`. Every write stays in
+  the project: a symlink there (`.agents`, `.claude`, `AGENTS.md`, a
+  detail file or the skill's `SKILL.md`) is followed only while it points
+  inside the project, and one that leads out is refused, so running the
+  command in a cloned repo cannot write over a file elsewhere on disk.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.

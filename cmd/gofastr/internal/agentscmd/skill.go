@@ -3,8 +3,6 @@ package agentscmd
 import (
 	_ "embed"
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // gofastrHostSkill is the source for the gofastr-host Claude Code
@@ -20,15 +18,23 @@ import (
 //go:embed embedded/gofastr-host-skill.md
 var gofastrHostSkill string
 
+// hostSkillDir is where the gofastr-host skill lives in a project.
+const hostSkillDir = ".claude/skills/gofastr-host"
+
 // WriteHostSkill drops the gofastr-host skill into <dir>/.claude/skills/
-// gofastr-host/SKILL.md. Idempotent: overwrites any existing copy.
+// gofastr-host/SKILL.md. Idempotent: overwrites any existing copy. The
+// write is confined to dir: a symlinked .claude or SKILL.md that leads
+// out of the project is refused, never written through.
 func WriteHostSkill(dir string) error {
-	target := filepath.Join(dir, ".claude", "skills", "gofastr-host")
-	if err := os.MkdirAll(target, 0o755); err != nil {
+	root, err := openProjectRoot(dir)
+	if err != nil {
 		return fmt.Errorf("create skill dir: %w", err)
 	}
-	skillPath := filepath.Join(target, "SKILL.md")
-	if err := os.WriteFile(skillPath, []byte(gofastrHostSkill), 0o644); err != nil {
+	defer root.Close()
+	if err := root.MkdirAll(hostSkillDir, 0o755); err != nil {
+		return fmt.Errorf("create skill dir: %w", err)
+	}
+	if err := replaceInRoot(root, hostSkillDir+"/SKILL.md", []byte(gofastrHostSkill), 0o644); err != nil {
 		return fmt.Errorf("write skill: %w", err)
 	}
 	return nil
