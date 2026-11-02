@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
 )
@@ -330,8 +331,16 @@ func sameDir(a, b string) bool {
 }
 
 // cliEntryYAML renders the cli entry that reproduces a run, for the next
-// steps of a run no entry drove.
-func cliEntryYAML(opts CliOptions, binary string) string {
+// steps of a run no entry drove. It refuses a value that is not UTF-8:
+// yamlScalar's strconv.Quote writes such a byte as \xff, which YAML 1.2
+// reads as U+00FF, so the entry would name a different path.
+func cliEntryYAML(opts CliOptions, binary string) (string, error) {
+	values := append([]string{opts.OutDir, binary, opts.FromOpenAPI, opts.ApiPrefix, opts.verbs}, opts.only...)
+	for _, v := range append(values, opts.exclude...) {
+		if !utf8.ValidString(v) {
+			return "", fmt.Errorf("%q is not valid UTF-8, which a gofastr.settings.yml entry cannot carry", v)
+		}
+	}
 	var b strings.Builder
 	b.WriteString("codegen:\n  generators:\n    - name: cli\n")
 	fmt.Fprintf(&b, "      output: %s\n", yamlScalar(opts.OutDir))
@@ -346,7 +355,7 @@ func cliEntryYAML(opts CliOptions, binary string) string {
 		if opts.apiPrefixSet {
 			fmt.Fprintf(&b, "        api_prefix: %s\n", yamlScalar(opts.ApiPrefix))
 		}
-		return b.String()
+		return b.String(), nil
 	}
 	if opts.ApiPrefix != "api" {
 		fmt.Fprintf(&b, "        api_prefix: %s\n", yamlScalar(opts.ApiPrefix))
@@ -376,7 +385,7 @@ func cliEntryYAML(opts CliOptions, binary string) string {
 			fmt.Fprintf(&b, "          %s: %s\n", yamlScalar(entity), yamlList(verbs))
 		}
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // yamlList renders a flow list; "*" is quoted, since bare it is a YAML

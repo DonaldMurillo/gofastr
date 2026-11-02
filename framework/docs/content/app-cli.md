@@ -347,7 +347,8 @@ more entries need `--out` or `--binary` to pick one. `--from-openapi`
 takes the entry's binary and output but none of its entity selection.
 Only the settings file in the directory it runs in counts. A run that no
 entry drove prints the entry that reproduces it, ready to paste under
-`codegen.generators`.
+`codegen.generators`. A value YAML cannot carry (a path or name that is
+not UTF-8) prints a note instead of an entry.
 
 ### Upgrading a CLI generated before v0.93.0
 

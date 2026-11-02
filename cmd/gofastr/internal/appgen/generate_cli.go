@@ -469,9 +469,14 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		fmt.Println("    gofastr build rebuilds it from the cli entry in gofastr.settings.yml")
 		return
 	}
+	entry, err := cliEntryYAML(opts, spec.Binary)
+	if err != nil {
+		fmt.Printf("    no gofastr.settings.yml entry reproduces this run: %v\n", err)
+		return
+	}
 	fmt.Println("    add this entry to codegen.generators in gofastr.settings.yml and gofastr build keeps the CLI current (gofastr docs app-cli):")
 	fmt.Println()
-	for _, line := range strings.Split(strings.TrimRight(cliEntryYAML(opts, spec.Binary), "\n"), "\n") {
+	for _, line := range strings.Split(strings.TrimRight(entry, "\n"), "\n") {
 		fmt.Println("      " + line)
 	}
 }
