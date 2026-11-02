@@ -180,7 +180,7 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 
 | Subcommand   | Effect                                                        |
 |--------------|---------------------------------------------------------------|
-| `up`         | Apply all pending migrations in version order.                |
+| `up`         | Apply all pending migrations in version order. It takes no count: `up 1` is refused rather than read as "apply everything". |
 | `status`     | Print applied count, pending versions, and any dirty version. |
 | `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be one positive integer; anything else, a second count included, is refused before a rollback. |
 | `generate N` | Write a versioned, reversible migration file from entity changes. |
