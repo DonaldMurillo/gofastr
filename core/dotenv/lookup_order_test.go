@@ -95,3 +95,20 @@ func TestLoad_EnvValueCountsAsBudgetInput(t *testing.T) {
 		t.Fatalf("64 copies of a 4 KiB env value: err = %v, want the expansion budget refusal", err)
 	}
 }
+
+// The environment value a line reads is credited to the input for the
+// rest of the file, not only that line: otherwise the 4 KiB P spends the
+// budget the file's own bytes earned, and a short later line expanding
+// ${Q} is refused as a multiplying chain.
+func TestLoad_EnvCreditCarriesToLaterLines(t *testing.T) {
+	t.Setenv("GOFASTR_DOTENV_TEST_BIG", strings.Repeat("p", 4096))
+	dir := t.TempDir()
+	p := writeEnvFile(t, dir, ".env", `P="${GOFASTR_DOTENV_TEST_BIG}"`+"\nQ=plain\nR=\"${Q}\"\n")
+	got, err := Load(p)
+	if err != nil {
+		t.Fatalf("later lines refused: %v", err)
+	}
+	if got["Q"] != "plain" || got["R"] != "plain" {
+		t.Fatalf("got %v", got)
+	}
+}
