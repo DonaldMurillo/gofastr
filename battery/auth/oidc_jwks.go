@@ -85,6 +85,45 @@ type jwksCache struct {
 	// rotated key would be rejected for minutes even though a refetch would
 	// resolve it. Keyed per kid, each unknown kid gets its own slot.
 	forcedByKid map[string]time.Time
+
+	// now and waiting are deterministic seams for package tests;
+	// production leaves both nil. now replaces time.Now for staleness,
+	// backoff and refetch-gap decisions. waiting runs when a caller finds
+	// the fetch slot held by another caller's fetch and is about to wait
+	// for it, so a test can release that fetch only once the waiter is
+	// committed to it.
+	now     func() time.Time
+	waiting func()
+}
+
+func (c *jwksCache) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+// acquireSlot takes the one-slot fetch semaphore. It returns false at once
+// when the slot is held and wait is false, and ctx's error when ctx ends
+// while it waits.
+func (c *jwksCache) acquireSlot(ctx context.Context, slot chan struct{}, wait bool) (bool, error) {
+	select {
+	case slot <- struct{}{}:
+		return true, nil
+	default:
+	}
+	if !wait {
+		return false, nil
+	}
+	if c.waiting != nil {
+		c.waiting()
+	}
+	select {
+	case slot <- struct{}{}:
+		return true, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 }
 
 // maxForcedKids bounds forcedByKid. kids come only from IdP-issued tokens
@@ -109,7 +148,7 @@ var errJWKSFetchBusy = errors.New("oidc: jwks fetch already in flight")
 // when none is in flight and the last failure's backoff has passed, and
 // otherwise verifies against the stale set.
 func (c *jwksCache) getKey(ctx context.Context, jwksURI, kid string) (oidcKey, error) {
-	now := time.Now()
+	now := c.clock()
 	c.mu.Lock()
 	set := c.set
 	stale := set == nil || now.Sub(c.fetchedAt) > c.ttl
@@ -186,13 +225,11 @@ func (c *jwksCache) awaitInFlight(ctx context.Context) error {
 	}
 	slot := c.fetchSlot
 	c.mu.Unlock()
-	select {
-	case slot <- struct{}{}:
-		<-slot
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	if _, err := c.acquireSlot(ctx, slot, true); err != nil {
+		return err
 	}
+	<-slot
+	return nil
 }
 
 // refresh fetches the key set once, outside mu. wait=false gives up at once
@@ -208,18 +245,12 @@ func (c *jwksCache) refresh(ctx context.Context, jwksURI string, wait, reuse boo
 	gen := c.gen
 	c.mu.Unlock()
 
-	if wait {
-		select {
-		case slot <- struct{}{}:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	} else {
-		select {
-		case slot <- struct{}{}:
-		default:
-			return errJWKSFetchBusy
-		}
+	held, err := c.acquireSlot(ctx, slot, wait)
+	if err != nil {
+		return err
+	}
+	if !held {
+		return errJWKSFetchBusy
 	}
 	defer func() { <-slot }()
 
@@ -247,13 +278,13 @@ func (c *jwksCache) refresh(ctx context.Context, jwksURI string, wait, reuse boo
 		}
 		c.gen++
 		c.lastErr = err
-		c.retryAt = time.Now().Add(jwksRetryBackoff)
+		c.retryAt = c.clock().Add(jwksRetryBackoff)
 		return err
 	}
 	c.gen++
 	c.lastErr = nil
 	c.set = set
-	c.fetchedAt = time.Now()
+	c.fetchedAt = c.clock()
 	c.retryAt = time.Time{}
 	return nil
 }
