@@ -839,3 +839,7 @@ notes:
     breaking: false
     guidance: "Regenerate any client built from /openapi.json that covers a view: its write calls never worked and are gone from the document."
     nodetect: "the change is in the served document; nothing in an app's source spells it"
+  - change: "A generated entity_list of an entity with no entity_detail screen renders with NoLinks(): its rows draw as text with no row menu, where each linked to <list>/<id>, a page no screen served"
+    breaking: false
+    guidance: "Regenerate to pick it up. To keep record links, add an entity_detail screen at <list route>/{id}; a create: true list keeps its links."
+    nodetect: "the change is in regenerated screen files; an app's Go source already generated is unaffected"

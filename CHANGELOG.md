@@ -330,6 +330,27 @@ few lines, and link the PR or the docs page for the rest.
   `JSONCase` field is assigned after `NewCrudHandler` (generated typed
   handlers do this) rekeys on its next request. New
   `openapi.EntityOpenAPIWith` takes the case in `openapi.Options`.
+- **Generated lists no longer link every row to a 404.** An app spec
+  `entity_list` of an entity with no `entity_detail` screen linked each
+  row, and its row menu's View, to `<list>/<id>`, a page no screen
+  serves (every Categories and Reviews row in the ecommerce example).
+  Such a list without `create: true` now renders with `.NoLinks()`.
+- **A skipped navigation transition no longer logs a page error.** A
+  view transition the runtime skipped before it was ready (the next
+  navigation committing over it, or a click during the animation)
+  rejected its `ready` promise with nothing to catch it, so rapid
+  clicking filled the console and any error tracker with "Transition
+  was skipped" unhandled rejections.
+- **Tracker example: a crumb keeps a multi-byte first letter whole.**
+  The crumb trail upper-cased a path segment's first byte, so `/étude`
+  read "�©tude" and the page carried invalid UTF-8.
+- **Tracker example: the issue list follows the URL's filter.** The
+  project layer drew the list from `?filter=` while the router keeps
+  that layer across a project's pages, so Reset, or the sidebar's
+  project link from a filtered issue, left the filtered list and its
+  filter text under an unfiltered URL. The list is the layer's `issues`
+  route area now. An unsubmitted filter draft no longer survives
+  opening an issue.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does

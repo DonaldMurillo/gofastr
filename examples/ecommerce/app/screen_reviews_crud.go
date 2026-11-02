@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=2c1ba145170d6c98
+//gofastr:generated generator=app kind=scaffold version=dev sum=f6805696c356e940
 
 package main
 
@@ -38,7 +38,7 @@ func (s *ReviewsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text(reviewsCrudTextCustomerReviews.Text(ctx))),
-		appUI.List("reviews").Columns("author_name", "rating", "title").PageSize(20).NoCreate().Heading(reviewsCrudTextLatestReviews.Text(ctx), 2).Empty(reviewsCrudTextNoReviewsYet.Text(ctx)).RenderCtx(ctx),
+		appUI.List("reviews").Columns("author_name", "rating", "title").PageSize(20).NoCreate().NoLinks().Heading(reviewsCrudTextLatestReviews.Text(ctx), 2).Empty(reviewsCrudTextNoReviewsYet.Text(ctx)).RenderCtx(ctx),
 	)
 }
 

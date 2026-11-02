@@ -407,7 +407,7 @@ runtime handles this natively: it derives the swap boundary from the fetched
 document's own layout chain (the deepest layer the live DOM shares with it),
 swaps only that layer's content cell, and applies every outlet and route
 area outside it as a fill — the same treatment a served envelope partial
-gets. Layout state (a kept list pane and its typed filter) survives
+gets. Layout state (a kept list pane and its scroll) survives
 navigation and Back exactly as on a live server.
 
 ## Error pages: 404.html and non-OK navigation

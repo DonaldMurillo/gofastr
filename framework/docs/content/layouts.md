@@ -103,7 +103,7 @@ survive navigation takes a fifth tool. Pick by who chooses the content:
 | A region each route may fill differently | an outlet: `l.Place(o)`, filled by `Screen.Fill`, `ScreenGroup.Fill`, or the outlet's `Default` | the screen, else its groups, else the outlet | every navigation | toolbar, activity aside |
 | A region derived from the URL, the same code for every route | `l.RouteArea(name, fn)` | the layout, from the match | every navigation | breadcrumbs |
 | Chrome that stays put | plain components in the build | the layout | never, while the layer is kept | top bar, sidebar |
-| A pane that keeps its DOM and scroll across sibling routes | a group layer: `ScreenGroup` with its own layout | the group's layout | when the group's resolved prefix changes | the project's issue list |
+| A pane that keeps its DOM and scroll across sibling routes | a group layer: `ScreenGroup` with its own layout | the group's layout | when the group's resolved prefix changes | the project's issue pane |
 
 The tracker's toolbar row shows the outlet and the route area side by
 side. The crumbs are the same function on every page, so they are a
@@ -113,6 +113,14 @@ with `InboxToolbar`, every project page gets `ProjectToolbar` from
 function could compute the buttons from the URL alone, a route area
 would do. Because each route picks its own component, the toolbar is an
 outlet.
+
+A kept group layer follows the same rule. The tracker's project layer
+keeps its issue pane (and the pane's scroll) across one project's
+issues, but the list inside it reads `?filter=`, so the list is the
+layer's `issues` route area: drawn by the layer itself, it kept the old
+filter when Reset or the sidebar moved the URL to the bare project. The
+`layoutfunc` lint sees a `MatchFromContext` read, not a resolver that
+reads the query, so this one is on the author.
 
 ## Outlets and fills
 

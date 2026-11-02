@@ -4222,6 +4222,15 @@ func entityListOn(blocks []AppSpecBlock, entity string) (found, create bool) {
 	return found, create
 }
 
+// AppSpecHasRecordScreen reports whether some screen shows a record of
+// entity (an entity_detail block). validateDetailRoutes holds that screen
+// to <list route>/{id} under one of the entity's lists, the home list's
+// row links point there, and without one every row link is a 404.
+func AppSpecHasRecordScreen(bp AppSpec, entity string) bool {
+	_, ok := appSpecDetailBase(bp, entity)
+	return ok
+}
+
 // appSpecDetailBase returns the route the entity's first detail screen
 // sits under: its route minus the trailing /{id}.
 func appSpecDetailBase(bp AppSpec, entity string) (string, bool) {

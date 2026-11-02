@@ -182,6 +182,9 @@
       try { vt = sVT.call(document, { update: run, types: t }); }
       catch (_) { run(); return; }
       _activeVT = vt;
+      // A skip before the animation is ready (the next commit, or a
+      // click during it) rejects ready: the skip is ours, not an error.
+      vt.ready.catch(() => {});
       vt.finished.catch(() => {}).finally(() => { if (_activeVT === vt) _activeVT = null; });
     },
   };
