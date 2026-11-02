@@ -526,6 +526,17 @@ var reCreateTable = regexp.MustCompile(`(?is)\bCREATE\s+(?:VIRTUAL\s+)?TABLE\s+(
 // argument), a plain literal, or a concatenation whose non-literal
 // operand is the table name.
 func (pk *ecPkg) collectDDL(rel string, d ast.Decl, fn *ast.FuncDecl) {
+	ecEachSQLString(d, func(root ast.Expr, text string, holes, args []ast.Expr) {
+		pk.parseDDL(rel, root, text, holes, args, fn)
+	})
+}
+
+// ecEachSQLString visits every string expression of a declaration once:
+// the format of a fmt.Sprintf (args are its operands), a plain literal,
+// or a concatenation with a literal operand (holes are its non-literal
+// operands). GOFASTR1416 and GOFASTR1417 read their statements the same
+// way, so a table spelled through a verb or an operand resolves alike.
+func ecEachSQLString(d ast.Decl, visit func(root ast.Expr, text string, holes, args []ast.Expr)) {
 	consumed := map[ast.Node]bool{}
 	ast.Inspect(d, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -541,7 +552,7 @@ func (pk *ecPkg) collectDDL(rel string, d ast.Decl, fn *ast.FuncDecl) {
 			return true
 		}
 		consumed[call.Args[0]] = true
-		pk.parseDDL(rel, call.Args[0], text, holes, call.Args[1:], fn)
+		visit(call.Args[0], text, holes, call.Args[1:])
 		return true
 	})
 	ast.Inspect(d, func(n ast.Node) bool {
@@ -552,14 +563,14 @@ func (pk *ecPkg) collectDDL(rel string, d ast.Decl, fn *ast.FuncDecl) {
 		case *ast.BasicLit:
 			if v.Kind == token.STRING {
 				text, holes, _ := ecHolesText(v)
-				pk.parseDDL(rel, v, text, holes, nil, fn)
+				visit(v, text, holes, nil)
 			}
 		case *ast.BinaryExpr:
 			text, holes, hasLit := ecHolesText(v)
 			if !hasLit {
 				return true
 			}
-			pk.parseDDL(rel, v, text, holes, nil, fn)
+			visit(v, text, holes, nil)
 			return false
 		}
 		return true
