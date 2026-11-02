@@ -755,3 +755,7 @@ notes:
     breaking: false
     guidance: "A dotfile value that references a variable the file does not define now gets the environment's value instead of an empty string, and one built from a key a higher-precedence file overrides now uses the override. Check any value that relied on the empty result."
     nodetect: "the change is in how .env files are read at boot; nothing in an app's Go source spells it"
+  - change: "textsafe.IsUnsafe (and so StripUnsafe, ContainsUnsafe and ScrubControlBytes) treats U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR as unsafe, like NEL"
+    breaking: false
+    guidance: "Text log lines percent-encode the two separators, and sinks that refuse unsafe text, such as auth.CleanName, refuse a value carrying one. A display name or title that held one loses it or is refused; nothing else changes."
+    nodetect: "the change is inside core/textsafe's predicate; callers spell nothing new"

@@ -45,12 +45,20 @@ func IsInvisible(r rune) bool {
 // OSC (U+009D) forms drive terminal escapes exactly as ESC-[ does.
 func IsC1(r rune) bool { return r >= 0x80 && r <= 0x9F }
 
+// IsLineSeparator reports whether r is U+2028 LINE SEPARATOR or U+2029
+// PARAGRAPH SEPARATOR. With LF, CR, VT, FF and NEL (U+0085) they are
+// the Unicode mandatory line breaks (UAX #14 class BK): Python's
+// str.splitlines and JavaScript's line terminators split on them, so a
+// log reader built on either reads one value as two lines. The C0 and
+// C1 checks already cover the others; these two are neither.
+func IsLineSeparator(r rune) bool { return r == 0x2028 || r == 0x2029 }
+
 // IsUnsafe reports whether r is a C0 control (U+0000–U+001F), DEL
-// (U+007F), a C1 control, or an invisible/bidi codepoint: the full set
-// no header, key, identity, log line, title, or terminal transcript
-// built from data should carry.
+// (U+007F), a C1 control, a Unicode line or paragraph separator, or an
+// invisible/bidi codepoint: the full set no header, key, identity, log
+// line, title, or terminal transcript built from data should carry.
 func IsUnsafe(r rune) bool {
-	return r < 0x20 || r == 0x7F || IsC1(r) || IsInvisible(r)
+	return r < 0x20 || r == 0x7F || IsC1(r) || IsLineSeparator(r) || IsInvisible(r)
 }
 
 // StripInvisible removes every invisible/bidi codepoint from s. It

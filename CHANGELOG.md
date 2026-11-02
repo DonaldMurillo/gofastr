@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`textsafe.IsUnsafe` covers U+2028 and U+2029.** The set had NEL
+  (U+0085) because it breaks a line, and not the Unicode line and
+  paragraph separators, which Python's `splitlines` and JavaScript's line
+  terminators split on the same way. `ScrubControlBytes` now
+  percent-encodes them in text log lines, and every `StripUnsafe` /
+  `ContainsUnsafe` sink (display names, notification and email text,
+  page titles) strips or refuses them. New `textsafe.IsLineSeparator`.
 - **`.env` `${NAME}` expansion follows its documented lookup order.**
   `dotenv.Load` (and `NewApp`'s auto-load) expanded each file against
   its own keys only, so the docs' own `PATH_TPL="${HOME}/bin"` loaded
