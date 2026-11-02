@@ -4628,6 +4628,18 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The harness session log redacts the credstore's key material and
+  secrets passed in a Bash call's `env`.** The `NAME=value` pattern
+  knew `_API_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` and `_ACCESS_KEY`,
+  so `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY`
+  (which every Bash child inherits, and a quiet-mode
+  `cat /proc/self/environ` prints with no prompt) were stored, and
+  exported, verbatim. And the patterns ran on each JSON string apart, so
+  `"env": {"ZAI_API_KEY": "<v>"}` in a `ToolCallStarted` never matched.
+  Both names now count, and a JSON member whose name is a secret name
+  loses its value (`sqlite.MemberRedactor`, which `DefaultRedactor`
+  implements). Events already stored keep what they had. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 - **`apiversions.ApplyToEntityConfig` panics on a projection naming an
   undeclared field.** An `Exclude` entry that matched no field (a typo,
   or the column's camelCase wire key instead of its field name) was

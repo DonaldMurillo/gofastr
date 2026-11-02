@@ -1901,7 +1901,14 @@ event-write path matches secret regexes against `ToolResult.Content`,
 tokens), and `TextDelta` (pasted secrets). Patterns: AWS access
 keys (`AKIA…`), GitHub PATs (`ghp_…`, `github_pat_…`),
 `-----BEGIN .* KEY-----`, `Bearer [A-Za-z0-9-_\.]+`, JWT-shaped
-tokens, common cloud-provider key prefixes. Matched substrings are
+tokens, common cloud-provider key prefixes, and `NAME=value`
+assignments whose name ends in `_API_KEY`, `_TOKEN`, `_SECRET`,
+`_PASSWORD`, `_PASSPHRASE`, `_ACCESS_KEY` or `_MACHINE_KEY` (the
+last two cover the credstore's own `GOFASTR_HARNESS_PASSPHRASE` and
+`GOFASTR_HARNESS_MACHINE_KEY`, which every Bash child inherits). The
+same names redact a JSON member's value, so a Bash call's
+`"env": {"ZAI_API_KEY": "…"}` is caught although the name and the
+value are two strings. Matched substrings are
 replaced with `«redacted:KIND»` markers and the original is
 discarded, not stored anywhere. The patterns run on each decoded
 string of the event payload, never on the serialized JSON, so a
