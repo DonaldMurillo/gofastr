@@ -66,7 +66,8 @@ scrubbed the same way.
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes, and nothing outside the project:
   a symlinked `AGENTS.md`, `CLAUDE.md` or `DESIGN.md` that leads out of it
-  is refused. `gofastr agents init|sync|skill`, `theme init`, `theme edit`
+  is refused. A `--reinit` name that is not an existing directory is
+  refused, so a typo creates nothing. `gofastr agents init|sync|skill`, `theme init`, `theme edit`
   (at startup and on every Write) and `new handler` hold the same rule: a
   link that leaves the project, dangling or not (a cloned repo's
   `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, a linked

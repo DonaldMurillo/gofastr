@@ -79,6 +79,25 @@ func TestInitRefusesMalformedModuleBeforeWriting(t *testing.T) {
 	}
 }
 
+// --reinit refreshes an existing project. Given a name with no directory
+// (a typo of the project's name), it created that directory, filled it
+// with onboarding files, and reported "Reinit complete".
+func TestInitReinitRefusesMissingProject(t *testing.T) {
+	inPlaceDir(t, "work")
+	if code := runInitCode(t, "my-ap", "--reinit"); code != 1 {
+		t.Fatalf("init my-ap --reinit exited %d, want 1", code)
+	}
+	if _, err := os.Stat("my-ap"); err == nil {
+		t.Fatal("init --reinit created the directory it was asked to refresh")
+	}
+	if err := os.WriteFile("file", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := runInitCode(t, "file", "--reinit"); code != 1 {
+		t.Fatalf("init file --reinit exited %d, want 1", code)
+	}
+}
+
 // A missing value is a usage error, exit 2, and writes nothing.
 func TestInitModuleFlagMissingValue(t *testing.T) {
 	inPlaceDir(t, "work")

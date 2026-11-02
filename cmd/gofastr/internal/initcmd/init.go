@@ -107,6 +107,15 @@ func RunInit(args []string) {
 	// refreshes a project that exists, so it runs before the guard that
 	// refuses one.
 	if reinit {
+		// A name with no directory behind it is a typo, not a project:
+		// refreshing it used to create the directory and fill it with
+		// onboarding files.
+		if info, err := os.Stat(name); err != nil || !info.IsDir() {
+			cli.Fail("--reinit refreshes an existing project, and %q is not a directory.", name)
+			cli.Info("This invocation has not written any files. Check the name, or run `gofastr init %s` to create the project.", name)
+			cli.OsExit(1)
+			return
+		}
 		runReinit(name, force)
 		return
 	}
