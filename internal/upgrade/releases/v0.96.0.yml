@@ -1080,3 +1080,11 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "BREAKING - BeforeUpdate and BeforeDelete hooks run after the scope check: update, delete and batch items answer 404 for another owner's or tenant's row, a trashed row or a missing id before the hook is called"
+    breaking: true
+    hits: review
+    guidance: "A hook's database work rolled back with the 404, but an email it sent or a file it deleted did not, for an id the caller could not touch. A hook that created the row it was then asked to update or delete must create it before the call. A sqlmock test that registers such a hook expects one keyed SELECT on the table after BEGIN."
+    find:
+      uses:
+        - gofastr/framework/hook.BeforeUpdate
+        - gofastr/framework/hook.BeforeDelete

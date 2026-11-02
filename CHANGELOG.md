@@ -179,6 +179,15 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: `BeforeUpdate` and `BeforeDelete` hooks no longer run for
+  an id the caller cannot write.** Update, delete and their batch items
+  check the target under the write's tenant, owner and soft-delete scope
+  (and any `BeforeGet` clause) first; another owner's row, another
+  tenant's, a trashed row or a missing id answers 404 before the hook,
+  so a hook's email or file delete never fires for it. A hook that
+  created the row it was asked to update must do that before the call.
+  One keyed `SELECT` per write, only when such a hook is registered.
+  See `hooks-and-transactions.md`.
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep

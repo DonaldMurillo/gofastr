@@ -215,8 +215,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		}
 	}
 	// A row the caller's BeforeGet hooks hide answers GET's 404, before
-	// anything else reads or writes it (hook_scope.go).
-	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+	// anything else reads or writes it, and so does one outside the
+	// write's scope before a BeforeUpdate hook sees it (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive, hook.BeforeUpdate); err != nil {
 		return nil, err
 	}
 	// A storage key in a file field must be one this request uploaded or
@@ -908,9 +909,10 @@ func autoUpdatedAtColumn(ent *entity.Entity) string {
 // doDelete runs the BeforeDelete → DELETE/UPDATE → AfterDelete chain for a
 // single record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string) error {
-	// A row the caller's BeforeGet hooks hide answers GET's 404
-	// (hook_scope.go).
-	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
+	// A row the caller's BeforeGet hooks hide answers GET's 404, and so
+	// does one outside the write's scope before a BeforeDelete hook sees
+	// it (hook_scope.go).
+	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive, hook.BeforeDelete); err != nil {
 		return err
 	}
 	// Snapshot the row before deletion so the audit hook can record what
