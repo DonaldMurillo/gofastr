@@ -77,8 +77,8 @@ type Flag struct {
     Key     string
     Enabled bool      // global kill switch
     Rollout int       // 0..100; stable hash of (key, subject)
-    Users   []string  // explicit allow list
-    Tenants []string  // explicit allow list
+    Users   []string  // allow list: "tenant:user", or a bare id with no tenant
+    Tenants []string  // allow list of tenant ids
     Envs    []string  // restrict to deployment environments (empty = any)
 }
 ```
@@ -87,12 +87,51 @@ Evaluation order:
 
 1. `Enabled` false → always off.
 2. `Envs` non-empty AND `EvalContext.Env` not in the list → off.
-3. `EvalContext.UserID` matches `Users` (non-empty) → on.
-4. `EvalContext.TenantID` matches `Tenants` (non-empty) → on.
+3. A `Users` entry names this tenant's user (below) → on.
+4. The tenant matches `Tenants` (non-empty) → on.
 5. `Rollout` percentage of the stable hash → on or off.
 
-The hash is FNV-1a over `key + 0x00 + subjectID`. Subject id is the
-user id when present, otherwise the tenant id, otherwise empty. An
+### The tenant
+
+The tenant a flag is evaluated for is `EvalContext.TenantID`. When that
+is empty, it is the tenant the framework resolved for the request: the
+`core/handler` tenant slot that `tenant.ResolveMiddleware` and
+`tenant.TenantMiddleware` fill (`handler.GetTenantID`). An explicit
+`TenantID` wins. A context with neither has no tenant: a single-tenant
+app.
+
+### User entries
+
+User ids are per tenant in a multi-tenant app, so a `Users` entry names
+one tenant's user:
+
+| Entry | Matches |
+|---|---|
+| `acme:42` | user `42` of tenant `acme` only |
+| `42` | user `42` when the context has **no** tenant |
+| `:google:42` | user `google:42` when the context has no tenant |
+
+The entry splits at its **first** `:`. The part before it is the tenant
+id with `%` and `:` percent-escaped (tenant `a:b` is written `a%3Ab`);
+the part after it is the user id as is, `:` included. A bare `42` never
+matches inside a tenant, and a bare id that holds a `:` must be written
+with an empty tenant part, or it names a tenant. Build entries with
+`flag.UserEntry(tenantID, userID)` and read them with
+`flag.ParseUserEntry(entry)`; both stores refuse a flag whose entry is
+empty, has no user id after the `:` (`acme:`), or has a malformed
+escape (`%zz:42`), and an entry a custom store hands over malformed
+never matches.
+
+The `Tenants` list names tenants and is unchanged.
+
+### Rollout
+
+The hash is FNV-1a over `key + 0x00 + subject`. The subject is the user
+as a `Users` entry spells it (`flag.UserEntry(tenant, user)`, so
+`acme:42` inside a tenant and the bare `42` without one), otherwise the
+tenant id, otherwise empty. Keying on the pair puts user `42` of two
+tenants in independent buckets; a single-tenant app's subject is the
+bare user id, as before. An
 empty subject is forced off at any partial rollout (1–99): anonymous
 traffic hashes to a single constant bucket per flag key, so a "50%
 rollout" would be 100% or 0% of anonymous traffic depending on the
@@ -124,8 +163,9 @@ Two stores are bundled:
 
 The SQL store registers its table with `App.ExportData` and
 `App.EraseUserData`. Erasing a user removes their id from every flag's
-`users` list and keeps the flag; the `tenants` list names tenants, not
-users, and is left alone. See [data export](data-export.md).
+`users` list and keeps the flag: the bare entry and every tenant's
+`<tenant>:<id>` entry, since `EraseUserData` names a user, not a tenant.
+The `tenants` list names tenants, not users, and is left alone. See [data export](data-export.md).
 
 For Redis or other backends, wrap `featureflag.Store`. Only `Get` is
 required; add `MutableStore` for admin-edit support.

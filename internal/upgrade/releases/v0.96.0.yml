@@ -1138,3 +1138,20 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "BREAKING - core/config.Load promotes the fields of an embedded struct the way encoding/json does: in type Cfg struct{ Base }, Base's config:\"PORT\" field reads PORT, no longer BASE_PORT, and the prefixed key is not read at all"
+    breaking: true
+    hits: review
+    guidance: "For each struct you pass to config.Load, LoadWith or MustLoad, look for an embedded struct (a field with a type and no name, value or pointer). Rename its <TYPE>_<KEY> environment and file keys to <KEY> (BASE_PORT becomes PORT), or name the field (Base Base) to keep reading BASE_PORT. Pointer embeds and unexported embedded types are promoted too; an unexported one used to be skipped. Load now fails when two embedded structs promote one key at the same depth (declare the field on the outer struct, which wins, or give one a different config tag) and when an embedded struct carries a config tag. Named struct fields (DB DBConfig reads DB_HOST) are unchanged."
+    find:
+      uses:
+        - gofastr/core/config.Load
+        - gofastr/core/config.LoadWith
+        - gofastr/core/config.MustLoad
+  - change: "BREAKING for multi-tenant apps - a feature flag's Users entry names one tenant's user: \"acme:42\" matches user 42 of tenant acme only, and a bare \"42\" matches only when the evaluation has no tenant; the tenant is EvalContext.TenantID, or the request's resolved tenant (handler.GetTenantID) when that is empty; a tenant's user is bucketed for Rollout on \"tenant:user\""
+    breaking: true
+    hits: review
+    guidance: "A bare id used to enable the flag for that user id in every tenant. In a multi-tenant app, rewrite each Users entry as tenant:user, built with featureflag.UserEntry(tenantID, userID), which percent-escapes ':' and '%' in the tenant id; rewrite the entries stored in the SQL store's users column too. A single-tenant app (no TenantID, no resolved tenant) changes nothing, except that a bare id holding ':' must be written :id (UserEntry(\"\", id)). Both stores' Set now refuse an empty entry, one with no user id after the ':' and a malformed escape. Partial rollouts in a multi-tenant app reshuffle once, since a tenant's user is now bucketed on the pair; an app that set only UserID now also gets the Tenants list and rollout of the request's resolved tenant. EraseUserData removes the user's entries in every tenant's spelling."
+    find:
+      fields:
+        - field: gofastr/core/featureflag.Flag.Users
+        - field: gofastr/core/featureflag.EvalContext.TenantID

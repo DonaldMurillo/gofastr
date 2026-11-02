@@ -732,7 +732,12 @@ datexport.RegisterEraser(datexport.DataEraser{
 
 `EraseRemoveMember` reads `Column` as a TEXT column holding a JSON array of
 strings and rewrites only the rows that list the user, without the user;
-the row stays. `Where` narrows any mode: each column is `SafeIdent`-checked
+the row stays. Set `MemberSeparator` when a member carries a qualifier
+ahead of the id: a member is then compared by the part after its first
+separator (the whole member when it has none). The feature-flag store
+sets `":"`, so erasing user `42` removes `42`, `:42` and every tenant's
+`acme:42`, and keeps `42:x` (tenant `42`'s user `x`). The qualifier must
+never contain the separator. `Where` narrows any mode: each column is `SafeIdent`-checked
 and must exist on the table, and each value is bound, so a service account
 that shares a user's id survives that user's erasure.
 

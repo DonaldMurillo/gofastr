@@ -259,6 +259,31 @@ few lines, and link the PR or the docs page for the rest.
   inline CSS, and answers 404 under its mount except at the page and
   spec paths. The webhook SQL tables gain `auth`, `response_status`
   and `response_body`, added when the store opens.
+- **BREAKING: `config.Load` promotes embedded struct fields.** In
+  `type Cfg struct{ Base }`, Base's `config:"PORT"` field now reads
+  `PORT`, the way `encoding/json` promotes it; it read `BASE_PORT`
+  before, and that key is no longer read. Pointer embeds and unexported
+  embedded types promote too (an unexported one was skipped). A field on
+  the outer struct wins over a promoted one with the same key; two
+  embedded structs promoting one key at the same depth, or a `config:`
+  tag on an embedded struct, now fail `Load`. Rename `<TYPE>_<KEY>`
+  env and file keys to `<KEY>`, or name the field (`Base Base`) to keep
+  the prefix. Named struct fields (`DB DBConfig` reads `DB_HOST`) are
+  unchanged. See [core-packages.md](framework/docs/content/core-packages.md#config).
+- **BREAKING for multi-tenant apps: feature-flag user allow lists name
+  a tenant's user.** A `Flag.Users` entry `acme:42` matches user `42` of
+  tenant `acme` only; a bare `42` matches only when the evaluation has
+  no tenant. It used to turn the flag on for user `42` of every tenant.
+  The tenant is `EvalContext.TenantID`, or the request's resolved tenant
+  (`handler.GetTenantID`) when that is empty. Ids may hold `:`: the
+  entry splits at its first `:` and the tenant part percent-escapes `:`
+  and `%`; build entries with `featureflag.UserEntry`, read them with
+  `featureflag.ParseUserEntry`, and both stores refuse malformed ones.
+  A tenant's user is bucketed for `Rollout` on the pair, so partial
+  rollouts in a multi-tenant app reshuffle once. `EraseUserData` removes
+  the user's entries in every tenant's spelling, through the new
+  `datexport.DataEraser.MemberSeparator`. Rewrite bare entries as
+  `tenant:user`. See [feature-flags.md](framework/docs/content/feature-flags.md#user-entries).
 
 
 ### Fixed

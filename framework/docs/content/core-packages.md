@@ -486,6 +486,17 @@ choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
 fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
 the `default:` tag, and the rules still check it. Recursive configuration
 struct shapes are rejected.
+
+A named struct field (`DB DBConfig`) reads its keys under `DB_`. An
+embedded struct does not: its fields are promoted the way
+`encoding/json` promotes them, so in `type Cfg struct{ Base }` Base's
+`config:"PORT"` reads `PORT`, never `BASE_PORT`. A pointer embed is
+allocated when one of its keys is present, and an unexported embedded
+type promotes its exported fields. A field declared on the outer struct
+wins over a promoted one with the same key; two embedded structs
+promoting one key at the same depth make `Load` fail with an error
+naming both, as does a `config:` tag on an embedded struct. To keep a
+prefix, name the field (`Base Base` reads `BASE_PORT`).
 Direct: call `config.Load(&cfg)` at startup. Start at
 `core/config/config.go`: `Load`.
 
