@@ -274,3 +274,67 @@ func TestActivityHidesHookMaskedField(t *testing.T) {
 		}
 	}
 }
+
+// A hook that masks only a non-empty value leaves the record's empty
+// memo as stored, so comparing the record's two reads finds no mask. The
+// tab still keeps memo's history out: the hook is asked about a
+// non-empty probe value too.
+func TestActivityHidesMaskOfNonEmptyOnly(t *testing.T) {
+	x := newInvoiceUI(t, withAudit(fakeAudit{entries: []AuditEntry{{
+		At: time.Now(), Actor: "u1", Operation: "update",
+		Before: map[string]any{"memo": "old-secret-memo", "issuedOn": "2026-01-05"},
+		After:  map[string]any{"memo": "", "issuedOn": "2026-02-09"},
+	}}}))
+	if _, err := x.db.Exec(`UPDATE invoices SET memo = '' WHERE id = 'inv-1'`); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := x.host.Crud(mustEntity(t, x, "invoices"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
+		if p, ok := data.(*hook.GetPayload); ok && p.Result != nil {
+			if s, _ := p.Result["memo"].(string); s != "" {
+				p.Result["memo"] = "****"
+			}
+		}
+		return nil
+	})
+	body := activityBody(t, x)
+	if strings.Contains(body, "secret-memo") {
+		t.Fatalf("SECURITY: the Activity tab drew a value the hook masks when non-empty:\n%s", body)
+	}
+	if !strings.Contains(body, `data-cui-internal="">Issued On</span>`) {
+		t.Fatalf("an unmasked change is missing:\n%s", body)
+	}
+}
+
+// A hook that fails on the probe hides every field it was asked about:
+// the tab cannot tell what it would mask.
+func TestActivityProbeFailureHidesProbed(t *testing.T) {
+	x := newInvoiceUI(t, withAudit(fakeAudit{entries: []AuditEntry{{
+		At: time.Now(), Actor: "u1", Operation: "update",
+		Before: map[string]any{"memo": "old-secret-memo"},
+		After:  map[string]any{"memo": ""},
+	}}}))
+	if _, err := x.db.Exec(`UPDATE invoices SET memo = '' WHERE id = 'inv-1'`); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := x.host.Crud(mustEntity(t, x, "invoices"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
+		if p, ok := data.(*hook.GetPayload); ok && p.Result != nil {
+			if s, _ := p.Result["memo"].(string); strings.HasPrefix(s, "entityui-probe") {
+				panic("unexpected value")
+			}
+		}
+		return nil
+	})
+	if body := activityBody(t, x); strings.Contains(body, "secret-memo") {
+		t.Fatalf("SECURITY: a failed probe left the field drawn:\n%s", body)
+	}
+}

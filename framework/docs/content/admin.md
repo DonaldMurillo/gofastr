@@ -388,7 +388,11 @@ INV-1010" for an exposed entity: a live record by the title its screen
 shows, linked there, and a deleted or purged one by the title in the
 row's stored copy, unlinked. An entity the admin does not expose shows
 its table name and the id. Changes lists the fields an update changed,
-through `entityui.UI.Changes`, so masked and hidden fields never show.
+through `entityui.UI.Changes`, so masked and hidden fields never show,
+and neither does a field the entity's `AfterGet` hooks mask: the admin's
+own reads of the record show the mask, so the audit page and the
+dashboard's recent activity do not print the stored values. The raw
+diff stays in the audit table for an operator who reads it there.
 A Roles change reads "Role · billing" and "Granted `plans:write`" (or
 Revoked, or Refused to grant or revoke); a User roles change names the
 account by its email and lists the roles it was given, or the one

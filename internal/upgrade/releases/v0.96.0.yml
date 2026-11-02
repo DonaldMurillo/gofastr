@@ -654,9 +654,9 @@ notes:
     breaking: false
     guidance: "Clients that subscribe and unsubscribe under one identity see no change. A client that unsubscribed on another identity's behalf must send the unsubscribe as that identity."
     nodetect: "the change is in the server's handling of a wire method; nothing in an app's source spells it"
-  - change: "A record's Activity tab leaves out every field an AfterGet hook rewrites on that record; its change list used to draw the audit row's stored values for them"
+  - change: "A record's Activity tab, the admin's Audit log page and the dashboard's recent activity leave out every field an AfterGet hook rewrites, on the record or on a probe copy whose empty fields hold a value; their change lists used to draw the audit row's stored values for them"
     breaking: false
-    guidance: "Nothing to change. An entry that changed only such a field now reads as a save. To show a masked field's history to some callers, give them a read the hook does not mask."
+    guidance: "Nothing to change. An entry that changed only such a field now reads as a save. To show a masked field's history to some callers, give them a read the hook does not mask; the raw diff stays in the audit table. The probe runs the entity's AfterGet hooks once per drawn change list with placeholder values, so a hook should mask without side effects."
     nodetect: "the change is in the Activity tab's rendering; nothing in an app's source spells it"
   - change: "entityui's RestoreHandler and PurgeHandler (the admin's trash Restore and Delete permanently) read the row through the caller's read hooks first and answer 404 for a row a BeforeList hook hides"
     breaking: false

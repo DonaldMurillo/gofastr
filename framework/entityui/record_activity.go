@@ -4,16 +4,93 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"net/http"
 	"strings"
 	"time"
 
+	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+// probeText is the value a hook probe puts in an empty text field.
+const probeText = "entityui-probe"
+
+// probeValue is a non-empty value of f's type, in the Go type the CRUD
+// handler's reads return for it.
+func probeValue(f schema.Field) any {
+	switch f.Type {
+	case schema.Int:
+		return int64(1)
+	case schema.Float:
+		return float64(1)
+	case schema.Bool:
+		return true
+	default:
+		return probeText
+	}
+}
+
+// hookMaskedFields asks the entity's AfterGet chain, the one a hooked
+// read runs, which visible fields it rewrites when they hold a value.
+// It runs the chain once over a copy of base (the record's stored row,
+// or nil for no record) whose empty fields hold a probe value, as the
+// caller (elevation removed, as crud runs its hooks), and reports every
+// field whose value the chain changed. Comparing the record's raw and
+// hooked reads alone misses a hook that masks only a non-empty value
+// while the record's own value is empty. A chain that fails or panics on
+// the probe reports every field it was probed on; an entity with no
+// AfterGet hook reports none. The probe never reads or writes a row.
+func hookMaskedFields(ctx context.Context, m *meta, id string, base map[string]any) map[string]bool {
+	if m.ch == nil || m.ch.Hooks == nil || len(m.ch.Hooks.HooksFor(hook.AfterGet)) == 0 {
+		return nil
+	}
+	probe := maps.Clone(base)
+	if probe == nil {
+		probe = map[string]any{}
+	}
+	before := make(map[string]string, len(m.fields))
+	var probed []string
+	for _, f := range m.fields {
+		if m.isKey(f.Name) {
+			continue
+		}
+		if cell(m.rowValue(probe, f.Name)) == "" {
+			probe[m.ch.WireKey(f.Name)] = probeValue(f)
+			probed = append(probed, f.Name)
+		}
+		before[f.Name] = cell(m.rowValue(probe, f.Name))
+	}
+	hctx := crud.WithoutElevation(ctx)
+	r := appui.RequestFromContext(ctx)
+	if r != nil {
+		r = r.WithContext(hctx)
+	} else {
+		r, _ = http.NewRequestWithContext(hctx, http.MethodGet, "/", nil)
+	}
+	payload := &hook.GetPayload{Request: r, ID: id, Result: probe}
+	masked := map[string]bool{}
+	if err := m.ch.Hooks.ExecuteHooks(hctx, hook.AfterGet, payload); err != nil {
+		slog.WarnContext(ctx, "entityui: read hook probe failed; its fields stay out of the change list", "entity", m.name, "error", err)
+		for _, name := range probed {
+			masked[name] = true
+		}
+		return masked
+	}
+	for _, f := range m.fields {
+		if was, ok := before[f.Name]; ok && cell(m.rowValue(payload.Result, f.Name)) != was {
+			masked[f.Name] = true
+		}
+	}
+	return masked
+}
 
 // The Activity tab: this record's audit rows, newest first, on a
 // timeline. Each entry says who did what and how long ago, and an edit
@@ -199,16 +276,20 @@ func activityVariant(op string) ui.TimelineEventVariant {
 // entity's field order, labelled and drawn the way the list draws them,
 // related records by title. It is "" for an entity this UI does not
 // draw, an entry missing either side (a create or a delete), and an edit
-// that changed nothing the caller may see. Relation titles are read
-// through the related entity's own gate as the caller.
+// that changed nothing the caller may see. A field the entity's AfterGet
+// hooks rewrite when it holds a value is left out (hookMaskedFields with
+// no record: the stored diff would print what every read masks).
+// Relation titles are read through the related entity's own gate as the
+// caller.
 func (u *UI) Changes(ctx context.Context, entityName string, before, after map[string]any) render.HTML {
 	m, err := u.meta(entityName)
 	if err != nil {
 		return ""
 	}
 	e := AuditEntry{Before: before, After: after}
-	s := &listState{m: m}
-	labels := u.resolveRowLabels(ctx, s, []map[string]any{before, after}, m.changeColumns([]AuditEntry{e}, nil))
+	masked := hookMaskedFields(ctx, m, "", nil)
+	s := &listState{m: m, masked: masked}
+	labels := u.resolveRowLabels(ctx, s, []map[string]any{before, after}, m.changeColumns([]AuditEntry{e}, masked))
 	changes := u.changes(ctx, s, labels, before, after)
 	if len(changes) == 0 {
 		return ""
