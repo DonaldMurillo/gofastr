@@ -272,7 +272,11 @@ of objects shallow-merges, and an `allOf` whose members name one scalar
 type reads as that scalar, the way FastAPI wraps an enum parameter that
 has a default; `oneOf`/`anyOf` bodies fall back to
 `--json`), JSON or YAML documents of OpenAPI 3.x (a Swagger 2.0 document fails:
-convert it first). Cookie parameters, parameters whose `in` is none of
+convert it first). YAML reads through `core/yaml`, the app spec's
+subset (see [app-spec](app-spec.md), "YAML subset"): block scalars
+(`description: |`), flow mappings (`schema: {}`) and anchors fail with a
+line and column, so feed such a document as JSON, which a GoFastr app
+serves at `/openapi.json`. Cookie parameters, parameters whose `in` is none of
 path, query, header or cookie, external refs,
 `$ref` cycles, path/template mismatches, and multipart or form-urlencoded bodies
 (even under a `format: binary` schema, which would send a file with no
