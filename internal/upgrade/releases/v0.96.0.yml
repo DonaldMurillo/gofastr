@@ -654,3 +654,7 @@ notes:
     breaking: false
     guidance: "A file the export now skips was never served by the running app. Copy the file into the static dir, or point the link at a file inside it, if it is meant to be public."
     nodetect: "symlinks live in the static directory on disk, not in the app source"
+  - change: "gofastr build's check-embed gate reads a template literal's ${...} in ClientJS as code, so a G.serverAction call inside one on an embeddable surface fails the build"
+    breaking: false
+    guidance: "The same tree already failed at boot (the Mount-time walk refuses it), so nothing that ran before stops running. Move the action to an island RPC, a form POST, or polling, the three shapes that work in a frame."
+    nodetect: "the call sits inside JavaScript text the gate itself now reads; the build reports it"

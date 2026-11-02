@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`check-embed` reads a template literal's `${…}` as code.** It skipped
+  the whole template as a string, so a ClientJS like
+  ``G.toast(`saved ${G.serverAction("save")}`)``, which the action
+  compiler rewrites into a live server action, passed `gofastr build`'s
+  gate and was refused only at boot.
 - **`static.Mount` works under a prefix.** It registered both
   `/static/` and `/static/{path...}`, which the router reads as one
   pattern, so `Mount` with any `Prefix` but the root panicked at boot
