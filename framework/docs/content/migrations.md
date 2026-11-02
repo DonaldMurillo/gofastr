@@ -102,7 +102,13 @@ other `-- +migrate` line that is not one of `Version`, `Name`, `Group`,
 with its spacing or case off (`--+migrate Down`, `-- +Migrate Down`),
 is refused too: the parser used to pass over it with the section above
 still open, so a misspelled `Down` put the Down statements into `Up` and
-the rollback ran as part of the apply.
+the rollback ran as part of the apply. A prose comment that starts the
+same way, such as `-- +migrated from v1`, is refused as an unknown
+directive, so write it without the `+` (`-- migrated from v1`).
+`migrate generate` refuses a SQL body (a multi-line `DEFAULT`, a view or
+a routine) holding any line the parser would read either way, using the
+parser's own test, `migrate.IsDirectiveLine` in `core/migrate`, so it
+never writes a file the runner then refuses to load.
 
 ### Non-transactional migrations
 
@@ -366,7 +372,11 @@ hand-tighten. A `String` whose `Max` changed is a type change on
 Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
 VARCHAR(200)` widens it, and a narrower width fails on a row that no
 longer fits rather than cutting it. SQLite ignores the width, so the
-same change there rebuilds nothing. On SQLite,
+same change there rebuilds nothing. To see the width, the live column read
+behind this, `migrate.ReadLiveColumns` (and `ReadLiveColumnsPostgres`,
+`ReadLiveColumnsBulk`), reports a Postgres character column as
+`character varying(255)`, information_schema's `data_type` plus the
+width; other types are the bare `data_type`. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
@@ -480,7 +490,10 @@ A table or column named past 63 bytes works on Postgres, which cuts it
 to its first 63 bytes in DDL and in queries alike, so the catalog holds
 the cut name. The migrator reads the catalog by the cut name too, so
 such a table gains its new columns at boot and such a column is not
-added a second time, proposed for a drop, or read as a key change.
+added a second time, proposed for a drop, or read as a key change. The
+same holds for foreign keys: `DiffSchema` matches a live key onto a long
+table, or on a long column on either side, to the relation that declares
+it, rather than proposing to drop it and add it back on every run.
 
 An index name belongs to the schema, not the table, on both engines, and
 the migrator creates every index with `CREATE INDEX IF NOT EXISTS`. Two

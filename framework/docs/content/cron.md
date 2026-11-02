@@ -177,7 +177,11 @@ releases the lock as soon as the claim is made, before the jobs start. A
 long job does not hold the lock: a 20-minute `@hourly` report runs while
 the `* * * * *` jobs keep firing every minute, and its own next firing
 starts concurrently if it overruns (see "No overlap protection" above).
-The lock's connection is pinned only for the lock and the claim. Each
+The lock's connection is pinned only for the lock and the claim. When
+the release's `pg_advisory_unlock` fails on a live session (a cancelled
+statement, a statement timeout), the connection is retired rather than
+returned to the pool, so ending its session releases the lock and
+another replica can lead. Each
 tick fires **at most once** across replicas:
 
 - It is not exactly once. A replica that claims a minute and then crashes

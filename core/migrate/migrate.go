@@ -236,6 +236,17 @@ func (m *Migrator) RegisterFromReader(r io.Reader) error {
 	return m.Register(*mig)
 }
 
+// IsDirectiveLine reports whether the migration parser reads line as a
+// directive: a "-- +migrate" line, known or not (an unknown one fails the
+// parse), or a comment that reads as one with its spacing or case off,
+// which fails the parse too. A generator that embeds SQL bodies it did not
+// write refuses one holding such a line, since the parser is line-based
+// and cannot tell a line inside a string literal from a directive.
+func IsDirectiveLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.HasPrefix(trimmed, "-- +migrate") || isNearMissDirective(trimmed)
+}
+
 // isNearMissDirective reports whether a line that is not a directive reads
 // as one with its spacing or case off ("--+migrate Down", "-- +Migrate
 // Down"): a comment the parser would pass over while the author meant it

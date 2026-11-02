@@ -4564,15 +4564,20 @@ few lines, and link the PR or the docs page for the rest.
   `Up`: the rollback ran as part of the apply (a `DELETE` or `DROP` with
   it) and the version was recorded applied. An unknown directive, and a
   comment that reads as one with its spacing or case off
-  (`--+migrate Down`, `-- +Migrate Down`), now fail the parse.
+  (`--+migrate Down`, `-- +Migrate Down`), now fail the parse; so does a
+  prose comment such as `-- +migrated from v1`. `migrate generate`
+  refuses a SQL body holding any such line through the parser's own
+  test, the new `migrate.IsDirectiveLine` (`core/migrate`), so it no
+  longer writes a file the runner refuses to load.
 - **Tables and columns named past 63 bytes migrate on Postgres.**
   Postgres cuts such a name to 63 bytes and the catalog holds the cut
   one, which the migrator compared with the whole name. A long table
   read as absent on every boot and never gained a column; a long column
   read as missing, so the next boot with a column to add failed on a
   duplicate `ADD COLUMN`, `DiffSchema` proposed dropping it, and a long
-  key column read as a key change. The catalog is now read by the cut
-  name.
+  key column read as a key change. A foreign key onto a long table, or on
+  a long column on either side, diffed as a destructive drop plus an add
+  on every run. The catalog is now read by the cut name.
 - **BREAKING: `migrate generate` refuses a SQLite rebuild of a table
   another table references.** SQLite empties a table before dropping it,
   and with foreign keys on, a child row still pointing at it fails the
@@ -4593,7 +4598,9 @@ few lines, and link the PR or the docs page for the rest.
   migration failed inside its own `BEGIN` (an aborted session refuses
   the unlock) every other replica waited on the lock for the life of
   the process. Such a connection is now retired, which ends its session
-  and releases the lock.
+  and releases the lock. `cron.NewPostgresAdvisoryLease` had the same
+  release and gets the same fix: a failed unlock no longer keeps every
+  other replica from leading.
 
 ### Security
 - **The trash view's Restore and Delete permanently routes honor read
