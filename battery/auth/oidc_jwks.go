@@ -369,6 +369,13 @@ func buildRSAKey(nB64, eB64 string) (*rsa.PublicKey, error) {
 	if n.BitLen() < 2048 {
 		return nil, fmt.Errorf("oidc: rsa modulus too weak (%d bits)", n.BitLen())
 	}
+	// And above: verification cost grows with the square of the modulus,
+	// and every sign-in verifies an id_token against this key. crypto/tls
+	// caps a peer's RSA key at 8192 bits for the same reason
+	// (CVE-2023-29409); passkeys use the same cap (maxCOSERSABits).
+	if n.BitLen() > maxCOSERSABits {
+		return nil, fmt.Errorf("oidc: rsa modulus too large (%d bits)", n.BitLen())
+	}
 	e := new(big.Int).SetBytes(eBytes)
 	if !e.IsUint64() || e.BitLen() > 31 {
 		return nil, errors.New("oidc: rsa exponent out of range")

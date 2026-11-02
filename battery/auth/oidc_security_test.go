@@ -323,6 +323,25 @@ func TestOIDCSec_DegenerateRSAExponent(t *testing.T) {
 	}
 }
 
+// TestOIDCSec_OversizedRSAModulus: a JWKS key past 8192 bits is refused at
+// parse. RSA verification cost grows with the square of the modulus and
+// every sign-in verifies against it; crypto/tls and the passkey parser cap
+// at the same 8192 bits. Found by the rsakeysize analyzer.
+func TestOIDCSec_OversizedRSAModulus(t *testing.T) {
+	eB64 := b64u(big.NewInt(65537).Bytes())
+	huge := new(big.Int).Lsh(big.NewInt(1), 16383) // 16384 bits
+	huge.SetBit(huge, 0, 1)
+	if _, err := buildRSAKey(b64u(huge.Bytes()), eB64); err == nil {
+		t.Fatal("buildRSAKey accepted a 16384-bit modulus")
+	}
+	// The cap itself still parses.
+	atCap := new(big.Int).Lsh(big.NewInt(1), 8191)
+	atCap.SetBit(atCap, 0, 1)
+	if _, err := buildRSAKey(b64u(atCap.Bytes()), eB64); err != nil {
+		t.Fatalf("buildRSAKey refused an 8192-bit modulus: %v", err)
+	}
+}
+
 // ── userinfo ─────────────────────────────────────────────────────────────────
 
 // TestOIDCSec_UserinfoSubMismatch: when userinfo is fetched to fill a missing
