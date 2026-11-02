@@ -19,6 +19,32 @@
 // collecting map values into a slice is mostly order-free: fanout
 // subscriber lists, cleanup queues). A hand-written sort the rule cannot
 // see carries the allow marker.
+//
+// The 2026-11 bug-bash round added the return arm: a map range whose body
+// returns an error BUILT from the range key or value (a call or composite
+// literal of an error type, fmt.Errorf / errors.New / i18n.NewError / a
+// constructor / &T{...}, whose operands mention the key, the value, or a
+// local derived from either inside the body). The error names whichever
+// entry the iteration reached first, so one input answers different
+// bytes per call. Found by a2b42f4d (framework/crud
+// itemKeyFoldsUnambiguous named the second spelling it happened to reach;
+// parseMultipartBody refused whichever duplicate form key came first).
+// The fix is the same: range slices.Sorted(maps.Keys(m)).
+//
+// The arm reads only maps shaped like decoded wire input: values of the
+// empty interface (a JSON object), []string (url.Values, http.Header, a
+// multipart form's Value), json.RawMessage, or []*multipart.FileHeader.
+// Measured over ./... on 2026-11-02, every map shape found 48 sites,
+// almost all boot-time validation of typed configuration maps
+// (map[string]Route and the like), where the error a developer sees is
+// one fix away from the next; the wire shapes found 6, each a refusal
+// of request, restore, seed or flag input, and each was fixed. Quiet
+// besides the other shapes: an error
+// that names no entry (`return errors.New("bad")`, `return ErrX`), a
+// returned error variable built elsewhere (`return err`: the range only
+// propagated it), a non-error return (a "find the one match" lookup
+// returns the entry, not a refusal), a return inside a nested func
+// literal, and the len(m) == 1 guard.
 package mapwriter
 
 import (
@@ -92,6 +118,7 @@ func run(pass *analysis.Pass) (any, error) {
 				checkJoined(pass, fn.Body, bound, guarded)
 			}
 		}
+		checkReturned(pass, f, bound, guarded)
 	}
 	return nil, nil
 }
@@ -444,4 +471,193 @@ var writerIface = func() *types.Interface {
 
 func implementsWriter(t types.Type) bool {
 	return types.Implements(t, writerIface)
+}
+
+// checkReturned reports a map range whose body returns an error built
+// from the entry it reached: the refusal names a random entry per call.
+func checkReturned(pass *analysis.Pass, f *ast.File, bound map[types.Object]ast.Expr, guarded []guardRange) {
+	ast.Inspect(f, func(n ast.Node) bool {
+		rng, ok := n.(*ast.RangeStmt)
+		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) {
+			return true
+		}
+		for _, g := range guarded {
+			if rng.Pos() >= g.from && rng.Pos() <= g.to && g.matches(pass, rng.X) {
+				return true
+			}
+		}
+		tainted := entryLocals(pass, rng)
+		if len(tainted) == 0 {
+			return true
+		}
+		ast.Inspect(rng.Body, func(inner ast.Node) bool {
+			switch x := inner.(type) {
+			case *ast.FuncLit:
+				return false // its return leaves the literal, not the range
+			case *ast.ReturnStmt:
+				for _, res := range x.Results {
+					if builtErrorFrom(pass, res, tainted) {
+						pass.Reportf(res.Pos(),
+							"returning an error built from a map range's entry: it names whichever entry the iteration reached first, so one input answers different text per call; range slices.Sorted(maps.Keys(m)) instead")
+						break
+					}
+				}
+			}
+			return true
+		})
+		return true
+	})
+}
+
+// entryLocals returns the range key and value plus every local the body
+// assigns from an expression that mentions one of them (to a fixed
+// point): col := ch.wireKeyColumn(k) names the entry as surely as k.
+func entryLocals(pass *analysis.Pass, rng *ast.RangeStmt) map[types.Object]bool {
+	out := map[types.Object]bool{}
+	for _, e := range []ast.Expr{rng.Key, rng.Value} {
+		if id, ok := e.(*ast.Ident); ok && id.Name != "_" {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				out[obj] = true
+			}
+		}
+	}
+	if len(out) == 0 {
+		return out
+	}
+	mentionsAny := func(e ast.Expr) bool {
+		hit := false
+		ast.Inspect(e, func(x ast.Node) bool {
+			if id, ok := x.(*ast.Ident); ok && out[pass.TypesInfo.ObjectOf(id)] {
+				hit = true
+			}
+			return !hit
+		})
+		return hit
+	}
+	for changed := true; changed; {
+		changed = false
+		ast.Inspect(rng.Body, func(n ast.Node) bool {
+			as, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range as.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || id.Name == "_" {
+					continue
+				}
+				obj := pass.TypesInfo.ObjectOf(id)
+				if obj == nil || out[obj] {
+					continue
+				}
+				var rhs ast.Expr
+				if len(as.Rhs) == len(as.Lhs) {
+					rhs = as.Rhs[i]
+				} else if len(as.Rhs) == 1 {
+					rhs = as.Rhs[0]
+				}
+				// An error result of a call on the entry is propagated,
+				// not built: `err := check(v)` stays out of the set.
+				if rhs != nil && !isErrorType(obj.Type()) && mentionsAny(rhs) {
+					out[obj] = true
+					changed = true
+				}
+			}
+			return true
+		})
+	}
+	return out
+}
+
+// builtErrorFrom reports whether e constructs an error value (a call or
+// composite literal of an error type) whose operands mention a tainted
+// local.
+func builtErrorFrom(pass *analysis.Pass, e ast.Expr, tainted map[types.Object]bool) bool {
+	e = ast.Unparen(e)
+	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		e = ast.Unparen(u.X)
+	}
+	var operands []ast.Expr
+	switch x := e.(type) {
+	case *ast.CallExpr:
+		operands = x.Args
+	case *ast.CompositeLit:
+		operands = x.Elts
+	default:
+		return false
+	}
+	if t := pass.TypesInfo.TypeOf(ast.Unparen(e)); t == nil || !isErrorType(t) && !isErrorType(types.NewPointer(t)) {
+		return false
+	}
+	for _, op := range operands {
+		hit := false
+		ast.Inspect(op, func(x ast.Node) bool {
+			if id, ok := x.(*ast.Ident); ok && tainted[pass.TypesInfo.ObjectOf(id)] {
+				hit = true
+			}
+			return !hit
+		})
+		if hit {
+			return true
+		}
+	}
+	return false
+}
+
+var errorIface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+
+func isErrorType(t types.Type) bool {
+	return types.Implements(t, errorIface)
+}
+
+// wireShaped reports whether the ranged map has the shape decoded wire
+// input takes: values of the empty interface (a JSON object decoded into
+// map[string]any), []string (url.Values, http.Header, a multipart form's
+// Value), json.RawMessage, or a slice of *multipart.FileHeader. A
+// refusal that names a random entry of a request body answers different
+// bytes per call; a configuration map's values are typed structs, and
+// the boot error it names is one fix away from the next.
+func wireShaped(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr, depth int) bool {
+	if depth > 8 {
+		return false
+	}
+	x = ast.Unparen(x)
+	if tv, ok := pass.TypesInfo.Types[x]; ok {
+		if m, isMap := tv.Type.Underlying().(*types.Map); isMap {
+			return wireValue(m.Elem())
+		}
+	}
+	switch e := x.(type) {
+	case *ast.Ident:
+		if src, ok := bound[pass.TypesInfo.ObjectOf(e)]; ok {
+			return wireShaped(pass, src, bound, depth+1)
+		}
+	case *ast.CallExpr:
+		if len(e.Args) == 1 {
+			return wireShaped(pass, e.Args[0], bound, depth+1)
+		}
+	}
+	return false
+}
+
+func wireValue(t types.Type) bool {
+	// json.RawMessage is an alias of jsontext.Value under the jsonv2
+	// experiment and a defined type without it.
+	if a, ok := t.(*types.Alias); ok && a.Obj().Pkg() != nil && a.Obj().Pkg().Path() == "encoding/json" && a.Obj().Name() == "RawMessage" {
+		return true
+	}
+	t = types.Unalias(t)
+	if astx.IsNamed(t, "encoding/json", "RawMessage") || astx.IsNamed(t, "encoding/json/jsontext", "Value") {
+		return true
+	}
+	switch u := t.Underlying().(type) {
+	case *types.Interface:
+		return u.Empty()
+	case *types.Slice:
+		if b, ok := u.Elem().Underlying().(*types.Basic); ok && b.Kind() == types.String {
+			return true
+		}
+		return astx.IsNamed(astx.Deref(u.Elem()), "mime/multipart", "FileHeader")
+	}
+	return false
 }
