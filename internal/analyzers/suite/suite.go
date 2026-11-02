@@ -87,9 +87,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/bareduration"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/optzero"
 	// 2026-11 bug-bash rules (lifecycle)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/deferreset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/iounderlock"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/poisonedconn"
-	"github.com/DonaldMurillo/gofastr/internal/analyzers/deferreset"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
