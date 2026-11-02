@@ -410,6 +410,9 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 
 		includeNames := make([]string, 0, len(ent.Config.Relations))
 		for _, rel := range ent.Config.Relations {
+			if hiddenRelation(ent, rel) {
+				continue
+			}
 			includeNames = append(includeNames, rel.Name)
 		}
 		includeDesc := "Comma-separated list of relations to eager-load."
@@ -1101,6 +1104,9 @@ func readSchema(reg entity.Registry, ent *entity.Entity, base map[string]any, jc
 		wire[f.Name] = wireKeyOf(f, jc)
 	}
 	for _, rel := range ent.Config.Relations {
+		if hiddenRelation(ent, rel) {
+			continue
+		}
 		key, ok := wire[rel.Name]
 		if !ok {
 			key = columnKey(rel.Name, jc)
@@ -1135,6 +1141,24 @@ func readSchema(reg entity.Registry, ent *entity.Entity, base map[string]any, jc
 		props[key] = loaded
 	}
 	return out
+}
+
+// hiddenRelation reports whether documenting rel would publish a Hidden
+// field of ent: a relation named after a Hidden field (the belongs_to a
+// Hidden relation field derives) or a belongs_to whose foreign key is a
+// Hidden column. Its include puts the related record, and with it the
+// hidden key, under the relation's name, so neither the read view nor the
+// include parameter's list names it.
+func hiddenRelation(ent *entity.Entity, rel entity.Relation) bool {
+	for _, f := range ent.GetFields() {
+		if !f.Hidden {
+			continue
+		}
+		if f.Name == rel.Name || (rel.Type == entity.RelManyToOne && slices.Contains(rel.ForeignKey, f.Name)) {
+			return true
+		}
+	}
+	return false
 }
 
 // typeRelationKey types a relation field's property by the key of the

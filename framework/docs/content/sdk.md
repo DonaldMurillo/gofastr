@@ -159,7 +159,9 @@ the client buffers — the parse in `do()` and the `ApiError`
 snapshot on the error path — goes through a capped read (`_readBody`,
 1 MiB, the same `maxBodyBytes` the Go client enforces): a bigger body
 throws instead of buffering. `watch` holds one SSE line, and one event's
-joined `data:` lines, to the same cap and rejects past it.
+joined `data:` lines, to the same cap and rejects past it. Every one of
+these caps counts UTF-8 bytes, not string length, so text outside ASCII
+gets no more room than the Go client gives it.
 
 Bodies and `watch` events parse with the client's `parseJSON`, not bare
 `JSON.parse`: an integer past 2^53 (a snowflake id, a big counter)

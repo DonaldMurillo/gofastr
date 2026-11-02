@@ -695,6 +695,27 @@ func (a *App) apiPrefix() string {
 	return "/" + p
 }
 
+// OpenAPISpec builds the entity document App.Start serves at
+// /openapi.json: the CRUD routes registration mounted, under the app's
+// APIPrefix, each field named in the app's JSONCase. A host that mounts the
+// entity routes without Start (kiln's live studio) serves this one, so its
+// document names the keys and paths its routes answer. An empty title
+// falls back to Config.Name, then "GoFastr API". Call it after the entities
+// are registered: the document is built from the registry as it stands.
+func (a *App) OpenAPISpec(title string) *coreoa.Spec {
+	if title == "" {
+		title = a.Config.Name
+	}
+	if title == "" {
+		title = "GoFastr API"
+	}
+	return openapi.EntityOpenAPIFor(a.Registry, openapi.Options{
+		Title: title, Version: "1.0.0",
+		CRUDMounted: a.entityCRUDEnabled, BulkMounted: a.entityUIMounted,
+		BasePath: a.apiPrefix(), JSONCase: a.JSONCasing(),
+	})
+}
+
 // entityMountPath is the base path an entity's CRUD routes mount at:
 // apiPrefix + "/" + table. With no prefix this is the historical "/table".
 func (a *App) entityMountPath(table string) string {
@@ -3689,11 +3710,7 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPIFor(a.Registry, openapi.Options{
-			Title: appName, Version: "1.0.0",
-			CRUDMounted: a.entityCRUDEnabled, BulkMounted: a.entityUIMounted,
-			BasePath: a.apiPrefix(), JSONCase: a.JSONCasing(),
-		})
+		spec := a.OpenAPISpec(appName)
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {

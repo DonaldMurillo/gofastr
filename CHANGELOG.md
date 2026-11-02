@@ -587,6 +587,16 @@ few lines, and link the PR or the docs page for the rest.
   `openapi.EntityOpenAPIFor(registry, openapi.Options{…, JSONCase})`
   takes the case; `EntityOpenAPI` and `EntityOpenAPIWithBulk` keep
   camelCase.
+- **kiln's live studio documents the routes it serves.** Its
+  `/openapi.json` and API browser camelCased every field and left out
+  the `api_prefix`, so a `json_case: snake` world's document named keys
+  and paths its routes do not answer. It now serves the new
+  `App.OpenAPISpec(title)`, the document `App.Start` serves, built from
+  the app's `APIPrefix`, `JSONCase` and mounted routes.
+- **`/openapi.json` names no relation behind a Hidden field.** The
+  `?include=` read view published a Hidden relation field (or a
+  `belongs_to` whose foreign key is Hidden) as a property under its wire
+  key, and the `include` parameter listed it among the relations.
 - **`/openapi.json` types a relation field by the key it names.** Every
   relation was a `uuid` string. A foreign key to an `int` key is an
   `integer` property and filter now, as crud stores, answers and parses
@@ -609,7 +619,7 @@ few lines, and link the PR or the docs page for the rest.
   `watch` joined an event's `data:` lines until a blank line, and the JS
   client buffered a line until a newline, with no limit, so a feed that
   never ended one grew the subscriber's heap. Both now stop at the
-  1 MiB body cap with an error. Regenerate the SDK or client
+  1 MiB body cap, counted in UTF-8 bytes, with an error. Regenerate the SDK or client
   (`gofastr build`) to pick it up.
 - **battery/auth bug bash (2026-11-01).** Details in
   [auth.md](framework/docs/content/auth.md):

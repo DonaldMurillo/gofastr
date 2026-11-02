@@ -534,7 +534,10 @@ takes all of that as an `openapi.Options` struct, plus `JSONCase`: the
 served spec passes the app's `AppConfig.JSONCase`, so a snake_case app
 documents each field under its column name, the key its routes send. A
 spec built by `EntityOpenAPI` or `EntityOpenAPIWithBulk` names fields in
-camelCase. Plugin-registered HTTP handlers go
+camelCase. `App.OpenAPISpec(title)` returns the served document itself,
+built with all of the app's settings (route predicates, `APIPrefix`,
+`JSONCase`): a host that mounts the entity routes without `App.Start`,
+as kiln's live studio does, serves that one. Plugin-registered HTTP handlers go
 through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no
 plugin → OpenAPI extension hook today.

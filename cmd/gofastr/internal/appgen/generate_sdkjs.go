@@ -859,9 +859,14 @@ const jsClientMethods = `  async do(method, path, body) {
     }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
+    // The cap counts UTF-8 bytes, as _readBody and the Go client do; a
+    // string's length counts UTF-16 code units, as few as a third of them.
+    const encoder = new TextEncoder();
     let buffer = "";
+    let lineBytes = 0;
     let event = "";
     let data = "";
+    let dataBytes = 0;
     for (;;) {
       let chunk;
       try {
@@ -872,6 +877,10 @@ const jsClientMethods = `  async do(method, path, body) {
       }
       if (chunk.done) return;
       buffer += decoder.decode(chunk.value, { stream: true });
+      // A newline byte is never part of a multi-byte character, so the
+      // bytes after the chunk's last one are the open line's.
+      const nl = chunk.value.lastIndexOf(10);
+      lineBytes = nl < 0 ? lineBytes + chunk.value.byteLength : chunk.value.byteLength - nl - 1;
       // A line, and an event's joined data, are bounded at the body cap
       // _readBody enforces: a feed that never ends one would otherwise
       // grow the subscriber's heap without limit.
@@ -891,16 +900,19 @@ const jsClientMethods = `  async do(method, path, body) {
           }
           event = "";
           data = "";
+          dataBytes = 0;
         } else if (line.startsWith(":")) {
           // heartbeat
         } else if (line.startsWith("event:")) {
           event = line.slice(6).trim();
         } else if (line.startsWith("data:")) {
-          data += line.slice(5).trim();
-          if (data.length > cap) throw await overCap("event data");
+          const piece = line.slice(5).trim();
+          dataBytes += encoder.encode(piece).byteLength;
+          if (dataBytes > cap) throw await overCap("event data");
+          data += piece;
         }
       }
-      if (buffer.length > cap) throw await overCap("line");
+      if (lineBytes > cap) throw await overCap("line");
     }
   }
 

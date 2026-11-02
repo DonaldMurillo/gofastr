@@ -43,7 +43,9 @@ the record it names. `/openapi.json` documents the read view that way:
 such a property is `anyOf` the key, the related record's schema, or
 null, and a relation with no field of its own is an optional property
 (an array of records for has-many and many-to-many). Request bodies
-still take the key.
+still take the key. A relation behind a Hidden field (a Hidden relation
+field, or a `belongs_to` whose foreign key is Hidden) is in neither the
+read view nor the `include` parameter's list of relations.
 
 ## Path syntax
 
