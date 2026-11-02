@@ -295,8 +295,11 @@ func gateBrokenScanAtHead(t *testing.T, root string, fx fixture, appDir string) 
 }
 
 // gatePatchedScanAtHead runs mode 5: after the patch, still pointed at this
-// tree. The migrated app must type-check, and no breaking note's strings,
+// tree. The migrated app must type-check, and no hits: edit note's strings,
 // css, config or gomod matcher may still hit: the retired spellings are gone.
+// A hits: review note's matches may still be right after the migration (an
+// Access block that names every write keeps matching the note that asks
+// each Access block to be checked), so they are not retired spellings.
 func gatePatchedScanAtHead(t *testing.T, fx fixture, appDir string) {
 	t.Helper()
 	reg, notes := loadInRangeNotes(t, appDir)
@@ -317,12 +320,13 @@ func gatePatchedScanAtHead(t *testing.T, fx fixture, appDir string) {
 	}
 }
 
-// silencedMatchers copies each breaking in-range note once per non-Go
-// matcher it carries, so one scan reports which matcher kind still hits.
+// silencedMatchers copies each breaking hits: edit in-range note once per
+// non-Go matcher it carries, so one scan reports which matcher kind still
+// hits.
 func silencedMatchers(notes []*upgrade.Note) []*upgrade.Note {
 	var out []*upgrade.Note
 	for _, n := range notes {
-		if !n.Breaking {
+		if !n.Breaking || n.Review {
 			continue
 		}
 		if !n.Find.Strings.Empty() {

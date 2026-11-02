@@ -10,20 +10,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -71,6 +69,27 @@ type OAuth2Provider interface {
 	FetchUserInfo(ctx context.Context, token string) (*OAuth2UserInfo, error)
 }
 
+// OAuth2PKCEProvider is implemented by a provider that sends a PKCE
+// (RFC 7636, S256) challenge with the authorization request and the
+// matching verifier with the code exchange. The plugin uses these methods
+// in place of AuthURL and ExchangeCode whenever a provider has them; the
+// built-in Google, GitHub and OIDC providers do.
+//
+// PKCE is not only for public clients. A confidential client's secret
+// protects the exchange, but not against authorization-code injection: an
+// attacker holding a victim's code (a leaked redirect, a log, a referer)
+// starts a flow of their own, swaps the stolen code into its callback, and
+// the server redeems it with its own secret, signing the attacker in as
+// the victim. The state cookie is the attacker's own, so it checks out. A
+// verifier bound to the flow's state makes the stolen code unredeemable
+// in any other flow (RFC 9700 §2.1.1, §4.5).
+type OAuth2PKCEProvider interface {
+	// AuthURLWithChallenge is AuthURL plus code_challenge (S256).
+	AuthURLWithChallenge(state, challenge string) string
+	// ExchangeCodeWithVerifier is ExchangeCode plus code_verifier.
+	ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error)
+}
+
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 // OAuth2Config holds the configuration for the OAuth2 plugin.
@@ -93,6 +112,13 @@ type OAuth2Config struct {
 	// ValidOAuthToken. Opt-in: when nil, OAuth login behaves exactly as
 	// before and the provider's refresh token is discarded.
 	TokenStore OAuthTokenStore
+
+	// TwoFactorURL is where a sign-in goes when the account still owes
+	// its second factor: the app's page that posts the code to
+	// /2fa/challenge. Same-origin paths only. Init requires it when a 2FA
+	// plugin is registered: the session an OAuth sign-in mints for such
+	// an account is pending, and "/" would refuse it.
+	TwoFactorURL string
 }
 
 // ─── Plugin ─────────────────────────────────────────────────────────────────
@@ -105,12 +131,17 @@ type OAuth2Config struct {
 // so server restarts mid-flow don't invalidate in-flight logins and
 // the redirect endpoint can't be used as a memory-pressure DoS
 // surface. Replay protection comes from a bounded usedNonces map
-// that's only touched on the (much rarer) successful callback path.
+// written by every callback that carries a bound, validly signed
+// state and a code. Anyone can mint such a state (start a flow, keep
+// the cookie), so the map evicts its earliest-expiring entries when
+// full rather than refusing callbacks: see validateAndConsumeState.
 type OAuth2Plugin struct {
 	mgr        *AuthManager
 	providers  map[string]OAuth2Provider
 	stateKey   []byte
 	tokenStore OAuthTokenStore
+	// twoFactorURL is OAuth2Config.TwoFactorURL.
+	twoFactorURL string
 
 	// usedNonces dedup callbacks against replay. Keyed by the random
 	// nonce embedded in the state token; values are the token's
@@ -135,9 +166,16 @@ func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 		providers:  make(map[string]OAuth2Provider),
 		usedNonces: make(map[string]time.Time),
 		tokenStore: cfg.TokenStore,
+		// twoFactorURL: see OAuth2Config.TwoFactorURL.
+		twoFactorURL: cfg.TwoFactorURL,
 	}
 
-	// Copy providers from config
+	// Copy providers from config. Each key names the provider in the
+	// route path and in the signed state token, so its shape is checked
+	// here, where a typo is a boot failure and not a dead login button.
+	for _, key := range slices.Sorted(maps.Keys(cfg.Providers)) {
+		mustValidProviderKey(key)
+	}
 	maps.Copy(p.providers, cfg.Providers)
 
 	// State signing key. A state token travels in the browser's address
@@ -191,6 +229,15 @@ func (p *OAuth2Plugin) TokenStore() OAuthTokenStore { return p.tokenStore }
 // callback gets a loud failure, not a silent email-trust login.
 func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
+	// The passkey and magic-link rule: every plugin is registered before
+	// any Init runs, so a 2FA plugin later in the list is already visible.
+	if p.twoFactorURL == "" {
+		for _, name := range mgr.order {
+			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
+				return fmt.Errorf("auth: oauth2 plugin: %q handles two-factor sign-in, so set OAuth2Config.TwoFactorURL to the page that finishes it: an OAuth sign-in of a 2FA account is pending until /2fa/challenge, and \"/\" would refuse it", name)
+			}
+		}
+	}
 	if mgr.UserStore() == nil {
 		// No user store at all, the callback already 500s on this. No
 		// opinion here; let the existing nil-check fire at request time.
@@ -215,9 +262,51 @@ func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	return nil
 }
 
-// RegisterProvider adds a provider to the plugin's registry.
+// RegisterProvider adds a provider to the plugin's registry under name, the
+// {provider} segment of its routes. It panics on a name that is not 1–64
+// ASCII letters, digits, '-' or '_' (see validProviderKey).
 func (p *OAuth2Plugin) RegisterProvider(name string, provider OAuth2Provider) {
+	mustValidProviderKey(name)
 	p.providers[name] = provider
+}
+
+// maxProviderKeyLen bounds a provider registry key.
+const maxProviderKeyLen = 64
+
+// validProviderKey reports whether key can name a provider: 1–64 ASCII
+// letters, digits, '-' or '_'. The key is the {provider} path segment and
+// a field of the state token, which joins its fields with '.'; a key
+// holding a '.' split the token wrong at the callback, so that provider's
+// every login failed as "invalid or expired state". The same set keeps the
+// key a single clean path segment.
+func validProviderKey(key string) bool {
+	if key == "" || len(key) > maxProviderKeyLen {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// mustValidProviderKey panics on a key validProviderKey refuses: a provider
+// registered under one is a configuration mistake no flow can complete,
+// handled like a short StateSecret.
+func mustValidProviderKey(key string) {
+	if !validProviderKey(key) {
+		panic(fmt.Sprintf("oauth2: provider key %q must be 1-%d ASCII letters, digits, '-' or '_': it is a route segment and a field of the dot-separated state token",
+			key, maxProviderKeyLen))
+	}
+}
+
+// providerKeys returns the registered provider keys, sorted.
+func (p *OAuth2Plugin) providerKeys() []string {
+	return slices.Sorted(maps.Keys(p.providers))
 }
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
@@ -318,7 +407,7 @@ func (p *OAuth2Plugin) redirectHandler() http.HandlerFunc {
 		}
 		p.bindStateToBrowser(w, state)
 
-		http.Redirect(w, r, provider.AuthURL(state), http.StatusFound)
+		http.Redirect(w, r, p.authURL(provider, state), http.StatusFound)
 	}
 }
 
@@ -347,7 +436,7 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 			return
 		}
 		p.bindStateToBrowser(w, state)
-		http.Redirect(w, r, provider.AuthURL(state), http.StatusFound)
+		http.Redirect(w, r, p.authURL(provider, state), http.StatusFound)
 	}
 }
 
@@ -428,22 +517,25 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusBadRequest, reasonOauthWrongBrowser)
 			return
 		}
+		// A callback with no code cannot complete, so it is refused before
+		// the state's nonce is recorded: the replay map only grows for a
+		// callback that goes on to an exchange.
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			writeAuthError(w, r, http.StatusBadRequest, reasonMissingAuthorisationCode)
+			return
+		}
 		linkUserID, ok := p.validateAndConsumeState(stateParam, providerName)
 		if !ok {
 			writeAuthError(w, r, http.StatusBadRequest, reasonInvalidOrExpiredState)
 			return
 		}
 
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			writeAuthError(w, r, http.StatusBadRequest, reasonMissingAuthorisationCode)
-			return
-		}
-
 		// Exchange the authorization code for a token. The HMAC state token
-		// (validated above) is what binds the callback to this authorization
-		// request; the confidential client's secret protects the exchange.
-		tok, err := provider.ExchangeCode(r.Context(), code)
+		// (validated above) binds the callback to this browser; the PKCE
+		// verifier, derived from that same state, binds the code to this
+		// flow, so a code stolen from another flow does not redeem here.
+		tok, err := p.exchangeCode(r.Context(), provider, code, stateParam)
 		if err != nil {
 			writeAuthError(w, r, http.StatusUnauthorized, reasonCodeExchangeFailed)
 			return
@@ -465,6 +557,11 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			slog.Warn("oauth email refused: not in composed Unicode form",
 				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
 			writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+			return
+		}
+		// The same bound the form paths apply: the address becomes a
+		// user-table value and a link-profile column.
+		if !emailWithinLimit(w, r, info.Email) {
 			return
 		}
 
@@ -537,15 +634,43 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonLinkFailed)
 				return
 			}
-			// An account claim removes every link and then every session;
+			// LinkOAuth keeps an existing binding's owner (ON CONFLICT),
+			// so a concurrent link of the same identity between the check
+			// above and the write leaves it on the other account. Read the
+			// binding back: only the owner it names was linked.
+			bound, berr := p.authoritativeOAuthOwner(r.Context(), linker, info)
+			if berr != nil {
+				writeAuthError(w, r, http.StatusInternalServerError, reasonLinkLookupFailed)
+				return
+			}
+			if bound.GetID() != linkUserID {
+				p.mgr.emitSecurity(r.Context(), SecurityEvent{
+					Kind:   "oauth.refused",
+					UserID: linkUserID,
+					Email:  info.Email,
+					Remote: remoteHost(r),
+					Meta:   map[string]string{"provider": providerName, "reason": "provider_already_linked"},
+				})
+				writeAuthError(w, r, http.StatusConflict, reasonProviderLinkedElsewhere)
+				return
+			}
+			// The provider tokens are stored before the re-check below, not
+			// after it: a claim whose token drop ran between a passing
+			// re-check and a later save left the squatter's tokens on the
+			// claimed account. Stored first, a claim either drops them
+			// after (its drop follows its session purge and unlink) or has
+			// already purged the session, which the re-check sees.
+			p.saveProviderTokens(r.Context(), linkUserID, providerName, tok)
+			// An account claim removes every session and then every link;
 			// a reset or change moves the hash first. A claim that overtook
 			// this callback between its session check and the upsert has
 			// already run its unlink, so the link just written would
 			// outlive it and sign the squatter back into the claimed
 			// account. Re-check the session and the credential now the link
-			// is stored, and take the link back when either moved.
+			// and tokens are stored, and take both back when either moved.
 			if !p.linkSessionHolds(r, linkUserID) || snap.moved(r.Context(), p.mgr) {
-				if !p.undoLink(r.Context(), userStore, linkUserID, info.Provider) {
+				tokensGone := p.dropProviderTokenRow(r.Context(), linkUserID, providerName)
+				if !p.undoLink(r.Context(), userStore, linkUserID, info.Provider) || !tokensGone {
 					writeAuthError(w, r, http.StatusInternalServerError, reasonLinkFailed)
 					return
 				}
@@ -566,14 +691,26 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 
 		user, linked, err := p.resolveOAuthUser(r.Context(), userStore, info)
 		if err != nil {
+			var collision *oauthEmailCollision
 			switch {
-			case errors.Is(err, errOAuthEmailCollision):
+			case errors.As(err, &collision):
+				// UserID names the local account the address belongs to:
+				// App.EraseUserData scrubs audit rows by it, and without
+				// it this row kept an erased user's email.
 				p.mgr.emitSecurity(r.Context(), SecurityEvent{
-					Kind:  "oauth.refused",
-					Email: info.Email,
-					Meta:  map[string]string{"provider": providerName, "reason": "link_conflict"},
+					Kind:   "oauth.refused",
+					UserID: collision.userID,
+					Email:  info.Email,
+					Meta:   map[string]string{"provider": providerName, "reason": "link_conflict"},
 				})
 				writeAuthError(w, r, http.StatusConflict, reasonEmailTaken)
+			case errors.Is(err, errOAuthNoEmail):
+				p.mgr.emitSecurity(r.Context(), SecurityEvent{
+					Kind:   "oauth.refused",
+					Remote: remoteHost(r),
+					Meta:   map[string]string{"provider": providerName, "reason": "no_email"},
+				})
+				writeAuthError(w, r, http.StatusBadRequest, reasonOauthNoEmail)
 			case errors.Is(err, errOAuthLookupFailed):
 				writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 			case errors.Is(err, errOAuthNoLinker):
@@ -604,31 +741,24 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			})
 		}
 
-		// Persist the provider tokens (incl. the refresh token) when a
-		// token store is configured. Best-effort: a store failure must not
-		// block the login itself, the user still gets a session, they just
-		// lose transparent refresh until the next successful login.
-		if p.tokenStore != nil {
-			_ = p.tokenStore.Save(r.Context(), OAuthTokenRecord{
-				UserID:       user.GetID(),
-				Provider:     providerName,
-				AccessToken:  tok.AccessToken,
-				RefreshToken: tok.RefreshToken,
-				Expiry:       tok.Expiry,
-			})
-		}
-
 		// Mint through the manager, not SessionStore().Create: MintSession
 		// is what applies the second-factor pending mark. Creating the
 		// session directly here left PendingTwoFactor=false for a
 		// 2FA-enrolled user, so an OAuth login alone produced a
 		// fully-privileged session that could then disable the factor.
 		cfg := p.mgr.Config()
-		sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
+		sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 		if err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
 		}
+		// The provider tokens are stored before the link is resolved
+		// again, not after: a claim whose unlink and token drop ran
+		// between a passing re-check and a later save left the squatter's
+		// tokens on the claimed account. A claim unlinks before it drops
+		// tokens, so with the save first, a link still naming this user
+		// means the drop is still to come, and a link gone drops them here.
+		p.saveProviderTokens(r.Context(), user.GetID(), providerName, tok)
 		// An account claim that removed the link after it was resolved
 		// above revoked sessions before this one existed. Resolve the link
 		// again now the session is stored: a claim unlinks before it
@@ -642,6 +772,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				slog.Warn("auth: dropping a session minted under a removed OAuth link failed",
 					"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
 			}
+			p.dropProviderTokenRow(r.Context(), user.GetID(), providerName)
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{
 				Kind:   "oauth.refused",
 				UserID: user.GetID(),
@@ -660,8 +791,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// needed afterwards.
 		mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
-		// Redirect to a sensible landing page
-		http.Redirect(w, r, "/", http.StatusFound)
+		// A pending session is refused everywhere but /2fa/challenge, so
+		// the browser goes to the page that posts the code. Init made sure
+		// TwoFactorURL is set whenever a 2FA plugin can make one pending.
+		target := "/"
+		if pending {
+			target = safeRedirectURL(p.twoFactorURL)
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 	}
 }
 
@@ -703,7 +840,7 @@ func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state
 	if !ok {
 		return false
 	}
-	writeSameSiteHop(w, r, target, oauthHopTitle)
+	writeSameSiteHop(w, r, p.mgr.config.Pages, target, oauthHopTitle)
 	return true
 }
 
@@ -723,40 +860,6 @@ func sameOriginTarget(r *http.Request) (string, bool) {
 	return path, true
 }
 
-// writeSameSiteHop writes the hop page: a meta refresh to target, plus a
-// link for a browser that does not follow it. It ships no CSS and no
-// script, like the magic-link fallback page, and its words are phrases in
-// the caller's locale. target is a same-origin path from sameOriginTarget.
-func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string, heading i18n.Phrase) {
-	ctx := r.Context()
-	lang := i18n.DocLang(ctx)
-	href := html.EscapeString(urlsafe.CleanAnchor(target))
-	title := html.EscapeString(heading.Text(ctx))
-	body := `<!doctype html>
-<html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<meta http-equiv="refresh" content="0;url=` + href + `">
-<title>` + title + `</title>
-</head>
-<body>
-<main>
-<h1>` + title + `</h1>
-<p><a href="` + href + `">` + html.EscapeString(oauthHopContinue.Text(ctx)) + `</a></p>
-</main>
-</body>
-</html>`
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The URL carries a token: an authorization code and state, or a
-	// verification token.
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, body)
-}
-
 // errOAuthEmailCollision means: a local account with this email already
 // exists, the IdP asserts the email is verified, and that account either
 // has a real password or has an address nobody proved. Refuse rather than
@@ -766,6 +869,94 @@ func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string, hea
 // a verified-but-attacker-controlled email from taking over an existing
 // password account.
 var errOAuthEmailCollision = errors.New("oauth: email collision with pre-existing account")
+
+// oauthEmailCollision is errOAuthEmailCollision carrying the id of the
+// local account the address belongs to, for the refusal's audit row.
+type oauthEmailCollision struct{ userID string }
+
+func (e *oauthEmailCollision) Error() string { return errOAuthEmailCollision.Error() }
+func (e *oauthEmailCollision) Unwrap() error { return errOAuthEmailCollision }
+
+// errOAuthNoEmail means the provider asserted no email address and no link
+// names the identity yet. An empty address is no address: it must never
+// match an existing account by email (two email-less identities matched
+// each other's account through FindByEmail("")), and it cannot create one
+// either, because every later email-less sign-up would then collide with
+// it. The identity signs up another way, or once the provider shares an
+// address. A linked identity still signs in through its link.
+var errOAuthNoEmail = errors.New("oauth: provider asserted no email")
+
+// saveProviderTokens persists the provider tokens (incl. the refresh token)
+// under the provider's registry key when a token store is configured.
+// Best-effort: a store failure must not block the login or link itself;
+// the user only loses transparent refresh until the next successful one.
+func (p *OAuth2Plugin) saveProviderTokens(ctx context.Context, userID, providerKey string, tok *OAuth2Token) {
+	if p.tokenStore == nil || tok == nil {
+		return
+	}
+	if err := p.tokenStore.Save(ctx, OAuthTokenRecord{
+		UserID:       userID,
+		Provider:     providerKey,
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		Expiry:       tok.Expiry,
+	}); err != nil {
+		slog.Warn("auth: storing provider tokens failed; refresh unavailable until the next sign-in",
+			"plugin", "oauth2", "user_hash", hashedIdentifier(userID), "err", err)
+	}
+}
+
+// dropProviderTokenRow deletes the token row a refused callback stored,
+// detached from the request (undoContext) so a client that hangs up cannot
+// keep it. False means the row may still be there; the failure is logged.
+func (p *OAuth2Plugin) dropProviderTokenRow(ctx context.Context, userID, providerKey string) bool {
+	if p.tokenStore == nil {
+		return true
+	}
+	undo, cancel := undoContext(ctx)
+	defer cancel()
+	if err := p.tokenStore.Delete(undo, userID, providerKey); err != nil {
+		slog.Error("auth: dropping provider tokens stored under a refused OAuth callback failed",
+			"plugin", "oauth2", "user_hash", hashedIdentifier(userID), "err", err)
+		return false
+	}
+	return true
+}
+
+// pkceVerifier derives the flow's PKCE code_verifier from its signed
+// state: HMAC-SHA256 under the state key, base64url (43 chars, the RFC 7636
+// minimum, all unreserved). The state travels in the URL, but the key does
+// not, so the verifier is secret, and deriving it means the callback needs
+// no server-side storage to find it again.
+func (p *OAuth2Plugin) pkceVerifier(state string) string {
+	mac := hmac.New(sha256.New, p.stateKey)
+	mac.Write([]byte("pkce|" + state))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// pkceChallenge is the S256 code_challenge for verifier.
+func pkceChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// authURL is the provider's authorization URL, with a PKCE challenge when
+// the provider supports one.
+func (p *OAuth2Plugin) authURL(provider OAuth2Provider, state string) string {
+	if pp, ok := provider.(OAuth2PKCEProvider); ok {
+		return pp.AuthURLWithChallenge(state, pkceChallenge(p.pkceVerifier(state)))
+	}
+	return provider.AuthURL(state)
+}
+
+// exchangeCode redeems code, sending the flow's PKCE verifier when the
+// provider supports one.
+func (p *OAuth2Plugin) exchangeCode(ctx context.Context, provider OAuth2Provider, code, state string) (*OAuth2Token, error) {
+	if pp, ok := provider.(OAuth2PKCEProvider); ok {
+		return pp.ExchangeCodeWithVerifier(ctx, code, p.pkceVerifier(state))
+	}
+	return provider.ExchangeCode(ctx, code)
+}
 
 // errOAuthLookupFailed means a transient/transport error happened during
 // the (provider, provider_id), email, or password lookup.
@@ -841,12 +1032,18 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 		// step-2b auto-link. The address must match exactly (both sides
 		// are canonical); a verified assertion for any other address
 		// proves nothing about this one. Best-effort like the refresh.
-		if info.EmailVerified && found.GetEmail() == info.Email {
+		if info.EmailVerified && info.Email != "" && found.GetEmail() == info.Email {
 			markVerifiedIfUnproven(ctx, store, found.GetID())
 		}
 		return found, false, nil
 	} else if !errors.Is(err, ErrUserNotFound) {
 		return nil, false, fmt.Errorf("%w: FindByOAuth: %v", errOAuthLookupFailed, err)
+	}
+
+	// No link: everything below keys on the email, and an empty one is
+	// no email at all.
+	if info.Email == "" {
+		return nil, false, errOAuthNoEmail
 	}
 
 	// Step 2: email-collision / migration handling.
@@ -872,7 +1069,7 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 			if hasPw {
 				// Refuse. The user must log in with their password and
 				// link the provider from settings.
-				return nil, false, errOAuthEmailCollision
+				return nil, false, &oauthEmailCollision{userID: existing.GetID()}
 			}
 			// A passwordless account whose address nobody proved may
 			// belong to whoever signed in through an IdP that does not
@@ -889,7 +1086,7 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 				proven = v
 			}
 			if !proven {
-				return nil, false, errOAuthEmailCollision
+				return nil, false, &oauthEmailCollision{userID: existing.GetID()}
 			}
 			// AUTO-LINK. Safe migration: a passwordless account was
 			// created by a prior OAuth login; a verified email re-binds
@@ -920,7 +1117,7 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 	if creator, ok := store.(OAuthUserCreator); ok {
 		newUser, createErr = creator.CreateUserNoPassword(ctx, info.Email, p.mgr.DefaultRoles())
 	} else {
-		newUser, createErr = store.CreateUser(ctx, info.Email, passwordPlaceholderHash, p.mgr.DefaultRoles())
+		newUser, createErr = store.CreateUser(ctx, info.Email, placeholderPasswordHash(), p.mgr.DefaultRoles())
 	}
 	if createErr != nil {
 		return nil, false, createErr
@@ -1022,16 +1219,23 @@ const stateTTL = 10 * time.Minute
 
 // nonceGCThreshold is the map size above which validateAndConsumeState
 // scan-and-purges expired entries. Only the callback path mutates the
-// nonces map, so unbounded growth requires successful callbacks, much
-// harder to abuse than the redirect path under the old design.
+// nonces map, but a callback needs no IdP to get there: anyone can start
+// a flow, keep the state cookie, and come back with any code. Each entry
+// costs an attacker two unauthenticated requests.
 const nonceGCThreshold = 4096
 
 // nonceGCSweepInterval bounds cleanup work when a burst of valid states
-// keeps the nonce map full of live entries. nonceMaxEntries is a hard ceiling:
-// at capacity, callbacks fail closed until expired nonces can be reclaimed.
+// keeps the nonce map full of live entries. nonceMaxEntries is a hard
+// ceiling: at capacity, the nonceEvictBatch earliest-expiring entries are
+// dropped to make room. Refusing callbacks at capacity instead let two
+// requests per entry lock every user out of OAuth sign-in for the state
+// TTL. Eviction keeps the replay guarantee that matters: a replay also
+// needs the state cookie, which the callback clears in the browser that
+// started the flow, and the IdP spends the code on first exchange.
 const (
 	nonceGCSweepInterval = time.Minute
 	nonceMaxEntries      = 1 << 16
+	nonceEvictBatch      = nonceMaxEntries / 16
 )
 
 // generateState builds a stateless, HMAC-signed state token of the form
@@ -1090,10 +1294,33 @@ func (p *OAuth2Plugin) validateAndConsumeState(state, expectedProvider string) (
 		p.purgeExpiredNoncesLocked(now)
 	}
 	if len(p.usedNonces) >= nonceMaxEntries {
-		return "", false
+		p.evictEarliestNoncesLocked(nonceEvictBatch)
 	}
 	p.usedNonces[nonceB64] = expiry
 	return userID, true
+}
+
+// evictEarliestNoncesLocked drops the n entries closest to expiry (ties by
+// nonce, for a deterministic choice). Sorting the whole map is paid once
+// per nonceEvictBatch insertions at capacity.
+func (p *OAuth2Plugin) evictEarliestNoncesLocked(n int) {
+	type entry struct {
+		nonce  string
+		expiry time.Time
+	}
+	all := make([]entry, 0, len(p.usedNonces))
+	for nonce, exp := range p.usedNonces {
+		all = append(all, entry{nonce, exp})
+	}
+	slices.SortFunc(all, func(a, b entry) int {
+		if c := a.expiry.Compare(b.expiry); c != 0 {
+			return c
+		}
+		return strings.Compare(a.nonce, b.nonce)
+	})
+	for _, e := range all[:min(n, len(all))] {
+		delete(p.usedNonces, e.nonce)
+	}
 }
 
 // stateUnspent reports whether state's nonce has not been consumed yet.
@@ -1204,8 +1431,35 @@ var defaultOAuthHTTPClient = oidcNoRedirect(&http.Client{Timeout: 10 * time.Seco
 // buffer to EOF.
 const oauthProviderMaxBody = 1 << 20
 
+// maxTokenLifetime caps expires_in so the Duration product cannot
+// overflow; ten years is past any real access token.
+const maxTokenLifetime = 10 * 365 * 24 * time.Hour
+
+// tokenExpiry turns a token response's expires_in (seconds) into
+// OAuth2Token.Expiry. An absent or zero expires_in is the zero time,
+// "no stated expiry": GitHub's classic OAuth-app tokens never expire and
+// carry none, and setting Expiry to now for them made every
+// ValidOAuthToken call force a refresh no refresh token could serve. A
+// negative value is already expired.
+func tokenExpiry(expiresIn int64) time.Time {
+	switch {
+	case expiresIn > int64(maxTokenLifetime/time.Second):
+		return time.Now().Add(maxTokenLifetime)
+	case expiresIn > 0:
+		return time.Now().Add(time.Duration(expiresIn) * time.Second)
+	case expiresIn < 0:
+		return time.Now()
+	}
+	return time.Time{}
+}
+
 // GoogleProvider implements OAuth2Provider for Google's OAuth2 endpoints.
+// It sends PKCE (OAuth2PKCEProvider); set DisablePKCE to stop.
 type GoogleProvider struct {
+	// DisablePKCE stops the PKCE challenge and verifier. Only for a
+	// deployment whose Google client refuses them.
+	DisablePKCE bool
+
 	clientID         string
 	clientSecret     string
 	redirectURL      string
@@ -1228,7 +1482,10 @@ func NewGoogleProvider(clientID, clientSecret, redirectURL string) *GoogleProvid
 
 func (g *GoogleProvider) Name() string { return "google" }
 
-func (g *GoogleProvider) AuthURL(state string) string {
+func (g *GoogleProvider) AuthURL(state string) string { return g.AuthURLWithChallenge(state, "") }
+
+// AuthURLWithChallenge implements OAuth2PKCEProvider.
+func (g *GoogleProvider) AuthURLWithChallenge(state, challenge string) string {
 	u, _ := url.Parse("https://accounts.google.com/o/oauth2/v2/auth")
 	q := u.Query()
 	q.Set("client_id", g.clientID)
@@ -1241,13 +1498,20 @@ func (g *GoogleProvider) AuthURL(state string) string {
 	// configured OAuthTokenStore always has something to refresh with.
 	q.Set("access_type", "offline")
 	q.Set("prompt", "consent")
+	setPKCEChallenge(q, challenge, g.DisablePKCE)
 	u.RawQuery = q.Encode()
 	return u.String()
 }
 
 func (g *GoogleProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2Token, error) {
+	return g.ExchangeCodeWithVerifier(ctx, code, "")
+}
+
+// ExchangeCodeWithVerifier implements OAuth2PKCEProvider.
+func (g *GoogleProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error) {
 	data := url.Values{}
 	data.Set("code", code)
+	setPKCEVerifier(data, verifier, g.DisablePKCE)
 	data.Set("client_id", g.clientID)
 	data.Set("client_secret", g.clientSecret)
 	data.Set("redirect_uri", g.redirectURL)
@@ -1283,7 +1547,7 @@ func (g *GoogleProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2
 	return &OAuth2Token{
 		AccessToken:  body.AccessToken,
 		RefreshToken: body.RefreshToken,
-		Expiry:       time.Now().Add(time.Duration(body.ExpiresIn) * time.Second),
+		Expiry:       tokenExpiry(body.ExpiresIn),
 	}, nil
 }
 
@@ -1327,7 +1591,7 @@ func (g *GoogleProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	return &OAuth2Token{
 		AccessToken:  body.AccessToken,
 		RefreshToken: body.RefreshToken,
-		Expiry:       time.Now().Add(time.Duration(body.ExpiresIn) * time.Second),
+		Expiry:       tokenExpiry(body.ExpiresIn),
 	}, nil
 }
 
@@ -1380,7 +1644,12 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 }
 
 // GitHubProvider implements OAuth2Provider for GitHub's OAuth2 endpoints.
+// It sends PKCE (OAuth2PKCEProvider); set DisablePKCE to stop.
 type GitHubProvider struct {
+	// DisablePKCE stops the PKCE challenge and verifier. Only for a
+	// deployment whose GitHub app refuses them.
+	DisablePKCE bool
+
 	clientID         string
 	clientSecret     string
 	redirectURL      string
@@ -1403,20 +1672,30 @@ func NewGitHubProvider(clientID, clientSecret, redirectURL string) *GitHubProvid
 
 func (g *GitHubProvider) Name() string { return "github" }
 
-func (g *GitHubProvider) AuthURL(state string) string {
+func (g *GitHubProvider) AuthURL(state string) string { return g.AuthURLWithChallenge(state, "") }
+
+// AuthURLWithChallenge implements OAuth2PKCEProvider.
+func (g *GitHubProvider) AuthURLWithChallenge(state, challenge string) string {
 	u, _ := url.Parse("https://github.com/login/oauth/authorize")
 	q := u.Query()
 	q.Set("client_id", g.clientID)
 	q.Set("redirect_uri", g.redirectURL)
 	q.Set("scope", "user:email")
 	q.Set("state", state)
+	setPKCEChallenge(q, challenge, g.DisablePKCE)
 	u.RawQuery = q.Encode()
 	return u.String()
 }
 
 func (g *GitHubProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2Token, error) {
+	return g.ExchangeCodeWithVerifier(ctx, code, "")
+}
+
+// ExchangeCodeWithVerifier implements OAuth2PKCEProvider.
+func (g *GitHubProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error) {
 	data := url.Values{}
 	data.Set("code", code)
+	setPKCEVerifier(data, verifier, g.DisablePKCE)
 	data.Set("client_id", g.clientID)
 	data.Set("client_secret", g.clientSecret)
 	data.Set("redirect_uri", g.redirectURL)
@@ -1453,7 +1732,7 @@ func (g *GitHubProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2
 	return &OAuth2Token{
 		AccessToken:  body.AccessToken,
 		RefreshToken: body.RefreshToken,
-		Expiry:       time.Now().Add(time.Duration(body.ExpiresIn) * time.Second),
+		Expiry:       tokenExpiry(body.ExpiresIn),
 	}, nil
 }
 
@@ -1502,7 +1781,7 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	return &OAuth2Token{
 		AccessToken:  body.AccessToken,
 		RefreshToken: body.RefreshToken,
-		Expiry:       time.Now().Add(time.Duration(body.ExpiresIn) * time.Second),
+		Expiry:       tokenExpiry(body.ExpiresIn),
 	}, nil
 }
 
@@ -1623,3 +1902,28 @@ func parseGoogleEmailVerified(v any) bool {
 	}
 	return false
 }
+
+// setPKCEChallenge adds an S256 code_challenge to an authorization query,
+// unless there is none or the provider disabled PKCE.
+func setPKCEChallenge(q url.Values, challenge string, disabled bool) {
+	if challenge == "" || disabled {
+		return
+	}
+	q.Set("code_challenge", challenge)
+	q.Set("code_challenge_method", "S256")
+}
+
+// setPKCEVerifier adds code_verifier to a token request, unless there is
+// none or the provider disabled PKCE.
+func setPKCEVerifier(form url.Values, verifier string, disabled bool) {
+	if verifier == "" || disabled {
+		return
+	}
+	form.Set("code_verifier", verifier)
+}
+
+var (
+	_ OAuth2PKCEProvider = (*GoogleProvider)(nil)
+	_ OAuth2PKCEProvider = (*GitHubProvider)(nil)
+	_ OAuth2PKCEProvider = (*OIDCProvider)(nil)
+)

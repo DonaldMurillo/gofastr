@@ -514,10 +514,12 @@ func (s *EntityUserStore) CreateUser(ctx context.Context, email, hashedPassword 
 }
 
 // CreateUserNoPassword auto-creates a user using the package-level
-// placeholder hash and records password_set=false. Used by the OAuth /
+// placeholder hash (made by DefaultHasher, so a login against it costs
+// what one against an unknown address does) and records
+// password_set=false. Used by the OAuth /
 // magic-link auto-create flows. Implements OAuthUserCreator.
 func (s *EntityUserStore) CreateUserNoPassword(ctx context.Context, email string, roles []string) (User, error) {
-	return s.create(ctx, email, passwordPlaceholderHash, roles, false)
+	return s.create(ctx, email, placeholderPasswordHash(), roles, false)
 }
 
 func (s *EntityUserStore) create(ctx context.Context, email, hashedPassword string, roles []string, passwordSet bool) (User, error) {
@@ -822,7 +824,7 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 		tsType, boolType, boolFalse = "TIMESTAMP", "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at %s NOT NULL, expires_at %s NOT NULL, two_factor_verified %s NOT NULL DEFAULT %s, pending_two_factor %s NOT NULL DEFAULT %s)",
+		"CREATE TABLE IF NOT EXISTS %s (id TEXT NOT NULL, token TEXT NOT NULL, user_id TEXT NOT NULL, created_at %s NOT NULL, expires_at %s NOT NULL, two_factor_verified %s NOT NULL DEFAULT %s, pending_two_factor %s NOT NULL DEFAULT %s)",
 		query.QuoteFolded(s.table), tsType, tsType, boolType, boolFalse, boolType, boolFalse,
 	)
 	_, err := s.db.ExecContext(ctx, stmt)
@@ -832,10 +834,27 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "two_factor_verified", "pending_two_factor"); err != nil {
 		return err
 	}
-	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (expires_at)",
-		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, indexName("idx_", s.table, "_expires"), query.QuoteFolded(s.table)))
-	_, err = s.db.ExecContext(ctx, idx)
-	return err
+	// The indexes are created whoever made the table, and they are the
+	// only ones: the CREATE TABLE above and SessionEntityFields declare no
+	// UNIQUE of their own, which left two unique indexes on token. The documented
+	// wiring declares app.Entity("sessions", SessionEntityConfig()), so
+	// AutoMigrate creates the table first and the CREATE TABLE above does
+	// nothing: token then had no index, and every cookie lookup (a random
+	// cookie included) scanned the whole table, as did DeleteByUser.
+	sqlite := s.dialect.of(s.db) == migrate.DialectSQLite
+	on := func(suffix string) string {
+		return query.IndexOn(sqlite, indexName("idx_", s.table, suffix), query.QuoteFolded(s.table))
+	}
+	for _, idx := range []string{
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (expires_at)", on("_expires")),
+		fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s (token)", on("_token")),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (user_id)", on("_user")),
+	} {
+		if _, err := s.db.ExecContext(ctx, idx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // qTable wraps a statement template with the validated table name.

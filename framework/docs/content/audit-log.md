@@ -247,7 +247,23 @@ deployments.
 Each row carries `record_id`/`actor_id` = the resolved user id (or `"-"`
 when unknown, since the column is NOT NULL), and a `diff` JSON of
 `{email, remote, …meta}`. `remote` is the host part of `r.RemoteAddr`;
-`X-Forwarded-For` is never trusted (see the auth threat model).
+`X-Forwarded-For` is never trusted (see the auth threat model). A row
+with no user id (an unknown address, a magic-link request, a refused
+OAuth sign-in) carries `email_hash`, a 12-hex-char sha256 prefix of the
+canonical address, instead of `email`, because erasure scrubs the rows
+a user acted from and cannot reach a row with no actor: a raw address
+there outlived the user. The address is canonicalized with
+`auth.CanonicalEmail`, the default, even on a host that set
+`AuthConfig.CanonicalizeEmail` (the sink has no manager); look a row up
+by `hashedIdentifier`'s rule over that form: the first 12 hex chars of
+its sha256. The digest is a pseudonym, not anonymous data: anyone holding
+a candidate address can confirm a match.
+
+Every sink, the built-in one and a host's own (`AuthConfig.AuditSink`
+and the token middleware's `WithTokenAudit`), gets the request's
+context minus its cancellation, with a 5-second deadline. Every event is
+emitted after the change it records, so a client that hangs up after a
+2FA disable or a role change no longer drops the row.
 
 ### Redaction posture
 

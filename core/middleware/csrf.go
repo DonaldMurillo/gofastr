@@ -20,7 +20,6 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
-	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // logSlogWarnDefault routes to slog.Default() so callers passing nil to
@@ -308,6 +307,12 @@ func CSRF(cfg CSRFConfig) Middleware {
 				return
 			}
 			ctx := context.WithValue(r.Context(), csrfSubmissionKey{}, csrfSubmission{header: cfg.HeaderName, token: submitted})
+			// The verified token is the page's token too: a handler that
+			// re-renders the form (a validation error) reads it here.
+			// Without it, readers fell back to guessing the cookie name and
+			// rendered no token under a custom CookieName, so the
+			// resubmit answered 403.
+			ctx = context.WithValue(ctx, csrfTokenCtxKey{}, cookie.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -487,20 +492,17 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 }
 
 // SkipBearerAuth returns a Skip predicate suitable for CSRFConfig.Skip that
-// bypasses requests carrying an X-API-Key header or an Authorization
-// header in a scheme the client has to attach on purpose (Bearer, a
-// token or signature scheme): those don't ride along on a cross-site
-// request, so they aren't subject to CSRF.
+// bypasses requests carrying an Authorization: Bearer or X-API-Key header;
+// those don't ride on cookies and so aren't subject to CSRF.
 //
-// The browser-ambient schemes are NOT skipped: Basic, Digest, Negotiate
-// and NTLM (the scheme token compared case-insensitively). A browser
-// caches those credentials and attaches them to a cross-site form POST
-// on its own, the way it attaches a cookie, so a request carrying one
-// still owes a CSRF token. An app behind a Basic-auth gate or an
-// intranet Negotiate SSO keeps CSRF protection on its cookie writes.
+// Only the Bearer scheme counts. Basic, Digest, Negotiate and NTLM are
+// credentials the browser attaches by itself, to a cross-site form POST
+// too, once a proxy or intranet challenged for them: skipping on any
+// Authorization value let such a form through CSRF behind an HTTP-auth
+// staging gate, riding the session cookie as well.
 func SkipBearerAuth() func(*http.Request) bool {
 	return func(r *http.Request) bool {
-		if authz := r.Header.Get("Authorization"); authz != "" && !ambientAuthScheme(authz) {
+		if scheme, _, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " "); ok && strings.EqualFold(scheme, "bearer") {
 			return true
 		}
 		if r.Header.Get("X-API-Key") != "" {
@@ -508,21 +510,4 @@ func SkipBearerAuth() func(*http.Request) bool {
 		}
 		return false
 	}
-}
-
-// ambientAuthScheme reports whether an Authorization value uses a scheme
-// the browser attaches by itself once the user has answered a challenge.
-// The fold is ASCII-only: a browser sends these scheme names in ASCII,
-// and a look-alike is a header the page set itself, which a cross-site
-// form cannot do.
-func ambientAuthScheme(authz string) bool {
-	scheme := strings.TrimLeft(authz, " \t")
-	if i := strings.IndexAny(scheme, " \t"); i >= 0 {
-		scheme = scheme[:i]
-	}
-	switch asciicase.Lower(scheme) {
-	case "basic", "digest", "negotiate", "ntlm":
-		return true
-	}
-	return false
 }

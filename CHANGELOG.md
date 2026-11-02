@@ -25,6 +25,38 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
+  A calendar that stays on the page beside the native date input it
+  fills, for a range in one control, refused days, or notes on days. The
+  native input is the value and posts without script; the
+  `headless-datepicker` module owns the date-grid keyboard, and a month
+  change is an island the page serves with `ui.DatePickerMonth`. An
+  ordinary date stays `ui.DateField`. Built on `headless.DatePicker`;
+  `core/i18n` gains `DateYearMonthLong`, `WeekdayName`, `WeekdayAbbr` and
+  `FirstWeekday` for it. See `form-module.md`, "When the native picker is
+  not enough".
+- **Untrusted process modules can be hosted by an app** ([#608](https://github.com/DonaldMurillo/gofastr/issues/608)).
+  `RegisterProcessModule` now builds the sandbox runner itself for a
+  `TrustUntrusted` descriptor, probing the backend once per App; before,
+  no app could pass one and every untrusted registration failed.
+  `WithSandboxBackend` overrides the host's built-in backend,
+  `App.ProcessModuleSandbox()` lets a host check before it registers, and
+  `SandboxConformanceError` carries the report. The probe child is the
+  app's own binary, answered by the framework's package `init`: there is
+  no hook to add to `main`, and `GOFASTR_SANDBOX_PROBE` is now reserved.
+  `ProbeResult.Reported` says whether a probe child ran the probe body.
+  `examples/processmodule-demo/host` hosts the demo module untrusted. See
+  [Process modules](framework/docs/content/process-modules.md#hosting-an-untrusted-module).
+- **The Linux sandbox passes every conformance probe**, so untrusted
+  process modules now run on Linux with bubblewrap and util-linux
+  `prlimit`. The child runs as uid 65534 in its own user namespace, sees no
+  `/etc` beyond the loader cache and timezone, has a read-only root and no
+  `/tmp` (it writes to its working directory), and runs under fd, process
+  and memory rlimits (default 1024 / 256 / 1 GiB). On a root host bwrap
+  itself starts as uid 65534. `prlimit` is now required on Linux. The P6
+  memory probe maps memory directly and asks for 256 MiB (was 64 MiB, below
+  what a cgo-linked Go binary needs to start). See
+  [What the Linux sandbox gives a module](framework/docs/content/process-modules.md#what-the-linux-sandbox-gives-a-module).
 - **`embedskip` analyzer.** `gofastr verify` and `make analyze` report a
   struct field walk (`NumField()` or the `Fields()` iterator) that maps
   fields to keys by their tags and never handles an embedded struct, so
@@ -140,6 +172,241 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **battery/auth bug bash (2026-11-01).** Details in
+  [auth.md](framework/docs/content/auth.md):
+  - **BREAKING: token management needs the second factor.** On a 2FA
+    account `POST/GET/DELETE /auth/tokens` need the cookie session that
+    passed it; a session from before enrollment answers 403 and a bare
+    bearer JWT 401. Either minted a permanent `*:*` token before.
+  - **BREAKING: the 2FA challenge replaces the session.** A passing code
+    deletes the pending session and sets a new cookie, so a planted
+    pending token never becomes a verified one.
+  - **BREAKING: CSRF skips only `Authorization: Bearer` and `X-API-Key`.**
+    Basic, Negotiate and NTLM, which the browser attaches by itself, no
+    longer skip the check (`middleware.SkipBearerAuth`).
+  - **BREAKING: OAuth.** Provider keys must be 1-64 letters, digits, `-`
+    or `_` (a dotted key never completed a flow). An identity with no
+    email and no existing link answers 400 `auth.oauth_no_email` (two
+    such identities merged into one account). OIDC `email_verified`
+    counts only when the same claim set's `email` is the kept address,
+    so a remapped `EmailClaim` no longer auto-links on another
+    address's flag.
+  - **BREAKING: a password form login of a 2FA account reaches the
+    challenge.** It redirected to its `next` page, which refuses the
+    pending session. Next to a 2FA plugin, `Init` now requires
+    `NewCorePlugin().WithTwoFactorURL(path)`.
+  - **BREAKING: OAuth sign-in of a 2FA account reaches the challenge.**
+    It redirected to `/`, which refuses the pending session. Next to a
+    2FA plugin, `Init` now requires `OAuth2Config.TwoFactorURL`, as
+    passkey and magic link do.
+  - **OAuth sends PKCE.** The OIDC, Google and GitHub providers send an
+    S256 `code_challenge` and the `code_verifier`, so a stolen
+    authorization code no longer redeems in an attacker's own flow
+    (authorization-code injection, RFC 9700). `DisablePKCE` on each
+    provider turns it off; custom providers opt in through
+    `auth.OAuth2PKCEProvider`.
+  - **OAuth refresh is serialized across replicas.** `SQLOAuthTokenStore`
+    leases a grant (`auth.OAuthTokenLeaser`, new `refresh_lease_ms`
+    column) before its refresh token is spent; a replica that finds
+    another's lease waits for that refresh and never spends the token,
+    failing with `auth.ErrOAuthRefreshInProgress` if it does not land.
+  - OAuth: an account claim deletes the squatter's stored provider
+    tokens; callbacks without a code no longer fill the replay table
+    and lock every login out; concurrent refreshes spend a refresh token
+    once; tokens with no `expires_in` stay usable; the `/link` flow
+    stores tokens and refuses a binding it lost to another account; a
+    JWKS or discovery outage no longer refetches under a lock on every
+    login. New `(*OAuth2Plugin).ValidOAuthToken` and
+    `RefreshOAuthToken` read the row under the registry key.
+  - `ttl_seconds` past the `time.Duration` range answers 400 (a wrapped
+    negative minted a permanent token); an unreadable SQLite
+    `revoked_at`/`expires_at` reads as revoked/expired; token display
+    prefixes keep 7 random chars after a long brand.
+  - Passkey RSA keys are capped at 8192 bits (a 4-Mbit key cost a minute
+    of CPU per anonymous sign-in attempt).
+  - At most 8 distinct session cookies are looked up per request (2999
+    copies drove 2999 queries).
+  - `RequireAuth(mgr.JWT())` works when wired before `Init`;
+    `RequireAuth(nil)` panics at wiring; a negative `JWTExpiry` fails
+    `Init`.
+  - Audit rows survive a client that hangs up after the change, and an
+    actor-less SQL audit row stores `email_hash`, not the address.
+  - `EntitySessionStore` indexes `token` (unique) and `user_id` whoever
+    created the table; `EraseUserData` reaches the in-memory auth stores.
+  - `AuthManager` reports its `BasePath` to the embed host.
+  - **Per-IP limits key IPv6 by its /64** (`ratelimit.IPKey`,
+    `(*Limiter).ClientKey`): one client could rotate source addresses
+    inside its own /64 past every per-IP limit. `Middleware()`, the auth
+    battery's per-IP limiters and `framework.AgentRateLimitKey` use it.
+  - Every `AuditSink`, a host's own included, gets the request's context
+    minus its cancellation, with a 5-second deadline: a sink doing slow
+    remote work is cut off there.
+  - `middleware.CSRF` puts the verified token on the context for a
+    mutating request too (`TokenFromContext`), and `auth.CSRFToken`
+    reads `__Host-auth_csrf` before `auth_csrf`.
+  - `auth.CheckPassword` knows only the two built-in formats again; the
+    battery's sign-in asks a custom `DefaultHasher` first.
+  - Passwords: the 8-character floor counts characters, so a short CJK
+    password that passed on bytes is refused; placeholders for
+    passwordless accounts are made by `DefaultHasher`.
+- **BREAKING: a magic-link sign-in of a 2FA account reaches the
+  challenge.** The confirm POST always redirected to `OnSuccessURL`,
+  which refuses the pending session it had just minted. It now goes to
+  the new `MagicLinkConfig.TwoFactorURL`, and `Init` refuses to start
+  when a 2FA plugin is registered and that field is empty, as the
+  passkey plugin does. Set it to the page that posts the code to
+  `/2fa/challenge`.
+- **Magic-link send and forgot-password limit each address.** One mail
+  per address every two minutes (`AddressRateLimit`), however many IPs
+  ask; within the cooldown the request gets the same 200 and nothing is
+  minted or mailed. A cooldown rather than an hourly budget, so a
+  stranger cannot stop the owner's links.
+- **Password hashing follows `auth.DefaultHasher`.** Passwordless and
+  cleared accounts store a placeholder made by it, so login timing no
+  longer tells them from unknown addresses under argon2id; a custom
+  hasher's `Verify` is called; `Argon2Hasher.Hash` refuses parameters
+  its verifier refuses; the 8-character floor counts characters, not
+  bytes. See [auth.md](framework/docs/content/auth.md#password-hashing).
+- **Multipart login and register forms work.** Only `ParseForm` ran,
+  which never reads a multipart body, so every one answered 400. A
+  file part or a repeated `email`/`password` field answers 400.
+- **A list on a bare filter key is no longer sent as an IN.** The
+  server reads `?status=a,b` as equality with the literal `a,b`, so a
+  list there matched nothing it was meant to. The generated JS SDK sent
+  an array on any filter key that way; it now throws on an array whose
+  key does not end in `_in`, or whose key is a column of its own (a
+  `check_in` column with no `check` column), naming the `<key>_in` to
+  use (`sort`, `fields` and `include` arrays still go comma-joined). The generated
+  CLI's bare `--<field>` flag claimed "comma list = IN" and sent the
+  same query; it is equality only now, and a new `--<field>-in` flag
+  sends `<field>_in`.
+- **`gofastr generate cli` refuses a `custom.go` from the other mode.**
+  The generator never rewrites `custom.go`, so moving between the entity
+  and `--from-openapi` modes kept a file importing the other mode's client,
+  and the CLI stopped building. The run now names the import and stops;
+  `--force` moves the file to `custom.go.bak` and writes a fresh one. See
+  [App CLI](framework/docs/content/app-cli.md).
+- **BREAKING: `client.d.ts` types nullable fields `T | null`.** The
+  server returns SQL `NULL` as `null` for any optional column, but the
+  generated types said `T`, so strict TypeScript compiled code that read
+  `null` as a string or number. A field that is not required, generated or
+  part of the key is now `T | null` on the entity interface and its Input
+  (where `null` clears it). See [SDK](framework/docs/content/sdk.md).
+- **BREAKING: the JS SDK keeps integers past 2^53.** `client.js` parsed
+  with `JSON.parse`, so a big id or counter lost digits. It now hands such
+  an integer over as its exact decimal string, and `client.d.ts` types
+  every integer field, and an integer `id`, `number | string`. TypeScript
+  code that does arithmetic on one narrows it first. See
+  [SDK](framework/docs/content/sdk.md).
+- **The harness MCP server cancels a request from another POST.** Over
+  Streamable HTTP each POST had its own in-flight table, so the
+  `notifications/cancelled` an MCP client sends as a separate POST found
+  nothing and the turn ran on. POSTs now share one table, owned by the
+  token principal plus `Mcp-Session-Id`, so another caller's cancel finds
+  nothing. The duplicate-id check and the 32-request cap count per owner
+  across POSTs.
+- **BREAKING: a presence topic named in the URL needs `AuthorizeTopic`.**
+  With no hook, any `?presence=` topic joined, so anyone who could guess a
+  topic read its roster, emails included. A screen now declares its topics
+  with `PresenceTopics(ctx)` (`uihost.PresenceScreen`); the host signs the
+  list into the page's stream URL for that viewer, and those topics join
+  with no hook. A `?presence=` topic is refused unless a hook admits it, and
+  an installed hook now answers for declared topics too.
+  `island.Manager.ServeSSEWithPresence` takes an `island.PresenceTopics`
+  (`Declared`, `Requested`) in place of a `[]string`. See
+  [Live presence](framework/docs/content/presence.md).
+- **A desktop window on Windows can no longer open a second, unguarded
+  window.** WebView2 answered `window.open` and `target="_blank"` with a
+  new web view that had no navigation policy, so a page could open a
+  foreign site in a window that looked like the app's. The Windows shell
+  now marks every new-window request handled, so nothing opens, as on
+  macOS and Linux.
+- **A static export's `llm.md` carries the page's SEO front matter.** The
+  live `/llm.md` opens with the screen's description, canonical and
+  other head metadata; the exported file was the bare doc. Both now go
+  through the new `UIHost.LLMMDWithSEO`, so an exported doc matches the
+  served one byte for byte.
+- **One A2A caller can no longer take every push-delivery slot.** The 16
+  in-flight deliveries and the 16-event backlog were shared by every
+  owner, so a caller whose receiver hung held them all and every other
+  owner's notifications were dropped. One owner now holds at most 4 of
+  each.
+- **A page whose cache entry was dropped keeps its own signals on Back
+  and Forward.** When an RPC write invalidated the page's entry, leaving
+  it captured only its `route.*` signals, so a replay showed the page's
+  markup with the previous page's values (a cart quantity, a selected
+  tab). The envelope navigator now tracks the page's whole page-scoped
+  seed, and a deferred part's seed adds to it instead of replacing it.
+- **BREAKING: auth's own screens draw with the design system.** The
+  magic-link confirmation and the same-site hop (the page a cross-site
+  OAuth link callback or webmail verification click lands on) were
+  hand-written HTML. The new `AuthConfig.Pages` draws both, and
+  `authui.Pages(host)` (`battery/auth/authui`) renders them as a
+  `ui.AuthCard` through the app's UIHost. `MagicLinkConfig.ConfirmPage`
+  is removed: implement `auth.Pages` instead, whose `ConfirmPageData`
+  now carries the screen's words in the caller's locale. The hop now
+  reloads through a `Refresh` header, so a page drawn through a UIHost
+  (which drops a meta refresh from a screen's head) still continues. With
+  `Pages` nil the plain documents stay.
+- **BREAKING: a blank write in a declared `Access` block is refused.**
+  Declaring `Access{Read: "posts:read"}` to gate reads left Create, Update
+  and Delete open to every caller, anonymous ones included. Once an
+  `Access` block names any permission, a blank `Create`, `Update` or
+  `Delete` now answers **403** for every caller, a wildcard role included,
+  and its MCP tool is refused too; server code under `crud.WithElevation`
+  still writes. The new `framework.Anyone` (`anyone` in an app spec or
+  entity declaration) opens an operation on purpose. A blank `Read` still
+  leaves reads open.
+- **A reboot no longer undoes a process-module revoke.** The next boot
+  compared the descriptor with the stored row, read the revoked grant as a
+  grant change, wrote it back and disabled the module. The store now
+  records revokes (`DesiredState.RevokedGrants`, a `revoked_grants` column
+  `EnsureSchema` adds to an existing table), the boot subtracts them from
+  the descriptor, and only a grant the row does not hold disables the
+  module. A descriptor that only drops grants reports the new
+  `InstallGrantsNarrowed` outcome and keeps the module enabled.
+- **A revoked process-module grant stops working when the drain starts.**
+  A revoke or disable drains the child for up to `DrainPerModule` (30 s by
+  default), and the broker kept answering its `host.*` reverse calls under
+  the old grant until the child exited. Those drains now refuse reverse
+  calls at once; an upgrade that takes no grant away and the shutdown drain
+  keep them open. `moduleproto.WithServeGate` is the new peer option behind
+  it.
+- **BREAKING: an rtc join with no user is refused unless the app opts
+  in.** Every caller whose `Join.User` was empty shared one seat bucket,
+  so one anonymous caller opening sockets displaced every other anonymous
+  caller across all rooms. `Authorize` returning an empty `User` now gets
+  a 403 (`rtc.user_required`) before the upgrade. An app whose callers
+  are anonymous sets `Config.AnonymousSeats: rtc.AnonymousPerSocket`:
+  each such socket holds its own seat and is never displaced by another.
+  `examples/rtc-call` opts in.
+- **BREAKING: webhook signatures cover the event name and delivery id.**
+  `v1` signed `<ts>.<body>`, so a delivery captured inside the tolerance
+  window could be re-sent with another `X-GoFastr-Event` or
+  `X-GoFastr-Delivery-ID` and still verify. It now signs
+  `<ts>\n<event>\n<delivery id>\n<body>`. `SignWithTimestamp` and
+  `VerifyTimestamped` take the event and id; `TimestampedVerifier` reads
+  them from the request. Every receiver must update its verifier.
+  ([webhooks](framework/docs/content/webhooks.md))
+- **A password reset removes every OAuth link.** On a verified account
+  the links survived, so an IdP identity linked from a stolen session
+  signed the attacker back in after the owner's reset. The reset now
+  unlinks every provider and deletes its stored tokens (an account claim
+  deletes them too), then mails a notice naming the unlinked providers
+  (`PasswordResetConfig.NoticeTemplate`). ([auth](framework/docs/content/auth.md))
+- **BREAKING: `access.Can`, `CanResource` and `CanResourceExact` check
+  token scopes.** A scoped API token passed them on its owner's roles, so
+  an `orders:update` token an admin minted could run an `orders:approve`
+  transition or the state override. They now also require a scope
+  granting the permission, as `RequirePermission` does, and a Decider's
+  Allow does not lift it.
+  ([access control](framework/docs/content/access-control.md))
+- **BREAKING: `auth.RequireRole` and `auth.MCPRole` need a role scope on
+  an API token.** A token carries its owner's roles, so a `customers:read`
+  token an admin minted passed `RequireRole("admin")`. A scoped token now
+  counts a role only when it holds `role:<name>` (`role:*`, `*:*`), as
+  `framework.MCPRequireRole` already required. Sessions and JWTs are
+  unaffected. ([auth](framework/docs/content/auth.md))
 - **BREAKING: WebSocket text writes must be valid UTF-8.** `Write`,
   `WriteString` and `Hub.Broadcast` sent any bytes as a TEXT frame, and
   a browser then dropped the connection with 1007. They now return
@@ -4473,13 +4740,6 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
-- **`SkipBearerAuth` keeps CSRF on for browser-ambient credentials.** It
-  skipped the check for any `Authorization` header, and a browser
-  attaches Basic, Digest, Negotiate and NTLM credentials to a
-  cross-site form post on its own, so an app behind a Basic-auth gate or
-  intranet SSO had no CSRF protection on its cookie-session writes.
-  Those four schemes are now checked; Bearer and other schemes still
-  skip. `battery/auth.CSRF` uses this predicate by default.
 - **A junk-key flood no longer resets an exhausted rate-limit key.**
   With the default `RefillBy`, eviction at `MaxKeys` shed the exhausted
   bucket first, so a per-username login throttle came back with a full

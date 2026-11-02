@@ -13,9 +13,8 @@ import (
 // are ambient: the browser caches the credentials and attaches them to
 // a cross-site form POST on its own, so an app behind a Basic-auth gate
 // or an intranet Negotiate SSO lost CSRF protection on every cookie
-// write (auth.CSRF ships SkipBearerAuth as its default Skip). Those
-// schemes now owe a token; a scheme a client has to attach on purpose
-// is still skipped.
+// write (auth.CSRF ships SkipBearerAuth as its default Skip). Only
+// Bearer skips now: Token and AWS4-HMAC-SHA256 owe a token too.
 func TestSkipBearerAuthKeepsCSRFForAmbientSchemes(t *testing.T) {
 	var reached atomic.Int32
 	h := CSRF(CSRFConfig{SecretKey: []byte("ambient-auth-csrf-key-32-bytes!!"), Skip: SkipBearerAuth()})(
@@ -40,15 +39,17 @@ func TestSkipBearerAuthKeepsCSRFForAmbientSchemes(t *testing.T) {
 		"NTLM TlRMTVNTUAABAAAAB4IIog==",
 		`Digest username="alice", realm="x", nonce="n", uri="/", response="r"`,
 		"DIGEST\tusername=\"alice\"",
+		"Token abc",
+		"AWS4-HMAC-SHA256 Credential=x",
 	} {
 		if code, n := post(authz); code != http.StatusForbidden || n != 0 {
-			t.Errorf("SECURITY: Authorization %q: tokenless form POST reached the handler (status %d); an ambient scheme must not skip CSRF",
+			t.Errorf("SECURITY: Authorization %q: tokenless form POST reached the handler (status %d); only Bearer skips CSRF",
 				strings.Fields(authz)[0], code)
 		}
 	}
-	for _, authz := range []string{"Bearer eyJhbGciOi", "bearer abc", "Token abc", "AWS4-HMAC-SHA256 Credential=x"} {
+	for _, authz := range []string{"Bearer eyJhbGciOi", "bearer abc"} {
 		if code, n := post(authz); code != http.StatusOK || n != 1 {
-			t.Errorf("Authorization %q: status %d, want the skip (a non-ambient credential)", strings.Fields(authz)[0], code)
+			t.Errorf("Authorization %q: status %d, want the skip (a Bearer credential)", strings.Fields(authz)[0], code)
 		}
 	}
 }

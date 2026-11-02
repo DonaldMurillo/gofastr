@@ -18,6 +18,13 @@ var (
 	oauthHopContinue = i18n.Define("auth.oauth_hop_continue", "Continue")
 )
 
+// The words of the email a completed password reset sends.
+var (
+	resetNoticeDone     = i18n.Define("auth.reset_notice_done", "Your password was reset, and every device signed in to your account was signed out.")
+	resetNoticeUnlinked = i18n.Define("auth.reset_notice_unlinked", "These sign-in providers were unlinked from your account. Link them again in your account settings if you use them: {{providers}}.")
+	resetNoticeWarning  = i18n.Define("auth.reset_notice_warning", "If you did not reset your password, contact support now.")
+)
+
 // The refusals this package writes, under their catalog keys.
 var (
 	reasonSessionRequired                = i18n.Define("auth.session_required", "interactive session required, not an API token")
@@ -130,6 +137,7 @@ var (
 	reasonTooManyScopes                  = i18n.Define("auth.too_many_scopes", "too many scopes ({{count}} > {{max}})")
 	reasonInvalidScope                   = i18n.Define("auth.invalid_scope", "invalid scope {{scope}} (want resource:verb)")
 	reasonNegativeTokenTTL               = i18n.Define("auth.negative_token_ttl", "token ttl must be positive (got {{ttl}}); omit it for a token that does not expire")
+	reasonTokenTTLOutOfRange             = i18n.Define("auth.token_ttl_out_of_range", "ttl_seconds must be between 1 and {{max}} (got {{ttl}}); omit it for a token that does not expire")
 	reasonInvalidTokenPrefix             = i18n.Define("auth.invalid_token_prefix", "invalid token prefix {{prefix}} (want lowercase alnum starting with a letter, 2-16 chars, trailing underscore, e.g. {{example}})")
 	reasonCurrentPasswordRequired        = i18n.Define("auth.current_password_required", "current password required")
 	reasonNewPasswordRequired            = i18n.Define("auth.new_password_required", "new password required")
@@ -163,3 +171,7 @@ var (
 	reasonVerifyOtherAccount         = i18n.Define("auth.verify_other_account", "this verification link belongs to another account")
 	reasonVerifySignIn               = i18n.Define("auth.verify_sign_in", "sign in, then open the verification link again")
 )
+
+// The OAuth callback's refusal of an identity whose provider shared no
+// email address and that no link names yet.
+var reasonOauthNoEmail = i18n.Define("auth.oauth_no_email", "this provider account shares no email address: let the app see your email at the provider, or sign up another way")

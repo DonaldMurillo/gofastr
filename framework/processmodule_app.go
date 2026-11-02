@@ -87,6 +87,9 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 		// forwards reconcile signals.
 		a.modules.SetProcessCoordinator(processCoordinatorAdapter{sup: sup})
 	}
+	if desc.TrustTier == TrustUntrusted {
+		a.installSandboxFor(desc, approved)
+	}
 	ctx := context.Background()
 	reg, err := a.processModules.Register(ctx, desc, approved)
 	if err != nil {
@@ -125,6 +128,24 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 	// the module-tool gate and the supervisor.
 	a.modules.markProcess(desc.Name)
 	return a
+}
+
+// installSandboxFor hands the supervisor the app's sandbox runner before
+// an untrusted descriptor registers, probing the backend on first use
+// (issue #608). A backend that is missing or does not conform panics with
+// [UntrustedNoSandboxError] carrying the conformance report, so the
+// operator reads which probe failed. An invalid descriptor panics with
+// its own validation error first: no probe runs for a registration that
+// would be refused anyway.
+func (a *App) installSandboxFor(desc ProcessModuleDescriptor, approved ApprovedGrants) {
+	if _, err := ValidateProcessModuleDescriptor(desc, approved); err != nil {
+		panic(fmt.Sprintf("framework: RegisterProcessModule(%q): %v", desc.Name, err))
+	}
+	runner, err := a.ProcessModuleSandbox()
+	if err != nil {
+		panic(fmt.Sprintf("framework: RegisterProcessModule(%q): %v", desc.Name, &UntrustedNoSandboxError{Module: desc.Name, cause: err}))
+	}
+	a.processModules.setSandbox(runner)
 }
 
 // ProcessModules returns the process-module supervisor, or nil when the

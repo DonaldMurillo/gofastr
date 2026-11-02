@@ -260,14 +260,11 @@ middleware.CSRF(middleware.CSRFConfig{
 Issues a cookie on safe requests; requires the matching header on
 mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
 `SkipBearerAuth()` is the shipped helper that bypasses CSRF on
-requests with `Authorization: Bearer …` (or any scheme a client has to
-attach on purpose) or `X-API-Key`, appropriate for pure API deployments
-where the browser is not involved. It does not skip the
-browser-ambient schemes `Basic`, `Digest`, `Negotiate` and `NTLM`
-(compared case-insensitively): a browser attaches cached credentials
-in those schemes to a cross-site form `POST` on its own, the way it
-attaches a cookie, so an app behind a Basic-auth gate or an intranet
-Negotiate SSO keeps its CSRF check.
+requests with `Authorization: Bearer …` or `X-API-Key`, appropriate for
+pure API deployments where the browser is not involved. Other
+`Authorization` schemes (Basic, Negotiate) are not skipped: the browser
+attaches them by itself. A verified mutating request carries its token on
+the context (`TokenFromContext`), so a re-rendered form can embed it.
 
 **Always set `SecretKey` explicitly in production.** The middleware
 will autogenerate one if omitted, but that key rotates every process
@@ -813,16 +810,19 @@ for every operation on an entity that declares none of `OwnerField`,
    requires an authenticated owner for every operation; the new
    session gate is redundant there and steps aside.
 2. **`Access` declared** (any operation, even a partial block): RBAC
-   governs the entity "as today": a blank permission for an operation
-   leaves it un-gated by RBAC, and the new session gate does not layer
-   an extra requirement on top.
+   governs the entity. A blank `Read` leaves reads open to every caller;
+   a blank `Create`, `Update` or `Delete` is refused to every caller
+   (403), a wildcard role included. `framework.Anyone` opens an
+   operation on purpose (`Create: framework.Anyone` for a contact form
+   on an otherwise gated entity). The session gate does not layer an
+   extra requirement on top.
 3. **`Public: true`**: a deliberate, full opt-out. Every operation,
    reads and writes, is open to anonymous callers: the framework's
    pre-secure-by-default behaviour for that entity. Meant for content
    that's genuinely public (a contact form, a blog's comments), not as
    a workaround for a 401 during development. An entity that wants
    public reads but gated writes uses `Access` instead (a blank
-   `Read` + a real `Create` permission).
+   `Read` and a real permission for each write).
 
 The read posture has two questions, and `Public` answers only the first
 (may this caller read the entity). **Which rows** they see is

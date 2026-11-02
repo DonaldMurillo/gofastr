@@ -42,7 +42,7 @@ func newChallengeFixture(t *testing.T, cfg TwoFAConfig) *challengeFixture {
 		UserStore:           store,
 		AllowInMemoryStores: true,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(cfg))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -125,10 +125,12 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 		}
 	}
 
-	// 200 wrong codes from 20 addresses in one /64, 10 each.
+	// 200 wrong codes from 20 addresses, 10 each, each in its own /64:
+	// the per-IP limiter keys IPv6 by /64, so addresses inside one /64
+	// would be stopped there before this budget is reached.
 	checked := 0
 	for h := 1; h <= 20; h++ {
-		remote := fmt.Sprintf("[2001:db8:1:2::%x]:1111", h)
+		remote := fmt.Sprintf("[2001:db8:%x::1]:1111", h)
 		for j := range 10 {
 			w := f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, wrong(h*1000+j)), P, remote)
 			if strings.Contains(w.Body.String(), "invalid code") {
@@ -143,7 +145,7 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 		t.Fatal("pending session survived the guessing run")
 	}
 	// The correct code no longer completes the revoked session.
-	w := f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, f.backupCodes[0]), P, "[2001:db8:1:2:ffff::1]:1111")
+	w := f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, f.backupCodes[0]), P, "[2001:db8:ffff::1]:1111")
 	if w.Code == http.StatusOK {
 		t.Fatalf("revoked session stepped up: %d %s", w.Code, w.Body.String())
 	}

@@ -50,9 +50,9 @@ type RateLimitStore interface {
 //	})
 //
 // The schema is created lazily on first use, hosts never hand-roll the
-// DDL. Admission holds exactly under concurrency, across any number of
+// DDL. Admission fails closed under concurrency, across any number of
 // replicas: Allow records the attempt before it counts (see Allow), so a
-// burst on one key admits at most MaxAttempts callers.
+// burst on one key admits at most MaxAttempts callers, and possibly none.
 type SQLRateLimitStore struct {
 	db      *sql.DB
 	table   string
@@ -144,10 +144,13 @@ func (s *SQLRateLimitStore) ensureSchemaOnce(ctx context.Context) error {
 // SQLite and Postgres. A denied caller's row stays behind; it predates
 // the block it triggered and is cleared when that block expires.
 //
-// The bound is one-sided. When every insert of an over-budget burst
-// commits before any of its counts run, every caller sees the whole
-// burst and none is admitted. That only happens to a key that is past
-// its budget and about to be blocked anyway, and it errs toward denial.
+// The bound is one-sided, and fails closed. When every insert of a burst
+// commits before any of its counts run, every caller sees the whole burst
+// and none is admitted, even with MaxAttempts or fewer legitimate callers
+// in it once the burst runs past the budget. That errs toward denial, the
+// right side for a brute-force limiter. A limiter whose budget a stranger
+// can spend for someone else (the per-address mail limit) is a lockout
+// lever on this store, which is why that one defaults to in-memory state.
 func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimiterConfig) (bool, time.Duration, error) {
 	if err := s.ensureSchemaOnce(ctx); err != nil {
 		return false, 0, err
@@ -178,6 +181,15 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 		// containing '_' or '%' can't over-match into a sibling scope's keys.
 		scopePrefix := escapeLikeLiteral(ratelimit.NamespaceScope(cfg.Scope)) + "|%"
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND attempted_at_ms <= $2`, attempts), scopePrefix, cutoffMs); err != nil {
+			return false, 0, err
+		}
+		// An expired block goes with the attempts it covered, as on the
+		// per-key path below. Dropping only the block left those attempts
+		// counting: with BlockDuration < Window the key's next try found
+		// them still in the window and was blocked again, where the
+		// in-memory limiter admits it. Attempts made after the block
+		// expired are fresh and stay.
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE a.rl_key LIKE $1 ESCAPE '\' AND EXISTS (SELECT 1 FROM %s b WHERE b.rl_key = a.rl_key AND b.blocked_until_ms <= $2 AND a.attempted_at_ms < b.blocked_until_ms)`, attempts, blocks), scopePrefix, nowMs); err != nil {
 			return false, 0, err
 		}
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND blocked_until_ms <= $2`, blocks), scopePrefix, nowMs); err != nil {

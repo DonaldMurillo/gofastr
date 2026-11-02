@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,14 @@ func TestRenderGoLiteralAllTypes(t *testing.T) {
 		{[]string{"a", "b"}, `[]string{"a", "b"}`},
 		{[]any{float64(1), "x"}, `[]any{1, "x"}`},
 		{map[string]any{"k": "v"}, `map[string]any{"k": "v"}`},
+		// A number decoded with UseNumber keeps every digit of an int64,
+		// which a float64 round trip would round (2^53 + 1).
+		{json.Number("9007199254740993"), "9007199254740993"},
+		{json.Number("2.5"), "2.5"},
+		{map[string]any{"n": json.Number("-4")}, `map[string]any{"n": -4}`},
+	}
+	if _, err := renderGoLiteral(json.Number("12x")); err == nil {
+		t.Error("a malformed json.Number rendered")
 	}
 	for _, c := range cases {
 		got, err := renderGoLiteral(c.in)

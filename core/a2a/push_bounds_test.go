@@ -58,8 +58,9 @@ func (l *lockedBuffer) String() string {
 // with a Warn line instead of parking a goroutine (and its payload) on
 // the semaphore. Delivery is one best-effort attempt, so a drop is the
 // documented outcome, not a lost guarantee. Each event goes to its own
-// task's config, since one config's events queue behind each other
-// (TestPushQueueBounded).
+// owner's task config, since one config's events queue behind each
+// other (TestPushQueueBounded) and one owner holds only its share of
+// the slots (TestPushSlotsPerOwner).
 func TestPushBacklogBounded(t *testing.T) {
 	tr := &blockingTransport{release: make(chan struct{})}
 	logs := &lockedBuffer{}
@@ -70,7 +71,7 @@ func TestPushBacklogBounded(t *testing.T) {
 	before := runtime.NumGoroutine()
 	for i := range events {
 		id := fmt.Sprintf("t%d", i)
-		recs := []*PushConfigRecord{{Config: PushNotificationConfig{ID: "c1", TaskID: id, URL: "http://receiver.test/hook"}}}
+		recs := []*PushConfigRecord{{Owner: "o" + id, Config: PushNotificationConfig{ID: "c1", TaskID: id, URL: "http://receiver.test/hook"}}}
 		p.deliver(recs, StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{TaskID: id}}, 1)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -197,18 +198,22 @@ func TestPushOrderPerConfig(t *testing.T) {
 
 // Events queued behind a config's slow delivery are bounded: past the
 // backlog they are dropped with a Warn line, so one hung receiver
-// cannot hold every payload a fast task mints.
+// cannot hold every payload a fast task mints. Each of five owners
+// floods one config: four fill the process-wide backlog with their
+// shares, and the fifth queues nothing behind its in-flight delivery.
 func TestPushQueueBounded(t *testing.T) {
 	tr := &blockingTransport{release: make(chan struct{})}
 	logs := &lockedBuffer{}
 	p := newPusher(PushOptions{Client: &http.Client{Transport: tr}, AllowPrivate: true}, slog.New(slog.NewTextHandler(logs, nil)))
-	recs := []*PushConfigRecord{{Config: PushNotificationConfig{ID: "c1", TaskID: "t1", URL: "http://receiver.test/hook"}}}
-	const events = 4 * pushBacklog
-	for v := range events {
-		p.deliver(recs, StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{TaskID: "t1"}}, int64(v))
+	const owners, events = 5, 4 * pushOwnerBacklog
+	for o := range owners {
+		recs := []*PushConfigRecord{{Owner: fmt.Sprintf("o%d", o), Config: PushNotificationConfig{ID: "c1", TaskID: "t1", URL: "http://receiver.test/hook"}}}
+		for v := range events {
+			p.deliver(recs, StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{TaskID: "t1"}}, int64(v))
+		}
 	}
-	if got, want := strings.Count(logs.String(), "push notification dropped"), events-1-pushBacklog; got != want {
-		t.Errorf("logged %d drops, want %d (one in flight, %d queued)", got, want, pushBacklog)
+	if got, want := strings.Count(logs.String(), "push notification dropped"), owners*(events-1)-pushBacklog; got != want {
+		t.Errorf("logged %d drops, want %d (one in flight per owner, %d queued)", got, want, pushBacklog)
 	}
 	// Once the receiver answers, the queue drains and frees its share
 	// of the backlog for later events.
@@ -216,15 +221,52 @@ func TestPushQueueBounded(t *testing.T) {
 	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(time.Millisecond) {
 		p.mu.Lock()
 		idle, queued := len(p.queues) == 0, p.queued
+		owners := len(p.ownerSlots) + len(p.ownerQueued)
 		p.mu.Unlock()
 		if idle {
-			if queued != 0 {
-				t.Fatalf("drained pusher still counts %d queued events", queued)
+			if queued != 0 || owners != 0 {
+				t.Fatalf("drained pusher still counts %d queued events and %d owner counters", queued, owners)
 			}
 			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("the config's queue never drained")
 		}
+	}
+}
+
+// One owner holds at most its share of the delivery slots and of the
+// backlog, so a caller whose receiver hangs cannot take every slot and
+// leave other owners' notifications dropped (#614).
+func TestPushSlotsPerOwner(t *testing.T) {
+	tr := &blockingTransport{release: make(chan struct{})}
+	defer close(tr.release)
+	logs := &lockedBuffer{}
+	p := newPusher(PushOptions{Client: &http.Client{Transport: tr}, AllowPrivate: true}, slog.New(slog.NewTextHandler(logs, nil)))
+	send := func(owner, task string, v int64) {
+		recs := []*PushConfigRecord{{Owner: owner, Config: PushNotificationConfig{ID: "c1", TaskID: task, URL: "http://receiver.test/hook"}}}
+		p.deliver(recs, StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{TaskID: task}}, v)
+	}
+	// mallory: one event to each of many tasks, then many to one task.
+	for i := range pushConcurrency {
+		send("mallory", fmt.Sprintf("m%d", i), 1)
+	}
+	for v := range 2 * pushBacklog {
+		send("mallory", "m0", int64(v+2))
+	}
+	p.mu.Lock()
+	slots, queued := len(p.queues), p.queued
+	p.mu.Unlock()
+	if slots != pushOwnerSlots {
+		t.Errorf("one owner holds %d delivery slots, want its share %d", slots, pushOwnerSlots)
+	}
+	if queued != pushOwnerBacklog {
+		t.Errorf("one owner queued %d events, want its share %d", queued, pushOwnerBacklog)
+	}
+	before := strings.Count(logs.String(), "push notification dropped")
+	send("alice", "a1", 1)
+	send("alice", "a1", 2)
+	if got := strings.Count(logs.String(), "push notification dropped"); got != before {
+		t.Errorf("alice's events were dropped behind mallory's: %d new drops", got-before)
 	}
 }

@@ -17,10 +17,12 @@ import (
 //
 // Presence tracks WHO is currently connected to a given SSE topic on
 // THIS replica. A "topic" is an opaque string an app associates with an
-// entity/room (e.g. "doc:42"). When a client opens the SSE stream with
-// ?presence=<topic>, its connection is registered on that topic; the
-// roster (the set of connected identities) is then queryable and can be
-// pushed live to every viewer when someone joins or leaves.
+// entity/room (e.g. "doc:42"). When a client opens the SSE stream for a
+// page that declared a topic (or with a ?presence=<topic> request an
+// AuthorizeTopic hook admits; see PresenceTopics), its connection is
+// registered on that topic; the roster (the set of connected identities)
+// is then queryable and can be pushed live to every viewer when someone
+// joins or leaves.
 //
 // SECURITY MODEL, identity is SERVER-DERIVED, never client-supplied.
 // The {userID, displayName} in a roster entry come exclusively from the
@@ -110,8 +112,14 @@ func ParsePresenceTopics(raw string) []string {
 	if raw == "" {
 		return nil
 	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
+	return boundTopics(strings.Split(raw, ","))
+}
+
+// boundTopics trims, de-duplicates and caps a topic list the way
+// ParsePresenceTopics does: empty and over-long topics are dropped and at
+// most maxPresenceTopics survive.
+func boundTopics(parts []string) []string {
+	out := make([]string, 0, min(len(parts), maxPresenceTopics))
 	seen := make(map[string]bool, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
@@ -192,9 +200,38 @@ func anonIdentity(sessionID string) PresenceIdentity {
 	}
 }
 
+// PresenceTopics is what one SSE connection asks to join.
+//
+// Declared are the topics the server rendered into the page itself. The
+// host vouches for them: framework/uihost signs the list into the page's
+// stream URL and checks that signature before it passes the list here, so a
+// client cannot add to it. Requested are topics the client named (the
+// ?presence= query value): untrusted, and admitted only by an AuthorizeTopic
+// hook.
+type PresenceTopics struct {
+	Declared  []string
+	Requested []string
+}
+
+// admitTopics decides which topics a connection joins. With no AuthorizeTopic
+// hook only the declared topics join and every requested topic is refused, so
+// naming a topic in the URL never reads its roster. With a hook installed,
+// every topic, declared ones too, goes through it, which also puts each
+// joined topic under the heartbeat re-check. Both lists share the
+// per-connection bounds.
+func (m *Manager) admitTopics(ctx context.Context, pt PresenceTopics) []string {
+	if m.topicAuthorizer() == nil {
+		return boundTopics(pt.Declared)
+	}
+	all := make([]string, 0, len(pt.Declared)+len(pt.Requested))
+	all = append(append(all, pt.Declared...), pt.Requested...)
+	return m.filterAuthorizedTopics(ctx, boundTopics(all))
+}
+
 // filterAuthorizedTopics returns the subset of topics the AuthorizeTopic hook
-// permits for ctx. A nil hook (the default) authorizes everything, presence
-// is public unless an app opts into gating. Rejected topics are dropped
+// permits for ctx. A nil hook keeps every topic: admitTopics has already
+// limited such a connection to the topics its page declared, so the
+// heartbeat re-check has nothing to drop. Rejected topics are dropped
 // silently; no error distinguishes an unauthorized topic from a nonexistent
 // one, so the filter cannot be used as a private-topic existence oracle.
 // Called at SSE-connect time (ServeSSEWithPresence) BEFORE PresenceJoin, so an

@@ -419,11 +419,19 @@ chrome inside the swapped shell anyway, the runtime re-appends the
 root to `<body>` after the swap and fires `fui:widget-open` again with
 `reinserted: true` (or, when the destination page inlines its own
 copy, dismisses the stale instance and hydrates the fresh node). What
-does NOT survive is an open modal: navigation closes every open
-backdrop'd widget, a closed widget's fetched chrome is dropped (the
-next open re-fetches it, served from the per-navigation chrome cache),
-and that close → reopen cycle fires `fui:widget-close` followed by
-`fui:widget-open`.
+does NOT survive is an open modal: navigation closes every
+backdrop'd widget opened on the page being left, a closed widget's
+fetched chrome is dropped (the next open re-fetches it, served from
+the per-navigation chrome cache), and that close → reopen cycle fires
+`fui:widget-close` followed by `fui:widget-open`.
+
+**Opens during a navigation.** An open belongs to the navigation it
+was issued under. Open a widget, then follow a link before its chrome
+arrives, and the late chrome mounts nothing on the new page. Follow a
+link, then open a widget from shared chrome (a header bell, a
+toolbar button) before the new page paints, and the widget opens on
+the page the link lands on: the commit does not drop it, and does not
+close it even when it is a modal.
 
 ## Routing
 

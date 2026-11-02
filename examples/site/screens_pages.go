@@ -433,7 +433,7 @@ var exampleLoC = map[string]int{
 	"embed-demo":           310,
 	"static-site":          60,
 	"backoffice":           310,
-	"processmodule-demo":   330,
+	"processmodule-demo":   620,
 	"webmcp-remote-assist": 2000,
 	"rtc-call":             700,
 }
@@ -543,9 +543,9 @@ func exRowItems() []render.HTML {
 				ln(pn("}))")),
 			})),
 		exRow("11", "examples/processmodule-demo", "Process-isolated module", "moduleproto", locBadge("processmodule-demo", ""),
-			"A third-party module as its own process: it speaks moduleproto over stdio, serves three routes and one tool to the host, and answers a reverse entity query. The child the process-module gate suite drives end to end.",
-			[]string{"Depends only on the moduleproto package + the standard library", "Handshake, ready, health, http, drain, tool.list, tool.call", "Reverse host.entity.query proves the broker path"},
-			"go run ./examples/processmodule-demo",
+			"A third-party module as its own process, plus the host app that runs it. The module speaks moduleproto over stdio, serves four routes and one tool, and answers a reverse entity query. The host registers it as an untrusted module, so it runs only where the sandbox passes every probe.",
+			[]string{"The module depends only on moduleproto + the standard library", "Handshake, ready, health, http, drain, tool.list, tool.call", "The host refuses the module, with the probe report, where the sandbox does not conform"},
+			"go run ./examples/processmodule-demo/host -module dist/examples/processmodule-demo",
 			codeBlock("examples/processmodule-demo/main.go", []render.HTML{
 				ln(render.Text("codec, _ "), pn(":="), render.Text(" moduleproto."), fn_("NewCodec"), pn("("), render.Text("os.Stdin, os.Stdout, …"), pn(")")),
 				ln(render.Text("peer "), pn(":="), render.Text(" moduleproto."), fn_("NewPeer"), pn("("), render.Text("codec, moduleproto.RoleChild"), pn(")")),

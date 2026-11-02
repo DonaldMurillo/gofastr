@@ -59,7 +59,7 @@ func newTwoFASplitRig(t *testing.T) *twofaSplitRig {
 		AllowInMemoryStores: true,
 	})
 	rig.twofa = NewTwoFAPlugin(TwoFAConfig{RateLimit: &RateLimiterConfig{MaxAttempts: 1000, Window: time.Minute, BlockDuration: time.Minute}})
-	rig.mgr.Use(NewCorePlugin())
+	rig.mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	rig.mgr.Use(rig.twofa)
 	rig.mgr.Use(NewAccountsPlugin())
 	if err := rig.mgr.Init(nil); err != nil {
@@ -157,15 +157,17 @@ func TestRequireTwoFASplitCookiesRefused(t *testing.T) {
 	if !p1 || !p2 {
 		t.Fatalf("expected pending sessions: %v %v", p1, p2)
 	}
-	if w := g.do(http.MethodPost, "/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, totpNow(secret)), "", V); w.Code != http.StatusOK {
+	w := g.do(http.MethodPost, "/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, totpNow(secret)), "", V)
+	if w.Code != http.StatusOK {
 		t.Fatalf("challenge: %d %s", w.Code, w.Body.String())
 	}
+	V = steppedUpSessionCookie(t, w, "session_id", V)
 	if w := g.do(http.MethodPost, "/auth/2fa/disable", "", "", V); w.Code != http.StatusOK {
 		t.Fatalf("disable: %d %s", w.Code, w.Body.String())
 	}
 
 	g.ran = ""
-	w := g.do(http.MethodGet, "/protected", "", "", P, T)
+	w = g.do(http.MethodGet, "/protected", "", "", P, T)
 	if w.Code == http.StatusOK || g.ran == g.victim.GetID() {
 		t.Fatalf("[P, T] ran the step-up route as the victim: %d ran=%s", w.Code, g.ran)
 	}

@@ -251,11 +251,15 @@ func probeSleeperPath() string {
 }
 
 // probeMemHogEnv tells a re-exec'd probe child to be P6's allocating
-// child: allocate and touch the named number of bytes, print
-// probeMemHogDone, exit.
+// child: map and touch the named number of bytes, then print
+// probeMemHogDone, or probeMemHogRefused when the kernel refused a
+// mapping first, and exit.
 const (
-	probeMemHogEnv  = "GOFASTR_PROBE_MEM_HOG"
-	probeMemHogDone = "MEMHOG-ALLOCATED"
+	probeMemHogEnv     = "GOFASTR_PROBE_MEM_HOG"
+	probeMemHogDone    = "MEMHOG-ALLOCATED"
+	probeMemHogRefused = "MEMHOG-REFUSED"
+	// probeMemHogChunk is how much the allocating child maps per step.
+	probeMemHogChunk = 16 << 20
 )
 
 // probeMemoryCap re-execs this binary to allocate twice the memory
@@ -288,6 +292,9 @@ func classifyMemHog(runErr error, timedOut bool, output string, want, limit int6
 		return ProbeStatusUnreachable, "memory: allocating child timed out"
 	}
 	if runErr == nil {
+		if strings.Contains(output, probeMemHogRefused) {
+			return ProbeStatusPass, fmt.Sprintf("memory capped: mapping refused short of %d bytes (limit=%d)", want, limit)
+		}
 		if strings.Contains(output, probeMemHogDone) {
 			return ProbeStatusFail, fmt.Sprintf("memory: allocated and touched %d bytes (limit=%d not enforced)", want, limit)
 		}
@@ -305,19 +312,39 @@ func classifyMemHog(runErr error, timedOut bool, output string, want, limit int6
 	return ProbeStatusUnreachable, fmt.Sprintf("memory: allocating child ended with %v: %s", runErr, tailForDetail(output))
 }
 
-// runProbeMemHog is the allocating child: it allocates v bytes, touches
-// every page so they are resident, and reports that it got there.
+// runProbeMemHog is the allocating child: it maps v bytes of anonymous
+// memory straight from the kernel, a chunk at a time, touching every page
+// so it is resident, and reports how far it got. Going around the Go heap
+// is the point: a cap that refuses a mapping (RLIMIT_DATA) answers ENOMEM
+// here, where the runtime under the same cap can fault in its GC instead
+// of failing cleanly, and a crash proves nothing about the cap. A cap
+// that kills on use (a cgroup) SIGKILLs the child mid-touch.
 func runProbeMemHog(v string) int {
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || n <= 0 || n > 1<<34 {
 		fmt.Println(probeOutUnreachable + " bad " + probeMemHogEnv + ": " + v)
 		return 0
 	}
-	b := make([]byte, n)
-	for i := 0; i < len(b); i += 4096 {
-		b[i] = 1
+	var held [][]byte
+	var got int64
+	for got < n {
+		size := min(int64(probeMemHogChunk), n-got)
+		b, err := syscall.Mmap(-1, 0, int(size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
+		if errors.Is(err, syscall.ENOMEM) {
+			fmt.Println(probeMemHogRefused, got)
+			return 0
+		}
+		if err != nil {
+			fmt.Println(probeOutUnreachable+" mmap:", err)
+			return 0
+		}
+		for i := 0; i < len(b); i += 4096 {
+			b[i] = 1
+		}
+		held = append(held, b)
+		got += size
 	}
-	fmt.Println(probeMemHogDone, n)
-	runtime.KeepAlive(b)
+	fmt.Println(probeMemHogDone, got)
+	runtime.KeepAlive(held)
 	return 0
 }

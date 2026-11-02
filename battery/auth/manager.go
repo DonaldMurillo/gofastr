@@ -68,16 +68,19 @@ type AuthConfig struct {
 	// If nil, an in-memory store is used (dev/test only).
 	SessionStore SessionStore
 
-	// LoginRateLimit, when non-nil, applies a per-IP rate limit to
-	// /auth/login. nil means unlimited (which you almost never want
-	// in production, set defaults if unsure).
+	// LoginRateLimit applies a per-IP rate limit to /auth/login. nil
+	// does NOT mean unlimited: New installs 30 attempts/min with a
+	// 5-minute block, in DevMode too. To loosen it, pass a config with a
+	// large MaxAttempts.
 	LoginRateLimit *RateLimiterConfig
 
-	// LoginRateLimitPerAccount, when non-nil, applies a per-account
-	// (keyed on the submitted email, lowercased) rate limit to
-	// /auth/login. Combined with the per-IP limiter it defeats the
-	// attacker who pivots through a botnet's worth of IPs to pound a
-	// single account. nil disables the per-account limit.
+	// LoginRateLimitPerAccount applies a per-account rate limit to
+	// /auth/login, keyed on the canonical email (see CanonicalEmail).
+	// Combined with the per-IP limiter it defeats the attacker who
+	// pivots through a botnet's worth of IPs to pound a single account.
+	// nil does NOT disable it: New installs 10 attempts/min with a
+	// 15-minute block. To loosen it, pass a config with a large
+	// MaxAttempts.
 	LoginRateLimitPerAccount *RateLimiterConfig
 
 	// RegisterRateLimit applies a per-IP rate limit to /auth/register.
@@ -143,21 +146,27 @@ type AuthConfig struct {
 	// CanonicalizeEmail, when set, replaces the battery's default email
 	// canonicalization at EVERY ingestion point (register, login,
 	// password reset, magic link, OAuth email matching, the per-account
-	// login limiter key). The default (auth.CanonicalEmail) trims,
-	// lowercases, and REFUSES decomposed Unicode input — see its doc
-	// for coverage. x/text/unicode/norm is deliberately not a framework
-	// dependency, so deployments needing full NFC folding install it
-	// here:
-	//
-	//	import "golang.org/x/text/unicode/norm"
-	//
-	//	CanonicalizeEmail: func(e string) (string, error) {
-	//	    return norm.NFC.String(strings.ToLower(strings.TrimSpace(e))), nil
-	//	},
+	// login limiter key). nil uses the default, auth.CanonicalEmail: it
+	// strips zero-width, bidi and C1 control characters, normalizes to
+	// NFC, trims and lowercases, so the composed and decomposed spellings
+	// of one mailbox, and a zero-width twin of it, are one identity. Set
+	// this only for rules the default does not apply (a provider that
+	// ignores dots or plus tags, a legacy store keyed on raw bytes). An
+	// override replaces the default whole, including the strip, so it
+	// owns its own invisible-character policy: wrap auth.CanonicalEmail
+	// rather than starting from scratch.
 	//
 	// The function must be safe for concurrent use. An error from it
-	// fails the request with 400 at every email-ingesting endpoint.
+	// (auth.ErrEmailNotComposed, or any other) fails the request with
+	// 400 at every email-ingesting endpoint.
 	CanonicalizeEmail func(email string) (string, error)
+
+	// Pages renders the screens the battery answers with itself: the
+	// magic-link confirmation and the same-site hop a cross-site OAuth
+	// link callback or verification link lands on. A UIHost app sets
+	// it to authui.Pages(host) (battery/auth/authui) so they carry the
+	// app's chrome and theme. nil keeps the plain built-in documents.
+	Pages Pages
 }
 
 // defaults fills in zero values with sensible defaults.
@@ -350,6 +359,11 @@ type AuthManager struct {
 	// Init alone mounts routes but signs nobody in.
 	app       *framework.App
 	resolving bool
+
+	// unregisterMemoryErase drops the in-memory store eraser a previous
+	// Init registered (memory_erase.go).
+	unregisterMemoryErase func()
+	memoryEraseName       string
 }
 
 // noteIfWired tells the app callers can be signed in, once both halves
@@ -399,6 +413,15 @@ func New(config AuthConfig) *AuthManager {
 		mgr.sessionStore = config.SessionStore
 	} else {
 		mgr.sessionStore = NewMemorySessionStore()
+	}
+	// Built here, not in Init: the usual wiring calls
+	// RequireAuth(mgr.JWT()) before App.Start runs Init, and a JWTAuth that
+	// only appeared at Init left that middleware holding nil. Every bearer
+	// request then panicked, and the "no auth is wired" banner never
+	// cleared. Init finishes the wiring on this same value.
+	if config.JWTSecret != "" {
+		mgr.jwtAuth = NewJWTAuth(config.JWTSecret, config.JWTExpiry)
+		mgr.jwtAuth.onResolve = mgr.markResolving
 	}
 
 	return mgr
@@ -548,6 +571,14 @@ func (m *AuthManager) initPlugins() error {
 // Name returns the battery name for the framework's BatteryManager.
 func (m *AuthManager) Name() string { return "auth" }
 
+// ReservedEmbedPrefixes reports the BasePath every auth route mounts under
+// (token minting, 2FA, account linking), so an embed grant can neither sit
+// over nor reach it wherever AuthConfig.BasePath moved it. framework/embed's
+// built-in list names only the default "/auth". See framework.EmbedReserving.
+func (m *AuthManager) ReservedEmbedPrefixes() []string {
+	return []string{m.Config().BasePath}
+}
+
 // Init is called by the framework during App.Start. It initializes JWT
 // (if configured), all registered auth plugins, and mounts their HTTP
 // routes on app.Router() under the configured BasePath.
@@ -581,14 +612,24 @@ func (m *AuthManager) Init(app *framework.App) error {
 		return err
 	}
 
-	// Initialize JWT if secret is configured
+	// A negative JWTExpiry is the same sign or unit error: every login
+	// answered 200 with a token that had already expired.
+	if m.config.JWTExpiry < 0 {
+		return fmt.Errorf("auth: AuthConfig.JWTExpiry is negative (%v): set a positive duration, or leave it zero for the 1-hour default", m.config.JWTExpiry)
+	}
+
+	// Finish the JWTAuth New built (see New for why it is not built here).
 	if m.config.JWTSecret != "" {
 		expiry := m.config.JWTExpiry
 		if expiry == 0 {
 			expiry = time.Hour
 		}
-		m.jwtAuth = NewJWTAuth(m.config.JWTSecret, expiry)
-		m.jwtAuth.onResolve = m.markResolving
+		if m.jwtAuth == nil {
+			m.jwtAuth = NewJWTAuth(m.config.JWTSecret, expiry)
+			m.jwtAuth.onResolve = m.markResolving
+		}
+		m.jwtAuth.Secret = m.config.JWTSecret
+		m.jwtAuth.Expiry = expiry
 		// Verify-only previous secrets for graceful JWTSecret rotation
 		// (sign with current; verify accepts current OR any previous).
 		m.jwtAuth.PreviousSecrets = m.config.JWTPreviousSecrets
@@ -664,6 +705,9 @@ func (m *AuthManager) OnStart(ctx context.Context) error {
 
 // OnStop stops plugins that implement AuthPluginOnStop.
 func (m *AuthManager) OnStop(ctx context.Context) error {
+	// The in-memory store eraser is process-wide; a stopped manager's
+	// stores must not be reached by another app's EraseUserData.
+	unregisterMemoryStoreEraser(m)
 	var firstErr error
 	for _, name := range slices.Backward(m.order) {
 

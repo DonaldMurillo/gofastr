@@ -69,6 +69,8 @@
 //	DataTable:            sortable/paginated table (island-friendly)
 //	DateField:            typed labelled native date field with bounds
 //	DateTimeField:        typed labelled native date-and-time field with bounds and step
+//	DatePicker:           calendar beside the native date input: range, refused days, notes on days
+//	DatePickerMonth:      the month a DatePicker's island endpoint answers
 //	DetailList:           label/value description list for record detail
 //	DiffViewer:           unified or split diff renderer
 //	Divider:              <hr> for plain horizontal; role="separator" otherwise

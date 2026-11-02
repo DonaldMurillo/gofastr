@@ -36,7 +36,6 @@ boot	2	setupMutationObserver
 boot	4	G
 boot	4	G
 boot	4	G
-boot	4	G
 boot	4	action
 boot	4	cached
 boot	4	el
