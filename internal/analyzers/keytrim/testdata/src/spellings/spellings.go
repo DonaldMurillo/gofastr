@@ -6,6 +6,7 @@ package spellings
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"unicode"
@@ -39,4 +40,17 @@ func quiet(name string, b []byte, id string) (string, bool) {
 
 func contents(b []byte) string {
 	return strings.TrimSpace(string(b))
+}
+
+// slugID trims a separator the code put there (appgen
+// screenActionComponentID): a non-whitespace cutset is not the rewrite.
+func slugID(id string) string {
+	return strings.Trim(id, "-")
+}
+
+// rawID inspects a JSON-RPC id (core/acp validRequestEnvelope,
+// core/moduleproto): whitespace around raw JSON is not the value.
+func rawID(frame struct{ ID json.RawMessage }) bool {
+	id := bytes.TrimSpace(frame.ID)
+	return len(id) > 0 && id[0] == '"'
 }

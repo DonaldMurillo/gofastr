@@ -16,7 +16,10 @@
 // The same rewrite spelled strings.Trim / TrimLeft / TrimRight /
 // TrimFunc or bytes.TrimSpace counts, and so does an operand that is a
 // local bound once to an identity value (raw := vals.Get("user_id")):
-// both were silent until the 2026-11-02 guard bash.
+// both were silent until the 2026-11-02 guard bash. A Trim cutset must
+// be whitespace (Trim(slug, "-") cuts a separator the code wrote), a
+// TrimFunc must be unicode.IsSpace, and a json.RawMessage operand is
+// exempt: whitespace around raw JSON is not part of the value.
 // An identity value is:
 //   - an identifier or field selector whose name is id or ids, ends in
 //     ID, IDs, Id or Ids (userID, s.OwnerID, recordIds), or names a
@@ -48,10 +51,12 @@ package keytrim
 
 import (
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
@@ -143,15 +148,63 @@ func trimName(pass *analysis.Pass, call *ast.CallExpr) string {
 	}
 	switch fn.Pkg().Path() + "." + sel.Sel.Name {
 	case "strings.TrimSpace", "bytes.TrimSpace":
-		if len(call.Args) == 1 {
+		if len(call.Args) == 1 && !rawJSON(pass, call.Args[0]) {
 			return fn.Pkg().Name() + "." + sel.Sel.Name
 		}
-	case "strings.Trim", "strings.TrimLeft", "strings.TrimRight", "strings.TrimFunc":
-		if len(call.Args) == 2 {
+	case "strings.Trim", "strings.TrimLeft", "strings.TrimRight":
+		// Only a whitespace cutset is the TrimSpace rewrite: Trim(slug,
+		// "-") cuts a separator the code put there itself.
+		if len(call.Args) == 2 && whitespaceCutset(pass, call.Args[1]) {
+			return "strings." + sel.Sel.Name
+		}
+	case "strings.TrimFunc":
+		if len(call.Args) == 2 && pathflow.QualifiedFunc(pass, call.Args[1]) == "unicode.IsSpace" {
 			return "strings." + sel.Sel.Name
 		}
 	}
 	return ""
+}
+
+// whitespaceCutset reports whether e is a constant cutset made only of
+// whitespace.
+func whitespaceCutset(pass *analysis.Pass, e ast.Expr) bool {
+	tv, ok := pass.TypesInfo.Types[e]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+		return false
+	}
+	s := constant.StringVal(tv.Value)
+	return s != "" && strings.TrimSpace(s) == ""
+}
+
+// rawJSON reports whether e is a json.RawMessage: whitespace around a
+// raw JSON value is not part of the value (a JSON-RPC id " 7 " is the
+// id 7), so trimming it to inspect the token rewrites nothing.
+func rawJSON(pass *analysis.Pass, e ast.Expr) bool {
+	// Since encoding/json/v2, json.RawMessage is an alias of
+	// jsontext.Value: accept either spelling of the type.
+	for t := pass.TypesInfo.TypeOf(e); t != nil; {
+		var obj *types.TypeName
+		switch x := t.(type) {
+		case *types.Alias:
+			obj = x.Obj()
+		case *types.Named:
+			obj = x.Obj()
+		default:
+			return false
+		}
+		if obj.Pkg() != nil {
+			switch obj.Pkg().Path() + "." + obj.Name() {
+			case "encoding/json.RawMessage", "encoding/json/jsontext.Value":
+				return true
+			}
+		}
+		a, ok := t.(*types.Alias)
+		if !ok {
+			return false
+		}
+		t = a.Rhs()
+	}
+	return false
 }
 
 // singleBindings maps each local bound exactly once in f to its value,
