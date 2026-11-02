@@ -94,6 +94,40 @@ func TestLintRuntimeProseFiresOnLiterals(t *testing.T) {
 	}
 }
 
+// runtimeProseSinksFixture holds the reader-facing sinks the 2026-11-02
+// guard bash found the lint blind to: the browser's own dialogs, the
+// text-node-creating DOM methods (append('x') is createTextNode('x')
+// spelled shorter), the rest of the ARIA text attributes and their
+// reflected properties, and nodeValue.
+const runtimeProseSinksFixture = `(() => {
+  if (!window.confirm('Discard your changes?')) return;
+  alert('Upload failed');
+  root.append('No results found');
+  root.replaceChildren(icon, 'Nothing here yet');
+  slider.setAttribute('aria-valuetext', 'Three of five');
+  card.setAttribute('aria-roledescription', 'Draggable card');
+  slider.ariaValueText = 'Three of five';
+  card.ariaRoleDescription = 'Draggable card';
+  dlg.ariaDescription = 'Press escape to close';
+  node.nodeValue = 'Saved just now';
+  NS.confirm(form, sub);
+  params.append('_id', id);
+  headers.append('Content-Type', 'application/json');
+  root.append(make('div', { 'font-weight': '600' }, 'layout layer'));
+  card.setAttribute('aria-roledescription', say('k.card', 'Draggable card'));
+})();
+`
+
+func TestLintRuntimeProseReadsEveryReaderSink(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "sinks.js", runtimeProseSinksFixture)
+	res, err := LintRuntimeProse(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLines(t, res, []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11})
+}
+
 func TestLintRuntimeProseRepoIsClean(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {

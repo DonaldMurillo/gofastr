@@ -156,6 +156,14 @@ few lines, and link the PR or the docs page for the rest.
   braces, so `.replace(` + "`{{n}}`" + `, String(n))` (a template
   literal) and `.replace(/{{n}}/g, String(n))` (unescaped braces, the
   same regex to JavaScript) filled the count with ASCII digits unseen.
+- **`core-ui/check.LintRuntimeProse` reads every reader-facing sink.**
+  `alert` / `confirm` / `prompt`, a literal passed to `append`,
+  `prepend`, `replaceChildren`, `before`, `after` or `replaceWith`
+  (each makes a text node), `nodeValue`, and the ARIA text attributes
+  and properties beyond `aria-label` (`aria-valuetext`,
+  `aria-roledescription`, `aria-placeholder`, `ariaDescription`, …)
+  all put English in front of a reader with the lint silent. The
+  shipped JavaScript stays clean under the wider rule.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
