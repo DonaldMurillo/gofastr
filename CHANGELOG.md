@@ -170,6 +170,13 @@ few lines, and link the PR or the docs page for the rest.
   KEEPTTL), so the value was kept forever over the old one, and
   `GetOrSet` with a negative `ttl` returned it. `RedisCache.Set` now
   deletes the key instead. See [cache](framework/docs/content/cache.md).
+- **A large file on disk gets its ETag after a HEAD, a 304 or a short
+  range.** `core/static` hashes a file over 16 MiB in the background,
+  and the goroutine opened it through the request's `*os.Root`, which
+  the handler closes when the response is done. A quick answer closed it
+  first, so a file only revalidated or range-read never got an ETag. The
+  file is now opened on the request and only read in the background. See
+  [core packages](framework/docs/content/core-packages.md#static).
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
@@ -4658,6 +4665,22 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`core/static` contains a root directory created after the handler.**
+  The symlink containment binds the `os.DirFS` root when `Handler` is
+  built. A directory that did not exist yet (a build step or a watcher
+  that creates it after the server starts) bound nothing, and every
+  later request opened through the bare `os.DirFS`, which follows a
+  symlink anywhere on disk. An unbound root is now retried on each
+  request until it binds. See [core packages](framework/docs/content/core-packages.md#static).
+- **`core/static` refuses dotfiles and config files under their Windows
+  spellings.** On Windows every disk-backed request opens through
+  `*os.Root`, which reads `\` as a separator and drops trailing dots,
+  spaces and an `::$DATA` suffix, while the refusals split the path on
+  `/` alone. `GET /assets%5C..%5C.env` served `.env`, and
+  `/web.config.` served `web.config`. The handler and `static.Refuses`
+  (the UI host's static dir and the static export) now judge the name
+  Windows opens, on every OS, so a file whose name holds a backslash is
+  refused everywhere. See [core packages](framework/docs/content/core-packages.md#static).
 - **A harness sub-agent can no longer call `TaskList` or `Agent`.** The
   sub-agent's catalog left both out, but its dispatcher ran any tool in
   the shared registry, so a tool_use naming one (a page the sub-agent

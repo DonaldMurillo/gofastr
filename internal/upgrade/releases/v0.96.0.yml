@@ -767,3 +767,7 @@ notes:
     find:
       uses:
         - gofastr/battery/relay.New
+  - change: "core/static (and static.Refuses, which the UI host's static dir and the static export share) treats a backslash as a path separator and matches a config file name with trailing dots, spaces or an ::$DATA suffix, on every OS"
+    breaking: false
+    guidance: "On Windows these spellings opened .env, .git/config and web.config past the refusals. Elsewhere the only change is that a file whose name holds a backslash, or a name like web.config. , now answers 404: rename such a file if it must be served."
+    nodetect: "the refusal reads request paths at runtime; nothing in an app's source spells it"
