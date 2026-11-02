@@ -10,9 +10,9 @@ import (
 
 // filterAuthorizedTopics drops topics the AuthorizeTopic hook rejects.
 
-// A nil AuthorizeTopic hook authorizes everything, presence stays public by
-// default (opt-in gating), so existing apps are unaffected.
-func TestAuthorizeTopic_NilHookAllowsAll(t *testing.T) {
+// With no hook the heartbeat re-check keeps every joined topic: admitTopics
+// already limited the connection to its declared ones.
+func TestAuthorizeTopic_NilHookKeepsJoined(t *testing.T) {
 	m := NewManager()
 	got := m.filterAuthorizedTopics(context.Background(), []string{"a", "b"})
 	if len(got) != 2 {
@@ -83,7 +83,7 @@ func TestServeSSEWithPresence_AuthorizeTopicGate(t *testing.T) {
 	})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		topics := ParsePresenceTopics(r.URL.Query().Get("presence"))
-		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1", DisplayName: "alice@x.com"}, topics)
+		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1", DisplayName: "alice@x.com"}, PresenceTopics{Requested: topics})
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -133,7 +133,7 @@ func TestServeSSEWithPresence_PanickingHookLeaksNoSubscription(t *testing.T) {
 	m.SetAuthorizeTopic(func(_ context.Context, _ string) bool { panic("boom") })
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		topics := ParsePresenceTopics(r.URL.Query().Get("presence"))
-		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1"}, topics)
+		m.ServeSSEWithPresence(w, r, PresenceIdentity{UserID: "u1"}, PresenceTopics{Requested: topics})
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()

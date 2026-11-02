@@ -67,16 +67,92 @@ type Server struct {
 	out io.Writer
 	mu  sync.Mutex
 
-	// inflight maps a running request's JSON-RPC id (compacted raw
-	// JSON) to the cancel func of its context, so a
-	// notifications/cancelled naming it can reach it.
-	inflightMu sync.Mutex
-	inflight   map[string]context.CancelCauseFunc
+	// inflight holds the cancel func of every running request, so a
+	// notifications/cancelled naming one can reach it. stdio owns its
+	// table; the HTTP transport hands every POST the handler's shared
+	// table, because an MCP client sends the cancel as its own POST.
+	// owner scopes this connection's entries: a cancel finds only
+	// requests with the same owner.
+	inflight *inflightTable
+	owner    inflightOwner
 }
 
-// maxInFlight bounds the requests one connection runs at once. The read
-// loop waits for a free slot past it, which pushes back on the client
-// instead of spawning without limit.
+// inflightOwner names who may cancel a request: the bearer token's
+// principal (claims.JTI) and the MCP session. Both halves count. The
+// client picks Mcp-Session-Id, so the session alone would let one caller
+// cancel another's requests.
+type inflightOwner struct {
+	principal string
+	session   string
+}
+
+// inflightKey is one running request: its owner and its compacted
+// JSON-RPC id.
+type inflightKey struct {
+	owner inflightOwner
+	id    string
+}
+
+// inflightTable maps running requests to their cancel funcs and counts
+// them per owner, so the maxInFlight cap holds across HTTP POSTs too.
+type inflightTable struct {
+	mu      sync.Mutex
+	cancels map[inflightKey]context.CancelCauseFunc
+	count   map[inflightOwner]int
+}
+
+func newInflightTable() *inflightTable {
+	return &inflightTable{
+		cancels: make(map[inflightKey]context.CancelCauseFunc),
+		count:   make(map[inflightOwner]int),
+	}
+}
+
+// errIDInFlight and errTooManyInFlight are track's refusals.
+var (
+	errIDInFlight      = errors.New("request id already in flight")
+	errTooManyInFlight = errors.New("too many requests in flight")
+)
+
+// track registers a request's cancel func under owner and id. It refuses
+// an id the owner already has running, and a request past the owner's
+// maxInFlight.
+func (t *inflightTable) track(ctx context.Context, owner inflightOwner, id json.RawMessage) (context.Context, func(), error) {
+	key := inflightKey{owner: owner, id: requestKey(id)}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, busy := t.cancels[key]; busy {
+		return nil, nil, errIDInFlight
+	}
+	if t.count[owner] >= maxInFlight {
+		return nil, nil, errTooManyInFlight
+	}
+	reqCtx, cancel := context.WithCancelCause(ctx)
+	t.cancels[key] = cancel
+	t.count[owner]++
+	return reqCtx, func() {
+		t.mu.Lock()
+		delete(t.cancels, key)
+		if t.count[owner]--; t.count[owner] <= 0 {
+			delete(t.count, owner)
+		}
+		t.mu.Unlock()
+		cancel(nil)
+	}, nil
+}
+
+// lookup returns the cancel func of owner's running request id, or nil.
+func (t *inflightTable) lookup(owner inflightOwner, id json.RawMessage) context.CancelCauseFunc {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.cancels[inflightKey{owner: owner, id: requestKey(id)}]
+}
+
+// maxInFlight bounds the requests one connection runs at once, and the
+// requests one owner (token principal plus MCP session) holds across
+// connections. The read loop waits for a free slot past it, which pushes
+// back on the client instead of spawning without limit; a POST that finds
+// its owner's share taken by other POSTs is refused.
 const maxInFlight = 32
 
 // errClientCancelled is the cancel cause for a request the client
@@ -89,6 +165,7 @@ func New(mux *multiplex.Mux, catalog *resources.Catalog) *Server {
 		Mux:           mux,
 		Catalog:       catalog,
 		IdentityClass: control.IdentityAgent,
+		inflight:      newInflightTable(),
 		in:            os.Stdin,
 		out:           os.Stdout,
 	}
@@ -138,16 +215,19 @@ func (s *Server) Serve(ctx context.Context) error {
 			s.handleNotification(req)
 			continue
 		}
-		reqCtx, release, ok := s.track(ctx, req.ID)
-		if !ok {
-			s.writeErr(req.ID, -32600, "request id already in flight")
-			continue
-		}
+		// The slot comes first, so this connection waits for room
+		// rather than being refused; the table's own cap then only
+		// refuses what other connections of the same owner hold.
 		select {
 		case slots <- struct{}{}:
 		case <-ctx.Done():
-			release()
 			return ctx.Err()
+		}
+		reqCtx, release, err := s.inflight.track(ctx, s.owner, req.ID)
+		if err != nil {
+			<-slots
+			s.writeErr(req.ID, -32600, err.Error())
+			continue
 		}
 		wg.Add(1)
 		go func() {
@@ -158,28 +238,6 @@ func (s *Server) Serve(ctx context.Context) error {
 		}()
 	}
 	return scanner.Err()
-}
-
-// track registers a request's cancel func under its id. ok is false when
-// a request with the same id is still running.
-func (s *Server) track(ctx context.Context, id json.RawMessage) (context.Context, func(), bool) {
-	key := requestKey(id)
-	s.inflightMu.Lock()
-	defer s.inflightMu.Unlock()
-	if _, busy := s.inflight[key]; busy {
-		return nil, nil, false
-	}
-	if s.inflight == nil {
-		s.inflight = make(map[string]context.CancelCauseFunc)
-	}
-	reqCtx, cancel := context.WithCancelCause(ctx)
-	s.inflight[key] = cancel
-	return reqCtx, func() {
-		s.inflightMu.Lock()
-		delete(s.inflight, key)
-		s.inflightMu.Unlock()
-		cancel(nil)
-	}, true
 }
 
 // requestKey canonicalises a JSON-RPC id so `1` and ` 1` name the same
@@ -205,11 +263,8 @@ func (s *Server) handleNotification(req rpcRequest) {
 	if err := unmarshalMCPObject(req.Params, &params); err != nil || len(params.RequestID) == 0 {
 		return
 	}
-	s.inflightMu.Lock()
-	cancel := s.inflight[requestKey(params.RequestID)]
-	s.inflightMu.Unlock()
-	if cancel != nil {
-		//gofastr:allow(recovercallback) the map holds only cancel funcs this server made with context.WithCancelCause in track; they do not panic and no host code is stored there
+	if cancel := s.inflight.lookup(s.owner, params.RequestID); cancel != nil {
+		//gofastr:allow(recovercallback) the table holds only cancel funcs inflightTable.track made with context.WithCancelCause; they do not panic and no host code is stored there
 		cancel(errClientCancelled)
 	}
 }

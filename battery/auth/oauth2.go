@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"log/slog"
 	"maps"
@@ -22,9 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -843,7 +840,7 @@ func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state
 	if !ok {
 		return false
 	}
-	writeSameSiteHop(w, r, target, oauthHopTitle)
+	writeSameSiteHop(w, r, p.mgr.config.Pages, target, oauthHopTitle)
 	return true
 }
 
@@ -861,40 +858,6 @@ func sameOriginTarget(r *http.Request) (string, bool) {
 		path += "?" + r.URL.RawQuery
 	}
 	return path, true
-}
-
-// writeSameSiteHop writes the hop page: a meta refresh to target, plus a
-// link for a browser that does not follow it. It ships no CSS and no
-// script, like the magic-link fallback page, and its words are phrases in
-// the caller's locale. target is a same-origin path from sameOriginTarget.
-func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string, heading i18n.Phrase) {
-	ctx := r.Context()
-	lang := i18n.DocLang(ctx)
-	href := html.EscapeString(urlsafe.CleanAnchor(target))
-	title := html.EscapeString(heading.Text(ctx))
-	body := `<!doctype html>
-<html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<meta http-equiv="refresh" content="0;url=` + href + `">
-<title>` + title + `</title>
-</head>
-<body>
-<main>
-<h1>` + title + `</h1>
-<p><a href="` + href + `">` + html.EscapeString(oauthHopContinue.Text(ctx)) + `</a></p>
-</main>
-</body>
-</html>`
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The URL carries a token: an authorization code and state, or a
-	// verification token.
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, body)
 }
 
 // errOAuthEmailCollision means: a local account with this email already

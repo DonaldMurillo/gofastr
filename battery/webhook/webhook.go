@@ -831,10 +831,10 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	ts := m.nowFn().Unix()
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "GoFastr-Webhook/1")
-	req.Header.Set("X-GoFastr-Event", d.Event)
-	req.Header.Set("X-GoFastr-Delivery-ID", d.ID)
+	req.Header.Set(EventHeader, d.Event)
+	req.Header.Set(DeliveryIDHeader, d.ID)
 	req.Header.Set("X-GoFastr-Timestamp", fmt.Sprintf("%d", ts))
-	req.Header.Set(SignatureHeader, SignWithTimestamp(sub.Secret, ts, d.Payload))
+	req.Header.Set(SignatureHeader, SignWithTimestamp(sub.Secret, ts, d.Event, d.ID, d.Payload))
 	client := m.opts.HTTPClient
 	if m.plaintextAuth(*sub) {
 		// A subscriber stored past Subscribe (or before this check

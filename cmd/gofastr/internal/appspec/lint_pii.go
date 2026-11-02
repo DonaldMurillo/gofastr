@@ -67,14 +67,15 @@ func LintUnscopedPII(bp AppSpec) []piiFinding {
 }
 
 // HasAccessGate reports whether the access declaration actually gates at
-// least one operation: an access: map with only blank entries gates
-// nothing and must not count as a remedy.
+// least one operation: an access: map with only blank or anyone entries
+// gates nothing and must not count as a remedy. anyone opens its operation
+// to every caller, and a blank read beside it stays open too.
 func HasAccessGate(a *fwentity.AccessDeclaration) bool {
 	if a == nil {
 		return false
 	}
 	for _, perm := range []string{a.Read, a.Create, a.Update, a.Delete} {
-		if strings.TrimSpace(perm) != "" {
+		if p := strings.TrimSpace(perm); p != "" && p != fwentity.Anyone {
 			return true
 		}
 	}

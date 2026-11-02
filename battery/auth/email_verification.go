@@ -227,7 +227,7 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 		// same-origin, so a browser with no session gets this 401 then.
 		if handler.IsCrossSiteRequest(r) {
 			if target, ok := sameOriginTarget(r); ok {
-				writeSameSiteHop(w, r, target, verifyHopTitle)
+				writeSameSiteHop(w, r, p.mgr.config.Pages, target, verifyHopTitle)
 				return
 			}
 		}

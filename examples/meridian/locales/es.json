@@ -698,6 +698,18 @@
       "increment": "Sumar",
       "label": "Contador"
     },
+    "datepicker": {
+      "chooseEnd": "{{date}} seleccionado. Elige la fecha de fin.",
+      "chosen": "{{date}} seleccionado.",
+      "end": "Fecha de fin",
+      "monthFailed": "No se pudo cargar el mes.",
+      "nextMonth": "Mes siguiente",
+      "nextYear": "Año siguiente",
+      "prevMonth": "Mes anterior",
+      "prevYear": "Año anterior",
+      "range": "Seleccionado del {{start}} al {{end}}.",
+      "start": "Fecha de inicio"
+    },
     "dialog": {
       "cancel": "Cancelar",
       "close": "Cerrar",

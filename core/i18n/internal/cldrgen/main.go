@@ -53,7 +53,7 @@ const (
 
 // skeletons are the flexible formats the table keeps, in cldrLocale's
 // field order: year-month, month-day, weekday-month-day.
-var skeletons = []string{"yMMM", "MMMd", "MMMEd"}
+var skeletons = []string{"yMMM", "MMMd", "MMMEd", "yMMMM"}
 
 var weekdays = []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
 
@@ -144,7 +144,7 @@ func main() {
 // and render writes them by these names.
 type record struct {
 	date, time, dateTime [4]string // full, long, medium, short
-	skeletons            [3]string // yMMM, MMMd, MMMEd
+	skeletons            [4]string // yMMM, MMMd, MMMEd, yMMMM
 	months, monthsAbbr   [12]string
 	monthsStandalone     [12]string
 	monthsStandaloneAbbr [12]string

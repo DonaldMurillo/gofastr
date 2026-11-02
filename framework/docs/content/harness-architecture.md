@@ -1190,13 +1190,17 @@ per connection), so a `harness.cancel_turn` sent while a `wait: "turn"`
 call is blocked is read and answered. `notifications/cancelled` naming
 a running request cancels it; for a `wait: "turn"` call that also
 cancels the turn it waits on, and the request gets no response, per
-MCP. A request id already in flight is refused with -32600. That is
-stdio, where one server reads the whole connection. Streamable HTTP
-serves each POST on its own, so a `notifications/cancelled` POSTed
-separately finds nothing to cancel, and the in-flight id check and the
-32-request cap count within one POST. Over HTTP, end a turn with
-`harness.cancel_turn`; closing a `wait: "turn"` request stops the wait
-and leaves the turn running.
+MCP. A request id already in flight is refused with -32600.
+
+Over Streamable HTTP every POST shares one in-flight table, so a
+`notifications/cancelled` sent as its own POST reaches a request another
+POST is still serving. Entries belong to the bearer token's principal
+(`claims.JTI`) plus the `Mcp-Session-Id`: a cancel finds only requests
+with both, because the client picks the session id. The duplicate-id
+check and the 32-request cap count per principal and session across
+POSTs; a request past the cap is refused with -32600. Closing a
+`wait: "turn"` request without a cancel stops the wait and leaves the
+turn running.
 
 `run_agent_with_shell_access` has two modes mirroring REST:
 synchronous (`wait: "turn"` blocks until the next `TurnEnded` and

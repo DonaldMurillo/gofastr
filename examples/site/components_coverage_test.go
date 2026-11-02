@@ -43,6 +43,7 @@ func TestComponentGalleryCoversUI(t *testing.T) {
 		"Picker":               "searches a server endpoint for its rows, shown in context as the admin's relation fields",
 		"ShortcutSheet":        "returns a (trigger, *widget.Builder) pair mounted once per app, shown in context as the admin's ? sheet",
 		"SortableListItems":    "the rows-only fragment a 409 reconciliation returns; not a tile (shown via the sortablelist kanban demo's conflict path)",
+		"DatePickerMonth":      "the month a DatePicker's island endpoint answers; not a tile (shown via the datepicker demo's month anchors)",
 	}
 
 	// Gallery display names, normalized (lowercase, spaces stripped).

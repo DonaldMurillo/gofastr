@@ -629,6 +629,66 @@ notes:
     breaking: false
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
     guidance: "Two same-titled regions emitted one id, so aria-labelledby and #features hit the first. Update a #features link or an e2e selector that targets a derived id inside an island or a deferred outlet to the prefixed id, or give the component an explicit ID, which always wins."
+  - change: "BREAKING - auth.RequireRole and auth.MCPRole count a role for a scoped API token only when the token holds role:<name> (role:* and *:* cover every role)"
+    breaking: true
+    hits: review
+    guidance: "A token used to carry its owner's roles through these gates. A service account or script whose token calls a role-gated route or MCP tool needs the role scope added (mint it with \"role:admin\" beside its resource scopes). Sessions and JWTs are unaffected."
+    find:
+      uses:
+        - gofastr/battery/auth.RequireRole
+        - gofastr/battery/auth.MCPRole
+  - change: "BREAKING - access.Can, access.CanResource and access.CanResourceExact refuse a scoped API token or embed grant whose scopes do not grant the permission; a Decider's Allow does not lift it"
+    breaking: true
+    hits: review
+    guidance: "These checks used to read only the token owner's roles. A token that runs a state transition, passes an entity Access permission named other than <table>:read/<table>:write, or relies on an owner-bypass or Unrestricted permission needs that permission in its scopes. Sessions and JWTs are unaffected."
+    find:
+      uses:
+        - gofastr/framework/access.Can
+        - gofastr/framework/access.CanResource
+        - gofastr/framework/access.CanResourceExact
+        - gofastr/framework.Can
+        - gofastr/framework.CanResource
+  - change: "BREAKING - webhook signatures sign <ts>\\n<event>\\n<delivery id>\\n<body>; webhook.SignWithTimestamp and webhook.VerifyTimestamped take the event name and delivery id before the body"
+    breaking: true
+    hits: edit
+    guidance: "A captured delivery could be re-sent under another event or delivery id and still verify. Pass r.Header.Get(webhook.EventHeader) and r.Header.Get(webhook.DeliveryIDHeader) to VerifyTimestamped. webhook.TimestampedVerifier reads them itself. Receivers outside Go (your subscribers' code) must sign the same newline-joined material, or every delivery fails verification after the upgrade; the webhooks doc has receiver code."
+    find:
+      shapes:
+        - symbol: gofastr/battery/webhook.SignWithTimestamp
+          type: '^func\(secret string, unixTimestamp int64, body \[\]byte\) string$'
+        - symbol: gofastr/battery/webhook.VerifyTimestamped
+          type: '^func\(secret string, header string, body \[\]byte, tolerance time\.Duration\) bool$'
+  - change: "BREAKING - an rtc join whose Join.User is empty is refused with 403 unless rtc.Config.AnonymousSeats is rtc.AnonymousPerSocket"
+    breaking: true
+    hits: review
+    guidance: "Userless callers shared one seat bucket, so one of them could displace every other. Return the caller's id in Join.User from Authorize. If the callers really have no account (a lobby display name), set AnonymousSeats: rtc.AnonymousPerSocket so each socket holds its own seat."
+    find:
+      uses:
+        - gofastr/battery/rtc.New
+  - change: "A process module whose descriptor drops grants and adds none stays enabled at boot (new InstallOutcome InstallGrantsNarrowed); a runtime RevokeGrants survives the next boot"
+    breaking: false
+    guidance: "Code that read InstallGrantsChanged as \"the grants differ\" now also needs InstallGrantsNarrowed. RegisterResult.EffectiveGrants is the stored set, which leaves out grants an operator revoked; give one back with SetEffectiveGrants. The revoked_grants column is added at boot."
+    nodetect: "a narrowed boot used to disable the module and now keeps it enabled; no source spelling changes"
+  - change: "BREAKING - once an Access block names any permission, a blank Create, Update or Delete is refused with 403 for every caller (wildcard roles included); framework.Anyone, or anyone in an app spec, opens an operation"
+    breaking: true
+    hits: review
+    guidance: "A blank write used to be open to every caller, anonymous ones included. For each entity with an Access block, name a permission for every write it should allow, or set it to framework.Anyone (anyone in gofastr.yml) when the write really is public, such as a contact form. Leave it blank only when no caller should write it; crud.WithElevation still writes from server code. A blank Read is unchanged."
+    find:
+      uses:
+        - gofastr/framework/entity.ExposureConfig.Access
+        - gofastr/framework/entity.AccessDeclaration
+      config:
+        - key: entities.*.access.*
+          value: '.'
+        - key: entities.*.exposure.access.*
+          value: '.'
+  - change: "BREAKING - auth.MagicLinkConfig.ConfirmPage is removed; auth.AuthConfig.Pages draws the magic-link confirmation and the same-site hop, and authui.Pages(host) renders both with the design system"
+    breaking: true
+    hits: edit
+    guidance: "Move a ConfirmPage func into an auth.Pages implementation set on AuthConfig.Pages: MagicLinkConfirm(w, r, d) writes the page (status and body; the battery already set no-store and no-referrer), and d.Words carries the title, the escaped ask sentence, the warning and the submit label. A UIHost app can drop its own page and set Pages: authui.Pages(host) from battery/auth/authui. Hop(w, r, d) draws the hop page; the battery sends the Refresh header that reloads it."
+    find:
+      uses:
+        - gofastr/battery/auth.MagicLinkConfig.ConfirmPage
   - change: "BREAKING for direct callers of the harness event bus - engine.Bus.Replay is removed; SubscribeSince replays from the bus's window and the session log itself"
     breaking: true
     hits: edit
@@ -636,6 +696,24 @@ notes:
     find:
       uses:
         - gofastr/framework/experimental/harness/engine.Bus.Replay
+  - change: "BREAKING - a ?presence= topic is refused unless an island AuthorizeTopic hook admits it; a screen declares its topics with PresenceTopics(ctx), and ServeSSEWithPresence takes island.PresenceTopics"
+    breaking: true
+    hits: review
+    guidance: "Any topic in a page URL used to join with no hook, so a guessed topic exposed its roster. Give each presence screen a PresenceTopics(ctx context.Context) []string method returning its topics and drop ?presence= from its links; the host signs the list for the viewer and joins it with no hook. Apps that build topics in the browser call host.Islands.SetAuthorizeTopic, which now also sees declared topics. A direct ServeSSEWithPresence call passes island.PresenceTopics{Declared: ..., Requested: ...}; with no hook only Declared joins."
+    find:
+      uses:
+        - gofastr/core-ui/island.Manager.ServeSSEWithPresence
+        - gofastr/core-ui/island.ParsePresenceTopics
+      strings:
+        match: '[?&]presence='
+  - change: "BREAKING - the generated JS SDK types integer fields and integer ids number | string, and hands an integer past 2^53 over as its decimal string"
+    breaking: true
+    guidance: "client.js used JSON.parse, which rounds an integer past 2^53. Regenerate the JS SDK (gofastr sdk). TypeScript that treats an integer field as a number narrows it first (typeof v === \"number\"), or converts with Number(v) when the value is known to stay under 2^53, or BigInt(v) when it may not."
+    nodetect: "the change lands in regenerated SDK files; caller code that reads an integer field as number has no fixed spelling to search for"
+  - change: "BREAKING - the generated client.d.ts types an optional field T | null on the entity and Input interfaces"
+    breaking: true
+    guidance: "The server returns a NULL column as null, which the old types hid. Regenerate the JS SDK (gofastr sdk). TypeScript that reads an optional field checks for null first (v ?? fallback, or if (v !== null)). A required, generated or key field keeps its plain type."
+    nodetect: "the change lands in regenerated SDK files; caller code that reads an optional field has no fixed spelling to search for"
   - change: "BREAKING - MagicLinkPlugin.Init refuses to start when a 2FA plugin is registered and MagicLinkConfig.TwoFactorURL is empty; a magic-link sign-in of a 2FA account now redirects there instead of to OnSuccessURL, which refused the pending session"
     breaking: true
     hits: review

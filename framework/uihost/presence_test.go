@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +47,8 @@ func TestHandleSSEPresenceAuthedUserRecords(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	// The "attacker" param is present to prove it is never read.
-	req := httptest.NewRequest("GET", "/__gofastr/sse?session="+sess.ID+"&presence=doc:42&user=attacker", nil)
+	sig := url.QueryEscape(ds.signDeclaredTopics("alice", "doc:42", time.Now().Add(time.Hour)))
+	req := httptest.NewRequest("GET", "/__gofastr/sse?session="+sess.ID+"&declared=doc:42&dsig="+sig+"&user=attacker", nil)
 	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	req = req.WithContext(handler.SetUser(ctx, &testPresenceUser{id: "alice", email: "alice@test.com"}))
 
@@ -83,14 +85,15 @@ func TestHandleSSEPresenceAuthedUserRecords(t *testing.T) {
 }
 
 // TestHandleSSEPresenceAnonymousNoCrash: an unauthenticated SSE connection
-// with a presence topic does not crash; it registers a pseudo-identity.
+// with a declared topic does not crash; it registers a pseudo-identity.
 func TestHandleSSEPresenceAnonymousNoCrash(t *testing.T) {
 	ds := newTestUIHost()
 	sess := ds.CreateSession()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req := httptest.NewRequest("GET", "/__gofastr/sse?session="+sess.ID+"&presence=room", nil)
+	sig := url.QueryEscape(ds.signDeclaredTopics("", "room", time.Now().Add(time.Hour)))
+	req := httptest.NewRequest("GET", "/__gofastr/sse?session="+sess.ID+"&declared=room&dsig="+sig, nil)
 	req.AddCookie(&http.Cookie{Name: "__Host-gofastr-session", Value: sess.Token})
 	req = req.WithContext(ctx)
 

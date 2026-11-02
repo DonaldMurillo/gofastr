@@ -186,7 +186,7 @@ func TestPlainRefusalStatusClamped(t *testing.T) {
 // handshake it refuses, so the handler must. An authorized plain GET
 // of the endpoint is 400, never an empty 200.
 func TestFailedUpgradeHasStatus(t *testing.T) {
-	s := New(Config{Authorize: func(r *http.Request) (Join, error) { return Join{Room: "room1"}, nil }})
+	s := New(Config{Authorize: func(r *http.Request) (Join, error) { return Join{Room: "room1", User: "u"}, nil }})
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)
 	t.Cleanup(s.Close)
