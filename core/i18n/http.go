@@ -14,7 +14,15 @@ import (
 // Framework code reaches every plain-text refusal through here, so an
 // app's catalog translates them all; the repo's rawtext analyzer
 // refuses a bare http.Error.
+//
+// A status outside 400-599 is sent as 500, as handler.WriteError sends
+// it: an error never goes out under a status that reads as success, and
+// a forgotten zero (decide.Block(0), a config left unset) does not panic
+// inside net/http's WriteHeader on the error path.
 func HTTPError(w http.ResponseWriter, r *http.Request, status int, p Phrase, params ...map[string]any) {
+	if status < 400 || status > 599 {
+		status = http.StatusInternalServerError
+	}
 	msg := http.StatusText(status)
 	if !p.IsZero() {
 		ctx := context.Background()

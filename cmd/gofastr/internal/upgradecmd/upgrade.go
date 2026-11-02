@@ -2,9 +2,11 @@ package upgradecmd
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -226,17 +228,48 @@ func hitPos(h scan.Hit) string {
 }
 
 // resolveLatestVersion asks the module proxy for the newest tagged
-// release. Needs network; callers fall back to requiring --to.
+// release, the one `go get …@latest` picks: the newest release, or the
+// newest prerelease when no release exists. -mod=mod lets the query run
+// inside a vendored module, where the go command otherwise refuses to
+// list versions. Needs network; callers fall back to requiring --to.
 func resolveLatestVersion() (string, error) {
-	out, err := exec.Command("go", "list", "-m", "-versions", project.GofastrModule).Output()
+	out, err := exec.Command("go", "list", "-mod=mod", "-m", "-versions", project.GofastrModule).Output()
 	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			return "", fmt.Errorf("%w: %s", err, cli.ScrubTerminalOutput(strings.TrimSpace(string(ee.Stderr))))
+		}
 		return "", err
 	}
 	fields := strings.Fields(strings.TrimSpace(string(out)))
 	if len(fields) < 2 {
 		return "", fmt.Errorf("no tagged versions reported for %s", project.GofastrModule)
 	}
-	return fields[len(fields)-1], nil
+	versions := fields[1:]
+	for i := len(versions) - 1; i >= 0; i-- {
+		if !strings.Contains(versions[i], "-") {
+			return versions[i], nil
+		}
+	}
+	return versions[len(versions)-1], nil
+}
+
+// applySteps are the mechanical steps --apply runs, in order. A vendored
+// module (vendor/modules.txt at root) re-vendors after tidy: go get
+// leaves vendor/ behind go.mod, and every later go command refuses the
+// mismatch ("inconsistent vendoring").
+func applySteps(root, target string) [][]string {
+	steps := [][]string{
+		{"go", "get", project.GofastrModule + "@" + target},
+		{"go", "mod", "tidy"},
+	}
+	if _, err := os.Stat(filepath.Join(root, "vendor", "modules.txt")); err == nil {
+		steps = append(steps, []string{"go", "mod", "vendor"})
+	}
+	return append(steps,
+		[]string{"go", "build", "./..."},
+		[]string{"go", "test", "./..."},
+	)
 }
 
 type upgradeOpts struct {
@@ -300,25 +333,25 @@ func RunUpgrade(args []string) {
 		cli.OsExit(0)
 	}
 	if bad != "" {
-		fmt.Fprintf(os.Stderr, "upgrade: unknown flag %s\n", bad)
+		cli.Fprintf(os.Stderr, "upgrade: unknown flag %s\n", bad)
 		cli.OsExit(2)
 	}
 
 	reg, err := upgrade.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
+		cli.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		cli.OsExit(1)
 	}
 
 	current, replaced, err := project.GoModGofastrVersion(opts.root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
+		cli.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		cli.OsExit(1)
 	}
 	currentFrom := "go.mod"
 	if opts.from != "" {
 		if err := semver.Validate(opts.from); err != nil {
-			fmt.Fprintf(os.Stderr, "upgrade: --from: %v\n", err)
+			cli.Fprintf(os.Stderr, "upgrade: --from: %v\n", err)
 			cli.OsExit(1)
 		}
 		current, currentFrom = opts.from, "--from"
@@ -326,7 +359,7 @@ func RunUpgrade(args []string) {
 		// The version is project data headed for the terminal: one that
 		// is not vX.Y.Z (escape bytes included) is refused, and the
 		// error quotes it.
-		fmt.Fprintf(os.Stderr, "upgrade: go.mod: %v\n", err)
+		cli.Fprintf(os.Stderr, "upgrade: go.mod: %v\n", err)
 		cli.OsExit(1)
 	}
 
@@ -334,29 +367,29 @@ func RunUpgrade(args []string) {
 	if target == "" {
 		target, err = resolveLatestVersion()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "upgrade: could not resolve the latest release (offline?): %v\nPass the target explicitly: gofastr upgrade --to vX.Y.Z\n", err)
+			cli.Fprintf(os.Stderr, "upgrade: could not resolve the latest release (offline?): %v\nPass the target explicitly: gofastr upgrade --to vX.Y.Z\n", err)
 			cli.OsExit(1)
 		}
 	}
 	if err := semver.Validate(target); err != nil {
-		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
+		cli.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		cli.OsExit(1)
 	}
 
-	fmt.Printf("Current: %s (%s)\n", current, currentFrom)
+	cli.Printf("Current: %s (%s)\n", current, currentFrom)
 	if replaced && opts.from == "" {
 		fmt.Println("         NOTE: go.mod has a replace directive for gofastr: the")
 		fmt.Println("         version above may not be what actually builds.")
 	}
-	fmt.Printf("Target:  %s\n\n", target)
+	cli.Printf("Target:  %s\n\n", target)
 
 	if !semver.Less(current, target) {
-		if current == target {
+		if !semver.Less(target, current) { // same precedence: v0.95.0 and v0.95.0+meta
 			fmt.Println("Already on the target release: nothing to do.")
 			if opts.from == "" {
 				fmt.Println("If go.mod was bumped before this run, re-run with the release the")
 				fmt.Println("code was written for to see the notes and the lines they affect:")
-				fmt.Printf("    gofastr upgrade --from vX.Y.Z --to %s\n", target)
+				cli.Printf("    gofastr upgrade --from vX.Y.Z --to %s\n", target)
 			}
 			return
 		}
@@ -372,44 +405,39 @@ func RunUpgrade(args []string) {
 	// range rather than only the target. A downgrade FROM a version newer
 	// than the registry also spans releases this binary doesn't know.
 	if semver.Less(reg.Through, hi) {
-		fmt.Printf("NOTE: this CLI's migration registry is complete through %s: the\n", reg.Through)
-		fmt.Printf("range shown reaches %s, so it may cross notes this binary doesn't\n", hi)
+		cli.Printf("NOTE: this CLI's migration registry is complete through %s: the\n", reg.Through)
+		cli.Printf("range shown reaches %s, so it may cross notes this binary doesn't\n", hi)
 		fmt.Println("know. Install the newest involved CLI first and re-run:")
-		fmt.Printf("    go install %s/cmd/gofastr@%s\n\n", project.GofastrModule, hi)
+		cli.Printf("    go install %s/cmd/gofastr@%s\n\n", project.GofastrModule, hi)
 	}
-	fmt.Print(upgradeReport(opts.root, upgrade.ReleasesInRange(reg, lo, hi), reg.MarkerSinks))
+	cli.Print(upgradeReport(opts.root, upgrade.ReleasesInRange(reg, lo, hi), reg.MarkerSinks))
 	printUnmountedForUpgrade(opts.root, target)
 	fmt.Println("Consult the release notes for the full story:")
 	fmt.Printf("    https://github.com/DonaldMurillo/gofastr/releases\n\n")
 
-	steps := [][]string{
-		{"go", "get", project.GofastrModule + "@" + target},
-		{"go", "mod", "tidy"},
-		{"go", "build", "./..."},
-		{"go", "test", "./..."},
-	}
+	steps := applySteps(opts.root, target)
 	if !opts.apply {
 		fmt.Println("Steps (re-run with --apply to execute them):")
 		for i, s := range steps {
-			fmt.Printf("  %d. %s\n", i+1, strings.Join(s, " "))
+			cli.Printf("  %d. %s\n", i+1, strings.Join(s, " "))
 		}
-		fmt.Println("  5. go install " + project.GofastrModule + "/cmd/gofastr@" + target + "   (the CLI doesn't update with go.mod)")
-		fmt.Println("  6. review the go.mod / go.sum diff before committing")
+		cli.Printf("  %d. go install %s/cmd/gofastr@%s   (the CLI doesn't update with go.mod)\n", len(steps)+1, project.GofastrModule, target)
+		fmt.Printf("  %d. review the go.mod / go.sum diff before committing\n", len(steps)+2)
 		return
 	}
 	for _, s := range steps {
-		fmt.Printf("→ %s\n", strings.Join(s, " "))
+		cli.Printf("→ %s\n", strings.Join(s, " "))
 		cmd := exec.Command(s[0], s[1:]...)
 		cmd.Dir = opts.root
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "upgrade: %q failed: %v\nFix the errors above (see the migration notes), then re-run.\n", strings.Join(s, " "), err)
+			cli.Fprintf(os.Stderr, "upgrade: %q failed: %v\nFix the errors above (see the migration notes), then re-run.\n", strings.Join(s, " "), err)
 			cli.OsExit(1)
 		}
 	}
 	fmt.Println()
 	fmt.Println("Upgraded. Two manual steps remain:")
-	fmt.Println("  • go install " + project.GofastrModule + "/cmd/gofastr@" + target + "   (the CLI doesn't update with go.mod)")
+	cli.Println("  • go install " + project.GofastrModule + "/cmd/gofastr@" + target + "   (the CLI doesn't update with go.mod)")
 	fmt.Println("  • review the go.mod / go.sum diff before committing")
 }

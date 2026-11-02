@@ -184,6 +184,18 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 				return
 			}
 		}
+		// The row must be one the caller's hooked read reaches, trashed
+		// or live (a live row goes on to answer 409): a row a BeforeList
+		// hook hides from the trash view is not restored or purged from
+		// it by id, the rule the bulk restore's re-read already applies.
+		if visible, err := u.hookedRowVisible(ctx, m, id); err != nil {
+			slog.ErrorContext(ctx, "entityui: trash write read", "entity", m.name, "op", op, "error", err)
+			writeBulkError(w, r, http.StatusInternalServerError, reasonWriteFailed)
+			return
+		} else if !visible {
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
+			return
+		}
 		var writeErr error
 		if op == "restore" {
 			writeErr = m.ch.RestoreOne(ctx, id)
@@ -211,6 +223,21 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 		}
 		http.Redirect(w, r, back, http.StatusSeeOther)
 	})
+}
+
+// hookedRowVisible reports whether the caller's read, with its read
+// hooks, returns the record id from the trash or from the live rows.
+func (u *UI) hookedRowVisible(ctx context.Context, m *meta, id string) (bool, error) {
+	for _, deleted := range []bool{true, false} {
+		ids, err := u.readIDs(ctx, m, []string{id}, deleted)
+		if err != nil {
+			return false, err
+		}
+		if len(ids) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // trashToast is the answer's toast title.

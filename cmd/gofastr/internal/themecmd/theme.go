@@ -2,14 +2,14 @@ package themecmd
 
 import (
 	"fmt"
-	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 // RunTheme dispatches `gofastr theme <subcommand>`.
@@ -26,7 +26,8 @@ func RunTheme(args []string) {
 	case "--help", "-h", "help":
 		printThemeHelp()
 	default:
-		fmt.Printf("%s Unknown theme subcommand: %s\n\n", cli.Red("✗"), args[0])
+		cli.Fail("Unknown theme subcommand: %s", args[0])
+		fmt.Println()
 		printThemeHelp()
 		cli.OsExit(1)
 	}
@@ -49,32 +50,44 @@ func printThemeHelp() {
 func runThemeInit(args []string) {
 	dest := "theme/theme.go"
 	force := false
-	for _, a := range args {
-		switch {
-		case a == "--force" || a == "-f":
-			force = true
-		case strings.HasPrefix(a, "--out=") || strings.HasPrefix(a, "-o="):
-			dest = strings.SplitN(a, "=", 2)[1]
-		case a == "--help" || a == "-h":
-			fmt.Println("Usage: gofastr theme init [--out=path] [--force]")
-			fmt.Println()
-			fmt.Println("Writes a starter theme.go to ./theme/theme.go (override via --out).")
-			fmt.Println("Refuses to overwrite an existing file unless --force is set.")
-			return
-		default:
-			fmt.Printf("%s Unknown flag: %s\n", cli.Red("✗"), a)
-			cli.OsExit(1)
-		}
+	if cli.HasHelpFlag(args) {
+		fmt.Println("Usage: gofastr theme init [--out=path] [--force]")
+		fmt.Println()
+		fmt.Println("Writes a starter theme.go to ./theme/theme.go (override via --out).")
+		fmt.Println("Refuses to overwrite an existing file unless --force is set.")
+		return
+	}
+	// cli.ParseFlags: --out=path and --out path both work, as on the
+	// other commands; the hand-rolled loop called `--out path` an unknown
+	// flag.
+	if _, err := cli.ParseFlags(args,
+		map[string]*string{"--out": &dest, "-o": &dest},
+		map[string]*bool{"--force": &force, "-f": &force}); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
 
-	if _, err := os.Stat(dest); err == nil && !force {
-		fmt.Printf("%s %s already exists. Pass --force to overwrite.\n", cli.Red("✗"), dest)
+	// dest is read and written through an os.Root (projectfs): a local
+	// path is confined to the working directory, so a theme/ or theme.go
+	// linked out of the checkout is refused rather than written through.
+	// Lstat, not Stat: a dangling theme.go link is a file already there.
+	rootDir, rel, err := projectfs.UserPath(dest)
+	if err != nil {
+		cli.Fail("mkdir %s: %v", filepath.Dir(dest), err)
 		cli.OsExit(1)
+		return
+	}
+	if _, err := projectfs.LstatFile(rootDir, rel); err == nil && !force {
+		cli.Fail("%s already exists. Pass --force to overwrite.", dest)
+		cli.OsExit(1)
+		return
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		fmt.Printf("%s mkdir %s: %v\n", cli.Red("✗"), filepath.Dir(dest), err)
+	if err := projectfs.MkdirAll(rootDir, path.Dir(rel), 0o755); err != nil {
+		cli.Fail("mkdir %s: %v", filepath.Dir(dest), err)
 		cli.OsExit(1)
+		return
 	}
 
 	// The file joins whatever package already lives in its directory
@@ -87,12 +100,12 @@ func runThemeInit(args []string) {
 	}
 	// --force replaces an existing theme through a temporary file, so a
 	// crash mid-write leaves the old one, not an empty one.
-	if err := atomicfile.Rewrite(dest, []byte(src), 0o644); err != nil {
-		fmt.Printf("%s write %s: %v\n", cli.Red("✗"), dest, err)
+	if err := projectfs.WriteFile(rootDir, rel, []byte(src), 0o644); err != nil {
+		cli.Fail("write %s: %v", dest, err)
 		cli.OsExit(1)
 	}
 
-	fmt.Printf("%s wrote %s: edit values to customize your theme.\n", cli.Green("✓"), dest)
+	cli.Success("wrote %s: edit values to customize your theme.", dest)
 	fmt.Println()
 	if pkg == "main" {
 		fmt.Println("Next: the theme is in package main, so main.go uses App directly:")
@@ -110,11 +123,11 @@ func runThemeInit(args []string) {
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/core-ui/app\"")
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework\"")
 	fmt.Println("        \"github.com/DonaldMurillo/gofastr/framework/uihost\"")
-	fmt.Println("        \"<your-module>/" + importDir + "\"")
+	cli.Println("        \"<your-module>/" + importDir + "\"")
 	fmt.Println("    )")
 	fmt.Println()
 	fmt.Println("    func main() {")
-	fmt.Println("        site := app.NewApp(\"MyApp\").WithTheme(" + pkg + ".App)")
+	cli.Println("        site := app.NewApp(\"MyApp\").WithTheme(" + pkg + ".App)")
 	fmt.Println("        site.Register(\"/\", &HomeScreen{}, nil) // HomeScreen implements component.Component + ScreenSpec")
 	fmt.Println()
 	fmt.Println("        host := uihost.New(site)")

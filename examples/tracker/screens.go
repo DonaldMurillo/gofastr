@@ -351,6 +351,13 @@ func newProjectLayout() *uiapp.Layout {
 	slide := uiapp.Slide(uiapp.Right, 220*time.Millisecond)
 	slide.Narrow = "768px" // ListDetail's phone breakpoint.
 	return uiapp.NewLayout("project", uiapp.LayoutSpec{
+		// The issue list reads ?filter=, so it is a route area: the
+		// layer is kept across one project's pages, and a kept layer
+		// is never re-rendered, so a list drawn by the layer itself
+		// kept the old filter when Reset or the sidebar's project
+		// link moved the URL. The area re-renders on every navigation
+		// the layer survives, from the destination's query.
+		Areas: []uiapp.AreaSpec{{Name: "issues"}},
 		Primary: uiapp.PrimaryConfig{
 			// The move is picked from the RESOLVED project: Billing
 			// slides, Search fades through (its two trails are text
@@ -387,15 +394,36 @@ func newProjectLayout() *uiapp.Layout {
 
 // buildProject renders the project layer: header (name, health, open
 // count) and the issue list pane beside the detail slot. The layer is
-// KEPT while you move between one project's issues, so nothing here
-// may read route state — the current row's mark is the runtime's
-// (activelink stamps aria-current on the exact-href match), and a
-// server mark read off the entering match would go stale on the very
-// next click.
+// KEPT while you move between one project's issues, so nothing it
+// draws itself may read route state: the filtered list is the
+// "issues" route area, re-rendered from each destination's query. The
+// current row's mark is the runtime's (activelink stamps aria-current
+// on the exact-href match), and a server mark read off the entering
+// match would go stale on the very next click.
 func buildProject(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 	p, err := resolvedProject.Get(ctx)
 	if err != nil {
 		return l.Primary()
+	}
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+		ui.PageHeader(ui.PageHeaderConfig{Compact: true, Title: p.Name, Subtitle: strconv.Itoa(openCount(p.Slug)) + " open · " + strconv.Itoa(len(issuesBySlug[p.Slug])) + " issues",
+			Badge: ui.StatusBadge(ui.StatusBadgeConfig{Label: p.Health, Variant: p.Tone})}),
+		ui.ListDetail(ui.ListDetailConfig{
+			ListLabel: "Issues", ExtraAttrs: l.VTRegion(), MobileSinglePane: true,
+			BackHref: "/projects/" + p.Slug, BackLabel: "Back to issues",
+			List:   l.RouteArea("issues", issueListArea),
+			Detail: l.Primary(),
+		}),
+	)
+}
+
+// issueListArea is the project's issue list: the filter box and the
+// rows matching ?filter=, rendered on every navigation inside the
+// project so the list always matches the URL.
+func issueListArea(ctx context.Context, _ uiapp.Match) render.HTML {
+	p, err := resolvedProject.Get(ctx)
+	if err != nil {
+		return ""
 	}
 	filter, err := resolvedFilter.Get(ctx)
 	if err != nil {
@@ -407,19 +435,10 @@ func buildProject(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 			rows = append(rows, issueRow(p.Slug, iss, filter))
 		}
 	}
-	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-		ui.PageHeader(ui.PageHeaderConfig{Compact: true, Title: p.Name, Subtitle: strconv.Itoa(openCount(p.Slug)) + " open · " + strconv.Itoa(len(issuesBySlug[p.Slug])) + " issues",
-			Badge: ui.StatusBadge(ui.StatusBadgeConfig{Label: p.Health, Variant: p.Tone})}),
-		ui.ListDetail(ui.ListDetailConfig{
-			ListLabel: "Issues", ExtraAttrs: l.VTRegion(), MobileSinglePane: true,
-			BackHref: "/projects/" + p.Slug, BackLabel: "Back to issues",
-			List: ui.Stack(ui.StackConfig{Gap: ui.GapNone},
-				ui.FilterToolbar(ui.FilterToolbarConfig{Compact: true, Action: "/projects/" + p.Slug,
-					Search: &ui.FilterSearch{Name: "filter", Value: filter, Placeholder: "Filter issues", Label: "Filter issues"}}),
-				ui.Stack(ui.StackConfig{Gap: ui.GapNone}, rows...)),
-			Detail: l.Primary(),
-		}),
-	)
+	return ui.Stack(ui.StackConfig{Gap: ui.GapNone},
+		ui.FilterToolbar(ui.FilterToolbarConfig{Compact: true, Action: "/projects/" + p.Slug,
+			Search: &ui.FilterSearch{Name: "filter", Value: filter, Placeholder: "Filter issues", Label: "Filter issues"}}),
+		ui.Stack(ui.StackConfig{Gap: ui.GapNone}, rows...))
 }
 
 // issueRow renders one list row: the key, the title, the status, the

@@ -310,7 +310,9 @@ func isStoreable(rec *responseRecorder, outer http.Header, hasCreds, reqNoStore 
 	}
 	// Vary: * declares the response varies on factors not in the request
 	// and must never be reused (RFC 9111 §4.1). Refuse to store it.
-	if varyHasStar(rec.header.Get("Vary")) {
+	// Every Vary line: a handler that Adds Vary: * after another Vary
+	// put the star on a line Header.Get never reads.
+	if varyHasStar(allValues("Vary", rec.header)) {
 		return false
 	}
 	return true

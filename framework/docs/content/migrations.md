@@ -96,7 +96,19 @@ required, not defaulted: directives are case-sensitive, and a file whose
 `-- +migrate Up` line is missing or misspelled (lower-case `up`) is
 rejected at parse time instead of registering a migration whose SQL was
 silently discarded while the tracking table records it applied.
-Programmatic `Register` refuses an empty `Up` for the same reason.
+Programmatic `Register` refuses an empty `Up` for the same reason. Any
+other `-- +migrate` line that is not one of `Version`, `Name`, `Group`,
+`Up`, `Down` or `NoTransaction`, and a comment that reads as a directive
+with its spacing or case off (`--+migrate Down`, `-- +Migrate Down`),
+is refused too: the parser used to pass over it with the section above
+still open, so a misspelled `Down` put the Down statements into `Up` and
+the rollback ran as part of the apply. A prose comment that starts the
+same way, such as `-- +migrated from v1`, is refused as an unknown
+directive, so write it without the `+` (`-- migrated from v1`).
+`migrate generate` refuses a SQL body (a multi-line `DEFAULT`, a view or
+a routine) holding any line the parser would read either way, using the
+parser's own test, `migrate.IsDirectiveLine` in `core/migrate`, so it
+never writes a file the runner then refuses to load.
 
 ### Non-transactional migrations
 
@@ -168,24 +180,28 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 
 | Subcommand   | Effect                                                        |
 |--------------|---------------------------------------------------------------|
-| `up`         | Apply all pending migrations in version order.                |
-| `status`     | Print applied count, pending versions, and any dirty version. |
-| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be a positive integer; anything else is refused before a rollback. |
-| `generate N` | Write a versioned, reversible migration file from entity changes. |
+| `up`         | Apply all pending migrations in version order. It takes no count: `up 1` is refused rather than read as "apply everything". |
+| `status`     | Print applied count, pending versions, any dirty version, and the drift `up`/`down` refuse on: an applied migration whose file changed since (MODIFIED) or whose file is gone. |
+| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be one positive integer; anything else, a second count included, is refused before a rollback. |
+| `generate N` | Write a versioned, reversible migration file from entity changes. `N` is one word (`add_users`); a second one is refused. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 | `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
 
 Flags & inputs (each valued flag is written `--name=<value>`; a flag the
 subcommand does not read, or a valued one without `=`, is refused before
-anything opens):
+anything opens). `up`, `status` and `repair` take no positional argument,
+and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
+`migrate generate a b`) is a usage error, exit 2, before anything opens.
 
 - `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
   a `.env` file in the working directory contains `DATABASE_URL=...`.
-- `--db=<name>` (or its alias `--driver=<name>`): `sqlite` (the
-  default), `postgres` or `mysql`; `sqlite3` and `postgresql` are
-  accepted as aliases, the same table `gofastr init --db=` uses.
-  Postgres or MySQL require building a `gofastr` binary that
-  blank-imports the matching driver; an unregistered driver is refused,
+- `--db=<name>` (or its alias `--driver=<name>`): `sqlite` or
+  `postgres`; `sqlite3` and `postgresql` are accepted as aliases, the
+  same table `gofastr init --db=` uses. Without the flag, a database URL
+  that starts with `postgres://` or `postgresql://` uses `postgres` and
+  anything else `sqlite`. Both drivers ship in the `gofastr` binary. The
+  runner and `generate` write SQLite and Postgres SQL only, so any other
+  name (`mysql`, a typo) is refused before anything opens or is written,
   never replaced by SQLite.
 - `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
@@ -356,7 +372,15 @@ numeric text converts and anything else fails the migration; a text
 default is dropped before the retype and the declared default set
 after it, since Postgres cannot cast the old one; other
 changes may still need a data-specific `USING` clause, so review and
-hand-tighten. On SQLite,
+hand-tighten. A `String` whose `Max` changed is a type change on
+Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
+VARCHAR(200)` widens it, and a narrower width fails on a row that no
+longer fits rather than cutting it. SQLite ignores the width, so the
+same change there rebuilds nothing. To see the width, the live column read
+behind this, `migrate.ReadLiveColumns` (and `ReadLiveColumnsPostgres`,
+`ReadLiveColumnsBulk`), reports a Postgres character column as
+`character varying(255)`, information_schema's `data_type` plus the
+width; other types are the bare `data_type`. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
@@ -383,7 +407,11 @@ transaction, where the pragma has no effect: it refuses a rebuild that a
 `CASCADE` or `SET NULL` key references and names those tables. It reads
 those keys from the declared relations and from the snapshot's recorded
 table DDL, so a key the database still holds counts even after its
-relation changed or went away. Write that
+relation changed or went away. It refuses a rebuild that any other
+foreign key the snapshot records references too, one with no `ON
+DELETE` action included: SQLite empties the table before dropping it,
+and a child row still pointing at it fails the `DROP`, so such a file
+applied where the child was empty and failed where it held rows. Write that
 migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
 foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
 Rows are carried over, not regenerated. A column added in the same change
@@ -461,6 +489,42 @@ the index under the new name and never drops the old one, since a
 foreign key you added by hand may depend on a unique index and the drop
 would fail. The snapshot keeps recording the old index while the new
 one is declared, so removing or changing the index later drops both.
+
+The migrator writes table, column and index names bare, so Postgres
+folds them to lowercase, the spelling CRUD's quoted SQL names. A name
+that is a keyword on either engine cannot go bare (`CREATE TABLE posts
+(order TEXT)` is a syntax error), so it is written quoted and folded:
+`"order"`, `"user"`, `"group"`. The set is Postgres's reserved keywords
+(including `user`, `end`, `desc`, `to`, `offset`, `do`, which SQLite
+takes bare) plus the SQLite keywords that break a statement the
+migrator writes (`index`, `set`, `values`, `drop`, …). The set lives in
+`core/query` (`query.IsKeyword`, `query.QuoteKeyword`), and the CRUD
+statements quote the same names the same way, so the column the DDL
+created is the one every query names. Every other name
+stays bare, so a schema without keyword names writes the same DDL and
+snapshot as before. A snapshot an older build wrote with such a name
+bare (it ran on SQLite) reads the same: a change of quoting alone is no
+change, and generation proposes nothing for it. Keywords both engines
+take bare, such as `key`, `status` or `action`, stay bare.
+
+A table or column named past 63 bytes works on Postgres, which cuts it
+to its first 63 bytes in DDL and in queries alike, so the catalog holds
+the cut name. The migrator reads the catalog by the cut name too, so
+such a table gains its new columns at boot and such a column is not
+added a second time, proposed for a drop, or read as a key change. The
+same holds for foreign keys: `DiffSchema` matches a live key onto a long
+table, or on a long column on either side, to the relation that declares
+it, rather than proposing to drop it and add it back on every run.
+
+An index name belongs to the schema, not the table, on both engines, and
+the migrator creates every index with `CREATE INDEX IF NOT EXISTS`. Two
+tables whose indexes share a name, whether set in `Index.Name` or
+derived (table `a_b` on `c` and table `a` on `b_c` are both
+`idx_a_b_c`), would get one index between them, so boot, `DiffSchema`
+and `migrate generate` refuse the pair and name both tables, as they do
+one table declaring two different indexes under one name. Names are
+compared folded and cut at 63 bytes, the way Postgres stores them, on
+both dialects. Give one of the indexes its own `Name`.
 
 A `Unique` field's `<table>_<column>_key` is the name Postgres gives
 the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
@@ -994,7 +1058,11 @@ app.View(migrate.View{
   materialized view and refreshes its rows. Postgres refuses to drop a
   materialized view another view reads, so boot first drops the plan's
   views that depend on it, deepest first, and recreates them after it. A
-  view outside the plan that reads it still fails the boot. Changing a
+  view outside the plan that reads it still fails the boot. A plain view
+  whose columns changed other than by new ones added at the end (one
+  dropped, renamed or retyped) is one `CREATE OR REPLACE VIEW` refuses,
+  so boot drops it (its dependents in the plan first) and creates it
+  again; its grants go with the drop. Changing a
   view between plain and `Materialized` drops the live object of the
   other kind (and its dependents) first. `migrate generate` tracks
   the definition by checksum and writes a reversible migration when it
@@ -1070,6 +1138,11 @@ if err := m.Force(ctx, 1, true); err != nil { … }
 
 // State.
 st, _ := m.Status(ctx)   // st.Applied[i].Checksum, .Dirty are populated
+// st.Modified: applied rows whose registered Up no longer matches the
+// recorded checksum (Up refuses). st.Unregistered: applied rows with no
+// registered migration in the default group or a group that has some
+// (Down refuses); a named group with nothing registered is a disabled
+// module and is not listed.
 ```
 
 Use `RegisterFromReader` to load directive-formatted SQL from any
@@ -1318,7 +1391,10 @@ development convenience. What it guarantees:
   in the meantime still gets this version's columns and key.
   The lock is acquired by polling `pg_try_advisory_lock` so a cancelled
   context (shutdown) returns promptly instead of hanging on a stuck
-  holder. SQLite gets the same cross-process serialization from a twin:
+  holder. When the unlock fails, as it does on a session a
+  `NoTransaction` migration left inside its own failed `BEGIN`, the
+  connection is retired rather than returned to the pool, so ending its
+  session releases the lock. SQLite gets the same cross-process serialization from a twin:
   a leased lock row in `_gofastr_migrate_lock` (one atomic upsert,
   released on completion, expired by the next boot if the holder
   crashed) — SQLite's file-level locking serializes statements, not the

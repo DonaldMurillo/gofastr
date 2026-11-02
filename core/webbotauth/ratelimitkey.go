@@ -3,13 +3,16 @@ package webbotauth
 import (
 	"net"
 	"net/http"
+
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // RateLimitKey returns a key function for a per-key rate limiter (such as
 // framework/ratelimit's MiddlewareByKey): a verified Web Bot Auth request
 // is keyed by its agent, "agent:" plus the resolved key-directory URL, and
 // everything else by fallback(r). A nil fallback keys on the connection's
-// remote host.
+// remote host, an IPv6 host by its /64: one subscriber is routinely handed
+// a whole /64 and could otherwise rotate a fresh budget per request.
 //
 // The point is honest quotas. Keyed by IP, a verified agent behind a busy
 // egress shares a budget with everyone on that address, and a spoofed
@@ -32,7 +35,7 @@ import (
 // adds with Use, so a limiter added later sees the agent.
 func RateLimitKey(fallback func(*http.Request) string) func(*http.Request) string {
 	if fallback == nil {
-		fallback = remoteHost
+		fallback = remoteHostKey
 	}
 	return func(r *http.Request) string {
 		if a := AgentFromContext(r.Context()); a != nil && a.URL != "" {
@@ -42,10 +45,12 @@ func RateLimitKey(fallback func(*http.Request) string) func(*http.Request) strin
 	}
 }
 
-func remoteHost(r *http.Request) string {
+// remoteHostKey is the connection's remote host as a rate-limit key: an
+// IPv6 host collapsed to its /64 (clientip.RateKey).
+func remoteHostKey(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
 	}
-	return host
+	return clientip.RateKey(host)
 }

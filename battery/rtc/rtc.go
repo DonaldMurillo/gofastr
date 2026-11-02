@@ -52,6 +52,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"golang.org/x/net/http/httpguts"
 )
 
 // DefaultPath is the WebSocket endpoint Mount registers when
@@ -524,7 +525,10 @@ func (s *Signaler) refuse(w http.ResponseWriter, r *http.Request, status int, re
 	if reason.IsZero() {
 		reason = i18n.StatusPhrase(status)
 	}
-	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+	// Every Upgrade line: a client may list its protocols across lines
+	// (RFC 9110 §5.3), and the websocket token on a second one is still
+	// an upgrade request.
+	if !httpguts.HeaderValuesContainsToken(r.Header.Values("Upgrade"), "websocket") {
 		i18n.HTTPError(w, r, status, reason, params)
 		return
 	}

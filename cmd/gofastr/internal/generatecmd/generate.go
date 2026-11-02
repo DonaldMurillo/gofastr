@@ -55,7 +55,7 @@ Usage:
       Run one generator
 
 `)
-	fmt.Print(generatorHelp())
+	cli.Print(generatorHelp())
 	fmt.Println(`
 Run "gofastr docs codegen", "gofastr docs app-spec", "gofastr docs app-cli",
 or "gofastr docs sdk" for the complete contracts.`)

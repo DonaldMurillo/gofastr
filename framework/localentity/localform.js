@@ -93,11 +93,14 @@
   const pad = (n) => String(n).padStart(2, '0');
 
   // day accepts a real calendar date, YYYY-MM-DD, as core/schema's
-  // Date does (2024-02-31 is refused, not rolled into March).
+  // Date does (2024-02-31 is refused, not rolled into March). The year
+  // is set with setUTCFullYear: Date.UTC reads 0-99 as 1900-1999, so
+  // 0050-01-01 failed its own round-trip.
   const day = (raw) => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
     if (!m) return null;
-    const d = new Date(Date.UTC(+m[1], m[2] - 1, +m[3]));
+    const d = new Date(0);
+    d.setUTCFullYear(+m[1], m[2] - 1, +m[3]);
     return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === m[2] - 1 && d.getUTCDate() === +m[3] ? raw : null;
   };
   // stamp accepts RFC 3339 (what core/schema's Timestamp parses) or a

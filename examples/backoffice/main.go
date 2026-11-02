@@ -128,7 +128,9 @@ func setupApp(dsn string) *framework.App {
 	if err := app.InitPlugins(); err != nil {
 		log.Fatal(err)
 	}
-	seed(db)
+	if err := seed(db); err != nil {
+		log.Fatal(err)
+	}
 	return app
 }
 
@@ -169,7 +171,7 @@ func registerEntities(app *framework.App) {
 	})
 }
 
-func seed(db *sql.DB) {
+func seed(db *sql.DB) error {
 	// A small amber square as a self-contained raster data URI demo photo, so
 	// the Image field shows a real thumbnail without a storage backend. (An
 	// SVG data URI would draw nothing: the image URL policy refuses it.)
@@ -196,14 +198,23 @@ func seed(db *sql.DB) {
 	}
 	for _, p := range products {
 		specs := fmt.Sprintf(`{"category":%q,"price":%g,"in_stock":%t}`, p.cat, p.price, p.stock == 1)
-		db.Exec(`INSERT INTO products (id, name, price, in_stock, category, description, photo, specs, launched_on)
+		if _, err := db.Exec(`INSERT INTO products (id, name, price, in_stock, category, description, photo, specs, launched_on)
 			VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?, ?, ?)`,
-			p.name, p.price, p.stock, p.cat, p.desc, photo, specs, "2026-01-15")
+			p.name, p.price, p.stock, p.cat, p.desc, photo, specs, "2026-01-15"); err != nil {
+			return fmt.Errorf("seed product %q: %w", p.name, err)
+		}
 	}
-	db.Exec(`INSERT INTO suppliers (id, name) VALUES (lower(hex(randomblob(16))), 'Acme Supply')`)
-	db.Exec(`INSERT INTO suppliers (id, name) VALUES (lower(hex(randomblob(16))), 'Globex Parts')`)
-	db.Exec(`INSERT INTO customers (id, name, email, vip) VALUES (lower(hex(randomblob(16))), 'Ada Lovelace', 'ada@example.com', 1)`)
-	db.Exec(`INSERT INTO customers (id, name, email, vip) VALUES (lower(hex(randomblob(16))), 'Alan Turing', 'alan@example.com', 0)`)
+	for _, stmt := range []string{
+		`INSERT INTO suppliers (id, name) VALUES (lower(hex(randomblob(16))), 'Acme Supply')`,
+		`INSERT INTO suppliers (id, name) VALUES (lower(hex(randomblob(16))), 'Globex Parts')`,
+		`INSERT INTO customers (id, name, email, vip) VALUES (lower(hex(randomblob(16))), 'Ada Lovelace', 'ada@example.com', 1)`,
+		`INSERT INTO customers (id, name, email, vip) VALUES (lower(hex(randomblob(16))), 'Alan Turing', 'alan@example.com', 0)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("seed: %w", err)
+		}
+	}
+	return nil
 }
 
 //go:fix inline

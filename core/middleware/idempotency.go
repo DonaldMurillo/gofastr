@@ -494,6 +494,7 @@ func requestFingerprint(r *http.Request, body []byte, principal string) string {
 func writeReplay(w http.ResponseWriter, replay *IdempotentResponse) {
 	maps.Copy(w.Header(), replay.Header)
 	w.Header().Set("Idempotent-Replay", "true")
+	//gofastr:allow(statusrange) replays the status this middleware recorded, kept by the store only for a 2xx response
 	w.WriteHeader(replay.Status)
 	_, _ = w.Write(replay.Body)
 }

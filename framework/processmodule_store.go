@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -243,7 +244,25 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 			return fmt.Errorf("processmodule: ensure schema (%s): %w", label, err)
 		}
 	}
-	return s.addRevokedColumn(ctx, grantsType)
+	if err := s.addRevokedColumn(ctx, grantsType); err != nil {
+		return err
+	}
+	registerProcessModuleExport()
+	return nil
+}
+
+// registerProcessModuleExport declares the desired-state table to
+// App.ExportData, so a restore keeps a process module an operator turned
+// off turned off and keeps the grants an operator revoked revoked. The
+// heartbeat table stays out: it records which replicas were alive, which
+// a restored deployment has to observe afresh. No eraser: the rows name
+// modules, not users.
+func registerProcessModuleExport() {
+	datexport.Register(datexport.DataExporter{
+		Name: desiredTable, Source: "processmodules", Table: desiredTable, PrimaryKey: "module",
+		Columns: []string{"module", "desired_generation", "enabled", "artifact_sha256",
+			"effective_grants", "migrations_applied_at", "revoked_grants"},
+	})
 }
 
 // addRevokedColumn adds revoked_grants to a desired-state table an older

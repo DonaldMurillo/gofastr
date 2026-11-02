@@ -18,9 +18,11 @@ Run database migrations. The subcommand defaults to 'up'.
 
 Common flags:
   --db-url=<url>   database URL (default: DATABASE_URL, then .env)
-  --db=<driver>    sqlite (default), postgres or mysql (aliases: sqlite3, postgresql;
-                   --driver=<driver> is the same flag). Postgres and MySQL need a
-                   gofastr binary that blank-imports the driver.
+  --db=<driver>    sqlite or postgres (aliases: sqlite3, postgresql;
+                   --driver=<driver> is the same flag). Without it, a URL that
+                   starts with postgres:// or postgresql:// uses postgres and
+                   anything else sqlite. Any other driver is refused: the
+                   runner and generate speak SQLite and Postgres only.
   --group=<name>   scope to a migration group (repeatable)
   --create-db      (up) create the database first if it does not exist`)
 }

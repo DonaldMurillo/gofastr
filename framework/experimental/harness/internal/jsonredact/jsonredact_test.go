@@ -40,3 +40,26 @@ func TestStringsKeepsEscapedQuotes(t *testing.T) {
 		t.Errorf("got %s ok=%v", out, ok)
 	}
 }
+
+// Members hands a string value its member name, and every other string
+// (an object key, an array element) "".
+func TestMembersPassesTheMemberName(t *testing.T) {
+	in := []byte(`{"a" : "va", "env": {"K": "vk"}, "arr": ["e1", "e2"], "n": 1, "b": "vb"}`)
+	got := map[string]string{}
+	out, ok := Members(in, func(key, s string) string {
+		got[s] = key
+		return s
+	})
+	if !ok || string(out) != string(in) {
+		t.Fatalf("Members changed an untouched document: ok=%v out=%s", ok, out)
+	}
+	want := map[string]string{
+		"a": "", "va": "a", "env": "", "K": "", "vk": "K",
+		"arr": "", "e1": "", "e2": "", "n": "", "b": "", "vb": "b",
+	}
+	for s, k := range want {
+		if got[s] != k {
+			t.Errorf("string %q got key %q, want %q", s, got[s], k)
+		}
+	}
+}

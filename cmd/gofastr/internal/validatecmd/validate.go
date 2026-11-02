@@ -27,6 +27,22 @@ func RunValidate(args []string) {
 		cli.OsExit(1)
 		return
 	}
+	// One app spec per run. A second path was never read, so
+	// `validate a.yml b.yml` reported a.yml valid and said nothing of b.yml.
+	if extra := positionalArgs(args[1:]); len(extra) > 0 {
+		cli.Fail("validate takes one app spec, got extra %q", extra)
+		cli.Info("Usage: gofastr validate <gofastr.yml|dir>  (run it once per app spec)")
+		cli.OsExit(2)
+		return
+	}
+	// validate reads no flags: `validate gofastr.yml --json` printed text
+	// as if --json meant something.
+	if extra := flagArgs(args[1:]); len(extra) > 0 {
+		cli.Fail("validate takes no flags, got %q", extra)
+		cli.Info("Usage: gofastr validate <gofastr.yml|dir>")
+		cli.OsExit(2)
+		return
+	}
 	path := args[0]
 	bp, err := appspec.LoadAppSpec(path)
 	if err != nil {
@@ -79,6 +95,28 @@ func RunValidate(args []string) {
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }
 
+// positionalArgs returns the arguments that are not flags.
+// flagArgs returns the arguments that start with "-".
+func flagArgs(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func positionalArgs(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func printValidateHelp() {
 	fmt.Println(`gofastr validate: validate an app spec without writing files
 
@@ -91,7 +129,8 @@ Checks:
   unscoped PII exposure
   a complete in-memory render of generated files
 
-Exit status is 0 when valid and 1 when any check fails.`)
+Exit status is 0 when valid, 1 when any check fails, and 2 for a usage
+error such as a second path (validate one app spec per run).`)
 }
 
 // failAppSpecValidation prints a validation failure prefixed with the

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/netguard"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // PushOptions tunes push-notification delivery. The zero value delivers
@@ -254,7 +256,7 @@ func (p *pusher) sweepMarks(now time.Time) {
 func (p *pusher) drain(key pushQueueKey, it pushItem) {
 	defer func() { <-p.sem }()
 	for {
-		if err := p.post(it.cfg, it.payload); err != nil {
+		if err := p.postGuarded(it.cfg, it.payload); err != nil {
 			p.log.Warn("a2a: push notification not delivered", "taskId", it.cfg.TaskID, "url", it.cfg.URL, "err", err)
 		}
 		p.mu.Lock()
@@ -273,6 +275,26 @@ func (p *pusher) drain(key pushQueueKey, it pushItem) {
 		decOwner(p.ownerQueued, key.owner)
 		p.mu.Unlock()
 	}
+}
+
+// errPushPanicked is what postGuarded returns in place of a panic.
+var errPushPanicked = errors.New("a2a: push delivery panicked")
+
+// postGuarded is post under a recover guard. A delivery goes through
+// the PushOptions.Client the host supplied (its Transport, a
+// CheckRedirect it set) on the drain goroutine, which no per-request
+// recover net reaches: a panic there used to take the process down. It
+// fails this one delivery instead, logged with the scrubbed value, and
+// the drain goes on to the next event and gives its slot back.
+func (p *pusher) postGuarded(cfg PushNotificationConfig, payload []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.log.Error("a2a: push delivery panicked",
+				"taskId", cfg.TaskID, "panic", textsafe.Recovered(r))
+			err = errPushPanicked
+		}
+	}()
+	return p.post(cfg, payload)
 }
 
 // decOwner takes one from owner's count, dropping the key at zero.

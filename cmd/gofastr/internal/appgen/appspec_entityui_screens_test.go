@@ -171,3 +171,83 @@ screens:
 	}
 	return fileContent(mustRenderAppSpecFiles(t, bp), "screen_posts_crud.go")
 }
+
+// A list whose entity has no record screen draws its rows without record
+// links: entityui links each row (and its row menu's View) to
+// <list route>/<id>, and with no entity_detail screen there that path is a
+// 404 on every row. A list with a detail screen keeps its links. Caught
+// live on the ecommerce example, where every Categories and Reviews row
+// linked to a page that did not exist.
+func TestGeneratedListWithoutRecordScreenDrawsNoLinks(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	clitest.WriteTestFile(t, path, `app:
+  name: Links
+  module: example.com/links
+entities:
+  - name: posts
+    crud: true
+    fields:
+      - name: title
+        type: string
+        required: true
+  - name: tags
+    crud: true
+    fields:
+      - name: label
+        type: string
+        required: true
+screens:
+  - name: posts
+    route: /posts
+    body:
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+  - name: post_detail
+    route: /posts/{id}
+    body:
+      - kind: entity_detail
+        entity: posts
+  - name: tags
+    route: /tags
+    body:
+      - kind: entity_list
+        entity: tags
+        fields: [label]
+  - name: home
+    route: /
+    body:
+      - kind: entity_list
+        entity: tags
+        fields: [label]
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+`)
+	bp, err := appspec.LoadAppSpec(path)
+	if err != nil {
+		t.Fatalf("loadAppSpec: %v", err)
+	}
+	files := mustRenderAppSpecFiles(t, bp)
+	tags := fileContent(files, "screen_tags_crud.go")
+	if !strings.Contains(tags, `appUI.List("tags").Columns("label").NoCreate().NoLinks()`) {
+		t.Errorf("a list with no record screen must draw no record links:\n%s", tags)
+	}
+	posts := fileContent(files, "screen_posts_crud.go")
+	if strings.Contains(posts, "NoLinks()") {
+		t.Errorf("a list with a record screen keeps its record links:\n%s", posts)
+	}
+	var home string
+	for _, f := range files {
+		if strings.Contains(f.Content, "type HomeScreen struct") {
+			home = f.Content
+		}
+	}
+	if !strings.Contains(home, `appUI.List("tags").Key("tags").Columns("label").NoCreate().NoLinks()`) {
+		t.Errorf("an off-home list of an entity with no record screen draws no links either:\n%s", home)
+	}
+	if !strings.Contains(home, `appUI.List("posts").Key("posts").Columns("title").NoCreate().Base("/posts").RenderCtx(ctx)`) {
+		t.Errorf("an off-home list of an entity with a record screen links to its home:\n%s", home)
+	}
+}

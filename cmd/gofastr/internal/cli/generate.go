@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -13,25 +14,34 @@ import (
 // red-probe round). Mirrors codegen's stderr scrub
 // (codegen/extension_command.go scrubTerminalBytes) for the diagnostic
 // path, which arrives as JSON rather than as raw stderr bytes. \n and \t
-// stay: ordinary formatting.
+// stay: ordinary formatting. A byte that is not valid UTF-8 goes too: a
+// bare 0x9b is the 8-bit CSI to a terminal that is not in UTF-8 mode,
+// and ranging over a string reads it as U+FFFD, which no rune check
+// refuses.
 func ScrubTerminalOutput(s string) string {
+	drop := func(r rune, size int) bool {
+		return (r == utf8.RuneError && size == 1) || (r != '\n' && r != '\t' && textsafe.IsUnsafe(r))
+	}
 	clean := true
-	for _, r := range s {
-		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if drop(r, size) {
 			clean = false
 			break
 		}
+		i += size
 	}
 	if clean {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for _, r := range s {
-		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
-			continue
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !drop(r, size) {
+			b.WriteString(s[i : i+size])
 		}
-		b.WriteRune(r)
+		i += size
 	}
 	return b.String()
 }

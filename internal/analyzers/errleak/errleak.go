@@ -39,6 +39,32 @@
 // posture). Format+args spellings ("...: %v", err) are deliberately
 // not resolved: the format string reaches the helper, not the wire,
 // and the helper's own gate decides.
+//
+// Both arms read the error's text in every spelling that builds the
+// body string in place: err.Error(), "prefix: "+err.Error(),
+// fmt.Sprint(err), and fmt.Sprintf with a text verb (%v %s %q) and the
+// error among its operands — fmt.Sprintf("query failed: %v", err) is a
+// built string, not a format handed to a helper. Until the 2026-11-02
+// guard bash the HTTP arm read only .Error(), and the JSON-RPC arm only
+// the bare "%v"/"%s" format.
+//
+// Two arms from the 2026-11 bug bashes ask where the error came from;
+// their contract, sinks and silences are in origin.go. Decode
+// (1a4d9e2a): an error from json.Unmarshal / (*json.Decoder).Decode,
+// directly, %w-wrapped, or returned by a helper (rawJSONErr fact), whose
+// text reaches a client at ANY status, a JSON-RPC code, or a Code/Message
+// literal: encoding/json's text names the server's Go types, so the 4xx
+// posture above does not cover it. Fix: handler.JSONErrorDetail(err).
+// Rewrap (d01462e8a): `&T{Message: err.Error()}` (or a helper returning a
+// T-carrying value) for an error type T, where err is a callback's error
+// (foreignErr fact) or a parameter and the function never tests it for
+// *T first. Fix: pass a *T through (errors.AsType[*T]).
+//
+// First whole-tree run: two decode hits in core/acp (the envelope parse
+// error and decodeSessionParams, fixed); six rewrap hits in core/mcp on
+// handler.JSONErrorDetail(err).Error(), removed by treating a local bound
+// only to func literals (JSONErrorDetail's pick helper) as the function's
+// own code rather than a callback.
 package errleak
 
 import (
@@ -46,6 +72,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -53,17 +80,25 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "errleak",
-	Doc:  "forbids sending an error's text to the client on a 5xx response or inside a JSON-RPC internal-error response; log it and write a fixed message instead",
-	Run:  run,
+	Name:      "errleak",
+	Doc:       "forbids sending an error's text to the client on a 5xx response or inside a JSON-RPC internal-error response, encoding/json's text at any status, and rebuilding a typed error from its own text; log it and write a fixed message instead",
+	Run:       run,
+	FactTypes: []analysis.Fact{(*rawJSONErr)(nil), (*foreignErr)(nil)},
 }
 
 const internalMsg = "sends an internal error's text in a JSON-RPC internal-error response: a server-side error string carries DSNs, paths and SQL to the caller — log it and answer a fixed message (core/mcp callTool's \"internal tool error\")"
 
 func run(pass *analysis.Pass) (any, error) {
+	reported := map[*ast.CallExpr]bool{}
+	var decls []*ast.FuncDecl
 	for _, f := range pass.Files {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
+		}
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				decls = append(decls, fd)
+			}
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -72,9 +107,14 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 			if hasServerErrorStatus(pass, call.Args) {
 				for _, arg := range call.Args {
-					if pos, found := findErrorText(pass, arg); found {
+					pos, found := findErrorText(pass, arg)
+					if !found {
+						pos, found = findSprintfErr(pass, arg)
+					}
+					if found {
 						pass.Reportf(pos,
 							"sends an internal error's text on a 5xx response: a server-side error string carries DSNs, paths and SQL to the client — log it and write a fixed message")
+						reported[call] = true
 						return true
 					}
 				}
@@ -83,16 +123,26 @@ func run(pass *analysis.Pass) (any, error) {
 				for _, arg := range call.Args {
 					if pos, found := findErrorText(pass, arg); found {
 						pass.Reportf(pos, internalMsg)
+						reported[call] = true
 						return true
 					}
 					if pos, found := findSprintfErr(pass, arg); found {
 						pass.Reportf(pos, internalMsg)
+						reported[call] = true
 						return true
 					}
 				}
 			}
 			return true
 		})
+	}
+	// The decode and rewrap arms (origin.go) need to know where an
+	// error came from; the summaries are computed to a fixed point and
+	// exported as facts first.
+	c := summarize(pass, decls)
+	for _, fd := range decls {
+		checkDecode(pass, c, fd, reported)
+		checkRewrap(pass, c, fd)
 	}
 	return nil, nil
 }
@@ -161,9 +211,14 @@ func findErrorText(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found boo
 	return pos, found
 }
 
-// findSprintfErr looks for fmt.Sprintf whose format is "%v" or "%s"
-// with an error-typed argument — the other spelling of "hand the
-// error's text over".
+// findSprintfErr looks for an fmt string formatter handed an
+// error-typed argument — the other spelling of "hand the error's text
+// over": fmt.Sprint / fmt.Sprintln of the error, or fmt.Sprintf whose
+// format renders an operand as text (%v, %s, %q, with any flags), as in
+// fmt.Sprintf("query failed: %v", err). Until the 2026-11-02 guard bash
+// only the bare "%v"/"%s" format counted and only on the JSON-RPC arm,
+// so http.Error(w, fmt.Sprintf("query failed: %v", err), 500) was
+// silent.
 func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bool) {
 	ast.Inspect(expr, func(n ast.Node) bool {
 		if found {
@@ -174,7 +229,7 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Sprintf" {
+		if !ok {
 			return true
 		}
 		xid, ok := sel.X.(*ast.Ident)
@@ -185,23 +240,33 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 		if !ok || pkg.Imported().Path() != "fmt" {
 			return true
 		}
-		if len(call.Args) < 2 {
+		args := call.Args
+		switch sel.Sel.Name {
+		case "Sprint", "Sprintln":
+		case "Sprintf":
+			if len(args) < 2 {
+				return true
+			}
+			lit, ok := args[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			s, e := strconv.Unquote(lit.Value)
+			if e != nil || !textVerb.MatchString(s) {
+				return true
+			}
+			args = args[1:]
+		default:
 			return true
 		}
-		lit, ok := call.Args[0].(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		if s, e := strconv.Unquote(lit.Value); e == nil && (s == "%v" || s == "%s") {
-			for _, a := range call.Args[1:] {
-				tv, ok := pass.TypesInfo.Types[a]
-				if !ok {
-					continue
-				}
-				if types.Implements(tv.Type, errorInterface) {
-					pos, found = call.Pos(), true
-					return false
-				}
+		for _, a := range args {
+			tv, ok := pass.TypesInfo.Types[a]
+			if !ok {
+				continue
+			}
+			if types.Implements(tv.Type, errorInterface) {
+				pos, found = call.Pos(), true
+				return false
 			}
 		}
 		return true
@@ -210,3 +275,6 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 }
 
 var errorInterface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+
+// textVerb matches a format verb that renders its operand as text.
+var textVerb = regexp.MustCompile(`%[-+# 0-9.*]*[vsq]`)

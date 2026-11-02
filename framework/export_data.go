@@ -209,6 +209,37 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 		Schema:    migrate.SnapshotFromRegistry(a.registryView(), dialect),
 	}
 
+	// On Postgres every table is read in one REPEATABLE READ snapshot. Read
+	// one by one, a busy app's archive held a comment whose post committed
+	// after the posts were read (a restore then trips the foreign key),
+	// and keyset paging could chase rows inserted ahead of its cursor
+	// without end. A read-only snapshot takes no lock a writer waits on.
+	//
+	// SQLite in WAL mode gets the same: a deferred read transaction holds
+	// its snapshot from the first read while writers commit to the WAL. It
+	// is opened ReadOnly because the sqlite3 driver begins every other
+	// transaction IMMEDIATE (_txlock=immediate), which would take the write
+	// lock for the whole export. A rollback-journal database has no such
+	// snapshot: a read transaction there holds a SHARED lock that blocks
+	// every writer, so it keeps reading table by table and the docs say to
+	// stop writes during the export.
+	var rd exportReader = a.DB
+	var snapshot *sql.TxOptions
+	switch {
+	case dialect == migrate.DialectPostgres:
+		snapshot = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+	case dialect == migrate.DialectSQLite && sqliteWAL(ctx, a.DB):
+		snapshot = &sql.TxOptions{ReadOnly: true}
+	}
+	if snapshot != nil {
+		tx, err := a.DB.BeginTx(ctx, snapshot)
+		if err != nil {
+			return fmt.Errorf("framework: export snapshot: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		rd = tx
+	}
+
 	for _, src := range sources {
 		// Identifiers come from the registry/exporter and are validated +
 		// quoted at the single raw-SQL boundary (rawReadAll / tableExists) via
@@ -222,7 +253,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 
 		// An entity table is spelled as AutoMigrate folded it; a battery
 		// table as the catalog has it.
-		phys, exists, err := physicalTable(ctx, a.DB, src.table, dialect, !src.raw)
+		phys, exists, err := physicalTable(ctx, rd, src.table, dialect, !src.raw)
 		if err != nil {
 			return fmt.Errorf("framework: export probe %q: %w", src.table, err)
 		}
@@ -243,7 +274,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 		if err != nil {
 			return fmt.Errorf("framework: export write %q: %w", src.name, err)
 		}
-		if err := rawReadEach(ctx, a.DB, dialect, phys, cols, pk, cfg.pageSize, w.write, w.flush); err != nil {
+		if err := rawReadEach(ctx, rd, dialect, phys, cols, pk, cfg.pageSize, w.write, w.flush); err != nil {
 			w.f.Close()
 			return fmt.Errorf("framework: export %q: %w", src.table, err)
 		}
@@ -262,6 +293,17 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 		return fmt.Errorf("framework: export manifest: %w", err)
 	}
 	return nil
+}
+
+// sqliteWAL reports whether a SQLite database runs in WAL mode. A probe
+// that fails reads as no: the export then reads table by table, as it
+// always did on SQLite.
+func sqliteWAL(ctx context.Context, db *sql.DB) bool {
+	var mode string
+	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		return false
+	}
+	return asciicase.Lower(mode) == "wal"
 }
 
 // ImportData restores an archive written by ExportData into the live database.
@@ -316,11 +358,18 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		phys string // the table as the catalog spells it (physicalTable)
 	}
 	plans := make([]planned, 0, len(manifest.Entities))
+	listed := make(map[string]bool, len(manifest.Entities))
 	for _, ent := range manifest.Entities {
 		src, ok := liveByID[ent.Name]
 		if !ok {
 			return fmt.Errorf("framework: import: source %q is not a live entity or registered exporter", ent.Name)
 		}
+		// A source listed twice names the same file twice: a keyless table
+		// took every row twice and committed.
+		if listed[ent.Name] {
+			return fmt.Errorf("framework: import: source %q is listed twice in the manifest", ent.Name)
+		}
+		listed[ent.Name] = true
 		if ent.Table != src.table {
 			return fmt.Errorf("framework: import: source %q archive table %q != live table %q",
 				ent.Name, ent.Table, src.table)
@@ -912,7 +961,7 @@ func (a *App) registryView() entity.Registry {
 // A composite key pages by row value, (a, b) > ($1, $2), which Postgres and
 // SQLite both compare column by column. A table with no key has nothing to
 // page by and is read in one statement.
-func rawReadEach(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table string, columns []string, keys []string, pageSize int, emit func(map[string]any) error, pageDone func() error) error {
+func rawReadEach(ctx context.Context, db exportReader, dialect migrate.Dialect, table string, columns []string, keys []string, pageSize int, emit func(map[string]any) error, pageDone func() error) error {
 	// table is a physicalTable spelling; quotePhysical validates it and keeps
 	// its case.
 	qt := quotePhysical(table)
@@ -987,7 +1036,7 @@ func rawReadEach(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table
 }
 
 // rawReadUnkeyed reads every row of a table with no key in one statement.
-func rawReadUnkeyed(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt string, columns []string, emit func(map[string]any) error) error {
+func rawReadUnkeyed(ctx context.Context, db exportReader, dialect migrate.Dialect, qt string, columns []string, emit func(map[string]any) error) error {
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns to read for table %q", qt)
 	}
@@ -1010,7 +1059,7 @@ func rawReadUnkeyed(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt
 // reorder (2026-10-27 D12). Unary + returns its operand unchanged, text,
 // number or blob, and an expression has no declared type, so the driver
 // hands the stored value through. The driver upper-cases declared types.
-func exportSelectList(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt string, cols []string) (string, error) {
+func exportSelectList(ctx context.Context, db exportReader, dialect migrate.Dialect, qt string, cols []string) (string, error) {
 	list := make([]string, len(cols))
 	for i, c := range cols {
 		list[i] = query.QuoteFolded(query.MustIdent(c))
@@ -1043,7 +1092,7 @@ func exportSelectList(ctx context.Context, db *sql.DB, dialect migrate.Dialect, 
 // A binary value is tagged (see exportFormatVersion). On SQLite every
 // []byte the driver returns is a BLOB; on Postgres the driver returns
 // numeric, uuid and json as []byte text too, so only a bytea column is.
-func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q string, args []any, width int, columns []string, emit func(map[string]any) error, seen func(vals []any)) (int, error) {
+func scanExportRows(ctx context.Context, db exportReader, dialect migrate.Dialect, q string, args []any, width int, columns []string, emit func(map[string]any) error, seen func(vals []any)) (int, error) {
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return 0, err
@@ -1184,6 +1233,13 @@ func tableExists(ctx context.Context, db *sql.DB, table string, dialect migrate.
 // rowQueryer is the slice of *sql.DB and *sql.Tx physicalTable needs.
 type rowQueryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// exportReader is what an export reads through: the pool, or on Postgres
+// the snapshot transaction ExportData holds.
+type exportReader interface {
+	rowQueryer
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 // physicalTable finds the table a declared name stands for and returns its
@@ -1399,8 +1455,10 @@ func readNDJSON(path string) ([]map[string]any, error) {
 		if err := dec.Decode(&m); err != nil {
 			return nil, err
 		}
-		for k, v := range m {
-			switch x := v.(type) {
+		// Sorted, so a row with two refusable columns names the same
+		// one on every restore.
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			switch x := m[k].(type) {
 			case json.Number:
 				m[k] = jsonNumberValue(x)
 			case map[string]any:

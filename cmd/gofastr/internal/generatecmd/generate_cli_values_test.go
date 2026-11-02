@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const cliValuesFixtureYAML = `app:
@@ -36,7 +38,7 @@ type valuesServer struct {
 
 func newValuesServer(t *testing.T) *valuesServer {
 	s := &valuesServer{}
-	row := `{"id":"w1","title":"\u001b[2Jforged\u009b31m","meta":{"n":` + bigInt + `}}`
+	row := `{"id":"w1","title":"\u001b[2Jforged\u009b31m\u202eflipped\u200b\u007f","meta":{"n":` + bigInt + `}}`
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		s.mu.Lock()
@@ -92,6 +94,75 @@ func TestCLIKeepsBigIntegers(t *testing.T) {
 	}
 }
 
+// A 2xx response past the client's 1 MiB cap says so: the decode read a
+// truncated body and the CLI printed "unexpected EOF", which names
+// neither the cap nor the response.
+func TestCLINamesAnOversizedResponse(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliValuesFixtureYAML)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"w1","title":"` + strings.Repeat("y", 2<<20) + `"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	out, code := runCLICode(t, bin, env, "widgets", "list", "--url", srv.URL)
+	if code != 1 || !strings.Contains(out, "exceeds 1048576 bytes") {
+		t.Errorf("an oversized list exited %d, want 1 naming the cap:\n%.300s", code, out)
+	}
+}
+
+// list prints the envelope the server sent: a keyset page has no total,
+// but decoding it through a struct printed "total": 0, "page": 0 and
+// "totalPages": 0, so `jq .total` read a count of zero, and a key the
+// struct did not name was dropped.
+func TestCLIListPrintsTheServerEnvelope(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliValuesFixtureYAML)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"w1","meta":{"n":` + bigInt + `}}],"cursor":"c2","hasMore":true,"extra":{"k":1}}`))
+	}))
+	t.Cleanup(srv.Close)
+	out := runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL, "--cursor", "")
+	for _, absent := range []string{`"total"`, `"page"`, `"totalPages"`, `"perPage"`} {
+		if strings.Contains(out, absent) {
+			t.Errorf("list printed %s, which the server never sent:\n%s", absent, out)
+		}
+	}
+	for _, want := range []string{`"extra"`, `"cursor": "c2"`, bigInt} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list lacks %s:\n%s", want, out)
+		}
+	}
+	if out := runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL, "-o", "table"); !strings.Contains(out, "1 rows, next cursor: c2") {
+		t.Errorf("table lost the cursor line:\n%s", out)
+	}
+}
+
+// A table cell spells a json field's object or array as JSON and keeps a
+// multi-line or tabbed value's words apart on one line: fmt's %v printed
+// map[a:[1 2] s:<b>], and scrubbing the newline out of "line1\nline2"
+// printed line1line2.
+func TestCLITableCellsReadAsJSON(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliValuesFixtureYAML)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"w1","title":"line1\nline2\tend","meta":{"a":[1,2],"s":"<b>"}},` +
+			`{"id":"w2","title":"x","meta":[` + bigInt + `,true]}],"page":1,"perPage":20,"total":2,"totalPages":1}`))
+	}))
+	t.Cleanup(srv.Close)
+	out := runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL, "-o", "table")
+	for _, want := range []string{`{"a":[1,2],"s":"<b>"}`, "line1 line2 end", `[` + bigInt + `,true]`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "map[") {
+		t.Errorf("table prints a Go map:\n%s", out)
+	}
+	if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) != 4 {
+		t.Errorf("table has %d lines, want header, two rows and the page line:\n%s", len(lines), out)
+	}
+}
+
 // Record text a table prints, and server text an error echoes, reach the
 // terminal without control bytes: a stored title "\x1b[2J..." cleared the
 // operator's screen on `list -o table`.
@@ -102,8 +173,14 @@ func TestCLITableStripsControlBytes(t *testing.T) {
 	if !strings.Contains(out, "forged") {
 		t.Fatalf("table lost the title:\n%q", out)
 	}
-	if strings.ContainsAny(out, "\x1b\u009b") {
-		t.Errorf("table output carries a control sequence:\n%q", out)
+	// Bidi overrides and zero-width runes too (owner decision, 2026-11):
+	// the table printer drops what core/textsafe calls unsafe, the set the
+	// gofastr CLI's own helpers scrub.
+	for _, r := range out {
+		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
+			t.Errorf("table output carries %U live:\n%q", r, out)
+			break
+		}
 	}
 	out = runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL+"/fail")
 	if !strings.Contains(out, "bad request") || strings.Contains(out, "\x1b") {

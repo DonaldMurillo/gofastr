@@ -2,12 +2,17 @@ package newcmd
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -141,7 +146,7 @@ func runNewRoute(args []string) {
 	method = strings.ToUpper(method)
 
 	cli.Info("Add this to your app setup:")
-	fmt.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
+	cli.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
 }
 
 // routeSnippet returns the canonical app.Router().Handle(...) line for
@@ -171,6 +176,12 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if textsafe.ContainsUnsafe(method) || textsafe.ContainsUnsafe(path) {
 		return fmt.Errorf("handler method %q or path %q carries control, invisible, or bidi bytes: they ride a // comment slot and cannot be scaffolded safely", method, path)
 	}
+	// A keyword does not parse at `func %s(`; main and init redeclare the
+	// package's entry points; a predeclared name (string, len, error)
+	// shadows it for every other file of the package; _ cannot be called.
+	if reason := unusableFuncName(rawName); reason != "" {
+		return fmt.Errorf("invalid handler name %q: %s; pick another name", rawName, reason)
+	}
 	name := rawName
 	// Resolve the base dir before joining: a symlinked component would
 	// otherwise redirect the scaffolded file outside it undetected
@@ -179,30 +190,115 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if err != nil {
 		return fmt.Errorf("resolve base dir: %w", err)
 	}
-	filename := filepath.Join(realDir, strings.ToLower(name)+"_handler.go")
+	// The file itself goes through an os.Root on that directory
+	// (projectfs): a <name>_handler.go linked out of it, dangling or not,
+	// is refused, never written through. Lstat, not Stat, so a dangling
+	// link counts as a file that is already there.
+	leaf := strings.ToLower(name) + "_handler.go"
+	filename := filepath.Join(realDir, leaf)
+	root, err := os.OpenRoot(realDir)
+	if err != nil {
+		return fmt.Errorf("open base dir: %w", err)
+	}
+	defer root.Close()
 	if !overwrite {
-		if _, err := os.Stat(filename); err == nil {
+		if _, err := projectfs.Lstat(root, leaf); err == nil {
 			return fmt.Errorf("handler file already exists: %s", filename)
 		}
 	}
 
+	// The file joins the package already in the directory (package main
+	// beside main.go, package entities under entities/); writing package
+	// main everywhere broke the build with "found packages entities and
+	// main". A name that package already declares would be redeclared.
+	pkg, declared := dirPackage(realDir, filepath.Base(filename))
+	if declared[name] {
+		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
+	}
+
 	content := fmt.Sprintf(`// %s handler: scaffolded by gofastr new handler.
-package main
+package %s
 
 import (
-    "net/http"
+	"net/http"
 )
 
 // %s handles %s %s.
 func %s(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("{\"ok\": true}"))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("{\"ok\": true}"))
 }
-`, name, name, method, path, name)
+`, name, pkg, name, method, path, name)
 
-	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
+	if err := projectfs.Replace(root, leaf, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", filename, err)
 	}
 	return nil
+}
+
+// unusableFuncName says why name, a Go identifier, cannot be the
+// scaffolded handler's function name, or "" when it can.
+func unusableFuncName(name string) string {
+	switch {
+	case token.IsKeyword(name):
+		return "it is a Go keyword"
+	case name == "main" || name == "init":
+		return "func " + name + " is reserved for the package's entry points"
+	case name == "_":
+		return "a blank function cannot be called"
+	case types.Universe.Lookup(name) != nil:
+		return "it would shadow Go's predeclared " + name + " in the whole package"
+	}
+	return ""
+}
+
+// dirPackage returns the package the non-test Go files in dir declare
+// ("main" when there are none) and the names that package declares at
+// top level. skip, the file being scaffolded, is left out: -overwrite
+// rewrites it. A file that does not parse is skipped, as go build would
+// report it on its own.
+func dirPackage(dir, skip string) (string, map[string]bool) {
+	pkg := ""
+	declared := map[string]bool{}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || n == skip || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, n), nil, parser.SkipObjectResolution)
+		if err != nil {
+			continue
+		}
+		if pkg == "" {
+			pkg = f.Name.Name
+		}
+		if f.Name.Name != pkg {
+			continue
+		}
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Recv == nil {
+					declared[d.Name.Name] = true
+				}
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					switch spec := spec.(type) {
+					case *ast.TypeSpec:
+						declared[spec.Name.Name] = true
+					case *ast.ValueSpec:
+						for _, id := range spec.Names {
+							declared[id.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if pkg == "" {
+		pkg = "main"
+	}
+	return pkg, declared
 }

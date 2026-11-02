@@ -54,6 +54,14 @@ func (e *beforeHookError) Unwrap() error { return e.err }
 // refusal from a failure.
 func IsHookRefusal(err error) bool {
 	_, ok := errors.AsType[*beforeHookError](err)
+	return ok && !isHookPanic(err)
+}
+
+// isHookPanic reports whether err carries a hook that panicked. A panic
+// is the hook faulting, not refusing: it answers 500, and its value,
+// whatever the hook held at the time, never reaches the client.
+func isHookPanic(err error) bool {
+	_, ok := errors.AsType[*hook.PanicError](err)
 	return ok
 }
 
@@ -242,7 +250,7 @@ func applyTenantScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b
 	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
-			b.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
+			b.Where(query.QuoteKeyword(ch.Entity.Config.TenantColumn())+" = $1", tenantID)
 		}
 	}
 }
@@ -1336,6 +1344,12 @@ func crudRefusal(ctx context.Context, err error) refusal {
 	if errors.Is(err, ErrReentrantMove) {
 		return phraseRefusal(ctx, http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
 	}
+	if isHookPanic(err) {
+		// Ahead of the hook arm and of every message sniff below: the
+		// panic text is not the caller's to read, whatever it says.
+		logf("crud: internal error: %v", err)
+		return phraseRefusal(ctx, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		// The hook's own wording, or its phrase when it returned one.
 		return errRefusal(ctx, http.StatusBadRequest, bhe, i18n.Phrase{})
@@ -1595,6 +1609,16 @@ func listLimitCap(entityMax int) int {
 	return limitCap
 }
 
+// ListLimits reports the page size a list answers with when ?limit is
+// absent, and the most rows a ?limit can get (a larger one is clamped),
+// for an entity whose Pagination.MaxListLimit is entityMax: the numbers
+// parsePagination applies. The OpenAPI document and llm.md describe a
+// list's limit parameter with them.
+func ListLimits(entityMax int) (def, max int) {
+	max = listLimitCap(entityMax)
+	return min(20, max), max
+}
+
 // scanRows scans all rows into a slice of maps, applying keyFunc to column names.
 // scanRowsPooled is the pool-backed version in pool.go.
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {
@@ -1773,8 +1797,19 @@ func writeJSONError(w http.ResponseWriter, r *http.Request, code int, reason i18
 	writeErrorBody(w, code, phraseRefusal(r.Context(), code, reason, params...).body())
 }
 
-// writeErrJSON writes err as a JSON error response (errRefusal).
+// writeErrJSON writes err as a JSON error response (errRefusal). A hook
+// that panicked has faulted, whatever status the call site gives its
+// refusals: it answers the generic 500, and the panic value (logged with
+// its stack where the hook ran, scrubbed here) never reaches the client.
+// Every surface that hands a hook's error to the client comes through
+// here, so a List or Get answering a BeforeList/BeforeGet refusal, and an
+// include answering a child's, all hold that line.
 func writeErrJSON(w http.ResponseWriter, r *http.Request, code int, err error, frame i18n.Phrase) {
+	if isHookPanic(err) {
+		logf("crud: internal error: %v", err)
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	writeErrorBody(w, code, errRefusal(r.Context(), code, err, frame).body())
 }
 

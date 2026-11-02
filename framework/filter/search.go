@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -72,7 +73,7 @@ func SearchConditions(fields []string, term string) ([]Condition, error) {
 		parts := make([]string, len(fields))
 		args := make([]any, len(fields))
 		for i, f := range fields {
-			parts[i] = "LOWER(" + f + `) LIKE $` + strconv.Itoa(i+1) + ` ESCAPE '\'`
+			parts[i] = "LOWER(" + query.QuoteKeyword(f) + `) LIKE $` + strconv.Itoa(i+1) + ` ESCAPE '\'`
 			args[i] = pattern
 		}
 		sql := "(" + strings.Join(parts, " OR ") + ")"

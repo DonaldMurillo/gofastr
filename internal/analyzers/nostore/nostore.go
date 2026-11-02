@@ -35,13 +35,21 @@
 // writer invoked by a principal-resolving chain) counts the same way:
 // the rest handlers resolve in the handle() wrapper one frame up.
 //
-// Cache-Control credit, in the shapes the repo already uses: the
+// Cache-Control credit counts only a value that suppresses storage: a
+// no-store or private directive (any case; private="field" names fields
+// and does not count). no-cache lets every cache store the body and only
+// asks it to revalidate, which a cookie-blind shared cache answers from
+// the stored copy; max-age, public and immutable invite storage. Found
+// by the 2026-11 bug bash: 6afdefa3, the per-caller llm.md and
+// /llm-pages.md answered no-cache, which this rule used to credit. A
+// value that is not a constant is credited (the rule cannot read it).
+// Credit comes in the shapes the repo already uses: the
 // function's own unconditional header set — a set nested in an if/for/
 // switch is a branch, not a posture, and the uihost pagecache finding
 // is exactly a no-store only the re-mint branch executes; a set that
-// guards the SAME conditional branch as the write it precedes (llm.md
-// sets no-cache inside the very if that writes the doc) DOES credit
-// that write — a branch-local posture is real for its own branch; a
+// guards the SAME conditional branch as the write it precedes DOES
+// credit that write — a branch-local posture is real for its own
+// branch; a
 // call at the function's top level to a same-package helper that sets
 // it unconditionally (writeCredentialHeaders, meHandler's spelling);
 // or a package-local WRAPPER that sets it before invoking the function
@@ -74,8 +82,10 @@
 // Postures it deliberately stays silent on, because they are not this
 // bug: a write with no reachable resolver; a response that already
 // carries an unconditional (or same-branch) Cache-Control on its own
-// path (the SSE arms' no-cache, the admin gate, writeAuthError via
-// writeCredentialHeaders); WriteHeader(204/205) — no body, nothing to
+// path (the admin gate, writeAuthError via writeCredentialHeaders, an
+// if/else chain that sets Cache-Control in every arm and no-store or
+// private in at least one: serveVersionedText's per-session arm);
+// WriteHeader(204/205) — no body, nothing to
 // store; an ERROR WRITE — in a family whose every explicit status is a
 // non-2xx constant (webbotauth's 403/503 problem bodies, the module
 // proxy's 503), a body write that a non-2xx WriteHeader precedes in its
@@ -560,24 +570,71 @@ func bodySetsCC(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	return false
 }
 
-// everyArmSetsCC reports whether every arm of the if/else chain sets
-// Cache-Control by bodySetsCC's rule. A chain with no final else has a
-// path that sets nothing.
+// everyArmSetsCC reports whether every arm of the if/else chain sets a
+// Cache-Control (any value), and at least one arm sets a storage-
+// suppressing one: the chain decides per arm, and the per-caller arm
+// (serveVersionedText's `private`) is the one that says private. A
+// chain with no final else has a path that sets nothing; a chain whose
+// every arm says no-cache or public suppresses nothing.
 func everyArmSetsCC(pass *analysis.Pass, st *ast.IfStmt) bool {
-	if !bodySetsCC(pass, st.Body) {
-		return false
+	any, suppress := everyArmSetsAnyCC(pass, st)
+	return any && suppress
+}
+
+func everyArmSetsAnyCC(pass *analysis.Pass, st *ast.IfStmt) (every, suppress bool) {
+	armSets := func(b *ast.BlockStmt) (bool, bool) {
+		set, sup := false, false
+		for _, stmt := range b.List {
+			switch s := stmt.(type) {
+			case *ast.ExprStmt:
+				if call, ok := s.X.(*ast.CallExpr); ok && isCacheControlHeader(call) {
+					set = true
+					if isCacheControlSet(pass, call) {
+						sup = true
+					}
+				}
+			case *ast.IfStmt:
+				if e, su := everyArmSetsAnyCC(pass, s); e {
+					set = true
+					sup = sup || su
+				}
+			}
+		}
+		return set, sup
+	}
+	every, suppress = armSets(st.Body)
+	if !every {
+		return false, false
 	}
 	switch e := st.Else.(type) {
 	case *ast.BlockStmt:
-		return bodySetsCC(pass, e)
+		ok, sup := armSets(e)
+		return ok, suppress || sup
 	case *ast.IfStmt:
-		return everyArmSetsCC(pass, e)
+		ok, sup := everyArmSetsAnyCC(pass, e)
+		return ok, suppress || sup
 	}
-	return false
+	return false, false
 }
 
-// isCacheControlSet: Header().Set/Add("Cache-Control", ...) on any
-// writer value.
+// isCacheControlHeader: Header().Set/Add("Cache-Control", ...) with any
+// value.
+func isCacheControlHeader(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || (sel.Sel.Name != "Set" && sel.Sel.Name != "Add") || len(call.Args) < 2 {
+		return false
+	}
+	return headerNameIs(call.Args[0], "cache-control")
+}
+
+// isCacheControlSet: Header().Set/Add("Cache-Control", v) on any writer
+// value, where v suppresses storage. Only no-store (nothing is stored)
+// and private (no shared cache stores it) do: no-cache lets every cache
+// store the body and only asks it to revalidate, which a cookie-blind
+// shared cache answers from the stored copy; max-age, public and
+// immutable invite storage outright. 6afdefa3: the per-caller llm.md
+// answered no-cache, which this rule used to credit. A value that is not
+// a constant is credited: the rule cannot read it.
 func isCacheControlSet(pass *analysis.Pass, call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || (sel.Sel.Name != "Set" && sel.Sel.Name != "Add") {
@@ -586,7 +643,27 @@ func isCacheControlSet(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if len(call.Args) < 2 {
 		return false
 	}
-	return headerNameIs(call.Args[0], "cache-control")
+	if !headerNameIs(call.Args[0], "cache-control") {
+		return false
+	}
+	v, ok := astx.StringConstant(pass, call.Args[1])
+	if !ok {
+		return true
+	}
+	return suppressesStorage(v)
+}
+
+// suppressesStorage: the Cache-Control value carries a no-store or
+// private directive (private="field" names fields, not the response, and
+// does not count).
+func suppressesStorage(v string) bool {
+	for _, d := range strings.Split(v, ",") {
+		d = strings.ToLower(strings.TrimSpace(d))
+		if d == "no-store" || d == "private" {
+			return true
+		}
+	}
+	return false
 }
 
 func headerNameIs(e ast.Expr, want string) bool {

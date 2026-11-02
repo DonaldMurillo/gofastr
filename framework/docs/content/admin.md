@@ -388,7 +388,19 @@ INV-1010" for an exposed entity: a live record by the title its screen
 shows, linked there, and a deleted or purged one by the title in the
 row's stored copy, unlinked. An entity the admin does not expose shows
 its table name and the id. Changes lists the fields an update changed,
-through `entityui.UI.Changes`, so masked and hidden fields never show.
+through `entityui.UI.Changes`, so masked and hidden fields never show,
+and neither does a field the entity's `AfterGet` hooks mask: the admin's
+own reads of the record show the mask, so the audit page and the
+dashboard's recent activity do not print the stored values. The hooks
+are asked about the record each row names, with its real id and stored
+row, as the signed-in admin, once per record per page however many rows
+name it; a hook that masks a field unless the caller owns the row hides
+that field and leaves the rest of the change drawn. A deleted record
+falls back to a probe row with no id, and a hook that refuses it hides
+the row's changes. Masking runs the app's `AfterGet` hooks with the
+admin's context on every page that draws changes, so they must be free
+of side effects (see `Changes` in [entityui](entityui.md)). The raw
+diff stays in the audit table for an operator who reads it there.
 A Roles change reads "Role · billing" and "Granted `plans:write`" (or
 Revoked, or Refused to grant or revoke); a User roles change names the
 account by its email and lists the roles it was given, or the one
@@ -397,6 +409,13 @@ Deleted, Restored or Updated, with how many it skipped or failed on; an
 app's own bulk action keeps the run id. On a phone each row is a card.
 Both read elevated: the page is behind the admin gate, and the trail
 names records whatever the entity's own read permission says.
+
+**Hidden records stay hidden.** The Audit log page and the dashboard's
+activity feed show only the id and operation of a record that is still
+stored (live or in the trash) but hidden from the admin by its
+`BeforeGet`/`BeforeList` hooks (`entityui.UI.RecordHidden`): its title
+and changed values stay out of the page, the answer the owner-scope check
+already gave.
 
 **Audit filters.** The audit page carries a GET filter form, the list
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a
@@ -475,7 +494,11 @@ runner at `app.EntityUI` time (`Extensions.Jobs`), and the runner needs
 the UI to run jobs, so `Config.BulkJobs` closes the cycle — the admin's
 `Init` binds the runner to `Config.UI` and then calls
 `UI.ResumeBulkJobs`, handing back any job a crash left between its
-snapshot and its `Enqueue`. The queue job's payload carries only the job
+snapshot and its `Enqueue`. The bound UI counts an entity the admin
+exposes as written through the admin's routes and any other entity
+through the app's own (`UI.WritePath`), so a queued run over a named
+entity with CRUD off finishes, and so does one the app's own bulk route
+queued. The queue job's payload carries only the job
 id; the confirmed selection lives in the host's snapshot store.
 
 `PrincipalFunc` (the second argument) rebuilds the confirming user's

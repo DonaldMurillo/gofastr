@@ -223,11 +223,11 @@ func TestJSONDecodeErrorTranslates(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if w.Code != 400 || body.Error.Reason != "invalid_json" {
-		t.Fatalf("status %d reason %q", w.Code, body.Error.Reason)
+	if w.Code != 400 || body.Reason != "invalid_json" {
+		t.Fatalf("status %d reason %q", w.Code, body.Reason)
 	}
-	if want := "JSON no válido: ids[0]: se esperaba una cadena, se recibió un número"; body.Error.Message != want {
-		t.Fatalf("message %q, want %q", body.Error.Message, want)
+	if want := "JSON no válido: ids[0]: se esperaba una cadena, se recibió un número"; body.Error != want {
+		t.Fatalf("message %q, want %q", body.Error, want)
 	}
 }
 

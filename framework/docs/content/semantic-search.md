@@ -80,8 +80,9 @@ persist state. Snapshot loading validates chunk counts and vector
 dimensions before changing the store.
 
 Replacing a document with empty text removes its previous chunks. Invalid
-embedding dimensions or non-finite coordinates are rejected before removing
-the previous document. Go declaration chunks include their documentation
+embedding dimensions, an empty vector, or non-finite coordinates are
+rejected before removing the previous document, even from an embedder
+whose `Dim()` is 0 until first use. Go declaration chunks include their documentation
 comments; structural subchunks keep IDs derived from their global offsets.
 
 Snapshots, the WAL, and the directory that holds them are owner-only
@@ -167,6 +168,11 @@ gofastr semantic query "router middleware" --mmr 0.4
 gofastr semantic stats
 gofastr semantic clear
 ```
+
+`query` takes one query (quote a query of several words; `--` before one
+that starts with a dash) and its flags before or after it, as `-k 5` or
+`-k=5`. `-k` must be at least 1; an empty query, a second word or an
+unknown flag is refused.
 
 `index` and `watch` hold the snapshot directory's writer lock, so a second
 `index` or `watch` on the same directory fails with "another process has

@@ -12,7 +12,7 @@ import (
 )
 
 // The pointer-modality contract of the swap focus (frag/nav.js
-// _navPointer): a navigation that began from a real mouse click
+// _navRing): a navigation that began from a real mouse click
 // focuses the fresh cell with focusVisible:false — the ring is
 // keyboard signal, not noise — while a keyboard activation keeps it.
 //

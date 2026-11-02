@@ -510,9 +510,14 @@ return n
 `
 
 // SetVisibilityTimeout configures how long a job can be in-flight before it
-// is considered abandoned and eligible for re-delivery. Safe for concurrent
-// use with Dequeue.
+// is considered abandoned and eligible for re-delivery. Defaults to 30
+// seconds; d <= 0 leaves the timeout unchanged, since a zero window made
+// Reclaim re-deliver a job the moment its worker claimed it. Safe for
+// concurrent use with Dequeue.
 func (q *RedisQueue) SetVisibilityTimeout(d time.Duration) {
+	if d <= 0 {
+		return
+	}
 	q.visibilityTimeout.Store(int64(d))
 }
 
@@ -1100,10 +1105,18 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 // (see [PopRecorder]). Returns the number of jobs re-delivered. Call it
 // periodically (e.g. from a background ticker) to make in-flight Redis work
 // crash-safe.
-func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
+func (q *RedisQueue) Reclaim(ctx context.Context) (reclaimed int, err error) {
+	// q.client is host-pluggable, and Start runs Reclaim on its own ticker
+	// goroutine with no per-request recover net: a panicking client is this
+	// tick's error, as in Enqueue, not the end of the process.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("redis queue: reclaim panicked: %s", textsafe.Recovered(v))
+		}
+	}()
 	// Pops first: a processing entry re-delivered here, then seen as a pop
 	// record with no claim, would be put back twice.
-	reclaimed, err := q.reclaimPops(ctx)
+	reclaimed, err = q.reclaimPops(ctx)
 	if err != nil {
 		return reclaimed, err
 	}

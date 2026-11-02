@@ -3,15 +3,26 @@ package check
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 // LintRuntimeProse fires when English prose written in a JS string
 // literal reaches a reader: a toast (NS.toast, NS._toastOrFallback,
-// NS._fallbackToast, _showNavToast), a text node (createTextNode), an
-// element's textContent, innerText, title, placeholder, ariaLabel or
-// alt, or a label attribute set through setAttribute (aria-label,
-// aria-description, title, placeholder, alt).
+// NS._fallbackToast, _showNavToast), the browser's own dialogs (alert,
+// confirm, prompt), a text node (createTextNode, or a literal argument
+// of append, prepend, replaceChildren, before, after or replaceWith,
+// which make one; an append(name, value) whose first literal is a bare
+// field name is the Headers / FormData / URLSearchParams method and
+// stays quiet), an element's textContent, innerText, title,
+// placeholder, alt, nodeValue or ARIA text property (ariaLabel,
+// ariaDescription, ariaValueText, ariaRoleDescription,
+// ariaPlaceholder), or a label attribute set through setAttribute
+// (aria-label, aria-description, aria-valuetext, aria-roledescription,
+// aria-placeholder, title, placeholder, alt). The dialogs, the
+// text-node methods, the last three ARIA attributes and nodeValue
+// arrived with the 2026-11-02 guard bash: each put English in front of
+// a reader with the lint silent.
 //
 // Bug class: the runtime's own words never reached a catalog. A page
 // rendered in Spanish still toasted "Request failed" and labelled the
@@ -66,10 +77,15 @@ func LintRuntimeProse(roots ...string) (*Result, error) {
 // lone capitalised word may end in a colon: signals.js wrote 'Error: '
 // past both.
 var (
-	reToastSink = regexp.MustCompile(`\b(?:toast|_toastOrFallback|_fallbackToast|_showNavToast|createTextNode)\s*(?:\?\.\s*)?\(`)
-	reTextSink  = regexp.MustCompile(`\.(?:textContent|innerText|title|placeholder|ariaLabel|alt)\s*\+?=[^=]`)
+	reToastSink = regexp.MustCompile(`\b(?:toast|_toastOrFallback|_fallbackToast|_showNavToast|createTextNode|alert|confirm|prompt)\s*(?:\?\.\s*)?\(`)
+	reTextSink  = regexp.MustCompile(`\.(?:textContent|innerText|title|placeholder|ariaLabel|ariaDescription|ariaValueText|ariaRoleDescription|ariaPlaceholder|alt|nodeValue)\s*\+?=[^=]`)
 	reAttrSink  = regexp.MustCompile(`\bsetAttribute\s*\(`)
-	reLabelAttr = regexp.MustCompile(`^\s*['"](?:aria-label|aria-description|title|placeholder|alt)['"]\s*,`)
+	reLabelAttr = regexp.MustCompile(`^\s*['"](?:aria-label|aria-description|aria-valuetext|aria-roledescription|aria-placeholder|title|placeholder|alt)['"]\s*,`)
+	// A string argument of these DOM methods becomes a text node, the
+	// way createTextNode's does. Only a literal argument itself counts:
+	// a nested call's arguments (append(make('div', …, 'x'))) are that
+	// call's business.
+	reNodeSink  = regexp.MustCompile(`\.(?:append|prepend|replaceChildren|before|after|replaceWith)\s*\(`)
 	reSaidAs    = regexp.MustCompile(`\bsay\(\s*(['"])[^'"]*(['"])\s*,\s*$`)
 	reTwoWords  = regexp.MustCompile(`[A-Za-z]{2,}[,.:;!?)]*(?:\s+\S+)*?\s+\S*[A-Za-z]{2,}`)
 	reCapWord   = regexp.MustCompile(`^[A-Z][a-z]{2,}[.!?:]?$`)
@@ -102,7 +118,61 @@ func proseSinkSpans(f jsSource) [][2]int {
 			spans = append(spans, [2]int{comma + 1, close})
 		}
 	}
+	for _, loc := range reNodeSink.FindAllStringIndex(f.Blank, -1) {
+		open := loc[1] - 1
+		close := matchDelimForward(f.Blank, open)
+		if close <= open {
+			continue
+		}
+		var args [][2]int
+		for from := open + 1; from < close; {
+			end := topLevelComma(f.Blank, from, close)
+			if end < 0 {
+				end = close
+			}
+			args = append(args, [2]int{from, end})
+			from = end + 1
+		}
+		if strings.HasPrefix(f.Blank[loc[0]:], ".append") && fieldPairAppend(f.Code, args) {
+			continue
+		}
+		for _, a := range args {
+			if isStringLiteral(f.Code[a[0]:a[1]]) {
+				spans = append(spans, a)
+			}
+		}
+	}
+	// Source order, so findings read top to bottom whichever sink
+	// family found them.
+	slices.SortFunc(spans, func(a, b [2]int) int { return a[0] - b[0] })
 	return spans
+}
+
+// isStringLiteral reports whether a call argument is a string literal
+// (quoted or a template).
+func isStringLiteral(arg string) bool {
+	arg = strings.TrimSpace(arg)
+	return arg != "" && strings.ContainsRune("'\"`", rune(arg[0]))
+}
+
+// fieldPairAppend reports whether an append call's arguments read as
+// Headers / FormData / URLSearchParams append(name, value[, filename]):
+// two or three arguments, the first a literal field name with no
+// whitespace in it ('Accept', 'Title'). Those appends add a header, a
+// form field or a query parameter, not a text node, and the round-3
+// review found them firing ("Accept" for h.append('Accept',
+// 'text/event-stream')). A DOM append whose first literal is prose
+// ('Last saved: ') or whose literal follows a node still reads as one.
+func fieldPairAppend(code string, args [][2]int) bool {
+	if len(args) < 2 || len(args) > 3 {
+		return false
+	}
+	first := strings.TrimSpace(code[args[0][0]:args[0][1]])
+	if !isStringLiteral(first) || len(first) < 2 {
+		return false
+	}
+	name := first[1 : len(first)-1]
+	return name != "" && !strings.ContainsAny(name, " \t\n")
 }
 
 // exprEnd is the offset of the first depth-zero ';' or closing

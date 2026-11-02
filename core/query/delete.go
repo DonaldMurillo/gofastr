@@ -50,7 +50,7 @@ func (db *DeleteBuilder) Build() (string, []any) {
 	// Each column sanitized, as UpdateBuilder.Returning does.
 	cols := make([]string, len(db.returning))
 	for i, c := range db.returning {
-		cols[i] = sanitizeColumn(c)
+		cols[i] = identSlot(sanitizeColumn(c))
 	}
 	return sqlStr + " RETURNING " + strings.Join(cols, ", "), args
 }

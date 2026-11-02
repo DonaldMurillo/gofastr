@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,7 +29,7 @@ import (
 func runGenerateCLIFromOpenAPI(opts CliOptions) {
 	doc, err := loadOpenAPIDoc(opts.FromOpenAPI)
 	if err != nil {
-		cli.Fail("read OpenAPI document: %v", err)
+		cli.Fail("read OpenAPI document: %s", textsafe.ScrubControlBytes(err.Error()))
 		cli.OsExit(1)
 		return
 	}
@@ -63,7 +64,10 @@ func runGenerateCLIFromOpenAPI(opts CliOptions) {
 			cli.OsExit(1)
 			return
 		}
-		cli.Fail("%v", err)
+		// The error quotes names from the spec, which --from-openapi may
+		// fetch from a URL: encode its control bytes rather than write
+		// them to the operator's terminal.
+		cli.Fail("%s", textsafe.ScrubControlBytes(err.Error()))
 		cli.OsExit(1)
 		return
 	}
@@ -259,6 +263,11 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 				own[k] = v
 			}
 		}
+		// typed holds the members that name a type. When none carries
+		// properties and all of them name the same type other than object,
+		// the allOf is that one scalar: FastAPI wraps an enum parameter
+		// with a default as {allOf: [{$ref: Color}], default: red}.
+		var typed []map[string]any
 		for _, p := range append(parts, any(own)) {
 			pm, ok := p.(map[string]any)
 			if !ok {
@@ -268,6 +277,9 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if err != nil {
 				return nil, err
 			}
+			if _, has := pm["type"]; has {
+				typed = append(typed, pm)
+			}
 			if pp, ok := pm["properties"].(map[string]any); ok {
 				for k, v := range pp {
 					props[k] = v
@@ -276,6 +288,10 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if rq, ok := pm["required"].([]any); ok {
 				required = append(required, rq...)
 			}
+		}
+		if len(props) == 0 && len(typed) > 0 && typed[0]["type"] != "object" &&
+			!slices.ContainsFunc(typed, func(m map[string]any) bool { return fmt.Sprint(m["type"]) != fmt.Sprint(typed[0]["type"]) }) {
+			return typed[0], nil
 		}
 		merged["properties"] = props
 		if len(required) > 0 {
@@ -366,16 +382,26 @@ func oaGoType(schema map[string]any) (goType string, repeated, ok bool) {
 // A bracketed operator splits the same way: a GoFastr spec names the two
 // readings of a colliding filter key x[in] and x_in[eq], which become
 // --x-in and --x-in-eq while the wire name stays exactly as declared.
+// An acronym stays one word, by appspec.ToSnakeCase's boundary rule: a
+// capital starts a word after a lowercase letter or digit, or when it
+// ends a run of capitals that a lowercase letter follows. getUserByID is
+// get-user-by-id and HTTPServer http-server, where splitting at every
+// capital gave get-user-by-i-d.
 func oaKebab(s string) string {
+	runes := []rune(s)
 	var out []rune
-	for i, r := range s {
+	for i, r := range runes {
 		switch {
 		case r == '_' || r == ' ' || r == '.' || r == '[':
 			out = append(out, '-')
 		case r == ']':
 		case unicode.IsUpper(r):
 			if i > 0 && len(out) > 0 && out[len(out)-1] != '-' {
-				out = append(out, '-')
+				prev := runes[i-1]
+				nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+				if unicode.IsLower(prev) || unicode.IsDigit(prev) || unicode.IsUpper(prev) && nextLower {
+					out = append(out, '-')
+				}
 			}
 			out = append(out, unicode.ToLower(r))
 		default:
@@ -472,6 +498,17 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 	binary := strings.TrimSpace(opts.Binary)
 	if binary == "" {
 		return cliSpec{}, fmt.Errorf("--binary must not be empty")
+	}
+	// A Swagger 2.0 document reads as OpenAPI 3 without an error and
+	// loses its basePath, its body and formData parameters and every
+	// parameter's type; refuse it, and any other major version.
+	if v, set := doc["swagger"]; set {
+		return cliSpec{}, fmt.Errorf("the document is Swagger %q; --from-openapi reads OpenAPI 3 (convert it first)", fmt.Sprint(v))
+	}
+	if v, set := doc["openapi"]; set {
+		if s, _ := v.(string); !strings.HasPrefix(s, "3.") {
+			return cliSpec{}, fmt.Errorf("the document is openapi %q; --from-openapi reads OpenAPI 3", fmt.Sprint(v))
+		}
 	}
 	for _, v := range []string{binary, opts.FromOpenAPI} {
 		for _, r := range v {
@@ -649,10 +686,28 @@ func oaSchemeHeader(n string, s map[string]any) (header, prefix string, err erro
 		return "Authorization", "Bearer ", nil
 	}
 	name, _ := s["name"].(string)
-	if name == "" || strings.ContainsAny(name, " \t\r\n\"\\") {
+	if !oaHeaderName(name) {
 		return "", "", fmt.Errorf("apiKey security scheme %q needs a plain header name, got %q", n, name)
 	}
 	return name, "", nil
+}
+
+// oaHeaderName reports whether s is an HTTP field name, an RFC 9110
+// token. net/http refuses any other name at send time, so a CLI built
+// on one (X-Key(1)) failed every request it sent.
+func oaHeaderName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case strings.ContainsRune("!#$%&'*+-.^_`|~", r):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // oaRequiredScheme picks the scheme a security requirement list (the
@@ -797,6 +852,11 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		if in == "cookie" {
 			return op, fmt.Errorf("cookie parameter %q is not supported", name)
 		}
+		// Any other in (Swagger 2's body/formData, a typo) matched no case
+		// below and the parameter vanished from the CLI, required or not.
+		if in != "path" && in != "query" && in != "header" {
+			return op, fmt.Errorf("parameter %q has in %q; the CLI sends path, query or header parameters", name, in)
+		}
 		schema, _ := pm["schema"].(map[string]any)
 		if schema != nil {
 			resolved, err := oaResolve(root, schema)
@@ -846,7 +906,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		case "query":
 			op.QueryParams = append(op.QueryParams, cp)
 		case "header":
-			if strings.ContainsAny(name, " \t\r\n\"\\") {
+			if !oaHeaderName(name) {
 				return op, fmt.Errorf("header parameter %q is not a plain header name", name)
 			}
 			op.HeaderParams = append(op.HeaderParams, cp)
@@ -943,10 +1003,17 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 					if slices.ContainsFunc(op.PathParams, func(p cliOpParam) bool { return p.Name == n }) {
 						continue
 					}
+					// A property is wire data, and --json sends any of
+					// them: one whose name derives no usable flag (@type),
+					// a reserved one (url, token) or one a parameter or an
+					// earlier property holds goes by --json alone rather
+					// than failing the document over a name nobody can
+					// change.
 					f := cliOpBodyField{Wire: n, Flag: oaKebab(n), GoType: goType, Required: requiredSet[n]}
-					if err := claim(f.Flag, "body field "+n); err != nil {
-						return op, err
+					if _, taken := flagSeen[f.Flag]; taken || !oaValidFlag(f.Flag) || oaReservedFlags[f.Flag] {
+						continue
 					}
+					flagSeen[f.Flag] = "body field " + n
 					op.BodyFields = append(op.BodyFields, f)
 				}
 			}
@@ -960,10 +1027,31 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				types[0] = "application/octet-stream"
 			}
 			for _, ct := range types {
+				// A multipart or form-urlencoded body is encoded fields,
+				// not a file sent as is: raw, multipart has no boundary.
+				base := strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0]))
+				if strings.HasPrefix(base, "multipart/") || base == "application/x-www-form-urlencoded" {
+					continue
+				}
 				mm, _ := content[ct].(map[string]any)
 				schema, _ := orEmpty(mm)["schema"].(map[string]any)
+				// A component schema is as binary as an inline one.
+				schema, err = oaResolve(root, orEmpty(schema))
+				if err != nil {
+					return op, err
+				}
 				format, _ := orEmpty(schema)["format"].(string)
 				if ct == "application/octet-stream" || format == "binary" {
+					// The content type is sent as the Content-Type header
+					// and printed raw in the --file flag's usage line, so it
+					// must be a plain media type: no control byte (C0, DEL
+					// or C1) that would rewrite the operator's terminal.
+					if strings.ContainsFunc(ct, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
+						return op, fmt.Errorf("request body content type %q carries control bytes: it is printed in the generated CLI's help output and sent as a header. Remove them from the spec", ct)
+					}
+					if _, _, err := mime.ParseMediaType(ct); err != nil || !strings.Contains(ct, "/") {
+						return op, fmt.Errorf("request body content type %q is not a media type (type/subtype)", ct)
+					}
 					op.BodyKind = "binary"
 					op.BodyContentType = ct
 					break

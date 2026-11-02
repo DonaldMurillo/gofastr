@@ -189,7 +189,17 @@ func (c *Client) send(ctx context.Context, method, path string, body io.Reader, 
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	dec := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes))
+	// One byte past the cap tells a body cut at the cap from one that
+	// ends there: a cut body decoded to "unexpected EOF", which named
+	// neither the cap nor the response.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > maxBodyBytes {
+		return fmt.Errorf("response body exceeds %d bytes", maxBodyBytes)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	return dec.Decode(out)
 }
@@ -326,7 +336,14 @@ func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string
 		case strings.HasPrefix(line, "event:"):
 			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
-			data = append(data, strings.TrimSpace(strings.TrimPrefix(line, "data:"))...)
+			// An event joins its data lines until a blank line; bound the
+			// join at the body cap, or a feed that never ends an event
+			// grows the heap without limit.
+			piece := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if len(data)+len(piece) > maxBodyBytes {
+				return fmt.Errorf("event data exceeds %d bytes", maxBodyBytes)
+			}
+			data = append(data, piece...)
 		}
 	}
 	if ctx.Err() != nil {
@@ -406,7 +423,7 @@ func relationKeyField(to string, decls []framework.EntityDeclaration) string {
 			continue
 		}
 		if cols := declKeyCols(d); len(cols) == 1 {
-			return appspec.ToCamelJSON(cols[0].Name)
+			return appspec.WireKey(cols[0].Name)
 		}
 	}
 	return "id"
@@ -436,11 +453,11 @@ func renderClientRelationDecode(decl framework.EntityDeclaration, decls []framew
 		"// sends the key or, under ?include=<field>, the record it names.\n"+
 		"func (r *%s) UnmarshalJSON(data []byte) error {\n\ttype plain %s\n\tvar wire struct {\n\t\t*plain\n", struct_, struct_)
 	for _, f := range rels {
-		fmt.Fprintf(&mb, "\t\t%s json.RawMessage `json:\"%s\"`\n", appspec.ToCamelCase(f.Name), appspec.ToCamelJSON(f.Name))
+		fmt.Fprintf(&mb, "\t\t%s json.RawMessage `json:\"%s\"`\n", appspec.ToCamelCase(f.Name), appspec.WireKey(f.Name))
 	}
 	mb.WriteString("\t}\n\twire.plain = (*plain)(r)\n\tif err := decodeExact(data, &wire); err != nil {\n\t\treturn err\n\t}\n")
 	for _, f := range rels {
-		name, tag := appspec.ToCamelCase(f.Name), appspec.ToCamelJSON(f.Name)
+		name, tag := appspec.ToCamelCase(f.Name), appspec.WireKey(f.Name)
 		fmt.Fprintf(&mb, "\tif wire.%[1]s != nil {\n\t\tkey, err := relationKey(wire.%[1]s, %[2]q, %[3]q, &r.%[4]s)\n\t\tif err != nil {\n\t\t\treturn fmt.Errorf(\"%[3]s: %%w\", err)\n\t\t}\n\t\tr.%[1]s = key\n\t}\n",
 			name, relationKeyField(f.To, decls), tag, included)
 	}
@@ -551,7 +568,7 @@ func renderClientEntity(decl framework.EntityDeclaration, decls []framework.Enti
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
 			appspec.ToCamelCase(field.Name),
 			goTypeForField(field.Type),
-			appspec.ToCamelJSON(field.Name)))
+			appspec.WireKey(field.Name)))
 	}
 	relField, relDecode := renderClientRelationDecode(decl, decls, struct_)
 	sb.WriteString(relField)
@@ -574,13 +591,13 @@ func renderClientEntity(decl framework.EntityDeclaration, decls []framework.Enti
 			sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s\"`\n",
 				appspec.ToCamelCase(field.Name),
 				goTypeForField(field.Type),
-				appspec.ToCamelJSON(field.Name)))
+				appspec.WireKey(field.Name)))
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
 			appspec.ToCamelCase(field.Name),
 			goPatchPointerTypeForField(field.Type),
-			appspec.ToCamelJSON(field.Name)))
+			appspec.WireKey(field.Name)))
 	}
 	sb.WriteString("}\n\n")
 	// Patch struct (<Entity>Patch): pointer fields. This is the PATCH
@@ -597,7 +614,7 @@ func renderClientEntity(decl framework.EntityDeclaration, decls []framework.Enti
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
 			appspec.ToCamelCase(field.Name),
 			goPatchPointerTypeForField(field.Type),
-			appspec.ToCamelJSON(field.Name)))
+			appspec.WireKey(field.Name)))
 	}
 	sb.WriteString("}\n\n")
 
@@ -695,7 +712,7 @@ func (c *Client) Delete%s(ctx context.Context, %s) error {
 		// A composite-key item names its target by its key fields.
 		for _, k := range declKeyCols(decl) {
 			sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s\"`\n",
-				appspec.ToCamelCase(k.Name), goTypeForField(k.Field.Type), appspec.ToCamelJSON(k.Name)))
+				appspec.ToCamelCase(k.Name), goTypeForField(k.Field.Type), appspec.WireKey(k.Name)))
 		}
 	}
 	for _, field := range decl.Fields {
@@ -705,7 +722,7 @@ func (c *Client) Delete%s(ctx context.Context, %s) error {
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
 			appspec.ToCamelCase(field.Name),
 			goPatchPointerTypeForField(field.Type),
-			appspec.ToCamelJSON(field.Name)))
+			appspec.WireKey(field.Name)))
 	}
 	sb.WriteString("}\n\n")
 

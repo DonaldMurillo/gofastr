@@ -18,6 +18,7 @@ import (
 	fwdb "github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // pivotLink is one many_to_many link: the pivot table and its two key
@@ -52,8 +53,8 @@ func newPivotLink(rel entity.Relation, parent, child any) (pivotLink, error) {
 // and the caller's insert was skipped.
 func (ch *CrudHandler) pivotLinked(ctx context.Context, r *http.Request, pivotHandler *CrudHandler, l pivotLink) (bool, error) {
 	cb := query.Count(l.through).
-		Where(l.localKey+" = $1", l.parent).
-		Where(l.fkTarget+" = $1", l.child)
+		Where(query.QuoteKeyword(l.localKey)+" = $1", l.parent).
+		Where(query.QuoteKeyword(l.fkTarget)+" = $1", l.child)
 	if pivotHandler != nil {
 		pivotHandler.ApplyTenantScopeCount(cb, r)
 		pivotHandler.ApplyOwnerScopeCount(cb, r)
@@ -86,7 +87,7 @@ func (ch *CrudHandler) writePivotLink(ctx context.Context, r *http.Request, rel 
 	insert := func(ctx context.Context) error {
 		if pivotHandler == nil {
 			//gofastr:allow(emitident) each name went through query.SafeIdent in newPivotLink, the only constructor
-			insQ := fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES ($1, $2)", l.through, l.localKey, l.fkTarget)
+			insQ := fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES ($1, $2)", query.QuoteKeyword(l.through), query.QuoteKeyword(l.localKey), query.QuoteKeyword(l.fkTarget))
 			if _, err := ch.DB.ExecContext(ctx, insQ, l.parent, l.child); err != nil {
 				return fmt.Errorf("pivot insert into %s: %w", rel.Through, err)
 			}
@@ -320,7 +321,7 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, r *http.Request,
 		readClause = " AND " + readClause
 	}
 	q := fmt.Sprintf("SELECT 1 FROM %s WHERE %s = $1 AND %s = $2%s%s",
-		table, pkCol, foreignCol, clause, readClause)
+		query.QuoteKeyword(table), query.QuoteKeyword(pkCol), query.QuoteKeyword(foreignCol), clause, readClause)
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
@@ -379,7 +380,7 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, r *http.Requ
 		readClause = " AND " + readClause
 	}
 	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1%s%s",
-		pkCol, table, foreignCol, clause, readClause)
+		query.QuoteKeyword(pkCol), query.QuoteKeyword(table), query.QuoteKeyword(foreignCol), clause, readClause)
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
@@ -438,7 +439,7 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1%s%s", pkCol, table, pkCol, clause, readClause)
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1%s%s", query.QuoteKeyword(pkCol), query.QuoteKeyword(table), query.QuoteKeyword(pkCol), clause, readClause)
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
@@ -479,6 +480,12 @@ func (ch *CrudHandler) findCascadeValue(body map[string]any, relName string) (an
 	}
 	wk := ch.wireKeyColumn(relName)
 	if val, ok := body[wk]; ok && val != nil {
+		return val, true
+	}
+	// The key MarshalEntity derives from the wire key: _extras is served
+	// as Extras, which snakes to extras (bodyColumns does the same for a
+	// field).
+	if val, ok := body[casing.ToSnake(conv)]; ok && val != nil {
 		return val, true
 	}
 	return nil, false

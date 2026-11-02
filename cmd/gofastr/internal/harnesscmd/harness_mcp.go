@@ -11,7 +11,6 @@ import (
 	xharness "github.com/DonaldMurillo/gofastr/framework/experimental/harness"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/mcpserver"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/logging"
-	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/secrets"
 )
 
 // runHarnessMCP is the `gofastr harness mcp` subcommand entry. It
@@ -37,16 +36,12 @@ func runHarnessMCP(args []string) {
 	useFramework := fs.Bool("framework", false, "use the framework preset profile")
 	profilePath := fs.String("profile", "", "explicit profile TOML path")
 	requiredToken := fs.String("required-token", "", "if set, GOFASTR_HARNESS_TOKEN env must match")
+	allowRepoSecrets := fs.Bool("allow-repo-secrets", false, "use provider keys from this repository's .harness-secrets/env without a remembered approval")
 	_ = fs.Parse(args)
-
-	// Load repo-local secrets (gitignored) before reading any env vars.
-	// Shell env still wins. This is the fallback for cases where the
-	// MCP client (Claude Code, Codex) doesn't pass env through.
-	_, _ = secrets.LoadRepo()
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
@@ -54,9 +49,17 @@ func runHarnessMCP(args []string) {
 	_ = os.MkdirAll(xdgConfig, 0o700)
 	_ = os.MkdirAll(xdgState, 0o700)
 
+	// Load repo-local secrets (gitignored) before reading any env vars.
+	// Shell env still wins. This is the fallback for cases where the
+	// MCP client (Claude Code, Codex) doesn't pass env through. stdin
+	// carries the MCP protocol, so nobody can be asked here: the keys
+	// need an approval remembered from an interactive run, or
+	// --allow-repo-secrets in the client's launch args.
+	loadRepoSecrets(xdgConfig, *allowRepoSecrets, false, nil, os.Stderr)
+
 	prof, err := loadProfile(*useFramework, *profilePath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -66,7 +69,7 @@ func runHarnessMCP(args []string) {
 
 	machineKey, err := machineKeyFromEnv()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 		return
 	}
@@ -91,7 +94,7 @@ func runHarnessMCP(args []string) {
 	}
 	h, err := xharness.New(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	defer h.Shutdown()
@@ -99,11 +102,11 @@ func runHarnessMCP(args []string) {
 	// Create one default session bound to the profile's default model.
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
-		fmt.Fprintf(os.Stderr, "harness mcp: no provider matches %q\n", prof.DefaultModel)
+		cli.Fprintf(os.Stderr, "harness mcp: no provider matches %q\n", prof.DefaultModel)
 		cli.OsExit(1)
 	}
 	if _, err := h.CreateSession(prov, modelID); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -111,7 +114,7 @@ func runHarnessMCP(args []string) {
 	srv := mcpserver.New(h.Mux, h.Catalog)
 	srv.RequiredToken = *requiredToken
 	if err := srv.Serve(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 }

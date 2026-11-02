@@ -96,6 +96,9 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	if err != nil {
 		return nil, err
 	}
+	if err := checkIndexNames(ordered, all); err != nil {
+		return nil, err
+	}
 
 	var out []SchemaChange
 	tables := make([]string, 0, len(ordered))
@@ -325,6 +328,10 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	if err != nil {
 		return nil, fmt.Errorf("invalid table name %q: %w", ent.GetTable(), err)
 	}
+	live = uncutLiveColumns(ent, live, dialect)
+	if lk != nil {
+		lk = &liveKey{constraint: lk.constraint, cols: uncutKey(ent, lk.cols, dialect)}
+	}
 
 	if len(live) == 0 {
 		// Table missing entirely: emit a CREATE TABLE via the same path
@@ -341,7 +348,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		return []SchemaChange{{
 			Summary: fmt.Sprintf("%s: create table", ent.GetName()),
 			SQL:     strings.Join(sqlParts, ";\n"),
-			Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", qtable),
+			Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", ddlIdent(qtable)),
 		}}, nil
 	}
 
@@ -391,8 +398,8 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		changes = append(changes, SchemaChange{
 			Summary: fmt.Sprintf("%s: rename column %s → %s", ent.GetName(), oldName, newName),
-			SQL:     fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", qtable, qOld, qNew),
-			Down:    fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", qtable, qNew, qOld),
+			SQL:     fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", ddlIdent(qtable), ddlIdent(qOld), ddlIdent(qNew)),
+			Down:    fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", ddlIdent(qtable), ddlIdent(qNew), ddlIdent(qOld)),
 		})
 		renameTargets[newLow] = true
 		renameSources[oldLow] = true
@@ -430,12 +437,12 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			}
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
-			qtable, qcol, colType, nullable, defaultClause)
+			ddlIdent(qtable), ddlIdent(qcol), colType, nullable, defaultClause)
 		added[f.Name] = colType
 		changes = append(changes, SchemaChange{
 			Summary: summary,
 			SQL:     ddl,
-			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol),
+			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ddlIdent(qtable), ddlIdent(qcol)),
 		})
 		// CREATE TABLE writes UNIQUE inline, but SQLite refuses UNIQUE on
 		// ADD COLUMN, so the added column gets a unique index instead, named
@@ -448,7 +455,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			}
 			changes = append(changes, SchemaChange{
 				Summary: fmt.Sprintf("%s: unique index %s", ent.GetName(), uqName),
-				SQL:     createIndexSQL(dialect, true, uqName, qtable, qcol),
+				SQL:     createIndexSQL(dialect, true, uqName, qtable, ddlIdent(qcol)),
 				Down:    dropIndexSQL(qtable, uqName),
 			})
 		}
@@ -595,7 +602,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", name, err)
 		}
-		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol)
+		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ddlIdent(qtable), ddlIdent(qcol))
 		// Inverse re-adds the column with the type it had in the previous
 		// snapshot. Reversible at the schema level: row data is not restored.
 		downType := live[name]
@@ -605,7 +612,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: drop column %s", ent.GetName(), name),
 			SQL:         ddl,
-			Down:        fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", qtable, qcol, downType),
+			Down:        fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", ddlIdent(qtable), ddlIdent(qcol), downType),
 			Destructive: true,
 		})
 	}
@@ -772,12 +779,37 @@ func canonicalType(s string, dialect Dialect) string {
 // the int4 sequence behind each SERIAL that ALTER COLUMN TYPE leaves
 // alone, is not a change the declaration asked for; widening an old
 // column is a hand-written migration (see migrations.md).
+//
+// A VARCHAR's width counts on Postgres, which enforces it: a String whose
+// Max went from 50 to 200 kept its VARCHAR(50), validation passed a
+// 150-character value, and the insert failed. A side that names no width
+// (an older snapshot, a catalog read without one) is not compared. SQLite
+// ignores the width, so a change there rebuilds nothing.
 func typesEquivalent(declared, live string, dialect Dialect) bool {
 	d, l := canonicalType(declared, dialect), canonicalType(live, dialect)
 	if dialect == DialectPostgres && d == "bigint" && l == "integer" {
 		return true
 	}
-	return d == l
+	if d != l {
+		return false
+	}
+	if dialect == DialectPostgres && (d == "varchar" || d == "character" || d == "char") {
+		dw, dok := typeWidth(declared)
+		lw, lok := typeWidth(live)
+		return !dok || !lok || dw == lw
+	}
+	return true
+}
+
+// typeWidth returns the parenthesized size of a type ("VARCHAR(255)",
+// "character varying(255)"), and whether it names one.
+func typeWidth(t string) (string, bool) {
+	open := strings.IndexByte(t, '(')
+	end := strings.LastIndexByte(t, ')')
+	if open < 0 || end < open {
+		return "", false
+	}
+	return strings.ReplaceAll(t[open+1:end], " ", ""), true
 }
 
 // alterColumnTypeSQL renders the Postgres DDL for a column type change: an
@@ -796,6 +828,7 @@ func typesEquivalent(declared, live string, dialect Dialect) bool {
 // field's " DEFAULT …", or "" for none) after, in one ALTER TABLE, the
 // spelling the Postgres manual gives for this case.
 func alterColumnTypeSQL(qtable, qcol, fromType, newType, defaultClause string) string {
+	qtable, qcol = ddlIdent(qtable), ddlIdent(qcol)
 	if isTextType(fromType) && isIntegerType(newType) {
 		sql := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT, ALTER COLUMN %s TYPE %s USING %s::%s",
 			qtable, qcol, qcol, newType, qcol, newType)
@@ -923,7 +956,7 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 		if err != nil {
 			return SchemaChange{}, fmt.Errorf("invalid column name %q: %w", name, err)
 		}
-		kept = append(kept, fmt.Sprintf("%s %s", q, liveLower[strings.ToLower(name)]))
+		kept = append(kept, fmt.Sprintf("%s %s", ddlIdent(q), liveLower[strings.ToLower(name)]))
 		copyCols = append(copyCols, q)
 	}
 	at := len(defs)
@@ -943,10 +976,10 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 	var b strings.Builder
 	fmt.Fprintf(&b, "CREATE TABLE %s (\n\t%s\n)", newTable, strings.Join(defs, ",\n\t"))
 	if len(copyCols) > 0 {
-		joined := strings.Join(copyCols, ", ")
-		fmt.Fprintf(&b, ";\nINSERT INTO %s (%s) SELECT %s FROM %s", newTable, joined, joined, qtable)
+		joined := strings.Join(ddlIdents(copyCols), ", ")
+		fmt.Fprintf(&b, ";\nINSERT INTO %s (%s) SELECT %s FROM %s", newTable, joined, joined, ddlIdent(qtable))
 	}
-	fmt.Fprintf(&b, ";\nDROP TABLE %s", qtable)
+	fmt.Fprintf(&b, ";\nDROP TABLE %s", ddlIdent(qtable))
 	fmt.Fprintf(&b, ";\n%s", sqliteRebuildRename(qtable))
 	// The DROP took every index with it. entityIndices is the set the
 	// snapshot records (declared plus the automatic belongs_to ones), so
@@ -1027,7 +1060,7 @@ func sqliteRebuildTable(qtable string) string { return qtable + "__rebuild" }
 // SQLite takes a schema on the table it renames but not on RENAME TO: the
 // table stays in its schema.
 func sqliteRebuildRename(qtable string) string {
-	return fmt.Sprintf("ALTER TABLE %s RENAME TO %s", sqliteRebuildTable(qtable), tableBase(qtable))
+	return fmt.Sprintf("ALTER TABLE %s RENAME TO %s", sqliteRebuildTable(qtable), ddlIdent(tableBase(qtable)))
 }
 
 // queryer is the read-only subset of *sql.DB / *sql.Tx the live-schema
@@ -1038,8 +1071,12 @@ type queryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// ReadLiveColumns returns a map of column_name → data_type from the live
-// DB. Empty map means "table doesn't exist".
+// ReadLiveColumns returns a map of column name → column type from the live
+// DB. Empty map means "table doesn't exist". On Postgres the type is
+// information_schema's data_type plus the width a character type declares
+// ("character varying(255)", "character(2)"; "text", "bigint" and the like
+// carry none). On SQLite it is the type the table was declared with, as
+// PRAGMA table_info reports it.
 func ReadLiveColumns(ctx context.Context, db *sql.DB, table string, dialect Dialect) (map[string]string, error) {
 	return readLiveColumnsQ(ctx, db, table, dialect)
 }
@@ -1063,6 +1100,8 @@ func readEntityColumnsQ(ctx context.Context, q queryer, table string, dialect Di
 	return readLiveColumnsSQLiteQ(ctx, q, table)
 }
 
+// ReadLiveColumnsPostgres is ReadLiveColumns on Postgres: column name →
+// data_type, with a character type's width ("character varying(255)").
 func ReadLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
 	return readLiveColumnsPostgresQ(ctx, db, table, false)
 }
@@ -1078,16 +1117,17 @@ func readLiveColumnsPostgresQ(ctx context.Context, q queryer, table string, fold
 	// A qualified app.widgets is widgets in schema app; the bare name is
 	// in the search-path schema.
 	schema, name := splitTable(table)
+	name = pgIdentCut(name)
 	var schemaArg any
 	if schema != "" {
-		schemaArg = schema
+		schemaArg = pgIdentCut(schema)
 	}
 	where := `lower(table_schema) = lower(coalesce($2, current_schema())) AND lower(table_name) = lower($1)`
 	if foldedOnly {
 		where = `table_schema = coalesce(lower($2), current_schema()) AND table_name = lower($1) AND column_name = lower(column_name)`
 	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT column_name, data_type
+		SELECT column_name, `+pgColumnType("")+`
 		FROM information_schema.columns
 		WHERE `+where, name, schemaArg)
 	if err != nil {
@@ -1164,7 +1204,7 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 		return "", fmt.Errorf("entity %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
 	}
 	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		safeTable, strings.Join(columns, ",\n\t")), nil
+		ddlIdent(safeTable), strings.Join(columns, ",\n\t")), nil
 }
 
 // columnDefs builds the per-column DDL fragments (validated name + type +
@@ -1174,11 +1214,12 @@ func buildCreateTableSQL(ent *entity.Entity, all map[string]*entity.Entity, dial
 // itself, passes all with withFKs off. Shared by buildCreateTableSQL so
 // there is exactly one column-rendering path.
 //
-// Identifiers are VALIDATED (SafeIdent rejects anything but [A-Za-z0-9_.]) but
-// NOT quoted, to match the runtime SQL the query builder / crud emit, which is
-// also unquoted. Quoting only the DDL would make Postgres preserve case in the
-// schema while the unquoted runtime folds it to lowercase, breaking any
-// mixed-case identifier. Validation alone provides the injection safety.
+// Identifiers are VALIDATED (SafeIdent rejects anything but [A-Za-z0-9_.]) and
+// left bare, except a keyword, which ddlIdent quotes folded (query.QuoteFolded,
+// the spelling CRUD's runtime SQL uses for every name). Quoting a name as
+// written would make Postgres preserve case in the schema while the runtime
+// folds it to lowercase, breaking any mixed-case identifier. Validation alone
+// provides the injection safety.
 //
 // A one-column key is marked inline (`id TEXT PRIMARY KEY`). A composite
 // key is a table constraint, `PRIMARY KEY (a, b)`, and each of its columns
@@ -1191,7 +1232,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
-		col := fmt.Sprintf("%s %s", safeCol, columnSQLType(ent, f, all, dialect))
+		col := fmt.Sprintf("%s %s", ddlIdent(safeCol), columnSQLType(ent, f, all, dialect))
 		inKey := slices.Contains(keys, f.Name)
 		if inKey && len(keys) == 1 {
 			col += " PRIMARY KEY"
@@ -1224,7 +1265,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			if err != nil {
 				return nil, fmt.Errorf("invalid key column %q: %w", k, err)
 			}
-			safe[i] = q
+			safe[i] = ddlIdent(q)
 		}
 		columns = append(columns, "PRIMARY KEY ("+strings.Join(safe, ", ")+")")
 	}
@@ -1238,7 +1279,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	return columns, nil
 }
 
-var reIndexName = regexp.MustCompile(`(?i)\bINDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)`)
+var reIndexName = regexp.MustCompile(`(?i)\bINDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:"?[a-zA-Z0-9_]+"?\.)?"?([a-zA-Z0-9_]+)`)
 
 func parseIndexName(ddl string) string {
 	m := reIndexName.FindStringSubmatch(ddl)

@@ -16,7 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -72,11 +71,11 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		if !canReadRecord(ctx, m.ch, dup) {
 			return m.notFound(ctx)
 		}
-		hooked, herr := m.ch.GetOne(crud.WithReadHooks(ctx), dup, nil)
+		hooked, herr := m.getRow(ctx, dup)
 		if herr != nil || hooked == nil {
 			return m.notFound(ctx)
 		}
-		row, err := m.ch.GetOne(ctx, dup, nil)
+		row, err := m.getRowUnhooked(ctx, dup)
 		if err != nil || row == nil {
 			return m.notFound(ctx)
 		}
@@ -868,7 +867,7 @@ func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur str
 	if err != nil {
 		return ""
 	}
-	if row, err := om.ch.GetOne(crud.WithReadHooks(ctx), cur, nil); err != nil || row == nil {
+	if row, err := om.getRow(ctx, cur); err != nil || row == nil {
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
@@ -935,6 +934,20 @@ func maskedFields(m *meta, raw, hooked map[string]any) map[string]bool {
 		}
 	}
 	return masked
+}
+
+// rewrittenFields reports every visible column an AfterGet hook rewrites
+// on this record, locked and system ones included: maskedFields narrowed
+// to what a form edits, this is what a display surface beside the record
+// (the Activity tab's change list) must not draw from stored values.
+func rewrittenFields(m *meta, raw, hooked map[string]any) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range m.fields {
+		if cell(m.rowValue(raw, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
+			out[f.Name] = true
+		}
+	}
+	return out
 }
 
 // showWhenCond is a parsed ShowWhen: the controller field and the

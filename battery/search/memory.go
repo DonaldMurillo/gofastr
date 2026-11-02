@@ -7,17 +7,65 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // Memory is an in-memory search backend suitable for tests and small examples.
+//
+// It registers a datexport store eraser, so App.EraseUserData deletes every
+// document indexed with the erased user as its Owner. The registration
+// keeps the index reachable until [Memory.Close] removes it.
 type Memory struct {
 	mu   sync.RWMutex
 	docs map[string]Document
+
+	closeOnce       sync.Once
+	unregisterErase func()
 }
 
-// NewMemory creates an empty in-memory search index.
+// NewMemory creates an empty in-memory search index and registers its
+// store eraser.
 func NewMemory() *Memory {
-	return &Memory{docs: make(map[string]Document)}
+	m := &Memory{docs: make(map[string]Document)}
+	_, m.unregisterErase = datexport.RegisterStoreEraser(datexport.StoreEraser{
+		Name:   "search:memory",
+		Source: "search",
+		Erase:  m.eraseOwner,
+	})
+	return m
+}
+
+// Close unregisters the index's store eraser, so an erasure no longer
+// reaches it. The documents stay searchable. Safe to call more than once.
+func (m *Memory) Close() error {
+	m.closeOnce.Do(m.unregisterErase)
+	return nil
+}
+
+// eraseOwner deletes every document whose Owner is owner and returns how
+// many it removed; with dryRun it removes nothing and returns how many it
+// would.
+func (m *Memory) eraseOwner(ctx context.Context, owner string, dryRun bool) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if owner == "" {
+		return 0, nil // an empty owner names no user
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for id, doc := range m.docs {
+		if doc.Owner != owner {
+			continue
+		}
+		n++
+		if !dryRun {
+			delete(m.docs, id)
+		}
+	}
+	return n, nil
 }
 
 // Index inserts or replaces a document.

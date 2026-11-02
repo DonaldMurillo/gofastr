@@ -35,6 +35,16 @@ type migKey struct {
 type Status struct {
 	Applied []MigrationRecord
 	Pending []Migration
+	// Modified lists applied migrations whose registered Up no longer
+	// matches the checksum recorded at apply time: Up refuses while any
+	// is listed (ChecksumMismatchError). A blank recorded checksum (a row
+	// from before checksums) is never listed.
+	Modified []MigrationRecord
+	// Unregistered lists applied migrations with no registered migration
+	// in the default group or in a group that has registered ones: Down
+	// refuses to roll one back. A named group with nothing registered is
+	// a disabled module, so its rows are not listed.
+	Unregistered []MigrationRecord
 }
 
 // nowFunc returns the dialect-appropriate default timestamp expression.
@@ -910,8 +920,29 @@ func (m *Migrator) Status(ctx context.Context, groups ...string) (*Status, error
 
 	pending := pendingMigrations(m.selectedMigrations(groups), applied)
 
+	// The drift Up and Down refuse on, listed here so the read an operator
+	// runs to find out why does not report a clean state.
+	registered := make(map[migKey]Migration, len(m.migrations))
+	groupsRegistered := make(map[string]bool, len(m.migrations))
+	for _, mig := range m.migrations {
+		registered[migKey{Group: mig.Group, Version: mig.Version}] = mig
+		groupsRegistered[mig.Group] = true
+	}
+	var modified, unregistered []MigrationRecord
+	for _, rec := range appliedList {
+		mig, ok := registered[migKey{Group: rec.Group, Version: rec.Version}]
+		switch {
+		case ok && rec.Checksum != "" && checksumOf(mig) != rec.Checksum:
+			modified = append(modified, rec)
+		case !ok && (rec.Group == "" || groupsRegistered[rec.Group]):
+			unregistered = append(unregistered, rec)
+		}
+	}
+
 	return &Status{
-		Applied: appliedList,
-		Pending: pending,
+		Applied:      appliedList,
+		Pending:      pending,
+		Modified:     modified,
+		Unregistered: unregistered,
 	}, nil
 }

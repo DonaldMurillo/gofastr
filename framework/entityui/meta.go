@@ -147,14 +147,75 @@ func (m *meta) keyWheres(ids []string) []*filter.Predicate {
 	return out
 }
 
-// listByIDs reads the records ids name, with opts' fields and sorts, one
-// keyWheres predicate at a time: rows come in key order within each.
-// opts' fields must carry the key columns: a row whose own id is not
-// one of ids drops out, since a column type the database chose (a
-// Postgres UUID or CITEXT under a view or an Unmanaged table) matches a
-// second spelling of its key. Each record comes back once: an alias in
-// one predicate reaches the row its own id reaches in another.
+// The screens read rows through the readers below, and each name says
+// whether the entity's read hooks run. The plain names are the hooked
+// read a screen draws from: the BeforeList/BeforeGet scope hides what the
+// JSON API hides and AfterList/AfterGet mask what it masks
+// (crud.WithReadHooks). That is every read that puts a row, a count or a
+// value in front of a caller, or decides an act from one.
+//
+// The *Unhooked names read stored values, and every call says why. They
+// exist for three jobs and no others: prefilling an input whose value
+// round-trips on submit (a masked value would be written back over the
+// stored one), comparing against the hooked read to learn which fields a
+// hook rewrites, and asking whether a row the hooked read missed is
+// stored at all. Never draw from an unhooked row without that
+// comparison. TestReadHookParityAdmin (battery/admin) drives every
+// surface built on these.
+
+// getRow is the record id as the caller's read hooks let it be read.
+func (m *meta) getRow(ctx context.Context, id string) (map[string]any, error) {
+	return m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+}
+
+// getRowUnhooked is record id as stored; see the readers' note above.
+func (m *meta) getRowUnhooked(ctx context.Context, id string) (map[string]any, error) {
+	return m.ch.GetOne(ctx, id, nil)
+}
+
+// listRows is ListAll through the caller's read hooks.
+func (m *meta) listRows(ctx context.Context, opts crud.ListOptions) ([]map[string]any, error) {
+	return m.ch.ListAll(crud.WithReadHooks(ctx), opts)
+}
+
+// listRowsUnhooked is ListAll over stored values; see the readers' note.
+func (m *meta) listRowsUnhooked(ctx context.Context, opts crud.ListOptions) ([]map[string]any, error) {
+	return m.ch.ListAll(ctx, opts)
+}
+
+// countRows is CountAll through the caller's read hooks.
+func (m *meta) countRows(ctx context.Context, opts crud.ListOptions) (int, error) {
+	return m.ch.CountAll(crud.WithReadHooks(ctx), opts)
+}
+
+// sumRows is SumAll through the caller's read hooks.
+func (m *meta) sumRows(ctx context.Context, field string, opts crud.ListOptions) (string, error) {
+	return m.ch.SumAll(crud.WithReadHooks(ctx), field, opts)
+}
+
+// groupRows is GroupCountAll through the caller's read hooks.
+func (m *meta) groupRows(ctx context.Context, field string, opts crud.ListOptions, limit int) ([]crud.GroupCount, error) {
+	return m.ch.GroupCountAll(crud.WithReadHooks(ctx), field, opts, limit)
+}
+
+// listByIDs reads the records ids name, with opts' fields and sorts,
+// through the caller's read hooks; listByIDsUnhooked reads them as
+// stored. Each runs one keyWheres predicate at a time: rows come in key
+// order within each. opts' fields must carry the key columns: a row
+// whose own id is not one of ids drops out, since a column type the
+// database chose (a Postgres UUID or CITEXT under a view or an Unmanaged
+// table) matches a second spelling of its key. Each record comes back
+// once: an alias in one predicate reaches the row its own id reaches in
+// another.
 func (m *meta) listByIDs(ctx context.Context, ids []string, opts crud.ListOptions) ([]map[string]any, error) {
+	return m.listByIDsWith(ctx, ids, opts, m.listRows)
+}
+
+func (m *meta) listByIDsUnhooked(ctx context.Context, ids []string, opts crud.ListOptions) ([]map[string]any, error) {
+	return m.listByIDsWith(ctx, ids, opts, m.listRowsUnhooked)
+}
+
+func (m *meta) listByIDsWith(ctx context.Context, ids []string, opts crud.ListOptions, read func(context.Context, crud.ListOptions) ([]map[string]any, error)) ([]map[string]any, error) {
 	asked := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		asked[id] = true
@@ -163,7 +224,7 @@ func (m *meta) listByIDs(ctx context.Context, ids []string, opts crud.ListOption
 	for _, w := range m.keyWheres(ids) {
 		o := opts
 		o.Where, o.Limit = w, len(ids)
-		rows, err := m.ch.ListAll(ctx, o)
+		rows, err := read(ctx, o)
 		if err != nil {
 			return nil, err
 		}

@@ -35,7 +35,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/netip"
 	"sort"
 	"strings"
 	"sync"
@@ -470,21 +469,10 @@ func (rl *Limiter) ClientKey(r *http.Request) string {
 // becomes its /64 prefix: one subscriber is routinely handed a whole /64,
 // 2^64 addresses, so keying on the full address let a single client rotate
 // past every per-IP limit (a fresh source address per request). Anything
-// that does not parse as an IP is returned unchanged.
+// that does not parse as an IP is returned unchanged. core/middleware's
+// RateLimit shares the rule (internal/clientip.RateKey).
 func IPKey(addr string) string {
-	ip, err := netip.ParseAddr(addr)
-	if err != nil {
-		return addr
-	}
-	ip = ip.Unmap()
-	if ip.Is4() {
-		return ip.String()
-	}
-	p, err := ip.WithZone("").Prefix(64)
-	if err != nil {
-		return addr
-	}
-	return p.String()
+	return clientip.RateKey(addr)
 }
 
 func clientIPFor(r *http.Request, trustXFF bool, proxies clientip.Proxies) string {

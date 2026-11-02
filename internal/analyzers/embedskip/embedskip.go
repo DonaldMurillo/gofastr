@@ -28,6 +28,40 @@
 //
 // A walk that is top-level-only on purpose carries
 // //gofastr:allow(embedskip) <why>.
+//
+// The 2026-11 round added three arms (arms.go), each from a reflect
+// tag-walker bug in core/handler or internal/jsonexact, each scoped to
+// the walks this detector already recognizes:
+//   - pointer gate (8708ddd5): in a function that reaches a tag-keyed
+//     walk (itself or through same-package calls: Bind → bindQuery →
+//     taggedFields), a `E.Kind() != reflect.Struct` (or ==) where E is one
+//     Elem() below reflect.ValueOf/TypeOf of an interface parameter, with
+//     no pointer-kind test on E after that Elem. A Handler[*T, O] input
+//     binds into a **T, so the pointee is itself a pointer and every tag
+//     was skipped. Fix: follow the pointer levels first (derefType).
+//     Silent: a gate whose branch returns an errors.New / fmt.Errorf
+//     refusal (core/config Load, core-ui/di Inject refuse a non-struct
+//     out loud; the bug is the silent skip), a second Elem or a deref
+//     helper before the gate, a gate on a typed parameter's Elem (a slice
+//     element type), a function that reaches no tag walk;
+//   - text binder (4cd4d974): in a package with a tag-keyed walk, a
+//     function taking a string that switches on V.Kind() with a SetString
+//     arm and a SetInt/SetUint/SetFloat/SetBool arm, when neither it, a
+//     function it calls, nor a direct caller names
+//     encoding.TextUnmarshaler or UnmarshalText (a package variable
+//     initialized from reflect.TypeFor[encoding.TextUnmarshaler]() counts).
+//     time.Time, UUID and slog.Level fields failed, and a validated enum
+//     bound raw. Fix: call UnmarshalText first when the field's address
+//     implements it. Silent in a package with no tag-keyed walk (a kind
+//     switch over config strings is not a tag binder);
+//   - pointer cycle (cdf2cb1b): in a function whose field walk keys by
+//     tag or descends on Anonymous (the posture this analyzer pushes
+//     toward, and the one that can loop), a self-call passing V.Elem()
+//     under a pointer-kind case or if on V, with no visited set. Fix: a
+//     map[uintptr]bool on v.Pointer(). Silent: a parameter or receiver
+//     that is (or holds) a map, an integer parameter the body compares (a
+//     depth bound), and walks that neither key by tag nor read Anonymous
+//     (deep-equal style test helpers over plain config).
 package embedskip
 
 import (
@@ -78,6 +112,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return true
 		})
 	}
+	runArms(pass)
 	return nil, nil
 }
 

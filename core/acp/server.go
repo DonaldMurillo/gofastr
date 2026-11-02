@@ -514,7 +514,9 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		if err := decodeEnvelope(line, &frame); err != nil {
 			st.respond(frame.ID, wireResponse{
 				JSONRPC: "2.0",
-				Error:   &wireRespError{Code: ErrParseError, Message: err.Error()},
+				// encoding/json's own text names the agent's Go types;
+				// the phrase names the JSON path and type instead.
+				Error: &wireRespError{Code: ErrParseError, Message: handler.JSONErrorDetail(err).Error()},
 			})
 			continue
 		}
@@ -689,7 +691,7 @@ func decodeEnvelope(line []byte, frame *wireRequest) error {
 	}
 	var trailing json.RawMessage
 	if err := dec.Decode(&trailing); err != io.EOF {
-		return errors.New("trailing data after the JSON-RPC envelope")
+		return handler.JSONTrailingData()
 	}
 	return nil
 }
@@ -969,7 +971,7 @@ func (st *serverState) checkSessionSetup(cwd string, mcpServers []mcpServerName,
 func (st *serverState) decodeSessionParams(frame wireRequest, method string) (sessionSetupParams, *wireRespError) {
 	var p sessionSetupParams
 	if err := decodeParams(frame.Params, &p); err != nil {
-		return p, &wireRespError{Code: ErrInvalidParams, Message: method + ": " + err.Error()}
+		return p, &wireRespError{Code: ErrInvalidParams, Message: method + ": " + handler.JSONErrorDetail(err).Error()}
 	}
 	if e := st.checkSessionSetup(p.CWD, p.MCPServers, p.AdditionalDirectories); e != nil {
 		return p, e

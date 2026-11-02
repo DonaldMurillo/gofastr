@@ -103,6 +103,34 @@ func TestExecutableServerActionCallAcceptsUnicodeWhitespace(t *testing.T) {
 	}
 }
 
+// A template literal's ${...} is code, and the action compiler's rewrite
+// is lexical (uihost replaces every "G.serverAction(" in the body), so a
+// call inside an interpolation becomes a live server action. The scanner
+// skipped the whole template as a string, the CLI printed a green tick,
+// and the boot walk, which matches lexically, refused the same tree.
+// Plain template text stays text.
+func TestExecutableServerActionCallReadsTemplateInterpolations(t *testing.T) {
+	for _, src := range []string{
+		"G.toast(`saved ${G.serverAction(\"save\", params)}`)",
+		"`a ${ {x: 1}.x } ${ `inner ${G.serverAction(\"save\")}` }`",
+		"`${'}'} ${G.serverAction (\"save\")}`",
+	} {
+		if !executableServerActionCall(src) {
+			t.Errorf("scanner missed the server action inside a template interpolation: %s", src)
+		}
+	}
+	for _, src := range []string{
+		"`G.serverAction(\"save\")`",
+		"`${\"G.serverAction(\"}`",
+		"`$G.serverAction(`",
+		"`${ /* G.serverAction( */ 1 }`",
+	} {
+		if executableServerActionCall(src) {
+			t.Errorf("scanner flagged template text or a string inside an interpolation: %s", src)
+		}
+	}
+}
+
 func TestAnalyzerIgnoresNonClientJSAndDeadRegistrations(t *testing.T) {
 	if got := loadFindings(t, "falsepositives"); len(got) != 0 {
 		t.Fatalf("expected 0 findings on falsepositives, got %d: %+v", len(got), got)

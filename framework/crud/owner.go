@@ -369,7 +369,7 @@ func applyOwnerScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b 
 		return
 	}
 	if id, ok := owner.Get(r.Context()); ok {
-		b.Where(field+" = $1", id)
+		b.Where(query.QuoteKeyword(field)+" = $1", id)
 	}
 }
 

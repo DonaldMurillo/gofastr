@@ -50,7 +50,8 @@ a `true` default, and an all-pointer `Patch`), and `*APIError` whose body carrie
 response body the client buffers — the JSON decode and the `*APIError`
 snapshot — is capped at 1 MiB (`maxBodyBytes`): a bigger body is a
 misbehaving endpoint, and the decode fails on truncation instead of
-buffering it. The built-in `http.Client` refuses redirects (requests
+buffering it. `Watch` holds one SSE event's joined `data:` lines to the
+same cap and returns an error past it. The built-in `http.Client` refuses redirects (requests
 carry the bearer token when `Token` is set, and a 3xx would re-send it
 to whatever origin the response names); pass your own `*http.Client` to
 keep a redirect policy. Consumers
@@ -157,7 +158,10 @@ envelope) resolve normally with `committed: false`. Every response body
 the client buffers — the parse in `do()` and the `ApiError`
 snapshot on the error path — goes through a capped read (`_readBody`,
 1 MiB, the same `maxBodyBytes` the Go client enforces): a bigger body
-throws instead of buffering.
+throws instead of buffering. `watch` holds one SSE line, and one event's
+joined `data:` lines, to the same cap and rejects past it. Every one of
+these caps counts UTF-8 bytes, not string length, so text outside ASCII
+gets no more room than the Go client gives it.
 
 Bodies and `watch` events parse with the client's `parseJSON`, not bare
 `JSON.parse`: an integer past 2^53 (a snowflake id, a big counter)
@@ -236,8 +240,13 @@ repeat this so consumers stop guessing.
 gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>]
     [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>]
     [--base-url=<url>] [--sdk-version=<semver>] [--no-archive]
-    [--dry-run] [--json]
+    [--stamp-time] [--dry-run] [--json]
 ```
+
+`manifest.json` carries no generation time, so rerunning the generator
+over an unchanged schema rewrites every file byte for byte.
+`--stamp-time` adds `generatedAt`, and the reference page then shows the
+date beside the version.
 
 Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
 a generator entry named

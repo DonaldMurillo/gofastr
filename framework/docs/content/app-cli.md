@@ -53,7 +53,9 @@ myapp posts delete 42
 Help is built in at every level, always exiting 0: bare `myapp` (or
 `help`/`--help`) lists every command, a bare entity command
 (`myapp posts`) lists that entity's subcommands, and `--help` on any
-verb prints its full flag reference. An unknown subcommand prints the
+verb prints its full flag reference, a verb that takes a record key or a
+path value included (`myapp posts patch --help` needs no id). An unknown
+subcommand prints the
 group usage and exits 2. `version` prints the binary name.
 
 Per verb:
@@ -70,11 +72,21 @@ Per verb:
   `--fields`, and `--param k=v` (repeatable) as the escape hatch for
   anything else. `-q` appears only when the entity declares
   `SearchFields`; `--trashed` only with `SoftDelete`. `-o table`
-  renders an aligned table instead of JSON. Table cells, the cursor
-  line and API error lines drop control bytes (C0 but tab, DEL and
-  C1), so a stored `\x1b[2J` cannot clear the reader's screen. JSON
+  renders an aligned table instead of JSON (`-o json`, the default); any
+  other `-o` value exits 2 before the request. `-o json` prints the
+  response envelope as the server sent it, indented, so a keyset page
+  has `cursor` and `hasMore` and no `total`. Table headers and cells,
+  the cursor line and API error lines drop control bytes (C0 but tab,
+  DEL and C1) and the bidi overrides and zero-width characters that
+  reorder or hide text, so a stored `\x1b[2J` cannot clear the reader's
+  screen and a `U+202E` cannot flip a column. A cell holding an object
+  or array prints it as compact JSON, and a tab or line break in a value
+  prints as a space, so every row stays on one line. JSON
   output keeps numbers exact: a value past 2^53 in a `--json` body, a
-  json-field flag or a response prints with every digit.
+  json-field flag or a response prints with every digit. The client
+  reads at most 1 MiB of a response: a bigger page fails with
+  `response body exceeds 1048576 bytes` (exit 1), so ask for fewer rows
+  with `--limit` or fewer columns with `--fields`.
 - **create / update / patch**: per-field flags OR `--json`
   (inline, `@file`, or `-` for stdin); the two are mutually exclusive.
   Field flags are presence-faithful: only explicitly-set flags enter
@@ -115,8 +127,13 @@ Connection resolution, in order: the `--url` flag →
 `login` (`<user-config-dir>/<binary>/config.json`, written 0600 on
 create and on every overwrite). A config file that exists but does
 not parse is refused with an error naming the file (delete it or
-`login` again) rather than silently treated as "not logged in",
-which would send every request unauthenticated. The stored token goes
+`login --url <url>` again, which replaces it) rather than silently
+treated as "not logged in", which would send every request
+unauthenticated. `logout` over such a file writes an empty config, so a
+token it still holds is gone. The URL must be an
+absolute `http://` or `https://` URL with a host, from whichever source
+it comes: `login --url 127.0.0.1:8080` and `<BINARY>_URL=app.example.com`
+exit 2 rather than store or call it. The stored token goes
 only to the origin (scheme, host and port) `login` stored it with:
 when `--url` or `<BINARY>_URL` points somewhere else, the request goes
 without it and stderr says why, so a production token never reaches a
@@ -189,8 +206,10 @@ gofastr generate cli --from-openapi openapi.json --binary=barc
 gofastr generate cli --from-openapi https://barc.example.com/openapi.json
 ```
 
-One subcommand per operation, named from `operationId` — a missing,
-duplicate, or non-identifier id fails generation, no auto-naming.
+One subcommand per operation, named from `operationId` in kebab case,
+an acronym one word (`getUserByID` is `get-user-by-id`, and a parameter
+or property `HTTPCode` is `--http-code`) — a missing, duplicate, or
+non-identifier id fails generation, no auto-naming.
 Operation summaries carrying terminal-control bytes (ESC, CR, BEL, DEL —
 the bytes that rewrite terminal output — or their 8-bit C1 spellings,
 U+0080–U+009F, which drive the same escapes without an ESC prefix) are
@@ -201,7 +220,8 @@ Path, query, and header parameters become typed flags (arrays of
 strings repeat the flag; typed arrays are rejected rather than left
 unvalidated). A query array sends `tags=a&tags=b` by default and with
 `explode: true`, and `tags=a,b` with `style: form, explode: false`,
-each item escaped. Generation refuses any other array style
+each item escaped. An array header parameter goes out as one line,
+`X-Tags: a,b` (`simple`, a header's one style). Generation refuses any other array style
 (`spaceDelimited`, `pipeDelimited`, `deepObject`, a path or header
 parameter that is not `simple`) rather than send what the server
 does not expect. A parameter's `description` leads its flag's help text,
@@ -210,16 +230,24 @@ An operation's parameter overrides a path-level one with the same `name`
 and `in`, as OpenAPI defines it, so the flag takes the operation's type
 and description;
 `application/json` object bodies get a flag per top-level scalar
-property plus the `--json` raw escape. An OpenAPI 3.1 type list
+property plus the `--json` raw escape. A property whose flag the CLI
+reserves (`url`, `token`, `file`, `json`), that a parameter or an
+earlier property by name already holds, or whose name is no flag at all
+(`@type`) gets no flag and goes by `--json`, since a body field's name
+is the API's and cannot be renamed. An OpenAPI 3.1 type list
 `[T, "null"]` reads as `T` (an unset flag sends nothing, and `--json`
 can send the `null`); a list naming two value types gets no flag.
 A body property named exactly
 like a path parameter gets no flag of its own: it repeats the record the
 path names, as a composite key's columns do in a GoFastr app's PUT body,
 and `--json` can still send it. Binary bodies
-(`application/octet-stream` / `format: binary`) take `--file` with `-`
+(`application/octet-stream` / `format: binary`, inline or by `$ref`) take `--file` with `-`
 for stdin; a body offering several binary types is sent as
-`application/octet-stream`, else the first type by name. A body the spec
+`application/octet-stream`, else the first type by name. The chosen
+type must be a media type with no control byte (it is the request's
+`Content-Type` and appears in `--file`'s help), or generation fails.
+A refused spec's error encodes control bytes on the terminal, and
+under `--dry-run --json` it is one JSON document. A body the spec
 does not mark `required` may be left out, and the command then sends no
 body: `--file` is optional, and the schema's `required` properties bind
 only a body built from field flags (`--title x` without a required
@@ -239,7 +267,8 @@ ends in the prefix is used as it is, so a `login` stored with
 `https://pets.example/api/v3` still requests `/api/v3/pet/7`.
 A templated server URL (`{host}`) seeds neither. An `http: bearer` or
 header `apiKey` security scheme wires into the same env/`login`
-machinery. The token goes under the scheme the document's top-level
+machinery; an apiKey `name` that is not an HTTP header name (`X-Key(1)`)
+fails generation, since no request could carry it. The token goes under the scheme the document's top-level
 `security` requires (its first alternative naming one supported scheme),
 or the first supported scheme by name when `security` names none; an
 operation whose own `security` names another scheme sends the token
@@ -254,10 +283,19 @@ no entities package, no framework dependency. `custom.go` and the
 `*.gen.go` rebuild behave exactly as below.
 
 Supported subset, by design: local `#/components/...` `$ref`s (`allOf`
-of objects shallow-merges; `oneOf`/`anyOf` bodies fall back to
-`--json`), JSON or YAML documents. Cookie parameters, external refs,
-`$ref` cycles, path/template mismatches, and multipart bodies fail
-generation with a precise error instead of guessing. A spec whose
+of objects shallow-merges, and an `allOf` whose members name one scalar
+type reads as that scalar, the way FastAPI wraps an enum parameter that
+has a default; `oneOf`/`anyOf` bodies fall back to
+`--json`), JSON or YAML documents of OpenAPI 3.x (a Swagger 2.0 document fails:
+convert it first). YAML reads through `core/yaml`, the app spec's
+subset (see [app-spec](app-spec.md), "YAML subset"): block scalars
+(`description: |`), flow mappings (`schema: {}`) and anchors fail with a
+line and column, so feed such a document as JSON, which a GoFastr app
+serves at `/openapi.json`. Cookie parameters, parameters whose `in` is none of
+path, query, header or cookie, external refs,
+`$ref` cycles, path/template mismatches, and multipart or form-urlencoded bodies
+(even under a `format: binary` schema, which would send a file with no
+multipart boundary) fail generation with a precise error instead of guessing. A spec whose
 *only* security scheme is unsupported (OAuth2 flows, apiKey outside a
 header) fails too; a spec offering bearer alongside OAuth2 generates
 against bearer.
@@ -347,7 +385,8 @@ more entries need `--out` or `--binary` to pick one. `--from-openapi`
 takes the entry's binary and output but none of its entity selection.
 Only the settings file in the directory it runs in counts. A run that no
 entry drove prints the entry that reproduces it, ready to paste under
-`codegen.generators`.
+`codegen.generators`. A value YAML cannot carry (a path or name that is
+not UTF-8) prints a note instead of an entry.
 
 ### Upgrading a CLI generated before v0.93.0
 
@@ -386,7 +425,10 @@ field or exclude the entity.
 - **Expecting `--published false` to parse.** Bool field flags follow
   stdlib `flag` semantics: bare `--published` sets true, and the
   explicit-value form needs `=`, as in `--published=false`. The space form
-  treats `false` as a positional and stops flag parsing.
+  reads `false` as a positional argument, where flag parsing stops, so
+  the verb refuses it with exit 2 before sending anything. Every verb
+  but `batch-delete`, whose ids may follow its flags, refuses an argument
+  left after its flags the same way.
 
 ## Sibling: SDKs
 

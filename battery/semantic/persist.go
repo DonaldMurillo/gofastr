@@ -126,6 +126,9 @@ func (s *FlatStore) LoadSnapshot(path string) error {
 	if header.ChunkCount < 0 || header.Dim < 0 {
 		return errors.New("semantic: snapshot count and dimension must be nonnegative")
 	}
+	if header.ChunkCount > 0 && header.Dim == 0 {
+		return errEmptyVector
+	}
 	s.mu.RLock()
 	storeDim, storeModel := s.dim, s.model
 	s.mu.RUnlock()

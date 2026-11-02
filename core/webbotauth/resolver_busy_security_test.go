@@ -59,7 +59,7 @@ func TestRequireMode_AnswersUnavailableWhenResolverIsBusy(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/orders", nil)
 	r.Header.Set("Signature-Input",
-		`sig1=("@authority" "signature-agent";key="sig1");created=1;expires=99999999999;keyid="k";tag="web-bot-auth"`)
+		`sig1=("@authority" "signature-agent";key="sig1");`+freshWindow()+`;keyid="k";tag="web-bot-auth"`)
 	r.Header.Set("Signature", `sig1=:AAAA:`)
 	r.Header.Set("Signature-Agent", `sig1="https://agent.example"`)
 

@@ -177,7 +177,13 @@ the drain is usually at once. Windows has no `SIGTERM`, so there the app
 is killed at once, and `gofastr dev` and `gofastr desktop` still wait
 up to the five seconds for it to exit before going on, so shutdown can
 remove the temp directory holding the binary (a running `.exe` cannot
-be deleted). A `SIGINT` or `SIGTERM` to `gofastr dev`
+be deleted). `SIGINT`, `SIGTERM` and `SIGHUP` (a closed terminal) all
+shut `gofastr dev` down the same way: the app is stopped and the temp
+binary directory removed. On Linux the app also gets `SIGTERM` from the
+kernel when `gofastr dev` dies without cleanup (`SIGKILL`, the OOM
+killer), so it never keeps the dev address after its watcher is gone;
+elsewhere such an app keeps running until stopped by hand. A shutdown
+signal to `gofastr dev`
 during a build kills the build and exits; it does not wait for the build
 and the app it would start. The build runs in a process group of its
 own, so the kill reaches the compiler, the linker and cgo's C toolchain
@@ -223,7 +229,10 @@ itself in those windows, so a request gets an answer instead of
   HTML: what is happening, and for a failed build the compiler, lint
   or sandbox output. A browser gets the same as a page. On an address
   other machines can reach, the output is left out (it carries absolute
-  paths and quoted source) and the page points at the terminal.
+  paths and quoted source) and the page points at the terminal. So is a
+  request whose `Host` is not a loopback name for the address
+  (`127.0.0.1`, `localhost`, `[::1]` with the port): that is a page on
+  another site whose name a rebinding DNS server points at this machine.
 - `/__livereload` answers too. An open tab reloads into the page when a
   build fails or the app exits, but not for an ordinary rebuild, and
   reloads back into the app when its new build comes up. On an address

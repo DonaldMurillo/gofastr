@@ -149,16 +149,16 @@ notifies, send one.
 When a resource can be edited by two actors at once, send a **version
 token** (an `ETag`, a `version=N` counter, an `updated_at` cursor) along
 with the mutation. The handler compares the request's token to the row's
-current token; on mismatch it returns **409 Conflict** with a
-problem-detail body. The runtime then reconciles instead of rolling back.
+current token; on mismatch it returns **409 Conflict** in the error
+envelope every route answers with. The runtime then reconciles instead of rolling back.
 
 `sortablelist` is the canonical implementation. Each commit POST carries
 `version=<token>` (from `Config.Version`); a 409 response triggers
 `ConflictRPC` (from `Config.ConflictRPC`), which returns fresh
 server-rendered `<li>` HTML that replaces the destination column. The
 409 body is read under hard safety bounds: `Content-Type: application/json`,
-at most ~4 KB, must parse as `{"error":{"code","message"}}`, and the
-`message`, when valid, is surfaced through the polite `aria-live` region.
+at most ~4 KB, must parse as the error envelope `{"error": "…"}`, and the
+`error` message, when a string, is surfaced through the polite `aria-live` region.
 See [Recipe 5](#recipe-5-sortablekanban-move-with-version-aware-409) and
 [Interactive patterns → Sortable List](interactive-patterns.md#sortable-list-single--kanban).
 
@@ -523,8 +523,9 @@ ui.SortableList(ui.SortableListConfig{
 - `POST /api/board/move`: body has `order`, `moved`, `container`,
   `version`. If `version` does not match the current board version,
   respond **409 Conflict** with
-  `Content-Type: application/json` and a body
-  `{"error":{"code":"…","message":"…"}}` (the `message` is surfaced
+  `Content-Type: application/json` and the error envelope
+  `{"error":"…","code":409,"reason":"…"}` (`handler.WriteError` writes
+  it from a `handler.Fail` or `handler.Errorf`; the `error` text is surfaced
   through the polite `aria-live` region, capped at ~300 chars). On
   match, apply the move, bump the version, respond 2xx.
 - `GET /api/board/conflict?container=<col>`: return fresh `<li>` HTML
@@ -532,7 +533,7 @@ ui.SortableList(ui.SortableListConfig{
   reconciles the column to zero items.
 
 The runtime reads the 409 body under hard safety bounds
-(`Content-Type: application/json`, ≤ ~4 KB, must parse, `message` ≤ ~300
+(`Content-Type: application/json`, ≤ ~4 KB, must parse, `error` ≤ ~300
 chars). Anything malformed falls back to the generic copy. Without
 `Version`, a 409 is treated like any other non-2xx (plain rollback);
 back-compat.

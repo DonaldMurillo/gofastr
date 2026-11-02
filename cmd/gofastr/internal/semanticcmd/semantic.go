@@ -204,46 +204,78 @@ func embedIndex(paths []string, watch bool) {
 		s.Docs, s.Chunks, time.Since(t0).Round(time.Millisecond), localSnapshotDir())
 }
 
-func embedQuery(args []string) {
-	if len(args) == 0 {
-		cli.Fail("usage: gofastr semantic query \"<text>\" [-k N] [--hybrid] [--mmr 0.4]")
-		cli.OsExit(1)
-	}
-	text := args[0]
-	q := semantic.Query{Text: text, K: 5}
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "-k", "--k":
-			if i+1 >= len(args) {
-				cli.Fail("missing value for %s", args[i])
-				cli.OsExit(1)
+const queryUsage = "usage: gofastr semantic query \"<text>\" [-k N] [--hybrid] [--mmr 0.4]"
+
+// parseQueryArgs reads `semantic query` arguments: one query text and
+// the -k/--k, --hybrid and --mmr flags, before or after it, as
+// `-k 3` or `-k=3`. "--" ends the flags, for a query that starts with a
+// dash. It refuses a k below one, an empty query and a second word, which
+// an unquoted multi-word query is.
+func parseQueryArgs(args []string) (semantic.Query, error) {
+	q := semantic.Query{K: 5}
+	var text []string
+	flags := true
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if !flags || arg == "" || !strings.HasPrefix(arg, "-") || arg == "-" {
+			text = append(text, arg)
+			continue
+		}
+		if arg == "--" {
+			flags = false
+			continue
+		}
+		name, value, hasValue := strings.Cut(arg, "=")
+		switch name {
+		case "-k", "--k", "--mmr":
+			if !hasValue {
+				if i+1 >= len(args) {
+					return q, fmt.Errorf("missing value for %s", name)
+				}
+				i++
+				value = args[i]
 			}
-			n, err := strconv.Atoi(args[i+1])
-			if err != nil {
-				cli.Fail("invalid k: %v", err)
-				cli.OsExit(1)
+			if name == "--mmr" {
+				//gofastr:allow(nonfinite) CLI flag value is operator input; a non-finite --mmr fails downstream, not a request-borne bound check.
+				f, err := strconv.ParseFloat(value, 64)
+				if err != nil {
+					return q, fmt.Errorf("invalid mmr: %v", err)
+				}
+				q.MMRLambda = f
+				continue
+			}
+			n, err := strconv.Atoi(value)
+			if err != nil || n < 1 {
+				return q, fmt.Errorf("-k takes a positive number of hits, got %q", value)
 			}
 			q.K = n
-			i++
 		case "--hybrid":
+			if hasValue {
+				return q, errors.New("--hybrid takes no value")
+			}
 			q.Hybrid = true
-		case "--mmr":
-			if i+1 >= len(args) {
-				cli.Fail("missing value for --mmr")
-				cli.OsExit(1)
-			}
-			//gofastr:allow(nonfinite) CLI flag value is operator input; a non-finite --mmr fails downstream, not a request-borne bound check.
-			f, err := strconv.ParseFloat(args[i+1], 64)
-			if err != nil {
-				cli.Fail("invalid mmr: %v", err)
-				cli.OsExit(1)
-			}
-			q.MMRLambda = f
-			i++
 		default:
-			cli.Fail("unknown flag: %s", args[i])
-			cli.OsExit(1)
+			return q, fmt.Errorf("unknown flag: %s", arg)
 		}
+	}
+	switch {
+	case len(text) == 0:
+		return q, errors.New(queryUsage)
+	case len(text) > 1:
+		return q, fmt.Errorf("semantic query takes one query, got %q and %q: quote a query of several words", text[0], text[1])
+	case strings.TrimSpace(text[0]) == "":
+		return q, errors.New("semantic query needs a non-empty query")
+	}
+	q.Text = text[0]
+	return q, nil
+}
+
+func embedQuery(args []string) {
+	q, err := parseQueryArgs(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
 
 	if url := os.Getenv("GOFASTR_URL"); url != "" {
@@ -283,7 +315,7 @@ func embedStats() {
 			cli.Fail("remote stats: %v", err)
 			cli.OsExit(1)
 		}
-		fmt.Println(string(body))
+		cli.Println(string(body))
 		return
 	}
 	idx, err := openLocalIndex(true)

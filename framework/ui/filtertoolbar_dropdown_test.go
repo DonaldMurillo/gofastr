@@ -67,6 +67,28 @@ func TestFilterToolbarClientNavigationIsOptIn(t *testing.T) {
 	}
 }
 
+// Reset follows the submit (D-37). With a native GET (the default, for a
+// kept layout that also renders query-dependent content) Reset declines
+// the client router, so the layout reloads too; with ClientNavigation
+// the router takes it like the submit.
+func TestFilterToolbarResetFollowsClientNavigation(t *testing.T) {
+	reset := func(out string) string {
+		i := strings.Index(out, "fui-filter-toolbar__reset")
+		if i < 0 {
+			t.Fatalf("no Reset link:\n%s", out)
+		}
+		start := strings.LastIndex(out[:i], "<a ")
+		end := strings.Index(out[i:], ">")
+		return out[start : i+end+1]
+	}
+	if a := reset(dropdownToolbar(func(*FilterToolbarConfig) {})); !strings.Contains(a, `data-cui-nav="off"`) {
+		t.Errorf("a native-GET toolbar's Reset is router-taken: %s", a)
+	}
+	if a := reset(dropdownToolbar(func(c *FilterToolbarConfig) { c.ClientNavigation = true })); strings.Contains(a, "data-cui-nav") {
+		t.Errorf("a client-navigation toolbar's Reset declines the router: %s", a)
+	}
+}
+
 // Nothing to put in the panel: no Filters button, and no Apply either.
 func TestFilterToolbarDropdownSearchOnly(t *testing.T) {
 	out := dropdownToolbar(func(c *FilterToolbarConfig) {

@@ -113,3 +113,43 @@ func screenLoad(ctx context.Context, req *http.Request) {
 	_ = m.Param("id")
 	_ = app.RequestFromContext(ctx)
 }
+
+// queryInBuild: the URL query read straight in a kept build is the same
+// stale chrome as the request it comes from.
+var queryInBuild = app.NewLayout("q", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) app.HTML {
+	_ = app.QueryFromContext(ctx).Get("filter") // want `layout build reads route state outside a RouteArea`
+	return l.Primary()
+})
+
+// A resolver that reads the query, read by a layout build outside a
+// RouteArea: the tracker's kept project layer drew its issue list from
+// such a value, and Reset to the bare project left the list filtered
+// (D-37). The same key read inside a RouteArea closure, and a key whose
+// resolver reads only the match, are silent.
+type issueList struct{ filter string }
+
+var issuesKey = app.NewKey[issueList]("issues")
+
+var projectKey = app.NewKey[string]("project")
+
+func loadIssues(ctx context.Context) (issueList, error) {
+	return issueList{filter: app.QueryFromContext(ctx).Get("filter")}, nil
+}
+
+var resolvers = []app.Resolver{
+	issuesKey.From(loadIssues),
+	projectKey.From(func(ctx context.Context) (string, error) {
+		m, _ := app.MatchFromContext(ctx)
+		return m.Param("project"), nil
+	}),
+}
+
+var queryResolverInBuild = app.NewLayout("qr", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) app.HTML {
+	_, _ = issuesKey.Get(ctx) // want `layout build reads a resolver that reads the URL query outside a RouteArea`
+	_, _ = projectKey.Get(ctx)
+	_ = l.RouteArea("issues", func(ctx context.Context, m app.Match) app.HTML {
+		_, _ = issuesKey.Get(ctx)
+		return ""
+	})
+	return l.Primary()
+})

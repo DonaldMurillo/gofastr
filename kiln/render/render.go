@@ -316,8 +316,10 @@ func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 		if len(row) == 0 {
 			continue
 		}
+		// Sorted, so a row that names one column twice is refused naming
+		// the same spelling on every apply.
 		folded := make(map[string]bool, len(row))
-		for k := range row {
+		for _, k := range slices.Sorted(maps.Keys(row)) {
 			if _, err := query.SafeIdent(k); err != nil {
 				return fmt.Errorf("seed column: %w", err)
 			}

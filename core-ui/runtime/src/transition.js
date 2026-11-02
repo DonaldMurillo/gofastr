@@ -182,6 +182,9 @@
       try { vt = sVT.call(document, { update: run, types: t }); }
       catch (_) { run(); return; }
       _activeVT = vt;
+      // A skip before the animation is ready (the next commit, or a
+      // click during it) rejects ready: the skip is ours, not an error.
+      vt.ready.catch(() => {});
       vt.finished.catch(() => {}).finally(() => { if (_activeVT === vt) _activeVT = null; });
     },
   };
@@ -206,7 +209,7 @@
       // re-delivered navigation reads as the pointer click it stands
       // in for — el.click() would synthesize detail 0, the keyboard
       // shape, and paint the focus ring — with no side channel into
-      // core (frag/nav.js keys _navPointer off e.detail alone).
+      // core (frag/nav.js keys _navRing off e.detail alone).
       try {
         el.dispatchEvent(new MouseEvent('click', {
           bubbles: true, cancelable: true,

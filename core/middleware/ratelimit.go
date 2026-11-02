@@ -18,7 +18,8 @@ import (
 //
 // KeyFunc selects the per-bucket identity (per IP, per session, per API
 // key, etc.). When KeyFunc is nil the default extractor uses
-// r.RemoteAddr; X-Forwarded-For is *ignored* unless TrustProxyHeaders
+// r.RemoteAddr, an IPv6 peer collapsed to its /64; X-Forwarded-For is
+// *ignored* unless TrustProxyHeaders
 // is set, because a caller in front of the origin can spoof XFF freely
 // and would otherwise get a fresh bucket per request.
 //
@@ -382,8 +383,13 @@ func (s *bucketStore) evictLocked(now time.Time) {
 // Set TrustProxyHeaders=true on RateLimitConfig (paired with a
 // TrustedProxies whitelist) only when the origin sits behind a
 // reverse proxy you control.
+//
+// An IPv6 peer is keyed on its /64 (clientip.RateKey): one subscriber
+// is routinely handed a whole /64, so keying the full address let a
+// single client rotate past the limit with a fresh source address per
+// request. IPv4 stays the address itself.
 func defaultRateLimitKey(r *http.Request) string {
-	return stripPort(r.RemoteAddr)
+	return clientip.RateKey(stripPort(r.RemoteAddr))
 }
 
 // newProxyAwareRateLimitKey returns a KeyFunc that reads the client from
@@ -401,25 +407,34 @@ func defaultRateLimitKey(r *http.Request) string {
 // When the header is not trusted (no proxy match, no value, or value
 // fails validation), the key falls back to r.RemoteAddr so rotating
 // header values from the same TCP source can't bypass the limit.
+//
+// Whichever address wins, an IPv6 one is keyed on its /64, as in
+// defaultRateLimitKey.
 func newProxyAwareRateLimitKey(trusted clientip.Proxies) func(*http.Request) string {
 	return func(r *http.Request) string {
-		peer := stripPort(r.RemoteAddr)
-		if trusted.Empty() || !trusted.ContainsAddr(peer) {
-			return peer
-		}
-		if r.Header.Get("X-Forwarded-For") != "" {
-			if ip, ok := clientip.Forwarded(r.Header, trusted); ok && isTrustablePublicIP(ip) {
-				return ip.String()
-			}
-			return peer
-		}
-		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			if ip := clientip.ParseHop(xri); isTrustablePublicIP(ip) {
-				return ip.String()
-			}
+		return clientip.RateKey(proxyAwareClient(r, trusted))
+	}
+}
+
+// proxyAwareClient is the client address newProxyAwareRateLimitKey keys
+// on, before the /64 collapse.
+func proxyAwareClient(r *http.Request, trusted clientip.Proxies) string {
+	peer := stripPort(r.RemoteAddr)
+	if trusted.Empty() || !trusted.ContainsAddr(peer) {
+		return peer
+	}
+	if r.Header.Get("X-Forwarded-For") != "" {
+		if ip, ok := clientip.Forwarded(r.Header, trusted); ok && isTrustablePublicIP(ip) {
+			return ip.String()
 		}
 		return peer
 	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		if ip := clientip.ParseHop(xri); isTrustablePublicIP(ip) {
+			return ip.String()
+		}
+	}
+	return peer
 }
 
 // isTrustablePublicIP returns true iff ip is non-nil and neither

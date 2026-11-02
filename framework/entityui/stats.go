@@ -132,7 +132,7 @@ func (u *UI) CountInt(ctx context.Context, entityName, where string) (int, bool)
 	if !ok {
 		return 0, false
 	}
-	n, err := m.ch.CountAll(crud.WithReadHooks(ctx), opts)
+	n, err := m.countRows(ctx, opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: count", "entity", entityName, "error", err)
 		return 0, false
@@ -155,7 +155,7 @@ func (u *UI) CountUpTo(ctx context.Context, entityName, where string, limit int)
 	}
 	opts.Fields = m.keys
 	opts.Limit = limit + 1
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
+	rows, err := m.listRows(ctx, opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: bounded count", "entity", entityName, "error", err)
 		return 0, false, false
@@ -186,7 +186,7 @@ func (u *UI) LastUpdated(ctx context.Context, entityName string) (time.Time, boo
 	opts.Fields = []string{"updated_at"}
 	opts.Sorts = []filter.ParsedSort{{Field: "updated_at", Desc: true}}
 	opts.Limit = 1
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
+	rows, err := m.listRows(ctx, opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: last updated", "entity", entityName, "error", err)
 		return time.Time{}, false
@@ -200,7 +200,7 @@ func (u *UI) LastUpdated(ctx context.Context, entityName string) (time.Time, boo
 // statSum totals field exactly: the database's SUM, or, when AfterList
 // hooks would mask what it totals, the masked rows up to statRowCap.
 func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListOptions) (*big.Rat, bool) {
-	text, err := m.ch.SumAll(crud.WithReadHooks(ctx), field, opts)
+	text, err := m.sumRows(ctx, field, opts)
 	if err == nil {
 		total, ok := new(big.Rat).SetString(text)
 		if !ok {
@@ -231,7 +231,7 @@ func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListO
 func (u *UI) statRows(ctx context.Context, m *meta, field string, opts crud.ListOptions) ([]map[string]any, bool) {
 	opts.Fields = []string{field}
 	opts.Limit = statRowCap + 1
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
+	rows, err := m.listRows(ctx, opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: stat", "entity", m.name, "error", err)
 		return nil, false
@@ -279,7 +279,7 @@ func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta
 		return nil, nil
 	}
 	var out []groupCount
-	groups, err := m.ch.GroupCountAll(crud.WithReadHooks(ctx), groupBy, opts, statGroupCap+1)
+	groups, err := m.groupRows(ctx, groupBy, opts, statGroupCap+1)
 	switch {
 	case err == nil:
 		for _, g := range groups {

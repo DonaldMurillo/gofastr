@@ -283,12 +283,28 @@ published its final state (`TASK_STATE_CANCELED` for one cut short) or
 unsupported-operation error; reads still answer. A host driving
 `a2a.Server` itself calls `Shutdown` the same way.
 
-Terminal rows do not accumulate without end: each owner retains at most
-64 settled (completed / failed / canceled / rejected) tasks — the oldest
-terminal rows are deleted after each settle, in-flight tasks never.
-Paused tasks (input or auth required) are capped at 64 per owner too:
-past the bound the oldest are canceled after each pause, and terminal
-retention then deletes them. Each task carries at most 8
+Host code that runs on the server's own goroutines cannot take the
+process down. A panicking skill handler fails its task. A `Store` or
+`RetentionTrimmer` that panics while a run settles ends that run with an
+`a2a: run finalize panicked` log line; the task keeps its last stored
+state. A `PushOptions.Client` that panics fails that one delivery with
+an `a2a: push delivery panicked` line. Each panic value is logged
+scrubbed of control bytes.
+
+Terminal rows do not accumulate without end. Retention counts per
+**tier**: one owner's tasks made in one tenant under one scope set
+(`a2a.RetentionTier`, the task's `Tenant` and `Scope`; a session is the
+unscoped tier, each narrowed API token or embed grant its own). Each
+tier retains at most 64 settled (completed / failed / canceled /
+rejected) tasks — the tier's oldest terminal rows are deleted after
+each settle in it, in-flight tasks never. Paused tasks (input or auth
+required) are capped at 64 per tier too: past the bound the tier's
+oldest are canceled after each pause in it, and terminal retention then
+deletes them. One tier's activity never counts, deletes or cancels
+another tier's tasks: a narrow token cannot push out the results a
+session ran, and work in one tenant cannot push out another's. An owner
+therefore retains up to 64 + 64 tasks per tenant and scope set it acts
+in. Each task carries at most 8
 push-notification configs, the oldest deleted past the bound. A trimmed task's push configs are deleted
 with it, and each trim that deletes tasks also deletes the owner's
 configs whose task is already gone (one registered while an earlier trim
@@ -298,8 +314,10 @@ authenticated writes must not grow either table unbounded. The bounds
 are `a2a.Config` knobs (`TerminalTaskRetention`, `PausedTaskRetention`,
 `MaxPushConfigsPerTask`; 0 = the default, negative = the host owns
 retention). The terminal and push-config bounds go through the optional
-`a2a.RetentionTrimmer` Store interface both built-in stores implement;
-the paused bound cancels through `UpdateTask`, so it holds on any Store.
+`a2a.RetentionTrimmer` Store interface both built-in stores implement
+(`TrimTerminalTasks(ctx, owner, tier, keep)` trims only rows whose
+tenant and scope equal the tier's); the paused bound cancels through
+`UpdateTask`, so it holds on any Store.
 
 Skill-handler runs are bounded per owner too:
 `Config.MaxConcurrentRunsPerOwner` caps how many runs one owner may

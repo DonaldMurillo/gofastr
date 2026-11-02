@@ -138,8 +138,14 @@ func Disabled() bool {
 	case "off", "0", "false", "no":
 		return true
 	}
-	underTest := testing.Testing() || os.Getenv(envUnderTest) != ""
-	return underTest && os.Getenv(EnvDir) == ""
+	return UnderTest() && os.Getenv(EnvDir) == ""
+}
+
+// UnderTest reports whether this process is a Go test binary or a
+// process one started (it inherits the marker a test binary sets at
+// init): the dev-loop and quickstart e2e suites run real apps that way.
+func UnderTest() bool {
+	return testing.Testing() || os.Getenv(envUnderTest) != ""
 }
 
 // Forced reports whether the environment asks this process to

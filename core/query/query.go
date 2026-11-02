@@ -139,8 +139,9 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 	// Sanitize the field eagerly so a payload like
 	// `id) DESC; DROP TABLE audit_logs; --` cannot appear in either
 	// the WHERE condition or the ORDER BY column. The value flows
-	// through a placeholder and so does not need sanitisation.
-	field = sanitizeFragment(field)
+	// through a placeholder and so does not need sanitisation. A
+	// keyword field (order) is quoted (identSlot) in both.
+	field = identSlot(sanitizeFragment(field))
 	op := ">"
 	orderDir := "ASC"
 	if dir == "backward" {
@@ -168,7 +169,7 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 	// both): a keyset cut on one column over rows sorted by another skips
 	// and repeats rows.
 	for _, o := range qb.orderBy {
-		if o.column == field {
+		if identSlot(sanitizeFragment(o.column)) == field {
 			return qb
 		}
 	}
@@ -193,7 +194,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	if len(qb.columns) > 0 {
 		sanitized := make([]string, len(qb.columns))
 		for i, c := range qb.columns {
-			sanitized[i] = sanitizeColumn(c)
+			sanitized[i] = identSlot(sanitizeColumn(c))
 		}
 		cols = strings.Join(sanitized, ", ")
 	}
@@ -202,14 +203,14 @@ func (qb *QueryBuilder) Build() (string, []any) {
 
 	// FROM table
 	sb.WriteString(" FROM ")
-	sb.WriteString(sanitizeFragment(qb.table))
+	sb.WriteString(identSlot(sanitizeFragment(qb.table)))
 
 	// JOINs
 	for _, j := range qb.joins {
 		sb.WriteString(" ")
 		sb.WriteString(j.joinType)
 		sb.WriteString(" ")
-		sb.WriteString(sanitizeFragment(j.table))
+		sb.WriteString(identSlot(sanitizeFragment(j.table)))
 		sb.WriteString(" ON ")
 		sb.WriteString(sanitizeFragment(j.on))
 	}
@@ -229,7 +230,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString(sanitizeFragment(o.column))
+			sb.WriteString(identSlot(sanitizeFragment(o.column)))
 			dir := sanitizeDirection(o.dir)
 			if dir != "" {
 				sb.WriteString(" ")

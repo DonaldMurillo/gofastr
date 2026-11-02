@@ -35,7 +35,11 @@ type Storage interface {
 ```
 
 `Save` writes the contents of `r` under `key`; `Get` returns a reader;
-`Delete` removes the object; `Exists` reports presence. Keys are opaque
+`Delete` removes the object; `Exists` reports presence. On the local
+backends a key that names a directory (a prefix such as `uploads/posts`)
+is not an object: `Get` returns `ErrNotFound` (404 through
+`upload.ServeHandler`), `Exists` reports false, and `Delete` leaves the
+directory in place and treats it as a missing object. Keys are opaque
 strings the upload layer assigns. A backend rejects a key that escapes
 its namespace (path traversal, empty key) with an error; it does not
 rewrite the key.
@@ -92,6 +96,13 @@ they alias. S3 keys are byte-exact and unchanged. Saves from another
 process sharing the directory are not serialized. Re-saving the exact
 stored key stays an ordinary overwrite. Objects planted straight onto disk by other tools
 with folded spellings follow the filesystem's folding, not the store's.
+Finding the stored spelling means listing the directory, so the check
+lists only where folding is possible: a name with a non-ASCII byte or a
+`K`, `;` or `` ` `` (the ASCII targets of Unicode normalization), or one
+whose case-swapped spelling opens the same file. On a case-sensitive
+filesystem the cost of serving one object no longer grows with the number
+of objects beside it; on a folding one each operation still lists every
+directory on the key's path.
 
 `LocalStorage` implements `RangeGetter`, so HTTP range requests
 (`Range:` bytes) are answered with a `206` from the seekable file
@@ -123,9 +134,21 @@ custom endpoint with `WithS3Endpoint`. Without a client,
 `Save` / `Get` / `Delete` / `Exists` cannot run; the constructor does
 not dial.
 
+`S3Storage` holds keys to the same form as the local backend, though S3
+itself would store any byte string: an empty key, any `..`, a control
+byte (NUL, CR, LF, DEL), a leading `/`, and a key that is not its own
+clean form (`a//b`, `./a`, `a/./b`, a trailing `/`, `.`) are refused with
+`upload.ErrInvalidKey` on every operation. In a bucket `a//b` is an
+object distinct from `a/b`, so a row naming the alias served or erased
+an object its key never named. `DefaultKeyValidator`, the standalone
+check a caller can apply to keys of its own, refuses the same keys plus
+a backslash.
+
 For direct browser uploads and downloads, pass a `Presigner` via
 `WithPresigner`. `PresignedGetURL` and `PresignedPutURL` then mint
-time-limited URLs that route traffic around the app entirely.
+time-limited URLs that route traffic around the app entirely. The
+expiry must be positive: zero or negative is refused, since a presigner
+either clamps it to its own longer default or signs a dead URL.
 `S3Storage` does not implement `RangeGetter`: a network backend would
 have to buffer the whole object to `Seek`; presigned URLs are the
 intended path for large transfers.

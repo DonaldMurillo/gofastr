@@ -117,6 +117,7 @@ func printHelp() {
                         to the copy; no package lists the copies. See "gofastr docs unmount"
   remount <package>     Go back to the framework's package and delete the copy
   version               Print version info
+  help [command]        This overview, or the command's own --help
 
 %s:
   --help, -h      Show this help message
@@ -143,7 +144,7 @@ func printHelp() {
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
-`, cli.Bold("GoFastr"), project.CliVersion(), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
+`, cli.Bold("GoFastr"), cli.ScrubTerminalOutput(project.CliVersion()), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
 }
 
 func main() {
@@ -196,20 +197,17 @@ func dispatch(args []string) {
 		return
 	}
 
-	// Global flags. --version/-v is intercepted anywhere except where a
-	// desktop builder/feed consumes --version as its own value. --help/-h is routed
-	// through to subcommands in ownsHelp, which implement it; for every
-	// other command it is intercepted anywhere in args (a side-effectful
-	// command like `dev --help` must never start a server because it
-	// lacks its own help path).
-	for i, a := range args {
-		if a == "--version" || a == "-v" {
-			if a == "--version" && desktopCommandOwnsVersionFlag(args, i) {
-				continue
-			}
-			fmt.Println(project.VersionLine())
-			return
-		}
+	// Global flags. --version/-v prints the version in the command's
+	// place only; after a command it is that command's argument (verify's
+	// -v, a desktop build's --version, and `test -v`, which go test users
+	// type and which must be refused rather than answered with the version
+	// and exit 0). --help/-h is routed through to subcommands in ownsHelp,
+	// which implement it; for every other command it is intercepted
+	// anywhere in args (a side-effectful command like `dev --help` must
+	// never start a server because it lacks its own help path).
+	if isGlobalVersionFlag(args) {
+		cli.Println(project.VersionLine())
+		return
 	}
 	if !ownsHelp[args[0]] {
 		for _, a := range args {
@@ -222,6 +220,20 @@ func dispatch(args []string) {
 
 	cmd := args[0]
 	cmdArgs := args[1:]
+	// `gofastr help` is the overview and `gofastr help <command>` is
+	// `gofastr <command> --help`. An unknown name falls through to the
+	// unknown-command answer below.
+	if cmd == "help" {
+		if len(cmdArgs) == 0 {
+			printHelp()
+			return
+		}
+		if knownCommand(cmdArgs[0]) {
+			dispatch([]string{cmdArgs[0], "--help"})
+			return
+		}
+		cmd = cmdArgs[0]
+	}
 	warnVersionMismatch(cmd, cmdArgs)
 
 	switch cmd {
@@ -268,19 +280,29 @@ func dispatch(args []string) {
 	case "desktop":
 		desktopcmd.RunDesktop(cmdArgs)
 	case "version":
-		fmt.Println(project.VersionLine())
+		cli.Println(project.VersionLine())
 	default:
-		fmt.Printf("%s Unknown command: %s\n\n", cli.Red("✗"), cmd)
+		cli.Fail("Unknown command: %s", cmd)
+		fmt.Println()
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
-				fmt.Printf("  Did you mean: %s?\n", cli.Bold("gofastr "+s))
+				cli.Printf("  Did you mean: "+cli.Bold("gofastr %s")+"?\n", s)
 			}
 		}
 		printHelp()
 		cli.OsExit(1)
 	}
+}
+
+// suggestions are the command names an unknown command is matched
+// against (aliases left out).
+var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
+
+// knownCommand reports whether name is a command dispatch runs, an
+// alias included.
+func knownCommand(name string) bool {
+	return ownsHelp[name] || name == "version" || name == "help"
 }
 
 // versionCheckedCommands are the commands that work on the project in
@@ -327,7 +349,7 @@ func warnVersionMismatch(cmd string, args []string) {
 		wd = dir
 	}
 	if w := project.VersionMismatch(wd); w != "" {
-		fmt.Fprintf(os.Stderr, "%s %s\n", cli.Yellow("warning:"), w)
+		cli.Fprintf(os.Stderr, cli.Yellow("warning:")+" %s\n", w)
 	}
 }
 
@@ -350,9 +372,8 @@ func projectDirFlag(cmd string, args []string) string {
 	return dir
 }
 
-func desktopCommandOwnsVersionFlag(args []string, index int) bool {
-	if index < 2 || len(args) < 2 || args[0] != "desktop" {
-		return false
-	}
-	return args[1] == "build" || args[1] == "feed"
+// isGlobalVersionFlag reports whether argv asks for the version as a
+// global flag: --version or -v where the command name goes.
+func isGlobalVersionFlag(args []string) bool {
+	return len(args) > 0 && (args[0] == "--version" || args[0] == "-v")
 }

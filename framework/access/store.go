@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
@@ -90,6 +91,10 @@ type GrantStore struct {
 	wake     chan struct{}   // buffered(1); worker wakeups
 	stopWork chan struct{}   // closed by stop() to end the worker
 	workerWG sync.WaitGroup
+
+	// reconcileEvery is how often the fanout worker reloads every role
+	// (WithReconcileInterval); zero or negative turns it off.
+	reconcileEvery time.Duration
 }
 
 // reloadTimeout bounds each background role reload so a stalled DB can never
@@ -123,6 +128,22 @@ func WithGrantTable(name string) GrantStoreOption {
 	}
 }
 
+// DefaultReconcileInterval is how often a GrantStore with a fanout reloads
+// every role from the database when no [WithReconcileInterval] is given.
+const DefaultReconcileInterval = 5 * time.Minute
+
+// WithReconcileInterval sets how often a GrantStore with a fanout reloads
+// every role from the database, so a replica that missed a refresh signal
+// (a stalled bus drops frames) stops honouring a revoked permission within
+// one interval. Zero or negative turns the reconcile off: a missed signal
+// then heals on the next change to that role or a restart.
+func WithReconcileInterval(d time.Duration) GrantStoreOption {
+	return func(gs *GrantStore) {
+		//gofastr:allow(optzero) zero or negative is the documented "reconcile off"; refreshWorker arms its ticker only when reconcile > 0
+		gs.reconcileEvery = d
+	}
+}
+
 // NewGrantStore creates a GrantStore bound to the given policy. The policy
 // reference is retained. Grant/Revoke mutate it directly so concurrent
 // Can checks see the change without a reload. Call LoadInto once at boot
@@ -133,9 +154,10 @@ func WithGrantTable(name string) GrantStoreOption {
 // policy return an error.
 func NewGrantStore(db *sql.DB, policy *RolePolicy, opts ...GrantStoreOption) *GrantStore {
 	gs := &GrantStore{
-		db:     db,
-		table:  "access_grants",
-		policy: policy,
+		db:             db,
+		table:          "access_grants",
+		policy:         policy,
+		reconcileEvery: DefaultReconcileInterval,
 	}
 	for _, opt := range opts {
 		opt(gs)
@@ -181,7 +203,24 @@ func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, revStmt); err != nil {
 		return err
 	}
+	s.registerExport()
 	return nil
+}
+
+// registerExport declares both tables to App.ExportData under their
+// configured names. Left out, a restore lost every runtime grant and every
+// tombstone, and the restored app's code seed brought back each permission
+// an admin had revoked. No eraser: the rows name roles, not users.
+func (s *GrantStore) registerExport() {
+	for _, t := range [...]struct{ base, table string }{
+		{"access_grants", s.table},
+		{"access_grants_revoked", s.revokedTable()},
+	} {
+		datexport.Register(datexport.DataExporter{
+			Name: datexport.ScopedName(t.base, t.table), Source: "access", Table: t.table,
+			PrimaryKey: "role,permission", Columns: []string{"role", "permission"},
+		})
+	}
 }
 
 // LoadInto reads all persisted grant rows and calls policy.Grant for each,
@@ -565,7 +604,7 @@ func (s *GrantStore) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	}
 
 	s.workerWG.Add(1)
-	go s.refreshWorker(wake, stopWork)
+	go s.refreshWorker(wake, stopWork, s.reconcileEvery)
 
 	var once sync.Once
 	stop = func() {
@@ -580,7 +619,8 @@ func (s *GrantStore) SetFanout(f fanout.Fanout) (stop func(), err error) {
 // publish enqueues an invalidation for role onto the non-blocking publish
 // queue. No-op when no fanout is attached. The enqueue never blocks
 // Grant/Revoke; a stalled backend drops frames (the queue's documented
-// behavior), and a missed refresh heals on the next grant/revoke or restart.
+// behavior), and a missed refresh heals at the worker's next periodic
+// reconcile (WithReconcileInterval), or on the next grant/revoke or restart.
 func (s *GrantStore) publish(role string) {
 	s.fanoutMu.Lock()
 	send := s.send
@@ -638,14 +678,25 @@ func (s *GrantStore) markDirty(role string) {
 // refreshWorker drains dirty roles off the fanout delivery path and reloads
 // each with a finite timeout. A failed reload re-marks the role dirty and
 // retries after a delay, so a distinct revoke can never disappear silently
-// under DB pressure. Exits when stopWork is closed.
-func (s *GrantStore) refreshWorker(wake, stopWork <-chan struct{}) {
+// under DB pressure. Every reconcile interval (when positive) it reloads
+// every role, so a refresh signal the bus dropped heals within one
+// interval instead of waiting for the next change to that role. Exits when
+// stopWork is closed.
+func (s *GrantStore) refreshWorker(wake, stopWork <-chan struct{}, reconcile time.Duration) {
 	defer s.workerWG.Done()
+	var tick <-chan time.Time
+	if reconcile > 0 {
+		t := time.NewTicker(reconcile)
+		defer t.Stop()
+		tick = t.C
+	}
 	for {
 		select {
 		case <-stopWork:
 			return
 		case <-wake:
+		case <-tick:
+			s.markDirty("") // "" reloads every role
 		}
 		if failed := s.drainDirty(); failed {
 			// Something failed to reload, schedule a retry so the dropped
@@ -721,19 +772,15 @@ func (s *GrantStore) reloadRole(ctx context.Context, role string) error {
 	if err != nil {
 		return err
 	}
-	merged, err := s.mergeBaseline(role, dbPerms, tombstones)
-	if err != nil {
-		return err
-	}
-	s.policy.replacePrepared(role, merged)
+	s.policy.replacePrepared(role, s.mergeBaseline(role, dbPerms, tombstones))
 	return nil
 }
 
-// reloadAll rebuilds every role that has a baseline or DB grant as
-// (baseline ∪ DB) − tombstones. Convergent (removes deleted DB grants and
-// honours tombstones), unlike additive LoadInto. Never published in practice
-// (Grant/Revoke reject empty roles), kept as a defensive full-reconcile
-// path. reloadAll takes transitionMu and delegates to reloadAllLocked so
+// reloadAll rebuilds every role that has a baseline, DB grant or tombstone
+// as (baseline ∪ DB) − tombstones. Convergent (removes deleted DB grants and
+// honours tombstones), unlike additive LoadInto. Never published
+// (Grant/Revoke reject empty roles); the fanout worker's periodic reconcile
+// and its failed-reload retry run it. reloadAll takes transitionMu and delegates to reloadAllLocked so
 // reloadRole's empty-role branch can reuse it without re-locking.
 func (s *GrantStore) reloadAll(ctx context.Context) error {
 	s.transitionMu.Lock()
@@ -760,12 +807,13 @@ func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 	for r := range byRole {
 		roles[r] = true
 	}
+	// A role whose last grant row was revoked holds only tombstones now;
+	// left out, it kept the revoked permission in this replica's policy.
+	for r := range tombstones {
+		roles[r] = true
+	}
 	for r := range roles {
-		merged, err := s.mergeBaseline(r, byRole[r], tombstones[r])
-		if err != nil {
-			return err
-		}
-		s.policy.replacePrepared(r, merged)
+		s.policy.replacePrepared(r, s.mergeBaseline(r, byRole[r], tombstones[r]))
 	}
 	return nil
 }
@@ -822,7 +870,17 @@ func (s *GrantStore) allDBPerms(ctx context.Context) (map[string][]Permission, e
 // to every registered reports capability here; subtracting first and
 // expanding afterwards would hand back a capability that was revoked on its
 // own (reports:delete) the next time any replica reloaded the role.
-func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) ([]Permission, error) {
+//
+// A permission a strict policy refuses (a capability this replica's registry
+// does not know, the normal state of a rolling deploy where a newer replica
+// registered and granted it first) is dropped from the result with a
+// warning, never fatal to the role: refusing the whole reload froze the
+// role here, so a revoke issued after the unknown grant never arrived and
+// this replica kept honoring a permission its peers had dropped. Dropping is
+// the fail-closed direction, since a strict replica never matches a
+// capability it refuses. LoadInto keeps refusing at boot, where an operator
+// sees it.
+func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) []Permission {
 	s.fanoutMu.Lock()
 	base := s.baseline[role]
 	s.fanoutMu.Unlock()
@@ -840,11 +898,33 @@ func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission
 			out = append(out, p)
 		}
 	}
-	expanded, err := s.policy.prepareGrants(out)
-	if err != nil {
-		return nil, err
+	return subtractPerms(s.prepareReload(role, out), s.policy.prepareRevokes(tombstones))
+}
+
+// prepareReload is prepareGrants for a reload: a permission the policy
+// refuses is left out, with a warning, instead of refusing the whole set.
+func (s *GrantStore) prepareReload(role string, perms []Permission) []Permission {
+	expanded, err := s.policy.prepareGrants(perms)
+	if err == nil {
+		return expanded
 	}
-	return subtractPerms(expanded, s.policy.prepareRevokes(tombstones)), nil
+	seen := make(map[Permission]bool, len(perms))
+	out := make([]Permission, 0, len(perms))
+	for _, p := range perms {
+		one, err := s.policy.prepareGrants([]Permission{p})
+		if err != nil {
+			slog.Warn("access: reload dropped a grant this replica refuses",
+				slog.String("role", role), slog.Any("err", err))
+			continue
+		}
+		for _, q := range one {
+			if !seen[q] {
+				seen[q] = true
+				out = append(out, q)
+			}
+		}
+	}
+	return out
 }
 
 // revokedTable is the revocation-tombstone table name, derived from the

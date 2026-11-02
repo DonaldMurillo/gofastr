@@ -37,7 +37,7 @@ the MCP server card mirrors it.
 
 | Method | Serves |
 |---|---|
-| `initialize` | The handshake: protocol version `2025-06-18`, capabilities, `serverInfo`. |
+| `initialize` | The handshake: the negotiated protocol version (see below), capabilities, `serverInfo`. |
 | `ping` | Liveness check; empty result. |
 | `tools/list` | One page of the tools the caller may see, name order. |
 | `tools/call` | Invokes a tool by name with an `arguments` object. |
@@ -63,6 +63,26 @@ both, so a templates-only server advertises it); `prompts` once any prompt is
 registered. Every list capability reports `listChanged: true`, and resources
 reports `subscribe: true`: the server pushes change notifications over the
 SSE stream (see [notifications](#server-initiated-notifications)).
+
+`initialize` negotiates the protocol version as the MCP 2025-06-18
+spec's Lifecycle section requires: "If the server supports the requested
+protocol version, it MUST respond with the same version. Otherwise, the
+server MUST respond with another protocol version it supports. This
+SHOULD be the latest version supported by the server." The server
+supports `2025-06-18` (`mcp.LatestProtocolVersion`) and `2025-03-26`
+(`mcp.SupportedProtocolVersions()` lists them, newest first). A client
+asking for either gets it back; one asking for any other version, or
+sending none, an empty one or a non-string one, gets `2025-06-18` and
+decides whether it can speak it. Two limits:
+
+- A `2025-03-26` client may send JSON-RPC batches, which that revision
+  required servers to accept. This server answers a batch with
+  `-32600`, as `2025-06-18` (which dropped batching) allows.
+- `2024-11-05` is not offered: its HTTP+SSE transport delivers each
+  response on the SSE stream, and this server answers in the POST body.
+
+The transport does not read the `MCP-Protocol-Version` request header,
+so it never refuses a request over it.
 
 ## Registering a tool
 
@@ -398,7 +418,10 @@ client implements. In a framework app,
 On `tools/call` the checks run in order: resolve the tool (unknown name:
 method-not-found), the framework call gate (disabled module: a generic
 internal error), the tool's own gate (invalid-params carrying the gate's
-error), then the handler. The handler runs under a recover guard, so a panic
+error), then the handler. Every gate (`SetGate`, `WithToolGate`,
+`Gated`, `WithResourceGate`, `WithPromptGate`) answers the same way: a
+plain error is invalid-params carrying its message, and a gate that
+returns its own `*RPCError` keeps that error's code and message. The handler runs under a recover guard, so a panic
 in handler code becomes an internal error with no detail echoed, instead of
 unwinding the transport loop; the same guard covers resource contents funcs
 and prompt handlers.
@@ -422,10 +445,14 @@ resource updates it must also send `resources/subscribe` with the `uri` —
 `NotifyResourceUpdated` is a no-op until at least one subscription is
 active. Subscriptions are refcounted per `uri`: every
 `resources/subscribe` adds one, every `resources/unsubscribe` releases
-one, and delivery stops only when the count for that `uri` reaches
-zero. A `uri` longer than 2048 bytes is refused, the server retains at
-most 1024 distinct subscribed uris (a `resources/subscribe` past that
-fails), and when the last stream disconnects the retained
+one of the same caller's (the resolved user, else the TCP peer's host),
+and delivery stops only when the count for that `uri` reaches zero. An
+unsubscribe for a `uri` the caller never subscribed to is a no-op, even
+when other callers did. A `uri` longer than 2048 bytes is refused, the server retains at
+most 1024 distinct subscribed uris and 4096 caller/`uri` subscriptions
+across all callers (a `resources/subscribe` that would add one past
+either bound fails; re-subscribing to a `uri` the caller already holds
+always works), and when the last stream disconnects the retained
 subscriptions are dropped — with no stream there is nobody to deliver
 to. Raising one from server code:
 
@@ -460,6 +487,12 @@ caller anything the matching methods would not:
   session revoked mid-stream has its stream closed at the next
   notification, and so does a caller the re-check places in another
   tenant (`tenant.ResolveMiddleware` re-resolves it).
+- A quiet stream re-checks its caller too: every 15 seconds, whether
+  or not notifications went out in between, the stream re-checks the
+  caller the same way and writes an SSE comment line (`: keep-alive`),
+  which SSE clients ignore. A revoked caller's idle stream closes within one interval
+  instead of holding its seat until the next notification, and a
+  connection that went half-open fails that write and frees its seat.
 - Nothing fires when a gate changes its answer for a connected caller
   without a registration, such as a role granted mid-session. Call
   `NotifyToolsListChanged`, `NotifyPromptsListChanged` or

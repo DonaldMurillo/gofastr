@@ -33,7 +33,9 @@ screens:
 		t.Fatalf("loadAppSpec: %v", err)
 	}
 	screens := allScreenContent(mustRenderAppSpecFiles(t, bp))
-	clitest.AssertContains(t, screens, `appUI.List("posts").Columns("title").NoCreate().Bulk()`)
+	// No record screen, so the rows draw without links (NoLinks); Bulk
+	// still follows.
+	clitest.AssertContains(t, screens, `appUI.List("posts").Columns("title").NoCreate().NoLinks().Bulk()`)
 }
 
 // A list placed off its entity's home (a dashboard declared before the
@@ -128,6 +130,9 @@ screens:
 	clitest.AssertContains(t, byDetail, `site.Register("/app/posts/create"`)
 
 	byCreate := render("false", "true", "")
-	clitest.AssertContains(t, byCreate, `appUI.List("posts").Columns("title").NoCreate().Base("/app/posts").RenderCtx(ctx)`)
+	// With no record screen the dashboard's rows have nowhere to link, so
+	// it draws them as text (NoLinks) and needs no Base; the create
+	// screen hanging off /app/posts is what shows that list is the home.
+	clitest.AssertContains(t, byCreate, `appUI.List("posts").Columns("title").NoCreate().NoLinks().RenderCtx(ctx)`)
 	clitest.AssertContains(t, byCreate, `appUI.Create("posts").Base("/app/posts")`)
 }

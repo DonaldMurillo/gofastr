@@ -160,9 +160,9 @@ func renderReadScope(preds []filter.ParsedFilter, qualifier string, startIdx int
 	}
 	col := func(field string) string {
 		if qualifier != "" {
-			return qualifier + "." + field
+			return query.QuoteKeyword(qualifier + "." + field)
 		}
-		return field
+		return query.QuoteKeyword(field)
 	}
 	var parts []string
 	var args []any

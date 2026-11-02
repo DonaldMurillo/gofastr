@@ -9,5 +9,5 @@ import (
 )
 
 func TestKeyTrim(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), keytrim.Analyzer, "a")
+	analysistest.Run(t, analysistest.TestData(), keytrim.Analyzer, "a", "spellings")
 }

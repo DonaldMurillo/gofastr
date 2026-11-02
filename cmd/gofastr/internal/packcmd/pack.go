@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -57,6 +58,13 @@ func decodeAppSpecString(yml string) (appspec.AppSpec, error) {
 // would forge structure. Refusing is the honest inverse.
 func encodeAppSpecYAML(bp appspec.AppSpec) (string, error) {
 	root := appSpecToMap(bp)
+	// YAML text is Unicode: a string holding a byte that is not UTF-8 has
+	// no spelling a YAML 1.2 decoder reads back (core/yaml reads "\xff"
+	// as U+00FF, as the spec says), so refuse it as an unrepresentable key
+	// is refused.
+	if at := invalidUTF8At(reflect.ValueOf(root), "app spec"); at != "" {
+		return "", fmt.Errorf("%s holds a byte that is not UTF-8; YAML cannot carry it", at)
+	}
 	var sb strings.Builder
 	if err := writeYAMLMap(&sb, root, 0, topLevelOrder, ""); err != nil {
 		return "", err
@@ -68,7 +76,11 @@ func encodeAppSpecYAML(bp appspec.AppSpec) (string, error) {
 
 func appSpecToMap(bp appspec.AppSpec) map[string]any {
 	m := map[string]any{}
-	if app := appToMap(bp.App); len(app) > 0 {
+	// A fragment has no app: section: writing the decoder's zero App
+	// (api_prefix: "") would turn it into a whole app that mounts its CRUD
+	// API at the root, and the next decode would run the checks a
+	// fragment skips.
+	if app := appToMap(bp.App); len(app) > 0 && !bp.IsFragment() {
 		m["app"] = app
 	}
 	if len(bp.Entities) > 0 {
@@ -355,6 +367,9 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			}
 			if r.CascadeWrite {
 				putBool(rm, "cascade_write", r.CascadeWrite)
+			}
+			if r.Hidden {
+				putBool(rm, "hidden", r.Hidden)
 			}
 			rels[i] = rm
 		}
@@ -824,6 +839,10 @@ func yamlKeyRejectReason(key string) string {
 		return "core/yaml rejects tabs anywhere in a line, so the file could not be read back"
 	case key != strings.TrimSpace(key):
 		return "edge whitespace is trimmed on re-parse, so the key would change"
+	case hasUnprintable(key):
+		// After the tab/line-break cases, which carry their own reasons.
+		return "a control or invisible character cannot be quoted in a key, and raw it " +
+			"reaches the terminal pack prints to (an ESC or C1 byte drives it)"
 	}
 	return ""
 }
@@ -936,6 +955,14 @@ func quoteYAMLStringEscaped(s string) string {
 	return b.String()
 }
 
+// hasUnprintable reports whether s holds an invalid UTF-8 byte or a rune
+// unicode.IsPrint rejects: the C0 and C1 controls, DEL, and the format runes
+// (bidi overrides, zero-width characters). quoteYAMLStringEscaped escapes
+// exactly this set, so a quoted value never carries one raw.
+func hasUnprintable(s string) bool {
+	return !utf8.ValidString(s) || strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) })
+}
+
 // needsQuote reports whether emitting s bare would re-parse as a non-string (or
 // break the line/map grammar). Conservative but minimal: keeps the output close
 // to hand-written YAML while guaranteeing string values survive the round-trip.
@@ -991,6 +1018,15 @@ func needsQuote(s string) bool {
 	if strings.ContainsAny(s, "\n\t") {
 		return true
 	}
+	// A non-printable rune or an invalid byte. Pack prints its YAML to the
+	// terminal, and the strings come from the app's source: bare, an ESC
+	// or 8-bit CSI/OSC (U+009B, U+009D) drives the terminal (an OSC 52
+	// writes the clipboard), a CR rewinds the line, and a bidi override
+	// reorders what the reader sees. Quoted, quoteYAMLStringEscaped writes
+	// each as an escape that reads back to the exact bytes.
+	if hasUnprintable(s) {
+		return true
+	}
 	if s != strings.TrimSpace(s) || strings.HasSuffix(s, ":") {
 		return true
 	}
@@ -1009,7 +1045,7 @@ var (
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
 	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
-	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write"}
+	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write", "hidden"}
 	indexOrder     = []string{"name", "columns", "unique"}
 	navOrder       = []string{"label", "href", "icon", "role", "items"}
 	accessOrder    = []string{"auth", "role", "read", "create", "update", "delete"}
@@ -1564,6 +1600,23 @@ func packReadTheme(file *ast.File) (map[string]string, map[string]string) {
 	for _, stmt := range appgen.FuncBody(file, "appTheme") {
 		asn, ok := stmt.(*ast.AssignStmt)
 		if !ok || len(asn.Lhs) != 1 || len(asn.Rhs) != 1 {
+			continue
+		}
+		// The generator's overlay spelling: one index assignment per key
+		// the spec names, theme.DarkColors["background"] = "#15141B". A
+		// right side that is not a literal is the ink the generator
+		// derives for a fill named without its -fg; the spec never said
+		// it, so it is not packed.
+		if ix, ok := asn.Lhs[0].(*ast.IndexExpr); ok {
+			if p := selectorPath(ix.X); len(p) == 2 && p[1] == "DarkColors" {
+				key := appspec.AstString(ix.Index)
+				if lit, ok := asn.Rhs[0].(*ast.BasicLit); ok && lit.Kind == token.STRING && key != "" {
+					if dark == nil {
+						dark = map[string]string{}
+					}
+					dark[key] = appspec.AstString(lit)
+				}
+			}
 			continue
 		}
 		path := selectorPath(asn.Lhs[0])
@@ -2582,10 +2635,14 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 			for _, a := range c.Args {
 				omit = append(omit, appspec.AstString(a))
 			}
-		case "Key", "Base", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
+		case "Key", "Base", "NoLinks", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
 			// structural: no app spec key (RenderCtx turns the builder
 			// into the HTML the screen's stack takes; Actions, Related and
-			// RelatedAt are app-side extensions pack does not declare)
+			// RelatedAt are app-side extensions pack does not declare).
+			// NoLinks follows from the spec: the generator emits it on a
+			// list without create when the entity has no record screen,
+			// so the packed spec regenerates it; a NoLinks written by hand
+			// on a list that has one is a difference pack check reports.
 		default:
 			return appspec.AppSpecBlock{}, false
 		}
@@ -2623,7 +2680,9 @@ func reverseHero(call *ast.CallExpr) appspec.AppSpecBlock {
 
 func reverseSection(call *ast.CallExpr, helpers map[string]ast.Expr) appspec.AppSpecBlock {
 	c := cfgOf(call, 0)
-	b := appspec.AppSpecBlock{Kind: "section", Props: props2("heading", appspec.AstString(c["Heading"]), "eyebrow", appspec.AstString(c["Eyebrow"]), "description", appspec.AstString(c["Description"]))}
+	b := appspec.AppSpecBlock{Kind: "section", Props: props2(
+		"heading", appspec.AstString(c["Heading"]), "eyebrow", appspec.AstString(c["Eyebrow"]), "description", appspec.AstString(c["Description"]),
+		"label", appspec.AstString(c["Label"]), "class", appspec.AstString(c["Class"]), "id", appspec.AstString(c["ID"]))}
 	// The section's children are wrapped in ui.Grid/ui.Stack(cfg, children…).
 	for _, arg := range call.Args[1:] {
 		wrap, ok := arg.(*ast.CallExpr)
@@ -2895,6 +2954,13 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Screens, err = packReadScreens(dir); err != nil {
 		return bp, err
 	}
+	// The /login screen generate synthesized for an app spec with auth on
+	// and no login form was not authored: drop it, so the packed spec
+	// regenerates it in the same place, as it does a list's create screen.
+	read := bp
+	bp.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s appspec.AppSpecScreen) bool {
+		return appspec.IsSynthesizedLoginScreen(read, s)
+	})
 	packResolveOmits(bp)
 	packFoldRecordKeys(bp)
 	if bp.Nav, err = packReadNav(dir); err != nil {
@@ -3035,7 +3101,7 @@ func RunPack(args []string) {
 		packNote(toStderr, "pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
 	}
 	if out == "" {
-		fmt.Print(yml)
+		cli.Print(yml)
 		return
 	}
 	// The 0600 argument to os.WriteFile only applies when the file is
@@ -3058,4 +3124,44 @@ func RunPack(args []string) {
 // and a crash mid-write leaves the previous file, never a truncated one.
 func writeSecretFile(path, content string) error {
 	return fileperm.ReplaceOwnerOnly(path, []byte(content))
+}
+
+// invalidUTF8At returns the path of the first string under v (map keys
+// and values, slices, struct fields) that is not valid UTF-8, or "".
+func invalidUTF8At(v reflect.Value, path string) string {
+	switch v.Kind() {
+	case reflect.String:
+		if !utf8.ValidString(v.String()) {
+			return path
+		}
+	case reflect.Interface, reflect.Pointer:
+		if !v.IsNil() {
+			return invalidUTF8At(v.Elem(), path)
+		}
+	case reflect.Slice, reflect.Array:
+		for i := range v.Len() {
+			if at := invalidUTF8At(v.Index(i), fmt.Sprintf("%s[%d]", path, i)); at != "" {
+				return at
+			}
+		}
+	case reflect.Map:
+		keys := v.MapKeys()
+		slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
+		for _, k := range keys {
+			kp := fmt.Sprintf("%s.%v", path, k)
+			if at := invalidUTF8At(k, kp); at != "" {
+				return at
+			}
+			if at := invalidUTF8At(v.MapIndex(k), kp); at != "" {
+				return at
+			}
+		}
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if at := invalidUTF8At(v.Field(i), path+"."+v.Type().Field(i).Name); at != "" {
+				return at
+			}
+		}
+	}
+	return ""
 }

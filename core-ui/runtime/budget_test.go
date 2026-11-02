@@ -1630,7 +1630,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// commit seam now passes, instead of the outgoing page's copy on
 		// <html> (2026-11-01 bug hunt R7-093,
 		// TestTransitionPickUsesIncomingVocab).
-		"transition": 1440,
+		// 1448 measured (1446 + 2) after commit handles the ready
+		// promise a skipped transition rejects, which surfaced as an
+		// unhandled rejection on every rage click (2026-11-02 bug bash,
+		// TestSkippedTransitionRaisesNoUnhandledRejection).
+		"transition": 1448,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's
@@ -1701,11 +1705,37 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// cold module load both POSTed. The guard reads dispatch state only
 		// this module holds.
 		// 3709 measured (3707 + 2) after its error parse reads
-		// core/handler's nested {error: {message, fields}} envelope and
+		// core/handler's then-nested {error: {message, fields}} envelope
+		// (flat again since issue #652) and
 		// any other dispatch of a node cancels its pending debounced
 		// input request (2026-11-01, TestRPCErrorToastReadsTypedHandlerEnvelope,
 		// TestSubmitCancelsPendingInputRPC, TestDetachedFormSkipsPendingInputRPC).
-		"rpc": 3709,
+		// 3718 measured (3716 + 2) after a data-cui-rpc form whose fetch
+		// never answers reports it (a toast and a failed form result)
+		// without opting in to data-cui-rpc-error-toast (2026-11-02,
+		// TestDispatchRPC_FormNetworkErrorIsNotSilent): an offline submit
+		// did nothing at all. The catch arm is this dispatcher's.
+		// 3747 measured (3745 + 2) after that report is limited to a
+		// fetch that never answered (2026-11-02,
+		// TestDispatchRPC_FormAnsweredSaveIsNotANetworkError): a 2xx with
+		// an unparsable body threw into the same catch and toasted
+		// "Network error" over a save the server committed.
+		// 3800 measured (3798 + 2) after a data-cui-rpc FORM whose method
+		// is POST drops a re-submit while its own POST is in flight
+		// (2026-11-02, D-09, TestFormPOSTResubmitInFlightSendsOnce): a
+		// double-click plus Ctrl+S sent three POSTs and an entity with no
+		// unique key got three rows. The in-flight set is dispatch state
+		// only this module holds.
+		// 4126 measured (4124 + 2) after such a form queues a re-submit
+		// whose payload differs from the POST in flight (the latest only)
+		// and sends it when the first settles, and releases a POST that
+		// has not answered in 30 s (2026-11-02 review of D-09,
+		// TestFormPOSTResubmitChangedIsQueued,
+		// TestFormPOSTHungRequestUnlocks): save A, edit to B, save again
+		// dropped B, and a hung POST locked the form until reload. The
+		// payload compare and the queue are dispatch state only this
+		// module holds.
+		"rpc": 4126,
 	}
 	const coreOverride = 0
 

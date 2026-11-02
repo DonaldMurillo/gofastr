@@ -79,6 +79,43 @@
 //     renderer) and calls with no outcome name and no status write;
 //   - _test.go files.
 //
+// The 2026-11 lifecycle round added three arms.
+//
+// Hand-backs (0b23d8584): DBQueue.workerLoop claimed a job with
+// q.dequeue(ctx, …), found its type gated, and handed it back with
+// `_ = q.release(ctx, job)` on the worker's own context; a shutdown in
+// between failed the UPDATE and the row stayed claimed, its attempt
+// spent. A claim-named call (claim, dequeue, acquire, lease, lock,
+// reserve) is work too, and the call that hands the claim back
+// (release, handBack, requeue, unlock) on the claim's root is its
+// outcome: "claiming is not recording an outcome", but releasing a
+// claim is. Only a hand-back settles a claim (a mark after a claim is
+// the claim's own bookkeeping). requeue and hand* also settle after a
+// callback; release and unlock do not, because framework/crud's
+// releaseObjects frees stored media inside the write it follows.
+//
+// Audit events (79cc5197, 9eaba945): battery/auth emitted its
+// SecurityEvent on the request's context after the change the event
+// records, so a client that hung up between the two cancelled the audit
+// write and the change left no row. The audit arm fires on an interface
+// method on a *Sink/*Auditor value, or one named *Event or *Audit*, handed
+// a context rooted at r.Context() after an earlier call on that same root
+// (the change). A helper that forwards its context parameter, still
+// cancellable, to such a sink exports an audits fact (to a fixed point,
+// so emitSecurity → deliverAudit → sink chains), and the report lands
+// once, on the innermost sink call, naming the caller that hands it the
+// request context. A helper that detaches first (deliverAudit after the
+// fix) hands the sink no live context, carries no fact, and so its
+// callers are quiet.
+//
+// Unbounded detach to a host (d799883c): 79cc5197 itself handed the sink
+// context.WithoutCancel(ctx) with no bound, so a host sink that blocked
+// held the auth handler as long as its remote did. Any method on an
+// exported, non-standard-library interface handed WithoutCancel with no
+// WithTimeout/WithDeadline over it is reported. An unexported interface is
+// a package's own seam over its drivers (framework/migrate's execQueryer)
+// and stays quiet.
+//
 // Out of reach, and so not in the rule: B25, where the work (a committed
 // HTTP write) and the publish (webhook.Bridge's mgr.Publish(ctx, …),
 // battery/webhook/bridge.go:110) sit in different functions joined by
@@ -104,7 +141,7 @@ var Analyzer = &analysis.Analyzer{
 	Name:      "settlectx",
 	Doc:       "report outcome writes (ack, settle, record, mark) made on the same cancellable context a just-finished callback ran under",
 	Run:       run,
-	FactTypes: []analysis.Fact{(*runsCallback)(nil), (*detaches)(nil)},
+	FactTypes: []analysis.Fact{(*runsCallback)(nil), (*detaches)(nil), (*audits)(nil)},
 }
 
 const advice = "record the outcome under a detached, bounded context: context.WithTimeout(context.WithoutCancel(ctx), d)"
@@ -137,17 +174,25 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 	a := &analyzer{
-		pass:      pass,
-		runs:      map[*types.Func]map[int]bool{},
-		detaching: map[*types.Func]bool{},
+		pass:       pass,
+		runs:       map[*types.Func]map[int]bool{},
+		detaching:  map[*types.Func]bool{},
+		audit:      map[*types.Func]map[int]bool{},
+		auditSinks: map[*types.Func][]*ast.CallExpr{},
+		auditUses:  map[*types.Func]token.Pos{},
+		reported:   map[token.Pos]bool{},
 	}
 	a.collectDetaching(fns)
 	a.collectRuns(fns)
+	a.collectAudits(fns)
 	for _, obj := range slices.SortedFunc(maps.Keys(a.detaching), byPos) {
 		pass.ExportObjectFact(obj, &detaches{Bounded: a.detaching[obj]})
 	}
 	for _, obj := range slices.SortedFunc(maps.Keys(a.runs), byPos) {
 		pass.ExportObjectFact(obj, &runsCallback{Index: slices.Sorted(maps.Keys(a.runs[obj]))})
+	}
+	for _, obj := range slices.SortedFunc(maps.Keys(a.audit), byPos) {
+		pass.ExportObjectFact(obj, &audits{Index: slices.Sorted(maps.Keys(a.audit[obj]))})
 	}
 	for _, fn := range fns {
 		if strings.HasSuffix(pass.Fset.Position(fn.Pos()).Filename, "_test.go") {
@@ -155,13 +200,16 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		r := a.newResolver(fn.Body)
 		a.checkBody(r, fn.Body)
+		a.checkAudit(r, fn.Body)
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			if lit, ok := n.(*ast.FuncLit); ok {
 				a.checkBody(r, lit.Body)
+				a.checkAudit(r, lit.Body)
 			}
 			return true
 		})
 	}
+	a.reportAuditHelpers()
 	return nil, nil
 }
 
@@ -171,6 +219,14 @@ type analyzer struct {
 	pass      *analysis.Pass
 	runs      map[*types.Func]map[int]bool
 	detaching map[*types.Func]bool // value: bounded
+	audit     map[*types.Func]map[int]bool
+	// auditSinks: per local audits function, its direct sink calls.
+	auditSinks map[*types.Func][]*ast.CallExpr
+	// auditUses: per local audits function, the first caller that hands it
+	// a request context after a change (reported at the helper's sink).
+	auditUses map[*types.Func]token.Pos
+	// reported: calls already reported, so two arms never report one.
+	reported map[token.Pos]bool
 }
 
 // ---- context classification ----
@@ -553,6 +609,9 @@ type work struct {
 	end   token.Pos
 	roots []types.Object
 	call  *ast.CallExpr
+	// claim: the work is a claim (dequeue, acquire, lease, lock), not a
+	// callback. Only a hand-back (release, requeue, unlock) settles it.
+	claim bool
 }
 
 type candidate struct {
@@ -587,6 +646,9 @@ func (a *analyzer) checkBody(r *resolver, body *ast.BlockStmt) {
 						works = append(works, work{end: n.End(), roots: roots, call: n})
 					}
 					return true
+				}
+				if roots := a.claimRoots(r, n); len(roots) > 0 && !deferred && !spawned {
+					works = append(works, work{end: n.End(), roots: roots, call: n, claim: true})
 				}
 				fn := typeutil.StaticCallee(info, n)
 				if fn == nil {
@@ -625,6 +687,11 @@ func (a *analyzer) checkBody(r *resolver, body *ast.BlockStmt) {
 func (a *analyzer) consider(r *resolver, c candidate, w work, statusAt map[types.Object][]token.Pos) bool {
 	info := a.pass.TypesInfo
 	settle := settleName(c.fn.Name()) || recordsStatus(info, c.call, w.end, statusAt)
+	if w.claim {
+		// After a claim, only handing the claim back is an outcome:
+		// the claim itself, or a status it set, is the claim.
+		settle = releaseName(c.fn.Name())
+	}
 	for _, arg := range c.call.Args {
 		t := info.TypeOf(arg)
 		if t == nil || !isContext(t) {
@@ -636,6 +703,12 @@ func (a *analyzer) consider(r *resolver, c candidate, w work, statusAt map[types
 			if !settle || sharesTx(info, c.call, w.call) {
 				return false
 			}
+			a.reported[c.call.Pos()] = true
+			if w.claim {
+				a.pass.Reportf(c.call.Pos(), "%s hands back the claim taken on line %d on the context the claim ran under; once shutdown or the request's end cancels it, this write fails and the claim stays held, its attempt spent, until the lease expires: %s",
+					c.fn.Name(), a.pass.Fset.Position(w.call.Pos()).Line, advice)
+				return true
+			}
 			a.pass.Reportf(c.call.Pos(), "%s records an outcome on the context the callback on line %d ran under; once shutdown or the request's end cancels it, the work has happened, this write fails, and the work runs again: %s",
 				c.fn.Name(), a.pass.Fset.Position(w.call.Pos()).Line, advice)
 			return true
@@ -644,6 +717,7 @@ func (a *analyzer) consider(r *resolver, c candidate, w work, statusAt map[types
 			if s.kind == fresh {
 				what = "context.Background()"
 			}
+			a.reported[c.call.Pos()] = true
 			a.pass.Reportf(c.call.Pos(), "%s records an outcome under %s; a blocked write outlives shutdown: %s",
 				c.fn.Name(), what, advice)
 			return true
@@ -759,10 +833,47 @@ func errorOnly(fn *types.Func) bool {
 var settleVerbs = map[string]bool{
 	"ack": true, "nack": true, "settle": true, "complete": true, "finish": true,
 	"checkpoint": true, "record": true, "mark": true, "fail": true,
+	// Handing work back is an outcome too (0b23d8584). release and
+	// unlock are outcomes of a claim only (claimRoots): after a callback,
+	// framework/crud's releaseObjects frees stored media inside the
+	// write, not a claim.
+	"hand": true, "requeue": true,
 }
 
 func settleName(name string) bool {
 	return settleVerbs[firstWord(name)]
+}
+
+// releaseVerbs lead the call that hands a claim back: release, handBack,
+// requeue, unlock.
+var releaseVerbs = map[string]bool{"release": true, "hand": true, "requeue": true, "unlock": true}
+
+func releaseName(name string) bool {
+	return releaseVerbs[firstWord(name)]
+}
+
+// claimVerbs lead a call that claims work or a lock for the caller:
+// dequeue, claim, acquire, lease, lock, reserve.
+var claimVerbs = map[string]bool{"claim": true, "dequeue": true, "acquire": true, "lease": true, "lock": true, "reserve": true}
+
+// claimRoots returns the live context roots a claim-named call (a
+// declared function or method, not a callback) runs under.
+func (a *analyzer) claimRoots(r *resolver, call *ast.CallExpr) []types.Object {
+	info := a.pass.TypesInfo
+	fn, ok := typeutil.Callee(info, call).(*types.Func)
+	if !ok || !claimVerbs[firstWord(fn.Name())] {
+		return nil
+	}
+	var roots []types.Object
+	for _, arg := range call.Args {
+		if t := info.TypeOf(arg); t == nil || !isContext(t) {
+			continue
+		}
+		if s := r.classify(arg, 0); s.kind == live {
+			roots = append(roots, s.root)
+		}
+	}
+	return roots
 }
 
 // firstWord returns the leading camel-case word of name, lowercased.

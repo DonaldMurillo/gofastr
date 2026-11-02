@@ -99,12 +99,16 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 		}
 	}
 
-	timeout := time.Duration(args.TimeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 2 * time.Minute
-	}
-	if timeout > 10*time.Minute {
-		timeout = 10 * time.Minute
+	// Bound the milliseconds before they become a Duration: a huge
+	// timeout_ms wrapped in the multiply, and the clamp then saw a few
+	// microseconds and killed the command before it started.
+	const maxBashTimeout = 10 * time.Minute
+	timeout := 2 * time.Minute
+	switch {
+	case args.TimeoutMs > int(maxBashTimeout/time.Millisecond):
+		timeout = maxBashTimeout
+	case args.TimeoutMs > 0:
+		timeout = time.Duration(args.TimeoutMs) * time.Millisecond
 	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)

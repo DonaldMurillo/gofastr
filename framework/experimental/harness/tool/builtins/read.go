@@ -63,7 +63,7 @@ func (r Read) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*t
 	if maxBytes <= 0 {
 		maxBytes = defaultReadMax
 	}
-	f, err := os.Open(args.Path)
+	f, err := openRegularPath(args.Path)
 	if err != nil {
 		return errorResult(fmt.Sprintf("Read: open %s: %v", args.Path, err)), nil
 	}
@@ -95,6 +95,35 @@ func (r Read) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*t
 		return errorResult(fmt.Sprintf("Read: %v", err)), nil
 	}
 	return textResult(string(data)), nil
+}
+
+// errNotRegular refuses a Read or Edit path that is not a regular file.
+var errNotRegular = errors.New("not a regular file")
+
+// openRegularPath opens path only when it is a regular file, Grep's
+// openRegular rule for a named path. Opening a FIFO blocks until a
+// writer appears and ignores the turn's context, so a quiet-mode Read
+// of one wedged the turn past CancelTurn; /dev/tty and /dev/zero never
+// end. A symlink counts when its target is a regular file, and the
+// open handle is checked again so a path swapped after the first check
+// is still refused.
+func openRegularPath(path string) (*os.File, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errNotRegular
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, errNotRegular
+	}
+	return f, nil
 }
 
 // textResult wraps a string into a successful ToolResult.

@@ -47,6 +47,10 @@
 //     problem, and the shape here is the nil error that says "fine"
 //     when it is not fine;
 //   - _test.go files.
+//
+// The 2026-11 nil-fold arm (nilfold.go, bug 8b19113f) covers the type
+// switch on a scanned `any` that answers one zero for `case nil` and for
+// a type it does not know; its silences are in that file.
 package laxcoerce
 
 import (
@@ -82,6 +86,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return true
 		})
 	}
+	runNilFold(pass)
 	return nil, nil
 }
 

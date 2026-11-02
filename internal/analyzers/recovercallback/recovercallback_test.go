@@ -17,7 +17,7 @@ func TestRecoverCallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	analysistest.Run(t, analysistest.TestData(), recovercallback.Analyzer,
-		"peerish", "toolgate", "broker", "watcher",
+		"peerish", "toolgate", "broker", "watcher", "a2aish", "mainseam",
 		"ifacedisp", "fieldlocal", "nestedrec", "tickerloop", "helperguard",
 		"genericdisp", "accessorish",
 		"leaderish", "bridgeish", "lifecycleish", "plumbingish",

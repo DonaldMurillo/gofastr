@@ -29,9 +29,12 @@ func RunMigrate(args []string) {
 	// The subcommand is optional (see printHelp: "migrate (m) [up|down|…]"),
 	// so a bare `gofastr migrate` must default to "up" without slicing past
 	// the end of an empty arg vector (which panicked with slice bounds [1:0]).
+	// A leading flag is the default subcommand's: `gofastr migrate
+	// --db-url=<url>` is up with a flag, not a subcommand named
+	// "--db-url=<url>".
 	subcmd := "up"
 	rest := args
-	if len(args) > 0 {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		subcmd = args[0]
 		rest = args[1:]
 	}
@@ -39,6 +42,12 @@ func RunMigrate(args []string) {
 	if err := migrateFlagsError(subcmd, rest); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
+		return
+	}
+	if err := migratePositionalError(subcmd, rest); err != nil {
+		cli.Fail("%v", err)
+		printMigrateUsage()
+		cli.OsExit(2)
 		return
 	}
 
@@ -85,6 +94,41 @@ var migrateFlags = map[string]struct{ valued, bare []string }{
 	"force":    {[]string{"--db-url", "--db", "--driver", "--group"}, []string{"--not-applied"}},
 	"repair":   {[]string{"--db-url", "--db", "--driver", "--from"}, []string{"--apply"}},
 	"generate": {[]string{"--db", "--driver", "--from", "--group", "--migrations", "--snapshot"}, nil},
+}
+
+// migratePositional is how many positional arguments each subcommand
+// takes. up, status and repair take none, so `migrate up 3` read like
+// "apply three" and applied everything; generate takes its one name and
+// dropped a second. down and force check their own value as well.
+var migratePositional = map[string]int{
+	"up": 0, "status": 0, "repair": 0, "down": 1, "force": 1, "generate": 1,
+}
+
+// migratePositionalError refuses more positional arguments than the
+// subcommand takes. It runs before anything opens the database.
+func migratePositionalError(subcmd string, args []string) error {
+	limit, ok := migratePositional[subcmd]
+	if !ok {
+		return nil
+	}
+	var extra []string
+	n := 0
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		n++
+		if n > limit {
+			extra = append(extra, a)
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	if limit == 0 {
+		return fmt.Errorf("migrate %s takes no arguments, got %q", subcmd, extra)
+	}
+	return fmt.Errorf("migrate %s takes one argument, got extra %q", subcmd, extra)
 }
 
 // migrateFlagsError refuses a flag the subcommand does not read, a valued
@@ -151,7 +195,7 @@ func runMigrateForce(args []string) {
 		cli.OsExit(1)
 	}
 
-	fmt.Printf("\n  %s\n\n", cli.Bold(fmt.Sprintf("Forcing migration %d → applied=%t...", version, applied)))
+	cli.Printf("\n  "+cli.Bold("Forcing migration %d → applied=%t...")+"\n\n", version, applied)
 
 	migrator, closeDB, err := migratorFromArgs(args)
 	if err != nil {
@@ -242,7 +286,7 @@ func runMigrateRepair(args []string) {
 		return
 	}
 	for _, s := range stale {
-		fmt.Printf("    %s %s\n", cli.Yellow("⚠"), s)
+		cli.Printf("    "+cli.Yellow("⚠")+" %s\n", s)
 	}
 
 	if !hasFlag(args, "--apply") {
@@ -254,7 +298,7 @@ func runMigrateRepair(args []string) {
 
 	fmt.Printf("\n  %s\n\n", cli.Bold("Rebuilding..."))
 	for _, s := range stale {
-		fmt.Printf("    %s rewriting %s without the stale key\n", cli.Yellow("→"), s.Table)
+		cli.Printf("    "+cli.Yellow("→")+" rewriting %s without the stale key\n", s.Table)
 	}
 	if err := fwmigrate.RepairStaleOwnerForeignKeys(context.Background(), db, stale); err != nil {
 		cli.Fail("Repair failed: %v", err)
@@ -316,19 +360,22 @@ func runMigrateUp(args []string) {
 
 func runMigrateDown(args []string) {
 	// The count is a positive integer or absent. Sscanf read "all" as no
-	// number and "3x" as 3, so a typo rolled back one or three.
+	// number and "3x" as 3, so a typo rolled back one or three. With two
+	// counts the last one won, so `down 1 3` dropped three tables: one
+	// count at most, as force takes one version.
 	n := 1
+	haveCount := false
 	for _, a := range args {
 		if strings.HasPrefix(a, "--") {
 			continue
 		}
 		v, err := strconv.Atoi(a)
-		if err != nil || v < 1 {
-			cli.Fail("migrate down takes a positive number of migrations to roll back, got %q", a)
+		if err != nil || v < 1 || haveCount {
+			cli.Fail("migrate down takes at most one positive number of migrations to roll back, got %q", a)
 			cli.OsExit(1)
 			return
 		}
-		n = v
+		n, haveCount = v, true
 	}
 
 	fmt.Printf("\n  %s\n\n", cli.Bold("Rolling back migrations..."))
@@ -385,9 +432,9 @@ func runMigrateStatus(args []string) {
 	fmt.Printf("    Pending: %d\n", len(status.Pending))
 	for _, pending := range status.Pending {
 		if showGroup {
-			fmt.Printf("    %s %d %s [%s]\n", cli.Yellow("→"), pending.Version, pending.Name, groupLabel(pending.Group))
+			cli.Printf("    "+cli.Yellow("→")+" %d %s [%s]\n", pending.Version, pending.Name, groupLabel(pending.Group))
 		} else {
-			fmt.Printf("    %s %d %s\n", cli.Yellow("→"), pending.Version, pending.Name)
+			cli.Printf("    "+cli.Yellow("→")+" %d %s\n", pending.Version, pending.Name)
 		}
 	}
 	for _, rec := range status.Applied {
@@ -397,13 +444,29 @@ func runMigrateStatus(args []string) {
 				// CLI accepts as its alias; the printed command is runnable
 				// verbatim for every group (a raw "" would render --group=,
 				// which getGroups rejects).
-				fmt.Printf("    %s %d %s [%s]: DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
-					cli.Yellow("⚠"), rec.Version, rec.Name, groupLabel(rec.Group), rec.Version, groupLabel(rec.Group))
+				cli.Printf("    "+cli.Yellow("⚠")+" %d %s [%s]: DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
+					rec.Version, rec.Name, groupLabel(rec.Group), rec.Version, groupLabel(rec.Group))
 			} else {
-				fmt.Printf("    %s %d %s: DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
-					cli.Yellow("⚠"), rec.Version, rec.Name, rec.Version)
+				cli.Printf("    "+cli.Yellow("⚠")+" %d %s: DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
+					rec.Version, rec.Name, rec.Version)
 			}
 		}
+	}
+	// The drift up and down refuse on: without these lines status read
+	// clean while both refused.
+	label := func(rec migrate.MigrationRecord) string {
+		if showGroup {
+			return fmt.Sprintf("%d %s [%s]", rec.Version, rec.Name, groupLabel(rec.Group))
+		}
+		return fmt.Sprintf("%d %s", rec.Version, rec.Name)
+	}
+	for _, rec := range status.Modified {
+		cli.Printf("    "+cli.Yellow("⚠")+" %s: MODIFIED since it was applied (up refuses; revert the file, or roll it back and re-apply)\n",
+			label(rec))
+	}
+	for _, rec := range status.Unregistered {
+		cli.Printf("    "+cli.Yellow("⚠")+" %s: applied, but no file in migrations/ registers it (down cannot roll it back)\n",
+			label(rec))
 	}
 }
 
@@ -418,7 +481,23 @@ func migrateArgsError(args []string) error {
 	if getMigrateDBURL(args) == "" {
 		return fmt.Errorf("database URL is required; set DATABASE_URL or pass --db-url=<url>")
 	}
-	return ensureDriverRegistered(getMigrateDriver(args))
+	driver := getMigrateDriver(args)
+	if !hasMigrationDialect(driver) {
+		return fmt.Errorf("the migration runner speaks SQLite and Postgres; --db=%q is neither (use sqlite or postgres)", driver)
+	}
+	return ensureDriverRegistered(driver)
+}
+
+// hasMigrationDialect reports whether the runner has SQL for driver.
+// dialectForDriver maps everything that is not SQLite to Postgres, so a
+// MySQL driver linked into a custom build would have run Postgres SQL
+// (placeholders, advisory lock) against MySQL.
+func hasMigrationDialect(driver string) bool {
+	switch driver {
+	case "sqlite", "sqlite3", "postgres", "pgx":
+		return true
+	}
+	return false
 }
 
 func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
@@ -513,9 +592,9 @@ func getMigrateDBURL(args []string) string {
 }
 
 // ensureDriverRegistered fails fast with a useful message if the requested
-// database/sql driver is not blank-imported into the binary. The default CLI
-// build only links sqlite3; users who need postgres or mysql build their own
-// gofastr binary that imports the appropriate driver.
+// database/sql driver is not blank-imported into the binary. The CLI links
+// the SQLite and Postgres drivers, the two the runner has a dialect for
+// (hasMigrationDialect refuses the rest first).
 func ensureDriverRegistered(driver string) error {
 	for _, registered := range sql.Drivers() {
 		if registered == driver {
@@ -539,13 +618,34 @@ func hasFlag(args []string, flag string) bool {
 // --driver=, through canonicalDBDriver. Before --db= was read here,
 // `migrate --db=postgres` fell through to the sqlite3 default and
 // created a SQLite file named after the Postgres URL.
+//
+// With no flag, a database URL that starts with postgres:// or
+// postgresql:// picks the postgres driver: a Postgres DATABASE_URL with
+// no --db opened the URL as a SQLite file name and failed with a SQLite
+// error that never said the driver was the problem.
 func getMigrateDriver(args []string) string {
 	for _, a := range args {
 		if v, ok := migrateDriverFlag(a); ok {
 			return project.CanonicalDBDriver(v)
 		}
 	}
+	if isPostgresURL(getMigrateDBURL(args)) {
+		return "postgres"
+	}
 	return "sqlite3"
+}
+
+// isPostgresURL reports whether url names a Postgres server by scheme.
+func isPostgresURL(url string) bool {
+	scheme, _, ok := strings.Cut(url, "://")
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(scheme) {
+	case "postgres", "postgresql":
+		return true
+	}
+	return false
 }
 
 // migrateDriverFlag reports the value of a --db= or --driver= argument.

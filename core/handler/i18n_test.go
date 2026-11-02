@@ -22,11 +22,11 @@ func TestWriteErrorTranslatesForRequest(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Error.Message != "validation échouée" || body.Error.Reason != "validation_failed" {
-		t.Fatalf("message %q reason %q", body.Error.Message, body.Error.Reason)
+	if body.Error != "validation échouée" || body.Reason != "validation_failed" {
+		t.Fatalf("message %q reason %q", body.Error, body.Reason)
 	}
-	if body.Error.Fields["title"][0] != "est obligatoire" || body.Error.FieldReasons["title"][0] != "required" {
-		t.Fatalf("fields %v reasons %v", body.Error.Fields, body.Error.FieldReasons)
+	if body.Fields["title"][0] != "est obligatoire" || body.FieldReasons["title"][0] != "required" {
+		t.Fatalf("fields %v reasons %v", body.Fields, body.FieldReasons)
 	}
 }
 
@@ -35,8 +35,8 @@ func TestWriteErrorAppMessageHasNoReason(t *testing.T) {
 	WriteError(w, nil, Errorf(404, "no such widget"))
 	var body errorResponse
 	json.NewDecoder(w.Body).Decode(&body)
-	if body.Error.Message != "no such widget" || body.Error.Reason != "" {
-		t.Fatalf("message %q reason %q", body.Error.Message, body.Error.Reason)
+	if body.Error != "no such widget" || body.Reason != "" {
+		t.Fatalf("message %q reason %q", body.Error, body.Reason)
 	}
 }
 
@@ -45,7 +45,7 @@ func TestWriteErrorInternalHasReason(t *testing.T) {
 	WriteError(w, nil, context.Canceled)
 	var body errorResponse
 	json.NewDecoder(w.Body).Decode(&body)
-	if body.Error.Reason != "internal" || body.Error.Message != "internal server error" {
-		t.Fatalf("message %q reason %q", body.Error.Message, body.Error.Reason)
+	if body.Reason != "internal" || body.Error != "internal server error" {
+		t.Fatalf("message %q reason %q", body.Error, body.Reason)
 	}
 }

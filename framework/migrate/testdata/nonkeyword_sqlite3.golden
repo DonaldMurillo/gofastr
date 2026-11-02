@@ -1,0 +1,140 @@
+CREATE TABLE IF NOT EXISTS authors (
+	id TEXT PRIMARY KEY NOT NULL,
+	email VARCHAR(120) UNIQUE NOT NULL,
+	status TEXT DEFAULT 'active',
+	score INTEGER DEFAULT 0,
+	created_at DATETIME,
+	updated_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_authors_status_score ON authors (status, score);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_authors_lower_email ON authors (lower(email));
+CREATE TABLE IF NOT EXISTS lines (
+	post_id INTEGER NOT NULL,
+	seq INTEGER NOT NULL,
+	text TEXT,
+	legacy TEXT,
+	PRIMARY KEY (post_id, seq)
+);
+CREATE TABLE IF NOT EXISTS posts (
+	id INTEGER PRIMARY KEY,
+	author_id TEXT NOT NULL,
+	title TEXT NOT NULL,
+	body TEXT,
+	meta TEXT,
+	created_at DATETIME,
+	updated_at DATETIME,
+	deleted_at DATETIME,
+	FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
+CREATE TABLE IF NOT EXISTS tags (
+	id TEXT PRIMARY KEY NOT NULL,
+	label TEXT
+);
+CREATE TABLE IF NOT EXISTS author_tags (
+	author_id TEXT NOT NULL,
+	tag_id TEXT NOT NULL,
+	PRIMARY KEY (author_id, tag_id),
+	FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE,
+	FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_author_tags_tag_id ON author_tags (tag_id);
+---
+{
+  "tables": {
+    "author_tags": {
+      "author_id": "TEXT",
+      "tag_id": "TEXT"
+    },
+    "authors": {
+      "created_at": "DATETIME",
+      "email": "VARCHAR(120)",
+      "id": "TEXT",
+      "score": "INTEGER",
+      "status": "TEXT",
+      "updated_at": "DATETIME"
+    },
+    "lines": {
+      "legacy": "TEXT",
+      "post_id": "INTEGER",
+      "seq": "INTEGER",
+      "text": "TEXT"
+    },
+    "posts": {
+      "author_id": "TEXT",
+      "body": "TEXT",
+      "created_at": "DATETIME",
+      "deleted_at": "DATETIME",
+      "id": "INTEGER",
+      "meta": "TEXT",
+      "title": "TEXT",
+      "updated_at": "DATETIME"
+    },
+    "tags": {
+      "id": "TEXT",
+      "label": "TEXT"
+    }
+  },
+  "table_ddl": {
+    "author_tags": "CREATE TABLE IF NOT EXISTS author_tags (\n\tauthor_id TEXT NOT NULL,\n\ttag_id TEXT NOT NULL,\n\tPRIMARY KEY (author_id, tag_id),\n\tFOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE,\n\tFOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE\n)",
+    "authors": "CREATE TABLE IF NOT EXISTS authors (\n\tid TEXT PRIMARY KEY NOT NULL,\n\temail VARCHAR(120) UNIQUE NOT NULL,\n\tstatus TEXT DEFAULT 'active',\n\tscore INTEGER DEFAULT 0,\n\tcreated_at DATETIME,\n\tupdated_at DATETIME\n)",
+    "lines": "CREATE TABLE IF NOT EXISTS lines (\n\tpost_id INTEGER NOT NULL,\n\tseq INTEGER NOT NULL,\n\ttext TEXT,\n\tlegacy TEXT,\n\tPRIMARY KEY (post_id, seq)\n)",
+    "posts": "CREATE TABLE IF NOT EXISTS posts (\n\tid INTEGER PRIMARY KEY,\n\tauthor_id TEXT NOT NULL,\n\ttitle TEXT NOT NULL,\n\tbody TEXT,\n\tmeta TEXT,\n\tcreated_at DATETIME,\n\tupdated_at DATETIME,\n\tdeleted_at DATETIME,\n\tFOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE\n)",
+    "tags": "CREATE TABLE IF NOT EXISTS tags (\n\tid TEXT PRIMARY KEY NOT NULL,\n\tlabel TEXT\n)"
+  },
+  "indices": {
+    "author_tags": [
+      "CREATE INDEX IF NOT EXISTS idx_author_tags_tag_id ON author_tags (tag_id)"
+    ],
+    "authors": [
+      "CREATE INDEX IF NOT EXISTS idx_authors_status_score ON authors (status, score)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS ux_authors_lower_email ON authors (lower(email))"
+    ],
+    "posts": [
+      "CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id)"
+    ]
+  },
+  "primary_keys": {
+    "authors": [
+      "id"
+    ],
+    "lines": [
+      "post_id",
+      "seq"
+    ],
+    "posts": [
+      "id"
+    ],
+    "tags": [
+      "id"
+    ]
+  },
+  "unique_columns": {
+    "authors": [
+      "email"
+    ],
+    "lines": [],
+    "posts": [],
+    "tags": []
+  }
+}
+---
+ALTER TABLE lines DROP COLUMN legacy;
+CREATE TABLE lines__rebuild (
+	post_id INTEGER NOT NULL,
+	seq INTEGER NOT NULL,
+	text INTEGER,
+	PRIMARY KEY (post_id, seq)
+);
+INSERT INTO lines__rebuild (post_id, seq, text) SELECT post_id, seq, text FROM lines;
+DROP TABLE lines;
+PRAGMA legacy_alter_table=ON;
+ALTER TABLE lines__rebuild RENAME TO lines;
+PRAGMA legacy_alter_table=OFF;
+ALTER TABLE tags RENAME COLUMN label TO caption;
+ALTER TABLE tags ADD COLUMN weight INTEGER;
+CREATE INDEX IF NOT EXISTS idx_tags_weight ON tags (weight);
+ALTER TABLE tags ADD COLUMN hits INTEGER DEFAULT 1;
+CREATE UNIQUE INDEX IF NOT EXISTS tags_caption_key ON tags (caption);
+---
+

@@ -174,16 +174,40 @@ type TenantFilter interface {
 	FiltersByTenant()
 }
 
+// RetentionTier is the set of one owner's tasks a retention bound counts
+// within: the tasks made in one tenant under one scope set, i.e. whose
+// TaskRecord.Tenant and TaskRecord.Scope equal these. Tenant "" is the
+// tenant-less tier and Scope "" the unscoped one (ScopeKey writes a
+// scoped caller's key). Retention is per tier, never per owner alone, so
+// one tier's writes cannot trim another tier's rows.
+type RetentionTier struct {
+	Tenant string
+	Scope  string
+}
+
+// TierOf is the retention tier rec belongs to.
+func TierOf(rec *TaskRecord) RetentionTier {
+	return RetentionTier{Tenant: rec.Tenant, Scope: rec.Scope}
+}
+
+// holds reports whether rec belongs to the tier.
+func (t RetentionTier) holds(rec *TaskRecord) bool {
+	return rec.Tenant == t.Tenant && rec.Scope == t.Scope
+}
+
 // RetentionTrimmer is the optional Store capability that bounds the
 // rows cheap authenticated writes mint. The server asks the store to
 // trim after every persist that leaves a task terminal and after every
 // push-config create; a store that does not implement it keeps its own
 // retention policy. Both built-in stores implement it.
 type RetentionTrimmer interface {
-	// TrimTerminalTasks deletes the owner's OLDEST terminal task rows
-	// until at most keep remain. Non-terminal rows are never touched.
-	// keep < 0 means unlimited (no-op).
-	TrimTerminalTasks(ctx context.Context, owner string, keep int) error
+	// TrimTerminalTasks deletes the OLDEST terminal task rows of owner
+	// in tier (the rows whose Tenant and Scope equal tier's) until at
+	// most keep remain in that tier. Rows of any other tier, and
+	// non-terminal rows, are never touched: a narrow token's activity,
+	// or the user's activity in another tenant, must not delete results
+	// that tier cannot even read. keep < 0 means unlimited (no-op).
+	TrimTerminalTasks(ctx context.Context, owner string, tier RetentionTier, keep int) error
 	// TrimPushConfigs deletes the OLDEST push-notification configs
 	// registered for (owner, taskID) until at most keep remain.
 	// keep < 0 means unlimited (no-op).

@@ -41,6 +41,9 @@ type ScheduledJob struct {
 	// cron, when set, drives NextRun from a cron expression instead of
 	// Interval. Nil for interval schedules (the pre-existing behaviour).
 	cron *cron.Schedule
+	// loc is the zone a cron schedule is evaluated in: the location of
+	// the time it was registered at.
+	loc *time.Location
 }
 
 // Scheduler is the non-durable, single-process scheduler. Its watermarks live
@@ -167,7 +170,9 @@ func NewSchedulerWithLogger(q Queue, logger *slog.Logger) *Scheduler {
 	return newScheduler([]Queue{q}, logger)
 }
 
-// Every returns a ScheduleBuilder that fires on a fixed interval.
+// Every returns a ScheduleBuilder that fires on a fixed interval. Register
+// refuses a negative interval or a positive one below one millisecond, the
+// DurableScheduler floor.
 func (s *Scheduler) Every(interval time.Duration) *ScheduleBuilder {
 	return &ScheduleBuilder{
 		scheduler: s,
@@ -299,13 +304,25 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 			return err
 		}
 		job.cron = &sc
-		job.NextRun = sc.Next(base)
+		// The zone base carries is the one every later firing is read
+		// in; nextFire gives a fixed-time spec vixie cron's handling
+		// across a DST change (cron.Schedule.FiresAt).
+		job.loc = base.Location()
+		job.NextRun = nextFire(sc, job.loc, base)
 		// Next returns the zero time for a spec that never fires
 		// (February 30), and a zero NextRun is due on every tick.
 		if job.NextRun.IsZero() {
 			return fmt.Errorf("queue: cron spec %q never fires", b.cronSpec)
 		}
 	} else {
+		// The DurableScheduler floor, so Every(5) (five nanoseconds: the
+		// untyped constant compiles) cannot spin Start's timer loop into
+		// enqueuing a job per iteration. A negative interval is refused
+		// too. Zero keeps its old meaning: due on every tick, at the
+		// one-minute floor.
+		if b.interval < 0 || (b.interval > 0 && b.interval < minDurableInterval) {
+			return fmt.Errorf("queue: schedule interval %s is below the %s floor", b.interval, minDurableInterval)
+		}
 		job.NextRun = base.Add(b.interval)
 	}
 
@@ -424,7 +441,7 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 			}
 
 			if sch.cron != nil {
-				sch.NextRun = sch.cron.Next(now)
+				sch.NextRun = nextFire(*sch.cron, sch.loc, now)
 				if sch.NextRun.IsZero() {
 					// Registration refuses a spec that never fires, so
 					// this guards Next alone: a zero NextRun would fire

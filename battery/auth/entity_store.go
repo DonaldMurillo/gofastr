@@ -904,18 +904,31 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 
 // sweepExpiredOnCreate reaps abandoned rows at most once per interval while
 // allowing session creation to succeed if cleanup itself is unavailable.
+// The slot is claimed under sweepMu and the DELETE runs outside it, so a
+// slow sweep never queues every Create (every login) behind the mutex; a
+// failed sweep retries after sessionSweepRetry rather than on the very
+// next Create, where a lock-timeout DELETE would run on every one (the
+// magic-link store's 5ade7a35 fix).
 func (s *EntitySessionStore) sweepExpiredOnCreate(ctx context.Context, now time.Time) {
 	s.sweepMu.Lock()
-	defer s.sweepMu.Unlock()
 	if now.Sub(s.lastSweep) < sessionSweepInterval {
-		return
-	}
-	if _, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE expires_at < $1"), now); err != nil {
-		slog.Warn("auth: expired session sweep failed", "err", err)
+		s.sweepMu.Unlock()
 		return
 	}
 	s.lastSweep = now
+	s.sweepMu.Unlock()
+	if _, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE expires_at < $1"), now); err != nil {
+		slog.Warn("auth: expired session sweep failed", "err", err)
+		s.sweepMu.Lock()
+		if s.lastSweep.Equal(now) {
+			s.lastSweep = now.Add(sessionSweepRetry - sessionSweepInterval)
+		}
+		s.sweepMu.Unlock()
+	}
 }
+
+// sessionSweepRetry is how soon a failed session sweep is tried again.
+const sessionSweepRetry = time.Minute
 
 // Get returns the session for the given token. The presented token is
 // hashed for the lookup; Session.Token carries the PRESENTED value back

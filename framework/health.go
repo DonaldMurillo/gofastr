@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
+	"github.com/DonaldMurillo/gofastr/framework/localrun"
 )
 
 // ReadinessCheck is a named probe run by GET /readyz. Implementations
@@ -40,6 +42,124 @@ type healthState struct {
 	checks  []ReadinessCheck
 	timeout time.Duration
 	verbose bool // when true, /readyz includes error.Error() strings
+	// drain is the WithReadinessDrain grace; nil keeps the default.
+	drain *time.Duration
+}
+
+// productionReadinessDrain is the default grace between /readyz turning
+// 503 and the listener closing. Load balancers probe every few seconds
+// (Kubernetes' default readiness period is 10s with endpoint removal
+// usually inside 5s; an AWS ALB target's deregistration starts on the
+// first failed check), so five seconds covers a typical probe interval
+// without stretching every rollout.
+const productionReadinessDrain = 5 * time.Second
+
+// WithReadinessDrain sets how long Shutdown keeps serving after /readyz
+// starts answering 503, so a load balancer that probes /readyz notices
+// and stops routing new requests here before the listener closes. During
+// the grace the server accepts and serves as before, and /healthz stays
+// 200 (a failed liveness probe restarts the process; it does not drain
+// it). Zero skips the wait; a negative value is zero.
+//
+// The default is 5s in production and 0 where no balancer probes: a Go
+// test binary, `gofastr dev`, a battery/service run, and an app whose
+// listener is bound to a loopback address only (the desktop battery
+// always is). An explicit WithReadinessDrain wins over every default.
+//
+// The grace counts against Shutdown's context. It takes at most half of
+// the time that context has left when the grace starts, so the HTTP
+// drain, process modules, batteries and OnStop hooks after it keep the
+// other half, and it ends early when the context does. The default
+// SIGTERM handler adds the grace to AppConfig.ShutdownTimeout, so a grace
+// no longer than ShutdownTimeout runs in full there and the drain after
+// it keeps its whole budget. A caller passing its own deadline to
+// Shutdown should size it the same way.
+func WithReadinessDrain(d time.Duration) AppOption {
+	d = max(d, 0)
+	return func(a *App) {
+		if a.health == nil {
+			a.health = &healthState{}
+		}
+		a.health.drain = &d
+	}
+}
+
+// readinessDrain returns the grace Shutdown waits after flipping /readyz.
+func (a *App) readinessDrain() time.Duration {
+	if a.health != nil && a.health.drain != nil {
+		return *a.health.drain
+	}
+	return defaultReadinessDrain(localrun.UnderTest(), dev.Enabled(), a.servesLocalOnly())
+}
+
+// defaultReadinessDrain is the grace when WithReadinessDrain was not
+// given: none in a test binary, under `gofastr dev`, or for a local-only
+// run (see [App.servesLocalOnly]), where no balancer is probing and
+// every stop would otherwise wait it out.
+func defaultReadinessDrain(underTest, devMode, local bool) time.Duration {
+	if underTest || devMode || local {
+		return 0
+	}
+	return productionReadinessDrain
+}
+
+// servesLocalOnly reports whether nothing but this machine reaches the
+// app, so no load balancer probes /readyz: a battery/service run, or a
+// listener bound to a loopback address (the desktop battery refuses any
+// other bind). A wildcard or routable bind is not local. Before the
+// listener binds only the service mark counts.
+func (a *App) servesLocalOnly() bool {
+	a.serverMu.Lock()
+	host := a.boundHost
+	a.serverMu.Unlock()
+	return a.isLocalRun(host)
+}
+
+// capReadinessDrain bounds the grace to half of the time ctx has left,
+// so the teardown after it (the HTTP drain, process modules, batteries,
+// OnStop hooks) keeps the other half. With no deadline the grace stands;
+// with an expired one it is zero.
+func capReadinessDrain(ctx context.Context, grace time.Duration) time.Duration {
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return grace
+	}
+	return max(min(grace, time.Until(dl)/2), 0)
+}
+
+// drainReadiness turns /readyz to 503 and, when the app is serving,
+// keeps serving for the readiness grace before Shutdown closes the
+// listener. The grace takes at most half of what is left of ctx
+// ([capReadinessDrain]) and ends early when ctx does.
+func (a *App) drainReadiness(ctx context.Context) {
+	a.draining.Store(true)
+	a.serverMu.Lock()
+	serving := a.server != nil
+	a.serverMu.Unlock()
+	configured := a.readinessDrain()
+	grace := capReadinessDrain(ctx, configured)
+	if !serving || grace <= 0 {
+		return
+	}
+	a.Logger().Info("readiness draining: /readyz answers 503; serving until the grace ends",
+		"grace", grace.String(), "configured", configured.String())
+	t := time.NewTimer(grace)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+	}
+}
+
+// signalShutdownTimeout is the deadline the default SIGTERM handler
+// gives Shutdown: AppConfig.ShutdownTimeout (15s when unset) for the
+// drain, plus the readiness grace spent before it.
+func (a *App) signalShutdownTimeout() time.Duration {
+	timeout := a.Config.ShutdownTimeout
+	if timeout <= 0 {
+		timeout = defaultShutdownTimeout
+	}
+	return timeout + a.readinessDrain()
 }
 
 // defaultReadinessTimeout bounds how long /readyz will wait for the
@@ -154,6 +274,17 @@ func (a *App) healthHandlers() (liveness, readiness http.HandlerFunc) {
 		_, _ = w.Write([]byte("ok"))
 	}
 	readiness = func(w http.ResponseWriter, r *http.Request) {
+		if a.draining.Load() {
+			// Shutdown has begun: say so at once, without running the
+			// checks, so the balancer stops routing here while the
+			// server still serves what it sends during the grace.
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(ReadinessResponse{Status: "draining", Checks: []ReadinessResult{}})
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), a.readinessTimeout())
 		defer cancel()
 		results := runReadinessChecks(ctx, a.readinessChecks(), a.readinessVerbose())
@@ -208,68 +339,72 @@ type ReadinessResult struct {
 // crash the process) and respects ctx cancellation so a check that
 // hangs past the deadline is reported as "timeout" instead of blocking
 // the response.
+//
+// Only this function writes the result rows. Each check goroutine sends
+// its row over a channel buffered for every check, so a check that
+// finishes after the deadline sends into the buffer and exits; it used
+// to write out[i] while the timeout path was reading and copying the
+// slice, a data race on a struct of strings. The timeout path tells a
+// finished row by its done flag, not by an empty Name, which reported a
+// passed check registered without a name as a timeout.
 func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bool) ReadinessResponse {
 	if len(checks) == 0 {
 		return ReadinessResponse{Status: "ready", Checks: []ReadinessResult{}}
 	}
+	type indexed struct {
+		i   int
+		res ReadinessResult
+	}
 	out := make([]ReadinessResult, len(checks))
-	resultCh := make(chan struct{}, len(checks))
+	done := make([]bool, len(checks))
+	resultCh := make(chan indexed, len(checks))
 	for i, c := range checks {
 		go func(i int, c ReadinessCheck) {
+			res := ReadinessResult{Name: c.Name, DurMS: 0}
 			defer func() {
 				if r := recover(); r != nil {
-					out[i] = ReadinessResult{
+					res = ReadinessResult{
 						Name:   c.Name,
 						Status: "error",
 						Error:  redactError(fmt.Sprintf("panic: %v", textsafe.Recovered(r)), verbose),
-						DurMS:  0,
 					}
 				}
-				resultCh <- struct{}{}
+				resultCh <- indexed{i: i, res: res}
 			}()
 			start := time.Now()
-			res := ReadinessResult{Name: c.Name, DurMS: 0}
 			if c.Check == nil {
 				res.Status = "error"
 				res.Error = redactError("nil check function", verbose)
-			} else {
-				err := c.Check(ctx)
-				res.DurMS = time.Since(start).Milliseconds()
-				if err != nil {
-					res.Status = "error"
-					res.Error = redactError(err.Error(), verbose)
-				} else {
-					res.Status = "ok"
-				}
+				return
 			}
-			out[i] = res
+			err := c.Check(ctx)
+			res.DurMS = time.Since(start).Milliseconds()
+			if err != nil {
+				res.Status = "error"
+				res.Error = redactError(err.Error(), verbose)
+			} else {
+				res.Status = "ok"
+			}
 		}(i, c)
 	}
 	// Race the wait against the deadline so a check that ignores ctx
 	// can't keep /readyz waiting longer than the request timeout.
-	completed := 0
-	for completed < len(checks) {
+	for completed := 0; completed < len(checks); completed++ {
 		select {
-		case <-resultCh:
-			completed++
+		case r := <-resultCh:
+			out[r.i] = r.res
+			done[r.i] = true
 		case <-ctx.Done():
-			// Fill in any unreported rows as timeout, then return a
-			// COPY so any goroutine still in c.Check() can't race the
-			// caller's read of the slice (it'd be writing back into
-			// `out`, which the caller has already moved on from).
 			for i, c := range checks {
-				if out[i].Name == "" {
+				if !done[i] {
 					out[i] = ReadinessResult{
 						Name:   c.Name,
 						Status: "timeout",
 						Error:  redactError("deadline exceeded", verbose),
-						DurMS:  0,
 					}
 				}
 			}
-			snapshot := make([]ReadinessResult, len(out))
-			copy(snapshot, out)
-			return ReadinessResponse{Checks: snapshot}
+			return ReadinessResponse{Checks: out}
 		}
 	}
 	return ReadinessResponse{Checks: out}

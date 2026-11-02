@@ -102,6 +102,26 @@ fails the job instead of silently matching nothing. It needs the repo's tags:
 locally `git fetch --tags origin`; the CI job checks out with
 `fetch-depth: 0`.
 
+The same gate holds `hits:` to its meaning both ways. A `hits: review`
+note must name only symbols that still exist at its own release, and a
+`hits: edit` note must name no `uses` symbol, and no `fields` entry
+without a key, value or refused condition, that still exists there
+(HEAD while the release is untagged): such a symbol survived with a new
+shape, so the ported spelling matches too and an app that finished the
+port is told to edit correct lines on every run. Name its old shape
+under `shapes` instead.
+
+`TestRegistryShapesMatchTheirRelease` checks each `shapes` regex
+against the type the symbol really had. It extracts the newest tag below
+the note's release with `git archive`, type-checks the symbol's package
+there, and requires the regex to match the type string the scanner
+would print (`scan.ShapeString`); then it type-checks the release itself
+(its tag, or the working tree while untagged) and requires a surviving
+symbol's type to no longer match. v0.66.0 spelled `MemoryQueue.Nack`'s
+first parameter `_` where v0.65.0 named it `ctx`, so a pre-bump scan
+never found a `MemoryQueue.Nack` call. The extraction compiles every
+era's module tree once per run (about five minutes cold).
+
 `TestRemovedExportsHaveNotes` is the inverse. It diffs the exported API of
 the module's public packages (everything outside `internal/`, `cmd/`,
 `examples/`, `evals/`, `benchmarks/`, `testdata/` and nested modules)

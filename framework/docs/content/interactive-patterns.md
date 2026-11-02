@@ -595,9 +595,9 @@ path** instead of a blanket rollback:
 
 1. The 409 response body is read under hard safety bounds (issue #83):
    the `Content-Type` MUST be `application/json`, at most ~4 KB is
-   read, the body MUST parse as a problem-detail object
-   `{"error":{"code":"…","message":"…"}}`, and `error.message` (which
-   must be a string) is capped at ~300 characters. Anything malformed,
+   read, the body MUST parse as the error envelope every route answers
+   with (`{"error":"…","code":409,"reason":"…"}`, what
+   `handler.WriteError` writes), and `error` (which must be a string) is capped at ~300 characters. Anything malformed,
    oversized, non-JSON, or unreadable, including an empty body,
    falls back to the generic copy (today's behavior, backward
    compatible).
@@ -613,7 +613,7 @@ path** instead of a blanket rollback:
    rollback + a `console.warn`.
 
 ```json
-{"error": {"code": "transition_blocked", "message": "Cannot move ORB-12 to Done because ORB-9 is incomplete."}}
+{"error": "Cannot move ORB-12 to Done because ORB-9 is incomplete.", "code": 409, "reason": "transition_blocked", "success": false}
 ```
 
 Without `Version`, `409` is treated like any other non-2xx (rollback),

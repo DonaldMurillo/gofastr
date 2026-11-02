@@ -3,7 +3,9 @@ package cron
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -152,11 +154,20 @@ func (p *PostgresAdvisoryLease) unlocker(conn *sql.Conn) func() {
 		// background context so shutdown-time release is not cancelled by the
 		// scheduler's parent context being torn down.
 		//
-		// best-effort: a session-scoped advisory lock is released by Postgres
-		// when the session ends, and the very next statement closes it. A
-		// failure here means the connection is already gone, which has the
-		// same outcome, there is nothing to report and nothing to retry.
-		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", p.key)
+		// conn.Close returns the connection to the pool; it does not end
+		// the session, and a session-scoped advisory lock lives as long as
+		// the session. An unlock that fails on a live session (a cancelled
+		// statement, a statement timeout) left the lock held by a pooled
+		// connection, so no other replica could lead until this process
+		// exited. Such a connection is retired instead: ending its session
+		// releases the lock.
+		var released bool
+		err := conn.QueryRowContext(context.Background(), "SELECT pg_advisory_unlock($1)", p.key).Scan(&released)
+		if err != nil || !released {
+			slog.Warn("cron: the leader lease unlock failed; retiring the connection so its session releases the lock",
+				"key", p.key, "err", err, "released", released)
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
 		_ = conn.Close()
 	}
 }

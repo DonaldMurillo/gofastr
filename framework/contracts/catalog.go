@@ -122,6 +122,8 @@ const (
 	RuleVarySet            = "GOFASTR1413"
 	RuleDialectDrift       = "GOFASTR1414"
 	RuleEraseCover         = "GOFASTR1415"
+	RuleDDLConstraint      = "GOFASTR1416"
+	RuleSettleStamp        = "GOFASTR1417"
 )
 
 // Performance rules.
@@ -168,6 +170,7 @@ const (
 	RuleBareThemeLiteral     = "GOFASTR1823"
 	RulePhysicalSide         = "GOFASTR1824"
 	RuleOwnedStatementAtRule = "GOFASTR1825"
+	RuleFlexReverse          = "GOFASTR1826"
 )
 
 // Permission rules.
@@ -647,7 +650,7 @@ func securityRules() []Rule {
 	}, {
 		ID: RuleHTMLConcat, Slug: "security/html-concat",
 		Title: "Untrusted value concatenated into HTML", Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`render.HTML` is called on a concatenated string.",
+		Summary: "`render.HTML` is called on a string built around a variable: a concatenation (on one line or several), a `fmt.Sprintf`/`Sprint`/`Sprintln` (a non-literal format counts), a `strings.Join`, or a local the function assigned one of these.",
 		Why: "`render.HTML` means \"this is already safe markup: do not escape it\". Concatenating a " +
 			"variable into it hands the user's string straight to the browser as markup. That is stored XSS.",
 		Fix: "Use `render.Text` for untrusted values (it escapes), or compose `core-ui/html` elements. If the concatenated half is genuinely a constant, annotate `//gofastr:allow(GOFASTR1403) <why>`.",
@@ -659,7 +662,7 @@ func securityRules() []Rule {
 	}, {
 		ID: RuleInsecureCookie, Slug: "security/insecure-cookie",
 		Title: "Cookie without security attributes", Capability: CapSecurity, Severity: SeverityError,
-		Summary: "An `http.Cookie` is constructed without HttpOnly, Secure, or SameSite.",
+		Summary: "An `http.Cookie` literal (net/http under any import alias) is constructed without HttpOnly, Secure, or SameSite.",
 		Why: "A cookie without HttpOnly is readable by any script that gets injected. Without Secure " +
 			"it travels over plain HTTP on the first request after a downgrade. Without SameSite it " +
 			"rides along on cross-site requests, the CSRF token's whole reason for existing.",
@@ -779,13 +782,16 @@ func securityRules() []Rule {
 		ID: RuleVarySet, Slug: "security/vary-set-overwrites",
 		Title:      "`Vary` written with Set in a middleware chain",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`Header().Set(\"Vary\", …)`, in any case, replaces the Vary entries earlier middlewares added.",
+		Summary: "`Header().Set(\"Vary\", …)` in any case, `Header().Del(\"Vary\")`, or a direct `Header()[\"Vary\"] = …` map write replaces the Vary entries earlier middlewares added.",
 		Why:     "Vary is append-only in a middleware chain: a response crosses CORS (which Adds `Vary: Origin`), an idempotency layer, a cache layer, and a later Set replaces every earlier entry — a shared cache then serves one principal's variant to another. The 2026-09-07 probe TestIdempotencyVaryEatsCors pinned it live: CORS(...)(Idempotency(...)) on an over-cap POST produced ACAO with Vary listing ONLY Idempotency-Key.",
-		Fix:     "Use `.Add(\"Vary\", …)`, the spelling core/middleware/cors.go, wellknown.go, embed, uihost, and the auth BFF all already use. Set is for headers one layer owns end to end; Vary is never one of them.",
+		Fix:     "Use `.Add(\"Vary\", …)`, the spelling core/middleware/cors.go, wellknown.go, embed, uihost, and the auth BFF all already use (a map write that appends to the existing entry is quiet too). Set is for headers one layer owns end to end; Vary is never one of them.",
 		Doc:     "security",
 		Examples: []Example{{
 			Bad:  "w.Header().Set(\"Vary\", \"Idempotency-Key\")",
 			Good: "w.Header().Add(\"Vary\", \"Idempotency-Key\")",
+		}, {
+			Bad:  "w.Header()[\"Vary\"] = []string{\"Idempotency-Key\"}",
+			Good: "w.Header()[\"Vary\"] = append(w.Header()[\"Vary\"], \"Idempotency-Key\")",
 		}},
 	}, {
 		ID: RuleDialectDrift, Slug: "security/dialect-twin-where-drift",
@@ -810,6 +816,30 @@ func securityRules() []Rule {
 		Examples: []Example{{
 			Bad:  "func (s *TokenStore) ensure() error {\n\t_, err := s.db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (user_id TEXT NOT NULL, token TEXT NOT NULL)`, s.table))\n\treturn err\n}",
 			Good: "func (s *TokenStore) ensure() error {\n\t_, err := s.db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (user_id TEXT NOT NULL, token TEXT NOT NULL)`, s.table))\n\tdatexport.RegisterEraser(datexport.DataEraser{Name: \"tokens\", Table: s.table, Column: \"user_id\"})\n\tdatexport.Register(datexport.DataExporter{Name: \"tokens\", Table: s.table, Columns: []string{\"user_id\", \"token\"}})\n\treturn err\n}",
+		}},
+	}, {
+		ID: RuleDDLConstraint, Slug: "security/inline-ddl-constraint",
+		Title:      "An inline DDL constraint that never runs, or runs twice",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "(a) A column declared UNIQUE or REFERENCES inside a `CREATE TABLE IF NOT EXISTS` for a table the same package also declares as an entity (a schema.Field list whose names are all columns of that statement); (b) a column declared UNIQUE inside a CREATE TABLE, or marked `Unique: true` on a matching entity field, that a single-column `CREATE UNIQUE INDEX` also covers.",
+		Why:     "When the entity is declared, AutoMigrate creates the table first and the store's CREATE TABLE IF NOT EXISTS is a no-op, so an inline constraint never exists: battery/auth's sessions.token UNIQUE never ran, every cookie lookup scanned the table and token uniqueness was not enforced (0550be96d). The fix's standalone CREATE UNIQUE INDEX then sat beside the inline UNIQUE and the entity field's Unique flag, so every session insert maintained two unique indexes on token (dbe11ba19).",
+		Fix:     "Declare the constraint once, where it runs whoever made the table: a standalone `CREATE [UNIQUE] INDEX IF NOT EXISTS` after the CREATE TABLE, with no UNIQUE inline and no Unique on the entity field beside it. A constraint that must stay inline says why: `//gofastr:allow(GOFASTR1416) <why>`.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, token TEXT UNIQUE NOT NULL)`)\n\tif err != nil {\n\t\treturn err\n\t}\n\t_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token ON sessions (token)`)\n\treturn err\n}",
+			Good: "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, token TEXT NOT NULL)`)\n\tif err != nil {\n\t\treturn err\n\t}\n\t_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token ON sessions (token)`)\n\treturn err\n}",
+		}},
+	}, {
+		ID: RuleSettleStamp, Slug: "security/status-update-skips-stamps",
+		Title:      "A status UPDATE that skips the stamps its siblings write",
+		Capability: CapSecurity, Severity: SeverityWarn,
+		Summary: "An `UPDATE <table> SET status = …` writes none of the stamp columns (updated_at, last_error, finished_at, completed_at, failed_at, …) while at least two other status UPDATEs on the same table in the same package all write one. Tables resolve the way GOFASTR1415 resolves them (literal, constant, receiver field, quoting wrapper, a method returning the name).",
+		Why:     "When every transition of a table records when and why the row moved and one does not, the row lists with an earlier transition's timestamp and error, and nobody can tell which path moved it. battery/queue's lease-expiry dead-letter sweep set status='failed' and nothing else while claim, Ack, Nack, release and Replay all wrote updated_at (Nack last_error too), so ListJobs(\"failed\") showed a worker that died holding its claim as an earlier attempt's handler error (04ac2e5e6).",
+		Fix:     "Write the stamps the sibling transitions write, with a reason a reader can tell apart (the queue's leaseExpiredError). A transition that must keep the earlier stamp on purpose says so: `//gofastr:allow(GOFASTR1417) <why>`.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "func (q *Queue) ack(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='done', updated_at=$1 WHERE id=$2`, now(), id)\n}\n\nfunc (q *Queue) nack(id, why string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed', updated_at=$1, last_error=$2 WHERE id=$3`, now(), why, id)\n}\n\nfunc (q *Queue) sweep(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed' WHERE id=$1`, id)\n}",
+			Good: "func (q *Queue) ack(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='done', updated_at=$1 WHERE id=$2`, now(), id)\n}\n\nfunc (q *Queue) nack(id, why string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed', updated_at=$1, last_error=$2 WHERE id=$3`, now(), why, id)\n}\n\nfunc (q *Queue) sweep(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed', updated_at=$1, last_error=$2 WHERE id=$3`, now(), \"lease expired\", id)\n}",
 		}},
 	}, {
 		ID: RuleFoldedKey, Slug: "security/folded-key-save",
@@ -870,7 +900,7 @@ func dataRules() []Rule {
 	return []Rule{{
 		ID: RuleIgnoredExec, Slug: "data/ignored-exec",
 		Title: "Write result discarded", Capability: CapData, Severity: SeverityError,
-		Summary: "The result and error of a `db.Exec` are both assigned to `_`.",
+		Summary: "The result and error of a `db.Exec` are both dropped: assigned to `_`, or the call stands alone as a statement (plain, deferred or in a goroutine).",
 		Why: "The write may not have happened. A constraint violation, a closed connection, a " +
 			"read-only replica: all of them return an error here and none of them are visible. " +
 			"The request returns 200 and the data is gone.",
@@ -879,6 +909,9 @@ func dataRules() []Rule {
 		Examples: []Example{{
 			Bad:  `_, _ = db.Exec("DELETE FROM sessions WHERE id = $1", id)`,
 			Good: "if _, err := db.Exec(\"DELETE FROM sessions WHERE id = $1\", id); err != nil {\n    return fmt.Errorf(\"revoke session: %w\", err)\n}",
+		}, {
+			Bad:  "db.Exec(`INSERT INTO posts (id, title) VALUES ('p1', 'Hello')`)",
+			Good: "if _, err := db.Exec(`INSERT INTO posts (id, title) VALUES ('p1', 'Hello')`); err != nil {\n    return fmt.Errorf(\"seed: %w\", err)\n}",
 		}},
 	}}
 }
@@ -1329,6 +1362,24 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  "border-right: var(--stroke-thin, 1px) solid var(--color-border); padding-left: var(--spacing-lg, 16px); text-align: left;",
 			Good: "border-inline-end: var(--stroke-thin, 1px) solid var(--color-border); padding-inline-start: var(--spacing-lg, 16px); text-align: start;",
+		}},
+	}, {
+		ID: RuleFlexReverse, Slug: "rendering/flex-reverse",
+		Title: "Kit CSS reverses a flex row or column, so reading order and visual order disagree", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Design-system CSS sets flex-direction (or the flex-flow shorthand) to row-reverse or column-reverse, " +
+			"in a stylesheet or a Set(\"flex-direction\", …) pair. Dev tooling (framework/dev) is exempt.",
+		Why: "A reversed flex container paints its children against their document order. A screen reader, the Tab key " +
+			"and a radio group's own arrow keys follow the document, so they move the other way from what the reader sees " +
+			"(WCAG 1.3.2 and 2.4.3). ui.RatingInput rendered its stars Max..1 for a sibling cascade and flipped them back " +
+			"with row-reverse: ArrowRight went to the lower star.",
+		Fix: "Render the children in the order they read and lay them out forward; a fill or highlight that needs " +
+			"\"every earlier sibling\" selects it with :has() over a later one (the Rating sheet's spelling). A reversed " +
+			"box whose children carry no order of their own (a purely decorative stack) carries " +
+			"//gofastr:allow(GOFASTR1826) with the reason.",
+		Doc: "accessibility",
+		Examples: []Example{{
+			Bad:  "display: inline-flex; flex-direction: row-reverse; justify-content: flex-end;",
+			Good: "display: inline-flex; /* children render 1..N; the fill reads :has() */",
 		}},
 	}}
 }

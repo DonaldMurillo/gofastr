@@ -355,3 +355,68 @@ func varStatusFire(w http.ResponseWriter, r *http.Request, code int) {
 	w.WriteHeader(code) // want `2xx response for a resolved principal`
 	w.Write([]byte(u))  // want `2xx response for a resolved principal`
 }
+
+// ---- 6afdefa3: only no-store or private suppress storage ---------------
+
+// llmMDNoCacheFire is the pre-6afdefa3 llm.md shape: a per-caller body
+// sent with no-cache, which every cache may store and serve after a
+// cookie-blind revalidation.
+func llmMDNoCacheFire(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	w.Header().Set("Content-Type", "text/markdown")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+// maxAgeFire and publicFire invite storage outright.
+func maxAgeFire(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	w.Header().Set("Cache-Control", "max-age=60")
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+func publicFire(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	w.Header().Set("Cache-Control", "public, must-revalidate")
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+// privateFieldFire: private="Set-Cookie" names fields, not the response;
+// a matcher on the substring "private" would credit it.
+func privateFieldFire(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	w.Header().Set("Cache-Control", `private="Set-Cookie", max-age=60`)
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+// everyArmNoCacheFire: every arm sets Cache-Control, none suppresses.
+func everyArmNoCacheFire(w http.ResponseWriter, r *http.Request, fresh bool) {
+	u := CurrentUser(r.Context())
+	if fresh {
+		w.Header().Set("Cache-Control", "no-cache")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=60")
+	}
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+// The fix spellings: private (no shared cache stores it), private with
+// no-store in any case (6afdefa3's setPageMarkdownHeaders), and a value
+// the rule cannot read.
+func privateQuiet(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	w.Header().Set("Cache-Control", "private, max-age=0")
+	w.Write([]byte(u))
+}
+
+func privateNoStoreQuiet(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	w.Header().Set("Cache-Control", "Private, No-Store")
+	w.Write([]byte(u))
+}
+
+func dynamicCCQuiet(w http.ResponseWriter, r *http.Request, cc string) {
+	u := CurrentUser(r.Context())
+	w.Header().Set("Cache-Control", cc)
+	w.Write([]byte(u))
+}

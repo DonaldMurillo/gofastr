@@ -185,7 +185,7 @@ func (u *UI) namedRows(ctx context.Context, m *meta, named, fields []string) ([]
 		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})
 	}
 	ids := dedupeIDs(named)
-	rows, err := m.listByIDs(crud.WithReadHooks(ctx), ids, crud.ListOptions{
+	rows, err := m.listByIDs(ctx, ids, crud.ListOptions{
 		Fields: fields,
 		Sorts:  m.keySorts(),
 	})

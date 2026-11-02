@@ -44,8 +44,11 @@ type SdkOptions struct {
 	only       []string
 	exclude    []string
 	noArchive  bool
-	dryRun     bool
-	json       bool
+	// stampTime writes the generation time into manifest.json. Off by
+	// default so a rerun over an unchanged schema is byte-identical.
+	stampTime bool
+	dryRun    bool
+	json      bool
 	// set names the value flags given on the command line, empty ones
 	// included: an explicit --only= clears the settings entry's list
 	// rather than leaving it to fill in.
@@ -61,7 +64,8 @@ type sdkSpec struct {
 	GofastrVersion string
 	Module         string
 	BaseURL        string
-	APIPrefix      string // "" or "/api": baked into docs/examples, not client paths
+	APIPrefix      string    // "" or "/api": baked into docs/examples, not client paths
+	GeneratedAt    time.Time // zero unless --stamp-time; the manifest omits it then
 	Decls          []framework.EntityDeclaration
 	Entities       []cliEntity
 }
@@ -170,7 +174,7 @@ func RunGenerateSDK(args []string) {
 	opts, err := parseSDKOptions(args)
 	if err != nil {
 		cli.Fail("%v", err)
-		cli.Info("Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--dry-run] [--json]")
+		cli.Info("Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]")
 		cli.OsExit(1)
 		return
 	}
@@ -224,7 +228,7 @@ func RunGenerateSDK(args []string) {
 		}
 		cli.Info("Would generate %d file(s) in %s:", len(files), opts.OutDir)
 		for _, f := range files {
-			fmt.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
+			cli.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
 		}
 		return
 	}
@@ -257,7 +261,7 @@ func RunGenerateSDK(args []string) {
 	cli.Success("Generated %d file(s) in %s", len(files), opts.OutDir)
 	fmt.Println()
 	fmt.Println("  Next steps:")
-	fmt.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q)})\n", filepath.ToSlash(filepath.Join(opts.OutDir, "dist")))
+	cli.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q)})\n", filepath.ToSlash(filepath.Join(opts.OutDir, "dist")))
 	fmt.Println("    re-run this command whenever entities change: output regenerates in place")
 }
 
@@ -284,6 +288,8 @@ func parseSDKOptions(args []string) (SdkOptions, error) {
 		switch {
 		case arg == "--no-archive":
 			opts.noArchive = true
+		case arg == "--stamp-time":
+			opts.stampTime = true
 		case arg == "--dry-run":
 			opts.dryRun = true
 		case arg == "--json":
@@ -462,6 +468,9 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 		BaseURL:        opts.baseURL,
 		APIPrefix:      apiPrefix,
 	}
+	if opts.stampTime {
+		spec.GeneratedAt = time.Now().UTC()
+	}
 
 	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
 		for _, name := range names {
@@ -635,7 +644,7 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 			App:            spec.App,
 			SDKVersion:     spec.SDKVersion,
 			GofastrVersion: spec.GofastrVersion,
-			GeneratedAt:    time.Now().UTC(),
+			GeneratedAt:    spec.GeneratedAt,
 			Entities:       names,
 			SchemaHash:     hash,
 			Artifacts:      artifacts,
@@ -737,7 +746,7 @@ func renderSDKGoReadme(spec sdkSpec) string {
 		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // ne/gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", eqKey, first.filterKeys.Key(filterField, filter.OpGte), first.Struct)
 	}
 	sb.WriteString(sdkBracketKeysNote(spec))
-	sb.WriteString("Validation errors return `*APIError`; its `Body` holds the JSON envelope\n`{\"error\", \"success\", \"code\", \"reason\", \"fields\", \"field_reasons\"}`: `error` is the\nmessage in the request's locale and `reason` its stable code; `fields` keys are\nsnake_case column names and `field_reasons` holds each message's code.\n\n")
+	sb.WriteString("Every non-2xx answer returns `*APIError`; its `Body` holds the JSON envelope every\nroute (CRUD, a declared endpoint, its auth gate) shares,\n`{\"error\", \"success\", \"code\", \"reason\", \"fields\", \"field_reasons\"}`: `error` is the\nmessage in the request's locale and `reason` its stable code; `fields` keys are\nsnake_case column names and `field_reasons` holds each message's code.\n\n")
 	sb.WriteString("`Do(ctx, method, path, body, out)` is the escape hatch for custom endpoints\nand presence-faithful `map[string]any` bodies. `Watch<Entity>` subscribes to\nthe live SSE feed. `Batch*` methods hit the atomic `_batch` routes.\n")
 	return sb.String()
 }

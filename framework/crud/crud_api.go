@@ -46,7 +46,10 @@ func syntheticRequest(ctx context.Context, method, path string) *http.Request {
 // case) is its column, as on the HTTP body path, and so is the snake key
 // MarshalEntity derives from a json tag, matched by its camel form.
 // casing.ToSnake("line2") is "line2", not the column line_2, so a typed
-// repo's Create dropped the field. Two keys naming one column are refused,
+// repo's Create dropped the field. A key the camel form does not reach is
+// matched by its snake form: the wire key Title of a Title column snakes
+// to title, HTTPCode to h_t_t_p_code, Note (for _note) to note, and the
+// value was dropped the same way. Two keys naming one column are refused,
 // as the HTTP body refuses them, rather than racing in map order.
 //
 // A Date column's value that is a Go time at midnight, a time.Time or the
@@ -64,6 +67,8 @@ func (ch *CrudHandler) bodyColumns(body map[string]any) error {
 			if c, ok := snap.columnOfWire[k]; ok {
 				col = c
 			} else if c := snap.columnOfCamel[casing.ToCamel(k)]; c != "" {
+				col = c
+			} else if c := snap.columnOfSnake[k]; c != "" {
 				col = c
 			}
 		}

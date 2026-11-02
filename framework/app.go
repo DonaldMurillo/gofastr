@@ -111,6 +111,12 @@ type AppConfig struct {
 	// disable the timeout middleware entirely, set
 	// DisableRequestTimeout. Overloading sign for "disable" is too
 	// easy to trip on (e.g. accidentally subtracting two timestamps).
+	//
+	// A budget at or past the server's write deadline would lose every
+	// buffered response finished after that deadline, so the two move
+	// together: an unset HTTPServerTimeouts.WriteTimeout (60s) is raised
+	// to the budget plus 10s, and an explicit one no longer than the
+	// budget makes Start return an error.
 	RequestTimeout time.Duration
 
 	// DisableRequestTimeout removes the Timeout middleware from the
@@ -171,7 +177,10 @@ type AppConfig struct {
 
 	// ShutdownTimeout bounds the graceful drain that the default
 	// SIGINT/SIGTERM handler runs via App.Shutdown. Zero installs the
-	// 15s default. The drain stops accepting connections, waits for
+	// 15s default. The handler's deadline is this plus the readiness
+	// grace (WithReadinessDrain) Shutdown spends first, serving while
+	// /readyz answers 503; a grace longer than this is cut to half the
+	// deadline. The drain then stops accepting connections, waits for
 	// in-flight requests, force-closes whatever remains at the deadline
 	// (an open SSE stream never goes idle), then stops batteries and
 	// runs OnStop hooks.
@@ -228,7 +237,39 @@ const (
 	defaultServerReadTimeout       = 60 * time.Second
 	defaultServerWriteTimeout      = 60 * time.Second
 	defaultServerIdleTimeout       = 120 * time.Second
+
+	// requestTimeoutWriteSlack is how far past a raised RequestTimeout an
+	// unset WriteTimeout is moved, so the timeout middleware's own 503
+	// (or a response finished just inside the budget) is still written.
+	requestTimeoutWriteSlack = 10 * time.Second
 )
+
+// requestBudget is the RequestTimeout the host asked the default chain's
+// timeout middleware to enforce: zero when it set none (the framework's
+// own 30s default) or when that middleware is not installed.
+func (a *App) requestBudget() time.Duration {
+	if a.noDefaults || a.Config.DisableRequestTimeout || a.Config.RequestTimeout <= 0 {
+		return 0
+	}
+	return a.Config.RequestTimeout
+}
+
+// checkRequestWriteTimeouts refuses an explicit WriteTimeout no longer
+// than an explicit RequestTimeout. Each is valid alone; together a
+// buffered response finished between the two is never delivered (the
+// client sees the connection drop, not the response or the timeout
+// middleware's 503) while its handler runs on to the budget. An unset
+// WriteTimeout is raised instead (see Start); 0 disables the deadline.
+func (a *App) checkRequestWriteTimeouts() error {
+	budget := a.requestBudget()
+	w := a.Config.HTTPServerTimeouts.WriteTimeout
+	if budget == 0 || w == nil || *w <= 0 || *w > budget {
+		return nil
+	}
+	return fmt.Errorf("framework: HTTPServerTimeouts.WriteTimeout (%s) must be longer than RequestTimeout (%s): "+
+		"a response finished after the write deadline is never delivered; raise WriteTimeout above RequestTimeout, "+
+		"set it to 0, or lower RequestTimeout", *w, budget)
+}
 
 // App is the top-level application container.
 // It wires together the entity registry, router, MCP server, and database.
@@ -304,11 +345,18 @@ type App struct {
 
 	serverMu sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
 	server   *http.Server
+	// boundHost is the IP the listener bound ("127.0.0.1", "::"), set
+	// once Start holds the port; servesLocalOnly reads it. Guarded by
+	// serverMu.
+	boundHost string
 	// shutdownDone is set by the first Shutdown and closed when its
 	// teardown returns; every later call waits on it instead of tearing
 	// down again. Guarded by shutdownMu.
 	shutdownMu   sync.Mutex
 	shutdownDone chan struct{}
+	// draining is set when Shutdown starts: /readyz answers 503 from
+	// then on, through the readiness grace and the drain after it.
+	draining atomic.Bool
 	// newConns holds connections the server accepted that have not sent
 	// a request yet (net/http's StateNew): a browser's speculative
 	// preconnect, a Transport's spare dial. Server.Shutdown spares such a
@@ -693,6 +741,30 @@ func (a *App) apiPrefix() string {
 		return ""
 	}
 	return "/" + p
+}
+
+// OpenAPISpec builds the entity document App.Start serves at
+// /openapi.json: the CRUD routes registration mounted, under the app's
+// APIPrefix, each field named in the app's JSONCase. A host that mounts the
+// entity routes without Start (kiln's live studio) serves this one, so its
+// document names the keys and paths its routes answer. An empty title
+// falls back to Config.Name, then "GoFastr API". Call it after the entities
+// are registered: the document is built from the registry as it stands.
+func (a *App) OpenAPISpec(title string) *coreoa.Spec {
+	if title == "" {
+		title = a.Config.Name
+	}
+	if title == "" {
+		title = "GoFastr API"
+	}
+	return openapi.EntityOpenAPIFor(a.Registry, openapi.Options{
+		Title: title, Version: "1.0.0",
+		CRUDMounted: a.entityCRUDEnabled, BulkMounted: a.entityUIMounted,
+		// The same mount facts the llm.md index reads (#358): a view
+		// serves its read routes only.
+		ReadOnlyMounted: func(e *entity.Entity) bool { return a.entityCrudMount(e).ReadOnly },
+		BasePath:        a.apiPrefix(), JSONCase: a.JSONCasing(),
+	})
 }
 
 // entityMountPath is the base path an entity's CRUD routes mount at:
@@ -1869,6 +1941,11 @@ func NewApp(opts ...AppOption) *App {
 	}
 
 	a := &App{
+		// Allocated here, never lazily: Start registers readiness checks
+		// while a concurrent Shutdown reads the drain setting, and a nil
+		// pointer filled in on first use raced them (the lazy-allocation
+		// branches below stay only for an App built without NewApp).
+		health:        &healthState{},
 		Registry:      NewRegistry(),
 		router:        router.New(),
 		MCP:           mcp.NewServer(),
@@ -1880,6 +1957,10 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
+	// The registry hands out the handler this App wires (hooks, events,
+	// JSON case, storage), so code holding only app.Registry, the
+	// documented factory.New(app.Registry, …), runs the app's pipeline.
+	a.Registry.handlerFor = a.CrudHandlerForEntity
 	// A recovered battery start or stop panic logs where the App logs.
 	a.Batteries.logger = a.Logger
 
@@ -2070,7 +2151,7 @@ func NewApp(opts ...AppOption) *App {
 	// the router resolves the chain per request, so ordering here does
 	// not weaken coverage.
 	if a.webBotAuth != nil && a.webBotAuth.Verify != nil {
-		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger())
+		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger(), webbotauth.WithMaxValidity(a.webBotAuth.Verify.MaxValidity))
 		a.router.Use(a.webBotAuthVerifier.Middleware)
 	}
 
@@ -2308,8 +2389,11 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 // and cascaded without child hooks. Callers set BasePath for their own mount.
 func (a *App) wireCrudHandler(ent *entity.Entity) *crud.CrudHandler {
 	name := ent.GetName()
-	ch := crud.NewCrudHandler(ent, a.DB)
-	ch.JSONCase = a.JSONCasing()
+	// WithJSONCase, not a field assignment: NewCrudHandler has already
+	// built the wire-key snapshot under the default case, and only
+	// WithJSONCase republishes it. Assigning the field left a snake_case
+	// app answering camelCase keys.
+	ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing())
 	ch.Hooks = a.HookRegistry(name)
 	ch.ChildHooks = a.lookupHookRegistry
 	ch.Storage = a.Storage
@@ -2440,8 +2524,7 @@ func (a *App) View(v migrate.View) *App {
 		panic(fmt.Sprintf("framework: failed to register view %q: %v", v.Name, err))
 	}
 	if a.DB != nil {
-		ch := crud.NewCrudHandler(ent, a.DB)
-		ch.JSONCase = a.JSONCasing()
+		ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing()) // republishes the wire keys; see wireCrudHandler
 		ch.Registry = a.Registry
 		ch.ChildHooks = a.lookupHookRegistry
 		// Views mount under the API prefix like entities do, so BasePath must
@@ -3286,7 +3369,12 @@ func (a *App) closeNewConns() {
 
 // Shutdown gracefully stops the HTTP server, stops every registered
 // battery in reverse dependency order, then runs each OnStop hook in
-// reverse registration order. Matches net/http.Server.Shutdown's
+// reverse registration order. It first turns /readyz to 503 and, while
+// the server is serving, keeps serving for the readiness grace
+// (WithReadinessDrain, 5s by default) so a load balancer stops routing
+// here before the listener closes; /healthz stays 200. The grace counts
+// against ctx: it takes at most half of what ctx has left, and the rest
+// of the teardown gets the remainder. Matches net/http.Server.Shutdown's
 // signature (takes a deadline ctx) but does the FULL lifecycle teardown.
 // Safe to call multiple times: the teardown runs once, and a later or
 // concurrent call waits for it to finish, then returns nil, or returns
@@ -3320,6 +3408,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 // shutdown is Shutdown's teardown, run once.
 func (a *App) shutdown(ctx context.Context) error {
+	a.drainReadiness(ctx)
 	// Snapshot the cancel func and detach the server under the same lock
 	// that Start/runStartHooks use to assign them. Invoke cancel OUTSIDE
 	// the lock so a cancel-triggered teardown can't re-enter and deadlock.
@@ -3565,6 +3654,9 @@ func (a *App) start(addr string, ln net.Listener) error {
 	if len(a.pendingEndpoints) > 0 {
 		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
 	}
+	if err := a.checkRequestWriteTimeouts(); err != nil {
+		return err
+	}
 
 	if ln != nil {
 		// A caller-supplied listener is served as given: there is no
@@ -3644,8 +3736,13 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// every page now (migrations and seeds have run, so data-backed
 	// pages render their rows) and return instead of serving.
 	if dir := os.Getenv(envExport); dir != "" {
-		if err := a.ExportStatic(a.appCtx, dir, os.Getenv(envExportBase)); err != nil {
+		res, err := a.exportStatic(a.appCtx, dir, os.Getenv(envExportBase))
+		if err != nil {
 			return abort(fmt.Errorf("export: %w", err))
+		}
+		// The receipt goes last: it says the export above is complete.
+		if err := writeExportReceipt(dir, os.Getenv(envExportRun), len(res.Pages)); err != nil {
+			return abort(fmt.Errorf("export receipt: %w", err))
 		}
 		a.Logger().Info("static export written", "dir", dir)
 		return abort(nil)
@@ -3726,7 +3823,7 @@ func (a *App) start(addr string, ln net.Listener) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPIWithBulk(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.entityUIMounted, a.apiPrefix())
+		spec := a.OpenAPISpec(appName)
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {
@@ -3766,7 +3863,10 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// Prometheus /metrics endpoint when metrics are enabled (WithMetrics).
 	// Unauthenticated by design, scrape from inside the network boundary.
 	if a.metrics != nil {
-		a.router.Get("/metrics", middleware.MetricsHandler(a.metrics))
+		// Through Metrics(), not the bare store: it attaches the
+		// framework-owned collectors (db_pool, outbox), which otherwise
+		// appeared only once a battery happened to take the handle.
+		a.router.Get("/metrics", middleware.MetricsHandler(a.Metrics()))
 	}
 
 	if a.Config.DebugEndpoints {
@@ -3827,7 +3927,9 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// OAuth Protected Resource metadata (RFC 9728). Opt-in; advertises how
 	// OAuth-token-protected resources accept tokens.
 	if a.oauthResource != nil {
-		a.router.Get("/.well-known/oauth-protected-resource", http.HandlerFunc(a.handleOAuthProtectedResource))
+		for _, p := range a.oauthResource.metadataPaths() {
+			a.router.Get(p, http.HandlerFunc(a.handleOAuthProtectedResource))
+		}
 	}
 	// Agent-readiness well-known endpoints (isitagentready.com). The API
 	// catalog (RFC 9727 linkset) + MCP server card are auto-served when
@@ -4000,6 +4102,13 @@ func (a *App) start(addr string, ln net.Listener) error {
 			srv.WriteTimeout = 0
 		}
 	}
+	if budget := a.requestBudget(); budget > 0 && to.WriteTimeout == nil && srv.WriteTimeout <= budget {
+		// A RequestTimeout raised past the default write deadline: the
+		// handler it was raised for would finish inside its budget and
+		// lose its response at the deadline. An explicit WriteTimeout in
+		// the same position is refused by checkRequestWriteTimeouts.
+		srv.WriteTimeout = budget + requestTimeoutWriteSlack
+	}
 	if p := a.Config.HTTPProtocols; p != nil {
 		protos := *p
 		srv.Protocols = &protos
@@ -4044,6 +4153,11 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// Serve closes the listener on Shutdown; this extra Close only matters
 	// on the Shutdown-raced path where Serve returns without adopting ln.
 	defer func() { _ = ln.Close() }()
+	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil {
+		a.serverMu.Lock()
+		a.boundHost = host
+		a.serverMu.Unlock()
+	}
 
 	// Graceful shutdown by default: docker stop and kubectl rollouts send
 	// SIGTERM, and without a handler the runtime kills the process
@@ -4063,10 +4177,7 @@ func (a *App) start(addr string, ln net.Listener) error {
 			defer signal.Stop(sigCh)
 			select {
 			case sig := <-sigCh:
-				timeout := a.Config.ShutdownTimeout
-				if timeout <= 0 {
-					timeout = defaultShutdownTimeout
-				}
+				timeout := a.signalShutdownTimeout()
 				a.Logger().Info("shutdown signal received; draining",
 					"signal", sig.String(), "timeout", timeout.String())
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)

@@ -140,6 +140,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
 		}
+		if err := ch.refuseInexactDecimals(ctx, body); err != nil {
+			return err
+		}
 		if err := ch.refuseBlankKeyParts(body); err != nil {
 			return err
 		}
@@ -320,7 +323,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			if !ch.upsertSetsGuarded(ctx, c, sent[c]) {
 				continue
 			}
-			setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", c, c))
+			setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", query.QuoteKeyword(c), query.QuoteKeyword(c)))
 			if c != ownerCol && c != tenantCol {
 				dataSet++
 			}
@@ -340,13 +343,13 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// SET holding just the scope columns (or nothing) is not a write.
 		if col := autoUpdatedAtColumn(ch.Entity); col != "" && dataSet > 0 {
 			vals = append(vals, ch.bindJSONValue(col, generateFieldValue(schema.AutoTimestamp)))
-			setParts = append(setParts, fmt.Sprintf("%s = $%d", col, len(vals)))
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", query.QuoteKeyword(col), len(vals)))
 		}
 
 		visFields := ch.visibleFields()
 		var sb strings.Builder
 		sb.WriteString("INSERT INTO ")
-		sb.WriteString(ch.Entity.GetTable())
+		sb.WriteString(query.QuoteKeyword(ch.Entity.GetTable()))
 		sb.WriteString(" AS " + upsertTarget)
 		if len(cols) == 0 {
 			// Nothing sent and nothing defaulted: the key is generated, so
@@ -356,11 +359,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			sb.WriteString(" DEFAULT VALUES")
 		} else {
 			sb.WriteString(" (")
-			sb.WriteString(strings.Join(cols, ", "))
+			sb.WriteString(strings.Join(query.QuoteKeywords(cols), ", "))
 			sb.WriteString(") VALUES (")
 			sb.WriteString(strings.Join(placeholders, ", "))
 			sb.WriteString(") ON CONFLICT (")
-			sb.WriteString(strings.Join(ch.keyCols(), ", "))
+			sb.WriteString(strings.Join(query.QuoteKeywords(ch.keyCols()), ", "))
 			sb.WriteString(") DO ")
 			if len(setParts) == 0 {
 				// No fields to update, just DO NOTHING; RETURNING still picks
@@ -376,7 +379,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			}
 		}
 		sb.WriteString(" RETURNING ")
-		sb.WriteString(strings.Join(visFields, ", "))
+		sb.WriteString(strings.Join(query.QuoteKeywords(visFields), ", "))
 
 		row := ch.conn(ctx).QueryRowContext(ctx, sb.String(), vals...)
 		res, err := ch.scanOne(row, visFields)
@@ -461,7 +464,7 @@ func (ch *CrudHandler) upsertRowExists(ctx context.Context, body map[string]any)
 	kc, ka := ch.keyCond(key)
 	var one int
 	err := ch.conn(ctx).QueryRowContext(ctx,
-		fmt.Sprintf("SELECT 1 FROM %s WHERE %s", ch.Entity.GetTable(), kc), ka...).Scan(&one)
+		fmt.Sprintf("SELECT 1 FROM %s WHERE %s", query.QuoteKeyword(ch.Entity.GetTable()), kc), ka...).Scan(&one)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return false, nil
@@ -505,7 +508,7 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 	}
 	kc, ka := ch.keyCond(key)
 	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s",
-		strings.Join(cols, ", "), ch.Entity.GetTable(), kc)
+		strings.Join(query.QuoteKeywords(cols), ", "), query.QuoteKeyword(ch.Entity.GetTable()), kc)
 	err := ch.conn(ctx).QueryRowContext(ctx, q, ka...).Scan(ptrs...)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -559,10 +562,11 @@ func (ch *CrudHandler) upsertConflictGuard() string {
 	tbl := upsertTarget
 	var guards []string
 	if of := scope.OwnerField; of != "" {
+		of = query.QuoteKeyword(of)
 		guards = append(guards, fmt.Sprintf("%s.%s = EXCLUDED.%s", tbl, of, of))
 	}
 	if scope.MultiTenant {
-		tc := ch.Entity.Config.TenantColumn()
+		tc := query.QuoteKeyword(ch.Entity.Config.TenantColumn())
 		guards = append(guards, fmt.Sprintf("%s.%s = EXCLUDED.%s", tbl, tc, tc))
 	}
 	if scope.SoftDelete {
