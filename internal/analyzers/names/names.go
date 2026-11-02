@@ -41,6 +41,7 @@ var Analyzers = []string{
 	"negdur",
 	"nonfinite",
 	"nowritedeadline",
+	"optzero",
 	"nowaitdelay",
 	"nostore",
 	"quoteident",

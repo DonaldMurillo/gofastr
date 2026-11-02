@@ -85,6 +85,7 @@ import (
 
 	// 2026-11 bug-bash rules (numbers)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/bareduration"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/optzero"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -166,6 +167,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// 2026-11 bug-bash rules (numbers): unit and zero-value mistakes on
 	// numeric configuration and the integer math that bounds it.
 	allow.Guard(bareduration.Analyzer),
+	allow.Guard(optzero.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

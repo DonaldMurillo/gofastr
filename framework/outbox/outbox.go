@@ -218,6 +218,7 @@ func WithBatchSize(n int) Option {
 // written by one replica and compared on another). Keep a floor of a few
 // minutes even for fast deploys. Defaults to 15m.
 func WithHandlerGrace(d time.Duration) Option {
+	//gofastr:allow(optzero) zero grace settles at once on purpose (single replica, and the outbox tests' knob); a negative acts as zero
 	return func(o *Outbox) { o.handlerGrace = d }
 }
 

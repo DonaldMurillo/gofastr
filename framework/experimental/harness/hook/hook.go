@@ -133,6 +133,7 @@ func (r *Runner) Run(ctx context.Context, e Event, env []string) []Result {
 
 func runOne(ctx context.Context, h Hook, env []string) Result {
 	timeout := h.Timeout
+	//gofastr:allow(optzero) Register rejects a negative Timeout before a hook can reach runOne
 	if timeout == 0 {
 		// Register rejects negatives, so 0 is the only default arm.
 		timeout = DefaultTimeout(h.Event)
