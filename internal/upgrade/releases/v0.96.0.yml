@@ -650,6 +650,12 @@ notes:
       uses:
         - gofastr/core/static.Handler
         - gofastr/core/static.Mount
+  - change: "static.Builder.Watch leaves the builder's OutDir out of the files it polls"
+    breaking: false
+    guidance: "With OutDir under a watched dir, each rebuild used to trigger the next. Nothing to change; a file written into OutDir by another tool no longer triggers a rebuild."
+    find:
+      uses:
+        - gofastr/framework/static.Builder.Watch
   - change: "core/static's SPA fallback (Config.SPA) answers with Cache-Control no-cache instead of the handler's MaxAge"
     breaking: false
     guidance: "The index served for a URL that names no file is revalidated on every request (a 304 while unchanged) instead of being cached under that URL for MaxAge. Nothing to change; a CDN rule that relied on the fallback's long max-age sees no-cache now."

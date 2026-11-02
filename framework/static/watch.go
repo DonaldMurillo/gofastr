@@ -35,6 +35,12 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 	}
 
 	state := newMtimeMap()
+	// The export is not a source. OutDir under a watched dir (watch ".",
+	// write "./dist") is the common layout, and every rebuild rewrites
+	// every export file: polling them made one edit rebuild forever.
+	if out, err := filepath.Abs(b.OutDir); err == nil && b.OutDir != "" {
+		state.skip = out
+	}
 	state.scan(watchDirs)
 
 	ticker := time.NewTicker(interval)
@@ -58,6 +64,18 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 type mtimeMap struct {
 	mu    sync.Mutex
 	files map[string]time.Time
+	// skip is an absolute directory left out of every walk: the
+	// builder's OutDir.
+	skip string
+}
+
+// skipped reports whether the walk leaves path's subtree out.
+func (m *mtimeMap) skipped(path string, d os.DirEntry) bool {
+	if m.skip == "" || d == nil || !d.IsDir() {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	return err == nil && abs == m.skip
 }
 
 func newMtimeMap() *mtimeMap {
@@ -70,9 +88,12 @@ func (m *mtimeMap) scan(dirs []string) {
 	defer m.mu.Unlock()
 	m.files = make(map[string]time.Time)
 	for _, d := range dirs {
-		_ = filepath.WalkDir(d, func(path string, _ os.DirEntry, err error) error {
+		_ = filepath.WalkDir(d, func(path string, de os.DirEntry, err error) error {
 			if err != nil {
 				return nil
+			}
+			if m.skipped(path, de) {
+				return filepath.SkipDir
 			}
 			info, err := os.Stat(path)
 			if err != nil || info.IsDir() {
@@ -95,9 +116,12 @@ func (m *mtimeMap) changed(dirs []string) bool {
 	seen := make(map[string]struct{}, len(m.files))
 
 	for _, d := range dirs {
-		_ = filepath.WalkDir(d, func(path string, _ os.DirEntry, err error) error {
+		_ = filepath.WalkDir(d, func(path string, de os.DirEntry, err error) error {
 			if err != nil {
 				return nil
+			}
+			if m.skipped(path, de) {
+				return filepath.SkipDir
 			}
 			info, err := os.Stat(path)
 			if err != nil || info.IsDir() {

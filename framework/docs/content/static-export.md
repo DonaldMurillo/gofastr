@@ -200,7 +200,10 @@ go build -o site ./examples/site/
   build wrote fails the build. Which file wins is decided by this
   build and the static source, never by what an earlier build left in
   the output directory, so `Builder.Watch` (which rebuilds into the
-  same directory) picks up a changed extra file.
+  same directory) picks up a changed extra file. `Watch` leaves
+  `OutDir` out of what it polls, so the output directory may sit under
+  a watched one (watch `.`, write `./dist`) without each rebuild
+  triggering the next.
 
 In an app that routes by locale prefix (`framework.WithLocalePrefixes`)
 each prefixed locale gets its own page tree (`/es/about/index.html`)

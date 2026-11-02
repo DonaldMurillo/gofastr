@@ -153,6 +153,11 @@ few lines, and link the PR or the docs page for the rest.
   `Prefix` on a segment boundary only: `/staticsecret.txt` served
   `secret.txt`. A path holding a NUL byte (`/a%00b`) answers 404 (or
   the SPA index) instead of 500.
+- **`static.Builder.Watch` no longer rebuilds forever.** It polled
+  every file under the watched dirs, `OutDir` included when it sat under
+  one (watch `.`, write `./dist`), and every rebuild rewrites the
+  export, so one source edit started a loop that never settled. `OutDir`
+  is left out of the poll.
 - **The SPA fallback is `no-cache`.** `core/static` answered a URL that
   names no file with the index under `Config.MaxAge`, so a long
   `MaxAge` meant for fingerprinted assets stored the app shell, as
