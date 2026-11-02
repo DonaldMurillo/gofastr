@@ -751,3 +751,7 @@ notes:
     breaking: false
     guidance: "Each such screen was unreachable from a browser, stopped the app at boot (on the CRUD mount), or was answered by the CRUD API (under it). Fix the route in the app spec before regenerating."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "gofastr harness and gofastr harness mcp always load the built-in default and framework profiles from the binary; a framework/experimental/harness/profile/<name>.toml under the working directory is no longer read in their place"
+    breaking: false
+    guidance: "Nothing to change to run the built-in profiles. To run an edited profile from a checkout of the gofastr repo, pass --profile framework/experimental/harness/profile/<name>.toml. A repo that carried that path no longer replaces the profile."
+    nodetect: "the profile is chosen by the harness command at run time; nothing in an app's source spells it"

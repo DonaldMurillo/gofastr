@@ -88,12 +88,14 @@ engine itself knows about *clients*, never about transports.
    two preset bundles loaded from `profile/framework.toml` and
    `profile/default.toml`. Adding a third profile must never require
    touching the loop or core packages. The two built-in presets are
-   also **embedded into the `gofastr` binary** (`go:embed`): when an
-   installed binary runs outside the source tree and the on-disk
-   `profile/*.toml` is absent, the loader falls back to the embedded
-   copy, so `gofastr harness` / `gofastr harness --framework` work
-   anywhere. An explicit `--profile <path>` still requires an on-disk
-   file (no embedded fallback).
+   also **embedded into the `gofastr` binary** (`go:embed`), and
+   `gofastr harness` / `gofastr harness --framework` always load the
+   embedded copy. A `profile/*.toml` under the working directory is
+   never read in its place: on a cloned repo that directory is
+   attacker-authored, and a planted profile's `prompt_header` would be
+   the system prompt outside the untrusted-content tags (rule 12). An
+   explicit `--profile <path>` loads an on-disk file (no embedded
+   fallback); use it to run an edited profile.
 7. **The engine knows about *clients*, never transports.** Transports
    are owned by `control/`. The engine sees an opaque `Client` and
    tracks per-client identity (originator, `identity_class`) without

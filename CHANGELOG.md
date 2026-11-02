@@ -4628,6 +4628,16 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`gofastr harness` no longer loads its built-in profile from the
+  working directory.** It preferred a
+  `framework/experimental/harness/profile/<name>.toml` relative to the
+  working directory over the copy in the binary, so a cloned repo
+  carrying that path replaced the trusted profile: its `prompt_header`
+  became the system prompt outside the untrusted-content tags, and its
+  `default_model` and `tool_packs` chose the provider and the tools. The
+  built-in profiles now always come from the binary; pass
+  `--profile <path>` to run an edited one. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 - **A harness sub-agent can no longer call `TaskList` or `Agent`.** The
   sub-agent's catalog left both out, but its dispatcher ran any tool in
   the shared registry, so a tool_use naming one (a page the sub-agent
