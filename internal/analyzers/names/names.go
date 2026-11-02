@@ -20,6 +20,7 @@ var Analyzers = []string{
 	"clienttimeout",
 	"compositekey",
 	"credfetch",
+	"deferreset",
 	"controlbytes",
 	"discardeddecode",
 	"discardederr",
