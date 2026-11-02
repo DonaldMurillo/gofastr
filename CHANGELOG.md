@@ -399,7 +399,12 @@ few lines, and link the PR or the docs page for the rest.
 - **BREAKING: `config.Load` promotes embedded struct fields.** In
   `type Cfg struct{ Base }`, Base's `config:"PORT"` field now reads
   `PORT`, the way `encoding/json` promotes it; it read `BASE_PORT`
-  before, and that key is no longer read. Pointer embeds and unexported
+  before, and that key is no longer read. When a source still holds the
+  old `BASE_PORT` spelling and no field reads it, `Load` logs one
+  warning per key through `slog` naming the key it reads now. A promoted
+  field an outer field shadows (`Base.Port` under the outer `Port`) is
+  never read from a source and takes its own `default:` tag, so a method
+  on `Base` reads its default rather than zero. Pointer embeds and unexported
   embedded types promote too (an unexported one was skipped). A field on
   the outer struct wins over a promoted one with the same key; two
   embedded structs promoting one key at the same depth, or a `config:`
