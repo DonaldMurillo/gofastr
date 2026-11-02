@@ -466,6 +466,9 @@ func TestAbandonedWindowCountsOnlyUnansweredIDs(t *testing.T) {
 				ids <- *f.ID
 			}
 		}
+		// The pipe closing at cleanup ends the scan; that error is the
+		// expected end, not a failure.
+		_ = sc.Err()
 	}()
 	abandon := func() uint64 {
 		t.Helper()
