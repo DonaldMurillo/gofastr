@@ -43,7 +43,7 @@ func kwApp(t *testing.T, db *sql.DB) *App {
 			{Name: "user", Type: schema.String},
 			{Name: "end", Type: schema.String},
 			{Name: "desc", Type: schema.String},
-			{Name: "limit", Type: schema.Int},
+			{Name: "limit", Type: schema.Int, Unique: true},
 		},
 		Scope: &entity.ScopeConfig{
 			SoftDelete:  true,
@@ -253,6 +253,16 @@ func TestKeywordColumnsCRUD(t *testing.T) {
 		_, list = kwDo(t, app, http.MethodGet, "/kwitems?group=g4", "")
 		if o := kwField(kwRows(t, list), "order"); !slices.Equal(o, []string{"4"}) {
 			t.Fatalf("after batch create = %v, want [4]", o)
+		}
+
+		// A duplicate in the Unique keyword column answers 409 naming it.
+		req := httptest.NewRequest(http.MethodPost, "/kwitems", strings.NewReader(`{"order":5,"limit":40}`))
+		req.Header.Set("Content-Type", "application/json")
+		ctx := tenant.SetTenantID(handler.SetUser(req.Context(), kwUser{ID: "alice"}), "t1")
+		rec := httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, req.WithContext(ctx))
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"limit"`) {
+			t.Fatalf("duplicate limit = %d %s, want 409 naming limit", rec.Code, rec.Body.String())
 		}
 	})
 }
