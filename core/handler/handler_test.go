@@ -421,6 +421,38 @@ func TestRespondNil(t *testing.T) {
 	}
 }
 
+// A Handler[I, *Out] returning (nil, nil) reaches Respond as a typed nil,
+// which is not == nil inside an any, so it went out as 200 "null" instead
+// of the documented 204. A nil map or slice is the same no-content case.
+func TestRespondTypedNilIs204(t *testing.T) {
+	type out struct{ A int }
+	h := HandlerAdapter(Handler[struct{}, *out](func(context.Context, struct{}) (*out, error) { return nil, nil }))
+	w := httptest.NewRecorder()
+	h(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Errorf("Handler returned (*out)(nil): status %d body %q, want 204 and no body", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	Respond(w, nil, (*HTML)(nil))
+	if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Errorf("(*HTML)(nil): status %d body %q, want 204 and no body", w.Code, w.Body.String())
+	}
+	// A nil slice or map is a list handler's empty result: still 200.
+	for _, v := range []any{map[string]int(nil), []int(nil)} {
+		w := httptest.NewRecorder()
+		Respond(w, nil, v)
+		if w.Code != http.StatusOK {
+			t.Errorf("%T(nil): status %d, want 200", v, w.Code)
+		}
+	}
+	// An empty, non-nil value is still content.
+	w = httptest.NewRecorder()
+	Respond(w, nil, []int{})
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "[]" {
+		t.Errorf("empty slice: status %d body %q, want 200 []", w.Code, w.Body.String())
+	}
+}
+
 func TestRespondJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

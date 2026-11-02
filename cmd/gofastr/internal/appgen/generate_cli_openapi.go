@@ -367,12 +367,16 @@ func oaGoType(schema map[string]any) (goType string, repeated, ok bool) {
 
 // oaKebab converts an operationId or property name to a kebab-case
 // command/flag word: camelCase and snake_case both split on boundaries.
+// A bracketed operator splits the same way: a GoFastr spec names the two
+// readings of a colliding filter key x[in] and x_in[eq], which become
+// --x-in and --x-in-eq while the wire name stays exactly as declared.
 func oaKebab(s string) string {
 	var out []rune
 	for i, r := range s {
 		switch {
-		case r == '_' || r == ' ' || r == '.':
+		case r == '_' || r == ' ' || r == '.' || r == '[':
 			out = append(out, '-')
+		case r == ']':
 		case unicode.IsUpper(r):
 			if i > 0 && len(out) > 0 && out[len(out)-1] != '-' {
 				out = append(out, '-')

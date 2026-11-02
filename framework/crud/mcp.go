@@ -136,6 +136,11 @@ func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Contex
 		if ch.MCPRouteScoped {
 			return nil
 		}
+		// A blank write in a declared Access block is refused to every
+		// caller; that needs no user, policy or route to decide.
+		if ch.permissionForOp(op) == permRefused && !ch.accessAllows(ctx, permRefused, "") {
+			return errMCPToolForbidden
+		}
 		if _, ok := handler.GetUser(ctx); !ok {
 			return nil
 		}
@@ -173,7 +178,12 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				values[key] = toolParamValues(v)
 			}
 		}
-		for _, field := range ch.snapshotFields() {
+		fields := ch.snapshotFields()
+		// Each param is named by the query key it forwards as: the suffix
+		// spelling, or the bracket spelling where the bare key reads two
+		// ways (a stage field beside stage_in), which the route refuses.
+		spell := filter.SpellerFor(fields)
+		for _, field := range fields {
 			// Never build a filter predicate on a Hidden field. Its value
 			// is omitted from output, but a filter turns row presence /
 			// absence into a value-disclosure oracle over a secret column.
@@ -204,21 +214,22 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			// never sends one. The plain key on a JSON field is refused
 			// instead: older schemas advertised it, so a client may
 			// still send it and must learn it no longer filters.
-			if v, ok := params[mcpFieldKey(field)]; ok {
+			eqKey := spell.Key(mcpFieldKey(field), filter.OpEq)
+			if v, ok := params[eqKey]; ok {
 				if !filter.OpSuitsType(filter.OpEq, field.Type) {
-					return nil, toolArgError("param %q: a json field takes no filter", mcpFieldKey(field))
+					return nil, toolArgError("param %q: a json field takes no filter", eqKey)
 				}
-				vs, err := toolFilterValues(mcpFieldKey(field), false, v)
+				vs, err := toolFilterValues(eqKey, false, v)
 				if err != nil {
 					return nil, err
 				}
-				values[mcpFieldKey(field)] = vs
+				values[eqKey] = vs
 			}
 			for _, s := range filter.FilterSuffixes {
 				if !filter.OpSuitsType(s.Op, field.Type) {
 					continue
 				}
-				key := mcpFieldKey(field) + s.Suffix
+				key := spell.Key(mcpFieldKey(field), s.Op)
 				if v, ok := params[key]; ok {
 					vs, err := toolFilterValues(key, s.Op == filter.OpIn, v)
 					if err != nil {
@@ -598,6 +609,9 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 	if len(ent.Config.SearchFields) > 0 {
 		props["q"] = map[string]any{"type": "string", "description": "Free-text search across: " + strings.Join(ent.Config.SearchFields, ", ")}
 	}
+	// Prop names are the query keys the tool forwards (listTool): the
+	// bracket spelling only where the bare key reads two ways.
+	spell := filter.SpellerFor(ent.GetFields())
 	for _, field := range ent.GetFields() {
 		// These props are the list tool's FILTER arguments, so NoQuery
 		// fields are omitted alongside Hidden ones, an agent offered a
@@ -606,7 +620,7 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 			continue
 		}
 		if filter.OpSuitsType(filter.OpEq, field.Type) {
-			props[mcpFieldKey(field)] = mcpFieldSchema(field)
+			props[spell.Key(mcpFieldKey(field), filter.OpEq)] = mcpFieldSchema(field)
 		}
 		// One prop per operator the field's type accepts, from the same
 		// filter.FilterSuffixes ∩ OpSuitsType derivation the forwarding
@@ -631,7 +645,7 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 				ps = map[string]any{"type": "array", "items": mcpFieldSchema(field), "minItems": 1}
 			}
 			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, mcpOperatorLabel(s.Op))
-			props[mcpFieldKey(field)+s.Suffix] = ps
+			props[spell.Key(mcpFieldKey(field), s.Op)] = ps
 		}
 	}
 	return map[string]any{"type": "object", "properties": props}

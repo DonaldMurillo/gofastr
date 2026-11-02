@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -168,6 +169,66 @@ func TestIdempotency_NonSuccessReleasesClaim(t *testing.T) {
 	}
 	if atomic.LoadInt32(&calls) != 2 {
 		t.Fatalf("expected 2 handler runs, got %d", calls)
+	}
+}
+
+// TestIdempotency_PanicReleasesClaim: Finish ran inline after the
+// handler with no defer, so a panicking handler (http.ErrAbortHandler
+// included) left the claim in flight, and every retry of the same
+// request got 409 "concurrent request" until the in-flight TTL although
+// nothing was running. A panic now releases the claim, then goes on.
+func TestIdempotency_PanicReleasesClaim(t *testing.T) {
+	for name, pv := range map[string]any{"panic": "boom", "abort": http.ErrAbortHandler} {
+		t.Run(name, func(t *testing.T) {
+			var calls atomic.Int32
+			h := Idempotency(IdempotencyConfig{Principal: testPrincipal})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if calls.Add(1) == 1 {
+					panic(pv)
+				}
+				w.WriteHeader(http.StatusCreated)
+			}))
+			serve := func() (code int, recovered any) {
+				rec := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{"n":1}`))
+				req.Header.Set(IdempotencyKeyHeader, "panic-key")
+				func() {
+					defer func() { recovered = recover() }()
+					h.ServeHTTP(rec, req)
+				}()
+				return rec.Code, recovered
+			}
+			if _, v := serve(); v != pv {
+				t.Fatalf("first call: recovered %v, want the handler's own panic value re-raised", v)
+			}
+			if code, _ := serve(); code != http.StatusCreated || calls.Load() != 2 {
+				t.Fatalf("retry after a panicked handler: status %d, %d runs; want 201 and a second run (409 means the claim was stranded)",
+					code, calls.Load())
+			}
+		})
+	}
+}
+
+// TestIdempotency_MaxInt64BodyCapKeepsBody: readBodyLimit read through
+// io.LimitReader(body, limit+1); at MaxBodyBytes = math.MaxInt64 the +1
+// wrapped negative, the reader read nothing, and the handler got an
+// empty body, fingerprinted as empty, so different payloads under one
+// key replayed each other.
+func TestIdempotency_MaxInt64BodyCapKeepsBody(t *testing.T) {
+	var got string
+	h := Idempotency(IdempotencyConfig{Principal: testPrincipal, MaxBodyBytes: math.MaxInt64})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			got = string(b)
+			w.WriteHeader(http.StatusCreated)
+		}))
+	req := httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{"amount":42}`))
+	req.Header.Set(IdempotencyKeyHeader, "maxint-key")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if got != `{"amount":42}` {
+		t.Fatalf("handler saw body %q, want the request body", got)
+	}
+	if n := sentinelLimit(math.MaxInt64); n != math.MaxInt64 {
+		t.Fatalf("sentinelLimit(MaxInt64) = %d, want it held at MaxInt64", n)
 	}
 }
 

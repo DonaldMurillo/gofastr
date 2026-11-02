@@ -91,9 +91,10 @@ type SidebarProps struct {
 	// DrawerName names the widget the mobile drawer opens; empty
 	// renders no drawer trigger (the caller mounts the drawer).
 	DrawerName string
-	// DrawerLabel names the drawer trigger button. Empty leaves the
-	// trigger unnamed — a caller rendering the trigger passes the
-	// words, this package says none of its own.
+	// DrawerLabel names the drawer trigger button. Empty (or only
+	// spaces) takes Strings.SidebarOpenDrawer ("Open navigation"): the
+	// hamburger is the phone's only way into the navigation, and an
+	// unnamed button there is one a screen reader calls "button".
 	DrawerLabel string
 	// CollapseStorageKey names the storage the collapse state lives
 	// in when Collapse is auto. Empty means server-owned: the module
@@ -138,6 +139,10 @@ type SidebarProps struct {
 	// Parts: attrs on the shell, the controls, the region's parts and
 	// every item part.
 	Parts Parts
+	// Strings are the strings this component says (the drawer
+	// trigger's default name). Nil means the English defaults; a layer
+	// above sets them from the request's language.
+	Strings *Strings
 }
 
 // groupIDPrefix resolves the per-render id prefix for groups.
@@ -289,9 +294,11 @@ func sidebarDrawerTrigger(b Box, p SidebarProps, part Part) render.HTML {
 		"type":          "button",
 		"data-cui-open": p.DrawerName,
 	})
-	if p.DrawerLabel != "" {
-		drawerAttrs["aria-label"] = scrubControlBytes(p.DrawerLabel)
+	label := p.DrawerLabel
+	if strings.TrimSpace(label) == "" {
+		label = p.Strings.Resolve().SidebarOpenDrawer
 	}
+	drawerAttrs["aria-label"] = scrubControlBytes(label)
 	glyphAttrs := html.Attrs{"aria-hidden": "true"}
 	if part == PartRoot {
 		// The root is the owner's to place and is never marked; the
@@ -687,8 +694,8 @@ func init() {
 				HTML: SidebarDrawerTrigger(SidebarProps{NavLabel: "Primary", DrawerName: "nav-drawer",
 					DrawerLabel: "Open navigation", Items: []SidebarItem{{Label: "Home", Href: "/"}}}, s),
 			}, {
-				Name: "a quiet label-free copy",
-				Why:  "without a label the button still opens the drawer — the name is the host's to add, and the contract does not depend on it",
+				Name: "an unlabelled copy",
+				Why:  "with no DrawerLabel the button is named from Strings (Open navigation): it is the phone's only way into the navigation, and an unnamed hamburger is one a screen reader calls button",
 				HTML: SidebarDrawerTrigger(SidebarProps{NavLabel: "Primary", DrawerName: "nav-drawer",
 					Items: []SidebarItem{{Label: "Home", Href: "/"}}}, s),
 			}}

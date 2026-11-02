@@ -29,6 +29,10 @@ var (
 	reasonInvalidDirection       = i18n.Define("dsl.invalid_direction", "dsl: invalid order direction {{dir}}")
 	reasonInNeedsValue           = i18n.Define("dsl.in_needs_value", "dsl: in operator requires at least one value")
 	reasonUnsupportedOperator    = i18n.Define("dsl.unsupported_operator", "dsl: unsupported operator {{op}}")
+	reasonAfterOrderMismatch     = i18n.Define("dsl.after_order_mismatch", "dsl: after() pages on {{field}} ascending; order({{order}}) sorts the rows another way")
+	reasonOrderTooMany           = i18n.Define("dsl.order_too_many", "dsl: too many order() clauses: {{count}} (max {{max}})")
+	reasonInListOverCap          = i18n.Define("dsl.in_list_over_cap", "dsl: in-list on {{field}} has {{count}} entries (max {{max}})")
+	reasonUnbalancedBrackets     = i18n.Define("dsl.unbalanced_brackets", "dsl: unbalanced brackets in {{input}}; quote a value that holds a bracket")
 
 	reasonFilterTooLong    = i18n.Define("dsl.filter_too_long", "filter: input exceeds {{max}} bytes")
 	reasonSortTooLong      = i18n.Define("dsl.sort_too_long", "sort: input exceeds {{max}} bytes")

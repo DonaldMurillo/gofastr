@@ -274,9 +274,13 @@ func (ds *UIHost) verifySessionToken(token string) (string, bool) {
 // returned HTML is injected alongside any global head tags from
 // WithHeadHTML / WithFavicon / etc.
 //
-// WARNING: the returned HTML is injected verbatim. Implementers must
-// escape any dynamic content (e.g. html.EscapeString for user-supplied
-// titles or descriptions) to prevent XSS.
+// The returned HTML goes through the same head scrub as WithHeadHTML
+// (script, iframe, svg, style and the other active tag families,
+// meta-refresh, on*= handlers, autofocus and script-pulling <link>s are
+// removed, run to a fixpoint; HTML nested to outlast the scrub is dropped
+// whole). The scrub is a backstop, not an escaper: implementers must
+// still escape dynamic content (e.g. html.EscapeString for user-supplied
+// titles or descriptions).
 type SEOScreen interface {
 	HeadHTML() string
 }
@@ -429,21 +433,37 @@ func WithCustomCSS(css string) Option {
 	}
 }
 
-// WithExtraScripts adds external <script src="…"> URLs to inject before
-// </body> on every page. Use for dev-only tooling like livereload.
-// CSP-safe: every URL becomes an external resource, no inline JS.
+// WithExtraScripts adds external <script src="…"> URLs to every full
+// page, emitted deferred at the end of <head> after runtime.js and the
+// per-screen action scripts (the same rail RegisterExternalScript
+// writes). Use for dev-only tooling like livereload. CSP-safe: every URL
+// becomes an external resource, no inline JS.
+//
+// Each src is held to RegisterExternalScript's same-origin grammar
+// ("/x.js", optionally "/x.js?v=abc"): the tag loads under the default
+// CSP's script-src 'self'. A src that fails it (a scheme, a host, a
+// protocol-relative "//cdn…", a backslash, a control byte, a fragment, a
+// "." or ".." segment) is dropped with a warning, the way the URL-typed
+// head options (WithFavicon, WithPreconnect) drop an unsafe URL.
 func WithExtraScripts(urls ...string) Option {
 	return func(ds *UIHost) {
 		for _, u := range urls {
-			ds.extraScripts = append(ds.extraScripts, externalScript{src: u})
+			if err := ds.registerScript(externalScript{src: u}, "WithExtraScripts"); err != nil {
+				slog.Default().Warn("uihost: script dropped from the page", "err", err)
+			}
 		}
 	}
 }
 
 // WithHeadHTML injects raw HTML into every page's <head>. This is the
-// escape hatch for arbitrary head content. The HTML is injected verbatim.
-// Callers must ensure it is CSP-compatible (no inline <script> or
-// <style> tags). For safe, auto-escaped alternatives, see WithFavicon,
+// escape hatch for head content the typed options do not cover. It is
+// scrubbed, not injected verbatim: <script>, <style>, <iframe>, <svg> and
+// the other active tag families, <base>/<img>/<embed>, meta-refresh,
+// on*= handlers, autofocus and script-pulling <link>s are removed, and the
+// scrub runs until its output stops changing, so a removal cannot splice
+// a forbidden tag back together. HTML still changing after the pass cap
+// (nesting built to outlast the scrub) is dropped whole and logged once.
+// For safe, auto-escaped alternatives, see WithFavicon,
 // WithThemeColor, WithDescription, WithOpenGraph, WithTwitterCard,
 // WithCanonicalURL, and WithPreconnect.
 func WithHeadHTML(html string) Option {
@@ -691,7 +711,9 @@ func (ds *UIHost) StaticDir() string {
 // serving symlink-following reads from a directory that was not
 // verifiable at installation time is the worse failure. embed.FS and
 // every other fs.FS pass through unchanged; a custom FS must not
-// follow symlinks (os.Root.FS() is the spelling).
+// follow symlinks (os.Root.FS() is the spelling). Only files are
+// served: a directory falls through to the screens, as under
+// WithStaticDir.
 func (ds *UIHost) SetStaticFS(fsys fs.FS) {
 	ds.staticFS = reRootDirFS(fsys)
 }
@@ -1202,7 +1224,7 @@ func (ds *UIHost) AutoCompileActions() {
 }
 
 // pathToActionID derives a component action ID from a route path.
-// "/" → "home", "/products" → "products", "/products/:slug" → "products-detail"
+// "/" → "home", "/products" → "products", "/products/:slug" → "products-slug"
 func pathToActionID(path string) string {
 	path = strings.TrimPrefix(path, "/")
 	if path == "" {
@@ -1458,24 +1480,27 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	})
 }
 
-// scrubCtl percent-encodes C0 control bytes (except tab) and DEL in a
+// scrubCtl percent-encodes every C0 control byte and DEL in a
 // Location header value built from request-derived paths. It is the
-// header scrub, and its two deliberate pass-throughs hold there:
+// header scrub, and its one deliberate pass-through holds there:
 // net/http's http.Redirect hex-escapes every non-ASCII byte in the
 // Location value it writes, so C1 and the bidi set cannot reach the
 // wire raw downstream of these emit sites (the gap it closes is
-// exactly the C0/DEL that hexEscapeNonASCII leaves alone), and HTAB
-// is a legal header-value byte. The log sink is NOT this scrub's
-// customer: slog leaves C1/bidi runes raw, so log fields
-// use textsafe.ScrubControlBytes instead.
+// exactly the C0/DEL that hexEscapeNonASCII leaves alone). Tab is
+// encoded too, although HTAB is a legal header-value byte: the WHATWG
+// URL parser deletes tab, CR and LF from a Location before parsing it,
+// so a raw "/\t/evil.example" is the protocol-relative "//evil.example"
+// in the browser, while "/%09/evil.example" stays a same-origin path.
+// The log sink is NOT this scrub's customer: slog leaves C1/bidi runes
+// raw, so log fields use textsafe.ScrubControlBytes instead.
 func scrubCtl(s string) string {
 	for i := range len(s) {
-		if c := s[i]; c < 0x20 && c != '\t' || c == 0x7f {
+		if c := s[i]; c < 0x20 || c == 0x7f {
 			var b strings.Builder
 			b.Grow(len(s))
 			for j := range len(s) {
 				d := s[j]
-				if d < 0x20 && d != '\t' || d == 0x7f {
+				if d < 0x20 || d == 0x7f {
 					fmt.Fprintf(&b, "%%%02x", d)
 					continue
 				}
@@ -1578,7 +1603,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// raw C0/DEL bytes pass through into the Location header verbatim,
 	// where they forge log lines and header values downstream. Percent-
 	// encode them, the same contract sanitizeHeaderValue pins elsewhere.
-	if target, ok := ds.App.ResolveRedirect(path); ok {
+	// handler.IsSafeRelativePath is the same gate the navigation arm
+	// applies: a target that is not a same-origin relative path (a tab
+	// a browser deletes in front of "/evil.example", a "//host") is no
+	// redirect at all, and the request falls through to the router.
+	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
 		http.Redirect(w, r, scrubCtl(carryQuery(target, r.URL.RawQuery)), http.StatusPermanentRedirect)
 		return
 	}
@@ -1667,6 +1696,20 @@ func withRenderAlt(ctx context.Context, res app.RenderResult) context.Context {
 	return context.WithValue(ctx, renderAltKey{}, true)
 }
 
+type noMintKey struct{}
+
+// withoutMint marks ctx so finishPageDocument reads a live session but
+// never mints one (the screen-path 405).
+func withoutMint(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noMintKey{}, true)
+}
+
+// mintRefused reports whether ctx carries the withoutMint mark.
+func mintRefused(ctx context.Context) bool {
+	refused, _ := ctx.Value(noMintKey{}).(bool)
+	return refused
+}
+
 // screenOwns reports whether the screen's registration-time metadata
 // (Description, Article, its registration instance's HeadHTML)
 // describes comp: comp is nil or a copy of the screen's component, and
@@ -1730,6 +1773,12 @@ func pageStatus(res app.RenderResult, recorded int) int {
 // the re-mint arm additionally carries a Set-Cookie token. A shared
 // cache that stores no-freshness responses keyed on URL alone would
 // serve visitor B this session's page.
+//
+// A ctx marked withoutMint (the screen-path 405) still reads a live
+// cookie and puts its id in the chrome, but never mints for a request
+// without one: the document then ships session-less chrome (no SSE
+// meta), the shape a static export has. A request that never asked to
+// read a page does not open a session.
 func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx context.Context, html render.HTML, path string, comp component.Component, status int) {
 	// The <title> element is user-data-bearing on dynamic routes (the
 	// post-Load ScreenTitle) and escapes markup, not invisibles: strip the
@@ -1740,7 +1789,10 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Add("Vary", "Cookie")
 	sessionID, live := ds.verifySessionToken(readSessionCookie(r))
-	if !live {
+	switch {
+	case !live && mintRefused(ctx):
+		sessionID = ""
+	case !live:
 		sess := ds.CreateSession()
 		sessionID = sess.ID
 		setSessionCookie(w, r, sess.Token)
@@ -1768,7 +1820,7 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
 		markup: widgets,
 	}
-	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
+	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline, status)
 	out = injectHeadData(ctx, out)
 	if widgets != "" {
 		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
@@ -2155,7 +2207,7 @@ func (ds *UIHost) injectChromeMode(ctx context.Context, page, pagePath, sessionI
 }
 
 func (ds *UIHost) injectChromeModeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
-	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
+	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil, 0)
 }
 
 // inlineHead is how a live page may inline its head (firstpaint.go).
@@ -2171,8 +2223,10 @@ type inlineHead struct {
 
 // injectChromeDoc is the chrome injector. inline, when set, lets a head
 // small enough for the first round trip carry its resources. A nil
-// inline, or export mode, links every head resource.
-func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
+// inline, or export mode, links every head resource. status is the code
+// the page answers with (0 for 200): only a 2xx page signs the topics
+// its screen declares.
+func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead, status int) string {
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
@@ -2195,14 +2249,21 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	defer returnBuilder(scripts)
 
 	if sessionID != "" && !ds.noLiveChannel {
-		// The SSE connection URL. presenceTopic (from the page's ?presence=
-		// query param) is appended so the SSE handler joins the connection
-		// onto the named topic. This is what binds a live roster island to
-		// the viewers of the page. QueryEscaped to keep the value safe inside
-		// the HTML attribute and the downstream URL.
+		// The SSE connection URL. The topics the screen declares
+		// (PresenceScreen) ride signed for this viewer and join with no
+		// hook. presenceTopic (the page's own ?presence= query value) rides
+		// as a request the SSE handler admits only through AuthorizeTopic.
+		// QueryEscaped to keep the values safe inside the HTML attribute
+		// and the downstream URL.
 		sseURL := "/__gofastr/sse?session=" + sessionID
 		if presenceTopic != "" {
 			sseURL += "&presence=" + url.QueryEscape(presenceTopic)
+		}
+		// A page that answers 403/404/500 refused or failed the viewer
+		// (a Load that found another tenant's record sets 404 and draws
+		// its own not-found state), so its screen's topics stay unsigned.
+		if status == 0 || (status >= 200 && status < 300) {
+			sseURL += ds.declaredPresenceQuery(ctx, comp)
 		}
 		fmt.Fprintf(headClose, `<meta name="gofastr-sse" content="%s">`+"\n", sseURL)
 	}
@@ -3395,13 +3456,18 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the SERVER-DERIVED identity from the request context (a
-	// READ of the middleware-seeded ctx user, never a client param) and
-	// the bounded ?presence= topic list, then delegate to the
-	// presence-aware SSE handler. Anonymous (nil user) is fine: the
-	// manager synthesizes a stable per-session pseudo-identity.
+	// READ of the middleware-seeded ctx user, never a client param), the
+	// page's declared topics (only when their signature verifies for this
+	// user) and the bounded ?presence= requests, then delegate to the
+	// presence-aware SSE handler, which admits requested topics only
+	// through AuthorizeTopic. Anonymous (nil user) is fine: the manager
+	// synthesizes a stable per-session pseudo-identity.
 	identity := island.PresenceIdentityFromContext(r.Context())
-	topics := island.ParsePresenceTopics(r.URL.Query().Get("presence"))
-	ds.Islands.ServeSSEWithPresence(w, r, identity, topics)
+	q := r.URL.Query()
+	ds.Islands.ServeSSEWithPresence(w, r, identity, island.PresenceTopics{
+		Declared:  ds.verifiedDeclaredTopics(q, identity.UserID, time.Now()),
+		Requested: island.ParsePresenceTopics(q.Get("presence")),
+	})
 }
 
 // maxPresenceParamLen caps the raw ?presence= query value threaded from the
@@ -4267,7 +4333,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
-				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					f.Close()
 					return true
 				}
@@ -4308,15 +4374,68 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 // methods (GET/HEAD) where a static file or screen resolves at the
 // path, it delegates to serveOrRender so the page renders normally
 // (200). This restores fall-through for a screen that shares its path
-// with a POST-only sibling route. For all other cases it renders a
-// styled 405 page through the default layout, preserving the Allow
-// header the router already set.
+// with a POST-only sibling route. Any other method on such a path gets
+// the screen-path answer (serveScreenMethodNotAllowed), with the
+// screen's GET and HEAD added to the router's Allow. For all other
+// cases it renders a styled 405 page through the default layout,
+// preserving the Allow header the router already set.
 func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && ds.resolvesStaticOrScreen(r) {
 		ds.serveOrRender(w, r)
 		return
 	}
+	if ds.isScreenPath(r) {
+		ds.serveScreenMethodNotAllowed(w, r)
+		return
+	}
 	ds.serveMethodNotAllowedPage(w, r)
+}
+
+// isScreenPath reports whether the request's path names a screen: the
+// app router resolves it and no declared redirect claims it first
+// (handlePage answers a redirect before it resolves a screen, so a
+// redirect's path is not a screen's, whatever the method).
+func (ds *UIHost) isScreenPath(r *http.Request) bool {
+	if ds.App == nil || ds.App.Router == nil {
+		return false
+	}
+	path := routePath(r)
+	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
+		return false
+	}
+	_, _, ok := ds.App.Router.Resolve(path)
+	return ok
+}
+
+// screenAllow is the Allow header of a screen path: GET and HEAD, then
+// each method a route registered at the same path serves (the router's
+// own Allow, when it dispatched a method mismatch), each once.
+func screenAllow(routed string) string {
+	methods := []string{http.MethodGet, http.MethodHead}
+	for m := range strings.SplitSeq(routed, ",") {
+		if m = strings.TrimSpace(m); m != "" && !slices.Contains(methods, m) {
+			methods = append(methods, m)
+		}
+	}
+	return strings.Join(methods, ", ")
+}
+
+// serveScreenMethodNotAllowed answers a method other than GET or HEAD
+// to a screen path that no registered route takes. A screen is a GET
+// resource: rendering it for a POST ran its policy and Load and minted
+// a session for a request that never asked to read the page. OPTIONS
+// gets 204 with the Allow header; every other method gets 405 and the
+// kit's 405 document. Nothing of the screen's runs: no policy, no Load,
+// and no session is minted (a live cookie is read, never renewed). A
+// route registered for the method at the path, an explicit PageHandler
+// included, is dispatched by the router before this is reached.
+func (ds *UIHost) serveScreenMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Allow", screenAllow(w.Header().Get("Allow")))
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	ds.renderMethodNotAllowed(w, r.WithContext(withoutMint(r.Context())))
 }
 
 // serveMethodNotAllowedPage renders a styled 405 page through the
@@ -4325,8 +4444,26 @@ func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) 
 // preserved (set by the router before dispatching). Composed entirely
 // from design-system elements, zero bespoke CSS.
 func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Request) {
+	ds.renderMethodNotAllowed(w, r)
+}
+
+// renderMethodNotAllowed writes the 405 answer: an RFC 9457 problem
+// document when the Accept header names one (the 404 and 500 shape),
+// else the 405 document. A request context marked withoutMint (the
+// screen-path refusal) keeps the document's tail from minting.
+func (ds *UIHost) renderMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
+	w.Header().Add("Vary", "Accept")
+	if acceptsProblemJSON(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		// Neither the path nor the method is echoed, as in the 404's
+		// problem document.
+		json.NewEncoder(w).Encode(newProblem(r.Context(), http.StatusMethodNotAllowed, problemMethodNotAllowed, problemMethodRefused))
+		return
+	}
 
 	rctx := r.Context()
 	children := []render.HTML{
@@ -4370,6 +4507,19 @@ func devStaticNoStore(w http.ResponseWriter) {
 	if dev.Enabled() {
 		w.Header().Set("Cache-Control", "no-store")
 	}
+}
+
+// fsEntryIsDir reports whether an opened static-FS entry is a directory,
+// and closes it when it is: the caller falls through to the screens and
+// never reads it. A Stat error is not a directory, so the handle stays
+// the caller's to serve and close as before.
+func fsEntryIsDir(f fs.File) bool {
+	info, err := f.Stat()
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	_ = f.Close()
+	return true
 }
 
 // serveOrRender is the catch-all NotFound handler. It first tries static
@@ -4419,8 +4569,13 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" && staticServable(cleanPath) {
+				// A directory is no static file: it falls through to the
+				// screens, as the static-dir branch above does. Handed to
+				// http.ServeFileFS it answered a 301 to "docs/", whose
+				// trailing slash fs.ValidPath refuses, so a screen sharing
+				// the directory's name was a redirect into a 404.
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
-				if f, err := ds.staticFS.Open(cleanPath); err == nil {
+				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					devStaticNoStore(w)
 					// A versioned URL is served from the handle it was
 					// hashed from; see markVersionedStatic.
@@ -4455,6 +4610,13 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
 		setPageMarkdownHeaders(w)
 		w.Write([]byte(md))
+		return
+	}
+	// A screen answers GET and HEAD. Any other method no route took
+	// stops here, before handlePage runs the screen's policy and Load
+	// or mints a session; a path that is no screen keeps its 404.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && ds.isScreenPath(r) {
+		ds.serveScreenMethodNotAllowed(w, r)
 		return
 	}
 	ds.handlePage(w, r)
@@ -4514,22 +4676,32 @@ func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (stri
 	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
 		return "", false
 	}
+	return ds.LLMMDWithSEO(ctx, base, scr, res), true
+}
+
+// LLMMDWithSEO is the llm.md the host serves for res, the doc
+// app.ScreenLLMMDForPath rendered for the concrete URL base of screen
+// scr: its markdown behind the screen's SEO front matter. The static
+// export writes it too, so an exported doc matches the served one. ctx
+// is the context the doc rendered under.
+func (ds *UIHost) LLMMDWithSEO(ctx context.Context, base string, scr *app.Screen, res app.ScreenLLMMDResult) string {
 	md := res.MD
 	// SEO front matter ONLY for an allowed render, resolved against the
 	// LOADED instance (the registration instance is a zero-value template
 	// for dynamic routes, and for a non-Allow decision, all
 	// component-supplied metadata is policy-protected).
-	if res.Allowed {
-		title := res.Title
-		if title == "" {
-			title = scr.Title
-		}
-		seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
-		if fm := screenSEOFrontMatter(title, seo); fm != "" {
-			md = fm + "\n" + md
-		}
+	if !res.Allowed {
+		return md
 	}
-	return md, true
+	title := res.Title
+	if title == "" {
+		title = scr.Title
+	}
+	seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
+	if fm := screenSEOFrontMatter(title, seo); fm != "" {
+		md = fm + "\n" + md
+	}
+	return md
 }
 
 // PageHandler returns an http.HandlerFunc that renders the registered
@@ -5308,10 +5480,44 @@ var linkTagRe = regexp.MustCompile(`(?is)<link\b[^>]*?/?>`)
 // Allowed survivors: <meta> (except http-equiv=refresh), <link> with
 // http(s)/relative href, <title>, and inline text content. Even
 // those have any on*= event-handler / autofocus attribute scrubbed.
+//
+// One pass is not enough: every rule removes bytes, and removing an
+// inner match splices its neighbours together, so
+// `<scr<script></script>ipt>` leaves `<script>` behind and
+// `http-equiv="ref/autofocusresh"` leaves `http-equiv="refresh"`. The
+// pass runs again until its output stops changing. Each changing pass
+// shortens the string, so the loop ends; headScrubMaxPasses bounds the
+// work, and HTML still changing at the cap is nested on purpose to
+// outlast the scrub: it is dropped whole (fail closed) and logged once.
 func stripInlineScripts(s string) string {
 	if s == "" {
 		return s
 	}
+	for range headScrubMaxPasses {
+		next := stripInlineScriptsOnce(s)
+		if next == s {
+			return s
+		}
+		s = next
+	}
+	headScrubCapWarnOnce.Do(func() {
+		slog.Default().Warn("uihost: caller-supplied head HTML still changed after the scrub's pass cap; dropping it",
+			"passes", headScrubMaxPasses,
+			"fix", "remove the nested script, handler or refresh markup from WithHeadHTML / SEOScreen.HeadHTML")
+	})
+	return ""
+}
+
+// headScrubMaxPasses caps stripInlineScripts' fixpoint loop. Honest head
+// HTML converges in one or two passes; each further pass undoes one more
+// level of deliberate nesting.
+const headScrubMaxPasses = 8
+
+// headScrubCapWarnOnce gates stripInlineScripts' one-time WARN.
+var headScrubCapWarnOnce sync.Once
+
+// stripInlineScriptsOnce is one pass of every head-scrub rule.
+func stripInlineScriptsOnce(s string) string {
 	out := scriptTagRe.ReplaceAllString(s, "")
 	out = dangerousHeadTagsRe.ReplaceAllString(out, "")
 	out = voidHeadTagsRe.ReplaceAllString(out, "")

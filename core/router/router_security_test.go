@@ -464,8 +464,9 @@ func TestParamsKeepsDeclaredKeys(t *testing.T) {
 // the clean prefix) rather than rejecting or mangling the whole value, and
 // leaves ordinary byte sequences that merely LOOK dangerous ("...", "a..b")
 // alone. The scrub set is exactly {CR, LF, NUL, "/" when single-segment,
-// ".." when segment-bounded}. This is the exported contract Bind and every
-// hand-rolled consumer build on; the siblings above assert only that a bad
+// an empty non-final segment in a catch-all, ".." when segment-bounded}.
+// This is the exported contract Bind and every hand-rolled consumer
+// build on; the siblings above assert only that a bad
 // byte is absent from the output, not what survives around it.
 func TestSanitizeTruncatesAtFirstBadByte(t *testing.T) {
 	cases := []struct {
@@ -484,6 +485,9 @@ func TestSanitizeTruncatesAtFirstBadByte(t *testing.T) {
 		{"...", true, "..."},               // ordinary: three dots is not a segment
 		{"a..b", false, "a..b"},            // ordinary: unbounded interior dots
 		{"docs/a/b/c", true, "docs/a/b/c"}, // legitimate multi-segment catch-all
+		{"docs/a/", true, "docs/a/"},       // trailing "/" is a real path's
+		{"/etc/passwd", true, ""},          // leading %2F: an absolute path
+		{"a//b", true, "a/"},               // interior %2F: an empty segment
 	}
 	for _, c := range cases {
 		if got := SanitizePathParam(c.in, c.catchAll); got != c.want {

@@ -25,7 +25,9 @@ body := ui.PaneHost(ui.PaneHostConfig{
 
 `Primary` is required (`PaneHost` panics when empty, mirroring
 `DataTable`). Each side pane is a labelled `role="region"`;
-`SecondaryLabel`/`TertiaryLabel` default to `"Secondary"`/`"Tertiary"`.
+`SecondaryLabel`/`TertiaryLabel` default to `"Secondary"`/`"Tertiary"`,
+said in the request's language when `Ctx` is set (the
+`ui.paneHost.secondary` / `ui.paneHost.tertiary` phrases).
 
 ## What it renders
 
@@ -192,7 +194,11 @@ the module applies:
   outside the drawer re-enters it at the first
   focusable, Shift+Tab at the last,
 - a refcounted **scroll lock**: `__gofastr.doc.lockScroll('panehost:<id>')`,
-  released on close / widen / navigate,
+  released on close / widen, and whenever the host leaves the document:
+  a client navigation that takes it away, or an island swap that
+  re-renders its region without it (no navigation needed; a swap that
+  renders the host again with its pane open hands the lock to the new
+  host),
 - **ESC** and **backdrop-click** to close — ESC and the backdrop are
   light-dismiss for the OVERLAY drawer only; an open inline column at
   desktop width is page content and survives both.

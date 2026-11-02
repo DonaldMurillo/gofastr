@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -56,9 +57,20 @@ var timestampLayouts = []string{
 //   - Date: YYYY-MM-DD, bound as the text sent.
 //
 // Every other type binds raw unchanged: String, Text, Enum, UUID and
-// Relation columns are TEXT on both dialects, so any string is a value
+// Relation columns are TEXT on both dialects, so any text is a value
 // that simply may match nothing.
+//
+// Under every type the value must be text Postgres can store: valid
+// UTF-8 with no NUL byte. Postgres refuses either in a text bind with
+// 22021 (a 500) while SQLite compared the bytes and answered 200, so
+// ?title=a%FFb split the dialects the way a mistyped value did. A
+// Decimal exponent past ±1000 (Postgres numeric_in refuses it) and a
+// Timestamp or Date in year 0 or before (Postgres has no year 0) are
+// refused for the same reason.
 func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
+	if !storableText(raw) {
+		return nil, valueTypeError(field, t)
+	}
 	switch t {
 	case schema.Int:
 		n, err := strconv.ParseInt(raw, 10, 64)
@@ -79,7 +91,8 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 		}
 		return f, nil
 	case schema.Decimal:
-		if !decimalLiteral.MatchString(raw) {
+		// The write check (schema.Validate) shares the exponent rule.
+		if !decimalLiteral.MatchString(raw) || !schema.DecimalExponentFits(raw) {
 			return nil, valueTypeError(field, t)
 		}
 		return raw, nil
@@ -118,6 +131,13 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 	default:
 		return raw, nil
 	}
+}
+
+// storableText reports whether raw is text both dialects store and
+// compare: valid UTF-8 holding no NUL byte. Postgres refuses anything
+// else in a text bind (22021).
+func storableText(raw string) bool {
+	return utf8.ValidString(raw) && strings.IndexByte(raw, 0) < 0
 }
 
 // TypedBind is CoerceValue for a value already checked, or one the program

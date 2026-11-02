@@ -348,6 +348,43 @@ func TestCompressHonorsGzipQZero(t *testing.T) {
 	}
 }
 
+// TestCompressIfMatchGzipTag: Compress hands gzip-accepting clients the
+// tag "x-gzip" and mapped it back to "x" for If-None-Match only. An
+// optimistic-concurrency PUT echoing that tag in If-Match reached the
+// handler unchanged and got 412 on every write. If-Match now gets the
+// same rewrite.
+func TestCompressIfMatchGzipTag(t *testing.T) {
+	const tag = `"rev-7"`
+	body := `{"items":[` + strings.Repeat(`{"name":"widget","qty":1},`, 100) + `{}]}`
+	h := Compress()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			if r.Header.Get("If-Match") != tag {
+				w.WriteHeader(http.StatusPreconditionFailed)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", tag)
+		_, _ = io.WriteString(w, body)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, gzipReq("/items"))
+	issued := rec.Header().Get("ETag")
+	if rec.Header().Get("Content-Encoding") != "gzip" || issued != `"rev-7-gzip"` {
+		t.Fatalf("premise: GET not gzipped under the gzip tag (ce=%q etag=%q)", rec.Header().Get("Content-Encoding"), issued)
+	}
+	put := httptest.NewRequest(http.MethodPut, "/items", strings.NewReader(`{}`))
+	put.Header.Set("Accept-Encoding", "gzip")
+	put.Header.Set("If-Match", issued)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, put)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT If-Match %s (the tag Compress issued) answered %d, want 204", issued, rec.Code)
+	}
+}
+
 type noHijackRecorder struct{ *httptest.ResponseRecorder }
 
 func TestCompressFailedHijackKeepsWriter(t *testing.T) {

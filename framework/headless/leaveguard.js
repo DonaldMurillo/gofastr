@@ -30,8 +30,15 @@
   const dirty = new WeakSet();
   let armed = false;
 
+  // The guarded form an event belongs to: a control's own form, which
+  // form="id" names even from outside the form element (a header
+  // field, a toolbar select), else the guard around the node.
   function guardOf(el) {
-    return el && el.closest ? el.closest(GUARD) : null;
+    if (!el) return null;
+    // A form's own .form is a named control called "form", never an owner.
+    const f = el.tagName !== 'FORM' ? el.form : null;
+    if (f && f.matches && f.matches(GUARD)) return f;
+    return el.closest ? el.closest(GUARD) : null;
   }
 
   // dirtyIn walks the scope the move would discard: an element (a

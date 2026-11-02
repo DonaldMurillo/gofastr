@@ -118,7 +118,9 @@ func FormFrame(cfg FormFrameConfig) render.HTML {
 
 	withSide := len(cfg.Side) > 0
 	colsCls := "fui-form-frame__columns"
-	if withSide {
+	// The two-column grid needs both columns: a side-only frame renders
+	// its side column at the full width, as documented.
+	if withSide && len(cfg.Main) > 0 {
 		colsCls += " fui-form-frame--with-side"
 	}
 	var cols []render.HTML

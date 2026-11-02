@@ -86,6 +86,9 @@ type Peer struct {
 
 	maxInflight      int
 	maxServeInflight int
+	// serveGate, when set, is asked before every served request or
+	// notification other than MethodCancel; a non-nil answer refuses it.
+	serveGate func(method string) *Error
 
 	// Per-direction id counter (the load-bearing field). Atomic; starts at 0
 	// so the first Add(1) returns 1: ids begin at 1, never 0.
@@ -186,6 +189,16 @@ func WithMaxServeInflight(n int) PeerOption {
 			p.maxServeInflight = n
 		}
 	}
+}
+
+// WithServeGate installs a check the Peer runs before it serves an
+// inbound request or notification. A non-nil *Error refuses the request
+// with that code and message (a notification is dropped) and the handler
+// never runs. [MethodCancel] is never gated: a refused peer must still be
+// able to cancel its own calls. The gate runs on every inbound frame, so
+// it must be cheap and must not block.
+func WithServeGate(gate func(method string) *Error) PeerOption {
+	return func(p *Peer) { p.serveGate = gate }
 }
 
 // WithHandler registers a handler at construction. Repeat to register more.
@@ -758,6 +771,9 @@ func (p *Peer) dispatch(f *Frame) {
 // so the write is not counted against the concurrent-handler cap.
 func (p *Peer) buildResponse(f *Frame) *Frame {
 	id := *f.ID
+	if refused := p.gate(f.Method); refused != nil {
+		return NewErrorResponse(id, refused.Code, refused.Message, refused.Data)
+	}
 	p.mu.Lock()
 	h, ok := p.handlers[f.Method]
 	p.mu.Unlock()
@@ -824,6 +840,9 @@ func runHandler(h Handler, ctx context.Context, params json.RawMessage) (result 
 }
 
 func (p *Peer) serveNotification(f *Frame) {
+	if p.gate(f.Method) != nil {
+		return
+	}
 	p.mu.Lock()
 	h, ok := p.handlers[f.Method]
 	p.mu.Unlock()
@@ -841,6 +860,22 @@ func (p *Peer) serveNotification(f *Frame) {
 	// Best-effort; errors are unobservable on the wire. A panicking
 	// handler is recovered here so it only drops the notification.
 	_, _ = runHandler(h, ctx, f.Params)
+}
+
+// gate runs the serve gate for method. MethodCancel always passes. A
+// gate that panics refuses the call: it runs on the dispatch path, where
+// an escaped panic would kill the process, and an unanswerable check must
+// not admit.
+func (p *Peer) gate(method string) (refused *Error) {
+	if p.serveGate == nil || method == MethodCancel {
+		return nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			refused = &Error{Code: CodeInternalError, Message: "serve gate failed"}
+		}
+	}()
+	return p.serveGate(method)
 }
 
 // maxAbandonedIDs bounds how many abandoned ids the peer remembers that are

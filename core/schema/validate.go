@@ -177,6 +177,25 @@ func validateDecimal(f Field, value any) error {
 	if !decimalRe.MatchString(s) {
 		return violate(ReasonNotDecimal, nil)
 	}
+	// Postgres refuses an exponent past ±1000 (22P02) and a value the
+	// column's precision cannot hold (22003), and rounds away fraction
+	// digits past its scale, while SQLite stores each as sent: the create
+	// answered 500 on one dialect and 201 on the other, or the two kept
+	// different numbers. Both checks read the text, so they run ahead of
+	// ParseFloat (which reads 1e-1001 as 0 with no error) and big.Rat
+	// (which builds 10^|exp| in full).
+	if !DecimalExponentFits(s) {
+		return violate(ReasonDecimalExponent, map[string]any{"max": MaxDecimalExponent})
+	}
+	if precision, scale, bounded := DecimalColumn(f); bounded {
+		intDigits, fracDigits := decimalDigits(s)
+		if fracDigits > scale {
+			return violate(ReasonDecimalFractionDigits, map[string]any{"max": scale})
+		}
+		if intDigits > precision-scale {
+			return violate(ReasonDecimalIntegerDigits, map[string]any{"max": precision - scale})
+		}
+	}
 	n, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return violate(ReasonNotDecimal, nil)

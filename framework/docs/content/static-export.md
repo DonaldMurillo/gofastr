@@ -113,7 +113,9 @@ go build -o site ./examples/site/
   whose doc was not written appears without a link. The builder hands
   the written docs to the index through `app.WithExportedDocs(ctx, docs)`.
   Each page's doc renders under the same synthetic request as its HTML,
-  so a screen that reads the request works in both.
+  so a screen that reads the request works in both. A page's doc is the
+  one the live host serves, SEO front matter included: the builder
+  writes it through `UIHost.LLMMDWithSEO`.
 - `.gofastr-pages`: the list of page and `llm.md` files this build
   wrote. The next build into the same `OutDir` removes any listed file
   it no longer writes, such as a page that became gated or a route that

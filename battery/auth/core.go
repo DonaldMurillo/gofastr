@@ -32,6 +32,9 @@ type CorePlugin struct {
 	// notices sends the duplicate-registration notice off the timed
 	// path, bounded and stopped with the manager (OnStop).
 	notices *mailQueue
+	// twoFactorURL is where an HTML form login of a 2FA account goes
+	// (WithTwoFactorURL).
+	twoFactorURL string
 }
 
 // CorePlugin drains its notice queue at shutdown.
@@ -44,6 +47,18 @@ const loginAccountScope = "login_account"
 // NewCorePlugin creates the core auth plugin.
 func NewCorePlugin() *CorePlugin {
 	return &CorePlugin{notices: newMailQueue("core")}
+}
+
+// WithTwoFactorURL sets where an HTML form login goes when the account
+// still owes its second factor: the app's page that posts the code to
+// /2fa/challenge. Same-origin paths only. Init requires it when a 2FA
+// plugin is registered, as the passkey, magic-link and OAuth plugins do:
+// the session a form login mints for such an account is pending, and the
+// login's `next` (or "/") would refuse it. A JSON login is unaffected; it
+// answers two_factor_required.
+func (c *CorePlugin) WithTwoFactorURL(path string) *CorePlugin {
+	c.twoFactorURL = path
+	return c
 }
 
 // OnStop cancels the duplicate-registration notices in flight and waits
@@ -59,6 +74,15 @@ func (c *CorePlugin) Name() string { return "core" }
 // login rate limiters from manager config.
 func (c *CorePlugin) Init(mgr *AuthManager) error {
 	c.mgr = mgr
+	// Every plugin is registered before any Init runs, so a 2FA plugin
+	// later in the list is already visible.
+	if c.twoFactorURL == "" {
+		for _, name := range mgr.order {
+			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
+				return fmt.Errorf("auth: core plugin: %q handles two-factor sign-in, so set NewCorePlugin().WithTwoFactorURL to the page that finishes it: a form login of a 2FA account is pending until /2fa/challenge, and its next page would refuse it", name)
+			}
+		}
+	}
 	cfg := mgr.Config()
 	if cfg.LoginRateLimit != nil {
 		// DevMode relaxes the per-IP login limiter so local
@@ -266,14 +290,14 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			// real row does. Skipping the work leaks user existence by
 			// timing; doing the WRONG algorithm's work leaks it just as
 			// well, only more subtly.
-			_ = CheckPassword(password, dummyHashFor(DefaultHasher))
+			_ = verifyPassword(password, dummyHashFor(DefaultHasher))
 			// Unknown user OR a transport error, record a failed login.
 			// UserID stays empty (anti-enumeration: the event never
 			// distinguishes "no such user" from "wrong password").
 			failLogin("", "bad_credentials", http.StatusUnauthorized, reasonInvalidCredentials)
 			return
 		}
-		if !CheckPassword(password, hash) {
+		if !verifyPassword(password, hash) {
 			failLogin(user.GetID(), "bad_credentials", http.StatusUnauthorized, reasonInvalidCredentials)
 			return
 		}
@@ -328,6 +352,14 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
 		if isForm {
+			// A pending session is refused everywhere but /2fa/challenge,
+			// so the browser goes to the page that posts the code. Init made
+			// sure twoFactorURL is set whenever a 2FA plugin can make one
+			// pending.
+			if pendingTwoFA {
+				http.Redirect(w, r, safeRedirectURL(c.twoFactorURL), http.StatusSeeOther)
+				return
+			}
 			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return
 		}

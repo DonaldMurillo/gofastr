@@ -115,6 +115,7 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 			"aria-invalid", "aria-describedby"),
 		Parts:   parts,
 		Strings: StringsFor(cfg.Ctx),
+		Ctx:     cfg.Ctx,
 	}, numberInputClasses))
 }
 

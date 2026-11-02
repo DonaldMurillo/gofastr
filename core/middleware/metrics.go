@@ -90,14 +90,57 @@ func MetricsMiddleware(m *Metrics) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			ww := &metricsResponseWriter{ResponseWriter: w, status: 200}
-			next.ServeHTTP(ww, r)
-			route := r.Pattern
-			if route == "" {
-				route = "unmatched"
+			record := func(status int) {
+				route := r.Pattern
+				if route == "" {
+					route = "unmatched"
+				}
+				m.record(boundMethod(r.Method), route, status, time.Since(start))
 			}
-			m.record(boundMethod(r.Method), route, ww.status, time.Since(start))
+			// A panicking handler still answered: Recovery sends a 500,
+			// or, past a committed response, the status already sent
+			// (then a cut connection). Count it, then let the panic go on.
+			defer func() {
+				if v := recover(); v != nil {
+					record(panickedStatus(w, ww.wroteHeader, ww.status))
+					panic(v)
+				}
+			}()
+			next.ServeHTTP(ww, r)
+			record(ww.status)
 		})
 	}
+}
+
+// panickedStatus is the status a panicked request is recorded under:
+// the one already sent when the response was committed, else the 500
+// Recovery writes. w is the writer this middleware was handed. When
+// Recovery is outside it, its writer, reached through Unwrap, saw what
+// actually went to the client: a wrapper between them (Compress) holds
+// a WriteHeader back, so this middleware's own committed flag can name
+// a 201 the client never got. Without Recovery outside, the wrapper's
+// own record is the best there is.
+func panickedStatus(w http.ResponseWriter, committed bool, status int) int {
+	for cur := w; cur != nil; {
+		if rw, ok := cur.(*recoveryWriter); ok {
+			switch {
+			case !rw.started:
+				return http.StatusInternalServerError
+			case rw.status != 0:
+				return rw.status
+			}
+			break // hijacked: no status went out through the writer
+		}
+		u, ok := cur.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		cur = u.Unwrap()
+	}
+	if committed {
+		return status
+	}
+	return http.StatusInternalServerError
 }
 
 // knownMethods is the set of HTTP methods we keep as distinct metric label
@@ -296,6 +339,10 @@ func (w *metricsResponseWriter) Write(b []byte) (int, error) {
 // panics otherwise. Found the hard way by the full-stack E2E test that
 // exercised /posts/_events through the metrics middleware.
 func (w *metricsResponseWriter) Flush() {
+	// A flush sends the headers: the status is the one set, or 200.
+	// Latch it, so a WriteHeader after the flush (which net/http drops)
+	// does not record a status the client never got.
+	w.wroteHeader = true
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

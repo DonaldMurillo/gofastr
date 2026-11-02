@@ -93,7 +93,7 @@ func (ch *CrudHandler) writePivotLink(ctx context.Context, r *http.Request, rel 
 			return nil
 		}
 		lw := pivotHandler.linkWrite(map[string]any{rel.LocalKey: l.parent, rel.ForeignKeyTarget: l.child})
-		if err := pivotHandler.checkBelongsToScope(ctx, lw); err != nil {
+		if err := pivotHandler.checkBelongsToScope(ctx, r, lw); err != nil {
 			var ve *ValidationError
 			if errors.As(err, &ve) {
 				return &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
@@ -290,7 +290,7 @@ func coercePKValue(reg entity.Registry, ent *entity.Entity, colName string, val 
 
 // checkChildOwnership verifies that a child record exists, belongs to the parent, and is readable
 // under the caller's tenant, owner, and read scopes (and is not soft-deleted).
-func (ch *CrudHandler) checkChildOwnership(ctx context.Context, target *entity.Entity, targetPK, fkCol string, childIDVal, parentID any) error {
+func (ch *CrudHandler) checkChildOwnership(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, targetPK, fkCol string, childIDVal, parentID any) error {
 	if serverWrites(ctx) {
 		return nil
 	}
@@ -340,12 +340,19 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, target *entity.E
 		}
 		return err
 	}
+	// A child the include would not attach is one the write neither
+	// touches nor confirms: the same not-found as a child that is not
+	// there.
+	if ch.childScopeHidesKey(ctx, r, target, rel, []any{coercedChildID}, fmt.Sprint(childIDVal)) {
+		return fmt.Errorf("%w: child %s/%v does not belong to parent %v",
+			errNotFound, target.GetName(), childIDVal, parentID)
+	}
 	return nil
 }
 
 // findExistingHasOneChild searches for an existing HasOne child record under parentID,
 // enforcing tenant, owner, read scopes, and soft-delete exclusions.
-func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, target *entity.Entity, targetPK, fkCol string, parentID any) (any, error) {
+func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, targetPK, fkCol string, parentID any) (any, error) {
 	if target == nil {
 		return nil, nil
 	}
@@ -390,6 +397,11 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, target *enti
 		}
 		return nil, err
 	}
+	// A child the caller's own read scope hides is one it does not have,
+	// as a ReadScope-hidden one is above.
+	if ch.childScopeHidesKey(ctx, r, target, rel, []any{existingID}, fmt.Sprint(existingID)) {
+		return nil, nil
+	}
 	return existingID, nil
 }
 
@@ -398,7 +410,7 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, target *enti
 // A target the request may not reach through a relation at all (see
 // relationReachable) answers the same not-found as an unreadable row, so a
 // link attempt is not an existence oracle over it.
-func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request, target *entity.Entity, targetPK string, idVal any) error {
+func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, targetPK string, idVal any) error {
 	if serverWrites(ctx) {
 		return nil
 	}
@@ -439,6 +451,12 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 			return fmt.Errorf("%w: target %s/%v is not readable by this caller", errNotFound, target.GetName(), idVal)
 		}
 		return fmt.Errorf("target %s/%v lookup: %w", target.GetName(), idVal, err)
+	}
+	// The target's own BeforeList scope, as ?include= over the relation
+	// applies it: a row it hides answers what a missing one does, or the
+	// link's status is an existence oracle over hidden rows.
+	if ch.childScopeHidesKey(ctx, r, target, rel, []any{coercedID}, fmt.Sprint(idVal)) {
+		return fmt.Errorf("%w: target %s/%v is not readable by this caller", errNotFound, target.GetName(), idVal)
 	}
 	return nil
 }
@@ -597,7 +615,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		body[oneFK(rel)] = childPKVal
 		// A child the caller's read scope hides goes back as its id only,
 		// as on the dependent arms.
-		if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+		if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 			return nil, fmt.Errorf("%s: %w", rel.Name, err)
 		}
 		attached[ch.convertKey(rel.Name)] = childResult
@@ -689,7 +707,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			}
 			if isUpdate {
 				if hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-					if err := ch.checkChildOwnership(ctx, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
+					if err := ch.checkChildOwnership(ctx, r, rel, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 						return nil, err
 					}
 					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
@@ -700,7 +718,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 					}
 				} else {
-					existingID, scanErr := ch.findExistingHasOneChild(ctx, target, targetPK, oneFK(rel), parentID)
+					existingID, scanErr := ch.findExistingHasOneChild(ctx, r, rel, target, targetPK, oneFK(rel), parentID)
 					if scanErr != nil {
 						return nil, scanErr
 					}
@@ -745,7 +763,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				return nil, fmt.Errorf("%s: %w", rel.Name, err)
 			}
 			// A child the caller's read scope hides goes back as its id only.
-			if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+			if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 				return nil, fmt.Errorf("%s: %w", rel.Name, err)
 			}
 			attached[ch.convertKey(rel.Name)] = childResult
@@ -773,7 +791,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					childIDVal, hasChildID = childMap[childHandler.convertKey(targetPK)]
 				}
 				if isUpdate && hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-					if err := ch.checkChildOwnership(ctx, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
+					if err := ch.checkChildOwnership(ctx, r, rel, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 						return nil, err
 					}
 					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
@@ -803,7 +821,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 				}
 				// A child the caller's read scope hides goes back as its id only.
-				if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+				if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 				}
 				childResults = append(childResults, childResult)
@@ -848,7 +866,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							return nil, err
 						}
 						childID = coerced
-						if err := ch.checkTargetRowScope(ctx, r, target, targetPK, childID); err != nil {
+						if err := ch.checkTargetRowScope(ctx, r, rel, target, targetPK, childID); err != nil {
 							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}
 						if len(childMap) == 1 {
@@ -869,7 +887,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							}
 							childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 							// The update may move the child out of the caller's read scope.
-							if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+							if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 								return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 							}
 						}
@@ -892,7 +910,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							childID = childResult[childHandler.convertKey(targetPK)]
 						}
 						// A child the caller's read scope hides goes back as its id only.
-						if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+						if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}
 					}
@@ -903,7 +921,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					childID = coerced
 					childResult = map[string]any{childHandler.convertKey(targetPK): childID}
-					if err := ch.checkTargetRowScope(ctx, r, target, targetPK, childID); err != nil {
+					if err := ch.checkTargetRowScope(ctx, r, rel, target, targetPK, childID); err != nil {
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				case json.Number:
@@ -913,7 +931,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					childID = coerced
 					childResult = map[string]any{childHandler.convertKey(targetPK): childID}
-					if err := ch.checkTargetRowScope(ctx, r, target, targetPK, childID); err != nil {
+					if err := ch.checkTargetRowScope(ctx, r, rel, target, targetPK, childID); err != nil {
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				default:

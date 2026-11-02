@@ -54,6 +54,9 @@ type (
 )
 
 const (
+	// Anyone opens an AccessControl operation to every caller.
+	Anyone = entity.Anyone
+
 	RelHasOne     = entity.RelHasOne
 	RelHasMany    = entity.RelHasMany
 	RelManyToOne  = entity.RelManyToOne

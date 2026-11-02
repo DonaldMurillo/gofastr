@@ -205,7 +205,11 @@ func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 	t := idx.colType[p.Field]
 	switch p.Op {
 	case OpLike:
-		// A substring, matched as text; never coerced.
+		// A substring, matched as text; never coerced, but bound as
+		// text, so it must be text Postgres stores (CoerceValue).
+		if !storableText(p.Value) {
+			return valueTypeError(sent, t)
+		}
 	case OpIn:
 		for _, v := range p.Values {
 			if _, err := CoerceValue(sent, t, v); err != nil {

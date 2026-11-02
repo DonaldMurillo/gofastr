@@ -60,14 +60,14 @@ func TestSignWithTimestamp_RejectsReplay(t *testing.T) {
 	body := []byte(`{"k":1}`)
 	old := time.Now().Add(-10 * time.Minute).Unix()
 
-	header := SignWithTimestamp(secret, old, body)
+	header := SignWithTimestamp(secret, old, "", "", body)
 	// Within tolerance, must verify when the timestamp matches what
 	// we present to VerifyTimestamp.
-	if !VerifyTimestamped(secret, header, body, time.Hour) {
+	if !VerifyTimestamped(secret, header, "", "", body, time.Hour) {
 		t.Fatalf("VerifyTimestamped within tolerance should succeed")
 	}
 	// Beyond tolerance, must reject even though the HMAC bytes match.
-	if VerifyTimestamped(secret, header, body, 1*time.Minute) {
+	if VerifyTimestamped(secret, header, "", "", body, 1*time.Minute) {
 		t.Fatalf("VerifyTimestamped must reject replay outside tolerance")
 	}
 }
@@ -76,14 +76,14 @@ func TestSignWithTimestamp_RejectsTamperedTimestamp(t *testing.T) {
 	secret := "s"
 	body := []byte("abc")
 	ts := time.Now().Unix()
-	header := SignWithTimestamp(secret, ts, body)
+	header := SignWithTimestamp(secret, ts, "", "", body)
 	// Adversary swaps the timestamp portion: must invalidate the signature.
 	parts := strings.Split(header, ",")
 	if len(parts) != 2 {
 		t.Fatalf("expected t=...,v1=... header, got %q", header)
 	}
 	tampered := "t=" + "99999," + parts[1]
-	if VerifyTimestamped(secret, tampered, body, time.Hour) {
+	if VerifyTimestamped(secret, tampered, "", "", body, time.Hour) {
 		t.Fatalf("verifier must reject tampered timestamp")
 	}
 }
@@ -95,12 +95,12 @@ func TestVerifyTimestamped_RejectsNonPositiveTolerance(t *testing.T) {
 	secret := "k"
 	body := []byte("x")
 	now := time.Now().Unix()
-	sig := SignWithTimestamp(secret, now, body)
+	sig := SignWithTimestamp(secret, now, "", "", body)
 
-	if VerifyTimestamped(secret, sig, body, 0) {
+	if VerifyTimestamped(secret, sig, "", "", body, 0) {
 		t.Error("tolerance=0 should reject (replay window disabled)")
 	}
-	if VerifyTimestamped(secret, sig, body, -time.Second) {
+	if VerifyTimestamped(secret, sig, "", "", body, -time.Second) {
 		t.Error("negative tolerance should reject")
 	}
 }
@@ -118,14 +118,14 @@ func TestVerifyTimestamped_RejectsExtremeTimestamps(t *testing.T) {
 	// timestamp. But the test pins that the verifier rejects, even if
 	// the HMAC matches its (also-bogus) signed payload.
 	maxTs := int64(math.MaxInt64)
-	sig := SignWithTimestamp(secret, maxTs, body)
-	if VerifyTimestamped(secret, sig, body, time.Hour) {
+	sig := SignWithTimestamp(secret, maxTs, "", "", body)
+	if VerifyTimestamped(secret, sig, "", "", body, time.Hour) {
 		t.Error("MaxInt64 timestamp must be rejected (would overflow drift arithmetic)")
 	}
 
 	minTs := int64(math.MinInt64)
-	sigNeg := SignWithTimestamp(secret, minTs, body)
-	if VerifyTimestamped(secret, sigNeg, body, time.Hour) {
+	sigNeg := SignWithTimestamp(secret, minTs, "", "", body)
+	if VerifyTimestamped(secret, sigNeg, "", "", body, time.Hour) {
 		t.Error("MinInt64 timestamp must be rejected")
 	}
 }
@@ -134,8 +134,8 @@ func TestVerifyTimestamped_RejectsExtremeTimestamps(t *testing.T) {
 // receiver accepts unsigned messages, exactly the worst-case auth bug.
 func TestVerifyTimestamped_RejectsEmptySecret(t *testing.T) {
 	body := []byte("x")
-	sig := SignWithTimestamp("anything", time.Now().Unix(), body)
-	if VerifyTimestamped("", sig, body, time.Hour) {
+	sig := SignWithTimestamp("anything", time.Now().Unix(), "", "", body)
+	if VerifyTimestamped("", sig, "", "", body, time.Hour) {
 		t.Error("empty secret must always reject")
 	}
 }
@@ -144,10 +144,13 @@ func TestAttempt_SignatureHeaderIsTimestampForm(t *testing.T) {
 	var gotSig string
 	var gotTs string
 	var gotBody []byte
+	var gotEvent, gotID string
 	var mu sync.Mutex
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		gotSig = r.Header.Get(SignatureHeader)
+		gotEvent = r.Header.Get(EventHeader)
+		gotID = r.Header.Get(DeliveryIDHeader)
 		gotTs = r.Header.Get("X-GoFastr-Timestamp")
 		gotBody, _ = io.ReadAll(r.Body)
 		mu.Unlock()
@@ -175,7 +178,7 @@ func TestAttempt_SignatureHeaderIsTimestampForm(t *testing.T) {
 	if !strings.Contains(gotSig, "t=") || !strings.Contains(gotSig, "v1=") {
 		t.Fatalf("sig header should carry t= and v1=, got %q", gotSig)
 	}
-	if !VerifyTimestamped("shh", gotSig, gotBody, time.Hour) {
+	if !VerifyTimestamped("shh", gotSig, gotEvent, gotID, gotBody, time.Hour) {
 		t.Fatalf("delivered sig didn't verify; ts=%q sig=%q", gotTs, gotSig)
 	}
 }

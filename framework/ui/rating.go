@@ -14,10 +14,13 @@ import (
 // ─── RatingInput ────────────────────────────────────────────────────
 //
 // A star rating over headless.Rating: a fieldset radiogroup of real
-// radios (reverse order in the DOM, flipped back visually by
-// flex-direction: row-reverse), each named "N out of Max", submitted
-// by a plain form POST without JavaScript. The hover-preview cascade
-// and the checked-state highlight are pure CSS sibling selectors.
+// radios in forward order (1..Max in the DOM, the order they read, so
+// native arrows move with the stars), each named "N out of Max",
+// submitted by a plain form POST without JavaScript. The hover
+// preview and the checked-state fill are pure CSS: :has() lights
+// every choice that has the checked radio or the hovered choice after
+// it. A browser without :has() still rates; only the earlier stars'
+// fill is missing.
 
 // RatingShape picks one of the bundled glyphs. For a custom glyph,
 // set RatingConfig.Icon instead. Icon overrides Shape.
@@ -181,6 +184,7 @@ func RatingInput(cfg RatingConfig) render.HTML {
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
 		Parts:      parts,
 		Strings:    StringsFor(cfg.Ctx),
+		Ctx:        cfg.Ctx,
 	}, ratingClasses))
 }
 
@@ -210,10 +214,6 @@ func ratingCSS(_ style.Theme) string {
   --_rating-glyph: var(--ui-rating-glyph, 24px);
   --_rating-cell: var(--ui-rating-cell, var(--spacing-touch-target, 44px));
   display: inline-flex;
-  /* Flex-direction:row-reverse turns our reverse-DOM order back
-     into 1..N visual order, while keeping the ~ sibling cascade. */
-  flex-direction: row-reverse;
-  justify-content: flex-end;
   gap: var(--spacing-xs, 2px);
   margin: 0;
   padding: 0;
@@ -274,13 +274,16 @@ func ratingCSS(_ style.Theme) string {
   border-radius: var(--radii-sm, 6px);
 }
 
-/* Highlight: the checked input + every later (in DOM = earlier-in-
-   reverse-order = smaller-value) sibling label lights up. Color is
-   driven by --ui-rating-color so per-shape variants and per-instance
-   overrides can recolor without writing new highlight rules. */
-[data-cui-comp="ui-rating"] .fui-rating__input:checked ~ .fui-rating__choice,
+/* Fill: the checked choice and every choice before it (a choice with
+   the checked radio after it), and likewise the hovered choice and
+   every choice before it. The choices are in forward DOM order, so
+   "before" is :has() over a later sibling. Color is driven by
+   --ui-rating-color so per-shape variants and per-instance overrides
+   can recolor without writing new highlight rules. */
+[data-cui-comp="ui-rating"] .fui-rating__input:checked + .fui-rating__choice,
+[data-cui-comp="ui-rating"] .fui-rating__choice:has(~ .fui-rating__input:checked),
 [data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover,
-[data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover ~ .fui-rating__choice {
+[data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:has(~ .fui-rating__choice:hover) {
   /* Amber-600 unset, not --color-warning: the warning token is tuned
      dark for text on a chip and paints a star brown. The default lives
      in the fallback, not on the root, so a page or theme that sets

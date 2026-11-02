@@ -171,11 +171,23 @@ separate manager with the guard on for them.
 | `X-GoFastr-Event`        | The event name (`orders.created`)                                          |
 | `X-GoFastr-Delivery-ID`  | Stable random ID for this delivery row                                     |
 | `X-GoFastr-Timestamp`    | Unix seconds at send time (informational; the signed value is authoritative) |
-| `X-GoFastr-Signature`    | `t=<unix>,v1=<hex HMAC-SHA256(secret, "<unix>.<body>")>`                    |
+| `X-GoFastr-Signature`    | `t=<unix>,v1=<hex HMAC-SHA256(secret, "<unix>\n<event>\n<delivery id>\n<body>")>` |
 
 Binding the timestamp into the signed material is the same convention
 Stripe uses; receivers reject captured payloads outside their tolerance
-window so a leaked delivery cannot replay forever.
+window so a leaked delivery cannot replay forever. The event name and the
+delivery id are signed too, so a captured delivery cannot be re-sent under
+another event or id inside that window. The parts are joined with a
+newline (`\n`), which a header value cannot carry; event names contain
+dots, so a dot would let one event, id and body read as another.
+
+A receiver written in another language computes the same HMAC:
+
+```python
+material = f"{t}\n{event}\n{delivery_id}\n".encode() + body
+expected = hmac.new(secret.encode(), material, hashlib.sha256).hexdigest()
+ok = hmac.compare_digest(expected, v1) and abs(time.time() - t) <= 300
+```
 
 The body is whatever you passed to `Publish`; `application/json`
 isn't required, but the header advertises it.
@@ -193,6 +205,8 @@ body, _ := io.ReadAll(r.Body)
 ok := webhook.VerifyTimestamped(
     secret,
     r.Header.Get(webhook.SignatureHeader),
+    r.Header.Get(webhook.EventHeader),
+    r.Header.Get(webhook.DeliveryIDHeader),
     body,
     5*time.Minute, // tolerance window
 )
@@ -207,7 +221,8 @@ if !ok {
 - an empty or whitespace-only secret
 - header missing `t=` or `v1=` fields
 - a timestamp outside the tolerance window (replay defense)
-- mismatched HMAC (any body tampering)
+- an event or delivery id carrying a newline
+- mismatched HMAC (any tampering with the body, event or delivery id)
 
 ## Response handling
 
@@ -551,9 +566,10 @@ are reported through `IngestConfig.Logger` (default `log.Printf`).
 Two are bundled:
 
 - `TimestampedVerifier(secret, tolerance)`: wraps
-  `VerifyTimestamped` over `X-GoFastr-Signature`. The timestamp is bound
+  `VerifyTimestamped` over `X-GoFastr-Signature`, reading the event and
+  delivery id from their headers. The timestamp, event and id are bound
   into the signed material, so a captured request can't replay past
-  `tolerance`. **Preferred whenever the sender supports it.**
+  `tolerance` or be re-sent under another event or id. **Preferred whenever the sender supports it.**
 - `HMACSHA256Verifier(header, prefix, secret)`: GitHub-style
   `<prefix><hex-hmac-sha256-of-body>` (e.g. header
   `X-Hub-Signature-256`, prefix `sha256=`). Uses `hmac.Equal`, but note

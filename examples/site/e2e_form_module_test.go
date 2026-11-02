@@ -89,10 +89,10 @@ func TestE2E_PasswordInput_RendersAndToggles(t *testing.T) {
 		t.Errorf("reveal button has no visible word: %q", result.BtnText)
 	}
 
-	// Click the reveal button: the headless module retypes the input,
-	// swaps the pressed state, the accessible name AND the visible
-	// word from the four data-hui-* attributes.
-	var afterLabel, afterText string
+	// Click the reveal button: the headless module retypes the input
+	// and flips aria-pressed. It is a toggle button (the APG pattern):
+	// the accessible name and the visible word stay as rendered.
+	var afterLabel, afterText, afterPressed string
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`(() => {
 			var btn = document.querySelector('[data-hui-reveal]');
@@ -108,6 +108,10 @@ func TestE2E_PasswordInput_RendersAndToggles(t *testing.T) {
 			var btn = document.querySelector('[data-hui-reveal]');
 			return btn ? btn.textContent : '';
 		})()`, &afterText),
+		chromedp.Evaluate(`(() => {
+			var btn = document.querySelector('[data-hui-reveal]');
+			return btn ? btn.getAttribute('aria-pressed') : '';
+		})()`, &afterPressed),
 	)
 	if err != nil {
 		t.Fatalf("chromedp reveal click: %v", err)
@@ -115,11 +119,14 @@ func TestE2E_PasswordInput_RendersAndToggles(t *testing.T) {
 	if result.Type != "text" {
 		t.Errorf("expected type=text after reveal, got %q", result.Type)
 	}
-	if !strings.Contains(strings.ToLower(afterLabel), "hide") {
-		t.Errorf("expected aria-label swapped to 'hide', got %q", afterLabel)
+	if afterPressed != "true" {
+		t.Errorf("expected aria-pressed=true after reveal, got %q", afterPressed)
 	}
-	if !strings.Contains(strings.ToLower(afterText), "hide") {
-		t.Errorf("expected visible word swapped to 'Hide', got %q", afterText)
+	if afterLabel != result.Label {
+		t.Errorf("expected the accessible name to stay %q (aria-pressed carries the state), got %q", result.Label, afterLabel)
+	}
+	if strings.TrimSpace(afterText) != strings.TrimSpace(result.BtnText) {
+		t.Errorf("expected the visible word to stay %q, got %q", result.BtnText, afterText)
 	}
 }
 

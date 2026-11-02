@@ -16,6 +16,12 @@ import (
 // existing behavior suites (hub_test.go, hub_hardening_test.go,
 // websocket_*_test.go) which pin the semantics. Additions to either
 // API are fine; anything captured here is not allowed to move.
+//
+// One deliberate move: Broadcast and BroadcastWait gained an error
+// return (ErrInvalidUTF8) when text frames started being checked for
+// UTF-8 before queueing. A call used as a statement still compiles; a
+// method value typed func(*Hub, []byte) does not, and that is the
+// break this pin records.
 
 // --- Hub API pins ---
 
@@ -24,8 +30,10 @@ var (
 	_ func(*Hub)                 = (*Hub).Run
 	_ func(*Hub, *WebSocketConn) = (*Hub).Register
 	_ func(*Hub, *WebSocketConn) = (*Hub).Unregister
-	_ func(*Hub, []byte)         = (*Hub).Broadcast
-	_ func(*Hub, []byte)         = (*Hub).BroadcastWait
+	_ func(*Hub, []byte) error   = (*Hub).Broadcast
+	_ func(*Hub, []byte) error   = (*Hub).BroadcastWait
+	_ func(*Hub, []byte)         = (*Hub).BroadcastBinary
+	_ func(*Hub, []byte)         = (*Hub).BroadcastBinaryWait
 	_ func(*Hub)                 = (*Hub).Stop
 	_ func(*Hub) int             = (*Hub).Count
 )
@@ -37,6 +45,7 @@ var (
 	_ func(*http.Request, func(*http.Request) bool) error                        = CheckUpgradeRequest
 	_ func(*WebSocketConn, []byte) error                                         = (*WebSocketConn).Write
 	_ func(*WebSocketConn, string) error                                         = (*WebSocketConn).WriteString
+	_ func(*WebSocketConn, []byte) error                                         = (*WebSocketConn).WriteBinary
 	_ func(*WebSocketConn) ([]byte, error)                                       = (*WebSocketConn).Read
 	_ func(*WebSocketConn) error                                                 = (*WebSocketConn).Close
 	_ func(*WebSocketConn, func())                                               = (*WebSocketConn).OnClose

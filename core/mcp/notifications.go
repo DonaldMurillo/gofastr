@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // sseSubBufferSize is the bounded per-subscriber notification buffer. A
@@ -347,7 +349,7 @@ func (s *Server) handleResourcesSubscribe(ctx context.Context, req Request) Resp
 	}
 	var params resourcesReadParams // same {"uri"} shape
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+handler.JSONErrorDetail(err).Error())
 	}
 	if params.URI == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing resource uri")
@@ -399,7 +401,7 @@ func (s *Server) handleResourcesUnsubscribe(ctx context.Context, req Request) Re
 	}
 	var params resourcesReadParams // same {"uri"} shape
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+handler.JSONErrorDetail(err).Error())
 	}
 	if params.URI == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing resource uri")

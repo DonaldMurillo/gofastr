@@ -53,6 +53,15 @@ const pushConcurrency = 16
 // pushConcurrency.
 const pushBacklog = pushConcurrency
 
+// pushOwnerSlots and pushOwnerBacklog are one owner's share of the
+// delivery slots and the backlog. Both pools are process-wide, so
+// without a share one caller whose receiver hangs held every slot and
+// queue entry, and every other owner's notifications were dropped.
+const (
+	pushOwnerSlots   = pushConcurrency / 4
+	pushOwnerBacklog = pushBacklog / 4
+)
+
 // pushDeliveryTimeout bounds one push POST. A hung receiver must not
 // accumulate goroutines for the TaskTimeout duration.
 const pushDeliveryTimeout = 10 * time.Second
@@ -73,6 +82,11 @@ type pusher struct {
 	// whose drain goroutine is still posting.
 	queues map[pushQueueKey][]pushItem
 	queued int // events across all queues, bounded by pushBacklog
+	// ownerSlots and ownerQueued count each owner's in-flight configs
+	// and queued events, bounded by pushOwnerSlots and pushOwnerBacklog.
+	// An owner at zero has no key.
+	ownerSlots  map[string]int
+	ownerQueued map[string]int
 	// marks holds, per config, the newest task version enqueued for it.
 	// Two publications of one task race between their persist and their
 	// enqueue (a run's WORKING against a CancelTask's CANCELED), so the
@@ -127,6 +141,8 @@ func newPusher(opts PushOptions, log *slog.Logger) *pusher {
 		sem:          make(chan struct{}, pushConcurrency),
 		log:          log,
 		queues:       map[pushQueueKey][]pushItem{},
+		ownerSlots:   map[string]int{},
+		ownerQueued:  map[string]int{},
 		marks:        map[pushQueueKey]pushMark{},
 	}
 }
@@ -188,12 +204,17 @@ func (p *pusher) enqueue(key pushQueueKey, it pushItem) int {
 	mark.version = max(mark.version, it.version)
 	if pending, busy := p.queues[key]; busy {
 		p.marks[key] = pushMark{version: mark.version}
-		if p.queued >= pushBacklog {
+		if p.queued >= pushBacklog || p.ownerQueued[key.owner] >= pushOwnerBacklog {
 			return pushFull
 		}
 		p.queues[key] = append(pending, it)
 		p.queued++
+		p.ownerQueued[key.owner]++
 		return pushQueued
+	}
+	if p.ownerSlots[key.owner] >= pushOwnerSlots {
+		p.marks[key] = pushMark{version: mark.version, idle: now}
+		return pushFull
 	}
 	select {
 	case p.sem <- struct{}{}:
@@ -203,6 +224,7 @@ func (p *pusher) enqueue(key pushQueueKey, it pushItem) int {
 	}
 	p.marks[key] = pushMark{version: mark.version}
 	p.queues[key] = nil
+	p.ownerSlots[key.owner]++
 	go p.drain(key, it)
 	return pushQueued
 }
@@ -241,6 +263,7 @@ func (p *pusher) drain(key pushQueueKey, it pushItem) {
 		pending := p.queues[key]
 		if len(pending) == 0 {
 			delete(p.queues, key)
+			decOwner(p.ownerSlots, key.owner)
 			p.marks[key] = pushMark{version: p.marks[key].version, idle: time.Now()}
 			p.mu.Unlock()
 			return
@@ -249,6 +272,7 @@ func (p *pusher) drain(key pushQueueKey, it pushItem) {
 		pending[0] = pushItem{}
 		p.queues[key] = pending[1:]
 		p.queued--
+		decOwner(p.ownerQueued, key.owner)
 		p.mu.Unlock()
 	}
 }
@@ -271,6 +295,15 @@ func (p *pusher) postGuarded(cfg PushNotificationConfig, payload []byte) (err er
 		}
 	}()
 	return p.post(cfg, payload)
+}
+
+// decOwner takes one from owner's count, dropping the key at zero.
+func decOwner(m map[string]int, owner string) {
+	if m[owner] <= 1 {
+		delete(m, owner)
+		return
+	}
+	m[owner]--
 }
 
 // post sends one notification. The token and Authorization header ride

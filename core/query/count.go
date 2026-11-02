@@ -54,21 +54,7 @@ func buildFiltered(verb, table string, wheres []whereClause, args []any) (string
 	// WHERE
 	if len(wheres) > 0 {
 		sb.WriteString(" WHERE ")
-		paramIdx := 1
-		for i, w := range wheres {
-			if i > 0 {
-				sb.WriteString(" ")
-				sb.WriteString(w.connector)
-				sb.WriteString(" ")
-			}
-			// Wrap each condition in parens. See query.go for the
-			// SQL-precedence bypass this defends against.
-			condition := renumberPlaceholders(w.condition, paramIdx)
-			paramIdx += len(w.args)
-			sb.WriteByte('(')
-			sb.WriteString(condition)
-			sb.WriteByte(')')
-		}
+		appendWhereClauses(&sb, wheres, 1)
 	}
 
 	return sb.String(), slices.Clone(args)

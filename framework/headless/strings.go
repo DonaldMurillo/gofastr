@@ -77,16 +77,14 @@ type Strings struct {
 
 	// ─── Password ───────────────────────────────────────────────────
 
-	// ShowPassword and HidePassword name the reveal button in each of
-	// its two states. Imperative, not rendered visually; they also
-	// travel as data so the runtime can swap them.
+	// ShowPassword names the reveal button. It is a toggle button: the
+	// name never changes and aria-pressed says whether the password is
+	// shown, so there is no second name for the pressed state.
 	ShowPassword string
-	HidePassword string
-	// RevealShow is the reveal button's visible text, and RevealHide
-	// is what the runtime swaps it to. One word each; RevealHide is
-	// never rendered by the server.
+	// RevealShow is the reveal button's visible word, inside
+	// ShowPassword's words so the name contains what is seen. It does
+	// not change either.
 	RevealShow string
-	RevealHide string
 
 	// ─── Pagination ─────────────────────────────────────────────────
 
@@ -287,6 +285,26 @@ type Strings struct {
 	CarouselSlide string
 	// CarouselGoTo names a dot control, "Go to slide {{n}}".
 	CarouselGoTo string
+	// CarouselRole and CarouselSlideRole are the roledescriptions the
+	// region and each slide carry ("carousel", "slide"): a screen
+	// reader says them in place of "region" and "group". One word each.
+	CarouselRole      string
+	CarouselSlideRole string
+
+	// ─── PaneHost ─────────────────────────────────────────────────────
+
+	// PaneSecondary and PaneTertiary name a side pane's region when its
+	// own label is empty ("Secondary", "Tertiary"). One word each.
+	PaneSecondary string
+	PaneTertiary  string
+
+	// ─── Sidebar ──────────────────────────────────────────────────────
+
+	// SidebarOpenDrawer names the phone drawer's hamburger when its own
+	// DrawerLabel is empty ("Open navigation"): the button is the only
+	// way into the navigation there, and an unnamed one is a button a
+	// screen reader calls "button".
+	SidebarOpenDrawer string
 
 	// ─── JSONTree ──────────────────────────────────────────────────────
 
@@ -359,6 +377,32 @@ type Strings struct {
 	// moment one is.
 	MultiSelectPlaceholder string
 
+	// ─── DatePicker ─────────────────────────────────────────────────
+
+	// DatePickerPrevMonth, DatePickerNextMonth, DatePickerPrevYear and
+	// DatePickerNextYear name the calendar's four nav anchors, which
+	// show a glyph and no word. A short phrase each.
+	DatePickerPrevMonth string
+	DatePickerNextMonth string
+	DatePickerPrevYear  string
+	DatePickerNextYear  string
+	// DatePickerStart and DatePickerEnd label a range's two native
+	// inputs when the caller names neither. Two words each.
+	DatePickerStart string
+	DatePickerEnd   string
+	// DatePickerChosen is said when a day is picked, with {{date}} for
+	// the day's full date, written in by the runtime.
+	DatePickerChosen string
+	// DatePickerChooseEnd is said when a range's start is picked, with
+	// {{date}} for it: it says what was picked and what comes next.
+	DatePickerChooseEnd string
+	// DatePickerRange is said when a range's end is picked, with
+	// {{start}} and {{end}} for the two full dates.
+	DatePickerRange string
+	// DatePickerMonthFailed titles the toast a month that failed to
+	// load raises. A short sentence.
+	DatePickerMonthFailed string
+
 	// ctx is the request the words were resolved for, set by ForRequest:
 	// a count, a step number or a slider value is written the way its
 	// reader writes numbers. It is the one field that is not a word, so
@@ -401,9 +445,7 @@ var defaultStrings = Strings{
 	PickColor: "Pick {{name}}",
 
 	ShowPassword: "Show password", // not-a-secret: the reveal button's accessible name
-	HidePassword: "Hide password", // not-a-secret: the reveal button's accessible name
 	RevealShow:   "Show",
-	RevealHide:   "Hide",
 
 	Previous: "Previous",
 	Next:     "Next",
@@ -473,6 +515,14 @@ var defaultStrings = Strings{
 	CarouselSlide: "Slide {{n}} of {{total}}",
 	CarouselGoTo:  "Go to slide {{n}}",
 
+	CarouselRole:      "carousel",
+	CarouselSlideRole: "slide",
+
+	PaneSecondary: "Secondary",
+	PaneTertiary:  "Tertiary",
+
+	SidebarOpenDrawer: "Open navigation",
+
 	ComboboxLoading:      "Loading…",
 	ComboboxNoResults:    "No matches",
 	ComboboxResultCount:  "{{n}} results",
@@ -502,6 +552,18 @@ var defaultStrings = Strings{
 	JSONEmptyObject:        "{}",
 	JSONEmptyArray:         "[]",
 	JSONTruncated:          "…",
+
+	DatePickerPrevMonth: "Previous month",
+	DatePickerNextMonth: "Next month",
+	DatePickerPrevYear:  "Previous year",
+	DatePickerNextYear:  "Next year",
+	DatePickerStart:     "Start date",
+	DatePickerEnd:       "End date",
+	DatePickerChosen:    "{{date}} selected.",
+	DatePickerChooseEnd: "{{date}} selected. Choose the end date.",
+	DatePickerRange:     "{{start}} to {{end}} selected.",
+
+	DatePickerMonthFailed: "The month could not be loaded.",
 }
 
 // DefaultStrings returns a fresh copy of the English defaults, every

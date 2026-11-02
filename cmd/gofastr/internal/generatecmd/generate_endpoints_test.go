@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -316,6 +317,8 @@ func TestEndpointResolverRefusals(t *testing.T) {
 		{"path not routed", "type In struct{ ID string `path:\"slug\" json:\"-\"` }\n" + sig, "path: \"{id}/y\"", "route has no {slug}"},
 		{"unbound path", "type In struct{}\n" + sig, "path: \"{id}/y\"", "the path names {id}"},
 		{"query on post", "type In struct{ Q string `query:\"q\" json:\"-\"` }\n" + sig, "", "needs a GET or DELETE"},
+		{"query option", "type In struct{ Q string `query:\"q,omitempty\" json:\"-\"` }\n" + sig, "method: GET", `query option "omitempty" is not supported`},
+		{"path option", "type In struct{ ID string `path:\"id,empty\" json:\"-\"` }\n" + sig, "path: \"{id}/y\"", `path option "empty" is not supported`},
 		{"query slice", "type In struct{ Q []string `query:\"q\" json:\"-\"` }\n" + sig, "method: GET", "must be a string, number or bool"},
 		{"path pointer", "type In struct{ ID *string `path:\"id\" json:\"-\"` }\n" + sig, "path: \"{id}/y\"", "drop the pointer"},
 		{"untagged body", "type In struct{ Rank int }\n" + sig, "", "give it a json tag"},
@@ -404,5 +407,37 @@ func TestEndpointsWithNoEntitiesFail(t *testing.T) {
 	clitest.WriteSettings(t, dir, "endpoints:\n  - name: ping\n    entity: posts\n    method: POST\n    path: ping\n    handler: entities/register.go#H\n")
 	if _, err := appgen.RefreshAppEndpoints(dir, true, true); err == nil || !strings.Contains(err.Error(), `entity "posts" is not declared`) {
 		t.Fatalf("no entities: %v", err)
+	}
+}
+
+// TestEndpointResolverAcceptsEmptyQueryOption pins that a query tag's
+// ",empty" option (handler.Bind keeps an explicit ?q= for it) is accepted
+// and the wire name stays the bare name.
+func TestEndpointResolverAcceptsEmptyQueryOption(t *testing.T) {
+	dir := cliTempModule(t)
+	decls, err := appgen.PackReadEntities(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := resolverPrelude + "type In struct{ Q *string `query:\"q,empty\" json:\"-\"` }\n" +
+		"func H(ctx context.Context, in In) (Posts, error) { return Posts{}, nil }\n"
+	if err := os.WriteFile(filepath.Join(dir, "entities", "x.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clitest.WriteSettings(t, dir, "endpoints:\n  - name: call_it\n    entity: posts\n    method: GET\n    path: x\n    handler: entities/x.go#H\n")
+	eps, err := appgen.ReadAppEndpoints(dir, decls)
+	if err != nil {
+		t.Fatalf("query:\"q,empty\" refused: %v", err)
+	}
+	var names []string
+	for _, d := range appgen.DeclsWithEndpoints(decls, eps) {
+		for _, e := range d.Endpoints {
+			for _, f := range e.InputSchema {
+				names = append(names, f.Name)
+			}
+		}
+	}
+	if !slices.Equal(names, []string{"q"}) {
+		t.Fatalf("input names = %q, want [q]", names)
 	}
 }

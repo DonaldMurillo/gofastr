@@ -113,7 +113,7 @@ func newReadPumpConn(t *testing.T, cfg WSConfig) (*WebSocketConn, net.Conn) {
 	}
 	conn := &WebSocketConn{
 		conn:       srv,
-		sendBuffer: make(chan []byte, sendBuf),
+		sendBuffer: make(chan wsMessage, sendBuf),
 		closed:     make(chan struct{}),
 		peerClosed: make(chan struct{}),
 		readMsgs:   make(chan []byte, 8),

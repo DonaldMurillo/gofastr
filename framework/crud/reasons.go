@@ -26,6 +26,19 @@ var (
 	reasonInvalidQuery     = i18n.Define("error.invalid_query", "invalid query: {{detail}}")
 	reasonInvalidBody      = i18n.Define("error.invalid_body", "invalid request body: {{detail}}")
 	reasonOffsetTooLarge   = i18n.Define("error.offset_too_large", "offset {{offset}} exceeds the maximum {{max}}")
+	reasonItemMissingKey   = i18n.Define("error.missing_key", "missing {{key}}")
+	reasonDupFormKey       = i18n.Define("error.duplicate_form_key", "form key {{key}} is repeated for a single-valued field")
+	reasonDupFilePart      = i18n.Define("error.duplicate_file_part", "file part {{key}} is repeated: an image or file field holds one upload")
+	reasonBadMultipart     = i18n.Define("error.malformed_multipart", "malformed multipart body")
+	reasonOpRefused        = i18n.Define("error.operation_refused", "access denied: this entity declares no permission for the operation")
+
+	// The {{detail}} of a _batch envelope's invalid_body refusal
+	// (checkEnvelopeKeys). The frame's code stays invalid_body: these sit
+	// in its params, not in its wrapped chain.
+	reasonEnvelopeNotObject    = i18n.Define("error.envelope.not_object", "the body must be a JSON object")
+	reasonEnvelopeBadKey       = i18n.Define("error.envelope.malformed_key", "malformed object key")
+	reasonEnvelopeDuplicateKey = i18n.Define("error.envelope.duplicate_key", "duplicate key {{key}}")
+	reasonEnvelopeUnknownKey   = i18n.Define("error.envelope.unknown_key", "unknown key {{key}} (expected {{expected}})")
 
 	reasonUnknownProjection = i18n.Define("error.unknown_projection_field", "unknown projection field")
 

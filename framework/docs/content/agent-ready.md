@@ -249,6 +249,15 @@ answers the block's status over the withheld doc, and a page whose
 policy redirects answers the same 303. The per-screen `/llm.md` route is
 a catalog entry and keeps answering 200 with the withheld doc.
 
+Every page-markdown answer is per caller: the negotiated twin, the
+per-screen `/llm.md` (exact, pattern and concrete dynamic URLs) and the
+`/llm-pages.md` index all run the policy chain with the live request,
+and the per-URL ones run the page's `Load`. So they answer the way the
+HTML page does, `Cache-Control: no-store` plus `Vary: Cookie`, and a
+shared cache never replays a signed-in reader's markdown to the next
+caller. `/llms.txt` and `/llms-full.txt` run nothing per caller and keep
+`Cache-Control: no-cache`.
+
 ### Agent-friendly 404s  (RFC 9457 + markdown recovery)
 
 A request that matches no route gets a 404 shaped like the client asked:
@@ -309,7 +318,10 @@ opens with a YAML front-matter block mirroring the same screen's HTML
 `ScreenRobots`, `ScreenHreflangs`, `ScreenSchema`) the head renders from,
 so a crawler and an LLM see one consistent metadata set per route.
 Screens with no SEO declarations get no front-matter, and the markdown is
-unchanged. See [SEO](/docs/seo) for the per-screen interfaces.
+unchanged. A static export writes the same front matter:
+`UIHost.LLMMDWithSEO(ctx, path, screen, doc)` turns the doc
+`app.ScreenLLMMDForPath` rendered into the served one. See
+[SEO](/docs/seo) for the per-screen interfaces.
 
 ### Every URL gets its own doc
 

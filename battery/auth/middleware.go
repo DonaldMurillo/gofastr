@@ -24,8 +24,15 @@ import (
 // answers 401. A bare NewJWTAuth with no store keeps the stateless
 // claims-derived principal (service-to-server deployments with no user
 // table).
+//
+// RequireAuth panics on a nil jwt: mgr.JWT() is nil only when the manager has
+// no JWTSecret, and the middleware would otherwise panic on the first bearer
+// request instead of at wiring time.
 func RequireAuth(jwt *JWTAuth) middleware.Middleware {
-	if jwt != nil && jwt.onResolve != nil {
+	if jwt == nil {
+		panic("auth: RequireAuth needs a *JWTAuth; mgr.JWT() is nil when AuthConfig.JWTSecret is empty")
+	}
+	if jwt.onResolve != nil {
 		jwt.onResolve()
 	}
 	return func(next http.Handler) http.Handler {
@@ -130,7 +137,7 @@ func RequireRole(roles ...string) middleware.Middleware {
 				return
 			}
 
-			if !hasAnyRole(user, roles) {
+			if !hasAnyRole(r.Context(), user, roles) {
 				handler.WriteError(w, r, handler.Fail(http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden)))
 				return
 			}
@@ -180,11 +187,16 @@ func extractBearerToken(r *http.Request) string {
 	return strings.TrimSpace(parts[1])
 }
 
-// hasAnyRole checks if the user has at least one of the target roles.
-func hasAnyRole(user User, targetRoles []string) bool {
+// hasAnyRole checks if the user has at least one of the target roles. A
+// scope-restricted caller (an API token) carries its owner's roles, so a role
+// counts for it only when it also holds access.RoleScope of that role
+// ("role:admin", "role:*" or "*:*"), the rule framework.MCPRequireRole
+// follows. Without it a token an admin minted for "customers:read" would
+// pass every gate that asks for "admin". Sessions and JWTs carry no scopes.
+func hasAnyRole(ctx context.Context, user User, targetRoles []string) bool {
 	userRoles := user.GetRoles()
 	for _, target := range targetRoles {
-		if slices.Contains(userRoles, target) {
+		if slices.Contains(userRoles, target) && access.ScopeAllows(ctx, access.RoleScope(target)) {
 			return true
 		}
 	}

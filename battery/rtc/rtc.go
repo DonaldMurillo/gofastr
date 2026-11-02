@@ -19,9 +19,12 @@
 //	    ICEServers: []rtc.ICEServer{{URLs: []string{"stun:stun.example.net:3478"}}},
 //	    Authorize: func(r *http.Request) (rtc.Join, error) {
 //	        // resolve the room and identity from the app's own auth
-//	        return rtc.Join{Room: "support-17", Role: "caller"}, nil
+//	        return rtc.Join{Room: "support-17", User: "u_42", Role: "caller"}, nil
 //	    },
 //	}))
+//
+// A join with no Join.User is refused with 403 unless
+// Config.AnonymousSeats names a policy (AnonymousPerSocket).
 //
 // Init mounts the endpoint (GET Config.Path, default /__gofastr/rtc)
 // and wires Close into app shutdown; App.Mount wires SetFanout
@@ -162,9 +165,19 @@ type Config struct {
 	// past the cap displaces its oldest one — the replace-on-rejoin
 	// policy, applied across rooms — so a reconnecting client always
 	// wins and one principal can never park unbounded read loops and
-	// per-room channel goroutines. Zero keeps the default; sockets whose
-	// host derived no Join.User share one bucket.
+	// per-room channel goroutines. Zero keeps the default. A socket with
+	// no Join.User has no principal to count against; AnonymousSeats
+	// decides whether it may join at all.
 	MaxSocketsPerUser int
+
+	// AnonymousSeats decides what a join with an empty Join.User gets.
+	// The zero value, AnonymousRefused, refuses it with 403 before the
+	// upgrade: anonymous callers used to share one seat bucket, so the
+	// 17th evicted the first, who rejoined and evicted the next.
+	// AnonymousPerSocket admits it with a seat of its own, so only
+	// MaxPeers bounds it and one person can hold many sockets; pick it
+	// for a public lobby where the app knows no user.
+	AnonymousSeats AnonymousSeatPolicy
 
 	// RoomIdleTTL is how long an empty room's state survives before it
 	// is dropped; default 1 minute. Rooms are created on first join.
@@ -177,6 +190,19 @@ type Config struct {
 
 	Logger *slog.Logger // nil means slog.Default()
 }
+
+// AnonymousSeatPolicy is Config.AnonymousSeats: what a join with no
+// Join.User gets.
+type AnonymousSeatPolicy int
+
+const (
+	// AnonymousRefused refuses a join with no Join.User (403). The default.
+	AnonymousRefused AnonymousSeatPolicy = iota
+	// AnonymousPerSocket admits a join with no Join.User and gives each
+	// such socket its own seat: MaxPeers still caps the room, but
+	// MaxSocketsPerUser does not apply.
+	AnonymousPerSocket
+)
 
 // Signaler is one signaling server: the room set, its sockets, and the
 // optional cross-replica fanout lane. Construct with New, register
@@ -247,6 +273,9 @@ func New(cfg Config) *Signaler {
 	if cfg.MaxPeers < 0 || cfg.MaxSignalBytes < 0 || cfg.MaxStatusBytes < 0 ||
 		cfg.MaxFramesPerSecond < 0 || cfg.RoomIdleTTL < 0 || cfg.MaxSocketsPerUser < 0 {
 		panic("rtc: Config limits must not be negative")
+	}
+	if cfg.AnonymousSeats != AnonymousRefused && cfg.AnonymousSeats != AnonymousPerSocket {
+		panic("rtc: Config.AnonymousSeats is not AnonymousRefused or AnonymousPerSocket")
 	}
 	if cfg.MaxPeers == 0 {
 		cfg.MaxPeers = defaultMaxPeers

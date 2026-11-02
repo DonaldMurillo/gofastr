@@ -13,7 +13,7 @@ func TestNegativePongTimeoutDisablesPongExpiry(t *testing.T) {
 		srv, cli := net.Pipe()
 		conn := &WebSocketConn{
 			conn:       srv,
-			sendBuffer: make(chan []byte, 1),
+			sendBuffer: make(chan wsMessage, 1),
 			closed:     make(chan struct{}),
 			peerClosed: make(chan struct{}),
 			config: WSConfig{

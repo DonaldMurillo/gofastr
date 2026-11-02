@@ -21,6 +21,15 @@ middleware chain populates. Author-facing: you write handlers against
 this. Start at `core/handler/handler.go`: `HandlerAdapter`.
 `Respond` encodes `O` before it writes the status, so a value JSON cannot
 encode (a NaN, a channel) answers the generic 500, never an empty 200.
+A nil output answers 204 No Content, and so does a nil pointer: a
+`Handler[I, *Out]` returning `(nil, nil)` is a 204, not a 200 `null`. A
+nil slice or map stays a 200 `null`, since it is a list's empty result. A panic in the handler is a generic 500; a panic after the
+response started (inside a `ResponseType`'s `WriteBody`, once the 200 and
+part of the body went out) is logged and aborts the connection with
+`http.ErrAbortHandler`, so the client sees a broken response, never an
+error document spliced onto a success. `WriteError` sends an `*Error`'s
+`Code` when it is in 400-599; a nil `*Error`, or a `Code` outside that
+range (a forgotten zero, a 1xx, a 2xx), is sent as 500.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
 A present higher-priority value replaces an earlier value, including a JSON
@@ -30,6 +39,40 @@ if declared on the outer struct, the way `encoding/json` promotes body
 keys, so a shared `Pagination` struct can be embedded in many inputs. A
 nil embedded pointer is allocated only when one of its values arrives.
 `ToolAdapter` (the MCP tool form) binds the same promoted tags.
+A pointer input (`Handler[*T, O]`, or `UnmarshalStrict(data, &p)` with
+`p` a `*T`) gets every struct rule: `T`'s tags bind, its strict keys
+hold, and the pointer is allocated when a value arrives, as
+`encoding/json` allocates it. `Bind` caps the body at 1 MiB; a larger
+one is a 413 whose `Err` is the cap's `*http.MaxBytesError`.
+
+A tagged field binds a string, a number or a bool, or any type that
+implements `encoding.TextUnmarshaler`, directly or through a pointer:
+`?since=2026-11-01T09:00:00Z` fills a `time.Time`, and a UUID type or an
+enum with its own `UnmarshalText` binds the same way. The type's
+`UnmarshalText` runs on every tag surface (query, path, header, tool
+params), so an enum that refuses `bogus` in a JSON body refuses
+`?status=bogus` too; its error is a 400 naming the parameter
+(`error.invalid_parameter`, or `error.invalid_header` for a header).
+
+An empty query or header value is the same as an absent one, for every
+kind: `?page=` and `?q=` leave the field at its zero value and a pointer
+field nil (a `Handler[*T, O]` input stays nil too). A repeated
+parameter binds its first value only, so `?q=&q=x` is an absent `q`.
+**Behaviour change (after v0.95.0):** `?q=` used to bind `""` into a
+string field (and `?page=` failed an int field with a 400). To receive an
+explicit empty, add the `,empty` tag option, `query:"q,empty"` or
+`header:"X-Foo,empty"`: a string gets `""`, a number, bool or
+`TextUnmarshaler` field its zero value, and a pointer field a non-nil
+pointer to that zero value, so `*string` tells `?q=` (pointer to `""`)
+from no `q` at all (nil). Path values are never empty and take no
+option. The tag name is the part before the first comma; any other
+option (`query:"q,emtpy"`), `,empty` on a `path` tag, or a tag with no
+name fails every `Bind` with a plain error (a 500), so the typo shows on
+the first request. `ToolAdapter` reads a tagged param given as `""` the
+same way. It also refuses two params keys that fold to one name
+(`{"q":"safe","Q":"danger"}`) across the whole params object, before
+splitting it into tagged values and the body, with the same
+`error.json_folded_keys` a strict body decode returns.
 
 Every decode of client-controlled JSON outside `Bind` goes through the
 same strict rule: `DecodeStrict(r, &dst)` for a reader,
@@ -53,15 +96,55 @@ of request or frame bytes, and the repo's own `jsonexact.Unmarshal`/`Decode`
 (exact numbers, the same duplicate and case rules), so a site that does not use these helpers
 needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
+A body these helpers refuse answers 400 with `reason` `invalid_json`
+(or the key refusal's own code: `json_duplicate_key`,
+`json_folded_keys`, `json_unknown_field`, `json_multiple_values`). The
+message says what was wrong in JSON's terms and never quotes
+`encoding/json`, whose text names the server's Go types and structs:
+
+| Body | Message |
+| --- | --- |
+| `{"ids":[1]}` into `[]string` | `invalid JSON: ids[0]: expected a string, got a number` |
+| `{"items":[{"qty":1.5}]}` into an `int` | `invalid JSON: items[0].qty: expected a whole number in range` |
+| `[1]` into a struct or map | `invalid JSON: expected an object, got an array` |
+| `{"ids": [1,}` | `invalid JSON: syntax error at byte 12` |
+| `{"ids":[` | `invalid JSON: the body ends before the JSON value is complete` |
+| empty | `invalid JSON: the body is empty` |
+| `{"meta":{"a":1,"a":2}}` | `invalid JSON: duplicate key "a" in meta` |
+
+A path is the client's own keys, with array indices in brackets
+(`a.b[0].c`); a key that is not a plain name is quoted (`tags["a b"]`).
+A type is one of JSON's six: string, number, boolean, object, array,
+null. Anything else (a field's own `UnmarshalJSON` refusing, a read that
+failed) reads `the value could not be decoded` or `the body could not be
+read`. Each part is a phrase, so a catalog translates the whole message.
+`JSONErrorDetail(err)` (`BodyReadDetail(err)` for a failed read,
+`JSONTrailingData()` for more bytes after the one value) gives you the
+same phrase for a decode you run yourself: pass it as the
+`{{detail}}` of your own frame, or call `.Error()` for English (a
+JSON-RPC message). The framework's own JSON decodes outside a body do
+the same: a `?where=` tree (`filter.where_invalid_json`,
+`filter.where_invalid_node`), a `?cursor=` token
+(`pagination.cursor_token`, which a token whose JSON is the wrong shape
+now answers too, in place of the decoder's text naming the token's Go
+struct), and a `_batch` envelope's key refusals (`invalid_body`, its
+detail one of `error.envelope.not_object`, `malformed_key`,
+`duplicate_key`, `unknown_key`).
+
 ### router
 
 A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 /pattern` registration with `{id}` path capture, concurrency-safe
 middleware chaining after registration (`Use` adds outside-in, the first
 added is outermost; `UseInner` adds middleware that runs after every `Use`
-and `Group` middleware in the tree, next to the handler), route groups,
-and sanitized path
-params (`Param` strips CR/LF/NUL, a decoded `/`, and smuggled `..`;
+and `Group` middleware in the tree, next to the handler), route groups
+(a top-level `Group` prefix starts with `/` or names a host with a dot
+or `localhost`, without a port; `Group("v1")` panics, since the mux
+would read `v1` as a host; a group's `NotFound` and `MethodNotAllowed`
+answer the misses under its prefix, the longest matching prefix
+winning, even when the root serves the request), and sanitized path
+params (`Param` strips CR/LF/NUL, a decoded `/`, smuggled `..`, and in a
+`{name...}` catch-all a leading or doubled `/`, which only `%2F` produces;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
 reader of `r.PathValue` should go through `Param` or the exported
 `SanitizePathParam`). `Param` panics when the matched route declares
@@ -90,6 +173,13 @@ The HTTP-facing real-time primitives: SSE (`SSEWriter` for one response,
 add an SSE or WebSocket endpoint; the framework's island-push and event
 bus layer on `SSEBroker`. Start at `core/stream/sse_broker.go`:
 `SSEBroker`.
+
+A subscriber that asks for `?event=<name>` gets only events of that
+name, and the broker never queues the others for it, so under
+drop-oldest an event it filtered out cannot push out one it asked for.
+`SSEWriter.SetID` cuts the id at its first CR, LF or NUL, and writes no
+`id:` field when nothing is left: an empty `id:` line would reset the
+browser's Last-Event-ID.
 
 Above the WebSocket client sits `StateChannel`
 (`core/stream/state_channel.go`), for apps that reconnect into live
@@ -136,10 +226,19 @@ it to close every open one with 1001 when `Shutdown` starts, since
 connection.
 
 `WebSocketConn` follows RFC 6455's strict readings: a text message
-that is not valid UTF-8 closes with 1007, a close reason that is not
-valid UTF-8 or a payload length in a longer form than it needs closes
-with 1002, and no data frame goes out after the connection's own Close
-frame. One read pump owns the socket and hands each message to `Read`
+that is not valid UTF-8 closes with 1007, a message past `ReadLimit`
+closes with 1009, and every malformed frame closes with 1002 (reserved
+bits or opcode, an unmasked client frame, a fragmented or oversized
+control frame, a continuation with nothing to continue or a new message
+inside one, a close reason that is not valid UTF-8, a payload length in
+a longer form than it needs). No data frame goes out after the
+connection's own Close frame, and `Close` first writes the messages
+`Write` already queued, oldest first, for up to `WriteTimeout` (10s
+when it is zero or negative), the same bound cutting a frame the pump is
+still writing to a stalled peer; `Write` returns `ErrClosed` once `Close`
+has started (a `Write` racing `Close` may still be accepted and
+dropped). A close the peer started, or one after a failed write, sends
+the Close frame at once with no drain. One read pump owns the socket and hands each message to `Read`
 through a small buffer. An app that reads must take a message at least
 once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
 (the keepalive cannot run while a message waits). `PongTimeout` counts
@@ -152,9 +251,37 @@ a Ping itself, so an app limiting its own frames never counts them:
 disables) caps the Pings and Pongs a client sends, and past it the
 connection closes with 1008.
 
+The same rule holds on the way out. `Write` and `WriteString` send a
+text frame, and a text frame must be valid UTF-8, or the browser fails
+the connection with 1007. So they check the bytes first and return
+`stream.ErrInvalidUTF8`, queueing nothing, when the check fails.
+`Hub.Broadcast` and `Hub.BroadcastWait` now return an error too: the
+same `ErrInvalidUTF8`, before the message goes to anyone (a dropped
+message is still not an error). `StateChannel` never queues an
+envelope that is not UTF-8 (a `json.RawMessage` or `MarshalJSON` can
+carry such bytes past `json.Marshal`): a snapshot like that closes the
+connection, and an event like that is dropped. To send arbitrary bytes,
+use `WriteBinary`, or `Hub.BroadcastBinary` / `BroadcastBinaryWait`.
+They send a binary frame (opcode 0x2) holding exactly the bytes given,
+and the browser hands it to the page as a `Blob` or `ArrayBuffer`.
+Text and binary share one send queue, so they reach the peer in the
+order they were written, including the messages `Close` drains.
+`Read` returns text and binary messages alike as bytes and does not
+say which opcode a message came in on, so a protocol that mixes the
+two tells them apart in its own framing.
+
+```go
+if err := conn.WriteString(msg); errors.Is(err, stream.ErrInvalidUTF8) {
+	err = conn.WriteBinary([]byte(msg)) // not text: send the bytes as binary
+}
+```
+
 `Upgrade` refuses a handshake RFC 6455 does not accept before it
-hijacks: a method other than GET, no `Connection: Upgrade` token, a
-version other than 13, or a key that is not base64 of 16 bytes. A
+hijacks: a method other than GET, a request older than HTTP/1.1, no
+`Connection: Upgrade` token, a version other than 13, or a key that is
+not base64 of 16 bytes. `Connection` and `Sec-WebSocket-Protocol` are
+read across every line the client sent them on. A zero or negative
+`WSConfig.SendBuffer` means the default of 32. A
 transport that hijacks the connection itself runs the same check,
 `stream.CheckUpgradeRequest(r, originOK)`, before writing its 101;
 `originOK` decides the Origin as `WSConfig.CheckOrigin` does.

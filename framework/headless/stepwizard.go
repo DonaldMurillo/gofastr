@@ -138,7 +138,28 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 	}
 
 	step := p.Steps[p.Current]
+	nextWord := w.StepNext
+	if p.Current == total-1 {
+		nextWord = w.StepSubmit
+	}
 	kids := []render.HTML{
+		// The form's default button, first in tree order: implicit
+		// submission (Enter in a step's field) clicks the form's first
+		// submit control, which on every step past the first was Back,
+		// so Enter walked the flow backwards. This one is Next's twin
+		// (the same name, value and hook, so the plain POST and the
+		// module's submit record both read "next"), hidden so it is
+		// neither seen nor reached by Tab, and first so it also wins
+		// over any submit control a step's Fields carry. The visible
+		// order (Back, then Next) is unchanged.
+		b.El("button", PartDefaultAction, Internal(html.Attrs{
+			"type":                        "submit",
+			"name":                        "wizard_action",
+			"value":                       "next",
+			"data-hui-step-wizard-action": "next",
+			"hidden":                      "",
+			"tabindex":                    "-1",
+		}), render.Text(nextWord)),
 		// The rail is built entirely from step Headings (strings) plus
 		// generated markers and dots: nothing of the caller's, so the
 		// whole list is the component's own.
@@ -172,10 +193,6 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 			"value":                       "back",
 			"data-hui-step-wizard-action": "back",
 		}, render.Text(w.StepBack))
-	}
-	nextWord := w.StepNext
-	if p.Current == total-1 {
-		nextWord = w.StepSubmit
 	}
 	next := b.El("button", PartNext, html.Attrs{
 		"type":                        "submit",
@@ -217,7 +234,7 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 func init() {
 	Register(Spec{
 		Name: "StepWizard",
-		Anatomy: []Part{PartRoot, PartSteps, PartStep, PartStepRow, PartMarker,
+		Anatomy: []Part{PartRoot, PartDefaultAction, PartSteps, PartStep, PartStepRow, PartMarker,
 			PartStepText, PartTitle, PartDesc, PartBody, PartActions, PartPrev,
 			PartNext, PartStatus},
 		Hooks: []string{"data-hui-step-wizard", "data-hui-step-wizard-current",

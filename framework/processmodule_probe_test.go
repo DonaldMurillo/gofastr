@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -293,13 +294,28 @@ func TestProbeTimeoutIsBounded(t *testing.T) {
 //   - SKIPS with a clear message if the host has no backend available.
 func TestSandboxConformance(t *testing.T) {
 	b := HostSandboxBackend()
+	if b == nil && os.Getenv(requireConformanceEnv) != "" {
+		t.Fatalf("no sandbox backend on %s and %s is set", runtime.GOOS, requireConformanceEnv)
+	}
 	if b == nil {
 		t.Skipf("no sandbox backend available on %s: untrusted modules fail-closed here (design §6)", runtime.GOOS)
 	}
+	if raceEnabled && b.Name() == "bwrap" {
+		t.Skip("-race build: ThreadSanitizer's startup reservation exceeds the bwrap backend's data cap, so this test binary cannot be a capped probe child; the non-race run and the processmodule-demo host tests cover it")
+	}
+	skipIfSandboxAccountCannotReachTestBinary(t, b)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	report := RunConformance(ctx, b, t)
 	t.Logf("conformance report for %s:\n%s", b.Name(), report.Summary())
+	// Whatever the verdict, every probe child must have run its probe
+	// body: an unreported probe means the re-exec dispatch broke, and the
+	// report then says nothing about the backend.
+	for _, res := range report.Results {
+		if !res.Reported {
+			t.Errorf("probe %s: child never reported (status=%s detail=%q)", res.ID, res.Status, res.Detail)
+		}
+	}
 
 	if !report.Conforms() {
 		var failed []string
@@ -308,7 +324,43 @@ func TestSandboxConformance(t *testing.T) {
 				failed = append(failed, fmt.Sprintf("%s=%s", res.ID, res.Status))
 			}
 		}
+		if os.Getenv(requireConformanceEnv) != "" {
+			t.Fatalf("host backend %s does not conform (%s) and %s is set: this host is expected to run untrusted modules",
+				b.Name(), strings.Join(failed, ", "), requireConformanceEnv)
+		}
 		t.Skipf("host backend %s does not conform (%s); untrusted modules fail-closed on %s per design §11 risk 1",
 			b.Name(), strings.Join(failed, ", "), runtime.GOOS)
+	}
+}
+
+// requireConformanceEnv, when set, turns "this host's backend does not
+// conform" from a skip into a failure. CI sets it on the Linux shard,
+// where bwrap is expected to pass every probe, so a regression in the
+// backend cannot hide as a skipped test.
+const requireConformanceEnv = "GOFASTR_REQUIRE_SANDBOX_CONFORMANCE"
+
+// skipIfSandboxAccountCannotReachTestBinary skips on a root host where the
+// bwrap backend runs the probe child as uid 65534 (so RLIMIT_NPROC
+// applies) and the go test binary sits in a build dir that account cannot
+// traverse. Every probe would fail at the mount, which is the correct
+// refusal for a host binary nobody else may read, and says nothing about
+// the backend. examples/processmodule-demo/host's tests build into a
+// readable dir and cover a root host.
+func skipIfSandboxAccountCannotReachTestBinary(t *testing.T, b SandboxBackend) {
+	t.Helper()
+	if b.Name() != "bwrap" || os.Geteuid() != 0 {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	for dir := filepath.Dir(exe); ; dir = filepath.Dir(dir) {
+		if st, err := os.Stat(dir); err == nil && st.Mode().Perm()&0o001 == 0 {
+			t.Skipf("root host: the probe child runs as uid 65534, which cannot traverse %s (%v) to the test binary", dir, st.Mode().Perm())
+		}
+		if dir == filepath.Dir(dir) {
+			return
+		}
 	}
 }

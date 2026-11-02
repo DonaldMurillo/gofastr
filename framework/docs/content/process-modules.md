@@ -78,15 +78,21 @@ replicas through the SQL-backed `ProcessModuleStore`.
 module's effective set, keeps the rest and bumps the generation; it
 refuses an empty `grants`. The store writes it as a compare-and-swap on
 the generation it read (`ProcessModuleStore.RemoveEffectiveGrants`), so
-two revokes at once both stick. A request body over 1 MiB, or one whose
+two revokes at once both stick. The store also records the revoke in
+`DesiredState.RevokedGrants` (the `revoked_grants` column), so it
+outlives the next boot. `SetEffectiveGrants` keeps that set in step: a
+grant the replacement drops is recorded as revoked, and one it gives back
+is no longer. A request body over 1 MiB, or one whose
 base64-encoded `module.http` frame would not fit the module's
 `Limits.FrameBytes` (about three quarters of it), answers 413 rather than
 reaching the child truncated or failing as a retryable 503.
 
 Every boot calls `RegisterProcessModule` again, and so does every
-replica sharing the store. It compares the descriptor with the stored
-row (`ProcessModuleStore.InstallOrUpdate`, whose `InstallOutcome` it
-reports in `RegisterResult.Outcome`):
+replica sharing the store. It compares the descriptor's grants, less the
+row's recorded revokes, with the stored row
+(`ProcessModuleStore.InstallOrUpdate`, whose `InstallOutcome` it reports
+in `RegisterResult.Outcome`, and whose resulting grants it reports in
+`RegisterResult.EffectiveGrants`):
 
 - **Same artifact and grants** (order and repeats ignored): nothing is
   written, and the module keeps its enabled state and generation.
@@ -96,12 +102,16 @@ reports in `RegisterResult.Outcome`):
   rolling deploy, a replica still on the old build drains its child and
   holds the module in `InstalledDisabled` (its routes answer 503) until
   its deploy registers the new artifact.
-- **Any grant change**, wider or narrower: the grants and digest are
-  updated, the generation bumped, and the module **disabled** until an
-  operator enables it again, with a Warn naming the previous and new
-  grants (`RegisterResult.PreviousGrants`). A runtime `RevokeGrants`
-  is not remembered across this: the descriptor's grants are written
-  back, and the module stays disabled until someone re-enables it.
+- **A grant the row does not hold** (`InstallGrantsChanged`): the
+  grants and digest are updated, the generation bumped, and the module
+  **disabled** until an operator enables it again, with a Warn naming
+  the previous and new grants (`RegisterResult.PreviousGrants`).
+- **Grants dropped, none added** (`InstallGrantsNarrowed`): the grants
+  and digest are updated and the generation bumped. The module keeps its
+  enabled state, since nothing new runs.
+- **A runtime revoke** stays in force: a descriptor that still requests
+  a revoked grant does not get it back, and that alone is no grant
+  change. Give a revoked grant back with `SetEffectiveGrants`.
 
 The routes reflect the stored enabled state from the first request after
 boot. Registering one name twice in the same process is still refused
@@ -161,6 +171,14 @@ calls. A drain also cancels a spawn still starting for the old state: that
 child is killed instead of installed, so a revoke or disable that lands
 mid-start never leaves a second child serving under the old grants.
 
+A drain caused by a disable, or by a revoke (an upgrade whose new grant
+set no longer covers one the child holds), refuses the child's `host.*`
+reverse calls from the moment it starts, with `CodeCapabilityDenied`. The
+child still gets its drain budget to wind down, but a revoked grant is
+gone at once rather than when the child exits. An upgrade that takes no
+grant away, a widening (`orders:read` to `orders:*`), and the shutdown
+drain keep reverse calls open so the child can finish queued work.
+
 ## Shutdown
 
 `App.Shutdown` drains process modules after the HTTP server has drained
@@ -189,13 +207,48 @@ confinement, resource limits, no privilege re-escalation). **An untrusted
 module with no probe-passing backend does not run**; there is no silent
 downgrade to the trusted runner.
 
-The backends are per-OS wrapper commands (Linux: `bwrap` + cgroup v2;
-macOS: `sandbox-exec`; Windows: AppContainer + Job Object). Some probe
-properties are **structurally unreachable on a stock host**: distinct-uid
-on macOS, network-egress denial on Windows. So: **an untrusted module may
-be unrunnable on stock macOS/Windows/some-Linux until the operator installs
-a conforming backend or provisions the missing rule.** Fail-closed refusal
-is the correct, honest enforcement, not a gap to paper over.
+The backends are per-OS wrapper commands (Linux: `bwrap` + `prlimit`;
+macOS: `sandbox-exec`; Windows: AppContainer + Job Object). **Linux is the
+platform where an untrusted module runs**: the bwrap backend passes every
+probe on a host with bubblewrap, util-linux `prlimit` and unprivileged user
+namespaces. Some probe properties are **structurally unreachable on a
+stock host** elsewhere: distinct-uid and resource caps on macOS,
+network-egress denial on Windows. So: **an untrusted module is unrunnable
+on stock macOS/Windows until the operator installs a conforming backend.**
+Fail-closed refusal is the correct, honest enforcement, not a gap to paper
+over.
+
+### What the Linux sandbox gives a module
+
+The child runs as uid/gid 65534 in its own user, pid, network, IPC and
+UTS namespaces, with every capability dropped. It sees a read-only `/usr`
+(plus `/bin`, `/lib*`, `/sbin`), `/etc/ld.so.cache` and `/etc/localtime`
+and nothing else of `/etc`, its package directory read-only, and its
+scratch directory read-write as its working directory. Everything else,
+the root and `/tmp` included, is read-only or absent: **a module writes
+only to its working directory**. It has no network but loopback inside its
+own namespace.
+
+Resource caps are rlimits set inside the namespaces: open files, processes
+(threads count), and data memory. `SandboxOpts` sets them; a zero takes the
+backend default of 1024 files, 256 processes and 1 GiB. The memory cap
+counts every writable mapping, the Go runtime's own and each cgo thread's
+stack included, so a cgo-linked Go module needs about 128 MiB before its
+`main` runs. CPU is not capped (that needs a delegated cgroup v2).
+
+On a **root host**, bwrap itself starts as host uid 65534: the kernel never
+applies the process cap to host root, namespace or not. The child is then
+a separate host account as well as a separate namespace uid. That account
+owns the spawn's scratch directory, and it must be able to read the
+package directory and the binary; one only root can read fails the spawn,
+closed. On a non-root host the child is the host user outside its
+namespaces, kept away from the host's files and processes by the mounts
+and the pid namespace.
+
+Unprivileged user namespaces are off on some distros and restricted by
+AppArmor on others (Ubuntu 24.04 ships an AppArmor profile that lets
+`bwrap` create them). Where they are unavailable, bwrap fails at spawn,
+every probe fails and untrusted modules are refused.
 
 A probe passes only when it proves the property, never because a test
 could not run. P3 looks for the planted fd by device and inode, so the
@@ -212,6 +265,60 @@ inside the conformance report `NewSandboxRunner` embeds in
 except newline and tab, plus DEL — the same contract the codegen
 extension path applies to child stderr, so a sandbox wrapper's or child's
 output cannot drive the operator's terminal from inside an error string.
+
+### Hosting an untrusted module
+
+The app builds the sandbox runner itself. The first `TrustUntrusted`
+descriptor passed to `RegisterProcessModule` probes the backend with the
+P1–P7 suite, once for the life of the App, and hands the result to the
+supervisor. When the backend is missing or fails a probe,
+`RegisterProcessModule` panics with `UntrustedNoSandboxError`, and the
+message carries the conformance report. A trusted-only app never probes.
+
+- **`WithSandboxBackend(b)`** picks the backend. Without it the app uses
+  the host's built-in one (`bwrap` on Linux, `sandbox-exec` on macOS). A
+  custom `SandboxBackend` must pass the same probes. `WithSandboxBackend(nil)`
+  makes every untrusted registration fail closed.
+- **`app.ProcessModuleSandbox()`** returns the runner, or the error that
+  refused it, probing on the first call. A host that must still boot on a
+  machine without a conforming sandbox calls it first and registers the
+  untrusted module only when it returns nil. The error is a
+  `*SandboxConformanceError` whose `Report` holds the per-probe results;
+  it unwraps to `ErrSandboxUnavailable`.
+
+```go
+app := framework.NewApp(framework.WithDB(db))
+if _, err := app.ProcessModuleSandbox(); err != nil {
+    log.Printf("untrusted modules cannot run here: %v", err)
+} else {
+    app.RegisterProcessModule(desc, approved) // desc.TrustTier == TrustUntrusted
+}
+```
+
+**The probe child is your app's own binary.** Each probe re-runs the
+running executable with `GOFASTR_SANDBOX_PROBE=<id>` in its environment.
+The framework's package `init` sees that variable, runs the probe body,
+prints one result line and exits before your `main` starts. There is no
+hook to call from `main`, so there is none to forget, and no helper
+binary to ship beside the app. Two things follow:
+
+- Package `init` functions that run before the framework's run in the
+  probe child too, inside the sandbox under test with a scrubbed
+  environment. An `init` that needs the network or a secret fails there,
+  as it would in a confined module.
+- `GOFASTR_SANDBOX_PROBE` is reserved. A process started with it set runs
+  one probe and exits.
+
+`ProbeResult.Reported` says whether the probe child printed its result
+line. A report with an unreported probe tells you about the wiring, not
+the backend.
+
+[`examples/processmodule-demo/host`](../../../examples/processmodule-demo/host)
+hosts the demo module as an untrusted module, and its `-check-sandbox`
+flag prints this host's report as JSON. On Linux with bubblewrap it runs
+the module confined; on macOS (no distinct uid, no resource caps) it
+refuses the module and prints which probes failed. `-trust=trusted` runs
+the same module with crash isolation only.
 
 ## Migrations (per-module schema + role)
 
@@ -505,9 +612,17 @@ bookkeeping.
   `MigrationsAppliedAt`; it looks "stuck disabled" with proxy 503s. The
   same holds after every artifact upgrade: the new artifact clears the
   stamp, so run the coordinator as part of the deploy.
-- **Expecting an untrusted module to run on stock macOS / Windows / some
-  Linux.** Sandbox backends need a probe-passing conforming wrapper; until
-  the operator provisions one, fail-closed refusal is correct, not a bug.
+- **Expecting an untrusted module to run on stock macOS / Windows, or on a
+  Linux host without bubblewrap, `prlimit` or unprivileged user
+  namespaces.** Sandbox backends need a probe-passing conforming wrapper;
+  until the operator provisions one, fail-closed refusal is correct, not a
+  bug.
+- **Writing to `/tmp` from an untrusted module.** There is no writable
+  `/tmp` in the Linux sandbox; write to the working directory.
+- **Registering an untrusted module the host may not be able to confine,
+  with nothing to catch the refusal.** `RegisterProcessModule` panics on a
+  host without a conforming sandbox. Call `app.ProcessModuleSandbox()`
+  first when the app has to boot there anyway.
 - **Assuming group names make SQLite DDL safe.** SQLite has no roles/
   `GRANT`/schemas; an untrusted module's migrations are rejected on SQLite
   loud (fail-closed). Groups are bookkeeping, not a boundary.

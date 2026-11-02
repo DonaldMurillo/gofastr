@@ -196,15 +196,19 @@
       return;
     }
     // Type-ahead: a printable single-character key jumps to the next
-    // item whose label starts with the accumulated prefix.
+    // item whose label starts with the accumulated prefix; the same
+    // letter again moves to the next item starting with it.
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const now = Date.now();
       if (now - typeAt > 800) typeBuf = '';
       typeAt = now;
       typeBuf += e.key.toLowerCase();
+      // One letter pressed again ("b", "b") cycles through the items
+      // that start with it, as a listbox does; no label starts "bb".
+      const q = typeBuf.split('').every(function (c) { return c === typeBuf[0]; }) ? typeBuf[0] : typeBuf;
       for (let i = 1; i <= items.length; i++) {
         const cand = items[(idx + i) % items.length];
-        if (label(cand).startsWith(typeBuf)) {
+        if (label(cand).startsWith(q)) {
           e.preventDefault();
           cand.focus();
           return;

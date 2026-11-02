@@ -211,6 +211,31 @@
     };
   }, true);
 
+  // The default-button forward. The repeater renders a hidden,
+  // nameless submit ahead of its rows so implicit submission (Enter in
+  // a row's field) does not click row 0's Remove. That hidden submit
+  // hands the submission to the host form's own default: its first
+  // submit control outside every repeater, the button Enter would
+  // click if the repeater's controls were not in the form. A disabled
+  // host default submits nothing, the way a disabled default button
+  // makes implicit submission do nothing; a form with no such control
+  // keeps the hidden submit's own nameless submission.
+  document.addEventListener('click', function (ev) {
+    const t = ev.target;
+    if (!t || !t.matches || !t.matches('[data-hui-repeater-default]')) return;
+    const form = t.form;
+    if (!form) return;
+    let host = null;
+    for (const el of form.elements) {
+      if (el === t || !el.closest || el.closest('[data-hui-repeater]')) continue;
+      if ((el.tagName === 'BUTTON' || el.tagName === 'INPUT') &&
+        (el.type === 'submit' || el.type === 'image')) { host = el; break; }
+    }
+    if (!host) return;
+    ev.preventDefault();
+    if (!host.disabled) form.requestSubmit(host);
+  });
+
   // ─── the arrival pass ────────────────────────────────────────────
 
   // After an island swap the kernel hands the inserted region here:
@@ -222,7 +247,17 @@
     const scope = root && root.querySelectorAll ? root : document;
     const rep = within(scope, '[data-hui-repeater]')[0] ||
       (scope.closest ? scope.closest('[data-hui-repeater]') : null);
-    if (!rep || repOp.root == null) { repOp = null; return; }
+    if (repOp.root == null) { repOp = null; return; }
+    // The record belongs to the answer, not to the next insertion: an
+    // unrelated node landing while the request is in flight (a toast,
+    // another region's poll) leaves it while the clicked repeater is
+    // still on the page; once that repeater has gone (the answer
+    // replaced it in a swap this pass did not see) the record goes too.
+    const pending = repOp.root.isConnected;
+    if (!rep || (pending && rep !== repOp.root)) {
+      if (!pending) repOp = null;
+      return;
+    }
     if (repOp.action === 'remove' && repOp.index >= 0) {
       const rows = rep.querySelectorAll('[data-hui-repeater-index]');
       const target = rows[repOp.index] || rows[rows.length - 1];

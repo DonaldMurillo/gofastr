@@ -112,8 +112,13 @@ Filters validate against the **target** entity's fields, not the
 parent's. `include=comments(post_id=x)` validates `post_id` on
 `comments`, not on `posts`. Keys split the way top-level keys do: a
 suffix counts only when the name before it is a field, so a field
-named `opt_in` or `check_in` filters as itself, both here and in
-`?rel.opt_in=`. Values must be of the column's type, as at the top
+named `opt_in` (with no `opt` field) filters as itself, both here and
+in `?rel.opt_in=`. The bracket form works here too, with the same
+words as the top level (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`,
+`in`): `include=members(check_in[eq]=2026-11-01,check[in]=a|b)`. A
+term that reads two ways (fields `check` and `check_in`, term
+`check_in=x`) is a 400 naming `check_in[eq]` and `check[in]`, as is an
+unknown bracket word. Values must be of the column's type, as at the top
 level: `include=members(opt_in=maybe)` is a 400 naming the field.
 
 ## Behaviour & guarantees

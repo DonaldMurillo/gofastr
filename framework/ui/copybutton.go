@@ -18,14 +18,15 @@ import (
 // ─── CopyButton ─────────────────────────────────────────────────────
 //
 // A "copy to clipboard" button that targets another element by id.
-// The headless-feedback module's [data-hui-copy] reader performs the
+// The headless-copy module's [data-hui-copy] reader performs the
 // clipboard write; this component adds:
 //
 //   - Visible label/copied-label swap keyed on the wrapper's
 //     data-hui-copy-state="done", which the module holds for 1.2s.
 //   - A visually-hidden role="status" sibling the module populates
 //     through data-hui-copy-status on success so screen-reader users
-//     hear "Copied" without focus-loss.
+//     hear "Copied" without focus-loss, and with the failure sentence
+//     (data-hui-copy-failed) when the browser refuses the write.
 //   - Token-driven min tap target (the button family's token-driven sizing).
 //
 // Pairs naturally with CodeBlock (Target="#my-code"), but works for
@@ -268,6 +269,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		"data-hui-copy-copied":   copied,
 		"data-hui-copy-back":     label,
 		"data-hui-copy-sentence": announce,
+		"data-hui-copy-failed":   i18nui.CopyFailed.Text(ctx),
 	}
 	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs) {
 		wrapAttrs[k] = v

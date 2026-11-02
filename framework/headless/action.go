@@ -175,10 +175,15 @@ type ToggleActionProps struct {
 	// Method defaults to POST and may be PUT, PATCH or DELETE. It
 	// applies to both the commit and the untoggle request.
 	Method string
-	// IdleLabel is the text in the un-committed state. Required.
+	// IdleLabel is the text in the un-committed state, and the
+	// button's accessible name in both states: it is a toggle button,
+	// so aria-pressed carries the state and the name stays put.
+	// Required.
 	IdleLabel string
 	// CommittedLabel is the text while committed. Required, and it
-	// must differ from IdleLabel: the flip is the signal.
+	// must differ from IdleLabel: the flip is the signal. Keep the
+	// idle label's words in it ("Follow" / "Following") so the name a
+	// voice user reads off the button still matches it (WCAG 2.5.3).
 	CommittedLabel string
 	// IdleIcon and DoneIcon are decoration beside each label.
 	IdleIcon render.HTML
@@ -292,7 +297,9 @@ func OptimisticAction(p OptimisticActionProps, s Classes) render.HTML {
 // ToggleAction renders the button. The headless module binds it
 // through the kernel's action primitive, ships nothing itself but the
 // initial state below, and mirrors committed onto aria-pressed from
-// then on.
+// then on. The accessible name is IdleLabel in both states (an
+// aria-label, unless the caller set one): only the visible label
+// flips.
 func ToggleAction(p ToggleActionProps, s Classes) render.HTML {
 	checkActionEndpoint("ToggleAction", "Endpoint", p.Endpoint)
 	if p.IdleLabel == "" {
@@ -374,6 +381,14 @@ func renderAction(a action, s Classes) render.HTML {
 	own["data-state"] = a.state
 	if a.pressed != "" {
 		own["aria-pressed"] = a.pressed
+		// A toggle button keeps one name and lets aria-pressed carry
+		// the state (the APG pattern): the visible label still flips,
+		// but a name that flipped with it read "Following, pressed",
+		// the state said twice. The idle label is the name; a caller's
+		// own aria-label (an icon-only toggle) is a stable name too.
+		if _, ok := own["aria-label"]; !ok {
+			own["aria-label"] = a.idleLabel
+		}
 	}
 	// The sentence, on the root: the rolled-back listener finds the
 	// button, and the span it writes to is inside it, so the
@@ -499,7 +514,8 @@ func init() {
 			return []Case{{
 				Name: "idle",
 				Why: "aria-pressed false and the committed span hidden: first paint matches the server's " +
-					"answer, and the runtime only ever flips what is already there",
+					"answer, and the runtime only ever flips what is already there. The name is the idle " +
+					"label in both states, a toggle button's one name, so aria-pressed alone says it is on",
 				HTML: ToggleAction(ToggleActionProps{
 					Endpoint: "/apps/blog/watch", IdleLabel: "Watch", CommittedLabel: "Watching",
 					Variant: "primary",

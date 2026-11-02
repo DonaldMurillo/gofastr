@@ -30,60 +30,42 @@ func pageOverflowHandler(t *testing.T) *CrudHandler {
 
 // hugePageWrapPositive is a page number parsePaginationValues accepts
 // (>0, fits int) whose (page-1)*limit product wraps int arithmetic to a
-// POSITIVE wrong value: (2^62+1)*4 = 2^64+4 → 4. The request then
-// silently serves the page-2 window while labelling it page 2^62+2.
-// (The MaxInt64 flavor wraps NEGATIVE: SQLite treats a negative OFFSET
-// as 0, masking the bug, while Postgres rejects it, turning the
-// request into a 500.)
+// POSITIVE wrong value: (2^62+1)*4 = 2^64+4 → 4. Unguarded, the request
+// served the page-2 window labelled page 2^62+2; the MaxInt64 flavor
+// wraps NEGATIVE, which SQLite reads as 0 and Postgres refuses (a 500).
 const hugePageWrapPositive = 4611686018427387906 // 2^62 + 2, wraps ×4
 
-// TestListHugePageNotWrappedWindow: an overflowing page number must be
-// clamped by the same guard pagination.ParsePagination applies, not
-// wrapped to an arbitrary window by int overflow.
-func TestListHugePageNotWrappedWindow(t *testing.T) {
+// A page whose skip overflows int is a page past the offset cap, and is
+// refused as one (400 offset_too_large) on the buffered and the streaming
+// path alike. pagination.OffsetForPage answers 0 on overflow, and a page or
+// offset too long for strconv.Atoi parses as none at all, so each of these
+// was served as page 1, labelled as the page asked for (2026-11-01 bug
+// bash; before that, a wrapped window).
+func TestListRefusesOverflowingPage(t *testing.T) {
 	ch := pageOverflowHandler(t)
-
-	req := withTestUser(httptest.NewRequest("GET",
-		fmt.Sprintf("/items?page=%d&limit=4&sort=n", hugePageWrapPositive), nil), "u1")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("huge page = %d: %s", rec.Code, rec.Body.String())
+	queries := []string{
+		fmt.Sprintf("page=%d&limit=4", hugePageWrapPositive),
+		"page=9223372036854775807&limit=20",
+		"page=99999999999999999999999&limit=20",
+		"offset=99999999999999999999999&limit=20",
 	}
-	resp := decodeListResponse(t, rec.Body.String())
-	if len(resp.Data) == 0 {
-		t.Fatal("expected the first window of rows, got none")
-	}
-	first, _ := resp.Data[0]["n"].(float64)
-	if first != 1 {
-		t.Fatalf("overflowing page wrapped to window starting at n=%v — int overflow in (page-1)*limit; want the guarded first window", first)
-	}
-}
-
-// TestStreamingListHugePageNotWrappedWindow: the streaming list path
-// computes its own (page-1)*limit offset and must apply the same
-// overflow guard.
-func TestStreamingListHugePageNotWrappedWindow(t *testing.T) {
-	ch := pageOverflowHandler(t)
-
-	req := withTestUser(httptest.NewRequest("GET",
-		fmt.Sprintf("/items?stream=true&page=%d&limit=4&sort=n", hugePageWrapPositive), nil), "u1")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("streaming huge page = %d: %s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	// Buggy offset 4 streams rows 5..8; the guarded path streams 1..4.
-	want := `"n":1`
-	for i := 1; i <= 4; i++ {
-		if !contains(body, fmt.Sprintf(`"n":%d`, i)) {
-			t.Fatalf("streaming huge page missed row n=%d (wrapped window): %s", i, body)
+	for _, stream := range []string{"", "&stream=true"} {
+		for _, q := range queries {
+			req := withTestUser(httptest.NewRequest("GET", "/items?sort=n&"+q+stream, nil), "u1")
+			rec := httptest.NewRecorder()
+			ch.List()(rec, req)
+			if rec.Code != http.StatusBadRequest || !contains(rec.Body.String(), "offset_too_large") {
+				t.Errorf("?%s%s = %d %s, want 400 offset_too_large like any page past the cap", q, stream, rec.Code, rec.Body.String())
+			}
 		}
 	}
-	_ = want
-	if contains(body, `"n":5`) {
-		t.Fatalf("streaming huge page served the wrapped window (n=5 present): %s", body)
+	// Within the cap still pages, past the last row included.
+	for _, q := range []string{"page=2&limit=4", "page=5000&limit=20", "offset=4&limit=4"} {
+		rec := httptest.NewRecorder()
+		ch.List()(rec, withTestUser(httptest.NewRequest("GET", "/items?sort=n&"+q, nil), "u1"))
+		if rec.Code != http.StatusOK {
+			t.Errorf("?%s = %d %s, want 200", q, rec.Code, rec.Body.String())
+		}
 	}
 }
 

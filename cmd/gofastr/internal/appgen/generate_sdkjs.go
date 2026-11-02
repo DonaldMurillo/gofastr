@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/file"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // renderSDKJSFiles emits the JS/TS SDK: one handrolled ESM client.js plus a
@@ -42,7 +44,7 @@ func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 		// the assignment and whatever follows runs in the constructor. Bracket
 		// access is identical for every legitimate name (`client.posts` still
 		// resolves) and admits no name that is not a string.
-		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q%s);", jsResourceProp(ent), ent.Table, jsUploadColumns(decl)))
+		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q, %s%s);", jsResourceProp(ent), ent.Table, jsFilterColumns(decl), jsUploadColumns(decl)))
 		// One binding per move, same quoting rule: the key is data, never
 		// an identifier, in the emitted statements.
 		for _, t := range crud.RoutableTransitions(decl.States) {
@@ -125,7 +127,7 @@ func tsKeyType(decl framework.EntityDeclaration) string {
 // empty for the generated string id (the defaults).
 func tsKeyArgs(decl framework.EntityDeclaration) string {
 	if intID(decl) {
-		return ", number, { id: number }"
+		return ", number | string, { id: number | string }"
 	}
 	if appspec.DeclKeyIsID(decl) {
 		return ""
@@ -138,7 +140,23 @@ func tsKeyArgs(decl framework.EntityDeclaration) string {
 	return ", " + tsKeyType(decl) + ", { " + strings.Join(fields, "; ") + " }"
 }
 
-// jsUploadColumns is the third Resource argument of an entity that takes
+// jsFilterColumns is the third Resource argument: every declared column
+// the server's filter parser knows (Hidden ones are invisible to it).
+// The server tries the suffix split first and falls back to bare
+// equality on the whole key, so on a column named check_in, with no
+// column named check, a joined list would be read as equality with
+// "a,b"; joinList refuses that key.
+func jsFilterColumns(decl framework.EntityDeclaration) string {
+	var cols []string
+	for _, f := range decl.Fields {
+		if !f.Hidden {
+			cols = append(cols, strconv.Quote(f.Name))
+		}
+	}
+	return "[" + strings.Join(cols, ", ") + "]"
+}
+
+// jsUploadColumns is the fourth Resource argument of an entity that takes
 // files: each Input key mapped to its column, the name a multipart part
 // goes by. Empty for an entity without Image or File fields.
 func jsUploadColumns(decl framework.EntityDeclaration) string {
@@ -201,7 +219,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if slices.Contains(decl.PrimaryKey, fd.Name) {
 			opt = ""
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values))
+		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values)+dtsNull(decl, fd))
 	}
 	dts.WriteString("}\n\n")
 
@@ -224,7 +242,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if inputTakesValue(fd) {
 			opt = ""
 		}
-		typ := tsTypeForField(fd.Type, fd.Values)
+		typ := tsTypeForField(fd.Type, fd.Values) + dtsNull(decl, fd)
 		if slices.ContainsFunc(uploadFields(decl), func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
 			// A Blob (a File is one) is uploaded; a string is a stored URL.
 			typ += " | Blob"
@@ -293,6 +311,20 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	writeDTSEndpoints(dts, decl, ent)
 }
 
+// dtsNull is " | null" for a field the server can hold as null, the rule
+// the OpenAPI document follows: an optional column with no generated
+// value outside the key. A read returns its null, and a write may send
+// one to clear it.
+func dtsNull(decl framework.EntityDeclaration, fd framework.FieldDeclaration) string {
+	if fd.Required || fd.AutoGenerate != "" || slices.Contains(decl.PrimaryKey, fd.Name) {
+		return ""
+	}
+	if fd.Name == "id" && appspec.DeclKeyIsID(decl) {
+		return ""
+	}
+	return " | null"
+}
+
 // dtsRuntimeTypes are the names client.d.ts declares for every app.
 // TestDTSRuntimeTypesListsEveryExport holds it to the runtime block.
 var dtsRuntimeTypes = []string{"ApiError", "ListParams", "CursorParams", "ListResponse", "CursorPage", "BatchResult", "NoBlob", "BatchResponse", "Resource", "Client"}
@@ -352,10 +384,14 @@ func stampNote(stamp string) string {
 
 // tsTypeForField mirrors goTypeForField for TypeScript. Decimal stays a
 // string (the wire truth), timestamps/dates are RFC 3339 strings, enums
-// become literal unions.
+// become literal unions. An integer is number | string: the client's
+// parseJSON hands one past 2^53 over as its exact decimal string, and the
+// server takes that string back for an integer column.
 func tsTypeForField(declType string, values []string) string {
 	switch strings.ToLower(declType) {
-	case "int", "integer", "float", "number":
+	case "int", "integer":
+		return "number | string"
+	case "float", "number":
 		return "number"
 	case "bool", "boolean":
 		return "boolean"
@@ -391,12 +427,24 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	// from the snippet meant to show the casing contract working. A
 	// spec with no range-able column shows plain equality.
 	if picked, filterOp := sdkExampleFilter(first.Fields); picked != nil {
+		// A bare key that reads two ways (a field beside its name plus a
+		// suffix) is a 400; the example then names the operator in
+		// brackets, the spelling the server reads one way.
 		if filterOp == "" {
-			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s]: \"x\" } });\n```\n\n", prop, prop, prop, picked.Wire)
+			eq := ""
+			if first.filterKeys.Ambiguous(picked.Snake, filter.OpEq) {
+				eq = ` + "[eq]"`
+			}
+			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s%s]: \"x\" } });\n```\n\n", prop, prop, prop, picked.Wire, eq)
 		} else {
-			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + \"_gte\"]: \"10\" } });\n```\n\n", prop, prop, prop, picked.Wire)
+			op := `"_gte"`
+			if first.filterKeys.Ambiguous(picked.Snake, filter.OpGte) {
+				op = `"[gte]"`
+			}
+			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + %s]: \"10\" } });\n```\n\n", prop, prop, prop, picked.Wire, op)
 		}
 	}
+	sb.WriteString(sdkBracketKeysNote(spec))
 	sb.WriteString("## Surface per entity\n\n`list(params)`, `listCursor(params)`, `get(id, opts)`, `create(body)`,\n`update(id, body)`, `patch(id, body)` (send only the keys you mean;\nJS objects are presence-faithful), `remove(id)`, `batchCreate(items)`,\n`batchUpdate(items)` (each item carries `id`), `batchDelete(ids)`, and\n`watch(onEvent, { signal })` for the live SSE feed (uses fetch streaming so\nthe Authorization header works; EventSource can't send it).\n\nErrors throw `ApiError` with `status`, `code`, `reason` (the stable error\ncode to branch on), `fields`, `fieldReasons`, and the raw `body`.\nBatch rollbacks (HTTP 400 with a decodable envelope) resolve normally:\ninspect `committed` and per-item `error`.\n")
 	return sb.String()
 }
@@ -405,6 +453,40 @@ func renderSDKJSReadme(spec sdkSpec) string {
 // Kept as one literal so the emitted file reads top-to-bottom like
 // handwritten code.
 const jsRuntimePrelude = `/**
+ * parseJSON is JSON.parse that keeps an integer past 2^53 exact: it
+ * arrives as its decimal string, the digits the server sent, where
+ * JSON.parse would round it (a snowflake id, a big counter). client.d.ts
+ * types every integer field number | string for this reason. Every other
+ * value parses as JSON.parse would.
+ */
+function parseJSON(text) {
+  // An unsafe integer has at least 16 digits; most bodies have no such run.
+  if (!/\d{16}/.test(text)) return JSON.parse(text);
+  const numChar = (c) => (c >= 48 && c <= 57) || c === 46 || c === 101 || c === 69 || c === 43 || c === 45;
+  let out = "";
+  let last = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 34) {
+      // A string: skip to its closing quote, past escaped characters.
+      for (i++; i < text.length && text.charCodeAt(i) !== 34; i++) {
+        if (text.charCodeAt(i) === 92) i++;
+      }
+    } else if (c === 45 || (c >= 48 && c <= 57)) {
+      let j = i + 1;
+      while (j < text.length && numChar(text.charCodeAt(j))) j++;
+      const tok = text.slice(i, j);
+      if (/^-?\d+$/.test(tok) && !Number.isSafeInteger(Number(tok))) {
+        out += text.slice(last, i) + '"' + tok + '"';
+        last = j;
+      }
+      i = j - 1;
+    }
+  }
+  return JSON.parse(out + text.slice(last));
+}
+
+/**
  * ApiError is thrown for non-2xx responses. The message is in the
  * request's locale; reason is its stable code (unique_taken,
  * unknown_filter), the thing to branch on. fields (when present) maps
@@ -421,7 +503,7 @@ export class ApiError extends Error {
     let fieldReasons = null;
     let parsed = null;
     if (typeof body === "string" && body) {
-      try { parsed = JSON.parse(body); } catch { /* non-JSON error body */ }
+      try { parsed = parseJSON(body); } catch { /* non-JSON error body */ }
     }
     if (parsed && typeof parsed === "object") {
       if (parsed.error) message = "api: " + status + ": " + parsed.error;
@@ -442,7 +524,7 @@ export class ApiError extends Error {
   }
 }
 
-function encodeParams(params) {
+function encodeParams(params, filterable) {
   const q = new URLSearchParams();
   if (!params) return q;
   const { filters, ...rest } = params;
@@ -453,7 +535,7 @@ function encodeParams(params) {
   if (filters) {
     for (const [key, value] of Object.entries(filters)) {
       if (value === undefined || value === null) continue;
-      q.set(key, Array.isArray(value) ? joinList(key, value) : String(value));
+      q.set(key, Array.isArray(value) ? joinList(key, value, filterable) : String(value));
     }
   }
   return q;
@@ -461,9 +543,19 @@ function encodeParams(params) {
 
 // A filter list goes as one comma-joined value, which the server splits
 // on commas, so an element holding a comma would arrive as two values.
-// The top-level lists (sort, fields, include) name fields, where a comma
-// already separates names the way the server reads them.
-function joinList(key, list) {
+// Only <column>_in is split: the server reads a list on any other key
+// as equality with the whole joined string, so status: ["a", "b"] would
+// match rows whose status is "a,b". That includes a column whose own
+// name ends in _in (check_in, with no column check): a key that is a
+// declared column needs its stem to be one as well. filterable holds the
+// declared columns only, so a key it does not hold (created_at_in, on a
+// column Define injects) is left to the server. The top-level lists (sort,
+// fields, include) name fields, where a comma already separates names
+// the way the server reads them.
+function joinList(key, list, filterable) {
+  if (!key.endsWith("_in") || (filterable.has(key) && !filterable.has(key.slice(0, -3)))) {
+    throw new Error("query: " + key + " takes one value; send a list as " + key + "_in");
+  }
   for (const v of list) {
     if (String(v).includes(",")) {
       throw new Error("query: a value of " + key + " holds a comma, which the server reads as a separator");
@@ -550,12 +642,15 @@ function recordID(values) {
 
 class Resource {
   /**
+   * filterable lists the table's declared columns, which joinList reads
+   * to tell <column>_in from a column whose own name ends in _in.
    * columns maps each Input key to its column; only a table with Image or
    * File fields has it, and only it takes Blob values.
    */
-  constructor(client, table, columns) {
+  constructor(client, table, filterable, columns) {
     this.client = client;
     this.table = table;
+    this._filterable = new Set(filterable || []);
     this.columns = columns || null;
   }
 
@@ -569,7 +664,7 @@ class Resource {
 
   _path(suffix, params) {
     let p = "/" + this.table + (suffix || "");
-    const q = encodeParams(params);
+    const q = encodeParams(params, this._filterable);
     const s = q.toString();
     return s ? p + "?" + s : p;
   }
@@ -578,9 +673,10 @@ class Resource {
    * Offset-paged list. params: {page, limit, sort, include, fields, q,
    * trashed, filters}: filter keys are the snake_case column names (see
    * the exported <entity>Fields constants), with _ne/_gt/_gte/_lt/_lte/_like/_in
-   * suffixes for operators. A filter value may be an array (an _in
-   * list); an element holding a comma throws, because the server splits
-   * on commas.
+   * suffixes for operators. An _in key takes an array; an array on any
+   * other filter key throws (the server reads a bare key as equality
+   * with the whole value), and so does an element holding a comma,
+   * because the server splits _in values on commas.
    */
   list(params) {
     return this.client.do("GET", this._path("", params));
@@ -719,7 +815,7 @@ const jsClientMethods = `  async do(method, path, body) {
       throw new ApiError(resp.status, text);
     }
     if (resp.status === 204 || text === "") return null;
-    return JSON.parse(text);
+    return parseJSON(text);
   }
 
   /**
@@ -790,7 +886,7 @@ const jsClientMethods = `  async do(method, path, body) {
         if (line === "") {
           if (data !== "") {
             let parsed = data;
-            try { parsed = JSON.parse(data); } catch { /* keep raw */ }
+            try { parsed = parseJSON(data); } catch { /* keep raw */ }
             await onEvent(event, parsed);
           }
           event = "";
@@ -838,6 +934,8 @@ export interface ListParams {
   /**
    * Filter params keyed by snake_case column name (use the <entity>Fields
    * constants), with _ne/_gt/_gte/_lt/_lte/_like/_in operator suffixes.
+   * An array is an IN list and goes only on an _in key; on any other
+   * key it throws.
    */
   filters?: Record<string, string | number | boolean | Array<string | number>>;
 }

@@ -135,6 +135,14 @@ type DesiredState struct {
 	// change here bumps DesiredGeneration.
 	EffectiveGrants []access.Permission
 
+	// RevokedGrants is every grant an operator took away at runtime
+	// ([ProcessModuleStore.RemoveEffectiveGrants], or a narrower
+	// [ProcessModuleStore.SetEffectiveGrants]). The boot-time
+	// [ProcessModuleStore.InstallOrUpdate] subtracts it from the
+	// descriptor's grants, so a revoke outlives the next boot. A grant
+	// SetEffectiveGrants gives back leaves it.
+	RevokedGrants []access.Permission
+
 	// MigrationsAppliedAt is nil until the migration coordinator has run
 	// pending migrations; the supervisor refuses Ready while nil for a
 	// module with a declared migration group.
@@ -218,8 +226,9 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 			enabled           %s NOT NULL DEFAULT %s,
 			artifact_sha256   TEXT NOT NULL,
 			effective_grants  %s,
-			migrations_applied_at %s NULL
-		)`, query.QuoteFolded(desiredTable), intType, boolType, boolDefault, grantsType, intType),
+			migrations_applied_at %s NULL,
+			revoked_grants    %s
+		)`, query.QuoteFolded(desiredTable), intType, boolType, boolDefault, grantsType, intType, grantsType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			module            TEXT NOT NULL,
 			replica_id        TEXT NOT NULL,
@@ -234,8 +243,39 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 			return fmt.Errorf("processmodule: ensure schema (%s): %w", label, err)
 		}
 	}
+	return s.addRevokedColumn(ctx, grantsType)
+}
+
+// addRevokedColumn adds revoked_grants to a desired-state table an older
+// build created without it. Postgres says ADD COLUMN IF NOT EXISTS; SQLite
+// has no such clause, so the catalog is read first, and a failed ADD
+// rereads it and passes when another replica added the column meanwhile.
+func (s *SQLProcessModuleStore) addRevokedColumn(ctx context.Context, grantsType string) error {
+	const col = "revoked_grants"
+	clause := "ADD COLUMN"
+	if s.dialect == migrate.DialectPostgres {
+		clause = "ADD COLUMN IF NOT EXISTS"
+	} else {
+		live, err := migrate.ReadLiveColumns(ctx, s.db, desiredTable, s.dialect)
+		if err != nil {
+			return fmt.Errorf("processmodule: ensure schema: read columns: %w", err)
+		}
+		if _, ok := live[col]; ok {
+			return nil
+		}
+	}
+	alter := fmt.Sprintf("ALTER TABLE %s %s %s %s", query.QuoteFolded(desiredTable), clause, col, grantsType)
+	if _, err := s.db.ExecContext(ctx, alter); err != nil {
+		now, rerr := migrate.ReadLiveColumns(ctx, s.db, desiredTable, s.dialect)
+		if _, ok := now[col]; rerr != nil || !ok {
+			return fmt.Errorf("processmodule: ensure schema: add %s: %w", col, err)
+		}
+	}
 	return nil
 }
+
+// desiredColumns is the column list scanDesired reads, in its order.
+const desiredColumns = "module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at, revoked_grants"
 
 // Install writes a new desired-state row. Returns ErrModuleInstalled if a
 // row already exists for the module.
@@ -271,16 +311,20 @@ type execer interface {
 // through the affected-row count.
 func (s *SQLProcessModuleStore) insertIfAbsent(ctx context.Context, ex execer, d DesiredState, grantsJSON []byte) (bool, error) {
 	enabledInt := boolToInt(d.Enabled)
+	revokedJSON, err := marshalGrants(d.RevokedGrants)
+	if err != nil {
+		return false, err
+	}
 	var q string
 	var args []any
 	if s.dialect == migrate.DialectPostgres {
-		q = fmt.Sprintf(`INSERT INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at)
-			VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (module) DO NOTHING`, query.QuoteFolded(desiredTable))
-		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, grantsJSON, timeToMillis(d.MigrationsAppliedAt)}
+		q = fmt.Sprintf(`INSERT INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at, revoked_grants)
+			VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (module) DO NOTHING`, query.QuoteFolded(desiredTable))
+		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, grantsJSON, timeToMillis(d.MigrationsAppliedAt), revokedJSON}
 	} else {
-		q = fmt.Sprintf(`INSERT OR IGNORE INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at)
-			VALUES (?, ?, ?, ?, ?, ?)`, query.QuoteFolded(desiredTable))
-		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, string(grantsJSON), timeToMillis(d.MigrationsAppliedAt)}
+		q = fmt.Sprintf(`INSERT OR IGNORE INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at, revoked_grants)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, query.QuoteFolded(desiredTable))
+		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, string(grantsJSON), timeToMillis(d.MigrationsAppliedAt), string(revokedJSON)}
 	}
 	res, err := ex.ExecContext(ctx, q, args...)
 	if err != nil {
@@ -307,10 +351,16 @@ const (
 	// deploy). The digest is updated and the generation bumped; the
 	// enabled flag stands.
 	InstallArtifactChanged
-	// InstallGrantsChanged: the effective grant set differs, wider or
-	// narrower. Grants and digest are updated, the generation bumped,
-	// and the module disabled until an operator re-enables it.
+	// InstallGrantsChanged: the descriptor's grants, less the stored
+	// revokes, add a grant the row does not hold. Grants and digest are
+	// updated, the generation bumped, and the module disabled until an
+	// operator re-enables it.
 	InstallGrantsChanged
+	// InstallGrantsNarrowed: the descriptor's grants, less the stored
+	// revokes, drop grants the row holds and add none. Grants and digest
+	// are updated and the generation bumped; the enabled flag stands,
+	// since nothing new runs unseen.
+	InstallGrantsNarrowed
 )
 
 // String names the outcome for logs.
@@ -324,6 +374,8 @@ func (o InstallOutcome) String() string {
 		return "artifact-changed"
 	case InstallGrantsChanged:
 		return "grants-changed"
+	case InstallGrantsNarrowed:
+		return "grants-narrowed"
 	}
 	return "unknown"
 }
@@ -333,8 +385,8 @@ type InstallResult struct {
 	Outcome InstallOutcome
 	// Row is the desired-state row as stored after the call.
 	Row DesiredState
-	// PreviousGrants is the grant set the row held before a
-	// grants change; nil for every other outcome.
+	// PreviousGrants is the grant set the row held before a grants
+	// change or narrowing; nil for every other outcome.
 	PreviousGrants []access.Permission
 }
 
@@ -343,6 +395,9 @@ type InstallResult struct {
 // wrote. It inserts the row when absent and otherwise reconciles it with
 // d in one transaction, by the rules on [InstallOutcome]. d.Enabled is
 // used only for a new row; an existing row's flag is never raised here.
+// For an existing row the grant set written is d.EffectiveGrants less the
+// row's RevokedGrants: a runtime revoke wins over the descriptor that
+// still requests the grant.
 func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredState) (InstallResult, error) {
 	if d.Module == "" {
 		return InstallResult{}, errors.New("processmodule: InstallOrUpdate: empty module name")
@@ -372,7 +427,7 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 	// The row exists. Lock it (Postgres) so a concurrent boot of another
 	// replica reconciles against this one's write, not a stale read.
 	// SQLite's write lock is already held: the INSERT OR IGNORE took it.
-	sel := fmt.Sprintf(`SELECT module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at FROM %s WHERE module = %s`,
+	sel := fmt.Sprintf(`SELECT `+desiredColumns+` FROM %s WHERE module = %s`,
 		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	if s.dialect == migrate.DialectPostgres {
 		sel += " FOR UPDATE"
@@ -391,13 +446,32 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 	if prev.ArtifactSHA256 != d.ArtifactSHA256 {
 		unstamp = ", migrations_applied_at = NULL"
 	}
+	target := withoutRevoked(d.EffectiveGrants, prev.RevokedGrants)
+	// A grant given back narrower than its revoke (orders:read after
+	// orders:* was revoked) is still a pattern match for the revoke, so
+	// the subtraction drops it. The stored row holds it and the descriptor
+	// still covers it: keep it.
+	for _, g := range prev.EffectiveGrants {
+		if !slices.Contains(target, g) && access.ScopeMatch(d.EffectiveGrants, g) {
+			target = append(target, g)
+		}
+	}
+	if grantsJSON, err = marshalGrants(target); err != nil {
+		return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: %w", d.Module, err)
+	}
 	switch {
-	case !sameGrantSet(prev.EffectiveGrants, d.EffectiveGrants):
+	case !grantsWithin(target, prev.EffectiveGrants):
 		res.Outcome = InstallGrantsChanged
 		res.PreviousGrants = prev.EffectiveGrants
 		upd = fmt.Sprintf(`UPDATE %s SET effective_grants = %s, artifact_sha256 = %s, enabled = %s, desired_generation = desired_generation + 1%s WHERE module = %s`,
 			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3), unstamp, place(s.dialect, 4))
 		args = []any{string(grantsJSON), d.ArtifactSHA256, boolToInt(false), d.Module}
+	case !sameGrantSet(prev.EffectiveGrants, target):
+		res.Outcome = InstallGrantsNarrowed
+		res.PreviousGrants = prev.EffectiveGrants
+		upd = fmt.Sprintf(`UPDATE %s SET effective_grants = %s, artifact_sha256 = %s, desired_generation = desired_generation + 1%s WHERE module = %s`,
+			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), unstamp, place(s.dialect, 3))
+		args = []any{string(grantsJSON), d.ArtifactSHA256, d.Module}
 	case prev.ArtifactSHA256 != d.ArtifactSHA256:
 		res.Outcome = InstallArtifactChanged
 		upd = fmt.Sprintf(`UPDATE %s SET artifact_sha256 = %s, desired_generation = desired_generation + 1%s WHERE module = %s`,
@@ -424,6 +498,38 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 	return res, nil
 }
 
+// withoutRevoked returns grants less every grant a revoked pattern covers.
+func withoutRevoked(grants, revoked []access.Permission) []access.Permission {
+	if len(revoked) == 0 {
+		return grants
+	}
+	return slices.DeleteFunc(slices.Clone(grants), func(g access.Permission) bool {
+		return access.ScopeMatch(revoked, g)
+	})
+}
+
+// grantsWithin reports whether every grant in a is also in b: a adds
+// nothing b does not already hold.
+func grantsWithin(a, b []access.Permission) bool {
+	for _, g := range a {
+		if !slices.Contains(b, g) {
+			return false
+		}
+	}
+	return true
+}
+
+// unionGrants returns a with every grant of b it lacks appended.
+func unionGrants(a, b []access.Permission) []access.Permission {
+	out := slices.Clone(a)
+	for _, g := range b {
+		if !slices.Contains(out, g) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // sameGrantSet reports whether a and b hold the same permissions,
 // ignoring order and repeats.
 func sameGrantSet(a, b []access.Permission) bool {
@@ -437,7 +543,7 @@ func sameGrantSet(a, b []access.Permission) bool {
 
 // GetDesired returns the desired-state row, or ErrNoDesiredRow if absent.
 func (s *SQLProcessModuleStore) GetDesired(ctx context.Context, module string) (DesiredState, error) {
-	q := fmt.Sprintf(`SELECT module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at FROM %s WHERE module = %s`,
+	q := fmt.Sprintf(`SELECT `+desiredColumns+` FROM %s WHERE module = %s`,
 		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	row := s.db.QueryRowContext(ctx, q, module)
 	d, err := scanDesired(row, s.dialect)
@@ -452,7 +558,7 @@ func (s *SQLProcessModuleStore) GetDesired(ctx context.Context, module string) (
 
 // ListDesired returns every desired-state row, ordered by module name.
 func (s *SQLProcessModuleStore) ListDesired(ctx context.Context) ([]DesiredState, error) {
-	q := fmt.Sprintf(`SELECT module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at FROM %s ORDER BY module ASC`,
+	q := fmt.Sprintf(`SELECT `+desiredColumns+` FROM %s ORDER BY module ASC`,
 		query.QuoteFolded(desiredTable))
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
@@ -523,9 +629,33 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: begin: %w", module, err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	upd := fmt.Sprintf(`UPDATE %s SET effective_grants = %s, desired_generation = desired_generation + 1 WHERE module = %s`,
-		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
-	res, err := tx.ExecContext(ctx, upd, string(grantsJSON), module)
+	// The revoked set follows the replacement: a grant it drops is
+	// remembered as revoked, a grant it gives back is no longer.
+	sel := fmt.Sprintf(`SELECT `+desiredColumns+` FROM %s WHERE module = %s`,
+		query.QuoteFolded(desiredTable), place(s.dialect, 1))
+	if s.dialect == migrate.DialectPostgres {
+		sel += " FOR UPDATE"
+	}
+	prev, err := scanDesired(tx.QueryRowContext(ctx, sel, module), s.dialect)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("processmodule: %w: %q", ErrNoDesiredRow, module)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: read: %w", module, err)
+	}
+	dropped := slices.DeleteFunc(slices.Clone(prev.EffectiveGrants), func(g access.Permission) bool {
+		return slices.Contains(grants, g)
+	})
+	revoked := slices.DeleteFunc(unionGrants(prev.RevokedGrants, dropped), func(g access.Permission) bool {
+		return slices.Contains(grants, g)
+	})
+	revokedJSON, err := marshalGrants(revoked)
+	if err != nil {
+		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: %w", module, err)
+	}
+	upd := fmt.Sprintf(`UPDATE %s SET effective_grants = %s, revoked_grants = %s, desired_generation = desired_generation + 1 WHERE module = %s`,
+		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3))
+	res, err := tx.ExecContext(ctx, upd, string(grantsJSON), string(revokedJSON), module)
 	if err != nil {
 		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: update: %w", module, err)
 	}
@@ -533,9 +663,9 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 		return 0, err
 	}
 	var gen int64
-	sel := fmt.Sprintf(`SELECT desired_generation FROM %s WHERE module = %s`,
+	genSel := fmt.Sprintf(`SELECT desired_generation FROM %s WHERE module = %s`,
 		query.QuoteFolded(desiredTable), place(s.dialect, 1))
-	if err := tx.QueryRowContext(ctx, sel, module).Scan(&gen); err != nil {
+	if err := tx.QueryRowContext(ctx, genSel, module).Scan(&gen); err != nil {
 		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: readback: %w", module, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -560,8 +690,8 @@ func (s *SQLProcessModuleStore) RemoveEffectiveGrants(ctx context.Context, modul
 	if len(grants) == 0 {
 		return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, errNoGrantsNamed)
 	}
-	upd := fmt.Sprintf(`UPDATE %s SET effective_grants = %s, desired_generation = desired_generation + 1 WHERE module = %s AND desired_generation = %s`,
-		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3))
+	upd := fmt.Sprintf(`UPDATE %s SET effective_grants = %s, revoked_grants = %s, desired_generation = desired_generation + 1 WHERE module = %s AND desired_generation = %s`,
+		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3), place(s.dialect, 4))
 	for range removeGrantsAttempts {
 		d, err := s.GetDesired(ctx, module)
 		if err != nil {
@@ -577,10 +707,16 @@ func (s *SQLProcessModuleStore) RemoveEffectiveGrants(ctx context.Context, modul
 		if err != nil {
 			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, err)
 		}
+		// Remember the revoke, so the next boot's InstallOrUpdate does not
+		// hand the grant back from the descriptor.
+		revokedJSON, err := marshalGrants(unionGrants(d.RevokedGrants, grants))
+		if err != nil {
+			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, err)
+		}
 		if s.afterGrantsRead != nil {
 			s.afterGrantsRead()
 		}
-		res, err := s.db.ExecContext(ctx, upd, string(grantsJSON), module, int64(d.DesiredGeneration))
+		res, err := s.db.ExecContext(ctx, upd, string(grantsJSON), string(revokedJSON), module, int64(d.DesiredGeneration))
 		if err != nil {
 			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: update: %w", module, err)
 		}
@@ -718,7 +854,7 @@ type scanner interface {
 func scanDesired(sc scanner, dialect migrate.Dialect) (DesiredState, error) {
 	var d DesiredState
 	var gen int64
-	var grantsRaw string
+	var grantsRaw, revokedRaw string
 	var migMs sql.NullInt64
 	// `enabled` is BOOLEAN on Postgres and INTEGER (0/1) on SQLite; scanning
 	// a PG bool into *int fails ("converting driver.Value type bool to int"),
@@ -726,12 +862,13 @@ func scanDesired(sc scanner, dialect migrate.Dialect) (DesiredState, error) {
 	// was reached. Scan into an any and normalize per-dialect so both paths
 	// read every column.
 	var enabledVal any
-	if err := sc.Scan(&d.Module, &gen, &enabledVal, &d.ArtifactSHA256, &grantsRaw, &migMs); err != nil {
+	if err := sc.Scan(&d.Module, &gen, &enabledVal, &d.ArtifactSHA256, &grantsRaw, &migMs, &revokedRaw); err != nil {
 		return DesiredState{}, err
 	}
 	d.DesiredGeneration = uint64(gen)
 	d.Enabled = enabledBool(enabledVal)
 	d.EffectiveGrants = unmarshalGrants(grantsRaw)
+	d.RevokedGrants = unmarshalGrants(revokedRaw)
 	if migMs.Valid {
 		t := time.UnixMilli(migMs.Int64)
 		d.MigrationsAppliedAt = &t

@@ -184,6 +184,9 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 			// Lazy: clicking the toggle fires the kernel's rpc
 			// primitive; the response populates the child group
 			// through the signal swap.
+			// Same-origin like every RPC sink here: a cross-origin
+			// branch is one the runtime silently declines to fetch.
+			checkSameOrigin("Tree node "+strconv.Quote(n.ID), "LazyPath", n.LazyPath)
 			Mark(toggleAttrs, "data-cui-rpc")
 			toggleAttrs["data-cui-rpc-method"] = "POST"
 			toggleAttrs["data-cui-rpc-signal"] = signalPrefix + "-" + n.ID
@@ -194,7 +197,11 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 	// A dangerous Href is dropped and the node degrades to a plain
 	// label rather than a clickable XSS vector.
 	if href := urlsafe.CleanAnchor(n.Href); href != "" {
-		row = append(row, b.El("a", PartLabel, Attrs(map[string]string{"href": href}),
+		// Out of the tab order: the tree is one tab stop (the APG tree
+		// view), the treeitem holds the roving tabindex, and the module
+		// follows the link on Enter. A tabbable link in every row made
+		// Tab walk the rows instead of leaving the tree.
+		row = append(row, b.El("a", PartLabel, Attrs(map[string]string{"href": href, "tabindex": "-1"}),
 			render.Text(scrubControlBytes(n.Label))))
 	} else {
 		row = append(row, b.El("span", PartLabel, nil, render.Text(scrubControlBytes(n.Label))))

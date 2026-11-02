@@ -58,8 +58,11 @@ group usage and exits 2. `version` prints the binary name.
 
 Per verb:
 
-- **list**: an equality filter flag per field (`--status active`,
-  comma list = IN), range flags (`--views-gt/-gte/-lt/-lte`) on
+- **list**: an equality filter flag per field (`--status active`),
+  `--<field>-in` for a comma list (`--status-in active,trialing` sends
+  `status_in`, or the bracket `status[in]` where the suffix key reads two
+  ways; the bare flag is equality only, so a comma there is part of the
+  value), range flags (`--views-gt/-gte/-lt/-lte`) on
   numeric/date/timestamp fields, `--<field>-like` on text fields,
   plus `--sort`, `--page`/`--limit`, `--cursor` (keyset; `--cursor ""`
   fetches the first keyset page, since the server switches to keyset
@@ -284,6 +287,15 @@ and never overwritten.** It is the extension seam:
 - Endpoints registered by hand in Go (not in `gofastr.settings.yml`) are
   reachable via the client's raw `Do(ctx, method, path, body, out)`
   escape hatch.
+
+`custom.go` imports the client of the mode that wrote it: the entity SDK
+(`entities/client`) or, under `--from-openapi`, the CLI's own
+`internal/client`. A run in the other mode finds that import and refuses,
+since the file would not build beside the new `*.gen.go` files. Re-run
+with `--force` and the generator moves the file to `custom.go.bak` and
+writes a fresh `custom.go`; copy your `customCommands` entries and
+`configureClient` body across, then delete the backup. `--force` never
+replaces an existing `custom.go.bak`.
 
 The rest of the tree is laid out the same way: each `<entity>.gen.go`
 holds the command table, the per-entity filter and mutation-field tables,

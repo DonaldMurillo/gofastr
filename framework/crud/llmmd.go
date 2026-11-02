@@ -208,11 +208,17 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		// suits the operator, so it is always a filter a caller can
 		// actually send against THIS entity; with no such field the
 		// placeholder names none.
-		writeLLMOpRow(&b, "", filter.OpEq, "equals", "active", visibleFields)
+		// Examples are spelled the way the parser reads them: the bracket
+		// form only where the bare key reads two ways.
+		spell := filter.SpellerFor(fields)
+		writeLLMOpRow(&b, "", filter.OpEq, "equals", "active", visibleFields, spell)
 		for _, s := range filter.FilterSuffixes {
 			label, sample := llmOpLabelSample(s.Op)
-			writeLLMOpRow(&b, s.Suffix, s.Op, label, sample, visibleFields)
+			writeLLMOpRow(&b, s.Suffix, s.Op, label, sample, visibleFields, spell)
 		}
+		b.WriteString("\n")
+		b.WriteString("Or name the operator by word in brackets after the whole field name: `?<field>[op]=value`, op one of `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`, `in`.\n")
+		writeLLMAmbiguousKeys(&b, fields, spell)
 		b.WriteString("\n")
 	}
 
@@ -229,9 +235,11 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("{\n")
 	b.WriteString("  \"data\": [...],\n")
 	b.WriteString("  \"cursor\": \"opaque-string-for-next-page\",\n")
-	b.WriteString("  \"hasMore\": true,\n")
-	b.WriteString("  \"total\": 42\n")
+	b.WriteString("  \"hasMore\": true\n")
 	b.WriteString("}\n```\n\n")
+	// No total: the cursor route deliberately skips the COUNT
+	// (serveCursorList), so documenting one sent agents after a field
+	// that never arrives.
 
 	// GET /{table}/{id}
 	fmt.Fprintf(&b, "### GET %s\n\n", recordPath)
@@ -703,20 +711,44 @@ var llmAllFieldTypes = []schema.FieldType{
 // example names the first visible field whose type suits the operator
 // (a filter a caller can send against this entity); with none, the
 // <field> placeholder names no column of it.
-func writeLLMOpRow(b *strings.Builder, suffix string, op filter.FilterOp, label, sample string, visible []schema.Field) {
+func writeLLMOpRow(b *strings.Builder, suffix string, op filter.FilterOp, label, sample string, visible []schema.Field, spell filter.KeySpeller) {
 	var applies []string
 	for _, t := range llmAllFieldTypes {
 		if filter.OpSuitsType(op, t) {
 			applies = append(applies, schema.FieldTypeLabel(t, false))
 		}
 	}
-	field := "<field>"
+	key := "<field>" + suffix
 	for _, f := range visible {
 		if filter.OpSuitsType(op, f.Type) {
-			field = f.Name
+			key = spell.Key(f.Name, op)
 			break
 		}
 	}
-	fmt.Fprintf(b, "| `%s` | %s | %s | `%s%s=%s` |\n",
-		suffix, label, strings.Join(applies, ", "), field, suffix, sample)
+	fmt.Fprintf(b, "| `%s` | %s | %s | `%s=%s` |\n",
+		suffix, label, strings.Join(applies, ", "), key, sample)
+}
+
+// writeLLMAmbiguousKeys names each bare key of this entity that reads two
+// ways (a field's name, and another field's name plus a suffix): the
+// route answers it 400, so the doc gives the bracket spellings that pick
+// one. Nothing is written when no key collides.
+func writeLLMAmbiguousKeys(b *strings.Builder, fields []schema.Field, spell filter.KeySpeller) {
+	for _, f := range fields {
+		if f.Hidden {
+			continue
+		}
+		for _, name := range []string{f.Name, f.WireName} {
+			if name == "" || (name == f.WireName && name == f.Name) || !filter.IsAmbiguousKey(name, spell.Named) {
+				continue
+			}
+			for _, s := range filter.FilterSuffixes {
+				if base, ok := strings.CutSuffix(name, s.Suffix); ok {
+					fmt.Fprintf(b, "`?%s=` reads two ways and answers 400: send `?%s=` (the `%s` field) or `?%s=` (`%s` on `%s`).\n",
+						name, filter.BracketKey(name, filter.OpEq), name, filter.BracketKey(base, s.Op), s.Op, base)
+					break
+				}
+			}
+		}
+	}
 }

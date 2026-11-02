@@ -142,19 +142,38 @@ await api.posts.patch(id, { views: 0 });   // JS objects are presence-faithful
 await api.posts.watch((event, data) => console.log(event), { signal });
 ```
 
-A filter value may be an array, which goes as one comma-joined value
+An `_in` filter takes an array, which goes as one comma-joined value
 (`filters: { status_in: ["open", "paid"] }` sends `status_in=open,paid`).
 The server splits it on commas, so an element holding a comma throws
-before any request is sent.
+before any request is sent. An array on any other filter key throws too,
+naming the `_in` key to use: the server reads `?status=open,paid` as
+equality with the literal `open,paid`, never as a list. The same goes
+for a column whose own name ends in `_in`: on a `check_in` column, with
+no `check` column, `filters: { check_in: [...] }` throws and asks for
+`check_in_in`.
 
 `watch` uses fetch streaming (not `EventSource`: it can't send the
 Authorization header). Batch rollbacks (HTTP 400 with a decodable
 envelope) resolve normally with `committed: false`. Every response body
-the client buffers — the `JSON.parse` in `do()` and the `ApiError`
+the client buffers — the parse in `do()` and the `ApiError`
 snapshot on the error path — goes through a capped read (`_readBody`,
 1 MiB, the same `maxBodyBytes` the Go client enforces): a bigger body
 throws instead of buffering. `watch` holds one SSE line, and one event's
-joined `data:` lines, to the same cap and rejects past it. The exported
+joined `data:` lines, to the same cap and rejects past it.
+
+Bodies and `watch` events parse with the client's `parseJSON`, not bare
+`JSON.parse`: an integer past 2^53 (a snowflake id, a big counter)
+arrives as its exact decimal string where `JSON.parse` would round it.
+Every other value parses the same. `client.d.ts` types each integer
+field `number | string` for that reason, and the server takes the string
+back for an integer column, so a value read this way round-trips.
+
+A field that is not required, has no generated value and is not part of
+the key can hold SQL `NULL`, and the server returns it as `null`, so
+`client.d.ts` types it `T | null` on `<Struct>` and on `<Struct>Input`
+(where sending `null` clears it). A required field, a generated one and
+the key stay plain `T`. Check for `null` before using an optional field's
+value. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
 
@@ -203,7 +222,8 @@ await api.enrollments.batchDelete([[studentId, courseId]]);
 
 Each value goes into its own path segment, escaped the way the server's
 `entity.JoinKey` escapes it, so the id the request names is the one the
-server stores. An entity with an integer `id` types it `number`.
+server stores. An entity with an integer `id` types it `number | string`,
+like every integer field (see below).
 
 ## The casing contract both SDKs encode
 
@@ -370,6 +390,13 @@ Files the export already produced (or the user static dir) always win.
   filter/sort query params and validation-error `fields` keys are the
   snake_case column names. The JS SDK exports `<entity>Fields`
   constants; the Go README shows the same rule.
+- **Sending a bare key that reads two ways.** With fields `stage` and
+  `stage_in`, `?stage_in=` is a 400: it could be `stage_in`'s equality
+  or `stage`'s IN list. Name the operator in brackets after the whole
+  field name: `filters: { "stage_in[eq]": "x" }` or
+  `filters: { "stage[in]": ["a", "b"] }`. Both READMEs list every such
+  key in the app, and the CLI's filter flags already send the bracket
+  form for them.
 - **Hand-editing `gen/sdk/` output.** The CLI has a `custom.go` seam;
   SDK output has no owned files: every regeneration overwrites in place.
   Wrap the generated client from your own package instead.

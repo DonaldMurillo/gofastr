@@ -76,6 +76,7 @@ func MultiSelect(cfg MultiSelectConfig) render.HTML {
 		ID:          cfg.ID,
 		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id"),
 		Strings:     StringsFor(cfg.Ctx),
+		Ctx:         cfg.Ctx,
 	}, classes)
 	return multiselectStyle.WrapHTML(out)
 }

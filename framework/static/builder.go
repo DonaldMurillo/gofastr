@@ -536,7 +536,7 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 						"path", p, "status", st)
 					continue
 				}
-				md = doc.MD
+				md = b.Host.LLMMDWithSEO(sctx, p, screen, doc)
 			} else {
 				// The URL resolves but its page answers 404 (a resolver
 				// or Load naming no row, an outlet nothing fills): no

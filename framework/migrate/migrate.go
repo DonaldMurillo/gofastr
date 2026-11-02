@@ -1233,7 +1233,7 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	case schema.Bool:
 		return "BOOLEAN"
 	case schema.Decimal:
-		return "DECIMAL(19,4)"
+		return schema.DecimalColumnType
 	case schema.Enum:
 		return "TEXT"
 	case schema.UUID:

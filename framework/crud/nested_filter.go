@@ -163,7 +163,10 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			currentEntity = target
 		}
 
-		fieldName, op := splitFieldOp(currentEntity, parts[len(parts)-1])
+		fieldName, op, err := splitFieldOp(currentEntity, parts[len(parts)-1])
+		if err != nil {
+			return nil, i18n.Wrap(reasonNestedFilter, err, map[string]any{"key": strconv.Quote(key)})
+		}
 
 		// Refuse field names that aren't plain SQL identifiers.
 		if !isSafeIdentifier(fieldName) {
@@ -210,6 +213,14 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			}
 			nf.Values = vals
 		} else {
+			// A scalar operator has one value. Keeping values[0] and
+			// dropping the rest ran ?author.age_lt=100&author.age_lt=5 as
+			// age < 100 while a proxy reading the last occurrence saw < 5.
+			// Refused with the top-level parser's filter.repeated_filter,
+			// the bracket form (author.age[lt]) included.
+			if len(values) > 1 {
+				return nil, filter.RepeatedFilterError(key, len(values))
+			}
 			nf.Value = values[0]
 		}
 		if err := checkNestedValues(sent, nf); err != nil {
@@ -234,45 +245,35 @@ func nestedField(registry entity.Registry, target *entity.Entity, name string) (
 
 // splitFieldOp splits the last segment of a nested key into the field it
 // names and its operator, the way filter.ParseFiltersValues splits a
-// top-level key: a suffix counts only when the name before it is a
-// visible field of target, and a segment that is itself a field name
-// (opt_in, check_in) is that field under equality. Cutting the first
-// matching suffix with no such check sent ?members.opt_in=true looking
-// for a field "opt". When neither reading names a field, the first
+// top-level key (filter.ReadKey): name[op] names the whole field before
+// the brackets, a suffix counts only when the name before it is a
+// visible field of target, a segment that is itself a field name
+// (opt_in) is that field under equality, and one that is both (check
+// beside check_in) is refused with the bracket spellings. Cutting the
+// first matching suffix with no such check sent ?members.opt_in=true
+// looking for a field "opt". When no reading names a field, the first
 // suffix cut stands, so the refusal names what the caller most likely
 // meant.
-func splitFieldOp(target *entity.Entity, raw string) (string, filter.FilterOp) {
+func splitFieldOp(target *entity.Entity, raw string) (string, filter.FilterOp, error) {
 	visible := func(name string) bool {
 		f, ok := nestedField(nil, target, name)
 		return ok && !f.Hidden
 	}
-	firstCut, firstOp, cut := raw, filter.OpEq, false
-	for _, s := range filter.FilterSuffixes {
-		before, ok := strings.CutSuffix(raw, s.Suffix)
-		if !ok {
-			continue
-		}
-		if visible(before) {
-			return before, s.Op
-		}
-		if !cut {
-			firstCut, firstOp, cut = before, s.Op, true
-		}
-	}
-	if visible(raw) {
-		return raw, filter.OpEq
-	}
-	return firstCut, firstOp
+	name, op, _, err := filter.ReadKey(raw, visible)
+	return name, op, err
 }
 
 // checkNestedValues refuses a value that is not of the target column's
 // type, the same filter.CoerceValue check the top-level parser runs, so
 // ?author.age=abc answers 400 on both dialects instead of a Postgres 500
-// and an empty SQLite 200. A like value is a substring and is not checked.
+// and an empty SQLite 200. A like value is a substring and is not coerced,
+// but it is still a text bind: invalid UTF-8 or a NUL is Postgres's 22021,
+// so it gets the text check every value gets (CoerceValue as String).
 func checkNestedValues(sent string, nf nestedFilter) error {
 	switch nf.Op {
 	case filter.OpLike:
-		return nil
+		_, err := filter.CoerceValue(sent, schema.String, nf.Value)
+		return err
 	case filter.OpIn:
 		for _, v := range nf.Values {
 			if _, err := filter.CoerceValue(sent, nf.colType, v); err != nil {

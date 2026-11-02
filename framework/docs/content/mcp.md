@@ -364,7 +364,8 @@ auth/tenant enriched, carrying the inbound `*http.Request`
 (`RequestFromContext`), so it can read the Cookie or Authorization header the
 caller presented at `/mcp`. battery/auth ships ready-made gates:
 `auth.MCPUser()` requires any signed-in caller, `auth.MCPRole("a", "b")`
-requires any of the roles. A nil gate panics, at registration time, because a
+requires any of the roles (an API token also needs the `role:a` or `role:b`
+scope). A nil gate panics, at registration time, because a
 nil precondition would silently allow every caller.
 
 <!-- gofastr:compile

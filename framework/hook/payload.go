@@ -75,7 +75,11 @@ func (p *ListPayload) AddWhere(sql string, args ...any) {
 // GetPayload is the data argument passed to BeforeGet and AfterGet hooks.
 //
 // BeforeGet: Request and ID are populated, Where starts empty, Result is nil.
-// Hooks call AddWhere() to scope the lookup (mismatches → 404).
+// Hooks call AddWhere() to scope the lookup (mismatches → 404). The record
+// writes run the same chain, inside their transaction and before they
+// write: PUT, PATCH, DELETE, a transition, _batch update and delete items,
+// and in process under crud.WithReadHooks, so a row the clauses exclude
+// answers those writes the same 404 and is left untouched.
 //
 // AfterGet: Request, ID, and Result are populated; Where is no longer applied.
 // Hooks may mutate Result in place to redact / transform. The redaction

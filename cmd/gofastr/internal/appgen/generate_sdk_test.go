@@ -153,8 +153,8 @@ func TestSDKJSTypedSurface(t *testing.T) {
 		// checks (there is no JS parser in the Go stdlib). See
 		// TestClientJSQuotesEmittedNames. `client.posts` still resolves. Only
 		// the emitted assignment form changed.
-		"this[\"posts\"] = new Resource(this, \"posts\")",
-		"this[\"docFiles\"] = new Resource(this, \"doc_files\")",
+		"this[\"posts\"] = new Resource(this, \"posts\", [",
+		"this[\"docFiles\"] = new Resource(this, \"doc_files\", [",
 		"export const postsFields",
 		"watch(onEvent, opts)",
 		"_batch",
@@ -166,9 +166,9 @@ func TestSDKJSTypedSurface(t *testing.T) {
 	for _, want := range []string{
 		"export interface Posts {",
 		"export interface PostsInput {",
-		"  title: string;",  // required → non-optional in Input
-		"  views?: number;", // optional camelCase
-		`"draft" | "live"`,  // enum literal union
+		"  title: string;",                  // required → non-optional in Input
+		"  views?: number | string | null;", // optional camelCase; an int past 2^53 arrives as a string; a stored null reads back
+		`"draft" | "live"`,                  // enum literal union
 		"export type PostsPatch = Partial<PostsInput>;",
 		"readonly posts: Resource<Posts, PostsInput, PostsPatch>;",
 		"readonly docFiles: Resource<Documents, DocumentsInput, DocumentsPatch>;",

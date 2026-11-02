@@ -30,7 +30,17 @@ chain: it mounts innermost with `router.UseInner`, after the app's own
 auth and tenant middleware.)
 
 `Recovery` is outermost so a panic anywhere below it produces a clean
-`500`. `RequestID` runs next so every later log line carries the trace
+`500`. That `500` drops the representation headers the handler had set
+(`Content-Type`, `Content-Encoding`, `Content-Length`, `ETag`,
+`Last-Modified`, `Content-Range`, `Accept-Ranges`,
+`Content-Disposition`) and is sent `Cache-Control: no-store`, so a
+panicking asset handler's error page is never cached as the asset;
+cookies and the other headers stay. A panic after the response started
+(a status sent, a flush, body bytes, a hijack) cannot become a `500`:
+`Recovery` logs it and cuts the connection, so the client sees a
+truncated response rather than error text after a `200` body. A panic
+in a handler `Timeout` runs on its own goroutine is logged with that
+goroutine's stack, so the log names the code that panicked. `RequestID` runs next so every later log line carries the trace
 ID. `Compress`, when `AppConfig.Compression` is set, gzips text
 responses for clients that send `Accept-Encoding: gzip`; it sits outside
 everything that writes the body, so it sees the final bytes. `Timeout` is innermost: a `30s` deadline that
@@ -59,7 +69,9 @@ could have compressed. It leaves alone `HEAD` requests, `Range` requests,
 `text/event-stream`, bodies that already carry a `Content-Encoding`,
 `204`/`206`/`304` answers and hijacked connections. An `ETag` gains a
 `-gzip` suffix on the compressed variant, and a conditional request
-carrying that suffix still revalidates to `304`. A compressed response
+carrying that suffix still revalidates to `304`; an `If-Match` carrying
+it is mapped back too, so an optimistic-concurrency write that echoes
+the tag the client was handed is not refused with `412`. A compressed response
 drops `Accept-Ranges`, since a range request is served uncompressed.
 Responses marked `immutable` (hashed static assets, `runtime.js`,
 `manifest.js`) are compressed at the best level and cached in memory by
@@ -248,8 +260,11 @@ middleware.CSRF(middleware.CSRFConfig{
 Issues a cookie on safe requests; requires the matching header on
 mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
 `SkipBearerAuth()` is the shipped helper that bypasses CSRF on
-requests with `Authorization: Bearer …`, appropriate for pure API
-deployments where the browser is not involved.
+requests with `Authorization: Bearer …` or `X-API-Key`, appropriate for
+pure API deployments where the browser is not involved. Other
+`Authorization` schemes (Basic, Negotiate) are not skipped: the browser
+attaches them by itself. A verified mutating request carries its token on
+the context (`TokenFromContext`), so a re-rendered form can embed it.
 
 **Always set `SecretKey` explicitly in production.** The middleware
 will autogenerate one if omitted, but that key rotates every process
@@ -430,9 +445,11 @@ The in-memory bucket store caps its resident entry count at `MaxKeys`
 (default 100_000, the `framework/ratelimit` convention): an IPv6 peer
 rotates source addresses without limit, and the reap only drops buckets
 that have refilled to capacity, which a flood's fresh keys have not. Past
-the cap the store sheds down to a low-water mark, nearest-to-full first:
-a flood's buckets have each spent one token, so they go before a key
-that spent more of its budget. A bucket that still owes tokens is never
+the cap the store sheds down to a low-water mark, most tokens left first
+(counting the refill ticks that have landed), then nearest to full: a
+flood's buckets have each spent one token, so they go before a key that
+spent more of its budget, also under the default `RefillBy` (equal to
+`Capacity`), where one tick refills either. A bucket that still owes tokens is never
 reaped for being quiet, only shed past the cap. At `Capacity: 1` a
 flood's single token is its whole budget too, so a flood of `MaxKeys`
 new keys can shed an exhausted key (the one nearest refill goes first)
@@ -461,10 +478,12 @@ sliding-window choice.
 
 When middleware refuses a guarded screen route, it answers with
 `uihost.UIHost.RenderScreen` (see [ui-wiring](ui-wiring.md) → "Guards
-on dynamic screens"). That helper defaults to
-`Cache-Control: private, no-store` on both the full-page and the
-client-side-navigation arm, and mints no session cookie. Three rules
-keep the failure surfaces safe:
+on dynamic screens"). Its full-page arm always answers
+`Cache-Control: no-store` with `Vary: Cookie` and verifies or mints the
+anonymous stream session like every page load; its
+client-side-navigation arm defaults to `Cache-Control: private,
+no-store` and mints nothing. Three rules keep the failure surfaces
+safe:
 
 - **A recovery page is per-user.** It was rendered for one caller's
   auth state; a shared cache replaying it to a second visitor leaks
@@ -531,7 +550,9 @@ in the gateway / docs pipeline.
 `core/middleware` exports:
 
 - `RequestID()`: generates or echoes `X-Request-ID`.
-- `Recovery()`: turns panics into `500` with structured log line.
+- `Recovery()`: turns panics into `500` with structured log line (a
+  `no-store` `500` without the handler's representation headers), or
+  cuts the connection when the response had already started.
 - `Logging()` / `LoggingFn(getLogger)` / `LoggingWithWriter(io.Writer)`:
   structured request log. `LoggingFn` reads the logger per-request so
   plugins can swap it after the chain is wired.
@@ -555,7 +576,8 @@ in the gateway / docs pipeline.
   unsafe request passed CSRF with, for a server-side re-dispatch.
 - `Compress()`: gzip for text responses (see [Compression](#compression)).
 - `RateLimit(RateLimitConfig)`: token-bucket per key.
-- `Timeout(d)`: per-request deadline; cancels context on expiry.
+- `Timeout(d)`: per-request deadline; cancels context on expiry. A
+  hijack that fails leaves the response buffered and the deadline armed.
 - `NewMetrics()` + `MetricsMiddleware` + `MetricsHandler`: RED metrics.
 - `Tracing()`: OpenTelemetry span around each request.
 
@@ -728,7 +750,11 @@ paths now resolve the same predicate. A create or update that sets a
 BelongsTo relation column such as `order_id` or `author_id` is answered
 with **404** when the target row exists but the caller cannot read it
 under the target's own owner, tenant, and read scopes — the exact status
-reading that foreign row gives, so existence is not leaked. The
+reading that foreign row gives, so existence is not leaked. A target
+whose own `BeforeList`/`BeforeGet` hooks scope reads is checked under
+their clauses too, as `?include=` over the relation applies them: a
+reference onto a row they hide, or onto one that does not exist, is
+404. The
 existence check underneath it (`FOREIGN KEY` on both dialects;
 `AutoMigrate` emits the clause and the `sqlite3` driver name defaults
 `_pragma=foreign_keys(1)`) still rejects a fabricated id.
@@ -795,16 +821,19 @@ for every operation on an entity that declares none of `OwnerField`,
    requires an authenticated owner for every operation; the new
    session gate is redundant there and steps aside.
 2. **`Access` declared** (any operation, even a partial block): RBAC
-   governs the entity "as today": a blank permission for an operation
-   leaves it un-gated by RBAC, and the new session gate does not layer
-   an extra requirement on top.
+   governs the entity. A blank `Read` leaves reads open to every caller;
+   a blank `Create`, `Update` or `Delete` is refused to every caller
+   (403), a wildcard role included. `framework.Anyone` opens an
+   operation on purpose (`Create: framework.Anyone` for a contact form
+   on an otherwise gated entity). The session gate does not layer an
+   extra requirement on top.
 3. **`Public: true`**: a deliberate, full opt-out. Every operation,
    reads and writes, is open to anonymous callers: the framework's
    pre-secure-by-default behaviour for that entity. Meant for content
    that's genuinely public (a contact form, a blog's comments), not as
    a workaround for a 401 during development. An entity that wants
    public reads but gated writes uses `Access` instead (a blank
-   `Read` + a real `Create` permission).
+   `Read` and a real permission for each write).
 
 The read posture has two questions, and `Public` answers only the first
 (may this caller read the entity). **Which rows** they see is
@@ -817,6 +846,20 @@ visitors see published rows, signed-in editors see drafts" posture, and it
 is deliberately weak: any signed-in user, not an editor role. Writes are
 not filtered by it. See
 [entity-declarations](entity-declarations.md) → "Row-level read scoping".
+
+A `BeforeGet` hook that scopes reads does filter writes. A record
+`GET /<entity>/{id}` answers 404 for, because the caller's own
+`BeforeGet` chain appends a clause that excludes it, is one `PUT`,
+`PATCH`, `DELETE`, a transition and each `_batch` update or delete item
+answer the same 404 for, with the bytes a missing id gets, and leave
+untouched. The check reads the row inside the write's transaction under
+the write's own tenant, owner and soft-delete scope, before any other
+step, so a hidden row, another owner's row and a missing one fail at the
+same point even for a body the write would have refused later. A hook
+error hides the row. In process it binds under `crud.WithReadHooks`, as
+`GetOne` does, and covers `RestoreOne`, `PurgeOne` and `UpsertOne`'s
+conflict arm too. See [hooks and transactions](hooks-and-transactions.md)
+→ "A `BeforeGet` scope binds writes too".
 
 Because entity MCP tools dispatch through the router, this gate governs
 their calls automatically, and the framework attaches the entity's

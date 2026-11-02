@@ -39,18 +39,21 @@ func serveWrite(t *testing.T, h http.HandlerFunc, method, target, body string, p
 // SECURITY (2026-10-27 D4): a write's response row runs through the
 // BeforeGet scope GET applies. A caller allowed to write a row its read
 // hook hides got every column back: a no-op PATCH of another team's note
-// returned the body GET answers 404 for.
+// returned the body GET answers 404 for. Since 2026-11-01 a write to a row
+// the hook already hides answers 404 (hidden_row_write_security_test.go);
+// the read-back still matters for a row the write itself moves out of the
+// caller's sight (an update into team b) and for a create.
 func TestWriteResponseRunsBeforeGetScope(t *testing.T) {
 	writes := []struct {
 		name, method, target, body string
 		path                       map[string]string
 		handler                    func(*CrudHandler) http.HandlerFunc
 	}{
-		{"update", http.MethodPatch, "/notes/n2", `{"body":"B-NOTE-SECRET"}`,
-			map[string]string{"id": "n2"}, (*CrudHandler).Update},
+		{"update", http.MethodPatch, "/notes/n1", `{"team_id":"b","body":"B-NOTE-SECRET"}`,
+			map[string]string{"id": "n1"}, (*CrudHandler).Update},
 		{"create", http.MethodPost, "/notes", `{"id":"n9","team_id":"b","body":"B-NOTE-SECRET"}`,
 			nil, (*CrudHandler).Create},
-		{"batch update", http.MethodPatch, "/notes/_batch", `{"items":[{"id":"n2","body":"B-NOTE-SECRET"}]}`,
+		{"batch update", http.MethodPatch, "/notes/_batch", `{"items":[{"id":"n1","team_id":"b","body":"B-NOTE-SECRET"}]}`,
 			nil, (*CrudHandler).BatchUpdate},
 		{"batch create", http.MethodPost, "/notes/_batch", `{"items":[{"id":"n9","team_id":"b","body":"B-NOTE-SECRET"}]}`,
 			nil, (*CrudHandler).BatchCreate},
@@ -100,19 +103,24 @@ func TestGetScopeHidesKeylessRow(t *testing.T) {
 }
 
 // A BeforeGet hook that refuses fails the read-back closed: the write
-// stands and the response names the row by its id.
+// stands and the response names the row by its id. A create shows it: an
+// update under such a hook now answers 404 and writes nothing
+// (TestHiddenRowWriteHookErrorFailsClosed).
 func TestWriteResponseHookErrorHidesRow(t *testing.T) {
 	notes := hookScopedNotes(t, func(context.Context, any) error { return errors.New("no read") })
-	code, body := serveWrite(t, notes.Update(), http.MethodPatch, "/notes/n1", `{"body":"A-EDITED"}`, map[string]string{"id": "n1"})
-	if code != http.StatusOK {
-		t.Fatalf("update: %d %s", code, body)
+	code, body := serveWrite(t, notes.Create(), http.MethodPost, "/notes", `{"id":"n9","team_id":"a","body":"A-EDITED"}`, nil)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, body)
 	}
 	if strings.Contains(body, "A-EDITED") {
 		t.Errorf("SECURITY: a refusing BeforeGet hook still let the row out: %s", body)
 	}
 }
 
-// SECURITY (D4): the transition route's response runs the scope too.
+// SECURITY (D4): the transition route's response runs the scope too. The
+// hook shows drafts only, so the move itself takes the row out of sight:
+// a row hidden before the move now answers 404 instead
+// (TestHiddenRowTransitionAnswers404).
 func TestTransitionResponseRunsBeforeGetScope(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -141,7 +149,12 @@ func TestTransitionResponseRunsBeforeGetScope(t *testing.T) {
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.BeforeGet, teamScope("a"))
+	ch.Hooks.RegisterHook(hook.BeforeGet, func(_ context.Context, data any) error {
+		if p, ok := data.(*hook.GetPayload); ok {
+			p.AddWhere("status = $1", "draft")
+		}
+		return nil
+	})
 	code, body := serveWrite(t, ch.Transition(), http.MethodPost, "/tickets/k1/transitions/send", "", map[string]string{"id": "k1", "key": "send"})
 	if code/100 != 2 {
 		t.Fatalf("transition: %d %s", code, body)

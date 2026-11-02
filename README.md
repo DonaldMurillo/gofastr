@@ -273,7 +273,7 @@ app.Entity("posts", framework.EntityConfig{
 | HTTP             | `GET / POST /posts`, `GET / PUT / PATCH / DELETE /posts/{id}`                   |
 | Batch endpoints  | `POST / PATCH / DELETE /posts/_batch`: atomic; one tx for all items            |
 | SSE stream       | `GET /posts/_events`: entity.created/updated/deleted, scoped per tenant        |
-| Filtering        | `?status=published&views_gte=10&sort=-created_at&page=2`                        |
+| Filtering        | `?status=published&views_gte=10&sort=-created_at&page=2`, or by bracket word: `?views[gte]=10` ([filters](framework/docs/content/entity-declarations.md)) |
 | Eager loading    | `?include=author.profile,comments`: flat or nested, validated against the registry |
 | Cursor paging    | `?cursor=&limit=50`: keyset paging ([cursor-pagination](framework/docs/content/cursor-pagination.md)) |
 | Multipart upload | `multipart/form-data` on `Image`/`File` fields → streamed through `WithFileStorage` |

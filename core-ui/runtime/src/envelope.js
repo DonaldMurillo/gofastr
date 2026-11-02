@@ -126,25 +126,28 @@
   const isReservedSignalKey = (k) =>
     k === '__proto__' || k === 'constructor' || k === 'prototype';
 
-  // The atomic seed merge (P7-C) with the route fold: the values a
-  // cache replay must restore are tracked here, per the live route.
-  const applyPartialSeed = (data) => {
+  // The atomic seed merge (P7-C). The page-scoped values a cache
+  // replay must restore are tracked here: a page's seed replaces them,
+  // a deferred part's seed (part true) adds its keys to them.
+  const applyPartialSeed = (data, part) => {
     const store = G._signals;
     if (!store) return;
     const page = data.p || {};
-    const changed = [];
+    const changed = [], own = {};
+    let n = 0;
     for (const k in page) {
       if (!Object.prototype.hasOwnProperty.call(page, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      const v = page[k];
+      const v = own[k] = page[k];
+      n++;
       if (Object.prototype.hasOwnProperty.call(store, k) && store[k].value === v) continue;
       if (store[k]) store[k].value = v;
       else store[k] = { value: v, listeners: [] };
       changed.push([k, v]);
     }
     for (const [k, v] of changed) G.setSignal(k, v);
-    const rs = routeSeedFrom(page);
-    if (rs) _routeSeedP = rs;
+    if (!part) _pageSeedP = n ? { p: own } : null;
+    else if (n) _pageSeedP = { p: Object.assign({}, _pageSeedP && _pageSeedP.p, own) };
     const glob = data.g || {};
     for (const k in glob) {
       if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
@@ -383,7 +386,7 @@
   // the flat island mixes scopes (globals beside page-scoped values),
   // and feeding a global through the page arm would clobber a value
   // the user mutated. pageSeedIsland (below) adds the keys the host names
-  // page-scoped; the route fold alone tracks _routeSeedP.
+  // page-scoped.
   const routeSeedFrom = (flat) => {
     const p = {};
     for (const k in flat) {
@@ -416,20 +419,18 @@
   // seedOf is the seed a cache entry replays: its seed field, else the
   // island a plain partial's bytes carry inline.
   const seedOf = (entry) => entry && (entry.seed || islandIn(entry.html));
-  // _routeSeedP tracks the route.* values a cache replay must restore.
-  // The head island is a FIRST-PAINT artifact — after any SPA
-  // navigation the store has moved and the head has not, so reading it
-  // back (the old routeSeedFromHead fallback) seeded a replay with the
-  // ORIGIN route's values (P13-B: a Back after a re-captured entry
-  // showed the boot page's bindings). Truth here instead: the boot
-  // head's values first, then every applied page seed that carries
-  // route keys REPLACES the subset (SeedFor stamps every referenced
-  // name of the route table, absent params included, so the subset is
-  // complete for the page it belongs to).
-  let _routeSeedP = routeSeedFromHead();
+  // _pageSeedP: the live page's page-scoped values, the seed a leave
+  // capture falls back to when the page has no entry to carry one
+  // forward (an RPC write invalidated it). The head island is a
+  // first-paint artifact (P13-B), so: the boot document's page seed,
+  // then every applied page seed replaces it.
+  const parsedSeed = (el) => {
+    try { return el ? JSON.parse(el.textContent || 'null') : null; } catch (_) { return null; }
+  };
+  let _pageSeedP = parsedSeed(islandIn(NS._docSeed(document))) || routeSeedFromHead();
   const captureEnvelopeSnapshot = (slot) => ({
     fills: captureLiveFills(slot),
-    seed: document.querySelector('script#gofastr-signals-partial') || routeSeedIsland(_routeSeedP),
+    seed: document.querySelector('script#gofastr-signals-partial') || routeSeedIsland(_pageSeedP),
   });
 
   // P13-A (spike/layout-static): read a FULL document as an envelope.
@@ -1288,7 +1289,7 @@
     // The seed merge and the cache read, module-to-module (the parts
     // module merges a part's seed and records landed parts on this
     // cache's entries; core exports neither).
-    applySeed: applyPartialSeed,
+    applySeed: (data) => applyPartialSeed(data, true),
     cacheGet: getCachedScreen,
 
     // Restore a recorded state after a swap — every position
@@ -1299,12 +1300,6 @@
     // arriving PATH. Returns true (handled).
     restore(path, ps) { return restoreScroll(path, ps); },
 
-    // Seam (frag/nav.js applyPartialSeed): fold a merged page seed's
-    // route keys into the replay truth.
-    routeFold(page) {
-      const rs = routeSeedFrom(page);
-      if (rs) _routeSeedP = rs;
-    },
   };
 
   // ─── The module's attachment ────────────────────────────────────────

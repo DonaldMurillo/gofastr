@@ -147,6 +147,15 @@ func scopedClauseKey(parsed []filter.ParsedFilter) string {
 		b.WriteString(string(f.Op))
 		b.WriteByte(' ')
 		b.WriteString(strconv.Quote(f.Value))
+		// The term an IN value came from: a_in=1|2,a[in]=2 and
+		// a_in=1,a[in]=2|2 spell one value run but are different
+		// predicates (two lists ANDed, split at different places).
+		// Only IN needs it: a scalar term is one predicate whichever
+		// spelling (column or wire alias) named it.
+		if f.Op == filter.OpIn {
+			b.WriteByte(' ')
+			b.WriteString(strconv.Quote(f.Key()))
+		}
 		b.WriteByte(';')
 	}
 	return b.String()
@@ -411,29 +420,23 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			return nil, i18n.NewError(reasonScopedMissingEq, map[string]any{"include": strconv.Quote(pathForErrors), "filter": strconv.Quote(kv)})
 		}
 		key, value := kv[:eq], kv[eq+1:]
-		// Split the key the way the top-level parser does: a suffix counts
-		// only when the name before it is a declared field, and a key that
-		// is itself a field (opt_in, check_in) is that field under
-		// equality. With fields nil every name is accepted, so the first
-		// suffix cut stands, as it always has.
+		// Split the key the way the top-level parser does (filter.ReadKey):
+		// name[op] names the whole field before the brackets, a suffix
+		// counts only when the name before it is a declared field, a key
+		// that is itself a field (opt_in) is that field under equality, and
+		// a key that is both (check beside check_in) is refused. With fields
+		// nil every name is accepted, so the first suffix cut stands, as it
+		// always has: a key cannot read two ways against no field list.
 		named := func(n string) bool { return knownField[n] || noQueryField[n] }
-		field, op := key, filter.OpEq
-		firstCut, firstOp, cut, resolved := key, filter.OpEq, false, false
-		for _, s := range filter.FilterSuffixes {
-			before, ok := strings.CutSuffix(key, s.Suffix)
-			if !ok {
-				continue
-			}
-			if fields == nil || named(before) {
-				field, op, resolved = before, s.Op, true
-				break
-			}
-			if !cut {
-				firstCut, firstOp, cut = before, s.Op, true
-			}
+		if fields == nil {
+			// Any cut name or bracket name is a field; the whole key is
+			// never asked about, so a suffixed key cuts and a plain one
+			// falls back to itself under equality.
+			named = func(n string) bool { return n != key }
 		}
-		if !resolved && !named(key) {
-			field, op = firstCut, firstOp
+		field, op, _, err := filter.ReadKey(key, named)
+		if err != nil {
+			return nil, i18n.Wrap(reasonScopedFilter, err, map[string]any{"include": strconv.Quote(pathForErrors)})
 		}
 		if noQueryField[field] {
 			return nil, i18n.NewError(reasonScopedNotFilterable, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field)})
@@ -466,7 +469,10 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 				if err != nil {
 					return nil, err
 				}
-				out = append(out, pf)
+				// Tag each value with its term, so author_id_in=1|2 and
+				// its alias writer_in=3, or check_in=a and check[in]=b,
+				// render as two ANDed IN lists.
+				out = append(out, pf.InList(key))
 			}
 		} else {
 			pf, err := scopedTyped(filter.ParsedFilter{Field: sent, Op: op, Value: value}, field, colType[field], pathForErrors)

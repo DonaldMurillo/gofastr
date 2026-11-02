@@ -172,7 +172,10 @@ Useful options:
   you write yourself must not follow symlinks out of its tree —
   `os.Root.FS()` is the spelling for a disk-backed one; `embed.FS`
   cannot carry symlinks at all. The dotfile and config-file refusal
-  applies here too.
+  applies here too. Only files are served: a directory in the FS falls
+  through to page rendering, as it does under `WithStaticDir`, so a
+  `docs/` directory of images never shadows a `/docs` screen (and a
+  directory with no screen answers 404, never a redirect or a listing).
 - `host.AssetURL("/logo.svg")`: the URL of a static file with its
   content hash appended (`/logo.svg?v=3f2a9c01b7d4`). Use it wherever a
   page links a file from the static directory or static FS. A request
@@ -302,8 +305,8 @@ func guard(host *uihost.UIHost, next http.Handler) http.Handler {
 }
 ```
 
-`RenderScreen` renders; it authorizes nothing and mints no session.
-The caller owns the decision, and with it the status:
+`RenderScreen` renders; it authorizes nothing. The caller owns the
+decision, and with it the status:
 
 | Situation | Answer |
 |---|---|
@@ -316,11 +319,15 @@ an unauthorized caller must not learn from the difference whether a
 session exists.
 
 Both full and client-side navigation (`X-Gofastr-Navigate`) requests
-get the same status and the same `Cache-Control: private, no-store`
-(the default; `ScreenResponse.CacheControl` overrides it). The partial
-arm carries bare content — the runtime surfaces a non-2xx partial as a
-navigation error and stays on the current page, a full load renders
-the branded page. See [security](security.md) → "Recovery screens and
+get the same status. The two arms differ in what else they carry:
+
+| Arm | Session | Cache policy | Body |
+|---|---|---|---|
+| Full load | Verified, or minted when the cookie is missing or dead (the page tail every screen runs: a direct load is a real page whose islands need a live id) | Always `no-store` + `Vary: Cookie`; `ScreenResponse.CacheControl` does not change it | The branded page in the default layout, with the signal seed |
+| Navigation partial | Never minted: a bare auth-failure body hands out no grant | `private, no-store` by default; `ScreenResponse.CacheControl` overrides it | The bare component, its title (`X-Gofastr-Title`), head carrier and `#gofastr-signals-partial` seed, as a page partial carries them |
+
+The runtime surfaces a non-2xx partial as a navigation error and stays
+on the current page; a full load renders the branded page. See [security](security.md) → "Recovery screens and
 cache policy" for why the no-store default is not optional. Every
 partial-shaped response carries it, including the early exits: the
 dead-session prefetch 204 and a policy redirect's 303 leave the server
@@ -350,6 +357,25 @@ marked no-store before any branch can return.
 > the middleware chain wraps the handler at request time, and the
 > router sets the RFC-compliant Allow header (filtered to exclude
 > gated methods) before dispatching.
+- **Posting a form to a screen's own path.** A screen answers GET and
+  HEAD only. A POST, PUT, PATCH or DELETE to a screen path that no
+  registered route takes answers **405** with `Allow: GET, HEAD` and the
+  kit's 405 document (`no-store`; an RFC 9457 problem document for an
+  `application/problem+json` Accept), and OPTIONS answers **204** with
+  the same `Allow`. Nothing of the screen's runs: no policy, no `Load`,
+  and no session is minted (a live cookie is read, so the document's
+  chrome keeps the caller's stream; without one the chrome is
+  session-less, like a static export). Before this a POST rendered the
+  page with a 200, ran its `Load` and minted a session. A form posts to
+  a handler: `r.Post("/contact", handleContact)` beside the `/contact`
+  screen wins its method while GET still renders the screen, and the
+  405 for a third method lists both sets
+  (`Allow: GET, HEAD, POST`). A host that wants the page rendered for a
+  POST registers it explicitly, `r.Post("/x", host.PageHandler("/x"))`,
+  or answers from its handler with `RenderScreen` (the
+  re-render-with-errors shape). A path that is no screen keeps its
+  404 for every method; a declared redirect keeps its 308, method and
+  all, and the trailing-slash 301 still answers first.
 - **Skipping the `routerMounter` shim and wondering why the sidebar
   drawer never opens on mobile.** `ui.Sidebar(cfg)` only renders the
   desktop rail; the `< md` drawer is a widget that must be mounted

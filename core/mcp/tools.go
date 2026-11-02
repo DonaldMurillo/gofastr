@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"math"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // toolsListResult is the result shape for tools/list per MCP spec. The
@@ -61,7 +63,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 	dec.UseNumber()
 	var params toolsCallParams
 	if err := dec.Decode(&params); err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+handler.JSONErrorDetail(err).Error())
 	}
 	// Keep the exact decimal only where float64 would lose it: an integer
 	// beyond 2^53 stays a json.Number, everything else becomes the float64

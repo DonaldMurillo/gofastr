@@ -46,7 +46,7 @@ func TestControlFramesRateLimited(t *testing.T) {
 	} {
 		conn := &WebSocketConn{
 			conn:       &nopConn{r: bytes.NewReader(controlFrames(tc.opcode, tc.n)), w: io.Discard},
-			sendBuffer: make(chan []byte, 8),
+			sendBuffer: make(chan wsMessage, 8),
 			closed:     make(chan struct{}),
 			config:     WSConfig{ReadLimit: 1 << 20, MaxControlFramesPerSecond: 4},
 		}

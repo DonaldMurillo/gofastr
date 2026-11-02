@@ -278,7 +278,7 @@ func TestSearchWildcardEscaped(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			conds := SearchConditions([]string{"title"}, tc.in)
+			conds, _ := SearchConditions([]string{"title"}, tc.in)
 			if len(conds) != 1 {
 				t.Fatalf("expected 1 condition, got %d", len(conds))
 			}
@@ -301,7 +301,7 @@ func TestSearchSQLPayloadParameterized(t *testing.T) {
 		"UNION SELECT password FROM users",
 	}
 	for _, p := range payloads {
-		conds := SearchConditions([]string{"title", "body"}, p)
+		conds, _ := SearchConditions([]string{"title", "body"}, p)
 		if len(conds) == 0 {
 			t.Fatalf("expected conditions for payload %q, got 0", p)
 		}

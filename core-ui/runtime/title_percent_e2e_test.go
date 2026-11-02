@@ -11,8 +11,9 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// A screen with no title sends no X-Gofastr-Title, and the runtime fell
-// back to decoding document.title, which is never encoded: "50% Off"
+// A navigation answer with no X-Gofastr-Title (uihost now always names
+// one, falling back to the app name; another server may not) left the
+// runtime decoding document.title, which is never encoded: "50% Off"
 // threw URIError and navigation gave up. A header that is not valid
 // percent-encoding (a proxy or another server writing it raw) is kept
 // as sent.

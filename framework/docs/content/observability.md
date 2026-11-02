@@ -40,6 +40,13 @@ HTTP metrics (always present with `WithMetrics()`):
 | `http_requests_total` | counter | `method`, `route`, `status` |
 | `http_request_duration_ms` | histogram | `route` |
 
+A request whose handler panicked is counted too: under `500` (the status
+`Recovery` sends), or under the status already sent when the response had
+started before the panic. With `Recovery` outside, the status is read off
+its writer, which sees what reached the client, so a status `Compress`
+held back is not counted as sent. A `Flush` before any `WriteHeader` counts as the
+`200` it sends.
+
 Subsystem metrics appear on the same `/metrics` endpoint as the components
 that produce them are wired:
 
@@ -164,9 +171,19 @@ and carries these attributes:
 | `http.status_code` | final response status |
 | `http.target` | request URL path |
 
-Responses with status `>= 500` set the span status to `codes.Error`.
-Incoming W3C `traceparent` / `tracestate` headers are extracted so
-upstream spans chain correctly.
+Responses with status `>= 500` set the span status to `codes.Error`. A
+panicking handler's span ends with `codes.Error` and the status the client
+got (`500`, or the one already sent), and the SDK records the panic as the
+span's `exception` event.
+
+Incoming trace context is extracted with the global propagator you set
+with `otel.SetTextMapPropagator` (B3, Jaeger, a composite), the same one
+that writes the response headers, so upstream spans in that format chain
+correctly. When that propagator finds no upstream span on a request, the
+W3C `traceparent` / `tracestate` headers are read as well, and W3C
+`baggage` too when the propagator brought no baggage of its own. With no
+propagator set (the otel no-op default), W3C `traceparent` / `tracestate`
+and `baggage` are read.
 
 ### Reading the current span in a handler
 

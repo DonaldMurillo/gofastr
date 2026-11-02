@@ -459,6 +459,12 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		// NoQuery fields are in the response schema but rejected by the
 		// filter parser under BOTH names, so advertising them here would
 		// generate SDK methods and agent calls that always 400.
+		//
+		// A bare key that reads two ways (field x beside x_in: ?x_in= is
+		// x_in's equality and x's IN list) answers 400, so each of its
+		// two meanings is advertised under its bracket spelling (x_in[eq],
+		// x[in]) instead; every other parameter keeps its suffix name.
+		spell := filter.SpellerFor(visibleFields)
 		for _, f := range visibleFields {
 			if f.NoQuery {
 				continue
@@ -488,7 +494,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 				if o.stringSchema {
 					ps = map[string]any{"type": "string"}
 				}
-				listOp.AddParameter(name+o.suffix, "query", o.desc(name), false, ps)
+				listOp.AddParameter(spell.Key(name, o.op), "query", o.desc(name), false, ps)
 			}
 		}
 

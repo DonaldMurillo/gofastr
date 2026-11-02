@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,3 +51,49 @@ func TestHandlerAdapter_PanicNoLeak(t *testing.T) {
 type errSecret string
 
 func (e errSecret) Error() string { return string(e) }
+
+type panicMidBody struct{}
+
+func (panicMidBody) ContentType() string { return "text/html; charset=utf-8" }
+func (panicMidBody) WriteBody(w http.ResponseWriter) error {
+	_, _ = w.Write([]byte("<p>partial"))
+	panic("render failed")
+}
+
+// A panic inside a ResponseType's WriteBody comes after the 200 and part
+// of the body went out. The recover path wrote its JSON 500 anyway, which
+// net/http could only append to the half-written page under the 200: a
+// broken render served as a success. Once the response has started the
+// adapter aborts it with http.ErrAbortHandler instead, so net/http drops
+// the connection and the client sees a failed response.
+func TestHandlerAdapter_PanicAfterResponseStartedAborts(t *testing.T) {
+	h := HandlerAdapter(Handler[struct{}, panicMidBody](func(context.Context, struct{}) (panicMidBody, error) {
+		return panicMidBody{}, nil
+	}))
+
+	w := httptest.NewRecorder()
+	func() {
+		defer func() {
+			if rec := recover(); rec != http.ErrAbortHandler {
+				t.Errorf("recovered %v, want http.ErrAbortHandler re-panicked", rec)
+			}
+		}()
+		h(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	}()
+	if body := w.Body.String(); body != "<p>partial" {
+		t.Errorf("body = %q, want the partial page with no error document spliced on", body)
+	}
+
+	// Over a real connection the client never sees a complete 200.
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		return // the connection was aborted before the headers arrived
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr == nil {
+		t.Errorf("status %d body %q read to a clean end; want the response aborted", resp.StatusCode, body)
+	}
+}

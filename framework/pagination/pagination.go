@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -239,13 +240,22 @@ func DecodeCursor(cursor string) (field string, value string, err error) {
 		return "", "", err
 	}
 	if err := handler.CheckObjectKeys(b, handler.FoldJSONKey); err != nil {
-		return "", "", &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
+		return "", "", cursorTokenError(err)
 	}
 	var token cursorToken
 	if err := json.Unmarshal(b, &token); err != nil {
-		return "", "", err
+		return "", "", cursorTokenError(err)
 	}
 	return stripControls(token.Field), token.Value, nil
+}
+
+// cursorTokenError frames a token's JSON decode failure as
+// pagination.cursor_token. The detail is handler.JSONErrorDetail's
+// phrase (the JSON path and type, or the key refusal), never the
+// decoder's text, which names the token's Go struct ("Go struct field
+// cursorToken.f of type string") and does not translate.
+func cursorTokenError(err error) error {
+	return &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 }
 
 // multiCursorToken is the wire shape for cursors that keyset on multiple
@@ -292,11 +302,11 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	// lives one level down inside the f array, which the any-depth walk
 	// sees and a top-level-only check would not.
 	if err := handler.CheckObjectKeys(b, handler.FoldJSONKey); err != nil {
-		return nil, &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
+		return nil, cursorTokenError(err)
 	}
 	var tok multiCursorToken
 	if err := json.Unmarshal(b, &tok); err != nil {
-		return nil, err
+		return nil, cursorTokenError(err)
 	}
 	if len(tok.Fields) > maxCursorFields {
 		return nil, i18n.NewError(reasonCursorTooManyFields, map[string]any{"count": len(tok.Fields), "max": maxCursorFields})
@@ -315,6 +325,17 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 // cursor value would mint a token past the size DecodeCursor accepts.
 var ErrCursorTooLong = errors.New("pagination: cursor value too long")
 
+// ErrCursorKeyNull is the error NewCursorPage wraps when the last row's
+// cursor value is NULL: no keyset predicate resumes after a NULL (the
+// token would carry the text "null", which the next page compares as a
+// value).
+var ErrCursorKeyNull = errors.New("pagination: cursor value is null")
+
+// ErrCursorKeyMissing is the error NewCursorPage wraps when the last row
+// has no cursor field at all, so there is more data and no cursor to
+// reach it.
+var ErrCursorKeyMissing = errors.New("pagination: cursor field missing from row")
+
 // NewCursorPage builds a CursorPage from data. It fetches limit+1 rows to
 // determine HasMore, and encodes the next cursor from the last row's
 // cursorField.
@@ -324,6 +345,15 @@ var ErrCursorTooLong = errors.New("pagination: cursor value too long")
 // the page comes back with no cursor: handing the token out would only
 // have the next request refuse it as too long. Key such a list on a
 // shorter column, or page it by offset.
+//
+// When there is a next page, a last row whose cursorField is NULL (nil,
+// or a nil pointer) is refused with an error wrapping ErrCursorKeyNull,
+// and one that lacks cursorField with an error wrapping
+// ErrCursorKeyMissing; the page comes back with no cursor either way.
+// Minting "null" made the next page compare the key against that text,
+// and HasMore with an empty cursor sent a client that echoes it back to
+// page 1, forever. Key a cursor list on a NOT NULL column the query
+// selects.
 func NewCursorPage(data []map[string]any, cursorField string, limit int) (CursorPage, error) {
 	if limit < 1 {
 		limit = DefaultPageSize
@@ -335,19 +365,35 @@ func NewCursorPage(data []map[string]any, cursorField string, limit int) (Cursor
 	page := CursorPage{Data: data, HasMore: hasMore}
 	if hasMore && len(data) > 0 {
 		last := data[len(data)-1]
-		if val, ok := last[cursorField]; ok {
-			cursor := EncodeCursor(cursorField, val)
-			if !CursorFits(cursor) {
-				return page, &i18n.Error{
-					Reason: reasonCursorValueTooLong,
-					Params: map[string]any{"field": cursorField, "size": len(cursor), "max": maxCursorEncodedSize},
-					Err:    ErrCursorTooLong,
-				}
-			}
-			page.Cursor = cursor
+		val, ok := last[cursorField]
+		if !ok {
+			return page, &i18n.Error{Reason: reasonCursorKeyMissing, Params: map[string]any{"field": cursorField}, Err: ErrCursorKeyMissing}
 		}
+		if isNullKey(val) {
+			return page, &i18n.Error{Reason: reasonCursorKeyNull, Params: map[string]any{"field": cursorField}, Err: ErrCursorKeyNull}
+		}
+		cursor := EncodeCursor(cursorField, val)
+		if !CursorFits(cursor) {
+			return page, &i18n.Error{
+				Reason: reasonCursorValueTooLong,
+				Params: map[string]any{"field": cursorField, "size": len(cursor), "max": maxCursorEncodedSize},
+				Err:    ErrCursorTooLong,
+			}
+		}
+		page.Cursor = cursor
 	}
 	return page, nil
+}
+
+// isNullKey reports whether a row value is SQL NULL as a driver or a
+// caller hands it over: nil, or a nil pointer (a scanned *time.Time,
+// *string, …).
+func isNullKey(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
 
 // NewOffsetPage builds an OffsetPage with computed TotalPages from total and pageSize.

@@ -71,7 +71,10 @@ func Counter(cfg CounterConfig) render.HTML {
 	initial := 0
 	if cfg.Slice != nil {
 		name = cfg.Slice.Name()
-		initial = cfg.Slice.Default()
+		// The request's value, not the declaration: the page seeds the
+		// signal with what a producer Seeded on Ctx, and the first paint
+		// must show the number the first + steps from.
+		initial = cfg.Slice.Value(cfg.Ctx)
 	}
 	if name == "" {
 		panic("ui: Counter requires SignalName or Slice")
@@ -86,8 +89,13 @@ func Counter(cfg CounterConfig) render.HTML {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
 	return counterStyle.WrapHTML(headless.Counter(headless.CounterProps{
-		Signal:     name,
-		Value:      initial,
+		Signal: name,
+		Value:  initial,
+		// The page owns this signal's seed (Slice auto-seeds it into the
+		// signals block and every partial; a bare SignalName is the
+		// app's to seed): the primitive hands the runtime no second one,
+		// so a server value that changes across an island swap wins.
+		Seeded:     true,
 		Step:       cfg.Step,
 		ID:         scopedID(cfg.Ctx, "counter"),
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
