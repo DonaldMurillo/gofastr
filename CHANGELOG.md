@@ -4390,6 +4390,14 @@ few lines, and link the PR or the docs page for the rest.
   it) and the version was recorded applied. An unknown directive, and a
   comment that reads as one with its spacing or case off
   (`--+migrate Down`, `-- +Migrate Down`), now fail the parse.
+- **Tables and columns named past 63 bytes migrate on Postgres.**
+  Postgres cuts such a name to 63 bytes and the catalog holds the cut
+  one, which the migrator compared with the whole name. A long table
+  read as absent on every boot and never gained a column; a long column
+  read as missing, so the next boot with a column to add failed on a
+  duplicate `ADD COLUMN`, `DiffSchema` proposed dropping it, and a long
+  key column read as a key change. The catalog is now read by the cut
+  name.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**

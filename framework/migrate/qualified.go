@@ -2,7 +2,9 @@ package migrate
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -105,12 +107,83 @@ func pgTableRefs(tables []string) (string, []any) {
 		s, n := splitTable(t)
 		var schema any
 		if s != "" {
-			schema = strings.ToLower(s)
+			schema = pgIdentCut(strings.ToLower(s))
 		}
 		rows[i] = fmt.Sprintf("($%d::int, $%d::text, $%d::text)", 3*i+1, 3*i+2, 3*i+3)
-		args = append(args, i, schema, strings.ToLower(n))
+		args = append(args, i, schema, pgIdentCut(strings.ToLower(n)))
 	}
 	return "(VALUES " + strings.Join(rows, ", ") + ") AS t(i, s, n)", args
+}
+
+// pgIdentCut is name as Postgres stores it: an identifier past 63 bytes
+// (query.MaxIdentBytes) is cut to its first 63 with only a NOTICE, in DDL
+// and queries alike, so the catalog holds the cut name. Compared whole, a
+// longer table name read as absent on every boot and never gained a
+// column. SafeIdent admits ASCII only, so the cut splits no character.
+func pgIdentCut(name string) string {
+	if len(name) > query.MaxIdentBytes {
+		return name[:query.MaxIdentBytes]
+	}
+	return name
+}
+
+// uncutLiveColumns re-keys the live columns Postgres cut to 63 bytes under
+// the declared field names they were created from. The catalog holds the
+// cut name, so a field named past 63 bytes read as missing: the next boot
+// that had anything to add ran ADD COLUMN for it, which Postgres cut to
+// the existing column's name and refused, and DiffSchema proposed dropping
+// the column it had just failed to add. live is returned as it is when no
+// field is that long, and never modified.
+func uncutLiveColumns(ent *entity.Entity, live map[string]string, dialect Dialect) map[string]string {
+	if dialect != DialectPostgres || len(live) == 0 {
+		return live
+	}
+	var out map[string]string
+	for _, f := range ent.GetFields() {
+		if len(f.Name) <= query.MaxIdentBytes {
+			continue
+		}
+		cut := pgIdentCut(strings.ToLower(f.Name))
+		typ, ok := live[cut]
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = maps.Clone(live)
+		}
+		delete(out, cut)
+		out[f.Name] = typ
+	}
+	if out == nil {
+		return live
+	}
+	return out
+}
+
+// uncutKey is cols, a live primary key, with each column Postgres cut to
+// 63 bytes spelled as the declared field it was created from, so a key on
+// a long column compares equal to the declaration instead of reading as a
+// key change on every boot.
+func uncutKey(ent *entity.Entity, cols []string, dialect Dialect) []string {
+	if dialect != DialectPostgres {
+		return cols
+	}
+	var out []string
+	for i, c := range cols {
+		for _, f := range ent.GetFields() {
+			if len(f.Name) > query.MaxIdentBytes && strings.EqualFold(c, pgIdentCut(f.Name)) {
+				if out == nil {
+					out = slices.Clone(cols)
+				}
+				out[i] = f.Name
+				break
+			}
+		}
+	}
+	if out == nil {
+		return cols
+	}
+	return out
 }
 
 // reCreateObject matches the head of a CREATE TABLE, INDEX or TRIGGER up to

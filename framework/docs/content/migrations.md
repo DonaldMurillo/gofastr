@@ -472,6 +472,12 @@ foreign key you added by hand may depend on a unique index and the drop
 would fail. The snapshot keeps recording the old index while the new
 one is declared, so removing or changing the index later drops both.
 
+A table or column named past 63 bytes works on Postgres, which cuts it
+to its first 63 bytes in DDL and in queries alike, so the catalog holds
+the cut name. The migrator reads the catalog by the cut name too, so
+such a table gains its new columns at boot and such a column is not
+added a second time, proposed for a drop, or read as a key change.
+
 An index name belongs to the schema, not the table, on both engines, and
 the migrator creates every index with `CREATE INDEX IF NOT EXISTS`. Two
 tables whose indexes share a name, whether set in `Index.Name` or

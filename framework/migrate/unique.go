@@ -196,7 +196,7 @@ func ensureUniqueIndexes(ctx context.Context, q execQueryer, ent *entity.Entity,
 		return fmt.Errorf("read columns of %s: %w", ent.GetTable(), err)
 	}
 	present := make(map[string]bool, len(live))
-	for c := range live {
+	for c := range uncutLiveColumns(ent, live, dialect) {
 		present[strings.ToLower(c)] = true
 	}
 	covered, err := liveUniqueColumns(ctx, q, qtable, dialect)
@@ -204,7 +204,7 @@ func ensureUniqueIndexes(ctx context.Context, q execQueryer, ent *entity.Entity,
 		return fmt.Errorf("read unique indexes of %s: %w", ent.GetTable(), err)
 	}
 	for _, c := range cols {
-		if !present[strings.ToLower(c)] || covered[strings.ToLower(c)] {
+		if !present[strings.ToLower(c)] || covered[strings.ToLower(c)] || (dialect == DialectPostgres && covered[pgIdentCut(strings.ToLower(c))]) {
 			continue
 		}
 		qcol, err := query.SafeIdent(c)
