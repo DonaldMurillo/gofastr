@@ -94,6 +94,59 @@ func init() {
 	}
 }
 
+// The scan matched a call only when the file imported the package under
+// its usual name, so a renamed import (cuistyle.Contribute) or a dot
+// import (bare Contribute) hid the registration from the audit whose job
+// is to surface it.
+func TestAuditDeps_FindsRenamedAndDotImports(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, dir, "go.mod", "module example.com/audit-test\ngo 1.22\n")
+	mustWrite(t, dir, "renamed/renamed.go", `package renamed
+
+import (
+	cuistyle "github.com/DonaldMurillo/gofastr/core-ui/style"
+	r "github.com/DonaldMurillo/gofastr/core/render"
+)
+
+var _ = cuistyle.Contribute(func(ss *cuistyle.StyleSheet) {})
+
+func init() { r.RegisterComponent("x", func() {}) }
+`)
+	mustWrite(t, dir, "dotted/dotted.go", `package dotted
+
+import . "github.com/DonaldMurillo/gofastr/core-ui/style"
+
+var _ = Contribute(func(ss *StyleSheet) {})
+`)
+	mustWrite(t, dir, "shadow/shadow.go", `package shadow
+
+import style "example.com/not/gofastr/style"
+
+var _ = style.Contribute(nil)
+`)
+
+	findings, err := auditDeps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, f := range findings {
+		got[f.Pkg+" "+f.Kind] = true
+	}
+	for _, want := range []string{
+		"example.com/audit-test/renamed style.Contribute",
+		"example.com/audit-test/renamed render.RegisterComponent",
+		"example.com/audit-test/dotted style.Contribute",
+	} {
+		if !got[want] {
+			t.Errorf("missing %q in findings: %+v", want, findings)
+		}
+	}
+	if got["example.com/audit-test/shadow style.Contribute"] {
+		t.Error("a package merely named style is not core-ui/style")
+	}
+}
+
 func TestAuditDeps_HumanReportListsPackagesAndKinds(t *testing.T) {
 	findings := []AuditFinding{
 		{Pkg: "example.com/a", Kind: "style.Contribute", File: "a/a.go", Line: 10},

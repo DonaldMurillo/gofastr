@@ -117,27 +117,25 @@ func parseFile(path string) (*parsedFile, error) {
 // returns one AuditFinding per qualified-call (alias.FuncName) it
 // matches.
 func scanFile(pf *parsedFile, pkg, rel string) []AuditFinding {
-	// Resolve aliases: which local alias maps to which import path.
-	aliasOf := make(map[string]string)
+	// Resolve each tracked import to the name the file calls it by: its
+	// package name, or the name the import gives it. A dot import calls
+	// the function bare, keyed under ".". Matching the usual name alone
+	// missed cuistyle.Contribute and a dot-imported Contribute.
+	want := make(map[[2]string]string)
 	for _, imp := range pf.f.Imports {
 		ipath := strings.Trim(imp.Path.Value, `"`)
-		var alias string
-		if imp.Name != nil {
-			alias = imp.Name.Name
-		} else {
-			alias = filepath.Base(ipath)
-		}
-		aliasOf[alias] = ipath
-	}
-
-	// Build the set of (alias, funcName) → kind we care about for THIS
-	// file's import map.
-	want := make(map[[2]string]string)
-	for _, tk := range trackedKinds {
-		for alias, ipath := range aliasOf {
-			if ipath == tk.ImportPath && alias == tk.PackageName {
-				want[[2]string{alias, tk.FuncName}] = tk.Kind
+		for _, tk := range trackedKinds {
+			if ipath != tk.ImportPath {
+				continue
 			}
+			alias := tk.PackageName
+			if imp.Name != nil {
+				alias = imp.Name.Name
+			}
+			if alias == "_" {
+				continue
+			}
+			want[[2]string{alias, tk.FuncName}] = tk.Kind
 		}
 	}
 	if len(want) == 0 {
@@ -150,15 +148,20 @@ func scanFile(pf *parsedFile, pkg, rel string) []AuditFinding {
 		if !ok {
 			return true
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
+		var key [2]string
+		switch fn := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			ident, ok := fn.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			key = [2]string{ident.Name, fn.Sel.Name}
+		case *ast.Ident:
+			key = [2]string{".", fn.Name}
+		default:
 			return true
 		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		kind, ok := want[[2]string{ident.Name, sel.Sel.Name}]
+		kind, ok := want[key]
 		if !ok {
 			return true
 		}
