@@ -1261,20 +1261,30 @@ func configPath() (string, error) {
 // stored token so every call runs unauthenticated against the
 // operator's assumption.
 func loadConfig() storedConfig {
-	var cfg storedConfig
-	path, err := configPath()
+	cfg, err := readConfig()
 	if err != nil {
-		return cfg
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return cfg
-	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: config file %s is corrupt (%v); delete it or run '%s login' again\n", binaryName, path, err, binaryName)
+		fmt.Fprintf(os.Stderr, "%s: %v; delete it or run '%s login --url <url>' again\n", binaryName, err, binaryName)
 		os.Exit(1)
 	}
 	return cfg
+}
+
+// readConfig is loadConfig with a corrupt file returned as an error, so
+// login and logout, which replace the file, can still run over one.
+func readConfig() (storedConfig, error) {
+	var cfg storedConfig
+	path, err := configPath()
+	if err != nil {
+		return cfg, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, nil
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return storedConfig{}, fmt.Errorf("config file %s is corrupt (%v)", path, err)
+	}
+	return cfg, nil
 }
 
 func saveConfig(cfg storedConfig) (string, error) {
@@ -1353,7 +1363,13 @@ func runLogin(args []string) int {
 	if ok, code := parseOrHelp(fs, args); !ok {
 		return code
 	}
-	cfg := loadConfig()
+	// A corrupt config is replaced when --url names the server; without
+	// one there is no URL to keep, and the refusal stands.
+	cfg, err := readConfig()
+	if err != nil && *urlF == "" {
+		fmt.Fprintf(os.Stderr, "%v: run '%s login --url <url>' to replace it\n", err, binaryName)
+		return 1
+	}
 	if *urlF != "" {
 		cfg.URL = strings.TrimRight(strings.TrimSpace(*urlF), "/")
 	}
@@ -1404,8 +1420,10 @@ func runLogout(args []string) int {
 	if ok, code := parseOrHelp(fs, args); !ok {
 		return code
 	}
-	cfg := loadConfig()
-	if cfg.Token == "" {
+	// A corrupt file may still hold a token in plain text: logout writes
+	// an empty config over it rather than refusing.
+	cfg, err := readConfig()
+	if err == nil && cfg.Token == "" {
 		fmt.Println("not logged in")
 		return 0
 	}

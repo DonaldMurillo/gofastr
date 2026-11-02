@@ -122,8 +122,10 @@ Connection resolution, in order: the `--url` flag →
 `login` (`<user-config-dir>/<binary>/config.json`, written 0600 on
 create and on every overwrite). A config file that exists but does
 not parse is refused with an error naming the file (delete it or
-`login` again) rather than silently treated as "not logged in",
-which would send every request unauthenticated. The URL must be an
+`login --url <url>` again, which replaces it) rather than silently
+treated as "not logged in", which would send every request
+unauthenticated. `logout` over such a file writes an empty config, so a
+token it still holds is gone. The URL must be an
 absolute `http://` or `https://` URL with a host, from whichever source
 it comes: `login --url 127.0.0.1:8080` and `<BINARY>_URL=app.example.com`
 exit 2 rather than store or call it. The stored token goes
