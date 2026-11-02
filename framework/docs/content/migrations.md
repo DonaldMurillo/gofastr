@@ -1352,7 +1352,10 @@ development convenience. What it guarantees:
   in the meantime still gets this version's columns and key.
   The lock is acquired by polling `pg_try_advisory_lock` so a cancelled
   context (shutdown) returns promptly instead of hanging on a stuck
-  holder. SQLite gets the same cross-process serialization from a twin:
+  holder. When the unlock fails, as it does on a session a
+  `NoTransaction` migration left inside its own failed `BEGIN`, the
+  connection is retired rather than returned to the pool, so ending its
+  session releases the lock. SQLite gets the same cross-process serialization from a twin:
   a leased lock row in `_gofastr_migrate_lock` (one atomic upsert,
   released on completion, expired by the next boot if the holder
   crashed) — SQLite's file-level locking serializes statements, not the

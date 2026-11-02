@@ -90,8 +90,8 @@ func TestWithAdvisoryLock_PostgresLockUnlockOrder(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT pg_try_advisory_lock($1)")).
 		WithArgs(AdvisoryLockKey).
 		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_lock"}).AddRow(true))
-	mock.ExpectExec(regexp.QuoteMeta("SELECT pg_advisory_unlock($1)")).
-		WithArgs(AdvisoryLockKey).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT pg_advisory_unlock($1)")).
+		WithArgs(AdvisoryLockKey).WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_unlock"}).AddRow(true))
 
 	ran := false
 	err = WithAdvisoryLock(context.Background(), db, DialectPostgres, func(_ *sql.Conn) error {
@@ -133,8 +133,8 @@ func TestWithAdvisoryLock_PostgresRetriesUntilAcquired(t *testing.T) {
 	mock.ExpectQuery(q).WillReturnRows(falseRow())
 	mock.ExpectQuery(q).WillReturnRows(falseRow())
 	mock.ExpectQuery(q).WillReturnRows(trueRow())
-	mock.ExpectExec(regexp.QuoteMeta("SELECT pg_advisory_unlock($1)")).
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT pg_advisory_unlock($1)")).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_unlock"}).AddRow(true))
 
 	ran := false
 	if err := WithAdvisoryLock(context.Background(), db, DialectPostgres, func(_ *sql.Conn) error {

@@ -4412,6 +4412,13 @@ few lines, and link the PR or the docs page for the rest.
   then on while SQLite booted. Boot now drops the view, and the plan's
   views that read it, and creates them again when Postgres refuses the
   replace. A view outside the plan that reads it still stops the boot.
+- **A failed unlock no longer leaves the Postgres migration lock held.**
+  The unlock's error was dropped and the connection went back to the
+  pool still holding the session lock, so after a `NoTransaction`
+  migration failed inside its own `BEGIN` (an aborted session refuses
+  the unlock) every other replica waited on the lock for the life of
+  the process. Such a connection is now retired, which ends its session
+  and releases the lock.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**

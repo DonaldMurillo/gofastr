@@ -126,8 +126,8 @@ func TestUnlockAfterCancelDuringFn(t *testing.T) {
 
 	mock.ExpectQuery("SELECT pg_try_advisory_lock").
 		WillReturnRows(sqlmock.NewRows([]string{"got"}).AddRow(true))
-	mock.ExpectExec("SELECT pg_advisory_unlock").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("SELECT pg_advisory_unlock").
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_unlock"}).AddRow(true))
 
 	sentinel := errors.New("migration aborted by shutdown")
 	err = WithAdvisoryLock(ctx, db, DialectPostgres, func(_ *sql.Conn) error {
@@ -160,8 +160,8 @@ func TestCustomLockKeyAcquireAndRelease(t *testing.T) {
 	const custom int64 = -9876543210
 	mock.ExpectQuery("SELECT pg_try_advisory_lock").WithArgs(custom).
 		WillReturnRows(sqlmock.NewRows([]string{"got"}).AddRow(true))
-	mock.ExpectExec("SELECT pg_advisory_unlock").WithArgs(custom).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("SELECT pg_advisory_unlock").WithArgs(custom).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_unlock"}).AddRow(true))
 
 	ran := false
 	err = WithAdvisoryLockKey(context.Background(), db, DialectPostgres, custom, func(_ *sql.Conn) error {
