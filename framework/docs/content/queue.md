@@ -683,7 +683,8 @@ audit or reconciliation process.
 black-holed dependency (an SMTP host that never answers, a hung HTTP
 call) wedges the worker forever, and with the default single worker
 that stalls the whole queue. Pass `WithDBHandlerTimeout(d)`
-(`WithHandlerTimeout(d)` on MemoryQueue, 30s default there) and the
+(`WithHandlerTimeout(d)` on MemoryQueue, 30s default there, kept for a
+zero or negative `d`; on DBQueue zero means no timeout) and the
 worker stops *waiting* at the deadline even if the handler ignores its
 cancelled context: the invocation runs on its own goroutine, the job is
 nacked at the deadline (retried/dead-lettered), and the worker keeps

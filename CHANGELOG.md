@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`queue.WithHandlerTimeout(0)` keeps the MemoryQueue's 30s budget.** A
+  zero budget failed every job the moment it started ("exceeded its 0s
+  budget"), retried it and dead-lettered it, though its handler may have
+  run each time. `WithDBHandlerTimeout(0)` means no timeout, so the same
+  value meant opposite things on the two queues.
 - **A skipped durable schedule no longer spins `DurableScheduler.Start`.**
   A schedule the pass skips (a corrupted row, a stored interval under the
   floor, a cron spec that no longer parses) keeps its past `next_run`,

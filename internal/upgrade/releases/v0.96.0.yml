@@ -672,3 +672,9 @@ notes:
         - gofastr/framework/outbox.WithPollInterval
         - gofastr/framework/outbox.WithBatchSize
         - gofastr/framework/outbox.WithMaxAttempts
+  - change: "queue.WithHandlerTimeout (MemoryQueue) keeps its 30s default when given zero or less"
+    breaking: false
+    guidance: "A zero budget failed every job at once and dead-lettered it after its retries. If you passed 0 meaning no timeout, pass a budget longer than your slowest handler; only DBQueue's WithDBHandlerTimeout reads 0 as no timeout."
+    find:
+      uses:
+        - gofastr/battery/queue.WithHandlerTimeout

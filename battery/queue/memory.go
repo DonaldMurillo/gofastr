@@ -28,9 +28,15 @@ type MemoryQueueOption func(*MemoryQueue)
 // worker stops waiting there: a handler that ignores its context cannot
 // wedge its worker forever (one stuck job would otherwise stall the whole
 // queue); the job is retried as a failure and a late side effect counts
-// as the at-least-once duplicate. Defaults to 30 s.
+// as the at-least-once duplicate. Defaults to 30 s; d <= 0 keeps the
+// default. (A zero budget failed every job at once; DBQueue's
+// WithDBHandlerTimeout reads zero as "no timeout" instead.)
 func WithHandlerTimeout(d time.Duration) MemoryQueueOption {
-	return func(q *MemoryQueue) { q.handlerTimeout = d }
+	return func(q *MemoryQueue) {
+		if d > 0 {
+			q.handlerTimeout = d
+		}
+	}
 }
 
 // WithLogger sets the logger used for handler-failure (WARN) and
