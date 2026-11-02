@@ -432,7 +432,10 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	if strings.HasPrefix(raw, "{") {
 		return nil, flowMapError(line, column)
 	}
-	if strings.HasPrefix(raw, "&") || strings.HasPrefix(raw, "*") || strings.HasPrefix(raw, "!!") {
+	// "!" opens a tag in every spelling: a !!core tag, a local !foo, and
+	// the bare non-specific "!". This parser resolves none of them, so a
+	// local tag is refused rather than read as the plain string "!foo".
+	if strings.HasPrefix(raw, "&") || strings.HasPrefix(raw, "*") || strings.HasPrefix(raw, "!") {
 		return nil, fmt.Errorf("yaml:%d:%d: anchors, aliases, and tags are not supported", line, column)
 	}
 	if strings.HasPrefix(raw, "[") {
@@ -449,25 +452,74 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 		}
 		return &Node{Kind: Scalar, Value: value, Line: line, Column: column}, nil
 	}
-	switch strings.ToLower(raw) {
-	case "true":
+	// The YAML 1.2 core schema (section 10.3.2) spells each of these in
+	// three cases only: tRuE is a string, as it is to every other tool.
+	switch raw {
+	case "true", "True", "TRUE":
 		return &Node{Kind: Scalar, Value: true, Line: line, Column: column}, nil
-	case "false":
+	case "false", "False", "FALSE":
 		return &Node{Kind: Scalar, Value: false, Line: line, Column: column}, nil
-	case "null", "~":
+	case "null", "Null", "NULL", "~":
 		return &Node{Kind: Scalar, Value: nil, Line: line, Column: column}, nil
 	}
 	if i, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		return &Node{Kind: Scalar, Value: i, Line: line, Column: column}, nil
 	}
-	//gofastr:allow(nonfinite) YAML permits .inf/.nan scalar literals; the parser preserves the float and consumers validate it, this is not a bound check.
-	if f, err := strconv.ParseFloat(raw, 64); err == nil && strings.ContainsAny(raw, ".eE") {
+	if isCoreFloat(raw) {
+		//gofastr:allow(nonfinite) isCoreFloat admits only decimal digits, so no inf or nan spelling reaches ParseFloat, and the only non-finite result, an out-of-range value, is refused on its error just below.
+		f, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return nil, fmt.Errorf("yaml:%d:%d: float %s is out of range", line, column, raw)
+		}
 		return &Node{Kind: Scalar, Value: f, Line: line, Column: column}, nil
 	}
 	if strings.Contains(raw, ": ") {
 		return nil, fmt.Errorf("yaml:%d:%d: nested mapping must be on an indented line", line, column)
 	}
 	return &Node{Kind: Scalar, Value: raw, Line: line, Column: column}, nil
+}
+
+// isCoreFloat reports whether raw is a decimal float in the YAML 1.2 core
+// schema with a fraction or an exponent: [-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)
+// ([eE][-+]?[0-9]+)?. strconv.ParseFloat alone also reads Go's own
+// spellings, a hex float (0x1.8p1 as 3) and digit underscores (1_000.5),
+// which are strings to every other YAML reader. A digits-only spelling is
+// an integer, so one too large for int64 stays a string as before.
+// .inf and .nan are left strings: no consumer reads a non-finite number.
+func isCoreFloat(raw string) bool {
+	i := 0
+	if i < len(raw) && (raw[i] == '-' || raw[i] == '+') {
+		i++
+	}
+	digits := func() int {
+		start := i
+		for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+			i++
+		}
+		return i - start
+	}
+	intDigits := digits()
+	fracOrExp := false
+	if i < len(raw) && raw[i] == '.' {
+		i++
+		fracOrExp = true
+		if digits() == 0 && intDigits == 0 {
+			return false
+		}
+	} else if intDigits == 0 {
+		return false
+	}
+	if i < len(raw) && (raw[i] == 'e' || raw[i] == 'E') {
+		i++
+		fracOrExp = true
+		if i < len(raw) && (raw[i] == '-' || raw[i] == '+') {
+			i++
+		}
+		if digits() == 0 {
+			return false
+		}
+	}
+	return fracOrExp && i == len(raw)
 }
 
 func parseInlineList(raw string, line, column, depth int) ([]*Node, error) {

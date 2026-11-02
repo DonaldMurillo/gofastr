@@ -1106,3 +1106,13 @@ notes:
     breaking: false
     guidance: "A display name made of a Hangul filler, or one carrying hidden tag text, is now refused by auth.CleanName with ErrInvalidName, and such characters are stripped from emails before matching. A per-rune caller of IsInvisible or IsUnsafe sees every tag character, flags included; call StripInvisible, StripUnsafe, ContainsInvisible or ContainsUnsafe on the whole string to keep flags."
     nodetect: "the change is in which runes the predicate reports; stored names and emails are data, not Go source"
+  - change: "BREAKING - core/yaml (gofastr.yml, kiln, pack, codegen) resolves plain scalars by the YAML 1.2 core schema: only true/True/TRUE, false/False/FALSE and null/Null/NULL/~ resolve, a hex float or digit underscores stay strings, an out-of-range float such as 1e999 is an error, and a local tag such as !foo is refused"
+    breaking: true
+    hits: review
+    guidance: "Write booleans and null in one of the three core casings (tRuE is now the string tRuE; the scan does not find these, the app's own load does when a field expects a boolean). Quote a value that starts with ! (\"!important\") or that you meant as a string. Replace a hex float with its decimal value, and fix any float too large for 64 bits; both fail the load with the line and column."
+    find:
+      text:
+        - glob: "**/*.yml"
+          match: '(:|-)[[:space:]]+(![A-Za-z!]|[-+]?0[xX][0-9a-fA-F]*\.?[0-9a-fA-F]*[pP][-+]?[0-9])'
+        - glob: "**/*.yaml"
+          match: '(:|-)[[:space:]]+(![A-Za-z!]|[-+]?0[xX][0-9a-fA-F]*\.?[0-9a-fA-F]*[pP][-+]?[0-9])'

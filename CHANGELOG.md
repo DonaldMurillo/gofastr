@@ -179,6 +179,16 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: `core/yaml` resolves plain scalars by the YAML 1.2 core
+  schema.** It read Go's spellings instead: a hex float (`0x1.8p1`) as
+  3, any casing of `true`/`false`/`null` (`tRuE`), and `1_000.5` as a
+  number; `1e999` as a string; and a local tag (`!foo bar`) as the
+  string `!foo bar`. Now only `true`/`True`/`TRUE` (and the `false` and
+  `null` spellings) resolve, hex floats and underscores stay strings, an
+  out-of-range float is an error, and every `!` tag is refused. App
+  specs, kiln, pack and codegen read through it. No file in this repo
+  used the old spellings. See
+  [app spec](framework/docs/content/app-spec.md#yaml-subset).
 - **BREAKING: a real environment variable wins inside a dotfile's
   `${…}`.** `dotenv.Load` (and so `NewApp`) now resolves `${NAME}` from
   `os.Environ` first, then an earlier file, then the same file: the
