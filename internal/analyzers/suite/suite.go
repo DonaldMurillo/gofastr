@@ -100,6 +100,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/authpresence"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fanoutreq"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/multipartparse"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/ratelimitkey"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rsakeysize"
 )
 
@@ -200,6 +201,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(authpresence.Analyzer),
 	allow.Guard(fanoutreq.Analyzer),
 	allow.Guard(multipartparse.Analyzer),
+	allow.Guard(ratelimitkey.Analyzer),
 	allow.Guard(rsakeysize.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and

@@ -76,6 +76,7 @@ var Analyzers = []string{
 	"authpresence",
 	"fanoutreq",
 	"multipartparse",
+	"ratelimitkey",
 	"rsakeysize",
 }
 
