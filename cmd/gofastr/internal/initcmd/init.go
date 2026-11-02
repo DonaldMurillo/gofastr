@@ -29,14 +29,19 @@ func RunInit(args []string) {
 		printInitHelp()
 		return
 	}
-	if len(args) == 0 {
+	name, flags, err := splitInitArgs(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.Info("Run 'gofastr init --help' for the accepted flags.")
+		cli.OsExit(2)
+		return
+	}
+	if name == "" {
 		cli.Fail("Project name is required.")
 		cli.Info("Usage: gofastr init <project-name>")
 		cli.Info("Example: gofastr init myapp")
 		cli.OsExit(1)
 	}
-
-	name := args[0]
 
 	// Validate project name
 	if err := validateProjectName(name); err != nil {
@@ -52,7 +57,7 @@ func RunInit(args []string) {
 	force := false
 
 	// Allow overriding via flags
-	for _, arg := range args[1:] {
+	for _, arg := range flags {
 		switch {
 		case arg == "--reinit":
 			reinit = true
@@ -464,6 +469,38 @@ func refuseLinkedToolFiles(dir string) error {
 	return nil
 }
 
+// initValuedFlags are the init flags that take a value.
+var initValuedFlags = map[string]bool{"--module": true, "--db": true}
+
+// splitInitArgs separates the project name from the flags, which may sit
+// on either side of it. A valued flag given as `--module <path>` comes
+// back as `--module=<path>`, the one form RunInit's switch reads; every
+// other flag passes through unchanged, so the switch still refuses an
+// unknown one. `--module <path>` used to be refused as an unknown flag,
+// and a flag before the name was read as the name.
+func splitInitArgs(args []string) (name string, flags []string, err error) {
+	named := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if len(arg) < 2 || arg[0] != '-' {
+			if named {
+				return "", nil, fmt.Errorf("unexpected argument %q: init takes one project name", arg)
+			}
+			name, named = arg, true
+			continue
+		}
+		if initValuedFlags[arg] {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return "", nil, fmt.Errorf("%s needs a value (%s=<value> or %s <value>)", arg, arg, arg)
+			}
+			i++
+			arg += "=" + args[i]
+		}
+		flags = append(flags, arg)
+	}
+	return name, flags, nil
+}
+
 // existingModulePath returns the module path of dir/go.mod, or "" when
 // there is no go.mod.
 func existingModulePath(dir string) (string, error) {
@@ -552,6 +589,9 @@ Flags:
   --reinit         Refresh AI onboarding files in an existing project
   --force          With --reinit, overwrite customized onboarding files;
                    with init ., overwrite the files the project already has
+
+Flags go before or after the name; --module and --db take their value
+as --module=<path> or --module <path>.
 
 The generated go.mod pins the GoFastr release matching this CLI and
 carries GoFastr's go line, not the local Go version, plus a toolchain
