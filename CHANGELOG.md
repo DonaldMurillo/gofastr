@@ -140,6 +140,17 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The analyzer wiring test checks every analyzer, not every
+  package.** `TestEveryAnalyzerIsWiredOrExplained` read one variable
+  named `Analyzer` in `<pkg>/<pkg>.go` and counted any mention of the
+  package name in a `suite.go` comment as the reason it was held back.
+  So `hygiene` (whose two analyzers are not named `Analyzer`) was
+  skipped, `unseated`'s two arms in `arms.go` were never looked at, and
+  `rawtext` was "explained" by the comment above its own registration.
+  Deleting those four registrations, with their marker names, passed
+  every test while `make analyze` and CI stopped running them. The test
+  now reads every exported `&analysis.Analyzer{}` in every file of each
+  package, and only a `<name> — <reason>` line holds one back.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
