@@ -514,7 +514,7 @@ func TestNonExpiringProviderTokenIsUsable(t *testing.T) {
 
 	store := newSQLOAuthTokenStore(t)
 	ctx := context.Background()
-	if err := store.Save(ctx, OAuthTokenRecord{UserID: "u1", Provider: "github", AccessToken: "gho_classic"}); err != nil {
+	if err := store.Save(ctx, OAuthTokenRecord{UserID: "u1", Provider: "github", AccessToken: "gho_classic"}); err != nil { // not-a-secret: fake token in a test store
 		t.Fatal(err)
 	}
 	at, err := ValidOAuthToken(ctx, store, gh, "u1")
