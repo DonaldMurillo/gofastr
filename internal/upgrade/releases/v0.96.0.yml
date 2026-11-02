@@ -725,3 +725,9 @@ notes:
     breaking: false
     guidance: "An argv-scope or Allow always rule saved for a search of the working directory no longer allows the same pattern over another directory. A saved rule for a pattern with a space or a quote no longer matches and prompts once more; answer it again to save the new spelling."
     nodetect: "the rules live in the harness's persisted permission file, not in app source"
+  - change: "App.ExportData writes the access.GrantStore tables (access_grants and access_grants_revoked, or the WithGrantTable name) once EnsureSchema has run, and App.ImportData restores them; a restore used to lose every runtime grant and every revoke of a permission the code declares"
+    breaking: false
+    guidance: "Nothing to change. Restart the app after an import so LoadInto reads the restored grants. An archive written with a GrantStore imports only into an app that also builds one: ImportData refuses a source it does not know, so drop access_grants*.ndjson and its manifest entries to restore it elsewhere."
+    find:
+      uses:
+        - gofastr/framework/access.NewGrantStore

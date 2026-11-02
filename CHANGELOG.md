@@ -154,6 +154,21 @@ few lines, and link the PR or the docs page for the rest.
   leave a half-applied write that blocks later ones), `FlatStore.Add`
   and `LoadSnapshot` now refuse it. See
   [semantic search](framework/docs/content/semantic-search.md).
+- **A backup keeps the RBAC grants and revokes.** `App.ExportData` left
+  out the `access.GrantStore` tables, so a restore lost every runtime
+  grant, and the code seed brought back every permission an admin had
+  revoked. `EnsureSchema` now registers both tables with the export;
+  restart after an import so `LoadInto` reads them.
+- **`access.Can(nil, …)` returns false.** It read the context without
+  the nil check `GetPermissions`, `CanResource` and `CanResourceExact`
+  already hold, and panicked.
+- **A strict replica applies a revoke after a capability it does not
+  know.** In a rolling deploy, a newer replica granted a role a
+  capability the older strict replica had not registered, and every
+  fanout reload of that role on the older replica failed, so a revoke
+  issued afterwards never reached it and it kept the permission. A
+  reload now leaves out, with a warning, a grant the policy refuses and
+  applies the rest. `LoadInto` still refuses at boot.
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

@@ -650,6 +650,12 @@ revoked grant stays revoked on every replica:
   current registry first and subtract tombstones second, so revoking one
   capability it covers (`reports:delete`) keeps it revoked on every
   reload.
+- **A reload leaves out what a strict policy refuses.** A role's DB rows
+  can hold a capability this replica has not registered: a newer replica
+  in a rolling deploy registered and granted it first. A fanout reload
+  drops that grant, with a warning, and applies the rest of the role, so
+  a revoke issued after it still lands. `LoadInto` keeps refusing such a
+  row at boot.
 
 **Consistency window.** Fanout is lossy best-effort. A publish that
 doesn't reach a peer (the peer's queue overflowed, the bus was briefly
@@ -659,6 +665,11 @@ reads from and writes to the DB; only the in-memory cache lags. A
 reconnecting replica's `LoadInto` reloads authoritative state on boot,
 and because tombstones live in the DB, a missed revoke signal does not
 resurrect on restart. The boot re-applies the tombstone.
+
+**Backups.** `EnsureSchema` registers both tables with `App.ExportData`,
+so an archive carries the runtime grants and the tombstones, and a restore
+keeps every revoke of a permission the code declares. Restart after
+`App.ImportData`: `LoadInto` reads the restored rows at boot.
 
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,

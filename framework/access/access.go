@@ -443,8 +443,9 @@ func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 // RequirePermission requires: the credential carries its owner's roles, and
 // an "orders:update" token an admin minted must not pass Can on
 // "orders:approve". Sessions and JWTs carry no scopes and are unaffected.
+// A nil context fails closed to false, like GetPermissions and CanResource.
 func Can(ctx context.Context, permission Permission) bool {
-	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
+	policy := PolicyFromContext(ctx)
 	if policy == nil {
 		return observe(ctx, permission, false, "can")
 	}
