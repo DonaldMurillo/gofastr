@@ -170,6 +170,7 @@ const (
 	RuleBareThemeLiteral     = "GOFASTR1823"
 	RulePhysicalSide         = "GOFASTR1824"
 	RuleOwnedStatementAtRule = "GOFASTR1825"
+	RuleFlexReverse          = "GOFASTR1826"
 )
 
 // Permission rules.
@@ -1361,6 +1362,24 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  "border-right: var(--stroke-thin, 1px) solid var(--color-border); padding-left: var(--spacing-lg, 16px); text-align: left;",
 			Good: "border-inline-end: var(--stroke-thin, 1px) solid var(--color-border); padding-inline-start: var(--spacing-lg, 16px); text-align: start;",
+		}},
+	}, {
+		ID: RuleFlexReverse, Slug: "rendering/flex-reverse",
+		Title: "Kit CSS reverses a flex row or column, so reading order and visual order disagree", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Design-system CSS sets flex-direction (or the flex-flow shorthand) to row-reverse or column-reverse, " +
+			"in a stylesheet or a Set(\"flex-direction\", …) pair. Dev tooling (framework/dev) is exempt.",
+		Why: "A reversed flex container paints its children against their document order. A screen reader, the Tab key " +
+			"and a radio group's own arrow keys follow the document, so they move the other way from what the reader sees " +
+			"(WCAG 1.3.2 and 2.4.3). ui.RatingInput rendered its stars Max..1 for a sibling cascade and flipped them back " +
+			"with row-reverse: ArrowRight went to the lower star.",
+		Fix: "Render the children in the order they read and lay them out forward; a fill or highlight that needs " +
+			"\"every earlier sibling\" selects it with :has() over a later one (the Rating sheet's spelling). A reversed " +
+			"box whose children carry no order of their own (a purely decorative stack) carries " +
+			"//gofastr:allow(GOFASTR1826) with the reason.",
+		Doc: "accessibility",
+		Examples: []Example{{
+			Bad:  "display: inline-flex; flex-direction: row-reverse; justify-content: flex-end;",
+			Good: "display: inline-flex; /* children render 1..N; the fill reads :has() */",
 		}},
 	}}
 }

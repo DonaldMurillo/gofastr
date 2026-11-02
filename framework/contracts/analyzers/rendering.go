@@ -49,6 +49,7 @@ func init() {
 			contracts.RuleDuplicateTokenValue,
 			contracts.RuleRepeatedLiteral,
 			contracts.RuleBareThemeLiteral, contracts.RulePhysicalSide,
+			contracts.RuleFlexReverse,
 		},
 		Run: runRendering,
 	})
@@ -267,6 +268,11 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			// exists. Dev tooling is English-only chrome and stays out.
 			if ownsStyling && !devSurface && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
 				out = append(out, checkPhysicalSides(f.Rel, lineNo, line, lines[i], bgMirrored, inDir)...)
+			}
+			// GOFASTR1826: a reversed flex row or column, whose paint
+			// order disagrees with the reading order.
+			if ownsStyling && !devSurface && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
+				out = append(out, checkFlexReverse(f.Rel, lineNo, line, lines[i])...)
 			}
 
 			// Cheap pre-filter. Every pattern below needs at least one of
