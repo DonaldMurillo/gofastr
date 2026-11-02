@@ -56,6 +56,12 @@ func (s *FlatStore) Add(_ context.Context, chunks []Chunk) error {
 	if dim == 0 && len(chunks[0].Vec) > 0 {
 		dim = len(chunks[0].Vec)
 	}
+	// An empty vector has no dimension: kept, it would sit beside the
+	// vectors of the dimension the next Add fixes, and dot would read
+	// past its end on every query.
+	if dim == 0 {
+		return errEmptyVector
+	}
 	for _, c := range chunks {
 		if len(c.Vec) != dim {
 			return errVecDim(dim, len(c.Vec))
@@ -366,6 +372,9 @@ func cloneChunk(c Chunk) Chunk {
 	}
 	return c
 }
+
+// errEmptyVector refuses a chunk whose vector has no coordinates.
+var errEmptyVector = errors.New("semantic: vector is empty")
 
 func finiteVector(v []float32) error {
 	for _, x := range v {

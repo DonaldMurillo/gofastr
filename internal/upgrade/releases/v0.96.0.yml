@@ -721,3 +721,7 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
+  - change: "A harness Grep or Glob argv summary names the directory the search reads (Grep --path and --glob, Glob --root), and quotes a word holding whitespace or a quote"
+    breaking: false
+    guidance: "An argv-scope or Allow always rule saved for a search of the working directory no longer allows the same pattern over another directory. A saved rule for a pattern with a space or a quote no longer matches and prompts once more; answer it again to save the new spelling."
+    nodetect: "the rules live in the harness's persisted permission file, not in app source"

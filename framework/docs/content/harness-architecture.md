@@ -669,6 +669,14 @@ becomes `cd <dir> && ` in front and an `env` map becomes
 names a program) is prompted, and a rule written for the bare
 command does not match it.
 
+A Grep or Glob summary names where the search reads, the same way:
+`Grep:<pattern> --path <dir> --glob <glob>` and
+`Glob:<pattern> --root <dir>`, each flag only when the call sets it,
+and any word holding whitespace or a quote single-quoted. A rule
+approved for `Grep:TODO` (the working directory) does not match
+`Grep:TODO --path /home/u/.ssh`, and no pattern can spell a
+summary that names a directory.
+
 Session-scoped allows persist for the `EngineRun` only; they
 never carry across sessions or persist to disk. The user can
 promote a session-scoped allow to a profile-level rule via
@@ -731,6 +739,12 @@ parent session's log tagged with `subAgent` (the sub-agent's client
 id) in the envelope, so the audit log and `sessions export` show what
 a sub-agent ran. They stay off the parent's client streams (SSE, WS,
 MCP, TUI): those carry the parent session's own conversation.
+
+**Sub-agent tools.** A sub-agent gets the parent's tools minus the
+meta tools, `TaskList` and `Agent`, so it cannot re-plan the
+parent's task list or spawn more agents. Its dispatcher refuses a
+call to either by name too, with an error result the model reads,
+since a model can name a tool its catalog never showed.
 
 ### 4. Pluggable backends
 

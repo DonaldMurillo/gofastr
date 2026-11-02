@@ -140,6 +140,20 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **MMR diversity no longer depends on the embedder's vector length.**
+  The stores normalize what they keep, but `Query` passed the query
+  vector to MMR as the embedder returned it, so an embedder that does
+  not normalize (a query vector ten units long) made relevance swamp the
+  redundancy penalty and `MMRLambda` picked near-duplicates. The query
+  vector is normalized for MMR now.
+- **A semantic index refuses an empty vector.** With an embedder whose
+  `Dim()` is 0 until first use, an empty vector fixed no dimension and
+  was stored; the next real vector set one, and every query after
+  panicked in the dot product, the snapshot carrying the chunk into each
+  restart. `Index.Add` (before the WAL logs the write, so it cannot
+  leave a half-applied write that blocks later ones), `FlatStore.Add`
+  and `LoadSnapshot` now refuse it. See
+  [semantic search](framework/docs/content/semantic-search.md).
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent
@@ -4502,6 +4516,21 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A harness sub-agent can no longer call `TaskList` or `Agent`.** The
+  sub-agent's catalog left both out, but its dispatcher ran any tool in
+  the shared registry, so a tool_use naming one (a page the sub-agent
+  fetched asking for it) rewrote the parent's task list or spawned
+  another agent. The sub-agent's dispatcher now refuses them with an
+  error result. See [harness architecture](framework/docs/content/harness-architecture.md).
+- **A harness Grep or Glob approval covers only the directory it was
+  approved for.** The permission engine decides a call from its argv
+  summary, and the Grep and Glob summaries named the pattern only, so
+  approving `Grep:TODO` at argv scope also allowed the same pattern over
+  `~/.ssh` (Grep's `path` and `glob`, Glob's `root`). The summary now
+  carries them, `Grep:TODO --path /home/u/.ssh`, and quotes any word
+  holding whitespace or a quote so no pattern spells another call's
+  summary. A saved rule for a pattern with a space or a quote prompts
+  once more. See [harness architecture](framework/docs/content/harness-architecture.md).
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

@@ -25,6 +25,10 @@ type Dispatcher struct {
 	bus      *Bus
 	registry *tool.Registry
 	mws      []tool.Middleware
+	// refused names registry tools this dispatcher never runs: a
+	// sub-agent's leaves out the meta tools its catalog hides, since a
+	// model can name a tool it was never shown.
+	refused map[string]bool
 }
 
 // NewDispatcher builds a Dispatcher for one session.
@@ -42,6 +46,12 @@ func (d *Dispatcher) Registry() *tool.Registry { return d.registry }
 // PermissionRequested events so the multiplexer can address answers
 // correctly and so identity_class self-approval guards apply.
 func (d *Dispatcher) Dispatch(ctx context.Context, originator ids.ClientID, call tool.ToolCall) (*tool.ToolResult, error) {
+	if d.refused[call.Name] {
+		return &tool.ToolResult{
+			IsError: true,
+			Content: []control.ContentBlock{{Type: "text", Text: call.Name + " is not available here: a sub-agent cannot call it"}},
+		}, nil
+	}
 	t, err := d.registry.Lookup(call.Name)
 	if err != nil {
 		return nil, err
@@ -151,13 +161,41 @@ func shellQuote(s string) string {
 
 const shellSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-./:=@%+,"
 
+// searchSummary spells a search as its pattern, then each non-empty
+// (flag, value) pair of flagValues, every word quoted by summaryWord.
+// No word holds an unquoted space, so the spelling splits back into
+// the words it came from: a pattern-only call cannot spell the summary
+// of a call that names a directory.
+func searchSummary(pattern string, flagValues ...string) string {
+	var b strings.Builder
+	b.WriteString(summaryWord(pattern))
+	for i := 0; i+1 < len(flagValues); i += 2 {
+		if v := flagValues[i+1]; v != "" {
+			b.WriteString(" " + flagValues[i] + " " + summaryWord(v))
+		}
+	}
+	return b.String()
+}
+
+// summaryWord single-quotes s, the way shellQuote does, when it holds
+// whitespace or a quote; any other s is its own word, so a plain
+// pattern keeps the summary an earlier approval was saved under.
+func summaryWord(s string) string {
+	if !strings.ContainsAny(s, " \t\n\r\v\f'") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // FormatArgvSummary computes a short argv-style summary for a tool
 // call, used by permission middleware to populate the
 // PermissionRequested event and to match argv-glob rules. The form is
 // best-effort and tool-specific:
 //
 //   - For Bash, the shell command, behind the call's cwd and env.
-//   - For Read/Write/Edit/Glob/Ls, "<Tool>:<path>" or "<Tool>:<pattern>".
+//   - For Read/Write/Edit/Ls, "<Tool>:<path>".
+//   - For Grep and Glob, "<Tool>:<pattern>" plus the directory and
+//     filename glob the search reads (searchSummary).
 //   - Otherwise the bare tool name.
 func FormatArgvSummary(toolName string, args []byte) string {
 	switch toolName {
@@ -187,18 +225,25 @@ func FormatArgvSummary(toolName string, args []byte) string {
 			return fmt.Sprintf("%s:%s", toolName, pathLike.Path)
 		}
 	case "Glob":
+		// Where a search reads is part of what it does: the root
+		// (Glob) and the path and glob (Grep) are in the summary, so an
+		// approval of a pattern over the working directory never
+		// covers the same pattern over ~/.ssh.
 		var glob struct {
 			Pattern string `json:"pattern"`
+			Root    string `json:"root"`
 		}
 		if jsonTryUnmarshal(args, &glob) && glob.Pattern != "" {
-			return fmt.Sprintf("Glob:%s", glob.Pattern)
+			return "Glob:" + searchSummary(glob.Pattern, "--root", glob.Root)
 		}
 	case "Grep":
 		var grep struct {
 			Pattern string `json:"pattern"`
+			Path    string `json:"path"`
+			Glob    string `json:"glob"`
 		}
 		if jsonTryUnmarshal(args, &grep) && grep.Pattern != "" {
-			return fmt.Sprintf("Grep:%s", grep.Pattern)
+			return "Grep:" + searchSummary(grep.Pattern, "--path", grep.Path, "--glob", grep.Glob)
 		}
 	case "WebFetch":
 		var w struct {
