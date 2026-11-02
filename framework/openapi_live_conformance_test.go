@@ -1,0 +1,487 @@
+package framework
+
+import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+)
+
+// specCheck validates v against an OpenAPI 3.1 schema node, resolving local
+// $refs against doc. It returns "" when v conforms, else the first JSON
+// pointer that does not, with the reason. It covers the keywords the
+// framework's generated documents use: type (string or list), enum, const,
+// required, properties, additionalProperties, items, maxItems, oneOf, allOf,
+// anyOf, format (date-time, date, uuid), minLength/maxLength, minimum/maximum
+// and maxProperties.
+func specCheck(doc, s map[string]any, v any, at string) string {
+	if ref, ok := s["$ref"].(string); ok {
+		name := strings.TrimPrefix(ref, "#/components/schemas/")
+		target, ok := doc["components"].(map[string]any)["schemas"].(map[string]any)[name].(map[string]any)
+		if !ok {
+			return at + ": unresolvable $ref " + ref
+		}
+		return specCheck(doc, target, v, at)
+	}
+	if typ, ok := s["type"]; ok && !jsonTypeIs(typ, v) {
+		return fmt.Sprintf("%s: %#v is not of type %v", at, v, typ)
+	}
+	if enum, ok := s["enum"].([]any); ok && !slices.Contains(enum, v) {
+		return fmt.Sprintf("%s: %#v is not in enum %v", at, v, enum)
+	}
+	if one, ok := s["oneOf"].([]any); ok {
+		n := 0
+		var why []string
+		for i, alt := range one {
+			if msg := specCheck(doc, alt.(map[string]any), v, fmt.Sprintf("%s(oneOf[%d])", at, i)); msg == "" {
+				n++
+			} else {
+				why = append(why, msg)
+			}
+		}
+		if n != 1 {
+			return fmt.Sprintf("%s: matches %d oneOf alternatives, want 1 (%s)", at, n, strings.Join(why, "; "))
+		}
+	}
+	if c, ok := s["const"]; ok && c != v {
+		return fmt.Sprintf("%s: %#v is not the const %#v", at, v, c)
+	}
+	if anyOf, ok := s["anyOf"].([]any); ok {
+		var why []string
+		for i, alt := range anyOf {
+			msg := specCheck(doc, alt.(map[string]any), v, fmt.Sprintf("%s(anyOf[%d])", at, i))
+			if msg == "" {
+				why = nil
+				break
+			}
+			why = append(why, msg)
+		}
+		if why != nil {
+			return fmt.Sprintf("%s: matches no anyOf alternative (%s)", at, strings.Join(why, "; "))
+		}
+	}
+	if all, ok := s["allOf"].([]any); ok {
+		for i, part := range all {
+			if msg := specCheck(doc, part.(map[string]any), v, fmt.Sprintf("%s(allOf[%d])", at, i)); msg != "" {
+				return msg
+			}
+		}
+	}
+	if str, ok := v.(string); ok {
+		switch s["format"] {
+		case "date-time":
+			if _, err := time.Parse(time.RFC3339, str); err != nil {
+				return fmt.Sprintf("%s: %q is not an RFC 3339 date-time", at, str)
+			}
+		case "date":
+			if _, err := time.Parse("2006-01-02", str); err != nil {
+				return fmt.Sprintf("%s: %q is not a full-date", at, str)
+			}
+		case "uuid":
+			if !regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`).MatchString(str) {
+				return fmt.Sprintf("%s: %q is not a uuid", at, str)
+			}
+		}
+		if n, ok := s["maxLength"].(float64); ok && float64(len([]rune(str))) > n {
+			return fmt.Sprintf("%s: %q is longer than %v", at, str, n)
+		}
+		if n, ok := s["minLength"].(float64); ok && float64(len([]rune(str))) < n {
+			return fmt.Sprintf("%s: %q is shorter than %v", at, str, n)
+		}
+	}
+	if f, ok := v.(float64); ok {
+		if n, ok := s["minimum"].(float64); ok && f < n {
+			return fmt.Sprintf("%s: %v < minimum %v", at, f, n)
+		}
+		if n, ok := s["maximum"].(float64); ok && f > n {
+			return fmt.Sprintf("%s: %v > maximum %v", at, f, n)
+		}
+	}
+	if obj, isObj := v.(map[string]any); isObj {
+		if req, ok := s["required"].([]any); ok {
+			for _, k := range req {
+				if _, ok := obj[k.(string)]; !ok {
+					return fmt.Sprintf("%s: required key %q missing (have %v)", at, k, specKeys(obj))
+				}
+			}
+		}
+		props, _ := s["properties"].(map[string]any)
+		for k, pv := range obj {
+			if ps, ok := props[k].(map[string]any); ok {
+				if msg := specCheck(doc, ps, pv, at+"/"+k); msg != "" {
+					return msg
+				}
+				continue
+			}
+			switch ap := s["additionalProperties"].(type) {
+			case bool:
+				if !ap {
+					return fmt.Sprintf("%s: key %q is not allowed", at, k)
+				}
+			case map[string]any:
+				if msg := specCheck(doc, ap, pv, at+"/"+k); msg != "" {
+					return msg
+				}
+			}
+		}
+		if n, ok := s["maxProperties"].(float64); ok && float64(len(obj)) > n {
+			return fmt.Sprintf("%s: more than %v properties", at, n)
+		}
+	}
+	if arr, ok := v.([]any); ok {
+		if items, ok := s["items"].(map[string]any); ok {
+			for i, it := range arr {
+				if msg := specCheck(doc, items, it, fmt.Sprintf("%s/%d", at, i)); msg != "" {
+					return msg
+				}
+			}
+		}
+		if n, ok := s["maxItems"].(float64); ok && float64(len(arr)) > n {
+			return fmt.Sprintf("%s: more than %v items", at, n)
+		}
+	}
+	return ""
+}
+
+func specKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// specOp returns the operation node documented at path+method.
+func specOp(t *testing.T, doc map[string]any, path, method string) map[string]any {
+	t.Helper()
+	item, ok := doc["paths"].(map[string]any)[path].(map[string]any)
+	if !ok {
+		t.Fatalf("spec documents no path %s (have %v)", path, specKeys(doc["paths"].(map[string]any)))
+	}
+	op, ok := item[method].(map[string]any)
+	if !ok {
+		t.Fatalf("spec documents no %s %s", strings.ToUpper(method), path)
+	}
+	return op
+}
+
+// conformsResponse asserts the live response matches the operation's
+// documented response for its status: the status is documented, and a JSON
+// body conforms to the declared schema.
+func conformsResponse(t *testing.T, doc map[string]any, path, method string, resp *TestResponse) {
+	t.Helper()
+	op := specOp(t, doc, path, method)
+	status := fmt.Sprint(resp.Status())
+	r, ok := op["responses"].(map[string]any)[status].(map[string]any)
+	if !ok {
+		t.Errorf("%s %s answered %s, which the spec does not document (documented: %v); body %s",
+			strings.ToUpper(method), path, status, specKeys(op["responses"].(map[string]any)), resp.Body())
+		return
+	}
+	content, _ := r["content"].(map[string]any)
+	if content == nil {
+		if strings.TrimSpace(resp.Body()) != "" {
+			t.Errorf("%s %s %s: spec declares no body, got %s", strings.ToUpper(method), path, status, resp.Body())
+		}
+		return
+	}
+	media, ok := content["application/json"].(map[string]any)
+	if !ok {
+		return
+	}
+	var v any
+	dec := json.NewDecoder(bytes.NewReader([]byte(resp.Body())))
+	if err := dec.Decode(&v); err != nil {
+		t.Errorf("%s %s %s: body is not JSON: %v: %s", strings.ToUpper(method), path, status, err, resp.Body())
+		return
+	}
+	if msg := specCheck(doc, media["schema"].(map[string]any), v, ""); msg != "" {
+		t.Errorf("%s %s %s: response does not conform to the spec: %s\nbody: %s", strings.ToUpper(method), path, status, msg, resp.Body())
+	}
+}
+
+// servedSpecApp migrates app's registry, starts it, and returns the
+// /openapi.json it serves (the app must set WithPublicOpenAPI).
+func servedSpecApp(t *testing.T, db *sql.DB, app *App) map[string]any {
+	t.Helper()
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	t.Cleanup(covStartAndStop(t, app))
+	var doc map[string]any
+	if err := TestHarness(t, app).Get("/openapi.json").JSON(&doc); err != nil {
+		t.Fatalf("decode spec: %v", err)
+	}
+	return doc
+}
+
+// A snake_case app's routes send each field under its column name, and
+// the document named them in camelCase: every response failed its own
+// schema's required list, and a client built from it sent keys the
+// routes do not read.
+func TestOpenAPI_SnakeCaseAppDocumentsColumnKeys(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithConfig(AppConfig{JSONCase: CaseSnake}), WithDB(db), WithPublicOpenAPI())
+		app.Entity("widgets", entity.EntityConfig{
+			Table: "widgets",
+			Fields: []schema.Field{
+				{Name: "display_name", Type: schema.String, Required: true},
+				{Name: "alias_col", Type: schema.String, WireName: "aliasKey"},
+			},
+		})
+		doc := servedSpecApp(t, db, app)
+		props := doc["components"].(map[string]any)["schemas"].(map[string]any)["widgets"].(map[string]any)["properties"].(map[string]any)
+		for _, k := range []string{"display_name", "created_at", "aliasKey"} {
+			if _, ok := props[k]; !ok {
+				t.Errorf("snake_case document has no %q property: %v", k, specKeys(props))
+			}
+		}
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		created := ta.Post("/widgets", map[string]any{"display_name": "w", "aliasKey": "a"})
+		created.AssertStatus(t, http.StatusCreated)
+		conformsResponse(t, doc, "/widgets", "post", created)
+		var got map[string]any
+		_ = created.JSON(&got)
+		id, _ := got["data"].(map[string]any)["id"].(string)
+		conformsResponse(t, doc, "/widgets/{id}", "get", ta.Get("/widgets/"+id))
+	})
+}
+
+// A relation field holds the key of the record it names. The document
+// typed every one as a uuid string, so a foreign key to an integer key
+// (stored and answered as a JSON number) failed every read, and a client
+// built from the document sent a string the create refuses; a key to a
+// text slug carried a uuid format no value of it meets.
+func TestOpenAPI_RelationFieldsTypedByTargetKey(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithPublicOpenAPI())
+		app.Entity("counters", entity.EntityConfig{
+			Table: "counters",
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.Int, AutoGenerate: schema.AutoIncrement},
+				{Name: "label", Type: schema.String, Required: true},
+			},
+		})
+		app.Entity("slugs", entity.EntityConfig{
+			Table: "slugs",
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.String, Required: true},
+				{Name: "label", Type: schema.String},
+			},
+		})
+		app.Entity("people", entity.EntityConfig{
+			Table:  "people",
+			Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}},
+		})
+		app.Entity("gadgets", entity.EntityConfig{
+			Table: "gadgets",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "counter_id", Type: schema.Relation, To: "counters"},
+				{Name: "slug_id", Type: schema.Relation, To: "slugs"},
+				{Name: "owner_id", Type: schema.Relation, To: "people"},
+			},
+		})
+		doc := servedSpecApp(t, db, app)
+		props := doc["components"].(map[string]any)["schemas"].(map[string]any)["gadgets"].(map[string]any)["properties"].(map[string]any)
+		if p := relationKeyAlt(props["ownerId"].(map[string]any)); p["format"] != "uuid" {
+			t.Errorf("a relation to a uuid key lost its format: %v", p)
+		}
+		create := specOp(t, doc, "/gadgets", "post")["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		var counter, person map[string]any
+		_ = ta.Post("/counters", map[string]any{"label": "c"}).JSON(&counter)
+		_ = ta.Post("/people", map[string]any{"name": "p"}).JSON(&person)
+		ta.Post("/slugs", map[string]any{"id": "intro", "label": "s"}).AssertStatus(t, http.StatusCreated)
+		body := map[string]any{
+			"title":     "g",
+			"counterId": counter["data"].(map[string]any)["id"],
+			"slugId":    "intro",
+			"ownerId":   person["data"].(map[string]any)["id"],
+		}
+		var asJSON any
+		raw, _ := json.Marshal(body)
+		_ = json.Unmarshal(raw, &asJSON)
+		if msg := specCheck(doc, create, asJSON, ""); msg != "" {
+			t.Errorf("the create schema refuses a body the route accepts: %s", msg)
+		}
+		created := ta.Post("/gadgets", body)
+		created.AssertStatus(t, http.StatusCreated)
+		conformsResponse(t, doc, "/gadgets", "post", created)
+		var got map[string]any
+		_ = created.JSON(&got)
+		id, _ := got["data"].(map[string]any)["id"].(string)
+		conformsResponse(t, doc, "/gadgets/{id}", "get", ta.Get("/gadgets/"+id))
+
+		// The filter parser reads the integer foreign key as an Int column:
+		// every operator the document advertises on it is one it takes.
+		advertised := 0
+		for _, p := range specOp(t, doc, "/gadgets", "get")["parameters"].([]any) {
+			name := p.(map[string]any)["name"].(string)
+			if !strings.HasPrefix(name, "counter_id") {
+				continue
+			}
+			advertised++
+			if name == "counter_id" {
+				if typ := p.(map[string]any)["schema"].(map[string]any)["type"]; typ != "integer" {
+					t.Errorf("?counter_id= is documented as %v; the parser refuses anything but an integer", typ)
+				}
+			}
+			resp := ta.Get("/gadgets?" + name + "=1")
+			if resp.Status() != http.StatusOK {
+				t.Errorf("advertised filter ?%s=1 answered %d: %s", name, resp.Status(), resp.Body())
+			}
+		}
+		if advertised == 0 {
+			t.Fatal("the list documents no counter_id filter")
+		}
+	})
+}
+
+// Every refusal a route answers is a response the document lists, in the
+// body shape it sends. The CRUD writes answered 415 (a body that is not
+// JSON), 413 (a body over the cap) and 409 (a unique value taken, a
+// record still referenced) undocumented, and a declared endpoint's gate
+// answered 401 and 403 in core/handler's nested envelope while its
+// operation listed 200 alone.
+func TestOpenAPI_DocumentsEveryRefusalTheRoutesAnswer(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithPublicOpenAPI())
+		ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+		})
+		app.Entity("people", entity.EntityConfig{
+			Table: "people",
+			Fields: []schema.Field{
+				{Name: "email", Type: schema.String, Required: true, Unique: true},
+			},
+			Endpoints: []entity.Endpoint{
+				{Method: "GET", Path: "summary", Handler: ok},
+				{Method: "POST", Path: "{id}/ping", Handler: ok},
+			},
+		})
+		app.Entity("pets", entity.EntityConfig{
+			Table: "pets",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String, Required: true},
+				{Name: "owner_id", Type: schema.Relation, To: "people", Required: true},
+			},
+		})
+		doc := servedSpecApp(t, db, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		anon := TestHarness(t, app)
+
+		var person map[string]any
+		_ = ta.Post("/people", map[string]any{"email": "a@x.test"}).JSON(&person)
+		pid := person["data"].(map[string]any)["id"].(string)
+		ta.Post("/pets", map[string]any{"name": "rex", "ownerId": pid}).AssertStatus(t, http.StatusCreated)
+
+		plain := func(method, path, body string) *TestResponse {
+			return ta.Request(method, path, strings.NewReader(body)).WithHeader("Content-Type", "text/plain").Execute()
+		}
+		huge := `{"email":"` + strings.Repeat("a", 2<<20) + `"}`
+		big := func(method, path string) *TestResponse {
+			return ta.Request(method, path, strings.NewReader(huge)).WithHeader("Content-Type", "application/json").Execute()
+		}
+		cases := []struct {
+			path, method string
+			resp         *TestResponse
+			want         int
+		}{
+			{"/people", "post", plain(http.MethodPost, "/people", `{"email":"b@x.test"}`), http.StatusUnsupportedMediaType},
+			{"/people/{id}", "put", plain(http.MethodPut, "/people/"+pid, `{"email":"b@x.test"}`), http.StatusUnsupportedMediaType},
+			{"/people/{id}", "patch", plain(http.MethodPatch, "/people/"+pid, `{"email":"b@x.test"}`), http.StatusUnsupportedMediaType},
+			{"/people/_batch", "post", plain(http.MethodPost, "/people/_batch", `{"items":[]}`), http.StatusUnsupportedMediaType},
+			{"/people/_batch", "patch", plain(http.MethodPatch, "/people/_batch", `{"items":[]}`), http.StatusUnsupportedMediaType},
+			{"/people/_batch", "delete", plain(http.MethodDelete, "/people/_batch", `{"ids":[]}`), http.StatusUnsupportedMediaType},
+			{"/people", "post", big(http.MethodPost, "/people"), http.StatusRequestEntityTooLarge},
+			{"/people/{id}", "put", big(http.MethodPut, "/people/"+pid), http.StatusRequestEntityTooLarge},
+			{"/people/{id}", "patch", big(http.MethodPatch, "/people/"+pid), http.StatusRequestEntityTooLarge},
+			{"/people/_batch", "post", big(http.MethodPost, "/people/_batch"), http.StatusRequestEntityTooLarge},
+			{"/people/_batch", "patch", big(http.MethodPatch, "/people/_batch"), http.StatusRequestEntityTooLarge},
+			{"/people/_batch", "delete", big(http.MethodDelete, "/people/_batch"), http.StatusRequestEntityTooLarge},
+			{"/people", "post", ta.Post("/people", map[string]any{"email": "a@x.test"}), http.StatusConflict},
+			{"/people/{id}", "delete", ta.Delete("/people/" + pid), http.StatusConflict},
+			{"/people/summary", "get", anon.Get("/people/summary"), http.StatusUnauthorized},
+			{"/people/{id}/ping", "post", anon.Request(http.MethodPost, "/people/"+pid+"/ping", strings.NewReader("{}")).WithHeader("Content-Type", "application/json").Execute(), http.StatusUnauthorized},
+			{"/people/{id}/ping", "post", ta.Request(http.MethodPost, "/people/"+pid+"/ping", strings.NewReader("x")).WithHeader("Content-Type", "text/plain").WithHeader("Sec-Fetch-Site", "cross-site").Execute(), http.StatusForbidden},
+		}
+		for _, c := range cases {
+			if c.resp.Status() != c.want {
+				t.Errorf("%s %s answered %d, want %d (the fixture no longer reaches the refusal): %s", strings.ToUpper(c.method), c.path, c.resp.Status(), c.want, c.resp.Body())
+				continue
+			}
+			conformsResponse(t, doc, c.path, c.method, c.resp)
+		}
+	})
+}
+
+// ?include= is documented on every read, and crud answers it by putting
+// the related record under the relation's key: for a belongs_to derived
+// from a relation field that is the field's own key, so the uuid string
+// the document promised became an object, and a has-many arrived under a
+// key the document never named.
+func TestOpenAPI_IncludedRelationsConformToSpec(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithPublicOpenAPI())
+		app.Entity("people", entity.EntityConfig{
+			Table:     "people",
+			Fields:    []schema.Field{{Name: "name", Type: schema.String, Required: true}},
+			Relations: []entity.Relation{entity.HasMany("pets", "pets", "owner_id")},
+		})
+		app.Entity("pets", entity.EntityConfig{
+			Table: "pets",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String, Required: true},
+				{Name: "owner_id", Type: schema.Relation, To: "people", Required: true},
+			},
+		})
+		doc := servedSpecApp(t, db, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+
+		var person, pet map[string]any
+		_ = ta.Post("/people", map[string]any{"name": "Ann"}).JSON(&person)
+		pid := person["data"].(map[string]any)["id"].(string)
+		_ = ta.Post("/pets", map[string]any{"name": "rex", "ownerId": pid}).JSON(&pet)
+		petID := pet["data"].(map[string]any)["id"].(string)
+
+		withOwner := ta.Get("/pets/" + petID + "?include=owner_id")
+		var got map[string]any
+		_ = withOwner.JSON(&got)
+		if _, isRecord := got["data"].(map[string]any)["ownerId"].(map[string]any); !isRecord {
+			t.Fatalf("the fixture no longer includes the owner record: %s", withOwner.Body())
+		}
+		conformsResponse(t, doc, "/pets/{id}", "get", withOwner)
+		conformsResponse(t, doc, "/pets/{id}", "get", ta.Get("/pets/"+petID))
+
+		withPets := ta.Get("/people/" + pid + "?include=pets")
+		got = nil
+		_ = withPets.JSON(&got)
+		if pets, _ := got["data"].(map[string]any)["pets"].([]any); len(pets) != 1 {
+			t.Fatalf("the fixture no longer includes the pets: %s", withPets.Body())
+		}
+		conformsResponse(t, doc, "/people/{id}", "get", withPets)
+		props := doc["components"].(map[string]any)["schemas"].(map[string]any)["people"].(map[string]any)["properties"].(map[string]any)
+		if _, ok := props["pets"]; !ok {
+			t.Errorf("the people schema does not name the pets an include adds: %v", specKeys(props))
+		}
+
+		// The include widens the read view only: a write still takes the key.
+		create := specOp(t, doc, "/pets", "post")["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+		if msg := specCheck(doc, create, map[string]any{"name": "x", "ownerId": map[string]any{"id": pid}}, ""); msg == "" {
+			t.Error("the create schema takes a related record where the route takes its key")
+		}
+	})
+}

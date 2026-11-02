@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,7 +29,7 @@ import (
 func runGenerateCLIFromOpenAPI(opts CliOptions) {
 	doc, err := loadOpenAPIDoc(opts.FromOpenAPI)
 	if err != nil {
-		cli.Fail("read OpenAPI document: %v", err)
+		cli.Fail("read OpenAPI document: %s", textsafe.ScrubControlBytes(err.Error()))
 		cli.OsExit(1)
 		return
 	}
@@ -63,7 +64,10 @@ func runGenerateCLIFromOpenAPI(opts CliOptions) {
 			cli.OsExit(1)
 			return
 		}
-		cli.Fail("%v", err)
+		// The error quotes names from the spec, which --from-openapi may
+		// fetch from a URL: encode its control bytes rather than write
+		// them to the operator's terminal.
+		cli.Fail("%s", textsafe.ScrubControlBytes(err.Error()))
 		cli.OsExit(1)
 		return
 	}
@@ -960,6 +964,16 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				schema, _ := orEmpty(mm)["schema"].(map[string]any)
 				format, _ := orEmpty(schema)["format"].(string)
 				if ct == "application/octet-stream" || format == "binary" {
+					// The content type is sent as the Content-Type header
+					// and printed raw in the --file flag's usage line, so it
+					// must be a plain media type: no control byte (C0, DEL
+					// or C1) that would rewrite the operator's terminal.
+					if strings.ContainsFunc(ct, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
+						return op, fmt.Errorf("request body content type %q carries control bytes: it is printed in the generated CLI's help output and sent as a header. Remove them from the spec", ct)
+					}
+					if _, _, err := mime.ParseMediaType(ct); err != nil || !strings.Contains(ct, "/") {
+						return op, fmt.Errorf("request body content type %q is not a media type (type/subtype)", ct)
+					}
 					op.BodyKind = "binary"
 					op.BodyContentType = ct
 					break

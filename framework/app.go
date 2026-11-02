@@ -2303,8 +2303,11 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 // and cascaded without child hooks. Callers set BasePath for their own mount.
 func (a *App) wireCrudHandler(ent *entity.Entity) *crud.CrudHandler {
 	name := ent.GetName()
-	ch := crud.NewCrudHandler(ent, a.DB)
-	ch.JSONCase = a.JSONCasing()
+	// WithJSONCase, not a field assignment: NewCrudHandler has already
+	// built the wire-key snapshot under the default case, and only
+	// WithJSONCase republishes it. Assigning the field left a snake_case
+	// app answering camelCase keys.
+	ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing())
 	ch.Hooks = a.HookRegistry(name)
 	ch.ChildHooks = a.lookupHookRegistry
 	ch.Storage = a.Storage
@@ -2435,8 +2438,7 @@ func (a *App) View(v migrate.View) *App {
 		panic(fmt.Sprintf("framework: failed to register view %q: %v", v.Name, err))
 	}
 	if a.DB != nil {
-		ch := crud.NewCrudHandler(ent, a.DB)
-		ch.JSONCase = a.JSONCasing()
+		ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing()) // republishes the wire keys; see wireCrudHandler
 		ch.Registry = a.Registry
 		ch.ChildHooks = a.lookupHookRegistry
 		// Views mount under the API prefix like entities do, so BasePath must
@@ -3683,7 +3685,11 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPIWithBulk(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.entityUIMounted, a.apiPrefix())
+		spec := openapi.EntityOpenAPIFor(a.Registry, openapi.Options{
+			Title: appName, Version: "1.0.0",
+			CRUDMounted: a.entityCRUDEnabled, BulkMounted: a.entityUIMounted,
+			BasePath: a.apiPrefix(), JSONCase: a.JSONCasing(),
+		})
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {

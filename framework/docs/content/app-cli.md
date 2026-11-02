@@ -216,7 +216,11 @@ path names, as a composite key's columns do in a GoFastr app's PUT body,
 and `--json` can still send it. Binary bodies
 (`application/octet-stream` / `format: binary`) take `--file` with `-`
 for stdin; a body offering several binary types is sent as
-`application/octet-stream`, else the first type by name. A body the spec
+`application/octet-stream`, else the first type by name. The chosen
+type must be a media type with no control byte (it is the request's
+`Content-Type` and appears in `--file`'s help), or generation fails.
+A refused spec's error encodes control bytes on the terminal, and
+under `--dry-run --json` it is one JSON document. A body the spec
 does not mark `required` may be left out, and the command then sends no
 body: `--file` is optional, and the schema's `required` properties bind
 only a body built from field flags (`--title x` without a required

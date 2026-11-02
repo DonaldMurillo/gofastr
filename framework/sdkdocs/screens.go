@@ -391,12 +391,14 @@ func (sc *errorsScreen) Render() render.HTML {
 		errRow("401", "No session or bearer token."),
 		errRow("403", "Authenticated but not permitted (RBAC / token scopes)."),
 		errRow("404", "No such record or route."),
+		errRow("409", "A unique value is taken, or the record is referenced by, or references, another record."),
 		errRow("413", "Request body too large."),
+		errRow("415", "A write whose body is not JSON (send Content-Type: application/json)."),
 		errRow("429", "Rate limited: retry later."),
 	}
 	return s.page("errors", "Errors",
 		heading(1, "Errors"),
-		para(text("Every non-2xx JSON response uses one envelope. Validation errors key the "),
+		para(text("Every non-2xx JSON response from the CRUD routes uses one envelope. Validation errors key the "),
 			code("fields"), text(" map by the "), html.Strong(html.TextConfig{}, text("snake_case column name")),
 			text(": not the camelCase response casing. Both SDKs surface the envelope (Go: "),
 			code("*APIError"), text("; JS: "), code("ApiError"), text(").")),
@@ -421,6 +423,9 @@ func (sc *errorsScreen) Render() render.HTML {
 		}),
 		para(text("Batch endpoints are the one exception: a rolled-back batch answers 400 with the normal batch envelope ("),
 			code("committed: false"), text(" plus per-item errors), and both SDKs return it as a result, not an error.")),
+		para(text("An endpoint the app declares beside the CRUD routes refuses at its gate (401 without a session, 403 for a cross-site form post) in another shape: the refusal nested under "),
+			code("error"), text(", as "), code(`{"error": {"code": 401, "reason": "authentication_required", "message": "…"}, "success": false}`),
+			text(". /openapi.json documents it as the GateError schema.")),
 	)
 }
 

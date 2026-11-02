@@ -177,6 +177,13 @@ few lines, and link the PR or the docs page for the rest.
   Code that passed verify can fail it on upgrade. Fix the finding, or
   mark a site that is the shape on purpose with
   `//gofastr:allow(<analyzer>) <why>`.
+- **`/openapi.json` documents what `?include=` returns.** An entity's
+  schema component is its read view: a relation field's property is
+  `anyOf` its key, the related record or null, since an include replaces
+  the key with the record, and each other relation is an optional
+  property (a record or null, or an array of records). Request bodies
+  still take the key. A generated client reads the field as a union
+  (see `includes.md`).
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
@@ -499,6 +506,42 @@ few lines, and link the PR or the docs page for the rest.
   `aria-roledescription`, `aria-placeholder`, `ariaDescription`, …)
   all put English in front of a reader with the lint silent. The
   shipped JavaScript stays clean under the wider rule.
+- **`AppConfig.JSONCase: crud.CaseSnake` reaches the entity routes
+  again.** Since v0.94.0 every `App.Entity`, `App.GroupEntity` and
+  `App.View` route answered camelCase keys in a snake_case app: the
+  handler built its wire keys before the app set the case. They are
+  snake_case again, as `entity-declarations.md` says; clients written
+  against the camelCase keys need the column names back.
+- **`/openapi.json` names a snake_case app's fields by their column
+  names.** It camelCased every property, required entry and record-key
+  path parameter whatever `AppConfig.JSONCase` said. The new
+  `openapi.EntityOpenAPIFor(registry, openapi.Options{…, JSONCase})`
+  takes the case; `EntityOpenAPI` and `EntityOpenAPIWithBulk` keep
+  camelCase.
+- **`/openapi.json` types a relation field by the key it names.** Every
+  relation was a `uuid` string. A foreign key to an `int` key is an
+  `integer` property and filter now, as crud stores, answers and parses
+  it; a key to a text slug or other non-uuid key drops the `uuid`
+  format no value of it met.
+- **`/openapi.json` lists the refusals the routes answer.** The CRUD
+  writes gain 409 (a unique value taken, a missing or still-referencing
+  record), 413 and 415; a declared endpoint gains its gate's 401 and its
+  cross-site 403, typed by a new `GateError` schema, since that gate
+  nests the refusal under `error` where the CRUD routes' `Error` keeps it
+  flat. The SDK docs' errors page names 409, 415 and the second shape.
+- **`gofastr generate cli --from-openapi` keeps spec bytes off the
+  terminal.** A binary body's content type reached the generated
+  `--file` help raw, so a spec could write ESC or C1 sequences to
+  whoever ran `<cli> <op> --help`; it must now be a media type with no
+  control byte. A refused spec's error encodes control bytes instead of
+  printing them, and `--dry-run --json` errors are valid JSON (they were
+  spelled with Go's `%q`, whose `\x1b` no JSON parser reads).
+- **The generated Go and JS clients bound their SSE feed.** `Watch` /
+  `watch` joined an event's `data:` lines until a blank line, and the JS
+  client buffered a line until a newline, with no limit, so a feed that
+  never ended one grew the subscriber's heap. Both now stop at the
+  1 MiB body cap with an error. Regenerate the SDK or client
+  (`gofastr build`) to pick it up.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
@@ -4855,6 +4898,11 @@ few lines, and link the PR or the docs page for the rest.
   Windows opens it through `os.Root`, where `\` is a separator, and
   served `sub/.env`. `static.Refuses` (and the static export's
   publish filter that uses it) now treats `\` as a separator.
+- **A caller's `/openapi.json` view no longer names entities they cannot
+  read through a relation.** The view drops such an entity's schema and
+  paths, but a readable entity's relation field still carried
+  `x-relation: <name>`. It now names a target only when the view
+  includes it; the full document is unchanged.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.
