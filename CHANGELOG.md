@@ -4423,7 +4423,9 @@ few lines, and link the PR or the docs page for the rest.
   migration failed inside its own `BEGIN` (an aborted session refuses
   the unlock) every other replica waited on the lock for the life of
   the process. Such a connection is now retired, which ends its session
-  and releases the lock.
+  and releases the lock. `cron.NewPostgresAdvisoryLease` had the same
+  release and gets the same fix: a failed unlock no longer keeps every
+  other replica from leading.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
