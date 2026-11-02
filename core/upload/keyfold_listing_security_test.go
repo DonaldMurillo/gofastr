@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -145,5 +146,41 @@ func TestDirMayFoldListsNormalizationCandidates(t *testing.T) {
 	fi, _ := os.Lstat(p)
 	if dirMayFold(fi, "123_456.png", base, nil) {
 		t.Error("dirMayFold of an ASCII name whose swapped spelling is absent = true; want false")
+	}
+}
+
+// An NTFS 8.3 short name (PHOTO~1.PNG for photo-original.png) and a ZFS
+// dataset with normalization set alias a key the ASCII case-swap probe
+// cannot see: the short name is a second spelling of a different long
+// name, not a case variant. Property: on Windows the walk always lists,
+// and anywhere a name holding "~" is listed.
+func TestDirMayFoldListsShortNamesAndWindows(t *testing.T) {
+	base := caseSensitiveTempDir(t)
+	lstat := func(name string) os.FileInfo {
+		t.Helper()
+		p := filepath.Join(base, name)
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Lstat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fi
+	}
+	for _, name := range []string{"PHOTO~1.PNG", "photo~1.png", "1~2"} {
+		if !dirMayFold(lstat(name), name, base, nil) {
+			t.Errorf("dirMayFold(%q) = false; a name holding ~ may be an 8.3 short name and must be listed", name)
+		}
+	}
+
+	plain := lstat("123_456.png")
+	if dirMayFold(plain, "123_456.png", base, nil) {
+		t.Fatal("setup: dirMayFold of a plain ASCII name off Windows = true; the Windows arm below proves nothing")
+	}
+	foldGOOS = "windows"
+	t.Cleanup(func() { foldGOOS = runtime.GOOS })
+	if !dirMayFold(plain, "123_456.png", base, nil) {
+		t.Error("dirMayFold on Windows = false; NTFS folds through short names and case alike, so Windows always lists")
 	}
 }

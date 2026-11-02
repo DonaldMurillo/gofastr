@@ -268,6 +268,9 @@ framework/
 │                    module, not part of the public API)
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
+├── internal/jpegcost/ reads a JPEG's frame header for what image/jpeg
+│                    will allocate (the progressive coefficient buffer),
+│                    shared by image/ and file/ the same way
 ├── internal/jpegtest/ hostile JPEG fixtures (the scan bomb) shared by the
 │                    image/ and file/ tests; imported by _test.go files only
 ├── internal/jsonexact/ JSON decode that keeps numbers under `any` exact,
@@ -386,10 +389,12 @@ The root package `framework/` itself contains:
 
 ```
 L1  internal/casing, internal/exif,           (no internal deps; exif is the
-    internal/jsonexact
-                                              leaf TIFF walker shared by
-                                              file/ and image/ so file
-                                              never links the codecs)
+    internal/jpegcost, internal/jsonexact
+                                              leaf TIFF walker and jpegcost
+                                              the JPEG header cost reader,
+                                              both shared by file/ and
+                                              image/ so file never links
+                                              the codecs)
 L2  entity                                   (imports core/ +
                                               internal/casing only)
 L3  hook, event, file, cron, access, db,    (leaf packages, no framework-

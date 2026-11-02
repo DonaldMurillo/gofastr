@@ -134,9 +134,21 @@ custom endpoint with `WithS3Endpoint`. Without a client,
 `Save` / `Get` / `Delete` / `Exists` cannot run; the constructor does
 not dial.
 
+`S3Storage` holds keys to the same form as the local backend, though S3
+itself would store any byte string: an empty key, any `..`, a control
+byte (NUL, CR, LF, DEL), a leading `/`, and a key that is not its own
+clean form (`a//b`, `./a`, `a/./b`, a trailing `/`, `.`) are refused with
+`upload.ErrInvalidKey` on every operation. In a bucket `a//b` is an
+object distinct from `a/b`, so a row naming the alias served or erased
+an object its key never named. `DefaultKeyValidator`, the standalone
+check a caller can apply to keys of its own, refuses the same keys plus
+a backslash.
+
 For direct browser uploads and downloads, pass a `Presigner` via
 `WithPresigner`. `PresignedGetURL` and `PresignedPutURL` then mint
-time-limited URLs that route traffic around the app entirely.
+time-limited URLs that route traffic around the app entirely. The
+expiry must be positive: zero or negative is refused, since a presigner
+either clamps it to its own longer default or signs a dead URL.
 `S3Storage` does not implement `RangeGetter`: a network backend would
 have to buffer the whole object to `Seek`; presigned URLs are the
 intended path for large transfers.

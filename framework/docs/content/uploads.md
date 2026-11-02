@@ -594,7 +594,11 @@ Built-in implementations:
   stored under a byte-different spelling (`TenantA/x` vs `tenanta/x`,
   NFC vs NFD) is refused with the same key error instead of silently
   overwriting it, and a delete under such a key is refused rather than
-  removing the other spelling's object. A key that is not its own clean
+  removing the other spelling's object. The check lists a key's directory
+  only where folding is possible: always on Windows, where an NTFS 8.3
+  short name (`PHOTO~1.PNG`) aliases a different long name, and for any
+  name holding `~` or a byte that can normalize; elsewhere a case-swap
+  probe proves the directory keeps the name apart. A key that is not its own clean
   form (`a//b`, `a/./b`, `./a`, a trailing `/`), a leading `/` and `.`
   are refused with `ErrInvalidKey` on every operation, never cleaned to
   the object they alias. Errors never carry the absolute storage path.

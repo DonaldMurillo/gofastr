@@ -1080,3 +1080,38 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "framework/image and file.StripMetadata refuse a JPEG whose scans times pixels exceed Config.MaxJPEGScanPixels (default ten times MaxPixels) with ErrDecompressionBomb: a 64 MP frame keeps ten scans, frames up to 10 MP keep the flat cap's 64"
+    breaking: false
+    guidance: "Common encoders write about ten scans, so ordinary photos decode as before. A host that decodes huge progressive JPEGs with many scans raises Config.MaxJPEGScanPixels, and MaxJPEGScans as well if it needs past 64; raising MaxJPEGScans alone no longer lifts the cost bound."
+    find:
+      uses:
+        - gofastr/framework/image.Config.MaxJPEGScans
+  - change: "framework/image and file.StripMetadata refuse a progressive JPEG whose coefficient buffer exceeds Config.MaxProgressiveJPEGBytes (default 512 MiB) with ErrDecompressionBomb: a progressive 64 MP 4:4:4 color frame is refused, grayscale and 4:2:0 pass"
+    breaking: false
+    guidance: "Baseline JPEGs and ordinary progressive photos decode as before. A host that decodes very large progressive 4:4:4 JPEGs and has the memory for them raises Config.MaxProgressiveJPEGBytes."
+    find:
+      uses:
+        - gofastr/framework/image.DecodeBytesWithConfig
+        - gofastr/framework/image.DecodeWithConfig
+  - change: "The local storage backends' fold check lists a key's directory on every Windows lookup and for any name holding ~, so an NTFS 8.3 short name (PHOTO~1.PNG) is refused as an alias of the long name it stands for"
+    breaking: false
+    guidance: "Nothing to change. On Windows each Get, Exists, Delete and overwriting Save lists the key's directories again, so a very large flat upload directory costs more per request there; shard keys into subdirectories if that shows."
+    find:
+      uses:
+        - gofastr/battery/storage.NewLocalStorage
+        - gofastr/core/upload.NewLocalStorage
+  - change: "BREAKING - battery/storage S3Storage and DefaultKeyValidator refuse an absolute key, a key with a control byte, and a key not in its clean form (a//b, ./a, a/./b, a trailing slash, .) with upload.ErrInvalidKey; S3Storage.PresignedGetURL and PresignedPutURL refuse an expiry <= 0"
+    breaking: true
+    hits: review
+    guidance: "Keys the framework mints are already clean. A key your code builds by joining strings goes through path.Clean with no leading slash before Save, and objects already stored under such a key in a bucket need renaming. Pass a positive duration to the presign calls."
+    find:
+      uses:
+        - gofastr/battery/storage.NewS3Storage
+        - gofastr/battery/storage.DefaultKeyValidator
+  - change: "BREAKING - core/static (and static.Refuses, so the UI host's static dir and the static export) answers 404 for a path segment holding ~ followed by a digit on every OS: a Windows 8.3 short name such as WEB~1.CON opened web.config past the config and dotfile refusals"
+    breaking: true
+    hits: review
+    guidance: "Rename any served asset whose name holds ~ then a digit (photo~1.png to photo-1.png) and update the links to it. A ~ followed by anything else (a~b.txt, notes.txt~) is still served."
+    find:
+      strings:
+        match: '~[0-9]'

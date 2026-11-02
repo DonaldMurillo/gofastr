@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/framework/internal/exif"
+	"github.com/DonaldMurillo/gofastr/framework/internal/jpegcost"
 )
 
 // StripMetadata returns a [ProcessOption] that removes privacy-bearing
@@ -65,6 +66,22 @@ const stripMaxPixels int64 = 64 * 1024 * 1024
 // Every scan starts at an FF DA marker and entropy data never holds one,
 // so counting the pair cannot miss a scan.
 const stripMaxJPEGScans = 64
+
+// stripMaxJPEGScanPixels caps scans × pixels, the block walks the bake's
+// decode costs, matching framework/image.DefaultMaxJPEGScanPixels (ten
+// walks of a frame at the pixel cap; local for the same layering reason,
+// pinned by TestStripMetadataBudgetsJPEGScansByPixels). The flat scan cap
+// alone let 64 scans of a 64 MP frame cost ~2.8 s of decode.
+const stripMaxJPEGScanPixels = 10 * stripMaxPixels
+
+// stripMaxProgressiveJPEGBytes caps the coefficients the bake's decode
+// keeps for a progressive JPEG, matching framework/image.
+// DefaultMaxProgressiveJPEGBytes (local for the same layering reason,
+// pinned by TestStripMetadataRefusesProgressiveJPEGOverMemoryBudget).
+// image/jpeg holds 256 bytes per block of every component for the whole
+// frame, so a few hundred bytes of 3-component 8192×8192 progressive JPEG
+// allocated ~1 GB inside the pixel cap.
+const stripMaxProgressiveJPEGBytes int64 = 512 << 20
 
 // checkStripPixelCap refuses header dimensions whose decoded raster would
 // exceed stripMaxPixels, before any pixel decode runs. Overflow-safe by
@@ -219,6 +236,13 @@ func stripJPEG(data []byte) ([]byte, error) {
 		}
 		if err := checkStripPixelCap(cfg.Width, cfg.Height); err != nil {
 			return nil, err
+		}
+		// Divide: the pixel cap bounds width×height, so the quotient is exact.
+		if int64(scans) > stripMaxJPEGScanPixels/(int64(cfg.Width)*int64(cfg.Height)) {
+			return nil, fmt.Errorf("strip: JPEG carries %d scans of a %dx%d frame, over the %d pixel-scan decode budget", scans, cfg.Width, cfg.Height, stripMaxJPEGScanPixels)
+		}
+		if n, ok := jpegcost.ProgressiveCoeffBytes(out); ok && n > stripMaxProgressiveJPEGBytes {
+			return nil, fmt.Errorf("strip: progressive JPEG needs %d bytes of coefficients, over the %d-byte decode cap", n, stripMaxProgressiveJPEGBytes)
 		}
 		img, err := jpeg.Decode(bytes.NewReader(out))
 		if err != nil {

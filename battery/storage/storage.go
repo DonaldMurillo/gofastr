@@ -3,6 +3,8 @@ package storage
 import (
 	"fmt"
 	"io"
+	"path"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
@@ -36,31 +38,42 @@ type KeyValidator interface {
 // DefaultKeyValidator implements basic key validation.
 type DefaultKeyValidator struct{}
 
-// ValidateKey checks that a key does not contain path traversal sequences.
+// ValidateKey refuses a key that could name something other than the
+// object it spells: the checks of [S3Storage]'s keys (see checkObjectKey)
+// plus a backslash, a separator on Windows. Refusals wrap
+// [upload.ErrInvalidKey].
 func (DefaultKeyValidator) ValidateKey(key string) error {
-	if key == "" {
-		return fmt.Errorf("storage: empty key")
+	if err := checkObjectKey(key); err != nil {
+		return err
 	}
-	// Check for path traversal patterns
-	for _, pattern := range []string{"..", "//", "\\"} {
-		if containsString(key, pattern) {
-			return fmt.Errorf("storage: invalid key %q: contains forbidden sequence %q", key, pattern)
-		}
+	if strings.Contains(key, `\`) {
+		return fmt.Errorf("%w: key %q contains a backslash", upload.ErrInvalidKey, key)
 	}
 	return nil
 }
 
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+// checkObjectKey refuses an empty key, any ".." (the traversal sequence
+// the backends always refused), a control byte (NUL truncates a path in
+// C-backed tooling, CR/LF splits a log or header line), an absolute key,
+// and a key that is not its own clean form (a//b, ./a, a/./b, a trailing
+// slash, "."). Each of those names an object under a second spelling, so
+// a row naming one could erase or serve an object its key never named.
+// Refusals wrap [upload.ErrInvalidKey]; keys the framework mints are
+// already clean.
+func checkObjectKey(key string) error {
+	switch {
+	case key == "":
+		return fmt.Errorf("%w: empty key", upload.ErrInvalidKey)
+	case strings.Contains(key, ".."):
+		return fmt.Errorf("%w: key contains a path traversal sequence: %q", upload.ErrInvalidKey, key)
+	case strings.IndexFunc(key, func(r rune) bool { return r < 0x20 || r == 0x7F }) >= 0:
+		return fmt.Errorf("%w: key %q contains a control byte", upload.ErrInvalidKey, key)
+	case strings.HasPrefix(key, "/"):
+		return fmt.Errorf("%w: key %q is absolute", upload.ErrInvalidKey, key)
+	case key == "." || path.Clean(key) != key:
+		return fmt.Errorf("%w: key %q is not in its clean form", upload.ErrInvalidKey, key)
 	}
-	return false
+	return nil
 }
 
 // ReadCloser wraps an io.Reader to implement io.ReadCloser with a no-op Close.

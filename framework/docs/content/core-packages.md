@@ -463,7 +463,11 @@ opens it, on every OS: `\` separates segments, and a config name
 matches with trailing dots or spaces or an `::$DATA` stream suffix, so
 `/assets%5C..%5C.env` and `/web.config.` are refused. On every OS a file
 whose name holds a backslash is judged by the pieces it splits into:
-`a\b.txt` is served, `a\.env` and `x\web.config` are refused.
+`a\b.txt` is served, `a\.env` and `x\web.config` are refused. A segment
+holding `~` followed by a digit is refused too, on every OS: it is the
+shape of an NTFS 8.3 short name, and a Windows volume that generates
+them opens `WEB~1.CON` as `web.config` and `ENV~1` as `.env`. A name
+like `a~b.txt` or `notes.txt~` is served.
 `IfNoneMatch(r, etag)`
 checks an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
 comparison. Start at `core/static/static.go`: `Handler`.

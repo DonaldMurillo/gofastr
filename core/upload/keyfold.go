@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -122,6 +123,11 @@ func CommitUnfolded(key, root string, rt *os.Root, rename func() error) error {
 // tell. It answers false only when that is impossible, so the listing
 // stays the authority wherever folding can happen:
 //
+//   - On Windows every name is listed. NTFS resolves an 8.3 short name
+//     (PHOTO~1.PNG for photo-original.png) to a different long name, an
+//     alias no case-swap probe can see.
+//   - Anywhere, a name holding '~' is listed: it may be a short name on
+//     an NTFS or FAT mount, and the probe cannot tell.
 //   - A name with a non-ASCII byte, or with 'K', ';' or '`', may fold by
 //     normalization alone, even on a case-sensitive filesystem (APFS in
 //     its case-sensitive variant still compares normalized names):
@@ -136,8 +142,12 @@ func CommitUnfolded(key, root string, rt *os.Root, rename func() error) error {
 //     fold. A probe that errors for any reason but absence lists.
 //
 // foldListHook is the test seam that counts the listings this saves.
+//
+// foldGOOS is the operating system dirMayFold judges for; a test sets it.
+var foldGOOS = runtime.GOOS
+
 func dirMayFold(fi os.FileInfo, part, parent string, rt *os.Root) bool {
-	if strings.ContainsAny(part, "K;`") {
+	if foldGOOS == "windows" || strings.ContainsAny(part, "K;`~") {
 		return true
 	}
 	swapped := []byte(part)

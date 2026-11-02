@@ -6095,6 +6095,44 @@ few lines, and link the PR or the docs page for the rest.
   `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` keeps livereload on.
 - **webmcp-remote-assist closes an expired credential's sockets and
   limits incoming frames.**
+- **`framework/image` budgets JPEG scans by pixels.** At the flat
+  64-scan cap a 6.5 KB progressive file over a 64 MP frame still cost
+  ~2.8 s of CPU. A JPEG is now also refused with `ErrDecompressionBomb`
+  when scans × width × height exceed `Config.MaxJPEGScanPixels`
+  (default ten times `MaxPixels`): ten scans at 64 MP, the full 64 up to
+  10 MP. `file.StripMetadata`'s orientation bake applies the same
+  budget. See [image](framework/docs/content/image.md).
+- **`framework/image` caps a progressive JPEG's coefficient memory.** Go's
+  decoder keeps 256 bytes per block of every component for a progressive
+  frame, so a few-hundred-byte 3-component 8192×8192 file allocated ~1 GB
+  inside the pixel cap. Decode now reads the frame header and refuses with
+  `ErrDecompressionBomb` past `Config.MaxProgressiveJPEGBytes` (default
+  512 MiB: a progressive 64 MP 4:4:4 color frame is refused, grayscale and
+  4:2:0 pass). `file.StripMetadata`'s orientation bake applies the same
+  cap. See [image](framework/docs/content/image.md).
+- **The local storage fold check lists the directory on Windows and for
+  names holding `~`.** Its case-swap probe cannot see an NTFS 8.3 short
+  name (`PHOTO~1.PNG` for `photo-original.png`), a second spelling of a
+  different long name, so a save under one could overwrite the other.
+  Windows now always lists; elsewhere a `~` in a name does. See
+  [uploads](framework/docs/content/uploads.md).
+- BREAKING: **`battery/storage` S3 keys and `DefaultKeyValidator` refuse
+  absolute, control-byte and unclean keys; presigning refuses a
+  non-positive expiry.** `DefaultKeyValidator` passed `/etc/passwd` and a
+  NUL byte despite its doc, and `S3Storage` refused only `..`: `a//b`,
+  `./a` and a leading `/` reached the bucket as objects distinct from the
+  key they spell. Both now refuse those with `upload.ErrInvalidKey`, and
+  `PresignedGetURL` / `PresignedPutURL` refuse `expires <= 0`. A host
+  that stored such keys renames them (`path.Clean`, no leading `/`). See
+  [storage](framework/docs/content/storage.md).
+- BREAKING: **`core/static` refuses Windows 8.3 short names.** On a
+  Windows volume that generates them, `GET /WEB~1.CON` served
+  `web.config` and `/ENV~1` served `.env` past the config and dotfile
+  refusals. A path segment holding `~` followed by a digit now answers
+  404 on every OS, in the handler and `static.Refuses` (the UI host's
+  static dir and the static export), as the backslash split already
+  does. A file served under such a name (`photo~1.png`) needs renaming.
+  See [core packages](framework/docs/content/core-packages.md#static).
 
 ## [0.95.0] - 2026-10-26
 
