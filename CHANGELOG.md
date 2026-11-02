@@ -379,10 +379,15 @@ few lines, and link the PR or the docs page for the rest.
   caller's context, so they must be side-effect free: see `Changes` in
   [entityui](framework/docs/content/entityui.md).
 - **A `data-cui-rpc` POST form sends one request at a time (D-09).**
-  A re-submit of a form whose method is POST is ignored while its own
-  POST is in flight, so a double click plus Ctrl+S no longer creates
-  three rows. PUT and PATCH forms, input-triggered forms, buttons and
-  controls still send every dispatch, the newest winning.
+  A re-submit of a form whose method is POST waits while its own POST
+  is in flight. One that sends the same fields as the request in flight
+  is ignored, so a double click plus Ctrl+S no longer creates three
+  rows. One that sends different fields (save A, edit to B, save again)
+  is held, the latest only, and goes out when the first answers; the
+  first answer then changes nothing on the page, the newer one does. A
+  POST that has not answered in 30 seconds stops holding the form, and
+  a held save goes out then. PUT and PATCH forms, input-triggered forms,
+  buttons and controls still send every dispatch, the newest winning.
 - **FilterToolbar Reset follows the submit (D-37).** Without
   `ClientNavigation`, Reset carries `data-cui-nav="off"` and loads the
   whole document, as the native GET submit does, so a kept layout that

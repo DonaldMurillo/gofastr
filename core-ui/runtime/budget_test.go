@@ -1725,7 +1725,16 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// double-click plus Ctrl+S sent three POSTs and an entity with no
 		// unique key got three rows. The in-flight set is dispatch state
 		// only this module holds.
-		"rpc": 3800,
+		// 4126 measured (4124 + 2) after such a form queues a re-submit
+		// whose payload differs from the POST in flight (the latest only)
+		// and sends it when the first settles, and releases a POST that
+		// has not answered in 30 s (2026-11-02 review of D-09,
+		// TestFormPOSTResubmitChangedIsQueued,
+		// TestFormPOSTHungRequestUnlocks): save A, edit to B, save again
+		// dropped B, and a hung POST locked the form until reload. The
+		// payload compare and the queue are dispatch state only this
+		// module holds.
+		"rpc": 4126,
 	}
 	const coreOverride = 0
 
