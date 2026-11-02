@@ -95,7 +95,15 @@
 //     to forward, so nothing upstream can fix it: ui.Markdown's and
 //     ui.CodeTabs' code blocks (2026-10-27 bug bash U10, U21). A child
 //     that reads Ctx only on a branch (Button's shortcut hint) stays
-//     quiet.
+//     quiet. Where a request context is in scope it also fires on
+//     core-ui/store's Slice.Default(): the declaration, not the
+//     request's value, so a producer's Seed is lost and the server
+//     paints the default while the page seed hands the client the
+//     seeded value. ui.Counter, ui.Tabs and ui.SignalToggle did
+//     (af3292807: a page that seeded 7 showed 0, and its first + made
+//     8). Read Slice.Value(ctx). A Default() with no context in scope (a
+//     declaration-time read, a config with no Ctx) and a Default method
+//     on any other type stay quiet.
 //
 // Silent postures, deliberately:
 //   - _test.go files, and every package outside the four roots
