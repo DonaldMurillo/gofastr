@@ -73,6 +73,7 @@ var Analyzers = []string{
 	"doublewrite",
 	"listheader",
 	// 2026-11 bug-bash rules (request-misc)
+	"authpresence",
 	"multipartparse",
 	"rsakeysize",
 }
