@@ -275,14 +275,21 @@ few lines, and link the PR or the docs page for the rest.
   CDN could store it under the asset's URL. Extensionless paths
   (`/dashboard/settings`) still get the index. See
   [core packages](framework/docs/content/core-packages.md#static).
-- **`/readyz` drains before shutdown.** `App.Shutdown` now turns
-  `/readyz` to `503` (`{"status":"draining"}`) at once and keeps serving
-  for a grace period, so a load balancer stops routing here before the
-  listener closes; `/healthz` stays `200` until exit. The grace is 5s by
-  default, set with `framework.WithReadinessDrain` (`0` skips it), and
-  `0` in a Go test binary and under `gofastr dev`. A stop now takes up
-  to the grace longer: the default SIGTERM handler's deadline is
-  `ShutdownTimeout` plus the grace. See
+- **BREAKING: `/readyz` drains before shutdown.** `App.Shutdown` now
+  turns `/readyz` to `503` (`{"status":"draining"}`) at once and keeps
+  serving for a grace period, so a load balancer stops routing here
+  before the listener closes; `/healthz` stays `200` until exit. The
+  grace is 5s by default, set with `framework.WithReadinessDrain` (`0`
+  skips it), and `0` in a Go test binary, under `gofastr dev`, for a
+  `battery/service` run and for an app bound to loopback only (every
+  desktop app). The grace counts against `Shutdown`'s context and takes
+  at most half of what it has left, so the HTTP drain, batteries and
+  `OnStop` hooks keep the rest: a caller that passes its own deadline
+  (`app.Shutdown(ctx)` with a 5s timeout) now gives requests still in
+  flight and the stop hooks half of it, not all of it. An earlier build
+  of this release let the grace spend the whole deadline. A stop now
+  takes up to the grace longer: the default SIGTERM handler's deadline
+  is `ShutdownTimeout` plus the grace. See
   [Health and readiness](framework/docs/content/health-checks.md#draining-on-shutdown).
 - **The gofastr CLI's status lines print arguments inert.** `✓`, `✗`,
   `→` and `⚠` lines (`cli.Success`, `Fail`, `Info`, `Warn`) remove

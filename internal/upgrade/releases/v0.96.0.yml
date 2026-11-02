@@ -1441,9 +1441,10 @@ notes:
       uses:
         - gofastr/core/static.Handler
         - gofastr/core/static.Mount
-  - change: "App.Shutdown answers /readyz with 503 at once and keeps serving for a readiness grace (default 5s, framework.WithReadinessDrain) before it stops accepting; a stop takes up to the grace longer"
-    breaking: false
-    guidance: "A load balancer probing /readyz stops routing here before the listener closes; /healthz stays 200 until exit. The default SIGTERM handler's deadline is AppConfig.ShutdownTimeout plus the grace, so keep both inside the orchestrator's kill window (Kubernetes' terminationGracePeriodSeconds, 30s by default). Pass framework.WithReadinessDrain(0) to stop at once, as before, or a longer grace to match a slow balancer. Test binaries and gofastr dev default to 0."
+  - change: "BREAKING - App.Shutdown answers /readyz with 503 at once and keeps serving for a readiness grace (default 5s, framework.WithReadinessDrain) before it stops accepting; the grace counts against Shutdown's context and takes up to half of it"
+    breaking: true
+    hits: review
+    guidance: "A load balancer probing /readyz stops routing here before the listener closes; /healthz stays 200 until exit. The grace spends Shutdown's own deadline: it takes at most half of the time the context has left, so a caller passing app.Shutdown a 5s context gives the HTTP drain, batteries and OnStop hooks 2.5s where they used to get 5s, and a request accepted during the grace must finish in that time. Add the grace to your own Shutdown deadline, or pass framework.WithReadinessDrain(0) to stop at once, as before, when nothing probes /readyz. The default SIGTERM handler's deadline is AppConfig.ShutdownTimeout plus the grace, so a grace no longer than ShutdownTimeout runs in full there; keep both inside the orchestrator's kill window (Kubernetes' terminationGracePeriodSeconds, 30s by default). Test binaries, gofastr dev, battery/service runs and apps bound to loopback only (every desktop app) default to 0."
     find:
       uses:
         - gofastr/framework.App.Shutdown
