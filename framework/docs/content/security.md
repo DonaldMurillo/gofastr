@@ -510,7 +510,12 @@ the served spec never documents CRUD paths registration did not mount
 (no DB, or `Exposure.CRUD=false` — declared custom endpoints stay
 documented either way). `EntityOpenAPIWithBulk` takes a second
 predicate and also documents the `_bulk`, `_export.csv` and `_pick` routes
-`App.EntityUI` mounts; the served spec passes it. Plugin-registered HTTP handlers go
+`App.EntityUI` mounts; the served spec passes it. `EntityOpenAPIFor`
+takes all of that as an `openapi.Options` struct, plus `JSONCase`: the
+served spec passes the app's `AppConfig.JSONCase`, so a snake_case app
+documents each field under its column name, the key its routes send. A
+spec built by `EntityOpenAPI` or `EntityOpenAPIWithBulk` names fields in
+camelCase. Plugin-registered HTTP handlers go
 through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no
 plugin → OpenAPI extension hook today.

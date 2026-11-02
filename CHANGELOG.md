@@ -146,6 +146,12 @@ few lines, and link the PR or the docs page for the rest.
   handler built its wire keys before the app set the case. They are
   snake_case again, as `entity-declarations.md` says; clients written
   against the camelCase keys need the column names back.
+- **`/openapi.json` names a snake_case app's fields by their column
+  names.** It camelCased every property, required entry and record-key
+  path parameter whatever `AppConfig.JSONCase` said. The new
+  `openapi.EntityOpenAPIFor(registry, openapi.Options{…, JSONCase})`
+  takes the case; `EntityOpenAPI` and `EntityOpenAPIWithBulk` keep
+  camelCase.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

@@ -53,7 +53,38 @@ func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 // and GET <path>/_export.csv, for each entity bulkMounted reports. nil
 // documents neither, which is EntityOpenAPI.
 func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
-	s := entityOpenAPI(registry, title, version, crudMounted, bulkMounted, nil, basePath...)
+	o := Options{Title: title, Version: version, CRUDMounted: crudMounted, BulkMounted: bulkMounted}
+	if len(basePath) > 0 {
+		o.BasePath = basePath[0]
+	}
+	return EntityOpenAPIFor(registry, o)
+}
+
+// Options configures EntityOpenAPIFor. The zero value documents a
+// camelCase API with no prefix, every CRUD route Exposure.CRUD allows,
+// and no bulk routes.
+type Options struct {
+	Title, Version string
+	// CRUDMounted reports whether an entity's auto-CRUD routes were
+	// registered (see EntityOpenAPI); nil checks Exposure.CRUD alone.
+	CRUDMounted func(*entity.Entity) bool
+	// BulkMounted reports the entities App.EntityUI mounts _bulk,
+	// _export.csv and _pick for; nil documents none.
+	BulkMounted func(*entity.Entity) bool
+	// BasePath is the API prefix baked into every path key ("/api").
+	BasePath string
+	// JSONCase is the casing the CRUD handlers answer in, the app's
+	// AppConfig.JSONCase. crud.CaseSnake documents each field under its
+	// column name, as the handlers send it; empty or crud.CaseCamel
+	// camelCases it. A WireName wins either way.
+	JSONCase crud.JSONCase
+}
+
+// EntityOpenAPIFor is EntityOpenAPIWithBulk configured by o. App builds
+// its /openapi.json with it, passing its JSONCase so a snake_case app's
+// document names the keys its routes send.
+func EntityOpenAPIFor(registry entity.Registry, o Options) *openapi.Spec {
+	s := entityOpenAPI(registry, o, nil)
 	// The auth-gated serving path (core/openapi Handler) rebuilds the
 	// document per request through RequestView, keeping only the
 	// entities THIS caller can read — llm.md parity: the spec is the
@@ -65,9 +96,9 @@ func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crud
 	// and keeps serving the full spec.
 	s.RequestView = func(r *http.Request) *openapi.Spec {
 		ctx := r.Context()
-		return entityOpenAPI(registry, title, version, crudMounted, bulkMounted, func(ent *entity.Entity) bool {
+		return entityOpenAPI(registry, o, func(ent *entity.Entity) bool {
 			return canReadSpecEntity(ctx, ent)
-		}, basePath...)
+		})
 	}
 	return s
 }
@@ -98,11 +129,13 @@ func objectSchemaWith(props map[string]any) map[string]any {
 
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
 // which registered entities reach the document.
-func entityOpenAPI(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
-	s := openapi.NewSpec(title, version)
+func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity) bool) *openapi.Spec {
+	s := openapi.NewSpec(o.Title, o.Version)
+	crudMounted, bulkMounted := o.CRUDMounted, o.BulkMounted
+	jc := o.JSONCase
 	apiPrefix := ""
-	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
-		apiPrefix = "/" + strings.Trim(basePath[0], "/")
+	if o.BasePath != "" && o.BasePath != "/" {
+		apiPrefix = "/" + strings.Trim(o.BasePath, "/")
 	}
 	s.AddServer("/", "current")
 
@@ -237,7 +270,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// is never looked up again under its database name or camel-cased twice.
 		wireFields := make([]schema.Field, len(visibleFields))
 		for i, f := range visibleFields {
-			f.Name = wireKeyOf(f)
+			f.Name = wireKeyOf(f, jc)
 			f.WireName = ""
 			wireFields[i] = f
 		}
@@ -328,7 +361,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		if ent.Version != "" {
 			path = pathPrefix + "/" + tableName
 		}
-		recPath, keyProps, keyReq := recordKey(ent, path)
+		recPath, keyProps, keyReq := recordKey(ent, path, jc)
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
@@ -363,7 +396,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// SDK generators / agents can discover the projection surface.
 		fieldNames := make([]string, 0, len(visibleFields))
 		for _, f := range visibleFields {
-			fieldNames = append(fieldNames, wireKeyOf(f))
+			fieldNames = append(fieldNames, wireKeyOf(f, jc))
 		}
 		fieldsDesc := "Comma-separated list of fields to return (projection); the primary key is always included."
 		if len(fieldNames) > 0 {
@@ -454,7 +487,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// Create request body excludes auto-generated and read-only
 		// fields; enforced states narrow the state field's enum to the
 		// values a create may set and drop the stamps.
-		createSchema := requestSchema(entitySchema, fields, st, scopeSkip, false)
+		createSchema := requestSchema(entitySchema, fields, st, scopeSkip, false, jc)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
@@ -494,7 +527,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		updateOp.Tags = []string{tagName}
 		// An enforced states block removes the state field and the stamps
 		// from the update body: they change only through a move's route.
-		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, scopeSkip, true), false)
+		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, scopeSkip, true, jc), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
 		if statesGuarded {
@@ -514,7 +547,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		patchOp.Summary = "Patch " + entityName
 		patchOp.OperationID = "patch_" + schemaName
 		patchOp.Tags = []string{tagName}
-		patchSchema := requestSchema(entitySchema, fields, st, scopeSkip, true)
+		patchSchema := requestSchema(entitySchema, fields, st, scopeSkip, true, jc)
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
@@ -638,7 +671,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		}
 		// An item is sparse like a single PATCH: the key part below is
 		// all it must carry.
-		batchPatch := requestSchema(entitySchema, fields, st, scopeSkip, true)
+		batchPatch := requestSchema(entitySchema, fields, st, scopeSkip, true, jc)
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
 				batchPatch,
@@ -766,8 +799,8 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 // to the values a create may set, and drops every stamp; an update drops
 // the state field and the stamps entirely — they change only through a
 // move's own route.
-func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, scopeSkip []string, update bool) map[string]any {
-	cp := excludeFieldsByBehavior(specSchema, fields)
+func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, scopeSkip []string, update bool, jc crud.JSONCase) map[string]any {
+	cp := excludeFieldsByBehavior(specSchema, fields, jc)
 	byName := make(map[string]schema.Field, len(fields))
 	for _, f := range fields {
 		byName[f.Name] = f
@@ -775,7 +808,7 @@ func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.
 	drop := map[string]bool{} // wire keys no write may carry
 	for _, name := range scopeSkip {
 		if f, ok := byName[name]; ok {
-			drop[wireKeyOf(f)] = true
+			drop[wireKeyOf(f, jc)] = true
 		}
 	}
 	stateKey := ""
@@ -785,11 +818,11 @@ func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.
 				continue
 			}
 			if f, ok := byName[t.Stamp]; ok {
-				drop[wireKeyOf(f)] = true
+				drop[wireKeyOf(f, jc)] = true
 			}
 		}
 		if f, ok := byName[st.Field]; ok {
-			stateKey = wireKeyOf(f)
+			stateKey = wireKeyOf(f, jc)
 		}
 		if update && stateKey != "" {
 			drop[stateKey] = true
@@ -883,7 +916,7 @@ func fieldToFilterSchema(f schema.Field) map[string]any {
 // default leaves the required list: a write may omit it and take the
 // default (schema.ValidateAll skips it). The response schema keeps it
 // required, since every stored row carries it.
-func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) map[string]any {
+func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field, jc crud.JSONCase) map[string]any {
 	cp := make(map[string]any, len(specSchema))
 	maps.Copy(cp, specSchema)
 
@@ -891,7 +924,7 @@ func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) m
 	exclude := make(map[string]bool)
 	for _, f := range fields {
 		if f.AutoGenerate != schema.AutoNone || f.ReadOnly || f.Hidden {
-			exclude[wireKeyOf(f)] = true
+			exclude[wireKeyOf(f, jc)] = true
 		}
 	}
 
@@ -907,7 +940,7 @@ func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) m
 	defaulted := make(map[string]bool)
 	for _, f := range fields {
 		if f.Default != nil {
-			defaulted[wireKeyOf(f)] = true
+			defaulted[wireKeyOf(f, jc)] = true
 		}
 	}
 	if reqs, ok := cp["required"].([]string); ok {
@@ -939,30 +972,34 @@ func versionSlug(prefix string) string {
 	return strings.ReplaceAll(s, "/", "_")
 }
 
-// wireKeyOf returns the JSON wire key for a schema field: WireName
-// verbatim when set, else the camelCase of the DB column name. This is
-// the single wire-key resolution used by every OpenAPI surface that
-// names a field, response properties, the required list, the ?fields=
-// projection description, and excludeFieldsByBehavior (request-schema
-// exclusion). Routing every surface through one function prevents the
-// class of bug where one surface advertises bodyText (camelCase of
-// Name) while the runtime accepts content (the WireName the entity
-// actually exposed).
+// wireKeyOf returns the JSON wire key for a schema field under the
+// handlers' casing jc: WireName verbatim when set, else the DB column
+// name (crud.CaseSnake) or its camelCase (anything else), which is what
+// crud's convertKey answers for the same case. This is the single
+// wire-key resolution used by every OpenAPI surface that names a field,
+// response properties, the required list, the ?fields= projection
+// description, and excludeFieldsByBehavior (request-schema exclusion).
+// Routing every surface through one function prevents the class of bug
+// where one surface advertises bodyText (camelCase of Name) while the
+// runtime accepts content (the WireName the entity actually exposed).
 //
 // Filter and sort parameters are a DELIBERATE exception: the filter
 // parser (framework/filter) matches against the raw DB column name plus
 // a WireName alias, never the camelCase form, so those params use
-// f.Name / f.WireName directly rather than this helper. Sharing
-// framework/crud's convertKey is impossible here: it is a method on
-// CrudHandler that depends on the per-handler JSONCase config, which
-// the OpenAPI builder (registry-only, no handler instance) does not
-// see. The OpenAPI builder assumes the default camelCase casing, which
-// is what convertKey returns when JSONCase is CaseCamel (the default).
-func wireKeyOf(f schema.Field) string {
+// f.Name / f.WireName directly rather than this helper.
+func wireKeyOf(f schema.Field, jc crud.JSONCase) string {
 	if f.WireName != "" {
 		return f.WireName
 	}
-	return casing.ToCamel(f.Name)
+	return columnKey(f.Name, jc)
+}
+
+// columnKey is a column's wire key under jc when no WireName applies.
+func columnKey(col string, jc crud.JSONCase) string {
+	if jc == crud.CaseSnake {
+		return col
+	}
+	return casing.ToCamel(col)
 }
 
 // recordKey returns the path naming one record of ent under path, and
@@ -970,16 +1007,16 @@ func wireKeyOf(f schema.Field) string {
 // A one-column key is the path's {id} and the item's key column; a
 // composite key takes one path segment per column (crud.KeyPath), each
 // named after its column's wire key.
-func recordKey(ent *entity.Entity, path string) (string, map[string]any, []string) {
+func recordKey(ent *entity.Entity, path string, jc crud.JSONCase) (string, map[string]any, []string) {
 	cols := ent.KeyColumns()
 	props := make(map[string]any, len(cols))
 	req := make([]string, 0, len(cols))
 	rec := path
 	for _, c := range cols {
-		w := casing.ToCamel(c)
+		w := columnKey(c, jc)
 		for _, f := range ent.GetFields() {
 			if f.Name == c {
-				w = wireKeyOf(f)
+				w = wireKeyOf(f, jc)
 			}
 		}
 		props[w] = map[string]any{"type": "string"}

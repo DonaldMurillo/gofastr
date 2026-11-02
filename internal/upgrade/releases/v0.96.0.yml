@@ -643,7 +643,7 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
-  - change: "AppConfig.JSONCase: crud.CaseSnake reaches the App.Entity, App.GroupEntity and App.View routes again: since v0.94.0 they answered camelCase keys in a snake_case app"
+  - change: "AppConfig.JSONCase: crud.CaseSnake reaches the App.Entity, App.GroupEntity and App.View routes again (since v0.94.0 they answered camelCase keys in a snake_case app), and /openapi.json names those fields by their column names too (it always camelCased them)"
     breaking: false
     nodetect: "the case is AppConfig data and the keys live in the app's clients"
     guidance: "A snake_case app's REST bodies use the column names again, as entity-declarations.md documents. A client written against the camelCase keys those routes served since v0.94.0 reads and sends the column names instead. Apps on the default camelCase change nothing."
