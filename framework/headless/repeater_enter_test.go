@@ -40,30 +40,8 @@ func TestRepeaterDefaultButtonCarriesNoOperation(t *testing.T) {
 func TestE2E_RepeaterEnterSubmitsTheHostDefault(t *testing.T) {
 	body := `<form id="rf" method="post" action="/save">` + string(enterRepeater()) +
 		`<button id="save" type="submit" name="intent" value="save">Save</button></form>`
-	b := startBehaviorServer(t, body)
-	ctx := behaviorPage(t, b)
-	if !pollTrue(ctx, controlsLoadedExpr(CollectionsBehaviorName)) {
-		t.Fatal("the repeater marker never loaded headless-collections")
-	}
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.getElementById('rf').addEventListener('submit', (e) => {
-			e.preventDefault();
-			const fd = new FormData(e.target, e.submitter);
-			window.__by = (e.submitter ? (e.submitter.id || 'nameless') : 'none') +
-				'|remove=' + String(fd.getAll('remove')) + '|intent=' + String(fd.getAll('intent'));
-		})`, nil),
-		chromedp.Focus(`#l1`, chromedp.ByID),
-		chromedp.KeyEvent("\r"),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if !pollTrue(ctx, `window.__by !== undefined`) {
-		t.Fatal("Enter submitted nothing")
-	}
-	var got string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__by`, &got)); err != nil {
-		t.Fatal(err)
-	}
+	got := enterInRepeaterRow(t, body, "l1", `(e.submitter ? (e.submitter.id || 'nameless') : 'none') +
+		'|remove=' + String(fd.getAll('remove')) + '|intent=' + String(fd.getAll('intent'))`)
 	if got != "save|remove=|intent=save" {
 		t.Fatalf("Enter in row 1's field submitted %q, want the form's Save with no remove", got)
 	}
@@ -73,6 +51,17 @@ func TestE2E_RepeaterEnterSubmitsTheHostDefault(t *testing.T) {
 // default's nameless submission: still no Remove.
 func TestE2E_RepeaterEnterWithNoHostButtonRemovesNothing(t *testing.T) {
 	body := `<form id="rf" method="post" action="/save">` + string(enterRepeater()) + `</form>`
+	got := enterInRepeaterRow(t, body, "l0", `'remove=' + String(fd.getAll('remove')) + '|add=' + String(fd.getAll('add'))`)
+	if got != "remove=|add=" {
+		t.Fatalf("Enter in row 0's field submitted %q, want no operation", got)
+	}
+}
+
+// enterInRepeaterRow serves body, presses Enter in the field with id
+// field, and returns what the #rf submit listener recorded: the JS
+// expression record, evaluated with fd as the submission's FormData.
+func enterInRepeaterRow(t *testing.T, body, field, record string) string {
+	t.Helper()
 	b := startBehaviorServer(t, body)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, controlsLoadedExpr(CollectionsBehaviorName)) {
@@ -82,9 +71,9 @@ func TestE2E_RepeaterEnterWithNoHostButtonRemovesNothing(t *testing.T) {
 		chromedp.Evaluate(`document.getElementById('rf').addEventListener('submit', (e) => {
 			e.preventDefault();
 			const fd = new FormData(e.target, e.submitter);
-			window.__by = 'remove=' + String(fd.getAll('remove')) + '|add=' + String(fd.getAll('add'));
+			window.__by = `+record+`;
 		})`, nil),
-		chromedp.Focus(`#l0`, chromedp.ByID),
+		chromedp.Focus(`#`+field, chromedp.ByID),
 		chromedp.KeyEvent("\r"),
 	); err != nil {
 		t.Fatal(err)
@@ -96,7 +85,5 @@ func TestE2E_RepeaterEnterWithNoHostButtonRemovesNothing(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__by`, &got)); err != nil {
 		t.Fatal(err)
 	}
-	if got != "remove=|add=" {
-		t.Fatalf("Enter in row 0's field submitted %q, want no operation", got)
-	}
+	return got
 }
