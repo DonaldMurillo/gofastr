@@ -35,7 +35,10 @@ type Storage interface {
 ```
 
 `Save` writes the contents of `r` under `key`; `Get` returns a reader;
-`Delete` removes the object; `Exists` reports presence. Keys are opaque
+`Delete` removes the object; `Exists` reports presence. On the local
+backends a key that names a directory (a prefix such as `uploads/posts`)
+is not an object: `Get` returns `ErrNotFound` (404 through
+`upload.ServeHandler`) and `Exists` reports false. Keys are opaque
 strings the upload layer assigns. A backend rejects a key that escapes
 its namespace (path traversal, empty key) with an error; it does not
 rewrite the key.

@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A directory key is not found on the local storage backends.** `Get`
+  of a prefix such as `uploads/posts` opened the directory, so
+  `upload.ServeHandler` answered 500 for it, and `Exists` reported it as
+  a stored object. Both local backends now return `ErrNotFound` (404)
+  and false. See [storage](framework/docs/content/storage.md).
 - **`file.StripMetadata` cuts PNG and WebP trailers.** Bytes after a PNG's
   IEND chunk or past a WebP's RIFF size were stored whenever the image had
   no metadata chunk to strip, while a JPEG's post-EOI trailer was always
