@@ -721,11 +721,7 @@ func (s *GrantStore) reloadRole(ctx context.Context, role string) error {
 	if err != nil {
 		return err
 	}
-	merged, err := s.mergeBaseline(role, dbPerms, tombstones)
-	if err != nil {
-		return err
-	}
-	s.policy.replacePrepared(role, merged)
+	s.policy.replacePrepared(role, s.mergeBaseline(role, dbPerms, tombstones))
 	return nil
 }
 
@@ -761,11 +757,7 @@ func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 		roles[r] = true
 	}
 	for r := range roles {
-		merged, err := s.mergeBaseline(r, byRole[r], tombstones[r])
-		if err != nil {
-			return err
-		}
-		s.policy.replacePrepared(r, merged)
+		s.policy.replacePrepared(r, s.mergeBaseline(r, byRole[r], tombstones[r]))
 	}
 	return nil
 }
@@ -822,7 +814,17 @@ func (s *GrantStore) allDBPerms(ctx context.Context) (map[string][]Permission, e
 // to every registered reports capability here; subtracting first and
 // expanding afterwards would hand back a capability that was revoked on its
 // own (reports:delete) the next time any replica reloaded the role.
-func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) ([]Permission, error) {
+//
+// A permission a strict policy refuses (a capability this replica's registry
+// does not know, the normal state of a rolling deploy where a newer replica
+// registered and granted it first) is dropped from the result with a
+// warning, never fatal to the role: refusing the whole reload froze the
+// role here, so a revoke issued after the unknown grant never arrived and
+// this replica kept honoring a permission its peers had dropped. Dropping is
+// the fail-closed direction, since a strict replica never matches a
+// capability it refuses. LoadInto keeps refusing at boot, where an operator
+// sees it.
+func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) []Permission {
 	s.fanoutMu.Lock()
 	base := s.baseline[role]
 	s.fanoutMu.Unlock()
@@ -840,11 +842,33 @@ func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission
 			out = append(out, p)
 		}
 	}
-	expanded, err := s.policy.prepareGrants(out)
-	if err != nil {
-		return nil, err
+	return subtractPerms(s.prepareReload(role, out), s.policy.prepareRevokes(tombstones))
+}
+
+// prepareReload is prepareGrants for a reload: a permission the policy
+// refuses is left out, with a warning, instead of refusing the whole set.
+func (s *GrantStore) prepareReload(role string, perms []Permission) []Permission {
+	expanded, err := s.policy.prepareGrants(perms)
+	if err == nil {
+		return expanded
 	}
-	return subtractPerms(expanded, s.policy.prepareRevokes(tombstones)), nil
+	seen := make(map[Permission]bool, len(perms))
+	out := make([]Permission, 0, len(perms))
+	for _, p := range perms {
+		one, err := s.policy.prepareGrants([]Permission{p})
+		if err != nil {
+			slog.Warn("access: reload dropped a grant this replica refuses",
+				slog.String("role", role), slog.Any("err", err))
+			continue
+		}
+		for _, q := range one {
+			if !seen[q] {
+				seen[q] = true
+				out = append(out, q)
+			}
+		}
+	}
+	return out
 }
 
 // revokedTable is the revocation-tombstone table name, derived from the

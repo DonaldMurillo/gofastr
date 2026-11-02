@@ -650,6 +650,12 @@ revoked grant stays revoked on every replica:
   current registry first and subtract tombstones second, so revoking one
   capability it covers (`reports:delete`) keeps it revoked on every
   reload.
+- **A reload leaves out what a strict policy refuses.** A role's DB rows
+  can hold a capability this replica has not registered: a newer replica
+  in a rolling deploy registered and granted it first. A fanout reload
+  drops that grant, with a warning, and applies the rest of the role, so
+  a revoke issued after it still lands. `LoadInto` keeps refusing such a
+  row at boot.
 
 **Consistency window.** Fanout is lossy best-effort. A publish that
 doesn't reach a peer (the peer's queue overflowed, the bus was briefly
