@@ -6,11 +6,13 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/backoff"
@@ -72,6 +74,10 @@ type DBQueue struct {
 	doneRetention time.Duration
 	lastPrune     time.Time
 	backoffMax    time.Duration
+
+	// claimFailing is set while claims fail with anything but ErrNoJob,
+	// so the worker loop logs an outage's onset and recovery once each.
+	claimFailing atomic.Bool
 
 	// now is the clock used for claim timestamps, lease-expiry cutoffs, and
 	// scheduled_at math. Defaults to time.Now; tests substitute a fake clock
@@ -1194,11 +1200,20 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		job, err := q.dequeue(ctx, lane, types)
 		if err != nil {
 			// ErrNoJob is the steady state, sleep briefly and retry.
+			// Anything else (a lost database, a renamed table, a row
+			// the claim cannot decode) stalls every job, so its onset
+			// is logged once, and so is the recovery.
+			if !errors.Is(err, ErrNoJob) && ctx.Err() == nil {
+				q.noteClaimErr(err)
+			} else if errors.Is(err, ErrNoJob) {
+				q.noteClaimOK()
+			}
 			if wait() {
 				return
 			}
 			continue
 		}
+		q.noteClaimOK()
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
 			// No handler, drop the row so it doesn't loop forever.
@@ -1256,6 +1271,21 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
 		}
 		cancel()
+	}
+}
+
+// noteClaimErr logs a claim failure once on its onset, across every worker.
+func (q *DBQueue) noteClaimErr(err error) {
+	if q.claimFailing.CompareAndSwap(false, true) {
+		q.logger.Error("queue: claiming jobs failed; no job runs until this clears (workers retry every poll)",
+			"table", q.table, "err", err)
+	}
+}
+
+// noteClaimOK logs the recovery once after a run of claim failures.
+func (q *DBQueue) noteClaimOK() {
+	if q.claimFailing.CompareAndSwap(true, false) {
+		q.logger.Info("queue: claiming jobs recovered", "table", q.table)
 	}
 }
 

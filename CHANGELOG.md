@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A DBQueue that cannot claim jobs says so.** The worker loop read every
+  claim error as an empty queue, so a lost database, a renamed table or a
+  row the claim cannot decode stopped every job with no log line. The
+  onset is now logged once at ERROR and the recovery once at INFO, as the
+  outbox relay already did.
 - **The outbox no longer drops an event for a consumer whose delivery
   was not created yet.** Each consumer's deliveries are expanded in their
   own batch, so with two relays, or a backlog older than the handler

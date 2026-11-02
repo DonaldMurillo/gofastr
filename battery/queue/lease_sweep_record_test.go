@@ -51,4 +51,3 @@ func assertLeaseSweepRecords(t *testing.T, q *DBQueue) {
 		t.Errorf("updated_at %s, want the sweep's %s", j.UpdatedAt, clock)
 	}
 }
-
