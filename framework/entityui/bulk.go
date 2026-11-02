@@ -589,11 +589,18 @@ func (u *UI) bulkHost() BulkHost {
 // tallies and the run's id (the snapshot id of a queued run); creator
 // names a queued run's confirming user, whose context may be gone by the
 // time it finishes. A host with no audit log writes nothing.
+//
+// The row records writes already made, so it is written on ctx's values
+// minus its cancellation, bounded by bulkSettleTimeout: on the request's
+// own context a client that hung up mid-run cancelled it and the run left
+// no summary row.
 func (u *UI) auditBulk(ctx context.Context, m *meta, runID, action, creator string, count int, t bulkTally, status string) error {
 	bh := u.bulkHost()
 	if bh == nil {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+	defer cancel()
 	detail := map[string]any{
 		"action": action, "count": count, "status": status,
 		"done": t.done, "skipped": t.skipped, "failed": t.failed,
@@ -898,11 +905,15 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 	held := false
 	// A call that fails while holding the lease hands it back (renewed to
 	// end now), so the JobRunner's retry need not wait it out. A runner
-	// that dies keeps it until it runs out.
+	// that dies keeps it until it runs out. The hand-back is detached
+	// (a cancelled worker still releases) and bounded (a store that
+	// blocks cannot hold the worker past bulkSettleTimeout).
 	defer func() {
 		if err != nil && held && !errors.Is(err, ErrBulkLeaseLost) {
 			now := u.now()
-			if _, rerr := store.Claim(context.WithoutCancel(ctx), id, runner, now, now); rerr != nil {
+			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+			defer cancel()
+			if _, rerr := store.Claim(rctx, id, runner, now, now); rerr != nil {
 				slog.WarnContext(ctx, "entityui: bulk lease release", "entity", m.name, "job", id, "error", rerr)
 			}
 		}
