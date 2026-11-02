@@ -52,6 +52,14 @@ func (e *beforeHookError) Unwrap() error { return e.err }
 // refusal from a failure.
 func IsHookRefusal(err error) bool {
 	_, ok := errors.AsType[*beforeHookError](err)
+	return ok && !isHookPanic(err)
+}
+
+// isHookPanic reports whether err carries a hook that panicked. A panic
+// is the hook faulting, not refusing: it answers 500, and its value,
+// whatever the hook held at the time, never reaches the client.
+func isHookPanic(err error) bool {
+	_, ok := errors.AsType[*hook.PanicError](err)
 	return ok
 }
 
@@ -1324,6 +1332,12 @@ func crudRefusal(ctx context.Context, err error) refusal {
 	// refusal fails its write with the conflict, not a 400.
 	if errors.Is(err, ErrReentrantMove) {
 		return phraseRefusal(ctx, http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
+	}
+	if isHookPanic(err) {
+		// Ahead of the hook arm and of every message sniff below: the
+		// panic text is not the caller's to read, whatever it says.
+		logf("crud: internal error: %v", err)
+		return phraseRefusal(ctx, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		// The hook's own wording, or its phrase when it returned one.

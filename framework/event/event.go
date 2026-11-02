@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 )
 
 // Pre-defined event types for entity lifecycle.
@@ -282,6 +283,14 @@ func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 	// webhook bridge's subscriber query, so a committed write lost its
 	// webhook. Keep the values, drop the cancel, bound each run.
 	ctx = context.WithoutCancel(ctx)
+	// Nor the emitter's transaction. A subscriber runs on another
+	// goroutine, after or beside the tx owner: App.InTx or a CRUD write
+	// on the inherited context joined that tx, failing with "transaction
+	// has already been committed" once the owner committed (the
+	// subscriber's write lost), or, while it was still open, sending
+	// statements on the owner's one connection from a second goroutine
+	// (#353) and committing or rolling back with someone else's request.
+	ctx = db.WithoutTx(ctx)
 	go func() {
 		// The tap runs inside the goroutine so a (best-effort, normally
 		// fast) Publish on the fanout can't add latency to the

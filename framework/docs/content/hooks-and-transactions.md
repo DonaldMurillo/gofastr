@@ -28,6 +28,11 @@ A Before hook that returns an error refuses the write: the HTTP handlers
 answer 400, and an in-process caller (`CreateOne`, `UpdateOne`,
 `DeleteOne`) gets an error `crud.IsHookRefusal` reports true for.
 
+A hook that panics has faulted rather than refused. The registry
+recovers it, logs the value and stack, and returns a `*hook.PanicError`;
+the write rolls back and the HTTP handlers answer 500 with the generic
+body, never the panic value, and `crud.IsHookRefusal` reports false.
+
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
 hook that fills in or normalizes a field mutates the body the validator
 then checks; use them to supply server-derived values that must pass
@@ -449,6 +454,10 @@ change the stored row (Create/Update has already committed it) but DO redact
 the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
 path. See "Redaction implication" below for the surfaces this covers.
+
+`T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
+models use) or snake_case (`json:"is_admin"`): the payload is offered
+under both spellings, and a change lands back on the payload's own key.
 
 The body `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` decode has already had
 its form values cleaned (entity-declarations.md, "Blank form values"),

@@ -797,3 +797,15 @@ notes:
     breaking: false
     guidance: "Each Allow always rule saved before this release names no directory and prompts once more; answer it again in each checkout that should keep it. An embedder that builds its own permission.Engine sets WorkingDir to keep rules per directory; left empty, rules saved with an empty WorkingDir behave as before."
     nodetect: "the rules live in the harness's persisted permission file, not in app source"
+  - change: "A Before hook that panics fails the write with 500 and the generic body; it used to answer 400 with \"hook panic: <value>\", and crud.IsHookRefusal now reports false for it"
+    breaking: false
+    guidance: "A client that read a 400 for a hook panic now reads 500. A hook that means to refuse a write returns an error instead of panicking."
+    nodetect: "a panic inside a hook is a runtime behaviour, not a source shape"
+  - change: "Typed write hooks (OnBeforeCreate[T], OnBeforeUpdate[T], OnAfterCreate[T], OnAfterUpdate[T]) fill a field tagged in snake_case (json:\"is_admin\") from the payload; it used to stay at its zero value, so an override or redaction on it did nothing"
+    breaking: false
+    guidance: "A hook on a snake-tagged T now reads the client's value where it read the zero value, and its writes to that field take effect. Check hooks that relied on the field reading as zero."
+    nodetect: "which hooks are affected depends on the json tags of the type a hook is instantiated with"
+  - change: "An EventBus.EmitAsync subscriber's context no longer carries the emitter's database transaction; its writes through App.InTx or CRUD calls run in a transaction of their own"
+    breaking: false
+    guidance: "A subscriber whose write used to fail with \"transaction has already been committed\" now succeeds. A subscriber that needs the emitter's transaction runs synchronously (Emit), on the emitter's goroutine."
+    nodetect: "whether a subscriber writes through the inherited context is runtime behaviour"

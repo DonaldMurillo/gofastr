@@ -199,6 +199,29 @@ few lines, and link the PR or the docs page for the rest.
   applied. A reference now reads an earlier file's value, then the same
   file's earlier keys, then `os.Environ`. `dotenv.Parse` alone still
   reads no environment. See [dotenv](framework/docs/content/dotenv.md).
+- **An `EmitAsync` subscriber no longer joins the emitter's
+  transaction.** The subscriber's context kept every emitter value,
+  the open `*sql.Tx` included, so a subscriber that wrote through
+  `App.InTx` or a CRUD call for an event emitted inside a transaction
+  joined it from another goroutine: after the commit its write failed
+  with "transaction has already been committed" and was lost, and before
+  it the write shared the request's connection and its fate. The
+  subscriber's context drops the transaction and keeps the other values.
+- **Typed hooks see fields tagged in snake_case.** `OnBeforeCreate[T]`
+  and the other typed write hooks decoded the payload with camelCase
+  keys only, so a `T` field tagged `json:"is_admin"` read its zero value.
+  A Before hook forcing `IsAdmin = false` compared equal to that zero and
+  was skipped, so the client's `true` was written; an After hook clearing
+  an `api_key` field left it in the response. The payload is now offered
+  under its own, camelCase and snake_case spellings.
+- **A panicking Before hook answers 500, not 400 with its panic value.**
+  The hook registry turned a panic into `hook panic: <value>`, and the
+  CRUD routes answered every Before hook error with 400 and its text, so
+  whatever the hook held when it faulted (a DSN, a query) reached the
+  client and the fault read as the caller's mistake. A recovered panic is
+  now a `*hook.PanicError`, logged with its stack; create, update, delete
+  and batch items answer it with the generic 500 body, and
+  `crud.IsHookRefusal` reports false for it.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
