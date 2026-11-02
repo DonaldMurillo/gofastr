@@ -611,10 +611,13 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 		// and now another path (Ack, Nack, release) may have transitioned the
 		// row, the sweep must never dead-letter a claim that is no longer
 		// expired-and-final.
+		// It records when and why, as every other settle does: left
+		// alone, the row listed the claim's updated_at and an earlier
+		// attempt's error, so a crashed worker read as a handler failure.
 		res, err := q.db.ExecContext(ctx, fmt.Sprintf(
-			`UPDATE %s SET status='failed'
-			WHERE id=$1 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $2
-			AND attempts >= max_attempts`, q.qt()), s.id, cutoff)
+			`UPDATE %s SET status='failed', updated_at=$1, last_error=$2
+			WHERE id=$3 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4
+			AND attempts >= max_attempts`, q.qt()), q.now().UTC(), leaseExpiredError, s.id, cutoff)
 		if err != nil {
 			return err
 		}
@@ -628,6 +631,10 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 	}
 	return nil
 }
+
+// leaseExpiredError is the LastError the dead-letter sweep records on a
+// final-attempt claim whose lease ran out.
+const leaseExpiredError = "lease expired on the final attempt: the worker stopped (crash, kill, or a handler that outran the lease) before it settled the job"
 
 // pruneDone deletes done jobs older than the retention, at most once per
 // donePruneEvery. The terminal status guard is its fence: a done row has

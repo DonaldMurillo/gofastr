@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A DBQueue job dead-lettered by lease expiry says so.** The sweep that
+  fails a final-attempt claim whose worker died wrote only the status: the
+  job listed with its claim's `updated_at` and an earlier attempt's
+  `last_error`, or none. It now records the sweep time and a `last_error`
+  naming the lease expiry.
 - **An erasure drops the job a `MemoryQueue` worker is running.** A job a
   `Start` worker had taken off the heap sat in no store the erasure read,
   so it was not counted, and when its handler failed the worker put the
