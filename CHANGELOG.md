@@ -157,6 +157,12 @@ few lines, and link the PR or the docs page for the rest.
   `integer` property and filter now, as crud stores, answers and parses
   it; a key to a text slug or other non-uuid key drops the `uuid`
   format no value of it met.
+- **`/openapi.json` lists the refusals the routes answer.** The CRUD
+  writes gain 409 (a unique value taken, a missing or still-referencing
+  record), 413 and 415; a declared endpoint gains its gate's 401 and its
+  cross-site 403, typed by a new `GateError` schema, since that gate
+  nests the refusal under `error` where the CRUD routes' `Error` keeps it
+  flat. The SDK docs' errors page names 409, 415 and the second shape.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

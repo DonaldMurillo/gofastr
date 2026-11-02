@@ -218,6 +218,9 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 	// Track whether any entity is auth-gated so the shared security
 	// schemes are registered once after the loop, not per entity.
 	anyGated := false
+	// gateRefusals records whether a declared endpoint's gate can refuse,
+	// so the GateError schema its 401 and 403 reference is registered.
+	gateRefusals := false
 	// components names every unversioned entity this document emits a
 	// schema for, so an endpoint's Returns can reference it.
 	components := map[string]bool{}
@@ -316,9 +319,9 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")
 			}
-			if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) {
-				anyGated = true
-			}
+			gatedEP, refusing := addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components)
+			anyGated = anyGated || gatedEP
+			gateRefusals = gateRefusals || refusing
 			continue
 		}
 
@@ -502,6 +505,8 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
+		createOp.AddResponse(409, "A unique value is already taken, or a relation names a record that does not exist", errorRef)
+		addBodyRefusals(createOp, errorRef)
 		if statesGuarded {
 			createOp.AddResponse(422, "Tried to set the state field to a non-initial value, or to set a stamp", stateErrRef)
 		}
@@ -541,6 +546,8 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, scopeSkip, true, jc), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
+		updateOp.AddResponse(409, "A unique value is already taken, or a relation names a record that does not exist", errorRef)
+		addBodyRefusals(updateOp, errorRef)
 		if statesGuarded {
 			updateOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
 		}
@@ -562,6 +569,8 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
+		patchOp.AddResponse(409, "A unique value is already taken, or a relation names a record that does not exist", errorRef)
+		addBodyRefusals(patchOp, errorRef)
 		if statesGuarded {
 			patchOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
 		}
@@ -589,6 +598,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			deleteOp.AddSecurity("cookieAuth", nil)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
+		deleteOp.AddResponse(409, "Other records still reference this one", errorRef)
 		s.AddPath("DELETE", recPath, *deleteOp)
 
 		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
@@ -657,6 +667,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		batchCreateOp.SetRequestBody("application/json", batchCreateBody, true)
 		batchCreateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchCreateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		addBodyRefusals(batchCreateOp, errorRef)
 		if gated {
 			batchCreateOp.AddResponse(401, "Authentication required", errorRef)
 			batchCreateOp.AddResponse(403, "Forbidden", errorRef)
@@ -707,6 +718,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		batchUpdateOp.SetRequestBody("application/json", batchUpdateBody, true)
 		batchUpdateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchUpdateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		addBodyRefusals(batchUpdateOp, errorRef)
 		if gated {
 			batchUpdateOp.AddResponse(401, "Authentication required", errorRef)
 			batchUpdateOp.AddResponse(403, "Forbidden", errorRef)
@@ -756,6 +768,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		batchDeleteOp.SetRequestBody("application/json", batchDeleteBody, true)
 		batchDeleteOp.AddResponse(200, "All items committed", batchRespRef)
 		batchDeleteOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		addBodyRefusals(batchDeleteOp, errorRef)
 		if gated {
 			batchDeleteOp.AddResponse(401, "Authentication required", errorRef)
 			batchDeleteOp.AddResponse(403, "Forbidden", errorRef)
@@ -767,9 +780,9 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
-		if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) {
-			anyGated = true
-		}
+		gatedEP, refusing := addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components)
+		anyGated = anyGated || gatedEP
+		gateRefusals = gateRefusals || refusing
 	}
 
 	// When at least one entity is auth-gated, advertise how callers
@@ -779,6 +792,22 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 	// entities unmarked. This is deliberately NOT a global security
 	// requirement (Spec.AddSecurityRequirement), that would hide the
 	// fact that ungated entities are anonymously reachable.
+	if gateRefusals {
+		// endpointRoute refuses through core/handler.WriteError, whose
+		// envelope nests the refusal under "error"; the CRUD routes'
+		// Error schema keeps it flat.
+		detail := objectSchemaWith(map[string]any{
+			"code":          map[string]any{"type": "integer"},
+			"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); message is its text in the request's locale."},
+			"message":       map[string]any{"type": "string"},
+			"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+			"field_reasons": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		})
+		detail["required"] = []string{"code", "message"}
+		gateErr := objectSchemaWith(map[string]any{"error": detail, "success": map[string]any{"type": "boolean"}})
+		gateErr["required"] = []string{"error", "success"}
+		s.AddSchema("GateError", gateErr)
+	}
 	if anyGated {
 		// "__Host-session" is the production default the auth battery
 		// sets in battery/auth/manager.go AuthConfig.defaults()
@@ -1108,13 +1137,21 @@ func hasCustomEndpoints(ent *entity.Entity) bool {
 	return false
 }
 
+// addBodyRefusals documents what a JSON-body write answers before it
+// reads the body: 413 past the body cap, 415 for a body that is not JSON.
+func addBodyRefusals(op *openapi.Operation, errorRef map[string]any) {
+	op.AddResponse(413, "Request body too large", errorRef)
+	op.AddResponse(415, "Content-Type must be application/json", errorRef)
+}
+
 // addCustomEndpoints emits an entity's hand-written Endpoints. Split out
 // of the main loop because it runs on both sides of the auto-CRUD
 // opt-out: the router mounts these endpoints regardless of
 // Exposure.CRUD, so the spec advertises them regardless too. It reports
-// whether any operation it emitted requires a caller.
-func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) bool {
-	gated := false
+// whether any operation it emitted requires a caller, and whether any
+// references the GateError schema its gate refuses with.
+func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) (gated, refusing bool) {
+	gateErrRef := map[string]any{"$ref": "#/components/schemas/GateError"}
 	for _, endpoint := range ent.Config.Endpoints {
 		if endpoint.Method == "" || endpoint.Path == "" {
 			continue
@@ -1159,7 +1196,16 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		if !endpoint.Public {
 			customOp.AddSecurity("bearerAuth", nil)
 			customOp.AddSecurity("cookieAuth", nil)
-			gated = true
+			customOp.AddResponse(401, "Authentication required", gateErrRef)
+			gated, refusing = true, true
+		}
+		// Every method but GET, HEAD and OPTIONS refuses a forged
+		// cross-site form post first, Public or not.
+		switch strings.ToUpper(endpoint.Method) {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			customOp.AddResponse(403, "A cross-site form post", gateErrRef)
+			refusing = true
 		}
 		out := EndpointOutputSchema(endpoint)
 		if len(endpoint.OutputSchema) == 0 {
@@ -1174,5 +1220,5 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		customOp.AddResponse(200, "OK", out)
 		s.AddPath(endpoint.Method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
 	}
-	return gated
+	return gated, refusing
 }

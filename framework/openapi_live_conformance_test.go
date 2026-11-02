@@ -348,3 +348,82 @@ func TestOpenAPI_RelationFieldsTypedByTargetKey(t *testing.T) {
 		}
 	})
 }
+
+// Every refusal a route answers is a response the document lists, in the
+// body shape it sends. The CRUD writes answered 415 (a body that is not
+// JSON), 413 (a body over the cap) and 409 (a unique value taken, a
+// record still referenced) undocumented, and a declared endpoint's gate
+// answered 401 and 403 in core/handler's nested envelope while its
+// operation listed 200 alone.
+func TestOpenAPI_DocumentsEveryRefusalTheRoutesAnswer(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithPublicOpenAPI())
+		ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+		})
+		app.Entity("people", entity.EntityConfig{
+			Table: "people",
+			Fields: []schema.Field{
+				{Name: "email", Type: schema.String, Required: true, Unique: true},
+			},
+			Endpoints: []entity.Endpoint{
+				{Method: "GET", Path: "summary", Handler: ok},
+				{Method: "POST", Path: "{id}/ping", Handler: ok},
+			},
+		})
+		app.Entity("pets", entity.EntityConfig{
+			Table: "pets",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String, Required: true},
+				{Name: "owner_id", Type: schema.Relation, To: "people", Required: true},
+			},
+		})
+		doc := servedSpecApp(t, db, app)
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		anon := TestHarness(t, app)
+
+		var person map[string]any
+		_ = ta.Post("/people", map[string]any{"email": "a@x.test"}).JSON(&person)
+		pid := person["data"].(map[string]any)["id"].(string)
+		ta.Post("/pets", map[string]any{"name": "rex", "ownerId": pid}).AssertStatus(t, http.StatusCreated)
+
+		plain := func(method, path, body string) *TestResponse {
+			return ta.Request(method, path, strings.NewReader(body)).WithHeader("Content-Type", "text/plain").Execute()
+		}
+		huge := `{"email":"` + strings.Repeat("a", 2<<20) + `"}`
+		big := func(method, path string) *TestResponse {
+			return ta.Request(method, path, strings.NewReader(huge)).WithHeader("Content-Type", "application/json").Execute()
+		}
+		cases := []struct {
+			path, method string
+			resp         *TestResponse
+			want         int
+		}{
+			{"/people", "post", plain(http.MethodPost, "/people", `{"email":"b@x.test"}`), http.StatusUnsupportedMediaType},
+			{"/people/{id}", "put", plain(http.MethodPut, "/people/"+pid, `{"email":"b@x.test"}`), http.StatusUnsupportedMediaType},
+			{"/people/{id}", "patch", plain(http.MethodPatch, "/people/"+pid, `{"email":"b@x.test"}`), http.StatusUnsupportedMediaType},
+			{"/people/_batch", "post", plain(http.MethodPost, "/people/_batch", `{"items":[]}`), http.StatusUnsupportedMediaType},
+			{"/people/_batch", "patch", plain(http.MethodPatch, "/people/_batch", `{"items":[]}`), http.StatusUnsupportedMediaType},
+			{"/people/_batch", "delete", plain(http.MethodDelete, "/people/_batch", `{"ids":[]}`), http.StatusUnsupportedMediaType},
+			{"/people", "post", big(http.MethodPost, "/people"), http.StatusRequestEntityTooLarge},
+			{"/people/{id}", "put", big(http.MethodPut, "/people/"+pid), http.StatusRequestEntityTooLarge},
+			{"/people/{id}", "patch", big(http.MethodPatch, "/people/"+pid), http.StatusRequestEntityTooLarge},
+			{"/people/_batch", "post", big(http.MethodPost, "/people/_batch"), http.StatusRequestEntityTooLarge},
+			{"/people/_batch", "patch", big(http.MethodPatch, "/people/_batch"), http.StatusRequestEntityTooLarge},
+			{"/people/_batch", "delete", big(http.MethodDelete, "/people/_batch"), http.StatusRequestEntityTooLarge},
+			{"/people", "post", ta.Post("/people", map[string]any{"email": "a@x.test"}), http.StatusConflict},
+			{"/people/{id}", "delete", ta.Delete("/people/" + pid), http.StatusConflict},
+			{"/people/summary", "get", anon.Get("/people/summary"), http.StatusUnauthorized},
+			{"/people/{id}/ping", "post", anon.Request(http.MethodPost, "/people/"+pid+"/ping", strings.NewReader("{}")).WithHeader("Content-Type", "application/json").Execute(), http.StatusUnauthorized},
+			{"/people/{id}/ping", "post", ta.Request(http.MethodPost, "/people/"+pid+"/ping", strings.NewReader("x")).WithHeader("Content-Type", "text/plain").WithHeader("Sec-Fetch-Site", "cross-site").Execute(), http.StatusForbidden},
+		}
+		for _, c := range cases {
+			if c.resp.Status() != c.want {
+				t.Errorf("%s %s answered %d, want %d (the fixture no longer reaches the refusal): %s", strings.ToUpper(c.method), c.path, c.resp.Status(), c.want, c.resp.Body())
+				continue
+			}
+			conformsResponse(t, doc, c.path, c.method, c.resp)
+		}
+	})
+}
