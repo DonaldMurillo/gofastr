@@ -587,6 +587,12 @@ few lines, and link the PR or the docs page for the rest.
   `openapi.EntityOpenAPIFor(registry, openapi.Options{…, JSONCase})`
   takes the case; `EntityOpenAPI` and `EntityOpenAPIWithBulk` keep
   camelCase.
+- **kiln's live studio documents the routes it serves.** Its
+  `/openapi.json` and API browser camelCased every field and left out
+  the `api_prefix`, so a `json_case: snake` world's document named keys
+  and paths its routes do not answer. It now serves the new
+  `App.OpenAPISpec(title)`, the document `App.Start` serves, built from
+  the app's `APIPrefix`, `JSONCase` and mounted routes.
 - **`/openapi.json` types a relation field by the key it names.** Every
   relation was a `uuid` string. A foreign key to an `int` key is an
   `integer` property and filter now, as crud stores, answers and parses
