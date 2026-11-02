@@ -163,6 +163,59 @@ func newErrorResponse(id any, code int, message string) Response {
 	}
 }
 
+// LatestProtocolVersion is the newest MCP protocol revision this server
+// speaks, the version initialize answers when the client asks for one
+// the server does not support.
+const LatestProtocolVersion = "2025-06-18"
+
+// supportedProtocolVersions lists the revisions initialize will echo,
+// newest first.
+//
+//   - 2025-06-18: the revision the server is written against.
+//   - 2025-03-26: every method and result shape the server serves exists
+//     in it; the newer fields (structuredContent, outputSchema, _meta)
+//     are additions a 2025-03-26 client ignores. One gap: that revision
+//     has clients MAY send JSON-RPC batches and servers MUST accept
+//     them, and this server answers a batch with an invalid-request
+//     error (2025-06-18 removed batching).
+//
+// 2024-11-05 is left off: its HTTP transport (HTTP+SSE) answers each
+// POST with 202 and delivers the response on the SSE stream, and this
+// server answers in the POST body, so a 2024-11-05 HTTP client would
+// wait on the stream for a response that never comes there.
+var supportedProtocolVersions = []string{LatestProtocolVersion, "2025-03-26"}
+
+// SupportedProtocolVersions returns the MCP protocol revisions the
+// server negotiates in initialize, newest first. The slice is a copy.
+func SupportedProtocolVersions() []string {
+	return append([]string(nil), supportedProtocolVersions...)
+}
+
+// negotiateProtocolVersion picks the version initialize answers, per
+// MCP 2025-06-18, Lifecycle, Version Negotiation: the client's requested
+// protocolVersion when the server supports it, otherwise the newest the
+// server supports. Missing params, a missing, empty or non-string
+// protocolVersion, and an unknown version all get the newest; the
+// client then decides whether it can speak it.
+func negotiateProtocolVersion(params json.RawMessage) string {
+	var p struct {
+		ProtocolVersion json.RawMessage `json:"protocolVersion"`
+	}
+	if len(params) == 0 || json.Unmarshal(params, &p) != nil {
+		return LatestProtocolVersion
+	}
+	var requested string
+	if json.Unmarshal(p.ProtocolVersion, &requested) != nil {
+		return LatestProtocolVersion
+	}
+	for _, v := range supportedProtocolVersions {
+		if v == requested {
+			return v
+		}
+	}
+	return LatestProtocolVersion
+}
+
 // handleInitialize returns the MCP initialize result: the protocol
 // version, the server's capabilities (tools), and serverInfo. It is the
 // first call a spec-compliant MCP client makes.
@@ -182,7 +235,7 @@ func (s *Server) handleInitialize(req Request) Response {
 		capabilities["prompts"] = map[string]any{"listChanged": true}
 	}
 	return newSuccessResponse(req.ID, map[string]any{
-		"protocolVersion": "2025-06-18",
+		"protocolVersion": negotiateProtocolVersion(req.Params),
 		"capabilities":    capabilities,
 		"serverInfo":      map[string]any{"name": name, "version": version},
 	})

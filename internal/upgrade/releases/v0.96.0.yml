@@ -647,3 +647,7 @@ notes:
     breaking: false
     guidance: "Clients that subscribe and unsubscribe under one identity see no change. A client that unsubscribed on another identity's behalf must send the unsubscribe as that identity."
     nodetect: "the change is in the server's handling of a wire method; nothing in an app's source spells it"
+  - change: "MCP initialize echoes the client's requested protocolVersion when the server supports it (2025-06-18, 2025-03-26) instead of always answering 2025-06-18; any other or missing version still gets 2025-06-18"
+    breaking: false
+    guidance: "A 2025-03-26 client now gets 2025-03-26 back. Hosts that asserted the handshake reply was always 2025-06-18 should compare against mcp.SupportedProtocolVersions()."
+    nodetect: "the change is in the server's answer to a wire method; nothing in an app's source spells it"

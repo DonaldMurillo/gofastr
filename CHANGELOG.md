@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **MCP `initialize` negotiates the protocol version.** It answered
+  `2025-06-18` whatever the client asked for. Per the 2025-06-18
+  Lifecycle spec it now echoes a requested version the server supports
+  (`2025-06-18`, `2025-03-26`) and otherwise answers the newest.
+  `mcp.LatestProtocolVersion` and `mcp.SupportedProtocolVersions()` are
+  new exports.
 - **The MCP notification stream's `endpoint` event names its mount
   path.** `ServeSSE(path)` opened every GET stream with
   `event: endpoint` / `data: /sse` whatever `path` was, so a client that
