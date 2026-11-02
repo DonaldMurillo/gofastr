@@ -651,12 +651,20 @@ entities:
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
 
-A `decimal` column is `DECIMAL(19,4)`. Postgres stores every digit of
-that. SQLite has no exact decimal type: it stores the value as an
-integer, or as a 64-bit float past about 15 significant digits, so
-`"90071992547409.1234"` reads back rounded there. Keep money that needs
-all 19 digits on Postgres, or store it as an `int` count of the smallest
-unit.
+A `decimal` column is `DECIMAL(19,4)`: up to 15 digits before the point
+and 4 after it. Postgres stores every digit of that. SQLite has no exact
+decimal type: it stores a whole number as an integer and a value with a
+fraction as a 64-bit float, which keeps 15 significant digits. So on
+SQLite a create or update refuses a value with a fraction and more than
+15 significant digits (`"90071992547409.1234"`,
+`"999999999999999.1234"`) with a 400 naming the field, code
+`decimal_significant_digits`, instead of storing it rounded; Postgres
+takes it. Whole numbers up to the column's 15 digits, and values such
+as `"12345678901.2345"`, read back as sent on both. Keep money that
+needs all 19 digits on Postgres, store it as an `int` count of the
+smallest unit, or give the field `RawType: "TEXT"`, which SQLite keeps
+as written (and which then sorts and compares as text).
+`schema.DecimalExactOnSQLite` is the check.
 
 A create or update refuses a `decimal` its column cannot store as sent,
 with a 400 naming the field, on both dialects:

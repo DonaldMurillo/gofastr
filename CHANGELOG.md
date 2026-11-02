@@ -188,6 +188,13 @@ few lines, and link the PR or the docs page for the rest.
   created the row it was asked to update must do that before the call.
   One keyed `SELECT` per write, only when such a hook is registered.
   See `hooks-and-transactions.md`.
+- **BREAKING (SQLite): a `decimal` SQLite would round is refused.** A
+  value with a fraction and more than 15 significant digits
+  (`"999999999999999.1234"` read back `999999999999999.1`) answers 400
+  `decimal_significant_digits` on SQLite instead of storing it rounded.
+  Postgres keeps every digit of `DECIMAL(19,4)` and still takes it. A
+  `RawType: "TEXT"` field is stored as sent. See
+  `entity-declarations.md`; `schema.DecimalExactOnSQLite` is the check.
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep

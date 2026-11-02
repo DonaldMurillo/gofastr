@@ -74,6 +74,9 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	if !vr.Valid {
 		return nil, &ValidationError{fields: vr.Errors}
 	}
+	if err := ch.refuseInexactDecimals(ctx, body); err != nil {
+		return nil, err
+	}
 	if err := ch.refuseBlankKeyParts(body); err != nil {
 		return nil, err
 	}
@@ -270,6 +273,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	vr := schema.ValidatePartial(ch.entitySchema(), body)
 	if !vr.Valid {
 		return nil, &ValidationError{fields: vr.Errors}
+	}
+	if err := ch.refuseInexactDecimals(ctx, body); err != nil {
+		return nil, err
 	}
 
 	// The state field and stamps change only through a move: the stored

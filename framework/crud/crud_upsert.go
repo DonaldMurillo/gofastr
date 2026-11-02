@@ -140,6 +140,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
 		}
+		if err := ch.refuseInexactDecimals(ctx, body); err != nil {
+			return err
+		}
 		if err := ch.refuseBlankKeyParts(body); err != nil {
 			return err
 		}

@@ -69,6 +69,47 @@ func DecimalColumn(f Field) (precision, scale int, bounded bool) {
 	return p, s, true
 }
 
+// SQLiteDecimalDigits is how many significant digits a SQLite column keeps
+// of a decimal with a fraction. SQLite has no exact decimal type: a
+// DECIMAL or NUMERIC column stores such a value as a 64-bit float, which
+// holds any 15 significant digits exactly and not every 16.
+const SQLiteDecimalDigits = 15
+
+// DecimalExactOnSQLite reports whether a SQLite column of type colType
+// (a Decimal field's RawType, or [DecimalColumnType] when it has none)
+// stores the decimal literal s exactly. A column with TEXT or BLOB
+// affinity stores the text as sent. Any other affinity stores a whole
+// number that fits 64 bits as an integer, and anything else as a 64-bit
+// float, which keeps [SQLiteDecimalDigits] significant digits. s is a
+// literal the Decimal validator accepted.
+func DecimalExactOnSQLite(colType, s string) bool {
+	if colType == "" {
+		colType = DecimalColumnType
+	}
+	// SQLite's affinity rules, in its own order (datatype3.html, 3.1).
+	t := strings.ToUpper(colType)
+	if !strings.Contains(t, "INT") && (strings.Contains(t, "CHAR") || strings.Contains(t, "CLOB") || strings.Contains(t, "TEXT") || strings.Contains(t, "BLOB")) {
+		return true
+	}
+	sig, intDigits, fracDigits := decimalSignificant(s)
+	if fracDigits == 0 && intDigits <= 18 {
+		return true
+	}
+	return sig <= SQLiteDecimalDigits
+}
+
+// decimalSignificant is decimalDigits plus the count of significant
+// digits, from the first non-zero digit to the last.
+func decimalSignificant(s string) (sig, intDigits, fracDigits int) {
+	intDigits, fracDigits = decimalDigits(s)
+	s = strings.TrimLeft(s, "+-")
+	if i := strings.IndexAny(s, "eE"); i >= 0 {
+		s = s[:i]
+	}
+	digits := strings.Replace(s, ".", "", 1)
+	return len(strings.Trim(digits, "0")), intDigits, fracDigits
+}
+
 // decimalDigits counts the digits a decimal literal (one decimalRe
 // matched, exponent within ±MaxDecimalExponent) needs on each side of
 // the point once leading integer zeros and trailing fraction zeros are

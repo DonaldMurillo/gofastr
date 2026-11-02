@@ -59,7 +59,9 @@ func TestDecimalWritePastColumnRefused(t *testing.T) {
 	}
 
 	// A value the column holds is stored as sent and reads back as it.
-	code, body := send(http.MethodPost, "/ledger", `{"amount":"999999999999999.1234","rate":"9999.99"}`)
+	// SQLite keeps 15 significant digits of a value with a fraction
+	// (decimal_sqlite_digits_test.go), so the in-range value has 15.
+	code, body := send(http.MethodPost, "/ledger", `{"amount":"99999999999.1234","rate":"9999.99"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("create in range answered %d: %s", code, body)
 	}

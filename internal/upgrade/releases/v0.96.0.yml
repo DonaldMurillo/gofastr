@@ -1088,3 +1088,7 @@ notes:
       uses:
         - gofastr/framework/hook.BeforeUpdate
         - gofastr/framework/hook.BeforeDelete
+  - change: "BREAKING on SQLite - a decimal value with a fraction and more than 15 significant digits is refused with a 400 (decimal_significant_digits) instead of being stored rounded to a 64-bit float"
+    breaking: true
+    guidance: "SQLite has no exact decimal type, so 999999999999999.1234 read back 999999999999999.1. Postgres keeps every digit of DECIMAL(19,4) and is unchanged. Keep such values on Postgres, store an int count of the smallest unit, or set the field's RawType to TEXT (stored as sent, compared as text)."
+    nodetect: "the refused values arrive in request bodies at runtime; nothing in an app's source spells them"

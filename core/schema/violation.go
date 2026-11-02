@@ -73,6 +73,10 @@ var (
 	ReasonDecimalExponent       = i18n.Define("validation.decimal_exponent", "must have an exponent between -{{max}} and {{max}}")
 	ReasonDecimalIntegerDigits  = i18n.Define("validation.decimal_integer_digits", "must have at most {{max}} digits before the decimal point")
 	ReasonDecimalFractionDigits = i18n.Define("validation.decimal_fraction_digits", "must have at most {{max}} digits after the decimal point")
+	// ReasonDecimalSignificantDigits refuses, on SQLite, a decimal with a
+	// fraction the column would keep only as a 64-bit float (see
+	// [DecimalExactOnSQLite]).
+	ReasonDecimalSignificantDigits = i18n.Define("validation.decimal_significant_digits", "must have at most {{max}} significant digits")
 	ReasonNotTrueFalse          = i18n.Define("validation.not_true_false", "must be true or false")
 	ReasonNotBoolean            = i18n.Define("validation.not_boolean", "must be a boolean")
 	ReasonNotOneOf              = i18n.Define("validation.not_one_of", "must be one of {{values}}")
