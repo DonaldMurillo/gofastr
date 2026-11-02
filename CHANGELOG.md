@@ -193,6 +193,17 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`gofastr init .` refuses a symlinked `.env` or settings file, even
+  one inside the project.** The two files it writes a generated secret
+  into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
+  `gofastr.settings.yml`, must be regular files. A link that stayed in
+  the project used to be followed, so in a cloned repo with
+  `.env -> static/robots.txt`, `init . --force` wrote the signing key
+  into a committed, statically served file (a dangling link created it
+  there). Any link at either file is now refused before anything is
+  written, whatever it points at; a link on the way (a linked directory
+  inside the project) is still followed. Replace the link with the file
+  itself. `projectfs.ReplaceOwnerOnly` holds the same rule.
 - **BREAKING: `core/yaml` resolves plain scalars by the YAML 1.2 core
   schema.** It read Go's spellings instead: a hex float (`0x1.8p1`) as
   3, any casing of `true`/`false`/`null` (`tRuE`), and `1_000.5` as a

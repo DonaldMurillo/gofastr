@@ -134,6 +134,20 @@ func RunInit(args []string) {
 			cli.OsExit(1)
 			return
 		}
+		// .env (JWT_SECRET, DATABASE_URL) and the settings file get a
+		// generated secret, and must be regular files: a link there is
+		// refused even when it stays in the project (.env ->
+		// static/robots.txt put the signing key in a served file). The
+		// writer refuses one too; checking here means a refused init
+		// leaves no half-made project.
+		for _, f := range []string{".env", settings.FileName} {
+			if err := projectfs.CheckRegularLeaf(".", f); err != nil {
+				cli.Fail("%v", err)
+				cli.Info("This invocation has not written any files.")
+				cli.OsExit(1)
+				return
+			}
+		}
 		// A go.mod already here names the module every generated import
 		// must use; go mod init cannot replace it, so a local/<dir>
 		// default would leave main.go importing a module that does not

@@ -53,7 +53,11 @@ scrubbed the same way.
   (`static/`, `migrations/`, `entities/`), is followed only while it
   points inside the project, and one that leads out is refused, so
   `init .` in a cloned repo cannot append to a `.gitignore` linked to
-  your shell profile. `init <name> --reinit` or `init . --reinit` refreshes the
+  your shell profile. The two files that get a generated secret, `.env`
+  (`JWT_SECRET`, `DATABASE_URL`) and `gofastr.settings.yml`, must be
+  regular files: a symlink there is refused before anything is written,
+  even one to a file inside the project, since `.env -> static/robots.txt`
+  would put the signing key in a committed, served file. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes, and nothing outside the project:
   a symlinked `AGENTS.md`, `CLAUDE.md` or `DESIGN.md` that leads out of it
