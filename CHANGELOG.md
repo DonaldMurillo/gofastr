@@ -145,7 +145,15 @@ few lines, and link the PR or the docs page for the rest.
     `handler.DecodeStrict`, `jsonexact.Unmarshal` or yaml `Decode`;
   - `recoverlog` and `controlbytes`: `log.Fatal*` / `log.Panic*` (they
     print the message before exiting), and for `recoverlog`
-    `os.Stderr.WriteString`.
+    `os.Stderr.WriteString`;
+  - `worldreadable`: a mode that is constant but not a bare literal —
+    `os.FileMode(0o644)`, a named const, `fs.ModePerm`, `0o600|0o044`;
+  - `unboundedbody` and `unboundedresp`: `ioutil.ReadAll`,
+    `io.CopyBuffer`, `buf.ReadFrom(body)`, a body read through
+    `bufio.NewReader` or a `body := r.Body` alias, and for responses
+    `io.Copy` into anything but `io.Discard`;
+  - `GOFASTR1413`: `Header().Del("Vary")` and `h["Vary"] = …`, which
+    clobber the earlier entries as `Set` does.
 
   Code that passed verify can fail it on upgrade. Fix the finding, or
   mark a site that is the shape on purpose with

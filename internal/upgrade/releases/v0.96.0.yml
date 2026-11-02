@@ -643,6 +643,6 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
-  - change: "gofastr verify widens fixedtmp, timestampid, errleak, discardeddecode, recoverlog and controlbytes to more spellings of the shapes they already refuse"
-    nodetect: "verify findings, not an API: code that builds a /tmp path by concat or Sprintf, mints an id in a struct literal or from time.Now().Format, formats an error into a 5xx body, or drops a strict-decoder error can fail verify where it passed"
+  - change: "gofastr verify widens fixedtmp, timestampid, errleak, discardeddecode, recoverlog, controlbytes, worldreadable, unboundedbody, unboundedresp and GOFASTR1413 to more spellings of the shapes they already refuse"
+    nodetect: "verify findings, not an API: code that builds a /tmp path by concat or Sprintf, mints an id in a struct literal or from time.Now().Format, formats an error into a 5xx body, drops a strict-decoder error, writes a file with os.FileMode(0o644) or a named mode const, reads a body with io.Copy or ReadFrom, or deletes the Vary header can fail verify where it passed"
     guidance: "Run gofastr verify and fix each finding: mint temp names with os.MkdirTemp / os.CreateTemp, ids from crypto/rand, log the error and answer a fixed 5xx message, and check the decode error. A site that is the shape on purpose takes //gofastr:allow(<analyzer>) <reason>."

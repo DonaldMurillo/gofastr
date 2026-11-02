@@ -9,5 +9,5 @@ import (
 )
 
 func TestWorldReadableFiresOnStateSites(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), worldreadable.Analyzer, "a", "b", "c", "d", "e")
+	analysistest.Run(t, analysistest.TestData(), worldreadable.Analyzer, "a", "b", "c", "d", "e", "modes")
 }
