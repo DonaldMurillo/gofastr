@@ -159,9 +159,14 @@ func TestPhoneWebView(t *testing.T) {
 			// Belt and braces: even a request the interceptor missed has
 			// nowhere to go.
 			chromedp.ProxyServer("http://127.0.0.1:9"),
+			// A loaded CI box can take longer than chromedp's default
+			// start waits to bring Chrome up (internal/chromedptest's
+			// launch-allowance gate; that helper is internal, so this
+			// module spells the two allowances itself).
+			chromedp.WSURLReadTimeout(60*time.Second),
 		)...)
 	defer cancelAlloc()
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(60*time.Second)))
 	defer cancel()
 	ctx, cancelT := context.WithTimeout(ctx, 90*time.Second)
 	defer cancelT()

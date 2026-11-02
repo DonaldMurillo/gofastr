@@ -78,7 +78,10 @@ below come from the platforms' documented APIs and need a device to confirm.
 3. **Data-dir helpers are copied** (`mobilehost/datadir.go`): owner-only
    create, exclusive mint, DB open. Desktop uses `internal/fileperm` and
    `internal/atomicfile` for these.
-4. **The desktop contract is not reusable as-is.** `desktop.Shell` assumes a
+4. **Test helpers too.** `internal/chromedptest` (the launch-allowance
+   Chrome harness the repo's gate requires) is out of reach, so `sim/`
+   spells the two start timeouts itself.
+5. **The desktop contract is not reusable as-is.** `desktop.Shell` assumes a
    process-owning event loop, windows, a tray and menus, and the boot gate
    assumes a loopback listener. None of it fits. What mobile wants from desktop
    is the OS-neutral half (the capability registry, grants, bridge chokepoint,
@@ -87,40 +90,40 @@ below come from the platforms' documented APIs and need a device to confirm.
 
 ### Platform constraints the runtime will meet
 
-5. **Android drops request bodies.** `WebResourceRequest` has no body, so
+6. **Android drops request bodies.** `WebResourceRequest` has no body, so
    every `fetch()` POST reaches Go empty. With `SIM_ANDROID_LIMITS=1` the
    simulated save fails (`POST /api/notes -> 400`). Fix options: a JS shim that
    hands bodies to a `WebMessageListener` keyed by a request id, or, cleaner, a
    **runtime transport hook in core-ui** that lets a native host replace
    `fetch` for same-origin calls. That hook would be core work.
-6. **Neither platform can return a redirect** from an interception API
+7. **Neither platform can return a redirect** from an interception API
    (`WebResourceResponse` rejects 3xx; a scheme task cannot redirect). The
    notes flow never redirects. Auth flows (`login -> 303`) will. The host
    probably needs to follow redirects itself for sub-requests and tell the
    shell to load the target for top-level navigations.
-7. **Cookies cannot cross the interception boundary**, so the jar lives in Go
+8. **Cookies cannot cross the interception boundary**, so the jar lives in Go
    (done). Consequence: page JS never sees a cookie. The runtime's
    `serverAction` reads `gofastr-session` from `document.cookie`
    (`core-ui/runtime/runtime.js`). Server actions would send an empty session
    until the runtime takes it from somewhere else (the `<meta name=
    "gofastr-sse">` session already exists for SSE).
-8. **iOS origin is a custom scheme** (`gofastr://app`). To verify on device:
+9. **iOS origin is a custom scheme** (`gofastr://app`). To verify on device:
    POST bodies on custom schemes (historically dropped by WebKit), whether the
    page is a secure context (Web Crypto, service workers), `localStorage`
    persistence.
-9. **No socket means no loopback hardening to port.** The desktop boot token,
+10. **No socket means no loopback hardening to port.** The desktop boot token,
    Host pin and stable-origin profile exist because any local process can reach
    a loopback port. Nothing outside the process can reach an in-memory listener,
    so the identity middleware needs no gate.
 
 ### Smaller findings
 
-10. The startup banner prints `http://memory/...` and "No auth is wired"
+11. The startup banner prints `http://memory/...` and "No auth is wired"
     warnings. Harmless, but a host-owned transport should be able to quiet them.
-11. The adaptive theme is opt-in (`site.WithTheme(theme.Default())`);
+12. The adaptive theme is opt-in (`site.WithTheme(theme.Default())`);
     desktop-notes does not set it. A mobile scaffold should, because phone users
     expect OS dark mode.
-12. Design-system bug seen along the way, independent of mobile: the entityui
+13. Design-system bug seen along the way, independent of mobile: the entityui
     list's empty state is clipped at 390px (same over plain TCP; correct at
     1280px).
 
@@ -129,7 +132,7 @@ below come from the platforms' documented APIs and need a device to confirm.
 1. Keep `App.Serve` in core.
 2. Make `localuser` and the data-dir helpers public (or one public
    "local app data" package that desktop and mobile share).
-3. Design the runtime transport hook (finding 5) and the session-source change
-   (finding 7) in core-ui. They decide whether Android works at all.
+3. Design the runtime transport hook (finding 6) and the session-source change
+   (finding 8) in core-ui. They decide whether Android works at all.
 4. Then split this module into its own repository, add a `gofastr mobile`
    scaffold, and verify the shims on a Mac with Xcode and an Android emulator.
