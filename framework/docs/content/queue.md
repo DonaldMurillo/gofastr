@@ -471,7 +471,10 @@ single occurrence may retry before dead-lettering. `UserID(id)` sets
 `Job.UserID` on every fired job, so `App.EraseUserData` reaches the jobs
 of a schedule whose payload is about one person (a per-user digest).
 
-`Every(d)` schedules fire on a fixed interval; `Cron(spec)` schedules
+`Every(d)` schedules fire on a fixed interval of one millisecond or more
+(`Register` refuses a negative interval or a shorter positive one, the
+same floor as the durable scheduler; `Every(0)` fires on every tick of
+the one-minute floor); `Cron(spec)` schedules
 fire when the cron expression's next time arrives; use it for
 time-of-day work like "every day at 02:00" that an interval cannot
 express. The spec is parsed by [`framework/cron`](cron.md) (`cron.Parse`),

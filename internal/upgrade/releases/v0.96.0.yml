@@ -649,3 +649,10 @@ notes:
     find:
       uses:
         - gofastr/framework/outbox.WithHandlerTimeout
+  - change: "BREAKING - the in-memory queue.Scheduler's Register refuses an Every interval that is negative or below one millisecond"
+    breaking: true
+    hits: review
+    guidance: "Every(5) is five nanoseconds and enqueued a job on every spin of the scheduler loop. Check the error Register returns and write the unit: Every(5 * time.Second). Every(0) still registers."
+    find:
+      uses:
+        - gofastr/battery/queue.Scheduler.Every

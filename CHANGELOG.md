@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The in-memory `queue.Scheduler` refuses an interval below one
+  millisecond.** `Every(5)` (five nanoseconds) made the scheduler's
+  timer loop enqueue a job per iteration, over 12,000 in 20ms. `Register`
+  now returns an error for a negative interval or a positive one under
+  1ms, the floor `DurableScheduler` already had; `Every(0)` still
+  registers.
 - **An outbox handler budget longer than the claim lease no longer runs
   twice.** The relay's lease is a fixed five minutes, but
   `outbox.WithHandlerTimeout` took any budget: a handler allowed ten

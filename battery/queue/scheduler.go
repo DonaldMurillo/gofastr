@@ -167,7 +167,9 @@ func NewSchedulerWithLogger(q Queue, logger *slog.Logger) *Scheduler {
 	return newScheduler([]Queue{q}, logger)
 }
 
-// Every returns a ScheduleBuilder that fires on a fixed interval.
+// Every returns a ScheduleBuilder that fires on a fixed interval. Register
+// refuses a negative interval or a positive one below one millisecond, the
+// DurableScheduler floor.
 func (s *Scheduler) Every(interval time.Duration) *ScheduleBuilder {
 	return &ScheduleBuilder{
 		scheduler: s,
@@ -306,6 +308,14 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 			return fmt.Errorf("queue: cron spec %q never fires", b.cronSpec)
 		}
 	} else {
+		// The DurableScheduler floor, so Every(5) (five nanoseconds: the
+		// untyped constant compiles) cannot spin Start's timer loop into
+		// enqueuing a job per iteration. A negative interval is refused
+		// too. Zero keeps its old meaning: due on every tick, at the
+		// one-minute floor.
+		if b.interval < 0 || (b.interval > 0 && b.interval < minDurableInterval) {
+			return fmt.Errorf("queue: schedule interval %s is below the %s floor", b.interval, minDurableInterval)
+		}
 		job.NextRun = base.Add(b.interval)
 	}
 
