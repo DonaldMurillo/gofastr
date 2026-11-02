@@ -36,13 +36,32 @@ import (
 // expansion would pass Parse's output budget.
 var errExpansionBudget = errors.New("dotenv: expansion budget exceeded")
 
+// expansionFactor is how many output bytes Parse admits per input byte;
+// see the budget comment in parse.
+const expansionFactor = 10
+
 // Parse reads .env content from r and returns the parsed key/value
 // map. Variable expansion is performed on double-quoted values using
-// already-parsed keys (later lines see earlier lines); for the full
-// rules including os.Environ fallback, use Expand explicitly.
+// already-parsed keys (later lines see earlier lines) and nothing else:
+// Parse reads no environment. Load adds the earlier files and the
+// os.Environ fallback; Expand takes a custom lookup.
 //
 // Duplicate keys: last wins.
 func Parse(r io.Reader) (map[string]string, error) {
+	return parse(r, nil, nil)
+}
+
+// parse is Parse with the two lookup sources Load adds around the
+// file's own keys. A ${NAME} reads shadow first (the values a
+// higher-precedence file already set, which are the values Load keeps),
+// then the keys parsed earlier in this file, then envFn (os.LookupEnv).
+// Either may be nil.
+//
+// A value read from shadow or envFn did not come from this file, so it
+// counts as input for the expansion budget, once per name: the budget
+// stops this file's lines multiplying each other, and one ${PATH} in a
+// two-line file is not that. Every copy written still counts as output.
+func parse(r io.Reader, shadow map[string]string, envFn func(string) (string, bool)) (map[string]string, error) {
 	out := map[string]string{}
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024), 1<<20) // up to 1MB lines
@@ -57,8 +76,8 @@ func Parse(r io.Reader) (map[string]string, error) {
 	// startup takes. A legitimate chain of references stays under 3x its
 	// input, and a literal value can never exceed the line that carries
 	// it, so 10x total is generous headroom that a bomb cannot fit in.
-	const expansionFactor = 10
 	consumed, expanded := 0, 0
+	external := map[string]bool{}
 	for scanner.Scan() {
 		lineNum++
 		raw := scanner.Text()
@@ -94,8 +113,11 @@ func Parse(r io.Reader) (map[string]string, error) {
 		// The budget caps the value while it is built: checked only
 		// afterwards, one line of 65536 ${A} references to a 64 KiB A
 		// allocated 4 GiB before the comparison ran.
+		src := &sources{local: out, shadow: shadow, envFn: envFn, external: external}
 		budget := expansionFactor*consumed - expanded
-		val, err := parseValue(valRaw, out, budget)
+		val, err := parseValue(valRaw, src, budget)
+		consumed += src.credited
+		budget += expansionFactor * src.credited
 		if errors.Is(err, errExpansionBudget) || err == nil && len(val) > budget {
 			return nil, fmt.Errorf("dotenv: line %d: ${...} expansion exceeded %dx the input size (over %d bytes of values from %d bytes read); a reference chain is multiplying",
 				lineNum, expansionFactor, expansionFactor*consumed, consumed)
@@ -130,13 +152,23 @@ func isValidKey(k string) bool {
 	return true
 }
 
+// sources is where one value's ${NAME} lookups resolve; see parse.
+type sources struct {
+	local    map[string]string // keys parsed earlier in this file
+	shadow   map[string]string // a higher-precedence file's values (Load)
+	envFn    func(string) (string, bool)
+	external map[string]bool // names already counted as input
+	credited int             // input bytes credited during this value
+}
+
 // parseValue interprets a value clause based on its leading quote (if
-// any) and applies ${VAR} expansion in double-quoted strings. seen is
-// the running map of previously-parsed keys from the same file.
+// any) and applies ${VAR} expansion in double-quoted strings. src holds
+// the running map of previously-parsed keys from the same file and the
+// lookups around it.
 //
 // budget caps the expanded length of a double-quoted value; past it
 // parseValue stops building and returns errExpansionBudget.
-func parseValue(v string, seen map[string]string, budget int) (string, error) {
+func parseValue(v string, src *sources, budget int) (string, error) {
 	if v == "" {
 		return "", nil
 	}
@@ -145,7 +177,7 @@ func parseValue(v string, seen map[string]string, budget int) (string, error) {
 		if len(v) < 2 || v[len(v)-1] != '"' {
 			return "", fmt.Errorf("unterminated double-quoted value")
 		}
-		out, ok, err := expandDouble(v[1:len(v)-1], seen, max(budget, 0))
+		out, ok, err := expandDouble(v[1:len(v)-1], src, max(budget, 0))
 		if err != nil {
 			return "", err
 		}

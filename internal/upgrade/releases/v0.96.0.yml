@@ -771,3 +771,15 @@ notes:
     breaking: false
     guidance: "On Windows these spellings opened .env, .git/config and web.config past the refusals. Elsewhere the only change is that a file whose name holds a backslash, or a name like web.config. , now answers 404: rename such a file if it must be served."
     nodetect: "the refusal reads request paths at runtime; nothing in an app's source spells it"
+  - change: "dotenv.Load and NewApp's .env auto-load expand ${NAME} against an earlier file's value, then the same file's earlier keys, then os.Environ, as documented; they used to read the same file's keys only, so ${HOME} loaded empty and a later file's ${DB_HOST} kept the value an earlier file shadowed"
+    breaking: false
+    guidance: "A dotfile value that references a variable the file does not define now gets the environment's value instead of an empty string, and one built from a key a higher-precedence file overrides now uses the override. Check any value that relied on the empty result."
+    nodetect: "the change is in how .env files are read at boot; nothing in an app's Go source spells it"
+  - change: "textsafe.IsUnsafe (and so StripUnsafe, ContainsUnsafe and ScrubControlBytes) treats U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR as unsafe, like NEL"
+    breaking: false
+    guidance: "Text log lines percent-encode the two separators, and sinks that refuse unsafe text, such as auth.CleanName, refuse a value carrying one. A display name or title that held one loses it or is refused; nothing else changes."
+    nodetect: "the change is inside core/textsafe's predicate; callers spell nothing new"
+  - change: "core/yaml (app specs, gofastr.settings.yml, codegen and isolation configs) decodes a double-quoted string by the YAML 1.2 escape table instead of Go's strconv.Unquote: \\xNN is U+00NN, \\/ \\e \\N \\_ \\L \\P and \\<space> are accepted, and Go-only escapes such as octal \\101 are refused"
+    breaking: false
+    guidance: "A double-quoted value that used \\xNN for a byte above 0x7F now reads as the character U+00NN, and one that used a Go octal or \\' escape fails to parse with the escape named. Write the character itself or a \\u escape."
+    nodetect: "the change is in how YAML files are read; nothing in an app's Go source spells it"

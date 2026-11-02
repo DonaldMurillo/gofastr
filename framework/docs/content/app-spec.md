@@ -150,7 +150,11 @@ GoFastr ships its own small YAML parser in `core/yaml`; no external YAML parser
 is required. Supported syntax:
 
 - indentation-based maps and lists
-- strings, quoted strings, booleans, numbers, and `null`
+- strings, quoted strings, booleans, numbers, and `null`. A
+  double-quoted string takes the YAML 1.2 escapes (`\n`, `\t`, `\"`,
+  `\\`, `\/`, `\e`, `\xE9`, `é`, `\U0001F600` and the rest of the
+  table); `\xNN` is the character U+00NN, and an escape YAML does not
+  define, such as Go's octal `\101`, is an error
 - inline scalar lists such as `[draft, published]`; a trailing comma
   (`[draft, published,]`) adds no item, an empty item (`[a,,b]`) is an
   error, and an empty string is written `""`
