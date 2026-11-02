@@ -5978,7 +5978,8 @@ few lines, and link the PR or the docs page for the rest.
   status helpers already scrubbed their arguments; ~170 other prints
   (lists of written files, next steps, `--json` output, stderr errors,
   `theme init` and `theme edit` refusals, `gofastr test` lines, `docs
-  --grep` excerpts) went through a raw `fmt.Printf`. They now use
+  --grep` excerpts, the a11y and `.ui.go` sandbox gate reports `build`
+  and `dev` print) went through a raw `fmt.Printf`. They now use
   `cli.Printf`, `Print`, `Println`, `Fprintf` and `Fprintln`, which
   scrub every argument, and `TestNoRawRepoTextReachesTheTerminal` fails
   on a raw fmt print to stdout or stderr whose arguments are neither
