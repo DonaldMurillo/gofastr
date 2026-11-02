@@ -3,6 +3,7 @@ package log
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -141,12 +142,27 @@ func (rw *countingResponseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// ReadFrom keeps the connection's sendfile path: io.Copy and
+// http.ServeContent use the writer's ReaderFrom when it has one, and
+// embedding http.ResponseWriter does not promote it. It latches the
+// implicit 200 and counts the bytes the way Write does.
+func (rw *countingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	rw.wroteHeader = true
+	n, err := io.Copy(rw.ResponseWriter, src)
+	rw.bytes += n
+	return n, err
+}
+
 // Flush forwards to the underlying ResponseWriter's Flusher if it has one.
 // Without this, any SSE / chunked-JSON / long-poll handler downstream of
 // battery/log returns 500 "streaming unsupported", its
 // `w.(http.Flusher)` assertion fails against the wrapper. Mirrors the
 // fix already present on core/middleware.metricsResponseWriter.
 func (rw *countingResponseWriter) Flush() {
+	// A flush sends the headers: the status is the one set, or 200.
+	// Latch it, so a WriteHeader after the flush (which net/http drops)
+	// does not log a status the client never got.
+	rw.wroteHeader = true
 	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
