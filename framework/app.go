@@ -1903,6 +1903,11 @@ func NewApp(opts ...AppOption) *App {
 	}
 
 	a := &App{
+		// Allocated here, never lazily: Start registers readiness checks
+		// while a concurrent Shutdown reads the drain setting, and a nil
+		// pointer filled in on first use raced them (the lazy-allocation
+		// branches below stay only for an App built without NewApp).
+		health:        &healthState{},
 		Registry:      NewRegistry(),
 		router:        router.New(),
 		MCP:           mcp.NewServer(),
