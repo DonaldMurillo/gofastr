@@ -3,21 +3,32 @@ package queue
 import "github.com/DonaldMurillo/gofastr/core/datexport"
 
 // The queue battery owns a physical table that lives OUTSIDE the framework
-// entity registry (it is created with raw DDL in db.go). Registering it here
-// from init(), mirroring framework/agentsinv, means any app that imports
-// battery/queue has its queue_jobs table included in App.ExportData, so a data
-// dump/restore is complete. The framework centralizes all raw read/write
-// behind one SafeIdent-guarded path; this registration is purely declarative.
+// entity registry (it is created with raw DDL in db.go). Registering it
+// means any app that imports battery/queue has its jobs table included in
+// App.ExportData, so a data dump/restore is complete, and reached by
+// App.EraseUserData on user_id. The framework centralizes all raw
+// read/write behind one SafeIdent-guarded path; this registration is purely
+// declarative.
 //
-// The table name is the default "queue_jobs". A host that renamed it via
-// WithTable must datexport.Register the new name (or the default entry is
-// skipped with a note at export time and that table is excluded).
+// init registers the default "queue_jobs" table. NewDBQueue registers the
+// table it was built with, under datexport.ScopedName("queue_jobs", table):
+// a queue built WithTable("billing_jobs") used to sit outside both planes,
+// so an erasure left that user's jobs, payloads included, in place.
 
 func init() {
+	registerJobsTable("queue_jobs")
+}
+
+// registerJobsTable registers table's exporter and user_id eraser. Both
+// registries replace an entry of the same name, so registering a table
+// again (a second DBQueue over it, the default table at init and at
+// NewDBQueue) is a no-op.
+func registerJobsTable(table string) {
+	name := datexport.ScopedName("queue_jobs", table)
 	datexport.Register(datexport.DataExporter{
-		Name:       "queue_jobs",
+		Name:       name,
 		Source:     "queue",
-		Table:      "queue_jobs",
+		Table:      table,
 		PrimaryKey: "id",
 		Columns: []string{
 			"id",
@@ -35,20 +46,10 @@ func init() {
 			"unique_key",
 		},
 	})
-	// The erase-plane mirror. A job's payload routinely carries the very
-	// data an erasure is meant to remove (the address an email job renders,
-	// the document a render job points at), and queue_jobs lives outside
-	// the entity registry, so App.EraseUserData can only reach it through a
-	// declaration like this one. Terminal rows make it acute: DBQueue's only
-	// job-row DELETE is Ack-of-claimed, and 'failed' rows are retained on
-	// purpose for Stats/ListJobs/Replay, so without this a dead-lettered job
-	// keeps the erased user's data forever and every later ExportData dump
-	// re-discloses it. Delete rather than anonymize: a job row minus its
-	// payload cannot be replayed, so there is nothing left worth retaining.
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name:   "queue_jobs",
+		Name:   name,
 		Source: "queue",
-		Table:  "queue_jobs",
+		Table:  table,
 		Column: "user_id",
 		Mode:   datexport.EraseDelete,
 	})

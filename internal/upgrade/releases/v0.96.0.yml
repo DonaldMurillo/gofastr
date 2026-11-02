@@ -678,3 +678,9 @@ notes:
     find:
       uses:
         - gofastr/battery/queue.WithHandlerTimeout
+  - change: "queue.NewDBQueue registers the table it was built with (WithTable) for App.ExportData and App.EraseUserData, under datexport.ScopedName(\"queue_jobs\", table)"
+    breaking: false
+    guidance: "A renamed jobs table used to be skipped by both, so an erasure kept that user's jobs. If you registered the renamed table yourself with datexport.Register or RegisterEraser, remove that registration, or the table is exported and erased twice under two names."
+    find:
+      uses:
+        - gofastr/battery/queue.WithTable

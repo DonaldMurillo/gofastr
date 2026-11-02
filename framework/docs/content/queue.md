@@ -76,7 +76,9 @@ Keep it longer than your slowest handler. A zero or negative value keeps
 the default, as does the same value passed to `SetLeaseTimeout`.
 
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
-exist. Pass `WithTable("my_jobs")` to use a custom table name. An
+exist. Pass `WithTable("my_jobs")` to use a custom table name; it is
+exported and erased under that name like the default (`App.ExportData`,
+`App.EraseUserData`). An
 index name longer than Postgres's 63-byte limit ends in a hash of the
 table name, so a long table name still gets each of its indexes. The
 durable scheduler's tables and indexes (`<table>_scheduler_schedules`,

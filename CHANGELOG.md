@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A DBQueue built `WithTable` is exported and erased.** The queue
+  registered only the default `queue_jobs` table, so a queue on
+  `billing_jobs` sat outside `App.ExportData` and `App.EraseUserData`: an
+  erasure left that user's jobs, payloads included. `NewDBQueue` now
+  registers its own table under `datexport.ScopedName("queue_jobs",
+  table)`, as the outbox and the durable scheduler do. A host that
+  registered the renamed table by hand can drop that registration, or
+  the table is exported twice.
 - **A DBQueue job claimed as shutdown lands is handed back unstarted.**
   The worker ran its handler on the already-cancelled context, the
   handler failed at once, and the job spent an attempt on a run that

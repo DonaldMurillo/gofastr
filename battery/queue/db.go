@@ -230,6 +230,7 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	if err := q.normalizeLegacyTimestamps(context.Background()); err != nil {
 		return nil, fmt.Errorf("normalize legacy timestamps: %w", err)
 	}
+	registerJobsTable(q.table)
 	return q, nil
 }
 
