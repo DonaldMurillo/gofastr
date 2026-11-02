@@ -461,8 +461,10 @@ a path for a dot segment or a config file name (the UI host's static
 dir and the static export use it). Both read a path the way Windows
 opens it, on every OS: `\` separates segments, and a config name
 matches with trailing dots or spaces or an `::$DATA` stream suffix, so
-`/assets%5C..%5C.env` and `/web.config.` are refused. A file whose name
-holds a backslash is refused everywhere. `IfNoneMatch(r, etag)`
+`/assets%5C..%5C.env` and `/web.config.` are refused. On every OS a file
+whose name holds a backslash is judged by the pieces it splits into:
+`a\b.txt` is served, `a\.env` and `x\web.config` are refused.
+`IfNoneMatch(r, etag)`
 checks an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
 comparison. Start at `core/static/static.go`: `Handler`.
 

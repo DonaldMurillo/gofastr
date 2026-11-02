@@ -620,9 +620,11 @@ func hasForbiddenConfigSegment(p string) bool {
 // The backslash is a separator on every platform because it is one
 // where the open runs on Windows: *os.Root resolves a name through
 // GetFullPathName there, so "assets\..\.env" opens .env while a check
-// that splits on "/" alone sees one segment with no leading dot. A file
-// whose name holds a backslash on another OS is refused as well, a
-// small price for one answer on every platform.
+// that splits on "/" alone sees one segment with no leading dot. On
+// another OS a file whose name holds a backslash is judged by the same
+// split, so every platform gives one answer: "a\b.txt" is served, while
+// a name whose backslash-separated pieces include a dotfile or a config
+// name ("a\.env", "x\web.config") is refused.
 func pathSegments(p string) []string {
 	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
 }

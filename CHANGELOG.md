@@ -5265,8 +5265,9 @@ few lines, and link the PR or the docs page for the rest.
   `/` alone. `GET /assets%5C..%5C.env` served `.env`, and
   `/web.config.` served `web.config`. The handler and `static.Refuses`
   (the UI host's static dir and the static export) now judge the name
-  Windows opens, on every OS, so a file whose name holds a backslash is
-  refused everywhere. See [core packages](framework/docs/content/core-packages.md#static).
+  Windows opens, on every OS: a backslash separates segments, so on
+  Linux too a name like `a\.env` or `x\web.config` is refused, while
+  `a\b.txt` is still served. See [core packages](framework/docs/content/core-packages.md#static).
 - **A harness "Allow always" rule covers the working directory it was
   granted in.** The rule file is one per user and an argv summary leaves
   the working directory implicit, so approving `go test ./...` forever in
