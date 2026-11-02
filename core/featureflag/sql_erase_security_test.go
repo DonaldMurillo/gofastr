@@ -68,3 +68,41 @@ func TestEraseRemovesFlagCohortMember(t *testing.T) {
 		}
 	}
 }
+
+// A user listed in a tenant's spelling ("acme:victim", ":victim") is
+// erased too: the entry names the user whatever its tenant part. The
+// other members stay, including tenant "victim"'s user "other", whose
+// tenant part only looks like the erased id.
+func TestEraseRemovesTenantQualifiedMember(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	s, err := featureflag.NewSQLStore(db, featureflag.WithSQLTable("tenant_rollouts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := []string{
+		"acme:victim", "a%3Ab:victim", ":victim", "victim",
+		"acme:bystander", "victim:other", "acme:victim2", "x:acme:victim",
+	}
+	if err := s.Set(featureflag.Flag{Key: "beta", Enabled: true, Users: users}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	app := framework.NewApp(framework.WithDB(db))
+	if _, err := app.EraseUserData(ctx, "victim"); err != nil {
+		t.Fatalf("EraseUserData: %v", err)
+	}
+	got, err := s.Get(ctx, "beta")
+	if err != nil || got == nil {
+		t.Fatalf("Get = %v, %v", got, err)
+	}
+	want := []string{"acme:bystander", "victim:other", "acme:victim2", "x:acme:victim"}
+	if !slices.Equal(got.Users, want) {
+		t.Errorf("SECURITY: [featureflag] users after erasure = %v, want %v. "+
+			"Attack: a tenant-qualified allow-list entry keeps an erased user's id on file.", got.Users, want)
+	}
+}

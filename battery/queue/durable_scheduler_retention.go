@@ -27,6 +27,7 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 	// overlap check (commitOccurrences) finds a schedule's active jobs only
 	// through their occurrences: pruning the occurrence of a failed job let
 	// the tick after a Replay enqueue a second run beside the replayed one.
+	//gofastr:allow(iounderlock) only the scheduler's own evaluation loop (and a direct RunOnce) reach this sweep, once per tick; no request path or other worker waits on retentionMu, which exists to keep two RunOnce calls from sweeping at once
 	_, err := s.queue.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s
 		WHERE created_at < $1 AND (
 			status='skipped'

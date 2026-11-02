@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/internal/sqlredact"
 )
 
 // SlowQueryLogger emits a slog warning for any DB query whose execution time
@@ -25,6 +27,21 @@ type SlowQueryLogger struct {
 	threshold time.Duration
 	getLogger func() *slog.Logger
 	hits      atomic.Uint64
+	dialect   sqlredact.Dialect
+}
+
+// Option configures a SlowQueryLogger.
+type Option func(*SlowQueryLogger)
+
+// WithDialect names the database engine, so the sql attr masks its
+// literals by that engine's quoting rules: "postgres" (or "postgresql",
+// "pgx"), "sqlite3" (or "sqlite"), "mysql" (or "mariadb"). The values
+// of framework.DetectDialect are accepted as they are. Without it, or
+// with a name it does not know, the line masks under every engine's
+// rules at once (see TrimSQL), which also hides PostgreSQL's
+// "quoted identifiers".
+func WithDialect(name string) Option {
+	return func(s *SlowQueryLogger) { s.dialect = sqlredact.ForSystem(name) }
 }
 
 // NewSlowQueryLogger wraps inner with a slow-query observer. When threshold
@@ -35,15 +52,11 @@ type SlowQueryLogger struct {
 // lifetime of the wrapper. To follow App.Logger swaps (battery/log replaces
 // it during plugin Init), use NewSlowQueryLoggerFn instead and pass
 // app.Logger as the accessor.
-func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog.Logger) *SlowQueryLogger {
+func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog.Logger, opts ...Option) *SlowQueryLogger {
 	if logger == nil {
-		return NewSlowQueryLoggerFn(inner, threshold, nil)
+		return NewSlowQueryLoggerFn(inner, threshold, nil, opts...)
 	}
-	return &SlowQueryLogger{
-		inner:     inner,
-		threshold: threshold,
-		getLogger: func() *slog.Logger { return logger },
-	}
+	return NewSlowQueryLoggerFn(inner, threshold, func() *slog.Logger { return logger }, opts...)
 }
 
 // NewSlowQueryLoggerFn is like NewSlowQueryLogger but takes a per-call
@@ -53,11 +66,17 @@ func NewSlowQueryLogger(inner db.Executor, threshold time.Duration, logger *slog
 //
 // If getLogger is nil or returns nil, slog.Default is used as a safety
 // fallback (slow-query lines never disappear silently).
-func NewSlowQueryLoggerFn(inner db.Executor, threshold time.Duration, getLogger func() *slog.Logger) *SlowQueryLogger {
+func NewSlowQueryLoggerFn(inner db.Executor, threshold time.Duration, getLogger func() *slog.Logger, opts ...Option) *SlowQueryLogger {
 	if getLogger == nil {
 		getLogger = func() *slog.Logger { return slog.Default() }
 	}
-	return &SlowQueryLogger{inner: inner, threshold: threshold, getLogger: getLogger}
+	s := &SlowQueryLogger{inner: inner, threshold: threshold, getLogger: getLogger}
+	for _, o := range opts {
+		if o != nil {
+			o(s)
+		}
+	}
+	return s
 }
 
 // Hits returns the running count of queries that crossed the threshold.
@@ -120,7 +139,7 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	attrs := []any{
 		slog.String("kind", kind),
 		slog.Duration("dur", dur),
-		slog.String("sql", TrimSQL(query)),
+		slog.String("sql", trimSQL(query, s.dialect)),
 		slog.Int("args", len(args)),
 	}
 	if err != nil {
@@ -133,31 +152,43 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	logger.LogAttrs(ctx, slog.LevelWarn, "slow query", asSlogAttrs(attrs)...)
 }
 
-// TrimSQL collapses internal whitespace so log lines stay readable. Caps the
-// printed query at 240 chars to keep logs from exploding on big builders.
+// maxLoggedSQL caps the printed statement, in bytes.
+const maxLoggedSQL = 240
+
+// TrimSQL is the statement's shape, as the slow-query line prints it
+// when no dialect was named: every string and number literal replaced by
+// ?, comments dropped, whitespace collapsed, control bytes escaped, and
+// the result capped at 240 bytes (cut on a rune boundary, then "…") to
+// keep logs from exploding on big builders. Placeholders ($1, ?, :n)
+// and identifiers stay. Bound arguments were never logged, only their
+// count.
+//
+// A slow-query line is for the statement's shape, and a value spelled
+// inline (ALTER ROLE … PASSWORD '…', SET app.key = '…') went to every
+// sink verbatim. Where a literal ends depends on the engine, and TrimSQL
+// does not know it, so it masks under every engine's rules at once:
+// "double-quoted" text prints as ? too (SQLite and MySQL can read it as
+// a string), # opens a comment (MySQL), block comments nest
+// (PostgreSQL), and a string whose end depends on whether a backslash
+// escapes masks the rest of the statement. Name the engine with
+// WithDialect to keep quoted identifiers on PostgreSQL. It is the masker
+// core/tracing puts on db.query.text.
 func TrimSQL(q string) string {
-	out := make([]byte, 0, len(q))
-	lastSpace := false
-	for i := 0; i < len(q); i++ {
-		c := q[i]
-		if c == '\n' || c == '\t' || c == '\r' {
-			c = ' '
-		}
-		if c == ' ' {
-			if lastSpace {
-				continue
-			}
-			lastSpace = true
-		} else {
-			lastSpace = false
-		}
-		out = append(out, c)
-		if len(out) == 240 {
-			out = append(out, "…"...)
-			break
-		}
+	return trimSQL(q, sqlredact.Unknown)
+}
+
+func trimSQL(q string, d sqlredact.Dialect) string {
+	out := sqlredact.Text(q, d)
+	if len(out) <= maxLoggedSQL {
+		return out
 	}
-	return string(out)
+	// Over the cap: cut at maxLoggedSQL, backed off to the start of the
+	// rune that straddles it, so the line stays valid UTF-8.
+	cut := maxLoggedSQL
+	for cut > 0 && !utf8.RuneStart(out[cut]) {
+		cut--
+	}
+	return out[:cut] + "…"
 }
 
 // asSlogAttrs converts our []any (alternating slog.Attr) into the expected

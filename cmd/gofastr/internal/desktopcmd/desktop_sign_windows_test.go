@@ -72,6 +72,30 @@ func TestZipWindowsBundleRefusesAPathName(t *testing.T) {
 	}
 }
 
+// A failed archive write leaves an earlier archive at dest untouched
+// and no temporary file behind.
+func TestZipWindowsBundleKeepsTheOldArchiveOnFailure(t *testing.T) {
+	out := t.TempDir()
+	dest := filepath.Join(out, "Notes-1.0.0-windows-amd64.zip")
+	if err := os.WriteFile(dest, []byte("previous archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// No Notes.exe in out: the write fails part way.
+	if err := zipWindowsBundle(out, "Notes", dest); err == nil {
+		t.Fatal("zipped a build with no executable")
+	}
+	if got, err := os.ReadFile(dest); err != nil || string(got) != "previous archive" {
+		t.Fatalf("dest after a failed write = %q, %v", got, err)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("out holds %d entries after a failed write, want only the old archive", len(entries))
+	}
+}
+
 // TestWindowsZipIsAFeedArchive builds the --zip archive from a fake
 // build output and signs a feed for it with the release tooling's own
 // writer, which runs the updater's extractor and identity check.

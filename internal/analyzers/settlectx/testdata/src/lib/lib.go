@@ -32,3 +32,13 @@ func SettleContext(ctx context.Context) (context.Context, context.CancelFunc) { 
 func Detach(ctx context.Context) context.Context { // want Detach:`detaches\(bounded=false\)`
 	return context.WithoutCancel(ctx)
 }
+
+// Sink is a host audit sink.
+type Sink interface {
+	AuditEvent(ctx context.Context, what string) error
+}
+
+// Emit hands its caller's context to the sink as is: an audits fact.
+func Emit(ctx context.Context, s Sink, what string) { // want Emit:`audits\[0\]`
+	_ = s.AuditEvent(ctx, what)
+}

@@ -78,9 +78,15 @@ func New() *Lifecycle {
 }
 
 // WithTimeout sets the maximum duration for the drain phase.
-// Default is 30 seconds.
+// Default is 30 seconds; d <= 0 keeps the current timeout. A zero
+// timeout is not "no timeout": the drain context expired before the
+// first drainer ran.
 func WithTimeout(d time.Duration) func(*Lifecycle) {
-	return func(lc *Lifecycle) { lc.timeout = d }
+	return func(lc *Lifecycle) {
+		if d > 0 {
+			lc.timeout = d
+		}
+	}
 }
 
 // RegisterDrainer adds a component to the drain phase. Drainers are
@@ -241,8 +247,12 @@ func (lc *Lifecycle) IsHealthy() bool {
 	return true
 }
 
-// SetShutdownTimeout configures the drain timeout.
+// SetShutdownTimeout configures the drain timeout. d <= 0 leaves it
+// unchanged, as WithTimeout does.
 func (lc *Lifecycle) SetShutdownTimeout(d time.Duration) {
+	if d <= 0 {
+		return
+	}
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 	lc.timeout = d

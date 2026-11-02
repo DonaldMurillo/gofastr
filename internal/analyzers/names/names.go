@@ -15,10 +15,12 @@ import "slices"
 // suppression check leaves them to the analyzers.
 var Analyzers = []string{
 	"asciifold",
+	"bareduration",
 	"callbackunderlock",
 	"clienttimeout",
 	"compositekey",
 	"credfetch",
+	"deferreset",
 	"controlbytes",
 	"discardeddecode",
 	"discardederr",
@@ -31,7 +33,9 @@ var Analyzers = []string{
 	"fieldtypeswitch",
 	"fixedtmp",
 	"floatnum",
+	"growmap",
 	"intwrap",
+	"iounderlock",
 	"keytrim",
 	"laxcoerce",
 	"laxenvelope",
@@ -40,6 +44,9 @@ var Analyzers = []string{
 	"negdur",
 	"nonfinite",
 	"nowritedeadline",
+	"nullarray",
+	"optzero",
+	"poisonedconn",
 	"nowaitdelay",
 	"nostore",
 	"quoteident",
@@ -48,11 +55,15 @@ var Analyzers = []string{
 	"recoverlog",
 	"reflectset",
 	"reqparamlimit",
+	"sanitizefix",
 	"resolvedial",
 	"rootread",
 	"rootwrite",
 	"secretcompare",
 	"settlectx",
+	"siblingresult",
+	"silentskip",
+	"textbind",
 	"tightenshared",
 	"timestampid",
 	"unboundedbody",
@@ -61,6 +72,21 @@ var Analyzers = []string{
 	"unseated",
 	"worldreadable",
 	"wrapwriter",
+
+	// 2026-11 bug-bash rules (response)
+	"recoverwrite",
+	"statusrange",
+	"doublewrite",
+	"listheader",
+	// 2026-11 bug-bash rules (request-misc)
+	"authpresence",
+	"fanoutreq",
+	"multipartparse",
+	"ratelimitkey",
+	"rsakeysize",
+
+	// 2026-11 bug-bash rules (read hooks)
+	"hookedread",
 }
 
 // Lints is every source lint outside the vettool that shares the

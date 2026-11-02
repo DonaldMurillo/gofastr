@@ -14,6 +14,13 @@
 // a different and much smaller risk. A grep cannot tell those apart, which
 // is why this lives in the vet lane rather than the contracts one.
 //
+// A read is any whole-body consumer: io.ReadAll / ioutil.ReadAll,
+// io.Copy / io.CopyBuffer, io.ReadFull, ReadFrom on any io.ReaderFrom, a
+// json/xml/yaml decoder, httputil.DumpBody. The body may reach it as
+// r.Body, through a local bound once to it (body := r.Body), or through
+// bufio.NewReader / NewReaderSize / io.TeeReader, none of which caps
+// anything (widened 2026-11-02: each of those spellings was silent).
+//
 // A cap counts only when it is on the path of the request being read:
 //
 //   - r.Body rebound from http.MaxBytesReader / io.LimitReader earlier in
@@ -97,6 +104,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/readsrc"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -110,12 +118,33 @@ var Analyzer = &analysis.Analyzer{
 // position holding the reader.
 var sinks = map[string]int{
 	"io.ReadAll":        0,
+	"ioutil.ReadAll":    0,
 	"io.Copy":           1,
+	"io.CopyBuffer":     1,
 	"json.NewDecoder":   0,
 	"xml.NewDecoder":    0,
+	"yaml.NewDecoder":   0,
 	"json.Unmarshal":    0,
 	"httputil.DumpBody": 0,
 	"io.ReadFull":       0,
+}
+
+// sinkArg returns the reader argument of a whole-body read: a sinks
+// entry, or ReadFrom on any io.ReaderFrom (buf.ReadFrom(r.Body) reads to
+// EOF). The 2026-11-02 guard bash found ioutil.ReadAll, io.CopyBuffer,
+// ReadFrom, a bufio.NewReader wrap and a `body := r.Body` alias all
+// silent.
+func sinkArg(pass *analysis.Pass, call *ast.CallExpr) ast.Expr {
+	if argIdx, ok := sinks[astx.PkgFuncName(pass, call.Fun)]; ok {
+		if argIdx < len(call.Args) {
+			return call.Args[argIdx]
+		}
+		return nil
+	}
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ReadFrom" && len(call.Args) == 1 {
+		return call.Args[0]
+	}
+	return nil
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -125,16 +154,17 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		checkFormParse(pass, f)
+		aliases := readsrc.SingleBindings(pass, f)
 		walkWithFuncs(f, func(n ast.Node, fn ast.Node, encl *ast.FuncDecl) {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || fn == nil {
 				return
 			}
-			argIdx, ok := sinks[astx.PkgFuncName(pass, call.Fun)]
-			if !ok || argIdx >= len(call.Args) {
+			arg := sinkArg(pass, call)
+			if arg == nil {
 				return
 			}
-			sel, ok := call.Args[argIdx].(*ast.SelectorExpr)
+			sel, ok := readsrc.Source(pass, arg, aliases).(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Body" {
 				return
 			}

@@ -69,7 +69,7 @@
 
   const G = NS;
   const _pend = new Map();          // in-flight dedup, module side: path -> epoch
-  let _navPointer = false;        // pointer modality, set from nav's `pointer` opt
+  let _navRing;                   // focus ring modality, set from nav's `ring` opt
 
   // The module's screen cache: same LRU contract as core's, its own
   // map. Fields are the module's own shape (fills/seed/parts/vt
@@ -191,11 +191,11 @@
 
   const _focusSwapTarget = (el) => {
     if (typeof el.focus !== 'function') return;
-    try { el.focus({ preventScroll: true, focusVisible: !_navPointer }); } catch (_) { /* older Safari */ }
+    try { el.focus({ preventScroll: true, focusVisible: _navRing }); } catch (_) { /* older Safari */ }
   };
-  // _navPointer is core's modality record for the navigation being
-  // applied, handed over with each delegated load (nav's `pointer`
-  // opt). This module never listens for clicks itself: it
+  // _navRing is core's modality record for the navigation being
+  // applied (undefined for a programmatic one: the browser decides),
+  // handed over with each delegated load (nav's `ring` opt). This module never listens for clicks itself: it
   // demand-loads beside the first navigation's fetch, after that
   // click, so its own listener would miss it and the ring would
   // paint on the first mouse navigation.
@@ -706,10 +706,10 @@
     return nav(path, o);
   };
   const nav = async (path, o) => {
-    const { bypassCache = false, forceFull = false, from = null, restore = null, pointer = false } = o || {};
+    const { bypassCache = false, forceFull = false, from = null, restore = null, ring } = o || {};
     // Core's modality record for THIS navigation, bound at entry
     // before the first await: the swap tail focuses with it.
-    _navPointer = pointer;
+    _navRing = ring;
     // Dedup in-flight nav, but only while the pending one is the live
     // navigation: on A→B→A the pending A is stale, and returning left B
     // live under the URL /a. A replay (cache or prefetch) drops its

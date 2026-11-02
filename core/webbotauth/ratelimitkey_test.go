@@ -34,6 +34,22 @@ func TestRateLimitKeyUnverifiedUsesFallback(t *testing.T) {
 	}
 }
 
+// An IPv6 subscriber holds a whole /64; the nil fallback keyed the full
+// address, so rotating source addresses minted a fresh budget per request.
+// Found by the ratelimitkey analyzer.
+func TestRateLimitKeyNilFallbackCollapsesIPv6(t *testing.T) {
+	key := RateLimitKey(nil)
+	seen := map[string]bool{}
+	for _, addr := range []string{"[2001:db8:1:2::1]:4567", "[2001:db8:1:2:ffff::9]:80"} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = addr
+		seen[key(r)] = true
+	}
+	if len(seen) != 1 || !seen["2001:db8:1:2::/64"] {
+		t.Fatalf("SECURITY: nil-fallback keys inside one /64 = %v, want the single key 2001:db8:1:2::/64", seen)
+	}
+}
+
 func TestRateLimitKeyNilFallbackIsRemoteHost(t *testing.T) {
 	key := RateLimitKey(nil)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)

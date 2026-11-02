@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=034ed374b2910a64
+//gofastr:generated generator=app kind=scaffold version=dev sum=0dea6e6df6d6cbfd
 
 package main
 
@@ -37,7 +37,7 @@ func (s *CategoriesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text(categoriesCrudTextCategories.Text(ctx))),
-		appUI.List("categories").Columns("name", "description", "active").PageSize(50).NoCreate().Heading(categoriesCrudTextAllCategories.Text(ctx), 2).Empty(categoriesCrudTextNoCategoriesYet.Text(ctx)).RenderCtx(ctx),
+		appUI.List("categories").Columns("name", "description", "active").PageSize(50).NoCreate().NoLinks().Heading(categoriesCrudTextAllCategories.Text(ctx), 2).Empty(categoriesCrudTextNoCategoriesYet.Text(ctx)).RenderCtx(ctx),
 	)
 }
 

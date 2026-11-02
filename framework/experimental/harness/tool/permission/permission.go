@@ -63,6 +63,13 @@ type Rule struct {
 	Glob bool `json:",omitempty"`
 	// What to do when matched.
 	Action Decision
+	// Dir is the working directory an "Allow always" (persistent) rule
+	// was granted in; Evaluate honours a persistent rule only in that
+	// directory. A summary leaves the working directory implicit (Bash's
+	// default cwd, Grep's default path), so without it one approval of
+	// `go test ./...` in your own repo ran a cloned repo's tests with no
+	// prompt. Session and profile rules ignore it.
+	Dir string `json:",omitempty"`
 }
 
 // Match reports whether the rule applies to a given (tool, argv) pair.
@@ -112,12 +119,19 @@ type Engine struct {
 
 	// QuietMode pre-shipped preset; default ON. When ON, common
 	// read-only argv shapes (git status, ls, grep, find, …) are
-	// allowed without prompting.
+	// allowed without prompting, as long as every path they read
+	// resolves under WorkingDir.
 	QuietMode bool
 
 	// StrictPermissions overrides QuietMode (default off). When ON,
 	// every tool call is gated.
 	StrictPermissions bool
+
+	// WorkingDir is the directory the session's tools run in. A
+	// persistent rule is stamped with it when saved and honoured only
+	// while it matches, so "Allow always" covers one checkout, not
+	// every repo the harness later runs in.
+	WorkingDir string
 }
 
 // New returns an Engine with the given profile rules and QuietMode on.
@@ -145,8 +159,13 @@ func (e *Engine) Evaluate(session ids.SessionID, toolName, argv string, mutating
 			return r.Action
 		}
 	}
-	// 2) Persistent rules (from "Allow always", survive restart).
+	// 2) Persistent rules (from "Allow always", survive restart), only
+	// in the working directory each was granted in. A rule saved before
+	// rules carried a Dir names none and prompts once more.
 	for _, r := range e.persistentRules {
+		if r.Dir != e.WorkingDir {
+			continue
+		}
 		if r.Match(toolName, argv) {
 			return r.Action
 		}
@@ -164,7 +183,7 @@ func (e *Engine) Evaluate(session ids.SessionID, toolName, argv string, mutating
 	// Quiet-mode preset applies to known-safe shapes regardless of
 	// the tool's is_mutating flag. Bash is always is_mutating=true
 	// because it CAN mutate, but `git status` is safe in practice.
-	if e.QuietMode && quietModeAllows(toolName, argv) {
+	if e.QuietMode && quietModeAllows(e.WorkingDir, toolName, argv) {
 		return DecisionAllow
 	}
 	if mutating {
@@ -238,15 +257,16 @@ func AnswerToRule(toolName, argvSummary string, ans control.AnswerPermission) (R
 // quietModeAllows returns true for known-safe read-only argv shapes
 // that the quiet-mode preset permits without prompting.
 //
-// Coverage: Read/Glob/Ls/Grep against anywhere (the tools themselves
-// are non-mutating); Bash patterns matching the read-only allowlist
-// in the doc (git status, ls, pwd, grep, find, …).
-func quietModeAllows(toolName, argv string) bool {
+// Coverage: Read/Glob/Ls/Grep, and Bash patterns matching the read-only
+// allowlist in the doc (git status, ls, pwd, grep, find, …), each only
+// while every path it reads resolves under workingDir (the process
+// working directory when empty). See quietPathsInside.
+func quietModeAllows(workingDir, toolName, argv string) bool {
 	switch toolName {
 	case "Read", "Glob", "Ls", "Grep":
-		return true
+		return quietPathsInside(workingDir, toolName, argv)
 	case "Bash":
-		return bashQuietAllow(argv)
+		return bashQuietAllow(argv) && quietPathsInside(workingDir, toolName, argv)
 	}
 	return false
 }

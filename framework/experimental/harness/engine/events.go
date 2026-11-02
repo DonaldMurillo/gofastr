@@ -7,10 +7,12 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
@@ -278,7 +280,7 @@ func (b *Bus) fromLog(ctx context.Context, since, upto uint64, emit func(control
 		if ctx.Err() != nil {
 			return false
 		}
-		page, err := log.EventsSince(ctx, b.session, last, logPage)
+		page, err := b.readLog(ctx, log, last)
 		if err != nil || len(page) == 0 {
 			break
 		}
@@ -311,6 +313,20 @@ func (b *Bus) fromLog(ctx context.Context, since, upto uint64, emit func(control
 		return emit(b.gap(last+1, upto))
 	}
 	return true
+}
+
+// readLog is one page of the session log under a recover guard. The log
+// is the store SetLog installed, read on SubscribeSince's goroutine,
+// which no per-request recover net reaches: a panic there is a read
+// error, and fromLog closes the range it could not read with a
+// StreamGap.
+func (b *Bus) readLog(ctx context.Context, log EventLog, since uint64) (page []control.EventEnvelope, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			page, err = nil, fmt.Errorf("engine: session log read panicked: %s", textsafe.Recovered(r))
+		}
+	}()
+	return log.EventsSince(ctx, b.session, since, logPage)
 }
 
 // gap builds the StreamGap envelope for ids from..to. It carries id 0:

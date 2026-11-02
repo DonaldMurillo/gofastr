@@ -83,6 +83,11 @@ func TestExecuteHooksRecoversPanicShapes(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected the recovered panic as an error")
 			}
+			// Typed, so a caller that answers a Before hook's refusal with
+			// its text can tell a fault from a refusal (crud answers 500).
+			if _, ok := errors.AsType[*PanicError](err); !ok {
+				t.Errorf("recovered panic = %T, want *PanicError", err)
+			}
 
 			// Registry still usable after the recovered panic: the panicking hook
 			// keeps firing (converted to an error every time), and a healthy hook

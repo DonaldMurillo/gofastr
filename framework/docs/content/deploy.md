@@ -111,7 +111,12 @@ one token lifetime, after which you drop the old one.
   `GOFASTR_SECRET_PREVIOUS` to the old (comma-separated to roll through
   several; each ≥32 chars). In code: `framework.WithSecretRotation(newSecret,
   oldSecret)`. Deploy to every replica, wait one session TTL, then unset
-  `GOFASTR_SECRET_PREVIOUS` and redeploy.
+  `GOFASTR_SECRET_PREVIOUS` and redeploy. `GOFASTR_SECRET` is used exactly as set,
+  surrounding whitespace included; an old value that carries some (a
+  trailing newline from a file, a pasted space or tab) is accepted in
+  `GOFASTR_SECRET_PREVIOUS` both with and without it. In a comma-separated
+  list the spaces around each comma are layout, so only an entry's line
+  break is kept there: move such a value in on its own.
 - **`AuthConfig.JWTSecret`**: set `JWTSecret` to the new value and move the
   old into `JWTPreviousSecrets`. Wait one `JWTExpiry` (default 1h), then
   remove it and redeploy.
@@ -151,8 +156,16 @@ serve HTTPS itself (next section). `App.Start` installs signal handling and
 drains in-flight requests on `SIGINT`/`SIGTERM` via `App.Shutdown`, so
 rolling deploys don't cut active requests.
 
-The drain is **bounded**: `AppConfig.ShutdownTimeout` (default 15s) caps
-it, and anything still open at the deadline is force-closed so the process
+First, `/readyz` turns `503` and the app keeps serving for the readiness
+grace (default 5s, `framework.WithReadinessDrain`; see
+[Health and readiness](health-checks.md#draining-on-shutdown)), so the
+load balancer stops routing here before the listener closes. `/healthz`
+stays `200` until exit. The grace counts against `Shutdown`'s deadline
+and takes at most half of it; an app bound to loopback only, or run by
+`battery/service`, skips it.
+
+The drain after it is **bounded**: `AppConfig.ShutdownTimeout` (default
+15s, on top of the grace) caps it, and anything still open at the deadline is force-closed so the process
 exits well inside Kubernetes' 30s SIGTERM→SIGKILL window. Long-lived
 connections never go idle, so the drain does not wait on them; it ends
 them when it starts, and the client reconnects to another replica or to
@@ -299,6 +312,11 @@ app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTim
 Prefer the smallest raise that covers your slowest real request over disabling
 the deadline entirely. `WriteTimeout` is a whole-response backstop: without
 it, a handler that hangs holds its connection (and a goroutine) forever.
+A `RequestTimeout` raised past the write deadline raises an unset
+`WriteTimeout` to the budget plus 10s; an explicit `WriteTimeout` no
+longer than an explicit `RequestTimeout` makes `Start` return an error,
+since every buffered response finished after the write deadline would be
+lost. `0` still disables it.
 
 The per-request middleware deadline (`AppConfig.RequestTimeout`, default
 30s) can be overridden per route or per group instead of app-wide:

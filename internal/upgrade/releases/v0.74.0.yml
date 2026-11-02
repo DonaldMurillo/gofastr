@@ -16,8 +16,9 @@ notes:
     hits: edit
     guidance: "The old string emitted JSON no spec-compliant MCP Apps host could parse, so there is no working caller to preserve. Set the four fields instead; an app that sets no CSP is unaffected."
     find:
-      fields:
-        - field: gofastr/core/mcp.AppConfig.CSP
+      shapes:
+        - symbol: gofastr/core/mcp.AppConfig.CSP
+          type: '^string$'
   - change: data-fui-confirm is honored on every form submit, not only data-fui-rpc dispatch
     breaking: false
     guidance: "Fix. A plain POST form carrying the attribute previously submitted with no prompt. If you relied on that no-op, remove the attribute."

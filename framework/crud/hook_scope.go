@@ -45,7 +45,7 @@ func beforeScopeHidesKey(ctx context.Context, conn DBExecutor, table string, key
 	}
 	qb := query.Select(key[0]).From(table)
 	for i, k := range key {
-		qb.Where(k+" = $1", vals[i])
+		qb.Where(query.QuoteKeyword(k)+" = $1", vals[i])
 	}
 	return clausesFindNothing(ctx, conn, qb, clauses)
 }
@@ -77,31 +77,47 @@ const (
 // DELETE, move, restore or purge a row it could not read; only the
 // response was cut to the id.
 //
+// guarded names the Before hooks the write runs next (BeforeUpdate on an
+// update, BeforeDelete on a delete). When any of them is registered the
+// target must also exist under the write's own scope before they run, so
+// a hook, which may send an email or delete a file no rollback undoes,
+// never sees an id the caller cannot touch: another owner's row, another
+// tenant's, a trashed row, a missing id (owner decision D-20). That scope
+// check runs under WithServerWrites too, with the owner and tenant scope
+// the write itself applies; only the BeforeGet clauses are skipped there.
+//
 // The write calls it first inside its transaction, before any statement
-// of its own, so the SELECT runs on ctx's tx. The hooks see the request
-// scopeRequest picks: always on an HTTP route, in process only under
-// WithReadHooks, the rule GetOne follows. A WithServerWrites caller is
-// trusted server Go, as on the cascade checks. No BeforeGet hook, or none
-// that appends a clause, costs nothing. Otherwise one keyed SELECT asks
-// for the row under the WHERE the write itself applies (tenant, owner
-// write scope, deleted_at IS NULL unless trashed is set) plus the hooks'
+// of its own, so the SELECT runs on ctx's tx. The BeforeGet hooks see the
+// request scopeRequest picks: always on an HTTP route, in process only
+// under WithReadHooks, the rule GetOne follows. A WithServerWrites caller
+// is trusted server Go, as on the cascade checks. No guarded hook and no
+// BeforeGet clause costs nothing. Otherwise one keyed SELECT asks for the
+// row under the WHERE the write itself applies (tenant, owner write
+// scope, deleted_at IS NULL unless trashed is set) plus the hooks'
 // clauses. Every row the write would not find answers here, at the same
 // point: hidden, missing, another owner's. They stay indistinguishable
 // even for a body the write would have refused further on. A hook error
 // hides the row: it fails closed.
-func (ch *CrudHandler) refuseHiddenTarget(ctx context.Context, r *http.Request, id string, trashed bool) error {
-	if ch.Hooks == nil || len(ch.Hooks.HooksFor(hook.BeforeGet)) == 0 || serverWrites(ctx) {
+func (ch *CrudHandler) refuseHiddenTarget(ctx context.Context, r *http.Request, id string, trashed bool, guarded ...hook.HookType) error {
+	if ch.Hooks == nil {
 		return nil
 	}
-	hr, apply := scopeRequest(ctx, r)
-	if !apply {
-		return nil
+	probe := false
+	for _, ht := range guarded {
+		if len(ch.Hooks.HooksFor(ht)) > 0 {
+			probe = true
+		}
 	}
-	clauses, err := ch.ownBeforeScopes(ctx, hr, id, false)
-	if err != nil {
-		return errNotFound
+	var clauses []hook.WhereClause
+	if len(ch.Hooks.HooksFor(hook.BeforeGet)) > 0 && !serverWrites(ctx) {
+		if hr, apply := scopeRequest(ctx, r); apply {
+			var err error
+			if clauses, err = ch.ownBeforeScopes(ctx, hr, id, false); err != nil {
+				return errNotFound
+			}
+		}
 	}
-	if len(clauses) == 0 {
+	if len(clauses) == 0 && !probe {
 		return nil
 	}
 	table, key := ch.Entity.GetTable(), ch.keyCols()

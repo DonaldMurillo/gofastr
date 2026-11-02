@@ -103,6 +103,17 @@
 // closure the loop calls: crud's authzHeld), or a resolver re-run
 // inside any park loop of the stream (harness REST's verifyToken per
 // event, the harness ws revocationWatch ticker that closes the socket).
+// A re-check that runs only when an event arrives does not count for a
+// delivery loop parked on a select (2bb698d2e: core/mcp's GET stream
+// re-established its caller on the delivery case alone, so a revoked
+// session's idle stream held its seat for as long as no notification
+// was raised): unless some park loop of the stream reaches the re-check
+// on a timer — a select case receiving from a time.Time channel (a
+// Ticker's or Timer's C, time.After) whose body reaches it, a loop body
+// that reaches it beside a select holding such a case, or a range over
+// a time channel (the revocationWatch goroutine) — each select-parked
+// delivery loop that does reach it is reported. A ticker whose case only
+// writes a heartbeat is not one.
 // When the identity IS re-checked, the arm then reads the connect-time
 // DECISIONS the stream's own families make outside their loops — an
 // authorize-named call, or a tenant accessor (GetTenantID/GetTenant)

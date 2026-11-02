@@ -3,6 +3,7 @@ package log
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -85,6 +86,11 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// rw records whether the response started (a final status, a
+			// body byte, a flush). A panic after that cannot become a 500:
+			// net/http would drop the status and append the error body to
+			// the bytes already sent.
+			rw := &countingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
 				if v := recover(); v != nil {
 					// net/http's abort signal, not a bug: re-raise it so the
@@ -103,10 +109,16 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 						RequestID: textsafe.ScrubControlBytes(middleware.GetRequestID(r.Context())),
 						ctx:       r.Context(),
 					})
+					if rw.wroteHeader {
+						// Reported above; cut the connection so the client
+						// sees a truncated response, not a 500 body spliced
+						// onto the one it was already reading.
+						panic(http.ErrAbortHandler)
+					}
 					i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				}
 			}()
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(rw, r)
 		})
 	}
 }
@@ -126,9 +138,12 @@ func (rw *countingResponseWriter) WriteHeader(code int) {
 		rw.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
 		return
 	}
+	// Latch only once the call returned: net/http panics on a code
+	// outside 100-999 before sending anything, and the recovery
+	// middleware still owes that request its 500.
+	rw.ResponseWriter.WriteHeader(code)
 	rw.status = code
 	rw.wroteHeader = true
-	rw.ResponseWriter.WriteHeader(code)
 }
 
 func (rw *countingResponseWriter) Write(b []byte) (int, error) {
@@ -141,12 +156,27 @@ func (rw *countingResponseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// ReadFrom keeps the connection's sendfile path: io.Copy and
+// http.ServeContent use the writer's ReaderFrom when it has one, and
+// embedding http.ResponseWriter does not promote it. It latches the
+// implicit 200 and counts the bytes the way Write does.
+func (rw *countingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	rw.wroteHeader = true
+	n, err := io.Copy(rw.ResponseWriter, src)
+	rw.bytes += n
+	return n, err
+}
+
 // Flush forwards to the underlying ResponseWriter's Flusher if it has one.
 // Without this, any SSE / chunked-JSON / long-poll handler downstream of
 // battery/log returns 500 "streaming unsupported", its
 // `w.(http.Flusher)` assertion fails against the wrapper. Mirrors the
 // fix already present on core/middleware.metricsResponseWriter.
 func (rw *countingResponseWriter) Flush() {
+	// A flush sends the headers: the status is the one set, or 200.
+	// Latch it, so a WriteHeader after the flush (which net/http drops)
+	// does not log a status the client never got.
+	rw.wroteHeader = true
 	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

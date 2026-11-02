@@ -299,9 +299,22 @@ jobs:
         # Affected packages, except that a change under internal/analyzers
         # or cmd/vettool vets everything: a new rule can flag code nobody
         # touched.
+        #
+        # Then again as windows and darwin: the runner is ubuntu-only, so
+        # a _windows.go or _darwin.go file (battery/desktop, the desktop
+        # build command) was never vetted at all. affected runs as a built
+        # binary under each GOOS so its own go list sees that OS's files
+        # and OS-only packages; `go run` would build it for the target OS.
+        # CGO_ENABLED=0 for the same reason as the cross-compile smoke.
         run: |
           go build -o /tmp/gofastr-vettool ./cmd/vettool
-          go run ./cmd/affected -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/ -- go vet -vettool=/tmp/gofastr-vettool
+          go build -o /tmp/gofastr-affected ./cmd/affected
+          vet_flags="-all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/"
+          /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
+          for os in windows darwin; do
+            echo "vettool, GOOS=$os"
+            CGO_ENABLED=0 GOOS=$os /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
+          done
 
       - name: Duplicate code (dupl, baseline-gated)
         # make dupl counts dupl clone groups (threshold 100) over the

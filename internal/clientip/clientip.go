@@ -17,6 +17,7 @@ package clientip
 import (
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 )
 
@@ -117,4 +118,30 @@ func ParseHop(s string) net.IP {
 		return net.ParseIP(host)
 	}
 	return nil
+}
+
+// RateKey turns a client address into a per-client rate-limit key. An
+// IPv4 address (an IPv4-mapped IPv6 one included) is itself. An IPv6
+// address becomes its /64 prefix: one subscriber is routinely handed a
+// whole /64, 2^64 addresses, so keying on the full address let a single
+// client rotate past every per-IP limit with a fresh source address per
+// request. Anything that does not parse as an IP is returned unchanged.
+//
+// framework/ratelimit.IPKey, core/middleware.RateLimit's default keys and
+// core/webbotauth.RateLimitKey's default fallback share it, so the prefix
+// rule has one implementation.
+func RateKey(addr string) string {
+	ip, err := netip.ParseAddr(addr)
+	if err != nil {
+		return addr
+	}
+	ip = ip.Unmap()
+	if ip.Is4() {
+		return ip.String()
+	}
+	p, err := ip.WithZone("").Prefix(64)
+	if err != nil {
+		return addr
+	}
+	return p.String()
 }

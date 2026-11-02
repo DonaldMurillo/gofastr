@@ -9,5 +9,5 @@ import (
 )
 
 func TestCompositeKey(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), compositekey.Analyzer, "ck", "ckalt")
+	analysistest.Run(t, analysistest.TestData(), compositekey.Analyzer, "ck", "ckalt", "printkey")
 }

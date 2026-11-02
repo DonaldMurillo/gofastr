@@ -118,7 +118,7 @@ func tsKeyType(decl framework.EntityDeclaration) string {
 	}
 	parts := make([]string, len(cols))
 	for i, k := range cols {
-		parts[i] = appspec.ToCamelJSON(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
+		parts[i] = appspec.WireKey(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
 	}
 	return "readonly [" + strings.Join(parts, ", ") + "]"
 }
@@ -135,7 +135,7 @@ func tsKeyArgs(decl framework.EntityDeclaration) string {
 	cols := declKeyCols(decl)
 	fields := make([]string, len(cols))
 	for i, k := range cols {
-		fields[i] = appspec.ToCamelJSON(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
+		fields[i] = appspec.WireKey(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
 	}
 	return ", " + tsKeyType(decl) + ", { " + strings.Join(fields, "; ") + " }"
 }
@@ -169,7 +169,7 @@ func jsUploadColumns(decl framework.EntityDeclaration) string {
 		if f.Hidden || dropCreate(f) {
 			continue
 		}
-		pairs = append(pairs, fmt.Sprintf("%q: %q", appspec.ToCamelJSON(f.Name), f.Name))
+		pairs = append(pairs, fmt.Sprintf("%q: %q", appspec.WireKey(f.Name), f.Name))
 	}
 	return ", { " + strings.Join(pairs, ", ") + " }"
 }
@@ -219,7 +219,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if slices.Contains(decl.PrimaryKey, fd.Name) {
 			opt = ""
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values)+dtsNull(decl, fd))
+		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.WireKey(fd.Name), opt, tsTypeForField(fd.Type, fd.Values)+dtsNull(decl, fd))
 	}
 	dts.WriteString("}\n\n")
 
@@ -236,7 +236,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 			continue
 		}
 		if dropUpdate(fd) {
-			patchOmit = append(patchOmit, fmt.Sprintf("%q", appspec.ToCamelJSON(fd.Name)))
+			patchOmit = append(patchOmit, fmt.Sprintf("%q", appspec.WireKey(fd.Name)))
 		}
 		opt := "?"
 		if inputTakesValue(fd) {
@@ -247,7 +247,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 			// A Blob (a File is one) is uploaded; a string is a stored URL.
 			typ += " | Blob"
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, typ)
+		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.WireKey(fd.Name), opt, typ)
 	}
 	dts.WriteString("}\n\n")
 
@@ -850,6 +850,7 @@ const jsClientMethods = `  async do(method, path, body) {
   }
 
   async _sse(path, onEvent, { signal } = {}) {
+    const cap = 1 << 20;
     const headers = { Accept: "text/event-stream" };
     if (this.token) headers.Authorization = "Bearer " + this.token;
     const resp = await this._fetch(this.baseURL + path, { headers, signal });
@@ -858,9 +859,14 @@ const jsClientMethods = `  async do(method, path, body) {
     }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
+    // The cap counts UTF-8 bytes, as _readBody and the Go client do; a
+    // string's length counts UTF-16 code units, as few as a third of them.
+    const encoder = new TextEncoder();
     let buffer = "";
+    let lineBytes = 0;
     let event = "";
     let data = "";
+    let dataBytes = 0;
     for (;;) {
       let chunk;
       try {
@@ -871,6 +877,17 @@ const jsClientMethods = `  async do(method, path, body) {
       }
       if (chunk.done) return;
       buffer += decoder.decode(chunk.value, { stream: true });
+      // A newline byte is never part of a multi-byte character, so the
+      // bytes after the chunk's last one are the open line's.
+      const nl = chunk.value.lastIndexOf(10);
+      lineBytes = nl < 0 ? lineBytes + chunk.value.byteLength : chunk.value.byteLength - nl - 1;
+      // A line, and an event's joined data, are bounded at the body cap
+      // _readBody enforces: a feed that never ends one would otherwise
+      // grow the subscriber's heap without limit.
+      const overCap = async (what) => {
+        try { await reader.cancel(); } catch { /* stream already closed */ }
+        return new ApiError(resp.status, "event stream " + what + " exceeded " + cap + " bytes");
+      };
       let idx;
       while ((idx = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, idx).replace(/\r$/, "");
@@ -883,14 +900,19 @@ const jsClientMethods = `  async do(method, path, body) {
           }
           event = "";
           data = "";
+          dataBytes = 0;
         } else if (line.startsWith(":")) {
           // heartbeat
         } else if (line.startsWith("event:")) {
           event = line.slice(6).trim();
         } else if (line.startsWith("data:")) {
-          data += line.slice(5).trim();
+          const piece = line.slice(5).trim();
+          dataBytes += encoder.encode(piece).byteLength;
+          if (dataBytes > cap) throw await overCap("event data");
+          data += piece;
         }
       }
+      if (lineBytes > cap) throw await overCap("line");
     }
   }
 

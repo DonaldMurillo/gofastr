@@ -39,8 +39,8 @@ func expectLock(mock sqlmock.Sqlmock) {
 }
 
 func expectUnlock(mock sqlmock.Sqlmock) {
-	mock.ExpectExec(regexp.QuoteMeta("SELECT pg_advisory_unlock($1)")).
-		WithArgs(AdvisoryLockKey).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT pg_advisory_unlock($1)")).
+		WithArgs(AdvisoryLockKey).WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_unlock"}).AddRow(true))
 }
 
 // expectCreateTable expects the CREATE TABLE IF NOT EXISTS for _migrations

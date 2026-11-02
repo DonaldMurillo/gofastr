@@ -350,6 +350,15 @@ calls waiting on a lookup share its result, and the next call looks up
 again. A lookup invalidated while it runs shares nothing, so its waiters
 look up again.
 
+**`Invalidate` and `InvalidateAll` clear this replica's cache only.** No
+fanout carries them. With several replicas behind a load balancer, the
+others keep serving a user's old roles until their own entries expire, up
+to the TTL (30 seconds by default). A demoted admin can still act as admin
+on another replica for that long. If that window is too wide, shorten it
+with `access.WithTTL`, or keep the role inputs in a `GrantStore`, whose
+grants and revokes reach every replica on its fanout (see
+[Cross-replica grant propagation](#cross-replica-grant-propagation)).
+
 The map is bounded, not just expired-on-read: a later `Resolve` sweeps
 entries whose TTL has lapsed at most once per TTL, and once 100,000
 distinct user ids are cached it sheds entries to a low-water mark
@@ -607,6 +616,15 @@ rebuilds the role as `(code baseline ∪ DB grants) − revocation tombstones`).
 The message body is never trusted: a crafted payload can only trigger a
 re-read, never pollute the policy directly.
 
+A refresh signal is best effort: a stalled bus drops frames. So every
+replica with a fanout also reloads every role from the database on a
+timer, every 5 minutes by default (`access.DefaultReconcileInterval`). A
+replica that missed a revoke stops honouring it within one interval
+instead of keeping it until the next change to that role or a restart.
+Set the interval with `access.WithReconcileInterval(d)`; zero or negative
+turns the reconcile off. The timer starts with `SetFanout` and stops with
+the stop function it returns, so a store without a fanout runs none.
+
 ### Revocation tombstones
 
 A `Revoke` does more than delete the grant row: it also inserts a
@@ -650,6 +668,12 @@ revoked grant stays revoked on every replica:
   current registry first and subtract tombstones second, so revoking one
   capability it covers (`reports:delete`) keeps it revoked on every
   reload.
+- **A reload leaves out what a strict policy refuses.** A role's DB rows
+  can hold a capability this replica has not registered: a newer replica
+  in a rolling deploy registered and granted it first. A fanout reload
+  drops that grant, with a warning, and applies the rest of the role, so
+  a revoke issued after it still lands. `LoadInto` keeps refusing such a
+  row at boot.
 
 **Consistency window.** Fanout is lossy best-effort. A publish that
 doesn't reach a peer (the peer's queue overflowed, the bus was briefly
@@ -659,6 +683,11 @@ reads from and writes to the DB; only the in-memory cache lags. A
 reconnecting replica's `LoadInto` reloads authoritative state on boot,
 and because tombstones live in the DB, a missed revoke signal does not
 resurrect on restart. The boot re-applies the tombstone.
+
+**Backups.** `EnsureSchema` registers both tables with `App.ExportData`,
+so an archive carries the runtime grants and the tombstones, and a restore
+keeps every revoke of a permission the code declares. Restart after
+`App.ImportData`: `LoadInto` reads the restored rows at boot.
 
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,

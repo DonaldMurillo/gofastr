@@ -120,7 +120,9 @@
     const isEnter = function (e) { return e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13; };
     form.querySelectorAll('textarea').forEach(function (ta) {
       ta.addEventListener('keydown', function (e) {
-        if (!isEnter(e) || e.shiftKey || e.isComposing) return;
+        // Safari's composition-ending Enter has isComposing false and
+        // the IME's keyCode 229: it confirms the conversion, not the form.
+        if (!isEnter(e) || e.shiftKey || e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
         e.stopPropagation();
         if (form.requestSubmit) form.requestSubmit();

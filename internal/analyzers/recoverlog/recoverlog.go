@@ -39,8 +39,11 @@
 // that parameter, with no scrub in between. Log sinks are the ones
 // controlbytes lists: package-level slog.* and *slog.Logger methods
 // (message and values, slog.Any/slog.String), slog.Log, the std log
-// package (package-level or on a *log.Logger), and fmt.Print* /
-// fmt.Fprint* to os.Stdout/os.Stderr.
+// package (package-level or on a *log.Logger; Print*, and the Fatal* and
+// Panic* families, which print the message before they exit or panic),
+// fmt.Print* / fmt.Fprint* to os.Stdout/os.Stderr, and WriteString /
+// Write on os.Stdout/os.Stderr themselves. Fatal*, Panic* and the direct
+// stream write arrived with the 2026-11-02 guard bash.
 //
 // A value counts as scrubbed when it passes through a call whose name
 // says scrub/sanitiz/strip/Recovered (core/textsafe.Recovered is the
@@ -559,7 +562,10 @@ var sinks = []sink{
 				return false
 			}
 			switch sel.Sel.Name {
-			case "Print", "Printf", "Println":
+			case "Print", "Printf", "Println",
+				// Fatal* and Panic* print the same message through the
+				// logger before they exit or panic.
+				"Fatal", "Fatalf", "Fatalln", "Panic", "Panicf", "Panicln":
 			default:
 				return false
 			}
@@ -579,6 +585,14 @@ var sinks = []sink{
 			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
+			}
+			// os.Stderr.WriteString(msg) / .Write([]byte(msg)): the
+			// stream written directly, without fmt.
+			if sel.Sel.Name == "WriteString" || sel.Sel.Name == "Write" {
+				if wsel, ok := ast.Unparen(sel.X).(*ast.SelectorExpr); ok &&
+					(wsel.Sel.Name == "Stdout" || wsel.Sel.Name == "Stderr") && a.pkgPathOf(wsel) == "os" {
+					return true
+				}
 			}
 			switch a.qualifiedFunc(sel) {
 			case "fmt.Print", "fmt.Printf", "fmt.Println":

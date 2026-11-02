@@ -262,18 +262,18 @@ func RunAudit(args []string) {
 		}
 		findings, err := auditDeps(root)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "audit deps: %v\n", err)
+			cli.Fprintf(os.Stderr, "audit deps: %v\n", err)
 			cli.OsExit(1)
 		}
-		fmt.Print(formatAuditReport(findings))
+		cli.Print(formatAuditReport(findings))
 		if _, entries, err := project.UnmountedSettings(root); err != nil {
-			fmt.Fprintf(os.Stderr, "audit deps: %v\n", err)
+			cli.Fprintf(os.Stderr, "audit deps: %v\n", err)
 			cli.OsExit(1)
 		} else if len(entries) > 0 {
 			fmt.Println()
 			fmt.Println("Unmounted gofastr packages (copies this app owns; framework fixes no longer reach them):")
 			for _, e := range entries {
-				fmt.Printf("  %s\n", project.DescribeUnmounted(e))
+				cli.Printf("  %s\n", project.DescribeUnmounted(e))
 			}
 		}
 	case "lint":
@@ -283,7 +283,7 @@ func RunAudit(args []string) {
 		}
 		findings, err := auditLint(root)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "audit lint: %v\n", err)
+			cli.Fprintf(os.Stderr, "audit lint: %v\n", err)
 			cli.OsExit(1)
 		}
 		// `audit lint` predates the contract system and knows nothing
@@ -295,14 +295,14 @@ func RunAudit(args []string) {
 		cli.Info("verify covers these rules with a reason, a fix, and an example per finding,")
 		cli.Info("and honours gofastr.settings.yml + //gofastr:allow, which this scan does not.")
 		fmt.Println()
-		fmt.Print(formatLintReport(findings))
+		cli.Print(formatLintReport(findings))
 		if len(findings) > 0 {
 			cli.OsExit(1)
 		}
 	case "a11y":
 		runAuditA11y(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown audit subcommand: %s\n", args[0])
+		cli.Fprintf(os.Stderr, "Unknown audit subcommand: %s\n", args[0])
 		cli.OsExit(2)
 	}
 }

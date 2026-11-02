@@ -69,16 +69,28 @@ func WithSQLIdempotencyTable(name string) SQLIdempotencyOption {
 }
 
 // WithSQLIdempotencyTTL overrides the default 24h cached-response TTL.
+// d <= 0 keeps the default: a zero TTL expired the cached response on
+// write, so every retry ran the handler again.
 func WithSQLIdempotencyTTL(d time.Duration) SQLIdempotencyOption {
-	return func(s *SQLIdempotencyStore) { s.ttl = d }
+	return func(s *SQLIdempotencyStore) {
+		if d > 0 {
+			s.ttl = d
+		}
+	}
 }
 
 // WithSQLIdempotencyInFlightTTL overrides the default 30s in-flight
 // claim TTL. Set this above the worst-case handler latency: a slower
 // handler whose claim expires mid-execution lets retries see "no row"
-// and execute again.
+// and execute again. d <= 0 keeps the default: a zero TTL wrote every
+// claim already expired, which is that duplicate execution on every
+// retry.
 func WithSQLIdempotencyInFlightTTL(d time.Duration) SQLIdempotencyOption {
-	return func(s *SQLIdempotencyStore) { s.inFlightTTL = d }
+	return func(s *SQLIdempotencyStore) {
+		if d > 0 {
+			s.inFlightTTL = d
+		}
+	}
 }
 
 // WithSQLIdempotencyDialect pins the SQL dialect ("postgres" or

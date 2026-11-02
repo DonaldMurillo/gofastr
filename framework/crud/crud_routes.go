@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -82,18 +83,34 @@ func transitionParam(cols []string) string {
 
 // PathRecordID is the record id a request routed through KeyPath(cols)
 // names, as entity.JoinKey renders it, for a handler mounted beside the
-// CRUD routes (an admin restore, say). It is "" when a key segment is.
+// CRUD routes (an admin restore, say). It is "" when a key segment is,
+// and when a segment is not text a database can store (invalid UTF-8 or
+// a NUL, which arrive percent-decoded): Postgres refuses either in a
+// text bind with 22021, so GET /items/%FF answered 500 there while
+// SQLite answered 404. Every handler answers a missing id with 400.
 func PathRecordID(r *http.Request, cols []string) string {
 	if len(cols) <= 1 {
-		return r.PathValue("id")
+		id := r.PathValue("id")
+		if !storableKey(id) {
+			return ""
+		}
+		return id
 	}
 	parts := make([]string, len(cols))
 	for i, c := range cols {
-		if parts[i] = r.PathValue(c); parts[i] == "" {
+		v := r.PathValue(c)
+		if v == "" || !storableKey(v) {
 			return ""
 		}
+		parts[i] = v
 	}
 	return entity.JoinKey(parts)
+}
+
+// storableKey reports whether a key segment is text Postgres binds:
+// valid UTF-8 holding no NUL byte (filter's storableText rule).
+func storableKey(s string) bool {
+	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
 }
 
 // pathID is PathRecordID under the handler's key.

@@ -18,10 +18,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/agentscmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/core/settings"
-	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
-	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"golang.org/x/mod/modfile"
 )
 
@@ -127,6 +126,28 @@ func RunInit(args []string) {
 			cli.OsExit(1)
 		}
 		projName = filepath.Base(wd)
+		// go mod init/edit and git init follow a go.mod or .git link out
+		// of the directory; refuse one before any file is written.
+		if err := refuseLinkedToolFiles("."); err != nil {
+			cli.Fail("%v", err)
+			cli.Info("This invocation has not written any files.")
+			cli.OsExit(1)
+			return
+		}
+		// .env (JWT_SECRET, DATABASE_URL) and the settings file get a
+		// generated secret, and must be regular files: a link there is
+		// refused even when it stays in the project (.env ->
+		// static/robots.txt put the signing key in a served file). The
+		// writer refuses one too; checking here means a refused init
+		// leaves no half-made project.
+		for _, f := range []string{".env", settings.FileName} {
+			if err := projectfs.CheckRegularLeaf(".", f); err != nil {
+				cli.Fail("%v", err)
+				cli.Info("This invocation has not written any files.")
+				cli.OsExit(1)
+				return
+			}
+		}
 		// A go.mod already here names the module every generated import
 		// must use; go mod init cannot replace it, so a local/<dir>
 		// default would leave main.go importing a module that does not
@@ -181,22 +202,23 @@ func RunInit(args []string) {
 		dbURL = "postgres://user:password@localhost:5432/" + projName + "?sslmode=disable"
 	}
 
-	fmt.Printf("\n  Creating %s project %s...\n\n", cli.Bold("GoFastr"), cli.Bold(projName))
+	cli.Printf("\n  Creating "+cli.Bold("GoFastr")+" project "+cli.Bold("%s")+"...\n\n", projName)
 
-	// Create directory structure
-	dirs := []string{
-		name,
-		filepath.Join(name, "static"),
+	// Create directory structure: the project directory itself (the one
+	// the user named), then its subdirectories through an os.Root on it,
+	// so a static/ or migrations/ linked out of the checkout is refused.
+	//gofastr:allow(worldreadable) the project checkout holds committed source and docs; 0755 is the mode git clone or mkdir gives it
+	if err := os.MkdirAll(name, 0o755); err != nil {
+		cli.Fail("Failed to create directory %q: %v", name, err)
+		cli.OsExit(1)
 	}
+	dirs := []string{"static"}
 	if !noEntity {
-		dirs = append(dirs,
-			filepath.Join(name, "entities"),
-			filepath.Join(name, "migrations"),
-		)
+		dirs = append(dirs, "entities", "migrations")
 	}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			cli.Fail("Failed to create directory %q: %v", dir, err)
+		if err := projectfs.MkdirAll(name, dir, 0o755); err != nil {
+			cli.Fail("Failed to create directory %q: %v", filepath.Join(name, dir), err)
 			cli.OsExit(1)
 		}
 	}
@@ -256,7 +278,7 @@ PORT=localhost:8080
 	// runs in a directory that may already hold a 0644 .env, so the mode is
 	// set explicitly, and set BEFORE the write, so no secret is ever on disk
 	// while the file is world-readable.
-	if err := writeEnvFile(filepath.Join(name, ".env"), envContent); err != nil {
+	if err := writeEnvFile(name, envContent); err != nil {
 		cli.Fail("Failed to write .env: %v", err)
 		cli.OsExit(1)
 	}
@@ -273,21 +295,21 @@ PORT=localhost:8080
 .env
 bin/
 `
-	if err := writeGitignore(filepath.Join(name, ".gitignore"), gitignoreContent); err != nil {
+	if err := writeGitignore(name, gitignoreContent); err != nil {
 		cli.Fail("Failed to write .gitignore: %v", err)
 		cli.OsExit(1)
 	}
 
 	// Write migrations/.gitkeep (only with entities)
 	if !noEntity {
-		if err := writeScaffoldFile(filepath.Join(name, "migrations", ".gitkeep"), []byte("")); err != nil {
+		if err := writeScaffoldFile(name, "migrations/.gitkeep", []byte("")); err != nil {
 			cli.Fail("Failed to write migrations/.gitkeep: %v", err)
 			cli.OsExit(1)
 		}
 	}
 
 	// Write static/.gitkeep
-	if err := writeScaffoldFile(filepath.Join(name, "static", ".gitkeep"), []byte("")); err != nil {
+	if err := writeScaffoldFile(name, "static/.gitkeep", []byte("")); err != nil {
 		cli.Fail("Failed to write static/.gitkeep: %v", err)
 		cli.OsExit(1)
 	}
@@ -295,7 +317,7 @@ bin/
 	// Write AGENTS.md (thin TOC) + .agents/ detail files so AI agents
 	// working on this project find the framework primitives instead
 	// of reinventing them. Refresh later with `gofastr agents sync`.
-	if err := writeScaffoldFile(filepath.Join(name, "AGENTS.md"), agentscmd.BuildAgentsMD()); err != nil {
+	if err := writeScaffoldFile(name, "AGENTS.md", agentscmd.BuildAgentsMD()); err != nil {
 		cli.Fail("Failed to write AGENTS.md: %v", err)
 		cli.OsExit(1)
 	}
@@ -323,7 +345,15 @@ bin/
 		cli.OsExit(1)
 	}
 
-	// Run go mod init to generate a proper go.mod
+	// Run go mod init to generate a proper go.mod. go mod init creates a
+	// dangling go.mod link's target and go mod edit rewrites whatever the
+	// link names, so a go.mod (or .git, for git init) that leaves the
+	// project is refused before either runs.
+	if err := refuseLinkedToolFiles(name); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 	minimumGo, preferredGo, err := scaffoldGoRequirements(name)
 	if err != nil {
 		cli.Fail("Could not read the existing go.mod: %v", err)
@@ -331,8 +361,9 @@ bin/
 		return
 	}
 	// An existing go.mod (init .) already declares modulePath; go mod
-	// init would only refuse to overwrite it.
-	if _, err := os.Stat(filepath.Join(name, "go.mod")); os.IsNotExist(err) {
+	// init would only refuse to overwrite it. Lstat: a dangling go.mod
+	// link is a file already there, not one go mod init should create.
+	if _, err := os.Lstat(filepath.Join(name, "go.mod")); os.IsNotExist(err) {
 		cmd := exec.Command("go", "mod", "init", modulePath)
 		cmd.Dir = name
 		cmd.Stdout = os.Stdout
@@ -408,7 +439,7 @@ bin/
 	cli.Info("    gofastr build         : Build production binary")
 	fmt.Println()
 	if pinnedVersion != "" {
-		fmt.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
+		cli.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
 		fmt.Println("  resolve that release. Use `gofastr upgrade` when you want to move.")
 	} else {
 		fmt.Println("  This development CLI has no release version to pin. Before `go mod tidy`, run:")
@@ -419,12 +450,26 @@ bin/
 	fmt.Println()
 }
 
+// refuseLinkedToolFiles refuses a go.mod or .git under dir that leaves
+// dir through a symlink (projectfs.Check): go mod init creates a dangling
+// go.mod link's target, go mod edit rewrites the file the link names,
+// and git init reinitialises the repository a linked .git names. None of
+// them runs inside an os.Root, so the check comes first.
+func refuseLinkedToolFiles(dir string) error {
+	for _, rel := range []string{"go.mod", ".git"} {
+		if err := projectfs.Check(dir, rel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // existingModulePath returns the module path of dir/go.mod, or "" when
 // there is no go.mod.
 func existingModulePath(dir string) (string, error) {
 	path := filepath.Join(dir, "go.mod")
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	data, err := projectfs.ReadFile(dir, "go.mod")
+	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}
 	if err != nil {
@@ -446,8 +491,8 @@ func existingModulePath(dir string) (string, error) {
 func scaffoldGoRequirements(dir string) (minimum, preferred string, err error) {
 	minimum, preferred = frameworkGoDirective, frameworkToolchain
 	path := filepath.Join(dir, "go.mod")
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	data, err := projectfs.ReadFile(dir, "go.mod")
+	if errors.Is(err, fs.ErrNotExist) {
 		return minimum, preferred, nil
 	}
 	if err != nil {
@@ -480,7 +525,7 @@ func scaffoldGoRequirements(dir string) (minimum, preferred string, err error) {
 // scaffolding a whole project.
 func printInitNextSteps(name string, noEntity bool) {
 	fmt.Printf("  %s:\n", cli.Bold("Next steps"))
-	fmt.Printf("    cd %s\n", name)
+	cli.Printf("    cd %s\n", name)
 	fmt.Println("    go mod tidy          : Resolve dependencies")
 	fmt.Println("    gofastr dev          : Start development server with hot-reload")
 	if !noEntity {
@@ -762,7 +807,7 @@ func getEnv(key, fallback string) string {
 }
 `, modulePath, appName, driverImport, sqlDriver, dsnFallback, migrateDialect)
 	}
-	if err := writeScaffoldFile(filepath.Join(name, "main.go"), []byte(content)); err != nil {
+	if err := writeScaffoldFile(name, "main.go", []byte(content)); err != nil {
 		cli.Fail("Failed to write main.go: %v", err)
 		cli.OsExit(1)
 	}
@@ -779,25 +824,33 @@ func envTrackedByGit(dir string) bool {
 	return cmd.Run() == nil
 }
 
-// writeEnvFile writes the scaffolded .env with owner-only permissions
-// (fileperm.ReplaceOwnerOnly).
+// Every file init writes, and every file it reads to merge into, goes
+// through an os.Root on the project directory (cmd/gofastr/internal/
+// projectfs). `init .` runs in a checkout the user may have cloned from
+// anyone: a joined path handed to os.ReadFile or atomicfile.Rewrite
+// followed .gitignore -> ~/.bashrc and appended the ignore rules to the
+// user's shell profile, and a static/ link out of the project took the
+// .gitkeep with it. A link that stays in the project is still followed.
+
+// writeEnvFile writes the scaffolded .env in dir with owner-only
+// permissions (projectfs.WriteOwnerOnly).
 //
 // os.WriteFile would truncate a pre-existing 0644 file and write the
 // secrets into it while it is still world-readable, then leave it that
 // way; the mode is set on a temporary file first, and the rename means a
 // crash or a full disk during `init . --force` leaves the old .env, not
 // an empty one.
-func writeEnvFile(path, content string) error {
-	return fileperm.ReplaceOwnerOnly(path, []byte(content))
+func writeEnvFile(dir, content string) error {
+	return projectfs.WriteOwnerOnly(dir, ".env", []byte(content))
 }
 
-// writeScaffoldFile writes a scaffold file at 0644. `init . --force` and
-// the AGENTS.md, CLAUDE.md and .gitignore merges rewrite files a project
-// already holds, and a crash mid-write left them empty: an existing file
-// is replaced through a temporary file and keeps its mode
-// (atomicfile.Rewrite).
-func writeScaffoldFile(path string, data []byte) error {
-	return atomicfile.Rewrite(path, data, 0o644)
+// writeScaffoldFile writes name (slash-separated, relative to dir) at
+// 0644 less the umask. `init . --force` and the AGENTS.md, CLAUDE.md and
+// .gitignore merges rewrite files a project already holds, and a crash
+// mid-write left them empty: an existing file is replaced through a
+// temporary file and keeps its mode (projectfs.WriteFile).
+func writeScaffoldFile(dir, name string, data []byte) error {
+	return projectfs.WriteFile(dir, name, data, 0o644)
 }
 
 // existingScaffoldFiles lists the files init . would replace that the
@@ -819,10 +872,10 @@ func existingScaffoldFiles(noEntity bool) []string {
 // writeGitignore writes the scaffold's ignore rules, or appends the ones
 // an existing .gitignore lacks: a repo's own rules stay, and .env is
 // ignored either way.
-func writeGitignore(path, content string) error {
-	existing, err := os.ReadFile(path)
+func writeGitignore(dir, content string) error {
+	existing, err := projectfs.ReadFile(dir, ".gitignore")
 	if errors.Is(err, fs.ErrNotExist) {
-		return writeScaffoldFile(path, []byte(content))
+		return writeScaffoldFile(dir, ".gitignore", []byte(content))
 	}
 	if err != nil {
 		return err
@@ -844,7 +897,7 @@ func writeGitignore(path, content string) error {
 	if merged != "" && !strings.HasSuffix(merged, "\n") {
 		merged += "\n"
 	}
-	return writeScaffoldFile(path, []byte(merged+add.String()))
+	return writeScaffoldFile(dir, ".gitignore", []byte(merged+add.String()))
 }
 
 // writeSettingsFile writes gofastr.settings.yml with the isolation
@@ -864,7 +917,7 @@ isolation:
   services:
   env:
 `
-	if err := fileperm.ReplaceOwnerOnly(filepath.Join(name, settings.FileName), []byte(content)); err != nil {
+	if err := projectfs.WriteOwnerOnly(name, settings.FileName, []byte(content)); err != nil {
 		cli.Fail("Failed to write %s: %v", settings.FileName, err)
 		cli.OsExit(1)
 	}
@@ -922,7 +975,7 @@ func (h *HomeScreen) Render() render.HTML {
 // where the screen name differs from the site's.
 func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 `, appName, entityHint, actions)
-	if err := writeScaffoldFile(filepath.Join(name, "screens.go"), []byte(content)); err != nil {
+	if err := writeScaffoldFile(name, "screens.go", []byte(content)); err != nil {
 		cli.Fail("Failed to write screens.go: %v", err)
 		cli.OsExit(1)
 	}
@@ -1050,7 +1103,7 @@ func authError(ctx context.Context) render.HTML {
 	}
 }
 `
-	if err := writeScaffoldFile(filepath.Join(name, "screens_auth.go"), []byte(content)); err != nil {
+	if err := writeScaffoldFile(name, "screens_auth.go", []byte(content)); err != nil {
 		cli.Fail("Failed to write screens_auth.go: %v", err)
 		cli.OsExit(1)
 	}
@@ -1122,7 +1175,7 @@ func ptrFloat(f float64) *float64 { return &f }
 
 func boolPtr(b bool) *bool { return &b }
 `
-	if err := writeScaffoldFile(filepath.Join(name, "entities", "entities.go"), []byte(content)); err != nil {
+	if err := writeScaffoldFile(name, "entities/entities.go", []byte(content)); err != nil {
 		cli.Fail("Failed to write entities/entities.go: %v", err)
 		cli.OsExit(1)
 	}
@@ -1164,7 +1217,7 @@ func windowsDeviceName(name string) bool {
 // richer AGENTS.md and the gofastr-host skill. This is the entry point
 // Claude Code reads automatically when opening a project.
 func writeCLAUDEmd(dir string) error {
-	return writeScaffoldFile(filepath.Join(dir, "CLAUDE.md"), claudeMDContent())
+	return writeScaffoldFile(dir, "CLAUDE.md", claudeMDContent())
 }
 
 // claudeMDContent returns the generated CLAUDE.md bytes for comparison.
@@ -1234,7 +1287,7 @@ built in: no internet needed, always matches your installed version.
 }
 
 func writeDesignMD(dir string) error {
-	return writeScaffoldFile(filepath.Join(dir, "DESIGN.md"), designMDContent())
+	return writeScaffoldFile(dir, "DESIGN.md", designMDContent())
 }
 
 func designMDContent() []byte {
@@ -1311,7 +1364,7 @@ capability upstream.
 //   - CLAUDE.md:  overwrites if unmodified; prompts if user changed it
 //   - DESIGN.md:  created when missing, never overwrites app-owned direction
 func runReinit(dir string, force bool) {
-	fmt.Printf("\n  %s AI onboarding files in %s\n\n", cli.Bold("Refreshing"), cli.Bold(dir))
+	cli.Printf("\n  "+cli.Bold("Refreshing")+" AI onboarding files in "+cli.Bold("%s")+"\n\n", dir)
 
 	// 1. .agents/ detail files: always overwrite.
 	if err := agentscmd.WriteAgentDetailFiles(dir); err != nil {
@@ -1328,11 +1381,20 @@ func runReinit(dir string, force bool) {
 	cli.Info("  ✓ .claude/skills/gofastr-host/SKILL.md refreshed")
 
 	// 3. AGENTS.md: sync (preserves user content outside markers).
-	agentsPath := filepath.Join(dir, "AGENTS.md")
-	existing, err := os.ReadFile(agentsPath)
+	//
+	// AGENTS.md, CLAUDE.md and DESIGN.md are read and written through an
+	// os.Root on dir (agentscmd.ReadProjectFile / WriteProjectFile): a
+	// symlink is followed only while it stays in the project, so a cloned
+	// repo cannot aim a refresh at a file elsewhere on disk.
+	existing, err := agentscmd.ReadProjectFile(dir, "AGENTS.md")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		cli.Fail("Cannot read AGENTS.md: %v", err)
+		cli.OsExit(1)
+		return
+	}
 	if err != nil {
 		// Doesn't exist yet: write fresh.
-		if err := writeScaffoldFile(agentsPath, agentscmd.BuildAgentsMD()); err != nil {
+		if err := agentscmd.WriteProjectFile(dir, "AGENTS.md", agentscmd.BuildAgentsMD()); err != nil {
 			cli.Fail("Failed to write AGENTS.md: %v", err)
 			cli.OsExit(1)
 		}
@@ -1343,7 +1405,7 @@ func runReinit(dir string, force bool) {
 		case err != nil && force:
 			// --force overwrites customized onboarding files; an AGENTS.md
 			// whose markers are gone is one.
-			if err := writeScaffoldFile(agentsPath, agentscmd.BuildAgentsMD()); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "AGENTS.md", agentscmd.BuildAgentsMD()); err != nil {
 				cli.Fail("Failed to write AGENTS.md: %v", err)
 				cli.OsExit(1)
 			}
@@ -1354,7 +1416,7 @@ func runReinit(dir string, force bool) {
 			cli.Info("  Run `gofastr init %s --reinit --force` to overwrite it, or fix the markers by hand.", dir)
 			cli.OsExit(1)
 		case changed:
-			if err := writeScaffoldFile(agentsPath, refreshed); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "AGENTS.md", refreshed); err != nil {
 				cli.Fail("Failed to write AGENTS.md: %v", err)
 				cli.OsExit(1)
 			}
@@ -1365,11 +1427,15 @@ func runReinit(dir string, force bool) {
 	}
 
 	// 4. CLAUDE.md: detect user modifications.
-	claudePath := filepath.Join(dir, "CLAUDE.md")
-	existingClaude, err := os.ReadFile(claudePath)
+	existingClaude, err := agentscmd.ReadProjectFile(dir, "CLAUDE.md")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		cli.Fail("Cannot read CLAUDE.md: %v", err)
+		cli.OsExit(1)
+		return
+	}
 	if err != nil {
 		// Doesn't exist yet: write fresh.
-		if err := writeScaffoldFile(claudePath, claudeMDContent()); err != nil {
+		if err := agentscmd.WriteProjectFile(dir, "CLAUDE.md", claudeMDContent()); err != nil {
 			cli.Fail("Failed to write CLAUDE.md: %v", err)
 			cli.OsExit(1)
 		}
@@ -1382,13 +1448,13 @@ func runReinit(dir string, force bool) {
 		if bytes.Equal(agentscmd.NormalizeMD(existingClaude), agentscmd.NormalizeMD(generated)) ||
 			bytes.Equal(agentscmd.NormalizeMD(existingClaude), agentscmd.NormalizeMD(legacyGenerated)) {
 			// Unmodified: safe to overwrite.
-			if err := writeScaffoldFile(claudePath, generated); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "CLAUDE.md", generated); err != nil {
 				cli.Fail("Failed to write CLAUDE.md: %v", err)
 				cli.OsExit(1)
 			}
 			cli.Info("  ✓ CLAUDE.md refreshed (unchanged from generated)")
 		} else if force {
-			if err := writeScaffoldFile(claudePath, generated); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "CLAUDE.md", generated); err != nil {
 				cli.Fail("Failed to write CLAUDE.md: %v", err)
 				cli.OsExit(1)
 			}
@@ -1402,7 +1468,7 @@ func runReinit(dir string, force bool) {
 
 	designPath := filepath.Join(dir, "DESIGN.md")
 	if _, err := os.Stat(designPath); os.IsNotExist(err) {
-		if err := writeDesignMD(dir); err != nil {
+		if err := agentscmd.WriteProjectFile(dir, "DESIGN.md", designMDContent()); err != nil {
 			cli.Fail("Failed to write DESIGN.md: %v", err)
 			cli.OsExit(1)
 		}

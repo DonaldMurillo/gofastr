@@ -49,7 +49,7 @@ func buildFiltered(verb, table string, wheres []whereClause, args []any) (string
 	var sb strings.Builder
 
 	sb.WriteString(verb)
-	sb.WriteString(sanitizeFragment(table))
+	sb.WriteString(identSlot(sanitizeFragment(table)))
 
 	// WHERE
 	if len(wheres) > 0 {

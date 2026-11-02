@@ -142,10 +142,42 @@
 //   - fields a same-package struct only ever holds enums in
 //     (SecurityEvent.Kind) stay quiet even when another field of the
 //     same struct carries: carrying is per field, not per type.
+//
+// Two arms came from the 2026-11 bug bashes.
+//
+// A Location is stricter than a header (2a52a980). framework/uihost's
+// scrubCtl percent-encoded C0 and DEL except tab (`c < 0x20 && c !=
+// '\t'`), and HTAB is a legal header byte, but the WHATWG URL parser
+// deletes tab, CR and LF from a Location before it parses it: a
+// RedirectPattern target of "/\t/evil.example" was //evil.example in
+// the browser. At the http.Redirect sink and at Header.Set/Add of
+// "Location", a same-package scrub whose body (or one callee hop) holds
+// a != comparison against a literal in 0x01..0x1f lets that byte
+// through and clears nothing. The same scrub still clears a log value or
+// any other header. Fix spelling: encode every C0 byte and DEL.
+//
+// Guard, then scrub (df472714): `if s.nextID != "" {
+// b.WriteString(stripSSEControlChars(s.nextID)) }` tested the raw value
+// and wrote the stripped one, so an id made only of control bytes wrote
+// an empty "id:" line, which resets the client's Last-Event-ID. The arm
+// fires on an if whose condition tests X for non-emptiness (X != "",
+// len(X) > 0, != 0, >= 1, alone or as a conjunct) and whose body hands
+// the same X to a stripping callee (strip/scrub/sanitize/remove/drop in
+// its name) whose result is written as a field of its own: the argument
+// of a Write*/Set/Add call or a composite-literal field. This arm needs
+// no request source: the empty field is the bug whoever supplied the
+// bytes. Quiet: an escaper (escape/quote/encode never empties a
+// non-empty value); a result concatenated or formatted behind a fixed
+// label ("tail: " + strip(s), Fprintf(w, "fix: %s", strip(s))), where
+// empty is an empty label, not an empty field; a result stored in a
+// local the body tests for emptiness; X reassigned before the strip; a
+// strip of some other value. Fix spelling: strip first, test the result
+// (SSEWriter.writeQueuedID).
 package controlbytes
 
 import (
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"regexp"
@@ -154,6 +186,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
@@ -215,6 +248,7 @@ func run(pass *analysis.Pass) (any, error) {
 			// test's log line fails nothing that ships.
 			continue
 		}
+		checkGuardThenScrub(pass, f)
 		for _, d := range f.Decls {
 			switch d := d.(type) {
 			case *ast.FuncDecl:
@@ -292,10 +326,12 @@ func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carryin
 							continue
 						}
 					}
+					t.location = s.location || locationHeaderSet(pass, s, n)
 					tainted := t.source(arg)
 					if !tainted && s.seam {
 						tainted = t.sourceSeam(arg)
 					}
+					t.location = false
 					if tainted {
 						pass.Reportf(n.Pos(),
 							"controlbytes: request-derived value reaches %s unscrubbed; C0/DEL bytes forge log lines and header values (scrub or escape at the sink)",
@@ -586,6 +622,11 @@ type sink struct {
 	// every same-package struct-parameter field counts as untrusted
 	// here (the message sinks).
 	seam bool
+	// location: the value becomes a Location a browser parses. The
+	// WHATWG URL parser deletes tab, CR and LF before it parses, so a
+	// scrub that lets any C0 byte through ("/\t/evil.example" reads as
+	// "//evil.example") is no scrub here (2a52a980).
+	location bool
 }
 
 var sinks = []sink{
@@ -717,7 +758,10 @@ var sinks = []sink{
 				return false
 			}
 			switch sel.Sel.Name {
-			case "Print", "Printf", "Println":
+			case "Print", "Printf", "Println",
+				// Fatal* and Panic* print the same message through the
+				// logger before they exit or panic.
+				"Fatal", "Fatalf", "Fatalln", "Panic", "Panicf", "Panicln":
 			default:
 				return false
 			}
@@ -783,7 +827,8 @@ var sinks = []sink{
 	{
 		// http.Redirect sets the Location header from its URL argument;
 		// net/http hex-escapes non-ASCII but passes C0 and DEL raw.
-		name: "http.Redirect Location",
+		name:     "http.Redirect Location",
+		location: true,
 		matches: func(t *taint, call *ast.CallExpr) bool {
 			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Redirect" {
@@ -912,6 +957,10 @@ type taint struct {
 	// in-function recover-and-log spelling (mcp gates, websocket
 	// hooks) is not this rule's bug and stays silent.
 	carryingPass bool
+	// location: the sink being checked is a Location header (see
+	// sink.location); a same-package scrub that exempts a C0 byte does
+	// not clear here.
+	location bool
 	// bind maps each variable assigned in this function to the
 	// expression(s) assigned to it. A variable rewritten mid-function
 	// keeps every binding: which write precedes a given sink is not
@@ -1216,8 +1265,81 @@ func (t *taint) callCleared(call *ast.CallExpr, seen map[types.Object]bool, dept
 			cleared = false
 			break
 		}
+		if t.location && exemptsC0(decl.Body, t.pass, 0) {
+			// scrubCtl before 2a52a980: `c < 0x20 && c != '\t'`
+			// passed tab into the Location, and the browser deleted it
+			// in front of "/evil.example".
+			cleared = false
+			break
+		}
 	}
 	return any && cleared
+}
+
+// locationHeaderSet: the Header.Set/Add sink writing the Location
+// header by its constant name.
+func locationHeaderSet(pass *analysis.Pass, s sink, call *ast.CallExpr) bool {
+	if s.name != "http.Header.Set/Add" || len(call.Args) < 1 {
+		return false
+	}
+	k, ok := astx.StringConstant(pass, call.Args[0])
+	return ok && strings.EqualFold(k, "Location")
+}
+
+// exemptsC0 reports whether a scrub body lets a C0 byte through: a !=
+// comparison against a literal in 0x01..0x1f (`c != '\t'`), in the body
+// or one same-package callee hop. A scrub with such an exemption still
+// clears a log or header value (HTAB is a legal header byte) but not a
+// Location.
+func exemptsC0(body ast.Node, pass *analysis.Pass, depth int) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.BinaryExpr:
+			if n.Op != token.NEQ {
+				return true
+			}
+			for _, e := range []ast.Expr{n.X, n.Y} {
+				if v, ok := litValue(e); ok && v >= 0x01 && v < 0x20 {
+					found = true
+				}
+			}
+		case *ast.CallExpr:
+			if depth >= 1 {
+				return true
+			}
+			if fd := sameDecl(pass, n.Fun); fd != nil && exemptsC0(fd.Body, pass, depth+1) {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// sameDecl resolves a callee to its same-package declaration.
+func sameDecl(pass *analysis.Pass, fun ast.Expr) *ast.FuncDecl {
+	var callee types.Object
+	switch f := ast.Unparen(fun).(type) {
+	case *ast.Ident:
+		callee = pass.TypesInfo.ObjectOf(f)
+	case *ast.SelectorExpr:
+		if sel, ok := pass.TypesInfo.Selections[f]; ok {
+			callee = sel.Obj()
+		} else {
+			callee = pass.TypesInfo.ObjectOf(f.Sel)
+		}
+	}
+	if callee == nil {
+		return nil
+	}
+	if fd, ok := declsOf(pass)[callee]; ok && fd.Body != nil {
+		return fd
+	}
+	return nil
 }
 
 // returnsScrubOf reports whether fn's every return statement hands the
@@ -1386,9 +1508,15 @@ func comparisonOp(op token.Token) bool {
 // (DEL). 0 is excluded on purpose: `i >= 0` on an index is not byte
 // evidence.
 func ctlLiteral(e ast.Expr) bool {
+	v, ok := litValue(e)
+	return ok && ((v >= 0x09 && v <= 0x20) || v == 0x7f)
+}
+
+// litValue is the value of a numeric or rune literal.
+func litValue(e ast.Expr) (uint64, bool) {
 	lit, ok := e.(*ast.BasicLit)
 	if !ok {
-		return false
+		return 0, false
 	}
 	var v uint64
 	switch lit.Kind {
@@ -1397,31 +1525,26 @@ func ctlLiteral(e ast.Expr) bool {
 		if len(val) > 1 && val[0] == '0' && val[1] != '.' {
 			u, err := strconv.ParseUint(strings.TrimPrefix(strings.TrimPrefix(val, "0x"), "0X"), 16, 32)
 			if err != nil {
-				return false
+				return 0, false
 			}
 			v = u
 		} else {
 			u, err := strconv.ParseUint(val, 10, 32)
 			if err != nil {
-				return false
+				return 0, false
 			}
 			v = u
 		}
 	case token.CHAR:
-		u, err := strconv.ParseUint(lit.Value[1:len(lit.Value)-1], 10, 32)
-		if err != nil {
-			// Escapes: '\t' etc. Map the common control ones.
-			switch lit.Value {
-			case "'\\t'", "'\\n'", "'\\r'", "'\\v'", "'\\f'", "'\\a'", "'\\b'":
-				return true
-			}
-			return false
+		r, _, tail, err := strconv.UnquoteChar(lit.Value[1:len(lit.Value)-1], '\'')
+		if err != nil || tail != "" {
+			return 0, false
 		}
-		v = u
+		v = uint64(r)
 	default:
-		return false
+		return 0, false
 	}
-	return (v >= 0x09 && v <= 0x20) || v == 0x7f
+	return v, true
 }
 
 // declsOf memoizes the package's object-to-declaration map.
@@ -1779,4 +1902,182 @@ func pkgPathOf(pass *analysis.Pass, sel *ast.SelectorExpr) string {
 		return ""
 	}
 	return pkg.Imported().Path()
+}
+
+// ---- guard, then scrub ---------------------------------------------------
+
+// stripName: a callee that removes bytes, so its result can be shorter
+// than its input, down to "". An escaper re-encodes and never empties a
+// non-empty value, so escape/quote/encode names are not this.
+var (
+	stripName   = regexp.MustCompile(`(?i)strip|scrub|sanitiz|remove|drop`)
+	encoderName = regexp.MustCompile(`(?i)escape|quote|encode`)
+)
+
+// checkGuardThenScrub reports the df472714 shape: an if that tests a
+// value for emptiness, then hands the RAW value to a stripping scrub in
+// its body: `if s.nextID != "" { b.WriteString(strip(s.nextID)) }`. An
+// id made only of control bytes passed the check, stripped to "", and
+// wrote an empty "id:" line, which resets the client's Last-Event-ID.
+// The fix scrubs first and tests the result (SSEWriter.writeQueuedID).
+// The stripped value must be written as a field of its own: the
+// argument of a Write*/Set/Add call or a composite-literal field.
+// Concatenated after a fixed label ("stderr tail: " + strip(s)) or
+// formatted behind one (Fprintf(w, "fix: %s", strip(s)), the one
+// whole-tree hit, in framework/contracts' text report), an empty result
+// is an empty label, not an empty field.
+// Quiet: the scrubbed result stored in a local the body then tests for
+// emptiness; an escaper (escape/quote/encode), which never empties a
+// non-empty value; a value reassigned in the body before the scrub.
+func checkGuardThenScrub(pass *analysis.Pass, f *ast.File) {
+	ast.Inspect(f, func(n ast.Node) bool {
+		iff, ok := n.(*ast.IfStmt)
+		if !ok || iff.Cond == nil {
+			return true
+		}
+		subj := nonEmptyTest(pass, iff.Cond)
+		if subj == nil {
+			return true
+		}
+		key := types.ExprString(subj)
+		parents := dominance.Parents(iff.Body)
+		reassigned := token.NoPos
+		ast.Inspect(iff.Body, func(m ast.Node) bool {
+			if _, lit := m.(*ast.FuncLit); lit {
+				return false
+			}
+			if as, ok := m.(*ast.AssignStmt); ok && reassigned == token.NoPos {
+				for _, l := range as.Lhs {
+					if types.ExprString(l) == key {
+						reassigned = as.Pos()
+					}
+				}
+			}
+			call, ok := m.(*ast.CallExpr)
+			if !ok || len(call.Args) != 1 || types.ExprString(ast.Unparen(call.Args[0])) != key {
+				return true
+			}
+			if reassigned != token.NoPos && reassigned < call.Pos() {
+				return true
+			}
+			name := astx.CalleeName(call.Fun)
+			if !stripName.MatchString(name) || encoderName.MatchString(name) {
+				return true
+			}
+			if !writtenAsField(pass, parents[call], call) || resultRetested(pass, iff.Body, call) {
+				return true
+			}
+			pass.Reportf(call.Pos(),
+				"controlbytes: %s is tested for emptiness before %s strips it: a value made only of stripped bytes passes the test and writes an empty field (an empty SSE \"id:\" line resets Last-Event-ID); strip first, then test the result",
+				key, name)
+			return true
+		})
+		return true
+	})
+}
+
+// nonEmptyTest returns X when cond is a non-emptiness test of it, alone
+// or as one conjunct: X != "", len(X) > 0, len(X) != 0, len(X) >= 1.
+func nonEmptyTest(pass *analysis.Pass, cond ast.Expr) ast.Expr {
+	b, ok := ast.Unparen(cond).(*ast.BinaryExpr)
+	if !ok {
+		return nil
+	}
+	if b.Op == token.LAND {
+		if x := nonEmptyTest(pass, b.X); x != nil {
+			return x
+		}
+		return nonEmptyTest(pass, b.Y)
+	}
+	lenOf := func(e ast.Expr) ast.Expr {
+		call, ok := ast.Unparen(e).(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return nil
+		}
+		if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && id.Name == "len" {
+			if _, builtin := pass.TypesInfo.Uses[id].(*types.Builtin); builtin {
+				return ast.Unparen(call.Args[0])
+			}
+		}
+		return nil
+	}
+	intConst := func(e ast.Expr) (int64, bool) {
+		tv := pass.TypesInfo.Types[e]
+		if tv.Value == nil || tv.Value.Kind() != constant.Int {
+			return 0, false
+		}
+		return constant.Int64Val(tv.Value)
+	}
+	switch b.Op {
+	case token.NEQ:
+		for _, pair := range [][2]ast.Expr{{b.X, b.Y}, {b.Y, b.X}} {
+			if k, ok := astx.StringConstant(pass, pair[1]); ok && k == "" && isString(pass.TypesInfo.TypeOf(pair[0])) {
+				return ast.Unparen(pair[0])
+			}
+			if x := lenOf(pair[0]); x != nil {
+				if n, ok := intConst(pair[1]); ok && n == 0 && isString(pass.TypesInfo.TypeOf(x)) {
+					return x
+				}
+			}
+		}
+	case token.GTR, token.GEQ:
+		if x := lenOf(b.X); x != nil && isString(pass.TypesInfo.TypeOf(x)) {
+			if n, ok := intConst(b.Y); ok && (b.Op == token.GTR && n == 0 || b.Op == token.GEQ && n == 1) {
+				return x
+			}
+		}
+	}
+	return nil
+}
+
+// resultRetested: the scrub's result is stored in a local that the body
+// tests for emptiness (`id := strip(raw); if id == "" { return }`), the
+// shape that already re-checks what it writes.
+func resultRetested(pass *analysis.Pass, body *ast.BlockStmt, call *ast.CallExpr) bool {
+	var stored types.Object
+	ast.Inspect(body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 || ast.Unparen(as.Rhs[0]) != call {
+			return true
+		}
+		if id, ok := as.Lhs[0].(*ast.Ident); ok {
+			stored = pass.TypesInfo.ObjectOf(id)
+		}
+		return false
+	})
+	if stored == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		b, ok := n.(*ast.BinaryExpr)
+		if !ok || found || (b.Op != token.EQL && b.Op != token.NEQ) {
+			return !found
+		}
+		for _, side := range []ast.Expr{b.X, b.Y} {
+			if id, ok := ast.Unparen(side).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == stored {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// writtenAsField: the scrub call is itself an argument of a write
+// (WriteString/Write/Set/Add) or a composite-literal field value. A
+// formatted print carries its label in the format string
+// (contracts' "fix: %s" report line), which is the label case.
+func writtenAsField(pass *analysis.Pass, parent ast.Node, call *ast.CallExpr) bool {
+	switch p := parent.(type) {
+	case *ast.KeyValueExpr:
+		return p.Value == call
+	case *ast.CallExpr:
+		if p.Fun == call {
+			return false
+		}
+		name := astx.CalleeName(p.Fun)
+		return strings.HasPrefix(name, "Write") || name == "Set" || name == "Add"
+	}
+	return false
 }

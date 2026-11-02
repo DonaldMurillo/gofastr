@@ -180,7 +180,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			if mtmSoftDelete != "" {
 				// The ManyToMany SELECT JOINs target + pivot, so a bare
 				// `deleted_at` would be ambiguous, qualify it with the target.
-				mtmSoftDelete = " AND " + safeRelEntity + ".deleted_at IS NULL"
+				mtmSoftDelete = " AND " + query.QuoteKeyword(safeRelEntity) + ".deleted_at IS NULL"
 			}
 			pivot, err := entity.PivotEntity(registry, ent, rel.Through)
 			if err != nil {
@@ -211,7 +211,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity string, saf
 		readClause = " AND " + readClause
 	}
 	q := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		safeEntity, where, softDeleteFilter, scopeClause, readClause)
+		query.QuoteKeyword(safeEntity), where, softDeleteFilter, scopeClause, readClause)
 	args = append(args, scopeArgs...)
 	args = append(args, readArgs...)
 
@@ -289,7 +289,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, keyCol
 		readClause = " AND " + readClause
 	}
 	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		safeEntity, where, softDeleteFilter, scopeClause, readClause)
+		query.QuoteKeyword(safeEntity), where, softDeleteFilter, scopeClause, readClause)
 	fkArgs = append(fkArgs, scopeArgs...)
 	fkArgs = append(fkArgs, readArgs...)
 
@@ -372,12 +372,12 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, 
 	pivotWhere, pivotArgs := pivotClause(pivot, pivotPreds, safeThrough, len(ids)+len(scopeArgs)+len(readArgs)+1)
 	q := fmt.Sprintf(
 		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s IN (%s)%s%s%s",
-		safeEntity,
-		safeThrough, safeLocalKey,
-		safeEntity,
-		safeThrough,
-		safeEntity, targetPK, safeThrough, safeFKTarget,
-		safeThrough, safeLocalKey,
+		query.QuoteKeyword(safeEntity),
+		query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
+		query.QuoteKeyword(safeEntity),
+		query.QuoteKeyword(safeThrough),
+		query.QuoteKeyword(safeEntity), query.QuoteKeyword(targetPK), query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeFKTarget),
+		query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
 		strings.Join(placeholders, ", "),
 		scopeClause,
 		readClause,

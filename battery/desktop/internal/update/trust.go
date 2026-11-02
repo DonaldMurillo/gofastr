@@ -38,8 +38,11 @@ var ErrSignature = errors.New("update signature check failed")
 // release key; Authenticode adds the publisher, and the rule is that an
 // update never loosens what the running copy has.
 //
-//   - The loader DLL must be trusted. It ships with Microsoft's
-//     signature and `gofastr desktop build` leaves it alone.
+//   - The new loader DLL must be trusted. It ships with Microsoft's
+//     signature and `gofastr desktop build` leaves it alone. When the
+//     installed loader is trusted, the new one must carry the same
+//     signer subject: the app loads the DLL on every launch, so a DLL
+//     from another publisher would run inside a pinned executable.
 //   - A new executable with a signature that does not verify is always
 //     refused: that is a tampered or mis-signed build.
 //   - When the running executable is trusted, the new one must be
@@ -49,9 +52,12 @@ var ErrSignature = errors.New("update signature check failed")
 //   - When the running executable is unsigned, or its own signature no
 //     longer verifies, the new one may be unsigned or trusted. The
 //     caller logs that the install rests on the feed signature alone.
-func CheckWindowsTrust(running, exe, dll Trust) error {
+func CheckWindowsTrust(running, runningDLL, exe, dll Trust) error {
 	if dll.State != Trusted {
 		return fmt.Errorf("%w: %s is not signed by a trusted publisher (%s)", ErrSignature, WebView2LoaderName, dll.Detail)
+	}
+	if runningDLL.State == Trusted && (len(runningDLL.Subject) == 0 || !bytes.Equal(runningDLL.Subject, dll.Subject)) {
+		return fmt.Errorf("%w: %s is signed by a different publisher than the installed one", ErrSignature, WebView2LoaderName)
 	}
 	if exe.State == Untrusted {
 		return fmt.Errorf("%w: the new executable's signature does not verify (%s)", ErrSignature, exe.Detail)

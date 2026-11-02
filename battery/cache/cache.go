@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // ErrCacheMiss is returned when a key is not found in the cache.
@@ -66,6 +67,18 @@ type flight struct {
 	err     error
 	waiters int
 	cancel  context.CancelFunc
+	// val is the loader's value when this fill ran the loader and
+	// stored it (loaded true). A waiter whose read-back misses decodes
+	// it instead of reporting a miss.
+	val    any
+	loaded bool
+}
+
+// fillResult is what a fill hands back to its waiters: the loader's
+// value, when the fill ran the loader.
+type fillResult struct {
+	val    any
+	loaded bool
 }
 
 // joinFill runs fill once per key across concurrent callers and waits for
@@ -73,7 +86,7 @@ type flight struct {
 // with ctx.Err() at once; the fill keeps running for the callers still
 // waiting, and is cancelled when none is left, so a stalled loader never
 // holds a request past its deadline and never runs on for nobody.
-func joinFill(ctx context.Context, key string, fill func(context.Context) error) error {
+func joinFill(ctx context.Context, key string, fill func(context.Context) (fillResult, error)) (fillResult, error) {
 	flights.Lock()
 	f := flights.m[key]
 	if f == nil {
@@ -89,7 +102,7 @@ func joinFill(ctx context.Context, key string, fill func(context.Context) error)
 
 	select {
 	case <-f.done:
-		return f.err
+		return fillResult{val: f.val, loaded: f.loaded}, f.err
 	case <-ctx.Done():
 		flights.Lock()
 		f.waiters--
@@ -102,14 +115,14 @@ func joinFill(ctx context.Context, key string, fill func(context.Context) error)
 			f.cancel()
 		}
 		flights.Unlock()
-		return ctx.Err()
+		return fillResult{}, ctx.Err()
 	}
 }
 
 // runFlight runs fill on its own goroutine. A loader panic there would end
 // the process rather than reach a caller's recover, so it comes back as
 // every waiter's error.
-func runFlight(ctx context.Context, key string, f *flight, fill func(context.Context) error) {
+func runFlight(ctx context.Context, key string, f *flight, fill func(context.Context) (fillResult, error)) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			f.err = fmt.Errorf("cache: loader panicked: %s", textsafe.Recovered(rec))
@@ -122,7 +135,8 @@ func runFlight(ctx context.Context, key string, f *flight, fill func(context.Con
 		f.cancel()
 		close(f.done)
 	}()
-	f.err = fill(ctx)
+	res, err := fill(ctx)
+	f.val, f.loaded, f.err = res.val, res.loaded, err
 }
 
 // GetOrSet returns the cached value for key, deserialized into dest. On a miss
@@ -132,6 +146,9 @@ func runFlight(ctx context.Context, key string, f *flight, fill func(context.Con
 //
 // dest must be a non-nil pointer. The loader's returned value is round-tripped
 // through the cache (JSON) so the value written into dest is the cached form.
+// When the stored entry is already gone at read-back (evicted by a bounded
+// cache or Redis maxmemory, or expired under a short TTL), dest gets the
+// loaded value through the same JSON round trip instead of a miss.
 // A negative ttl follows the Cache.Set contract: the loader still runs, but
 // nothing is stored and GetOrSet surfaces the miss (ErrCacheMiss).
 //
@@ -160,7 +177,7 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	// boundaries. flightCtx keeps the context's values (trace, auth) and
 	// drops its cancellation and deadline; joinFill cancels it once no
 	// caller waits.
-	fill := func(flightCtx context.Context) error {
+	fill := func(flightCtx context.Context) (fillResult, error) {
 		// Re-check: another writer may have populated the cache while we
 		// queued for the flight. It decodes into a fresh value of dest's
 		// type, never dest itself: the fill can outlive the caller whose
@@ -178,13 +195,13 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 			}
 		}
 		if err := c.Get(flightCtx, key, probe); err == nil {
-			return nil
+			return fillResult{}, nil
 		} else if !errors.Is(err, ErrCacheMiss) {
-			return err
+			return fillResult{}, err
 		}
 		val, lerr := loader(flightCtx)
 		if lerr != nil {
-			return lerr
+			return fillResult{}, lerr
 		}
 		// A fill abandoned by its last caller must not store: a later
 		// caller may already have filled the key afresh, and this value
@@ -192,20 +209,24 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 		// leaves still lands; fencing that needs a compare-and-set the
 		// Cache interface does not have.
 		if err := flightCtx.Err(); err != nil {
-			return err
+			return fillResult{}, err
 		}
-		return c.Set(flightCtx, key, val, ttl)
+		if err := c.Set(flightCtx, key, val, ttl); err != nil {
+			return fillResult{}, err
+		}
+		return fillResult{val: val, loaded: true}, nil
 	}
+	var res fillResult
 	var err error
 	if flightKey, ok := cacheFlightKey(c, key); ok {
-		err = joinFill(ctx, flightKey, fill)
+		res, err = joinFill(ctx, flightKey, fill)
 	} else {
 		// A value implementation may be a map- or slice-backed cache, so
 		// formatting its interface value cannot produce reliable instance
 		// identity. Fill alone instead of letting separate instances
 		// with the same type/key share a result: a flight under a key no
 		// other call uses, so the caller still leaves at its deadline.
-		err = joinFill(ctx, "alone:"+strconv.FormatUint(aloneFills.Add(1), 10), fill)
+		res, err = joinFill(ctx, "alone:"+strconv.FormatUint(aloneFills.Add(1), 10), fill)
 	}
 	if err != nil {
 		return err
@@ -213,7 +234,21 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 
 	// Read back so every waiter (including the leader) fills dest from the
 	// canonical cached representation.
-	return c.Get(ctx, key, dest)
+	err = c.Get(ctx, key, dest)
+	if errors.Is(err, ErrCacheMiss) && res.loaded && ttl >= 0 {
+		// The value was loaded and stored, and is gone already: evicted
+		// by a bounded cache or Redis maxmemory, or expired under a
+		// short TTL. The load succeeded, so hand back its value through
+		// the same JSON round trip the cache applies, rather than a miss
+		// the caller would read as a failure. A negative ttl stored
+		// nothing on purpose and keeps surfacing the miss.
+		data, merr := json.Marshal(res.val)
+		if merr != nil {
+			return merr
+		}
+		return jsonexact.Unmarshal(data, dest)
+	}
+	return err
 }
 
 // aloneFills numbers the flights of value-backed caches. A shared key

@@ -17,7 +17,8 @@
 //      with the sibling's deeplink params, so the existing
 //      data-cui-open + signal pipeline swaps src/alt/caption.
 //
-//   3. ArrowLeft / ArrowRight while the modal is open → same.
+//   3. ArrowLeft / ArrowRight while the modal is open → same (swapped
+//      in a right-to-left modal, where Prev sits on the right).
 //
 //   4. After every open, preload the previous + next image in the
 //      sequence so Arrow-key nav feels instant.
@@ -310,7 +311,10 @@
     const st = states.get(m);
     if (!st || !isOpen(st.modal)) return;
     ev.preventDefault();
-    step(m, ev.key === 'ArrowLeft' ? -1 : 1);
+    // Prev sits at the inline start, so in a right-to-left lightbox it
+    // is on the right: ArrowRight goes back and ArrowLeft goes on.
+    const rtl = getComputedStyle(m).direction === 'rtl';
+    step(m, (ev.key === 'ArrowLeft') !== rtl ? -1 : 1);
   });
 
   // ─── Pinch-to-zoom ─────────────────────────────────────────────────

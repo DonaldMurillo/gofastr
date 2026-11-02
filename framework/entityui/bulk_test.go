@@ -335,6 +335,9 @@ type memBulk struct {
 	// onSettle, when set, runs before each Settle: a second worker can
 	// take the lease there.
 	onSettle func(id string)
+	// claimDeadlines records, per Claim call, whether its context had a
+	// deadline (the lease hand-back must be bounded).
+	claimDeadlines []bool
 }
 
 func newMemBulk() *memBulk {
@@ -352,6 +355,10 @@ func (b *memBulk) AuditEvent(ctx context.Context, _, op, id string, detail map[s
 	defer b.mu.Unlock()
 	if b.failAudit != nil {
 		return b.failAudit
+	}
+	// A real audit store's insert fails on a cancelled context.
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	b.audits = append(b.audits, map[string]any{"op": op, "id": id, "detail": detail, "actor": userID(ctx)})
 	return nil
@@ -389,9 +396,11 @@ func (b *memBulk) Job(_ context.Context, id string) (BulkJob, error) {
 	return j, nil
 }
 
-func (b *memBulk) Claim(_ context.Context, id, runner string, now, until time.Time) (bool, error) {
+func (b *memBulk) Claim(ctx context.Context, id, runner string, now, until time.Time) (bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	_, bounded := ctx.Deadline()
+	b.claimDeadlines = append(b.claimDeadlines, bounded)
 	j, ok := b.jobs[id]
 	if !ok || j.Status != BulkQueued {
 		return false, nil

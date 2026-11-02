@@ -162,7 +162,7 @@ func (e *engine) loadConfigurations(loads []loadOutcome) {
 	scanned := map[string]bool{}
 	for _, lo := range loads {
 		for _, p := range lo.pkgs {
-			for _, f := range p.CompiledGoFiles {
+			for _, f := range compiledSources(p) {
 				scanned[f] = true
 			}
 		}
@@ -187,7 +187,7 @@ func (e *engine) loadConfigurations(loads []loadOutcome) {
 	dirNames := map[string]map[string]bool{}
 	for _, lo := range loads {
 		for _, p := range lo.pkgs {
-			for _, f := range p.CompiledGoFiles {
+			for _, f := range compiledSources(p) {
 				d := filepath.Dir(f)
 				if dirNames[d] == nil {
 					dirNames[d] = map[string]bool{}
@@ -301,7 +301,7 @@ func (e *engine) loadConfigurations(loads []loadOutcome) {
 		built := map[string]bool{}
 		for _, p := range pkgs {
 			report := map[string]bool{}
-			for _, f := range p.CompiledGoFiles {
+			for _, f := range compiledSources(p) {
 				if want[f] {
 					report[f] = true
 					built[f] = true
@@ -453,6 +453,11 @@ const maxConstraintTags = 8
 func solveFileConfig(src []byte, name string) (buildConfig, bool) {
 	fos, farch := fileOSArch(name)
 	expr, hasExpr := fileBuildConstraint(src)
+	if importsC(src) {
+		// go/build compiles a file that imports "C" only with cgo on:
+		// under CGO_ENABLED=0 it is ignored like a constrained file.
+		expr, hasExpr = andTag(expr, "cgo"), true
+	}
 	if !hasExpr {
 		if fos == "" && farch == "" {
 			// Unconstrained: the main load compiled it, so an
@@ -689,6 +694,21 @@ func fileBuildConstraint(src []byte) (constraint.Expr, bool) {
 
 // packageClause is the package name a file declares; "" when the
 // header does not parse.
+// importsC reports whether the file imports "C", which makes it a cgo
+// file only a CGO_ENABLED=1 build compiles.
+func importsC(src []byte) bool {
+	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.ImportsOnly)
+	if err != nil {
+		return false
+	}
+	for _, im := range f.Imports {
+		if im.Path.Value == `"C"` {
+			return true
+		}
+	}
+	return false
+}
+
 func packageClause(src []byte) string {
 	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.PackageClauseOnly)
 	if err != nil {

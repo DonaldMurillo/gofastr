@@ -60,7 +60,7 @@ func recordedConstraints(ddl string) (map[string]colConstraint, bool) {
 		if hasDefault {
 			c.dflt = " DEFAULT " + dflt
 		}
-		out[strings.ToLower(name)] = c
+		out[strings.ToLower(unquoteDDLIdent(name))] = c
 	}
 	return out, true
 }
@@ -135,8 +135,8 @@ func constraintChanges(ent *entity.Entity, dialect Dialect, qtable, prevDDL stri
 			}
 			alters = append(alters, SchemaChange{
 				Summary: summary,
-				SQL:     fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s", qtable, qcol, set),
-				Down:    fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s", qtable, qcol, unset),
+				SQL:     fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s", ddlIdent(qtable), ddlIdent(qcol), set),
+				Down:    fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s", ddlIdent(qtable), ddlIdent(qcol), unset),
 			})
 		}
 		if dfltFlip {
@@ -157,6 +157,7 @@ func constraintChanges(ent *entity.Entity, dialect Dialect, qtable, prevDDL stri
 // alterDefaultSQL sets a Postgres column's default to clause (" DEFAULT
 // …"), or drops it for "".
 func alterDefaultSQL(qtable, qcol, clause string) string {
+	qtable, qcol = ddlIdent(qtable), ddlIdent(qcol)
 	if clause == "" {
 		return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT", qtable, qcol)
 	}

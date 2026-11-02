@@ -94,6 +94,14 @@ contracts:
     GOFASTR1409: # security/unfenced-claim-write
       exempt:
         - framework/contracts/**
+    # And for the two DDL/status rules: their bad examples quote the
+    # inline UNIQUE beside its standalone index and the stampless sweep.
+    GOFASTR1416: # security/inline-ddl-constraint
+      exempt:
+        - framework/contracts/**
+    GOFASTR1417: # security/status-update-skips-stamps
+      exempt:
+        - framework/contracts/**
 
     # The semantic-coverage rules read .gofastr/semantic-coverage.json,
     # which records WHICH TESTS RAN — and that differs by environment.

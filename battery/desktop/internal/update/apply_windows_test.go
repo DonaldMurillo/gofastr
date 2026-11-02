@@ -173,10 +173,12 @@ func TestWindowsPlatformVerifySignatureAppliesThePolicy(t *testing.T) {
 	extracted := t.TempDir()
 	fakeBuild(t, extracted, "Notes", "dev.gofastr.notes", "1.3.0")
 
+	newLoader := filepath.Join(extracted, WebView2LoaderName)
 	results := map[string]Trust{
-		exe:                                   {State: Trusted, Subject: []byte("CN=Acme")},
-		filepath.Join(extracted, "Notes.exe"): {State: Trusted, Subject: []byte("CN=Other")},
-		filepath.Join(extracted, WebView2LoaderName): {State: Trusted, Subject: []byte("CN=Microsoft")},
+		exe:                                    {State: Trusted, Subject: []byte("CN=Acme")},
+		filepath.Join(dir, WebView2LoaderName): {State: Trusted, Subject: []byte("CN=Microsoft")},
+		filepath.Join(extracted, "Notes.exe"):  {State: Trusted, Subject: []byte("CN=Other")},
+		newLoader:                              {State: Trusted, Subject: []byte("CN=Microsoft")},
 	}
 	var checked []string
 	p := bundledPlatform(t, exe)
@@ -187,9 +189,18 @@ func TestWindowsPlatformVerifySignatureAppliesThePolicy(t *testing.T) {
 	if err := p.VerifySignature(extracted); !errors.Is(err, ErrSignature) {
 		t.Fatalf("another publisher: err = %v, want ErrSignature", err)
 	}
-	if len(checked) != 3 {
-		t.Fatalf("checked %v, want the running exe, the new exe and the loader", checked)
+	if len(checked) != 4 {
+		t.Fatalf("checked %v, want both executables and both loaders", checked)
 	}
+
+	// Same publisher on the exe, but a loader signed by someone else:
+	// the installed loader pins it.
+	results[filepath.Join(extracted, "Notes.exe")] = Trust{State: Trusted, Subject: []byte("CN=Acme")}
+	results[newLoader] = Trust{State: Trusted, Subject: []byte("CN=Other")}
+	if err := p.VerifySignature(extracted); !errors.Is(err, ErrSignature) {
+		t.Fatalf("loader from another publisher: err = %v, want ErrSignature", err)
+	}
+	results[newLoader] = Trust{State: Trusted, Subject: []byte("CN=Microsoft")}
 
 	results[exe] = Trust{State: Unsigned}
 	results[filepath.Join(extracted, "Notes.exe")] = Trust{State: Unsigned}
@@ -356,7 +367,7 @@ func TestVerifyAuthenticodeOnRealFiles(t *testing.T) {
 	if bad.State != Untrusted {
 		t.Fatalf("a tampered file: state %d, detail %q", bad.State, bad.Detail)
 	}
-	if err := CheckWindowsTrust(Trust{State: Unsigned}, bad, good); !errors.Is(err, ErrSignature) {
+	if err := CheckWindowsTrust(Trust{State: Unsigned}, good, bad, good); !errors.Is(err, ErrSignature) {
 		t.Fatalf("the policy accepted a tampered executable: %v", err)
 	}
 }

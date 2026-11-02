@@ -46,6 +46,18 @@ has to return once `Start` does, which the generated `main.go` does.
 gofastr export --base /gofastr _site
 ```
 
+An exit status of 0 does not prove the export ran: a `main` that returns
+before `Start` exits 0 too, over an empty or stale directory. So the CLI
+also sets `GOFASTR_EXPORT_RUN` to a fresh run id, and `Start` writes it
+back in `<dir>/.gofastr-export.json` (`framework.ExportReceiptFile`)
+once every page is on disk. The CLI checks the id, prints the page
+count, and deletes the receipt so it does not ship with the site. For an
+app on GoFastr v0.96.0 or later (or a package inside this repository), a
+missing receipt fails the export. An older pin or a `replace` directive
+cannot be told apart from an app that never exported, so the CLI warns
+and keeps the exit status as the only signal. An app that sets
+`GOFASTR_EXPORT` itself, without `GOFASTR_EXPORT_RUN`, gets no receipt.
+
 A registered battery that implements `static.Contributor` sees every
 rendered page and adds files of its own; [site search](site-search.md)
 writes its index this way. A contributor file at a page's path, in any
@@ -181,11 +193,15 @@ go build -o site ./examples/site/
 - Every file in the app's static dir (or embedded static FS), copied
   to the same path, `index.html` files included. Two kinds of file are
   refused: one the UI host would not serve (a path with a dot segment
-  such as `.env` or `.git/config`, or a server config file name such
-  as `web.config`), and one at the path of a page the build rendered,
-  in any case (`about/index.html` or `About/index.html` beside an
-  `/about` route). The build log names
-  each. Files under a leading `.well-known/`, unless they are dotfiles
+  such as `.env` or `.git/config`, a server config file name such
+  as `web.config`, or a symlink whose target leaves the static dir or
+  is neither a regular file nor a directory), and one at the path of a
+  page the build rendered, in any case (`about/index.html` or
+  `About/index.html` beside an `/about` route). The build log names
+  each. A symlinked directory that stays inside the static dir
+  (`static/images -> img`) is copied under its own name, as the UI host
+  serves it; a link back to a directory it sits in (`loop -> .`) is
+  skipped and logged. Files under a leading `.well-known/`, unless they are dotfiles
   themselves, and the root `.nojekyll` GitHub Pages reads are copied.
   A static-dir
   `_headers` or `_redirects` is appended to the generated one, so its
@@ -201,7 +217,10 @@ go build -o site ./examples/site/
   build wrote fails the build. Which file wins is decided by this
   build and the static source, never by what an earlier build left in
   the output directory, so `Builder.Watch` (which rebuilds into the
-  same directory) picks up a changed extra file.
+  same directory) picks up a changed extra file. `Watch` leaves
+  `OutDir` out of what it polls, so the output directory may sit under
+  a watched one (watch `.`, write `./dist`) without each rebuild
+  triggering the next.
 
 In an app that routes by locale prefix (`framework.WithLocalePrefixes`)
 each prefixed locale gets its own page tree (`/es/about/index.html`)
@@ -407,7 +426,7 @@ runtime handles this natively: it derives the swap boundary from the fetched
 document's own layout chain (the deepest layer the live DOM shares with it),
 swaps only that layer's content cell, and applies every outlet and route
 area outside it as a fill — the same treatment a served envelope partial
-gets. Layout state (a kept list pane and its typed filter) survives
+gets. Layout state (a kept list pane and its scroll) survives
 navigation and Back exactly as on a live server.
 
 ## Error pages: 404.html and non-OK navigation

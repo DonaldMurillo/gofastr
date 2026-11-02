@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -182,7 +183,24 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
+// ReadFrom keeps the connection's sendfile path: io.Copy and
+// http.ServeContent use the writer's ReaderFrom when it has one, and
+// embedding http.ResponseWriter does not promote it. It latches the
+// implicit 200 the way Write does.
+func (s *statusRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if s.status == 0 {
+		s.status = http.StatusOK
+	}
+	return io.Copy(s.ResponseWriter, src)
+}
+
+// Flush sends the headers: the status is the one set, or 200. Latch it,
+// so a WriteHeader after the flush (which net/http drops) is not
+// reported as the outcome.
 func (s *statusRecorder) Flush() {
+	if s.status == 0 {
+		s.status = http.StatusOK
+	}
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

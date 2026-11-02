@@ -17,6 +17,8 @@ package framework
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 // OAuthProtectedResourceConfig configures the
@@ -63,6 +65,37 @@ func WithOAuthProtectedResource(cfg OAuthProtectedResourceConfig) AppOption {
 	return func(a *App) {
 		a.oauthResource = &cfg
 	}
+}
+
+// oauthResourceWellKnownPath is the well-known prefix of RFC 9728.
+const oauthResourceWellKnownPath = "/.well-known/oauth-protected-resource"
+
+// metadataPaths returns the paths the document is served at: the bare
+// well-known prefix, and when the resource identifier has a path, the
+// prefix followed by it (RFC 9728 §3.1), which is the URL a compliant
+// client builds for https://api.example.com/mcp and the only one whose
+// document §3.3 lets it accept. A path with anything outside the
+// unreserved characters and "/" is not given a route of its own: it
+// could not be a literal route pattern.
+func (c *OAuthProtectedResourceConfig) metadataPaths() []string {
+	paths := []string{oauthResourceWellKnownPath}
+	u, err := url.Parse(c.Resource)
+	if err != nil {
+		return paths
+	}
+	p := strings.TrimRight(u.Path, "/")
+	if p == "" || p != u.EscapedPath() && p+"/" != u.EscapedPath() {
+		return paths
+	}
+	for _, r := range p {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-._~/", r)) {
+			return paths
+		}
+	}
+	if strings.Contains(p, "//") || strings.Contains(p, "/./") || strings.Contains(p, "/../") || strings.HasSuffix(p, "/.") || strings.HasSuffix(p, "/..") {
+		return paths
+	}
+	return append(paths, oauthResourceWellKnownPath+p)
 }
 
 // handleOAuthProtectedResource emits the RFC 9728 metadata document.

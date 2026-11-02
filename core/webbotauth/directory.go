@@ -609,11 +609,19 @@ func mediaType(ct string) string {
 // max-age or Expires-Date, clamped to [minPositiveTTL, maxPositiveTTL].
 // ok is false when neither header is present.
 func responseTTL(h http.Header, now time.Time) (time.Duration, bool) {
-	if cc := h.Get("Cache-Control"); cc != "" {
+	// Every Cache-Control line: a max-age on a second line still bounds
+	// the entry (RFC 9110 §5.3).
+	if cc := strings.Join(h.Values("Cache-Control"), ","); cc != "" {
 		for _, part := range strings.Split(cc, ",") {
 			part = strings.TrimSpace(part)
 			if v, ok := strings.CutPrefix(part, "max-age="); ok {
 				if secs, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && secs >= 0 {
+					// Bound the seconds before they become a Duration: a
+					// max-age past MaxInt64 nanoseconds wrapped, and the
+					// clamp then saw the wrapped value.
+					if secs > int64(maxPositiveTTL/time.Second) {
+						return maxPositiveTTL, true
+					}
 					return clampTTL(time.Duration(secs) * time.Second), true
 				}
 			}

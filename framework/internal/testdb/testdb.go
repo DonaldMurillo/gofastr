@@ -147,7 +147,9 @@ func Open(t *testing.T, dialect migrate.Dialect) *sql.DB {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			scopedDB.Close()
-			db.ExecContext(ctx, "DROP SCHEMA "+schemaName+" CASCADE")
+			if _, err := db.ExecContext(ctx, "DROP SCHEMA "+schemaName+" CASCADE"); err != nil {
+				t.Errorf("drop test schema %s: %v", schemaName, err)
+			}
 			db.Close()
 		})
 		return scopedDB

@@ -227,7 +227,11 @@ notes:
     hits: edit
     find:
       fields:
+        # Any value but the named widths (narrow, wide, or empty for the
+        # default): the field is a string type, so an old length still
+        # compiles and panics at render.
         - field: gofastr/framework/ui.WorkbenchConfig.RailWidth
+          value: '(?s)^(?:[^nw]|n(?:[^a]|a[^r]|ar[^r]|arr[^o]|arro[^w]|arrow.)|w(?:[^i]|i[^d]|id[^e]|ide.)|(?:n|na|nar|narr|narro|w|wi|wid)$)'
     guidance: "Replace the length with the nearest named width (ui.WorkbenchRailNarrow, ui.WorkbenchRailWide, or leave it unset for 320px). A theme that needs another size sets --ui-workbench-rail-narrow or --ui-workbench-rail-wide. The old length was written as an inline style attribute that the default CSP strips, so on a strict host it never applied."
   - change: "the blueprint's screen-level filters:, transitions:, search:, island: and widget: keys are removed (the decoder names the replacement for each), the entity_create and entity_edit block kinds are gone, and the synthesized create screen moved from <list>/new to <list>/create with no <detail>/edit screen behind it: generated apps draw entity screens through framework/entityui, and an entity detail screen must sit at <list route>/{id} under one of the entity's list screens"
     breaking: true
@@ -295,8 +299,9 @@ notes:
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/core-ui/app.App.RenderOverlayResult
+      shapes:
+        - symbol: gofastr/core-ui/app.App.RenderOverlayResult
+          type: '^func\(ctx context\.Context, path string, as app\.ScreenType\) \(app\.RenderResult, error\)$'
     guidance: "Pass the location the overlay opens over as the third argument: a.RenderOverlayResult(ctx, path, r.Header.Get(\"X-Gofastr-From\"), as) in a host, or \"\" where there is none (a test). The screen reads its path with app.OverlayOriginFromContext(ctx)."
   - change: "queue.Browsable.ListJobs takes an offset after the limit, so a caller can page past the newest jobs; the DB, memory and Redis queues implement it"
     breaking: true

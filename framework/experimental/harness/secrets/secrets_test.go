@@ -79,3 +79,41 @@ func TestLoadRejectsMalformed(t *testing.T) {
 		t.Fatal("expected error for malformed line")
 	}
 }
+
+// LoadRepo starts the walk at the working directory, and a key the
+// process already holds is left alone.
+func TestLoadRepoFromWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".harness-secrets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".harness-secrets", "env"),
+		[]byte("LOADREPO_TEST_API_KEY=from-file\nLOADREPO_KEPT_API_KEY=from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(root, "pkg", "x")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+	t.Setenv("LOADREPO_TEST_API_KEY", "")
+	os.Unsetenv("LOADREPO_TEST_API_KEY")
+	t.Setenv("LOADREPO_KEPT_API_KEY", "from-env")
+
+	path, err := LoadRepo()
+	if err != nil {
+		t.Fatalf("LoadRepo: %v", err)
+	}
+	if want := filepath.Join(root, ".harness-secrets", "env"); path != want {
+		t.Fatalf("LoadRepo path = %q, want %q", path, want)
+	}
+	if got := os.Getenv("LOADREPO_TEST_API_KEY"); got != "from-file" {
+		t.Fatalf("LOADREPO_TEST_API_KEY = %q, want from-file", got)
+	}
+	if got := os.Getenv("LOADREPO_KEPT_API_KEY"); got != "from-env" {
+		t.Fatalf("an env value was overridden by the file: %q", got)
+	}
+}

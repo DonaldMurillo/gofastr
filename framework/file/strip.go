@@ -12,13 +12,15 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/framework/internal/exif"
+	"github.com/DonaldMurillo/gofastr/framework/internal/jpegcost"
 )
 
 // StripMetadata returns a [ProcessOption] that removes privacy-bearing
 // metadata from stored image originals: EXIF (GPS coordinates, camera
 // serials, embedded thumbnails), XMP, and equivalent segments — JPEG
 // APPn (bar the Adobe APP14 colour marker) and COM segments, PNG tEXt/zTXt/iTXt/eXIf chunks, and WebP EXIF
-// and XMP chunks. A non-trivial EXIF orientation is applied first, so
+// and XMP chunks, plus any trailer after the format's end marker (JPEG
+// EOI, PNG IEND, the WebP RIFF size). A non-trivial EXIF orientation is applied first, so
 // the stripped original still displays upright: JPEG and still PNG
 // re-encode with the orientation baked into the pixels; WebP (no encoder
 // at this layer) and animated PNG (no APNG encoder) are spliced, every
@@ -54,6 +56,32 @@ const stripJPEGQuality = 95
 // orientation-baked JPEG decoded here with no DecodeConfig guard let a
 // ~300 KB upload force a ~256 MiB raster per request.
 const stripMaxPixels int64 = 64 * 1024 * 1024
+
+// stripMaxJPEGScans caps the scans a JPEG may carry before the
+// orientation bake decodes it, matching framework/image.DefaultMaxJPEGScans
+// (local for the same layering reason as stripMaxPixels, and pinned to it
+// by TestStripMetadataRefusesJPEGScanBomb). A progressive scan of one
+// end-of-band run costs about ten bytes and makes the decoder walk every
+// block again, so the pixel cap alone let a few KB buy seconds of CPU.
+// Every scan starts at an FF DA marker and entropy data never holds one,
+// so counting the pair cannot miss a scan.
+const stripMaxJPEGScans = 64
+
+// stripMaxJPEGScanPixels caps scans × pixels, the block walks the bake's
+// decode costs, matching framework/image.DefaultMaxJPEGScanPixels (ten
+// walks of a frame at the pixel cap; local for the same layering reason,
+// pinned by TestStripMetadataBudgetsJPEGScansByPixels). The flat scan cap
+// alone let 64 scans of a 64 MP frame cost ~2.8 s of decode.
+const stripMaxJPEGScanPixels = 10 * stripMaxPixels
+
+// stripMaxProgressiveJPEGBytes caps the coefficients the bake's decode
+// keeps for a progressive JPEG, matching framework/image.
+// DefaultMaxProgressiveJPEGBytes (local for the same layering reason,
+// pinned by TestStripMetadataRefusesProgressiveJPEGOverMemoryBudget).
+// image/jpeg holds 256 bytes per block of every component for the whole
+// frame, so a few hundred bytes of 3-component 8192×8192 progressive JPEG
+// allocated ~1 GB inside the pixel cap.
+const stripMaxProgressiveJPEGBytes int64 = 512 << 20
 
 // checkStripPixelCap refuses header dimensions whose decoded raster would
 // exceed stripMaxPixels, before any pixel decode runs. Overflow-safe by
@@ -113,7 +141,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 	orient := 0
 	out := make([]byte, 0, len(data))
 	out = append(out, data[0], data[1])
-	i, inScan := 2, false
+	i, inScan, scans := 2, false, 0
 	for i < len(data) {
 		if inScan {
 			// Entropy-coded scan data: copy bytes until the next
@@ -186,6 +214,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 			}
 		case marker == 0xFE: // COM: comment, dropped
 		case marker == 0xDA: // SOS: header copied, scan data follows
+			scans++
 			out = append(out, data[i:segLenAt+segLen]...)
 			i = segLenAt + segLen
 			inScan = true
@@ -196,12 +225,24 @@ func stripJPEG(data []byte) ([]byte, error) {
 		i = segLenAt + segLen
 	}
 	if orient >= 2 && orient <= 8 {
+		// The pixel cap bounds the frame, not how often a progressive
+		// decode walks it; see stripMaxJPEGScans.
+		if scans > stripMaxJPEGScans {
+			return nil, fmt.Errorf("strip: JPEG carries %d scans, over the %d-scan decode cap", scans, stripMaxJPEGScans)
+		}
 		cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
 		if err != nil {
 			return nil, fmt.Errorf("jpeg: decoding header for orientation bake: %w", err)
 		}
 		if err := checkStripPixelCap(cfg.Width, cfg.Height); err != nil {
 			return nil, err
+		}
+		// Divide: the pixel cap bounds width×height, so the quotient is exact.
+		if int64(scans) > stripMaxJPEGScanPixels/(int64(cfg.Width)*int64(cfg.Height)) {
+			return nil, fmt.Errorf("strip: JPEG carries %d scans of a %dx%d frame, over the %d pixel-scan decode budget", scans, cfg.Width, cfg.Height, stripMaxJPEGScanPixels)
+		}
+		if n, ok := jpegcost.ProgressiveCoeffBytes(out); ok && n > stripMaxProgressiveJPEGBytes {
+			return nil, fmt.Errorf("strip: progressive JPEG needs %d bytes of coefficients, over the %d-byte decode cap", n, stripMaxProgressiveJPEGBytes)
 		}
 		img, err := jpeg.Decode(bytes.NewReader(out))
 		if err != nil {
@@ -220,7 +261,8 @@ func stripJPEG(data []byte) ([]byte, error) {
 // (tEXt/zTXt/iTXt/eXIf), which drops them all: the stdlib encoder
 // writes only the chunks it understands, no text or EXIF survives, and
 // PNG is lossless so the re-encode costs nothing but CPU. A PNG with no
-// metadata chunk is returned unchanged, byte-for-byte. An eXIf
+// metadata chunk is returned unchanged up to the end of its IEND chunk;
+// a trailer after it is cut. An eXIf
 // orientation of 2..8 is baked into the pixels before re-encoding.
 //
 // An animated PNG (an acTL chunk) is spliced instead, see
@@ -235,6 +277,7 @@ func stripPNG(data []byte) ([]byte, error) {
 		return nil, errors.New("png: bad signature")
 	}
 	orient, hasMeta, animated := 0, false, false
+	iendEnd := 0 // offset just past the IEND chunk; 0 when there is none
 	pos := 8
 	for pos+8 <= len(data) {
 		length := binary.BigEndian.Uint32(data[pos : pos+4])
@@ -255,14 +298,19 @@ func stripPNG(data []byte) ([]byte, error) {
 		case "acTL":
 			animated = true
 		case "IEND":
-			// Stop like the decoder does; bytes after IEND only
-			// survive when there is nothing to strip.
+			// Stop like the decoder does. Bytes after IEND are a
+			// trailer readers ignore and tools park data in; they are
+			// cut below, as stripJPEG cuts what follows EOI.
+			iendEnd = pos + 12 + int(length)
 			pos = len(data)
 			continue
 		}
 		pos += 12 + int(length)
 	}
 	if !hasMeta {
+		if iendEnd > 0 && iendEnd < len(data) {
+			return data[:iendEnd], nil
+		}
 		return data, nil
 	}
 	if animated {
@@ -387,7 +435,9 @@ func stripWebP(data []byte) ([]byte, error) {
 		}
 	}
 	if !changed {
-		return data, nil
+		// Bytes past the RIFF size are a trailer no reader looks at;
+		// cut them, as stripJPEG cuts what follows EOI.
+		return data[:riffEnd], nil
 	}
 	keepEXIF := false
 	if orient >= 2 && orient <= 8 {

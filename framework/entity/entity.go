@@ -431,141 +431,22 @@ func Define(name string, config EntityConfig) *Entity {
 	config.PrimaryKey = slices.Clone(config.PrimaryKey)
 	keyCols := config.keyColumns()
 
-	// Inject the id field when the key uses it and Fields does not declare it.
-	hasID := false
-	for _, f := range config.Fields {
-		if f.Name == "id" {
-			hasID = true
-			break
-		}
-	}
-	if !hasID && slices.Contains(keyCols, "id") {
-		idField := schema.Field{
-			Name:         "id",
-			Type:         schema.UUID,
-			AutoGenerate: schema.AutoUUID,
-			ReadOnly:     true,
-		}
-		config.Fields = append([]schema.Field{idField}, config.Fields...)
-	}
-
-	// Inject timestamp fields if enabled and not already defined
-	if *config.Timestamps {
-		hasCreatedAt := false
-		hasUpdatedAt := false
-		for _, f := range config.Fields {
-			if f.Name == "created_at" {
-				hasCreatedAt = true
-			}
-			if f.Name == "updated_at" {
-				hasUpdatedAt = true
-			}
-		}
-		if !hasCreatedAt {
-			config.Fields = append(config.Fields, schema.Field{
-				Name:         "created_at",
-				Type:         schema.Timestamp,
-				AutoGenerate: schema.AutoTimestamp,
-				ReadOnly:     true,
-			})
-		}
-		if !hasUpdatedAt {
-			config.Fields = append(config.Fields, schema.Field{
-				Name:         "updated_at",
-				Type:         schema.Timestamp,
-				AutoGenerate: schema.AutoTimestamp,
-				ReadOnly:     true,
-			})
-		}
-	}
-
-	// Inject tenant_id field if multi-tenancy is enabled and not already
-	// declared. Symmetric with deleted_at: the crud layer injects tenant_id
-	// on writes and scopes reads by it, so the column MUST exist in the
-	// table. Without this, AutoMigrate would create a table with no
-	// tenant_id column and the first create request would fail with a
-	// "no such column" error. Hidden + ReadOnly keeps it out of request
-	// bodies and API responses, the framework manages its value.
+	// Validate the scope column names once, here, so a misconfigured
+	// TenantField or OwnerField fails loud at definition with an actionable
+	// message, rather than as an opaque "unsafe SQL identifier" panic on the
+	// first scoped request, where the column name is interpolated into the
+	// WHERE clause.
 	if config.Scope.MultiTenant {
-		tenantCol := config.TenantColumn()
-		// Validate the tenant column name once, here, so a misconfigured
-		// TenantField fails loud at definition with an actionable message,
-		// rather than as an opaque "unsafe SQL identifier" panic on the first
-		// tenant-scoped request, where the column name is interpolated into the
-		// WHERE clause.
-		if _, err := query.SafeIdent(tenantCol); err != nil {
-			panic(fmt.Sprintf("entity %q: TenantField %q is not a valid SQL identifier: %v", name, tenantCol, err))
-		}
-		hasTenantID := false
-		for _, f := range config.Fields {
-			if f.Name == tenantCol {
-				hasTenantID = true
-			}
-		}
-		if !hasTenantID {
-			config.Fields = append(config.Fields, schema.Field{
-				Name:         tenantCol,
-				Type:         schema.String,
-				AutoGenerate: schema.AutoNone,
-				ReadOnly:     true,
-				Hidden:       true,
-			})
+		if _, err := query.SafeIdent(config.TenantColumn()); err != nil {
+			panic(fmt.Sprintf("entity %q: TenantField %q is not a valid SQL identifier: %v", name, config.TenantColumn(), err))
 		}
 	}
-
-	// Inject soft delete field if enabled
-	if config.Scope.SoftDelete {
-		hasDeletedAt := false
-		for _, f := range config.Fields {
-			if f.Name == "deleted_at" {
-				hasDeletedAt = true
-			}
-		}
-		if !hasDeletedAt {
-			config.Fields = append(config.Fields, schema.Field{
-				Name:         "deleted_at",
-				Type:         schema.Timestamp,
-				AutoGenerate: schema.AutoNone,
-				ReadOnly:     true,
-				Hidden:       true,
-			})
-		}
-	}
-
-	// Inject the owner column when an owner scope is configured and no
-	// field with that name is declared, symmetric with tenant_id above
-	// and matching the app generator's owner_field semantics. The
-	// crud layer stamps the owner on writes (InjectOwner) and scopes
-	// reads by it (ApplyOwnerScope), so the column MUST exist in the
-	// table; without this, AutoMigrate would create a table with no
-	// owner column, a create would silently persist an unowned row (the
-	// INSERT column list comes from GetFields) and the first scoped read
-	// would fail with "no such column". A field the caller DID declare
-	// with that name is left untouched.
 	if config.Scope.OwnerField != "" {
-		// Validate the owner column name once, here, matching the
-		// TenantField check above: it is interpolated into owner-scope
-		// WHERE clauses, so a bad name should fail loud at definition,
-		// not as an opaque panic on the first scoped request.
 		if _, err := query.SafeIdent(config.Scope.OwnerField); err != nil {
 			panic(fmt.Sprintf("entity %q: OwnerField %q is not a valid SQL identifier: %v", name, config.Scope.OwnerField, err))
 		}
-		hasOwner := false
-		for _, f := range config.Fields {
-			if f.Name == config.Scope.OwnerField {
-				hasOwner = true
-			}
-		}
-		if !hasOwner {
-			config.Fields = append(config.Fields, schema.Field{
-				Name:         config.Scope.OwnerField,
-				Type:         schema.String,
-				AutoGenerate: schema.AutoNone,
-				ReadOnly:     true,
-				Hidden:       true,
-			})
-		}
 	}
+	config.Fields = config.systemFields()
 
 	// CrossOwnerRead lifts owner scoping for reads only, so it only makes
 	// sense on an entity that is owner-scoped to begin with. Catch the
@@ -777,6 +658,147 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 	return &Entity{Config: config}
+}
+
+// WithSystemFields returns a copy whose Fields hold the system columns
+// Define injects (the id key, created_at/updated_at, and the tenant,
+// owner and soft-delete scope columns) that Fields does not already
+// declare, in the order Define adds them. Define keeps a declared field
+// as it is, so a caller can adjust one of these columns (hide it, give it
+// a WireName) before Define by adjusting it here. Nothing else in the
+// config changes, and the scope column names are not validated: Define
+// does that.
+func (c EntityConfig) WithSystemFields() EntityConfig {
+	c.Fields = c.normalizeSubConfigs().systemFields()
+	return c
+}
+
+// systemFields returns c.Fields with the system columns Define
+// injects added. It is called on a normalized config.
+func (c EntityConfig) systemFields() []schema.Field {
+	c.Fields = slices.Clone(c.Fields)
+	// Inject the id field when the key uses it and Fields does not declare it.
+	hasID := false
+	for _, f := range c.Fields {
+		if f.Name == "id" {
+			hasID = true
+			break
+		}
+	}
+	if !hasID && slices.Contains(c.keyColumns(), "id") {
+		idField := schema.Field{
+			Name:         "id",
+			Type:         schema.UUID,
+			AutoGenerate: schema.AutoUUID,
+			ReadOnly:     true,
+		}
+		c.Fields = append([]schema.Field{idField}, c.Fields...)
+	}
+
+	// Inject timestamp fields if enabled and not already defined
+	if *c.Timestamps {
+		hasCreatedAt := false
+		hasUpdatedAt := false
+		for _, f := range c.Fields {
+			if f.Name == "created_at" {
+				hasCreatedAt = true
+			}
+			if f.Name == "updated_at" {
+				hasUpdatedAt = true
+			}
+		}
+		if !hasCreatedAt {
+			c.Fields = append(c.Fields, schema.Field{
+				Name:         "created_at",
+				Type:         schema.Timestamp,
+				AutoGenerate: schema.AutoTimestamp,
+				ReadOnly:     true,
+			})
+		}
+		if !hasUpdatedAt {
+			c.Fields = append(c.Fields, schema.Field{
+				Name:         "updated_at",
+				Type:         schema.Timestamp,
+				AutoGenerate: schema.AutoTimestamp,
+				ReadOnly:     true,
+			})
+		}
+	}
+
+	// Inject tenant_id field if multi-tenancy is enabled and not already
+	// declared. Symmetric with deleted_at: the crud layer injects tenant_id
+	// on writes and scopes reads by it, so the column MUST exist in the
+	// table. Without this, AutoMigrate would create a table with no
+	// tenant_id column and the first create request would fail with a
+	// "no such column" error. Hidden + ReadOnly keeps it out of request
+	// bodies and API responses, the framework manages its value.
+	if c.Scope.MultiTenant {
+		tenantCol := c.TenantColumn()
+		hasTenantID := false
+		for _, f := range c.Fields {
+			if f.Name == tenantCol {
+				hasTenantID = true
+			}
+		}
+		if !hasTenantID {
+			c.Fields = append(c.Fields, schema.Field{
+				Name:         tenantCol,
+				Type:         schema.String,
+				AutoGenerate: schema.AutoNone,
+				ReadOnly:     true,
+				Hidden:       true,
+			})
+		}
+	}
+
+	// Inject soft delete field if enabled
+	if c.Scope.SoftDelete {
+		hasDeletedAt := false
+		for _, f := range c.Fields {
+			if f.Name == "deleted_at" {
+				hasDeletedAt = true
+			}
+		}
+		if !hasDeletedAt {
+			c.Fields = append(c.Fields, schema.Field{
+				Name:         "deleted_at",
+				Type:         schema.Timestamp,
+				AutoGenerate: schema.AutoNone,
+				ReadOnly:     true,
+				Hidden:       true,
+			})
+		}
+	}
+
+	// Inject the owner column when an owner scope is configured and no
+	// field with that name is declared, symmetric with tenant_id above
+	// and matching the app generator's owner_field semantics. The
+	// crud layer stamps the owner on writes (InjectOwner) and scopes
+	// reads by it (ApplyOwnerScope), so the column MUST exist in the
+	// table; without this, AutoMigrate would create a table with no
+	// owner column, a create would silently persist an unowned row (the
+	// INSERT column list comes from GetFields) and the first scoped read
+	// would fail with "no such column". A field the caller DID declare
+	// with that name is left untouched.
+	if c.Scope.OwnerField != "" {
+		hasOwner := false
+		for _, f := range c.Fields {
+			if f.Name == c.Scope.OwnerField {
+				hasOwner = true
+			}
+		}
+		if !hasOwner {
+			c.Fields = append(c.Fields, schema.Field{
+				Name:         c.Scope.OwnerField,
+				Type:         schema.String,
+				AutoGenerate: schema.AutoNone,
+				ReadOnly:     true,
+				Hidden:       true,
+			})
+		}
+	}
+
+	return c.Fields
 }
 
 // keyColumns is PrimaryKey, or "id" when it is nil. Only a raw

@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"go/types"
 	"slices"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -47,6 +48,9 @@ func checkCtxless(pass *analysis.Pass, ft *ast.FuncType, body *ast.BlockStmt, re
 				if expr == "" && uiPackage(pass.Pkg.Path()) {
 					reportOrphan(pass, n, ui)
 				}
+				if expr != "" {
+					reportSliceDefault(pass, n, expr, ui)
+				}
 			case *ast.CompositeLit:
 				if expr != "" {
 					reportCtxless(pass, n, expr, setLater, bound, ui)
@@ -84,6 +88,33 @@ func reportCtxless(pass *analysis.Pass, lit *ast.CompositeLit, expr string, setL
 		return
 	}
 	ui.reportf(lit, "%s.%s leaves Ctx unset while a request context is in scope: the component says its words through Ctx, so they render in English in every other locale; set Ctx: %s", named.Obj().Pkg().Name(), named.Obj().Name(), expr)
+}
+
+// reportSliceDefault is ctxless's per-request-value arm: a call of
+// core-ui/store's Slice.Default() where a request context is in scope.
+// Default is the declaration; the request's value is what a producer
+// Seeded on that context, and Slice.Value(ctx) reads it (falling back
+// to the default). ui.Counter, ui.Tabs and ui.SignalToggle painted
+// Default() as their first value (af3292807), so a page that seeded 7
+// rendered a counter reading 0 whose first + stepped to 8.
+func reportSliceDefault(pass *analysis.Pass, call *ast.CallExpr, expr string, ui uiReporter) {
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Default" || len(call.Args) != 0 {
+		return
+	}
+	s, ok := pass.TypesInfo.Selections[sel]
+	if !ok || s.Kind() != types.MethodVal {
+		return
+	}
+	recv := s.Recv()
+	if p, ok := recv.(*types.Pointer); ok {
+		recv = p.Elem()
+	}
+	named, ok := types.Unalias(recv).(*types.Named)
+	if !ok || named.Obj().Pkg() == nil || named.Obj().Name() != "Slice" || !strings.HasSuffix(named.Obj().Pkg().Path(), "core-ui/store") {
+		return
+	}
+	ui.reportf(call, "store.Slice.Default() is the declaration, not this request's value: a producer's Seed on the request context is ignored, so the server paints the default while the page seed hands the client the seeded value; read %s.Value(%s)", types.ExprString(sel.X), expr)
 }
 
 // reportOrphan is ctxless's no-context arm, for kit code only: a call

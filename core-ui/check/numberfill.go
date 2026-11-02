@@ -45,7 +45,7 @@ func LintNumberFill(roots ...string) (*Result, error) {
 			}
 			pattern := strings.TrimSpace(nthArgument(f.Code, f.Blank, open, close, 0))
 			arg := strings.TrimSpace(nthArgument(f.Code, f.Blank, open, close, 1))
-			exact := isJSStringLiteral(pattern) && pattern[1:len(pattern)-1] == "{{n}}"
+			exact := isNPlaceholder(pattern)
 			if !exact && !reNRegex.MatchString(pattern) {
 				continue
 			}
@@ -61,7 +61,7 @@ func LintNumberFill(roots ...string) (*Result, error) {
 				continue
 			}
 			pattern := strings.TrimSpace(nthArgument(f.Code, f.Blank, open, close, 0))
-			if !isJSStringLiteral(pattern) || pattern[1:len(pattern)-1] != "{{n}}" {
+			if !isNPlaceholder(pattern) {
 				continue
 			}
 			join := reJoinAfter.FindStringIndex(f.Blank[close+1:])
@@ -117,9 +117,21 @@ func sayParamN(params string) (string, bool) {
 	return "", false
 }
 
+// isNPlaceholder reports whether a pattern argument is the literal
+// '{{n}}', in any of JavaScript's three quotes: a template literal with
+// no substitution is the same string as a quoted one.
+func isNPlaceholder(pattern string) bool {
+	if isJSStringLiteral(pattern) {
+		return pattern[1:len(pattern)-1] == "{{n}}"
+	}
+	return pattern == "`{{n}}`"
+}
+
 // reNRegex matches a regex literal pattern that names {{n}}: /\{\{n\}\}/
-// or a class holding n, /\{\{([nq])\}\}/.
-var reNRegex = regexp.MustCompile(`^/.*\\\{\\\{(?:n|\(?\[[a-z]*n[a-z]*\]\)?)\\\}\\\}`)
+// or a class holding n, /\{\{([nq])\}\}/. The braces may go unescaped,
+// /{{n}}/g: a brace that does not open a {m,n} quantifier is a literal
+// brace, so both spellings match the same text.
+var reNRegex = regexp.MustCompile(`^/.*\\?\{\\?\{(?:n|\(?\[[a-z]*n[a-z]*\]\)?)\\?\}\\?\}`)
 
 var (
 	reSplitCall = regexp.MustCompile(`\.\s*split\s*\(`)

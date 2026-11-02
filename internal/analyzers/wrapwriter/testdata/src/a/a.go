@@ -22,7 +22,7 @@ type timeoutWriter struct { // want `wrapwriter: timeoutWriter wraps http.Respon
 
 func (tw *timeoutWriter) Header() http.Header         { return tw.h }
 func (tw *timeoutWriter) WriteHeader(code int)        { tw.code = code }
-func (tw *timeoutWriter) Write(p []byte) (int, error) { return tw.w.Write(p) }
+func (tw *timeoutWriter) Write(p []byte) (int, error) { return tw.w.Write(p) } // want `wrapwriter: timeoutWriter forwards Write to the writer it wraps but declares no ReadFrom`
 func (tw *timeoutWriter) Flush()                      { tw.w.(http.Flusher).Flush() }
 func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return tw.w.(http.Hijacker).Hijack()
@@ -104,7 +104,7 @@ type valueWriter struct { // want `wrapwriter: valueWriter wraps`
 	http.ResponseWriter
 }
 
-func (v valueWriter) Write(b []byte) (int, error) { return v.ResponseWriter.Write(b) }
+func (v valueWriter) Write(b []byte) (int, error) { return v.ResponseWriter.Write(b) } // want `wrapwriter: valueWriter forwards Write to the writer it wraps but declares no ReadFrom`
 
 func Value(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +139,7 @@ type ifaceField struct { // want `wrapwriter: ifaceField wraps`
 
 func (i *ifaceField) Header() http.Header         { return i.fw.Header() }
 func (i *ifaceField) WriteHeader(c int)           { i.fw.WriteHeader(c) }
-func (i *ifaceField) Write(b []byte) (int, error) { return i.fw.Write(b) }
+func (i *ifaceField) Write(b []byte) (int, error) { return i.fw.Write(b) } // want `wrapwriter: ifaceField forwards Write to the writer it wraps but declares no ReadFrom`
 
 func Iface(next http.Handler, fw flushingWriter, r *http.Request) {
 	next.ServeHTTP(&ifaceField{fw: fw}, r)
@@ -178,7 +178,7 @@ func (w *tracingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 // Unwrap on a value receiver, type used by value.
 type stripWriter struct{ http.ResponseWriter }
 
-func (s stripWriter) Write(b []byte) (int, error) { return s.ResponseWriter.Write(b) }
+func (s stripWriter) Write(b []byte) (int, error) { return s.ResponseWriter.Write(b) } // want `wrapwriter: stripWriter forwards Write to the writer it wraps but declares no ReadFrom`
 func (s stripWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // Holds a writer but is not one (no Header): core/stream's SSEWriter.

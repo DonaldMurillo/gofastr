@@ -41,7 +41,7 @@ func runAuditA11y(args []string) {
 		cli.OsExit(0)
 	}
 	if opts.badFlag != "" {
-		fmt.Fprintf(os.Stderr, "audit a11y: unknown flag %s\n", opts.badFlag)
+		cli.Fprintf(os.Stderr, "audit a11y: unknown flag %s\n", opts.badFlag)
 		cli.OsExit(2)
 	}
 	if (opts.email == "") != (opts.password == "") {
@@ -54,10 +54,10 @@ func runAuditA11y(args []string) {
 			Email: opts.email, Password: opts.password,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "audit a11y: %v\n", err)
+			cli.Fprintf(os.Stderr, "audit a11y: %v\n", err)
 			cli.OsExit(1)
 		}
-		fmt.Print(formatAxeReport(run))
+		cli.Print(formatAxeReport(run))
 		if run.Incomplete() {
 			cli.OsExit(1)
 		}
@@ -71,10 +71,10 @@ func runAuditA11y(args []string) {
 
 	findings, err := gates.AuditA11y(opts.root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "audit a11y: %v\n", err)
+		cli.Fprintf(os.Stderr, "audit a11y: %v\n", err)
 		cli.OsExit(1)
 	}
-	fmt.Print(gates.FormatA11yReport(findings))
+	cli.Print(gates.FormatA11yReport(findings))
 	if len(findings) > 0 {
 		cli.OsExit(1)
 	}

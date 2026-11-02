@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
@@ -17,7 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/access"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -182,18 +182,18 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	if !canReadRecord(ctx, m.ch, b.id) {
 		return m.notFound(ctx), nil
 	}
-	// WithReadHooks: the header and every display value show what an
+	// Hooked (getRow): the header and every display value show what an
 	// AfterGet redaction shows, never the stored column.
-	row, err := m.ch.GetOne(crud.WithReadHooks(ctx), b.id, nil)
+	row, err := m.getRow(ctx, b.id)
 	if err != nil || row == nil {
 		return m.notFound(ctx), nil
 	}
-	// Deliberately NOT WithReadHooks: the edit form's inputs
+	// Deliberately unhooked: the edit form's inputs
 	// round-trip on submit, so prefilling from a redacted read would
 	// write the mask over the stored value. The diff of the two reads
 	// also names the columns a hook rewrites, which the form renders
 	// write-only (see maskedFields).
-	raw, rerr := m.ch.GetOne(ctx, b.id, nil)
+	raw, rerr := m.getRowUnhooked(ctx, b.id)
 	if rerr != nil || raw == nil {
 		return m.notFound(ctx), nil
 	}
@@ -579,7 +579,9 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	}
 	if b.activity && b.ui.host.Audit() != nil {
 		tabs = append(tabs, tab{key: "activity", label: i18nui.EntityTabActivity.Text(ctx), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
-			return b.activityTab(ctx, m), nil
+			masked := rewrittenFields(m, raw, row)
+			maps.Copy(masked, hookMaskedFields(ctx, m, b.id, raw))
+			return b.activityTab(ctx, m, masked), nil
 		}})
 	}
 	if b.apiTab {

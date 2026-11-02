@@ -204,7 +204,7 @@ func (w *devContractWatch) printOnce(summary string) {
 
 	fmt.Println()
 	cli.Warn("contracts: findings in what you changed:")
-	fmt.Println(summary)
+	cli.Println(summary)
 }
 
 // devBaselinePath is the conventional baseline location under root.

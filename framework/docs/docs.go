@@ -26,6 +26,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 //go:embed content/*.md
@@ -295,20 +297,52 @@ func extractSummary(body []byte) string {
 	return ""
 }
 
+// matchSpan returns the byte span of line whose lowering is the first
+// match of needle in lower (strings.ToLower(line)). The two strings'
+// offsets differ wherever lowering changes a rune's length (U+0130 'İ'
+// is 2 bytes and lowers to 1; an invalid byte becomes the 3-byte
+// U+FFFD), so the span is found by lowering line rune by rune, the way
+// strings.ToLower does, until the lowered length reaches the match.
+func matchSpan(line, lower, needle string) (start, end int) {
+	at := strings.Index(lower, needle)
+	if at < 0 {
+		return 0, 0
+	}
+	start, end = -1, len(line)
+	off := 0 // length of line[:i] once lowered
+	for i := 0; i < len(line); {
+		if start < 0 && off >= at {
+			start = i
+		}
+		if start >= 0 && off >= at+len(needle) {
+			end = i
+			break
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		off += utf8.RuneLen(unicode.ToLower(r))
+		i += size
+	}
+	if start < 0 {
+		start = len(line)
+	}
+	return start, end
+}
+
 // excerptAround returns a substring of `line` centred on the first
 // occurrence of `needle` (matched case-insensitively against `lower`,
 // which must be strings.ToLower(line)): cap/2 chars either side of the
 // match, shifted inward at the line's ends, so a cut line is cap chars
 // plus the needle. Prepends/appends "…" when the cut hits before/after
-// the match.
+// the match. The cut widens to whole runes, so the excerpt is valid
+// UTF-8 whenever line is.
 func excerptAround(line, lower, needle string, cap int) string {
 	if len(line) <= cap {
 		return line
 	}
-	idx := strings.Index(lower, needle)
+	matchStart, matchEnd := matchSpan(line, lower, needle)
 	half := cap / 2
-	start := idx - half
-	end := idx + len(needle) + half
+	start := matchStart - half
+	end := matchEnd + half
 	if start < 0 {
 		end -= start
 		start = 0
@@ -320,6 +354,12 @@ func excerptAround(line, lower, needle string, cap int) string {
 		if start < 0 {
 			start = 0
 		}
+	}
+	for start > 0 && !utf8.RuneStart(line[start]) {
+		start--
+	}
+	for end < len(line) && !utf8.RuneStart(line[end]) {
+		end++
 	}
 	out := line[start:end]
 	if start > 0 {

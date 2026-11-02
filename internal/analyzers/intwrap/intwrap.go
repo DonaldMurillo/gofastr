@@ -30,6 +30,13 @@
 // and layout math converts bounded values everywhere), as do targets
 // narrower or unsigned (int8, uint8, …).
 //
+// Shapes D, E and F (2026-11 bug bash, documented in overflow.go) are
+// signed arithmetic that wraps before a guard sees it: a caller's
+// seconds multiplied into a time.Duration (8b19113f2, ce72591bd), a
+// limit+1 sentinel at MaxInt64 handed to io.LimitReader (c0d6e99e0),
+// and (page-1)*limit offset math (b973561c4). Their silences are
+// listed there; the dominance rules below are shapes A–C's.
+//
 // A bound counts only when it proves the subject inside the safe range
 // on the REACHING path (review 6): a diverging guard — an earlier if
 // whose condition, when false, leaves the subject in range (`u >
@@ -85,11 +92,12 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "intwrap",
-	Doc:  "forbids unsigned→signed conversion and MinInt negation without a dominating bound check; wrapped values read negative and slip past Max-only guards",
+	Doc:  "forbids unsigned→signed conversion, MinInt negation, a caller's count multiplied into a time.Duration, a limit+1 sentinel at a reader, and (page-1)*limit offset math without a bound check first; wrapped values read negative or tiny and slip past the guards after them",
 	Run:  run,
 }
 
 func run(pass *analysis.Pass) (any, error) {
+	idx := newPkgIndex(pass)
 	for _, f := range pass.Files {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
@@ -99,6 +107,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok || fn.Body == nil {
 				continue
 			}
+			checkOverflowArms(pass, fn, idx)
 			parents := dominance.Parents(fn.Body)
 			abs := isAbsFunc(fn)
 			anyVars := unboundedSources(pass, fn.Body)

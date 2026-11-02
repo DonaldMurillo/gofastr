@@ -227,7 +227,9 @@ var (
 )
 
 func stripGoComments(body []byte) []byte {
+	//gofastr:allow(sanitizefix) one pass on purpose: a splice of real Go source ("/" + "/*a*/" + "/x") is code, not a comment, and a second pass would delete it
 	b := reBlockComment.ReplaceAll(body, []byte(""))
+	//gofastr:allow(sanitizefix) the lint's own heuristic comment removal over the app's source, not a security boundary; looping would eat code the first pass spliced
 	return reLineComment.ReplaceAll(b, []byte(""))
 }
 

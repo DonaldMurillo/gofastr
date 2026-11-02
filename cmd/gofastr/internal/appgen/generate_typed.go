@@ -169,7 +169,7 @@ func deletedBody(decl framework.EntityDeclaration) string {
 	wire := make([]string, len(cols))
 	for i, k := range cols {
 		names[i] = k.Name
-		wire[i] = fmt.Sprintf("%q: %q", k.Name, appspec.ToCamelJSON(k.Name))
+		wire[i] = fmt.Sprintf("%q: %q", k.Name, appspec.WireKey(k.Name))
 	}
 	return fmt.Sprintf(`wire := map[string]string{%s}
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
@@ -442,7 +442,7 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration, decls []framework
 		if dropCreate(field) {
 			continue
 		}
-		typ, tag := entityFieldGoType(struct_, field), appspec.ToCamelJSON(field.Name)
+		typ, tag := entityFieldGoType(struct_, field), appspec.WireKey(field.Name)
 		if inputTakesValue(field) {
 			fmt.Fprintf(&sb, "\t%s %s `json:\"%s\"`\n", appspec.ToCamelCase(field.Name), typ, tag)
 		} else {
@@ -451,7 +451,7 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration, decls []framework
 	}
 	for _, rel := range cascadeRelations(decl) {
 		fmt.Fprintf(&sb, "\t%s %s%sInput `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(rel.Name),
-			cascadeArity(rel), appspec.ToCamelCase(rel.Entity), appspec.ToCamelJSON(rel.Name))
+			cascadeArity(rel), appspec.ToCamelCase(rel.Entity), appspec.WireKey(rel.Name))
 	}
 	sb.WriteString("}\n\n")
 	fmt.Fprintf(&sb, "// %sPatch is the update payload for %sRepo: a nil field is left as\n"+
@@ -464,11 +464,11 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration, decls []framework
 			continue
 		}
 		fmt.Fprintf(&sb, "\t%s *%s `json:\"%s,omitempty\"`\n",
-			appspec.ToCamelCase(field.Name), entityFieldGoType(struct_, field), appspec.ToCamelJSON(field.Name))
+			appspec.ToCamelCase(field.Name), entityFieldGoType(struct_, field), appspec.WireKey(field.Name))
 	}
 	for _, rel := range cascadeRelations(decl) {
 		fmt.Fprintf(&sb, "\t%s %s%s%sNested `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(rel.Name),
-			cascadeArity(rel), struct_, appspec.ToCamelCase(rel.Name), appspec.ToCamelJSON(rel.Name))
+			cascadeArity(rel), struct_, appspec.ToCamelCase(rel.Name), appspec.WireKey(rel.Name))
 	}
 	sb.WriteString("}\n\n")
 	for _, rel := range cascadeRelations(decl) {

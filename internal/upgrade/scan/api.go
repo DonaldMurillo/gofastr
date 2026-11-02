@@ -6,7 +6,18 @@
 // runtime path imports it.
 package scan
 
-import "github.com/DonaldMurillo/gofastr/internal/upgrade"
+import (
+	"go/types"
+
+	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+)
+
+// ShapeString is the string a shapes regex is matched against for an
+// object of type t: packages by name, aliases resolved. The registry
+// gate in evals/upgrade-fixtures uses it to check each shapes entry
+// against the symbol's real type at the release before and at the
+// release itself.
+func ShapeString(t types.Type) string { return shapeString(t) }
 
 // Hit is one place a note's Find matched.
 type Hit struct {

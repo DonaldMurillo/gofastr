@@ -134,9 +134,10 @@ func (p *windowsPlatform) VerifySignature(extracted string) error {
 		trust = VerifyAuthenticode
 	}
 	running := trust(p.exe)
+	runningDLL := trust(filepath.Join(filepath.Dir(p.exe), WebView2LoaderName))
 	exe := trust(filepath.Join(extracted, name+".exe"))
 	dll := trust(filepath.Join(extracted, WebView2LoaderName))
-	if err := CheckWindowsTrust(running, exe, dll); err != nil {
+	if err := CheckWindowsTrust(running, runningDLL, exe, dll); err != nil {
 		return err
 	}
 	if running.State != Trusted && p.warn != nil {

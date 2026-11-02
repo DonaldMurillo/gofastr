@@ -161,18 +161,21 @@ func ValidationError(fields map[string][]schema.Violation) *Error {
 	}
 }
 
-// errorResponse is the JSON shape sent to clients.
+// errorResponse is the error envelope every route answers with, the
+// CRUD routes' included (framework/crud writes the same keys): "error"
+// is the message in the request's locale, "code" the HTTP status,
+// "reason" the message's stable code, and "fields"/"field_reasons" the
+// field violations with their codes. "success" is always false and
+// says nothing the status does not; it stays because the crud routes
+// and this writer both sent it before the two shapes became one, so a
+// client that branches on it keeps working.
 type errorResponse struct {
-	Error   errorResponseDetail `json:"error"`
-	Success bool                `json:"success"`
-}
-
-type errorResponseDetail struct {
+	Error        string              `json:"error"`
 	Code         int                 `json:"code"`
 	Reason       string              `json:"reason,omitempty"`
-	Message      string              `json:"message"`
 	Fields       map[string][]string `json:"fields,omitempty"`
 	FieldReasons map[string][]string `json:"field_reasons,omitempty"`
+	Success      bool                `json:"success"`
 }
 
 // ViolationBodies renders field violations for a response body: the
@@ -193,7 +196,14 @@ func ViolationBodies(ctx context.Context, fields map[string][]schema.Violation) 
 }
 
 // WriteError writes a structured error response to w, translated into
-// r's locale.
+// r's locale, in the one error envelope every route answers with:
+//
+//	{"error": "<message>", "code": 400, "reason": "<stable code>",
+//	 "fields": {...}, "field_reasons": {...}, "success": false}
+//
+// "reason" is absent for an error with no Reason (Errorf's own
+// wording), and "fields"/"field_reasons" for an error with no
+// Violations.
 //
 // An *Error is rendered as the developer built it: its Code, its
 // Reason (translated, with the code in "reason") or its Message, and
@@ -233,13 +243,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	w.WriteHeader(code)
 
-	detail := errorResponseDetail{Code: code, Message: herr.Message}
+	body := errorResponse{Code: code, Error: herr.Message}
 	if !herr.Reason.IsZero() {
-		detail.Reason = herr.Reason.Code()
-		detail.Message = herr.Reason.Text(ctx, herr.Params)
+		body.Reason = herr.Reason.Code()
+		body.Error = herr.Reason.Text(ctx, herr.Params)
 	}
-	detail.Fields, detail.FieldReasons = ViolationBodies(ctx, herr.Violations)
-	json.NewEncoder(w).Encode(errorResponse{Success: false, Error: detail})
+	body.Fields, body.FieldReasons = ViolationBodies(ctx, herr.Violations)
+	json.NewEncoder(w).Encode(body)
 }
 
 // RequestFromContext retrieves the *http.Request stored by HandlerAdapter.

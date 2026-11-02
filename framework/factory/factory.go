@@ -46,6 +46,13 @@ type EntityRegistry interface {
 	Get(name string) (*entity.Entity, error)
 }
 
+// wiredRegistry is the registry an App owns (framework.Registry): it
+// returns the CRUD handler that App's own routes serve, or nil when no
+// App owns it.
+type wiredRegistry interface {
+	CrudHandlerFor(*entity.Entity) (*crud.CrudHandler, error)
+}
+
 // BaseFunc returns a fresh body map. Called for each Create / Build,
 // returning a new map each time keeps tests independent of each
 // other.
@@ -53,8 +60,10 @@ type BaseFunc func() map[string]any
 
 // Factory builds and persists rows for one entity. Construct via [New].
 //
-// The handler defaults to the entity's bundled CRUD handler. Override
-// it via [WithHandler] when your tests need a different DB connection
+// The handler defaults to the one the owning App's routes serve, when
+// reg is an App's registry (app.Registry), and to a bare
+// crud.NewCrudHandler (no hooks, events or app casing) for any other
+// registry. Override it via [WithHandler] when your tests need a different DB connection
 // (sandboxed schema, in-memory fork, …).
 type Factory struct {
 	entityName string
@@ -91,10 +100,24 @@ func New(reg EntityRegistry, entityName string, base BaseFunc, opts ...Option) (
 	if e.DB == nil {
 		return nil, fmt.Errorf("factory: entity %q has no DB attached", entityName)
 	}
+	// app.Registry hands out the handler its App wires: hooks, events,
+	// JSON case, storage. A bare NewCrudHandler carries none of them, so
+	// a factory built from the documented factory.New(app.Registry, …)
+	// skipped every hook the app registered.
+	h := crud.NewCrudHandler(e, e.DB)
+	if w, ok := reg.(wiredRegistry); ok {
+		wired, err := w.CrudHandlerFor(e)
+		if err != nil {
+			return nil, fmt.Errorf("factory: entity %q: %w", entityName, err)
+		}
+		if wired != nil {
+			h = wired
+		}
+	}
 	f := &Factory{
 		entityName: entityName,
 		base:       base,
-		handler:    crud.NewCrudHandler(e, e.DB),
+		handler:    h,
 	}
 	for _, opt := range opts {
 		opt(f)
@@ -119,7 +142,8 @@ func (f *Factory) Build(overrides ...map[string]any) map[string]any {
 
 // Create inserts a fresh row through the full CRUD pipeline (Before
 // hooks → INSERT → After hooks → event emission) and returns the
-// persisted record as a snake_cased map.
+// persisted record keyed as the handler's API responses are (the app's
+// JSONCase, camelCase by default).
 func (f *Factory) Create(ctx context.Context, overrides ...map[string]any) (map[string]any, error) {
 	body := f.Build(overrides...)
 	return f.handler.CreateOne(ctx, body)

@@ -71,6 +71,7 @@ var manifest = []rule{
 	// --- Internal ---
 	{"internal/", Internal},
 	{"stability", Internal}, // this gate package is not a public contract
+	{"assets/", Internal},   // the project's own brand files (logo, icon), not a library contract
 
 	// --- Experimental: pin a version ---
 	{"framework/experimental/", Experimental},

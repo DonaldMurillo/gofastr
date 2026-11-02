@@ -2,8 +2,11 @@ package hook
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // HookType enumerates the lifecycle hook points for entity operations.
@@ -85,13 +88,32 @@ func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, dat
 	return nil
 }
 
-// runHookSafely calls fn with a deferred recover. Recovered panics become
-// errors so the framework's lifecycle (tx rollback, error chain) handles
-// them deterministically instead of unwinding the http stack.
+// PanicError is the error ExecuteHooks returns for a hook that panicked.
+// A panic is a fault in the hook, not a refusal it chose: a caller that
+// answers a Before hook's error with its text (crud answers 400 with it)
+// answers this one as a server error instead, because the panic value is
+// whatever the hook held when it faulted (a DSN, a query, request bytes)
+// and was never written for the client. Error renders the value scrubbed
+// of control bytes, for logs.
+type PanicError struct {
+	// Value is what the hook passed to panic.
+	Value any
+}
+
+func (e *PanicError) Error() string { return "hook panic: " + textsafe.Recovered(e.Value) }
+
+// runHookSafely calls fn with a deferred recover. A recovered panic
+// becomes a *PanicError so the framework's lifecycle (tx rollback, error
+// chain) handles it deterministically instead of unwinding the http
+// stack. The stack is logged here, the one place it still exists.
 func runHookSafely(ctx context.Context, fn HookFunc, data any) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("hook panic: %v", r)
+			slog.Default().ErrorContext(ctx, "hook: lifecycle hook panicked; the operation fails",
+				"panic", textsafe.Recovered(r),
+				"stack", string(debug.Stack()),
+			)
+			err = &PanicError{Value: r}
 		}
 	}()
 	return fn(ctx, data)

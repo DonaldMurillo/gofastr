@@ -9,6 +9,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"net/url"
 )
 
 // HTML stands in for render.HTML.
@@ -65,4 +66,22 @@ type LayoutFunc func(ctx context.Context, l *LayoutTree) HTML
 
 func NewLayout(name string, spec LayoutSpec, build LayoutFunc) *Layout {
 	return &Layout{}
+}
+
+// QueryFromContext stands in for the request's URL query read.
+func QueryFromContext(ctx context.Context) url.Values { return url.Values{} }
+
+// Key, Resolver, NewKey, From and Get stand in for the route resolver
+// surface (core-ui/app/resolver.go).
+type Key[T any] struct{ name string }
+
+type Resolver struct{}
+
+func NewKey[T any](name string) *Key[T] { return &Key[T]{name: name} }
+
+func (k *Key[T]) From(fn func(ctx context.Context) (T, error)) Resolver { return Resolver{} }
+
+func (k *Key[T]) Get(ctx context.Context) (T, error) {
+	var zero T
+	return zero, nil
 }

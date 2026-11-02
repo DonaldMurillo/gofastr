@@ -373,9 +373,9 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	// A pause is the paused-retention hook the same way.
 	switch state := cand.Task.Status.State; {
 	case state.Terminal():
-		t.srv.trimTerminalTasks(t.owner)
+		t.srv.trimTerminalTasks(t.owner, TierOf(cand))
 	case state.Interrupted():
-		t.srv.trimPausedTasks(t.owner)
+		t.srv.trimPausedTasks(t.owner, TierOf(cand))
 	}
 	return nil
 }
@@ -501,7 +501,7 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 		t.srv.publish(t.owner, cand, *ev)
 		// The finalize write left the task terminal: same retention
 		// hook as mutate.
-		t.srv.trimTerminalTasks(t.owner)
+		t.srv.trimTerminalTasks(t.owner, TierOf(cand))
 		return true
 	}
 	for range attempts {

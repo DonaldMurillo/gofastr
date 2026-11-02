@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/sqlredact"
 )
 
 func TestQueryTextStripsLiterals(t *testing.T) {
@@ -19,7 +21,7 @@ func TestQueryTextStripsLiterals(t *testing.T) {
 		{"SELECT 'a\x1b[2J'", `SELECT ?`},
 		{"SELECT \"a\x1b\"", `SELECT "a%1b"`},
 	} {
-		if got := queryText(tc.in, quoting{}); got != tc.want {
+		if got := queryText(tc.in, sqlredact.Postgres); got != tc.want {
 			t.Errorf("queryText(%q)\n got %q\nwant %q", tc.in, got, tc.want)
 		}
 	}
@@ -39,8 +41,15 @@ func TestQueryTextPerSystemQuoting(t *testing.T) {
 		{`SELECT "TOPSECRET", 'b' FROM t`, "mysql", `SELECT ?, ? FROM t`},
 		{`SELECT * FROM t WHERE email = "a@b.c"`, "sqlite", `SELECT * FROM t WHERE email = ?`},
 		{`SELECT 'C:\' FROM t WHERE x LIKE'y'`, "sqlite", `SELECT ? FROM t WHERE x LIKE?`},
+		// PostgreSQL nests block comments: the quote in "it's" is inside
+		// the comment, and 'TOPSECRET' is a literal.
+		{`/* a /* b */ it's */ SELECT 'TOPSECRET'`, "postgresql", `SELECT ?`},
+		// MySQL reads # as a line comment, so its quote opens nothing.
+		{"SELECT 1 # it's\nFROM t WHERE a = 'TOPSECRET'", "mysql", `SELECT ? FROM t WHERE a = ?`},
+		// An engine this package does not know is read under every rule.
+		{`SELECT "TOPSECRET", 'a\'TOPSECRET' FROM t`, "sqlserver", `SELECT ?, ?`},
 	} {
-		if got := queryText(tc.in, quotingFor(tc.system)); got != tc.want {
+		if got := queryText(tc.in, sqlredact.ForSystem(tc.system)); got != tc.want {
 			t.Errorf("queryText(%q) on %s\n got %q\nwant %q", tc.in, tc.system, got, tc.want)
 		}
 	}
@@ -48,7 +57,7 @@ func TestQueryTextPerSystemQuoting(t *testing.T) {
 
 func TestQueryTextCapsLength(t *testing.T) {
 	q := "INSERT INTO t (a) VALUES " + strings.Repeat("(?), ", 5000)
-	if got := queryText(q, quoting{}); len(got) > maxQueryText {
+	if got := queryText(q, sqlredact.Postgres); len(got) > maxQueryText {
 		t.Errorf("len = %d, want at most %d", len(got), maxQueryText)
 	}
 }

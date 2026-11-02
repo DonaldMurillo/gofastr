@@ -111,7 +111,7 @@ func (s *Server) hasTemplates() bool {
 // page, and on every page when the whole listing fits (the
 // pre-pagination wire shape).
 type resourceTemplatesListResult struct {
-	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"`
+	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"` //gofastr:required-array
 	NextCursor        string             `json:"nextCursor,omitempty"`
 }
 

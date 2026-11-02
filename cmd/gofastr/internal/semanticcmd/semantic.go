@@ -283,7 +283,7 @@ func embedStats() {
 			cli.Fail("remote stats: %v", err)
 			cli.OsExit(1)
 		}
-		fmt.Println(string(body))
+		cli.Println(string(body))
 		return
 	}
 	idx, err := openLocalIndex(true)

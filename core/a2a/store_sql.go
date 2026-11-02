@@ -471,17 +471,19 @@ func (s *SQLStore) DeletePushConfig(ctx context.Context, owner, taskID, id strin
 }
 
 // TrimTerminalTasks implements RetentionTrimmer: it keeps the newest
-// `keep` terminal rows for owner and deletes the older ones. The id
-// walk then delete (instead of one DELETE ... LIMIT statement) keeps
-// both dialects happy; ids are deleted in bounded batches.
-func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, keep int) error {
+// `keep` terminal rows of owner in tier (tenant and scope columns equal)
+// and deletes the older ones; other tiers' rows are never read or
+// deleted. The id walk then delete (instead of one DELETE ... LIMIT
+// statement) keeps both dialects happy; ids are deleted in bounded
+// batches.
+func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, tier RetentionTier, keep int) error {
 	if keep < 0 {
 		return nil
 	}
-	stmt := fmt.Sprintf(`SELECT id FROM %s WHERE owner = %s AND state IN (%s,%s,%s,%s) ORDER BY status_ts DESC, updated_at DESC, id DESC`,
-		query.QuoteFolded(s.taskTable), s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5))
+	stmt := fmt.Sprintf(`SELECT id FROM %s WHERE owner = %s AND tenant = %s AND scope = %s AND state IN (%s,%s,%s,%s) ORDER BY status_ts DESC, updated_at DESC, id DESC`,
+		query.QuoteFolded(s.taskTable), s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5), s.ph(6), s.ph(7))
 	rows, err := s.db.QueryContext(ctx, stmt,
-		owner, TaskStateCompleted, TaskStateFailed, TaskStateCanceled, TaskStateRejected)
+		owner, tier.Tenant, tier.Scope, TaskStateCompleted, TaskStateFailed, TaskStateCanceled, TaskStateRejected)
 	if err != nil {
 		return err
 	}

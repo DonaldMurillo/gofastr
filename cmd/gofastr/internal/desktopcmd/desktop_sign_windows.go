@@ -105,6 +105,9 @@ func compareNumeric(a, b string) int {
 // <name>/ directory holding <name>.exe and WebView2Loader.dll, the shape
 // the updater and `gofastr desktop feed` accept. Entries carry no
 // timestamps, so two archives of the same build are byte-identical.
+// The archive is written to a temporary file beside dest and renamed
+// over it, so a failed write leaves an earlier archive alone and never
+// writes through a link at dest.
 func zipWindowsBundle(outDir, name, dest string) error {
 	// The name becomes the archive's top-level directory: one plain
 	// path element, never a separator or a dot segment.
@@ -112,11 +115,11 @@ func zipWindowsBundle(outDir, name, dest string) error {
 	if root != name || root == "." || root == ".." || strings.ContainsAny(root, `/\:`) {
 		return fmt.Errorf("app name %q cannot name an archive directory", name)
 	}
-	//gofastr:allow(worldreadable) a distributed archive is a public artifact: it is the update download, holds no state or secret
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	f, err := os.CreateTemp(filepath.Dir(dest), ".zip-*")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
 	zw := zip.NewWriter(f)
 	write := func() error {
 		dir := &zip.FileHeader{Name: root + "/"}
@@ -145,8 +148,21 @@ func zipWindowsBundle(outDir, name, dest string) error {
 	}
 	if err := write(); err != nil {
 		f.Close()
-		os.Remove(dest)
+		os.Remove(tmp)
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	//gofastr:allow(worldreadable) a distributed archive is a public artifact: it is the update download, holds no state or secret
+	if err := os.Chmod(tmp, 0o644); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := replaceArtifact(tmp, dest); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }

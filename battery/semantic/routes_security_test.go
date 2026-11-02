@@ -251,3 +251,34 @@ func TestQueryRejectsFoldedJSONKeys(t *testing.T) {
 		t.Errorf("SECURITY: [semantic-query-strict-keys] POST /query with case-folded \"Text\"/\"text\" keys returned %d %q — the folded spelling still binds the tagged field last-wins; want 400", rec.Code, rec.Body.String())
 	}
 }
+
+type removeRecorder struct {
+	errIndex
+	removed []string
+}
+
+func (r *removeRecorder) Remove(ctx context.Context, docIDs ...string) error {
+	r.removed = append(r.removed, docIDs...)
+	return nil
+}
+
+// DELETE /doc/a%FFb handed the index a 0xff byte, which a Postgres-backed
+// index refuses in a text bind (22021): a 500. An id that is not storable
+// text names no document, so the delete is the no-op an absent id gets,
+// answered before the index sees it.
+func TestHTTPDelete_UnstorableIDNeverReachesIndex(t *testing.T) {
+	idx := &removeRecorder{}
+	h := Handler(idx, WithAuthToken("test"))
+	for _, target := range []string{"/doc/a%FFb", "/doc?id=a%00b"} {
+		req := httptest.NewRequest(http.MethodDelete, target, nil)
+		req.Header.Set("Authorization", "Bearer test")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("DELETE %s = %d %s, want 204", target, rec.Code, rec.Body.String())
+		}
+	}
+	if len(idx.removed) != 0 {
+		t.Errorf("the index was asked to remove %q; an id that is not storable text must not reach it", idx.removed)
+	}
+}

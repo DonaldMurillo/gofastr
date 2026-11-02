@@ -6,11 +6,13 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/backoff"
@@ -73,10 +75,20 @@ type DBQueue struct {
 	lastPrune     time.Time
 	backoffMax    time.Duration
 
+	// claimFailing is set while claims fail with anything but ErrNoJob,
+	// so the worker loop logs an outage's onset and recovery once each.
+	claimFailing atomic.Bool
+
 	// now is the clock used for claim timestamps, lease-expiry cutoffs, and
 	// scheduled_at math. Defaults to time.Now; tests substitute a fake clock
 	// so lease-reclaim behaviour can be asserted without wall-clock sleeps.
 	now func() time.Time
+
+	// afterClaim is a deterministic seam for package tests: the worker
+	// loop calls it with each job it claimed, before it decides whether
+	// to run it, so a test can land a shutdown in that gap. Production
+	// code leaves it nil.
+	afterClaim func(Job)
 }
 
 type dbDialect int
@@ -118,9 +130,15 @@ func WithDBLaneWorkers(lane string, n int) DBQueueOption {
 }
 
 // WithWorkers sets the number of background worker goroutines started by
-// Start(). Defaults to 1 when not set.
+// Start(). Defaults to 1 when not set. Zero starts no shared workers (only
+// the WithDBLaneWorkers lanes run); a negative count keeps the default,
+// since Start sized a channel with it and panicked.
 func WithWorkers(n int) DBQueueOption {
-	return func(q *DBQueue) { q.workers = n }
+	return func(q *DBQueue) {
+		if n >= 0 {
+			q.workers = n
+		}
+	}
 }
 
 // WithDBHandlerTimeout caps a single handler invocation's wall-clock
@@ -131,7 +149,11 @@ func WithWorkers(n int) DBQueueOption {
 // one stuck job stalls the entire queue — the job is nacked at the
 // deadline and retried/dead-lettered, so a late side effect is the
 // duplicate the at-least-once contract already allows. Zero (default)
-// means no timeout; set it whenever handlers touch the network. (Named
+// means no timeout; set it whenever handlers touch the network. The budget
+// must be shorter than the claim lease ([WithLeaseTimeout], five minutes
+// by default): NewDBQueue refuses one that is not, since a handler still
+// inside its budget would outlive its claim and have its job re-claimed
+// and run again while it runs. (Named
 // distinctly from the MemoryQueue's WithHandlerTimeout because both live
 // in this package.)
 func WithDBHandlerTimeout(d time.Duration) DBQueueOption {
@@ -153,9 +175,18 @@ func WithDBLogger(l *slog.Logger) DBQueueOption {
 
 // WithLeaseTimeout sets how long a claimed-but-unacked job may stay in-flight
 // before it is considered abandoned (the worker crashed/was killed) and
-// becomes eligible for re-dequeue. Defaults to 5 minutes.
+// becomes eligible for re-dequeue. Defaults to 5 minutes; d <= 0 keeps the
+// default. A zero lease is not "no lease": it made every claim abandoned
+// the moment it was written, so the next poll ran a live job again and the
+// dead-letter sweep failed a final attempt that was still running. With a
+// handler budget set ([WithDBHandlerTimeout]) the lease must be longer
+// than it; NewDBQueue refuses the pair otherwise.
 func WithLeaseTimeout(d time.Duration) DBQueueOption {
-	return func(q *DBQueue) { q.lease = d }
+	return func(q *DBQueue) {
+		if d > 0 {
+			q.lease = d
+		}
+	}
 }
 
 // WithBackoff enables exponential retry backoff. On a Nack with retries
@@ -205,6 +236,9 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	for _, opt := range opts {
 		opt(q)
 	}
+	if err := leaseCoversBudget(q.lease, q.handlerTimeout); err != nil {
+		return nil, err
+	}
 	// Validate table name once at construction time.
 	query.MustIdent(q.table)
 	q.dialect = detectDBDialect(db)
@@ -217,6 +251,7 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	if err := q.normalizeLegacyTimestamps(context.Background()); err != nil {
 		return nil, fmt.Errorf("normalize legacy timestamps: %w", err)
 	}
+	registerJobsTable(q.table)
 	return q, nil
 }
 
@@ -411,12 +446,38 @@ func (q *DBQueue) RegisterHandler(jobType string, h Handler) {
 }
 
 // SetLeaseTimeout adjusts the in-flight lease duration after construction.
-// See WithLeaseTimeout for semantics. Safe to call concurrently with a
-// running worker loop.
+// See WithLeaseTimeout for semantics; d <= 0 leaves the lease unchanged,
+// and so does a lease no longer than the handler budget
+// ([WithDBHandlerTimeout]), which is logged at WARN: NewDBQueue refuses
+// that pair, and this setter has no error to return.
+// Safe to call concurrently with a running worker loop.
 func (q *DBQueue) SetLeaseTimeout(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	if err := leaseCoversBudget(d, q.handlerTimeout); err != nil {
+		q.logger.Warn("queue: SetLeaseTimeout ignored; the lease is unchanged", "err", err.Error())
+		return
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.lease = d
+}
+
+// leaseCoversBudget refuses a claim lease no longer than the handler
+// budget. Each is valid alone, but together a handler still inside its
+// budget outlives its claim: the next poll re-claims the job and runs it
+// again concurrently, the first run's settle is fenced out, and on a
+// final attempt the dead-letter sweep fails a job about to succeed (the
+// outbox relay's e5616f008 shape). A zero budget is "no timeout", which
+// the lease docs already cover.
+func leaseCoversBudget(lease, handlerTimeout time.Duration) error {
+	if handlerTimeout > 0 && lease <= handlerTimeout {
+		return fmt.Errorf("queue: the claim lease (%s) must be longer than the handler budget WithDBHandlerTimeout(%s): "+
+			"a handler still inside its budget would have its job re-claimed and run again; raise WithLeaseTimeout above it",
+			lease, handlerTimeout)
+	}
+	return nil
 }
 
 // SetGate installs a gate checked in the worker loop after a handler is
@@ -601,10 +662,13 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 		// and now another path (Ack, Nack, release) may have transitioned the
 		// row, the sweep must never dead-letter a claim that is no longer
 		// expired-and-final.
+		// It records when and why, as every other settle does: left
+		// alone, the row listed the claim's updated_at and an earlier
+		// attempt's error, so a crashed worker read as a handler failure.
 		res, err := q.db.ExecContext(ctx, fmt.Sprintf(
-			`UPDATE %s SET status='failed'
-			WHERE id=$1 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $2
-			AND attempts >= max_attempts`, q.qt()), s.id, cutoff)
+			`UPDATE %s SET status='failed', updated_at=$1, last_error=$2
+			WHERE id=$3 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4
+			AND attempts >= max_attempts`, q.qt()), q.now().UTC(), leaseExpiredError, s.id, cutoff)
 		if err != nil {
 			return err
 		}
@@ -618,6 +682,10 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 	}
 	return nil
 }
+
+// leaseExpiredError is the LastError the dead-letter sweep records on a
+// final-attempt claim whose lease ran out.
+const leaseExpiredError = "lease expired on the final attempt: the worker stopped (crash, kill, or a handler that outran the lease) before it settled the job"
 
 // pruneDone deletes done jobs older than the retention, at most once per
 // donePruneEvery. The terminal status guard is its fence: a done row has
@@ -699,6 +767,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 			// fails means the connection is unusable, which the pool
 			// discovers on its own — but silence here would hide a
 			// leaked write lock, so it is logged.
+			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
 			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
 				if q.logger != nil {
 					q.logger.Warn("queue: rolling back an abandoned claim", "err", err)
@@ -1177,10 +1246,23 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		job, err := q.dequeue(ctx, lane, types)
 		if err != nil {
 			// ErrNoJob is the steady state, sleep briefly and retry.
+			// Anything else (a lost database, a renamed table, a row
+			// the claim cannot decode) stalls every job, so its onset
+			// is logged once, and so is the recovery.
+			if !errors.Is(err, ErrNoJob) && ctx.Err() == nil {
+				q.noteClaimErr(err)
+			} else if errors.Is(err, ErrNoJob) {
+				q.noteClaimOK()
+			}
 			if wait() {
 				return
 			}
 			continue
+		}
+		q.noteClaimOK()
+		if q.afterClaim != nil {
+			//gofastr:allow(recovercallback) package-test seam, nil in production; a panicking test hook should fail its test
+			q.afterClaim(job)
 		}
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
@@ -1198,8 +1280,17 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		gate := q.gate
 		q.mu.RUnlock()
 		if gate != nil && !gateAllows(q.logger, gate, job.Type, job.ID) {
-			_ = q.release(ctx, job)
+			q.handBack(ctx, job)
 			continue
+		}
+		if ctx.Err() != nil {
+			// A shutdown landed between the claim and the start: the
+			// handler would run on a cancelled context, fail at once, and
+			// spend the attempt (dead-lettering a MaxAttempts 1 job) on a
+			// run that never happened. Hand it back unstarted instead, as
+			// the outbox relay does with the rest of its batch.
+			q.handBack(ctx, job)
+			return
 		}
 		if err := q.runHandler(ctx, h, job); err != nil {
 			// job.Attempts was bumped by Dequeue before the handler ran, so it
@@ -1232,6 +1323,35 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
 		}
 		cancel()
+	}
+}
+
+// handBack returns a claim the worker will not run (its type is gated, or a
+// shutdown landed before it started) to pending with its attempt refunded.
+// The write is detached like Ack and Nack: on the worker's own context a
+// shutdown made it fail, leaving the row claimed with the attempt spent,
+// and on a last attempt the dead-letter sweep failed a job that never ran.
+func (q *DBQueue) handBack(ctx context.Context, job Job) {
+	settleCtx, cancel := settleContext(ctx)
+	defer cancel()
+	if err := q.release(settleCtx, job); err != nil {
+		q.logger.Warn("queue: handing back an unstarted job failed; it reruns when its lease expires",
+			"job_id", job.ID, "err", err)
+	}
+}
+
+// noteClaimErr logs a claim failure once on its onset, across every worker.
+func (q *DBQueue) noteClaimErr(err error) {
+	if q.claimFailing.CompareAndSwap(false, true) {
+		q.logger.Error("queue: claiming jobs failed; no job runs until this clears (workers retry every poll)",
+			"table", q.table, "err", err)
+	}
+}
+
+// noteClaimOK logs the recovery once after a run of claim failures.
+func (q *DBQueue) noteClaimOK() {
+	if q.claimFailing.CompareAndSwap(true, false) {
+		q.logger.Info("queue: claiming jobs recovered", "table", q.table)
 	}
 }
 

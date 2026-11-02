@@ -51,6 +51,11 @@ import (
 // GOPROXY=off; a module-resolution failure skips with a message rather
 // than failing. Runtime ~15s warm (vettool build, module scaffolds, three
 // go vets).
+//
+// The vettool build is a subprocess no import edge shows: an analyzer
+// change selects this package through the directive below.
+//
+//gofastr:test-reads internal/analyzers/ cmd/vettool/
 func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	// ── leg 1: terminal-control summaries never ship live ────────────
 	hostile := "list things\x1b]0;pwned\x07\r  EVIL"

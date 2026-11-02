@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"github.com/chromedp/chromedp"
 )
@@ -119,7 +120,7 @@ func auditA11yURL(base string, pages []string, credentials a11yCredentials) (axe
 	if len(pages) == 0 {
 		pages = []string{"/"}
 	}
-	fmt.Printf("Auditing %d page(s) at %s under %d color scheme(s)…\n\n", len(pages), base, len(axetest.Schemes))
+	cli.Printf("Auditing %d page(s) at %s under %d color scheme(s)…\n\n", len(pages), base, len(axetest.Schemes))
 
 	run := axeAuditRun{Pages: append([]string(nil), pages...)}
 	for _, page := range pages {

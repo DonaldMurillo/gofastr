@@ -91,10 +91,20 @@ comma-joined value (`"provider,provider_id"`) is a composite key.
 `battery/queue` (queue_jobs) register themselves this way; importing the battery == including its tables.
 A store whose table name is configurable registers from its constructor
 instead, under the name it was given, so a renamed table is the one
-exported and erased: the auth API-token and OAuth-token stores, admin saved
+exported and erased: `queue.NewDBQueue` (a `WithTable` name), the auth
+API-token and OAuth-token stores, admin saved
 views, the A2A task and push-config stores, feature flags, the SQL
 idempotency store, the event outbox, the webhook delivery and inbound
-stores, and the entity admin's bulk jobs. Registration replaces an entry
+stores, the entity admin's bulk jobs, and the RBAC `access.GrantStore`
+(its grants and its revocation tombstones, registered by `EnsureSchema`;
+restart after an import so `LoadInto` reads them). The framework's own
+module state is registered the same way: `gofastr_modules` (each module an
+operator turned on or off, registered when the module store opens) and
+`gofastr_process_modules` (a process module's desired state: on or off,
+its approved artifact, its grants and the grants an operator revoked,
+registered by `EnsureSchema`), so a restore keeps a module turned off that
+was off. The process-module heartbeat table stays out: which replicas were
+alive is something a restored deployment observes afresh. Registration replaces an entry
 with the same `Name`, so these stores name each entry with
 `datexport.ScopedName(base, table)`: the default table keeps the bare name
 (`feature_flags.ndjson`), and any other table is appended after a `-`
@@ -213,6 +223,8 @@ these is rejected up front, leaving the database untouched:
 - missing or unparseable `manifest.json`;
 - unsupported `format` version;
 - a source that isn't a live entity or registered exporter;
+- a source listed twice in the manifest (a keyless table would take every
+  row twice);
 - a source whose table is not in the live database;
 - an archive table name that doesn't match the live table;
 - an archive column absent from the live schema (incompatible column set);
@@ -303,6 +315,22 @@ datexport.Register(datexport.DataExporter{
   and import share the same database (each pool connection otherwise gets its
   own private `:memory:`). A file-backed SQLite or Postgres DB has no such
   constraint.
+- **Exporting a live app**: on Postgres the export reads every table in one
+  read-only `REPEATABLE READ` snapshot, so the archive is the database at a
+  single moment, however busy the app is, and writers are never blocked. A
+  SQLite database in WAL mode (`PRAGMA journal_mode=WAL`) gets the same: the
+  export reads every table in one read-only deferred transaction, which holds
+  its snapshot while writers keep committing to the WAL. Two costs: the WAL
+  cannot be checkpointed past that snapshot until the export ends, so it
+  grows while a long export runs, and the transaction holds one pool
+  connection for the whole export, so an app limited to one open connection
+  (`SetMaxOpenConns(1)`) queues its requests behind it. A SQLite database in
+  rollback-journal mode (the default `delete`, or `truncate`/`persist`) has
+  no such snapshot, since a read transaction there would block every writer
+  for the whole export. Each table is read on its own: stop writes during
+  the export, or a child row written after its parent's table was read can
+  land in the archive without its parent, and the restore fails on the
+  foreign key.
 - **Cross-dialect restore**: an archive is portable across SQLite and Postgres
   at the row level, but Postgres enforces column types strictly: bind a string
   into a `TIMESTAMPTZ` column and it parses; bind a JSON number into a typed
@@ -385,7 +413,8 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    verification and passkey-registration token minted for the user; the
    magic-link one matches by email via the `IdentityEmail` resolver, see
    [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
-   `battery/queue` registers `queue_jobs` (delete by `user_id`), which reaches
+   `battery/queue` registers `queue_jobs`, and `NewDBQueue` the table it
+   was built with (delete by `user_id`), which reaches
    a job only when the producer set `Job.UserID` — see
    [the queue reference](queue.md). A job whose payload is personal data but
    which names no user is not erasable, and its payload column is exported
@@ -531,11 +560,13 @@ stored files are deleted. Each result is listed in `report.Stores` with
 | a semantic index with no `Path` | `semantic.Open` (`semantic:memory`) | the chunks whose `Owner` is the user, from memory |
 | `queue.RedisQueue` | `queue.NewRedisQueue` (`queue_redis:<queue>`) | every job whose `UserID` is the user, from the main, delayed and dead lists and the pop and processing hashes |
 | `queue.MemoryQueue` | `queue.NewMemoryQueue` (`queue_memory`) | every job whose `UserID` is the user: pending, delayed, handed out by `Dequeue`, and dead; the unique keys they held are freed |
+| `search.Memory` | `search.NewMemory` (`search:memory`) | every document whose `Owner` is the user |
 | `queue.Scheduler` (in-memory) | `queue.NewScheduler` (`queue_scheduler_memory`) | every schedule whose `UserID` is the user, so it is neither kept nor fired again |
 | `battery/auth` in-memory stores (`MemorySessionStore`, `MemoryTwoFAStore`, `MemoryPasskeyStore`, `MemoryMagicLinkTokenStore`) | `AuthManager.Init`, for the ones the manager runs with (`auth_memory`); `AuthManager.OnStop` removes it | the user's sessions, 2FA state, passkeys, and password-reset, email-verification and passkey-registration tokens. Magic-link sign-in tokens are keyed by email, which is gone by the time a store eraser runs; they expire on their own (15 minutes by default) |
 
 **A store eraser stays registered until the store closes**: `Index.Close`,
-`RedisQueue.Close`, `MemoryQueue.Close` or `Scheduler.Close` removes it.
+`RedisQueue.Close`, `MemoryQueue.Close`, `Scheduler.Close` or
+`search.Memory.Close` removes it.
 Until then the registry holds the store, so it is never garbage-collected,
 and every erasure reaches it. Close each one you are done with, including
 one built for a single request or a test.
@@ -549,9 +580,10 @@ it. A semantic index over a store shared across processes
 eraser, and neither does one over a custom `Store` that cannot list its
 chunks (`AllChunks`): register a store eraser for it yourself.
 
-A job a worker is running when the sweep passes is not stopped. If it fails
-and is retried after the sweep, it is back in the queue until the next
-erasure. The Redis erasure is one Lua script, which the server runs with
+A job a worker is running when the sweep passes is not stopped, but it is
+counted, and when its handler returns the queue drops it instead of
+retrying, dead-lettering or deferring it: a `DBQueue` or `RedisQueue`
+settle finds the job gone, and a `MemoryQueue` worker skips the settle. The Redis erasure is one Lua script, which the server runs with
 no other command in between, so no worker step lands between its reads and
 its deletes. A worker that read a job just before the script ran (a job
 `Dequeue` popped but has not claimed, a `Nack`, a `Replay`) does not write
@@ -729,7 +761,30 @@ datexport.RegisterEraser(datexport.DataEraser{
 
 `EraseRemoveMember` reads `Column` as a TEXT column holding a JSON array of
 strings and rewrites only the rows that list the user, without the user;
-the row stays. `Where` narrows any mode: each column is `SafeIdent`-checked
+the row stays. Set `MemberSeparator` when a member carries a tenant
+qualifier ahead of the id; the feature-flag store sets `":"`. A member
+equal to the whole id always goes. What else goes depends on the
+erasure's tenant:
+
+- **With a tenant** (`framework.WithEraseTenant("acme")`, or, without
+  that option, the tenant the request's context resolved,
+  `handler.GetTenantID`): the bare `:42` and that tenant's `acme:42`.
+  Another tenant's `beta:42` names a different user, since ids are per
+  tenant, and stays. The tenant is matched with `%` and the separator
+  percent-escaped, `featureflag.UserEntry`'s spelling.
+- **With no tenant** (or `WithEraseTenant("")`, which overrides the
+  request's): every member whose part after its first separator is the
+  id, so every tenant's `acme:42`, `beta:42`, and `:42`. Use this from a
+  job or an operator tool where ids are global.
+
+Either way `42:x` (tenant `42`'s user `x`) stays. A list written before
+entries were qualified may hold a bare id with a separator,
+`google:42`; erasing user `google:42` removes it, though the entry also
+reads as tenant `google`'s user `42`: the erased id never survives, and
+the cost of the ambiguity is a flag entry another user may need
+re-adding. The qualifier must never contain the separator.
+`WithEraseTenant` affects only these member lists; every other eraser
+matches the user id. `Where` narrows any mode: each column is `SafeIdent`-checked
 and must exist on the table, and each value is bound, so a service account
 that shares a user's id survives that user's erasure.
 

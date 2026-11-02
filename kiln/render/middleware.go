@@ -1,8 +1,7 @@
 package render
 
 import (
-	"net/http"
-
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -16,15 +15,10 @@ var middlewareCatalog = map[string]middlewareBuilder{
 	"recover": buildRecover,
 }
 
+// buildRecover is core/middleware's Recovery: a panic before the
+// response started answers 500, one after it cuts the connection rather
+// than splicing error text onto the partial body, and the panic is
+// logged. The catalog's own recover wrote http.Error unconditionally.
 func buildRecover(_ map[string]any) (router.Middleware, error) {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
-				if rec := recover(); rec != nil {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-				}
-			}()
-			next.ServeHTTP(w, r)
-		})
-	}, nil
+	return middleware.Recovery(), nil
 }

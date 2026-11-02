@@ -31,7 +31,9 @@
 //     client_secret, password, passwd, secret, token, code, api_key,
 //     refresh_token, or access_token;
 //   - an Authorization, Proxy-Authorization, or X-API-Key header set on
-//     the request (Header.Set, Header.Add, or an index write), its name
+//     the request (Header.Set, Header.Add, an index write, or
+//     req.SetBasicAuth, which writes Authorization; the last was silent
+//     until the 2026-11-02 guard bash), its name
 //     a literal or a constant (the --from-openapi CLI client names it
 //     through const tokenHeader, and a literal-only read let that client
 //     ship with no CheckRedirect);
@@ -535,7 +537,22 @@ func (f *fnCtx) headerCredential(req *types.Var) string {
 				return true
 			}
 			sel, ok := v.Fun.(*ast.SelectorExpr)
-			if !ok || (sel.Sel.Name != "Set" && sel.Sel.Name != "Add") || !onReqHeader(sel.X) {
+			if !ok {
+				return true
+			}
+			// req.SetBasicAuth(user, pass) writes the Authorization
+			// header: the same credential the Header.Set spelling
+			// carries (2026-11-02 guard bash: it was silent).
+			if sel.Sel.Name == "SetBasicAuth" {
+				if id, ok := ast.Unparen(sel.X).(*ast.Ident); ok {
+					if o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && o == req {
+						found = "Authorization header (SetBasicAuth)"
+						return false
+					}
+				}
+				return true
+			}
+			if (sel.Sel.Name != "Set" && sel.Sel.Name != "Add") || !onReqHeader(sel.X) {
 				return true
 			}
 			judgeKey(v.Args[0])

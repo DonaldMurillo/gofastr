@@ -1,12 +1,14 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"maps"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -73,6 +75,22 @@ var stripOutboundHeaders = []string{
 	// Service-Worker-Allowed widens a worker's scope past its script's
 	// path: vendor script could register one over every app page.
 	http.CanonicalHeaderKey("Service-Worker-Allowed"),
+	// Origin-wide policy the browser keeps after this response. NEL with
+	// Report-To / Reporting-Endpoints reports requests to every app URL
+	// to a vendor endpoint for max_age, past the page's CSP; Alt-Svc
+	// steers later app traffic; Accept-CH / Critical-CH make every app
+	// request carry client hints (which the relay then forwards back);
+	// Strict-Transport-Security pins the app's subdomains; Set-Login is
+	// the origin's FedCM login status. The host sets these, never a
+	// vendor (a value the host set before the relay ran stays).
+	http.CanonicalHeaderKey("NEL"),
+	http.CanonicalHeaderKey("Report-To"),
+	http.CanonicalHeaderKey("Reporting-Endpoints"),
+	http.CanonicalHeaderKey("Alt-Svc"),
+	http.CanonicalHeaderKey("Accept-CH"),
+	http.CanonicalHeaderKey("Critical-CH"),
+	http.CanonicalHeaderKey("Strict-Transport-Security"),
+	http.CanonicalHeaderKey("Set-Login"),
 }
 
 // reverseProxy keeps the concrete type in one place; the handler layer
@@ -253,6 +271,16 @@ func (r *Relay) newProxy(rt *routeRuntime) *reverseProxy {
 			// switches (see refuseSwitch), so the vendor never gets asked.
 			out.Header.Del("Connection")
 			out.Header.Del("Upgrade")
+			// A relayed request is same-origin, so the browser sent the
+			// full page URL as Referer, query string (a reset or
+			// magic-link token) included. Sent to the vendor directly,
+			// its default policy would have sent the origin alone; the
+			// vendor gets no more than that here.
+			if ref := refererOrigin(in.Header.Get("Referer")); ref != "" {
+				out.Header.Set("Referer", ref)
+			} else {
+				out.Header.Del("Referer")
+			}
 			// Forwarded metadata is derived from the connection, never
 			// relayed from the client.
 			out.Header.Set("X-Forwarded-For", r.clientIP(in))
@@ -368,8 +396,9 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 		resp.Status = http.StatusText(http.StatusBadGateway)
 		resp.Body = io.NopCloser(strings.NewReader(body))
 		resp.ContentLength = int64(len(body))
-		resp.Header = http.Header{}
+		resp.Header = http.Header{"Content-Type": {"text/plain; charset=utf-8"}}
 	}
+	r.restrictContentType(rt, resp)
 
 	for _, name := range stripOutboundHeaders {
 		resp.Header.Del(name)
@@ -396,14 +425,101 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 	resp.Body = &cappedBody{ReadCloser: resp.Body, remaining: rt.maxBody}
 }
 
-// stripAbsoluteLinkTargets drops Link header values whose target is an
-// absolute URL. A relative Link target resolves against the app origin
-// (the mount), so pagination hints like `</page/2>; rel="next"` stay
-// forwarded; an absolute one — typically a vendor `rel=preload` — hands
-// the browser a direct connection to a third-party origin, re-opening
-// the exact channel the first-party posture exists to close. A value
-// mixing relative and absolute targets is dropped whole: conservative
-// beats leaking.
+// restrictContentType refuses a response whose media type the route may
+// not relay (see defaultContentTypes and Route.ContentTypes) with a plain
+// 502, the same refusal a redirect gets. A relayed response answers on
+// the app's origin, so a vendor HTML page echoing the query string would
+// otherwise be reflected script on the app. An SVG passes under
+// Content-Security-Policy: sandbox. A body with no Content-Type is
+// labelled application/octet-stream: left unset, the server would sniff
+// it, and the sniffer calls "<html>" text/html.
+func (r *Relay) restrictContentType(rt *routeRuntime, resp *http.Response) {
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotModified && resp.ContentLength != 0 {
+			resp.Header.Set("Content-Type", "application/octet-stream")
+		}
+		return
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	if err == nil && relayableType(rt, mt) {
+		if mt == svgType && !rt.extraCT[svgType] {
+			resp.Header.Add("Content-Security-Policy", "sandbox")
+		}
+		return
+	}
+	if bodiless(resp) {
+		return
+	}
+	r.logger.Warn("relay: refused upstream content type",
+		"status", resp.StatusCode,
+		"content_type", url.PathEscape(ct),
+		"upstream", rt.upstream.Host)
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	_ = resp.Body.Close()
+	body := "upstream content type refused\n"
+	resp.StatusCode = http.StatusBadGateway
+	resp.Status = http.StatusText(http.StatusBadGateway)
+	resp.Body = io.NopCloser(strings.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.Header = http.Header{"Content-Type": {"text/plain; charset=utf-8"}}
+}
+
+// bodiless reports whether resp forwards no body, so its type cannot put
+// anything on the page: a vendor beacon answering 204, or 200 with an
+// empty body, under a text/html label is a success the vendor accepted,
+// not a document. A 204 or 304 has no body by definition; otherwise a
+// declared Content-Length of 0 settles it, and an unknown length
+// (chunked) is decided by reading one byte, which is put back in front
+// of the body when there is one. A read error counts as a body, so the
+// refusal stands.
+func bodiless(resp *http.Response) bool {
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified ||
+		resp.ContentLength == 0 || resp.Body == nil {
+		return true
+	}
+	if resp.ContentLength > 0 {
+		return false
+	}
+	var one [1]byte
+	n, err := io.ReadFull(resp.Body, one[:])
+	if n == 0 && err == io.EOF {
+		return true
+	}
+	resp.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(one[:n]), resp.Body), resp.Body}
+	return false
+}
+
+// refererOrigin reduces a Referer to its origin with a trailing slash,
+// the form a browser's strict-origin-when-cross-origin policy sends to
+// another origin. Anything that is not an absolute http(s) URL with a
+// host comes back "" and is not forwarded.
+func refererOrigin(ref string) string {
+	if ref == "" {
+		return ""
+	}
+	u, err := url.Parse(ref)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	return scheme + "://" + u.Host + "/"
+}
+
+// stripAbsoluteLinkTargets drops Link header values that name another
+// origin. A relative Link target resolves against the app origin (the
+// mount), so pagination hints like `</page/2>; rel="next"` stay
+// forwarded; one on another origin — typically a vendor `rel=preload`
+// or `rel=preconnect` — hands the browser a direct connection to a
+// third party, re-opening the exact channel the first-party posture
+// exists to close. A value holding any such target is dropped whole:
+// conservative beats leaking.
 func stripAbsoluteLinkTargets(h http.Header) {
 	values := h.Values("Link")
 	if len(values) == 0 {
@@ -411,15 +527,62 @@ func stripAbsoluteLinkTargets(h http.Header) {
 	}
 	kept := make([]string, 0, len(values))
 	for _, v := range values {
-		if strings.Contains(v, "://") || strings.Contains(v, "<//") {
-			continue
+		if linkValueSameOrigin(v) {
+			kept = append(kept, v)
 		}
-		kept = append(kept, v)
 	}
 	h.Del("Link")
 	for _, v := range kept {
 		h.Add("Link", v)
 	}
+}
+
+// linkValueSameOrigin reports whether every <target> in a Link field
+// value resolves on the app's own origin. A value with an unclosed "<"
+// is refused.
+func linkValueSameOrigin(v string) bool {
+	for {
+		i := strings.IndexByte(v, '<')
+		if i < 0 {
+			return true
+		}
+		j := strings.IndexByte(v[i+1:], '>')
+		if j < 0 {
+			return false
+		}
+		if !linkTargetSameOrigin(v[i+1 : i+1+j]) {
+			return false
+		}
+		v = v[i+1+j+1:]
+	}
+}
+
+// linkTargetSameOrigin reads a Link target the way a browser's URL
+// parser does, not as written: it drops every tab and newline, trims
+// leading and trailing C0 controls and spaces, and reads "\" as "/" (an
+// http(s) base makes both separators), so <\\vendor.example/x> and
+// </<TAB>/vendor.example/x> are the scheme-relative //vendor.example/x
+// they parse as. A target with a scheme or an authority is another
+// origin as far as the relay is concerned.
+func linkTargetSameOrigin(target string) bool {
+	t := strings.Map(func(r rune) rune {
+		switch r {
+		case '\t', '\n', '\r':
+			return -1
+		case '\\':
+			return '/'
+		}
+		return r
+	}, target)
+	t = strings.TrimFunc(t, func(r rune) bool { return r <= 0x20 })
+	if strings.HasPrefix(t, "//") {
+		return false
+	}
+	// A scheme ends at the first ":" ahead of any "/", "?" or "#".
+	if end := strings.IndexAny(t, "/?#"); end >= 0 {
+		t = t[:end]
+	}
+	return !strings.Contains(t, ":")
 }
 
 // errUpstreamTooLarge ends a response whose upstream body ran past the

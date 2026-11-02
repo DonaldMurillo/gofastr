@@ -66,7 +66,9 @@ func Compress() Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			accepts := acceptsGzip(r.Header.Get("Accept-Encoding"))
+			// Every Accept-Encoding line: Header.Get reads only the
+			// first, and a client may list its codings across lines.
+			accepts := acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ","))
 			revalidatingGzip := false
 			if accepts {
 				if inm := r.Header.Get("If-None-Match"); strings.Contains(inm, gzipETagSuffix) {
@@ -349,7 +351,7 @@ func (w *compressWriter) holdsWhole() bool {
 		return false
 	}
 	h := w.Header()
-	if strings.Contains(h.Get("Cache-Control"), "immutable") {
+	if cacheControlImmutable(h) {
 		return true
 	}
 	et := h.Get("ETag")
@@ -413,11 +415,18 @@ func (w *compressWriter) decide(compress bool) error {
 	}
 	if w.holdsWhole() {
 		w.held = true
-		w.cacheable = strings.Contains(h.Get("Cache-Control"), "immutable")
+		w.cacheable = cacheControlImmutable(h)
 		return nil // headers go out with the body in finish
 	}
 	w.startStream()
 	return nil
+}
+
+// cacheControlImmutable reports whether any Cache-Control line of h
+// carries immutable: a handler that Adds it on a second line is as
+// immutable as one that sets it on the first.
+func cacheControlImmutable(h http.Header) bool {
+	return strings.Contains(strings.Join(h.Values("Cache-Control"), ","), "immutable")
 }
 
 // startStream sends the headers and starts deflating, writing whatever

@@ -51,6 +51,11 @@ type DurableScheduler struct {
 	// beforeOccurrenceCommit is a deterministic partition hook for package
 	// tests. Production code leaves it nil.
 	beforeOccurrenceCommit func()
+	// passDone is a deterministic seam for package tests: Start calls it
+	// after each pass with the pass's time and the wait it chose before
+	// the next one, so a test reads the loop's cadence without timing
+	// it. Production code leaves it nil.
+	passDone func(now time.Time, delay time.Duration)
 }
 
 // hookBeforeOccurrenceCommit runs the hook under a recover guard: it
@@ -396,7 +401,7 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 		case <-s.wake:
 		case <-timer.C:
 		}
-		now := time.Now()
+		now := s.queue.now()
 		owned, err := s.runOnce(ctx, now)
 		if err != nil {
 			slog.Default().Error("queue: durable scheduler evaluation failed; retrying next heartbeat",
@@ -411,6 +416,10 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 				delay = heartbeat
 			}
 		}
+		if s.passDone != nil {
+			//gofastr:allow(recovercallback) package-test seam, nil in production; a panicking test hook should fail its test
+			s.passDone(now, delay)
+		}
 		if !timer.Stop() {
 			select {
 			case <-timer.C:
@@ -421,10 +430,18 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 	}
 }
 
+// nextWakeDelay is how long Start sleeps after the pass it ran at now: until
+// the earliest next_run after now, at most maximum. A schedule still due
+// at now is one that pass skipped (a corrupted row, a stored interval under
+// the floor, a spec that no longer parses) and left where it was; waking
+// for it floored the wait at 10ms, so Start re-ran the pass, wrote the
+// lease row and logged the skip a hundred times a second. It is retried
+// at the heartbeat instead.
 func (s *DurableScheduler) nextWakeDelay(ctx context.Context, now time.Time, maximum time.Duration) (time.Duration, error) {
 	var nextRaw any
 	err := s.queue.db.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT next_run FROM %s ORDER BY next_run LIMIT 1", s.queue.schedulerSchedulesTable()),
+		fmt.Sprintf("SELECT next_run FROM %s WHERE next_run > $1 ORDER BY next_run LIMIT 1", s.queue.schedulerSchedulesTable()),
+		now.UTC(),
 	).Scan(&nextRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

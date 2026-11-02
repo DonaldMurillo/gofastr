@@ -481,6 +481,16 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 			cli.OsExit(1)
 			return
 		}
+		// The --zip archive is an update download: the updater and
+		// `gofastr desktop feed` compare its ProductVersion as semver,
+		// so a "1.0" build would be refused at release time.
+		if f.zip {
+			if err := desktop.ValidateAppVersion(f.version); err != nil || len(f.version) > 64 {
+				cli.Fail("--version %q must be major.minor.patch with an optional -pre-release (no build metadata, no leading zeros), at most 64 characters, to build an update archive with --zip", f.version)
+				cli.OsExit(1)
+				return
+			}
+		}
 		if err := buildWindowsDesktop(f, name); err != nil {
 			cli.Fail("Windows desktop build failed: %v", err)
 			cli.OsExit(1)

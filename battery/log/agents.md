@@ -47,7 +47,9 @@ app.RegisterPlugin(log.New(log.Config{
 - A colorized human-readable ConsoleSink on stderr when stderr is a
   terminal and `NO_COLOR` is unset (zero-config dev affordance). The
   JSON file sink still runs alongside it; console is purely additive.
-  Override with `Config.Console` (`ConsoleOn` / `ConsoleOff`).
+  Override with `Config.Console` (`ConsoleOn` / `ConsoleOff`). Every
+  piece it writes (message, keys, values, a non-JSON entry) shows a
+  control, C1 or bidi rune as a `\uXXXX` escape, never live.
 
 **Don't reinvent** a `LoggingMiddleware` wrapper, a `defer recover()`
 panic catcher, or per-handler `log.Println` calls. `log.New(Config{})`

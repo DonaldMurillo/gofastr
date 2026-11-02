@@ -18,8 +18,9 @@ GET /healthz
 200 ok
 ```
 
-Unconditional 200. The contract is: "the HTTP server is accepting
-connections." Liveness probes that fail should restart the pod.
+Unconditional 200, through shutdown until the process exits. The
+contract is: "the HTTP server is accepting connections." Liveness
+probes that fail should restart the pod.
 
 ## Readiness
 
@@ -45,6 +46,59 @@ its dependencies aren't.
 All checks run in parallel under a 5-second overall deadline.
 Per-check duration is reported in `durationMs` so a slow probe is
 visible without a full timeout.
+
+## Draining on shutdown
+
+When `App.Shutdown` starts (the default `SIGTERM` handler calls it),
+`/readyz` answers `503` at once, without running the checks:
+
+```
+GET /readyz
+503 Service Unavailable
+
+{"status": "draining", "checks": []}
+```
+
+The app then keeps serving for a grace period, so a load balancer
+probing `/readyz` notices and stops sending new requests before the
+listener closes. Requests that arrive during the grace are served as
+usual, and `/healthz` stays `200`. After the grace, the normal drain
+runs: stop accepting, finish in-flight requests, stop batteries.
+
+The grace is 5 seconds by default. Set it with `WithReadinessDrain`;
+`0` skips the wait. The default is `0` wherever no balancer probes: in a
+Go test binary (and a process one starts), under `gofastr dev`, for a
+`battery/service` run, and for an app whose listener is bound to a
+loopback address only (`127.0.0.1`, `::1`; the desktop battery always
+is). An explicit `WithReadinessDrain` wins over all of these.
+
+The grace counts against `Shutdown`'s context. It takes at most half of
+the time that context has left, so the HTTP drain, batteries and
+`OnStop` hooks after it keep the other half, and it ends early if the
+context does. With a 5s grace, `app.Shutdown(ctx)` under a 5s deadline
+serves for 2.5s, then gives the drain the remaining 2.5s. The default
+`SIGTERM` handler adds the grace to `AppConfig.ShutdownTimeout`, so
+there a grace no longer than `ShutdownTimeout` runs in full and a stop
+takes up to the grace longer than before. When you call `Shutdown`
+yourself, add the grace to your deadline the same way, or pass
+`WithReadinessDrain(0)` if nothing probes `/readyz`.
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "time"
+-->
+```go
+app := framework.NewApp(
+    // Match the balancer: probe period x failure threshold, plus a margin.
+    framework.WithReadinessDrain(10*time.Second),
+)
+```
+
+Size it to how fast your balancer reacts: Kubernetes removes a pod from
+its Service endpoints once the readiness probe fails `failureThreshold`
+times, `periodSeconds` apart. Keep the grace plus `ShutdownTimeout`
+inside the pod's `terminationGracePeriodSeconds` (30s by default).
 
 ## Registering checks
 
@@ -110,7 +164,9 @@ under `recover()`, so a panicking check marks that row as
 `"error"` without taking the process down. A check that ignores
 `ctx.Done()` and runs past the deadline is reported as
 `"timeout"` immediately. The response does not wait for the
-straggler.
+straggler, and the straggler's late result is dropped, never written
+into a response already sent. Checks that finished before the deadline
+keep their own rows, named or not.
 
 <!-- gofastr:compile
 stmt: _ = app

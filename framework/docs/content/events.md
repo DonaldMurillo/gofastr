@@ -173,7 +173,10 @@ order reads it from the data (a timestamp or version column), not from
 arrival. The subscriber's context
 keeps the emitter's values (the user, the tenant, the request id) but not
 its cancel, because CRUD emits on the request context and the handler
-has usually returned by the time a subscriber runs. Each run is bounded
+has usually returned by the time a subscriber runs. Nor does it keep the
+emitter's transaction: a subscriber that writes through `App.InTx` or a
+CRUD call opens a transaction of its own rather than joining one another
+goroutine owns, which may already have committed. Each run is bounded
 by `event.AsyncHandlerTimeout` (one minute); work longer than that starts
 its own job. A payload whose
 `MarshalJSON` panics skips the fanout and still reaches local
@@ -393,9 +396,13 @@ handler)` + `ob.StartRelay(ctx)`.
   row, retried and dead-lettered independently. One consumer that errors
   or panics never blocks its siblings or fails the whole row. A parent row
   is marked `dispatched` once it has no `pending` deliveries left (all
-  `dispatched`/`dead`/`abandoned`) **and** it is older than the handler
-  grace. It may complete with some deliveries dead; `Replay` /
-  `ReplayConsumer` resurrects them.
+  `dispatched`/`dead`/`abandoned`), **and** every consumer the relay
+  declares for its type has a delivery row, **and** it is older than the
+  handler grace. The middle check matters on a backlog: each consumer's
+  deliveries are created in its own batch, so a parent can hold one
+  consumer's delivery before another's exists, and completing it then
+  would skip the other consumer for good. It may complete with some
+  deliveries dead; `Replay` / `ReplayConsumer` resurrects them.
 - **Handler budget (30s default).** Each handler invocation gets a
   wall-clock budget (`outbox.WithHandlerTimeout`, 30s by default, the
   same posture as both queue backends). At the deadline the handler's
@@ -428,7 +435,9 @@ handler)` + `ob.StartRelay(ctx)`.
   schedules an exponential backoff; the settle writes state only, never
   the counter — two overlapping runners under lease overrun both count
   because both claims counted. After `MaxAttempts` (default 10) the
-  delivery is marked `dead`. `Replay(rowID)` resets all dead/abandoned
+  delivery is marked `dead`. `WithMaxAttempts`, `WithBatchSize` (default
+  100) and `WithPollInterval` (default 1s) keep their defaults when
+  given zero or less. `Replay(rowID)` resets all dead/abandoned
   deliveries of a row; `ReplayConsumer(rowID, name)` resets one. A reset
   delivery's age starts over, so the handler grace below runs again from
   the replay.
@@ -517,6 +526,11 @@ handler)` + `ob.StartRelay(ctx)`.
   whose lease expired and was re-claimed settles nothing, so its late
   write cannot clear the re-claimant's lease and let a third relay claim
   the delivery mid-run. The current claimant's outcome decides the row.
+  The lease is five minutes, or twice the handler budget plus the 10s
+  settle window when that is longer: a `WithHandlerTimeout` of ten
+  minutes gets a lease of 20m20s, so a slow handler still inside its
+  budget is never re-claimed by another relay. The cost is that a relay
+  that crashes holding such a claim hands it on that much later.
   A relay that has less lease left than one handler run plus its settle
   hands the rest of its batch back unstarted, attempts refunded; the
   first delivery of a batch always runs. A graceful shutdown mid-batch

@@ -95,3 +95,45 @@ func TestControlRPCSendsEveryChange(t *testing.T) {
 		t.Fatalf("two changes sent %d requests, want 2", n)
 	}
 }
+
+// A data-cui-rpc form whose method is POST creates, so a re-submit while
+// its own POST is in flight is dropped: a double-click plus Ctrl+S sent
+// three POSTs and an entity with no unique key got three rows. Once the
+// first answers, the next submit goes out. A PATCH form keeps the
+// newest-value rule: every submit reaches the server.
+func TestFormPOSTResubmitInFlightSendsOnce(t *testing.T) {
+	thrice := `(() => { const f = document.getElementById('f'); f.requestSubmit(); f.requestSubmit(); f.requestSubmit(); })()`
+	for _, tc := range []struct {
+		method string
+		want   int32
+	}{{"POST", 1}, {"PATCH", 3}} {
+		t.Run(tc.method, func(t *testing.T) {
+			srv, hits, hold := busyRig(t, `<form id="f" data-cui-rpc="/rpc" data-cui-rpc-method="`+tc.method+`"><input name="title" value="x"><button type="submit">Save</button></form>`)
+			ctx := chromedptest.Context(t)
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(srv.URL),
+				chromedp.Evaluate(thrice, nil),
+				chromedp.Sleep(400*time.Millisecond),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if n := hits.Load(); n != tc.want {
+				t.Fatalf("three submits of a %s form sent %d requests, want %d", tc.method, n, tc.want)
+			}
+			if tc.method != "POST" {
+				return
+			}
+			close(hold)
+			if err := chromedp.Run(ctx,
+				chromedp.Poll(`!document.getElementById('f').hasAttribute('aria-busy')`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+				chromedp.Evaluate(`document.getElementById('f').requestSubmit()`, nil),
+				chromedp.Sleep(300*time.Millisecond),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if n := hits.Load(); n != 2 {
+				t.Fatalf("a submit after the first POST settled: %d requests in total, want 2", n)
+			}
+		})
+	}
+}

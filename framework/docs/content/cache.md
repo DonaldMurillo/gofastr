@@ -39,14 +39,26 @@ type Cache interface {
 }
 ```
 
+Values are stored as JSON. Reading one back into a typed destination
+works as `json.Unmarshal` does; into an interface (`*any`,
+`map[string]any`, `[]any`) every number stays exact. The line is the
+magnitude: a number below 2^53 (9007199254740992) in absolute value
+reads back as a float64, and every number at or past it as a
+`json.Number`, so a cached id `9007199254740993` does not come back as
+`…992`. That includes values a float64 holds exactly, such as `1e20` or
+a `UnixNano` timestamp (about `1.7e18`): accept `json.Number` there, or
+read into a typed destination.
+
 All call sites depend only on this interface. Swap `MemoryCache` for
 `RedisCache` (or a future backend) without touching business logic.
 
 `Set`'s `ttl` of `0` uses the configured default. A negative `ttl` is
 honoured as "already expired": nothing is stored and any existing
-entry under the key is dropped (`MemoryCache`), or refused by the
-backend (`RedisCache`, whose SET rejects a non-positive expiry) — a
-mis-computed lifetime can never widen into retention. Via `GetOrSet`
+entry under the key is dropped, on both `MemoryCache` and `RedisCache`
+(which deletes the key and never hands the negative expiry to the
+client: go-redis reads one as "no expiry") — a mis-computed lifetime
+can never widen into retention. A negative `WithTTL` default behaves
+the same. Via `GetOrSet`
 a negative `ttl` still runs the loader, stores nothing, and surfaces
 the miss.
 
@@ -158,7 +170,11 @@ with `ctx.Err()`; the loader's context is cancelled when the last
 waiter leaves, and a fill nobody waits for any more stores nothing, so
 it cannot overwrite a value a later caller filled. A cache with value
 receivers has no identity to share a fill by, so each caller fills on
-its own, and still leaves at its deadline.
+its own, and still leaves at its deadline. A value that was loaded and
+stored but is gone by the time a waiter reads it back (evicted by
+`WithMaxEntries` or Redis `maxmemory`, or expired under a short TTL)
+still reaches `dest`, through the same JSON round trip; only a negative
+`ttl` surfaces the miss.
 
 ## HTTP caching middleware
 

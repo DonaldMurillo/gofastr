@@ -34,6 +34,37 @@ few lines, and link the PR or the docs page for the rest.
   never drops or changes the running build's publisher, and the
   relaunched copy waits for the old process to exit. See `desktop.md`,
   "Windows code signing" and "Auto-update".
+- **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
+  reloads every role from the database every 5 minutes by default, so a
+  replica that missed a refresh signal stops honouring a revoked
+  permission within one interval. A full reload also covers a role whose
+  last grant was revoked (only tombstones left), which it used to skip.
+  Zero or negative turns it off. See
+  [access control](framework/docs/content/access-control.md#cross-replica-grant-propagation).
+- **`Relation.Hidden` keeps a relation out of reads.** A has-many or
+  has-one whose foreign key is Hidden on the target (users has_many notes
+  through a Hidden `notes.owner_ref`) stays includable by default, since
+  that is usually a caller's own rows. Setting `Hidden: true` on the
+  relation (`hidden: true` in `gofastr.yml`) refuses it on `?include=`
+  and nested filters the way an unknown relation is refused, and leaves
+  it out of `/openapi.json` and llm.md (`entity.HidesRelation`).
+- **Thirty-odd new static rules from the 2026-11 bug bashes.** One per
+  bug shape that recurred across PRs #642–#646 and round 2: vet
+  analyzers (`optzero`, `bareduration`, `iounderlock`, `poisonedconn`,
+  `deferreset`, `recoverwrite`, `statusrange`, `doublewrite`,
+  `listheader`, `textbind`, `sanitizefix`, `authpresence`,
+  `multipartparse`, `ratelimitkey`, `fanoutreq`, `rsakeysize`,
+  `siblingresult`, `silentskip`, `growmap`, `nullarray`, `hookedread`), new arms on
+  `intwrap`, `recovercallback`, `settlectx`, `wrapwriter`, `nostore`,
+  `controlbytes`, `errleak`, `discardeddecode`, `mapwriter`, `embedskip`,
+  `laxcoerce`, `compositekey`, `unrechecked` and `rawtext`, contracts
+  rules GOFASTR1416 `ddlconstraint`, GOFASTR1417 `settlestamp` and
+  GOFASTR1826 `flexreverse` (GOFASTR1415 tightened), and the runtime JS
+  lints `dateutcyear`, `keyguard` and `clipboardawait`. They run in
+  `make analyze` and in an app's `gofastr verify`; a deliberate site
+  carries `//gofastr:allow(<rule>) <why>`. Two new markers:
+  `//gofastr:mustuse <result>` on a function's doc and
+  `//gofastr:required-array` on a slice field.
 - **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
   A calendar that stays on the page beside the native date input it
   fills, for a range in one control, refused days, or notes on days. The
@@ -188,6 +219,200 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`gofastr init .` refuses a symlinked `.env` or settings file, even
+  one inside the project.** The two files it writes a generated secret
+  into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
+  `gofastr.settings.yml`, must be regular files. A link that stayed in
+  the project used to be followed, so in a cloned repo with
+  `.env -> static/robots.txt`, `init . --force` wrote the signing key
+  into a committed, statically served file (a dangling link created it
+  there). Any link at either file is now refused before anything is
+  written, whatever it points at; a link on the way (a linked directory
+  inside the project) is still followed. Replace the link with the file
+  itself. `projectfs.ReplaceOwnerOnly` holds the same rule.
+- **BREAKING: every route answers errors in one envelope** ([#652](https://github.com/DonaldMurillo/gofastr/issues/652)).
+  `core/handler.WriteError` nested its refusal,
+  `{"error": {"code", "reason", "message", "fields"}, "success": false}`,
+  while the crud routes wrote it flat, so a client parsed two shapes and
+  the generated JS client read a gate's 401 as `api: 401: [object
+  Object]` with no `reason`. `WriteError` now writes the crud shape:
+  `{"error": "<message>", "code", "reason", "fields", "field_reasons",
+  "success": false}`. That covers a declared endpoint's auth gate (401)
+  and cross-site refusal (403), `RequirePermission`'s 403, the auth
+  battery's session and bearer middleware, every typed handler's error
+  (`handler.Fail`, `Errorf`, `ValidationError`) and its bind 400 and
+  body-cap 413. The message is still the request's translation of an
+  `i18n.Phrase`, with its code in `reason`. `success: false` stays: both
+  old shapes sent it and clients branch on it. In `/openapi.json` the
+  gate's 401 and 403 reference the shared `Error` schema. The
+  runtime's form-error and error-toast readers and `ui.SortableList`'s
+  versioned-409 reader read only the flat `error`; a move handler that
+  hand-wrote `{"error": {"message": …}}` for its 409, as the docs used to
+  say, answers through `handler.WriteError(w, r, handler.Errorf(409, …))`
+  or writes `{"error": "…"}`. An unmatched path under the API prefix
+  still answers an RFC 9457 problem document, and the JSON-RPC (MCP, A2A,
+  ACP), desktop-bridge and service-control envelopes are protocols and
+  keep their own shapes. See
+  [i18n → The error contract](framework/docs/content/i18n.md#the-error-contract).
+- **BREAKING: `core/yaml` resolves plain scalars by the YAML 1.2 core
+  schema.** It read Go's spellings instead: a hex float (`0x1.8p1`) as
+  3, any casing of `true`/`false`/`null` (`tRuE`), and `1_000.5` as a
+  number; `1e999` as a string; and a local tag (`!foo bar`) as the
+  string `!foo bar`. Now only `true`/`True`/`TRUE` (and the `false` and
+  `null` spellings) resolve, hex floats and underscores stay strings, an
+  out-of-range float is an error, and every `!` tag is refused. App
+  specs, kiln, pack and codegen read through it. No file in this repo
+  used the old spellings. See
+  [app spec](framework/docs/content/app-spec.md#yaml-subset).
+- **BREAKING: `.env` `${NAME}` reads the value that is applied.**
+  `dotenv.Load` (and so `NewApp`'s auto-load) now resolves `${NAME}`
+  from `os.Environ` first, then an earlier (higher-precedence) file's
+  value, then the same file's earlier keys: the order `Apply` keeps
+  values in. v0.95.0 expanded each file against its own keys only, so
+  the docs' own `PATH_TPL="${HOME}/bin"` loaded as `/bin`, a `.env`
+  `DATABASE_URL="postgres://${DB_HOST}/app"` kept the `.env` host while
+  `.env.local`'s `DB_HOST` was the one applied, and with `DB_HOST=prod`
+  in the environment the URL still used the dotfile's host. A value
+  that relied on the empty result or on the file's spelling beating the
+  environment now reads the applied value. `dotenv.Parse` alone still
+  reads no environment. See
+  [dotenv](framework/docs/content/dotenv.md#variable-expansion-var).
+- **BREAKING: `BeforeUpdate` and `BeforeDelete` hooks no longer run for
+  an id the caller cannot write.** Update, delete and their batch items
+  check the target under the write's tenant, owner and soft-delete scope
+  (and any `BeforeGet` clause) first; another owner's row, another
+  tenant's, a trashed row or a missing id answers 404 before the hook,
+  so a hook's email or file delete never fires for it. A hook that
+  created the row it was asked to update must do that before the call.
+  One keyed `SELECT` per write, only when such a hook is registered.
+  See `hooks-and-transactions.md`.
+- **BREAKING (SQLite): a `decimal` SQLite would round is refused.** A
+  value with a fraction and more than 15 significant digits
+  (`"999999999999999.1234"` read back `999999999999999.1`) answers 400
+  `decimal_significant_digits` on SQLite instead of storing it rounded.
+  Postgres keeps every digit of `DECIMAL(19,4)` and still takes it. A
+  `RawType: "TEXT"` field is stored as sent. See
+  `entity-declarations.md`; `schema.DecimalExactOnSQLite` is the check.
+- **`core/static` redirects `/dir` to `/dir/`.** A request without the
+  trailing slash for a directory that has an `IndexFile` used to get the
+  index at `/dir`, so its relative links resolved against the parent.
+  It now answers `301` to `./dir/` (query kept), like `net/http`'s
+  `FileServer`; the relative `Location` keeps the prefix and cannot
+  name another host.
+- **BREAKING: `core/static`'s SPA fallback answers only client routes.**
+  With `SPA: true`, a missing path whose last segment ends in a
+  well-known asset extension (`.js` `.mjs` `.css` `.map`, `.png` `.jpg`
+  `.jpeg` `.gif` `.svg` `.webp` `.avif` `.ico`, `.woff` `.woff2` `.ttf`,
+  `.json` `.wasm` `.txt` `.xml`, any case) now gets `404` instead of the
+  index: the browser ran the HTML as a script or a stylesheet, and a
+  CDN could store it under the asset's URL. Every other miss is a client
+  route and still gets the index, a dot in its last segment included
+  (`/u/jane.doe`, `/blog/v1.2`). A client route ending in one of those
+  extensions (`/feeds/latest.json`) now 404s and needs a server route.
+  See [core packages](framework/docs/content/core-packages.md#static).
+- **BREAKING: `/readyz` drains before shutdown.** `App.Shutdown` now
+  turns `/readyz` to `503` (`{"status":"draining"}`) at once and keeps
+  serving for a grace period, so a load balancer stops routing here
+  before the listener closes; `/healthz` stays `200` until exit. The
+  grace is 5s by default, set with `framework.WithReadinessDrain` (`0`
+  skips it), and `0` in a Go test binary, under `gofastr dev`, for a
+  `battery/service` run and for an app bound to loopback only (every
+  desktop app). The grace counts against `Shutdown`'s context and takes
+  at most half of what it has left, so the HTTP drain, batteries and
+  `OnStop` hooks keep the rest: a caller that passes its own deadline
+  (`app.Shutdown(ctx)` with a 5s timeout) now gives requests still in
+  flight and the stop hooks half of it, not all of it. An earlier build
+  of this release let the grace spend the whole deadline. A stop now
+  takes up to the grace longer: the default SIGTERM handler's deadline
+  is `ShutdownTimeout` plus the grace. See
+  [Health and readiness](framework/docs/content/health-checks.md#draining-on-shutdown).
+- **The gofastr CLI's status lines print arguments inert.** `✓`, `✗`,
+  `→` and `⚠` lines (`cli.Success`, `Fail`, `Info`, `Warn`) remove
+  terminal control characters from every value they print: C0 but tab
+  and newline, DEL, C1, escape sequences, bidi overrides and zero-width
+  characters. A cloned repo whose directory name carried an OSC 52
+  clipboard write drove the terminal of whoever ran `gofastr validate`,
+  `migrate generate` or `agents sync` on it; each command scrubbed, or
+  forgot to, on its own. The mark keeps its colour. The generated app
+  CLI's `-o table` now also drops bidi overrides and zero-width
+  characters, from its headers as well as its cells.
+- **BREAKING for custom A2A stores: retention counts per tier.**
+  `a2a.Config.TerminalTaskRetention` and `PausedTaskRetention` now bound
+  one owner's tasks per tier (`a2a.RetentionTier`: the tenant and scope
+  set a task was made under), not per owner. A narrow token's tasks, or
+  the same user's tasks in another tenant, pushed the user's other tasks
+  past the bound, deleting results and canceling paused work that tier
+  could not even read. `RetentionTrimmer.TrimTerminalTasks` gains a tier
+  argument: `TrimTerminalTasks(ctx, owner, tier, keep)`. A custom store
+  implementing the old signature no longer satisfies `RetentionTrimmer`
+  and is silently not trimmed; update the method to filter by
+  `tier.Tenant` and `tier.Scope`. An owner now retains up to 64 terminal
+  and 64 paused tasks per tenant and scope set.
+- **`gofastr verify` and `make analyze` read more spellings of the shapes
+  they already refuse.** A 2026-11-02 pass wrote small variations of each
+  analyzer's own bug shape and widened every rule that missed one:
+  - `fixedtmp`: `"/tmp/app-" + pid`, `filepath.Join("/tmp/app", name)`,
+    `path.Join`, `fmt.Sprintf("/tmp/app-%d", pid)` and an
+    `exec.Cmd{Dir: …, Path: …}` literal;
+  - `timestampid`: an id bound in `Session{ID: …}`, `var token = …` or
+    a multi-value assignment, built with `fmt.Sprint`, or made from
+    `time.Now().Format(…)` / `.String()`. A `make([]byte, 16)` rand
+    buffer now silences it as a `[16]byte` array always did. A trailing
+    `key` counts only behind a credential word (`apiKey`, `signingKey`):
+    a date-bucketed storage `Key` or `cacheKey` names a place, not a
+    capability, and stays quiet;
+  - `errleak`: `fmt.Sprintf("query failed: %v", err)` and
+    `fmt.Sprint(err)` on a 5xx;
+  - `discardeddecode`: a discarded `handler.UnmarshalStrict`,
+    `handler.DecodeStrict`, `jsonexact.Unmarshal` or yaml `Decode`;
+  - `recoverlog` and `controlbytes`: `log.Fatal*` / `log.Panic*` (they
+    print the message before exiting), and for `recoverlog`
+    `os.Stderr.WriteString`;
+  - `worldreadable`: a mode that is constant but not a bare literal —
+    `os.FileMode(0o644)`, a named const, `fs.ModePerm`, `0o600|0o044`;
+  - `unboundedbody` and `unboundedresp`: `ioutil.ReadAll`,
+    `io.CopyBuffer`, `buf.ReadFrom(body)`, a body read through
+    `bufio.NewReader` or a `body := r.Body` alias, and for responses
+    `io.Copy` / `ReadFrom` into a writer that keeps the bytes
+    (`bytes.Buffer`, `strings.Builder`, a `[]byte` writer). A streaming
+    copy into a `ResponseWriter`, a file or an `io.Writer` stays quiet;
+  - `GOFASTR1413`: `Header().Del("Vary")`, which drops the earlier
+    entries as `Set` does (the `h["Vary"] = …` map write is the
+    BREAKING entry below). A map write under a non-canonical key
+    (`h["vary"]`) is a second header line, not a clobber, and stays
+    quiet;
+  - `secretcompare`: `bytes.Equal` on a credential pair, a
+    `bytes.Compare` / `strings.Compare` tested `== 0` / `!= 0` (one that
+    sorts stays quiet), a `switch token { case stored: }`, a
+    `string(sig)` conversion, and a `~string` type parameter;
+  - `credfetch`: `req.SetBasicAuth`, which writes `Authorization`;
+  - `keytrim`: `strings.Trim` / `TrimLeft` / `TrimRight` / `TrimFunc`
+    and `bytes.TrimSpace` on an id, and a request read that reaches the
+    trim through a local.
+
+  Code that passed verify can fail it on upgrade. Fix the finding, or
+  mark a site that is the shape on purpose with
+  `//gofastr:allow(<analyzer>) <why>`.
+- **`make analyze` and CI vet the windows and darwin files too.** The
+  repo analyzers ran on linux only, so no `_windows.go` or `_darwin.go`
+  file was ever vetted. Both now run the vettool again with
+  `GOOS=windows` and `GOOS=darwin` over the affected packages, listed
+  for that OS. The first run found three things: `discardederr` now
+  ignores `(*syscall.LazyProc).Call` and `(*syscall.Proc).Call` (and
+  the `golang.org/x/sys/windows` twins), whose error is always non-nil;
+  the Windows `EvalAsync` result slot is numbered by a counter, not the
+  clock; and `gofastr desktop build` writes its cached WebView2 SDK
+  package with `fileperm.WriteOwnerOnly`.
+- **BREAKING for generated clients: `/openapi.json` documents what
+  `?include=` returns.** An entity's
+  schema component is its read view: a relation field's property is
+  `anyOf` its key, the related record or null, since an include replaces
+  the key with the record, and each other relation is an optional
+  property (a record or null, or an array of records). Request bodies
+  still take the key. A generated client reads the field as a union, so
+  code that used a relation field as a string stops compiling once the
+  client is regenerated; narrow the union where you read it (see
+  `includes.md`).
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
@@ -196,9 +421,904 @@ few lines, and link the PR or the docs page for the rest.
   inline CSS, and answers 404 under its mount except at the page and
   spec paths. The webhook SQL tables gain `auth`, `response_status`
   and `response_body`, added when the store opens.
+- **Search docs list what each backend counts as the same word.**
+  `search.md` gains a table of matches that differ by backend: SQLite
+  FTS5 folds diacritics (`cafe` finds `café`) and Memory and Postgres do
+  not; Postgres finds no `½`, `v1.2` or email address; doubled hyphens
+  match differently on each. Nothing changed in the backends; normalize
+  text yourself if every backend must agree.
+- **BREAKING: `gofastr verify` reports two more spellings.** GOFASTR1601
+  (write result discarded) now fires on a bare `db.Exec(...)` or
+  `ExecContext(...)` statement, plain, deferred or in a goroutine, not
+  only on `_, _ = db.Exec(...)`. GOFASTR1413 (Vary overwritten) now fires
+  on `w.Header()["Vary"] = …`; an append to the existing entry stays
+  quiet. A CI gate on `gofastr verify` can newly fail: check the error,
+  or mark a deliberate site `// best-effort: <why>`. The blog, spa and
+  backoffice examples' seeds now check every insert.
+- **`gofastr export` checks that the app exported.** An exit 0 reported
+  "Exported to <dir>" even when `main` returned before `App.Start` and
+  the directory was empty or stale. The CLI now passes a run id in
+  `GOFASTR_EXPORT_RUN`, `App.Start` writes it back in
+  `<dir>/.gofastr-export.json` (`framework.ExportReceiptFile`) after the
+  export, and the CLI checks and deletes it. A missing receipt fails the
+  export for an app on v0.96.0 or later; an older pin or a `replace`
+  directive gets a warning. See `static-export.md`.
+
+- **Audit change lists ask the app's read hooks about the real record.**
+  `entityui.UI.Changes`, behind the admin's audit page and dashboard
+  activity, ran the entity's `AfterGet` hooks over a made-up row with no
+  id, once per entry. A hook that looks the record up by id refused it,
+  and the common "mask unless the caller owns the row" hook masked it, so
+  the fail-closed probe hid every field and the audit log showed no
+  changes. It now reads the record the entry names (stored, and through
+  the caller's read hooks, as the record screen does), leaves out what
+  differs, and probes only the fields empty on that row, with the real
+  id. A deleted record falls back to the old probe. The new
+  `entityui.WithChangeCache(ctx)` makes the hooks run once per record per
+  page; the admin installs it. Masking calls `AfterGet` hooks with the
+  caller's context, so they must be side-effect free: see `Changes` in
+  [entityui](framework/docs/content/entityui.md).
+- **A `data-cui-rpc` POST form sends one request at a time (D-09).**
+  A re-submit of a form whose method is POST waits while its own POST
+  is in flight. One that sends the same fields as the request in flight
+  is ignored, so a double click plus Ctrl+S no longer creates three
+  rows. One that sends different fields (save A, edit to B, save again)
+  is held, the latest only, and goes out when the first answers; the
+  first answer then changes nothing on the page, the newer one does. A
+  POST that has not answered in 30 seconds stops holding the form, and
+  a held save goes out then. PUT and PATCH forms, input-triggered forms,
+  buttons and controls still send every dispatch, the newest winning.
+- **FilterToolbar Reset follows the submit (D-37).** Without
+  `ClientNavigation`, Reset carries `data-cui-nav="off"` and loads the
+  whole document, as the native GET submit does, so a kept layout that
+  renders query-dependent content clears too. `ui.LinkButton` and
+  `headless.Button` links accept `data-cui-nav="off"`. The `layoutfunc`
+  lint also flags `app.QueryFromContext` in a layout build, and a
+  `Key.Get` there whose same-package resolver reads the query or the
+  request, outside a `RouteArea`.
+- **SDK `manifest.json` has no generation time by default (D-18).**
+  `gofastr generate` and `gofastr generate sdk` rerun over an unchanged
+  schema rewrite every file byte for byte. `gofastr generate sdk
+  --stamp-time` writes `generatedAt` as before, and `sdkdocs` shows the
+  date only then. `sdk.Manifest.GeneratedAt` is omitted when zero.
+- **An app spec with auth and no login form gets a `/login` screen
+  (D-35).** With `app.auth.enabled: true` and no `login_form` screen,
+  the generator adds `/login` (a `login_form` in `ui.AuthCard`, no CSS),
+  so gated screens, the Sign in button and a failed form login no
+  longer land on a 404 (ecommerce did). The app shell now offers Sign
+  in. `gofastr pack` drops the added screen.
+
+- **BREAKING: `config.Load` promotes embedded struct fields.** In
+  `type Cfg struct{ Base }`, Base's `config:"PORT"` field now reads
+  `PORT`, the way `encoding/json` promotes it; it read `BASE_PORT`
+  before, and that key is no longer read. When a source still holds the
+  old `BASE_PORT` spelling and no field reads it, `Load` logs one
+  warning per key through `slog` naming the key it reads now. A promoted
+  field an outer field shadows (`Base.Port` under the outer `Port`) is
+  never read from a source and takes its own `default:` tag, so a method
+  on `Base` reads its default rather than zero. Pointer embeds and unexported
+  embedded types promote too (an unexported one was skipped). A field on
+  the outer struct wins over a promoted one with the same key; two
+  embedded structs promoting one key at the same depth, or a `config:`
+  tag on an embedded struct, now fail `Load`. Rename `<TYPE>_<KEY>`
+  env and file keys to `<KEY>`, or name the field (`Base Base`) to keep
+  the prefix. Named struct fields (`DB DBConfig` reads `DB_HOST`) are
+  unchanged. See [core-packages.md](framework/docs/content/core-packages.md#config).
+- **BREAKING for multi-tenant apps: feature-flag user allow lists name
+  a tenant's user.** A `Flag.Users` entry `acme:42` matches user `42` of
+  tenant `acme` only; a bare `42` matches only when the evaluation has
+  no tenant. It used to turn the flag on for user `42` of every tenant.
+  The tenant is `EvalContext.TenantID`, or the request's resolved tenant
+  (`handler.GetTenantID`) when that is empty. Ids may hold `:`: the
+  entry splits at its first `:` and the tenant part percent-escapes `:`
+  and `%`; build entries with `featureflag.UserEntry`, read them with
+  `featureflag.ParseUserEntry`, and both stores refuse malformed ones.
+  A tenant's user is bucketed for `Rollout` on the pair, so partial
+  rollouts in a multi-tenant app reshuffle once. `EraseUserData` removes
+  the user's entries through the new
+  `datexport.DataEraser.MemberSeparator`: with a tenant (the new
+  `framework.WithEraseTenant`, or the request's resolved tenant) the bare
+  entries and that tenant's `tenant:user` only, so another tenant's user
+  with the same id keeps theirs; with no tenant, every tenant's spelling.
+  An entry equal to the whole erased id (a pre-upgrade bare `google:42`)
+  always goes. Rewrite bare entries as
+  `tenant:user`. See [feature-flags.md](framework/docs/content/feature-flags.md#user-entries).
 
 
 ### Fixed
+- **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
+  SQLite table by table, so a comment written while the export ran could
+  land in the archive without its post, and the restore failed on the
+  foreign key. In WAL mode every table is read in one read-only deferred
+  transaction now, as Postgres already was; writers are not blocked. A
+  rollback-journal database still reads table by table: stop writes during
+  its export. See [data export](framework/docs/content/data-export.md#operational-notes).
+- **`App.EraseUserData` reaches `search.Memory`.** The in-memory search
+  index kept every document indexed for an erased user. `NewMemory`
+  registers a store eraser now, the new `Memory.Close` removes it, and
+  `search.Battery` closes its backend on stop. Close an index built for a
+  test. See [search](framework/docs/content/search.md#the-in-memory-backend).
+- **Docs: `CachedResolver.Invalidate` is process-local.** It clears the
+  calling replica's cache only; other replicas serve a user's old roles
+  for up to the TTL (30 seconds by default). Said beside `Invalidate` and
+  in [access control](framework/docs/content/access-control.md).
+- **A restore keeps the modules an operator turned off turned off.**
+  `ExportData` left out `gofastr_modules` and the process-module
+  desired-state table, so a restored app booted every disabled module
+  back on and a process module got back the grants an operator had
+  revoked. Both tables are in the archive now; the heartbeat table stays
+  out. See [data export](framework/docs/content/data-export.md).
+- **`gofastr pack` keeps an app spec fragment a fragment.** A spec with
+  no `app:` section was written back with `app: {api_prefix: ""}`, so the
+  next decode read it as a whole app mounting its CRUD API at the root and
+  ran the checks a fragment skips. Packing a value that holds a byte that
+  is not UTF-8 now fails and names the field: YAML cannot carry the byte,
+  and the `\xff` escape it used to write decodes, per YAML 1.2, as `ÿ`.
+  `gofastr generate cli` holds the same line for the
+  `gofastr.settings.yml` entry it prints after a run: a `--out`,
+  binary, prefix or entity name that is not UTF-8 prints a note
+  instead of an entry that would name a different path.
+- **The relay drops vendor headers that set policy for the app's
+  origin.** A relayed response is served on the app's origin, so a
+  vendor's `NEL` with `Report-To` had the browser report requests to
+  every app URL to the vendor for up to a year, outside the page's CSP.
+  `NEL`, `Report-To`, `Reporting-Endpoints`, `Alt-Svc`, `Accept-CH`,
+  `Critical-CH`, `Strict-Transport-Security` and `Set-Login` from the
+  upstream no longer reach the browser; values the host set stay. See
+  [relay](framework/docs/content/relay.md).
+- **The relay sends the vendor the page's origin, not its URL, as
+  `Referer`.** A relayed request is same-origin, so the browser sends
+  the full page URL as `Referer`, and a reset or magic-link page that
+  loaded a vendor script through the relay handed its token to the
+  vendor; a request straight to the vendor would have carried the origin
+  alone. The relay now cuts `Referer` to `scheme://host/` and drops one
+  that is not an absolute http(s) URL.
+- **The relay's `Link` strip reads a target the way the browser does.**
+  It looked for `://` and `<//` only, so `<\\vendor.example/x>`,
+  `</\vendor.example/x>` and a tab between the slashes, which a browser
+  parses as `//vendor.example/x`, reached it as a preload or preconnect
+  to the vendor. A target with a scheme or an authority after tab and
+  newline removal and `\` to `/` now drops the value. See
+  [relay](framework/docs/content/relay.md).
+- **`RedisCache` stores nothing for a negative TTL.** The `Cache`
+  contract says a negative `ttl` stores nothing and drops what the key
+  held, and `MemoryCache` does that. `RedisCache.Set` handed the
+  negative duration to the client, and a go-redis adapter sends any
+  non-positive expiry other than 0 as a SET with no expiry (and -1 as
+  KEEPTTL), so a lifetime already in the past made an entry that never
+  expired, over the old one, and `GetOrSet` with a negative `ttl`
+  returned it. `RedisCache.Set` now deletes the key instead, for a
+  negative `WithTTL` default too. See [cache](framework/docs/content/cache.md).
+- **A large file on disk gets its ETag after a HEAD, a 304 or a short
+  range.** `core/static` hashes a file over 16 MiB in the background,
+  and the goroutine opened it through the request's `*os.Root`, which
+  the handler closes when the response is done. A quick answer closed it
+  first, so a file only revalidated or range-read never got an ETag. The
+  file is now opened on the request and only read in the background. See
+  [core packages](framework/docs/content/core-packages.md#static).
+- **`core/yaml` decodes double-quoted escapes by the YAML rules.** It
+  ran them through Go's `strconv.Unquote`, so `"caf\xe9"` came back as
+  invalid UTF-8 instead of `café`, Go's octal `"\101"` read as `A`, and
+  YAML's own `\/`, `\e`, `\N`, `\_`, `\L`, `\P` and `\ ` failed with
+  "invalid syntax". App specs, `gofastr.settings.yml` and the other
+  files read through it get the YAML value; an escape YAML does not
+  define is an error. See [app spec](framework/docs/content/app-spec.md#yaml-subset).
+- **`textsafe.IsUnsafe` covers U+2028 and U+2029.** The set had NEL
+  (U+0085) because it breaks a line, and not the Unicode line and
+  paragraph separators, which Python's `splitlines` and JavaScript's line
+  terminators split on the same way. `ScrubControlBytes` now
+  percent-encodes them in text log lines, and every `StripUnsafe` /
+  `ContainsUnsafe` sink (display names, notification and email text,
+  page titles) strips or refuses them. New `textsafe.IsLineSeparator`.
+- **An `EmitAsync` subscriber no longer joins the emitter's
+  transaction.** The subscriber's context kept every emitter value,
+  the open `*sql.Tx` included, so a subscriber that wrote through
+  `App.InTx` or a CRUD call for an event emitted inside a transaction
+  joined it from another goroutine: after the commit its write failed
+  with "transaction has already been committed" and was lost, and before
+  it the write shared the request's connection and its fate. The
+  subscriber's context drops the transaction and keeps the other values.
+- **Typed hooks see fields tagged in snake_case.** `OnBeforeCreate[T]`
+  and the other typed write hooks decoded the payload with camelCase
+  keys only, so a `T` field tagged `json:"is_admin"` read its zero value.
+  A Before hook forcing `IsAdmin = false` compared equal to that zero and
+  was skipped, so the client's `true` was written; an After hook clearing
+  an `api_key` field left it in the response. The payload is now offered
+  under its own, camelCase and snake_case spellings.
+- **A panicking Before hook answers 500, not 400 with its panic value.**
+  The hook registry turned a panic into `hook panic: <value>`, and the
+  CRUD routes answered every Before hook error with 400 and its text, so
+  whatever the hook held when it faulted (a DSN, a query) reached the
+  client and the fault read as the caller's mistake. A recovered panic is
+  now a `*hook.PanicError`, logged with its stack; create, update, delete
+  and batch items answer it with the generic 500 body, and
+  `crud.IsHookRefusal` reports false for it. A panicking `BeforeList` or
+  `BeforeGet` does the same on List and Get (and the MCP read tools that
+  call them), and on a parent's `?include=` or `?rel.field=` that runs a
+  child's hook; each answered 400 with the panic value.
+- **OAuth protected-resource metadata is served at the path-inserted URL.**
+  RFC 9728 §3.1 puts the metadata of `https://api.example.com/mcp` at
+  `/.well-known/oauth-protected-resource/mcp`, and §3.3 has a client refuse a
+  document whose `resource` does not match the identifier it built the URL
+  from. `WithOAuthProtectedResource` served only the bare prefix, so a
+  compliant client of a path-scoped resource found nothing. Both URLs answer
+  now.
+- **`/readyz` no longer races a check that returns at the deadline,
+  and keeps an unnamed check's result.** On timeout the handler read and
+  copied the result rows while a check that ignored `ctx`, or returned in
+  that moment, could still write its own row, a data race `go test
+  -race` reports; and a row counted as reported only when it carried a
+  name, so a passing check registered with `RegisterReadiness("", …)`
+  was reported as a timeout and the app as not ready. Each check now
+  hands its row over a channel to the one goroutine that builds the
+  response, and a late row is dropped.
+- **Rotating a secret that ends in a newline keeps sessions.**
+  `GOFASTR_SECRET` is used as set, so a value read from a file (a
+  Kubernetes secret made with `--from-file`) signs with its trailing
+  newline. `GOFASTR_SECRET_PREVIOUS` trimmed its entries, so moving that
+  same value there on rotation derived a different verify key and every
+  session and embed grant the old secret signed stopped verifying. An
+  entry ending in a line break is now also accepted as written, and a
+  value alone in the variable is also accepted exactly as written, so
+  one with a leading or trailing space or tab verifies too.
+- **`ImportData` refuses a source the manifest lists twice.** The file
+  was restored once per listing: a keyed table failed on its key, but a
+  keyless one took every row twice and committed.
+- **`ExportData` reads one snapshot on Postgres.** Each table was read on
+  its own, so an export of an app taking writes held comments whose post
+  committed after the posts were read: the archive named parents it did
+  not hold and its restore tripped the foreign key. Keyset paging could
+  also chase rows inserted ahead of its cursor for as long as the writes
+  kept coming. Every table is read in one read-only `REPEATABLE READ`
+  transaction now. SQLite still reads table by table.
+- **`/metrics` carries the `db_pool` and `outbox` series with no battery.**
+  Start mounted the bare metrics store, and the framework-owned
+  collectors attach only inside `app.Metrics()`, so an app with `WithDB`
+  + `WithMetrics` (+ `WithOutbox`) whose batteries never took the handle
+  served neither the pool gauges nor `outbox_pending`/dead-letter counts,
+  and an alert on them had no series to fire on. Start mounts the
+  endpoint through `app.Metrics()` now.
+- **The `gofastr dev` hold page keeps its build output from a rebound
+  page.** On a loopback bind the hold answered any `Host`, so a page on
+  another site whose name a rebinding DNS server pointed at 127.0.0.1
+  read the failed build's absolute paths and quoted source as
+  same-origin. A request whose `Host` is not a loopback name for the
+  address gets the page without the output, as an exposed bind does.
+- **`gofastr verify` finds GOFASTR1403 and GOFASTR1404 however the code
+  spells them.** GOFASTR1404 keyed on the identifier `http`, so a cookie
+  built as `nethttp.Cookie{...}` under an import alias passed.
+  GOFASTR1403 was a one-line pattern for `render.HTML(... + ...)`, so
+  `render.HTML(fmt.Sprintf("<p>%s</p>", name))`, a concatenation split
+  over lines, and `render.HTML(esc(a) + b)` put the same unescaped value
+  into markup unreported. Both rules read the syntax tree now; a build
+  from constants alone stays quiet. GOFASTR1403 also reads a Sprintf
+  whose format is a variable, a `strings.Join`, and a local the function
+  assigned such a build (`s := "<p>" + name + "</p>"; render.HTML(s)`).
+  The escaped builds in the kit (the sparkline among them) carry
+  `//gofastr:allow(GOFASTR1403)`.
+- **`gofastr migrate down` takes one count.** With two counts the last
+  one won, so `migrate down 1 3` ran three Down sections (three
+  `DROP TABLE`s) where one was asked for. A second count is refused
+  before anything rolls back, the way `migrate force` refuses a second
+  version.
+- **`/openapi.json` lists only a view's read routes.** `App.View`
+  mounts its entity read-only, and `llm.md` says so, but the spec
+  documented create, update, delete and the `_batch` family on every
+  view, each a 405. It now lists List, Get and `_events`
+  (`openapi.Options.ReadOnlyMounted`, which `App.OpenAPISpec` sets).
+- **A factory built from `app.Registry` runs the app's hooks.**
+  `factory.New(app.Registry, …)` built a bare CRUD handler, so a row
+  seeded through it skipped every `BeforeCreate`/`AfterCreate` hook and
+  event the app registered, though the docs promised the production
+  pipeline, and came back camelCase under a `snake_case` app. The
+  registry now hands out the app's own handler through the new
+  `Registry.CrudHandlerFor`.
+- **Generated lists no longer link every row to a 404.** An app spec
+  `entity_list` of an entity with no `entity_detail` screen linked each
+  row, and its row menu's View, to `<list>/<id>`, a page no screen
+  serves (every Categories and Reviews row in the ecommerce example).
+  Such a list without `create: true` now renders with `.NoLinks()`,
+  and `gofastr pack` reads that call back as part of the spec, so a
+  packed app regenerates it.
+- **A skipped navigation transition no longer logs a page error.** A
+  view transition the runtime skipped before it was ready (the next
+  navigation committing over it, or a click during the animation)
+  rejected its `ready` promise with nothing to catch it, so rapid
+  clicking filled the console and any error tracker with "Transition
+  was skipped" unhandled rejections.
+- **Tracker example: a crumb keeps a multi-byte first letter whole.**
+  The crumb trail upper-cased a path segment's first byte, so `/étude`
+  read "�©tude" and the page carried invalid UTF-8.
+- **Tracker example: the issue list follows the URL's filter.** The
+  project layer drew the list from `?filter=` while the router keeps
+  that layer across a project's pages, so Reset, or the sidebar's
+  project link from a filtered issue, left the filtered list and its
+  filter text under an unfiltered URL. The list is the layer's `issues`
+  route area now. An unsubmitted filter draft no longer survives
+  opening an issue.
+- **MMR diversity no longer depends on the embedder's vector length.**
+  The stores normalize what they keep, but `Query` passed the query
+  vector to MMR as the embedder returned it, so an embedder that does
+  not normalize (a query vector ten units long) made relevance swamp the
+  redundancy penalty and `MMRLambda` picked near-duplicates. The query
+  vector is normalized for MMR now.
+- **A semantic index refuses an empty vector.** With an embedder whose
+  `Dim()` is 0 until first use, an empty vector fixed no dimension and
+  was stored; the next real vector set one, and every query after
+  panicked in the dot product, the snapshot carrying the chunk into each
+  restart. `Index.Add` (before the WAL logs the write, so it cannot
+  leave a half-applied write that blocks later ones), `FlatStore.Add`
+  and `LoadSnapshot` now refuse it. See
+  [semantic search](framework/docs/content/semantic-search.md).
+- **A backup keeps the RBAC grants and revokes.** `App.ExportData` left
+  out the `access.GrantStore` tables, so a restore lost every runtime
+  grant, and the code seed brought back every permission an admin had
+  revoked. `EnsureSchema` now registers both tables with the export;
+  restart after an import so `LoadInto` reads them.
+- **`access.Can(nil, …)` returns false.** It read the context without
+  the nil check `GetPermissions`, `CanResource` and `CanResourceExact`
+  already hold, and panicked.
+- **A strict replica applies a revoke after a capability it does not
+  know.** In a rolling deploy, a newer replica granted a role a
+  capability the older strict replica had not registered, and every
+  fanout reload of that role on the older replica failed, so a revoke
+  issued afterwards never reached it and it kept the permission. A
+  reload now leaves out, with a warning, a grant the policy refuses and
+  applies the rest. `LoadInto` still refuses at boot.
+- **A directory key is not found on the local storage backends.** `Get`
+  of a prefix such as `uploads/posts` opened the directory, so
+  `upload.ServeHandler` answered 500 for it, and `Exists` reported it as
+  a stored object; `Delete` removed an empty prefix and failed on a
+  full one. Both local backends now return `ErrNotFound` (404) and
+  false, and `Delete` leaves the directory and reports it not found
+  (`core/upload` wraps `os.ErrNotExist`, `battery/storage` returns nil,
+  as for a missing file). See [storage](framework/docs/content/storage.md).
+- **`file.StripMetadata` cuts PNG and WebP trailers.** Bytes after a PNG's
+  IEND chunk or past a WebP's RIFF size were stored whenever the image had
+  no metadata chunk to strip, while a JPEG's post-EOI trailer was always
+  dropped. Readers ignore those bytes and tools park data there, so the
+  stored original now ends at the format's end marker. See
+  [uploads](framework/docs/content/uploads.md).
+- **A refused print request no longer holds a PDF render slot.** The
+  `/pdf` route took one of the `MaxConcurrentRenders` slots before it ran
+  the document's access policy, so a signed-in caller asking for other
+  people's documents kept the slots busy while `RequireOwner`'s callback
+  looked them up, and the owners' own PDFs answered `503`. The policy now
+  runs first; a refused caller gets its `401` or `403` even when every
+  slot is busy. See [print](framework/docs/content/print.md).
+- **Image decode refuses a JPEG with more than 64 scans.** The pixel cap
+  bounded the frame but not how often the decoder walks it: a
+  progressive scan of one end-of-band run costs about ten bytes and
+  revisits every block, so a 10 KB upload of 100 scans held a core for
+  four seconds at 64 MP, through `framework/image` decode, the image
+  field pipeline and `file.StripMetadata`'s orientation bake. Past
+  `Config.MaxJPEGScans` (default `DefaultMaxJPEGScans`, 64) decode returns
+  `ErrDecompressionBomb` before any pixel is decoded. The count walks
+  the marker segments to the first EOI, so a motion photo (a one-scan
+  JPEG with a video clip after EOI) and a large APPn payload are not
+  read as scans; see [image](framework/docs/content/image.md).
+- **`email.SMTPSender` refuses a `Headers` key that is not one field
+  name, or that names a field the `Email` carries.** A key went out as
+  the field name with only a CR/LF check: `"X-A: b"` or `"X A"` wrote a
+  line that reads as another field, a leading space folded it into the
+  header above, and `To`, `Cc`, `From` or `Subject` gave the message two
+  of that field, so a reader showed one recipient list while the envelope
+  used the other. `Bcc` (and `Resent-Bcc`) published the blind list the
+  sender never writes, and two keys differing only in case (`Date` and
+  `DATE`) wrote one field twice.
+  These now fail with `ErrSendFailed`; see [email](framework/docs/content/email.md).
+- **Local storage no longer lists a directory to serve one file.** The
+  fold check behind both local backends (`upload.RefuseFoldedKey`) read
+  the whole parent directory, with an lstat per entry, on every Get,
+  Exists, Delete and overwriting Save. Upload directories are flat, so
+  with 50,000 objects in one field each GET of `/uploads/...` spent about
+  85ms in syscalls, and Save held the process-wide commit lock through
+  it. The check now lists only where the filesystem can fold the name;
+  see [storage](framework/docs/content/storage.md).
+- **A `data-cui-rpc` form says when its fetch never answers.** Offline
+  or on a dropped connection the submit did nothing at all unless the
+  form set `data-cui-rpc-error-toast`. It now always toasts ("Request
+  failed", or that attribute's title) and reports `gofastr:formresult`
+  `{ok: false}`. A save the server answered is never reported this way,
+  even when its 2xx body does not parse. See
+  [Runtime contract](framework/docs/content/runtime-contract.md).
+- **A programmatic navigation no longer forces the focus ring.**
+  `__gofastr.navigate()` (an RPC form's `data-cui-rpc-navigate`, a
+  widget, app code) focused the swapped region with `focusVisible: true`,
+  so a form submitted with the mouse landed on a page ringed in a focus
+  outline. The browser's `:focus-visible` heuristic decides now, as the
+  runtime contract already said.
+- **`ui.DataTable` draws its phone header while it holds focus.** In
+  `ResponsiveCards` and `ResponsiveRows` mode the header row is clipped
+  on a phone but its sort links and select-all box stayed in the tab
+  order, so Tab moved through controls nobody could see. The row is
+  drawn while one of them has focus.
+- **A long `ui.StatCard` value wraps inside its card.** A figure such as
+  `$1,000,000,001,193.00` ran out of the card: past a phone's edge into
+  a horizontal page scroll, and over the neighbouring cell's label in a
+  `ui.StatStrip`.
+- **BREAKING: the app generator refuses names its app could not boot
+  with.** A table, field or index name SQL cannot carry (`first-name`,
+  `last name`, a name over 63 bytes), two entities on one table, and an
+  entity on a battery's table (`auth_users`, `auth_sessions`,
+  `audit_log`, …, bare or as `public.` / `main.`) used to generate an
+  app that compiled and then failed at boot, 500ed on every request,
+  shared one Postgres table between two entities, or served the accounts
+  table through CRUD. `gofastr validate` and `generate` now name each
+  one. An SQL keyword (`order`, `group`, `user`, `desc`, `select`, …) is
+  an ordinary name: AutoMigrate and the CRUD statements both quote it.
+  See
+  [app spec validation](framework/docs/content/app-spec.md#validation).
+- **The app generator refuses screen routes no browser can reach.** A
+  route without a leading `/` (`café`), with `?`, `#`, an empty or `..`
+  segment (`//evil.com`, `/x/../admin`) or a repeated parameter
+  generated a screen that never rendered, a route on an entity's CRUD
+  mount (`/api/posts`) stopped the boot with a panic, and a route under
+  it (`/api/posts/{id}`) was answered by the CRUD API instead. See
+  [app spec validation](framework/docs/content/app-spec.md#validation).
+- **BREAKING: generated clients send the JSON key the server reads for
+  every field.** The server keys a column `Title` as `Title` and `_note` as
+  `Note`; the generated model, typed repo shapes, typed client, Go and JS
+  SDKs and CLI lowered the first letter (`title`, `note`), so those
+  fields were dropped on write and read as empty. The typed repo's
+  in-process write keeps them too: `CreateOne`, `UpdateOne` and
+  `UpsertOne` map the key `framework.MarshalEntity` derives (`title`,
+  `note`, `h_t_t_p_code`) back to its column, and a cascade relation's
+  the same way. App specs refuse two field names that become one Go
+  field or one Postgres column (`Title` and `title`).
+- **The embed boot check and `check-embed` read ClientJS the same way.**
+  The boot walk matched the bytes `G.serverAction(` anywhere, so a
+  mention in a comment, a string or template text passed `gofastr
+  build` and then panicked at `Mount`, and `G.serverAction /* … */ (`
+  failed the build but passed boot. `check-embed` lost its place at a
+  quote inside a regular expression (`s.replace(/"/g, '')`) and missed a
+  real call after it. Both now call one scanner that skips comments,
+  strings, template text and regex literals, and reads `${…}` as code.
+- **Bugs the 2026-11 rules found on the tree.** Each has a test that
+  failed before its fix.
+  - A zero or negative option no longer means "expire at once" or a
+    panic: `lifecycle.WithTimeout`/`SetShutdownTimeout`,
+    `WithSQLIdempotencyTTL`/`WithSQLIdempotencyInFlightTTL` (a retry ran
+    the handler twice), `WithBrokerHandleTTL`, and `queue.WithWorkers(-1)`
+    (`Start` panicked).
+  - A `math.MaxInt64` cap no longer wraps: `image.Config.MaxSourceBytes`
+    and semantic's `MaxFileSize` read every source as empty,
+    `upload.Config.MaxSize` refused every upload. A huge webbotauth
+    `max-age` caches for 24h instead of 1 minute; a huge harness Bash
+    `timeout_ms` takes the 10-minute ceiling instead of killing the
+    command.
+  - A panicking host component no longer crashes the process: the
+    battery/log webhook `HTTPClient`, `RedisQueue.Reclaim`'s client, a
+    harness session log during `SubscribeSince`.
+  - entityui: an in-request bulk run's summary audit survives a client
+    hang-up, and a queued run's lease hand-back is bounded at 10s.
+    `EntitySessionStore`'s expiry sweep no longer holds its mutex across
+    the DELETE.
+  - The metrics, tracing and CORS middleware and the battery/log, webmcp
+    and theme-preview writers forward `ReadFrom` (sendfile survives) and
+    record the status the client got after a `Flush`; metrics and
+    tracing record a `WriteHeader(0)` panic as 500.
+  - battery/log's recovery and kiln's `recover` middleware (now core
+    Recovery) cut a started response instead of appending a 500 to it.
+  - `i18n.HTTPError` sends a status outside 400–599 as 500; uihost
+    ignores a `ScreenStatusCode` outside 100–999, and a blocked page's
+    markdown twin answers with the HTML page's status.
+  - WebSocket upgrades (core/stream, battery/rtc), Compress
+    (Accept-Encoding, `immutable`), the cache's `Vary: *` and the
+    webbotauth directory TTL read every field line of the header.
+  - RateLimit's default and proxy-aware keys and webbotauth's
+    `RateLimitKey(nil)` group an IPv6 client by its /64.
+  - OIDC JWKS RSA keys over 8192 bits are refused.
+  - A record id, auth unlink/token path value, admin queue-replay id or
+    semantic `DELETE /doc` id that is not storable text (invalid UTF-8,
+    NUL) is refused instead of reaching Postgres as a 500.
+  - acp decode errors no longer echo encoding/json text naming Go types;
+    the dev hold page strips ANSI escapes to a fixpoint.
+  - Refusals that walked a map now name the same key every time: MCP
+    tool arguments, a restored export row, kiln seed rows and page
+    props, `gofastr` CLI `--verbs`, entity form items. The harness MCP
+    server answers an unencodable result with -32603 instead of an empty
+    line.
+  - `core/config.Load` binds `encoding.TextUnmarshaler` fields
+    (`time.Time`, `slog.Level`, `netip.Addr`, validated enums).
+  - Option pairs that break an invariant together: `NewDBQueue` refuses
+    a `WithDBHandlerTimeout` no shorter than the claim lease (a handler
+    inside its budget was re-claimed and run twice); webhook `New` raises
+    a `LeasePeriod` no longer than the HTTP client timeout to twice that
+    timeout (a second Manager re-sent a slow delivery); a `RequestTimeout`
+    raised past the write deadline raises an unset `WriteTimeout`, and an
+    explicit conflicting pair fails `Start` (slow buffered responses were
+    lost at the write deadline).
+  - admin: the Audit log and dashboard activity no longer print the
+    title or changed values of a record a `BeforeGet`/`BeforeList` hook
+    hides from the admin; they show its id only.
+  - Browser: a Date field in localentity keeps years 0–99;
+    `data-cui-submit-on-enter` and the tag field ignore Safari's
+    IME-confirming Enter (keyCode 229); Tree and Lightbox arrows swap in
+    right-to-left.
+- **MCP `initialize` negotiates the protocol version.** It answered
+  `2025-06-18` whatever the client asked for. Per the 2025-06-18
+  Lifecycle spec it now echoes a requested version the server supports
+  (`2025-06-18`, `2025-03-26`) and otherwise answers the newest.
+  `mcp.LatestProtocolVersion` and `mcp.SupportedProtocolVersions()` are
+  new exports.
+- **The MCP notification stream's `endpoint` event names its mount
+  path.** `ServeSSE(path)` opened every GET stream with
+  `event: endpoint` / `data: /sse` whatever `path` was, so a client that
+  follows the event posted to a path nothing serves (the framework
+  mounts `/mcp`). It now carries `path`.
+- **MCP `tools/call` always answers a `content` array.** A handler
+  returning a nil `[]mcp.Content`, or an `mcp.ToolResult` flagging
+  `IsError` with no blocks, put `"content": null` on the wire; the MCP
+  schema requires an array and validating clients rejected the reply.
+  It is now `[]`. `prompts/get` likewise answers `"messages": []` for a
+  prompt handler that returns no messages.
+- **A2A: a panicking `Store` or push client no longer crashes the
+  process.** A run's finalize (the store read and write after the
+  handler returns, the publish, the retention trim) and each push
+  delivery through `PushOptions.Client` ran on the server's own
+  goroutines with no recover, so one panic there took down every
+  owner's runs and streams. The run now ends with an
+  `a2a: run finalize panicked` log line and is released; the delivery
+  fails with `a2a: push delivery panicked` and the drain carries on.
+- **An MCP response that cannot encode is still answered.** The MCP
+  transports dropped the JSON encode error, so a result holding a NaN
+  where the dispatch does not marshal it first (a content block's or a
+  prompt message's `_meta`) answered HTTP with an empty 200 body, an SSE
+  event with empty data, and stdio with no line at all, leaving the
+  client waiting forever. Every transport now answers an internal error
+  carrying the request's id and logs the encode error.
+- **An MCP gate's own `*RPCError` keeps its code on every gate.**
+  `WithToolGate` and the server-wide gate (`SetGate`, and
+  `CallToolFor`'s run of it) wrapped a gate's `*RPCError` in a second
+  invalid-params error reading `RPC error -32001: ...`, while `Gated`,
+  `WithResourceGate` and `WithPromptGate` passed it through. All five now
+  pass it through.
+- **MCP `resources/unsubscribe` releases only the caller's own
+  subscription.** The per-`uri` count was shared by every caller, so
+  any caller past the server gate could unsubscribe a `uri` it never
+  subscribed to and switch `notifications/resources/updated` off for
+  everyone who had. Each subscribe is now recorded under its caller
+  (the resolved user, else the TCP peer's host); delivery is unchanged.
+  That record is capped at 4096 caller/`uri` subscriptions across all
+  callers, beside the existing 1024 distinct uris: an anonymous caller
+  is its peer host, so without the cap a client with many addresses
+  grew it without end. A subscribe that would add one past the cap
+  fails.
+- **An idle MCP notification stream re-checks its caller.** The GET
+  stream `ServeSSE` holds re-checked the caller only before a
+  notification, and notifications are rare, so a revoked session's
+  stream kept its seat, goroutine and buffer for as long as the server
+  stayed quiet, and a half-open connection was never written to and
+  never freed. The stream now re-checks the caller every 15 seconds and
+  writes an SSE comment line (`: keep-alive`) that clients ignore.
+- **A queued admin bulk run over a CRUD-off entity finishes.** The admin
+  bound `Config.BulkJobs` to `Config.UI`, which sees no write routes for
+  a named entity with CRUD off, so every run the admin's bulk route
+  queued over one stopped before its first record. The bound UI now
+  counts the admin's routes for the entities it exposes and the app's
+  for the rest. New `entityui.UI.WritePath(e)` reports a UI's write
+  base.
+- **`gofastr upgrade` scans files that import `"C"`.** The go command
+  compiles cgo's rewrite of such a file from the build cache, so the
+  imports, fields and strings matchers dropped every hit in it and the
+  report called it "not compiled"; under `CGO_ENABLED=0` no load
+  reached it at all. Hits now land on the file as written, and a
+  cgo-off scan loads it with cgo on. Only cgo's copy is renamed back:
+  a goyacc-style file whose `//line` directive names its `.y` grammar
+  keeps its own name and its hits.
+- **`gofastr upgrade` lists a `gofastr.yml` it could not parse.** The
+  config matchers skipped the file silently, so every `config:` note
+  read "Nothing found" over a spec nobody had read. It now sits in the
+  report's "could not be scanned" NOTE with the parse error.
+- **`gofastr upgrade` handles vendored apps and release candidates.**
+  `--apply` runs `go mod vendor` after `go mod tidy` when the app has
+  `vendor/modules.txt`; its `go build` used to fail on inconsistent
+  vendoring. Resolving the newest release without `--to` no longer
+  fails inside a vendored module ("offline?") and picks the newest
+  release over a newer prerelease, the way `go get …@latest` does. A
+  prerelease `--to v0.96.0-rc.1` shows v0.96.0's notes instead of none,
+  and `--to v0.95.0+meta` on a v0.95.0 app is the same release, not a
+  downgrade.
+- **`gofastr upgrade` stops telling a ported app to edit correct lines.**
+  Thirteen `hits: edit` notes named a symbol that survives its release
+  with a new shape (`app.ScreenLLMMD`, `pagination.NewCursorPage`,
+  `admin.AuthPrincipal`, `ui.WorkbenchConfig.RailWidth` and ten more),
+  so every ported call stayed under "Edit these". They now name the old
+  shape under `shapes`, a value condition, only the removed member
+  (`crud.EventOutbox.Append`, not the interface), or `hits: review`
+  (`semantic.NewPgVector`, whose signature did not change). The v0.66.0
+  queue note never found a `MemoryQueue.Nack` call: its regex spelled
+  the first parameter `_` where v0.65.0 named it `ctx`. Two registry
+  gates in `evals/upgrade-fixtures` now refuse both shapes of mistake
+  (`TestRegistryShapesMatchTheirRelease`, and the edit arm of
+  `TestRegistrySymbolsExistedAtPriorTag`).
+- **Cron jobs run once across a daylight-saving change.** The in-process
+  `framework.Scheduler` and `battery/queue`'s in-memory `Scheduler`
+  matched each tick's wall clock with no DST handling: on a fall-back
+  night `"30 1 * * *"` ran at both 01:30s, and leader election did not
+  stop it (the tick claim is per UTC minute); on a spring-forward day
+  `"30 2 * * *"` did not run at all. Both now follow vixie cron, as the
+  durable scheduler already did: a fixed-time job runs once in a repeated
+  hour and once right after a skipped one, and a job with a wildcard
+  minute or hour keeps real elapsed time. The rule is the new
+  `cron.Schedule.FiresAt`, which all three schedulers share. Hosts in UTC
+  see no change.
+- **A DBQueue built `WithTable` is exported and erased.** The queue
+  registered only the default `queue_jobs` table, so a queue on
+  `billing_jobs` sat outside `App.ExportData` and `App.EraseUserData`: an
+  erasure left that user's jobs, payloads included. `NewDBQueue` now
+  registers its own table under `datexport.ScopedName("queue_jobs",
+  table)`, as the outbox and the durable scheduler do. A host that
+  registered the renamed table by hand can drop that registration, or
+  the table is exported twice.
+- **A DBQueue job claimed as shutdown lands is handed back unstarted.**
+  The worker ran its handler on the already-cancelled context, the
+  handler failed at once, and the job spent an attempt on a run that
+  never happened; a `MaxAttempts: 1` job was dead-lettered. The worker
+  now returns it to pending with the attempt refunded, as the outbox
+  relay does with the rest of a batch.
+- **A DBQueue that cannot claim jobs says so.** The worker loop read every
+  claim error as an empty queue, so a lost database, a renamed table or a
+  row the claim cannot decode stopped every job with no log line. The
+  onset is now logged once at ERROR and the recovery once at INFO, as the
+  outbox relay already did.
+- **The outbox no longer drops an event for a consumer whose delivery
+  was not created yet.** Each consumer's deliveries are expanded in their
+  own batch, so with two relays, or a backlog older than the handler
+  grace (any outage past 15 minutes), a parent could hold consumer `a`'s
+  delivery and not yet `b`'s. Dispatching `a` completed the parent, and
+  expansion only visits pending parents, so `b` never received the event
+  and no dead letter recorded it: two relays over a 300-event backlog
+  lost up to five of 600 deliveries. A parent now completes only once
+  every consumer the relay declares for its type has a delivery.
+- **`queue.WithHandlerTimeout(0)` keeps the MemoryQueue's 30s budget.** A
+  zero budget failed every job the moment it started ("exceeded its 0s
+  budget"), retried it and dead-lettered it, though its handler may have
+  run each time. `WithDBHandlerTimeout(0)` means no timeout, so the same
+  value meant opposite things on the two queues.
+- **A skipped durable schedule no longer spins `DurableScheduler.Start`.**
+  A schedule the pass skips (a corrupted row, a stored interval under the
+  floor, a cron spec that no longer parses) keeps its past `next_run`,
+  and the loop woke for it every 10ms: a hundred passes a second, each
+  writing the lease row and logging the skip at ERROR. It now waits for
+  the next schedule that is not yet due, or the heartbeat.
+- **A DBQueue job dead-lettered by lease expiry says so.** The sweep that
+  fails a final-attempt claim whose worker died wrote only the status: the
+  job listed with its claim's `updated_at` and an earlier attempt's
+  `last_error`, or none. It now records the sweep time and a `last_error`
+  naming the lease expiry.
+- **An erasure drops the job a `MemoryQueue` worker is running.** A job a
+  `Start` worker had taken off the heap sat in no store the erasure read,
+  so it was not counted, and when its handler failed the worker put the
+  user's payload back on the heap or the dead list after an erasure that
+  had reported success. The erasure now counts it, and the worker drops
+  it when the handler returns, as a `DBQueue` or `RedisQueue` settle
+  already did.
+- **A gated DBQueue job survives a shutdown during its hand-back.** A
+  worker that claimed a job and then found its type gated released it on
+  the worker's context; a shutdown at that moment left the row claimed
+  with an attempt spent, and on a last attempt the dead-letter sweep
+  failed a job that never ran. The release now settles on a detached
+  context, as Ack and Nack do.
+- **Outbox options keep their defaults for zero or less.**
+  `outbox.WithPollInterval(0)` crashed the process when the relay
+  started (`time.NewTicker` panics on its goroutine); `WithBatchSize(0)`
+  delivered nothing, and a negative size was unlimited on SQLite but an
+  error on every Postgres pump; `WithMaxAttempts(0)` dead-lettered a
+  delivery on its first failure.
+- **`queue.WithLeaseTimeout(0)` keeps the five-minute lease.** A zero or
+  negative lease made every claim count as abandoned the moment it was
+  written: the next poll ran a live job a second time, and on a job's
+  last attempt the dead-letter sweep failed it while it was still
+  running. `WithLeaseTimeout` and `SetLeaseTimeout` now ignore
+  `d <= 0`, as the durable scheduler's `LeaseDuration` already did, and
+  so does `RedisQueue.SetVisibilityTimeout`, whose zero window made
+  `Reclaim` re-deliver a job its worker had just claimed.
+- **The in-memory `queue.Scheduler` refuses an interval below one
+  millisecond.** `Every(5)` (five nanoseconds) made the scheduler's
+  timer loop enqueue a job per iteration, over 12,000 in 20ms. `Register`
+  now returns an error for a negative interval or a positive one under
+  1ms, the floor `DurableScheduler` already had; `Every(0)` still
+  registers.
+- **An outbox handler budget longer than the claim lease no longer runs
+  twice.** The relay's lease is a fixed five minutes, but
+  `outbox.WithHandlerTimeout` took any budget: a handler allowed ten
+  minutes was re-claimed by another relay at minute five and ran
+  concurrently, and its own success was then fenced out. The lease is
+  now twice the handler budget plus the settle window when that is
+  longer than five minutes.
+- **Docs search excerpts hold the match in whole characters.**
+  `framework_docs_search` and `gofastr docs --grep` cut a long line at
+  byte offsets, splitting an em dash or accented letter, and located the
+  match in the lowercased line, which is longer or shorter than the line
+  itself when it holds a character such as `İ`, so the excerpt could miss
+  the match.
+- **`gofastr pack` prints no terminal escapes.** A string from the app's
+  source with an ESC, a C1 control, a bidi override or a zero-width
+  space went into the YAML bare, so `gofastr pack` in a cloned repo
+  could drive the terminal (an OSC 52 sequence writes the clipboard).
+  Such a value is now double-quoted with the character escaped and reads
+  back unchanged; a map key holding one is refused, and the check's
+  notes percent-encode them in file names.
+- **`gofastr agents` writes only inside the project.** `agents skill`,
+  `agents init`, `agents sync` and `init --reinit` followed a symlink
+  anywhere: a cloned repo carrying
+  `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc` had `agents skill`
+  overwrite `~/.bashrc` with the skill, and a `.agents` link sent the
+  detail files to another directory; `init --reinit --force` did the same
+  to a linked `AGENTS.md` or `CLAUDE.md`, and created a dangling
+  `DESIGN.md` link's target. Writes now go through an `os.Root` on the
+  project; a link inside it is still followed, one out of it is refused.
+- **The onboarding writers follow an in-project link the way the kernel
+  does, and respect the umask.** A relative link target was resolved
+  against the link's lexical directory, so with `docs -> real/sub`,
+  `docs/AGENTS.md -> ../target.md` read and replaced `target.md` at the
+  project root instead of `real/target.md`. A new file was forced to
+  0644 whatever the umask said; it is now created the way `os.WriteFile`
+  creates one.
+- **`gofastr init .`, `new handler` and `theme init|edit` write only
+  inside the project.** The plain `init .` path still wrote through
+  links: a cloned repo with `.gitignore -> ~/.bashrc` had `gen/`, `.env`
+  and the rest appended to `~/.bashrc`, a `static/` or `migrations/` link
+  took the `.gitkeep` elsewhere, a dangling `go.mod` link had `go mod
+  init` create its target, and with `--force` `main.go`, `screens.go`,
+  the onboarding files, `.env` (with a fresh `JWT_SECRET`) and
+  `gofastr.settings.yml` were written over the link targets. `new
+  handler --overwrite` did the same to a linked `<name>_handler.go`, and
+  `theme init` / the theme editor's Write to a linked `theme/` or
+  `theme.go`. All of them now read and write through an `os.Root` on the
+  project; a link inside it is still followed. A linked `static/`,
+  `entities/` or `migrations/` is refused before any file is written.
+  `init .` also refuses a `go.mod` or `.git` linked out of the project
+  before writing anything, since `go mod edit` rewrote the file the link
+  named and `git init` reinitialised the repository a linked `.git`
+  named. `theme init --out` and `theme edit --out` treat an absolute path
+  under the working directory (`$PWD/theme/theme.go`) as a path inside
+  the project, and `theme edit` refuses a linked destination at startup.
+- **A slow module answer no longer kills the module.** A `moduleproto`
+  peer remembered the last 1,024 calls it gave up on, answered or not,
+  so 1,024 timed-out calls answered in time pushed out a slow call still
+  owed, and its answer faulted the peer as unsolicited; the supervisor
+  then killed the module and every request in flight. The window now
+  counts only ids still owed an answer.
+- **`log_filter historical=true` skips a log line past 1 MiB.** The
+  file tail used `bufio.Scanner`, which stops the scan on such a line,
+  and the error was swallowed, so the historical read returned nothing
+  while one large entry sat in its window. The line is now skipped.
+- **The cache keeps large integers exact under an interface.**
+  `MemoryCache`, `RedisCache` and `GetOrSet` decoded with
+  `json.Unmarshal`, so a value read into `map[string]any` or `*any` had
+  every number as float64 and a cached id `9007199254740993` came back
+  as `9007199254740992`. A number whose magnitude is 2^53 or more now
+  reads back as a `json.Number`, even one a float64 holds exactly
+  (`1e20`, a `UnixNano` timestamp); every smaller number is still a
+  float64.
+- **`cache.GetOrSet` returns a loaded value whose entry was already
+  evicted.** Every waiter read its value back from the cache after the
+  fill, so an entry an LRU bound or Redis `maxmemory` evicted (or a short
+  TTL expired) in between made a successful load return `ErrCacheMiss`.
+  The waiters now get the loader's value; a negative `ttl` still
+  surfaces the miss.
+- **`check-embed` reads a template literal's `${…}` as code.** It skipped
+  the whole template as a string, so a ClientJS like
+  ``G.toast(`saved ${G.serverAction("save")}`)``, which the action
+  compiler rewrites into a live server action, passed `gofastr build`'s
+  gate and was refused only at boot.
+- **`static.Mount` works under a prefix.** It registered both
+  `/static/` and `/static/{path...}`, which the router reads as one
+  pattern, so `Mount` with any `Prefix` but the root panicked at boot
+  with a route conflict (the spelling `porting.md` shows). A trailing
+  slash (`/static/`) is now accepted too. The handler also strips
+  `Prefix` on a segment boundary only: `/staticsecret.txt` served
+  `secret.txt`. A path holding a NUL byte (`/a%00b`) answers 404 (or
+  the SPA index) instead of 500.
+- **`static.Builder.Watch` no longer rebuilds forever.** It polled
+  every file under the watched dirs, `OutDir` included when it sat under
+  one (watch `.`, write `./dist`), and every rebuild rewrites the
+  export, so one source edit started a loop that never settled. `OutDir`
+  is left out of the poll.
+- **The SPA fallback is `no-cache`.** `core/static` answered a URL that
+  names no file with the index under `Config.MaxAge`, so a long
+  `MaxAge` meant for fingerprinted assets stored the app shell, as
+  `text/html`, under a client route or under a new asset's name that a
+  newer replica linked mid-deploy, for that long. The fallback now
+  revalidates every time (its ETag makes that a 304); files that exist
+  keep `MaxAge`.
+- **The analyzer wiring test checks every analyzer, not every
+  package.** `TestEveryAnalyzerIsWiredOrExplained` read one variable
+  named `Analyzer` in `<pkg>/<pkg>.go` and counted any mention of the
+  package name in a `suite.go` comment as the reason it was held back.
+  So `hygiene` (whose two analyzers are not named `Analyzer`) was
+  skipped, `unseated`'s two arms in `arms.go` were never looked at, and
+  `rawtext` was "explained" by the comment above its own registration.
+  Deleting those four registrations, with their marker names, passed
+  every test while `make analyze` and CI stopped running them. The test
+  now reads every exported `&analysis.Analyzer{}` in every file of each
+  package, and only a `<name> — <reason>` line holds one back.
+- **An analyzer marker needs a reason in words.**
+  `//gofastr:allow(<analyzer>) --` silenced the vettool and the
+  `core-ui/check` lints while `gofastr verify` reported the same marker as
+  having no reason. Separator punctuation alone (`--`, `—`, `:`) no
+  longer counts as a reason anywhere.
+- **An analyzer change selects the generated-code vet gates.** The gates
+  that vet emitted code with the repo vettool (`TestUnionApp`, the
+  generated-CLI and styles gates in `appgen` and `generatecmd`) build
+  `./cmd/vettool` in a subprocess, which no import edge shows, so
+  `cmd/affected` never selected them for a change under
+  `internal/analyzers/`: a widened rule that fired on emitted code passed
+  the pull request and failed main. Each now declares
+  `//gofastr:test-reads internal/analyzers/ cmd/vettool/`, and
+  `TestRepoVettoolCallersDeclareTheirReads` holds every future caller of
+  `clitest.RepoVettool` to the same directive.
+- **`core-ui/check.LintNumberFill` reads every spelling of the `{{n}}`
+  pattern.** It matched only a quoted `'{{n}}'` and a regex with escaped
+  braces, so `.replace(` + "`{{n}}`" + `, String(n))` (a template
+  literal) and `.replace(/{{n}}/g, String(n))` (unescaped braces, the
+  same regex to JavaScript) filled the count with ASCII digits unseen.
+- **`core-ui/check.LintRuntimeProse` reads every reader-facing sink.**
+  `alert` / `confirm` / `prompt`, a literal passed to `append`,
+  `prepend`, `replaceChildren`, `before`, `after` or `replaceWith`
+  (each makes a text node), `nodeValue`, and the ARIA text attributes
+  and properties beyond `aria-label` (`aria-valuetext`,
+  `aria-roledescription`, `aria-placeholder`, `ariaDescription`, …)
+  all put English in front of a reader with the lint silent. An
+  `append(name, value)` whose first literal is a bare field name
+  (`Headers`, `FormData`, `URLSearchParams`) adds no text node and stays
+  quiet. The shipped JavaScript stays clean under the wider rule.
+- **`AppConfig.JSONCase: crud.CaseSnake` reaches the entity routes
+  again.** Since v0.94.0 every `App.Entity`, `App.GroupEntity` and
+  `App.View` route answered camelCase keys in a snake_case app: the
+  handler built its wire keys before the app set the case. They are
+  snake_case again, as `entity-declarations.md` says; clients written
+  against the camelCase keys need the column names back. A handler whose
+  `JSONCase` field is assigned after `NewCrudHandler` (generated typed
+  handlers do this) rekeys on its next request.
+- **`/openapi.json` names a snake_case app's fields by their column
+  names.** It camelCased every property, required entry and record-key
+  path parameter whatever `AppConfig.JSONCase` said. The new
+  `openapi.EntityOpenAPIFor(registry, openapi.Options{…, JSONCase})`
+  takes the case; `EntityOpenAPI` and `EntityOpenAPIWithBulk` keep
+  camelCase.
+- **kiln's live studio documents the routes it serves.** Its
+  `/openapi.json` and API browser camelCased every field and left out
+  the `api_prefix`, so a `json_case: snake` world's document named keys
+  and paths its routes do not answer. It now serves the new
+  `App.OpenAPISpec(title)`, the document `App.Start` serves, built from
+  the app's `APIPrefix`, `JSONCase` and mounted routes.
+- **`/openapi.json` names no relation behind a Hidden field.** The
+  `?include=` read view published a Hidden relation field (or a
+  `belongs_to` whose foreign key is Hidden) as a property under its wire
+  key, and the `include` parameter listed it among the relations.
+- **`/openapi.json` types a relation field by the key it names.** Every
+  relation was a `uuid` string, so a column pointing at an AutoIncrement
+  table, which the route answers as a JSON number, failed a strict
+  client on every row. A foreign key to an `int` key is an `integer`
+  property and filter now, as crud stores, answers and parses it; a key
+  to a text slug or other non-uuid key takes that key's type and drops
+  the `uuid` format no value of it met.
+- **`/openapi.json` lists the refusals the routes answer, and the
+  entity's page size.** The CRUD writes gain 409 (a unique value or a
+  client-supplied key taken, a missing or still-referencing record), 413
+  and 415; a declared endpoint gains its gate's 401 and its cross-site
+  403, typed by the shared `Error` schema (one envelope since #652). The
+  SDK docs' errors page names 409 and 415. The `limit`
+  parameter said "default 20, max 100" whatever `Pagination.MaxListLimit`
+  set, and `llm.md` said default 20 under a smaller cap; both now state
+  the numbers the list applies (new `crud.ListLimits`).
+- **`gofastr generate cli --from-openapi` keeps spec bytes off the
+  terminal.** A binary body's content type reached the generated
+  `--file` help raw, so a spec could write ESC or C1 sequences to
+  whoever ran `<cli> <op> --help`; it must now be a media type with no
+  control byte. A refused spec's error encodes control bytes instead of
+  printing them, and `--dry-run --json` errors are valid JSON (they were
+  spelled with Go's `%q`, whose `\x1b` no JSON parser reads).
+- **The generated Go and JS clients bound their SSE feed.** `Watch` /
+  `watch` joined an event's `data:` lines until a blank line, and the JS
+  client buffered a line until a newline, with no limit, so a feed that
+  never ended one grew the subscriber's heap. Both now stop at the
+  1 MiB body cap, counted in UTF-8 bytes, with an error. Regenerate the SDK or client
+  (`gofastr build`) to pick it up.
 - **battery/auth bug bash (2026-11-01).** Details in
   [auth.md](framework/docs/content/auth.md):
   - **BREAKING: token management needs the second factor.** On a 2FA
@@ -4910,8 +6030,340 @@ few lines, and link the PR or the docs page for the rest.
   errors. Every shell now refuses an extension containing `;` and a
   default name containing `\`. On Windows a `*` extension matches
   everything, and so does a filter with no extensions.
+- **BREAKING: `gofastr migrate` and `gofastr validate` refuse extra
+  arguments.** `migrate up 3` applied every pending migration, `migrate
+  status x` and `migrate generate a b` dropped the extras, and `validate
+  a.yml b.yml` checked only `a.yml`. Each is now a usage error, exit 2,
+  before anything opens. `migrate` with a `postgres://` or
+  `postgresql://` database URL and no `--db` uses the Postgres driver
+  instead of failing with a SQLite error. See `migrations.md`.
+
+- **BREAKING: two indexes that share a name are refused.** Index names
+  belong to the schema on both engines and every index is created with
+  `IF NOT EXISTS`, so the second table's index was skipped and a
+  `Unique` one let that table take duplicates. A default name collides
+  too (table `a_b` on `c` and table `a` on `b_c` are both `idx_a_b_c`).
+  Boot, `DiffSchema` and `migrate generate` now name both tables; give
+  one index its own `Name`.
+- **A `String` whose `Max` changed migrates on Postgres.** Neither
+  `DiffSchema` nor `migrate generate` compared the `VARCHAR` width, so
+  a `Max` raised from 50 to 200 left `VARCHAR(50)` in place, validation
+  passed a 150-character value and the insert failed. Both now emit
+  `ALTER COLUMN … TYPE VARCHAR(n)` (a destructive change, like every
+  retype); the live Postgres column read carries the width. SQLite
+  ignores widths and is unchanged.
+- **`tenant.WithMultiTenant` adds the tenant column.** It runs after
+  `entity.Define`, which is where a multi-tenant entity's column is
+  injected, so it set `MultiTenant` and `TenantField` on an entity with
+  no such field: auto-migrate created no tenant column and the first
+  create failed on the column CRUD writes. It now adds the column, and
+  renames the `tenant_id` that `Define` injected to a custom `Field`.
+- **BREAKING: a misspelled `-- +migrate` directive is refused.** The
+  parser skipped a directive it did not know and kept the section above
+  it open, so `-- +migrate down` under `Up` put the Down statements into
+  `Up`: the rollback ran as part of the apply (a `DELETE` or `DROP` with
+  it) and the version was recorded applied. An unknown directive, and a
+  comment that reads as one with its spacing or case off
+  (`--+migrate Down`, `-- +Migrate Down`), now fail the parse; so does a
+  prose comment such as `-- +migrated from v1`. `migrate generate`
+  refuses a SQL body holding any such line through the parser's own
+  test, the new `migrate.IsDirectiveLine` (`core/migrate`), so it no
+  longer writes a file the runner refuses to load.
+- **Tables and columns named past 63 bytes migrate on Postgres.**
+  Postgres cuts such a name to 63 bytes and the catalog holds the cut
+  one, which the migrator compared with the whole name. A long table
+  read as absent on every boot and never gained a column; a long column
+  read as missing, so the next boot with a column to add failed on a
+  duplicate `ADD COLUMN`, `DiffSchema` proposed dropping it, and a long
+  key column read as a key change. A foreign key onto a long table, or on
+  a long column on either side, diffed as a destructive drop plus an add
+  on every run. The catalog is now read by the cut name.
+- **BREAKING: `migrate generate` refuses a SQLite rebuild of a table
+  another table references.** SQLite empties a table before dropping it,
+  and with foreign keys on, a child row still pointing at it fails the
+  `DROP`. The generated file applied on a database whose child was empty
+  and failed with `FOREIGN KEY constraint failed` wherever it held rows.
+  It was refused only for `CASCADE` and `SET NULL` keys; every key the
+  snapshot records now counts. Write the rebuild by hand, or apply it with
+  `ApplySchemaDiffWithOptions`.
+- **A Postgres view whose columns changed boots.** Boot applies a plain
+  view with `CREATE OR REPLACE VIEW`, which refuses a body that drops,
+  renames or retypes a column, so such a view failed every boot from
+  then on while SQLite booted. Boot now drops the view, and the plan's
+  views that read it, and creates them again when Postgres refuses the
+  replace. A view outside the plan that reads it still stops the boot.
+- **A failed unlock no longer leaves the Postgres migration lock held.**
+  The unlock's error was dropped and the connection went back to the
+  pool still holding the session lock, so after a `NoTransaction`
+  migration failed inside its own `BEGIN` (an aborted session refuses
+  the unlock) every other replica waited on the lock for the life of
+  the process. Such a connection is now retired, which ends its session
+  and releases the lock. `cron.NewPostgresAdvisoryLease` had the same
+  release and gets the same fix: a failed unlock no longer keeps every
+  other replica from leading.
+- **Keyword table, column and index names migrate.** The migrator wrote
+  every name bare, so a field named `order`,
+  `group` or `limit` failed `CREATE TABLE` on both engines, and one
+  named `user`, `end`, `desc`, `to`, `offset` or `do` booted on SQLite
+  and failed on Postgres. A name that is a keyword on either engine is
+  now written quoted and folded (`"order"`) in every statement the
+  migrator writes, and the recorded DDL a snapshot holds is read back
+  either way. Other names stay bare, so existing DDL and snapshots are
+  byte-identical, and a snapshot that holds a keyword name bare diffs
+  as unchanged.
+- **CRUD quotes keyword column and table names.** The migrator created a
+  column named `order`, `group`, `user`, `end`, `desc` or `limit`, but
+  every CRUD statement named it bare, so the first insert failed
+  (`near "order": syntax error` on both engines, `user`, `end`, `desc`
+  and the rest on Postgres), and on Postgres a bare `user` in an owner
+  scope read the session user, so an entity with `OwnerField: "user"`
+  found none of its rows. The keyword set moved to `core/query`
+  (`query.IsKeyword`, `query.QuoteKeyword`, `query.QuoteKeywords`), the
+  migrator reads it there, and every statement the framework writes
+  quotes a keyword name with it the way the DDL does: the builders'
+  table and column slots (`Insert`, `Update`, `Delete`, `Count`,
+  `Select`, `Returning`, `Order`, `Cursor`, `Join`'s table), the CRUD
+  key, owner, tenant and state conditions, filters, sorts, `?where=`,
+  `?q=` search, keyset cursors, upserts (columns, `ON CONFLICT` target,
+  `EXCLUDED` sets), includes and nested filters across a relation keyed
+  on a keyword column, belongs-to and many-to-many reference checks,
+  the typed query columns (`entity.StringColumn` and the rest) and the
+  query DSL. Names that are not keywords are written bare as before, so
+  the SQL of a schema without them is byte-identical. See
+  [query DSL](framework/docs/content/query-dsl.md) and
+  [entity declarations](framework/docs/content/entity-declarations.md#column-naming).
 
 ### Security
+- **The harness's repository-key prompt can no longer be overwritten.**
+  `gofastr harness` printed the key names, the file path and the
+  directory from a cloned repo's `.harness-secrets/env` raw in the
+  prompt that asks before using the author's provider keys. A key
+  named `ESC[2K CR ESC]52;…ZAI_API_KEY` passed the `_API_KEY` check,
+  erased the warning and wrote the operator's clipboard before they
+  answered. A file with a key that is not an environment variable name
+  (`^[A-Z][A-Z0-9_]*$`) is now refused whole before anything is asked,
+  `--allow-repo-secrets` included, and every value in the prompt, the
+  refusal and the error line is scrubbed.
+- **No gofastr CLI output carries a repo's terminal escapes.** The
+  status helpers already scrubbed their arguments; ~170 other prints
+  (lists of written files, next steps, `--json` output, stderr errors,
+  `theme init` and `theme edit` refusals, `gofastr test` lines, `docs
+  --grep` excerpts, the a11y and `.ui.go` sandbox gate reports `build`
+  and `dev` print) went through a raw `fmt.Printf`. They now use
+  `cli.Printf`, `Print`, `Println`, `Fprintf` and `Fprintln`, which
+  scrub every argument, and `TestNoRawRepoTextReachesTheTerminal` fails
+  on a raw fmt print to stdout or stderr whose arguments are neither
+  constants nor scrubbed. `cli.ScrubTerminalOutput` also drops bytes
+  that are not valid UTF-8 (a bare 0x9b is CSI to a terminal not in
+  UTF-8 mode), and a projectfs refusal quotes the link it names, so a
+  directory name taken from a link's target cannot reach the terminal
+  raw through the error.
+- **`core/textsafe` treats Unicode tag characters and Hangul fillers as
+  invisible.** Tag characters (U+E0000–U+E007F) spell ASCII nobody sees,
+  the way instructions are hidden in a prompt, and a Hangul filler
+  (U+115F, U+1160, U+3164, U+FFA0) draws a blank that passes for an
+  empty name. Every strip and gate built on textsafe now removes or
+  refuses them: `auth.CleanName` refuses them in a display name and
+  `auth.CanonicalEmail` strips them. The string helpers keep a
+  subdivision flag (Scotland's black flag and tag letters) whole. See
+  [core packages](framework/docs/content/core-packages.md#textsafe).
+- **Web Bot Auth caps a signature's validity window at 5 minutes.** A
+  signature was accepted until its own `expires`, however far out, so a
+  captured one replayed for as long as the signer chose. One whose
+  `expires - created` exceeds the cap is now invalid. Raise it with
+  `WebBotAuthVerifyConfig.MaxValidity` or `webbotauth.WithMaxValidity`.
+  See [Web Bot Auth](framework/docs/content/web-bot-auth.md#what-a-signature-must-satisfy).
+- **BREAKING: `battery/relay` relays script, style, image, font, JSON
+  and `text/plain` only.** A relayed response answers on the app's
+  origin, so a vendor HTML page echoing the query string was reflected
+  XSS. Any other type is now a `502`; a route serving a vendor iframe
+  page opts in with `Route.ContentTypes: []string{"text/html"}`. SVG
+  passes under `Content-Security-Policy: sandbox`, and a body with no
+  `Content-Type` goes out as `application/octet-stream`. A response
+  that forwards no body (a `204` or `304`, an empty `200`, chunked or
+  `Content-Length: 0`) passes whatever its type, so a vendor beacon
+  answering `204` under `text/html` is not turned into a `502`. See
+  [relay](framework/docs/content/relay.md#threat-model).
+- **`core/static` contains a root directory created after the handler.**
+  The symlink containment binds the `os.DirFS` root when `Handler` is
+  built. A directory that did not exist yet (a build step or a watcher
+  that creates it after the server starts) bound nothing, and every
+  later request opened through the bare `os.DirFS`, which follows a
+  symlink anywhere on disk. An unbound root is now retried on each
+  request until it binds. See [core packages](framework/docs/content/core-packages.md#static).
+- **`core/static` refuses dotfiles and config files under their Windows
+  spellings.** On Windows every disk-backed request opens through
+  `*os.Root`, which reads `\` as a separator and drops trailing dots,
+  spaces and an `::$DATA` suffix, while the refusals split the path on
+  `/` alone. `GET /assets%5C..%5C.env` served `.env`, and
+  `/web.config.` served `web.config`. The handler and `static.Refuses`
+  (the UI host's static dir and the static export) now judge the name
+  Windows opens, on every OS: a backslash separates segments, so on
+  Linux too a name like `a\.env` or `x\web.config` is refused, while
+  `a\b.txt` is still served. See [core packages](framework/docs/content/core-packages.md#static).
+- **A harness "Allow always" rule covers the working directory it was
+  granted in.** The rule file is one per user and an argv summary leaves
+  the working directory implicit, so approving `go test ./...` forever in
+  your own repo also ran `go test ./...`, and with it a cloned repo's
+  test code, in every other checkout with no prompt; `Grep:TODO` saved in
+  one checkout covered all of them. A persistent rule now records
+  `Rule.Dir` (`permission.Engine.WorkingDir`, the process working
+  directory) and applies only there. Rules saved earlier name no
+  directory and prompt once more. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **The harness session log redacts the credstore's key material and
+  secrets passed in a Bash call's `env`.** The `NAME=value` pattern
+  knew `_API_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` and `_ACCESS_KEY`,
+  so `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY`
+  (which every Bash child inherits, and a quiet-mode
+  `cat /proc/self/environ` prints with no prompt) were stored, and
+  exported, verbatim. And the patterns ran on each JSON string apart, so
+  `"env": {"ZAI_API_KEY": "<v>"}` in a `ToolCallStarted` never matched.
+  Both names now count, and a JSON member whose name is a secret name
+  loses its value (`sqlite.MemberRedactor`, which `DefaultRedactor`
+  implements). Events already stored keep what they had. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **BREAKING: `apiversions.ApplyToEntityConfig` panics on a projection
+  naming an undeclared field.** An `Exclude` entry that matched no field (a typo,
+  or the column's camelCase wire key instead of its field name) was
+  ignored, so the column a version meant to hide stayed on its wire
+  output. A name in `Include`, `Exclude` or a `Rename` key that the base
+  config does not declare, and that `entity.Define` does not inject
+  either, now panics at startup, like `Version` does on a bad prefix.
+  The columns `Define` injects (`id`, the timestamps, the scope columns)
+  count as declared, so `Include: {"id", "title"}` works as it did, and
+  `Exclude` and `Rename` reach an injected column: `Exclude:
+  {"updated_at"}` hides it, where it used to do nothing, so a version
+  that listed it now drops the column from its responses.
+  `EntityConfig.WithSystemFields` returns a
+  config with those columns already in `Fields`. See
+  [API versioning](framework/docs/content/api-versioning.md).
+- **The harness `Read` and `Edit` tools refuse a path that is not a
+  regular file.** `Grep` already skipped FIFOs and devices; `Read` opened
+  any path, and opening a FIFO blocks until a writer appears with no
+  regard for the turn's context. A quiet-mode `Read` of one (no prompt)
+  wedged the turn past `CancelTurn`, and the session with it; `/dev/tty`
+  never ends, and `Edit` read `/dev/zero` without bound. Both now refuse
+  a FIFO, device, socket, directory or symlink to one with an error
+  result. See [harness architecture](framework/docs/content/harness-architecture.md).
+- **The `gofastr harness` chat page refuses to be framed.** It holds a
+  24 h human-class token and the permission modal, and it sent no
+  framing policy, so a page on any site could load it in an iframe and
+  overlay its own content to steer the operator's click onto "Allow for
+  session". It now sends `X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'`. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **`gofastr harness` no longer loads its built-in profile from the
+  working directory.** It preferred a
+  `framework/experimental/harness/profile/<name>.toml` relative to the
+  working directory over the copy in the binary, so a cloned repo
+  carrying that path replaced the trusted profile: its `prompt_header`
+  became the system prompt outside the untrusted-content tags, and its
+  `default_model` and `tool_packs` chose the provider and the tools. The
+  built-in profiles now always come from the binary; pass
+  `--profile <path>` to run an edited one. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **A harness sub-agent can no longer call `TaskList` or `Agent`.** The
+  sub-agent's catalog left both out, but its dispatcher ran any tool in
+  the shared registry, so a tool_use naming one (a page the sub-agent
+  fetched asking for it) rewrote the parent's task list or spawned
+  another agent. The sub-agent's dispatcher now refuses them with an
+  error result. See [harness architecture](framework/docs/content/harness-architecture.md).
+- **A harness Grep or Glob approval covers only the directory it was
+  approved for.** The permission engine decides a call from its argv
+  summary, and the Grep and Glob summaries named the pattern only, so
+  approving `Grep:TODO` at argv scope also allowed the same pattern over
+  `~/.ssh` (Grep's `path` and `glob`, Glob's `root`). The summary now
+  carries them, `Grep:TODO --path /home/u/.ssh`, and quotes any word
+  holding whitespace or a quote so no pattern spells another call's
+  summary. A saved rule for a pattern with a space or a quote prompts
+  once more. See [harness architecture](framework/docs/content/harness-architecture.md).
+- **A relation behind a Hidden field is no longer includable.**
+  `?include=` on a Hidden relation field, or on a `belongs_to` whose
+  foreign key is Hidden, attached the related record under the
+  relation's name, so the hidden key and its record reached any caller
+  who could read the row; a nested filter across it (`?owner_ref.email=`)
+  tested the record's values. Both now answer the same 400 a name that
+  is no relation gets (`unknown_include`, `nested_unknown_relation`) on
+  every include path, the in-process `GetOne`, `ListAll` and
+  `TypedQuery.Include` included, no near-miss hint names one, and llm.md
+  leaves it out. The rule is the new `entity.Entity.HidesRelation`,
+  which `/openapi.json` shares. See [includes.md](framework/docs/content/includes.md).
+- **The trash view's Restore and Delete permanently routes honor read
+  hooks.** `entityui.RestoreHandler` and `PurgeHandler` wrote any
+  trashed row the caller's scope reached by id, including one a
+  `BeforeList` hook hides from the trash view itself; the bulk restore
+  already dropped such a row. Both now read the row with
+  `crud.WithReadHooks` first and answer 404 for a hidden one (#645).
+- **A record's Activity tab no longer prints a value a read hook
+  masks.** The change list drew each audit row's stored before and
+  after values for every field but `NoQuery` ones, so a field an
+  `AfterGet` hook rewrites (`****` on the record and in the JSON API)
+  showed its written values to anyone who could open the record. A
+  field the hook rewrites on that record is now left out, locked fields
+  included (`framework/entityui`). The hook is also run once over a
+  probe copy of the row with every empty field filled, so a hook that
+  masks only a non-empty value is caught while the record's own value
+  is empty; a hook that fails on the probe keeps the probed fields out.
+  The admin's Audit log page and the dashboard's recent activity
+  (`UI.Changes`) leave out the fields the hooks mask on a probe row too:
+  they printed the stored values the admin's own record screen masks.
+- **The log file sink tightens an existing file to `FileMode`.** The
+  `0600` default applied only when the sink created the file, so a
+  `server.log` an older build, a `touch` or a provisioning step left
+  `0644` stayed world-readable, while every file the sink rotated in
+  was `0600`. Opening now clears the bits `FileMode` lacks (it never
+  adds any) on a file this process owns. A file another user owns (a
+  provisioned `0664 root:app` log the app appends to through its group)
+  keeps its mode, and a chmod the OS refuses is one stderr warning, not
+  a failed open; Windows skips the tighten. Set
+  `FileOpts.FileMode: 0o640` if a shipper reads the file through its
+  group.
+- **Slow-query lines mask SQL string literals.** `slowquery.TrimSQL`
+  (the `sql` attr of every `slow query` line) printed a statement
+  verbatim, so a value spelled inline (`ALTER ROLE … PASSWORD '…'`,
+  `SET app.key = '…'`, a hand-built `WHERE token = '…'`) reached every
+  log sink. The line now uses the masker behind tracing's
+  `db.query.text` (shared in `internal/sqlredact`): string and number
+  literals print as `?` and comments are dropped; placeholders and
+  identifiers stay. `slowquery.WithDialect("postgres" | "sqlite3" |
+  "mysql")` picks the engine's quoting rules; without it the line masks
+  under all of them, so a SQLite `"double-quoted"` string, a MySQL
+  `'a\'b'` escape or `#` comment, and a PostgreSQL nested `/* /* */ */`
+  comment no longer leak, at the cost of PostgreSQL quoted identifiers
+  printing as `?`. Tracing's `db.query.text` now nests PostgreSQL
+  comments, reads MySQL `#` comments and `$é$` dollar tags, and masks
+  under every engine's rules for a `db.system.name` it does not know.
+  The 240-byte cut also no longer splits a UTF-8 rune.
+- **The log console sink escapes control and bidi runes in the message
+  and keys.** Only attr values were escaped; the message, attr keys,
+  the time and level fields, and an entry that was not JSON were
+  written raw, and slog escapes C0 only, so a C1 CSI or a right-to-left
+  override in a message built from request data reached the terminal
+  live. A quote in a message also printed as `\"`.
+- **The log webhook sink no longer writes its URL to stderr.** When a
+  batch was given up on a transport error, the warning quoted net/http's
+  error, which carries the full URL, so a Slack incoming-webhook secret
+  or a `?token=` query landed in journald and the container log. The
+  warning (and `HTTPErrorReporter`, which shares the sink) now names
+  only `scheme://host`.
+- **A static export no longer publishes a symlink out of the static
+  dir.** The UI host reads the static dir through `os.Root` and answers
+  404 for `static/config.json -> ../config/prod.json`, but the export
+  copied it with `os.Open`, so the target's bytes went out with the
+  site. Both the static dir and a disk-backed static FS now skip such a
+  link (and any entry that is not a regular file) and log it; an
+  in-tree symlink still ships. A symlinked directory that stays in the
+  tree (`static/images -> img`) is walked under its own name, as the
+  live host serves it; one that leaves the tree is skipped, and so is a
+  link back to a directory the walk is in (`loop -> .`). A symlinked
+  directory used to fail the build halfway with an empty file left
+  behind.
+- **A caller's `/openapi.json` view no longer names entities they cannot
+  read through a relation.** The view drops such an entity's schema and
+  paths, but a readable entity's relation field still carried
+  `x-relation: <name>`. It now names a target only when the view
+  includes it; the full document is unchanged.
 - **A junk-key flood no longer resets an exhausted rate-limit key.**
   With the default `RefillBy`, eviction at `MaxKeys` shed the exhausted
   bucket first, so a per-username login throttle came back with a full
@@ -5656,6 +7108,64 @@ few lines, and link the PR or the docs page for the rest.
   `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` keeps livereload on.
 - **webmcp-remote-assist closes an expired credential's sockets and
   limits incoming frames.**
+
+
+- **`framework/image` budgets JPEG scans by pixels.** At the flat
+  64-scan cap a 6.5 KB progressive file over a 64 MP frame still cost
+  ~2.8 s of CPU. A JPEG is now also refused with `ErrDecompressionBomb`
+  when scans × width × height exceed `Config.MaxJPEGScanPixels`
+  (default ten times `MaxPixels`): ten scans at 64 MP, the full 64 up to
+  10 MP. `file.StripMetadata`'s orientation bake applies the same
+  budget. See [image](framework/docs/content/image.md).
+- **`framework/image` caps a progressive JPEG's coefficient memory.** Go's
+  decoder keeps 256 bytes per block of every component for a progressive
+  frame, so a few-hundred-byte 3-component 8192×8192 file allocated ~1 GB
+  inside the pixel cap. Decode now reads the frame header and refuses with
+  `ErrDecompressionBomb` past `Config.MaxProgressiveJPEGBytes` (default
+  512 MiB: a progressive 64 MP 4:4:4 color frame is refused, grayscale and
+  4:2:0 pass). `file.StripMetadata`'s orientation bake applies the same
+  cap. See [image](framework/docs/content/image.md).
+- **The local storage fold check lists the directory on Windows and for
+  names holding `~`.** Its case-swap probe cannot see an NTFS 8.3 short
+  name (`PHOTO~1.PNG` for `photo-original.png`), a second spelling of a
+  different long name, so a save under one could overwrite the other.
+  Windows now always lists; elsewhere a `~` in a name does. See
+  [uploads](framework/docs/content/uploads.md).
+- BREAKING: **`battery/storage` S3 keys and `DefaultKeyValidator` refuse
+  absolute, control-byte and unclean keys; presigning refuses a
+  non-positive expiry.** `DefaultKeyValidator` passed `/etc/passwd` and a
+  NUL byte despite its doc, and `S3Storage` refused only `..`: `a//b`,
+  `./a` and a leading `/` reached the bucket as objects distinct from the
+  key they spell. Both now refuse those with `upload.ErrInvalidKey`, and
+  `PresignedGetURL` / `PresignedPutURL` refuse `expires <= 0`. A host
+  that stored such keys renames them (`path.Clean`, no leading `/`). See
+  [storage](framework/docs/content/storage.md).
+- BREAKING: **`core/static` refuses Windows 8.3 short names.** On a
+  Windows volume that generates them, `GET /WEB~1.CON` served
+  `web.config` and `/ENV~1` served `.env` past the config and dotfile
+  refusals. A path segment holding `~` followed by a digit now answers
+  404 on every OS, in the handler and `static.Refuses` (the UI host's
+  static dir and the static export), as the backslash split already
+  does. A file served under such a name (`photo~1.png`) needs renaming.
+  See [core packages](framework/docs/content/core-packages.md#static).
+- **Harness quiet mode reads only under the working directory.** The
+  preset was documented as reads "under the repo" but allowed any path,
+  so `Read:/proc/self/environ`, `~/.ssh/id_rsa`, `cat
+  /proc/self/environ`, `grep -r . ~/.config/gofastr` and `find / -name
+  creds.enc` ran with no prompt. Read, Glob, Ls, Grep and the quiet Bash
+  readers now auto-allow only paths that resolve, symlinks included,
+  under the working directory; `..`, `~`, an outside path or a symlink
+  out of the repo prompts. See `harness-architecture.md`.
+- **Harness asks before using a repository's provider keys.** A cloned
+  repo's `.harness-secrets/env` supplied provider keys whenever you had
+  none, so the session ran on the repo author's account. `gofastr
+  harness` now names the keys and asks once per repository and key set
+  on a terminal, remembered in `~/.config/gofastr/harness/repo-secrets.json`;
+  with nobody to ask (`harness mcp`, CI) the keys are refused unless
+  approved earlier or `--allow-repo-secrets` is passed. Keys your
+  environment sets are untouched. The threat model now notes that
+  `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY` are
+  readable by other processes of the same user.
 
 ## [0.95.0] - 2026-10-26
 

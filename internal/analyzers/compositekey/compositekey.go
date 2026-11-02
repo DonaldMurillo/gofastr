@@ -29,8 +29,10 @@
 //     characters count.
 //   - concatenations never used as a key: ambiguity nobody indexes on is
 //     not a collision.
-//   - fmt.Sprintf keys: interpolation belongs to the emitident /
-//     GOFASTR1401 families, not this one.
+//   - fmt.Sprintf keys joined by a separator: interpolation belongs to
+//     the emitident / GOFASTR1401 families. (The print-key arm in
+//     printkey.go is the one Sprintf shape this analyzer owns: a %v of
+//     an interface or pointer value used as a key.)
 //   - keyed-store arguments whose callee parameter name does not say
 //     "key": the Store.Begin/Finish leg fires only when the parameter
 //     name contains "key" (key, storeKey, cacheKey). A keyed store
@@ -70,6 +72,7 @@ func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		checkFile(pass, f, helpers)
 	}
+	runPrintKey(pass)
 	return nil, nil
 }
 

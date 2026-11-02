@@ -61,7 +61,7 @@ func (ub *UpdateBuilder) Matching(cols ...string) (string, []any) {
 func selectVerb(cols []string) string {
 	safe := make([]string, len(cols))
 	for i, c := range cols {
-		safe[i] = sanitizeColumn(c)
+		safe[i] = identSlot(sanitizeColumn(c))
 	}
 	return "SELECT " + strings.Join(safe, ", ") + " FROM "
 }
@@ -72,7 +72,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
 	sb.WriteString("UPDATE ")
-	sb.WriteString(sanitizeFragment(ub.table))
+	sb.WriteString(identSlot(sanitizeFragment(ub.table)))
 
 	// SET clauses: column slot is sanitized; the value flows through
 	// a placeholder. A payload like `role = 'admin' --` collapses to a
@@ -84,7 +84,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		fmt.Fprintf(&sb, "%s = $%d", sanitizeColumn(s.column), paramIdx)
+		fmt.Fprintf(&sb, "%s = $%d", identSlot(sanitizeColumn(s.column)), paramIdx)
 		paramIdx++
 		args = append(args, s.value)
 	}
@@ -103,7 +103,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		sb.WriteString(" RETURNING ")
 		sanitizedRet := make([]string, len(ub.returning))
 		for i, c := range ub.returning {
-			sanitizedRet[i] = sanitizeColumn(c)
+			sanitizedRet[i] = identSlot(sanitizeColumn(c))
 		}
 		sb.WriteString(strings.Join(sanitizedRet, ", "))
 	}

@@ -23,7 +23,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/logging"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/profile"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
-	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/secrets"
 	xterm "golang.org/x/term"
 )
 
@@ -54,6 +53,7 @@ func RunHarness(args []string) {
 	allowProjectHooks := fs.Bool("allow-project-hooks", false, "enable hooks defined in the project repo")
 	autoApprove := fs.Bool("auto-approve", false, "bypass human-ack permission requirement")
 	strictPerms := fs.Bool("strict-permissions", false, "disable the quiet-mode permission preset")
+	allowRepoSecrets := fs.Bool("allow-repo-secrets", false, "use provider keys from this repository's .harness-secrets/env for this run without asking")
 	logToStderr := fs.Bool("log-to-stderr", false, "also write logs to stderr")
 	logLevel := fs.String("log-level", "", "per-component level overrides (engine=debug,...)")
 	prompt := fs.String("prompt", "", "send a single prompt and exit (handy for smoke tests)")
@@ -62,32 +62,35 @@ func RunHarness(args []string) {
 	_ = noListen
 	_ = autoApprove // wiring lands with task 24 + 6 (multiplex auto-approve)
 
-	// Load repo-local secrets (gitignored) so .harness-secrets/env
-	// provides API keys without needing every invocation to export
-	// them. Shell env wins on conflict.
-	_, _ = secrets.LoadRepo()
-
 	// Resolve XDG paths.
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
+		cli.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
 		cli.OsExit(1)
 	}
 	xdgConfig := filepath.Join(home, ".config", "gofastr", "harness")
 	xdgState := filepath.Join(home, ".local", "share", "gofastr", "harness")
 	if err := os.MkdirAll(xdgConfig, 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	if err := os.MkdirAll(xdgState, 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
+
+	// Load repo-local secrets (gitignored) so .harness-secrets/env
+	// provides API keys without needing every invocation to export
+	// them. Shell env wins on conflict. A cloned repo's file can carry
+	// its author's keys, so the keys are used only with consent: asked
+	// once per repository and key set on a terminal, or allowed for one
+	// run by --allow-repo-secrets.
+	loadRepoSecrets(xdgConfig, *allowRepoSecrets, isTTY(os.Stdin) && isTTY(os.Stderr), os.Stdin, os.Stderr)
 
 	// Pick profile.
 	prof, err := loadProfile(*useFramework, *profilePath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -97,7 +100,7 @@ func RunHarness(args []string) {
 
 	machineKey, err := machineKeyFromEnv()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
@@ -123,7 +126,7 @@ func RunHarness(args []string) {
 	}
 	h, err := xharness.New(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
+		cli.Fprintf(os.Stderr, "gofastr harness: %v\n", err)
 		cli.OsExit(1)
 	}
 	defer h.Shutdown()
@@ -136,21 +139,21 @@ func RunHarness(args []string) {
 	// Resolve provider from the profile's default_model "provider:id".
 	prov, modelID := resolveDefaultModel(h, prof)
 	if prov == nil {
-		fmt.Fprintf(os.Stderr, "harness: no provider matches %q\n", prof.DefaultModel)
+		cli.Fprintf(os.Stderr, "harness: no provider matches %q\n", prof.DefaultModel)
 		cli.OsExit(1)
 	}
 
 	// Spawn one engine for the session.
 	sess, err := h.CreateSession(prov, modelID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 
 	// Bundled inproc client.
 	c := inproc.New(ids.NewClientID(), control.IdentityHuman, h.Mux.EngineFor(sess).Bus, h.Mux)
 	if err := h.Mux.Attach(sess, c); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		cli.OsExit(1)
 	}
 	defer c.Close()
@@ -172,7 +175,7 @@ func RunHarness(args []string) {
 		}
 		url, token, shutdown, err := startHTTPListener(h, sess, bind)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "harness: http listener:", err)
+			cli.Fprintln(os.Stderr, "harness: http listener:", err)
 			cli.OsExit(1)
 		}
 		defer shutdown()
@@ -195,7 +198,7 @@ func RunHarness(args []string) {
 		t.WebURL = webURL
 		t.WebToken = webToken
 		if err := t.Run(context.Background()); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			cli.Fprintln(os.Stderr, err)
 		}
 		return
 	}
@@ -219,17 +222,16 @@ func loadProfile(useFramework bool, explicit string) (*profile.Profile, error) {
 		}
 		return profile.Load(explicit)
 	}
+	// The built-in profiles always come from the binary. This used to
+	// prefer a framework/experimental/harness/profile/<name>.toml found
+	// relative to the working directory, for edits inside the source
+	// tree, but the working directory is attacker-authored on a cloned
+	// repo: any repo carrying that path replaced the trusted profile, its
+	// prompt_header becoming the system prompt outside the untrusted-
+	// content tags (rule 12). To try an edited profile, pass --profile.
 	name := "default"
-	path := "framework/experimental/harness/profile/default.toml"
 	if useFramework {
 		name = "framework"
-		path = "framework/experimental/harness/profile/framework.toml"
-	}
-	// Prefer the on-disk copy when running inside the source tree (so
-	// edits to the .toml take effect without rebuilding); fall back to
-	// the copy embedded in the binary for installed/out-of-tree runs.
-	if _, err := os.Stat(path); err == nil {
-		return profile.Load(path)
 	}
 	return profile.Embedded(name)
 }
@@ -315,7 +317,7 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 		SessionID: sess,
 		Content:   engine.SimpleInput(prompt),
 	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cli.Fprintln(os.Stderr, err)
 		return
 	}
 	for env := range sub {
@@ -335,7 +337,7 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 		}
 		if env.Kind == "Error" {
 			e, _ := control.DecodeEvent(env)
-			fmt.Fprintf(os.Stderr, "\n[error] %v\n", e)
+			cli.Fprintf(os.Stderr, "\n[error] %v\n", e)
 			return
 		}
 	}
@@ -355,7 +357,7 @@ func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
 			// Scan reports EOF and a read failure the same way; only Err
 			// separates "user pressed ctrl-D" from "input was lost".
 			if err := scanner.Err(); err != nil {
-				fmt.Fprintf(os.Stderr, "\nread input: %v\n", err)
+				cli.Fprintf(os.Stderr, "\nread input: %v\n", err)
 			}
 			return
 		}
@@ -367,7 +369,7 @@ func runREPL(h *xharness.Harness, c *inproc.Client, sess ids.SessionID) {
 			SessionID: sess,
 			Content:   engine.SimpleInput(line),
 		}); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			cli.Fprintln(os.Stderr, err)
 			continue
 		}
 		streamOneTurn(sub)
@@ -389,7 +391,7 @@ func streamOneTurn(sub <-chan control.EventEnvelope) {
 			return
 		case "Error":
 			e, _ := control.DecodeEvent(env)
-			fmt.Fprintf(os.Stderr, "\n[error] %v\n", e)
+			cli.Fprintf(os.Stderr, "\n[error] %v\n", e)
 			return
 		}
 	}

@@ -2,11 +2,11 @@ package clitest
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"sync"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 )
 
@@ -128,7 +128,7 @@ func removeSharedTrees() {
 	defer sharedTrees.mu.Unlock()
 	for _, dir := range sharedTrees.remove {
 		if err := scratchdir.Remove(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "clitest: remove shared scratch package %s: %v\n", dir, err)
+			cli.Fprintf(os.Stderr, "clitest: remove shared scratch package %s: %v\n", dir, err)
 		}
 	}
 	sharedTrees.remove = nil

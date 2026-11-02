@@ -5,7 +5,13 @@ package clitest
 // a path parameter and a JSON body, a PUT with an optional binary body
 // under its own bearer security, apiKey security, and a server entry —
 // enough surface to exercise the self-client, operations.go, and the
-// shared scaffold both generation modes emit.
+// shared scaffold both generation modes emit. A PATCH under /odd carries
+// the hostile spellings spec build accepts as data: a path template, a
+// summary, a description and a binary content type parameter holding
+// quotes, backticks, backslashes and a comment closer, a dotted joined
+// array query name and a spaced boolean one, so every literal those
+// strings reach in the emitted code is proved quoted by the build and
+// the vettool.
 func CliGateSpecDoc(summary string) map[string]any {
 	return map[string]any{
 		"openapi": "3.0.3",
@@ -18,6 +24,24 @@ func CliGateSpecDoc(summary string) map[string]any {
 		},
 		"security": []any{map[string]any{"apiKey": []any{}}},
 		"paths": map[string]any{
+			"/odd/{id}/\"q`b\\*/é": map[string]any{
+				"patch": map[string]any{
+					"operationId": "oddThing",
+					"summary":     "odd `names` */ \" \\ end",
+					"parameters": []any{
+						map[string]any{"name": "id", "in": "path", "required": true, "description": "the */ id `x` \"q\" \\", "schema": map[string]any{"type": "integer"}},
+						map[string]any{"name": "page.size", "in": "query", "explode": false, "schema": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+						map[string]any{"name": "Display Name", "in": "query", "schema": map[string]any{"type": "boolean"}},
+					},
+					"requestBody": map[string]any{
+						"required": true,
+						"content": map[string]any{
+							"application/octet-stream; name=\"a\\\"b*/`\"": map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}},
+						},
+					},
+					"responses": map[string]any{"200": map[string]any{}},
+				},
+			},
 			"/things": map[string]any{
 				"get": map[string]any{
 					"operationId": "listThings",

@@ -70,9 +70,11 @@ Per verb:
   `--fields`, and `--param k=v` (repeatable) as the escape hatch for
   anything else. `-q` appears only when the entity declares
   `SearchFields`; `--trashed` only with `SoftDelete`. `-o table`
-  renders an aligned table instead of JSON. Table cells, the cursor
-  line and API error lines drop control bytes (C0 but tab, DEL and
-  C1), so a stored `\x1b[2J` cannot clear the reader's screen. JSON
+  renders an aligned table instead of JSON. Table headers and cells,
+  the cursor line and API error lines drop control bytes (C0 but tab,
+  DEL and C1) and the bidi overrides and zero-width characters that
+  reorder or hide text, so a stored `\x1b[2J` cannot clear the reader's
+  screen and a `U+202E` cannot flip a column. JSON
   output keeps numbers exact: a value past 2^53 in a `--json` body, a
   json-field flag or a response prints with every digit.
 - **create / update / patch**: per-field flags OR `--json`
@@ -219,7 +221,11 @@ path names, as a composite key's columns do in a GoFastr app's PUT body,
 and `--json` can still send it. Binary bodies
 (`application/octet-stream` / `format: binary`) take `--file` with `-`
 for stdin; a body offering several binary types is sent as
-`application/octet-stream`, else the first type by name. A body the spec
+`application/octet-stream`, else the first type by name. The chosen
+type must be a media type with no control byte (it is the request's
+`Content-Type` and appears in `--file`'s help), or generation fails.
+A refused spec's error encodes control bytes on the terminal, and
+under `--dry-run --json` it is one JSON document. A body the spec
 does not mark `required` may be left out, and the command then sends no
 body: `--file` is optional, and the schema's `required` properties bind
 only a body built from field flags (`--title x` without a required
@@ -347,7 +353,8 @@ more entries need `--out` or `--binary` to pick one. `--from-openapi`
 takes the entry's binary and output but none of its entity selection.
 Only the settings file in the directory it runs in counts. A run that no
 entry drove prints the entry that reproduces it, ready to paste under
-`codegen.generators`.
+`codegen.generators`. A value YAML cannot carry (a path or name that is
+not UTF-8) prints a note instead of an entry.
 
 ### Upgrading a CLI generated before v0.93.0
 

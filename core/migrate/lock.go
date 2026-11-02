@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -167,10 +168,22 @@ func withLeasedLock(ctx context.Context, db *sql.DB, dialect Dialect, key int64,
 	// Release on the same connection. Use a background context so a cancelled
 	// ctx (the common "shutdown mid-migration" case) still unlocks rather than
 	// leaving the lock dangling until the session is reaped.
+	//
+	// conn.Close returns the connection to the pool; it does not end the
+	// session, so an unlock that fails leaves the lock held by a pooled
+	// connection for the life of the process, and every other replica
+	// waits on it. A NoTransaction migration that ran its own BEGIN and
+	// failed inside it leaves the session in an aborted transaction, which
+	// refuses the unlock. Such a connection is retired instead: ending the
+	// session releases its locks and discards the aborted transaction.
 	defer func() {
-		// best-effort: closing the dedicated connection also releases the
-		// session advisory lock; this explicit unlock shortens that window.
-		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", key)
+		var released bool
+		err := conn.QueryRowContext(context.Background(), "SELECT pg_advisory_unlock($1)", key).Scan(&released)
+		if err != nil || !released {
+			slog.Warn("migrate lock: the advisory unlock failed; retiring the connection so its session releases the lock",
+				"err", err, "released", released)
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
 	}()
 
 	return fn(conn, noKeep)

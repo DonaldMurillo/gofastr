@@ -1535,7 +1535,10 @@ gofastr desktop build --id=dev.gofastr.notes --name=Notes --version=1.2.0 `
 - `--notarize` and `--entitlements` are macOS-only and refused here.
 
 `--zip` writes `<o>/<Name>-<version>-windows-amd64.zip`, the
-auto-update archive: one `<Name>/` directory holding `<Name>.exe` and
+auto-update archive. It needs a semver `--version` (`1.2.0`, not `1.0`
+or `1.2.0.0`), the same rule the updater compares by. The archive is
+written beside its destination and renamed into place, so a failed
+build leaves an earlier archive alone. It holds one `<Name>/` directory with `<Name>.exe` and
 `WebView2Loader.dll`. Entries carry no timestamps, so two archives of
 the same build are byte-identical. Publish it with `gofastr desktop
 feed --platform windows-amd64` (see Auto-update).
@@ -1717,8 +1720,11 @@ loaded DLL, though it will rename them:
    `ProductVersion` is exactly the feed's version and its
    `GoFastrAppID` is the running app's.
 6. Check Authenticode (`WinVerifyTrust`, revocation off) on the
-   running executable, the new executable, and the new loader:
-   - the loader must carry a trusted signature;
+   running executable and loader, and on the new ones:
+   - the new loader must carry a trusted signature, from the same
+     signer as the installed loader when that one is trusted. The
+     executable loads the DLL on every launch, so a loader from
+     another publisher would run code inside a signed app;
    - a new executable whose signature does not verify (tampered,
      self-signed, expired without a timestamp) is always refused;
    - when the running executable is signed and trusted, the new one

@@ -946,7 +946,11 @@ so `ow\u200Bner@example.com` (zero-width space), a trailing BOM, or a
 right-to-left override inside the local part would otherwise register as
 a second account that renders identically to the first in every list,
 log, and mail template. The default canonicalizer strips them before
-folding, so the twin lands on the base account.
+folding, so the twin lands on the base account. The set includes the
+Unicode tag characters (U+E0000–U+E007F) and the Hangul fillers
+(U+115F, U+1160, U+3164, U+FFA0). `auth.CleanName` refuses the same set
+in a display name, except a subdivision flag such as Scotland's, whose
+tag letters stay.
 
 **Unicode normalization (NFC/NFD)**: the same mailbox can be spelled in
 composed (`é`) or decomposed (`e` + combining acute) form — macOS and
@@ -1135,7 +1139,7 @@ users. The rule:
 | Layer | Convention | Where set |
 |---|---|---|
 | DB column names | `snake_case` (e.g. `password_hash`, `user_id`) | Entity declarations + `UserEntityFields()` |
-| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `EntityConfig.JSONCase` or `AppConfig.JSONCase`; defaults to camelCase |
+| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `AppConfig.JSONCase` (or `CrudHandler.JSONCase` per handler); defaults to camelCase |
 
 The framework automatically converts snake_case DB columns to
 camelCase JSON keys at the response layer (via `crud.JSONCase`). You
@@ -2194,6 +2198,9 @@ IdP endpoint moves. The document's `issuer` MUST match the configured
 `Issuer` exactly (OIDC §4.3, issuer-spoofing guard). `Issuer` must be
 an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
 (local IdPs and tests).
+
+A JWKS RSA key over 8192 bits is refused, like one under 2048: a huge
+modulus would make every sign-in burn CPU on verification.
 
 Discovery and JWKS fetches run one at a time and never under a lock
 other logins wait on. A login waiting for another login's discovery

@@ -141,7 +141,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 	case q != "":
 		list.Search = q
 	}
-	rows, err := om.ch.ListAll(crud.WithReadHooks(ctx), list)
+	rows, err := om.listRows(ctx, list)
 	if err != nil {
 		return nil, "", false
 	}

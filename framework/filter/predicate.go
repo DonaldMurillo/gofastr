@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -260,14 +261,14 @@ func buildPredSQL(p Predicate, args *[]any) string {
 			*args = append(*args, TypedBind(p.colType, v))
 			ph[i] = "$" + strconv.Itoa(len(*args))
 		}
-		return "(" + p.Field + " IN (" + strings.Join(ph, ",") + "))"
+		return "(" + query.QuoteKeyword(p.Field) + " IN (" + strings.Join(ph, ",") + "))"
 	case OpLike:
 		clause, arg := LikeClause(p.Field, len(*args)+1, p.Value)
 		*args = append(*args, arg)
 		return "(" + clause + ")"
 	default:
 		*args = append(*args, TypedBind(p.colType, p.Value))
-		return "(" + p.Field + " " + sqlOp(p.Op) + " $" + strconv.Itoa(len(*args)) + ")"
+		return "(" + query.QuoteKeyword(p.Field) + " " + sqlOp(p.Op) + " $" + strconv.Itoa(len(*args)) + ")"
 	}
 }
 

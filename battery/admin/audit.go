@@ -20,6 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
@@ -330,6 +331,9 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 	names := b.actorNames(ctx, rows)
 	now := time.Now()
 	data := make([]ui.Row, len(rows))
+	// One answer per record from the app's read hooks, however many of
+	// the page's rows name it.
+	ctx = entityui.WithChangeCache(ctx)
 	for i, r := range rows {
 		before, after := b.scopedSides(ctx, r)
 		record, changes := b.auditRecord(ctx, r, before, after)
@@ -531,16 +535,24 @@ func auditSides(r auditRow) (before, after map[string]any) {
 }
 
 // scopedSides is auditSides for a caller who may see them: nil, nil
-// when r's entity is owner-scoped and the caller's owner scope hides the
-// record. Elevation never lifts owner scope, so the trail names a record
-// and lists its values only when the caller's own read would: its stored
-// copy names the caller as owner, or the live record reads under the
-// caller's scope. A hidden record keeps its id and loses its title and
-// changes.
+// when the entity's read hooks hide the stored record from the caller
+// (a BeforeGet/BeforeList scope, which the record screen answers
+// not-found for), or when r's entity is owner-scoped and the caller's
+// owner scope hides the record. Elevation lifts neither, so the trail
+// names a record and lists its values only when the caller's own read
+// would: its stored copy names the caller as owner, or the live record
+// reads under the caller's scope and hooks. A hidden record keeps its id
+// and loses its title and changes.
 func (b *Battery) scopedSides(ctx context.Context, r auditRow) (before, after map[string]any) {
 	before, after = auditSides(r)
 	e, ok := b.exposedNamed(r.Entity)
-	if !ok || b.ui == nil || e.Config.Scope == nil || e.Config.Scope.OwnerField == "" || owner.IsCrossOwner(ctx) {
+	if !ok || b.ui == nil {
+		return before, after
+	}
+	if r.RecordID != "" && !framework.AuditDigestID(r.RecordID) && b.ui.RecordHidden(b.elevate(ctx), e.GetName(), r.RecordID) {
+		return nil, nil
+	}
+	if e.Config.Scope == nil || e.Config.Scope.OwnerField == "" || owner.IsCrossOwner(ctx) {
 		return before, after
 	}
 	if me, ok := owner.Get(ctx); ok {

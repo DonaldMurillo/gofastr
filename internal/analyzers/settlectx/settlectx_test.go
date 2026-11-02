@@ -9,5 +9,5 @@ import (
 )
 
 func TestSettleCtx(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), settlectx.Analyzer, "a", "lib")
+	analysistest.Run(t, analysistest.TestData(), settlectx.Analyzer, "a", "lib", "claimaudit")
 }

@@ -190,9 +190,22 @@ func midNavOpenCase(t *testing.T, held string, modal bool) {
 		chromedp.ActionFunc(func(context.Context) error { freeOpen(); return nil }),
 		chromedp.Poll(`!!window.__gofastr._widgets.late && String(window.__gofastr.getSignal('who') ?? '') === 'fresh'`, nil,
 			chromedp.WithPollingTimeout(5*time.Second)),
-		// Let the commit's listeners and the catalog re-fetch's deep-link
-		// sync run before reading the outcome.
-		chromedp.Sleep(500*time.Millisecond),
+		// Read the outcome only once the commit's catalog re-fetch has
+		// synced deep links: the one sync that could close the widget.
+		// It is the only _syncDeepLinks call after the counter went in
+		// (no popstate, and the boot catalog's ran before), so waiting
+		// for the count is waiting for exactly that pass, with no
+		// fixed sleep standing in for it.
+		chromedp.Poll(`window.__gofastr.__syncs >= 1`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		// And for the open's own deep-link write, the last step it takes.
+		chromedp.ActionFunc(func(c context.Context) error {
+			err := chromedp.Poll(`location.pathname + location.search === '/b?panel=late&who=fresh'`, nil,
+				chromedp.WithPollingTimeout(5*time.Second)).Do(c)
+			if err != nil {
+				return fmt.Errorf("the open never wrote its deep link on /b: %w", err)
+			}
+			return nil
+		}),
 	); err != nil {
 		_ = chromedp.Run(ctx,
 			chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="late"]') && !!window.__gofastr._widgets.late`, &mounted),
