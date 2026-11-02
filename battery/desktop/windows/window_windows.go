@@ -16,6 +16,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/win32"
 )
 
+// asyncEvalID numbers EvalAsync's result slots. The id is a correlation
+// id, not a capability: the slot map lives in the page's own JS realm,
+// which can read or replace any entry whatever the id, so an
+// unguessable id would protect nothing. A process-wide counter is unique
+// for every eval this process submits, which is all the slot needs.
 var asyncEvalID atomic.Uint64
 
 func (w *winWindow) ID() string { return w.id }
@@ -120,7 +125,7 @@ func (w *winWindow) EvalAsync(ctx context.Context, body string) (json.RawMessage
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), asyncEvalID.Add(1))
+	id := fmt.Sprintf("eval-%d", asyncEvalID.Add(1))
 	idJSON, _ := json.Marshal(id)
 	keyJSON, _ := json.Marshal("__gofastrEvalResults")
 	kick := `(function(){const k=` + string(keyJSON) + `,id=` + string(idJSON) + `;` +

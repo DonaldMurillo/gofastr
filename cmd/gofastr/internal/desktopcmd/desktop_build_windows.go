@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 const (
@@ -153,7 +154,7 @@ func fetchWebView2Loader() ([]byte, error) {
 		if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != webView2NupkgSHA256 {
 			return nil, fmt.Errorf("Microsoft.Web.WebView2 package checksum mismatch: got %s", got)
 		}
-		if err := os.WriteFile(packagePath, data, 0o600); err != nil {
+		if err := fileperm.WriteOwnerOnly(packagePath, data); err != nil {
 			return nil, fmt.Errorf("cache WebView2 SDK package: %w", err)
 		}
 	}

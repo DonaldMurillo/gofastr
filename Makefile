@@ -91,9 +91,17 @@ dupl:
 # rules as vet checks. Runs in CI's vet step and the pre-commit hook.
 # Affected packages, except that a change under internal/analyzers or
 # cmd/vettool vets everything: a new rule can flag code nobody touched.
+# The host OS first, then windows and darwin (as CI does), so the
+# _windows.go / _darwin.go files are vetted too. affected runs as a built
+# binary so its go list reads each GOOS's own files; `go run` would build
+# it for the target OS. The pre-commit hook runs the host OS only.
+ANALYZE_AFFECTED = -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/
 analyze: $(DIST_DIR)
 	go build -o $(DIST_DIR)/vettool ./cmd/vettool
-	go run ./cmd/affected -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/ -- go vet -vettool=$(DIST_DIR)/vettool
+	go build -o $(DIST_DIR)/affected ./cmd/affected
+	$(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool
+	CGO_ENABLED=0 GOOS=windows $(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool
+	CGO_ENABLED=0 GOOS=darwin $(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool
 
 # Run framework tests against Postgres via TEST_POSTGRES_DSN. Set the DSN to
 # point at a local PG you don't mind us creating per-test schemas in.

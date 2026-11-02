@@ -234,6 +234,16 @@ few lines, and link the PR or the docs page for the rest.
   Code that passed verify can fail it on upgrade. Fix the finding, or
   mark a site that is the shape on purpose with
   `//gofastr:allow(<analyzer>) <why>`.
+- **`make analyze` and CI vet the windows and darwin files too.** The
+  repo analyzers ran on linux only, so no `_windows.go` or `_darwin.go`
+  file was ever vetted. Both now run the vettool again with
+  `GOOS=windows` and `GOOS=darwin` over the affected packages, listed
+  for that OS. The first run found three things: `discardederr` now
+  ignores `(*syscall.LazyProc).Call` and `(*syscall.Proc).Call` (and
+  the `golang.org/x/sys/windows` twins), whose error is always non-nil;
+  the Windows `EvalAsync` result slot is numbered by a counter, not the
+  clock; and `gofastr desktop build` writes its cached WebView2 SDK
+  package with `fileperm.WriteOwnerOnly`.
 - **`/openapi.json` documents what `?include=` returns.** An entity's
   schema component is its read view: a relation field's property is
   `anyOf` its key, the related record or null, since an include replaces
