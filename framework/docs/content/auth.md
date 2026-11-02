@@ -1063,7 +1063,7 @@ users. The rule:
 | Layer | Convention | Where set |
 |---|---|---|
 | DB column names | `snake_case` (e.g. `password_hash`, `user_id`) | Entity declarations + `UserEntityFields()` |
-| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `EntityConfig.JSONCase` or `AppConfig.JSONCase`; defaults to camelCase |
+| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `AppConfig.JSONCase` (or `CrudHandler.JSONCase` per handler); defaults to camelCase |
 
 The framework automatically converts snake_case DB columns to
 camelCase JSON keys at the response layer (via `crud.JSONCase`). You

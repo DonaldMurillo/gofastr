@@ -729,7 +729,9 @@ If you want snake_case columns, write them snake_case in the declaration:
 `flare_verdict` → column `flare_verdict`. The framework never rewrites field
 names; the only auto-casing happens at the JSON layer (via `AppConfig.JSONCase`
 / `CrudHandler.WithJSONCase`), which converts column names to/from `camel` or
-`snake` on the wire and leaves the underlying column untouched.
+`snake` on the wire and leaves the underlying column untouched. The
+served `/openapi.json` names fields in the same case the routes answer
+in.
 
 Rule of thumb: name fields in whatever case you want the column to be in.
 camelCase is the convention used in the example apps; snake_case is the

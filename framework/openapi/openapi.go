@@ -53,7 +53,36 @@ func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 // and GET <path>/_export.csv, for each entity bulkMounted reports. nil
 // documents neither, which is EntityOpenAPI.
 func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
-	s := entityOpenAPI(registry, title, version, crudMounted, bulkMounted, nil, basePath...)
+	opts := Options{CRUDMounted: crudMounted, BulkMounted: bulkMounted}
+	if len(basePath) > 0 {
+		opts.BasePath = basePath[0]
+	}
+	return EntityOpenAPIWith(registry, title, version, opts)
+}
+
+// Options configures EntityOpenAPIWith.
+type Options struct {
+	// CRUDMounted and BulkMounted are EntityOpenAPIWithBulk's
+	// crudMounted and bulkMounted predicates.
+	CRUDMounted, BulkMounted func(*entity.Entity) bool
+	// JSONCase is the key case the app's CRUD handlers read and write
+	// (App.JSONCasing). Empty is crud.CaseCamel. A field's WireName is
+	// verbatim under either case.
+	JSONCase crud.JSONCase
+	// BasePath is the API prefix baked into every path key ("/api").
+	BasePath string
+}
+
+// EntityOpenAPIWith is EntityOpenAPIWithBulk configured by opts. App
+// builds its /openapi.json through it so the document names each field
+// by the key its handlers answer under: with AppConfig.JSONCase set to
+// snake_case the routes answer `author_id`, and a spec saying `authorId`
+// generated clients that read nothing back.
+func EntityOpenAPIWith(registry entity.Registry, title, version string, opts Options) *openapi.Spec {
+	crudMounted, bulkMounted := opts.CRUDMounted, opts.BulkMounted
+	basePath := []string{opts.BasePath}
+	jc := opts.JSONCase
+	s := entityOpenAPI(registry, title, version, crudMounted, bulkMounted, nil, jc, basePath...)
 	// The auth-gated serving path (core/openapi Handler) rebuilds the
 	// document per request through RequestView, keeping only the
 	// entities THIS caller can read — llm.md parity: the spec is the
@@ -67,7 +96,7 @@ func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crud
 		ctx := r.Context()
 		return entityOpenAPI(registry, title, version, crudMounted, bulkMounted, func(ent *entity.Entity) bool {
 			return canReadSpecEntity(ctx, ent)
-		}, basePath...)
+		}, jc, basePath...)
 	}
 	return s
 }
@@ -97,8 +126,9 @@ func objectSchemaWith(props map[string]any) map[string]any {
 }
 
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
-// which registered entities reach the document.
-func entityOpenAPI(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
+// which registered entities reach the document; jc is the handlers' key
+// case (casedFields).
+func entityOpenAPI(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, jc crud.JSONCase, basePath ...string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
 	apiPrefix := ""
 	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
@@ -203,7 +233,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		}
 		entityName := ent.GetName()
 		tableName := ent.GetTable()
-		fields := ent.GetFields()
+		fields := casedFields(ent.GetFields(), jc)
 
 		// Version-aware disambiguation. Unversioned entities (App.Entity)
 		// keep the historical bare names, schema "posts", tag "posts",
@@ -328,7 +358,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		if ent.Version != "" {
 			path = pathPrefix + "/" + tableName
 		}
-		recPath, keyProps, keyReq := recordKey(ent, path)
+		recPath, keyProps, keyReq := recordKey(ent, fields, path)
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
@@ -952,12 +982,10 @@ func versionSlug(prefix string) string {
 // Filter and sort parameters are a DELIBERATE exception: the filter
 // parser (framework/filter) matches against the raw DB column name plus
 // a WireName alias, never the camelCase form, so those params use
-// f.Name / f.WireName directly rather than this helper. Sharing
-// framework/crud's convertKey is impossible here: it is a method on
-// CrudHandler that depends on the per-handler JSONCase config, which
-// the OpenAPI builder (registry-only, no handler instance) does not
-// see. The OpenAPI builder assumes the default camelCase casing, which
-// is what convertKey returns when JSONCase is CaseCamel (the default).
+// f.Name / f.WireName directly rather than this helper. The handlers'
+// JSONCase reaches it through casedFields: under snake_case every field
+// arrives with its column name as WireName, so this camelCase fallback
+// only ever runs for the default case.
 func wireKeyOf(f schema.Field) string {
 	if f.WireName != "" {
 		return f.WireName
@@ -965,19 +993,39 @@ func wireKeyOf(f schema.Field) string {
 	return casing.ToCamel(f.Name)
 }
 
+// casedFields returns fields as the handlers' JSONCase keys them. Under
+// crud.CaseSnake a field with no WireName answers under its column name
+// (crud's convertKeyRaw), so the copy pins that name as WireName and
+// every surface wireKeyOf feeds (properties, required, request bodies,
+// ?fields=, record keys) names the key the route answers under. The
+// filter parameters read WireName-or-Name, the same name either way.
+func casedFields(fields []schema.Field, jc crud.JSONCase) []schema.Field {
+	if jc != crud.CaseSnake {
+		return fields
+	}
+	out := slices.Clone(fields)
+	for i := range out {
+		if out[i].WireName == "" {
+			out[i].WireName = out[i].Name
+		}
+	}
+	return out
+}
+
 // recordKey returns the path naming one record of ent under path, and
 // the properties and required list a batch-update item names it with.
 // A one-column key is the path's {id} and the item's key column; a
 // composite key takes one path segment per column (crud.KeyPath), each
-// named after its column's wire key.
-func recordKey(ent *entity.Entity, path string) (string, map[string]any, []string) {
+// named after its column's wire key. fields are ent's fields as
+// casedFields keyed them.
+func recordKey(ent *entity.Entity, fields []schema.Field, path string) (string, map[string]any, []string) {
 	cols := ent.KeyColumns()
 	props := make(map[string]any, len(cols))
 	req := make([]string, 0, len(cols))
 	rec := path
 	for _, c := range cols {
 		w := casing.ToCamel(c)
-		for _, f := range ent.GetFields() {
+		for _, f := range fields {
 			if f.Name == c {
 				w = wireKeyOf(f)
 			}

@@ -3683,7 +3683,12 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPIWithBulk(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.entityUIMounted, a.apiPrefix())
+		spec := openapi.EntityOpenAPIWith(a.Registry, appName, "1.0.0", openapi.Options{
+			CRUDMounted: a.entityCRUDEnabled,
+			BulkMounted: a.entityUIMounted,
+			JSONCase:    a.JSONCasing(),
+			BasePath:    a.apiPrefix(),
+		})
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {

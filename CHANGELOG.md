@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`AppConfig.JSONCase: snake_case` reaches the routes and the spec.**
+  App set the case on each entity's handler after the handler had keyed
+  its field cache in camelCase, so every auto-CRUD route kept answering
+  `authorId`, and `/openapi.json` assumed camelCase outright. The
+  routes and the spec now both name `author_id`. A handler whose
+  `JSONCase` field is assigned after `NewCrudHandler` (generated typed
+  handlers do this) rekeys on its next request. New
+  `openapi.EntityOpenAPIWith` takes the case in `openapi.Options`.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
