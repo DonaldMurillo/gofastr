@@ -436,9 +436,7 @@ and silently cost the block its syntax highlighting.
 ### static
 
 A hardened file server for `embed.FS` / `fs.FS`: ETag caching,
-configurable `Cache-Control`, MIME detection, SPA fallback (served
-`no-cache` whatever `MaxAge` says, so the shell is never stored under a
-URL that names no file), and
+configurable `Cache-Control`, MIME detection, SPA fallback, and
 traversal / dotfile / forbidden-config rejection. Seekable files (disk,
 `embed.FS`) are served through `http.ServeContent`, so `Range`,
 `If-Range` and multi-range requests get `206` and video can seek; a
@@ -458,6 +456,20 @@ uses it for its own assets too. `Prefix` is `/static`, `static` or
 `/static`. The handler strips the prefix on a segment boundary only
 (`/staticx.js` is not `x.js`), and a path without it is served from
 the root, so the handler also works behind `http.StripPrefix`. A
+request for a directory without the trailing slash (`/docs`) gets
+`301` to the slash form (`/docs/`, query kept) when the directory has
+an `IndexFile`, as `net/http`'s `FileServer` does, so the index's
+relative links resolve under it. The `Location` is relative
+(`./docs/`): it lands under the handler's `Prefix` or an outer
+`StripPrefix`, and never on another host, whatever the path spells
+(`//evil.com`, `/\evil.com`). With `SPA: true`, a miss whose last path
+segment has no file extension (a client route: `/dashboard/settings`,
+`/users/42`) gets `IndexFile`, served `no-cache` whatever `MaxAge` says,
+so the shell is never stored under a URL that names no file. A miss
+with an extension (`/app.3f2a.js`, `/x.css`, `/logo.png`) gets `404`,
+not the shell: a browser would run that HTML as a script or a
+stylesheet. A client route with a dot in its last segment
+(`/files/report.pdf` as a route) needs a server route of its own. A
 backslash counts as a path separator in the dot-segment and config-file
 checks, as it does to a Windows filesystem. `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's

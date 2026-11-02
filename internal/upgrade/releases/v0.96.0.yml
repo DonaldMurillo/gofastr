@@ -1,6 +1,20 @@
 version: v0.96.0
 title: unreleased
 notes:
+  - change: "core/static.Handler with SPA true serves IndexFile only for a missing path whose last segment has no file extension; a missing /app.3f2a.js, /x.css or /logo.png gets 404 instead of the index"
+    breaking: false
+    guidance: "The index served as a missing script or stylesheet was HTML the browser could not run, and a cache could store it under the asset's URL. Client routes without a dot in their last segment (/dashboard/settings, /users/42) still get the index. A client route whose last segment has a dot (/files/report.pdf) now 404s: give it a server route that serves the index, or drop the dot from the route."
+    find:
+      uses:
+        - gofastr/core/static.Handler
+        - gofastr/core/static.Mount
+  - change: "core/static.Handler answers a directory request without the trailing slash (/docs) with 301 to ./docs/ (query kept) when the directory has an IndexFile; it used to serve the index at /docs"
+    breaking: false
+    guidance: "Relative links in a directory's index.html now resolve under the directory, as net/http's FileServer has them. A client or test that expected 200 at /docs follows the redirect or requests /docs/."
+    find:
+      uses:
+        - gofastr/core/static.Handler
+        - gofastr/core/static.Mount
   - change: "App.Shutdown answers /readyz with 503 at once and keeps serving for a readiness grace (default 5s, framework.WithReadinessDrain) before it stops accepting; a stop takes up to the grace longer"
     breaking: false
     guidance: "A load balancer probing /readyz stops routing here before the listener closes; /healthz stays 200 until exit. The default SIGTERM handler's deadline is AppConfig.ShutdownTimeout plus the grace, so keep both inside the orchestrator's kill window (Kubernetes' terminationGracePeriodSeconds, 30s by default). Pass framework.WithReadinessDrain(0) to stop at once, as before, or a longer grace to match a slow balancer. Test binaries and gofastr dev default to 0."

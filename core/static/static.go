@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Config holds the configuration for serving static files.
@@ -41,8 +43,13 @@ type Config struct {
 	// Defaults to "index.html".
 	IndexFile string
 
-	// SPA enables single-page application mode. When true, requests for
-	// paths that don't match any file will serve IndexFile instead of 404.
+	// SPA enables single-page application mode. When true, a request
+	// that matches no file and whose last path segment has no file
+	// extension (a client route: /dashboard/settings, /users/42) is
+	// answered with IndexFile instead of 404. A missing file with an
+	// extension (/app.3f2a.js, /x.css, /logo.png) is still a 404: the
+	// index in its place is HTML a browser would run as a script or a
+	// stylesheet, and a cache would store it under the asset's URL.
 	SPA bool
 
 	// NotFoundFile, when set, names a file in FS whose body answers a
@@ -81,6 +88,11 @@ type Config struct {
 	// symlinks to follow) and for a disk FS whose root could not be
 	// opened; those keep the plain FS.Open path.
 	root *os.Root
+
+	// dirRequest is the request's file path when the URL did not end in
+	// a slash, set per request. serveFile answers a directory of that
+	// name with a redirect to the slash form instead of its index.
+	dirRequest string
 }
 
 // defaults fills in zero-value fields with sensible defaults.
@@ -194,6 +206,9 @@ func Handler(config Config) http.Handler {
 			}
 			config.root = root
 		}
+		if !strings.HasSuffix(r.URL.Path, "/") {
+			config.dirRequest = reqPath
+		}
 
 		// Try to open and serve the file.
 		served := serveFile(w, r, config, reqPath)
@@ -201,13 +216,16 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
-		// If SPA mode, try serving the index file as fallback.
+		// If SPA mode, try serving the index file as fallback, for a
+		// client route only: a last segment with a file extension names a
+		// file (a fingerprinted asset a newer replica links mid-deploy, a
+		// stale bundle), and the shell in its place is HTML the browser
+		// would run as a script or a stylesheet. Those get the 404.
 		// The fallback is no-cache whatever MaxAge says: MaxAge is for the
 		// files the URLs name, and a long one here would store the shell
-		// under a URL that names no file (a fingerprinted asset a newer
-		// replica links mid-deploy, a client route) for that long. The
-		// index's ETag keeps each revalidation a body-less 304.
-		if config.SPA && reqPath != config.IndexFile {
+		// under a client route for that long. The index's ETag keeps each
+		// revalidation a body-less 304.
+		if config.SPA && reqPath != config.IndexFile && path.Ext(path.Base(reqPath)) == "" {
 			fallback := config
 			fallback.MaxAge = 0
 			if serveFile(w, r, fallback, config.IndexFile) {
@@ -339,6 +357,17 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	// If it's a directory, try to serve the index file.
 	if stat.IsDir() {
 		indexPath := path.Join(name, config.IndexFile)
+		if config.dirRequest != "" && name == config.dirRequest {
+			// /docs names a directory: send the client to /docs/, as
+			// net/http's FileServer does, so the index's relative links
+			// resolve under it rather than under its parent. Only when
+			// there is an index to serve there.
+			if !config.hasFile(indexPath) {
+				return false
+			}
+			redirectToDir(w, r)
+			return true
+		}
 		return serveFile(w, r, config, indexPath)
 	}
 
@@ -444,6 +473,38 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return true
 	}
 	return true
+}
+
+// hasFile reports whether name opens, inside the root, as a regular file.
+func (c Config) hasFile(name string) bool {
+	f, err := c.reopen(name)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	return err == nil && st.Mode().IsRegular()
+}
+
+// redirectToDir answers 301 with the request's own path plus a slash,
+// query kept. The Location is relative, "./<last segment>/", so it
+// resolves under whatever prefix the client used, including one an outer
+// http.StripPrefix removed before this handler saw the path. It can
+// never leave the origin. The "./" is the guard: it keeps a segment like
+// "http:evil.com" from reading as a scheme, and a slash or a backslash
+// (which a browser folds into one) after it only starts a path. Escaping
+// is a second layer that keeps such bytes out of the header at all.
+func redirectToDir(w http.ResponseWriter, r *http.Request) {
+	base := path.Base(path.Clean("/" + r.URL.Path))
+	loc := "./" + (&url.URL{Path: base}).EscapedPath() + "/"
+	if r.URL.RawQuery != "" {
+		// net/http refuses a control byte in the request target, so
+		// this is a no-op for a served request; for a hand-built one it
+		// percent-encodes the byte rather than splitting the header.
+		loc += "?" + textsafe.ScrubControlBytes(r.URL.RawQuery)
+	}
+	w.Header().Set("Location", loc)
+	w.WriteHeader(http.StatusMovedPermanently)
 }
 
 // errOutsideRoot is reopen's answer for a file that opened but resolves

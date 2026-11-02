@@ -179,6 +179,19 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`core/static` redirects `/dir` to `/dir/`.** A request without the
+  trailing slash for a directory that has an `IndexFile` used to get the
+  index at `/dir`, so its relative links resolved against the parent.
+  It now answers `301` to `./dir/` (query kept), like `net/http`'s
+  `FileServer`; the relative `Location` keeps the prefix and cannot
+  name another host.
+- **`core/static`'s SPA fallback answers only client routes.** With
+  `SPA: true`, a missing path whose last segment has a file extension
+  (`/app.3f2a.js`, `/x.css`, `/logo.png`) now gets `404` instead of the
+  index: the browser ran the HTML as a script or a stylesheet, and a
+  CDN could store it under the asset's URL. Extensionless paths
+  (`/dashboard/settings`) still get the index. See
+  [core packages](framework/docs/content/core-packages.md#static).
 - **`/readyz` drains before shutdown.** `App.Shutdown` now turns
   `/readyz` to `503` (`{"status":"draining"}`) at once and keeps serving
   for a grace period, so a load balancer stops routing here before the

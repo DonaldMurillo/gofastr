@@ -16,7 +16,9 @@ import (
 // app.<new>.js, lands on an older one, and the shell is pinned under the
 // asset's name until it expires. The fallback revalidates every time
 // (no-cache keeps the index's ETag, so it is a body-less 304); a file
-// that exists keeps MaxAge.
+// that exists keeps MaxAge. (A missing asset with an extension now
+// gets a 404 instead of the shell; TestSPAFallbackOnlyForExtensionlessPaths
+// holds that. The no-cache rule still covers every client route.)
 func TestSPAFallbackIsNotCachedUnderMaxAge(t *testing.T) {
 	fsys := fstest.MapFS{
 		"index.html":    {Data: []byte("<p>shell</p>")},
@@ -24,7 +26,7 @@ func TestSPAFallbackIsNotCachedUnderMaxAge(t *testing.T) {
 	}
 	h := Handler(Config{FS: fsys, SPA: true, MaxAge: 365 * 24 * time.Hour})
 
-	for _, u := range []string{"/app.def456.js", "/dashboard/settings"} {
+	for _, u := range []string{"/users/42", "/dashboard/settings"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, u, nil))
 		if rec.Code != http.StatusOK || rec.Body.String() != "<p>shell</p>" {
