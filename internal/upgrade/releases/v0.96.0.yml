@@ -1084,3 +1084,7 @@ notes:
     breaking: true
     guidance: "migrate up applied every pending migration whatever number followed it, and validate checked only its first path. Drop the extra argument from deploy scripts (migrate down N rolls back N), and run validate once per app spec. A script that passed a Postgres URL with no --db failed with a SQLite error and now migrates the Postgres database it names; pass --db=sqlite to keep the old driver."
     nodetect: "the arguments live in shell scripts, Makefiles and CI config, not in the app's Go source"
+  - change: "BREAKING for apps gating CI on gofastr verify - GOFASTR1601 reports a bare db.Exec(...) or ExecContext(...) statement (plain, deferred or in a goroutine) and GOFASTR1413 reports a w.Header()[\"Vary\"] = ... map write"
+    breaking: true
+    guidance: "Each finding names its line. Check the Exec error (if _, err := db.Exec(...); err != nil { ... }) or mark a deliberate site with // best-effort: <why>. For Vary, use Header().Add(\"Vary\", ...) or append to the existing entry."
+    nodetect: "gofastr verify reports every site itself, with its file and line"

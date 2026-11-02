@@ -779,13 +779,16 @@ func securityRules() []Rule {
 		ID: RuleVarySet, Slug: "security/vary-set-overwrites",
 		Title:      "`Vary` written with Set in a middleware chain",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`Header().Set(\"Vary\", …)`, in any case, replaces the Vary entries earlier middlewares added.",
+		Summary: "`Header().Set(\"Vary\", …)` in any case, or a direct `Header()[\"Vary\"] = …` map write, replaces the Vary entries earlier middlewares added.",
 		Why:     "Vary is append-only in a middleware chain: a response crosses CORS (which Adds `Vary: Origin`), an idempotency layer, a cache layer, and a later Set replaces every earlier entry — a shared cache then serves one principal's variant to another. The 2026-09-07 probe TestIdempotencyVaryEatsCors pinned it live: CORS(...)(Idempotency(...)) on an over-cap POST produced ACAO with Vary listing ONLY Idempotency-Key.",
-		Fix:     "Use `.Add(\"Vary\", …)`, the spelling core/middleware/cors.go, wellknown.go, embed, uihost, and the auth BFF all already use. Set is for headers one layer owns end to end; Vary is never one of them.",
+		Fix:     "Use `.Add(\"Vary\", …)`, the spelling core/middleware/cors.go, wellknown.go, embed, uihost, and the auth BFF all already use (a map write that appends to the existing entry is quiet too). Set is for headers one layer owns end to end; Vary is never one of them.",
 		Doc:     "security",
 		Examples: []Example{{
 			Bad:  "w.Header().Set(\"Vary\", \"Idempotency-Key\")",
 			Good: "w.Header().Add(\"Vary\", \"Idempotency-Key\")",
+		}, {
+			Bad:  "w.Header()[\"Vary\"] = []string{\"Idempotency-Key\"}",
+			Good: "w.Header()[\"Vary\"] = append(w.Header()[\"Vary\"], \"Idempotency-Key\")",
 		}},
 	}, {
 		ID: RuleDialectDrift, Slug: "security/dialect-twin-where-drift",
@@ -870,7 +873,7 @@ func dataRules() []Rule {
 	return []Rule{{
 		ID: RuleIgnoredExec, Slug: "data/ignored-exec",
 		Title: "Write result discarded", Capability: CapData, Severity: SeverityError,
-		Summary: "The result and error of a `db.Exec` are both assigned to `_`.",
+		Summary: "The result and error of a `db.Exec` are both dropped: assigned to `_`, or the call stands alone as a statement (plain, deferred or in a goroutine).",
 		Why: "The write may not have happened. A constraint violation, a closed connection, a " +
 			"read-only replica: all of them return an error here and none of them are visible. " +
 			"The request returns 200 and the data is gone.",
@@ -879,6 +882,9 @@ func dataRules() []Rule {
 		Examples: []Example{{
 			Bad:  `_, _ = db.Exec("DELETE FROM sessions WHERE id = $1", id)`,
 			Good: "if _, err := db.Exec(\"DELETE FROM sessions WHERE id = $1\", id); err != nil {\n    return fmt.Errorf(\"revoke session: %w\", err)\n}",
+		}, {
+			Bad:  "db.Exec(`INSERT INTO posts (id, title) VALUES ('p1', 'Hello')`)",
+			Good: "if _, err := db.Exec(`INSERT INTO posts (id, title) VALUES ('p1', 'Hello')`); err != nil {\n    return fmt.Errorf(\"seed: %w\", err)\n}",
 		}},
 	}}
 }

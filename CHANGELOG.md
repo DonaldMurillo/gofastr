@@ -193,6 +193,14 @@ few lines, and link the PR or the docs page for the rest.
   not; Postgres finds no `½`, `v1.2` or email address; doubled hyphens
   match differently on each. Nothing changed in the backends; normalize
   text yourself if every backend must agree.
+- **BREAKING: `gofastr verify` reports two more spellings.** GOFASTR1601
+  (write result discarded) now fires on a bare `db.Exec(...)` or
+  `ExecContext(...)` statement, plain, deferred or in a goroutine, not
+  only on `_, _ = db.Exec(...)`. GOFASTR1413 (Vary overwritten) now fires
+  on `w.Header()["Vary"] = …`; an append to the existing entry stays
+  quiet. A CI gate on `gofastr verify` can newly fail: check the error,
+  or mark a deliberate site `// best-effort: <why>`. The blog, spa and
+  backoffice examples' seeds now check every insert.
 
 
 ### Fixed

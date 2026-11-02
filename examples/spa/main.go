@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -34,8 +35,12 @@ func main() {
 	app := buildApp(db)
 
 	// --- Seed data (must run after tables exist) ---
-	framework.AutoMigrate(db, app.Registry)
-	seed(db)
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		log.Fatal(err)
+	}
+	if err := seed(db); err != nil {
+		log.Fatal(err)
+	}
 
 	// Custom API endpoint, site metadata. Entity CRUD already mounts under
 	// /api via APIPrefix; this just adds one more route alongside it.
@@ -129,12 +134,18 @@ func resolveStaticDir() string {
 	return ""
 }
 
-func seed(db *sql.DB) {
-	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a1', 'Getting Started with Go', 'A beginner''s guide to Go.', 'Go is a statically typed, compiled language designed at Google. It is simple, fast, and has excellent concurrency support. In this article we cover the basics: installation, hello world, and your first HTTP server.', 'tutorial')`)
-	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a2', 'Why We Built GoFastr', 'The story behind the framework.', 'Every framework we tried assumed humans write every route by hand. We wanted something designed for AI coding agents as the primary author. GoFastr is a two-layer framework: core primitives for control, entity system for speed.', 'story')`)
-	db.Exec(`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a3', 'MCP-Native Apps', 'Making your app an MCP server.', 'The Model Context Protocol lets AI tools interact with your app directly. With GoFastr, every entity can auto-generate MCP tools for list, get, create, update, and delete, so any MCP client can work with your data out of the box.', 'tutorial')`)
-
-	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p1', 'GoFastr', 'Go fullstack framework for the AI era', 'https://github.com/DonaldMurillo/gofastr')`)
-	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p2', 'GoFastr CLI', 'Command-line tools for scaffolding and dev', 'https://github.com/DonaldMurillo/gofastr')`)
-	db.Exec(`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p3', 'Example Apps', 'Reference applications built with GoFastr', 'https://github.com/DonaldMurillo/gofastr/tree/main/examples')`)
+func seed(db *sql.DB) error {
+	for _, stmt := range []string{
+		`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a1', 'Getting Started with Go', 'A beginner''s guide to Go.', 'Go is a statically typed, compiled language designed at Google. It is simple, fast, and has excellent concurrency support. In this article we cover the basics: installation, hello world, and your first HTTP server.', 'tutorial')`,
+		`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a2', 'Why We Built GoFastr', 'The story behind the framework.', 'Every framework we tried assumed humans write every route by hand. We wanted something designed for AI coding agents as the primary author. GoFastr is a two-layer framework: core primitives for control, entity system for speed.', 'story')`,
+		`INSERT OR IGNORE INTO articles (id, title, summary, body, category) VALUES ('a3', 'MCP-Native Apps', 'Making your app an MCP server.', 'The Model Context Protocol lets AI tools interact with your app directly. With GoFastr, every entity can auto-generate MCP tools for list, get, create, update, and delete, so any MCP client can work with your data out of the box.', 'tutorial')`,
+		`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p1', 'GoFastr', 'Go fullstack framework for the AI era', 'https://github.com/DonaldMurillo/gofastr')`,
+		`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p2', 'GoFastr CLI', 'Command-line tools for scaffolding and dev', 'https://github.com/DonaldMurillo/gofastr')`,
+		`INSERT OR IGNORE INTO projects (id, name, description, url) VALUES ('p3', 'Example Apps', 'Reference applications built with GoFastr', 'https://github.com/DonaldMurillo/gofastr/tree/main/examples')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("seed: %w", err)
+		}
+	}
+	return nil
 }

@@ -2028,19 +2028,64 @@ func runData(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			continue
 		}
 		lines := strings.Split(string(body), "\n")
-		for i, line := range lines {
-			if !reIgnoredExec.MatchString(line) {
-				continue
+		flagged := map[int]bool{}
+		report := func(lineNo int) {
+			if flagged[lineNo] || hasLegacyAnnotation(lines, lineNo, "best-effort", "ignore the error", "errors here") {
+				return
 			}
-			if hasLegacyAnnotation(lines, i+1, "best-effort", "ignore the error", "errors here") {
-				continue
-			}
+			flagged[lineNo] = true
 			out = append(out, contracts.Diagnostic{
-				RuleID: contracts.RuleIgnoredExec, File: f.Rel, Line: i + 1,
+				RuleID: contracts.RuleIgnoredExec, File: f.Rel, Line: lineNo,
 				Message: "both the result and the error of this write are discarded",
-				Snippet: strings.TrimSpace(line),
+				Snippet: strings.TrimSpace(lines[lineNo-1]),
 			})
+		}
+		for i, line := range lines {
+			if reIgnoredExec.MatchString(line) {
+				report(i + 1)
+			}
+		}
+		if file, parsed := p.AST(f.Rel); parsed {
+			for _, pos := range bareExecStatements(file) {
+				if line := p.Position(pos).Line; line >= 1 && line <= len(lines) {
+					report(line)
+				}
+			}
 		}
 	}
 	return out, nil
+}
+
+// bareExecStatements returns the position of every Exec or ExecContext
+// call that stands as a statement of its own (plain, deferred or in a
+// goroutine): the result and the error both go nowhere, exactly as with
+// `_, _ =`. The line matcher above only knew the assignment.
+func bareExecStatements(file *ast.File) []token.Pos {
+	var out []token.Pos
+	isExec := func(e ast.Expr) bool {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		return ok && (sel.Sel.Name == "Exec" || sel.Sel.Name == "ExecContext")
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.ExprStmt:
+			if isExec(s.X) {
+				out = append(out, s.Pos())
+			}
+		case *ast.DeferStmt:
+			if isExec(s.Call) {
+				out = append(out, s.Pos())
+			}
+		case *ast.GoStmt:
+			if isExec(s.Call) {
+				out = append(out, s.Pos())
+			}
+		}
+		return true
+	})
+	return out
 }
