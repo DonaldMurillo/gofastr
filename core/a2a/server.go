@@ -21,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
@@ -823,6 +824,19 @@ func (s *Server) startRun(r *http.Request, t *taskRun, rn *run, h Handler) {
 			stopLife()
 			cancel()
 			s.finishRun(rn)
+		}()
+		// finalize reads and writes through the Store, publishes, and
+		// trims through the RetentionTrimmer: host-supplied code on this
+		// goroutine, outside invoke's recover, with no per-request net
+		// behind it. A panic there must end this run (logged; the
+		// deferred finishRun still releases it), not the process and
+		// every other owner's runs with it. The task keeps its last
+		// stored state.
+		defer func() {
+			if p := recover(); p != nil {
+				s.log.Error("a2a: run finalize panicked",
+					"taskId", rn.id, "panic", textsafe.Recovered(p))
+			}
 		}()
 		var err error
 		if !haltedBeforeStart {

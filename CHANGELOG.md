@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A2A: a panicking `Store` or push client no longer crashes the
+  process.** A run's finalize (the store read and write after the
+  handler returns, the publish, the retention trim) and each push
+  delivery through `PushOptions.Client` ran on the server's own
+  goroutines with no recover, so one panic there took down every
+  owner's runs and streams. The run now ends with an
+  `a2a: run finalize panicked` log line and is released; the delivery
+  fails with `a2a: push delivery panicked` and the drain carries on.
 - **An MCP response that cannot encode is still answered.** The MCP
   transports dropped the JSON encode error, so a result holding a NaN
   where the dispatch does not marshal it first (a content block's or a
