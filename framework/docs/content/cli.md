@@ -4,7 +4,8 @@
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 ```
 
-One binary. `gofastr <command> --help` prints every flag; this page maps
+One binary. `gofastr <command> --help` (or `gofastr help <command>`)
+prints every flag; `gofastr help` is the command overview. This page maps
 each command to the doc that covers it.
 
 Everything the CLI prints, status lines (`✓`, `✗`, `→`, `⚠`) and the

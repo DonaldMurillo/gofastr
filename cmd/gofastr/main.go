@@ -117,6 +117,7 @@ func printHelp() {
                         to the copy; no package lists the copies. See "gofastr docs unmount"
   remount <package>     Go back to the framework's package and delete the copy
   version               Print version info
+  help [command]        This overview, or the command's own --help
 
 %s:
   --help, -h      Show this help message
@@ -219,6 +220,20 @@ func dispatch(args []string) {
 
 	cmd := args[0]
 	cmdArgs := args[1:]
+	// `gofastr help` is the overview and `gofastr help <command>` is
+	// `gofastr <command> --help`. An unknown name falls through to the
+	// unknown-command answer below.
+	if cmd == "help" {
+		if len(cmdArgs) == 0 {
+			printHelp()
+			return
+		}
+		if knownCommand(cmdArgs[0]) {
+			dispatch([]string{cmdArgs[0], "--help"})
+			return
+		}
+		cmd = cmdArgs[0]
+	}
 	warnVersionMismatch(cmd, cmdArgs)
 
 	switch cmd {
@@ -270,7 +285,6 @@ func dispatch(args []string) {
 		cli.Fail("Unknown command: %s", cmd)
 		fmt.Println()
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				cli.Printf("  Did you mean: "+cli.Bold("gofastr %s")+"?\n", s)
@@ -279,6 +293,16 @@ func dispatch(args []string) {
 		printHelp()
 		cli.OsExit(1)
 	}
+}
+
+// suggestions are the command names an unknown command is matched
+// against (aliases left out).
+var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
+
+// knownCommand reports whether name is a command dispatch runs, an
+// alias included.
+func knownCommand(name string) bool {
+	return ownsHelp[name] || name == "version" || name == "help"
 }
 
 // versionCheckedCommands are the commands that work on the project in
