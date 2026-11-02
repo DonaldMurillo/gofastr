@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`/readyz` no longer races a check that outlives its deadline.** On
+  timeout the handler read and copied the result rows while a check that
+  ignored `ctx` could still write its own row, a data race `go test
+  -race` reports. Checks now hand their rows over a channel, and a late
+  one is dropped. A check registered with an empty name that had passed
+  is no longer reported as `"timeout"` when another check hangs.
 - **`RedisCache.Set` with a negative TTL deletes the key.** It passed
   the negative duration to `RedisClient.Set`, and a go-redis adapter
   stores that with no expiry (`-1` is KEEPTTL), so a lifetime already in

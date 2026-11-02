@@ -110,7 +110,9 @@ under `recover()`, so a panicking check marks that row as
 `"error"` without taking the process down. A check that ignores
 `ctx.Done()` and runs past the deadline is reported as
 `"timeout"` immediately. The response does not wait for the
-straggler.
+straggler, and the straggler's late result is dropped, never written
+into a response already sent. Checks that finished before the deadline
+keep their own rows, named or not.
 
 <!-- gofastr:compile
 stmt: _ = app

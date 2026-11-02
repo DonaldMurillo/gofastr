@@ -208,27 +208,40 @@ type ReadinessResult struct {
 // crash the process) and respects ctx cancellation so a check that
 // hangs past the deadline is reported as "timeout" instead of blocking
 // the response.
+//
+// Only this function writes the result rows. Each check goroutine sends
+// its row over a channel buffered for every check, so a check that
+// finishes after the deadline sends into the buffer and exits; it used
+// to write out[i] while the timeout path was reading and copying the
+// slice, a data race on a struct of strings. The timeout path tells a
+// finished row by its done flag, not by an empty Name, which reported a
+// passed check registered without a name as a timeout.
 func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bool) ReadinessResponse {
 	if len(checks) == 0 {
 		return ReadinessResponse{Status: "ready", Checks: []ReadinessResult{}}
 	}
+	type indexed struct {
+		i   int
+		res ReadinessResult
+	}
 	out := make([]ReadinessResult, len(checks))
-	resultCh := make(chan struct{}, len(checks))
+	done := make([]bool, len(checks))
+	resultCh := make(chan indexed, len(checks))
 	for i, c := range checks {
 		go func(i int, c ReadinessCheck) {
+			res := ReadinessResult{Name: c.Name, DurMS: 0}
 			defer func() {
 				if r := recover(); r != nil {
-					out[i] = ReadinessResult{
+					res = ReadinessResult{
 						Name:   c.Name,
 						Status: "error",
 						Error:  redactError(fmt.Sprintf("panic: %v", textsafe.Recovered(r)), verbose),
 						DurMS:  0,
 					}
 				}
-				resultCh <- struct{}{}
+				resultCh <- indexed{i: i, res: res}
 			}()
 			start := time.Now()
-			res := ReadinessResult{Name: c.Name, DurMS: 0}
 			if c.Check == nil {
 				res.Status = "error"
 				res.Error = redactError("nil check function", verbose)
@@ -242,23 +255,18 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 					res.Status = "ok"
 				}
 			}
-			out[i] = res
 		}(i, c)
 	}
 	// Race the wait against the deadline so a check that ignores ctx
 	// can't keep /readyz waiting longer than the request timeout.
-	completed := 0
-	for completed < len(checks) {
+	for completed := 0; completed < len(checks); completed++ {
 		select {
-		case <-resultCh:
-			completed++
+		case r := <-resultCh:
+			out[r.i] = r.res
+			done[r.i] = true
 		case <-ctx.Done():
-			// Fill in any unreported rows as timeout, then return a
-			// COPY so any goroutine still in c.Check() can't race the
-			// caller's read of the slice (it'd be writing back into
-			// `out`, which the caller has already moved on from).
 			for i, c := range checks {
-				if out[i].Name == "" {
+				if !done[i] {
 					out[i] = ReadinessResult{
 						Name:   c.Name,
 						Status: "timeout",
@@ -267,9 +275,7 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 					}
 				}
 			}
-			snapshot := make([]ReadinessResult, len(out))
-			copy(snapshot, out)
-			return ReadinessResponse{Checks: snapshot}
+			return ReadinessResponse{Checks: out}
 		}
 	}
 	return ReadinessResponse{Checks: out}
