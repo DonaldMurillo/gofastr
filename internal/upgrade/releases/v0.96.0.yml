@@ -761,3 +761,9 @@ notes:
     find:
       uses:
         - gofastr/battery/relay.New
+  - change: "battery/relay drops the upstream's NEL, Report-To, Reporting-Endpoints, Alt-Svc, Accept-CH, Critical-CH, Strict-Transport-Security and Set-Login response headers"
+    breaking: false
+    guidance: "Nothing to change. Each set policy for the whole app origin from a vendor response. Set any of them yourself in the app's own middleware if you want it; a value set before the relay runs is kept."
+    find:
+      uses:
+        - gofastr/battery/relay.New

@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The relay drops vendor headers that set policy for the app's
+  origin.** A relayed response is served on the app's origin, so a
+  vendor's `NEL` with `Report-To` had the browser report requests to
+  every app URL to the vendor for up to a year, outside the page's CSP.
+  `NEL`, `Report-To`, `Reporting-Endpoints`, `Alt-Svc`, `Accept-CH`,
+  `Critical-CH`, `Strict-Transport-Security` and `Set-Login` from the
+  upstream no longer reach the browser; values the host set stay. See
+  [relay](framework/docs/content/relay.md).
 - **The relay sends the vendor the page's origin, not its URL, as
   `Referer`.** A relayed request is same-origin, so the browser sends
   the full page URL as `Referer`, and a reset or magic-link page that

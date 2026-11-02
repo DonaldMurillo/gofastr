@@ -73,6 +73,22 @@ var stripOutboundHeaders = []string{
 	// Service-Worker-Allowed widens a worker's scope past its script's
 	// path: vendor script could register one over every app page.
 	http.CanonicalHeaderKey("Service-Worker-Allowed"),
+	// Origin-wide policy the browser keeps after this response. NEL with
+	// Report-To / Reporting-Endpoints reports requests to every app URL
+	// to a vendor endpoint for max_age, past the page's CSP; Alt-Svc
+	// steers later app traffic; Accept-CH / Critical-CH make every app
+	// request carry client hints (which the relay then forwards back);
+	// Strict-Transport-Security pins the app's subdomains; Set-Login is
+	// the origin's FedCM login status. The host sets these, never a
+	// vendor (a value the host set before the relay ran stays).
+	http.CanonicalHeaderKey("NEL"),
+	http.CanonicalHeaderKey("Report-To"),
+	http.CanonicalHeaderKey("Reporting-Endpoints"),
+	http.CanonicalHeaderKey("Alt-Svc"),
+	http.CanonicalHeaderKey("Accept-CH"),
+	http.CanonicalHeaderKey("Critical-CH"),
+	http.CanonicalHeaderKey("Strict-Transport-Security"),
+	http.CanonicalHeaderKey("Set-Login"),
 }
 
 // reverseProxy keeps the concrete type in one place; the handler layer
