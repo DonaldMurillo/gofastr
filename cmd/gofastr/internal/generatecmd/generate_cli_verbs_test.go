@@ -59,8 +59,8 @@ var cliMutationCases = []struct {
 	argv []string
 }{
 	{"create help", []string{"gadgets", "create", "--help"}},
-	// id verbs pop the positional id before flag parsing, so their help
-	// text shows when the id precedes --help.
+	// id verbs pop the positional id before flag parsing; their help
+	// shows with the id or without it (TestCLIKeyedVerbHelpExitsZero).
 	{"update help", []string{"gadgets", "update", "rec-9", "--help"}},
 	{"patch help", []string{"gadgets", "patch", "rec-9", "--help"}},
 	{"create all flag kinds", []string{"gadgets", "create",

@@ -1691,7 +1691,9 @@ func decodeJSON(data []byte, out any) error {
 // column, <verb> <id> [flags] or <verb> <a> <b> [flags]. It returns the
 // record's path tail, one escaped segment per value, and the id the
 // server knows the record by: the value itself for a one-column key, the
-// path tail for a longer one.
+// path tail for a longer one. A key left out for --help yields ok with a
+// bare -h as rest, so the caller's flag parse prints the verb's flag
+// reference and exits 0 before any request.
 func takeKey(verb string, keys, args []string) (tail, id string, rest []string, ok bool) {
 	short := len(args) < len(keys)
 	for i := 0; !short && i < len(keys); i++ {
@@ -1703,6 +1705,9 @@ func takeKey(verb string, keys, args []string) (tail, id string, rest []string, 
 			names[i] = "<" + k + ">"
 		}
 		fmt.Fprintf(os.Stderr, "usage: %s %s %s [flags]\n", binaryName, verb, strings.Join(names, " "))
+		if askedHelp(args) {
+			return "", "", []string{"-h"}, true
+		}
 		return "", "", nil, false
 	}
 	segs := make([]string, len(keys))
@@ -1714,6 +1719,18 @@ func takeKey(verb string, keys, args []string) (tail, id string, rest []string, 
 		id = args[0]
 	}
 	return tail, id, args[len(keys):], true
+}
+
+// askedHelp reports whether args holds one of the flag package's help
+// spellings.
+func askedHelp(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "-h", "-help", "--h", "--help":
+			return true
+		}
+	}
+	return false
 }
 
 // readJSONArg resolves a --json value: "-" reads stdin, "@path" reads a
@@ -2671,7 +2688,13 @@ func runEndpointVerb(cmd, base string, call endpointCall, args []string) int {
 		}
 		if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 			fmt.Fprintf(os.Stderr, "usage: %s %s %s [flags]\n", binaryName, cmd, strings.Join(names, " "))
-			return 2
+			if !askedHelp(args) {
+				return 2
+			}
+			// --help in place of a path value: the flag parse below
+			// prints the flag reference and exits 0 before any request.
+			args = []string{"-h"}
+			break
 		}
 		path += "/" + url.PathEscape(args[0])
 		args = args[1:]

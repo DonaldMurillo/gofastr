@@ -517,6 +517,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
+  (entity mode); regenerate the CLI to pick these up. Details in
+  [app-cli.md](framework/docs/content/app-cli.md):
+  - `--help` on a verb that takes a record key or a path value
+    (`get`, `update`, `patch`, `delete`, a move, an endpoint) prints its
+    flag reference and exits 0 without the key. It printed one usage
+    line and exited 2.
 - **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
   in [app-cli.md](framework/docs/content/app-cli.md):
   - **BREAKING: an acronym is one word in command and flag names.**

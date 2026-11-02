@@ -53,7 +53,9 @@ myapp posts delete 42
 Help is built in at every level, always exiting 0: bare `myapp` (or
 `help`/`--help`) lists every command, a bare entity command
 (`myapp posts`) lists that entity's subcommands, and `--help` on any
-verb prints its full flag reference. An unknown subcommand prints the
+verb prints its full flag reference, a verb that takes a record key or a
+path value included (`myapp posts patch --help` needs no id). An unknown
+subcommand prints the
 group usage and exits 2. `version` prints the binary name.
 
 Per verb:
