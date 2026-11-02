@@ -1069,7 +1069,7 @@ notes:
     find:
       shapes:
         - symbol: gofastr/framework/filter.SearchConditions
-          type: '^func\(fields \[\]string, term string\) \(\[\]filter\.Condition, error\)$'
+          type: '^func\(fields \[\]string, term string\) \[\]filter\.Condition$'
   - change: "BREAKING - a BeforeGet hook that hides a row now also blocks writes to it: PUT, PATCH, DELETE, transitions, _batch items, restore and purge answer 404 (in process only under crud.WithReadHooks), and BeforeGet hooks run inside the write transaction"
     breaking: true
     guidance: "If a hook hides rows from callers who still need to write them, move that rule to Access permissions or stop hiding the row. A hook that reads the database must use the ctx it is given (framework.TxFromContext), not a separate pool connection, or it can deadlock on a one-connection pool."
