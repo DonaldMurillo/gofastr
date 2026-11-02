@@ -241,7 +241,9 @@ few lines, and link the PR or the docs page for the rest.
   `$1,000,000,001,193.00` ran out of the card: past a phone's edge into
   a horizontal page scroll, and over the neighbouring cell's label in a
   `ui.StatStrip`.
-- **The app generator refuses names its app could not boot with.** A
+- **BREAKING: the app generator refuses names its app could not boot
+  with.** A few words (`user`, `desc`, `end`, `left`, `right`) only
+  Postgres refuses, so an SQLite app spec using one stops validating. A
   table, field or index name that bare SQL cannot carry (`order`, `on`,
   `user`, `first-name`, a name over 63 bytes), two entities on one
   table, and an entity on a battery's table (`auth_users`,
@@ -257,8 +259,8 @@ few lines, and link the PR or the docs page for the rest.
   mount (`/api/posts`) stopped the boot with a panic, and a route under
   it (`/api/posts/{id}`) was answered by the CRUD API instead. See
   [app spec validation](framework/docs/content/app-spec.md#validation).
-- **Generated clients send the JSON key the server reads for every
-  field.** The server keys a column `Title` as `Title` and `_note` as
+- **BREAKING: generated clients send the JSON key the server reads for
+  every field.** The server keys a column `Title` as `Title` and `_note` as
   `Note`; the generated model, typed repo shapes, typed client, Go and JS
   SDKs and CLI lowered the first letter (`title`, `note`), so those
   fields were dropped on write and read as empty. App specs now refuse a
