@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/internal/actionscan"
 )
 
 // enforceNoServerActionsOnEmbeds panics at boot when a component that ships a
@@ -338,33 +336,22 @@ func (w *reachWalker) record(t reflect.Type) {
 	}
 }
 
-// serverActionCall reports whether clientJS contains a G.serverAction call,
-// including legal JavaScript whitespace before the opening parenthesis.
+// serverActionCall reports whether clientJS calls G.serverAction, reading
+// it the way `gofastr build`'s check-embed analyzer does
+// (internal/actionscan): comments, strings, template text and regular
+// expression literals are not code, a template's ${...} is, and
+// whitespace or a comment before "(" is still a call.
 //
-// The action compiler rewrites only the canonical "G.serverAction(" spelling.
-// The embed gate rejects the whitespace form instead of shipping a call with
-// no component ID. Calls assembled dynamically through computed properties or
-// string concatenation remain outside both this scan and the compiler.
+// The action compiler rewrites only the canonical "G.serverAction("
+// spelling, so the gate rejects the other spellings instead of shipping
+// a call with no component ID. It used to match the bytes anywhere, so a
+// mention in a comment or a string passed check-embed and then panicked
+// here at Mount, while G.serverAction /* … */ ( failed the build and
+// passed here. The compiler's lexical rewrite of a mention inside a
+// comment or a string leaves a comment or a string; a string runs only
+// through eval or new Function, which the default CSP refuses. Calls
+// assembled through computed properties or concatenation remain outside
+// both this scan and the compiler.
 func serverActionCall(clientJS string) bool {
-	const name = "G.serverAction"
-	for offset := 0; offset < len(clientJS); {
-		i := strings.Index(clientJS[offset:], name)
-		if i < 0 {
-			return false
-		}
-		match := offset + i
-		after := match + len(name)
-		for after < len(clientJS) {
-			r, size := utf8.DecodeRuneInString(clientJS[after:])
-			if !unicode.IsSpace(r) {
-				break
-			}
-			after += size
-		}
-		if after < len(clientJS) && clientJS[after] == '(' {
-			return true
-		}
-		offset = match + len(name)
-	}
-	return false
+	return actionscan.ServerActionCall(clientJS)
 }

@@ -319,6 +319,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The embed boot check and `check-embed` read ClientJS the same way.**
+  The boot walk matched the bytes `G.serverAction(` anywhere, so a
+  mention in a comment, a string or template text passed `gofastr
+  build` and then panicked at `Mount`, and `G.serverAction /* … */ (`
+  failed the build but passed boot. `check-embed` lost its place at a
+  quote inside a regular expression (`s.replace(/"/g, '')`) and missed a
+  real call after it. Both now call one scanner that skips comments,
+  strings, template text and regex literals, and reads `${…}` as code.
 - **MCP `initialize` negotiates the protocol version.** It answered
   `2025-06-18` whatever the client asked for. Per the 2025-06-18
   Lifecycle spec it now echoes a requested version the server supports
