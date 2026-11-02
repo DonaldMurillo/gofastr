@@ -751,3 +751,19 @@ notes:
     breaking: false
     guidance: "Each such screen was unreachable from a browser, stopped the app at boot (on the CRUD mount), or was answered by the CRUD API (under it). Fix the route in the app spec before regenerating."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "RedisCache.Set with a negative ttl (or a negative WithTTL default) deletes the key and stores nothing, as MemoryCache does; it used to pass the duration to the RedisClient, and a go-redis adapter stored the value with no expiry"
+    breaking: false
+    guidance: "Nothing to change. A caller that passed a negative ttl got a never-expiring entry before; it now reads a miss, which is what the Cache contract always said."
+    nodetect: "the ttl is a runtime value; no spelling in an app's source marks a negative one"
+  - change: "battery/relay forwards Referer to the upstream as the page's origin (https://app.example/) instead of the full page URL, and drops a Referer that is not an absolute http(s) URL"
+    breaking: false
+    guidance: "Nothing to change. A vendor that read the page path from Referer reads it from its own payload (analytics scripts send the page URL in the body). Send what the vendor needs in the request yourself if it relied on the header."
+    find:
+      uses:
+        - gofastr/battery/relay.New
+  - change: "battery/relay drops the upstream's NEL, Report-To, Reporting-Endpoints, Alt-Svc, Accept-CH, Critical-CH, Strict-Transport-Security and Set-Login response headers"
+    breaking: false
+    guidance: "Nothing to change. Each set policy for the whole app origin from a vendor response. Set any of them yourself in the app's own middleware if you want it; a value set before the relay runs is kept."
+    find:
+      uses:
+        - gofastr/battery/relay.New

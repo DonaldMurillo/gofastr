@@ -140,6 +140,36 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The relay drops vendor headers that set policy for the app's
+  origin.** A relayed response is served on the app's origin, so a
+  vendor's `NEL` with `Report-To` had the browser report requests to
+  every app URL to the vendor for up to a year, outside the page's CSP.
+  `NEL`, `Report-To`, `Reporting-Endpoints`, `Alt-Svc`, `Accept-CH`,
+  `Critical-CH`, `Strict-Transport-Security` and `Set-Login` from the
+  upstream no longer reach the browser; values the host set stay. See
+  [relay](framework/docs/content/relay.md).
+- **The relay sends the vendor the page's origin, not its URL, as
+  `Referer`.** A relayed request is same-origin, so the browser sends
+  the full page URL as `Referer`, and a reset or magic-link page that
+  loaded a vendor script through the relay handed its token to the
+  vendor; a request straight to the vendor would have carried the origin
+  alone. The relay now cuts `Referer` to `scheme://host/` and drops one
+  that is not an absolute http(s) URL.
+- **The relay's `Link` strip reads a target the way the browser does.**
+  It looked for `://` and `<//` only, so `<\\vendor.example/x>`,
+  `</\vendor.example/x>` and a tab between the slashes, which a browser
+  parses as `//vendor.example/x`, reached it as a preload or preconnect
+  to the vendor. A target with a scheme or an authority after tab and
+  newline removal and `\` to `/` now drops the value. See
+  [relay](framework/docs/content/relay.md).
+- **`RedisCache` stores nothing for a negative TTL.** The `Cache`
+  contract says a negative `ttl` stores nothing and drops what the key
+  held, and `MemoryCache` does that. `RedisCache.Set` handed the
+  negative duration to the client, and a go-redis adapter sends any
+  non-positive expiry other than 0 as a SET with no expiry (and -1 as
+  KEEPTTL), so the value was kept forever over the old one, and
+  `GetOrSet` with a negative `ttl` returned it. `RedisCache.Set` now
+  deletes the key instead. See [cache](framework/docs/content/cache.md).
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
