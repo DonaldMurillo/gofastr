@@ -173,7 +173,8 @@ type AppConfig struct {
 	// SIGINT/SIGTERM handler runs via App.Shutdown. Zero installs the
 	// 15s default. The handler's deadline is this plus the readiness
 	// grace (WithReadinessDrain) Shutdown spends first, serving while
-	// /readyz answers 503. The drain then stops accepting connections, waits for
+	// /readyz answers 503; a grace longer than this is cut to half the
+	// deadline. The drain then stops accepting connections, waits for
 	// in-flight requests, force-closes whatever remains at the deadline
 	// (an open SSE stream never goes idle), then stops batteries and
 	// runs OnStop hooks.
@@ -306,6 +307,10 @@ type App struct {
 
 	serverMu sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
 	server   *http.Server
+	// boundHost is the IP the listener bound ("127.0.0.1", "::"), set
+	// once Start holds the port; servesLocalOnly reads it. Guarded by
+	// serverMu.
+	boundHost string
 	// shutdownDone is set by the first Shutdown and closed when its
 	// teardown returns; every later call waits on it instead of tearing
 	// down again. Guarded by shutdownMu.
@@ -3324,7 +3329,9 @@ func (a *App) closeNewConns() {
 // reverse registration order. It first turns /readyz to 503 and, while
 // the server is serving, keeps serving for the readiness grace
 // (WithReadinessDrain, 5s by default) so a load balancer stops routing
-// here before the listener closes; /healthz stays 200. Matches net/http.Server.Shutdown's
+// here before the listener closes; /healthz stays 200. The grace counts
+// against ctx: it takes at most half of what ctx has left, and the rest
+// of the teardown gets the remainder. Matches net/http.Server.Shutdown's
 // signature (takes a deadline ctx) but does the FULL lifecycle teardown.
 // Safe to call multiple times: the teardown runs once, and a later or
 // concurrent call waits for it to finish, then returns nil, or returns
@@ -4051,6 +4058,11 @@ func (a *App) Start(addr string) error {
 	// Serve closes the listener on Shutdown; this extra Close only matters
 	// on the Shutdown-raced path where Serve returns without adopting ln.
 	defer func() { _ = ln.Close() }()
+	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil {
+		a.serverMu.Lock()
+		a.boundHost = host
+		a.serverMu.Unlock()
+	}
 
 	// Graceful shutdown by default: docker stop and kubectl rollouts send
 	// SIGTERM, and without a handler the runtime kills the process

@@ -160,7 +160,9 @@ First, `/readyz` turns `503` and the app keeps serving for the readiness
 grace (default 5s, `framework.WithReadinessDrain`; see
 [Health and readiness](health-checks.md#draining-on-shutdown)), so the
 load balancer stops routing here before the listener closes. `/healthz`
-stays `200` until exit.
+stays `200` until exit. The grace counts against `Shutdown`'s deadline
+and takes at most half of it; an app bound to loopback only, or run by
+`battery/service`, skips it.
 
 The drain after it is **bounded**: `AppConfig.ShutdownTimeout` (default
 15s, on top of the grace) caps it, and anything still open at the deadline is force-closed so the process

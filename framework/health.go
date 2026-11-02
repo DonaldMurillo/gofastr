@@ -59,11 +59,21 @@ const productionReadinessDrain = 5 * time.Second
 // and stops routing new requests here before the listener closes. During
 // the grace the server accepts and serves as before, and /healthz stays
 // 200 (a failed liveness probe restarts the process; it does not drain
-// it). Zero skips the wait; a negative value is zero. The default is 5s
-// in production and 0 in a Go test binary and under `gofastr dev`. The
-// grace ends early when Shutdown's context does. The default SIGTERM
-// handler adds the grace to AppConfig.ShutdownTimeout, so the drain
-// after it keeps its full budget.
+// it). Zero skips the wait; a negative value is zero.
+//
+// The default is 5s in production and 0 where no balancer probes: a Go
+// test binary, `gofastr dev`, a battery/service run, and an app whose
+// listener is bound to a loopback address only (the desktop battery
+// always is). An explicit WithReadinessDrain wins over every default.
+//
+// The grace counts against Shutdown's context. It takes at most half of
+// the time that context has left when the grace starts, so the HTTP
+// drain, process modules, batteries and OnStop hooks after it keep the
+// other half, and it ends early when the context does. The default
+// SIGTERM handler adds the grace to AppConfig.ShutdownTimeout, so a grace
+// no longer than ShutdownTimeout runs in full there and the drain after
+// it keeps its whole budget. A caller passing its own deadline to
+// Shutdown should size it the same way.
 func WithReadinessDrain(d time.Duration) AppOption {
 	d = max(d, 0)
 	return func(a *App) {
@@ -79,33 +89,60 @@ func (a *App) readinessDrain() time.Duration {
 	if a.health != nil && a.health.drain != nil {
 		return *a.health.drain
 	}
-	return defaultReadinessDrain(localrun.UnderTest(), dev.Enabled())
+	return defaultReadinessDrain(localrun.UnderTest(), dev.Enabled(), a.servesLocalOnly())
 }
 
 // defaultReadinessDrain is the grace when WithReadinessDrain was not
-// given: none in a test binary or under `gofastr dev`, where no
-// balancer is probing and every stop would otherwise wait it out.
-func defaultReadinessDrain(underTest, devMode bool) time.Duration {
-	if underTest || devMode {
+// given: none in a test binary, under `gofastr dev`, or for a local-only
+// run (see [App.servesLocalOnly]), where no balancer is probing and
+// every stop would otherwise wait it out.
+func defaultReadinessDrain(underTest, devMode, local bool) time.Duration {
+	if underTest || devMode || local {
 		return 0
 	}
 	return productionReadinessDrain
 }
 
+// servesLocalOnly reports whether nothing but this machine reaches the
+// app, so no load balancer probes /readyz: a battery/service run, or a
+// listener bound to a loopback address (the desktop battery refuses any
+// other bind). A wildcard or routable bind is not local. Before the
+// listener binds only the service mark counts.
+func (a *App) servesLocalOnly() bool {
+	a.serverMu.Lock()
+	host := a.boundHost
+	a.serverMu.Unlock()
+	return a.isLocalRun(host)
+}
+
+// capReadinessDrain bounds the grace to half of the time ctx has left,
+// so the teardown after it (the HTTP drain, process modules, batteries,
+// OnStop hooks) keeps the other half. With no deadline the grace stands;
+// with an expired one it is zero.
+func capReadinessDrain(ctx context.Context, grace time.Duration) time.Duration {
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return grace
+	}
+	return max(min(grace, time.Until(dl)/2), 0)
+}
+
 // drainReadiness turns /readyz to 503 and, when the app is serving,
 // keeps serving for the readiness grace before Shutdown closes the
-// listener. The wait ends early when ctx does.
+// listener. The grace takes at most half of what is left of ctx
+// ([capReadinessDrain]) and ends early when ctx does.
 func (a *App) drainReadiness(ctx context.Context) {
 	a.draining.Store(true)
 	a.serverMu.Lock()
 	serving := a.server != nil
 	a.serverMu.Unlock()
-	grace := a.readinessDrain()
+	configured := a.readinessDrain()
+	grace := capReadinessDrain(ctx, configured)
 	if !serving || grace <= 0 {
 		return
 	}
 	a.Logger().Info("readiness draining: /readyz answers 503; serving until the grace ends",
-		"grace", grace.String())
+		"grace", grace.String(), "configured", configured.String())
 	t := time.NewTimer(grace)
 	defer t.Stop()
 	select {

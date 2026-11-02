@@ -66,11 +66,22 @@ usual, and `/healthz` stays `200`. After the grace, the normal drain
 runs: stop accepting, finish in-flight requests, stop batteries.
 
 The grace is 5 seconds by default. Set it with `WithReadinessDrain`;
-`0` skips the wait. In a Go test binary (and a process one starts) and
-under `gofastr dev` the default is `0`, so tests and dev reloads stop at
-once. The grace ends early if `Shutdown`'s context does. The default
-`SIGTERM` handler adds the grace to `AppConfig.ShutdownTimeout`, so a
-stop takes up to the grace longer than before.
+`0` skips the wait. The default is `0` wherever no balancer probes: in a
+Go test binary (and a process one starts), under `gofastr dev`, for a
+`battery/service` run, and for an app whose listener is bound to a
+loopback address only (`127.0.0.1`, `::1`; the desktop battery always
+is). An explicit `WithReadinessDrain` wins over all of these.
+
+The grace counts against `Shutdown`'s context. It takes at most half of
+the time that context has left, so the HTTP drain, batteries and
+`OnStop` hooks after it keep the other half, and it ends early if the
+context does. With a 5s grace, `app.Shutdown(ctx)` under a 5s deadline
+serves for 2.5s, then gives the drain the remaining 2.5s. The default
+`SIGTERM` handler adds the grace to `AppConfig.ShutdownTimeout`, so
+there a grace no longer than `ShutdownTimeout` runs in full and a stop
+takes up to the grace longer than before. When you call `Shutdown`
+yourself, add the grace to your deadline the same way, or pass
+`WithReadinessDrain(0)` if nothing probes `/readyz`.
 
 <!-- gofastr:compile
 stmt: _ = app
