@@ -749,3 +749,7 @@ notes:
       shapes:
         - symbol: gofastr/core/a2a.RetentionTrimmer.TrimTerminalTasks
           type: '^func\(([_[:alnum:]]+ )?context\.Context, ([_[:alnum:]]+ )?string, ([_[:alnum:]]+ )?int\) error$'
+  - change: "AutoMigrate, DiffSchema and migrate generate write a table, column or index name that is a keyword on SQLite or Postgres (order, group, user, end, desc, to, offset, do, …) quoted and folded, so such names migrate on both engines"
+    breaking: false
+    guidance: "Nothing to do. Names that are not keywords are written as before. On SQLite a column named end, desc, to, offset, do or user already worked bare; the next migrate generate writes it quoted for new statements and proposes no change for the quoting alone. Raw SQL of your own that names such a column on Postgres must quote it, as CRUD does."
+    nodetect: "the names are entity field and table declarations; any keyword among them is affected, which no single spelling marks"

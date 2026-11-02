@@ -730,11 +730,12 @@ func indexDDL(dialect Dialect, table string, idx entity.Index) string {
 	} else {
 		safeCols := make([]string, len(idx.Columns))
 		for i, col := range idx.Columns {
-			// Validate but DON'T quote, same convention as columnDefs. Quoting
-			// would make Postgres preserve case here while the unquoted CREATE
-			// TABLE folds the column to lowercase, so "UserName" would reference
-			// a column that doesn't exist.
-			safeCols[i] = query.MustIdent(col)
+			// Validate, and quote only a keyword (folded), the convention of
+			// columnDefs. Quoting a name as written would make Postgres
+			// preserve case here while the CREATE TABLE folded the column to
+			// lowercase, so "UserName" would reference a column that doesn't
+			// exist.
+			safeCols[i] = ddlIdent(query.MustIdent(col))
 		}
 		body = strings.Join(safeCols, ", ")
 	}
@@ -790,13 +791,14 @@ type declaredFK struct {
 }
 
 // clause renders the foreign key as a table constraint. Identifiers are
-// validated but UNQUOTED, same convention as columnDefs. Quoting would
-// preserve case on Postgres while the referenced CREATE TABLE folded its
-// identifiers to lowercase, so a mixed-case target like "MixedAccount"
+// validated and left bare unless they are keywords (ddlIdent, which quotes
+// them folded), the convention of columnDefs. Quoting a name as written
+// would preserve case on Postgres while the referenced CREATE TABLE folded
+// its identifiers to lowercase, so a mixed-case target like "MixedAccount"
 // would resolve to a relation that doesn't exist.
 func (fk declaredFK) clause(dialect Dialect) string {
 	c := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-		strings.Join(fk.cols, ", "), referencedTable(dialect, fk.refTable), strings.Join(fk.refCols, ", "))
+		strings.Join(ddlIdents(fk.cols), ", "), referencedTable(dialect, fk.refTable), strings.Join(ddlIdents(fk.refCols), ", "))
 	if fk.onDelete != "" {
 		c += " ON DELETE " + string(fk.onDelete)
 	}
@@ -1590,15 +1592,15 @@ func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*ent
 		Cols: map[string]string{safeLocalKey: sourcePKType, safeTargetKey: targetPKType},
 		DDL: fmt.Sprintf(
 			"CREATE TABLE IF NOT EXISTS %s (\n\t%s %s NOT NULL,\n\t%s %s NOT NULL,\n\tPRIMARY KEY (%s, %s),\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE,\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE\n)",
-			safeThrough,
-			safeLocalKey, sourcePKType,
-			safeTargetKey, targetPKType,
-			safeLocalKey, safeTargetKey,
-			safeLocalKey, referencedTable(dialect, safeSourceTable), safeSourcePK,
-			safeTargetKey, referencedTable(dialect, safeTargetTable), safeTargetPK,
+			ddlIdent(safeThrough),
+			ddlIdent(safeLocalKey), sourcePKType,
+			ddlIdent(safeTargetKey), targetPKType,
+			ddlIdent(safeLocalKey), ddlIdent(safeTargetKey),
+			ddlIdent(safeLocalKey), referencedTable(dialect, safeSourceTable), ddlIdent(safeSourcePK),
+			ddlIdent(safeTargetKey), referencedTable(dialect, safeTargetTable), ddlIdent(safeTargetPK),
 		),
-		DropDDL:      fmt.Sprintf("DROP TABLE IF EXISTS %s", safeThrough),
-		IndexDDL:     createIndexSQL(dialect, false, idxName, safeThrough, safeTargetKey),
+		DropDDL:      fmt.Sprintf("DROP TABLE IF EXISTS %s", ddlIdent(safeThrough)),
+		IndexDDL:     createIndexSQL(dialect, false, idxName, safeThrough, ddlIdent(safeTargetKey)),
 		DropIndexDDL: dropIndexSQL(safeThrough, idxName),
 		fks: []declaredFK{
 			{cols: []string{safeLocalKey}, target: ent, refTable: safeSourceTable, refCols: []string{safeSourcePK}, onDelete: entity.OnDeleteCascade},
