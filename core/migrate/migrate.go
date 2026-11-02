@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Migration represents a single versioned database migration.
@@ -234,6 +236,18 @@ func (m *Migrator) RegisterFromReader(r io.Reader) error {
 	return m.Register(*mig)
 }
 
+// isNearMissDirective reports whether a line that is not a directive reads
+// as one with its spacing or case off ("--+migrate Down", "-- +Migrate
+// Down"): a comment the parser would pass over while the author meant it
+// to open a section.
+func isNearMissDirective(trimmed string) bool {
+	if !strings.HasPrefix(trimmed, "--") {
+		return false
+	}
+	rest := strings.TrimLeft(trimmed[2:], " \t")
+	return len(rest) >= len("+migrate") && asciicase.Lower(rest[:len("+migrate")]) == "+migrate"
+}
+
 // parseMigration reads a migration from a reader using comment directives.
 func parseMigration(r io.Reader) (*Migration, error) {
 	scanner := bufio.NewScanner(r)
@@ -274,8 +288,17 @@ func parseMigration(r io.Reader) (*Migration, error) {
 				section = "down"
 			} else if directive == "NoTransaction" {
 				noTx = true
+			} else {
+				// An unknown directive used to be skipped, leaving the
+				// section above it open: "-- +migrate down" under Up put
+				// the Down statements into Up, so the rollback ran as part
+				// of the apply and the version was recorded applied.
+				return nil, fmt.Errorf("unknown migration directive %q: the directives are -- +migrate Version, Name, Group, Up, Down and NoTransaction, spelled with that case", trimmed)
 			}
 			continue
+		}
+		if isNearMissDirective(trimmed) {
+			return nil, fmt.Errorf("malformed migration directive %q: write it as -- +migrate <Directive>, one space after the dashes and a lower-case migrate", trimmed)
 		}
 
 		switch section {

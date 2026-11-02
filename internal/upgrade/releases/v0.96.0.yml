@@ -662,3 +662,7 @@ notes:
       uses:
         - gofastr/framework/tenant.WithMultiTenant
         - gofastr/framework.WithMultiTenant
+  - change: "BREAKING - migration files with an unknown -- +migrate directive, or a comment that reads as one with its spacing or case off (--+migrate Down, -- +Migrate Down), fail to parse"
+    breaking: true
+    guidance: "The parser passed over such a line with the section above it still open, so a misspelled Down put the Down statements into Up and the rollback ran during the apply. Spell each directive as -- +migrate Version|Name|Group|Up|Down|NoTransaction. Before fixing the file of an already-applied migration, check whether its Down statements ran with its Up; the corrected file changes the Up checksum, so reconcile with gofastr migrate force <version> once the schema is right."
+    nodetect: "the directives live in .sql migration files, not in Go source"

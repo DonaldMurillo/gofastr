@@ -96,7 +96,13 @@ required, not defaulted: directives are case-sensitive, and a file whose
 `-- +migrate Up` line is missing or misspelled (lower-case `up`) is
 rejected at parse time instead of registering a migration whose SQL was
 silently discarded while the tracking table records it applied.
-Programmatic `Register` refuses an empty `Up` for the same reason.
+Programmatic `Register` refuses an empty `Up` for the same reason. Any
+other `-- +migrate` line that is not one of `Version`, `Name`, `Group`,
+`Up`, `Down` or `NoTransaction`, and a comment that reads as a directive
+with its spacing or case off (`--+migrate Down`, `-- +Migrate Down`),
+is refused too: the parser used to pass over it with the section above
+still open, so a misspelled `Down` put the Down statements into `Up` and
+the rollback ran as part of the apply.
 
 ### Non-transactional migrations
 

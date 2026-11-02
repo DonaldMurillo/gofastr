@@ -4383,6 +4383,13 @@ few lines, and link the PR or the docs page for the rest.
   no such field: auto-migrate created no tenant column and the first
   create failed on the column CRUD writes. It now adds the column, and
   renames the `tenant_id` that `Define` injected to a custom `Field`.
+- **BREAKING: a misspelled `-- +migrate` directive is refused.** The
+  parser skipped a directive it did not know and kept the section above
+  it open, so `-- +migrate down` under `Up` put the Down statements into
+  `Up`: the rollback ran as part of the apply (a `DELETE` or `DROP` with
+  it) and the version was recorded applied. An unknown directive, and a
+  comment that reads as one with its spacing or case off
+  (`--+migrate Down`, `-- +Migrate Down`), now fail the parse.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
