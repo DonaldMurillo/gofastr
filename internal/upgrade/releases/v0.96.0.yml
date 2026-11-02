@@ -1087,3 +1087,10 @@ notes:
     find:
       uses:
         - gofastr/battery/relay.New
+  - change: "Web Bot Auth verification refuses a signature whose expires - created window is longer than 5 minutes (webbotauth.DefaultMaxValidity)"
+    breaking: false
+    guidance: "Agents sign per request with short windows, so most apps notice nothing. If a signer you rely on signs longer windows, set WebBotAuthVerifyConfig.MaxValidity (or pass webbotauth.WithMaxValidity to webbotauth.New); in observe mode such a request now logs an invalid signature and carries no VerifiedAgent."
+    find:
+      uses:
+        - gofastr/framework.WebBotAuthVerifyConfig
+        - gofastr/core/webbotauth.New

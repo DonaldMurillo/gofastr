@@ -5259,6 +5259,12 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **Web Bot Auth caps a signature's validity window at 5 minutes.** A
+  signature was accepted until its own `expires`, however far out, so a
+  captured one replayed for as long as the signer chose. One whose
+  `expires - created` exceeds the cap is now invalid. Raise it with
+  `WebBotAuthVerifyConfig.MaxValidity` or `webbotauth.WithMaxValidity`.
+  See [Web Bot Auth](framework/docs/content/web-bot-auth.md#what-a-signature-must-satisfy).
 - **BREAKING: `battery/relay` relays script, style, image, font, JSON
   and `text/plain` only.** A relayed response answers on the app's
   origin, so a vendor HTML page echoing the query string was reflected

@@ -204,7 +204,9 @@ func mustDecodeB64URL(t *testing.T, s string) []byte {
 }
 
 func testVerifier(res *directoryResolver, now time.Time, require bool) *Verifier {
-	return &Verifier{resolver: res, log: discardLog(), now: func() time.Time { return now }, require: require}
+	// The draft vectors sign windows up to 100 years; the cap is configured
+	// past them so these tests keep exercising the other gates.
+	return &Verifier{resolver: res, log: discardLog(), now: func() time.Time { return now }, require: require, maxValidity: vectorMaxValidity}
 }
 
 // runWBAVector drives one draft request vector through VerifyRequest
@@ -338,3 +340,7 @@ func sha256Sum(b []byte) []byte {
 	sum := sha256.Sum256(b)
 	return sum[:]
 }
+
+// vectorMaxValidity is a validity cap past every window the draft's
+// vectors sign (E.2.1: 100 years).
+const vectorMaxValidity = 200 * 365 * 24 * time.Hour
