@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A refused print request no longer holds a PDF render slot.** The
+  `/pdf` route took one of the `MaxConcurrentRenders` slots before it ran
+  the document's access policy, so a signed-in caller asking for other
+  people's documents kept the slots busy while `RequireOwner`'s callback
+  looked them up, and the owners' own PDFs answered `503`. The policy now
+  runs first; a refused caller gets its `401` or `403` even when every
+  slot is busy. See [print](framework/docs/content/print.md).
 - **Image decode refuses a JPEG with more than 64 scans.** The pixel cap
   bounded the frame but not how often the decoder walks it: a
   progressive scan of one end-of-band run costs about ten bytes and

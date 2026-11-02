@@ -195,7 +195,9 @@ how many run at once: `Config.MaxConcurrentRenders` (default `4`,
 battery-wide across all documents' `/pdf` routes). A request that finds
 all slots busy is answered `503` with `Retry-After: 1` — before the
 document's `Build` runs — instead of queueing another browser the node
-has to find room for. Raise it only on hardware that can actually run
+has to find room for. The access policy runs before a slot is taken, so
+a request it refuses never holds one and gets its `401` or `403`, not a
+`503`. Raise it only on hardware that can actually run
 that many Chromiums concurrently.
 
 **`Config.BaseURL` and PDF tokens.** The PDF document is `about:blank` to

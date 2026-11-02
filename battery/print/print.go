@@ -277,6 +277,9 @@ func serveAutoPrint(w http.ResponseWriter, _ *http.Request) {
 // serveHTML returns the handler for a document's print-friendly HTML route.
 func (b *Battery) serveHTML(doc *Document) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !b.admit(w, r, doc) {
+			return
+		}
 		html, _, ok := b.build(w, r, doc, false)
 		if !ok {
 			return
@@ -287,20 +290,27 @@ func (b *Battery) serveHTML(doc *Document) http.Handler {
 	})
 }
 
-// build runs the access gate, the Build hook, and assembles the shell.
-// On any failure it writes the response itself and returns ok=false. The
-// forPDF flag switches the app.css href to absolute and drops auto-print.
-func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, forPDF bool) (string, PageConfig, bool) {
+// admit runs the document's access policy. On a refusal it writes the
+// response itself and returns false. Every route calls it before build,
+// and the PDF route before it takes a render slot.
+func (b *Battery) admit(w http.ResponseWriter, r *http.Request, doc *Document) bool {
 	if pol := b.accessOf(doc); pol != nil {
 		if status, reason := pol(r); status != 0 {
 			if reason.IsZero() {
 				reason = i18n.StatusPhrase(status)
 			}
 			i18n.HTTPError(w, r, status, reason)
-			return "", PageConfig{}, false
+			return false
 		}
 	}
+	return true
+}
 
+// build runs the Build hook and assembles the shell, for a request admit
+// has already let through. On any failure it writes the response itself
+// and returns ok=false. The forPDF flag switches the app.css href to
+// absolute and drops auto-print.
+func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, forPDF bool) (string, PageConfig, bool) {
 	comp, err := safeBuild(doc, r)
 	if err != nil {
 		writeBuildError(w, r, err)

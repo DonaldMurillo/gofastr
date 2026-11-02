@@ -68,14 +68,23 @@ func (b *Battery) servePDF(doc *Document) http.Handler {
 			return
 		}
 
-		// Bound the renders before spending anything else on the
-		// request: each RenderPDF call in the shipped chromepdf
-		// backend is a whole headless-Chromium process, so an
-		// uncapped route behind RequireAuth is a process-exhaustion
-		// primitive. Past the battery-wide cap, answer 503 with
-		// Retry-After instead of queueing another renderer — and
-		// before Build, so a request that cannot render now does not
-		// run the document's data load either.
+		// The access policy runs before a render slot is taken: a
+		// request it refuses must not hold one while the policy looks
+		// the caller up (RequireOwner's callback is a data load), or a
+		// caller asking for other people's documents keeps the slots
+		// busy and their owners get 503. A refused caller also learns
+		// it was refused, not whether the renderer is busy.
+		if !b.admit(w, r, doc) {
+			return
+		}
+
+		// Bound the renders before Build: each RenderPDF call in the
+		// shipped chromepdf backend is a whole headless-Chromium
+		// process, so an uncapped route behind RequireAuth is a
+		// process-exhaustion primitive. Past the battery-wide cap,
+		// answer 503 with Retry-After instead of queueing another
+		// renderer, and do it before Build, so a request that cannot
+		// render now does not run the document's data load either.
 		select {
 		case b.renderSem <- struct{}{}:
 			defer func() { <-b.renderSem }()
@@ -85,8 +94,8 @@ func (b *Battery) servePDF(doc *Document) http.Handler {
 			return
 		}
 
-		// Reuse the exact same access gate + Build + shell as the HTML
-		// route, in PDF mode (absolute app.css href, no auto-print).
+		// Reuse the exact same Build + shell as the HTML route, in PDF
+		// mode (absolute app.css href, no auto-print).
 		html, page, ok := b.build(w, r, doc, true)
 		if !ok {
 			return
