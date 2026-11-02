@@ -391,6 +391,14 @@ a row in `claimed` status whose `claimed_at` has passed the configured
 lease timeout (default 5 min) becomes eligible again. No extra
 configuration needed.
 
+On shutdown (the context passed to `Start` cancelled), a DBQueue worker
+that has claimed a job but not started its handler hands the job back
+with its attempt refunded, so the next process runs it; a handler that
+is already running gets the cancelled context, and its result settles as
+usual. A worker that finds a claimed job's type gated hands it back the
+same way. A claim the database committed while the shutdown cancelled the
+query cannot be handed back; that job reruns when its lease expires.
+
 **RedisQueue** uses a visibility timeout: while a job is in-flight it
 sits in a processing hash with an expiry timestamp. Call
 `RedisQueue.Start(ctx, interval)` to run an auto-reclaim ticker:

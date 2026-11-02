@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A DBQueue job claimed as shutdown lands is handed back unstarted.**
+  The worker ran its handler on the already-cancelled context, the
+  handler failed at once, and the job spent an attempt on a run that
+  never happened; a `MaxAttempts: 1` job was dead-lettered. The worker
+  now returns it to pending with the attempt refunded, as the outbox
+  relay does with the rest of a batch.
 - **A DBQueue that cannot claim jobs says so.** The worker loop read every
   claim error as an empty queue, so a lost database, a renamed table or a
   row the claim cannot decode stopped every job with no log line. The

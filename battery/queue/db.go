@@ -1230,15 +1230,17 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		gate := q.gate
 		q.mu.RUnlock()
 		if gate != nil && !gateAllows(q.logger, gate, job.Type, job.ID) {
-			// Detached like Ack and Nack: a shutdown landing here left
-			// the row claimed with its attempt spent, and on a last
-			// attempt the dead-letter sweep failed a job that never ran.
-			settleCtx, cancel := settleContext(ctx)
-			if err := q.release(settleCtx, job); err != nil {
-				q.logger.Warn("queue: release of a gated job failed", "job_id", job.ID, "err", err)
-			}
-			cancel()
+			q.handBack(ctx, job)
 			continue
+		}
+		if ctx.Err() != nil {
+			// A shutdown landed between the claim and the start: the
+			// handler would run on a cancelled context, fail at once, and
+			// spend the attempt (dead-lettering a MaxAttempts 1 job) on a
+			// run that never happened. Hand it back unstarted instead, as
+			// the outbox relay does with the rest of its batch.
+			q.handBack(ctx, job)
+			return
 		}
 		if err := q.runHandler(ctx, h, job); err != nil {
 			// job.Attempts was bumped by Dequeue before the handler ran, so it
@@ -1271,6 +1273,20 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
 		}
 		cancel()
+	}
+}
+
+// handBack returns a claim the worker will not run (its type is gated, or a
+// shutdown landed before it started) to pending with its attempt refunded.
+// The write is detached like Ack and Nack: on the worker's own context a
+// shutdown made it fail, leaving the row claimed with the attempt spent,
+// and on a last attempt the dead-letter sweep failed a job that never ran.
+func (q *DBQueue) handBack(ctx context.Context, job Job) {
+	settleCtx, cancel := settleContext(ctx)
+	defer cancel()
+	if err := q.release(settleCtx, job); err != nil {
+		q.logger.Warn("queue: handing back an unstarted job failed; it reruns when its lease expires",
+			"job_id", job.ID, "err", err)
 	}
 }
 
