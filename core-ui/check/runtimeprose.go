@@ -12,7 +12,9 @@ import (
 // NS._fallbackToast, _showNavToast), the browser's own dialogs (alert,
 // confirm, prompt), a text node (createTextNode, or a literal argument
 // of append, prepend, replaceChildren, before, after or replaceWith,
-// which make one), an element's textContent, innerText, title,
+// which make one; an append(name, value) whose first literal is a bare
+// field name is the Headers / FormData / URLSearchParams method and
+// stays quiet), an element's textContent, innerText, title,
 // placeholder, alt, nodeValue or ARIA text property (ariaLabel,
 // ariaDescription, ariaValueText, ariaRoleDescription,
 // ariaPlaceholder), or a label attribute set through setAttribute
@@ -122,22 +124,55 @@ func proseSinkSpans(f jsSource) [][2]int {
 		if close <= open {
 			continue
 		}
+		var args [][2]int
 		for from := open + 1; from < close; {
 			end := topLevelComma(f.Blank, from, close)
 			if end < 0 {
 				end = close
 			}
-			arg := strings.TrimSpace(f.Code[from:end])
-			if arg != "" && strings.ContainsRune("'\"`", rune(arg[0])) {
-				spans = append(spans, [2]int{from, end})
-			}
+			args = append(args, [2]int{from, end})
 			from = end + 1
+		}
+		if strings.HasPrefix(f.Blank[loc[0]:], ".append") && fieldPairAppend(f.Code, args) {
+			continue
+		}
+		for _, a := range args {
+			if isStringLiteral(f.Code[a[0]:a[1]]) {
+				spans = append(spans, a)
+			}
 		}
 	}
 	// Source order, so findings read top to bottom whichever sink
 	// family found them.
 	slices.SortFunc(spans, func(a, b [2]int) int { return a[0] - b[0] })
 	return spans
+}
+
+// isStringLiteral reports whether a call argument is a string literal
+// (quoted or a template).
+func isStringLiteral(arg string) bool {
+	arg = strings.TrimSpace(arg)
+	return arg != "" && strings.ContainsRune("'\"`", rune(arg[0]))
+}
+
+// fieldPairAppend reports whether an append call's arguments read as
+// Headers / FormData / URLSearchParams append(name, value[, filename]):
+// two or three arguments, the first a literal field name with no
+// whitespace in it ('Accept', 'Title'). Those appends add a header, a
+// form field or a query parameter, not a text node, and the round-3
+// review found them firing ("Accept" for h.append('Accept',
+// 'text/event-stream')). A DOM append whose first literal is prose
+// ('Last saved: ') or whose literal follows a node still reads as one.
+func fieldPairAppend(code string, args [][2]int) bool {
+	if len(args) < 2 || len(args) > 3 {
+		return false
+	}
+	first := strings.TrimSpace(code[args[0][0]:args[0][1]])
+	if !isStringLiteral(first) || len(first) < 2 {
+		return false
+	}
+	name := first[1 : len(first)-1]
+	return name != "" && !strings.ContainsAny(name, " \t\n")
 }
 
 // exprEnd is the offset of the first depth-zero ';' or closing

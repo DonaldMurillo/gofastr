@@ -17,6 +17,10 @@
 //   - database/sql result accessors (Result.RowsAffected,
 //     Result.LastInsertId): reads after an already-checked Exec whose
 //     count is display-only;
+//   - a Win32 procedure call, (*syscall.LazyProc).Call / (*Proc).Call
+//     and the golang.org/x/sys/windows twins: the error is always
+//     non-nil (GetLastError), so dropping it hides no refusal; r1 is the
+//     result callers check;
 //   - assignments where no kept value is ever used: nothing marches on
 //     with the refusal hidden;
 //   - _test.go files.
@@ -119,7 +123,7 @@ func checkFunc(pass *analysis.Pass, body *ast.BlockStmt) {
 		// that reads as 'nothing found'"), and the 25 RowsAffected
 		// drops that motivated the arity gate are a nameable stdlib
 		// accessor, excluded below instead of by arity.
-		if isSQLResultMethod(pass, call) {
+		if isSQLResultMethod(pass, call) || isWin32ProcCall(pass, call) {
 			return true
 		}
 		if !keepsUsedValue(pass, body, st) {
@@ -226,7 +230,49 @@ func isSQLResultMethod(pass *analysis.Pass, call *ast.CallExpr) bool {
 	return obj != nil && obj.Pkg() != nil && obj.Pkg().Path() == "database/sql"
 }
 
-var errorIface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+// isWin32ProcCall reports whether the call is Call on a Win32 procedure
+// handle: (*syscall.LazyProc).Call, (*syscall.Proc).Call, or their
+// golang.org/x/sys/windows twins. Their error is ALWAYS non-nil by
+// design: it is built from GetLastError, whatever the last failing call
+// on the thread left there, so it is no refusal signal. The API's own
+// result is r1 (an HRESULT, a handle, a BOOL), and that is what callers
+// check. The windows vet run measured 9 such drops in
+// battery/desktop/internal/win32/com_windows.go and
+// battery/desktop/windows/caps_windows.go.
+func isWin32ProcCall(pass *analysis.Pass, call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Call" {
+		return false
+	}
+	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
+	if !ok {
+		return false
+	}
+	recv := fn.Signature().Recv()
+	if recv == nil {
+		return false
+	}
+	t := recv.Type()
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return false
+	}
+	switch named.Obj().Pkg().Path() {
+	case "syscall", "golang.org/x/sys/windows":
+	default:
+		return false
+	}
+	switch named.Obj().Name() {
+	case "LazyProc", "Proc":
+		return true
+	}
+	return false
+}
+
+var errorIface =types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 
 // isPkgName reports whether e names an imported package (a qualified
 // function call rather than a method on a receiver).

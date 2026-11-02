@@ -61,3 +61,31 @@ type Event struct {
 func stamp() Event {
 	return Event{At: time.Now().Format(time.RFC3339), Label: "x"}
 }
+
+// Silent: a date-bucketed storage or cache key names a place, not a
+// capability. Guessing "backups/20261102-0300.sql" grants nothing the
+// store's own access control did not already decide.
+type Object struct {
+	Key  string
+	Size int64
+}
+
+func backupObject() Object {
+	return Object{Key: "backups/" + time.Now().Format("20060102-150405") + ".sql"}
+}
+
+func statsCacheKey() string {
+	cacheKey := "stats:" + time.Now().Format("2006-01-02")
+	return cacheKey
+}
+
+func bucketKey() string {
+	objectKey := fmt.Sprintf("logs/%d.json", time.Now().Unix())
+	return objectKey
+}
+
+// A key qualified as a credential still fires.
+func newSigningKey() string {
+	signingKey := fmt.Sprintf("sk-%d", time.Now().UnixNano()) // want "signingKey minted from wall-clock time is enumerable"
+	return signingKey
+}

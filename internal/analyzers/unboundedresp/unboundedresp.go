@@ -36,8 +36,8 @@
 //
 // A read is any spelling that pulls the body to EOF: io.ReadAll and
 // ioutil.ReadAll, a json/xml/yaml decoder, io.Copy / io.CopyBuffer into
-// anything but io.Discard, and ReadFrom on any io.ReaderFrom
-// (bytes.Buffer). The body may reach it through a local bound once to
+// a destination that keeps the bytes in memory, and ReadFrom on one
+// (bytes.Buffer, strings.Builder, a []byte-typed writer). The body may reach it through a local bound once to
 // resp.Body, or through bufio.NewReader / NewReaderSize / io.TeeReader,
 // none of which bounds anything. The 2026-11-02 guard bash found every
 // one of these silent; only io.ReadAll and the decoders on the bare
@@ -46,6 +46,13 @@
 // Silent postures, deliberately:
 //   - io.Copy(io.Discard, resp.Body): the keep-alive drain holds no
 //     memory (the client timeout bounds the drip feed);
+//   - a streaming copy: io.Copy / CopyBuffer / ReadFrom into a writer
+//     that does not keep the bytes (a proxied http.ResponseWriter, an
+//     *os.File download, an io.Writer parameter of unknown type) holds
+//     one chunk at a time, for the same reason the Discard drain is
+//     quiet. Round 3's widening fired on these; the review found them
+//     false positives. Bounding a download's disk use is not this
+//     rule's memory-exhaustion shape;
 //   - request bodies (http.Request.Body): unboundedbody owns them;
 //   - _test.go files: a test client POSTing fixtures to a local
 //     httptest server is not attacker surface;
@@ -150,16 +157,18 @@ func run(pass *analysis.Pass) (any, error) {
 					src = call.Args[0]
 				}
 			case "io.Copy", "io.CopyBuffer":
-				// io.Copy(&buf, resp.Body) reads it all as surely as
-				// ReadAll. Draining into io.Discard holds no memory and
-				// is the keep-alive idiom; it stays quiet.
-				if len(call.Args) >= 2 && qualified(pass, call.Args[0]) != "io.Discard" {
+				// io.Copy(&buf, resp.Body) reads it all into memory as
+				// surely as ReadAll. A copy into a writer that does not
+				// keep the bytes (a ResponseWriter, a file, io.Discard)
+				// streams in fixed chunks and stays quiet.
+				if len(call.Args) >= 2 && buffersInMemory(pass, call.Args[0]) {
 					src = call.Args[1]
 				}
 			default:
-				// buf.ReadFrom(resp.Body): bytes.Buffer, bufio.Writer
-				// and every io.ReaderFrom read to EOF.
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ReadFrom" && len(call.Args) == 1 {
+				// buf.ReadFrom(resp.Body) on a bytes.Buffer (or another
+				// in-memory io.ReaderFrom) reads to EOF into memory;
+				// (*os.File).ReadFrom streams.
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ReadFrom" && len(call.Args) == 1 && buffersInMemory(pass, sel.X) {
 					src = call.Args[0]
 				}
 			}
@@ -173,6 +182,35 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 	return nil, nil
+}
+
+// buffersInMemory reports whether a copy destination keeps every byte
+// written to it: a bytes.Buffer, a strings.Builder, or a writer whose
+// type is a []byte. Any other destination (an http.ResponseWriter, an
+// *os.File, io.Discard, an io.Writer interface of unknown dynamic type)
+// streams, holding one chunk at a time, so a copy into it is not the
+// memory exhaustion this rule exists for.
+func buffersInMemory(pass *analysis.Pass, dst ast.Expr) bool {
+	tv, ok := pass.TypesInfo.Types[dst]
+	if !ok || tv.Type == nil {
+		return false
+	}
+	t := tv.Type
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	if n, ok := types.Unalias(t).(*types.Named); ok && n.Obj().Pkg() != nil {
+		switch n.Obj().Pkg().Path() + "." + n.Obj().Name() {
+		case "bytes.Buffer", "strings.Builder":
+			return true
+		}
+	}
+	if sl, ok := t.Underlying().(*types.Slice); ok {
+		if b, ok := sl.Elem().Underlying().(*types.Basic); ok && b.Kind() == types.Byte {
+			return true
+		}
+	}
+	return false
 }
 
 // reportIfUnbounded fires when a read takes resp.Body itself and
