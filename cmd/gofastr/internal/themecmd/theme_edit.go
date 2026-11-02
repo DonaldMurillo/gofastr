@@ -63,7 +63,8 @@ func runThemeEdit(args []string) {
 			printThemeEditHelp()
 			return
 		default:
-			fmt.Printf("%s Unknown flag: %s\n\n", cli.Red("✗"), a)
+			cli.Fail("Unknown flag: %s", a)
+			fmt.Println()
 			printThemeEditHelp()
 			cli.OsExit(1)
 		}
@@ -75,7 +76,7 @@ func runThemeEdit(args []string) {
 	// accident.
 	if !force {
 		if _, err := os.Stat(outPath); err == nil {
-			fmt.Printf("%s %s already exists.\n", cli.Yellow("⚠"), outPath)
+			cli.Warn("%s already exists.", outPath)
 			fmt.Println("  The editor regenerates it whole on write-back, which would")
 			fmt.Println("  overwrite any hand-edited values. Pass --force to proceed, or")
 			fmt.Println("  write to a new path via --out=<path>.")
@@ -87,7 +88,7 @@ func runThemeEdit(args []string) {
 	// linked out of it, as theme init does, before serving an editor
 	// whose Write could only fail; writeBack confines every write too.
 	if err := projectfs.Check(projectfs.Split(outPath)); err != nil {
-		fmt.Printf("%s %v\n", cli.Red("✗"), err)
+		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
@@ -127,7 +128,7 @@ func runThemeEdit(args []string) {
 	// guard states (framework/devmcp_bind.go).
 	bound, err := themeEditBindAddr(addr)
 	if err != nil {
-		fmt.Printf("%s refusing to bind the theme editor to %q: %v\n", cli.Red("✗"), addr, err)
+		cli.Fail("refusing to bind the theme editor to %q: %v", addr, err)
 		fmt.Println("  The page carries its own bearer token and the write-back endpoint")
 		fmt.Println("  rewrites a Go file on disk. The Host pin stops DNS rebinding from a")
 		fmt.Println("  browser, not a direct TCP client. Bind to 127.0.0.1 or localhost.")
@@ -136,7 +137,7 @@ func runThemeEdit(args []string) {
 	addr = bound
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Printf("%s listen %s: %v\n", cli.Red("✗"), addr, err)
+		cli.Fail("listen %s: %v", addr, err)
 		cli.OsExit(1)
 	}
 	boundAddr := ln.Addr().String()
@@ -172,8 +173,8 @@ func runThemeEdit(args []string) {
 	url := "http://" + boundAddr
 	fmt.Println("━─────────────────────────────────────────────")
 	fmt.Println("  gofastr theme edit")
-	fmt.Printf("  %s\n", url)
-	fmt.Printf("  write-back → %s\n", outPath)
+	cli.Printf("  %s\n", url)
+	cli.Printf("  write-back → %s\n", outPath)
 	fmt.Println("  Ctrl-C to stop")
 	fmt.Println("━─────────────────────────────────────────────")
 

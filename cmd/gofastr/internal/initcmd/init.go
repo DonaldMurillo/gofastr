@@ -134,6 +134,20 @@ func RunInit(args []string) {
 			cli.OsExit(1)
 			return
 		}
+		// .env (JWT_SECRET, DATABASE_URL) and the settings file get a
+		// generated secret, and must be regular files: a link there is
+		// refused even when it stays in the project (.env ->
+		// static/robots.txt put the signing key in a served file). The
+		// writer refuses one too; checking here means a refused init
+		// leaves no half-made project.
+		for _, f := range []string{".env", settings.FileName} {
+			if err := projectfs.CheckRegularLeaf(".", f); err != nil {
+				cli.Fail("%v", err)
+				cli.Info("This invocation has not written any files.")
+				cli.OsExit(1)
+				return
+			}
+		}
 		// A go.mod already here names the module every generated import
 		// must use; go mod init cannot replace it, so a local/<dir>
 		// default would leave main.go importing a module that does not
@@ -188,7 +202,7 @@ func RunInit(args []string) {
 		dbURL = "postgres://user:password@localhost:5432/" + projName + "?sslmode=disable"
 	}
 
-	fmt.Printf("\n  Creating %s project %s...\n\n", cli.Bold("GoFastr"), cli.Bold(projName))
+	cli.Printf("\n  Creating "+cli.Bold("GoFastr")+" project "+cli.Bold("%s")+"...\n\n", projName)
 
 	// Create directory structure: the project directory itself (the one
 	// the user named), then its subdirectories through an os.Root on it,
@@ -425,7 +439,7 @@ bin/
 	cli.Info("    gofastr build         : Build production binary")
 	fmt.Println()
 	if pinnedVersion != "" {
-		fmt.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
+		cli.Printf("  GoFastr is pinned to %s, matching this CLI. `go mod tidy` will\n", pinnedVersion)
 		fmt.Println("  resolve that release. Use `gofastr upgrade` when you want to move.")
 	} else {
 		fmt.Println("  This development CLI has no release version to pin. Before `go mod tidy`, run:")
@@ -511,7 +525,7 @@ func scaffoldGoRequirements(dir string) (minimum, preferred string, err error) {
 // scaffolding a whole project.
 func printInitNextSteps(name string, noEntity bool) {
 	fmt.Printf("  %s:\n", cli.Bold("Next steps"))
-	fmt.Printf("    cd %s\n", name)
+	cli.Printf("    cd %s\n", name)
 	fmt.Println("    go mod tidy          : Resolve dependencies")
 	fmt.Println("    gofastr dev          : Start development server with hot-reload")
 	if !noEntity {
@@ -1350,7 +1364,7 @@ capability upstream.
 //   - CLAUDE.md:  overwrites if unmodified; prompts if user changed it
 //   - DESIGN.md:  created when missing, never overwrites app-owned direction
 func runReinit(dir string, force bool) {
-	fmt.Printf("\n  %s AI onboarding files in %s\n\n", cli.Bold("Refreshing"), cli.Bold(dir))
+	cli.Printf("\n  "+cli.Bold("Refreshing")+" AI onboarding files in "+cli.Bold("%s")+"\n\n", dir)
 
 	// 1. .agents/ detail files: always overwrite.
 	if err := agentscmd.WriteAgentDetailFiles(dir); err != nil {

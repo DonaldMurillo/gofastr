@@ -7,12 +7,16 @@ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 One binary. `gofastr <command> --help` prints every flag; this page maps
 each command to the doc that covers it.
 
-Status lines (`✓`, `✗`, `→`, `⚠`) print paths, errors and values read
-from your project with terminal control characters removed: C0 controls
-but tab and newline, DEL, C1, escape sequences, bidi overrides
-(U+202A–U+202E, U+2066–U+2069) and zero-width characters. A directory
-name or a file in a cloned repo cannot write your clipboard (OSC 52),
-clear the screen or reorder the line you are reading.
+Everything the CLI prints, status lines (`✓`, `✗`, `→`, `⚠`) and the
+rest (lists of written files, next steps, errors on stderr, prompts),
+shows paths, errors and values read from your project with terminal
+control characters removed: C0 controls but tab and newline, DEL, C1,
+escape sequences, bidi overrides (U+202A–U+202E, U+2066–U+2069),
+zero-width characters, and bytes that are not valid UTF-8 (a bare 0x9b
+is CSI to a terminal not in UTF-8 mode). A directory name, a key name
+or a file in a cloned repo cannot write your clipboard (OSC 52), clear
+the screen or reorder the line you are reading. `--json` output is
+scrubbed the same way.
 
 ## Scaffold
 
@@ -49,7 +53,11 @@ clear the screen or reorder the line you are reading.
   (`static/`, `migrations/`, `entities/`), is followed only while it
   points inside the project, and one that leads out is refused, so
   `init .` in a cloned repo cannot append to a `.gitignore` linked to
-  your shell profile. `init <name> --reinit` or `init . --reinit` refreshes the
+  your shell profile. The two files that get a generated secret, `.env`
+  (`JWT_SECRET`, `DATABASE_URL`) and `gofastr.settings.yml`, must be
+  regular files: a symlink there is refused before anything is written,
+  even one to a file inside the project, since `.env -> static/robots.txt`
+  would put the signing key in a committed, served file. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes, and nothing outside the project:
   a symlinked `AGENTS.md`, `CLAUDE.md` or `DESIGN.md` that leads out of it

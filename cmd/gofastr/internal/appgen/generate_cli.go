@@ -394,12 +394,12 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		}
 		cli.Info("Would generate %d file(s) in %s:", len(files), opts.OutDir)
 		for _, f := range files {
-			fmt.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
+			cli.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
 		}
 		if len(removals) > 0 {
 			cli.Info("Would remove %d file(s) the CLI no longer produces:", len(removals))
 			for _, r := range removals {
-				fmt.Printf("    %s\n", filepath.Join(opts.OutDir, r.name))
+				cli.Printf("    %s\n", filepath.Join(opts.OutDir, r.name))
 			}
 		}
 		return
@@ -463,8 +463,8 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 	}
 	fmt.Println()
 	fmt.Println("  Next steps:")
-	fmt.Printf("    go build -o %s ./%s   : build the CLI\n", spec.Binary, opts.OutDir)
-	fmt.Printf("    ./%s login --url https://your-app.example.com --with-token   : store a scoped API token\n", spec.Binary)
+	cli.Printf("    go build -o %s ./%s   : build the CLI\n", spec.Binary, opts.OutDir)
+	cli.Printf("    ./%s login --url https://your-app.example.com --with-token   : store a scoped API token\n", spec.Binary)
 	fmt.Println("    custom.go is yours: add or override commands there. The *.gen.go files are rebuilt on every run")
 	if opts.settingsEntry {
 		fmt.Println("    gofastr build rebuilds it from the cli entry in gofastr.settings.yml")
@@ -472,13 +472,13 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 	}
 	entry, err := cliEntryYAML(opts, spec.Binary)
 	if err != nil {
-		fmt.Printf("    no gofastr.settings.yml entry reproduces this run: %v\n", err)
+		cli.Printf("    no gofastr.settings.yml entry reproduces this run: %v\n", err)
 		return
 	}
 	fmt.Println("    add this entry to codegen.generators in gofastr.settings.yml and gofastr build keeps the CLI current (gofastr docs app-cli):")
 	fmt.Println()
 	for _, line := range strings.Split(strings.TrimRight(entry, "\n"), "\n") {
-		fmt.Println("      " + line)
+		cli.Println("      " + line)
 	}
 }
 

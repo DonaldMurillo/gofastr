@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
@@ -18,13 +19,14 @@ import (
 func BuildSandboxGateTo(root string, stdout, stderr io.Writer) bool {
 	findings, err := auditSandbox(root)
 	if err != nil {
-		fmt.Fprintf(stderr, ".ui.go sandbox lint: %v\n", err)
+		cli.Fprintf(stderr, ".ui.go sandbox lint: %v\n", err)
 		return false
 	}
 	if len(findings) == 0 {
 		return true
 	}
-	fmt.Fprint(stdout, formatSandboxReport(findings))
+	// The report names project files: scrubbed, as every CLI print is.
+	cli.Fprintf(stdout, "%s", formatSandboxReport(findings))
 	return false
 }
 

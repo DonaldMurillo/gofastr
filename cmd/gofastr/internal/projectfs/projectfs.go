@@ -10,7 +10,9 @@
 // operation here goes through an os.Root on the project directory: a
 // link that stays in the project is followed, the way a write through it
 // would be; one that leaves (an absolute target, or a relative one that
-// climbs past the root) is refused, dangling or not.
+// climbs past the root) is refused, dangling or not. A file the CLI
+// writes a secret into (ReplaceOwnerOnly) is stricter: a link at the
+// file itself is refused even when it stays in the project.
 package projectfs
 
 import (
@@ -66,7 +68,7 @@ func Resolve(root *os.Root, name string) (string, error) {
 				if lastLink != "" {
 					return "", outErr(lastLink, lastTarget)
 				}
-				return "", fmt.Errorf("%s leaves the project", name)
+				return "", fmt.Errorf("%q leaves the project", name)
 			}
 			done = done[:len(done)-1]
 			continue
@@ -91,7 +93,7 @@ func Resolve(root *os.Root, name string) (string, error) {
 		}
 		hops++
 		if hops > maxLinkHops {
-			return "", fmt.Errorf("%s: too many levels of symbolic links", name)
+			return "", fmt.Errorf("%q: too many levels of symbolic links", name)
 		}
 		target, err := root.Readlink(filepath.FromSlash(cur))
 		if err != nil {
@@ -115,7 +117,7 @@ func Resolve(root *os.Root, name string) (string, error) {
 }
 
 func outErr(link, target string) error {
-	return fmt.Errorf("%s is a symlink out of the project (to %q); move it, then re-run", link, target)
+	return fmt.Errorf("%q is a symlink out of the project (to %q); move it, then re-run", link, target)
 }
 
 // Check refuses name (relative to dir) when a symlink on the way to it,
@@ -182,17 +184,81 @@ func Replace(root *os.Root, name string, data []byte, perm fs.FileMode) error {
 // settings file): the temporary file is owner-only (0600, or an
 // owner-only ACL on Windows, fileperm.RestrictOpenFile) before a byte
 // lands, whatever mode a file already there had.
+//
+// Unlike Replace, name itself must be a regular file or missing
+// (RegularLeaf): a symlink there is refused whatever it points at, in
+// the project or out, dangling or not. A link that stays in the project
+// still chooses which file receives the secret, and `init . --force`
+// with .env -> static/robots.txt wrote a generated JWT_SECRET into a
+// committed, statically served file. A link on the way to name is
+// followed while it stays in root, as Replace does. The rename replaces
+// the directory entry at name, so a link that appears after the check
+// is replaced, never written through.
 func ReplaceOwnerOnly(root *os.Root, name string, data []byte) error {
-	return replace(root, name, data, func(fs.FileInfo) (fs.FileMode, func(*os.File) error) {
+	resolved, err := RegularLeaf(root, name)
+	if err != nil {
+		return err
+	}
+	return replaceAt(root, resolved, data, func(fs.FileInfo) (fs.FileMode, func(*os.File) error) {
 		return 0o600, fileperm.RestrictOpenFile
 	})
 }
 
-func replace(root *os.Root, name string, data []byte, modeFor func(existing fs.FileInfo) (fs.FileMode, func(*os.File) error)) (err error) {
-	name, err = Resolve(root, name)
+// RegularLeaf returns the path name (slash-separated, relative to root)
+// names inside root with every link on the way to it resolved (Resolve),
+// and refuses name itself unless it is missing or a regular file: a
+// symlink at name is refused whatever it points at, as is a directory or
+// any other kind of file.
+func RegularLeaf(root *os.Root, name string) (string, error) {
+	dir, base := path.Split(path.Clean(filepath.ToSlash(name)))
+	if base == "" || base == "." || base == ".." {
+		return "", fmt.Errorf("%q names no file", name)
+	}
+	resolved := "."
+	if dir != "" {
+		var err error
+		if resolved, err = Resolve(root, dir); err != nil {
+			return "", err
+		}
+	}
+	p := path.Join(resolved, base)
+	fi, err := root.Lstat(filepath.FromSlash(p))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return p, nil
+	case err != nil:
+		return "", err
+	case fi.Mode()&fs.ModeSymlink != 0:
+		return "", fmt.Errorf("%q is a symlink; gofastr writes a secret into it, so it must be a regular file: put the file there instead of the link, then re-run", name)
+	case !fi.Mode().IsRegular():
+		return "", fmt.Errorf("%q is not a regular file; gofastr writes a secret into it: move it aside, then re-run", name)
+	}
+	return p, nil
+}
+
+// CheckRegularLeaf is RegularLeaf on an os.Root on dir, for a refusal
+// that must come before anything is written (`init .` checks .env and
+// the settings file before it writes main.go).
+func CheckRegularLeaf(dir, name string) error {
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
 	}
+	defer root.Close()
+	_, err = RegularLeaf(root, name)
+	return err
+}
+
+func replace(root *os.Root, name string, data []byte, modeFor func(existing fs.FileInfo) (fs.FileMode, func(*os.File) error)) error {
+	name, err := Resolve(root, name)
+	if err != nil {
+		return err
+	}
+	return replaceAt(root, name, data, modeFor)
+}
+
+// replaceAt is replace on a name already resolved inside root.
+func replaceAt(root *os.Root, name string, data []byte, modeFor func(existing fs.FileInfo) (fs.FileMode, func(*os.File) error)) (err error) {
 	var existing fs.FileInfo
 	if fi, serr := root.Lstat(filepath.FromSlash(name)); serr == nil {
 		if fi.Mode()&fs.ModeSymlink == 0 && fi.Mode().Perm()&0o200 == 0 {
@@ -264,7 +330,8 @@ func WriteFile(dir, name string, data []byte, perm fs.FileMode) error {
 }
 
 // WriteOwnerOnly replaces name (relative to dir) with data through
-// ReplaceOwnerOnly on an os.Root on dir.
+// ReplaceOwnerOnly on an os.Root on dir: a symlink at name is refused,
+// in the project or not.
 func WriteOwnerOnly(dir, name string, data []byte) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {

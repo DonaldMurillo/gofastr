@@ -193,6 +193,17 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`gofastr init .` refuses a symlinked `.env` or settings file, even
+  one inside the project.** The two files it writes a generated secret
+  into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
+  `gofastr.settings.yml`, must be regular files. A link that stayed in
+  the project used to be followed, so in a cloned repo with
+  `.env -> static/robots.txt`, `init . --force` wrote the signing key
+  into a committed, statically served file (a dangling link created it
+  there). Any link at either file is now refused before anything is
+  written, whatever it points at; a link on the way (a linked directory
+  inside the project) is still followed. Replace the link with the file
+  itself. `projectfs.ReplaceOwnerOnly` holds the same rule.
 - **BREAKING: `core/yaml` resolves plain scalars by the YAML 1.2 core
   schema.** It read Go's spellings instead: a hex float (`0x1.8p1`) as
   3, any casing of `true`/`false`/`null` (`tRuE`), and `1_000.5` as a
@@ -5991,6 +6002,30 @@ few lines, and link the PR or the docs page for the rest.
   [entity declarations](framework/docs/content/entity-declarations.md#column-naming).
 
 ### Security
+- **The harness's repository-key prompt can no longer be overwritten.**
+  `gofastr harness` printed the key names, the file path and the
+  directory from a cloned repo's `.harness-secrets/env` raw in the
+  prompt that asks before using the author's provider keys. A key
+  named `ESC[2K CR ESC]52;…ZAI_API_KEY` passed the `_API_KEY` check,
+  erased the warning and wrote the operator's clipboard before they
+  answered. A file with a key that is not an environment variable name
+  (`^[A-Z][A-Z0-9_]*$`) is now refused whole before anything is asked,
+  `--allow-repo-secrets` included, and every value in the prompt, the
+  refusal and the error line is scrubbed.
+- **No gofastr CLI output carries a repo's terminal escapes.** The
+  status helpers already scrubbed their arguments; ~170 other prints
+  (lists of written files, next steps, `--json` output, stderr errors,
+  `theme init` and `theme edit` refusals, `gofastr test` lines, `docs
+  --grep` excerpts, the a11y and `.ui.go` sandbox gate reports `build`
+  and `dev` print) went through a raw `fmt.Printf`. They now use
+  `cli.Printf`, `Print`, `Println`, `Fprintf` and `Fprintln`, which
+  scrub every argument, and `TestNoRawRepoTextReachesTheTerminal` fails
+  on a raw fmt print to stdout or stderr whose arguments are neither
+  constants nor scrubbed. `cli.ScrubTerminalOutput` also drops bytes
+  that are not valid UTF-8 (a bare 0x9b is CSI to a terminal not in
+  UTF-8 mode), and a projectfs refusal quotes the link it names, so a
+  directory name taken from a link's target cannot reach the terminal
+  raw through the error.
 - **`core/textsafe` treats Unicode tag characters and Hangul fillers as
   invisible.** Tag characters (U+E0000–U+E007F) spell ASCII nobody sees,
   the way instructions are hidden in a prompt, and a Hangul filler

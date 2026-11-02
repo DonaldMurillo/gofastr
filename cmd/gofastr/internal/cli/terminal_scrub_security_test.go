@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -110,6 +111,37 @@ func TestSubcommandsPrintRepoValuesInert(t *testing.T) {
 		})
 		assertInert(t, "gofastr migrate generate", out)
 	})
+}
+
+// Property: the scrubbing prints (Printf, Print, Println, Fprintf,
+// Fprintln) reach the terminal inert whatever their arguments carry,
+// including a bare 0x9b byte (the 8-bit CSI in a non-UTF-8 terminal),
+// which ranges as U+FFFD and slipped past a rune-only check. The format
+// string is the caller's and keeps its styling.
+func TestScrubbingPrintsAreInert(t *testing.T) {
+	old := cli.StdoutIsTTY
+	cli.StdoutIsTTY = false
+	t.Cleanup(func() { cli.StdoutIsTTY = old })
+	arg := payload + "\x9b31m"
+	for name, call := range map[string]func(){
+		"Printf":   func() { cli.Printf("x %s %d\n", arg, 3) },
+		"Print":    func() { cli.Print("x ", arg, 3, "\n") },
+		"Println":  func() { cli.Println("x", arg, 3) },
+		"Fprintf":  func() { cli.Fprintf(os.Stderr, "x %v\n", errors.New(arg)) },
+		"Fprintln": func() { cli.Fprintln(os.Stderr, "x", arg) },
+		// Alone, so no other unsafe rune sends the scrub down its
+		// rewriting path.
+		"Printf bare 0x9b": func() { cli.Printf("x %s cHduZWQ=\n", "a\x9b31m") },
+	} {
+		assertInert(t, name, captureOutput(t, call))
+	}
+	if got := cli.ScrubTerminalOutput("a\x9bb\xffc"); got != "abc" {
+		t.Errorf("ScrubTerminalOutput kept an invalid byte: %q", got)
+	}
+	cli.StdoutIsTTY = true
+	if out := captureOutput(t, func() { cli.Printf(cli.Bold("%s")+"\n", "\x1b[31mred") }); out != "\x1b[1m[31mred\x1b[0m\n" {
+		t.Errorf("Printf: want the format's styling kept and the argument's stripped, got %q", out)
+	}
 }
 
 // The helpers' own styling is theirs, not an argument's: on a terminal

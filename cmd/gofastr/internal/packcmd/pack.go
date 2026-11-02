@@ -3082,7 +3082,7 @@ func RunPack(args []string) {
 		packNote(toStderr, "pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
 	}
 	if out == "" {
-		fmt.Print(yml)
+		cli.Print(yml)
 		return
 	}
 	// The 0600 argument to os.WriteFile only applies when the file is

@@ -337,6 +337,15 @@ before using them:
 A key already set in your environment is never asked about: the shell
 always wins.
 
+`gofastr harness` refuses the whole file, before it asks anything, when
+a key in it is not an environment variable name (capital letters,
+digits and `_`, starting with a letter). A name such as
+`ESC[2K CR ESC]52;…ZAI_API_KEY` ends in `_API_KEY`, but printed in the
+prompt it erased the warning and wrote your clipboard. The refusal
+quotes the name instead of printing it, and `--allow-repo-secrets` does
+not override it. The file's path and the repository directory are
+printed with terminal control characters removed.
+
 ---
 
 ## Build order

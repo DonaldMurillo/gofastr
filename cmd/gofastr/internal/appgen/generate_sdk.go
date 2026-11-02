@@ -228,7 +228,7 @@ func RunGenerateSDK(args []string) {
 		}
 		cli.Info("Would generate %d file(s) in %s:", len(files), opts.OutDir)
 		for _, f := range files {
-			fmt.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
+			cli.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
 		}
 		return
 	}
@@ -261,7 +261,7 @@ func RunGenerateSDK(args []string) {
 	cli.Success("Generated %d file(s) in %s", len(files), opts.OutDir)
 	fmt.Println()
 	fmt.Println("  Next steps:")
-	fmt.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q)})\n", filepath.ToSlash(filepath.Join(opts.OutDir, "dist")))
+	cli.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q)})\n", filepath.ToSlash(filepath.Join(opts.OutDir, "dist")))
 	fmt.Println("    re-run this command whenever entities change: output regenerates in place")
 }
 

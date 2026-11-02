@@ -192,7 +192,7 @@ func runMigrateForce(args []string) {
 		cli.OsExit(1)
 	}
 
-	fmt.Printf("\n  %s\n\n", cli.Bold(fmt.Sprintf("Forcing migration %d → applied=%t...", version, applied)))
+	cli.Printf("\n  "+cli.Bold("Forcing migration %d → applied=%t...")+"\n\n", version, applied)
 
 	migrator, closeDB, err := migratorFromArgs(args)
 	if err != nil {
@@ -283,7 +283,7 @@ func runMigrateRepair(args []string) {
 		return
 	}
 	for _, s := range stale {
-		fmt.Printf("    %s %s\n", cli.Yellow("⚠"), s)
+		cli.Printf("    "+cli.Yellow("⚠")+" %s\n", s)
 	}
 
 	if !hasFlag(args, "--apply") {
@@ -295,7 +295,7 @@ func runMigrateRepair(args []string) {
 
 	fmt.Printf("\n  %s\n\n", cli.Bold("Rebuilding..."))
 	for _, s := range stale {
-		fmt.Printf("    %s rewriting %s without the stale key\n", cli.Yellow("→"), s.Table)
+		cli.Printf("    "+cli.Yellow("→")+" rewriting %s without the stale key\n", s.Table)
 	}
 	if err := fwmigrate.RepairStaleOwnerForeignKeys(context.Background(), db, stale); err != nil {
 		cli.Fail("Repair failed: %v", err)
@@ -429,9 +429,9 @@ func runMigrateStatus(args []string) {
 	fmt.Printf("    Pending: %d\n", len(status.Pending))
 	for _, pending := range status.Pending {
 		if showGroup {
-			fmt.Printf("    %s %d %s [%s]\n", cli.Yellow("→"), pending.Version, pending.Name, groupLabel(pending.Group))
+			cli.Printf("    "+cli.Yellow("→")+" %d %s [%s]\n", pending.Version, pending.Name, groupLabel(pending.Group))
 		} else {
-			fmt.Printf("    %s %d %s\n", cli.Yellow("→"), pending.Version, pending.Name)
+			cli.Printf("    "+cli.Yellow("→")+" %d %s\n", pending.Version, pending.Name)
 		}
 	}
 	for _, rec := range status.Applied {
@@ -441,11 +441,11 @@ func runMigrateStatus(args []string) {
 				// CLI accepts as its alias; the printed command is runnable
 				// verbatim for every group (a raw "" would render --group=,
 				// which getGroups rejects).
-				fmt.Printf("    %s %d %s [%s]: DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
-					cli.Yellow("⚠"), rec.Version, rec.Name, groupLabel(rec.Group), rec.Version, groupLabel(rec.Group))
+				cli.Printf("    "+cli.Yellow("⚠")+" %d %s [%s]: DIRTY (failed mid-apply; run `gofastr migrate force %d --group=%s` after reconciling)\n",
+					rec.Version, rec.Name, groupLabel(rec.Group), rec.Version, groupLabel(rec.Group))
 			} else {
-				fmt.Printf("    %s %d %s: DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
-					cli.Yellow("⚠"), rec.Version, rec.Name, rec.Version)
+				cli.Printf("    "+cli.Yellow("⚠")+" %d %s: DIRTY (failed mid-apply; run `gofastr migrate force %d` after reconciling)\n",
+					rec.Version, rec.Name, rec.Version)
 			}
 		}
 	}

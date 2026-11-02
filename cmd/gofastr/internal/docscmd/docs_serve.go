@@ -100,7 +100,7 @@ func runDocsServe(args []string) {
 		return
 	}
 	if flags.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "unexpected argument %q\n\n", flags.Arg(0))
+		cli.Fprintf(os.Stderr, "unexpected argument %q\n\n", flags.Arg(0))
 		printDocsServeHelp()
 		cli.OsExit(2)
 		return
