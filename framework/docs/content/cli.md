@@ -370,7 +370,9 @@ configuration, tests included:
   suffix), loaded under one GOOS, GOARCH and tag set that satisfies
   it. Only that file's hits are reported from that load, and an error
   in a file the host load already checked does not mark the app
-  broken;
+  broken. A file that imports `"C"` counts as constrained to cgo: under
+  `CGO_ENABLED=0` it is loaded with cgo on (which needs a C compiler),
+  and its hits land on the file as written, not on cgo's rewrite of it;
 - a `//go:build ignore` file declaring a package other than its
   directory's: a program run by name, loaded alone the way
   `go run gen.go` builds it.
