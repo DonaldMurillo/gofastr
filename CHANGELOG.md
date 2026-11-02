@@ -198,6 +198,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **`App.EraseUserData` reaches `search.Memory`.** The in-memory search
+  index kept every document indexed for an erased user. `NewMemory`
+  registers a store eraser now, the new `Memory.Close` removes it, and
+  `search.Battery` closes its backend on stop. Close an index built for a
+  test. See [search](framework/docs/content/search.md#the-in-memory-backend).
 - **Docs: `CachedResolver.Invalidate` is process-local.** It clears the
   calling replica's cache only; other replicas serve a user's old roles
   for up to the TTL (30 seconds by default). Said beside `Invalidate` and

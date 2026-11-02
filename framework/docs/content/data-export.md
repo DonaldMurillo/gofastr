@@ -548,11 +548,13 @@ stored files are deleted. Each result is listed in `report.Stores` with
 | a semantic index with no `Path` | `semantic.Open` (`semantic:memory`) | the chunks whose `Owner` is the user, from memory |
 | `queue.RedisQueue` | `queue.NewRedisQueue` (`queue_redis:<queue>`) | every job whose `UserID` is the user, from the main, delayed and dead lists and the pop and processing hashes |
 | `queue.MemoryQueue` | `queue.NewMemoryQueue` (`queue_memory`) | every job whose `UserID` is the user: pending, delayed, handed out by `Dequeue`, and dead; the unique keys they held are freed |
+| `search.Memory` | `search.NewMemory` (`search:memory`) | every document whose `Owner` is the user |
 | `queue.Scheduler` (in-memory) | `queue.NewScheduler` (`queue_scheduler_memory`) | every schedule whose `UserID` is the user, so it is neither kept nor fired again |
 | `battery/auth` in-memory stores (`MemorySessionStore`, `MemoryTwoFAStore`, `MemoryPasskeyStore`, `MemoryMagicLinkTokenStore`) | `AuthManager.Init`, for the ones the manager runs with (`auth_memory`); `AuthManager.OnStop` removes it | the user's sessions, 2FA state, passkeys, and password-reset, email-verification and passkey-registration tokens. Magic-link sign-in tokens are keyed by email, which is gone by the time a store eraser runs; they expire on their own (15 minutes by default) |
 
 **A store eraser stays registered until the store closes**: `Index.Close`,
-`RedisQueue.Close`, `MemoryQueue.Close` or `Scheduler.Close` removes it.
+`RedisQueue.Close`, `MemoryQueue.Close`, `Scheduler.Close` or
+`search.Memory.Close` removes it.
 Until then the registry holds the store, so it is never garbage-collected,
 and every erasure reaches it. Close each one you are done with, including
 one built for a single request or a test.

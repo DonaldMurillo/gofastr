@@ -1090,3 +1090,9 @@ notes:
     find:
       uses:
         - gofastr/framework/access.NewGrantStore
+  - change: "search.NewMemory registers a store eraser, so App.EraseUserData deletes the documents whose Owner is the erased user; Memory.Close removes the registration"
+    breaking: false
+    guidance: "Close a search.Memory you are done with (a test's, a request's): the registration holds the index until then. search.Battery closes its backend on stop."
+    find:
+      uses:
+        - gofastr/battery/search.NewMemory

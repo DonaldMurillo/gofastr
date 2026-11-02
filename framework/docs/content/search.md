@@ -46,8 +46,8 @@ The blog example wires this into `GET /posts/search?q=...`. See
 
 `Owner` is a storage tag, not a search filter: scope searches through
 `Fields` and `FieldEquals`. Its job is erasure. The SQLite and Postgres
-backends register a data eraser, so `App.EraseUserData` deletes every
-document indexed for the erased user. Set it on any document whose text
+backends register a data eraser and `search.Memory` a store eraser, so
+`App.EraseUserData` deletes every document indexed for the erased user. Set it on any document whose text
 or fields carry one user's data, or erasure leaves that copy behind.
 
 ### `Query`
@@ -99,6 +99,12 @@ Documents are stored in a map, so:
 - Restarting the process drops the index.
 - Memory usage is `O(total text size)`.
 - Search is `O(n)` over the corpus.
+
+`NewMemory` registers a store eraser (`search:memory`), so
+`App.EraseUserData` deletes the documents whose `Owner` is the erased
+user. The registration holds the index until `Close` removes it: close an
+index you are done with, including one built for a test. `search.Battery`
+closes its backend on stop.
 
 It splits the query and the documents into words the way the SQL
 backends do (letters, digits, `-` and `_`; a hyphenated word also
@@ -381,11 +387,9 @@ sb := b.(*search.Battery)
 results, _ := sb.Backend().Search(ctx, search.Query{Text: "..."})
 ```
 
-`search.Memory` has no background goroutine, so `Battery` implements
-`framework.Battery` only: `Name` and `Init` (a no-op); there is no
-`OnStop`. A future backend that starts a background goroutine will need
-an `OnStop` added to this wrapper (it does not exist today): implement
-`io.Closer` on that backend type and call `Close` from the new hook.
+`Battery` implements `framework.BatteryLifecycle`: `Init` and `OnStart`
+are no-ops, and `OnStop` calls `Close` on a backend that implements
+`io.Closer`, which for `search.Memory` unregisters its store eraser.
 
 ## Common mistakes
 
