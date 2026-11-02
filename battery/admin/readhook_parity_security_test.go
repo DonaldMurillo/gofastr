@@ -108,6 +108,8 @@ func parityEnv(t *testing.T) (*env, http.Handler) {
 		`{"old":{"title":"Visible case","secret":"OLD-STORED-SECRET","status":"open"},"new":{"title":"Visible case","secret":"VIS-STORED-SECRET","status":"open"}}`)
 	x.seedAuditDiff("a-hid", "", "cases", "update", "c-hid", "admin-1", at.Add(-time.Minute),
 		`{"old":{"title":"HIDDEN old title","status":"open"},"new":{"title":"HIDDEN case","status":"open"}}`)
+	x.seedAuditDiff("a-hid-bin", "", "cases", "update", "c-hid-bin", "admin-1", at.Add(-2*time.Minute),
+		`{"old":{"title":"HIDDEN binned old title","status":"open"},"new":{"title":"HIDDEN binned case","status":"open"}}`)
 	return x, withPolicy(x.as(theAdmin))
 }
 
@@ -135,6 +137,7 @@ func TestReadHookParityAdmin(t *testing.T) {
 		// drew the visible row (so a blank page cannot pass).
 		want string
 	}{
+		{"dashboard", func() *http.Request { return preq(http.MethodGet, "/admin", "") }, "Visible case"},
 		{"list", func() *http.Request { return preq(http.MethodGet, "/admin/entities/cases", "") }, "Visible case"},
 		{"list search", func() *http.Request { return preq(http.MethodGet, "/admin/entities/cases?q=case", "") }, "Visible case"},
 		{"list sorted by secret", func() *http.Request { return preq(http.MethodGet, "/admin/entities/cases?sort=secret", "") }, "Visible case"},
@@ -153,6 +156,8 @@ func TestReadHookParityAdmin(t *testing.T) {
 		{"relation picker", func() *http.Request {
 			return preq(http.MethodPost, "/admin/api/tasks/_pick?field=case_id", `{"q":"case"}`)
 		}, "Visible case"},
+		{"audit log", func() *http.Request { return preq(http.MethodGet, "/admin/audit", "") }, "Visible case"},
+		{"audit log filtered to entity", func() *http.Request { return preq(http.MethodGet, "/admin/audit?entity=cases", "") }, "Visible case"},
 		{"dashboard count", func() *http.Request { return preq(http.MethodGet, "/admin/_count/cases", "") }, `fui-stat-card__value" data-cui-internal="">1</p>`},
 		{"search page", func() *http.Request { return preq(http.MethodGet, "/admin/search?q=case", "") }, "Visible case"},
 		{"palette", func() *http.Request {

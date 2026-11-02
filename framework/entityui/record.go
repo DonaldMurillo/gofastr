@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 // RecordBuilder draws one record: header, move buttons, tabs (Edit,
@@ -63,6 +64,37 @@ func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bo
 		return "", false
 	}
 	return u.recordTitle(ctx, m, row), true
+}
+
+// RecordHidden reports whether record id is still stored, live or in
+// the trash, while the caller's read hooks keep it out of sight: the
+// BeforeGet chain hides the live row from its record screen, or the
+// BeforeList chain hides the trashed one from the trash view. A screen
+// that draws a record from a stored copy of its values (an audit row's
+// sides, SnapshotTitle) asks it first: printing that copy for a row the
+// hooks hide shows what the record screen answers not-found for. It
+// answers false for a record that is gone, a failed read and an unknown
+// entity: the unhooked read decides that the row is stored, and only a
+// stored row the hooked read misses is hidden.
+func (u *UI) RecordHidden(ctx context.Context, entityName, id string) bool {
+	m, err := u.meta(entityName)
+	if err != nil || m.ch.Hooks == nil ||
+		len(m.ch.Hooks.HooksFor(hook.BeforeGet))+len(m.ch.Hooks.HooksFor(hook.BeforeList)) == 0 {
+		return false
+	}
+	if row, err := m.ch.GetOne(ctx, id, nil); err == nil && row != nil {
+		hooked, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+		return err != nil || hooked == nil
+	}
+	if m.e.Config.Scope == nil || !m.e.Config.Scope.SoftDelete {
+		return false
+	}
+	opts := crud.ListOptions{Fields: m.keys, Deleted: true}
+	if raw, err := m.listByIDs(ctx, []string{id}, opts); err != nil || len(raw) == 0 {
+		return false
+	}
+	hooked, err := m.listByIDs(crud.WithReadHooks(ctx), []string{id}, opts)
+	return err != nil || len(hooked) == 0
 }
 
 // SnapshotTitle names a record from a stored copy of its values, an
