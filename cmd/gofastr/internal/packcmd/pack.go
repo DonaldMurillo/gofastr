@@ -824,6 +824,10 @@ func yamlKeyRejectReason(key string) string {
 		return "core/yaml rejects tabs anywhere in a line, so the file could not be read back"
 	case key != strings.TrimSpace(key):
 		return "edge whitespace is trimmed on re-parse, so the key would change"
+	case hasUnprintable(key):
+		// After the tab/line-break cases, which carry their own reasons.
+		return "a control or invisible character cannot be quoted in a key, and raw it " +
+			"reaches the terminal pack prints to (an ESC or C1 byte drives it)"
 	}
 	return ""
 }
@@ -936,6 +940,14 @@ func quoteYAMLStringEscaped(s string) string {
 	return b.String()
 }
 
+// hasUnprintable reports whether s holds an invalid UTF-8 byte or a rune
+// unicode.IsPrint rejects: the C0 and C1 controls, DEL, and the format runes
+// (bidi overrides, zero-width characters). quoteYAMLStringEscaped escapes
+// exactly this set, so a quoted value never carries one raw.
+func hasUnprintable(s string) bool {
+	return !utf8.ValidString(s) || strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) })
+}
+
 // needsQuote reports whether emitting s bare would re-parse as a non-string (or
 // break the line/map grammar). Conservative but minimal: keeps the output close
 // to hand-written YAML while guaranteeing string values survive the round-trip.
@@ -989,6 +1001,15 @@ func needsQuote(s string) bool {
 		return true
 	}
 	if strings.ContainsAny(s, "\n\t") {
+		return true
+	}
+	// A non-printable rune or an invalid byte. Pack prints its YAML to the
+	// terminal, and the strings come from the app's source: bare, an ESC
+	// or 8-bit CSI/OSC (U+009B, U+009D) drives the terminal (an OSC 52
+	// writes the clipboard), a CR rewinds the line, and a bidi override
+	// reorders what the reader sees. Quoted, quoteYAMLStringEscaped writes
+	// each as an escape that reads back to the exact bytes.
+	if hasUnprintable(s) {
 		return true
 	}
 	if s != strings.TrimSpace(s) || strings.HasSuffix(s, ":") {

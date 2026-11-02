@@ -843,12 +843,17 @@ func (p *Peer) serveNotification(f *Frame) {
 	_, _ = runHandler(h, ctx, f.Params)
 }
 
-// maxAbandonedIDs bounds how many abandoned ids the peer remembers. A late
-// response trails its abandonment by at most one counterparty round-trip
-// (the serving peer guarantees every request a paired response), so a
-// window covering the last 1024 abandonments is far beyond any legitimate
-// need; a response that misses both the pending map and this window is
-// treated as the unsolicited protocol fault it almost certainly is.
+// maxAbandonedIDs bounds how many abandoned ids the peer remembers that are
+// still OWED a late response. A tombstone a late response consumed holds
+// nothing and does not count: the window measures responses outstanding,
+// not abandonments made. Counting every abandonment let 1024 calls that
+// were given up and then answered evict the tombstone of one slow call
+// still owed, so its answer, from a conforming counterparty, faulted the
+// peer. A conforming counterparty owes at most its serve cap in running
+// handlers plus as many unwritten responses, so 1024 outstanding is far
+// beyond any legitimate need; a response that misses both the pending map
+// and this window is treated as the unsolicited protocol fault it almost
+// certainly is, and a counterparty that never answers cannot grow it.
 const maxAbandonedIDs = 1024
 
 // noteAbandonedLocked records id as given-up. p.mu must be held.
@@ -858,9 +863,25 @@ func (p *Peer) noteAbandonedLocked(id uint64) {
 	}
 	p.abandoned[id] = struct{}{}
 	p.abandonedFIFO = append(p.abandonedFIFO, id)
-	for len(p.abandonedFIFO) > maxAbandonedIDs {
-		delete(p.abandoned, p.abandonedFIFO[0])
+	// Evict the oldest tombstone still outstanding. FIFO entries whose
+	// tombstone a late response already consumed are skipped: they hold
+	// no slot in the window.
+	for len(p.abandoned) > maxAbandonedIDs {
+		oldest := p.abandonedFIFO[0]
 		p.abandonedFIFO = p.abandonedFIFO[1:]
+		delete(p.abandoned, oldest)
+	}
+	// Consumed entries are only dropped from the FIFO's front by the loop
+	// above, so a peer that never fills the window would keep every id it
+	// ever abandoned. Compact once they outnumber the live tombstones.
+	if len(p.abandonedFIFO) > 2*maxAbandonedIDs {
+		live := make([]uint64, 0, len(p.abandoned))
+		for _, a := range p.abandonedFIFO {
+			if _, ok := p.abandoned[a]; ok {
+				live = append(live, a)
+			}
+		}
+		p.abandonedFIFO = live
 	}
 }
 

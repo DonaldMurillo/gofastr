@@ -38,7 +38,9 @@ each command to the doc that covers it.
   replaced file keeps its mode. An existing `.gitignore` is kept and gains the entries
   it lacks. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
-  your edits); no Go code or git changes. An unknown flag is an error
+  your edits); no Go code or git changes, and nothing outside the project:
+  a symlinked `AGENTS.md`, `CLAUDE.md` or `DESIGN.md` that leads out of it
+  is refused. An unknown flag is an error
   (exit 2). A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
@@ -56,7 +58,11 @@ each command to the doc that covers it.
   `--path` and `--handler` take `--method=POST` or `--method POST`; an
   unknown flag is an error.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
-  and the per-battery detail files under `.agents/`.
+  and the per-battery detail files under `.agents/`. Every write stays in
+  the project: a symlink there (`.agents`, `.claude`, `AGENTS.md`, a
+  detail file or the skill's `SKILL.md`) is followed only while it points
+  inside the project, and one that leads out is refused, so running the
+  command in a cloned repo cannot write over a file elsewhere on disk.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.

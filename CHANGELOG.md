@@ -344,6 +344,34 @@ few lines, and link the PR or the docs page for the rest.
   concurrently, and its own success was then fenced out. The lease is
   now twice the handler budget plus the settle window when that is
   longer than five minutes.
+- **Docs search excerpts hold the match in whole characters.**
+  `framework_docs_search` and `gofastr docs --grep` cut a long line at
+  byte offsets, splitting an em dash or accented letter, and located the
+  match in the lowercased line, which is longer or shorter than the line
+  itself when it holds a character such as `İ`, so the excerpt could miss
+  the match.
+- **`gofastr pack` prints no terminal escapes.** A string from the app's
+  source with an ESC, a C1 control, a bidi override or a zero-width
+  space went into the YAML bare, so `gofastr pack` in a cloned repo
+  could drive the terminal (an OSC 52 sequence writes the clipboard).
+  Such a value is now double-quoted with the character escaped and reads
+  back unchanged; a map key holding one is refused, and the check's
+  notes percent-encode them in file names.
+- **`gofastr agents` writes only inside the project.** `agents skill`,
+  `agents init`, `agents sync` and `init --reinit` followed a symlink
+  anywhere: a cloned repo carrying
+  `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc` had `agents skill`
+  overwrite `~/.bashrc` with the skill, and a `.agents` link sent the
+  detail files to another directory; `init --reinit --force` did the same
+  to a linked `AGENTS.md` or `CLAUDE.md`, and created a dangling
+  `DESIGN.md` link's target. Writes now go through an `os.Root` on the
+  project; a link inside it is still followed, one out of it is refused.
+- **A slow module answer no longer kills the module.** A `moduleproto`
+  peer remembered the last 1,024 calls it gave up on, answered or not,
+  so 1,024 timed-out calls answered in time pushed out a slow call still
+  owed, and its answer faulted the peer as unsolicited; the supervisor
+  then killed the module and every request in flight. The window now
+  counts only ids still owed an answer.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
