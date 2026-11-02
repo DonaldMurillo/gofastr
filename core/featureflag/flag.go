@@ -35,9 +35,14 @@ package featureflag
 import (
 	"context"
 	"errors"
+	"fmt"
 	"hash/fnv"
+	"net/url"
 	"slices"
+	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // Flag is the rule definition stored for a key.
@@ -53,6 +58,12 @@ import (
 // Users and Tenants are explicit allow lists. A subject matching
 // either list short-circuits to true (regardless of rollout), so flags
 // can be force-enabled for testers and beta tenants.
+//
+// A Users entry names one tenant's user: "acme:42" matches user 42 of
+// tenant acme only, and a bare "42" matches user 42 only when the
+// context has no tenant (a single-tenant app). The entry splits at its
+// first ':', with ':' and '%' in the tenant id percent-escaped; build
+// entries with [UserEntry]. Tenants holds tenant ids.
 //
 // Envs restricts the flag to specific deployment environments. When
 // non-empty, the EvalContext's Env must match one of the listed values
@@ -70,7 +81,9 @@ type Flag struct {
 
 // EvalContext is the per-call subject identity used to evaluate a flag.
 // Build one from the request, typically the authenticated user id and
-// the resolved tenant id.
+// the resolved tenant id. A TenantID left empty falls back to the
+// tenant the framework resolved for the request (handler.GetTenantID),
+// so a multi-tenant app's user entries stay scoped to their tenant.
 //
 // The Env field is matched by string equality against any rule that
 // references it; this is how "dev only" or "staging only" flags work
@@ -166,10 +179,15 @@ func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
 	if len(f.Envs) > 0 && !containsString(f.Envs, ec.Env) {
 		return false
 	}
-	if containsString(f.Users, ec.UserID) && ec.UserID != "" {
+	tenant := evalTenant(ctx, ec)
+	// A Users entry names one tenant's user ("acme:42"); a bare id names
+	// a user only where there is no tenant. User ids are per-tenant in a
+	// multi-tenant app, so a bare "42" used to enable the flag for user
+	// 42 of every tenant.
+	if ec.UserID != "" && userAllowed(f.Users, tenant, ec.UserID) {
 		return true
 	}
-	if containsString(f.Tenants, ec.TenantID) && ec.TenantID != "" {
+	if containsString(f.Tenants, tenant) && tenant != "" {
 		return true
 	}
 	if f.Rollout <= 0 {
@@ -185,7 +203,7 @@ func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
 	// want anonymous traffic in a rollout should derive a stable
 	// pseudo-subject (request signature, session) and put it in
 	// EvalContext.UserID themselves.
-	subject := subjectID(ec)
+	subject := subjectID(tenant, ec.UserID)
 	if subject == "" {
 		return false
 	}
@@ -218,19 +236,26 @@ func (e *Evaluator) BoolDefault(ctx context.Context, key string, fallback bool) 
 	return e.evaluate(ctx, f)
 }
 
-// subjectID picks the stable identifier to hash for rollout.
-// Preference order: user → tenant → empty.
+// subjectID picks the stable identifier to hash for rollout: the user
+// as its Users entry spells it ([UserEntry]: "tenant:user" with a
+// tenant, the bare id without), else the tenant id, else empty. Keying
+// a tenant's user on the pair keeps user 42 of two tenants in
+// independent buckets; with no tenant the subject is the bare id, so a
+// single-tenant app's cohorts are what they were.
 //
 // An empty subject is NOT bucketed: the caller forces the flag OFF at
 // partial rollout rather than hashing every anonymous request into one
 // shared bucket, which would flip all of them together at the same
 // percentage. Callers who want anonymous traffic in a rollout derive a
 // stable pseudo-subject and put it in EvalContext.UserID themselves.
-func subjectID(ec EvalContext) string {
-	if ec.UserID != "" {
-		return ec.UserID
+func subjectID(tenantID, userID string) string {
+	switch {
+	case userID != "" && tenantID != "":
+		return UserEntry(tenantID, userID)
+	case userID != "":
+		return userID
 	}
-	return ec.TenantID
+	return tenantID
 }
 
 // bucket returns an integer in [0, 100) for the (salt, key, subject)
@@ -251,6 +276,81 @@ func bucket(salt, key, subject string) int {
 
 func containsString(xs []string, s string) bool {
 	return slices.Contains(xs, s)
+}
+
+// tenantEscaper writes a tenant id into a user entry's tenant part:
+// '%' and ':' percent-escaped, so the entry's first ':' always ends the
+// tenant part.
+var tenantEscaper = strings.NewReplacer("%", "%25", ":", "%3A")
+
+// UserEntry spells a [Flag.Users] entry for one user of one tenant:
+// "tenant:user", with ':' and '%' in the tenant id percent-escaped
+// ("a:b" is written "a%3Ab"). The user id is written as is, ':'
+// included, since the entry splits at its first ':'. With no tenant it
+// is the bare user id, or ":user" when the id holds a ':' (a bare
+// "google:42" would name tenant google's user 42).
+func UserEntry(tenantID, userID string) string {
+	if tenantID == "" {
+		if strings.Contains(userID, ":") {
+			return ":" + userID
+		}
+		return userID
+	}
+	return tenantEscaper.Replace(tenantID) + ":" + userID
+}
+
+// ParseUserEntry reads a [Flag.Users] entry back into the tenant and
+// user it names, the inverse of [UserEntry]. The entry splits at its
+// first ':'; the part before it is the percent-escaped tenant id, and
+// an entry with no ':' is a bare user id with no tenant. An empty user
+// id, or a tenant part that is not valid percent-escaping, is an error.
+func ParseUserEntry(entry string) (tenantID, userID string, err error) {
+	tenantPart, userID, qualified := strings.Cut(entry, ":")
+	if !qualified {
+		tenantPart, userID = "", entry
+	}
+	if userID == "" {
+		return "", "", errors.New("featureflag: user entry names no user id")
+	}
+	tenantID, err = url.PathUnescape(tenantPart)
+	if err != nil {
+		return "", "", errors.New("featureflag: user entry has a malformed tenant escape")
+	}
+	return tenantID, userID, nil
+}
+
+// validUsers reports the first malformed entry of a Users list, so a
+// store refuses a flag whose entry would silently never match.
+func validUsers(users []string) error {
+	for i, u := range users {
+		if _, _, err := ParseUserEntry(u); err != nil {
+			return fmt.Errorf("users[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// userAllowed reports whether users holds an entry naming this tenant's
+// user. A malformed entry matches nothing.
+func userAllowed(users []string, tenantID, userID string) bool {
+	for _, u := range users {
+		t, id, err := ParseUserEntry(u)
+		if err == nil && t == tenantID && id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// evalTenant is the tenant a flag is evaluated for: the EvalContext's
+// TenantID, or, when that is empty, the tenant the framework resolved
+// for the request (core/handler's tenant slot, which
+// tenant.ResolveMiddleware and tenant.TenantMiddleware fill).
+func evalTenant(ctx context.Context, ec EvalContext) string {
+	if ec.TenantID != "" || ctx == nil {
+		return ec.TenantID
+	}
+	return handler.GetTenantID(ctx)
 }
 
 // ----- package-level default ------------------------------------------------
@@ -375,6 +475,9 @@ func (m *MemoryStore) Get(_ context.Context, key string) (*Flag, error) {
 func (m *MemoryStore) Set(f Flag) error {
 	if f.Key == "" {
 		return errors.New("flag: empty key")
+	}
+	if err := validUsers(f.Users); err != nil {
+		return fmt.Errorf("flag %q: %w", f.Key, err)
 	}
 	if f.Rollout < 0 {
 		f.Rollout = 0

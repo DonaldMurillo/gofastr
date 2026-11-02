@@ -1147,3 +1147,11 @@ notes:
         - gofastr/core/config.Load
         - gofastr/core/config.LoadWith
         - gofastr/core/config.MustLoad
+  - change: "BREAKING for multi-tenant apps - a feature flag's Users entry names one tenant's user: \"acme:42\" matches user 42 of tenant acme only, and a bare \"42\" matches only when the evaluation has no tenant; the tenant is EvalContext.TenantID, or the request's resolved tenant (handler.GetTenantID) when that is empty; a tenant's user is bucketed for Rollout on \"tenant:user\""
+    breaking: true
+    hits: review
+    guidance: "A bare id used to enable the flag for that user id in every tenant. In a multi-tenant app, rewrite each Users entry as tenant:user, built with featureflag.UserEntry(tenantID, userID), which percent-escapes ':' and '%' in the tenant id; rewrite the entries stored in the SQL store's users column too. A single-tenant app (no TenantID, no resolved tenant) changes nothing, except that a bare id holding ':' must be written :id (UserEntry(\"\", id)). Both stores' Set now refuse an empty entry, one with no user id after the ':' and a malformed escape. Partial rollouts in a multi-tenant app reshuffle once, since a tenant's user is now bucketed on the pair; an app that set only UserID now also gets the Tenants list and rollout of the request's resolved tenant. EraseUserData removes the user's entries in every tenant's spelling."
+    find:
+      fields:
+        - field: gofastr/core/featureflag.Flag.Users
+        - field: gofastr/core/featureflag.EvalContext.TenantID

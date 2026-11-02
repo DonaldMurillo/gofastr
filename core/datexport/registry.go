@@ -135,17 +135,27 @@ const (
 //     with owner_kind = "user" and leaves a service account that shares
 //     the id alone. Each column is SafeIdent-checked before SQL and must
 //     exist on the table; each value is a bound argument.
+//   - MemberSeparator (EraseRemoveMember only) lets a member carry a
+//     qualifier ahead of the value: a member is removed when the part
+//     after its FIRST MemberSeparator equals the value, or, holding no
+//     separator, when the whole member does. A feature flag's user
+//     allow list writes "acme:42" for tenant acme's user 42, so its
+//     eraser sets ":" and erasing user 42 removes "42", ":42" and
+//     every tenant's "<tenant>:42". The qualifier must not contain the
+//     separator (featureflag percent-escapes it). Empty matches the
+//     whole member.
 type DataEraser struct {
-	Name         string
-	Source       string
-	Table        string
-	Column       string
-	Mode         EraseMode
-	ScrubColumns []string
-	Tombstone    string
-	Identity     IdentityKind
-	ValuePrefix  string
-	Where        []Equals
+	Name            string
+	Source          string
+	Table           string
+	Column          string
+	Mode            EraseMode
+	ScrubColumns    []string
+	Tombstone       string
+	Identity        IdentityKind
+	ValuePrefix     string
+	Where           []Equals
+	MemberSeparator string
 }
 
 // Equals is one column = value condition of DataEraser.Where.
@@ -337,7 +347,7 @@ func cloneEraser(e DataEraser) *DataEraser {
 		Name: e.Name, Source: e.Source, Table: e.Table, Column: e.Column,
 		Mode: e.Mode, ScrubColumns: scrub, Tombstone: e.Tombstone,
 		Identity: e.Identity, ValuePrefix: e.ValuePrefix,
-		Where: slices.Clone(e.Where),
+		Where: slices.Clone(e.Where), MemberSeparator: e.MemberSeparator,
 	}
 }
 

@@ -1632,24 +1632,43 @@ func eraseDelete(ctx context.Context, tx *sql.Tx, e resolvedEraser) (int, error)
 // conditions. The rest of the array keeps its order; an array left with
 // no members is written as []. The value is a bound argument, $1 in
 // every position.
+//
+// With a MemberSeparator, a member is compared by the part after its
+// first separator (the whole member when it holds none), so a qualified
+// member such as a feature flag's "acme:42" is removed with the bare
+// "42". The separator is bound too, as $2.
 func eraseRemoveMember(ctx context.Context, tx *sql.Tx, dialect migrate.Dialect, e resolvedEraser) (int, error) {
 	qt := quotePhysical(e.table)
 	qc := query.QuoteFolded(query.MustIdent(e.eraser.Column))
+	args := []any{e.value}
+	member := func(v string) string { return v }
+	if sep := e.eraser.MemberSeparator; sep != "" {
+		args = append(args, sep)
+		find, width := "instr(%s, $2)", "length($2)"
+		if dialect == migrate.DialectPostgres {
+			find, width = "strpos(%s, $2::text)", "length($2::text)"
+		}
+		member = func(v string) string {
+			at := fmt.Sprintf(find, v)
+			return fmt.Sprintf("(CASE WHEN %[2]s > 0 THEN substr(%[1]s, %[2]s + %[3]s) ELSE %[1]s END)", v, at, width)
+		}
+	}
 	var rest, holds string
 	if dialect == migrate.DialectPostgres {
-		rest = fmt.Sprintf("COALESCE((SELECT json_agg(m.v ORDER BY m.n)::text FROM json_array_elements_text(%s::json) WITH ORDINALITY AS m(v, n) WHERE m.v <> $1), '[]')", qc)
-		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_array_elements_text(%s::json) AS h(v) WHERE h.v = $1)", qc)
+		rest = fmt.Sprintf("COALESCE((SELECT json_agg(m.v ORDER BY m.n)::text FROM json_array_elements_text(%s::json) WITH ORDINALITY AS m(v, n) WHERE %s <> $1), '[]')", qc, member("m.v"))
+		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_array_elements_text(%s::json) AS h(v) WHERE %s = $1)", qc, member("h.v"))
 	} else {
-		rest = fmt.Sprintf("(SELECT json_group_array(m.value) FROM (SELECT value FROM json_each(%s) WHERE value <> $1 ORDER BY key) AS m)", qc)
-		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_each(%s) WHERE value = $1)", qc)
+		rest = fmt.Sprintf("(SELECT json_group_array(m.value) FROM (SELECT value FROM json_each(%s) WHERE %s <> $1 ORDER BY key) AS m)", qc, member("value"))
+		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_each(%s) WHERE %s = $1)", qc, member("value"))
 	}
 	// The match column is the array itself, so only the Where conditions
-	// narrow the rows; their placeholders follow the value's.
-	conds, wargs := whereConds(e.eraser, 2)
+	// narrow the rows; their placeholders follow the value's (and the
+	// separator's).
+	conds, wargs := whereConds(e.eraser, len(args)+1)
 	if conds != "" {
 		holds += " AND " + conds
 	}
-	return execCount(ctx, tx, fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s", qt, qc, rest, holds), append([]any{e.value}, wargs...)...)
+	return execCount(ctx, tx, fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s", qt, qc, rest, holds), append(args, wargs...)...)
 }
 
 // eraserMatch is the condition an eraser's rows meet: its match column
