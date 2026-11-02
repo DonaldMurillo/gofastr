@@ -94,6 +94,33 @@ func TestCLIKeepsBigIntegers(t *testing.T) {
 	}
 }
 
+// list prints the envelope the server sent: a keyset page has no total,
+// but decoding it through a struct printed "total": 0, "page": 0 and
+// "totalPages": 0, so `jq .total` read a count of zero, and a key the
+// struct did not name was dropped.
+func TestCLIListPrintsTheServerEnvelope(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliValuesFixtureYAML)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"w1","meta":{"n":` + bigInt + `}}],"cursor":"c2","hasMore":true,"extra":{"k":1}}`))
+	}))
+	t.Cleanup(srv.Close)
+	out := runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL, "--cursor", "")
+	for _, absent := range []string{`"total"`, `"page"`, `"totalPages"`, `"perPage"`} {
+		if strings.Contains(out, absent) {
+			t.Errorf("list printed %s, which the server never sent:\n%s", absent, out)
+		}
+	}
+	for _, want := range []string{`"extra"`, `"cursor": "c2"`, bigInt} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list lacks %s:\n%s", want, out)
+		}
+	}
+	if out := runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL, "-o", "table"); !strings.Contains(out, "1 rows, next cursor: c2") {
+		t.Errorf("table lost the cursor line:\n%s", out)
+	}
+}
+
 // A table cell spells a json field's object or array as JSON and keeps a
 // multi-line or tabbed value's words apart on one line: fmt's %v printed
 // map[a:[1 2] s:<b>], and scrubbing the newline out of "line1\nline2"

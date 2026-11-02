@@ -539,6 +539,9 @@ few lines, and link the PR or the docs page for the rest.
   - `login --url` replaces a corrupt config file, and `logout` writes an
     empty one over it. Both refused it, though the refusal told the
     reader to run `login` again.
+  - `list` prints the envelope the server sent. A keyset page printed
+    `"total": 0`, `"page": 0` and `"totalPages": 0` it never sent, and a
+    key the CLI did not know was dropped.
 - **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
   in [app-cli.md](framework/docs/content/app-cli.md):
   - **BREAKING: an acronym is one word in command and flag names.**

@@ -1651,6 +1651,18 @@ func printJSON(v any) int {
 	return 0
 }
 
+// printRawJSON prints a response body as the server sent it, indented: its
+// keys, their order and every digit of its numbers.
+func printRawJSON(raw []byte) int {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, raw, "", "  "); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(buf.String())
+	return 0
+}
+
 // printListTable renders rows as an aligned table. keys are the JSON wire
 // keys in column order; headers the matching titles.
 func printListTable(headers, keys []string, rows []map[string]any) {
@@ -2417,6 +2429,9 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if watch || uploads {
 		imports = append(imports, "\t\"context\"")
 	}
+	if list {
+		imports = append(imports, "\t\"encoding/json\"") // the raw list envelope
+	}
 	if fields || list {
 		imports = append(imports, "\t\"flag\"") // list visits its flags for a given --cursor
 	}
@@ -2523,20 +2538,27 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}
-	var resp listResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &resp); err != nil {
+	// The envelope stays raw so -o json prints the server's own: a keyset
+	// page carries no total, and a struct printed "total": 0 for it.
+	var raw json.RawMessage
+	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &raw); err != nil {
 		return apiFail(err)
 	}
-	if *outF == "table" {
-		printListTable(headers, keys, resp.Data)
-		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), scrubTerminal(resp.Cursor))
-		} else {
-			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
-		}
-		return 0
+	if *outF == "json" {
+		return printRawJSON(raw)
 	}
-	return printJSON(resp)
+	var resp listResponse
+	if err := decodeJSON(raw, &resp); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	printListTable(headers, keys, resp.Data)
+	if resp.Cursor != "" || resp.HasMore {
+		fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), scrubTerminal(resp.Cursor))
+	} else {
+		fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
+	}
+	return 0
 }
 
 `)
