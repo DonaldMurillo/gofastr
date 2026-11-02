@@ -397,7 +397,10 @@ client implements. In a framework app,
 On `tools/call` the checks run in order: resolve the tool (unknown name:
 method-not-found), the framework call gate (disabled module: a generic
 internal error), the tool's own gate (invalid-params carrying the gate's
-error), then the handler. The handler runs under a recover guard, so a panic
+error), then the handler. Every gate (`SetGate`, `WithToolGate`,
+`Gated`, `WithResourceGate`, `WithPromptGate`) answers the same way: a
+plain error is invalid-params carrying its message, and a gate that
+returns its own `*RPCError` keeps that error's code and message. The handler runs under a recover guard, so a panic
 in handler code becomes an internal error with no detail echoed, instead of
 unwinding the transport loop; the same guard covers resource contents funcs
 and prompt handlers.
@@ -421,8 +424,10 @@ resource updates it must also send `resources/subscribe` with the `uri` —
 `NotifyResourceUpdated` is a no-op until at least one subscription is
 active. Subscriptions are refcounted per `uri`: every
 `resources/subscribe` adds one, every `resources/unsubscribe` releases
-one, and delivery stops only when the count for that `uri` reaches
-zero. A `uri` longer than 2048 bytes is refused, the server retains at
+one of the same caller's (the resolved user, else the TCP peer's host),
+and delivery stops only when the count for that `uri` reaches zero. An
+unsubscribe for a `uri` the caller never subscribed to is a no-op, even
+when other callers did. A `uri` longer than 2048 bytes is refused, the server retains at
 most 1024 distinct subscribed uris (a `resources/subscribe` past that
 fails), and when the last stream disconnects the retained
 subscriptions are dropped — with no stream there is nobody to deliver
@@ -459,6 +464,12 @@ caller anything the matching methods would not:
   session revoked mid-stream has its stream closed at the next
   notification, and so does a caller the re-check places in another
   tenant (`tenant.ResolveMiddleware` re-resolves it).
+- A quiet stream re-checks its caller too: every 15 seconds without a
+  notification, the stream re-checks the caller the same way and
+  writes an SSE comment line (`: keep-alive`), which SSE clients
+  ignore. A revoked caller's idle stream closes within one interval
+  instead of holding its seat until the next notification, and a
+  connection that went half-open fails that write and frees its seat.
 - Nothing fires when a gate changes its answer for a connected caller
   without a registration, such as a role granted mid-session. Call
   `NotifyToolsListChanged`, `NotifyPromptsListChanged` or

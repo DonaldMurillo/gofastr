@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
@@ -31,6 +32,14 @@ const maxMCPBodyBytes = 1 << 20
 // stops reading pins the handler goroutine forever: closing sub.ch
 // cannot interrupt an in-flight write. Each write arms a fresh one.
 const sseWriteTimeout = 10 * time.Second
+
+// sseKeepAliveEvery paces the comment line the held notification stream
+// writes while no notification is due. Each tick also re-checks the
+// caller, so a stream whose session was revoked, or whose connection
+// went half-open, ends within one interval instead of whenever the next
+// notification happens to arrive. Server.sseKeepAlive overrides it
+// (tests).
+const sseKeepAliveEvery = 15 * time.Second
 
 // isMCPJSONContentType allows only "application/json" (with optional
 // parameters) and the +json structured-suffix family. The literal
@@ -81,6 +90,29 @@ func writeEnvelopeError(w http.ResponseWriter, resp Response) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// encodeResponse is the wire form of a dispatched response, one JSON
+// line. A response JSON cannot encode (a NaN in a content block's or a
+// prompt message's _meta, values the dispatch hands through unmarshaled)
+// becomes an internal error carrying the request's id: the transports
+// used to drop the encode error, which answered HTTP with an empty body
+// and stdio with no line at all, so the client waited on a reply that
+// never came. The encode error names Go types and values; it is logged,
+// never sent.
+func encodeResponse(resp Response) []byte {
+	b, err := json.Marshal(resp)
+	if err == nil {
+		return append(b, '\n')
+	}
+	slog.Error("mcp: response encode failed", slog.String("err", err.Error()))
+	b, err = json.Marshal(newErrorResponse(resp.ID, ErrInternalError, "internal error"))
+	if err != nil {
+		// Only an in-process id could fail here (a NaN float): answer
+		// with a null id rather than with nothing.
+		b, _ = json.Marshal(newErrorResponse(nil, ErrInternalError, "internal error"))
+	}
+	return append(b, '\n')
 }
 
 // decodeEnvelope is the one envelope decode every transport runs.
@@ -282,7 +314,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resp := s.HandleRequest(ctx, req)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(encodeResponse(resp))
 }
 
 // ServeStdio reads JSON-RPC requests from in line-by-line and writes
@@ -369,7 +401,7 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		}
 
 		resp := s.HandleRequest(ctx, req)
-		encoder.Encode(resp)
+		_, _ = out.Write(encodeResponse(resp))
 	}
 
 	// lines closed: the scan has finished, so its error is settled.
@@ -395,7 +427,7 @@ func (s *Server) ServeSSE(path string) http.Handler {
 		}
 
 		if r.Method == http.MethodGet {
-			s.sseGetHandler(w, r)
+			s.sseStream(w, r, path)
 			return
 		}
 
@@ -434,7 +466,7 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
 		resp := s.HandleRequest(ctx, req)
-		data, _ := json.Marshal(resp)
+		data := bytes.TrimSuffix(encodeResponse(resp), []byte("\n"))
 		StreamSSE(w, "message", string(data))
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
@@ -445,14 +477,22 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	// Standard JSON response
 	resp := s.HandleRequest(ctx, req)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(encodeResponse(resp))
 }
 
-// sseGetHandler sets up an SSE connection for streaming and then HOLDS
+// sseGetHandler serves the held stream for a handler not built by
+// ServeSSE, which knows no mount path: its endpoint event keeps the
+// historical "/sse".
+func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
+	s.sseStream(w, r, "/sse")
+}
+
+// sseStream sets up an SSE connection for streaming and then HOLDS
 // it: the connection stays open for the life of the client, carrying
 // the server-initiated MCP notifications (notifications/*) fanned out
-// to the per-subscriber registry in notifications.go.
-func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
+// to the per-subscriber registry in notifications.go. Its opening
+// endpoint event names path, where ServeSSE mounted the POST half.
+func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) {
 	// Same gate as ssePostHandler. This handler used to discard the
 	// request entirely, so the origin/Host check simply did not run on
 	// the GET half of the pair, a guard hole rather than a disclosure
@@ -538,9 +578,37 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send initial connection event
-	if !writeSSEEvent("endpoint", "/sse") {
+	if !writeSSEEvent("endpoint", path) {
 		return
 	}
+
+	// callerHeld re-establishes the caller: the context was built at
+	// connect, so on its own it keeps answering for a session since
+	// revoked or a token since expired. A caller a fresh request would no
+	// longer carry has the stream closed, as framework/crud's event
+	// stream does. So does one the re-check placed in another tenant
+	// (tenant.ResolveMiddleware re-resolves it): the stream was admitted
+	// for the connect-time tenant, and a gate that does not read the
+	// tenant would keep delivering its URIs.
+	callerHeld := func() (context.Context, bool) {
+		live, held := handler.RecheckPrincipal(sub.ctx)
+		if !held || handler.GetTenantID(live) != handler.GetTenantID(sub.ctx) {
+			return nil, false
+		}
+		return live, true
+	}
+
+	// The keep-alive tick re-checks the caller and writes an SSE comment
+	// while the server is quiet. Without it the re-check ran only before
+	// a delivery, and a revoked caller held its seat for as long as no
+	// notification was raised; a half-open connection was never written
+	// to, so it was never found dead either.
+	every := s.sseKeepAlive
+	if every <= 0 {
+		every = sseKeepAliveEvery
+	}
+	keepAlive := time.NewTicker(every)
+	defer keepAlive.Stop()
 
 	// Hold the connection until the client goes away. Each notification
 	// is filtered per subscriber (server-wide gate + the item's gate,
@@ -552,6 +620,13 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			// Client disconnected. The deferred removeSSESubscriber
 			// unregisters; nothing else is needed.
 			return
+		case <-keepAlive.C:
+			if _, held := callerHeld(); !held {
+				return
+			}
+			if !writeSSEComment(rc, ew) {
+				return
+			}
 		case n, ok := <-sub.ch:
 			if !ok {
 				// The publisher dropped this subscriber for
@@ -561,17 +636,10 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 				// is to reconnect and re-list. See notifySubscribers.
 				return
 			}
-			// Re-establish the caller before every delivery: the
-			// context was built at connect, so on its own it keeps
-			// answering for a session since revoked or a token since
-			// expired. A caller a fresh request would no longer carry
-			// has the stream closed, as framework/crud's event stream
-			// does. So does one the re-check placed in another tenant
-			// (tenant.ResolveMiddleware re-resolves it): the stream was
-			// admitted for the connect-time tenant, and a gate that
-			// does not read the tenant would keep delivering its URIs.
-			live, held := handler.RecheckPrincipal(sub.ctx)
-			if !held || handler.GetTenantID(live) != handler.GetTenantID(sub.ctx) {
+			// Re-establish the caller before every delivery too (see
+			// callerHeld).
+			live, held := callerHeld()
+			if !held {
 				return
 			}
 			if !s.subscriberMayReceive(live, n) {
@@ -597,6 +665,25 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// writeSSEComment writes one SSE comment line (": keep-alive") under a
+// fresh write deadline, flushes it, and clears the deadline again, the
+// same discipline writeSSEEvent keeps. A consumer ignores comment lines,
+// so the stream's events are unchanged; the write is what finds a dead
+// connection. It reports whether the stream is still alive.
+func writeSSEComment(rc *http.ResponseController, ew *errWriter) bool {
+	if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return false
+	}
+	if _, err := io.WriteString(ew, ": keep-alive\n\n"); err != nil {
+		return false
+	}
+	if err := rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return false
+	}
+	_ = rc.SetWriteDeadline(time.Time{})
+	return true
 }
 
 // wantsSSE checks if the request Accept header indicates SSE.

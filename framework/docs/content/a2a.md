@@ -283,6 +283,14 @@ published its final state (`TASK_STATE_CANCELED` for one cut short) or
 unsupported-operation error; reads still answer. A host driving
 `a2a.Server` itself calls `Shutdown` the same way.
 
+Host code that runs on the server's own goroutines cannot take the
+process down. A panicking skill handler fails its task. A `Store` or
+`RetentionTrimmer` that panics while a run settles ends that run with an
+`a2a: run finalize panicked` log line; the task keeps its last stored
+state. A `PushOptions.Client` that panics fails that one delivery with
+an `a2a: push delivery panicked` line. Each panic value is logged
+scrubbed of control bytes.
+
 Terminal rows do not accumulate without end: each owner retains at most
 64 settled (completed / failed / canceled / rejected) tasks — the oldest
 terminal rows are deleted after each settle, in-flight tasks never.

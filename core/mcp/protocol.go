@@ -85,7 +85,7 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 		// to arm updates either. initialize and ping fall through
 		// uncovered on purpose. See Server.serverGate.
 		if err := s.checkServerGate(ctx); err != nil {
-			return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
+			return Response{JSONRPC: "2.0", ID: req.ID, Error: gateRefusal(err)}
 		}
 	}
 

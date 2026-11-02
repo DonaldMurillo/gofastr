@@ -140,6 +140,51 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The MCP notification stream's `endpoint` event names its mount
+  path.** `ServeSSE(path)` opened every GET stream with
+  `event: endpoint` / `data: /sse` whatever `path` was, so a client that
+  follows the event posted to a path nothing serves (the framework
+  mounts `/mcp`). It now carries `path`.
+- **MCP `tools/call` always answers a `content` array.** A handler
+  returning a nil `[]mcp.Content`, or an `mcp.ToolResult` flagging
+  `IsError` with no blocks, put `"content": null` on the wire; the MCP
+  schema requires an array and validating clients rejected the reply.
+  It is now `[]`. `prompts/get` likewise answers `"messages": []` for a
+  prompt handler that returns no messages.
+- **A2A: a panicking `Store` or push client no longer crashes the
+  process.** A run's finalize (the store read and write after the
+  handler returns, the publish, the retention trim) and each push
+  delivery through `PushOptions.Client` ran on the server's own
+  goroutines with no recover, so one panic there took down every
+  owner's runs and streams. The run now ends with an
+  `a2a: run finalize panicked` log line and is released; the delivery
+  fails with `a2a: push delivery panicked` and the drain carries on.
+- **An MCP response that cannot encode is still answered.** The MCP
+  transports dropped the JSON encode error, so a result holding a NaN
+  where the dispatch does not marshal it first (a content block's or a
+  prompt message's `_meta`) answered HTTP with an empty 200 body, an SSE
+  event with empty data, and stdio with no line at all, leaving the
+  client waiting forever. Every transport now answers an internal error
+  carrying the request's id and logs the encode error.
+- **An MCP gate's own `*RPCError` keeps its code on every gate.**
+  `WithToolGate` and the server-wide gate (`SetGate`, and
+  `CallToolFor`'s run of it) wrapped a gate's `*RPCError` in a second
+  invalid-params error reading `RPC error -32001: ...`, while `Gated`,
+  `WithResourceGate` and `WithPromptGate` passed it through. All five now
+  pass it through.
+- **MCP `resources/unsubscribe` releases only the caller's own
+  subscription.** The per-`uri` count was shared by every caller, so
+  any caller past the server gate could unsubscribe a `uri` it never
+  subscribed to and switch `notifications/resources/updated` off for
+  everyone who had. Each subscribe is now recorded under its caller
+  (the resolved user, else the TCP peer's host); delivery is unchanged.
+- **An idle MCP notification stream re-checks its caller.** The GET
+  stream `ServeSSE` holds re-checked the caller only before a
+  notification, and notifications are rare, so a revoked session's
+  stream kept its seat, goroutine and buffer for as long as the server
+  stayed quiet, and a half-open connection was never written to and
+  never freed. The stream now re-checks the caller every 15 seconds and
+  writes an SSE comment line (`: keep-alive`) that clients ignore.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -220,6 +221,11 @@ type Server struct {
 	// positive. Connection-agnostic by transport necessity: there is no
 	// session id linking a POST to a GET stream.
 	resourceSubs map[string]int
+	// resourceSubsBy splits resourceSubs by the caller that subscribed
+	// (sseSeatKey's identity): resources/unsubscribe releases only the
+	// caller's own count, so one caller cannot switch off another's
+	// updates. Delivery still reads the per-uri total above.
+	resourceSubsBy map[resourceSubKey]int
 	// SSE subscriber seat policy (seats.go): how many concurrent
 	// notification streams one caller may hold, and what happens past
 	// the cap. sseSeatOrder is the per-caller FIFO the EvictOldest
@@ -228,6 +234,10 @@ type Server struct {
 	sseSeatCap      int
 	sseSeatOverflow SeatOverflowPolicy
 	sseSeatOrder    map[string][]*sseSubscriber
+	// sseKeepAlive overrides sseKeepAliveEvery, the interval at which an
+	// idle notification stream re-checks its caller and writes a comment
+	// line. Zero means the default; tests shrink it.
+	sseKeepAlive time.Duration
 }
 
 // NewServer creates a new MCP server with an empty tool registry.
@@ -541,9 +551,22 @@ func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 		}
 	}()
 	if gErr := t.Gate(ctx); gErr != nil {
-		return &RPCError{Code: ErrInvalidParams, Message: gErr.Error()}
+		return gateRefusal(gErr)
 	}
 	return nil
+}
+
+// gateRefusal is the JSON-RPC error a gate's refusal answers as. A gate
+// that returns its own *RPCError keeps its code and message, as Gated,
+// WithResourceGate and WithPromptGate always did; any other error is a
+// caller-facing refusal on invalid params carrying its message. Wrapping
+// an *RPCError a second time answered -32602 with "RPC error -32001: ..."
+// on the tool and server-wide gates alone.
+func gateRefusal(err error) *RPCError {
+	if rpcErr, ok := errors.AsType[*RPCError](err); ok {
+		return rpcErr
+	}
+	return &RPCError{Code: ErrInvalidParams, Message: err.Error()}
 }
 
 // runCallGate evaluates the registry-wide call gate with the same net
@@ -651,7 +674,7 @@ func (s *Server) CallTool(ctx context.Context, name string, params map[string]an
 // invalid params carrying the gate's message.
 func (s *Server) CallToolFor(ctx context.Context, name string, params map[string]any) (any, error) {
 	if err := s.checkServerGate(ctx); err != nil {
-		return nil, &RPCError{Code: ErrInvalidParams, Message: err.Error()}
+		return nil, gateRefusal(err)
 	}
 	return s.callTool(ctx, name, params)
 }

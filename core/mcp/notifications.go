@@ -137,7 +137,21 @@ func (s *Server) removeSSESubscriber(sub *sseSubscriber) {
 func (s *Server) expireResourceSubsIfIdleLocked() {
 	if len(s.sseSubs) == 0 {
 		clear(s.resourceSubs)
+		clear(s.resourceSubsBy)
 	}
+}
+
+// resourceSubKey names one caller's subscription to one uri. A struct,
+// not a joined string: no byte in a uri can make two callers' keys
+// collide.
+type resourceSubKey struct{ caller, uri string }
+
+// subscriptionCaller is the identity a resources/subscribe is recorded
+// under: the seat key, so the resolved user's id when middleware put
+// one in the context, else the TCP peer's host.
+func subscriptionCaller(ctx context.Context) string {
+	r, _ := RequestFromContext(ctx)
+	return sseSeatKey(ctx, r)
 }
 
 // notifySubscribers fans a notification out to every live subscriber.
@@ -310,7 +324,11 @@ func (s *Server) NotifyResourceUpdated(uri string) {
 // the multi-replica deployment already has (see the notifications
 // section of framework/docs/content/mcp.md). The server may subscribe
 // to a uri before it is registered, per spec.
-func (s *Server) handleResourcesSubscribe(_ context.Context, req Request) Response {
+//
+// Each count is also recorded under the subscribing caller
+// (resourceSubsBy), not to scope delivery but so an unsubscribe can
+// release only what its own caller subscribed.
+func (s *Server) handleResourcesSubscribe(ctx context.Context, req Request) Response {
 	if req.Params == nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing params")
 	}
@@ -337,16 +355,23 @@ func (s *Server) handleResourcesSubscribe(_ context.Context, req Request) Respon
 		return newErrorResponse(req.ID, ErrInvalidParams,
 			fmt.Sprintf("too many distinct subscribed resource uris (max %d)", maxResourceSubscriptions))
 	}
+	if s.resourceSubsBy == nil {
+		s.resourceSubsBy = make(map[resourceSubKey]int)
+	}
 	s.resourceSubs[params.URI]++
+	s.resourceSubsBy[resourceSubKey{caller: subscriptionCaller(ctx), uri: params.URI}]++
 	s.sseMu.Unlock()
 	return newSuccessResponse(req.ID, map[string]any{})
 }
 
-// handleResourcesUnsubscribe releases one resources/subscribe. The count
-// per uri is decremented; at zero the uri stops receiving updates.
-// Unsubscribing a uri nobody subscribed to is a no-op, not an error, per
-// spec.
-func (s *Server) handleResourcesUnsubscribe(_ context.Context, req Request) Response {
+// handleResourcesUnsubscribe releases one of the caller's own
+// resources/subscribe calls for the uri. The per-uri count is
+// decremented; at zero the uri stops receiving updates. Unsubscribing a
+// uri the caller holds no subscription to is a no-op, not an error, per
+// spec — including a uri other callers subscribed to: the count was
+// shared, so a stranger's unsubscribe used to release their
+// subscription and switch their updates off.
+func (s *Server) handleResourcesUnsubscribe(ctx context.Context, req Request) Response {
 	if req.Params == nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing params")
 	}
@@ -357,11 +382,19 @@ func (s *Server) handleResourcesUnsubscribe(_ context.Context, req Request) Resp
 	if params.URI == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing resource uri")
 	}
+	key := resourceSubKey{caller: subscriptionCaller(ctx), uri: params.URI}
 	s.sseMu.Lock()
-	if n := s.resourceSubs[params.URI]; n <= 1 {
-		delete(s.resourceSubs, params.URI)
-	} else {
-		s.resourceSubs[params.URI] = n - 1
+	if own := s.resourceSubsBy[key]; own > 0 {
+		if own == 1 {
+			delete(s.resourceSubsBy, key)
+		} else {
+			s.resourceSubsBy[key] = own - 1
+		}
+		if n := s.resourceSubs[params.URI]; n <= 1 {
+			delete(s.resourceSubs, params.URI)
+		} else {
+			s.resourceSubs[params.URI] = n - 1
+		}
 	}
 	s.sseMu.Unlock()
 	return newSuccessResponse(req.ID, map[string]any{})
