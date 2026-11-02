@@ -558,7 +558,9 @@ does not cover: a runtime browser scan, and the dependency report.
   runs it as a stdio MCP server; `harness creds` manages encrypted API
   keys — `creds add <provider> <account> -` reads the secret from
   `GOFASTR_HARNESS_SECRET` or piped stdin, and a literal argv value
-  warns the same way).
+  warns the same way). Provider keys from a repository's
+  `.harness-secrets/env` are used only after you approve them once on a
+  terminal, or with `--allow-repo-secrets` for one run.
 - `gofastr version`: print version info.
 
 ## Common mistakes

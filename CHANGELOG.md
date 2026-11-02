@@ -6132,6 +6132,16 @@ few lines, and link the PR or the docs page for the rest.
   readers now auto-allow only paths that resolve, symlinks included,
   under the working directory; `..`, `~`, an outside path or a symlink
   out of the repo prompts. See `harness-architecture.md`.
+- **Harness asks before using a repository's provider keys.** A cloned
+  repo's `.harness-secrets/env` supplied provider keys whenever you had
+  none, so the session ran on the repo author's account. `gofastr
+  harness` now names the keys and asks once per repository and key set
+  on a terminal, remembered in `~/.config/gofastr/harness/repo-secrets.json`;
+  with nobody to ask (`harness mcp`, CI) the keys are refused unless
+  approved earlier or `--allow-repo-secrets` is passed. Keys your
+  environment sets are untouched. The threat model now notes that
+  `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY` are
+  readable by other processes of the same user.
 
 ## [0.95.0] - 2026-10-26
 

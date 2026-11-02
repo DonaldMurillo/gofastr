@@ -1096,3 +1096,7 @@ notes:
     breaking: false
     guidance: "Reads outside the repo now raise a permission prompt. Approve it once, or add a session or Allow-always rule for the paths you read on purpose. --strict-permissions is unchanged."
     nodetect: "the decision is made at tool-call time from the model's arguments; nothing in an app's source spells it"
+  - change: "BREAKING for harness runs on a repository's keys - gofastr harness uses provider keys from .harness-secrets/env only with consent: asked once per repository and key set on a terminal, and refused in gofastr harness mcp, CI or a pipe unless approved earlier or --allow-repo-secrets is passed"
+    breaking: true
+    guidance: "Export your own provider key, run gofastr harness once on a terminal in the repository and answer y, or add --allow-repo-secrets to the MCP client's launch args (or the CI command) for a repository whose keys you mean to use."
+    nodetect: "the keys come from a repository file at run time; nothing in an app's source spells them"
