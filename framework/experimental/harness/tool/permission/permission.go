@@ -63,6 +63,13 @@ type Rule struct {
 	Glob bool `json:",omitempty"`
 	// What to do when matched.
 	Action Decision
+	// Dir is the working directory an "Allow always" (persistent) rule
+	// was granted in; Evaluate honours a persistent rule only in that
+	// directory. A summary leaves the working directory implicit (Bash's
+	// default cwd, Grep's default path), so without it one approval of
+	// `go test ./...` in your own repo ran a cloned repo's tests with no
+	// prompt. Session and profile rules ignore it.
+	Dir string `json:",omitempty"`
 }
 
 // Match reports whether the rule applies to a given (tool, argv) pair.
@@ -118,6 +125,12 @@ type Engine struct {
 	// StrictPermissions overrides QuietMode (default off). When ON,
 	// every tool call is gated.
 	StrictPermissions bool
+
+	// WorkingDir is the directory the session's tools run in. A
+	// persistent rule is stamped with it when saved and honoured only
+	// while it matches, so "Allow always" covers one checkout, not
+	// every repo the harness later runs in.
+	WorkingDir string
 }
 
 // New returns an Engine with the given profile rules and QuietMode on.
@@ -145,8 +158,13 @@ func (e *Engine) Evaluate(session ids.SessionID, toolName, argv string, mutating
 			return r.Action
 		}
 	}
-	// 2) Persistent rules (from "Allow always", survive restart).
+	// 2) Persistent rules (from "Allow always", survive restart), only
+	// in the working directory each was granted in. A rule saved before
+	// rules carried a Dir names none and prompts once more.
 	for _, r := range e.persistentRules {
+		if r.Dir != e.WorkingDir {
+			continue
+		}
 		if r.Match(toolName, argv) {
 			return r.Action
 		}

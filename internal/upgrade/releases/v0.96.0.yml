@@ -761,3 +761,7 @@ notes:
     find:
       uses:
         - gofastr/framework/experimental/apiversions.ApplyToEntityConfig
+  - change: "A harness Allow always permission rule is saved with the working directory it was granted in (Rule.Dir) and applies only while the harness runs there; permission.Engine has a WorkingDir field the harness sets to the process working directory"
+    breaking: false
+    guidance: "Each Allow always rule saved before this release names no directory and prompts once more; answer it again in each checkout that should keep it. An embedder that builds its own permission.Engine sets WorkingDir to keep rules per directory; left empty, rules saved with an empty WorkingDir behave as before."
+    nodetect: "the rules live in the harness's persisted permission file, not in app source"

@@ -683,7 +683,14 @@ approved for `Grep:TODO` (the working directory) does not match
 summary that names a directory.
 
 Session-scoped allows persist for the `EngineRun` only; they
-never carry across sessions or persist to disk. The user can
+never carry across sessions or persist to disk. An **Allow always**
+answer is written to `$XDG_CONFIG_HOME/gofastr/harness/permissions.json`
+with the working directory it was granted in, and is honoured only
+while the harness runs in that directory. A summary leaves the working
+directory implicit (Bash's default cwd, Grep's default path), so a
+global rule would let one approval of `go test ./...` in your own repo
+run a cloned repo's tests with no prompt. A rule saved before rules
+carried a directory prompts once more. The user can
 promote a session-scoped allow to a profile-level rule via
 `/permissions:promote <rule>`.
 

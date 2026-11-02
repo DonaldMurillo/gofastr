@@ -4628,6 +4628,16 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A harness "Allow always" rule covers the working directory it was
+  granted in.** The rule file is one per user and an argv summary leaves
+  the working directory implicit, so approving `go test ./...` forever in
+  your own repo also ran `go test ./...`, and with it a cloned repo's
+  test code, in every other checkout with no prompt; `Grep:TODO` saved in
+  one checkout covered all of them. A persistent rule now records
+  `Rule.Dir` (`permission.Engine.WorkingDir`, the process working
+  directory) and applies only there. Rules saved earlier name no
+  directory and prompt once more. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 - **The harness session log redacts the credstore's key material and
   secrets passed in a Bash call's `env`.** The `NAME=value` pattern
   knew `_API_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` and `_ACCESS_KEY`,
