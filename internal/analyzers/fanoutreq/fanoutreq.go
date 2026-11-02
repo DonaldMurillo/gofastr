@@ -354,9 +354,11 @@ func backendCall(pass *analysis.Pass, body *ast.BlockStmt) *ast.CallExpr {
 	return found
 }
 
+// quiet reports whether path is one of quietPkgs or below one of them.
 func quiet(path string) bool {
 	for _, p := range quietPkgs {
-		if path == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(path, p)) {
+		root := strings.TrimSuffix(p, "/")
+		if path == root || strings.HasPrefix(path, root+"/") {
 			return true
 		}
 	}
