@@ -51,6 +51,11 @@ type DurableScheduler struct {
 	// beforeOccurrenceCommit is a deterministic partition hook for package
 	// tests. Production code leaves it nil.
 	beforeOccurrenceCommit func()
+	// passDone is a deterministic seam for package tests: Start calls it
+	// after each pass with the pass's time and the wait it chose before
+	// the next one, so a test reads the loop's cadence without timing
+	// it. Production code leaves it nil.
+	passDone func(now time.Time, delay time.Duration)
 }
 
 // hookBeforeOccurrenceCommit runs the hook under a recover guard: it
@@ -396,7 +401,7 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 		case <-s.wake:
 		case <-timer.C:
 		}
-		now := time.Now()
+		now := s.queue.now()
 		owned, err := s.runOnce(ctx, now)
 		if err != nil {
 			slog.Default().Error("queue: durable scheduler evaluation failed; retrying next heartbeat",
@@ -410,6 +415,9 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 					"err", err.Error())
 				delay = heartbeat
 			}
+		}
+		if s.passDone != nil {
+			s.passDone(now, delay)
 		}
 		if !timer.Stop() {
 			select {
