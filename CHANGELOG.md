@@ -4398,6 +4398,14 @@ few lines, and link the PR or the docs page for the rest.
   duplicate `ADD COLUMN`, `DiffSchema` proposed dropping it, and a long
   key column read as a key change. The catalog is now read by the cut
   name.
+- **BREAKING: `migrate generate` refuses a SQLite rebuild of a table
+  another table references.** SQLite empties a table before dropping it,
+  and with foreign keys on, a child row still pointing at it fails the
+  `DROP`. The generated file applied on a database whose child was empty
+  and failed with `FOREIGN KEY constraint failed` wherever it held rows.
+  It was refused only for `CASCADE` and `SET NULL` keys; every key the
+  snapshot records now counts. Write the rebuild by hand, or apply it with
+  `ApplySchemaDiffWithOptions`.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**

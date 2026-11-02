@@ -393,7 +393,11 @@ transaction, where the pragma has no effect: it refuses a rebuild that a
 `CASCADE` or `SET NULL` key references and names those tables. It reads
 those keys from the declared relations and from the snapshot's recorded
 table DDL, so a key the database still holds counts even after its
-relation changed or went away. Write that
+relation changed or went away. It refuses a rebuild that any other
+foreign key the snapshot records references too, one with no `ON
+DELETE` action included: SQLite empties the table before dropping it,
+and a child row still pointing at it fails the `DROP`, so such a file
+applied where the child was empty and failed where it held rows. Write that
 migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
 foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
 Rows are carried over, not regenerated. A column added in the same change
