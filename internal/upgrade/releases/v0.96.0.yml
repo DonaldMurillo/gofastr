@@ -664,3 +664,11 @@ notes:
         - gofastr/battery/queue.WithLeaseTimeout
         - gofastr/battery/queue.DBQueue.SetLeaseTimeout
         - gofastr/battery/queue.RedisQueue.SetVisibilityTimeout
+  - change: "outbox.WithPollInterval, WithBatchSize and WithMaxAttempts keep their defaults (1s, 100, 10) when given zero or less"
+    breaking: false
+    guidance: "A zero poll interval crashed the relay at start, a zero batch delivered nothing, and zero attempts dead-lettered on the first failure. Pass a positive value, or drop the option for the default."
+    find:
+      uses:
+        - gofastr/framework/outbox.WithPollInterval
+        - gofastr/framework/outbox.WithBatchSize
+        - gofastr/framework/outbox.WithMaxAttempts

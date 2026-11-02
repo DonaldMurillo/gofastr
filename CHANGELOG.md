@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Outbox options keep their defaults for zero or less.**
+  `outbox.WithPollInterval(0)` crashed the process when the relay
+  started (`time.NewTicker` panics on its goroutine); `WithBatchSize(0)`
+  delivered nothing, and a negative size was unlimited on SQLite but an
+  error on every Postgres pump; `WithMaxAttempts(0)` dead-lettered a
+  delivery on its first failure.
 - **`queue.WithLeaseTimeout(0)` keeps the five-minute lease.** A zero or
   negative lease made every claim count as abandoned the moment it was
   written: the next poll ran a live job a second time, and on a job's

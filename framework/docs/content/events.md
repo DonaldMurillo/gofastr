@@ -416,7 +416,9 @@ handler)` + `ob.StartRelay(ctx)`.
   schedules an exponential backoff; the settle writes state only, never
   the counter — two overlapping runners under lease overrun both count
   because both claims counted. After `MaxAttempts` (default 10) the
-  delivery is marked `dead`. `Replay(rowID)` resets all dead/abandoned
+  delivery is marked `dead`. `WithMaxAttempts`, `WithBatchSize` (default
+  100) and `WithPollInterval` (default 1s) keep their defaults when
+  given zero or less. `Replay(rowID)` resets all dead/abandoned
   deliveries of a row; `ReplayConsumer(rowID, name)` resets one. A reset
   delivery's age starts over, so the handler grace below runs again from
   the replay.

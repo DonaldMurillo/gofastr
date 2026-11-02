@@ -159,9 +159,14 @@ func WithTable(name string) Option {
 }
 
 // WithMaxAttempts sets how many Emit attempts a row gets before it is
-// marked "dead". Defaults to 10.
+// marked "dead". Defaults to 10; n <= 0 keeps the default (it used to
+// dead-letter a delivery on its first failure).
 func WithMaxAttempts(n int) Option {
-	return func(o *Outbox) { o.maxAttempts = n }
+	return func(o *Outbox) {
+		if n > 0 {
+			o.maxAttempts = n
+		}
+	}
 }
 
 // WithoutEnsureTable suppresses the CREATE TABLE IF NOT EXISTS that New
@@ -175,15 +180,26 @@ func WithoutEnsureTable() Option {
 }
 
 // WithPollInterval sets how often the Relay polls for pending rows when
-// no Nudge arrives. Defaults to 1s.
+// no Nudge arrives. Defaults to 1s; d <= 0 keeps the default (the relay's
+// ticker panics on a non-positive interval, which crashed the process).
 func WithPollInterval(d time.Duration) Option {
-	return func(o *Outbox) { o.pollInterval = d }
+	return func(o *Outbox) {
+		if d > 0 {
+			o.pollInterval = d
+		}
+	}
 }
 
 // WithBatchSize sets the maximum number of rows the Relay claims per
-// pump. Defaults to 100.
+// pump. Defaults to 100; n <= 0 keeps the default (a LIMIT 0 delivered
+// nothing, and a negative one was unlimited on SQLite and an error on
+// Postgres).
 func WithBatchSize(n int) Option {
-	return func(o *Outbox) { o.batchSize = n }
+	return func(o *Outbox) {
+		if n > 0 {
+			o.batchSize = n
+		}
+	}
 }
 
 // WithHandlerGrace sets the grace window that governs two symmetric,
