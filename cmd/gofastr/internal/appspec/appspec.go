@@ -278,11 +278,11 @@ func LoadAppSpecPath(path string, validate bool) (AppSpec, error) {
 			foundAppSpec = true
 			node, err := parseAppSpecFile(filepath.Join(path, entry.Name()))
 			if err != nil {
-				return AppSpec{}, err
+				return AppSpec{}, fragmentError{entry.Name(), err}
 			}
 			next, err := DecodeAppSpec(node)
 			if err != nil {
-				return AppSpec{}, err
+				return AppSpec{}, fragmentError{entry.Name(), err}
 			}
 			if node.Kind == coreyaml.Map && node.Map["app"] != nil {
 				if err := mergeAppNode(appNode, node.Map["app"], "app", entry.Name(), appKeyFile); err != nil {
@@ -328,6 +328,20 @@ func DecodeAppSpecFile(path string) (AppSpec, error) {
 	}
 	return DecodeAppSpec(node)
 }
+
+// fragmentError names the file of a directory spec a parse or decode
+// error came from. Without it `gofastr validate specs/` answered
+// "yaml:3:4: unexpected indentation" with every fragment a candidate.
+type fragmentError struct {
+	file string
+	err  error
+}
+
+func (e fragmentError) Error() string {
+	return "app spec: " + e.file + ": " + strings.TrimPrefix(e.err.Error(), "app spec: ")
+}
+
+func (e fragmentError) Unwrap() error { return e.err }
 
 // parseAppSpecFile reads one .yml/.yaml/.json app spec into a YAML node.
 func parseAppSpecFile(path string) (*coreyaml.Node, error) {
