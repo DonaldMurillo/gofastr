@@ -5259,6 +5259,14 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **BREAKING: `battery/relay` relays script, style, image, font, JSON
+  and `text/plain` only.** A relayed response answers on the app's
+  origin, so a vendor HTML page echoing the query string was reflected
+  XSS. Any other type is now a `502`; a route serving a vendor iframe
+  page opts in with `Route.ContentTypes: []string{"text/html"}`. SVG
+  passes under `Content-Security-Policy: sandbox`, and a body with no
+  `Content-Type` goes out as `application/octet-stream`. See
+  [relay](framework/docs/content/relay.md#threat-model).
 - **`core/static` contains a root directory created after the handler.**
   The symlink containment binds the `os.DirFS` root when `Handler` is
   built. A directory that did not exist yet (a build step or a watcher

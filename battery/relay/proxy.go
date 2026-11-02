@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -394,8 +395,9 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 		resp.Status = http.StatusText(http.StatusBadGateway)
 		resp.Body = io.NopCloser(strings.NewReader(body))
 		resp.ContentLength = int64(len(body))
-		resp.Header = http.Header{}
+		resp.Header = http.Header{"Content-Type": {"text/plain; charset=utf-8"}}
 	}
+	r.restrictContentType(rt, resp)
 
 	for _, name := range stripOutboundHeaders {
 		resp.Header.Del(name)
@@ -420,6 +422,43 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 	// now" is the relay's own warning about this direction, and nothing
 	// enforced it.
 	resp.Body = &cappedBody{ReadCloser: resp.Body, remaining: rt.maxBody}
+}
+
+// restrictContentType refuses a response whose media type the route may
+// not relay (see defaultContentTypes and Route.ContentTypes) with a plain
+// 502, the same refusal a redirect gets. A relayed response answers on
+// the app's origin, so a vendor HTML page echoing the query string would
+// otherwise be reflected script on the app. An SVG passes under
+// Content-Security-Policy: sandbox. A body with no Content-Type is
+// labelled application/octet-stream: left unset, the server would sniff
+// it, and the sniffer calls "<html>" text/html.
+func (r *Relay) restrictContentType(rt *routeRuntime, resp *http.Response) {
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotModified && resp.ContentLength != 0 {
+			resp.Header.Set("Content-Type", "application/octet-stream")
+		}
+		return
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	if err == nil && relayableType(rt, mt) {
+		if mt == svgType && !rt.extraCT[svgType] {
+			resp.Header.Add("Content-Security-Policy", "sandbox")
+		}
+		return
+	}
+	r.logger.Warn("relay: refused upstream content type",
+		"status", resp.StatusCode,
+		"content_type", url.PathEscape(ct),
+		"upstream", rt.upstream.Host)
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	_ = resp.Body.Close()
+	body := "upstream content type refused\n"
+	resp.StatusCode = http.StatusBadGateway
+	resp.Status = http.StatusText(http.StatusBadGateway)
+	resp.Body = io.NopCloser(strings.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.Header = http.Header{"Content-Type": {"text/plain; charset=utf-8"}}
 }
 
 // refererOrigin reduces a Referer to its origin with a trailing slash,

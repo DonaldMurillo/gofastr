@@ -1080,3 +1080,10 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "BREAKING - battery/relay refuses an upstream response whose Content-Type is not script, style, image, font, JSON or text/plain with a 502; SVG gains Content-Security-Policy: sandbox and a body with no Content-Type is sent as application/octet-stream"
+    breaking: true
+    hits: review
+    guidance: "A relayed response runs on the app's origin, so a vendor HTML page was reflected script. A route that relays a vendor's iframe page (text/html) or another type adds it with Route.ContentTypes, for example ContentTypes: []string{\"text/html\"}, trusting that vendor as much as the app's own code."
+    find:
+      uses:
+        - gofastr/battery/relay.New

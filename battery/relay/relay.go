@@ -122,6 +122,16 @@ type Route struct {
 	// true: upstream cache headers pass through unchanged, for
 	// immutable versioned assets (/t/assets/sdk@1.2.3.js).
 	CacheOK bool
+
+	// ContentTypes names media types this route may relay on top of the
+	// default set: script, style, image, font, JSON and text/plain. The
+	// relay serves on the app's own origin, so anything else a vendor
+	// sends (an HTML error page echoing the query, a compromised SDK
+	// host) is refused with a 502. A route that relays a vendor's iframe
+	// page names "text/html" here, and accepts that the vendor's page
+	// then runs as the app. Each entry is a lowercase "type/subtype" with
+	// no parameters; New panics on anything else.
+	ContentTypes []string
 }
 
 // Relay is the first-party relay plugin. Construct with New, register
@@ -143,6 +153,7 @@ type routeRuntime struct {
 	methods  []string
 	maxBody  int64
 	cacheOK  bool
+	extraCT  map[string]bool
 	upstream *url.URL
 	proxy    *reverseProxy
 }
@@ -189,6 +200,13 @@ func New(cfg Config) *Relay {
 		if err != nil {
 			panic(fmt.Sprintf("relay: route %q: %v", r.Prefix, err))
 		}
+		extraCT := make(map[string]bool, len(r.ContentTypes))
+		for _, ct := range r.ContentTypes {
+			if !validMediaType(ct) {
+				panic(fmt.Sprintf("relay: route %q: ContentTypes entry %q is not a lowercase type/subtype", r.Prefix, ct))
+			}
+			extraCT[ct] = true
+		}
 		maxBody := r.MaxBodyBytes
 		if maxBody == 0 {
 			maxBody = defaultMaxBodyBytes
@@ -199,6 +217,7 @@ func New(cfg Config) *Relay {
 			methods:  r.Methods,
 			maxBody:  maxBody,
 			cacheOK:  r.CacheOK,
+			extraCT:  extraCT,
 			upstream: u,
 		})
 	}
