@@ -445,7 +445,12 @@
       }
     } catch (err) {
       if ((err && err.name === 'AbortError') || stale()) return;
-      if (errToast !== null) {
+      // A form never fails silently: a refusal paints its fields, a
+      // redirect toasts, and a fetch that never answered (offline, a
+      // dropped connection) toasts too, with or without an opted-in
+      // title. The leave guard keeps the edits unsaved.
+      if (formSource) formResult(formSource, false);
+      if (formSource || errToast !== null) {
         NS._toastOrFallback?.({ variant: 'error', title: errToast || NS.say('runtime.request_failed', 'Request failed'), body: NS.say('runtime.network_error', 'Network error: please try again'), ttl: 6000 });
       }
       if (responseSignal) {

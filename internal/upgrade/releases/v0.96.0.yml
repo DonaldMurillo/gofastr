@@ -735,3 +735,7 @@ notes:
     breaking: false
     guidance: "Set those fields on the Email itself (Email.From, To, CC, BCC, Subject). A Headers copy gave the message two of the field, or, for Bcc, published the blind list. A key with a colon or space was never a working header."
     nodetect: "Headers keys are map keys built at runtime; no fixed spelling in an app's source marks them"
+  - change: "A data-cui-rpc form whose fetch never answers (offline, a dropped connection) toasts and reports gofastr:formresult {ok: false} without data-cui-rpc-error-toast; the attribute now titles that toast on a form"
+    breaking: false
+    guidance: "Nothing to change. A form that set data-cui-rpc-error-toast only to get the network-failure toast can drop it; keep it to choose the title. An app that showed its own offline message on a form's submit should drop it to avoid two."
+    nodetect: "the change is in the runtime's behavior on a failed fetch; nothing in an app's source spells it"

@@ -1690,7 +1690,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// any other dispatch of a node cancels its pending debounced
 		// input request (2026-11-01, TestRPCErrorToastReadsTypedHandlerEnvelope,
 		// TestSubmitCancelsPendingInputRPC, TestDetachedFormSkipsPendingInputRPC).
-		"rpc": 3709,
+		// 3718 measured (3716 + 2) after a data-cui-rpc form whose fetch
+		// never answers reports it (a toast and a failed form result)
+		// without opting in to data-cui-rpc-error-toast (2026-11-02,
+		// TestDispatchRPC_FormNetworkErrorIsNotSilent): an offline submit
+		// did nothing at all. The catch arm is this dispatcher's.
+		"rpc": 3718,
 	}
 	const coreOverride = 0
 
