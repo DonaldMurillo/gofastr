@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The `gofastr dev` hold page keeps its build output from a rebound
+  page.** On a loopback bind the hold answered any `Host`, so a page on
+  another site whose name a rebinding DNS server pointed at 127.0.0.1
+  read the failed build's absolute paths and quoted source as
+  same-origin. A request whose `Host` is not a loopback name for the
+  address gets the page without the output, as an exposed bind does.
 - **`gofastr verify` finds GOFASTR1403 and GOFASTR1404 however the code
   spells them.** GOFASTR1404 keyed on the identifier `http`, so a cookie
   built as `nethttp.Cookie{...}` under an import alias passed.

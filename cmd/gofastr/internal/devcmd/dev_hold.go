@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/loopback"
 	"github.com/DonaldMurillo/gofastr/core/config"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
@@ -57,6 +58,12 @@ type devHold struct {
 	// hold serves /__livereload (always on loopback).
 	exposed    bool
 	liveReload bool
+	// hosts are the Host authorities that name this machine's loopback
+	// bind (127.0.0.1:<port>, localhost:<port>, [::1]:<port>). A request
+	// naming any other host is a DNS-rebound page (evil.example resolving
+	// to 127.0.0.1), which reads the response as same-origin: it gets the
+	// page without the build output, as an exposed bind does.
+	hosts []string
 
 	mu      sync.Mutex
 	ln      net.Listener
@@ -77,7 +84,9 @@ func newDevHold(addr string) (*devHold, error) {
 		return nil, err
 	}
 	exposed := !boundLoopback(ln.Addr())
+	hosts, _ := loopback.LoopbackGuards(ln.Addr().String())
 	h := &devHold{
+		hosts:      hosts,
 		addr:       ln.Addr().String(),
 		idPrefix:   fmt.Sprintf("gofastr-dev-hold-%d-", time.Now().UnixNano()),
 		exposed:    exposed,
@@ -194,10 +203,14 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	phase, detail, gen, _ := h.state()
-	if h.exposed {
+	// Build output holds absolute paths and quoted source. It goes only to
+	// a loopback bind asked by a loopback name: a rebound page's Host is
+	// the attacker's own name.
+	withheld := h.exposed || !loopback.HostAllowed(r.Host, h.hosts)
+	if withheld {
 		detail = ""
 	}
-	title, lead := holdMessage(phase, h.exposed)
+	title, lead := holdMessage(phase, withheld, h.exposed)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Retry-After", "1")
 	w.Header().Set("X-Gofastr-Dev", phase)
@@ -250,14 +263,19 @@ func (h *devHold) serveLiveReload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// holdMessage is the page's title and lead. exposed means the page
-// carries no build output, so a failed build points at the terminal.
-func holdMessage(phase string, exposed bool) (title, lead string) {
+// holdMessage is the page's title and lead. withheld means the page
+// carries no build output, so a failed build points at the terminal;
+// exposed says why: the bind is reachable from other machines, rather
+// than the request naming a host that is not this machine.
+func holdMessage(phase string, withheld, exposed bool) (title, lead string) {
 	switch phase {
 	case holdBuildFailed:
 		where := "below"
-		if exposed {
+		switch {
+		case exposed:
 			where = "in the terminal running gofastr dev (this address is reachable from other machines, so the page leaves the build output out)"
+		case withheld:
+			where = "in the terminal running gofastr dev (the request named a host other than this machine, so the page leaves the build output out)"
 		}
 		return "Build failed", "the last build failed. Fix the error " + where + " and save; " +
 			"gofastr dev rebuilds on every save. It is still running, so do not start another one."

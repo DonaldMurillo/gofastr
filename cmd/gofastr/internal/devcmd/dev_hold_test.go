@@ -365,6 +365,61 @@ func TestExposedHoldHidesBuildOutput(t *testing.T) {
 	}
 }
 
+// A loopback hold served its build output to any Host. A page on
+// evil.example whose name a rebinding DNS server points at 127.0.0.1 is
+// same-origin with the hold, so its script read the absolute paths and
+// quoted source the exposed-bind rule above keeps off the network. A
+// request naming a host that is not this machine gets the page without
+// the output; every loopback spelling still gets it.
+func TestLoopbackHoldWithholdsBuildOutputFromAForeignHost(t *testing.T) {
+	h := newTestHold(t)
+	h.show(holdBuildFailed, "/home/dev/secret/main.go:3:2: undefined: x\n")
+	_, port, err := net.SplitHostPort(h.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(host, accept string) string {
+		t.Helper()
+		req, err := http.NewRequest("GET", "http://"+h.addr+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		res, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("Host %q: status %d, want 503", host, res.StatusCode)
+		}
+		return string(body)
+	}
+	for _, accept := range []string{"", "text/html"} {
+		for _, host := range []string{"evil.example:" + port, "evil.example", "127.0.0.1.evil.example:" + port} {
+			body := get(host, accept)
+			if strings.Contains(body, "secret/main.go") {
+				t.Errorf("Host %q (Accept %q) read the build output: %q", host, accept, body)
+			}
+			if !strings.Contains(body, "terminal") {
+				t.Errorf("Host %q (Accept %q): the page must point at the terminal: %q", host, accept, body)
+			}
+		}
+		for _, host := range []string{"127.0.0.1:" + port, "localhost:" + port, "LOCALHOST:" + port} {
+			if body := get(host, accept); !strings.Contains(body, "secret/main.go") {
+				t.Errorf("Host %q (Accept %q) lost the build output: %q", host, accept, body)
+			}
+		}
+	}
+}
+
 // The hold's own /__livereload follows the app's rule: off on an exposed
 // bind unless dev.LiveReloadExposeEnv opts in.
 func TestExposedHoldDropsLiveReload(t *testing.T) {
