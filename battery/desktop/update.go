@@ -124,6 +124,15 @@ type updater struct {
 	// rename and its rollback. nil selects os.Rename.
 	rename func(oldpath, newpath string) error
 
+	// platformKey is the feed entry key, a test seam; "" selects this
+	// host's GOOS-GOARCH.
+	platformKey string
+
+	// defaultOnce builds the OS platform once: the Windows one reads the
+	// running executable's version resource, which does not change.
+	defaultOnce     sync.Once
+	defaultPlatform update.Platform
+
 	mu       sync.Mutex
 	notified string // last version an update_available event named
 
@@ -166,12 +175,20 @@ func (u *updater) renameFile(oldpath, newpath string) error {
 }
 
 // platformOrDefault returns the injected platform or the OS default
-// (NSBundle-backed on darwin through objc.Main, refusing elsewhere).
+// (NSBundle-backed on darwin through objc.Main, the executable's version
+// resource on Windows, refusing elsewhere).
 func (u *updater) platformOrDefault() update.Platform {
 	if u.platform != nil {
 		return u.platform
 	}
-	return update.DefaultPlatform(nil, update.ExecRunner{})
+	u.defaultOnce.Do(func() {
+		p := update.DefaultPlatform(nil, update.ExecRunner{})
+		if w, ok := p.(interface{ SetWarn(func(string)) }); ok {
+			w.SetWarn(func(msg string) { u.b.logger.Warn("desktop: " + msg) })
+		}
+		u.defaultPlatform = p
+	})
+	return u.defaultPlatform
 }
 
 // CheckForUpdates runs one check against the configured feed now.
@@ -254,7 +271,11 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 	}
 	r := resolved{release: rel, newer: newer}
 	if newer {
-		entry, err := rel.Entry(update.PlatformKey())
+		key := u.platformKey
+		if key == "" {
+			key = update.PlatformKey()
+		}
+		entry, err := rel.Entry(key)
 		if err != nil {
 			return resolved{}, errUpdateNoEntry
 		}
@@ -268,7 +289,8 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 
 // InstallUpdate downloads the newest version from the configured feed,
 // verifies it (ed25519 feed signature, sha256, size, single-bundle
-// zip, codesign), swaps it in place of the running bundle, relaunches
+// zip, then codesign on macOS or Authenticode on Windows), swaps it in
+// place of the running bundle, relaunches
 // it, and quits the current process. ErrUnsupported when unbundled or
 // on a host without an apply step.
 func (b *Battery) InstallUpdate(ctx context.Context) error {
@@ -334,11 +356,12 @@ func (u *updater) install(ctx context.Context) error {
 	// The bundle must be the release the signed feed names, for this
 	// app: a 0.1.0 build labelled 1.2.0 would reinstall on every check,
 	// an old archive under a new label is a silent downgrade, and
-	// another app's bundle must never replace this one. The plist
+	// another app's bundle must never replace this one. The identity
 	// values stay out of the log (they come from the download).
-	info, err := update.ReadBundleInfo(newApp)
+	units, inspect := installLayout(platform, name, bundleDir)
+	info, err := inspect(newApp)
 	if err != nil {
-		u.b.logger.Warn("desktop: update bundle Info.plist refused", "error", err.Error())
+		u.b.logger.Warn("desktop: update bundle identity refused", "error", err.Error())
 		return errUpdateArchive
 	}
 	if info.ShortVersion != r.release.Version {
@@ -354,45 +377,7 @@ func (u *updater) install(ctx context.Context) error {
 		u.b.logger.Warn("desktop: update bundle signature check failed", "error", err.Error())
 		return errUpdateArchive
 	}
-
-	// Swap: beside the running bundle first (same volume), then the
-	// two renames, then relaunch and quit. A failed second rename
-	// moves the old bundle back. A crash between the two renames
-	// leaves no <Name>.app at all, only <Name>.app.old and
-	// <Name>.app.new beside it: the app cannot start to repair that,
-	// so the user renames one back. After a completed swap the next
-	// launch's startUpdater removes <Name>.app.old.
-	current := filepath.Join(bundleDir, name)
-	old := current + ".old"
-	// A rollback that failed leaves <Name>.app.old as the only copy of
-	// the app. The RemoveAll(old) below would delete it, so a swap with
-	// no current bundle refuses before touching anything.
-	if _, err := os.Lstat(current); err != nil {
-		u.b.logger.Error("desktop: the app bundle is missing, so the update was not applied; rename the .app.old bundle beside it back to .app", "error", update.LogDetail(err))
-		return errUpdateApply
-	}
-	beside := filepath.Join(bundleDir, name+".new")
-	if err := os.RemoveAll(beside); err != nil {
-		u.b.logger.Error("desktop: clearing the previous staged bundle failed", "error", update.LogDetail(err))
-		return errUpdateApply
-	}
-	if err := update.MoveTree(newApp, beside); err != nil {
-		u.b.logger.Error("desktop: moving the new bundle into place failed", "error", update.LogDetail(err))
-		return errUpdateApply
-	}
-	if err := os.RemoveAll(old); err != nil {
-		u.b.logger.Error("desktop: clearing the leftover old bundle failed", "error", update.LogDetail(err))
-		return errUpdateApply
-	}
-	if err := u.renameFile(current, old); err != nil {
-		u.b.logger.Error("desktop: moving the current bundle aside failed", "error", update.LogDetail(err))
-		return errUpdateApply
-	}
-	if err := u.renameFile(beside, current); err != nil {
-		u.b.logger.Error("desktop: moving the new bundle into place failed", "error", update.LogDetail(err))
-		if rb := u.renameFile(old, current); rb != nil {
-			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the .app.old bundle beside it back to .app", "error", update.LogDetail(rb))
-		}
+	if !u.swap(newApp, units) {
 		return errUpdateApply
 	}
 	// The new bundle is in place: from here a second install would
@@ -400,7 +385,7 @@ func (u *updater) install(ctx context.Context) error {
 	u.installed = true
 	// Relaunch errors are runner output, which update.ExecRunner has
 	// already rewritten to name the bundle, not its path.
-	if err := platform.Relaunch(current); err != nil {
+	if err := platform.Relaunch(units[0].Current); err != nil {
 		u.b.logger.Error("desktop: relaunching the updated bundle failed", "error", err.Error())
 		return errUpdateApply
 	}
@@ -410,6 +395,91 @@ func (u *updater) install(ctx context.Context) error {
 	u.b.logger.Info("desktop: update installed, relaunching",
 		"version", r.release.Version) // semver-validated: no control bytes
 	return nil
+}
+
+// installLayout returns the paths an install replaces and the reader
+// for the extracted bundle's identity. A FileLayout platform (Windows)
+// names its own files; every other platform swaps the one bundle
+// directory, <dir>/<name>, and reads its Info.plist.
+func installLayout(platform update.Platform, name, bundleDir string) ([]update.Unit, func(string) (update.BundleInfo, error)) {
+	if fl, ok := platform.(update.FileLayout); ok {
+		if units, ok := fl.Units(); ok && len(units) > 0 {
+			return units, fl.Inspect
+		}
+	}
+	return []update.Unit{{Current: filepath.Join(bundleDir, name)}}, update.ReadBundleInfo
+}
+
+// swap moves the extracted bundle's units into place. Each unit's new
+// copy goes beside its installed path first (<path>.new, same volume),
+// then two renames per unit: installed to <path>.old, new into place.
+// A failed rename moves every unit already swapped back. A crash
+// between the two renames of a unit leaves no installed copy of it,
+// only <path>.old and <path>.new beside it: the app cannot start to
+// repair that, so the user renames one back. After a completed swap
+// the next launch's startUpdater removes the .old copies. It reports
+// whether the swap completed; every failure is logged here.
+func (u *updater) swap(newApp string, units []update.Unit) bool {
+	// A rollback that failed leaves <path>.old as the only copy of the
+	// app. The RemoveAll(old) below would delete it, so a swap with a
+	// missing installed path refuses before touching anything.
+	for _, unit := range units {
+		if _, err := os.Lstat(unit.Current); err != nil {
+			u.b.logger.Error("desktop: the app bundle is missing, so the update was not applied; rename the .old copy beside it back", "error", update.LogDetail(err))
+			return false
+		}
+	}
+	for _, unit := range units {
+		beside := unit.Current + ".new"
+		if err := os.RemoveAll(beside); err != nil {
+			u.b.logger.Error("desktop: clearing the previous staged bundle failed", "error", update.LogDetail(err))
+			return false
+		}
+		if err := update.MoveTree(filepath.Join(newApp, unit.Rel), beside); err != nil {
+			u.b.logger.Error("desktop: moving the new bundle into place failed", "error", update.LogDetail(err))
+			return false
+		}
+	}
+	for _, unit := range units {
+		if err := os.RemoveAll(unit.Current + ".old"); err != nil {
+			u.b.logger.Error("desktop: clearing the leftover old bundle failed", "error", update.LogDetail(err))
+			return false
+		}
+	}
+	for i, unit := range units {
+		old, beside := unit.Current+".old", unit.Current+".new"
+		if err := u.renameFile(unit.Current, old); err != nil {
+			u.b.logger.Error("desktop: moving the current bundle aside failed", "error", update.LogDetail(err))
+			u.rollback(units[:i])
+			return false
+		}
+		if err := u.renameFile(beside, unit.Current); err != nil {
+			u.b.logger.Error("desktop: moving the new bundle into place failed", "error", update.LogDetail(err))
+			if rb := u.renameFile(old, unit.Current); rb != nil {
+				u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the .old copy beside it back", "error", update.LogDetail(rb))
+				return false
+			}
+			u.rollback(units[:i])
+			return false
+		}
+	}
+	return true
+}
+
+// rollback undoes completed unit swaps, last first: the new copy goes
+// back to <path>.new and <path>.old returns to the installed path.
+func (u *updater) rollback(done []update.Unit) {
+	for i := len(done) - 1; i >= 0; i-- {
+		cur := done[i].Current
+		if err := u.renameFile(cur, cur+".new"); err != nil {
+			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is half updated", "error", update.LogDetail(err))
+			return
+		}
+		if err := u.renameFile(cur+".old", cur); err != nil {
+			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the .old copy beside it back", "error", update.LogDetail(err))
+			return
+		}
+	}
 }
 
 // stageDir creates the 0700 staging directory under the battery's data
@@ -445,22 +515,31 @@ func (b *Battery) startUpdater(ctx context.Context) {
 	go u.loop(ctx, interval)
 }
 
-// removeStaleOld deletes the bundle a previous update left beside the
-// running one (the old process could not remove itself while running).
+// removeStaleOld deletes the copies a previous update left beside the
+// running app as <path>.old (the old process could not remove itself
+// while running).
 func (u *updater) removeStaleOld() {
-	name, dir, ok := u.platformOrDefault().Bundle()
+	platform := u.platformOrDefault()
+	name, dir, ok := platform.Bundle()
 	if !ok {
 		return
 	}
-	old := filepath.Join(dir, name+".old")
-	if _, err := os.Stat(old); err != nil {
-		return
+	units, _ := installLayout(platform, name, dir)
+	removed := false
+	for _, unit := range units {
+		old := unit.Current + ".old"
+		if _, err := os.Lstat(old); err != nil {
+			continue
+		}
+		if err := os.RemoveAll(old); err != nil {
+			u.b.logger.Warn("desktop: removing the previous update's leftover bundle failed", "error", update.LogDetail(err))
+			continue
+		}
+		removed = true
 	}
-	if err := os.RemoveAll(old); err != nil {
-		u.b.logger.Warn("desktop: removing the previous update's leftover bundle failed", "error", update.LogDetail(err))
-		return
+	if removed {
+		u.b.logger.Info("desktop: removed the previous update's leftover bundle")
 	}
-	u.b.logger.Info("desktop: removed the previous update's leftover bundle")
 }
 
 // loop runs the scheduled checks: first after firstUpdateCheckDelay,

@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"unicode/utf16"
 	"unsafe"
+
+	"github.com/DonaldMurillo/gofastr/internal/winversion"
 )
 
 type windowsDesktopVersion struct {
@@ -158,78 +159,5 @@ func windowsVersionParts(version string) ([4]uint16, error) {
 }
 
 func renderWindowsVersionResource(info windowsDesktopVersion, version [4]uint16) []byte {
-	stringsTable := versionInfoBlock("040904B0", nil, 0, 1,
-		versionString("CompanyName", "GoFastr"),
-		versionString("FileDescription", info.Name),
-		versionString("FileVersion", info.Version),
-		versionString("InternalName", info.Name),
-		versionString("OriginalFilename", info.Name+".exe"),
-		versionString("ProductName", info.Name),
-		versionString("ProductVersion", info.Version),
-		versionString("Comments", "Application ID: "+info.ID),
-	)
-	stringFileInfo := versionInfoBlock("StringFileInfo", nil, 0, 1, stringsTable)
-	translation := []byte{0x09, 0x04, 0xB0, 0x04} // LANG_ENGLISH/US, Unicode
-	translationEntry := versionInfoBlock("Translation", translation, uint16(len(translation)), 0)
-	varFileInfo := versionInfoBlock("VarFileInfo", nil, 0, 1, translationEntry)
-
-	fileVersionMS := uint32(version[0])<<16 | uint32(version[1])
-	fileVersionLS := uint32(version[2])<<16 | uint32(version[3])
-	fixed := make([]byte, 0, 52)
-	for _, word := range []uint32{
-		0xFEEF04BD, // dwSignature
-		0x00010000, // dwStrucVersion
-		fileVersionMS,
-		fileVersionLS,
-		fileVersionMS,
-		fileVersionLS,
-		0x3F,       // dwFileFlagsMask
-		0,          // dwFileFlags
-		0x00040004, // VOS_NT_WINDOWS32
-		1,          // VFT_APP
-		0,          // dwFileSubtype
-		0,          // dwFileDateMS
-		0,          // dwFileDateLS
-	} {
-		fixed = binary.LittleEndian.AppendUint32(fixed, word)
-	}
-	return versionInfoBlock("VS_VERSION_INFO", fixed, uint16(len(fixed)), 0,
-		stringFileInfo, varFileInfo)
-}
-
-func versionString(key, value string) []byte {
-	encoded := utf16.Encode([]rune(value))
-	encoded = append(encoded, 0)
-	data := make([]byte, 0, len(encoded)*2)
-	for _, unit := range encoded {
-		data = binary.LittleEndian.AppendUint16(data, unit)
-	}
-	return versionInfoBlock(key, data, uint16(len(encoded)), 1)
-}
-
-func versionInfoBlock(key string, value []byte, valueLength, valueType uint16, children ...[]byte) []byte {
-	block := make([]byte, 6, 6+len(key)*2+len(value))
-	for _, unit := range utf16.Encode([]rune(key + "\x00")) {
-		block = binary.LittleEndian.AppendUint16(block, unit)
-	}
-	alignVersionInfo(&block)
-	block = append(block, value...)
-	alignVersionInfo(&block)
-	for _, child := range children {
-		block = append(block, child...)
-		alignVersionInfo(&block)
-	}
-	if len(block) > 0xFFFF {
-		panic("desktop: Windows version resource block exceeds 65535 bytes")
-	}
-	binary.LittleEndian.PutUint16(block[0:2], uint16(len(block)))
-	binary.LittleEndian.PutUint16(block[2:4], valueLength)
-	binary.LittleEndian.PutUint16(block[4:6], valueType)
-	return block
-}
-
-func alignVersionInfo(block *[]byte) {
-	for len(*block)%4 != 0 {
-		*block = append(*block, 0)
-	}
+	return winversion.Render(winversion.Info{Name: info.Name, ID: info.ID, Version: info.Version, Parts: version})
 }

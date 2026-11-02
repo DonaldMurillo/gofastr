@@ -1,9 +1,9 @@
-//go:build !darwin || (!arm64 && !amd64)
+//go:build !windows && (!darwin || (!arm64 && !amd64))
 
 package update
 
 // unsupportedPlatform is the DefaultPlatform for every host without a
-// native apply step (windows, linux, and any darwin the objc layer
+// native apply step (linux, and any darwin the objc layer
 // does not build for): every method refuses.
 type unsupportedPlatform struct{}
 

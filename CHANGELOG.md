@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
+  `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
+  with signtool, timestamped through `--timestamp-url`, and `--zip`
+  writes the `windows-amd64` update archive that `gofastr desktop feed`
+  now signs. The updater installs on Windows: it swaps the executable
+  and `WebView2Loader.dll` as a set, checks Authenticode so an update
+  never drops or changes the running build's publisher, and the
+  relaunched copy waits for the old process to exit. See `desktop.md`,
+  "Windows code signing" and "Auto-update".
 - **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
   A calendar that stays on the page beside the native date input it
   fills, for a range in one control, refused days, or notes on days. The

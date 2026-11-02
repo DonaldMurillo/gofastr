@@ -19,6 +19,7 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         [--pkg=<path>] [--version=<x.y.z>]
         [--sign=<identity>|--no-sign] [-o=<dir>]
         [--notarize] [--notary-profile=<name>] [--entitlements=<plist>]
+        [--timestamp-url=<url>|none] [--zip] (Windows only)
         [--scheme=<scheme>] [--format=executable|tar.gz (Linux only)]
         [--launch-args=<args>] [--ldflags=<flags>]
         On Linux, writes <o>/<Name> as a CGO-free ELF executable for
@@ -60,8 +61,14 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         verified and fetched from NuGet; the target machine needs the
         Evergreen WebView2 Runtime installed. --scheme embeds a default
         deep-link scheme; the app registers it for the current user when
-        it starts and forwards links to an existing app window. Signing
-        and notarization are macOS-only.
+        it starts and forwards links to an existing app window.
+        --sign=<thumbprint|subject> signs the .exe with signtool (found
+        on PATH or in the newest Windows SDK) from the current user's
+        certificate store, timestamped through --timestamp-url (default
+        http://timestamp.digicert.com; "none" skips it). Unsigned by
+        default. --zip writes <o>/<Name>-<version>-windows-amd64.zip,
+        the auto-update archive gofastr desktop feed signs.
+        Notarization is macOS-only.
         --launch-args=desktop bakes in the arguments a double-clicked
         executable starts with, for a binary whose desktop mode is a
         subcommand; main reads them through desktop.LaunchArgs(os.Args[1:]).

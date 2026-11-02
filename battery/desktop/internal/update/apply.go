@@ -35,13 +35,15 @@ func (ExecRunner) Run(name string, args ...string) error {
 
 // Platform is the OS seam of the updater: where the running bundle
 // lives, what version it reports, how its replacement proves its
-// signature, and how the new copy is launched. One darwin
-// implementation exists; every other host gets DefaultPlatform's
-// unsupported answer.
+// signature, and how the new copy is launched. darwin swaps one .app
+// directory; windows/amd64 swaps the executable and its loader DLL as a
+// set (it also implements FileLayout). Every other host gets
+// DefaultPlatform's unsupported answer.
 type Platform interface {
 	// Version returns the running app's version (the bundle's
-	// CFBundleShortVersionString on darwin). "" when unbundled, and an
-	// empty version never updates.
+	// CFBundleShortVersionString on darwin, the executable's
+	// ProductVersion on windows). "" when unbundled, and an empty
+	// version never updates.
 	Version() string
 	// Identifier returns the running app's CFBundleIdentifier. ""
 	// when unbundled; an update bundle must declare the same one.
@@ -50,10 +52,12 @@ type Platform interface {
 	// its parent directory. ok is false when the process is not
 	// running from a bundle.
 	Bundle() (name, dir string, ok bool)
-	// VerifySignature runs codesign --verify --deep --strict on the
-	// extracted bundle and refuses a failed check.
+	// VerifySignature checks the extracted bundle's code signature and
+	// refuses a failed check: codesign --verify --deep --strict on
+	// darwin, Authenticode under CheckWindowsTrust on windows.
 	VerifySignature(appDir string) error
-	// Relaunch opens the newly installed bundle (open -n) so the new
+	// Relaunch starts the newly installed copy (open -n on darwin, the
+	// new executable with PredecessorEnv set on windows) so the new
 	// version starts before the current process quits.
 	Relaunch(appDir string) error
 }
@@ -196,4 +200,26 @@ func LogDetail(err error) string {
 		}
 	}
 	return "not a file-system error"
+}
+
+// Unit is one path an install replaces. Rel names the new copy inside
+// the extracted bundle root ("" is the root itself); Current is the
+// installed path it replaces.
+type Unit struct {
+	Rel     string
+	Current string
+}
+
+// FileLayout is the optional Platform extension for a host whose
+// install replaces files beside the running executable instead of one
+// bundle directory (Windows: the .exe and WebView2Loader.dll). A
+// Platform without it installs the macOS way: the extracted root
+// replaces <dir>/<name>, and its identity comes from Info.plist.
+type FileLayout interface {
+	// Units lists the installed paths the swap replaces, in order; the
+	// first is the one Relaunch starts. ok is false when not bundled.
+	Units() (units []Unit, ok bool)
+	// Inspect checks that the extracted root holds exactly the files
+	// Units names and returns the identity it declares.
+	Inspect(extracted string) (BundleInfo, error)
 }

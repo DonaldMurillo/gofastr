@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -979,6 +980,12 @@ func (b *Battery) Run(app *framework.App) error {
 	// nothing a headless CI run cannot do.
 	if os.Getenv(ManifestEnv) == "1" {
 		return b.runManifestMode(app, os.Stdout)
+	}
+	// An update relaunch names the instance it replaces: wait for it to
+	// exit before claiming the single-instance lock, the database, or the
+	// listener it still holds (Windows; a no-op without the variable).
+	if update.AwaitPredecessor() {
+		b.logger.Info("desktop: started after an update; the previous instance has exited")
 	}
 	// A packaged native app may forward activation to a running instance.
 	// Check for an existing instance before app.Start opens the database or

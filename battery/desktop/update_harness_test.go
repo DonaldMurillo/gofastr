@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -125,8 +124,10 @@ func TestUpdatesCheckAndInstallThroughThePage(t *testing.T) {
 	// origin the updater will download from (plain http is allowed to
 	// 127.0.0.1).
 	archiveURL := srv.URL + "/Notes-1.2.0.zip"
+	// The archive is a macOS bundle, so it is published under a darwin
+	// key and the updater is pointed at that key on every host.
 	if err := desktop.SignUpdateFeed(feedDir, keyPath, "1.2.0", "What changed",
-		runtime.GOOS+"-"+runtime.GOARCH, archivePath, archiveURL); err != nil {
+		"darwin-arm64", archivePath, archiveURL); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err = os.ReadFile(filepath.Join(feedDir, "manifest.json"))
@@ -166,6 +167,7 @@ func TestUpdatesCheckAndInstallThroughThePage(t *testing.T) {
 	})
 	fp := &harnessUpdatePlatform{version: "1.0.0", name: "Notes.app", dir: bundleDir}
 	d.SetUpdatePlatform(fp)
+	d.SetUpdatePlatformKey("darwin-arm64")
 
 	h := desktoptest.Run(t, app, d)
 

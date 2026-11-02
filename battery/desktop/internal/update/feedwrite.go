@@ -97,11 +97,13 @@ var rePlatformKey = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // size computed from the archive file), signs it with the key file's
 // private key, and writes manifest.json and manifest.json.sig into
 // outDir. It refuses a non-semver version, a platform key outside the
-// grammar, an archive URL outside the https rule, an archive that
-// is not a zip with exactly one top-level directory whose name ends in
-// .app, an archive the updater's own ExtractZip refuses, and an archive
-// whose Contents/Info.plist does not declare version as its
-// CFBundleShortVersionString.
+// grammar, an archive URL outside the https rule, an archive that is
+// not a zip with exactly one top-level directory, and an archive the
+// updater's own ExtractZip refuses. A darwin-* archive's directory must
+// end in .app and its Contents/Info.plist must declare version as its
+// CFBundleShortVersionString. A windows-* archive's directory must hold
+// exactly <dir>.exe and WebView2Loader.dll, and the executable's
+// ProductVersion must be version.
 func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
 	if _, err := ParseVersion(version); err != nil {
 		return fmt.Errorf("version %q: %w", version, err)
@@ -123,26 +125,40 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	if int64(len(data)) > MaxArchiveSize {
 		return fmt.Errorf("archive exceeds the %d byte cap", int64(MaxArchiveSize))
 	}
-	root, err := zipRootName(data)
+	// A windows-* entry carries the executable and its loader under one
+	// directory named for the executable; every other platform carries
+	// one .app bundle.
+	windows := strings.HasPrefix(platform, "windows-")
+	root, err := zipRootName(data, !windows)
 	if err != nil {
 		return err
 	}
 	// Every client runs ExtractZip on the download, so the feed runs it
 	// too: an archive the updater refuses (a stray top-level README.txt
 	// or .DS_Store, no directory entry for the bundle root, a symlink,
-	// an oversized entry) is never signed.
-	if err := extractCheck(data, root); err != nil {
-		return err
-	}
-	// The label must be the bundle's own version: a feed calling a 0.1.0
-	// bundle 1.2.0 reinstalls it on every check, and an old archive under
-	// a new label is a downgrade the updater cannot see.
-	info, err := zipBundleInfo(data, root)
-	if err != nil {
-		return err
-	}
-	if info.ShortVersion != version {
-		return fmt.Errorf("--version %q does not match the archive: %s/%s says CFBundleShortVersionString %q; rebuild with gofastr desktop build --version %s", version, root, infoPlistPath, info.ShortVersion, version)
+	// an oversized entry) is never signed. The label must be the
+	// bundle's own version: a feed calling a 0.1.0 bundle 1.2.0
+	// reinstalls it on every check, and an old archive under a new
+	// label is a downgrade the updater cannot see.
+	if windows {
+		info, err := windowsArchiveInfo(data, root)
+		if err != nil {
+			return err
+		}
+		if info.ShortVersion != version {
+			return fmt.Errorf("--version %q does not match the archive: %s/%s.exe says ProductVersion %q; rebuild with gofastr desktop build --version %s", version, root, root, info.ShortVersion, version)
+		}
+	} else {
+		if err := extractCheck(data, root); err != nil {
+			return err
+		}
+		info, err := zipBundleInfo(data, root)
+		if err != nil {
+			return err
+		}
+		if info.ShortVersion != version {
+			return fmt.Errorf("--version %q does not match the archive: %s/%s says CFBundleShortVersionString %q; rebuild with gofastr desktop build --version %s", version, root, infoPlistPath, info.ShortVersion, version)
+		}
 	}
 	sum := sha256.Sum256(data)
 	feed := Feed{
@@ -172,11 +188,11 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	return fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json.sig"), sigFile)
 }
 
-// zipRootName names the archive's top-level directory and requires it
-// to end in .app. It shares the entry-cleaning guard with ExtractZip;
+// zipRootName names the archive's top-level directory and, when
+// requireApp is set, requires it to end in .app. It shares the entry-cleaning guard with ExtractZip;
 // the full shape check (no top-level files, a directory entry for the
 // root) is ExtractZip's, which extractCheck runs.
-func zipRootName(data []byte) (string, error) {
+func zipRootName(data []byte, requireApp bool) (string, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return "", fmt.Errorf("%w: not a zip archive", ErrBadArchive)
@@ -192,7 +208,7 @@ func zipRootName(data []byte) (string, error) {
 			continue // a file at the top level: ignored, the root check is on the tree
 		}
 		if root == "" {
-			if !strings.HasSuffix(top, ".app") {
+			if requireApp && !strings.HasSuffix(top, ".app") {
 				return "", fmt.Errorf("%w: top-level directory %q is not a .app bundle", ErrBadArchive, top)
 			}
 			root = top
@@ -201,7 +217,7 @@ func zipRootName(data []byte) (string, error) {
 		}
 	}
 	if root == "" {
-		return "", fmt.Errorf("%w: no top-level .app directory", ErrBadArchive)
+		return "", fmt.Errorf("%w: no top-level bundle directory", ErrBadArchive)
 	}
 	return root, nil
 }
@@ -217,4 +233,23 @@ func extractCheck(data []byte, root string) error {
 	defer os.RemoveAll(tmp)
 	_, err = ExtractZip(data, tmp, root)
 	return err
+}
+
+// windowsArchiveInfo extracts a Windows archive the way the client
+// does, checks it holds exactly the executable and its loader, and
+// reads the identity the executable's version resource declares.
+func windowsArchiveInfo(data []byte, root string) (BundleInfo, error) {
+	tmp, err := os.MkdirTemp("", "gofastr-feed-check-")
+	if err != nil {
+		return BundleInfo{}, fmt.Errorf("archive check: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+	dir, err := ExtractZip(data, tmp, root)
+	if err != nil {
+		return BundleInfo{}, err
+	}
+	if err := CheckWindowsBundle(dir, root); err != nil {
+		return BundleInfo{}, err
+	}
+	return ReadWindowsBundleInfo(dir, root)
 }
