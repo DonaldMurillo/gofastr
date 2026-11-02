@@ -107,6 +107,9 @@ start of a word, so `error` does not find `xerror`. Two differences
 remain: it does not stem (`pages` does not find `page`), and it also
 searches a document's string `Fields`, which the SQL backends store
 but do not index.
+The words themselves still differ at the edges (diacritics, symbols,
+repeated hyphens): see
+[What each backend counts as the same word](#what-each-backend-counts-as-the-same-word).
 
 The implementation is in `battery/search/memory.go`; read it before
 using it in anything user-facing.
@@ -362,6 +365,61 @@ deleted in the same transaction.
 All three share AND-of-terms semantics, prefix matching on the last term,
 the same empty-query (match-all) and pure-punctuation (match-none) edge
 cases, and the string-only `FieldEquals` scoping contract.
+
+### What each backend counts as the same word
+
+They do not share a tokenizer, so the same query can find a document on
+one backend and miss it on another. Each backend keeps its own engine's
+rules on purpose: making them agree would mean re-tokenizing in Go
+before every write and query, and losing what the engine does well
+(Postgres stemming, FTS5 diacritic folding). If the same results on every
+backend matter to you, normalize `Document.Text` and `Query.Text` the
+same way yourself before calling `Index` and `Search` (for example strip
+diacritics with `golang.org/x/text/unicode/norm` and drop the combining
+marks).
+
+| Document text | Query | Memory | SQLite FTS5 | Postgres |
+|---------------|-------|--------|-------------|----------|
+| `café` | `cafe` | no | yes | no |
+| `cafe` | `café` | no | yes | no |
+| `Café` | `café` | yes | yes | yes |
+| `ÉCOLE` | `école` | yes | yes | yes |
+| `straße` | `strasse` | no | no | no |
+| `½ cup` | `½` | yes | yes | no |
+| `v1.2 notes` | `v1.2` | yes | yes | no |
+| `v1.2 notes` | `v1` | yes | yes | yes |
+| `user@example.com` | `example` | yes | yes | no |
+| `user@example.com` | `user@example.com` | yes | yes | no |
+| `load--balancer` | `load--balancer` | yes | yes | yes |
+| `load--balancer` | `balancer` | yes | yes | yes |
+| `load--balancer` | `load-balancer` | no | yes | no |
+| `load-balancer` | `load--balancer` | no | yes | yes |
+| `pages` | `page` | yes (prefix) | yes | yes |
+
+Why they differ:
+
+- **Diacritics.** FTS5's `unicode61` tokenizer removes diacritics by
+  default, so `cafe` and `café` are the same word. Memory and Postgres
+  (the `english` and `simple` configs, without the `unaccent` extension)
+  keep them, so the spelling has to match. All three fold case.
+- **Symbols, versions and addresses.** Postgres's parser gives `½` no
+  word at all, reads `v1.2` as a single file-name token, and reads
+  `user@example.com` as a single email token; the query side does not
+  produce the same tokens, so none of them is found. Memory and FTS5 split
+  at every rune that is not a letter or digit, so each part is a word.
+- **Repeated hyphens.** Memory keeps a hyphenated word whole as well as
+  its parts, so `load--balancer` and `load-balancer` are different
+  whole words there; FTS5 drops the hyphens and matches the parts.
+  Postgres reads `load-balancer` as a compound word plus its parts but
+  `load--balancer` as two separate words, so a single-hyphen query finds
+  only a single-hyphen document.
+- **Stemming.** Postgres and FTS5 stem (`pages` finds `page`); Memory
+  does not, and `page` finds `pages` there only because the last term
+  matches as a prefix.
+
+The table is what the backends do today, checked against SQLite 3 with
+FTS5 and Postgres 16. It is behaviour to know about, not a contract:
+a newer engine version may move a row.
 
 ## Battery wrapper
 

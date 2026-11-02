@@ -187,6 +187,12 @@ few lines, and link the PR or the docs page for the rest.
   inline CSS, and answers 404 under its mount except at the page and
   spec paths. The webhook SQL tables gain `auth`, `response_status`
   and `response_body`, added when the store opens.
+- **Search docs list what each backend counts as the same word.**
+  `search.md` gains a table of matches that differ by backend: SQLite
+  FTS5 folds diacritics (`cafe` finds `café`) and Memory and Postgres do
+  not; Postgres finds no `½`, `v1.2` or email address; doubled hyphens
+  match differently on each. Nothing changed in the backends; normalize
+  text yourself if every backend must agree.
 
 
 ### Fixed
