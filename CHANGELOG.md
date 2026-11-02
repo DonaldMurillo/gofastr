@@ -326,7 +326,11 @@ few lines, and link the PR or the docs page for the rest.
   a path that leaves the project or names nothing, before creating any
   directory; a link inside the project is still followed. `gofastr
   theme init` (for a destination inside the project) and `gofastr new
-  handler` refuse the same links.
+  handler` refuse the same links. `gofastr init .` refuses a `go.mod`
+  or `.git` linked out of the project before writing anything: go mod
+  init created a dangling `go.mod` link's target, go mod edit rewrote
+  the file the link named, and git init reinitialised the repository a
+  linked `.git` named.
 - **The `gofastr dev` hold page keeps its build output from a rebound
   page.** On a loopback bind the hold answered any `Host`, so a page on
   another site whose name a rebinding DNS server pointed at 127.0.0.1

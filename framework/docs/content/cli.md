@@ -43,7 +43,9 @@ each command to the doc that covers it.
   that leaves the project or names nothing (a cloned repo's
   `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, a linked
   `.agents/` or `.env`), creating nothing on the way; a link inside the
-  project is followed. An unknown flag is an error
+  project is followed. `init .` also refuses a `go.mod` or `.git` that
+  links out of the directory, before writing any file, since `go mod`
+  and `git init` would write through it. An unknown flag is an error
   (exit 2). A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.

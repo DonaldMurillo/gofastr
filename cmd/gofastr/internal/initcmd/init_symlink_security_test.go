@@ -139,3 +139,62 @@ func TestScaffoldWriterFollowsALinkInsideTheProject(t *testing.T) {
 		t.Errorf("CLAUDE.md is no longer a link")
 	}
 }
+
+// `gofastr init .` ran go mod init when os.Stat said go.mod did not exist,
+// which a dangling go.mod link also says, so go mod init created the
+// link's target outside the project; over an existing outside target, go
+// mod edit rewrote it. A go.mod that leaves the project through a link is
+// refused before any go subprocess runs, dangling or not.
+func TestInitRefusesGoModLinkedOutside(t *testing.T) {
+	for _, dangling := range []bool{true, false} {
+		t.Run(map[bool]string{true: "dangling", false: "existing"}[dangling], func(t *testing.T) {
+			dir := inPlaceDir(t, "linkapp")
+			outsideDir := filepath.Join(filepath.Dir(dir), "other")
+			if err := os.Mkdir(outsideDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			victim := filepath.Join(outsideDir, "go.mod")
+			const precious = "module example.com/other\n\ngo 1.21\n"
+			if !dangling {
+				if err := os.WriteFile(victim, []byte(precious), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink(victim, filepath.Join(dir, "go.mod")); err != nil {
+				t.Fatal(err)
+			}
+			code := runInitCode(t, ".", "--no-entity")
+			if code != 1 {
+				t.Errorf("init . over a go.mod linked outside exited %d, want 1", code)
+			}
+			got, err := os.ReadFile(victim)
+			if dangling && err == nil {
+				t.Errorf("init . (exit %d) created %s outside the project through go.mod:\n%s", code, victim, got)
+			}
+			if !dangling && string(got) != precious {
+				t.Errorf("init . (exit %d) rewrote %s outside the project through go.mod:\n%s", code, victim, got)
+			}
+		})
+	}
+}
+
+// `git init .` over a .git linked outside the project reinitialises the
+// repository the link names (it rewrites that repo's config and hooks).
+// init . refuses such a .git before writing anything.
+func TestInitRefusesGitDirLinkedOutside(t *testing.T) {
+	dir := inPlaceDir(t, "gitlinkapp")
+	outsideRepo := filepath.Join(filepath.Dir(dir), "outside-repo")
+	if err := os.Mkdir(outsideRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideRepo, filepath.Join(dir, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	code := runInitCode(t, ".", "--no-entity")
+	if code != 1 {
+		t.Errorf("init . over a .git linked outside exited %d, want 1", code)
+	}
+	if entries, _ := os.ReadDir(outsideRepo); len(entries) > 0 {
+		t.Errorf("init . (exit %d) put %d entries in %s through the linked .git", code, len(entries), outsideRepo)
+	}
+}
