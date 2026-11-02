@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
@@ -89,6 +90,29 @@ func writeEnvelopeError(w http.ResponseWriter, resp Response) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// encodeResponse is the wire form of a dispatched response, one JSON
+// line. A response JSON cannot encode (a NaN in a content block's or a
+// prompt message's _meta, values the dispatch hands through unmarshaled)
+// becomes an internal error carrying the request's id: the transports
+// used to drop the encode error, which answered HTTP with an empty body
+// and stdio with no line at all, so the client waited on a reply that
+// never came. The encode error names Go types and values; it is logged,
+// never sent.
+func encodeResponse(resp Response) []byte {
+	b, err := json.Marshal(resp)
+	if err == nil {
+		return append(b, '\n')
+	}
+	slog.Error("mcp: response encode failed", slog.String("err", err.Error()))
+	b, err = json.Marshal(newErrorResponse(resp.ID, ErrInternalError, "internal error"))
+	if err != nil {
+		// Only an in-process id could fail here (a NaN float): answer
+		// with a null id rather than with nothing.
+		b, _ = json.Marshal(newErrorResponse(nil, ErrInternalError, "internal error"))
+	}
+	return append(b, '\n')
 }
 
 // decodeEnvelope is the one envelope decode every transport runs.
@@ -290,7 +314,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resp := s.HandleRequest(ctx, req)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(encodeResponse(resp))
 }
 
 // ServeStdio reads JSON-RPC requests from in line-by-line and writes
@@ -377,7 +401,7 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		}
 
 		resp := s.HandleRequest(ctx, req)
-		encoder.Encode(resp)
+		_, _ = out.Write(encodeResponse(resp))
 	}
 
 	// lines closed: the scan has finished, so its error is settled.
@@ -442,7 +466,7 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
 		resp := s.HandleRequest(ctx, req)
-		data, _ := json.Marshal(resp)
+		data := bytes.TrimSuffix(encodeResponse(resp), []byte("\n"))
 		StreamSSE(w, "message", string(data))
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
@@ -453,7 +477,7 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	// Standard JSON response
 	resp := s.HandleRequest(ctx, req)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(encodeResponse(resp))
 }
 
 // sseGetHandler sets up an SSE connection for streaming and then HOLDS

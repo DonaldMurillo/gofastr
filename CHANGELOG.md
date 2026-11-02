@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An MCP response that cannot encode is still answered.** The MCP
+  transports dropped the JSON encode error, so a result holding a NaN
+  where the dispatch does not marshal it first (a content block's or a
+  prompt message's `_meta`) answered HTTP with an empty 200 body, an SSE
+  event with empty data, and stdio with no line at all, leaving the
+  client waiting forever. Every transport now answers an internal error
+  carrying the request's id and logs the encode error.
 - **An MCP gate's own `*RPCError` keeps its code on every gate.**
   `WithToolGate` and the server-wide gate (`SetGate`, and
   `CallToolFor`'s run of it) wrapped a gate's `*RPCError` in a second
