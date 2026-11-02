@@ -1,6 +1,8 @@
 package apiversions
 
 import (
+	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -61,6 +63,7 @@ func ApplyToEntityConfig(base entity.EntityConfig, ps *ProjectionSet, version st
 	if p == nil {
 		return base
 	}
+	checkProjectionNames(base, p)
 
 	adjusted := make([]schema.Field, len(base.Fields))
 	for i, f := range base.Fields {
@@ -84,4 +87,30 @@ func shouldInclude(fieldName string, p *Projection) bool {
 		return slices.Contains(p.Include, fieldName)
 	}
 	return true
+}
+
+// checkProjectionNames panics when p names a field base does not
+// declare, the way Version panics on a bad prefix: at startup, never in
+// the request path. Exclude is how a version hides a column; a name
+// that matched nothing (a typo, or the column's wire key instead of its
+// field name) left that column on the version's wire output silently.
+func checkProjectionNames(base entity.EntityConfig, p *Projection) {
+	declared := make(map[string]bool, len(base.Fields))
+	for _, f := range base.Fields {
+		declared[f.Name] = true
+	}
+	check := func(kind, name string) {
+		if !declared[name] {
+			panic(fmt.Sprintf("apiversions: projection %q: %s names field %q, which the entity does not declare (use the field name, not its wire key)", p.Version, kind, name))
+		}
+	}
+	for _, n := range p.Include {
+		check("Include", n)
+	}
+	for _, n := range p.Exclude {
+		check("Exclude", n)
+	}
+	for _, n := range slices.Sorted(maps.Keys(p.Rename)) {
+		check("Rename", n)
+	}
 }

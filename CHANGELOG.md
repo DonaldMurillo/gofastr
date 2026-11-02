@@ -4628,6 +4628,13 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`apiversions.ApplyToEntityConfig` panics on a projection naming an
+  undeclared field.** An `Exclude` entry that matched no field (a typo,
+  or the column's camelCase wire key instead of its field name) was
+  ignored, so the column a version meant to hide stayed on its wire
+  output. A name in `Include`, `Exclude` or a `Rename` key that the base
+  config does not declare now panics at startup, like `Version` does on
+  a bad prefix. See [API versioning](framework/docs/content/api-versioning.md).
 - **The harness `Read` and `Edit` tools refuse a path that is not a
   regular file.** `Grep` already skipped FIFOs and devices; `Read` opened
   any path, and opening a FIFO blocks until a writer appears with no
