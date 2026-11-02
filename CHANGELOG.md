@@ -172,8 +172,11 @@ few lines, and link the PR or the docs page for the rest.
 - **A directory key is not found on the local storage backends.** `Get`
   of a prefix such as `uploads/posts` opened the directory, so
   `upload.ServeHandler` answered 500 for it, and `Exists` reported it as
-  a stored object. Both local backends now return `ErrNotFound` (404)
-  and false. See [storage](framework/docs/content/storage.md).
+  a stored object; `Delete` removed an empty prefix and failed on a
+  full one. Both local backends now return `ErrNotFound` (404) and
+  false, and `Delete` leaves the directory and reports it not found
+  (`core/upload` wraps `os.ErrNotExist`, `battery/storage` returns nil,
+  as for a missing file). See [storage](framework/docs/content/storage.md).
 - **`file.StripMetadata` cuts PNG and WebP trailers.** Bytes after a PNG's
   IEND chunk or past a WebP's RIFF size were stored whenever the image had
   no metadata chunk to strip, while a JPEG's post-EOI trailer was always

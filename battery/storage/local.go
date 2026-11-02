@@ -452,7 +452,19 @@ func (ls *LocalStorage) Delete(ctx context.Context, key string) error {
 	// other key's file. The check and the unlink share Save's commit lock.
 	rt := ls.rootFor(root)
 	return upload.CommitUnfolded(key, root, rt, func() error {
+		// Only a regular file is an object: a key naming a prefix
+		// directory is not found (no error, as for a missing file), and
+		// the directory stays.
+		var fi os.FileInfo
 		var err error
+		if rt != nil {
+			fi, err = rt.Lstat(rootRel(path, root))
+		} else {
+			fi, err = os.Lstat(path)
+		}
+		if err == nil && fi.IsDir() {
+			return nil
+		}
 		if rt != nil {
 			// Kernel-contained unlink: a parent directory swapped for a
 			// symlink after resolution is refused here instead of followed.

@@ -402,6 +402,19 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 	root := s.rootFor(rk)
 	var rmErr error
 	if err := CommitUnfolded(key, rk.root, root, func() error {
+		// Only a regular file is an object: a key naming a prefix
+		// directory is not found, and the directory stays.
+		var fi os.FileInfo
+		var stErr error
+		if root != nil {
+			fi, stErr = root.Lstat(rk.rel())
+		} else {
+			fi, stErr = os.Lstat(rk.path)
+		}
+		if stErr == nil && fi.IsDir() {
+			rmErr = &os.PathError{Op: "remove", Path: rk.path, Err: os.ErrNotExist}
+			return nil
+		}
 		if root != nil {
 			// Kernel-contained unlink: a parent directory swapped for a
 			// symlink after resolution is refused here instead of followed.

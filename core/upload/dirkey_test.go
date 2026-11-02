@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,7 +21,8 @@ import (
 // a directory key is not found.
 func TestDirectoryKeyIsNotAnObject(t *testing.T) {
 	ctx := context.Background()
-	s := upload.NewLocalStorage(t.TempDir())
+	dir := t.TempDir()
+	s := upload.NewLocalStorage(dir)
 	t.Cleanup(func() { s.Close() })
 	if err := s.Save(ctx, "uploads/posts/a.png", strings.NewReader("x")); err != nil {
 		t.Fatal(err)
@@ -40,6 +43,27 @@ func TestDirectoryKeyIsNotAnObject(t *testing.T) {
 		upload.ServeHandler(s)(rec, req)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("GET /%s = %d, want 404", key, rec.Code)
+		}
+	}
+	// Delete honours the same property: a directory key is not found,
+	// and the prefix stays. Delete removed an empty prefix and reported
+	// success, and failed a non-empty one with an error that was not
+	// not-found, so erasure counted it a hard failure.
+	if err := s.Save(ctx, "uploads/empty/b.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, "uploads/empty/b.png"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "uploads", "empty")); err != nil {
+		t.Fatalf("setup: the emptied prefix is gone: %v", err)
+	}
+	for _, key := range []string{"uploads/empty", "uploads/posts"} {
+		if err := s.Delete(ctx, key); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("Delete(%q) = %v, want os.ErrNotExist", key, err)
+		}
+		if fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(key))); err != nil || !fi.IsDir() {
+			t.Errorf("Delete(%q) removed the prefix: %v", key, err)
 		}
 	}
 }

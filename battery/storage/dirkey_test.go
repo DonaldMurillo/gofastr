@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,7 +16,8 @@ import (
 // and Exists report it not found instead of handing back the directory.
 func TestLocalDirectoryKeyIsNotAnObject(t *testing.T) {
 	ctx := context.Background()
-	s := NewLocalStorage(t.TempDir())
+	dir := t.TempDir()
+	s := NewLocalStorage(dir)
 	t.Cleanup(func() { s.Close() })
 	if err := s.Save(ctx, "uploads/posts/a.png", strings.NewReader("x")); err != nil {
 		t.Fatal(err)
@@ -28,6 +31,27 @@ func TestLocalDirectoryKeyIsNotAnObject(t *testing.T) {
 		}
 		if ok, err := s.Exists(ctx, key); ok || err != nil {
 			t.Errorf("Exists(%q) = %v, %v; want false, nil", key, ok, err)
+		}
+	}
+	// Delete honours the same property: a directory key is not found,
+	// and the prefix stays. Delete removed an empty prefix and reported
+	// success, and failed a non-empty one with an error that was not
+	// not-found, so erasure counted it a hard failure.
+	if err := s.Save(ctx, "uploads/empty/b.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, "uploads/empty/b.png"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "uploads", "empty")); err != nil {
+		t.Fatalf("setup: the emptied prefix is gone: %v", err)
+	}
+	for _, key := range []string{"uploads/empty", "uploads/posts"} {
+		if err := s.Delete(ctx, key); err != nil {
+			t.Errorf("Delete(%q) = %v, want nil", key, err)
+		}
+		if fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(key))); err != nil || !fi.IsDir() {
+			t.Errorf("Delete(%q) removed the prefix: %v", key, err)
 		}
 	}
 }

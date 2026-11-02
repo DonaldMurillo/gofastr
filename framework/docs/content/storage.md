@@ -38,7 +38,8 @@ type Storage interface {
 `Delete` removes the object; `Exists` reports presence. On the local
 backends a key that names a directory (a prefix such as `uploads/posts`)
 is not an object: `Get` returns `ErrNotFound` (404 through
-`upload.ServeHandler`) and `Exists` reports false. Keys are opaque
+`upload.ServeHandler`), `Exists` reports false, and `Delete` leaves the
+directory in place and treats it as a missing object. Keys are opaque
 strings the upload layer assigns. A backend rejects a key that escapes
 its namespace (path traversal, empty key) with an error; it does not
 rewrite the key.
