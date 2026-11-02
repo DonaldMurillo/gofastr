@@ -619,7 +619,7 @@ few lines, and link the PR or the docs page for the rest.
   `watch` joined an event's `data:` lines until a blank line, and the JS
   client buffered a line until a newline, with no limit, so a feed that
   never ended one grew the subscriber's heap. Both now stop at the
-  1 MiB body cap with an error. Regenerate the SDK or client
+  1 MiB body cap, counted in UTF-8 bytes, with an error. Regenerate the SDK or client
   (`gofastr build`) to pick it up.
 - **battery/auth bug bash (2026-11-01).** Details in
   [auth.md](framework/docs/content/auth.md):
