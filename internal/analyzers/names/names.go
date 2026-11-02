@@ -84,6 +84,9 @@ var Analyzers = []string{
 	"multipartparse",
 	"ratelimitkey",
 	"rsakeysize",
+
+	// 2026-11 bug-bash rules (read hooks)
+	"hookedread",
 }
 
 // Lints is every source lint outside the vettool that shares the

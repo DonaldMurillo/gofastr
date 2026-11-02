@@ -112,6 +112,8 @@ import (
 	// 2026-11 bug-bash rules (request-data)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/sanitizefix"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/textbind"
+	// 2026-11 bug-bash rules (read hooks)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/hookedread"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -205,6 +207,9 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(statusrange.Analyzer),
 	allow.Guard(doublewrite.Analyzer),
 	allow.Guard(listheader.Analyzer),
+	// 2026-11 bug-bash rules (read hooks): the entity screens read rows
+	// through the hooked reader or a named *Unhooked one.
+	allow.Guard(hookedread.Analyzer),
 
 	// 2026-11 bug-bash rules (request-misc): request-shaped trust and
 	// cost mistakes, one per bug the battery/auth bash found.
