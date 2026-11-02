@@ -19,3 +19,15 @@ func TestErrLeak(t *testing.T) {
 func TestErrLeakFormattedErrorOnFiveHundred(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), errleak.Analyzer, "variants")
 }
+
+// TestErrLeakDecodeText pins the 1a4d9e2a arm: encoding/json's own text,
+// naming the server's Go types, sent to a client at any status.
+func TestErrLeakDecodeText(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), errleak.Analyzer, "decode")
+}
+
+// TestErrLeakRewrap pins the d01462e8a arm: a typed error rebuilt from
+// its own text loses its code.
+func TestErrLeakRewrap(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), errleak.Analyzer, "rewrap")
+}

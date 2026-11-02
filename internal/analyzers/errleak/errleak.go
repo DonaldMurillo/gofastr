@@ -47,6 +47,24 @@
 // built string, not a format handed to a helper. Until the 2026-11-02
 // guard bash the HTTP arm read only .Error(), and the JSON-RPC arm only
 // the bare "%v"/"%s" format.
+//
+// Two arms from the 2026-11 bug bashes ask where the error came from;
+// their contract, sinks and silences are in origin.go. Decode
+// (1a4d9e2a): an error from json.Unmarshal / (*json.Decoder).Decode,
+// directly, %w-wrapped, or returned by a helper (rawJSONErr fact), whose
+// text reaches a client at ANY status, a JSON-RPC code, or a Code/Message
+// literal: encoding/json's text names the server's Go types, so the 4xx
+// posture above does not cover it. Fix: handler.JSONErrorDetail(err).
+// Rewrap (d01462e8a): `&T{Message: err.Error()}` (or a helper returning a
+// T-carrying value) for an error type T, where err is a callback's error
+// (foreignErr fact) or a parameter and the function never tests it for
+// *T first. Fix: pass a *T through (errors.AsType[*T]).
+//
+// First whole-tree run: two decode hits in core/acp (the envelope parse
+// error and decodeSessionParams, fixed); six rewrap hits in core/mcp on
+// handler.JSONErrorDetail(err).Error(), removed by treating a local bound
+// only to func literals (JSONErrorDetail's pick helper) as the function's
+// own code rather than a callback.
 package errleak
 
 import (
@@ -62,17 +80,25 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "errleak",
-	Doc:  "forbids sending an error's text to the client on a 5xx response or inside a JSON-RPC internal-error response; log it and write a fixed message instead",
-	Run:  run,
+	Name:      "errleak",
+	Doc:       "forbids sending an error's text to the client on a 5xx response or inside a JSON-RPC internal-error response, encoding/json's text at any status, and rebuilding a typed error from its own text; log it and write a fixed message instead",
+	Run:       run,
+	FactTypes: []analysis.Fact{(*rawJSONErr)(nil), (*foreignErr)(nil)},
 }
 
 const internalMsg = "sends an internal error's text in a JSON-RPC internal-error response: a server-side error string carries DSNs, paths and SQL to the caller — log it and answer a fixed message (core/mcp callTool's \"internal tool error\")"
 
 func run(pass *analysis.Pass) (any, error) {
+	reported := map[*ast.CallExpr]bool{}
+	var decls []*ast.FuncDecl
 	for _, f := range pass.Files {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
+		}
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				decls = append(decls, fd)
+			}
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -88,6 +114,7 @@ func run(pass *analysis.Pass) (any, error) {
 					if found {
 						pass.Reportf(pos,
 							"sends an internal error's text on a 5xx response: a server-side error string carries DSNs, paths and SQL to the client — log it and write a fixed message")
+						reported[call] = true
 						return true
 					}
 				}
@@ -96,16 +123,26 @@ func run(pass *analysis.Pass) (any, error) {
 				for _, arg := range call.Args {
 					if pos, found := findErrorText(pass, arg); found {
 						pass.Reportf(pos, internalMsg)
+						reported[call] = true
 						return true
 					}
 					if pos, found := findSprintfErr(pass, arg); found {
 						pass.Reportf(pos, internalMsg)
+						reported[call] = true
 						return true
 					}
 				}
 			}
 			return true
 		})
+	}
+	// The decode and rewrap arms (origin.go) need to know where an
+	// error came from; the summaries are computed to a fixed point and
+	// exported as facts first.
+	c := summarize(pass, decls)
+	for _, fd := range decls {
+		checkDecode(pass, c, fd, reported)
+		checkRewrap(pass, c, fd)
 	}
 	return nil, nil
 }
