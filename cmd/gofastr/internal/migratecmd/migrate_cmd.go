@@ -452,6 +452,22 @@ func runMigrateStatus(args []string) {
 			}
 		}
 	}
+	// The drift up and down refuse on: without these lines status read
+	// clean while both refused.
+	label := func(rec migrate.MigrationRecord) string {
+		if showGroup {
+			return fmt.Sprintf("%d %s [%s]", rec.Version, rec.Name, groupLabel(rec.Group))
+		}
+		return fmt.Sprintf("%d %s", rec.Version, rec.Name)
+	}
+	for _, rec := range status.Modified {
+		fmt.Printf("    %s %s: MODIFIED since it was applied (up refuses; revert the file, or roll it back and re-apply)\n",
+			cli.Yellow("⚠"), label(rec))
+	}
+	for _, rec := range status.Unregistered {
+		fmt.Printf("    %s %s: applied, but no file in migrations/ registers it (down cannot roll it back)\n",
+			cli.Yellow("⚠"), label(rec))
+	}
 }
 
 // migrateArgsError is what migratorFromArgs refuses before it opens

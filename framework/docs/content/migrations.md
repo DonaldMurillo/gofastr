@@ -181,9 +181,9 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 | Subcommand   | Effect                                                        |
 |--------------|---------------------------------------------------------------|
 | `up`         | Apply all pending migrations in version order. It takes no count: `up 1` is refused rather than read as "apply everything". |
-| `status`     | Print applied count, pending versions, and any dirty version. |
+| `status`     | Print applied count, pending versions, any dirty version, and the drift `up`/`down` refuse on: an applied migration whose file changed since (MODIFIED) or whose file is gone. |
 | `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be one positive integer; anything else, a second count included, is refused before a rollback. |
-| `generate N` | Write a versioned, reversible migration file from entity changes. |
+| `generate N` | Write a versioned, reversible migration file from entity changes. `N` is one word (`add_users`); a second one is refused. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 | `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
 
@@ -1138,6 +1138,11 @@ if err := m.Force(ctx, 1, true); err != nil { … }
 
 // State.
 st, _ := m.Status(ctx)   // st.Applied[i].Checksum, .Dirty are populated
+// st.Modified: applied rows whose registered Up no longer matches the
+// recorded checksum (Up refuses). st.Unregistered: applied rows with no
+// registered migration in the default group or a group that has some
+// (Down refuses); a named group with nothing registered is a disabled
+// module and is not listed.
 ```
 
 Use `RegisterFromReader` to load directive-formatted SQL from any
