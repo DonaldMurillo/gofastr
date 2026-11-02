@@ -4402,6 +4402,11 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A caller's `/openapi.json` view no longer names entities they cannot
+  read through a relation.** The view drops such an entity's schema and
+  paths, but a readable entity's relation field still carried
+  `x-relation: <name>`. It now names a target only when the view
+  includes it; the full document is unchanged.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

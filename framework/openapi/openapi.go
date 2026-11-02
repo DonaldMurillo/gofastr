@@ -290,7 +290,16 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		wireProps := entitySchema["properties"].(map[string]any)
 		for i, f := range visibleFields {
 			if f.Type == schema.Relation {
-				typeRelationKey(wireProps[wireFields[i].Name].(map[string]any), registry, ent, f)
+				prop := wireProps[wireFields[i].Name].(map[string]any)
+				typeRelationKey(prop, registry, ent, f)
+				// A caller's view leaves out every entity they cannot read,
+				// its name included, so x-relation names a target only
+				// when this document emits it.
+				if keep != nil {
+					if target, err := entity.ResolveTarget(registry, ent, f.To); err != nil || target == nil || emitted[target] == "" {
+						delete(prop, "x-relation")
+					}
+				}
 			}
 		}
 		keyCols := ent.KeyColumns()
@@ -1090,13 +1099,17 @@ func readSchema(reg entity.Registry, ent *entity.Entity, base map[string]any, jc
 		if !ok {
 			key = columnKey(rel.Name, jc)
 		}
-		record := map[string]any{"type": "object"}
+		// The target is named, by $ref and in prose, only when this
+		// document emits it: a caller's view leaves out the entities they
+		// cannot read, names included.
+		record, targetName := map[string]any{"type": "object"}, ""
 		if target, err := entity.ResolveTarget(reg, ent, rel.Entity); err == nil && target != nil {
 			if name, ok := emitted[target]; ok {
 				record = map[string]any{"$ref": "#/components/schemas/" + name}
+				targetName = rel.Entity + " "
 			}
 		}
-		desc := "With ?include=" + rel.Name + ": the related " + rel.Entity + " record"
+		desc := "With ?include=" + rel.Name + ": the related " + targetName + "record"
 		var loaded map[string]any
 		switch rel.Type {
 		case entity.RelHasMany, entity.RelManyToMany:
@@ -1107,7 +1120,7 @@ func readSchema(reg entity.Registry, ent *entity.Entity, base map[string]any, jc
 		if own, ok := props[key].(map[string]any); ok {
 			loaded = map[string]any{
 				"anyOf":       []any{own, record, map[string]any{"type": "null"}},
-				"description": "The key of the " + rel.Entity + " record; " + strings.ToLower(desc[:1]) + desc[1:] + " itself, or null when it is not readable.",
+				"description": "The key of the related " + targetName + "record; " + strings.ToLower(desc[:1]) + desc[1:] + " itself, or null when it is not readable.",
 			}
 			if x, ok := own["x-relation"]; ok {
 				loaded["x-relation"] = x
