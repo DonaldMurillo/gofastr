@@ -272,7 +272,7 @@ func isWin32ProcCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	return false
 }
 
-var errorIface =types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+var errorIface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 
 // isPkgName reports whether e names an imported package (a qualified
 // function call rather than a method on a receiver).
