@@ -37,8 +37,8 @@
 // Measured over ./... on 2026-11-02, every map shape found 48 sites,
 // almost all boot-time validation of typed configuration maps
 // (map[string]Route and the like), where the error a developer sees is
-// one fix away from the next; the wire shapes found 6, each a refusal
-// of request, restore, seed or flag input, and each was fixed. Quiet
+// one fix away from the next; the wire shapes found 7, each a refusal
+// of request, restore, seed, layout or flag input, and each was fixed. Quiet
 // besides the other shapes: an error
 // that names no entry (`return errors.New("bad")`, `return ErrX`), a
 // returned error variable built elsewhere (`return err`: the range only
