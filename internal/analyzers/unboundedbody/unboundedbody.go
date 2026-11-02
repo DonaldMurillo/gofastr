@@ -104,6 +104,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/readsrc"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -146,75 +147,6 @@ func sinkArg(pass *analysis.Pass, call *ast.CallExpr) ast.Expr {
 	return nil
 }
 
-// bodySource sees through what does not cap a read: parentheses, the
-// pass-through wrappers bufio.NewReader / NewReaderSize / io.TeeReader,
-// and a local bound exactly once (body := r.Body). A limiter is not
-// unwrapped: a read through io.LimitReader is bounded.
-func bodySource(pass *analysis.Pass, e ast.Expr, aliases map[types.Object]ast.Expr) ast.Expr {
-	for range 8 {
-		e = ast.Unparen(e)
-		switch x := e.(type) {
-		case *ast.Ident:
-			b, ok := aliases[pass.TypesInfo.ObjectOf(x)]
-			if !ok {
-				return e
-			}
-			e = b
-		case *ast.CallExpr:
-			switch astx.PkgFuncName(pass, x.Fun) {
-			case "bufio.NewReader", "bufio.NewReaderSize", "io.TeeReader":
-				if len(x.Args) == 0 {
-					return e
-				}
-				e = x.Args[0]
-			default:
-				return e
-			}
-		default:
-			return e
-		}
-	}
-	return e
-}
-
-// singleBindings maps each local bound exactly once in f, by a
-// single-value assignment or declaration, to its value.
-func singleBindings(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
-	out := map[types.Object]ast.Expr{}
-	count := map[types.Object]int{}
-	bind := func(id *ast.Ident, v ast.Expr) {
-		if obj := pass.TypesInfo.ObjectOf(id); obj != nil && id.Name != "_" {
-			count[obj]++
-			out[obj] = v
-		}
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch st := n.(type) {
-		case *ast.AssignStmt:
-			if len(st.Lhs) == len(st.Rhs) {
-				for i, lhs := range st.Lhs {
-					if id, ok := lhs.(*ast.Ident); ok {
-						bind(id, st.Rhs[i])
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			if len(st.Names) == len(st.Values) {
-				for i, id := range st.Names {
-					bind(id, st.Values[i])
-				}
-			}
-		}
-		return true
-	})
-	for obj, n := range count {
-		if n > 1 {
-			delete(out, obj)
-		}
-	}
-	return out
-}
-
 func run(pass *analysis.Pass) (any, error) {
 	ix := buildIndex(pass)
 	for _, f := range pass.Files {
@@ -222,7 +154,7 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		checkFormParse(pass, f)
-		aliases := singleBindings(pass, f)
+		aliases := readsrc.SingleBindings(pass, f)
 		walkWithFuncs(f, func(n ast.Node, fn ast.Node, encl *ast.FuncDecl) {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || fn == nil {
@@ -232,7 +164,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if arg == nil {
 				return
 			}
-			sel, ok := bodySource(pass, arg, aliases).(*ast.SelectorExpr)
+			sel, ok := readsrc.Source(pass, arg, aliases).(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Body" {
 				return
 			}
