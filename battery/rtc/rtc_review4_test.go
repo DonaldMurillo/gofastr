@@ -68,10 +68,10 @@ func TestEvictedSeatJoinsAnnouncedOnce(t *testing.T) {
 	defer y.close()
 	waitFor(t, 3*time.Second, func() bool { return hasPeer(s2, "room1", "pY") }, "s2 sees pY")
 
-	p1, _ := join(t, base2, "room1", "p1")
+	p1, _ := joinAs(t, base2, "room1", "p1", "u")
 	defer p1.close()
 	y.expectEnv(t, "join")
-	p2, _ := join(t, base2, "room1", "p2")
+	p2, _ := joinAs(t, base2, "room1", "p2", "u")
 	defer p2.close()
 
 	joins, leaves := joinLeaveCounts(t, collectEnvs(y, 700*time.Millisecond))
@@ -257,13 +257,13 @@ func TestSignalFloodDeliveredOrClosed(t *testing.T) {
 // one.
 func TestRemoteDisplacementFreesSeat(t *testing.T) {
 	base1, base2, s1, s2 := twoReplicas(t, func() Config { return Config{MaxSocketsPerUser: 2} })
-	l, _ := join(t, base1, "room1", "pL")
+	l, _ := joinAs(t, base1, "room1", "pL", "u")
 	defer l.close()
-	old, _ := join(t, base1, "room1", "p1")
+	old, _ := joinAs(t, base1, "room1", "p1", "u")
 	defer old.close()
 	waitFor(t, 3*time.Second, func() bool { return hasPeer(s2, "room1", "p1") }, "s2 sees p1")
 
-	moved, _ := join(t, base2, "room1", "p1")
+	moved, _ := joinAs(t, base2, "room1", "p1", "u")
 	defer moved.close()
 	waitFor(t, 3*time.Second, func() bool {
 		s1.mu.Lock()
@@ -272,7 +272,7 @@ func TestRemoteDisplacementFreesSeat(t *testing.T) {
 	}, "s1 drops its local p1")
 
 	s1.mu.Lock()
-	seats := len(s1.seatOrder[""])
+	seats := len(s1.seatOrder["u"])
 	lp := s1.rooms["room1"].listed
 	s1.mu.Unlock()
 	lp.mu.Lock()

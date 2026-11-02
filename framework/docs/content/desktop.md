@@ -298,7 +298,9 @@ native events are evaluated into whatever the window shows, so the
 default is to refuse. An app that wants the old behaviour (an in-window
 OAuth flow, say) sets `Config.DangerouslyAllowForeignNavigation: true`.
 There is no "open in the system browser" hand-off yet: a refused link
-does nothing.
+does nothing. A request for a new window (`window.open`, a
+`target="_blank"` link) opens nothing on any shell, the app's own pages
+included.
 
 How each shell enforces it:
 
@@ -306,6 +308,7 @@ How each shell enforces it:
 |-------|------|--------------|
 | macOS | `WKNavigationDelegate` `decidePolicyForNavigationAction` | Before the request, main frame only |
 | Windows | `ICoreWebView2::add_NavigationStarting` | Before the request and on each redirect; WebView2 raises it for the main frame only |
+| Windows | `ICoreWebView2::add_NewWindowRequested` | Every new-window request is marked handled. WebView2 would otherwise open a second web view with no navigation policy |
 | Linux | `decide-policy` on the response (`webkit_response_policy_decision_is_main_frame_main_resource`) | After the response arrives, before the page commits. WebKitGTK's navigation action has no main-frame flag, so a refused request still reaches the other host; nothing it returns renders |
 
 A custom `Shell` gets the policy as `WindowConfig.AllowNavigation` and
@@ -317,7 +320,8 @@ A test checks the policy without a shell: `desktoptest.Harness`'s
 bound address (`battery/desktop/navigation_policy_security_test.go`).
 The macOS e2e (`phaseForeignNavigation`) and the Linux graphical test
 (`TestNativeGTKWebKit`) drive a real web view at a second origin. The
-Windows hook has no test runner yet.
+Windows hooks have no test runner yet; `TestWindowsShellRefusesNewWindows`
+checks the shell's source.
 
 ## Capabilities
 

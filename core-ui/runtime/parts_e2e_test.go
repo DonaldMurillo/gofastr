@@ -938,3 +938,69 @@ func TestPartResetWaitsForThePage(t *testing.T) {
 		}
 	})
 }
+
+// A deferred part's seed adds to the page's seed; it never replaces it.
+// /a's entry is invalidated after its part lands, so leaving /a falls
+// back to the tracked page seed, and Back must restore /a's quantity,
+// not keep /b's (#614).
+func TestPartSeedKeepsPageSeed(t *testing.T) {
+	s := newPartsSite(t, 10000)
+	envelope := func(seed, primary string, fills ...string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("X-Gofastr-Partial", "true")
+			w.Header().Set("X-Gofastr-Swap", "l:site")
+			w.Header().Set("X-Gofastr-Envelope", "2")
+			fmt.Fprintf(w, `<script type="application/json" id="gofastr-signals-partial">%s</script>`, seed)
+			fmt.Fprintf(w, `<template data-cui-fill="l:site">%s</template>`, primary)
+			for _, f := range fills {
+				fmt.Fprintf(w, `<template data-cui-fill="l:site#%s">SERVER-%s-SKELETON</template>`, f, f)
+			}
+		}
+	}
+	s.setPageResp("/a", envelope(`{"p":{"quantity":10}}`, `A-PRIMARY`, "aside", "rail"))
+	s.setPageResp("/b", envelope(`{"p":{"quantity":20}}`, `B-PRIMARY`, "aside"))
+	s.setPartResp("/a|aside", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<script type="application/json" id="gofastr-signals-partial">{"p":{"badge":3}}</script>`+
+			`<template data-cui-fill="l:site#aside">PART-A-ASIDE</template>`)
+	})
+
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/"),
+		chromedp.WaitVisible(`#goA`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	jsClick(t, ctx, `#goA`)
+	waitContains(t, ctx, `#main`, "A-PRIMARY")
+	waitContains(t, ctx, `#aside`, "PART-A-ASIDE")
+	var badge, back string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`String(__gofastr.getSignal('badge'))`, &badge),
+		chromedp.Evaluate(`__gofastr.invalidate('/a'); true`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if badge != "3" {
+		t.Fatalf("badge after the part landed = %s, want 3", badge)
+	}
+	jsClick(t, ctx, `#goB`)
+	waitContains(t, ctx, `#main`, "B-PRIMARY")
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`history.back()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitContains(t, ctx, `#main`, "A-PRIMARY")
+	if err := chromedp.Run(ctx,
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`String(__gofastr.getSignal('quantity'))`, &back),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if back != "10" {
+		t.Errorf("Back to /a: quantity = %s, want its page seed's 10", back)
+	}
+}

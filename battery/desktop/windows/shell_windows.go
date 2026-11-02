@@ -78,6 +78,7 @@ const (
 	iidWebViewSettings9         = "0528A73B-E92D-49F4-927A-E547DDDAA37D"
 	iidWebMessageHandler        = "57213F19-00E6-49FA-8E07-898EA01ECBD2"
 	iidNavigationStarting       = "9ADBE429-F36D-432B-9DDC-F8881FBD76E3"
+	iidNewWindowRequested       = "D4C185FE-C81C-4989-97AF-2D3FA7AB5651"
 	iidAddScriptHandler         = "B99369F3-9B11-47B5-BC6F-8E7895FCEA17"
 	iidExecuteScriptHandler     = "49511172-CC67-4BCA-9923-137112F4C4CC"
 	iidCapturePreviewHandler    = "697E05E9-3D8F-45FA-96F4-8FFE1EDEDAF5"
@@ -1044,6 +1045,44 @@ func (s *winShell) installNavigationPolicy(w *winWindow) error {
 	win32.Release(cb)
 	if addErr != nil {
 		return fmt.Errorf("desktop/windows: register navigation policy handler: %w", addErr)
+	}
+	return installNewWindowPolicy(w)
+}
+
+// installNewWindowPolicy marks every new-window request (window.open, a
+// target=_blank link) handled, so WebView2 opens no window. The window
+// it would open is a second web view with none of this shell's
+// handlers: no navigation policy, so a page could open a foreign site
+// in a window that looks like the app's. macOS and Linux open nothing
+// for these requests either. Set Handled first, so a failure past it
+// still refuses.
+func installNewWindowPolicy(w *winWindow) error {
+	cb, err := win32.NewCOMHandler(iidNewWindowRequested, func(sender, args uintptr) uintptr {
+		if args == 0 {
+			return 0
+		}
+		_, _ = win32.COMCall(args, 6 /* put_Handled */, 1)
+		defer func() {
+			if v := recover(); v != nil {
+				slog.Default().Error("desktop/windows: new-window policy panicked", "panic", textsafe.Recovered(v))
+			}
+		}()
+		var uri uintptr
+		if _, err := win32.COMCall(args, 3 /* get_Uri */, uintptr(unsafe.Pointer(&uri))); err == nil && uri != 0 {
+			raw := win32.ReadUTF16(uri, maxNavigationURL+1)
+			win32.CoTaskMemFree(uri)
+			slog.Default().Warn("desktop/windows: refused a new window", "host", desktop.NavigationHost(raw))
+		}
+		return 0
+	})
+	if err != nil {
+		return fmt.Errorf("desktop/windows: create new-window policy handler: %w", err)
+	}
+	var token int64
+	_, addErr := win32.COMCall(w.webview, 44 /* add_NewWindowRequested */, cb, uintptr(unsafe.Pointer(&token)))
+	win32.Release(cb)
+	if addErr != nil {
+		return fmt.Errorf("desktop/windows: register new-window policy handler: %w", addErr)
 	}
 	return nil
 }

@@ -78,15 +78,21 @@ replicas through the SQL-backed `ProcessModuleStore`.
 module's effective set, keeps the rest and bumps the generation; it
 refuses an empty `grants`. The store writes it as a compare-and-swap on
 the generation it read (`ProcessModuleStore.RemoveEffectiveGrants`), so
-two revokes at once both stick. A request body over 1 MiB, or one whose
+two revokes at once both stick. The store also records the revoke in
+`DesiredState.RevokedGrants` (the `revoked_grants` column), so it
+outlives the next boot. `SetEffectiveGrants` keeps that set in step: a
+grant the replacement drops is recorded as revoked, and one it gives back
+is no longer. A request body over 1 MiB, or one whose
 base64-encoded `module.http` frame would not fit the module's
 `Limits.FrameBytes` (about three quarters of it), answers 413 rather than
 reaching the child truncated or failing as a retryable 503.
 
 Every boot calls `RegisterProcessModule` again, and so does every
-replica sharing the store. It compares the descriptor with the stored
-row (`ProcessModuleStore.InstallOrUpdate`, whose `InstallOutcome` it
-reports in `RegisterResult.Outcome`):
+replica sharing the store. It compares the descriptor's grants, less the
+row's recorded revokes, with the stored row
+(`ProcessModuleStore.InstallOrUpdate`, whose `InstallOutcome` it reports
+in `RegisterResult.Outcome`, and whose resulting grants it reports in
+`RegisterResult.EffectiveGrants`):
 
 - **Same artifact and grants** (order and repeats ignored): nothing is
   written, and the module keeps its enabled state and generation.
@@ -96,12 +102,16 @@ reports in `RegisterResult.Outcome`):
   rolling deploy, a replica still on the old build drains its child and
   holds the module in `InstalledDisabled` (its routes answer 503) until
   its deploy registers the new artifact.
-- **Any grant change**, wider or narrower: the grants and digest are
-  updated, the generation bumped, and the module **disabled** until an
-  operator enables it again, with a Warn naming the previous and new
-  grants (`RegisterResult.PreviousGrants`). A runtime `RevokeGrants`
-  is not remembered across this: the descriptor's grants are written
-  back, and the module stays disabled until someone re-enables it.
+- **A grant the row does not hold** (`InstallGrantsChanged`): the
+  grants and digest are updated, the generation bumped, and the module
+  **disabled** until an operator enables it again, with a Warn naming
+  the previous and new grants (`RegisterResult.PreviousGrants`).
+- **Grants dropped, none added** (`InstallGrantsNarrowed`): the grants
+  and digest are updated and the generation bumped. The module keeps its
+  enabled state, since nothing new runs.
+- **A runtime revoke** stays in force: a descriptor that still requests
+  a revoked grant does not get it back, and that alone is no grant
+  change. Give a revoked grant back with `SetEffectiveGrants`.
 
 The routes reflect the stored enabled state from the first request after
 boot. Registering one name twice in the same process is still refused
@@ -160,6 +170,14 @@ the `module.drain` call is done, which cancels its in-flight reverse
 calls. A drain also cancels a spawn still starting for the old state: that
 child is killed instead of installed, so a revoke or disable that lands
 mid-start never leaves a second child serving under the old grants.
+
+A drain caused by a disable, or by a revoke (an upgrade whose new grant
+set no longer covers one the child holds), refuses the child's `host.*`
+reverse calls from the moment it starts, with `CodeCapabilityDenied`. The
+child still gets its drain budget to wind down, but a revoked grant is
+gone at once rather than when the child exits. An upgrade that takes no
+grant away, a widening (`orders:read` to `orders:*`), and the shutdown
+drain keep reverse calls open so the child can finish queued work.
 
 ## Shutdown
 

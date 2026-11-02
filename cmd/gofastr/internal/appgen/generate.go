@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -2034,17 +2035,16 @@ func renderAccessLiteral(access *fwentity.AccessDeclaration) string {
 		return ""
 	}
 	var parts []string
-	if access.Read != "" {
-		parts = append(parts, fmt.Sprintf("Read: %q", access.Read))
-	}
-	if access.Create != "" {
-		parts = append(parts, fmt.Sprintf("Create: %q", access.Create))
-	}
-	if access.Update != "" {
-		parts = append(parts, fmt.Sprintf("Update: %q", access.Update))
-	}
-	if access.Delete != "" {
-		parts = append(parts, fmt.Sprintf("Delete: %q", access.Delete))
+	for _, op := range []struct{ key, perm string }{
+		{"Read", access.Read}, {"Create", access.Create}, {"Update", access.Update}, {"Delete", access.Delete},
+	} {
+		switch op.perm {
+		case "":
+		case fwentity.Anyone:
+			parts = append(parts, op.key+": framework.Anyone")
+		default:
+			parts = append(parts, fmt.Sprintf("%s: %q", op.key, op.perm))
+		}
 	}
 	if len(parts) == 0 {
 		return ""
@@ -2264,6 +2264,17 @@ func renderGoLiteral(value any) (string, error) {
 		return fmt.Sprintf("%g", v), nil
 	case int, int32, int64:
 		return fmt.Sprintf("%d", v), nil
+	case json.Number:
+		// A spec decoded with UseNumber: an int64 keeps every digit; any
+		// other number takes the float64 spelling above.
+		if i, err := v.Int64(); err == nil {
+			return fmt.Sprintf("%d", i), nil
+		}
+		f, err := v.Float64()
+		if err != nil {
+			return "", fmt.Errorf("default literal %q: %w", v.String(), err)
+		}
+		return renderGoLiteral(f)
 	case map[string]any:
 		keys := make([]string, 0, len(v))
 		for key := range v {

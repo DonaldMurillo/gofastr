@@ -710,7 +710,9 @@ jobs:
             # parallelism the chromedp websocket connect starves and times
             # out ("websocket url timeout reached", CLAUDE.md documents
             # this package as flaky under parallel load, run isolated).
-            run: go test -count=1 -timeout=10m ./core-ui/runtime/
+            # 20m: main's run took 581s on 2026-11-01, 19s under the old
+            # 10m cap, and the next run on a PR hit it.
+            run: go test -count=1 -timeout=20m ./core-ui/runtime/
           - suite: core-ui-runtime-hosts
             pkg: core-ui/runtime/hosttest$
             # The runtime's tests that boot it inside a framework, uihost

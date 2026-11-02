@@ -51,10 +51,37 @@ app.Entity("posts", framework.EntityConfig{
 })
 ```
 
-Each blank field leaves that operation un-gated by RBAC (owner and tenant
-scoping still apply). When a field is set, auto-CRUD refuses a request
-whose context lacks the permission with **403**: on List, Get, Create,
-Update, Delete, the batch/stream variants, and the `_events` SSE feed. The
+When a field is set, auto-CRUD refuses a request whose context lacks the
+permission with **403**: on List, Get, Create, Update, Delete, the
+batch/stream variants, and the `_events` SSE feed.
+
+Once any field is set, a blank one means:
+
+- **`Read` blank**: reads are open to every caller, the "public reads,
+  gated writes" shape.
+- **`Create`, `Update` or `Delete` blank**: the write is refused to every
+  caller with 403, a wildcard role included, and its MCP tool is
+  refused too. Only server code that elevated its context
+  (`crud.WithElevation`) still writes.
+- **`framework.Anyone`** (`"anyone"` in an app spec or entity
+  declaration): the operation is open to every caller, signed in or not.
+  It is not a permission: no role grants it and no scope names it.
+
+Owner and tenant scoping apply either way: `Create: framework.Anyone`
+on an `OwnerField` entity still needs a signed-in owner.
+
+```go
+app.Entity("inquiries", framework.EntityConfig{
+    Exposure: &framework.ExposureConfig{
+        Access: framework.AccessControl{
+            Read:   "inquiries:read",
+            Create: framework.Anyone, // the public contact form
+            Update: "inquiries:write",
+            Delete: "inquiries:admin",
+        },
+    },
+})
+``` The
 roles + policy must be in the request context first; mount
 `framework.AccessMiddleware` (above) ahead of the CRUD routes.
 
@@ -142,13 +169,19 @@ JWT claims, session cookie, API key lookup. **Service accounts** (see
 hold roles exactly like users and flow through the same `Policy.Can`
 path; an API token's **scopes** (`posts:read`, `*:*`) are an additional
 token-level restriction layered on top, enforced by `auth.HasScope` /
-`auth.RequireScope`. Scopes only narrow: `RequirePermission` also
-refuses a scoped caller (an API token or embed grant) whose scopes do
-not grant the permission, since the token carries its owner's roles.
-The framework's role gates (`framework.MCPRequireRole`, `/.debug`) do
-the same with `access.RoleScope(role)`: a scoped caller acts on a role
-only when it holds `"role:<role>"` (`"role:*"` and `"*:*"` cover every
-role).
+`auth.RequireScope`. Scopes only narrow: `RequirePermission`,
+`access.Can`, `CanResource` and `CanResourceExact` all refuse a scoped
+caller (an API token or embed grant) whose scopes do not grant the
+permission, since the token carries its owner's roles, and a Decider's
+`DecisionAllow` does not lift that. So an `orders:update` token an admin
+minted cannot run an `orders:approve` state transition, and an entity
+whose `Access.Delete` is `plans:admin` needs `plans:admin` in the token's
+scopes on top of the route's `plans:write`. A permission outside the
+`resource:verb` scope vocabulary cannot be minted, so no token passes it.
+The role gates (`framework.MCPRequireRole`, `/.debug`,
+`auth.RequireRole`, `auth.MCPRole`) do the same with
+`access.RoleScope(role)`: a scoped caller acts on a role only when it
+holds `"role:<role>"` (`"role:*"` and `"*:*"` cover every role).
 
 ## API
 

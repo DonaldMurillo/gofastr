@@ -1461,7 +1461,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestEnvelopeBackRestoresEarlierVisitScroll,
 		// TestForcedNavigateNotDedupedByCacheReplay,
 		// envelope_superseded_wait_e2e_test.go).
-		"envelope": 8062,
+		// 8129 measured (8127 + 2) after a leave capture with no entry to carry
+		// forward falls back to the page's whole page-scoped seed, not its
+		// route.* keys, and a deferred part's seed adds to it (#614,
+		// TestInvalidatedPageKeepsSeed, TestPartSeedKeepsPageSeed). The
+		// dead routeFold seam went.
+		"envelope": 8129,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

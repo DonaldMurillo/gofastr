@@ -332,6 +332,11 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 		s.refuse(w, r, http.StatusBadRequest, reasonInvalidJoin, nil)
 		return
 	}
+	if join.User == "" && s.cfg.AnonymousSeats != AnonymousPerSocket {
+		s.logger.Warn("rtc: join refused", "reason", "no_user")
+		s.refuse(w, r, http.StatusForbidden, reasonUserRequired, nil)
+		return
+	}
 	peerID := join.PeerID
 	if peerID == "" {
 		var ok bool

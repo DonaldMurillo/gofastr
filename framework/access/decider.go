@@ -98,9 +98,16 @@ func GetDecider(ctx context.Context) Decider {
 //
 // Can itself is untouched: there is no wildcard/segment logic in the hot path.
 // The resource-aware path is a separate entrypoint the CRUD layer opts into.
+//
+// A scope-restricted caller must hold a scope granting capability
+// (ScopeAllows) before the Decider is asked: scopes only narrow, so a
+// Decider's Allow does not lift a scope the token was never given.
 func CanResource(ctx context.Context, capability Permission, resource Ref) bool {
 	if ctx == nil {
 		return false
+	}
+	if !ScopeAllows(ctx, capability) {
+		return observe(ctx, capability, false, "can-resource")
 	}
 	if d, ok := ctx.Value(deciderKey{}).(Decider); ok && d != nil {
 		switch d(ctx, GetRoles(ctx), capability, resource) {
@@ -120,9 +127,14 @@ func CanResource(ctx context.Context, capability Permission, resource Ref) bool 
 // caller's roles must hold capability itself. A role granted the Wildcard
 // does not satisfy it. A move's Permission is checked this way, so a
 // superuser role does not pick up every narrow capability an app declares.
+// A scope-restricted caller must also hold a scope granting capability, as
+// in CanResource.
 func CanResourceExact(ctx context.Context, capability Permission, resource Ref) bool {
 	if ctx == nil {
 		return false
+	}
+	if !ScopeAllows(ctx, capability) {
+		return observe(ctx, capability, false, "can-resource-exact")
 	}
 	if d, ok := ctx.Value(deciderKey{}).(Decider); ok && d != nil {
 		switch d(ctx, GetRoles(ctx), capability, resource) {
