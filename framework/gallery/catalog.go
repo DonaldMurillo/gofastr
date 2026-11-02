@@ -703,6 +703,9 @@ var Catalog = []Entry{
 			},
 		})
 	}},
+	{"datepicker", "DatePicker", "Forms", "A calendar beside the native date input, for ranges, refused days and notes on days.", func() render.HTML {
+		return ui.DatePicker(DatePickerDemo(""))
+	}},
 	{"multiselect", "Multiselect", "Forms", "Multi-pick from a list with chips.", func() render.HTML {
 		// Value deliberately differs from Label ("cpp" vs "C++") so the
 		// e2e suite catches chip-shows-Value regressions.
@@ -1885,6 +1888,19 @@ widget.MountBuilder(r, preset.Modal("user-edit").
 <button data-cui-toast='{"variant":"success","title":"Saved"}'>Save</button>
 // Server: any data-cui-rpc handler attaches the header on 2xx.
 func push(w http.ResponseWriter, r *http.Request) { ui.AddToastSuccess(w, "Saved", "", 5000) }`,
+
+	"datepicker": `// One config for the page and the month endpoint, so both agree on the days.
+func stay(r *http.Request) ui.DatePickerConfig {
+    return ui.DatePickerConfig{
+        ID: "stay", Label: "Your stay", Endpoint: "/book/month",
+        Range: &ui.DatePickerRange{StartName: "check_in", EndName: "check_out"},
+        Month: r.URL.Query().Get("month"), Today: today(r), Min: today(r),
+        Days:  map[string]ui.DatePickerDay{"2026-11-13": {Disabled: true, Note: "Full"}},
+        Ctx:   r.Context(),
+    }
+}
+// Page: ui.DatePicker(stay(r)) inside the booking form.
+// GET /book/month: w.Write([]byte(ui.DatePickerMonth(stay(r))))`,
 
 	"sortablelist": `ui.SortableList(ui.SortableListConfig{
     Label: "Priorities", RPCPath: "/api/reorder",

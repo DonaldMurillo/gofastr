@@ -307,6 +307,12 @@ func CSRF(cfg CSRFConfig) Middleware {
 				return
 			}
 			ctx := context.WithValue(r.Context(), csrfSubmissionKey{}, csrfSubmission{header: cfg.HeaderName, token: submitted})
+			// The verified token is the page's token too: a handler that
+			// re-renders the form (a validation error) reads it here.
+			// Without it, readers fell back to guessing the cookie name and
+			// rendered no token under a custom CookieName, so the
+			// resubmit answered 403.
+			ctx = context.WithValue(ctx, csrfTokenCtxKey{}, cookie.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -480,11 +486,17 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 }
 
 // SkipBearerAuth returns a Skip predicate suitable for CSRFConfig.Skip that
-// bypasses requests using Authorization: Bearer or Api-Key headers; those
-// don't ride on cookies and so aren't subject to CSRF.
+// bypasses requests carrying an Authorization: Bearer or X-API-Key header;
+// those don't ride on cookies and so aren't subject to CSRF.
+//
+// Only the Bearer scheme counts. Basic, Digest, Negotiate and NTLM are
+// credentials the browser attaches by itself, to a cross-site form POST
+// too, once a proxy or intranet challenged for them: skipping on any
+// Authorization value let such a form through CSRF behind an HTTP-auth
+// staging gate, riding the session cookie as well.
 func SkipBearerAuth() func(*http.Request) bool {
 	return func(r *http.Request) bool {
-		if r.Header.Get("Authorization") != "" {
+		if scheme, _, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " "); ok && strings.EqualFold(scheme, "bearer") {
 			return true
 		}
 		if r.Header.Get("X-API-Key") != "" {

@@ -119,9 +119,12 @@ func TestQualifiedTableIndexes(t *testing.T) {
 	if err := pk.EnsureSchema(ctx); err != nil {
 		t.Errorf("passkey store: %v", err)
 	}
+	// One users index, one passkeys index, and three on sessions
+	// (expires_at, token, user_id: EnsureSchema creates the last two
+	// whoever made the table).
 	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = $1 AND indexname NOT LIKE '%pkey' AND indexname NOT LIKE '%key'`, q).Scan(&n); err != nil || n != 3 {
-		t.Fatalf("store indexes in %s = %d (%v), want 3", q, n, err)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = $1 AND indexname NOT LIKE '%pkey' AND indexname NOT LIKE '%key'`, q).Scan(&n); err != nil || n != 5 {
+		t.Fatalf("store indexes in %s = %d (%v), want 5", q, n, err)
 	}
 }
 

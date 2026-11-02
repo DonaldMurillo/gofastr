@@ -17,9 +17,9 @@ import (
 // patterns run start, middle, end, two.
 type cldrLocale struct {
 	date, time, dateTime [4]string
-	// skeletons are the year-month, month-day and weekday-month-day
-	// formats.
-	skeletons            [3]string
+	// skeletons are the year-month, month-day, weekday-month-day and
+	// year-wide-month formats (CLDR's yMMM, MMMd, MMMEd and yMMMM).
+	skeletons            [4]string
 	months, monthsAbbr   [12]string
 	monthsStandalone     [12]string
 	monthsStandaloneAbbr [12]string

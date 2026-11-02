@@ -14,10 +14,12 @@
 //	    UserStore:  myUserStore,            // implements auth.UserStore
 //	    // SessionStore left nil → in-memory default (single-instance only).
 //	})
-//	mgr.Use(auth.NewCorePlugin())           // /auth/login, /auth/register, /auth/me, /auth/logout
+//	mgr.Use(auth.NewCorePlugin().           // /auth/login, /auth/register, /auth/me, /auth/logout
+//	    WithTwoFactorURL("/login/2fa"))     // required next to the 2FA plugin
 //	mgr.Use(auth.NewMagicLinkPlugin(auth.MagicLinkConfig{
-//	    BaseURL:     "https://app.example.com",
-//	    EmailSender: mySender,              // implements auth.MagicLinkEmailSender
+//	    BaseURL:      "https://app.example.com",
+//	    EmailSender:  mySender,             // implements auth.MagicLinkEmailSender
+//	    TwoFactorURL: "/login/2fa",         // required next to the 2FA plugin
 //	}))
 //	mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
 //	mgr.Use(auth.NewAccountsPlugin())       // /auth/accounts, /auth/unlink/{provider}
@@ -34,10 +36,13 @@
 // development, set [AuthConfig.DevMode]=true to get plain
 // SessionCookie="session_id" and Secure=false.
 //
-// Per-IP rate limiting is opt-in via [AuthConfig.LoginRateLimit] and the
-// per-plugin RateLimit fields. Per-account limiting is opt-in via
-// [AuthConfig.LoginRateLimitPerAccount]. Neither is on by default, set
-// them in production.
+// Rate limiting is on by default. [AuthConfig.LoginRateLimit] (per IP)
+// and [AuthConfig.LoginRateLimitPerAccount] (per canonical email) get
+// default throttles when nil, in DevMode too, and so do the per-plugin
+// RateLimit fields; magic-link send and forgot-password also limit each
+// address (AddressRateLimit). To loosen one, pass a config with a large
+// MaxAttempts; to share a budget across replicas, give it a
+// [SQLRateLimitStore].
 //
 // X-Forwarded-For is NOT trusted by default. Set
 // [RateLimiterConfig.TrustForwardedFor]=true ONLY when you sit behind a
@@ -49,8 +54,9 @@
 // [UserStore] or [SessionStore] may implement:
 //
 //   - [OAuthLinker]:     bind OAuth identities to local users by
-//     (provider, providerID). Without it, OAuth callback falls back to
-//     email-only matching (insecure for non-verifying providers).
+//     (provider, providerID). Required: [OAuth2Plugin] Init fails closed
+//     without it in production (DevMode or AllowInMemoryStores only
+//     warns), and the callback never falls back to email-only matching.
 //   - [AccountLister] / [AccountUnlinker]: required by [AccountsPlugin]
 //     for the /auth/accounts and /auth/unlink endpoints.
 //   - [PasswordChecker]: lets [AccountsPlugin] refuse "unlink the last

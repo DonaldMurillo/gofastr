@@ -25,6 +25,11 @@ const (
 	DateMonthDay
 	// DateWeekdayMonthDay is "Thu, Mar 5" in English.
 	DateWeekdayMonthDay
+	// DateYearMonthLong is "March 2026" in English, "marzo de 2026" in
+	// Spanish: CLDR's year with the wide month (yMMMM), what a
+	// calendar's caption says. A locale whose CLDR format keeps the
+	// month numeric keeps it numeric here too.
+	DateYearMonthLong
 )
 
 // TimeStyle picks a time format. The zero value is TimeShort.
@@ -74,6 +79,8 @@ func (l *cldrLocale) datePattern(s DateStyle) string {
 		return l.skeletons[1]
 	case DateWeekdayMonthDay:
 		return l.skeletons[2]
+	case DateYearMonthLong:
+		return l.skeletons[3]
 	}
 	return l.date[s.lengthIndex()]
 }

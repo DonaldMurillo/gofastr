@@ -92,9 +92,10 @@ func setupP17WithMagicLink(t *testing.T) (*AuthManager, *TwoFAPlugin, *MagicLink
 		SessionCookie:       "session_id",
 		UserStore:           userStore,
 	})
-	core := NewCorePlugin()
+	core := NewCorePlugin().WithTwoFactorURL("/login/2fa")
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
-	magic := NewMagicLinkPlugin(MagicLinkConfig{})
+	// TwoFactorURL: a 2FA plugin is registered, so Init requires it.
+	magic := NewMagicLinkPlugin(MagicLinkConfig{TwoFactorURL: "/login/2fa"})
 	// DevMode so send-verification does not fail closed on a missing
 	// EmailSender, a 503 would hide whether the step-up check fired.
 	verify := NewEmailVerificationPlugin(EmailVerificationConfig{DevMode: true, BaseURL: "http://localhost"})

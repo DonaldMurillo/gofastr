@@ -206,7 +206,7 @@ func TestTwoFAPlugin_Name(t *testing.T) {
 func TestTwoFAPlugin_InitDefaults(t *testing.T) {
 	p := NewTwoFAPlugin(TwoFAConfig{})
 	mgr := New(AuthConfig{JWTSecret: "test-secret", AllowInMemoryStores: true, UserStore: newMemoryUserStore()})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(p)
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -226,7 +226,7 @@ func TestTwoFAPlugin_InitCustomConfig(t *testing.T) {
 		BackupCodeCount: 5,
 	})
 	mgr := New(AuthConfig{JWTSecret: "test-secret", AllowInMemoryStores: true, UserStore: newMemoryUserStore()})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(p)
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -254,7 +254,7 @@ func newTwoFATestEnv(t *testing.T) (*AuthManager, *MemoryTwoFAStore, *memoryUser
 		SessionTTL:          24 * time.Hour,
 		UserStore:           userStore,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twoFAStore}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -370,7 +370,7 @@ func TestTwoFA_Enroll_FailsClosedOnStoreError(t *testing.T) {
 		SessionTTL:          24 * time.Hour,
 		UserStore:           userStore,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: errStore}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -656,7 +656,7 @@ func setupP17(t *testing.T) (*AuthManager, *TwoFAPlugin, *router.Router) {
 		SessionCookie:       "session_id",
 		UserStore:           userStore,
 	})
-	core := NewCorePlugin()
+	core := NewCorePlugin().WithTwoFactorURL("/login/2fa")
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mgr.Use(core)
 	mgr.Use(twofa)
@@ -740,10 +740,11 @@ func TestPendingTwoFA_Me_AllowedAfterChallenge(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("challenge: expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
+	stepped := steppedUpSessionCookie(t, w, "session_id", tok)
 
-	// Same session, /auth/me now passes.
+	// The stepped-up session, /auth/me now passes.
 	req2 := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
-	req2.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
+	req2.AddCookie(&http.Cookie{Name: "session_id", Value: stepped})
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
@@ -761,7 +762,7 @@ func TestPendingTwoFA_NoEnrollmentUnaffected(t *testing.T) {
 		SessionCookie:       "session_id",
 		UserStore:           userStore,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -892,7 +893,7 @@ func newTwoFAEnforceManager(t *testing.T) (*AuthManager, *TwoFAPlugin) {
 		SessionTTL:          time.Hour, SessionCookie: "session_id",
 		UserStore: newMemoryUserStore(),
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mgr.Use(twofa)
 	if err := mgr.Init(nil); err != nil {
@@ -977,10 +978,11 @@ func TestTwoFA_RequireMiddleware_AllowsAfterChallenge(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 from challenge, got %d (body=%s)", w.Code, w.Body.String())
 	}
+	stepped := steppedUpSessionCookie(t, w, "session_id", sess.Token)
 
-	// Same session should now pass RequireTwoFA.
+	// The stepped-up session should now pass RequireTwoFA.
 	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, reqWithSession(http.MethodGet, "/protected", sess.Token, nil))
+	r.ServeHTTP(w2, reqWithSession(http.MethodGet, "/protected", stepped, nil))
 	if w2.Code != http.StatusOK {
 		t.Fatalf("expected 200 after successful challenge, got %d (body=%s)", w2.Code, w2.Body.String())
 	}
@@ -1057,7 +1059,7 @@ func TestChallengeFailsWhenMarkFails(t *testing.T) {
 		UserStore:           userStore,
 		SessionStore:        wrapped,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twoFAStore}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

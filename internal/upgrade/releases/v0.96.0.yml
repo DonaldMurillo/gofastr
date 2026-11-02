@@ -714,6 +714,119 @@ notes:
     breaking: true
     guidance: "The server returns a NULL column as null, which the old types hid. Regenerate the JS SDK (gofastr sdk). TypeScript that reads an optional field checks for null first (v ?? fallback, or if (v !== null)). A required, generated or key field keeps its plain type."
     nodetect: "the change lands in regenerated SDK files; caller code that reads an optional field has no fixed spelling to search for"
+  - change: "BREAKING - MagicLinkPlugin.Init refuses to start when a 2FA plugin is registered and MagicLinkConfig.TwoFactorURL is empty; a magic-link sign-in of a 2FA account now redirects there instead of to OnSuccessURL, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Set MagicLinkConfig.TwoFactorURL to the page that posts the code to /2fa/challenge, the same page PasskeyConfig.TwoFactorURL names. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+  - change: "BREAKING - on an account with a second factor, POST/GET/DELETE /auth/tokens need the cookie session that passed it; a session from before enrollment answers 403 and a bearer JWT with no such session 401"
+    breaking: true
+    hits: review
+    guidance: "Either credential minted a permanent *:* token the new factor never touched. A client that manages tokens for a 2FA user signs in, completes /auth/2fa/challenge, and calls the token routes with that session cookie."
+    find:
+      uses:
+        - gofastr/battery/auth.NewTokensPlugin
+  - change: "BREAKING - a passing /auth/2fa/challenge deletes the pending session and sets a new session cookie instead of marking the pending one verified"
+    breaking: true
+    hits: review
+    guidance: "Browsers follow the Set-Cookie on their own. A client that carries the session token by hand takes the new value from the challenge response's Set-Cookie; the pre-challenge token answers 401."
+    find:
+      uses:
+        - gofastr/battery/auth.NewTwoFAPlugin
+  - change: "BREAKING - middleware.SkipBearerAuth (auth.CSRF's default skip) skips only Authorization: Bearer and X-API-Key; Basic, Digest, Negotiate and NTLM requests are CSRF-checked"
+    breaking: true
+    hits: review
+    guidance: "The browser attaches those schemes by itself, to a cross-site form too. A non-browser client that authenticates with Basic on a CSRF-protected route either moves to a bearer token or is exempted with WithCSRFSkipPaths for its routes."
+    find:
+      uses:
+        - gofastr/core/middleware.SkipBearerAuth
+        - gofastr/battery/auth.CSRF
+  - change: "BREAKING - OAuth provider registry keys must be 1-64 letters, digits, - or _ (NewOAuth2Plugin and RegisterProvider panic otherwise); an identity with no email and no existing link answers 400 auth.oauth_no_email; OIDC email_verified counts only when the same claim set's email equals the kept address"
+    breaking: true
+    hits: review
+    guidance: "A dotted key (login.gov) never completed a flow: rename it, and its stored links and tokens with it. Ask email-less providers for the email scope. An app that maps OIDCClaimsMapping.EmailClaim to upn or preferred_username sees those sign-ins arrive unverified, so they no longer auto-link into an existing account by address."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOAuth2Plugin
+        - gofastr/battery/auth.OIDCClaimsMapping
+  - change: "BREAKING - auth.RequireAuth(nil) panics at wiring time, and AuthManager.Init refuses a negative AuthConfig.JWTExpiry"
+    breaking: true
+    hits: review
+    guidance: "mgr.JWT() is non-nil as soon as auth.New returns with a JWTSecret (or DevMode), so RequireAuth(mgr.JWT()) works before App.Start. A nil there means the manager has no secret; set AuthConfig.JWTSecret. Replace a negative JWTExpiry with a positive duration or zero for the 1-hour default."
+    find:
+      uses:
+        - gofastr/battery/auth.RequireAuth
+  - change: "BREAKING for audit consumers - a SQL audit row from battery/auth with no user id (an unknown address, a magic-link request, a refused OAuth sign-in) carries diff.email_hash, a 12-hex-char sha256 prefix of the canonical address, instead of diff.email"
+    breaking: true
+    hits: review
+    guidance: "EraseUserData scrubs the rows a user acted from and cannot reach a row with no actor, so the raw address outlived the user's erasure. A query or alert that reads diff.email on such rows matches on diff.email_hash instead: the first 12 hex chars of the sha256 of auth.CanonicalEmail(address), the default canonicalizer even when AuthConfig.CanonicalizeEmail is set. Rows with a user id keep diff.email."
+    find:
+      uses:
+        - gofastr/battery/auth.NewSQLAuditSink
+  - change: "BREAKING - OAuth2Plugin.Init refuses to start when a 2FA plugin is registered and OAuth2Config.TwoFactorURL is empty; an OAuth sign-in of a 2FA account now redirects there instead of to /, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Set OAuth2Config.TwoFactorURL to the page that posts the code to /2fa/challenge, the same page PasskeyConfig.TwoFactorURL and MagicLinkConfig.TwoFactorURL name. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOAuth2Plugin
+  - change: "magic-link send and forgot-password mail one link per address every two minutes (AddressRateLimit, kept in memory per replica); a request inside the cooldown gets the usual 200 and nothing is mailed"
+    breaking: true
+    hits: review
+    guidance: "A user's resend within two minutes sends nothing; the link already mailed still works. An end-to-end test that asks twice for one address passes AddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to the plugin."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+        - gofastr/battery/auth.NewPasswordResetPlugin
+  - change: "auth.ValidatePasswordStrength counts characters, not bytes, for the 8-character floor"
+    breaking: true
+    hits: review
+    guidance: "A password of fewer than 8 characters that passed on its byte length (three CJK characters are 9 bytes) is refused at registration, reset and change. Existing passwords keep signing in."
+    find:
+      uses:
+        - gofastr/battery/auth.ValidatePasswordStrength
+        - gofastr/battery/auth.NewCorePlugin
+  - change: "a custom auth.DefaultHasher's Verify is asked first at sign-in and password change; auth.CheckPassword keeps knowing only the bcrypt and argon2id formats"
+    breaking: false
+    guidance: "A custom hasher's own hashes now sign in; before, every login failed. Its Verify may call auth.CheckPassword for rows written before the switch."
+    find:
+      uses:
+        - gofastr/battery/auth.DefaultHasher
+  - change: "the OIDC, Google and GitHub OAuth providers send PKCE (S256 code_challenge and code_verifier); new auth.OAuth2PKCEProvider lets a custom provider do the same"
+    breaking: true
+    hits: review
+    guidance: "Every mainstream IdP accepts PKCE on a confidential client. If yours rejects the authorize or token request after upgrading, set OIDCConfig.DisablePKCE (or DisablePKCE on the Google or GitHub provider). A custom OAuth2Provider is unchanged until it implements AuthURLWithChallenge and ExchangeCodeWithVerifier."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOIDCProvider
+        - gofastr/battery/auth.NewGoogleProvider
+        - gofastr/battery/auth.NewGitHubProvider
+  - change: "BREAKING - CorePlugin.Init refuses to start when a 2FA plugin is registered and no NewCorePlugin().WithTwoFactorURL(path) was set; an HTML form login of a 2FA account now redirects there instead of to its next page, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Write mgr.Use(auth.NewCorePlugin().WithTwoFactorURL(\"/login/2fa\")), naming the page that posts the code to /2fa/challenge, the same page the passkey, magic-link and OAuth plugins' TwoFactorURL names. JSON logins are unaffected. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewCorePlugin
+  - change: "per-IP rate limits key an IPv6 client by its /64 (ratelimit.IPKey, (*Limiter).ClientKey) in ratelimit Middleware, MiddlewareByKey(nil), the auth battery's per-IP limiters and framework.AgentRateLimitKey"
+    breaking: true
+    hits: review
+    guidance: "One client could rotate source addresses inside its own /64 past every per-IP limit. Clients on one IPv6 LAN now share a budget, as clients behind one IPv4 NAT already do; raise MaxAttempts if a shared /64 legitimately sends more. ClientIP still returns the full address."
+    find:
+      uses:
+        - gofastr/framework/ratelimit.Limiter.Middleware
+        - gofastr/framework/ratelimit.Limiter.MiddlewareByKey
+        - gofastr/framework.AgentRateLimitKey
+  - change: "RefreshOAuthToken and ValidOAuthToken on a SQLOAuthTokenStore lease the grant before spending its refresh token, and can fail with auth.ErrOAuthRefreshInProgress when another replica's refresh does not land within 10 seconds; the store adds a refresh_lease_ms column to an existing table on first use"
+    breaking: true
+    hits: review
+    guidance: "Two replicas refreshing one grant both spent its refresh token, and a provider that detects reuse revoked the grant. Treat ErrOAuthRefreshInProgress as retryable: the token was not spent. The column is added automatically; nothing to migrate by hand."
+    find:
+      uses:
+        - gofastr/battery/auth.RefreshOAuthToken
+        - gofastr/battery/auth.ValidOAuthToken
   - change: "BREAKING - desktopui.Theme() is removed; it returned the macOS theme on every OS"
     breaking: true
     hits: edit

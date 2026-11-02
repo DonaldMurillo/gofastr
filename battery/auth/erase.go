@@ -127,6 +127,7 @@ func registerCanonicalErasers() {
 // skipped auth_* entries. Stores that are not the battery's own SQL
 // implementations leave the canonical registrations in place.
 func resolveEraseTables(mgr *AuthManager) {
+	registerMemoryStoreEraser(mgr)
 	if us, ok := mgr.UserStore().(*EntityUserStore); ok {
 		datexport.RegisterEraser(datexport.DataEraser{
 			Name: "auth_users", Source: "auth", Table: us.table,

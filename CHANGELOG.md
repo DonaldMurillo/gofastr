@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
+  A calendar that stays on the page beside the native date input it
+  fills, for a range in one control, refused days, or notes on days. The
+  native input is the value and posts without script; the
+  `headless-datepicker` module owns the date-grid keyboard, and a month
+  change is an island the page serves with `ui.DatePickerMonth`. An
+  ordinary date stays `ui.DateField`. Built on `headless.DatePicker`;
+  `core/i18n` gains `DateYearMonthLong`, `WeekdayName`, `WeekdayAbbr` and
+  `FirstWeekday` for it. See `form-module.md`, "When the native picker is
+  not enough".
 - **Untrusted process modules can be hosted by an app** ([#608](https://github.com/DonaldMurillo/gofastr/issues/608)).
   `RegisterProcessModule` now builds the sandbox runner itself for a
   `TrustUntrusted` descriptor, probing the backend once per App; before,
@@ -162,6 +172,104 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **battery/auth bug bash (2026-11-01).** Details in
+  [auth.md](framework/docs/content/auth.md):
+  - **BREAKING: token management needs the second factor.** On a 2FA
+    account `POST/GET/DELETE /auth/tokens` need the cookie session that
+    passed it; a session from before enrollment answers 403 and a bare
+    bearer JWT 401. Either minted a permanent `*:*` token before.
+  - **BREAKING: the 2FA challenge replaces the session.** A passing code
+    deletes the pending session and sets a new cookie, so a planted
+    pending token never becomes a verified one.
+  - **BREAKING: CSRF skips only `Authorization: Bearer` and `X-API-Key`.**
+    Basic, Negotiate and NTLM, which the browser attaches by itself, no
+    longer skip the check (`middleware.SkipBearerAuth`).
+  - **BREAKING: OAuth.** Provider keys must be 1-64 letters, digits, `-`
+    or `_` (a dotted key never completed a flow). An identity with no
+    email and no existing link answers 400 `auth.oauth_no_email` (two
+    such identities merged into one account). OIDC `email_verified`
+    counts only when the same claim set's `email` is the kept address,
+    so a remapped `EmailClaim` no longer auto-links on another
+    address's flag.
+  - **BREAKING: a password form login of a 2FA account reaches the
+    challenge.** It redirected to its `next` page, which refuses the
+    pending session. Next to a 2FA plugin, `Init` now requires
+    `NewCorePlugin().WithTwoFactorURL(path)`.
+  - **BREAKING: OAuth sign-in of a 2FA account reaches the challenge.**
+    It redirected to `/`, which refuses the pending session. Next to a
+    2FA plugin, `Init` now requires `OAuth2Config.TwoFactorURL`, as
+    passkey and magic link do.
+  - **OAuth sends PKCE.** The OIDC, Google and GitHub providers send an
+    S256 `code_challenge` and the `code_verifier`, so a stolen
+    authorization code no longer redeems in an attacker's own flow
+    (authorization-code injection, RFC 9700). `DisablePKCE` on each
+    provider turns it off; custom providers opt in through
+    `auth.OAuth2PKCEProvider`.
+  - **OAuth refresh is serialized across replicas.** `SQLOAuthTokenStore`
+    leases a grant (`auth.OAuthTokenLeaser`, new `refresh_lease_ms`
+    column) before its refresh token is spent; a replica that finds
+    another's lease waits for that refresh and never spends the token,
+    failing with `auth.ErrOAuthRefreshInProgress` if it does not land.
+  - OAuth: an account claim deletes the squatter's stored provider
+    tokens; callbacks without a code no longer fill the replay table
+    and lock every login out; concurrent refreshes spend a refresh token
+    once; tokens with no `expires_in` stay usable; the `/link` flow
+    stores tokens and refuses a binding it lost to another account; a
+    JWKS or discovery outage no longer refetches under a lock on every
+    login. New `(*OAuth2Plugin).ValidOAuthToken` and
+    `RefreshOAuthToken` read the row under the registry key.
+  - `ttl_seconds` past the `time.Duration` range answers 400 (a wrapped
+    negative minted a permanent token); an unreadable SQLite
+    `revoked_at`/`expires_at` reads as revoked/expired; token display
+    prefixes keep 7 random chars after a long brand.
+  - Passkey RSA keys are capped at 8192 bits (a 4-Mbit key cost a minute
+    of CPU per anonymous sign-in attempt).
+  - At most 8 distinct session cookies are looked up per request (2999
+    copies drove 2999 queries).
+  - `RequireAuth(mgr.JWT())` works when wired before `Init`;
+    `RequireAuth(nil)` panics at wiring; a negative `JWTExpiry` fails
+    `Init`.
+  - Audit rows survive a client that hangs up after the change, and an
+    actor-less SQL audit row stores `email_hash`, not the address.
+  - `EntitySessionStore` indexes `token` (unique) and `user_id` whoever
+    created the table; `EraseUserData` reaches the in-memory auth stores.
+  - `AuthManager` reports its `BasePath` to the embed host.
+  - **Per-IP limits key IPv6 by its /64** (`ratelimit.IPKey`,
+    `(*Limiter).ClientKey`): one client could rotate source addresses
+    inside its own /64 past every per-IP limit. `Middleware()`, the auth
+    battery's per-IP limiters and `framework.AgentRateLimitKey` use it.
+  - Every `AuditSink`, a host's own included, gets the request's context
+    minus its cancellation, with a 5-second deadline: a sink doing slow
+    remote work is cut off there.
+  - `middleware.CSRF` puts the verified token on the context for a
+    mutating request too (`TokenFromContext`), and `auth.CSRFToken`
+    reads `__Host-auth_csrf` before `auth_csrf`.
+  - `auth.CheckPassword` knows only the two built-in formats again; the
+    battery's sign-in asks a custom `DefaultHasher` first.
+  - Passwords: the 8-character floor counts characters, so a short CJK
+    password that passed on bytes is refused; placeholders for
+    passwordless accounts are made by `DefaultHasher`.
+- **BREAKING: a magic-link sign-in of a 2FA account reaches the
+  challenge.** The confirm POST always redirected to `OnSuccessURL`,
+  which refuses the pending session it had just minted. It now goes to
+  the new `MagicLinkConfig.TwoFactorURL`, and `Init` refuses to start
+  when a 2FA plugin is registered and that field is empty, as the
+  passkey plugin does. Set it to the page that posts the code to
+  `/2fa/challenge`.
+- **Magic-link send and forgot-password limit each address.** One mail
+  per address every two minutes (`AddressRateLimit`), however many IPs
+  ask; within the cooldown the request gets the same 200 and nothing is
+  minted or mailed. A cooldown rather than an hourly budget, so a
+  stranger cannot stop the owner's links.
+- **Password hashing follows `auth.DefaultHasher`.** Passwordless and
+  cleared accounts store a placeholder made by it, so login timing no
+  longer tells them from unknown addresses under argon2id; a custom
+  hasher's `Verify` is called; `Argon2Hasher.Hash` refuses parameters
+  its verifier refuses; the 8-character floor counts characters, not
+  bytes. See [auth.md](framework/docs/content/auth.md#password-hashing).
+- **Multipart login and register forms work.** Only `ParseForm` ran,
+  which never reads a multipart body, so every one answered 400. A
+  file part or a repeated `email`/`password` field answers 400.
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent
