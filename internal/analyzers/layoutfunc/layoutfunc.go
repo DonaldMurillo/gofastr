@@ -13,6 +13,12 @@
 // arrives as the fn's Match parameter and re-renders per navigation)
 // and the route.* signal bindings, which follow every applied seed.
 //
+// app.QueryFromContext is the same request read. So is a route
+// resolver's value (Key.Get) when the resolver this package declares for
+// that key (Key.From(fn)) reads the query or the request: the tracker's
+// kept project layer drew its issue list from such a value, and Reset to
+// the bare project left the list filtered (D-37).
+//
 // Reads lexically inside a RouteArea closure are the allowed case —
 // including nested closures, and a closure passed by identifier — and
 // everything outside a LayoutFunc body (a resolver, a screen Load, a
@@ -35,7 +41,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "layoutfunc",
-	Doc:  "flags app.MatchFromContext / Match.Param / Match.Path / route.From / app.RequestFromContext read inside a LayoutFunc body and outside a RouteArea closure: the build's markup is static chrome a partial never refreshes, so request-derived chrome goes stale after the first navigation",
+	Doc:  "flags app.MatchFromContext / Match.Param / Match.Path / route.From / app.RequestFromContext / app.QueryFromContext, and Key.Get of a resolver that reads the query, inside a LayoutFunc body and outside a RouteArea closure: the build's markup is static chrome a partial never refreshes, so request-derived chrome goes stale after the first navigation",
 	Run:  run,
 }
 
@@ -51,6 +57,8 @@ func init() {
 
 const finding = "layout build reads route state outside a RouteArea: the build's markup is static chrome a partial never refreshes, so it goes stale after the first navigation — take the state from l.RouteArea's fn or bind route.* signals"
 
+const queryFinding = "layout build reads a resolver that reads the URL query outside a RouteArea: the build's markup is static chrome a partial never refreshes, so a kept layer keeps the old query's content — read the key inside l.RouteArea's fn"
+
 func run(pass *analysis.Pass) (any, error) {
 	mod := *moduleFlag
 	if mod == "" && pass.Module != nil {
@@ -65,9 +73,11 @@ func run(pass *analysis.Pass) (any, error) {
 		routePath:  mod + "/core-ui/route",
 		decls:      map[token.Pos]ast.Node{},
 		areaBodies: map[ast.Node]bool{},
+		queryKeys:  map[types.Object]bool{},
 	}
 	w.indexDeclarations()
 	w.collectAreaClosures()
+	w.collectQueryResolvers()
 	w.walkFiles()
 	return nil, nil
 }
@@ -80,6 +90,9 @@ type walker struct {
 	routePath  string
 	decls      map[token.Pos]ast.Node
 	areaBodies map[ast.Node]bool
+	// queryKeys holds the resolver keys whose resolver, declared in
+	// this package with Key.From, reads the query or the request.
+	queryKeys map[types.Object]bool
 }
 
 // indexDeclarations maps every declaring identifier to what it
@@ -159,6 +172,82 @@ func (w *walker) collectAreaClosures() {
 			return true
 		})
 	}
+}
+
+// collectQueryResolvers records every key this package declares a
+// resolver for (k.From(fn)) whose fn reads app.QueryFromContext or
+// app.RequestFromContext. The fn resolves like a build does: a literal,
+// or a same-package function or func-valued variable.
+func (w *walker) collectQueryResolvers() {
+	for _, f := range w.pass.Files {
+		if pathflow.IsTestFile(w.pass, f) {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) != 1 {
+				return true
+			}
+			key, ok := w.keyMethod(call, "From")
+			if !ok {
+				return true
+			}
+			if body := w.resolveFn(call.Args[0]); body != nil && w.readsRequest(body) {
+				w.queryKeys[key] = true
+			}
+			return true
+		})
+	}
+}
+
+// keyMethod reports the receiver object of a k.<name>(…) call on an
+// app.Key: the key variable a resolver is declared or read through.
+func (w *walker) keyMethod(call *ast.CallExpr, name string) (types.Object, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != name {
+		return nil, false
+	}
+	fn, ok := w.appFn(sel)
+	if !ok {
+		return nil, false
+	}
+	recv := fn.Type().(*types.Signature).Recv()
+	if recv == nil {
+		return nil, false
+	}
+	t := recv.Type()
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	if named, ok := t.(*types.Named); !ok || named.Obj().Name() != "Key" {
+		return nil, false
+	}
+	var obj types.Object
+	switch x := sel.X.(type) {
+	case *ast.Ident:
+		obj = w.pass.TypesInfo.Uses[x]
+	case *ast.SelectorExpr:
+		obj = w.pass.TypesInfo.Uses[x.Sel]
+	}
+	return obj, obj != nil
+}
+
+// readsRequest reports whether body calls app.QueryFromContext or
+// app.RequestFromContext anywhere inside it.
+func (w *walker) readsRequest(body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		if call, ok := n.(*ast.CallExpr); ok {
+			if fn, ok := w.appFn(call.Fun); ok && (fn.Name() == "QueryFromContext" || fn.Name() == "RequestFromContext") {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 // walkFiles finds layout builds in LayoutFunc-typed positions — the
@@ -286,9 +375,13 @@ func (w *walker) walkBuild(root ast.Node, inArea bool) {
 		case *ast.CallExpr:
 			if fn, ok := w.appFn(n.Fun); ok {
 				switch fn.Name() {
-				case "MatchFromContext", "RequestFromContext":
+				case "MatchFromContext", "RequestFromContext", "QueryFromContext":
 					if !inArea {
 						w.pass.Reportf(n.Pos(), "%s", finding)
+					}
+				case "Get":
+					if key, ok := w.keyMethod(n, "Get"); ok && !inArea && w.queryKeys[key] {
+						w.pass.Reportf(n.Pos(), "%s", queryFinding)
 					}
 				case "RouteArea":
 					// The area closure is the lint's exemption, lexically:

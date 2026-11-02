@@ -56,6 +56,9 @@ func (s staleStep) serve(w http.ResponseWriter, r *http.Request, crossOrigin str
 // errors cleared after a newer refusal, no stale result for the leave
 // guard, no reset of what the user typed since, no error toast, and no
 // busy state dropped while the newer request is still out. Each case pins one of the guards in rpc.js.
+// The form PATCHes: a POST form drops a re-submit while its own POST is
+// in flight (TestFormPOSTResubmitInFlightSendsOnce), so only a PUT or
+// PATCH form, or a button in the form, can race two submits.
 func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 	js, err := RuntimeJS()
 	if err != nil {
@@ -171,7 +174,7 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 			mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/html")
 				fmt.Fprint(w, `<!doctype html><html><head><title>stale</title></head><body>
-<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST"`+tc.formAttrs+`>
+<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="PATCH"`+tc.formAttrs+`>
   <div class="fui-field" data-hui-field="" data-cui-comp="ui-form-field">
     <label class="fui-field__label" for="title">Title</label>
     <input class="fui-input" id="title" name="title" value="">

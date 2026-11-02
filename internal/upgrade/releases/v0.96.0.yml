@@ -1183,3 +1183,21 @@ notes:
     breaking: true
     guidance: "SQLite has no exact decimal type, so 999999999999999.1234 read back 999999999999999.1. Postgres keeps every digit of DECIMAL(19,4) and is unchanged. Keep such values on Postgres, store an int count of the smallest unit, or set the field's RawType to TEXT (stored as sent, compared as text)."
     nodetect: "the refused values arrive in request bodies at runtime; nothing in an app's source spells them"
+  - change: "A data-cui-rpc form whose method is POST ignores a re-submit while its own POST is in flight; PUT and PATCH forms still send every submit"
+    breaking: false
+    guidance: "A double click plus Ctrl+S sent three POSTs and an entity with no unique key got three rows. A form that relied on a second POST while the first was out (a resend from a gofastr:formresult listener, say) sends it after the first answers, or uses data-cui-rpc-method=\"PUT\" or \"PATCH\" to keep the newest-value rule."
+    nodetect: "the change is in the browser runtime; a form's markup is unchanged"
+  - change: "ui.FilterToolbar without ClientNavigation renders Reset with data-cui-nav=off, a whole document load like its native GET submit; the layoutfunc lint flags app.QueryFromContext, and Key.Get of a same-package resolver that reads the query or the request, in a layout build outside a RouteArea"
+    breaking: false
+    guidance: "A kept layout that drew query-dependent content stayed filtered after Reset, because the client router swapped only the screen cell. Nothing to change for that. If the lint now flags your layout build, read the value inside l.RouteArea's fn, or give the region to an outlet a screen fills."
+    nodetect: "the Reset change is in rendered markup and the lint finds its own sites; the source that configures a FilterToolbar is unchanged"
+  - change: "gofastr generate sdk writes manifest.json without generatedAt unless --stamp-time is given, so a rerun over an unchanged schema is byte-identical; the SDK reference page drops the date from its download stamp then"
+    breaking: false
+    guidance: "Pass --stamp-time to keep the date. Code that read sdk.Manifest.GeneratedAt gets the zero time from an unstamped manifest: check IsZero, as sdkdocs does."
+    find:
+      uses:
+        - gofastr/framework/sdk.Manifest
+  - change: "An app spec with app.auth.enabled and no login_form screen generates a /login screen holding a login form; the app shell's Sign in button and guest redirects point at it"
+    breaking: false
+    guidance: "Regenerate to get the screen. An app that registers its own /login by hand in owned Go collides with the generated one: name the screen login or route it /login in the app spec, or add a login_form screen, and nothing is added."
+    nodetect: "the change is in what the generator emits from an app spec; nothing in an app's source spells it"

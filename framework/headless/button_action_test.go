@@ -148,6 +148,17 @@ func TestButtonLinkCarriesOnlyLinkLegalActions(t *testing.T) {
 	}
 }
 
+// data-cui-nav="off" says how a link goes (a whole document load, not
+// the client router), so it rides an anchor; off is the only value the
+// runtime reads, so any other is refused.
+func TestButtonLinkCarriesNavOff(t *testing.T) {
+	got := Button(ButtonProps{Label: "Reset", Href: "/list", Action: html.Attrs{"data-cui-nav": "off"}}, nil)
+	has(t, got, `data-cui-nav="off"`, "the opt-out did not land on the anchor")
+	mustPanicWith(t, "off is the only value", func() {
+		Button(ButtonProps{Label: "Reset", Href: "/list", Action: html.Attrs{"data-cui-nav": "on"}}, nil)
+	})
+}
+
 // data-cui-intercept-page and data-cui-intercept-swap say where a link
 // goes (its target, as the page or into the top layer), so they ride an
 // anchor; a button has no target, so each is refused there.

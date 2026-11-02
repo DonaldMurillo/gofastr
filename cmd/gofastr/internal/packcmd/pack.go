@@ -2911,6 +2911,13 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Screens, err = packReadScreens(dir); err != nil {
 		return bp, err
 	}
+	// The /login screen generate synthesized for an app spec with auth on
+	// and no login form was not authored: drop it, so the packed spec
+	// regenerates it in the same place, as it does a list's create screen.
+	read := bp
+	bp.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s appspec.AppSpecScreen) bool {
+		return appspec.IsSynthesizedLoginScreen(read, s)
+	})
 	packResolveOmits(bp)
 	packFoldRecordKeys(bp)
 	if bp.Nav, err = packReadNav(dir); err != nil {

@@ -119,8 +119,10 @@ keeps its issue pane (and the pane's scroll) across one project's
 issues, but the list inside it reads `?filter=`, so the list is the
 layer's `issues` route area: drawn by the layer itself, it kept the old
 filter when Reset or the sidebar moved the URL to the bare project. The
-`layoutfunc` lint sees a `MatchFromContext` read, not a resolver that
-reads the query, so this one is on the author.
+`layoutfunc` lint flags this shape: a layout build that reads, outside a
+`RouteArea` closure, a resolver key whose resolver (declared in the same
+package with `Key.From`) reads `app.QueryFromContext` or
+`app.RequestFromContext`.
 
 ## Outlets and fills
 
@@ -700,9 +702,11 @@ Rules the code enforces, each failing loudly instead of silently:
   effects.
 - **The `layoutfunc` lint** (a type-aware analyzer in the repo's vet
   tool and `gofastr verify`): it flags `app.MatchFromContext`,
-  `Match.Param`, `Match.Path`, `route.From`, and
-  `app.RequestFromContext` read lexically inside a `LayoutFunc` body
-  and outside a `RouteArea` closure — the build's markup is static
+  `Match.Param`, `Match.Path`, `route.From`, `app.RequestFromContext`
+  and `app.QueryFromContext` read lexically inside a `LayoutFunc` body
+  and outside a `RouteArea` closure, and a `Key.Get` there whose
+  resolver (declared in the same package with `Key.From`) reads the
+  query or the request — the build's markup is static
   chrome a partial never refreshes, so request-derived chrome goes
   stale after the first navigation. **The fix:** move the read into the
   `RouteArea` closure (it receives the match), bind a `route.*` signal

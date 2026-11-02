@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -234,6 +235,47 @@ func TestSDKManifest(t *testing.T) {
 	if int64(len(got["dist/"+sdk.JSArtifact])) != m.Artifacts["js"].Bytes {
 		t.Error("manifest byte count disagrees with the artifact")
 	}
+}
+
+// Two generations of an unchanged schema write the same manifest bytes
+// (D-18): it carries no generation time unless --stamp-time asks for one,
+// so a rerun of `gofastr generate` leaves gen/dist/manifest.json alone.
+func TestSDKManifestDeterministicUnlessStamped(t *testing.T) {
+	a := renderedSDK(t)["dist/"+sdk.ManifestFile]
+	time.Sleep(1100 * time.Millisecond)
+	b := renderedSDK(t)["dist/"+sdk.ManifestFile]
+	if a != b {
+		t.Fatalf("two generations wrote different manifests:\n%s\n%s", a, b)
+	}
+	if strings.Contains(a, "generatedAt") {
+		t.Fatalf("an unstamped manifest carries generatedAt:\n%s", a)
+	}
+	opts, err := parseSDKOptions([]string{"--stamp-time", "--name=myapp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := buildSDKSpec(sdkFixtureDecls(), &opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := renderSDKFiles(spec, []string{"js"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if f.Name != "dist/"+sdk.ManifestFile {
+			continue
+		}
+		var m sdk.Manifest
+		if err := json.Unmarshal([]byte(f.Content), &m); err != nil {
+			t.Fatal(err)
+		}
+		if m.GeneratedAt.IsZero() {
+			t.Fatalf("--stamp-time wrote no generatedAt:\n%s", f.Content)
+		}
+		return
+	}
+	t.Fatal("no manifest rendered")
 }
 
 func TestSDKZipDeterministic(t *testing.T) {

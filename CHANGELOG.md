@@ -229,6 +229,30 @@ few lines, and link the PR or the docs page for the rest.
   spec paths. The webhook SQL tables gain `auth`, `response_status`
   and `response_body`, added when the store opens.
 
+- **A `data-cui-rpc` POST form sends one request at a time (D-09).**
+  A re-submit of a form whose method is POST is ignored while its own
+  POST is in flight, so a double click plus Ctrl+S no longer creates
+  three rows. PUT and PATCH forms, input-triggered forms, buttons and
+  controls still send every dispatch, the newest winning.
+- **FilterToolbar Reset follows the submit (D-37).** Without
+  `ClientNavigation`, Reset carries `data-cui-nav="off"` and loads the
+  whole document, as the native GET submit does, so a kept layout that
+  renders query-dependent content clears too. `ui.LinkButton` and
+  `headless.Button` links accept `data-cui-nav="off"`. The `layoutfunc`
+  lint also flags `app.QueryFromContext` in a layout build, and a
+  `Key.Get` there whose same-package resolver reads the query or the
+  request, outside a `RouteArea`.
+- **SDK `manifest.json` has no generation time by default (D-18).**
+  `gofastr generate` and `gofastr generate sdk` rerun over an unchanged
+  schema rewrite every file byte for byte. `gofastr generate sdk
+  --stamp-time` writes `generatedAt` as before, and `sdkdocs` shows the
+  date only then. `sdk.Manifest.GeneratedAt` is omitted when zero.
+- **An app spec with auth and no login form gets a `/login` screen
+  (D-35).** With `app.auth.enabled: true` and no `login_form` screen,
+  the generator adds `/login` (a `login_form` in `ui.AuthCard`, no CSS),
+  so gated screens, the Sign in button and a failed form login no
+  longer land on a 404 (ecommerce did). The app shell now offers Sign
+  in. `gofastr pack` drops the added screen.
 
 ### Fixed
 
