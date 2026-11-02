@@ -1445,3 +1445,7 @@ notes:
         - gofastr/framework.App.Shutdown
         - gofastr/framework.App.Start
         - gofastr/framework.App.RunWithSignals
+  - change: "entityui UI.Changes (the admin's audit page and dashboard activity) asks the entity's AfterGet hooks about the record each entry names, with its real id and stored row, instead of a made-up row with no id; new entityui.WithChangeCache runs them once per record per page"
+    breaking: false
+    guidance: "An audit log that showed no field changes for an entity whose AfterGet hook looks the record up by id, or masks unless the caller owns the row, now shows every change but the masked fields. The hooks now see the record's real id, its stored row (through the caller's read hooks) and a copy with only its empty fields set to probe values, as the signed-in admin, once per record on each page that draws changes; a deleted record still gets the old probe with an empty ID. Keep AfterGet hooks free of side effects (read counters, last-viewed stamps, notifications). A host drawing many entries with UI.Changes wraps the render's context in entityui.WithChangeCache once."
+    nodetect: "the change is in how the change list calls the app's hooks at render time; nothing in an app's source spells it"

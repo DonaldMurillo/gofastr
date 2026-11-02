@@ -168,8 +168,10 @@ keeps the UI unchanged; without a callback the default stays
   hook that masks only a value that is there is caught while the
   record's own value is empty. The probe runs the entity's `AfterGet`
   chain once over a copy of the stored row with each empty field
-  filled, reads and writes nothing, and a chain that fails on it keeps
-  every probed field out. A hook that masks only some non-empty values
+  filled, reads and writes nothing itself, and a chain that fails on it
+  keeps every probed field out. The hooks run with the caller's context,
+  so they must be side-effect free (see `Changes` below for what they
+  see). A hook that masks only some non-empty values
   (one prefix, one owner) is caught only on the values the record and
   the probe hold. An override's reason shows under the entry. The form's
   side column holds Details: the id with a copy button, the created and
@@ -414,9 +416,37 @@ one read for the page, not one per row.
 `appUI.Changes(ctx, entity, before, after)` draws what one edit changed
 as the Activity tab's change list, "" when no field the caller may see
 differs. It leaves out the fields the entity's `AfterGet` hooks rewrite
-on a probe row whose every field holds a value, since it has no record
-to compare; `before` and `after` are keyed by the API's wire names, the way
-the audit log stores them. `appUI.WithActorName(name)` returns a UI whose
+for the caller on the record the entry names (its key values in
+`before` or `after`), found the way the record screen finds them: the
+stored row and the row through the caller's read hooks are read and
+every field they differ on is left out, then the chain runs once more
+over the stored row with only its empty fields given a probe value,
+with the record's real id. So a hook that masks a field unless the
+caller owns the row masks it here too and leaves the others drawn. A
+caller whose hooked read of the record fails or is refused sees no
+field of it. A record that no longer exists (deleted, purged) has no
+row to ask about, so the chain runs over a probe row whose every field
+holds a value, with no id, as the fallback: a hook that refuses that
+probe keeps every field out. `before` and `after` are keyed by the API's
+wire names, the way the audit log stores them.
+`entityui.WithChangeCache(ctx)` returns a context under which `Changes`
+asks the hooks about each record once and reuses the answer for every
+later entry of the same record; a page drawing many entries installs it
+once per render (the admin's audit page and dashboard do), so the hooks
+run once per record shown, not once per entry. Do not keep it past the
+render.
+
+Masking calls the app's `AfterGet` hooks as the caller (elevation
+removed) with a request carrying the caller's context, outside any
+read the app made itself, so those hooks must be free of side effects.
+On the Activity tab, and once per record on each page that draws
+changes, a hook sees: a `GetPayload` for the record's real id holding
+its stored row (the hooked read), and a second one for the same id
+whose empty fields hold `"entityui-probe"`, `1` or `true` by type; for
+a deleted record, one with an empty `ID` and every field holding a
+probe value. A hook that counts reads, stamps "last viewed", sends a
+notification or writes an access log fires on these too, and a probe
+value it writes anywhere is a made-up one. `appUI.WithActorName(name)` returns a UI whose
 Activity tab names each actor by `name(ctx, id)` (the admin passes the
 account's email), the id where it answers "" or panics.
 

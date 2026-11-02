@@ -364,6 +364,20 @@ few lines, and link the PR or the docs page for the rest.
   export for an app on v0.96.0 or later; an older pin or a `replace`
   directive gets a warning. See `static-export.md`.
 
+- **Audit change lists ask the app's read hooks about the real record.**
+  `entityui.UI.Changes`, behind the admin's audit page and dashboard
+  activity, ran the entity's `AfterGet` hooks over a made-up row with no
+  id, once per entry. A hook that looks the record up by id refused it,
+  and the common "mask unless the caller owns the row" hook masked it, so
+  the fail-closed probe hid every field and the audit log showed no
+  changes. It now reads the record the entry names (stored, and through
+  the caller's read hooks, as the record screen does), leaves out what
+  differs, and probes only the fields empty on that row, with the real
+  id. A deleted record falls back to the old probe. The new
+  `entityui.WithChangeCache(ctx)` makes the hooks run once per record per
+  page; the admin installs it. Masking calls `AfterGet` hooks with the
+  caller's context, so they must be side-effect free: see `Changes` in
+  [entityui](framework/docs/content/entityui.md).
 - **A `data-cui-rpc` POST form sends one request at a time (D-09).**
   A re-submit of a form whose method is POST is ignored while its own
   POST is in flight, so a double click plus Ctrl+S no longer creates

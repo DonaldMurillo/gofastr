@@ -391,7 +391,15 @@ its table name and the id. Changes lists the fields an update changed,
 through `entityui.UI.Changes`, so masked and hidden fields never show,
 and neither does a field the entity's `AfterGet` hooks mask: the admin's
 own reads of the record show the mask, so the audit page and the
-dashboard's recent activity do not print the stored values. The raw
+dashboard's recent activity do not print the stored values. The hooks
+are asked about the record each row names, with its real id and stored
+row, as the signed-in admin, once per record per page however many rows
+name it; a hook that masks a field unless the caller owns the row hides
+that field and leaves the rest of the change drawn. A deleted record
+falls back to a probe row with no id, and a hook that refuses it hides
+the row's changes. Masking runs the app's `AfterGet` hooks with the
+admin's context on every page that draws changes, so they must be free
+of side effects (see `Changes` in [entityui](entityui.md)). The raw
 diff stays in the audit table for an operator who reads it there.
 A Roles change reads "Role · billing" and "Granted `plans:write`" (or
 Revoked, or Refused to grant or revoke); a User roles change names the

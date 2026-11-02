@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,6 +52,64 @@ func TestAuditChangesHideHookMaskedField(t *testing.T) {
 		if !strings.Contains(body, `>Closed</span></ins>`) {
 			t.Errorf("%s lost the unmasked change", p)
 		}
+	}
+}
+
+// The change lists ask the app's read hooks about the record each row
+// names, once per record per page. An ownership hook (it looks the owner
+// up by the record's id, refuses an id it does not know, and masks secret
+// for anyone but the owner) keeps secret out and lets the other changes
+// show to an admin who owns nothing; probing a made-up row with no id made
+// it refuse, and the fail-closed probe hid every change on the page.
+func TestAuditChangesAskHooksOncePerRealRecord(t *testing.T) {
+	cases := entity.EntityConfig{
+		Table: "cases",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "secret", Type: schema.String},
+			{Name: "notes", Type: schema.String},
+			{Name: "status", Type: schema.Enum, Values: []string{"open", "closed"}, Default: "open"},
+		},
+	}.WithTimestamps(false)
+	var mu sync.Mutex
+	probes := 0
+	mask := func(x *env, _ *Config) {
+		framework.OnAfterGet(x.app, "cases", func(_ context.Context, p *hook.GetPayload) error {
+			if p.ID != "c-1" {
+				return fmt.Errorf("no such case %q", p.ID)
+			}
+			if p.Result["notes"] == "entityui-probe" {
+				mu.Lock()
+				probes++
+				mu.Unlock()
+			}
+			p.Result["secret"] = "****" // the admin does not own c-1
+			return nil
+		})
+	}
+	x := setup(t, map[string]entity.EntityConfig{"cases": cases}, Config{Entities: []string{"cases"}}, mask)
+	x.insert("cases", map[string]any{"id": "c-1", "title": "Case one", "secret": "s", "status": "closed"})
+	now := time.Now().UTC()
+	for i := range 3 {
+		x.seedAuditDiff(fmt.Sprintf("a%d", i), "", "cases", "update", "c-1", "admin-1", now.Add(time.Duration(i)*time.Second),
+			`{"old":{"id":"c-1","title":"Case one","secret":"old-secret-value","status":"open"},"new":{"id":"c-1","title":"Case one","secret":"new-secret-value","status":"closed"}}`)
+	}
+	for _, p := range []string{"/admin/audit", "/admin"} {
+		mu.Lock()
+		probes = 0
+		mu.Unlock()
+		body := get(x.as(theAdmin), p).Body.String()
+		if strings.Contains(body, "secret-value") {
+			t.Errorf("SECURITY: %s drew a hook-masked field's stored values", p)
+		}
+		if !strings.Contains(body, `>Closed</span></ins>`) {
+			t.Errorf("%s hid the unmasked change", p)
+		}
+		mu.Lock()
+		if probes != 1 {
+			t.Errorf("%s probed the hooks %d times for three rows of one record, want 1", p, probes)
+		}
+		mu.Unlock()
 	}
 }
 
