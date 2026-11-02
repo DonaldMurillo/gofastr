@@ -634,7 +634,9 @@ does not cover: a runtime browser scan, and the dependency report.
 - **`dev --pkg ./cmd/server` from the wrong directory.** Keep `--dir`
   at the project root and point `--pkg` below it; otherwise the watcher
   misses `internal/` and relative paths (a sqlite `db_url`, static
-  dirs) resolve against the command directory.
+  dirs) resolve against the command directory. A `--pkg` (or project
+  root) that is not a main package builds but cannot run; dev says
+  which package it found and points at `--pkg`.
 - **`migrate force` as a routine fix.** It only rewrites the tracking
   table. It's for dirty-state recovery or adopting a baseline. Read
   [migrations](migrations.md) first.

@@ -439,8 +439,15 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	// Hand the address to the app: it binds it itself.
 	hold.release()
 	if err := runCmd.Start(); err != nil {
-		cli.Fail("Failed to start: %v", err)
-		hold.show(holdBuildFailed, fmt.Sprintf("Failed to start the app: %v", err))
+		msg := fmt.Sprintf("Failed to start the app: %v", err)
+		// go build -o writes a non-main package's archive without
+		// complaint, and the exec of it fails with "permission denied":
+		// say what is wrong instead.
+		if name := packageName(dir, pkg); name != "" && name != "main" {
+			msg = fmt.Sprintf("%s is package %s, not a main package. gofastr dev runs a command: pass --pkg ./cmd/<name> when main lives below the project root", pkg, name)
+		}
+		cli.Fail("%s", msg)
+		hold.show(holdBuildFailed, msg)
 		return false
 	}
 
@@ -470,6 +477,21 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	}(os.Stdout)
 
 	return true
+}
+
+// packageName is the Go package name of pkg, listed in dir, or "" when
+// go list cannot say.
+func packageName(dir, pkg string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
+	defer cancel()
+	list := exec.CommandContext(ctx, "go", "list", "-f", "{{.Name}}", pkg)
+	list.Dir = dir
+	list.WaitDelay = 5 * time.Second
+	out, err := list.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // buildGatesAndBinary runs the rebuild's gates and go build, copying
