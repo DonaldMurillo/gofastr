@@ -162,9 +162,16 @@ keeps the UI unchanged; without a callback the default stays
   way the list's cell draws it (a badge, a money figure, a related
   record's title). An update that changed no field the caller may see
   reads "… saved this invoice". Masked (`NoQuery`) and `Hidden` fields
-  never appear, nor does a field an `AfterGet` hook rewrites on the
-  record (the audit row stored what was written, which the hook hides),
-  and an override's reason shows under it. The form's
+  never appear, nor does a field an `AfterGet` hook rewrites (the audit
+  row stored what was written, which the hook hides): one it rewrites
+  on the record's stored value, or on a non-empty probe value, so a
+  hook that masks only a value that is there is caught while the
+  record's own value is empty. The probe runs the entity's `AfterGet`
+  chain once over a copy of the stored row with each empty field
+  filled, reads and writes nothing, and a chain that fails on it keeps
+  every probed field out. A hook that masks only some non-empty values
+  (one prefix, one owner) is caught only on the values the record and
+  the probe hold. An override's reason shows under the entry. The form's
   side column holds Details: the id with a copy button, the created and
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
@@ -406,7 +413,9 @@ out. A list names its page's rows in one batch: each relation part is
 one read for the page, not one per row.
 `appUI.Changes(ctx, entity, before, after)` draws what one edit changed
 as the Activity tab's change list, "" when no field the caller may see
-differs; `before` and `after` are keyed by the API's wire names, the way
+differs. It leaves out the fields the entity's `AfterGet` hooks rewrite
+on a probe row whose every field holds a value, since it has no record
+to compare; `before` and `after` are keyed by the API's wire names, the way
 the audit log stores them. `appUI.WithActorName(name)` returns a UI whose
 Activity tab names each actor by `name(ctx, id)` (the admin passes the
 account's email), the id where it answers "" or panics.

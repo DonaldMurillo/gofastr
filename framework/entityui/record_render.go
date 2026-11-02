@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
@@ -579,7 +580,9 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	}
 	if b.activity && b.ui.host.Audit() != nil {
 		tabs = append(tabs, tab{key: "activity", label: i18nui.EntityTabActivity.Text(ctx), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
-			return b.activityTab(ctx, m, rewrittenFields(m, raw, row)), nil
+			masked := rewrittenFields(m, raw, row)
+			maps.Copy(masked, hookMaskedFields(ctx, m, b.id, raw))
+			return b.activityTab(ctx, m, masked), nil
 		}})
 	}
 	if b.apiTab {

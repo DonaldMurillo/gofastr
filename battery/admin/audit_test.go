@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -10,9 +11,48 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+// A field the entity's AfterGet hook masks, here only when it holds a
+// value, is left out of the change lists on the Audit log page and the
+// dashboard's activity, as it is on the record's own Activity tab: the
+// admin's reads of the record show the mask, so its audit diffs do not
+// print the stored values either.
+func TestAuditChangesHideHookMaskedField(t *testing.T) {
+	cases := entity.EntityConfig{
+		Table: "cases",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "secret", Type: schema.String},
+			{Name: "status", Type: schema.Enum, Values: []string{"open", "closed"}, Default: "open"},
+		},
+	}.WithTimestamps(false)
+	mask := func(x *env, _ *Config) {
+		framework.OnAfterGet(x.app, "cases", func(_ context.Context, p *hook.GetPayload) error {
+			if s, _ := p.Result["secret"].(string); s != "" {
+				p.Result["secret"] = "****"
+			}
+			return nil
+		})
+	}
+	x := setup(t, map[string]entity.EntityConfig{"cases": cases}, Config{Entities: []string{"cases"}}, mask)
+	x.insert("cases", map[string]any{"id": "c-1", "title": "Case one", "status": "closed"})
+	x.seedAuditDiff("a1", "", "cases", "update", "c-1", "admin-1", time.Now().UTC(),
+		`{"old":{"title":"Case one","secret":"old-secret-value","status":"open"},"new":{"title":"Case one","secret":"new-secret-value","status":"closed"}}`)
+	for _, p := range []string{"/admin/audit", "/admin"} {
+		body := get(x.as(theAdmin), p).Body.String()
+		if strings.Contains(body, "secret-value") {
+			t.Errorf("SECURITY: %s drew a hook-masked field's stored values", p)
+		}
+		if !strings.Contains(body, `>Closed</span></ins>`) {
+			t.Errorf("%s lost the unmasked change", p)
+		}
+	}
+}
 
 func capturingLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelError}))

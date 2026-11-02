@@ -4384,7 +4384,13 @@ few lines, and link the PR or the docs page for the rest.
   `AfterGet` hook rewrites (`****` on the record and in the JSON API)
   showed its written values to anyone who could open the record. A
   field the hook rewrites on that record is now left out, locked fields
-  included (`framework/entityui`).
+  included (`framework/entityui`). The hook is also run once over a
+  probe copy of the row with every empty field filled, so a hook that
+  masks only a non-empty value is caught while the record's own value
+  is empty; a hook that fails on the probe keeps the probed fields out.
+  The admin's Audit log page and the dashboard's recent activity
+  (`UI.Changes`) leave out the fields the hooks mask on a probe row too:
+  they printed the stored values the admin's own record screen masks.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.
