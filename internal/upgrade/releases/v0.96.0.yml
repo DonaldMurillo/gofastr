@@ -650,3 +650,7 @@ notes:
       uses:
         - gofastr/core/static.Handler
         - gofastr/core/static.Mount
+  - change: "A static export (App.ExportStatic, gofastr build) skips a static-dir symlink whose target leaves the static dir, dangles, or is not a regular file, and logs it; it used to publish the target, which the live host answers 404 for"
+    breaking: false
+    guidance: "A file the export now skips was never served by the running app. Copy the file into the static dir, or point the link at a file inside it, if it is meant to be public."
+    nodetect: "symlinks live in the static directory on disk, not in the app source"

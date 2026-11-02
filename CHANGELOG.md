@@ -4373,6 +4373,14 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A static export no longer publishes a symlink out of the static
+  dir.** The UI host reads the static dir through `os.Root` and answers
+  404 for `static/config.json -> ../config/prod.json`, but the export
+  copied it with `os.Open`, so the target's bytes went out with the
+  site. Both the static dir and a disk-backed static FS now skip such a
+  link (and any entry that is not a regular file) and log it; an
+  in-tree symlink still ships. A symlinked directory in the static dir
+  used to fail the build halfway with an empty file left behind.
 - **`core/static` refuses a hidden file named with a backslash.** The
   dot-segment and config-file checks split on `/` only, so
   `/sub%5C.env` read as one harmless segment, while a disk `FS` on

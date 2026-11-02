@@ -2039,6 +2039,15 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 		return err
 	}
 	defer root.Close()
+	// Every read goes through an os.Root over src, the way the UI host
+	// reads the static dir: a symlink pointing out of the tree is refused
+	// in the kernel, so the export never publishes a file the live host
+	// answers 404 for. os.Open followed it.
+	srcRoot, err := os.OpenRoot(src)
+	if err != nil {
+		return err
+	}
+	defer srcRoot.Close()
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -2058,8 +2067,17 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 			log("skipped %s (not published)", rel)
 			return nil
 		}
+		in, skip, err := openSourceFile(srcRoot, rel, d)
+		if err != nil {
+			return err
+		}
+		if skip != "" {
+			log("skipped %s (%s)", rel, skip)
+			return nil
+		}
+		defer in.Close()
 		if generatedHostRules(filepath.ToSlash(rel), rendered) {
-			data, err := os.ReadFile(path)
+			data, err := io.ReadAll(in)
 			if err != nil {
 				return err
 			}
@@ -2072,11 +2090,6 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 			return err
 		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
 		w, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 		if err != nil {
 			return err
@@ -2089,6 +2102,31 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 		log("copied %s -> %s", rel, out)
 		return nil
 	})
+}
+
+// openSourceFile opens rel, a walked static-dir entry, through srcRoot.
+// A non-empty reason means the entry is not published, the way the UI
+// host answers 404 for it: a symlink whose target leaves the tree (or
+// no longer exists), and anything that is not a regular file, such as a
+// symlinked directory the walk does not descend.
+func openSourceFile(srcRoot *os.Root, rel string, d fs.DirEntry) (*os.File, string, error) {
+	f, err := srcRoot.Open(rel)
+	if err != nil {
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil, "symlink out of the static dir or to nothing", nil
+		}
+		return nil, "", err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, "", err
+	}
+	if !st.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, "not a regular file", nil
+	}
+	return f, "", nil
 }
 
 func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
@@ -2110,6 +2148,21 @@ func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(str
 		if !publishable(path) {
 			log("skipped %s (not published)", path)
 			return nil
+		}
+		// A symlink in a disk-backed FS (SetStaticFS re-roots os.DirFS
+		// through os.Root) is published only when it resolves to a regular
+		// file inside the tree, as openSourceFile decides for the static
+		// dir; a read of one that escapes failed the whole build.
+		if d.Type()&fs.ModeSymlink != 0 {
+			fi, err := fs.Stat(fsys, path)
+			if err != nil {
+				log("skipped %s (symlink out of the static dir or to nothing)", path)
+				return nil
+			}
+			if !fi.Mode().IsRegular() {
+				log("skipped %s (not a regular file)", path)
+				return nil
+			}
 		}
 		if generatedHostRules(path, rendered) {
 			data, err := fs.ReadFile(fsys, path)
