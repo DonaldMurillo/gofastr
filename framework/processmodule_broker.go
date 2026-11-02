@@ -119,9 +119,15 @@ func WithBrokerSearchEndpoint(h http.Handler) BrokerOption {
 }
 
 // WithBrokerHandleTTL bounds the lifetime of a leaked-but-unreleased handle.
-// Default 5m. Tests override to exercise expiry without real sleeps.
+// Default 5m; d <= 0 keeps the default (a zero TTL minted every handle
+// already expired, so no delegated call could succeed). Tests override to
+// exercise expiry without real sleeps.
 func WithBrokerHandleTTL(d time.Duration) BrokerOption {
-	return func(b *Broker) { b.handleTTL = d }
+	return func(b *Broker) {
+		if d > 0 {
+			b.handleTTL = d
+		}
+	}
 }
 
 // WithBrokerClock injects the clock the handle-expiry check reads.
