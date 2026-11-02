@@ -206,6 +206,12 @@ few lines, and link the PR or the docs page for the rest.
   schema rewrite every file byte for byte. `gofastr generate sdk
   --stamp-time` writes `generatedAt` as before, and `sdkdocs` shows the
   date only then. `sdk.Manifest.GeneratedAt` is omitted when zero.
+- **An app spec with auth and no login form gets a `/login` screen
+  (D-35).** With `app.auth.enabled: true` and no `login_form` screen,
+  the generator adds `/login` (a `login_form` in `ui.AuthCard`, no CSS),
+  so gated screens, the Sign in button and a failed form login no
+  longer land on a 404 (ecommerce did). The app shell now offers Sign
+  in. `gofastr pack` drops the added screen.
 
 ### Fixed
 

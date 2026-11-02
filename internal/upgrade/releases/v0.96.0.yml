@@ -1094,3 +1094,7 @@ notes:
     find:
       uses:
         - gofastr/framework/sdk.Manifest
+  - change: "An app spec with app.auth.enabled and no login_form screen generates a /login screen holding a login form; the app shell's Sign in button and guest redirects point at it"
+    breaking: false
+    guidance: "Regenerate to get the screen. An app that registers its own /login by hand in owned Go collides with the generated one: name the screen login or route it /login in the app spec, or add a login_form screen, and nothing is added."
+    nodetect: "the change is in what the generator emits from an app spec; nothing in an app's source spells it"

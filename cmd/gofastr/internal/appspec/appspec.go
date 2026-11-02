@@ -3713,6 +3713,10 @@ func isGoFastrActionEvent(event string) bool {
 // renders appUI.Create(entity), it inherits the home screen's layout +
 // access, and it is not added to nav.
 // The record page holds the edit form, so no edit screen is synthesized.
+//
+// It also appends the sign-in screen an app spec with auth on and no
+// login_form needs (AppSpecLoginScreen): the gates, the Sign in button
+// and the battery's failed-login redirect all point at /login.
 func AppSpecSynthesizeCRUDScreens(bp AppSpec) AppSpec {
 	existing := map[string]bool{}
 	for _, s := range bp.Screens {
@@ -3746,8 +3750,76 @@ func AppSpecSynthesizeCRUDScreens(bp AppSpec) AppSpec {
 			}
 		}
 	}
+	if s, ok := AppSpecLoginScreen(bp); ok {
+		add(s)
+	}
 	bp.Screens = append(bp.Screens, extra...)
 	return bp
+}
+
+// AppSpecLoginScreen is the /login screen synthesized for an app spec with
+// auth on and no screen hosting a login_form. Without it every gated
+// screen, the Sign in button and a failed form login sent the visitor to
+// a /login nobody registered (ecommerce). The body is the login_form
+// block an author would write, so the screen composes ui.AuthCard and
+// ui.Form like an authored one and ships no CSS. It takes the marketing
+// layout when the app spec has one (where an authored sign-in screen
+// sits), links a signup_form screen when there is one, and is not added
+// to nav. A screen whose name makes the login file or type, or one
+// already routed /login, keeps its place: nothing is synthesized.
+func AppSpecLoginScreen(bp AppSpec) (AppSpecScreen, bool) {
+	if !bp.App.Auth.Enabled {
+		return AppSpecScreen{}, false
+	}
+	layout, signup := "", ""
+	for _, s := range bp.Screens {
+		if ToSnakeCase(s.Name) == "login" || ToCamelCase(s.Name) == "Login" || s.Route == "/login" {
+			return AppSpecScreen{}, false
+		}
+		if s.Layout == "marketing" {
+			layout = "marketing"
+		}
+		for _, b := range AppSpecBlocksDeep(s.Body) {
+			if AppSpecBlockKindIs(b, "login_form") {
+				return AppSpecScreen{}, false
+			}
+			if AppSpecBlockKindIs(b, "signup_form") && signup == "" && !strings.Contains(s.Route, "{") {
+				signup = s.Route
+			}
+		}
+	}
+	// The block spells out the defaults the renderer would fill in, the
+	// way gofastr pack reads an AuthCard back, so pack recognizes this
+	// screen as the synthesized one (IsSynthesizedLoginScreen) and drops it.
+	authBase := bp.App.Auth.BasePath
+	if authBase == "" {
+		authBase = "/auth"
+	}
+	block := AppSpecBlock{Kind: "login_form", Text: "Sign in", Props: map[string]any{"action": authBase + "/login", "next": "/"}}
+	if signup != "" {
+		block.Props["register_href"] = signup
+	}
+	return AppSpecScreen{
+		Name:   "login",
+		Route:  "/login",
+		Layout: layout,
+		Title:  "Sign in",
+		Body:   []AppSpecBlock{block},
+	}, true
+}
+
+// IsSynthesizedLoginScreen reports whether screen, read back from a
+// generated app, is exactly the sign-in screen AppSpecLoginScreen adds to
+// bp without it. gofastr pack drops it, as it drops a synthesized create
+// screen: the regenerate adds it again in the same place.
+func IsSynthesizedLoginScreen(bp AppSpec, screen AppSpecScreen) bool {
+	if screen.Route != "/login" {
+		return false
+	}
+	rest := bp
+	rest.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s AppSpecScreen) bool { return s.Route == "/login" })
+	synth, ok := AppSpecLoginScreen(rest)
+	return ok && reflect.DeepEqual(synth, screen)
 }
 
 // AppSpecKeyColNames lists the columns the record's id is made of: the

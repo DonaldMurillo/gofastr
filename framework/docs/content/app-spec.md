@@ -746,7 +746,7 @@ spec seeds no admin. Pack says so before the check names `app.go` and
 `main.go`; add `seed_password` under `app.admin` before generating from
 it.
 
-The synthesized `/create` screen is dropped (it wasn't authored). Generate and pack are a matched inverse pair for the declarative
+The synthesized `/create` screen, and the `/login` screen added for an app spec with auth and no login form, are dropped (they weren't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for an app spec of those
 constructs (modulo comments + formatting). When you add a new construct to
@@ -1431,6 +1431,17 @@ screens:
           next: /admin           # where to land after login (default /)
           register_href: /signup  # optional link
 ```
+
+An app spec with `app.auth.enabled: true` and no `login_form` on any
+screen gets one anyway: the generator adds a `/login` screen holding a
+`login_form` with the defaults above (it links a `signup_form` screen's
+route as `register_href` when there is one), the way a writable list gets
+its `<list>/create`. Gated screens, the Sign in button and a failed form
+login all point there, so none of them lands on a 404. It takes the
+`marketing` layout when the app spec has marketing screens, and is not
+added to nav. Write your own `login_form` screen (any route), or a
+screen named `login` or routed `/login`, and nothing is added. `gofastr
+pack` drops the added screen, as it drops a synthesized create screen.
 
 ### Admin back-office (`app.admin`)
 
