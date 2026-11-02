@@ -177,6 +177,12 @@ few lines, and link the PR or the docs page for the rest.
   control byte. A refused spec's error encodes control bytes instead of
   printing them, and `--dry-run --json` errors are valid JSON (they were
   spelled with Go's `%q`, whose `\x1b` no JSON parser reads).
+- **The generated Go and JS clients bound their SSE feed.** `Watch` /
+  `watch` joined an event's `data:` lines until a blank line, and the JS
+  client buffered a line until a newline, with no limit, so a feed that
+  never ended one grew the subscriber's heap. Both now stop at the
+  1 MiB body cap with an error. Regenerate the SDK or client
+  (`gofastr build`) to pick it up.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

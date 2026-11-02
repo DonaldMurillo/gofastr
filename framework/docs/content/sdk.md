@@ -50,7 +50,8 @@ a `true` default, and an all-pointer `Patch`), and `*APIError` whose body carrie
 response body the client buffers — the JSON decode and the `*APIError`
 snapshot — is capped at 1 MiB (`maxBodyBytes`): a bigger body is a
 misbehaving endpoint, and the decode fails on truncation instead of
-buffering it. The built-in `http.Client` refuses redirects (requests
+buffering it. `Watch` holds one SSE event's joined `data:` lines to the
+same cap and returns an error past it. The built-in `http.Client` refuses redirects (requests
 carry the bearer token when `Token` is set, and a 3xx would re-send it
 to whatever origin the response names); pass your own `*http.Client` to
 keep a redirect policy. Consumers
@@ -152,7 +153,8 @@ envelope) resolve normally with `committed: false`. Every response body
 the client buffers — the `JSON.parse` in `do()` and the `ApiError`
 snapshot on the error path — goes through a capped read (`_readBody`,
 1 MiB, the same `maxBodyBytes` the Go client enforces): a bigger body
-throws instead of buffering. The exported
+throws instead of buffering. `watch` holds one SSE line, and one event's
+joined `data:` lines, to the same cap and rejects past it. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
 

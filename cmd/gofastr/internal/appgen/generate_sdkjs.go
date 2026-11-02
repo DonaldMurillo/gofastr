@@ -754,6 +754,7 @@ const jsClientMethods = `  async do(method, path, body) {
   }
 
   async _sse(path, onEvent, { signal } = {}) {
+    const cap = 1 << 20;
     const headers = { Accept: "text/event-stream" };
     if (this.token) headers.Authorization = "Bearer " + this.token;
     const resp = await this._fetch(this.baseURL + path, { headers, signal });
@@ -775,6 +776,13 @@ const jsClientMethods = `  async do(method, path, body) {
       }
       if (chunk.done) return;
       buffer += decoder.decode(chunk.value, { stream: true });
+      // A line, and an event's joined data, are bounded at the body cap
+      // _readBody enforces: a feed that never ends one would otherwise
+      // grow the subscriber's heap without limit.
+      const overCap = async (what) => {
+        try { await reader.cancel(); } catch { /* stream already closed */ }
+        return new ApiError(resp.status, "event stream " + what + " exceeded " + cap + " bytes");
+      };
       let idx;
       while ((idx = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, idx).replace(/\r$/, "");
@@ -793,8 +801,10 @@ const jsClientMethods = `  async do(method, path, body) {
           event = line.slice(6).trim();
         } else if (line.startsWith("data:")) {
           data += line.slice(5).trim();
+          if (data.length > cap) throw await overCap("event data");
         }
       }
+      if (buffer.length > cap) throw await overCap("line");
     }
   }
 

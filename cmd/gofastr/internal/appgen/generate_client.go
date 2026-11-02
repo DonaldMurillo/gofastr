@@ -326,7 +326,14 @@ func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string
 		case strings.HasPrefix(line, "event:"):
 			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
-			data = append(data, strings.TrimSpace(strings.TrimPrefix(line, "data:"))...)
+			// An event joins its data lines until a blank line; bound the
+			// join at the body cap, or a feed that never ends an event
+			// grows the heap without limit.
+			piece := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if len(data)+len(piece) > maxBodyBytes {
+				return fmt.Errorf("event data exceeds %d bytes", maxBodyBytes)
+			}
+			data = append(data, piece...)
 		}
 	}
 	if ctx.Err() != nil {
