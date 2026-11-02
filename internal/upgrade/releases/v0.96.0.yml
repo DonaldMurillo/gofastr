@@ -851,6 +851,7 @@ notes:
     find:
       uses:
         - gofastr/framework/access.NewGrantStore
+        - gofastr/framework.NewGrantStore
   - change: "email.SMTPSender refuses a Headers key that is not a header field name (printable ASCII, no colon or space) or that names From, To, Cc, Bcc or Subject, with ErrSendFailed"
     breaking: false
     guidance: "Set those fields on the Email itself (Email.From, To, CC, BCC, Subject). A Headers copy gave the message two of the field, or, for Bcc, published the blind list. A key with a colon or space was never a working header."
@@ -1261,7 +1262,8 @@ notes:
     guidance: "Common encoders write about ten scans, so ordinary photos decode as before. A host that decodes huge progressive JPEGs with many scans raises Config.MaxJPEGScanPixels, and MaxJPEGScans as well if it needs past 64; raising MaxJPEGScans alone no longer lifts the cost bound."
     find:
       uses:
-        - gofastr/framework/image.Config.MaxJPEGScans
+        - gofastr/framework/image.DecodeBytesWithConfig
+        - gofastr/framework/image.DecodeWithConfig
   - change: "framework/image and file.StripMetadata refuse a progressive JPEG whose coefficient buffer exceeds Config.MaxProgressiveJPEGBytes (default 512 MiB) with ErrDecompressionBomb: a progressive 64 MP 4:4:4 color frame is refused, grayscale and 4:2:0 pass"
     breaking: false
     guidance: "Baseline JPEGs and ordinary progressive photos decode as before. A host that decodes very large progressive 4:4:4 JPEGs and has the memory for them raises Config.MaxProgressiveJPEGBytes."
@@ -1337,6 +1339,7 @@ notes:
     find:
       uses:
         - gofastr/framework/access.NewGrantStore
+        - gofastr/framework.NewGrantStore
   - change: "search.NewMemory registers a store eraser, so App.EraseUserData deletes the documents whose Owner is the erased user; Memory.Close removes the registration"
     breaking: false
     guidance: "Close a search.Memory you are done with (a test's, a request's): the registration holds the index until then. search.Battery closes its backend on stop."
@@ -1355,6 +1358,8 @@ notes:
       uses:
         - gofastr/framework/hook.BeforeUpdate
         - gofastr/framework/hook.BeforeDelete
+        - gofastr/framework.BeforeUpdate
+        - gofastr/framework.BeforeDelete
   - change: "BREAKING on SQLite - a decimal value with a fraction and more than 15 significant digits is refused with a 400 (decimal_significant_digits) instead of being stored rounded to a 64-bit float"
     breaking: true
     guidance: "SQLite has no exact decimal type, so 999999999999999.1234 read back 999999999999999.1. Postgres keeps every digit of DECIMAL(19,4) and is unchanged. Keep such values on Postgres, store an int count of the smallest unit, or set the field's RawType to TEXT (stored as sent, compared as text)."
