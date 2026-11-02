@@ -123,12 +123,14 @@ var errVerifyFailed = i18n.NewError(reasonVerifyFailed)
 var reasonVerifyFailed = i18n.Define("webhook.verify_failed", "signature verification failed")
 
 // TimestampedVerifier wraps VerifyTimestamped over the X-GoFastr-Signature
-// header (SignatureHeader). It binds the timestamp into the signed material,
-// so a captured request cannot replay past `tolerance`. Prefer this over
+// header (SignatureHeader), with the event and delivery id read from
+// EventHeader and DeliveryIDHeader. The timestamp, event and id are all in
+// the signed material, so a captured request cannot replay past `tolerance`
+// nor be re-sent under another event or id. Prefer this over
 // HMACSHA256Verifier whenever the sender supports it.
 func TimestampedVerifier(secret string, tolerance time.Duration) InboundVerifier {
 	return func(r *http.Request, body []byte) error {
-		if !VerifyTimestamped(secret, r.Header.Get(SignatureHeader), body, tolerance) {
+		if !VerifyTimestamped(secret, r.Header.Get(SignatureHeader), r.Header.Get(EventHeader), r.Header.Get(DeliveryIDHeader), body, tolerance) {
 			return errVerifyFailed
 		}
 		return nil

@@ -236,6 +236,143 @@ few lines, and link the PR or the docs page for the rest.
 - **`router.Handle` names an unclean pattern** (`Group("/api/")` builds
   `/api//x`) as an invalid route, not a conflict with a registration
   that does not exist.
+- **A list on a bare filter key is no longer sent as an IN.** The
+  server reads `?status=a,b` as equality with the literal `a,b`, so a
+  list there matched nothing it was meant to. The generated JS SDK sent
+  an array on any filter key that way; it now throws on an array whose
+  key does not end in `_in`, or whose key is a column of its own (a
+  `check_in` column with no `check` column), naming the `<key>_in` to
+  use (`sort`, `fields` and `include` arrays still go comma-joined). The generated
+  CLI's bare `--<field>` flag claimed "comma list = IN" and sent the
+  same query; it is equality only now, and a new `--<field>-in` flag
+  sends `<field>_in`.
+- **`gofastr generate cli` refuses a `custom.go` from the other mode.**
+  The generator never rewrites `custom.go`, so moving between the entity
+  and `--from-openapi` modes kept a file importing the other mode's client,
+  and the CLI stopped building. The run now names the import and stops;
+  `--force` moves the file to `custom.go.bak` and writes a fresh one. See
+  [App CLI](framework/docs/content/app-cli.md).
+- **BREAKING: `client.d.ts` types nullable fields `T | null`.** The
+  server returns SQL `NULL` as `null` for any optional column, but the
+  generated types said `T`, so strict TypeScript compiled code that read
+  `null` as a string or number. A field that is not required, generated or
+  part of the key is now `T | null` on the entity interface and its Input
+  (where `null` clears it). See [SDK](framework/docs/content/sdk.md).
+- **BREAKING: the JS SDK keeps integers past 2^53.** `client.js` parsed
+  with `JSON.parse`, so a big id or counter lost digits. It now hands such
+  an integer over as its exact decimal string, and `client.d.ts` types
+  every integer field, and an integer `id`, `number | string`. TypeScript
+  code that does arithmetic on one narrows it first. See
+  [SDK](framework/docs/content/sdk.md).
+- **The harness MCP server cancels a request from another POST.** Over
+  Streamable HTTP each POST had its own in-flight table, so the
+  `notifications/cancelled` an MCP client sends as a separate POST found
+  nothing and the turn ran on. POSTs now share one table, owned by the
+  token principal plus `Mcp-Session-Id`, so another caller's cancel finds
+  nothing. The duplicate-id check and the 32-request cap count per owner
+  across POSTs.
+- **BREAKING: a presence topic named in the URL needs `AuthorizeTopic`.**
+  With no hook, any `?presence=` topic joined, so anyone who could guess a
+  topic read its roster, emails included. A screen now declares its topics
+  with `PresenceTopics(ctx)` (`uihost.PresenceScreen`); the host signs the
+  list into the page's stream URL for that viewer, and those topics join
+  with no hook. A `?presence=` topic is refused unless a hook admits it, and
+  an installed hook now answers for declared topics too.
+  `island.Manager.ServeSSEWithPresence` takes an `island.PresenceTopics`
+  (`Declared`, `Requested`) in place of a `[]string`. See
+  [Live presence](framework/docs/content/presence.md).
+- **A desktop window on Windows can no longer open a second, unguarded
+  window.** WebView2 answered `window.open` and `target="_blank"` with a
+  new web view that had no navigation policy, so a page could open a
+  foreign site in a window that looked like the app's. The Windows shell
+  now marks every new-window request handled, so nothing opens, as on
+  macOS and Linux.
+- **A static export's `llm.md` carries the page's SEO front matter.** The
+  live `/llm.md` opens with the screen's description, canonical and
+  other head metadata; the exported file was the bare doc. Both now go
+  through the new `UIHost.LLMMDWithSEO`, so an exported doc matches the
+  served one byte for byte.
+- **One A2A caller can no longer take every push-delivery slot.** The 16
+  in-flight deliveries and the 16-event backlog were shared by every
+  owner, so a caller whose receiver hung held them all and every other
+  owner's notifications were dropped. One owner now holds at most 4 of
+  each.
+- **A page whose cache entry was dropped keeps its own signals on Back
+  and Forward.** When an RPC write invalidated the page's entry, leaving
+  it captured only its `route.*` signals, so a replay showed the page's
+  markup with the previous page's values (a cart quantity, a selected
+  tab). The envelope navigator now tracks the page's whole page-scoped
+  seed, and a deferred part's seed adds to it instead of replacing it.
+- **BREAKING: auth's own screens draw with the design system.** The
+  magic-link confirmation and the same-site hop (the page a cross-site
+  OAuth link callback or webmail verification click lands on) were
+  hand-written HTML. The new `AuthConfig.Pages` draws both, and
+  `authui.Pages(host)` (`battery/auth/authui`) renders them as a
+  `ui.AuthCard` through the app's UIHost. `MagicLinkConfig.ConfirmPage`
+  is removed: implement `auth.Pages` instead, whose `ConfirmPageData`
+  now carries the screen's words in the caller's locale. The hop now
+  reloads through a `Refresh` header, so a page drawn through a UIHost
+  (which drops a meta refresh from a screen's head) still continues. With
+  `Pages` nil the plain documents stay.
+- **BREAKING: a blank write in a declared `Access` block is refused.**
+  Declaring `Access{Read: "posts:read"}` to gate reads left Create, Update
+  and Delete open to every caller, anonymous ones included. Once an
+  `Access` block names any permission, a blank `Create`, `Update` or
+  `Delete` now answers **403** for every caller, a wildcard role included,
+  and its MCP tool is refused too; server code under `crud.WithElevation`
+  still writes. The new `framework.Anyone` (`anyone` in an app spec or
+  entity declaration) opens an operation on purpose. A blank `Read` still
+  leaves reads open.
+- **A reboot no longer undoes a process-module revoke.** The next boot
+  compared the descriptor with the stored row, read the revoked grant as a
+  grant change, wrote it back and disabled the module. The store now
+  records revokes (`DesiredState.RevokedGrants`, a `revoked_grants` column
+  `EnsureSchema` adds to an existing table), the boot subtracts them from
+  the descriptor, and only a grant the row does not hold disables the
+  module. A descriptor that only drops grants reports the new
+  `InstallGrantsNarrowed` outcome and keeps the module enabled.
+- **A revoked process-module grant stops working when the drain starts.**
+  A revoke or disable drains the child for up to `DrainPerModule` (30 s by
+  default), and the broker kept answering its `host.*` reverse calls under
+  the old grant until the child exited. Those drains now refuse reverse
+  calls at once; an upgrade that takes no grant away and the shutdown drain
+  keep them open. `moduleproto.WithServeGate` is the new peer option behind
+  it.
+- **BREAKING: an rtc join with no user is refused unless the app opts
+  in.** Every caller whose `Join.User` was empty shared one seat bucket,
+  so one anonymous caller opening sockets displaced every other anonymous
+  caller across all rooms. `Authorize` returning an empty `User` now gets
+  a 403 (`rtc.user_required`) before the upgrade. An app whose callers
+  are anonymous sets `Config.AnonymousSeats: rtc.AnonymousPerSocket`:
+  each such socket holds its own seat and is never displaced by another.
+  `examples/rtc-call` opts in.
+- **BREAKING: webhook signatures cover the event name and delivery id.**
+  `v1` signed `<ts>.<body>`, so a delivery captured inside the tolerance
+  window could be re-sent with another `X-GoFastr-Event` or
+  `X-GoFastr-Delivery-ID` and still verify. It now signs
+  `<ts>\n<event>\n<delivery id>\n<body>`. `SignWithTimestamp` and
+  `VerifyTimestamped` take the event and id; `TimestampedVerifier` reads
+  them from the request. Every receiver must update its verifier.
+  ([webhooks](framework/docs/content/webhooks.md))
+- **A password reset removes every OAuth link.** On a verified account
+  the links survived, so an IdP identity linked from a stolen session
+  signed the attacker back in after the owner's reset. The reset now
+  unlinks every provider and deletes its stored tokens (an account claim
+  deletes them too), then mails a notice naming the unlinked providers
+  (`PasswordResetConfig.NoticeTemplate`). ([auth](framework/docs/content/auth.md))
+- **BREAKING: `access.Can`, `CanResource` and `CanResourceExact` check
+  token scopes.** A scoped API token passed them on its owner's roles, so
+  an `orders:update` token an admin minted could run an `orders:approve`
+  transition or the state override. They now also require a scope
+  granting the permission, as `RequirePermission` does, and a Decider's
+  Allow does not lift it.
+  ([access control](framework/docs/content/access-control.md))
+- **BREAKING: `auth.RequireRole` and `auth.MCPRole` need a role scope on
+  an API token.** A token carries its owner's roles, so a `customers:read`
+  token an admin minted passed `RequireRole("admin")`. A scoped token now
+  counts a role only when it holds `role:<name>` (`role:*`, `*:*`), as
+  `framework.MCPRequireRole` already required. Sessions and JWTs are
+  unaffected. ([auth](framework/docs/content/auth.md))
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

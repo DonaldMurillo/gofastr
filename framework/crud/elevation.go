@@ -97,5 +97,8 @@ func (ch *CrudHandler) accessAllows(ctx context.Context, perm, id string) bool {
 		d := access.GetDecider(ctx)
 		return d == nil || d(ctx, access.GetRoles(ctx), access.Permission(perm), ref) != access.DecisionDeny
 	}
+	if perm == permRefused {
+		return false
+	}
 	return access.CanResource(ctx, access.Permission(perm), ref)
 }

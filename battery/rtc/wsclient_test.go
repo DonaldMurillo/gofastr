@@ -255,6 +255,7 @@ func serveJoin(s *Signaler, w http.ResponseWriter, r *http.Request) {
 		Room:        room,
 		PeerID:      q.Get("peer"),
 		Role:        q.Get("role"),
+		User:        q.Get("user"),
 		DisplayName: q.Get("name"),
 	})
 }
@@ -281,6 +282,11 @@ func newTestSignaler(t *testing.T, cfg Config) *Signaler {
 			return Join{Room: "room1"}, nil
 		}
 	}
+	// serveJoin and most fixtures join with no Join.User. A test that
+	// needs the refusal builds its Signaler with New.
+	if cfg.AnonymousSeats == AnonymousRefused {
+		cfg.AnonymousSeats = AnonymousPerSocket
+	}
 	return New(cfg)
 }
 
@@ -289,6 +295,13 @@ func newTestSignaler(t *testing.T, cfg Config) *Signaler {
 func join(t *testing.T, base, room, peer string) (*wsClient, wireEnvelope) {
 	t.Helper()
 	c := wsDial(t, base+"/ws/"+room+"?peer="+peer)
+	return c, c.expectEnv(t, "snapshot")
+}
+
+// joinAs is join for a socket whose Join.User is user.
+func joinAs(t *testing.T, base, room, peer, user string) (*wsClient, wireEnvelope) {
+	t.Helper()
+	c := wsDial(t, base+"/ws/"+room+"?peer="+peer+"&user="+user)
 	return c, c.expectEnv(t, "snapshot")
 }
 

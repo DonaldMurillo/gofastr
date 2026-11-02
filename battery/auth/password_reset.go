@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -60,6 +61,14 @@ type PasswordResetConfig struct {
 	// values), so it carries the reader's locale: render the body from
 	// your phrases with it (i18n.Phrase.Text).
 	BodyTemplate func(ctx context.Context, url string) string
+
+	// NoticeTemplate, when non-nil, builds the body of the email a
+	// completed reset sends to the account's address. unlinked names the
+	// sign-in providers the reset removed (a reset unlinks every OAuth
+	// identity, so one planted from a stolen session cannot sign back
+	// in). nil sends the default text from this package's phrases. The
+	// notice goes through EmailSender and is skipped when it is nil.
+	NoticeTemplate func(ctx context.Context, unlinked []string) string
 
 	// DevMode logs the reset URL when EmailSender is nil. NEVER enable in
 	// production, anyone with log read access then resets arbitrary
@@ -416,6 +425,30 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
 		})
 	}
+	// A verified account keeps no IdP identity either: one linked from a
+	// stolen session signs the attacker back in after the owner's reset.
+	// The notice below names what was removed, so the owner can link a
+	// provider of their own again. Unlinked before the session revoke, the
+	// same order as the passkeys: an IdP sign-in that lands mid-unlink
+	// mints a session the revoke then catches.
+	var unlinked []string
+	lister, unlinker, err := oauthUnlinkTools(p.mgr.UserStore())
+	if err == nil {
+		unlinked, err = p.mgr.unlinkAllOAuth(r.Context(), userID, lister, unlinker)
+	}
+	for _, provider := range unlinked {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "oauth.unlinked",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"provider": provider, "reason": "password_reset"},
+		})
+	}
+	if err != nil {
+		slog.Warn("password-reset OAuth unlink failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		incomplete = true
+	}
 	// A failed purge left the attacker's live cookie working behind a
 	// reset that answered success.
 	if err := p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r)); err != nil {
@@ -467,6 +500,47 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	p.queueResetNotice(r.Context(), userID, unlinked)
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
+}
+
+// queueResetNotice mails the account's address that its password was reset
+// and which sign-in providers the reset unlinked. It is skipped when no
+// EmailSender is set, and a lookup or send failure is logged, never
+// returned: the reset itself has already succeeded.
+func (p *PasswordResetPlugin) queueResetNotice(requestCtx context.Context, userID string, unlinked []string) {
+	if p.cfg.EmailSender == nil {
+		return
+	}
+	user, err := p.mgr.UserStore().FindByID(requestCtx, userID)
+	if err != nil || user == nil || user.GetEmail() == "" {
+		slog.Warn("password-reset notice skipped: no address for the account",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		return
+	}
+	to := user.GetEmail()
+	p.delivery.enqueue(requestCtx, to, func(ctx context.Context) {
+		var body string
+		if p.cfg.NoticeTemplate != nil {
+			body = p.cfg.NoticeTemplate(ctx, unlinked)
+		} else {
+			body = defaultResetNotice(ctx, unlinked)
+		}
+		if err := p.cfg.EmailSender.Send(ctx, to, body); err != nil {
+			slog.Warn("password-reset notice send failed",
+				"plugin", "password-reset", "email_hash", hashedIdentifier(to), "err", err)
+		}
+	})
+}
+
+// defaultResetNotice is the notice body when NoticeTemplate is nil.
+func defaultResetNotice(ctx context.Context, unlinked []string) string {
+	parts := []string{resetNoticeDone.Text(ctx)}
+	if len(unlinked) > 0 {
+		parts = append(parts, resetNoticeUnlinked.Text(ctx, map[string]any{"providers": strings.Join(unlinked, ", ")}))
+	}
+	parts = append(parts, resetNoticeWarning.Text(ctx))
+	return strings.Join(parts, "\n\n")
 }

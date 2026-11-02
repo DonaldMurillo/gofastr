@@ -437,12 +437,18 @@ func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 // access.Middleware or battery/auth). Returns false when no policy is present,
 // the secure-by-default answer for an un-wired request. This is the seam the
 // CRUD layer uses to enforce EntityConfig.Access.
+//
+// A scope-restricted caller (an API token or embed grant, WithHeldScopes)
+// must also hold a scope granting permission (ScopeAllows), as
+// RequirePermission requires: the credential carries its owner's roles, and
+// an "orders:update" token an admin minted must not pass Can on
+// "orders:approve". Sessions and JWTs carry no scopes and are unaffected.
 func Can(ctx context.Context, permission Permission) bool {
 	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
 	if policy == nil {
 		return observe(ctx, permission, false, "can")
 	}
-	return observe(ctx, permission, policy.Can(ctx, permission), "can")
+	return observe(ctx, permission, ScopeAllows(ctx, permission) && policy.Can(ctx, permission), "can")
 }
 
 // GetPermissions extracts the user's permissions from context by looking up

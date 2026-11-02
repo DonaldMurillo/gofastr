@@ -72,7 +72,7 @@ func MCPRole(roles ...string) func(ctx context.Context) error {
 		if roleGateDenied(ctx, user) {
 			return errors.New("auth: this tool call was refused by the access decider for the caller's roles")
 		}
-		if !hasAnyRole(user, roles) {
+		if !hasAnyRole(ctx, user, roles) {
 			return fmt.Errorf("auth: this tool requires role %v", roles)
 		}
 		return nil

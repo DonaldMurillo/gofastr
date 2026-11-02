@@ -45,7 +45,7 @@ app.Entity("tickets", framework.EntityConfig{
     Exposure: &framework.ExposureConfig{
         CRUD: &crud,
         MCP: true,
-        Access: framework.AccessControl{Read: "tickets:read"},
+        Access: framework.AccessControl{Read: "tickets:read", Create: "tickets:write", Update: "tickets:write", Delete: "tickets:write"},
     },
 })
 ```
@@ -521,9 +521,12 @@ registration, so the scoping survives code generation.
 `access` mirrors `Exposure.Access` (`framework.AccessControl`): the
 per-operation RBAC permission required by auto-CRUD. Keys are `read`
 (List + Get), `create`, `update`, and `delete`; each value is a permission
-string such as `posts:write`. A blank or omitted key leaves that operation
-un-gated by RBAC (owner and tenant scoping still apply); omit the whole map
-for no RBAC gating at all. When set, auto-CRUD refuses a request whose
+string such as `posts:write`. A blank or omitted `read` leaves List and Get
+un-gated by RBAC. A blank or omitted `create`, `update` or `delete` refuses
+that operation with **403** for every caller, admins included; write
+`anyone` (`framework.Anyone` in Go) to open it on purpose. Owner and tenant
+scoping still apply either way. Omit the whole map for no RBAC gating at
+all. When set, auto-CRUD refuses a request whose
 context lacks the permission with **403**: the roles + policy must be in
 the request context first: mount `framework.AccessMiddleware` with a policy
 (`battery/auth` only supplies the authenticated user whose roles you feed
@@ -546,8 +549,8 @@ anonymous caller with **401**. Before this, a plain entity with no
 `owner_field` and `access` already take over gating for an entity: set
 either one and this default session requirement no longer applies (their
 own contracts, described above and in **Per-user scoping**, govern the
-entity instead, including any operation an `access:` block leaves
-un-gated, "as today").
+entity instead: a blank `read:` stays open, a blank write is refused,
+and `anyone` opens a write).
 
 For an entity that's genuinely meant to be open to anonymous callers, such as a
 public contact form, a blog's comments, or a newsletter signup, declare
@@ -557,7 +560,7 @@ pre-secure-by-default behaviour for that entity. It is **not** a partial
 "reads only" relaxation: an entity that wants public reads but gated
 writes uses `access:` instead (a blank `read:` + a real `create:`
 permission leaves List/Get open while Create still requires the
-permission):
+permission, and the blank `update:` and `delete:` are refused):
 
 ```yaml
 entities:
@@ -570,7 +573,7 @@ entities:
 
   - name: posts
     access:
-      create: posts:write   # blank read: + a real create: → public reads, gated writes
+      create: posts:write   # blank read: → public reads; blank update/delete → refused
     fields:
       - name: title
         type: string

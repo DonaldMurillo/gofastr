@@ -164,7 +164,7 @@ func TestSubscribeRefusesMalformedAuth(t *testing.T) {
 		"bearer no token":     {Kind: AuthBearer},
 		"bearer with header":  {Kind: AuthBearer, Token: "x", Header: "X-Key"},
 		"api key no token":    {Kind: AuthAPIKey},
-		"crlf in token":       {Kind: AuthBearer, Token: "x\r\nX-Evil: 1"},
+		"crlf in token":       {Kind: AuthBearer, Token: "x\r\nX-Evil: 1"}, // not-a-secret: test fixture credential
 		"bad header name":     {Kind: AuthAPIKey, Token: "x", Header: "X Key"},
 		"host header":         {Kind: AuthAPIKey, Token: "x", Header: "Host"},
 		"content-type":        {Kind: AuthAPIKey, Token: "x", Header: "content-type"},
@@ -178,7 +178,7 @@ func TestSubscribeRefusesMalformedAuth(t *testing.T) {
 		"no kind, username":   {Username: "a"},
 		"no kind, password":   {Password: "p"},
 		"crlf in username":    {Kind: AuthBasic, Username: "a\r\nX-Evil", Password: "p"},
-		"crlf in password":    {Kind: AuthBasic, Username: "a", Password: "p\r\nX-Evil: 1"},
+		"crlf in password":    {Kind: AuthBasic, Username: "a", Password: "p\r\nX-Evil: 1"}, // not-a-secret: test fixture credential
 	}
 	for name, a := range bad {
 		_, err := mgr.Subscribe(context.Background(), Subscriber{URL: "http://127.0.0.1:1/", Secret: "s", Auth: a})
@@ -210,7 +210,7 @@ func TestSQLStoreSealsAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	want := Auth{Kind: AuthAPIKey, Token: "very-secret-key", Header: "X-Receiver-Key"}
+	want := Auth{Kind: AuthAPIKey, Token: "very-secret-key", Header: "X-Receiver-Key"} // not-a-secret: test fixture credential
 	if err := s.AddSubscriber(ctx, Subscriber{ID: "s1", URL: "https://example.com/h", Secret: "shh",
 		Events: []string{"*"}, Active: true, Created: time.Now(), Auth: want}); err != nil {
 		t.Fatal(err)
@@ -296,7 +296,7 @@ func TestCredentialClientWithoutNew(t *testing.T) {
 func TestPlaintextAuthRefused(t *testing.T) {
 	ctx := context.Background()
 	strict := New(NewMemoryStore(), Options{AllowPrivateNetworks: true})
-	_, err := strict.Subscribe(ctx, Subscriber{URL: "http://127.0.0.1:1/h", Secret: "s", Auth: Auth{Kind: AuthBearer, Token: "tok-secret"}})
+	_, err := strict.Subscribe(ctx, Subscriber{URL: "http://127.0.0.1:1/h", Secret: "s", Auth: Auth{Kind: AuthBearer, Token: "tok-secret"}}) // not-a-secret: test fixture credential
 	if err == nil || strings.Contains(err.Error(), "tok-secret") {
 		t.Fatalf("Subscribe(http + Auth) = %v; want a refusal that does not echo the token", err)
 	}
@@ -317,7 +317,7 @@ func TestPlaintextAuthRefused(t *testing.T) {
 	defer srv.Close()
 	store := NewMemoryStore()
 	if err := store.AddSubscriber(ctx, Subscriber{ID: "direct", URL: srv.URL, Secret: "s", Events: []string{"*"}, Active: true,
-		Created: time.Now(), Auth: Auth{Kind: AuthAPIKey, Token: "key-secret"}}); err != nil {
+		Created: time.Now(), Auth: Auth{Kind: AuthAPIKey, Token: "key-secret"}}); err != nil { // not-a-secret: test fixture credential
 		t.Fatal(err)
 	}
 	mgr := New(store, Options{AllowPrivateNetworks: true, MaxAttempts: 3, Backoff: []time.Duration{time.Hour}})
@@ -346,8 +346,8 @@ func TestDeliveryRedactsEchoedCredential(t *testing.T) {
 	}))
 	defer echo.Close()
 	for name, a := range map[string]Auth{
-		"api key": {Kind: AuthAPIKey, Token: "key-very-secret"},
-		"bearer":  {Kind: AuthBearer, Token: "tok-very-secret"},
+		"api key": {Kind: AuthAPIKey, Token: "key-very-secret"},                   // not-a-secret: test fixture credential
+		"bearer":  {Kind: AuthBearer, Token: "tok-very-secret"},                   // not-a-secret: test fixture credential
 		"basic":   {Kind: AuthBasic, Username: "svc", Password: "pw-very-secret"}, // not-a-secret: fixture credential the echo test must see redacted
 	} {
 		d := deliverOnce(t, Subscriber{URL: echo.URL, Auth: a}, Options{})
