@@ -62,8 +62,14 @@ import (
 // concatenation. A field also carries the literal defaults assigned to
 // it (`&DBQueue{table: "queue_jobs"}`, `t = "oauth_tokens"` flowing into
 // the composite), so an init()-time registration under the canonical
-// literal covers the DDL that spells the field. A table whose name
-// cannot be resolved is uncovered: the rule never guesses coverage.
+// literal covers the DDL that spells the field — unless the package
+// also writes the field from a function parameter (a WithTable option,
+// a constructor's table argument). Then the field names whatever table
+// the host chose, the literal covers only the default, and coverage
+// needs a registration whose Table resolves to the field itself
+// (946fccf75: a DBQueue built WithTable("billing_jobs") sat outside
+// both planes behind init's "queue_jobs" registration). A table whose
+// name cannot be resolved is uncovered: the rule never guesses coverage.
 //
 // Fix spelling: declare the table to both planes from the package that
 // creates it, the battery/auth erase.go + export.go pattern: a
@@ -115,8 +121,9 @@ func ruleEraseCover(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diag
 		if t.rel != rel || (t.alter && pk.createdWithEvidence(t)) {
 			continue
 		}
-		erased := ecCovered(t.refs, pk.erasers)
-		exported := ecCovered(t.refs, pk.exporters)
+		refs := pk.coverageRefs(t.refs)
+		erased := ecCovered(refs, pk.erasers)
+		exported := ecCovered(refs, pk.exporters)
 		if erased && exported {
 			continue
 		}
@@ -144,6 +151,48 @@ func (pk *ecPkg) createdWithEvidence(alter *ecTable) bool {
 		}
 	}
 	return false
+}
+
+// coverageRefs is a table's identities as a registration must match
+// them. A field the package also writes from a parameter (a
+// WithTable-style option, a constructor's table argument) names
+// whatever table the host chose, so its literal defaults stop standing
+// in for it: an init()-time registration under the canonical
+// "queue_jobs" covers the default table and leaves a queue built
+// WithTable("billing_jobs") outside both planes (946fccf75). Such a ref
+// keeps only its resolution key, and coverage then needs a
+// registration whose Table resolves to the field itself.
+func (pk *ecPkg) coverageRefs(refs []ecRef) []ecRef {
+	out := make([]ecRef, 0, len(refs))
+	for _, r := range refs {
+		for _, part := range strings.Split(r.key, "+") {
+			if strings.HasPrefix(part, "field:") && pk.paramWritten(strings.TrimPrefix(part, "field:")) {
+				r = ecRef{key: r.key}
+				break
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// paramWritten reports whether field key ("T.f") is assigned, anywhere
+// in the package, a value that resolves through a function parameter.
+func (pk *ecPkg) paramWritten(key string) bool {
+	if v, ok := pk.paramFields[key]; ok {
+		return v
+	}
+	pk.paramFields[key] = false // a field written from itself is not a parameter
+	written := false
+	for _, s := range pk.fieldInits[key] {
+		for _, r := range pk.resolve(s.expr, ecCtx{fn: s.fn}, 0) {
+			if strings.HasPrefix(r.key, "param:") {
+				written = true
+			}
+		}
+	}
+	pk.paramFields[key] = written
+	return written
 }
 
 // eraseCoverScope keeps the rule to the framework's own store code.
@@ -217,6 +266,7 @@ type ecPkg struct {
 	funcs       map[string]*ast.FuncDecl
 	calls       map[string][]ecCallSite // callee bare name → call sites
 	fieldInits  map[string][]ecSite     // "T.f" → assigned values
+	paramFields map[string]bool         // "T.f" → written from a parameter (memo)
 	tables      []*ecTable
 	erasers     [][]ecRef
 	exporters   [][]ecRef
@@ -238,6 +288,7 @@ func eraseCoverPackage(p *contracts.Pass, dir string) *ecPkg {
 		funcs:       map[string]*ast.FuncDecl{},
 		calls:       map[string][]ecCallSite{},
 		fieldInits:  map[string][]ecSite{},
+		paramFields: map[string]bool{},
 		visiting:    map[string]bool{},
 	}
 	type parsed struct {
