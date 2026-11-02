@@ -169,6 +169,11 @@ gofastr semantic stats
 gofastr semantic clear
 ```
 
+`query` takes one query (quote a query of several words; `--` before one
+that starts with a dash) and its flags before or after it, as `-k 5` or
+`-k=5`. `-k` must be at least 1; an empty query, a second word or an
+unknown flag is refused.
+
 `index` and `watch` hold the snapshot directory's writer lock, so a second
 `index` or `watch` on the same directory fails with "another process has
 this index open for writing" until the first exits. `query` and `stats`

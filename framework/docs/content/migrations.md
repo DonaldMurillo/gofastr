@@ -180,10 +180,10 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 
 | Subcommand   | Effect                                                        |
 |--------------|---------------------------------------------------------------|
-| `up`         | Apply all pending migrations in version order.                |
-| `status`     | Print applied count, pending versions, and any dirty version. |
+| `up`         | Apply all pending migrations in version order. It takes no count: `up 1` is refused rather than read as "apply everything". |
+| `status`     | Print applied count, pending versions, any dirty version, and the drift `up`/`down` refuse on: an applied migration whose file changed since (MODIFIED) or whose file is gone. |
 | `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be one positive integer; anything else, a second count included, is refused before a rollback. |
-| `generate N` | Write a versioned, reversible migration file from entity changes. |
+| `generate N` | Write a versioned, reversible migration file from entity changes. `N` is one word (`add_users`); a second one is refused. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 | `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
 
@@ -195,14 +195,14 @@ and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
 
 - `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
   a `.env` file in the working directory contains `DATABASE_URL=...`.
-- `--db=<name>` (or its alias `--driver=<name>`): `sqlite`, `postgres`
-  or `mysql`; `sqlite3` and `postgresql` are accepted as aliases, the
+- `--db=<name>` (or its alias `--driver=<name>`): `sqlite` or
+  `postgres`; `sqlite3` and `postgresql` are accepted as aliases, the
   same table `gofastr init --db=` uses. Without the flag, a database URL
   that starts with `postgres://` or `postgresql://` uses `postgres` and
-  anything else `sqlite`. The stock `gofastr` binary links the SQLite and
-  Postgres drivers; MySQL requires building a `gofastr` binary that
-  blank-imports the driver. An unregistered driver is refused, never
-  replaced by SQLite.
+  anything else `sqlite`. Both drivers ship in the `gofastr` binary. The
+  runner and `generate` write SQLite and Postgres SQL only, so any other
+  name (`mysql`, a typo) is refused before anything opens or is written,
+  never replaced by SQLite.
 - `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
   for fresh deploys where the database named in the DSN has not been created
@@ -1138,6 +1138,11 @@ if err := m.Force(ctx, 1, true); err != nil { … }
 
 // State.
 st, _ := m.Status(ctx)   // st.Applied[i].Checksum, .Dirty are populated
+// st.Modified: applied rows whose registered Up no longer matches the
+// recorded checksum (Up refuses). st.Unregistered: applied rows with no
+// registered migration in the default group or a group that has some
+// (Down refuses); a named group with nothing registered is a disabled
+// module and is not listed.
 ```
 
 Use `RegisterFromReader` to load directive-formatted SQL from any

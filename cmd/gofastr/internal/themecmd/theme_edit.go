@@ -50,25 +50,22 @@ func runThemeEdit(args []string) {
 	outPath := "theme/theme.go"
 	noOpen := false
 	force := false
-	for _, a := range args {
-		switch {
-		case strings.HasPrefix(a, "--addr="):
-			addr = strings.TrimPrefix(a, "--addr=")
-		case a == "--no-open":
-			noOpen = true
-		case strings.HasPrefix(a, "--out="):
-			outPath = strings.TrimPrefix(a, "--out=")
-		case a == "--force":
-			force = true
-		case a == "--help" || a == "-h" || a == "help":
-			printThemeEditHelp()
-			return
-		default:
-			cli.Fail("Unknown flag: %s", a)
-			fmt.Println()
-			printThemeEditHelp()
-			cli.OsExit(1)
-		}
+	if cli.HasHelpFlag(args) || slices.Contains(args, "help") {
+		printThemeEditHelp()
+		return
+	}
+	// cli.ParseFlags: --addr=x and --addr x both work, as on the other
+	// commands; the hand-rolled loop called `--addr 127.0.0.1:9000` an
+	// unknown flag. An empty --addr= still reaches themeEditBindAddr's
+	// refusal.
+	if _, err := cli.ParseFlags(args,
+		map[string]*string{"--addr": &addr, "--out": &outPath},
+		map[string]*bool{"--no-open": &noOpen, "--force": &force}); err != nil {
+		cli.Fail("%v", err)
+		fmt.Println()
+		printThemeEditHelp()
+		cli.OsExit(1)
+		return
 	}
 
 	// Confirm-before-overwrite unless --force. The editor regenerates the

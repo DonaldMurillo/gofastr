@@ -1261,20 +1261,30 @@ func configPath() (string, error) {
 // stored token so every call runs unauthenticated against the
 // operator's assumption.
 func loadConfig() storedConfig {
-	var cfg storedConfig
-	path, err := configPath()
+	cfg, err := readConfig()
 	if err != nil {
-		return cfg
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return cfg
-	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "%s: config file %s is corrupt (%v); delete it or run '%s login' again\n", binaryName, path, err, binaryName)
+		fmt.Fprintf(os.Stderr, "%s: %v; delete it or run '%s login --url <url>' again\n", binaryName, err, binaryName)
 		os.Exit(1)
 	}
 	return cfg
+}
+
+// readConfig is loadConfig with a corrupt file returned as an error, so
+// login and logout, which replace the file, can still run over one.
+func readConfig() (storedConfig, error) {
+	var cfg storedConfig
+	path, err := configPath()
+	if err != nil {
+		return cfg, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, nil
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return storedConfig{}, fmt.Errorf("config file %s is corrupt (%v)", path, err)
+	}
+	return cfg, nil
 }
 
 func saveConfig(cfg storedConfig) (string, error) {
@@ -1353,12 +1363,22 @@ func runLogin(args []string) int {
 	if ok, code := parseOrHelp(fs, args); !ok {
 		return code
 	}
-	cfg := loadConfig()
+	// A corrupt config is replaced when --url names the server; without
+	// one there is no URL to keep, and the refusal stands.
+	cfg, err := readConfig()
+	if err != nil && *urlF == "" {
+		fmt.Fprintf(os.Stderr, "%v: run '%s login --url <url>' to replace it\n", err, binaryName)
+		return 1
+	}
 	if *urlF != "" {
 		cfg.URL = strings.TrimRight(strings.TrimSpace(*urlF), "/")
 	}
 	if cfg.URL == "" {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url https://your-app.example.com\n")
+		return 2
+	}
+	if err := checkServerURL(cfg.URL); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 	var token string
@@ -1400,8 +1420,10 @@ func runLogout(args []string) int {
 	if ok, code := parseOrHelp(fs, args); !ok {
 		return code
 	}
-	cfg := loadConfig()
-	if cfg.Token == "" {
+	// A corrupt file may still hold a token in plain text: logout writes
+	// an empty config over it rather than refusing.
+	cfg, err := readConfig()
+	if err == nil && cfg.Token == "" {
 		fmt.Println("not logged in")
 		return 0
 	}
@@ -1489,6 +1511,10 @@ func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url, set %s_URL, or run ` + "`%s login`" + `\n", envPrefix, binaryName)
 		return nil, 2
 	}
+	if err := checkServerURL(base); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return nil, 2
+	}
 	// $<APP>_TOKEN is the caller's explicit choice and goes wherever
 	// the call does. The stored token is tied to the URL it was stored
 	// with: sending it to whatever --url names would hand a production
@@ -1519,6 +1545,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// checkServerURL refuses a server URL the client cannot call: anything but
+// an absolute http(s) URL with a host. "127.0.0.1:8080" parses with the
+// scheme "127.0.0.1", so login stored it and every later call failed on a
+// URL parse error, the stored token withheld under an empty origin.
+func checkServerURL(raw string) error {
+	if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+		return nil
+	}
+	return fmt.Errorf("server URL %q is not an absolute http(s) URL: write it as https://app.example.com", raw)
 }
 
 // apiBase is base with the API prefix joined on. A base whose path
@@ -1614,6 +1651,18 @@ func printJSON(v any) int {
 	return 0
 }
 
+// printRawJSON prints a response body as the server sent it, indented: its
+// keys, their order and every digit of its numbers.
+func printRawJSON(raw []byte) int {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, raw, "", "  "); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(buf.String())
+	return 0
+}
+
 // printListTable renders rows as an aligned table. keys are the JSON wire
 // keys in column order; headers the matching titles.
 func printListTable(headers, keys []string, rows []map[string]any) {
@@ -1627,12 +1676,30 @@ func printListTable(headers, keys []string, rows []map[string]any) {
 		cells := make([]string, len(keys))
 		for i, k := range keys {
 			if v, ok := row[k]; ok && v != nil {
-				cells[i] = scrubTerminal(fmt.Sprintf("%v", v))
+				cells[i] = tableCell(v)
 			}
 		}
 		fmt.Fprintln(w, strings.Join(cells, "\t"))
 	}
 	w.Flush()
+}
+
+// tableCell is one table cell's text: an object or array in its compact
+// JSON spelling (fmt's %v printed a Go map[a:[1 2]]), each tab and line
+// break a space, so a multi-line value keeps its words apart and a tab
+// does not open a column of its own, then scrubbed for the terminal.
+func tableCell(v any) string {
+	s := fmt.Sprintf("%v", v)
+	switch v.(type) {
+	case map[string]any, []any:
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if enc.Encode(v) == nil {
+			s = strings.TrimSuffix(buf.String(), "\n")
+		}
+	}
+	return scrubTerminal(strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(s))
 }
 
 // apiFail prints err and maps it to an exit code: 4 for auth failures
@@ -1691,7 +1758,9 @@ func decodeJSON(data []byte, out any) error {
 // column, <verb> <id> [flags] or <verb> <a> <b> [flags]. It returns the
 // record's path tail, one escaped segment per value, and the id the
 // server knows the record by: the value itself for a one-column key, the
-// path tail for a longer one.
+// path tail for a longer one. A key left out for --help yields ok with a
+// bare -h as rest, so the caller's flag parse prints the verb's flag
+// reference and exits 0 before any request.
 func takeKey(verb string, keys, args []string) (tail, id string, rest []string, ok bool) {
 	short := len(args) < len(keys)
 	for i := 0; !short && i < len(keys); i++ {
@@ -1703,6 +1772,9 @@ func takeKey(verb string, keys, args []string) (tail, id string, rest []string, 
 			names[i] = "<" + k + ">"
 		}
 		fmt.Fprintf(os.Stderr, "usage: %s %s %s [flags]\n", binaryName, verb, strings.Join(names, " "))
+		if askedHelp(args) {
+			return "", "", []string{"-h"}, true
+		}
 		return "", "", nil, false
 	}
 	segs := make([]string, len(keys))
@@ -1714,6 +1786,33 @@ func takeKey(verb string, keys, args []string) (tail, id string, rest []string, 
 		id = args[0]
 	}
 	return tail, id, args[len(keys):], true
+}
+
+// strayArgs reports, and explains on stderr, an argument left after a
+// verb's flags. The flag package stops at the first positional, so
+// "--published false --views 3" read false as an argument: the call went
+// out with published=true and without --views, and exited 0.
+func strayArgs(cmd string, fs *flag.FlagSet) bool {
+	if fs.NArg() == 0 {
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "%s %s: unexpected argument %q; the flags after it were not read\n", binaryName, cmd, fs.Arg(0))
+	if fs.Arg(0) == "true" || fs.Arg(0) == "false" {
+		fmt.Fprintln(os.Stderr, "a bool flag takes its value after =, as in --flag=false")
+	}
+	return true
+}
+
+// askedHelp reports whether args holds one of the flag package's help
+// spellings.
+func askedHelp(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "-h", "-help", "--h", "--help":
+			return true
+		}
+	}
+	return false
 }
 
 // readJSONArg resolves a --json value: "-" reads stdin, "@path" reads a
@@ -2330,6 +2429,9 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if watch || uploads {
 		imports = append(imports, "\t\"context\"")
 	}
+	if list {
+		imports = append(imports, "\t\"encoding/json\"") // the raw list envelope
+	}
 	if fields || list {
 		imports = append(imports, "\t\"flag\"") // list visits its flags for a given --cursor
 	}
@@ -2342,7 +2444,7 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list || transition || endpoint {
 		imports = append(imports, "\t\"net/url\"")
 	}
-	if batchDel || endpoint || uploads {
+	if list || batchDel || endpoint || uploads {
 		imports = append(imports, "\t\"os\"") // usage errors go to stderr; files open from disk
 	}
 	if uploads {
@@ -2395,6 +2497,13 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
+	if *outF != "json" && *outF != "table" {
+		fmt.Fprintf(os.Stderr, "%s %s: -o %q: the output format is json|table\n", binaryName, cmd, *outF)
+		return 2
+	}
 	q := url.Values{}
 	set := func(key, val string) {
 		if val != "" {
@@ -2429,20 +2538,27 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}
-	var resp listResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &resp); err != nil {
+	// The envelope stays raw so -o json prints the server's own: a keyset
+	// page carries no total, and a struct printed "total": 0 for it.
+	var raw json.RawMessage
+	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &raw); err != nil {
 		return apiFail(err)
 	}
-	if *outF == "table" {
-		printListTable(headers, keys, resp.Data)
-		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), scrubTerminal(resp.Cursor))
-		} else {
-			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
-		}
-		return 0
+	if *outF == "json" {
+		return printRawJSON(raw)
 	}
-	return printJSON(resp)
+	var resp listResponse
+	if err := decodeJSON(raw, &resp); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	printListTable(headers, keys, resp.Data)
+	if resp.Cursor != "" || resp.HasMore {
+		fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), scrubTerminal(resp.Cursor))
+	} else {
+		fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
+	}
+	return 0
 }
 
 `)
@@ -2459,6 +2575,9 @@ func runGetVerb(cmd, base string, keys, args []string) int {
 	g, code := parseGlobals(fs, rest)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	var out singleResponse
 	if err := g.client.Do(g.ctx, http.MethodGet, base+"/"+tail, nil, &out); err != nil {
@@ -2582,6 +2701,9 @@ func runMutationVerb(cmd, method string, keys []string, base string, fields []mu
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
 	body, code := buildBody(fs, *jsonBody, apply)
 	if code != 0 {
 		return code
@@ -2608,6 +2730,9 @@ func runDeleteVerb(cmd, base string, keys, args []string) int {
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, base+"/"+tail, nil, nil); err != nil {
 		return apiFail(err)
 	}
@@ -2631,6 +2756,9 @@ func runTransitionVerb(cmd, base, key string, keys, args []string) int {
 	g, code := parseGlobals(fs, rest)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	var out singleResponse
 	path := base + "/" + tail + "/transitions/" + url.PathEscape(key)
@@ -2671,7 +2799,13 @@ func runEndpointVerb(cmd, base string, call endpointCall, args []string) int {
 		}
 		if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 			fmt.Fprintf(os.Stderr, "usage: %s %s %s [flags]\n", binaryName, cmd, strings.Join(names, " "))
-			return 2
+			if !askedHelp(args) {
+				return 2
+			}
+			// --help in place of a path value: the flag parse below
+			// prints the flag reference and exits 0 before any request.
+			args = []string{"-h"}
+			break
 		}
 		path += "/" + url.PathEscape(args[0])
 		args = args[1:]
@@ -2685,6 +2819,9 @@ func runEndpointVerb(cmd, base string, call endpointCall, args []string) int {
 	g, code := parseGlobals(fs, args)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
@@ -2751,6 +2888,9 @@ func runBatchJSONVerb(cmd, base, method string, args []string) int {
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
 	items, code := readJSONArrayArg(*jsonBody)
 	if code != 0 {
 		return code
@@ -2809,6 +2949,9 @@ func runWatchVerb(cmd string, watch func(c *client.Client, ctx context.Context, 
 	g, code := parseGlobals(fs, args)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	// g.ctx is already signal-cancellable: parseGlobals built it with
 	// signal.NotifyContext, so Ctrl-C cancels the stream here too.

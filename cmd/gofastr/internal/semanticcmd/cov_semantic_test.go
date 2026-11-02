@@ -122,6 +122,47 @@ func TestEmbedQueryFlagParsing(t *testing.T) {
 	}
 }
 
+// `semantic query -k 3 auth` took "-k" as the query and failed on "3"
+// as an unknown flag; `-k=3` was an unknown flag; `-k 0` and `-k -5`
+// ran with the default; `query ""` printed null; and an unquoted
+// `query auth middleware` failed with "unknown flag: middleware". Flags
+// go anywhere, in either spelling, and the rest is refused by name.
+func TestParseQueryArgs(t *testing.T) {
+	for _, args := range [][]string{
+		{"auth", "-k", "3"},
+		{"-k", "3", "auth"},
+		{"-k=3", "auth"},
+		{"--k=3", "auth", "--hybrid"},
+		{"--mmr=0.4", "-k", "3", "auth"},
+		{"-k", "3", "--", "auth"},
+	} {
+		q, err := parseQueryArgs(args)
+		if err != nil {
+			t.Errorf("parseQueryArgs(%q): %v", args, err)
+			continue
+		}
+		if q.Text != "auth" || q.K != 3 {
+			t.Errorf("parseQueryArgs(%q) = text %q k %d, want auth 3", args, q.Text, q.K)
+		}
+	}
+	if q, err := parseQueryArgs([]string{"--", "-dash"}); err != nil || q.Text != "-dash" {
+		t.Errorf("parseQueryArgs(-- -dash) = %+v, %v", q, err)
+	}
+	for _, args := range [][]string{
+		{"auth", "-k", "0"},
+		{"auth", "-k", "-5"},
+		{""},
+		{"  "},
+		{"auth", "middleware"},
+		{"-k", "3"},
+		{"auth", "--zzz"},
+	} {
+		if q, err := parseQueryArgs(args); err == nil {
+			t.Errorf("parseQueryArgs(%q) = %+v, want an error", args, q)
+		}
+	}
+}
+
 func TestChooseEmbedderOllama(t *testing.T) {
 	t.Setenv("EMBED_BACKEND", "ollama")
 	if _, ok := chooseEmbedder().(*semantic.OllamaEmbedder); !ok {

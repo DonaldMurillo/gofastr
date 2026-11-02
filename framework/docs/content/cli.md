@@ -4,7 +4,8 @@
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 ```
 
-One binary. `gofastr <command> --help` prints every flag; this page maps
+One binary. `gofastr <command> --help` (or `gofastr help <command>`)
+prints every flag; `gofastr help` is the command overview. This page maps
 each command to the doc that covers it.
 
 Everything the CLI prints, status lines (`✓`, `✗`, `→`, `⚠`) and the
@@ -22,7 +23,9 @@ scrubbed the same way.
 
 - `gofastr init <name>`: a new project with framework UI, `DESIGN.md`, a
   sample entity (`--no-entity` to skip), git, and the agent onboarding
-  files. `--module=<path>` sets the Go module; `--db=sqlite|postgres`
+  files. `--module=<path>` sets the Go module (a path that is not a
+  valid Go import path is refused before any file is written);
+  `--db=sqlite|postgres`
   picks the driver (default `sqlite`; `sqlite3` and `postgresql` are
   accepted aliases, anything else is an error). The DSN lives in the
   0600 gitignored `.env` only: with `--db=postgres` the generated
@@ -57,11 +60,14 @@ scrubbed the same way.
   (`JWT_SECRET`, `DATABASE_URL`) and `gofastr.settings.yml`, must be
   regular files: a symlink there is refused before anything is written,
   even one to a file inside the project, since `.env -> static/robots.txt`
-  would put the signing key in a committed, served file. `init <name> --reinit` or `init . --reinit` refreshes the
+  would put the signing key in a committed, served file. Flags go
+  before or after the name, and `--module` and `--db` take
+  `--module=<path>` or `--module <path>`. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes, and nothing outside the project:
   a symlinked `AGENTS.md`, `CLAUDE.md` or `DESIGN.md` that leads out of it
-  is refused. `gofastr agents init|sync|skill`, `theme init`, `theme edit`
+  is refused. A `--reinit` name that is not an existing directory is
+  refused, so a typo creates nothing. `gofastr agents init|sync|skill`, `theme init`, `theme edit`
   (at startup and on every Write) and `new handler` hold the same rule: a
   link that leaves the project, dangling or not (a cloned repo's
   `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, a linked
@@ -85,13 +91,21 @@ scrubbed the same way.
   one handler or route registration into an existing app. `--method`,
   `--path` and `--handler` take `--method=POST` or `--method POST`; an
   unknown flag is an error. A `<name>_handler.go` symlinked out of the
-  directory is refused, dangling or not.
-- `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
-  and the per-battery detail files under `.agents/`. Every write stays in
-  the project: a symlink there (`.agents`, `.claude`, `AGENTS.md`, a
-  detail file or the skill's `SKILL.md`) is followed only while it points
-  inside the project, and one that leads out is refused, so running the
-  command in a cloned repo cannot write over a file elsewhere on disk.
+  directory is refused, dangling or not. `new handler` writes
+  `<name>_handler.go` into the current directory in the package its Go
+  files already declare (`package main` when there are none). It refuses
+  a name the build would reject: a Go keyword, `main`, `init`, `_`, a
+  predeclared name such as `string`, or a name that package already
+  declares.
+- `gofastr agents init|sync|skill [dir]`: generate or refresh `AGENTS.md`
+  and the per-battery detail files under `.agents/`, in `dir` (default
+  the current directory). The verbs take no flags: a flag or a second
+  argument is refused with exit 2 before anything is written. Every write
+  stays in the project: a symlink there (`.agents`, `.claude`,
+  `AGENTS.md`, a detail file or the skill's `SKILL.md`) is followed only
+  while it points inside the project, and one that leads out is refused,
+  so running the command in a cloned repo cannot write over a file
+  elsewhere on disk.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.
@@ -101,6 +115,8 @@ scrubbed the same way.
   relative or absolute (`--out=$PWD/theme/theme.go`): a `theme/` or
   `theme.go` symlinked out of it is refused. An `--out` outside it names
   its own directory, and only the file in it is checked.
+  The theme verbs take a value as `--out=x` or `--out x` (`theme edit`'s
+  `--addr` too) and refuse an unknown flag.
 
 ### Windows init reports an existing directory
 
@@ -151,7 +167,7 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 
 - `gofastr validate <yml>`: validate an app spec without generating
   (exit 0 = valid; includes the unscoped-PII lint). One app spec per run:
-  a second path is a usage error, exit 2.
+  a second path or a flag is a usage error, exit 2.
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
@@ -264,7 +280,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   `--dir` sets the watch root, `--pkg` the main package under it,
   `--addr`/`-p` the port (not both); `--no-a11y` skips the accessibility
   lint on each rebuild. Each takes its value as `--addr=x` or `--addr x`;
-  an unknown flag, or a flag whose value is missing, is an error. While the app is building, failed to build, or exited,
+  an unknown flag, or a flag whose value is missing, is an error, and so
+  is an address whose port is missing or not a number from 0 to 65535
+  (`-p abc`, `-p 99999`, `--addr localhost:`), or a `--dir` that is not
+  an existing directory. While the app is building, failed to build, or exited,
   the address answers 503 with what happened (the build error
   included) instead of refusing connections.
 - `gofastr build`: codegen + `go vet` + accessibility lint + the embed
@@ -282,7 +301,7 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (each as `--run=X` or `--run X`), `--race`, `--cover`, `--short`; an
   unknown flag is an error.
 - `gofastr docs [topic]`: these docs, offline, versioned with the
-  binary (`--list` every topic, `--grep <term>` to search).
+  binary (`--list` every topic, `--grep <term>` or `--grep=<term>` to search).
 - `gofastr docs serve`: the docs website on `127.0.0.1:8083`, for
   offline browsing. The first run downloads the static export attached
   to this binary's release (about 6 MB, checked against its published
@@ -605,7 +624,11 @@ does not cover: a runtime browser scan, and the dependency report.
   warns the same way). Provider keys from a repository's
   `.harness-secrets/env` are used only after you approve them once on a
   terminal, or with `--allow-repo-secrets` for one run.
-- `gofastr version`: print version info.
+- `gofastr version`: print version info. `gofastr --version` and
+  `gofastr -v` do the same in the command's place only; after a command
+  the flag is that command's (`verify -v` is verbose, `desktop build
+  --version` the app's version, and `test -v` is refused as an unknown
+  flag rather than answered with the version and exit 0).
 
 ## Common mistakes
 
@@ -621,7 +644,9 @@ does not cover: a runtime browser scan, and the dependency report.
 - **`dev --pkg ./cmd/server` from the wrong directory.** Keep `--dir`
   at the project root and point `--pkg` below it; otherwise the watcher
   misses `internal/` and relative paths (a sqlite `db_url`, static
-  dirs) resolve against the command directory.
+  dirs) resolve against the command directory. A `--pkg` (or project
+  root) that is not a main package builds but cannot run; dev says
+  which package it found and points at `--pkg`.
 - **`migrate force` as a routine fix.** It only rewrites the tracking
   table. It's for dirty-state recovery or adopting a baseline. Read
   [migrations](migrations.md) first.

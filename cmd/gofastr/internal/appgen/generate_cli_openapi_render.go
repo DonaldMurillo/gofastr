@@ -463,8 +463,10 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	fmt.Fprintf(sb, "\tpath := %q\n", op.PathTemplate)
 	for i, p := range op.PathParams {
 		// The placeholder literal goes through %q so a hostile spec's
-		// param name cannot break out of the generated string.
-		fmt.Fprintf(sb, "\tpath = strings.Replace(path, %q, url.PathEscape(%s), 1)\n", "{"+p.Name+"}", paramString(fmt.Sprintf("pp%d", i), p))
+		// param name cannot break out of the generated string. Every
+		// occurrence: /users/{id}/files/{id} names one value twice, and
+		// PathEscape leaves no brace in it for a later pass to match.
+		fmt.Fprintf(sb, "\tpath = strings.ReplaceAll(path, %q, url.PathEscape(%s))\n", "{"+p.Name+"}", paramString(fmt.Sprintf("pp%d", i), p))
 	}
 
 	// Query assembly: only flags the caller actually set are sent.
@@ -497,7 +499,9 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	for i, p := range op.HeaderParams {
 		v := fmt.Sprintf("hp%d", i)
 		if p.Repeated {
-			fmt.Fprintf(sb, "\tfor _, item := range %s {\n\t\thdr.Add(%q, item)\n\t}\n", v, p.Name)
+			// simple style, a header's only one: one line, a,b. Two lines
+			// read as the first item to a server taking the value.
+			fmt.Fprintf(sb, "\tif len(%s) > 0 {\n\t\thdr.Set(%q, strings.Join(%s, \",\"))\n\t}\n", v, p.Name, v)
 			continue
 		}
 		fmt.Fprintf(sb, "\tif visited[%q] {\n\t\thdr.Set(%q, %s)\n\t}\n", p.Flag, p.Name, paramString(v, p))

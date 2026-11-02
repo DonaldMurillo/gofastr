@@ -278,11 +278,11 @@ func LoadAppSpecPath(path string, validate bool) (AppSpec, error) {
 			foundAppSpec = true
 			node, err := parseAppSpecFile(filepath.Join(path, entry.Name()))
 			if err != nil {
-				return AppSpec{}, err
+				return AppSpec{}, fragmentError{entry.Name(), err}
 			}
 			next, err := DecodeAppSpec(node)
 			if err != nil {
-				return AppSpec{}, err
+				return AppSpec{}, fragmentError{entry.Name(), err}
 			}
 			if node.Kind == coreyaml.Map && node.Map["app"] != nil {
 				if err := mergeAppNode(appNode, node.Map["app"], "app", entry.Name(), appKeyFile); err != nil {
@@ -328,6 +328,20 @@ func DecodeAppSpecFile(path string) (AppSpec, error) {
 	}
 	return DecodeAppSpec(node)
 }
+
+// fragmentError names the file of a directory spec a parse or decode
+// error came from. Without it `gofastr validate specs/` answered
+// "yaml:3:4: unexpected indentation" with every fragment a candidate.
+type fragmentError struct {
+	file string
+	err  error
+}
+
+func (e fragmentError) Error() string {
+	return "app spec: " + e.file + ": " + strings.TrimPrefix(e.err.Error(), "app spec: ")
+}
+
+func (e fragmentError) Unwrap() error { return e.err }
 
 // parseAppSpecFile reads one .yml/.yaml/.json app spec into a YAML node.
 func parseAppSpecFile(path string) (*coreyaml.Node, error) {
@@ -2631,6 +2645,17 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		entityNames[decl.Name] = true
 		entitiesByName[decl.Name] = decl
+		// A field declared twice was caught only by the render pass, as
+		// "generated code declares Products.Title twice
+		// (entities/client/client.go and entities/client/client.go)",
+		// naming a file the author never wrote instead of the spec line.
+		seenField := map[string]bool{}
+		for _, f := range decl.Fields {
+			if seenField[f.Name] {
+				errs.add(fmt.Errorf("app spec: entity %q declares field %q twice: remove or rename one", decl.Name, f.Name))
+			}
+			seenField[f.Name] = true
+		}
 		// Field names and enum values are transcribed into emitted Go,
 		// SQL identifiers and CSS. Nothing downstream re-escapes them,
 		// so they are validated here, at the generate-time boundary,

@@ -1,6 +1,7 @@
 package migratecmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,9 +40,11 @@ func runMigrateGenerate(args []string) {
 		}
 	}
 
-	dialect := framework.DialectSQLite
-	if opts.driver == "postgres" || opts.driver == "pgx" {
-		dialect = framework.DialectPostgres
+	dialect, err := generateDialect(opts.driver)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
 
 	bp, err := appspec.LoadAppSpec(opts.from)
@@ -93,6 +96,20 @@ func runMigrateGenerate(args []string) {
 		!strings.Contains(string(body), "-- +migrate Down") {
 		cli.Info("Note: this migration has no Down section (no safe inverse): it is not reversible.")
 	}
+}
+
+// generateDialect is the DDL dialect for a --db/--driver value. The
+// generator writes SQLite and Postgres only; anything else (mysql, or a
+// typo) fell back to SQLite in silence and committed DDL for an engine
+// nobody named.
+func generateDialect(driver string) (framework.Dialect, error) {
+	switch project.CanonicalDBDriver(driver) {
+	case "sqlite3":
+		return framework.DialectSQLite, nil
+	case "postgres", "pgx":
+		return framework.DialectPostgres, nil
+	}
+	return "", fmt.Errorf("migrate generate writes SQLite or Postgres DDL; --db=%q is neither (use sqlite or postgres)", driver)
 }
 
 type migrateGenOptions struct {

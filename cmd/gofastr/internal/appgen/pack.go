@@ -66,8 +66,29 @@ func PackReadEntities(dir string) ([]framework.EntityDeclaration, error) {
 	if decls != nil {
 		return decls, nil
 	}
-	// Legacy aggregated layout: inline RegisterAll in register.go.
-	return packReadLegacyRegister(root, "entities/register.go")
+	// Aggregated layout: an inline RegisterAll in register.go (older
+	// generate app output) or in another file of the package, the one
+	// `gofastr init` writes as entities/entities.go. Reading register.go
+	// only left every derived generator answering "no entities package
+	// found" on a fresh init app, run from the directory holding entities/.
+	if decls, err := packReadLegacyRegister(root, "entities/register.go"); err != nil || len(decls) > 0 {
+		return decls, err
+	}
+	entries, err := RootReadDirEntries(root, "entities")
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || name == "register.go" || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		decls, err := packReadLegacyRegister(root, "entities/"+name)
+		if err != nil || len(decls) > 0 {
+			return decls, err
+		}
+	}
+	return nil, nil
 }
 
 // packReadPerEntityFiles reads the per-entity generated files under the

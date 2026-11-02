@@ -83,6 +83,87 @@ func runWireCLI(t *testing.T, bin string, env []string, stdin string, args ...st
 	return string(out)
 }
 
+// A server URL with no http(s) scheme is refused where it enters: login
+// stored `127.0.0.1:8080` as given, and every later call then failed on a
+// URL parse error, the stored token withheld under an empty origin.
+func TestCLIRefusesSchemelessServerURL(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliWireFixtureYAML)
+	for _, bad := range []string{"127.0.0.1:8080", "app.example.com", "ftp://app.example.com", "https://"} {
+		cmd := exec.Command(bin, "login", "--url", bad, "--with-token")
+		cmd.Env = env
+		cmd.Stdin = strings.NewReader("gfsk_x\n")
+		out, err := cmd.CombinedOutput()
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 2 || !strings.Contains(string(out), "http(s)") {
+			t.Errorf("login --url %s: %v, want exit 2 naming http(s)\n%s", bad, err, out)
+		}
+		cmd = exec.Command(bin, "widgets", "list")
+		cmd.Env = append(env, "MYAPP_URL="+bad, "MYAPP_TOKEN=t")
+		out, err = cmd.CombinedOutput()
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 2 || !strings.Contains(string(out), "http(s)") {
+			t.Errorf("MYAPP_URL=%s list: %v, want exit 2 naming http(s)\n%s", bad, err, out)
+		}
+	}
+	rec := newWireRecorder(t)
+	runWireCLI(t, bin, env, "gfsk_x\n", "login", "--url", strings.Replace(rec.URL, "http://", "HTTP://", 1)+"/", "--with-token")
+	if out := runWireCLI(t, bin, env, "", "widgets", "list"); !strings.Contains(out, `"data"`) {
+		t.Errorf("list after login printed %s", out)
+	}
+	if auth, _, _ := rec.last(); auth != "Bearer gfsk_x" {
+		t.Errorf("the stored token did not reach its own origin: %q", auth)
+	}
+}
+
+// A corrupt config file names its way out, and the way works: the refusal
+// says "delete it or run 'myapp login' again", but login read the old
+// file first and refused the same way, and so did logout.
+func TestCLILoginReplacesCorruptConfig(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliWireFixtureYAML)
+	var cfgDir string
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "XDG_CONFIG_HOME="); ok {
+			cfgDir = filepath.Join(v, "myapp")
+		}
+	}
+	cfgPath := filepath.Join(cfgDir, "config.json")
+	corrupt := func() {
+		t.Helper()
+		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(cfgPath, []byte(`{"url":"http://a.test","token":"gfsk_old"`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := newWireRecorder(t)
+
+	corrupt()
+	runWireCLI(t, bin, env, "gfsk_new\n", "login", "--url", rec.URL, "--with-token")
+	runWireCLI(t, bin, env, "", "widgets", "list")
+	if auth, _, _ := rec.last(); auth != "Bearer gfsk_new" {
+		t.Errorf("after login over a corrupt config the call carried %q", auth)
+	}
+
+	// With no --url there is no URL to keep: still refused, exit 1.
+	corrupt()
+	cmd := exec.Command(bin, "login", "--with-token")
+	cmd.Env = env
+	cmd.Stdin = strings.NewReader("gfsk_new\n")
+	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "corrupt") {
+		t.Errorf("login without --url over a corrupt config: %v\n%s", err, out)
+	}
+
+	// logout removes the token a corrupt file still holds.
+	corrupt()
+	runWireCLI(t, bin, env, "", "logout")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "gfsk_old") {
+		t.Errorf("logout left the token in the config file: %s", data)
+	}
+}
+
 // The stored login token belongs to the origin it was stored for: a --url
 // or $MYAPP_URL naming another host must not receive it.
 func TestCLITokenOnlyToItsOrigin(t *testing.T) {

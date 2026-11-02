@@ -50,22 +50,22 @@ func printThemeHelp() {
 func runThemeInit(args []string) {
 	dest := "theme/theme.go"
 	force := false
-	for _, a := range args {
-		switch {
-		case a == "--force" || a == "-f":
-			force = true
-		case strings.HasPrefix(a, "--out=") || strings.HasPrefix(a, "-o="):
-			dest = strings.SplitN(a, "=", 2)[1]
-		case a == "--help" || a == "-h":
-			fmt.Println("Usage: gofastr theme init [--out=path] [--force]")
-			fmt.Println()
-			fmt.Println("Writes a starter theme.go to ./theme/theme.go (override via --out).")
-			fmt.Println("Refuses to overwrite an existing file unless --force is set.")
-			return
-		default:
-			cli.Fail("Unknown flag: %s", a)
-			cli.OsExit(1)
-		}
+	if cli.HasHelpFlag(args) {
+		fmt.Println("Usage: gofastr theme init [--out=path] [--force]")
+		fmt.Println()
+		fmt.Println("Writes a starter theme.go to ./theme/theme.go (override via --out).")
+		fmt.Println("Refuses to overwrite an existing file unless --force is set.")
+		return
+	}
+	// cli.ParseFlags: --out=path and --out path both work, as on the
+	// other commands; the hand-rolled loop called `--out path` an unknown
+	// flag.
+	if _, err := cli.ParseFlags(args,
+		map[string]*string{"--out": &dest, "-o": &dest},
+		map[string]*bool{"--force": &force, "-f": &force}); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
 
 	// dest is read and written through an os.Root (projectfs): a local

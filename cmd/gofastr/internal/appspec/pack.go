@@ -23,6 +23,19 @@ func AstString(e ast.Expr) string {
 	return ""
 }
 
+// astAccessPerm reads one AccessControl operation: a permission string,
+// or framework.Anyone, which the generator spells as the constant rather
+// than its value. Reading literals alone dropped an open create (a
+// contact form) from the packed spec.
+func astAccessPerm(e ast.Expr) string {
+	if sel, ok := e.(*ast.SelectorExpr); ok && sel.Sel.Name == "Anyone" {
+		if pkg, ok := sel.X.(*ast.Ident); ok && (pkg.Name == "framework" || pkg.Name == "entity") {
+			return fwentity.Anyone
+		}
+	}
+	return AstString(e)
+}
+
 func AstBool(e ast.Expr) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && id.Name == "true"
@@ -441,8 +454,8 @@ func PackEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 		if accessExpr, ok := x["Access"]; ok {
 			a := FieldVals(accessExpr)
 			exposure.Access = &framework.AccessDeclaration{
-				Read: AstString(a["Read"]), Create: AstString(a["Create"]),
-				Update: AstString(a["Update"]), Delete: AstString(a["Delete"]),
+				Read: astAccessPerm(a["Read"]), Create: astAccessPerm(a["Create"]),
+				Update: astAccessPerm(a["Update"]), Delete: astAccessPerm(a["Delete"]),
 			}
 		}
 		if rsExpr, ok := x["ReadScope"]; ok {

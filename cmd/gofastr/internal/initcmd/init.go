@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 )
 
 func RunInit(args []string) {
@@ -29,14 +30,19 @@ func RunInit(args []string) {
 		printInitHelp()
 		return
 	}
-	if len(args) == 0 {
+	name, flags, err := splitInitArgs(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.Info("Run 'gofastr init --help' for the accepted flags.")
+		cli.OsExit(2)
+		return
+	}
+	if name == "" {
 		cli.Fail("Project name is required.")
 		cli.Info("Usage: gofastr init <project-name>")
 		cli.Info("Example: gofastr init myapp")
 		cli.OsExit(1)
 	}
-
-	name := args[0]
 
 	// Validate project name
 	if err := validateProjectName(name); err != nil {
@@ -52,7 +58,7 @@ func RunInit(args []string) {
 	force := false
 
 	// Allow overriding via flags
-	for _, arg := range args[1:] {
+	for _, arg := range flags {
 		switch {
 		case arg == "--reinit":
 			reinit = true
@@ -62,6 +68,13 @@ func RunInit(args []string) {
 			modulePath = strings.TrimPrefix(arg, "--module=")
 			if modulePath == "" {
 				cli.Fail("--module requires a non-empty value.")
+				cli.OsExit(1)
+			}
+			// go mod init runs last, after every other file is written, so
+			// a path it refuses must be refused here, before any of them.
+			if err := module.CheckImportPath(modulePath); err != nil {
+				cli.Fail("--module=%q is not a valid Go module path: %v", modulePath, err)
+				cli.Info("This invocation has not written any files. Example: --module=github.com/you/app")
 				cli.OsExit(1)
 			}
 		case arg == "--no-entity":
@@ -94,6 +107,15 @@ func RunInit(args []string) {
 	// refreshes a project that exists, so it runs before the guard that
 	// refuses one.
 	if reinit {
+		// A name with no directory behind it is a typo, not a project:
+		// refreshing it used to create the directory and fill it with
+		// onboarding files.
+		if info, err := os.Stat(name); err != nil || !info.IsDir() {
+			cli.Fail("--reinit refreshes an existing project, and %q is not a directory.", name)
+			cli.Info("This invocation has not written any files. Check the name, or run `gofastr init %s` to create the project.", name)
+			cli.OsExit(1)
+			return
+		}
 		runReinit(name, force)
 		return
 	}
@@ -464,6 +486,38 @@ func refuseLinkedToolFiles(dir string) error {
 	return nil
 }
 
+// initValuedFlags are the init flags that take a value.
+var initValuedFlags = map[string]bool{"--module": true, "--db": true}
+
+// splitInitArgs separates the project name from the flags, which may sit
+// on either side of it. A valued flag given as `--module <path>` comes
+// back as `--module=<path>`, the one form RunInit's switch reads; every
+// other flag passes through unchanged, so the switch still refuses an
+// unknown one. `--module <path>` used to be refused as an unknown flag,
+// and a flag before the name was read as the name.
+func splitInitArgs(args []string) (name string, flags []string, err error) {
+	named := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if len(arg) < 2 || arg[0] != '-' {
+			if named {
+				return "", nil, fmt.Errorf("unexpected argument %q: init takes one project name", arg)
+			}
+			name, named = arg, true
+			continue
+		}
+		if initValuedFlags[arg] {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return "", nil, fmt.Errorf("%s needs a value (%s=<value> or %s <value>)", arg, arg, arg)
+			}
+			i++
+			arg += "=" + args[i]
+		}
+		flags = append(flags, arg)
+	}
+	return name, flags, nil
+}
+
 // existingModulePath returns the module path of dir/go.mod, or "" when
 // there is no go.mod.
 func existingModulePath(dir string) (string, error) {
@@ -552,6 +606,9 @@ Flags:
   --reinit         Refresh AI onboarding files in an existing project
   --force          With --reinit, overwrite customized onboarding files;
                    with init ., overwrite the files the project already has
+
+Flags go before or after the name; --module and --db take their value
+as --module=<path> or --module <path>.
 
 The generated go.mod pins the GoFastr release matching this CLI and
 carries GoFastr's go line, not the local Go version, plus a toolchain

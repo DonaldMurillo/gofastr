@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
@@ -118,7 +117,7 @@ func runDesktopRun(args []string) {
 	var buildInterrupt <-chan struct{}
 	if f.watch {
 		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+		signal.Notify(signals, devcmd.ShutdownSignals...)
 		go func() {
 			<-signals
 			close(shutdown)
@@ -151,6 +150,7 @@ func runDesktopRun(args []string) {
 		run := exec.Command(bin)
 		run.Dir = f.dir
 		run.Env = childEnv
+		devcmd.TieToParent(run)
 		run.Stdout = os.Stdout
 		run.Stderr = os.Stderr
 		mu.Lock()

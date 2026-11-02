@@ -35,6 +35,14 @@ func RunValidate(args []string) {
 		cli.OsExit(2)
 		return
 	}
+	// validate reads no flags: `validate gofastr.yml --json` printed text
+	// as if --json meant something.
+	if extra := flagArgs(args[1:]); len(extra) > 0 {
+		cli.Fail("validate takes no flags, got %q", extra)
+		cli.Info("Usage: gofastr validate <gofastr.yml|dir>")
+		cli.OsExit(2)
+		return
+	}
 	path := args[0]
 	bp, err := appspec.LoadAppSpec(path)
 	if err != nil {
@@ -88,6 +96,17 @@ func RunValidate(args []string) {
 }
 
 // positionalArgs returns the arguments that are not flags.
+// flagArgs returns the arguments that start with "-".
+func flagArgs(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func positionalArgs(args []string) []string {
 	var out []string
 	for _, a := range args {
