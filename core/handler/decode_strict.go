@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -40,7 +41,7 @@ import (
 func DecodeStrict(r io.Reader, dst any) error {
 	body, err := io.ReadAll(r)
 	if err != nil {
-		e := Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		e := Fail(400, ReasonInvalidJSON, map[string]any{"detail": BodyReadDetail(err)})
 		e.Err = err
 		return e
 	}
@@ -89,7 +90,9 @@ func UnmarshalStrict(data []byte, dst any, opts ...StrictOption) error {
 		dec.UseNumber()
 	}
 	if err := dec.Decode(dst); err != nil {
-		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		// The decoder's own text names Go types and struct names; the
+		// detail names the JSON path and the JSON type instead.
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": JSONErrorDetail(err)})
 	}
 	// Exactly one value: a second Decode must find nothing. A swallowed
 	// second value is the same two-ways-to-read ambiguity the duplicate
@@ -162,10 +165,7 @@ func CheckTopLevelKeys(data []byte, fold func(string) string) error {
 			norm = fold(key)
 		}
 		if prev, dup := seen[norm]; dup {
-			if prev == key {
-				return Fail(400, ReasonJSONDuplicateKey, map[string]any{"key": strconv.Quote(key)})
-			}
-			return Fail(400, ReasonJSONFoldedKeys, map[string]any{"first": strconv.Quote(prev), "second": strconv.Quote(key)})
+			return keyRefusal(nil, prev, key)
 		}
 		seen[norm] = key
 		var skip json.RawMessage
@@ -187,7 +187,7 @@ func CheckObjectKeys(data []byte, fold func(string) string) error {
 	// later duplicate was seen, and a caller decoding with UseNumber
 	// accepted the body.
 	dec.UseNumber()
-	err := walkObjectKeys(dec, fold)
+	err := walkObjectKeys(dec, fold, nil)
 	if _, tokenErr := err.(*Error); err != nil && !tokenErr {
 		return nil
 	}
@@ -196,8 +196,9 @@ func CheckObjectKeys(data []byte, fold func(string) string) error {
 
 // walkObjectKeys consumes one JSON value from dec, checking every object
 // it contains. Only *Error values are findings; any other error is a
-// tokenisation failure the caller ignores.
-func walkObjectKeys(dec *json.Decoder, fold func(string) string) error {
+// tokenisation failure the caller ignores. path is where the value sits;
+// a finding below the top level names it.
+func walkObjectKeys(dec *json.Decoder, fold func(string) string, path []pathSeg) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
@@ -221,21 +222,18 @@ func walkObjectKeys(dec *json.Decoder, fold func(string) string) error {
 					norm = fold(key)
 				}
 				if prev, dup := seen[norm]; dup {
-					if prev == key {
-						return Fail(400, ReasonJSONDuplicateKey, map[string]any{"key": strconv.Quote(key)})
-					}
-					return Fail(400, ReasonJSONFoldedKeys, map[string]any{"first": strconv.Quote(prev), "second": strconv.Quote(key)})
+					return keyRefusal(path, prev, key)
 				}
 				seen[norm] = key
-				if err := walkObjectKeys(dec, fold); err != nil {
+				if err := walkObjectKeys(dec, fold, append(slices.Clip(path), pathSeg{key: key})); err != nil {
 					return err
 				}
 			}
 			_, err := dec.Token() // the closing '}'
 			return err
 		case '[':
-			for dec.More() {
-				if err := walkObjectKeys(dec, fold); err != nil {
+			for i := 0; dec.More(); i++ {
+				if err := walkObjectKeys(dec, fold, append(slices.Clip(path), pathSeg{index: i, isIdx: true})); err != nil {
 					return err
 				}
 			}
@@ -246,7 +244,30 @@ func walkObjectKeys(dec *json.Decoder, fold func(string) string) error {
 	return nil
 }
 
+// keyRefusal is the duplicate (prev == key) or case-folded key refusal
+// for an object at path; the top level keeps its path-free wording.
+func keyRefusal(path []pathSeg, prev, key string) *Error {
+	params := map[string]any{"key": strconv.Quote(clip(key))}
+	if prev != key {
+		params = map[string]any{"first": strconv.Quote(clip(prev)), "second": strconv.Quote(clip(key))}
+	}
+	switch {
+	case len(path) == 0 && prev == key:
+		return Fail(400, ReasonJSONDuplicateKey, params)
+	case len(path) == 0:
+		return Fail(400, ReasonJSONFoldedKeys, params)
+	}
+	params["path"] = renderPath(path)
+	if prev == key {
+		return Fail(400, reasonJSONDuplicateKeyAt, params)
+	}
+	return Fail(400, reasonJSONFoldedKeysAt, params)
+}
+
+// isStructPointer reports whether dst points at a struct through one or
+// more pointer levels: UnmarshalStrict(data, &p) with p a *T is the
+// struct case, not a lax one.
 func isStructPointer(dst any) bool {
 	rv := reflect.ValueOf(dst)
-	return rv.Kind() == reflect.Pointer && !rv.IsNil() && rv.Elem().Kind() == reflect.Struct
+	return rv.Kind() == reflect.Pointer && !rv.IsNil() && derefType(rv.Type().Elem()).Kind() == reflect.Struct
 }

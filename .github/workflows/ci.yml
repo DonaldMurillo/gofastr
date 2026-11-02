@@ -559,6 +559,77 @@ jobs:
       - name: Module integrity
         run: make mod-verify
 
+  sandbox-conformance:
+    # The untrusted process-module tier, on each OS with a sandbox backend
+    # (issue #608): the P1-P7 conformance suite run through the framework's
+    # test binary AND through a real host app binary
+    # (examples/processmodule-demo/host), whose probe child is the app
+    # itself, answered by the framework's package init. The tests assert
+    # every probe child ran the probe body, then follow the untrusted demo
+    # module to whichever outcome the host earns: served where the backend
+    # conforms, refused with the report where it does not. The report
+    # lands in the job summary either way. bwrap (+ prlimit) passes every
+    # probe, so the linux shard sets GOFASTR_REQUIRE_SANDBOX_CONFORMANCE
+    # and a backend regression fails instead of skipping; sandbox-exec
+    # cannot (no distinct uid, no resource caps), so macOS expects the
+    # refusal.
+    name: "sandbox conformance · ${{ matrix.suite }} (blocking)"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: linux
+            os: ubuntu-latest
+            require: "1"
+          - suite: macos
+            os: macos-latest
+            require: ""
+    env:
+      CGO_ENABLED: "1"
+      GOFASTR_REQUIRE_SANDBOX_CONFORMANCE: ${{ matrix.require }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install bubblewrap (the linux backend; prlimit ships in util-linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Conformance report from a host app binary
+        run: |
+          # $TMPDIR, not $RUNNER_TEMP: on macOS the runner temp dir is under
+          # $HOME, which the sandbox-exec profile denies reads of.
+          host="$(mktemp -d)/host"
+          go build -o "$host" ./examples/processmodule-demo/host
+          {
+            echo "### Sandbox conformance on ${{ matrix.suite }}"
+            echo '```json'
+            "$host" -check-sandbox
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Probe wiring and the untrusted tier (framework)
+        run: >-
+          go test -count=1 -v
+          -run 'TestSandboxConformance|TestProbeChild|TestApp_Untrusted|TestApp_ProcessModuleSandbox|TestApp_TrustedModuleDoesNotProbe|TestSandboxConformanceError|TestNewSandboxRunner|TestSelectRunner'
+          ./framework/
+
+      - name: Untrusted module through a host app (examples/processmodule-demo)
+        run: go test -count=1 -v ./examples/processmodule-demo/...
+
+      - name: Sandbox denials (macOS, on failure)
+        # What sandbox-exec refused, by operation and path: the probe
+        # report only sees the child fail; the kernel log names the rule.
+        if: failure() && runner.os == 'macOS'
+        run: log show --last 15m --style compact --predicate 'sender == "Sandbox" OR subsystem == "com.apple.sandbox.reporting"' | grep -i deny | tail -60 || true
+
   browser-e2e:
     # One matrix shard per chromedp suite. These suites were serialized in
     # a single job because they contend for Chrome/sockets when they share

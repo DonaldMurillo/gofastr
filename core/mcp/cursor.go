@@ -7,8 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // defaultListPageSize is the page size every paginated list method serves
@@ -137,7 +138,7 @@ func (s *Server) listOffset(req Request, method string) (int, error) {
 		Cursor string `json:"cursor,omitempty"`
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return 0, fmt.Errorf("invalid list params: %w", err)
+		return 0, errors.New("invalid list params: " + handler.JSONErrorDetail(err).Error())
 	}
 	if params.Cursor == "" {
 		return 0, nil

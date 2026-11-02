@@ -58,6 +58,17 @@ func (sl *Slice[T]) Seed(ctx context.Context, v T) {
 	}
 }
 
+// Value returns the slice's value for this request: what a producer
+// passed to Seed on ctx, else the declared default. It is the value
+// Bind stamps and the page's seed carries, so a component that renders
+// its own data-cui-signal binding (ui.Counter, ui.Tabs,
+// ui.SignalToggle) stamps it as its first paint and the server text
+// and the client store agree. Default is the declaration, never the
+// request: stamping it shows the wrong value whenever the request
+// seeded another. A nil ctx, or one from outside the UI host (no
+// value bag), returns the default.
+func (sl *Slice[T]) Value(ctx context.Context) T { return sl.resolve(ctx) }
+
 // resolve returns the request value if the producer seeded one, else the
 // declared default.
 func (sl *Slice[T]) resolve(ctx context.Context) T {

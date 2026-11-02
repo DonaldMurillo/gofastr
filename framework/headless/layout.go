@@ -3,6 +3,7 @@ package headless
 import (
 	"context"
 	"strconv"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -430,6 +431,11 @@ func slugID(prefix, s string) string {
 			prevDash = false
 		case r >= 'A' && r <= 'Z':
 			out = append(out, r+32)
+			prevDash = false
+		case r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)):
+			// Every script's letters survive: an ASCII-only slug gave
+			// two different non-Latin titles the same id.
+			out = append(out, unicode.ToLower(r))
 			prevDash = false
 		default:
 			if !prevDash && len(out) > 0 {

@@ -66,6 +66,15 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
       // key the list on a shorter column, or page it by offset
   }
   ```
+
+  It refuses the two other cursors no next request can use, again with
+  no cursor on the page: a last row whose key is NULL (`nil` or a nil
+  pointer) wraps `pagination.ErrCursorKeyNull`, since the token would
+  carry the text `null` and the next page would compare the key against
+  it, and a last row with no such field wraps
+  `pagination.ErrCursorKeyMissing`, since `HasMore` with an empty cursor
+  sends a client that echoes it back to page 1. Neither is an error on
+  the last page, which mints no cursor.
 - `direction` defaults to `"forward"`; only `"forward"` and
   `"backward"` are accepted.
 

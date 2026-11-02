@@ -169,9 +169,15 @@ state field keeps the stored state and the insert arm's `Default` never
 lands on conflict), and the in-process `CreateOne` and `UpdateOne`.
 
 A refusal names the stored state and the open moves only to a caller whose
-`ReadScope` admits the record. One the scope hides gets the same 422 or 409
-with neither, so a caller who may write a record but not read it learns
-nothing of its state from the refusal.
+read scope admits the record. A record the `BeforeGet` chain
+`GET /<entity>/{id}` runs hides (in process only under
+`crud.WithReadHooks`, as `GetOne` applies it) is never written at all:
+the update, the move or the override answers the 404 a missing id gets,
+before any refusal is built (see
+[hooks and transactions](hooks-and-transactions.md)). One the declared
+`ReadScope` hides gets the same 422 or 409 with neither the state nor the
+moves, so a caller who may write a record but not read it learns nothing
+of its state from the refusal.
 
 `TypedQuery.UpdateAll` refuses a body that names any guarded column
 (`crud.ErrBulkStateWrite`), override or not: one value written onto many
@@ -191,8 +197,11 @@ field changes. In order:
    skip them.
 2. **A read of the row** under tenant, owner-write and soft-delete scope.
    A row the caller cannot see answers 404, so another owner's id reveals
-   nothing. A visible row whose value is not in `From` answers a
-   `TransitionConflictError` (409) naming the open moves.
+   nothing; so does a row the caller's `BeforeGet` hooks hide (on the
+   route always, in process under `crud.WithReadHooks`), read first,
+   under the same scope plus the hooks' clauses. A visible row whose
+   value is not in `From` answers a `TransitionConflictError` (409)
+   naming the open moves.
 3. **`BeforeUpdate` hooks**, with the move's writes as the body and the
    move's key on the context (`crud.TransitionFromContext`). A hook can
    veto; changes it makes to the body are not written.

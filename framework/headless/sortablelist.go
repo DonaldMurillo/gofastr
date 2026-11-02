@@ -113,6 +113,9 @@ func sortableRootAttrs(p SortableListProps) html.Attrs {
 	}))
 	Mark(own, "data-hui-sortable")
 	if p.RPCPath != "" {
+		// Same-origin like every RPC sink here: the module's fetch of a
+		// cross-origin path would carry the reorder off the page.
+		checkSameOrigin("SortableList", "RPCPath", p.RPCPath)
 		own["data-hui-sortable-rpc"] = p.RPCPath
 	}
 	if p.Group != "" {
@@ -126,6 +129,7 @@ func sortableRootAttrs(p SortableListProps) html.Attrs {
 		own["data-hui-sortable-version"] = p.Version
 	}
 	if p.ConflictRPC != "" {
+		checkSameOrigin("SortableList", "ConflictRPC", p.ConflictRPC)
 		own["data-hui-sortable-conflict"] = p.ConflictRPC
 	}
 	// The module's announcements travel as attributes so a translated

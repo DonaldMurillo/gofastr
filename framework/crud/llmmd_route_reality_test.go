@@ -1,6 +1,10 @@
 package crud
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -49,5 +53,51 @@ func TestRegistryLLMMD_RouteReality(t *testing.T) {
 	legacy := RegistryLLMMD(reg, "MyApp", nil, "")
 	if !strings.Contains(legacy, "secrets") {
 		t.Errorf("nil predicate must keep the pre-#266 behavior:\n%s", legacy)
+	}
+}
+
+// llm.md told an agent the cursor response carries "total"; the cursor
+// route never sends one (serveCursorList skips the COUNT), so an agent
+// following the doc read a missing field (2026-11-01 bug bash). Every key
+// each documented list envelope names must be in what the route answers.
+func TestLLMMDListEnvelopesMatchRoute(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT)`)
+	ent := entity.Define("items", entity.EntityConfig{
+		Table:    "items",
+		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{Public: true},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	seedRows(t, db, "items", []map[string]any{{"id": "i1", "title": "a"}, {"id": "i2", "title": "b"}})
+	ch := NewCrudHandler(ent, db)
+	doc := EntityLLMMD(ent)
+	keyRE := regexp.MustCompile(`"(\w+)":`)
+	for _, c := range []struct{ heading, query string }{
+		{"**Offset response:**", "/items?page=1&limit=1"},
+		{"**Cursor response**", "/items?cursor=&limit=1"},
+	} {
+		i := strings.Index(doc, c.heading)
+		if i < 0 {
+			t.Fatalf("llm.md has no %s section", c.heading)
+		}
+		section := doc[i:]
+		if j := strings.Index(section, "```\n\n"); j > 0 {
+			section = section[:j]
+		}
+		rec := httptest.NewRecorder()
+		ch.List()(rec, httptest.NewRequest(http.MethodGet, c.query, nil))
+		var got map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v (%s)", c.query, err, rec.Body.String())
+		}
+		keys := keyRE.FindAllStringSubmatch(section, -1)
+		if len(keys) == 0 {
+			t.Fatalf("llm.md %s names no keys:\n%s", c.heading, section)
+		}
+		for _, m := range keys {
+			if _, ok := got[m[1]]; !ok {
+				t.Errorf("llm.md %s documents %q; GET %s answers %s", c.heading, m[1], c.query, rec.Body.String())
+			}
+		}
 	}
 }

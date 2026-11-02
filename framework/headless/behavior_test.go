@@ -50,7 +50,7 @@ func jsStripComments(src string) string {
 // moduleSources is every behaviour module source this package
 // registers, one entry per RegisterBehavior. The gates read them all:
 // a hook may be declared by one component and bound by any module in
-var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS, leaveguardJS, bellJS, selectionCopyJS}
+var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, copyJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS, leaveguardJS, bellJS, selectionCopyJS, datepickerJS}
 
 // others' hooks unbound. The list grows as the package registers
 // more modules (headless-controls, headless-collections,
@@ -237,6 +237,7 @@ var adapterHooks = map[string]string{
 	"data-hui-copy-copied":         "the button's copied label, rendered by ui.CopyButton",
 	"data-hui-copy-back":           "the label restored after the copied flash, rendered by ui.CopyButton",
 	"data-hui-copy-sentence":       "the status sentence shape with {name}, rendered by ui.CopyButton",
+	"data-hui-copy-failed":         "the status sentence said when the clipboard refuses the write, rendered by ui.CopyButton",
 	"data-hui-copy-status":         "the polite status region, rendered by ui.CopyButton",
 	"data-hui-theme-toggle":        "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
 	"data-hui-theme-option":        "one scheme option control, rendered by ui.ThemeToggle",
@@ -470,12 +471,13 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		name    string
 		markers []string
 	}{
-		{ControlsBehaviorName, []string{"[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
+		{ControlsBehaviorName, []string{"[data-hui-counter-value]", "[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
 			"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"}},
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
 			"[data-cui-toast-stack]", "[data-hui-network-retry]"}},
+		{CopyBehaviorName, []string{"[data-hui-copy]"}},
 		{BellBehaviorName, []string{"[data-hui-notification-bell]"}},
 		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]", "[data-hui-theme-picker]",
 			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
@@ -509,12 +511,13 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		name    string
 		markers []string
 	}{
-		{ControlsBehaviorName, []string{"[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
+		{ControlsBehaviorName, []string{"[data-hui-counter-value]", "[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
 			"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"}},
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
 			"[data-cui-toast-stack]", "[data-hui-network-retry]"}},
+		{CopyBehaviorName, []string{"[data-hui-copy]"}},
 		{BellBehaviorName, []string{"[data-hui-notification-bell]"}},
 		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]", "[data-hui-theme-picker]",
 			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},

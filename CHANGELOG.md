@@ -25,6 +25,56 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
+  A calendar that stays on the page beside the native date input it
+  fills, for a range in one control, refused days, or notes on days. The
+  native input is the value and posts without script; the
+  `headless-datepicker` module owns the date-grid keyboard, and a month
+  change is an island the page serves with `ui.DatePickerMonth`. An
+  ordinary date stays `ui.DateField`. Built on `headless.DatePicker`;
+  `core/i18n` gains `DateYearMonthLong`, `WeekdayName`, `WeekdayAbbr` and
+  `FirstWeekday` for it. See `form-module.md`, "When the native picker is
+  not enough".
+- **Untrusted process modules can be hosted by an app** ([#608](https://github.com/DonaldMurillo/gofastr/issues/608)).
+  `RegisterProcessModule` now builds the sandbox runner itself for a
+  `TrustUntrusted` descriptor, probing the backend once per App; before,
+  no app could pass one and every untrusted registration failed.
+  `WithSandboxBackend` overrides the host's built-in backend,
+  `App.ProcessModuleSandbox()` lets a host check before it registers, and
+  `SandboxConformanceError` carries the report. The probe child is the
+  app's own binary, answered by the framework's package `init`: there is
+  no hook to add to `main`, and `GOFASTR_SANDBOX_PROBE` is now reserved.
+  `ProbeResult.Reported` says whether a probe child ran the probe body.
+  `examples/processmodule-demo/host` hosts the demo module untrusted. See
+  [Process modules](framework/docs/content/process-modules.md#hosting-an-untrusted-module).
+- **The Linux sandbox passes every conformance probe**, so untrusted
+  process modules now run on Linux with bubblewrap and util-linux
+  `prlimit`. The child runs as uid 65534 in its own user namespace, sees no
+  `/etc` beyond the loader cache and timezone, has a read-only root and no
+  `/tmp` (it writes to its working directory), and runs under fd, process
+  and memory rlimits (default 1024 / 256 / 1 GiB). On a root host bwrap
+  itself starts as uid 65534. `prlimit` is now required on Linux. The P6
+  memory probe maps memory directly and asks for 256 MiB (was 64 MiB, below
+  what a cgo-linked Go binary needs to start). See
+  [What the Linux sandbox gives a module](framework/docs/content/process-modules.md#what-the-linux-sandbox-gives-a-module).
+- **Bracket filter keys.** `?field[op]=value` names the operator by word
+  (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`, `in`), and the text
+  before the brackets is always the whole field or wire name, so fields
+  `check` and `check_in` are both reachable (`?check_in[eq]=`,
+  `?check[in]=`). It works at the top level, in `?rel.field[op]=` and in
+  `include=rel(field[op]=…)`. New in `framework/filter`: `ReadKey`,
+  `BracketKey`, `SuffixKey`, `IsBracketKey`, `IsAmbiguousKey`,
+  `KeySpeller` / `SpellerFor`, `BracketOps`, `ParsedFilter.Key()` and
+  `RepeatedFilterError`.
+- **`store.Slice.Value(ctx)`** returns a slice's value for this request
+  (the seed, else the default), and `ui.SignalToggleConfig.Ctx`.
+- **`core/handler.JSONErrorDetail`, `BodyReadDetail` and
+  `JSONTrailingData`** phrase a JSON decode error for your own decode
+  sites.
+- **`schema.DecimalColumn`, `schema.DecimalColumnType`,
+  `schema.MaxDecimalExponent` and `schema.DecimalExponentFits`.**
+- **`headless.CounterProps.Seeded`**, and the `headless-copy` behaviour
+  module (the copy control, split out of `headless-feedback`).
 - **`embedskip` analyzer.** `gofastr verify` and `make analyze` report a
   struct field walk (`NumField()` or the `Fields()` iterator) that maps
   fields to keys by their tags and never handles an embedded struct, so
@@ -140,6 +190,104 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **battery/auth bug bash (2026-11-01).** Details in
+  [auth.md](framework/docs/content/auth.md):
+  - **BREAKING: token management needs the second factor.** On a 2FA
+    account `POST/GET/DELETE /auth/tokens` need the cookie session that
+    passed it; a session from before enrollment answers 403 and a bare
+    bearer JWT 401. Either minted a permanent `*:*` token before.
+  - **BREAKING: the 2FA challenge replaces the session.** A passing code
+    deletes the pending session and sets a new cookie, so a planted
+    pending token never becomes a verified one.
+  - **BREAKING: CSRF skips only `Authorization: Bearer` and `X-API-Key`.**
+    Basic, Negotiate and NTLM, which the browser attaches by itself, no
+    longer skip the check (`middleware.SkipBearerAuth`).
+  - **BREAKING: OAuth.** Provider keys must be 1-64 letters, digits, `-`
+    or `_` (a dotted key never completed a flow). An identity with no
+    email and no existing link answers 400 `auth.oauth_no_email` (two
+    such identities merged into one account). OIDC `email_verified`
+    counts only when the same claim set's `email` is the kept address,
+    so a remapped `EmailClaim` no longer auto-links on another
+    address's flag.
+  - **BREAKING: a password form login of a 2FA account reaches the
+    challenge.** It redirected to its `next` page, which refuses the
+    pending session. Next to a 2FA plugin, `Init` now requires
+    `NewCorePlugin().WithTwoFactorURL(path)`.
+  - **BREAKING: OAuth sign-in of a 2FA account reaches the challenge.**
+    It redirected to `/`, which refuses the pending session. Next to a
+    2FA plugin, `Init` now requires `OAuth2Config.TwoFactorURL`, as
+    passkey and magic link do.
+  - **OAuth sends PKCE.** The OIDC, Google and GitHub providers send an
+    S256 `code_challenge` and the `code_verifier`, so a stolen
+    authorization code no longer redeems in an attacker's own flow
+    (authorization-code injection, RFC 9700). `DisablePKCE` on each
+    provider turns it off; custom providers opt in through
+    `auth.OAuth2PKCEProvider`.
+  - **OAuth refresh is serialized across replicas.** `SQLOAuthTokenStore`
+    leases a grant (`auth.OAuthTokenLeaser`, new `refresh_lease_ms`
+    column) before its refresh token is spent; a replica that finds
+    another's lease waits for that refresh and never spends the token,
+    failing with `auth.ErrOAuthRefreshInProgress` if it does not land.
+  - OAuth: an account claim deletes the squatter's stored provider
+    tokens; callbacks without a code no longer fill the replay table
+    and lock every login out; concurrent refreshes spend a refresh token
+    once; tokens with no `expires_in` stay usable; the `/link` flow
+    stores tokens and refuses a binding it lost to another account; a
+    JWKS or discovery outage no longer refetches under a lock on every
+    login. New `(*OAuth2Plugin).ValidOAuthToken` and
+    `RefreshOAuthToken` read the row under the registry key.
+  - `ttl_seconds` past the `time.Duration` range answers 400 (a wrapped
+    negative minted a permanent token); an unreadable SQLite
+    `revoked_at`/`expires_at` reads as revoked/expired; token display
+    prefixes keep 7 random chars after a long brand.
+  - Passkey RSA keys are capped at 8192 bits (a 4-Mbit key cost a minute
+    of CPU per anonymous sign-in attempt).
+  - At most 8 distinct session cookies are looked up per request (2999
+    copies drove 2999 queries).
+  - `RequireAuth(mgr.JWT())` works when wired before `Init`;
+    `RequireAuth(nil)` panics at wiring; a negative `JWTExpiry` fails
+    `Init`.
+  - Audit rows survive a client that hangs up after the change, and an
+    actor-less SQL audit row stores `email_hash`, not the address.
+  - `EntitySessionStore` indexes `token` (unique) and `user_id` whoever
+    created the table; `EraseUserData` reaches the in-memory auth stores.
+  - `AuthManager` reports its `BasePath` to the embed host.
+  - **Per-IP limits key IPv6 by its /64** (`ratelimit.IPKey`,
+    `(*Limiter).ClientKey`): one client could rotate source addresses
+    inside its own /64 past every per-IP limit. `Middleware()`, the auth
+    battery's per-IP limiters and `framework.AgentRateLimitKey` use it.
+  - Every `AuditSink`, a host's own included, gets the request's context
+    minus its cancellation, with a 5-second deadline: a sink doing slow
+    remote work is cut off there.
+  - `middleware.CSRF` puts the verified token on the context for a
+    mutating request too (`TokenFromContext`), and `auth.CSRFToken`
+    reads `__Host-auth_csrf` before `auth_csrf`.
+  - `auth.CheckPassword` knows only the two built-in formats again; the
+    battery's sign-in asks a custom `DefaultHasher` first.
+  - Passwords: the 8-character floor counts characters, so a short CJK
+    password that passed on bytes is refused; placeholders for
+    passwordless accounts are made by `DefaultHasher`.
+- **BREAKING: a magic-link sign-in of a 2FA account reaches the
+  challenge.** The confirm POST always redirected to `OnSuccessURL`,
+  which refuses the pending session it had just minted. It now goes to
+  the new `MagicLinkConfig.TwoFactorURL`, and `Init` refuses to start
+  when a 2FA plugin is registered and that field is empty, as the
+  passkey plugin does. Set it to the page that posts the code to
+  `/2fa/challenge`.
+- **Magic-link send and forgot-password limit each address.** One mail
+  per address every two minutes (`AddressRateLimit`), however many IPs
+  ask; within the cooldown the request gets the same 200 and nothing is
+  minted or mailed. A cooldown rather than an hourly budget, so a
+  stranger cannot stop the owner's links.
+- **Password hashing follows `auth.DefaultHasher`.** Passwordless and
+  cleared accounts store a placeholder made by it, so login timing no
+  longer tells them from unknown addresses under argon2id; a custom
+  hasher's `Verify` is called; `Argon2Hasher.Hash` refuses parameters
+  its verifier refuses; the 8-character floor counts characters, not
+  bytes. See [auth.md](framework/docs/content/auth.md#password-hashing).
+- **Multipart login and register forms work.** Only `ParseForm` ran,
+  which never reads a multipart body, so every one answered 400. A
+  file part or a repeated `email`/`password` field answers 400.
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent
@@ -277,6 +425,247 @@ few lines, and link the PR or the docs page for the rest.
   counts a role only when it holds `role:<name>` (`role:*`, `*:*`), as
   `framework.MCPRequireRole` already required. Sessions and JWTs are
   unaffected. ([auth](framework/docs/content/auth.md))
+- **BREAKING: WebSocket text writes must be valid UTF-8.** `Write`,
+  `WriteString` and `Hub.Broadcast` sent any bytes as a TEXT frame, and
+  a browser then dropped the connection with 1007. They now return
+  `stream.ErrInvalidUTF8` and send nothing; `Hub.Broadcast` and
+  `BroadcastWait` return `error` for it. New `WriteBinary`,
+  `BroadcastBinary` and `BroadcastBinaryWait` send BINARY frames, in
+  order with text, through `Close`'s drain too. A `StateChannel`
+  snapshot that is not valid UTF-8 closes the connection; such an event
+  is dropped for that role.
+- **BREAKING: an empty query or header value is treated as absent.**
+  `?page=` answered 400 on a number field, and `?q=` bound `""` to a
+  string. Every kind now leaves the field unset, as if the parameter
+  were missing. A `,empty` tag option (`query:"q,empty"`) keeps an
+  explicit empty: `""`, a zero, or a non-nil pointer to one, so a
+  handler can tell `?q=` from no `q`. A generated endpoint's optional
+  `*string` query field now gets nil for `?q=` unless the input tags
+  it `query:"q,empty"`, which the endpoint generator now accepts. An
+  unknown tag option is refused.
+- **Tag binding honours `encoding.TextUnmarshaler`.** A query, path,
+  header or tool parameter whose type implements it is filled through
+  `UnmarshalText`, and its error is a 400. `?status=bogus` used to get
+  past a type that validates in `UnmarshalText`; `time.Time` and UUID
+  types now bind from a query.
+- **A tool call refuses case-folded twin keys across the whole params
+  object.** `{"q":"safe","Q":"danger"}` bound `danger` to a `query:"q"`
+  field while `params["q"]` read `safe`.
+- **`middleware.Tracing` joins a trace from the configured propagator.**
+  It injected with the global otel propagator but always extracted W3C,
+  so an app on B3 or Jaeger started a new trace per request. It now
+  extracts with the global propagator and falls back to W3C
+  `traceparent` when that finds no upstream span; with no global
+  configured, nothing changes.
+- **The SQL idempotency store refuses a NUL principal on Postgres.** It
+  can't be stored as text, and escaping it could match another user's
+  id. That keyed write answers 503 (or runs unkeyed under `FailOpen`);
+  every other principal is stored as is.
+- **A Group's `NotFound` and `MethodNotAllowed` answer misses under its
+  prefix.** They ran only when the group itself was served, and every
+  app serves the root, so a group's custom 404 was silently ignored. A
+  miss now runs the handler of the longest-prefix group that set one
+  (`{name}` segments and host groups match), else the root's.
+  `WrapNotFound` on a group wraps the handler it would inherit.
+- **BREAKING: a top-level `Group` prefix starts with `/` or names a
+  host.** `Group("v1")` registered routes for Host `v1`, so `/v1/x`
+  answered 404 with no error. It now panics with the fix (`"/v1"`). A
+  host group needs a dot or `localhost`, and no port, since the mux
+  matches the request host without its port and `Group("localhost:8080")`
+  could never match. Nested groups are not checked.
+- **The SQL idempotency store runs on Postgres.** Its table declared
+  `body BLOB`, which Postgres has no type for, and its key joins its
+  parts with NUL bytes, which Postgres text refuses, so
+  `NewSQLIdempotencyStore` failed on Postgres and could never store a
+  key. The body is `BYTEA` there and the key is escaped on Postgres
+  only; SQLite keys are unchanged. See `idempotency.md`.
+- **A panic no longer corrupts a response that already started.**
+  `Recovery` and `handler.HandlerAdapter` cut the connection instead of
+  writing a 500 after a status, a flush or body bytes went out; before,
+  the client got a 200 with error text appended. Recovery's 500 drops
+  the handler's representation headers (`Content-Encoding`, `ETag`, …)
+  and is sent `Cache-Control: no-store`. The panic stack in the log
+  names the handler, not `Timeout`. Metrics and tracing count a
+  panicked request as a 500 (or the status already sent) and mark its
+  span Error. See `security.md` and `observability.md`.
+- **Middleware status and claim bookkeeping.** An idempotency claim is
+  released when the handler panics, so a retry no longer gets 409 until
+  the in-flight TTL. A failed `Hijack` under `Timeout` keeps the writer
+  buffered and the deadline armed. The logging, metrics and tracing
+  wrappers record the status the client got (1xx passes through, a
+  first write or flush latches 200). `Compress` maps its `-gzip` ETag
+  back for `If-Match` too. A body cap of `math.MaxInt64` no longer reads
+  an empty body. `WarnIfCSRFUnconfigured` accepts a nil `*slog.Logger`.
+  An `Idempotency-Key` outside printable ASCII answers 400; on Postgres
+  it reached the store and answered 503.
+- **`core/handler`.** A pointer input (`Handler[*T, O]`,
+  `ToolAdapter[*T]`) gets the struct rules: duplicate, case-folded and
+  unknown keys are refused and query, path and header tags bind. A body
+  over the cap answers 413, not 400. A `Handler[I, *Out]` returning
+  `(nil, nil)` answers 204; a nil slice or map is still a 200.
+  `WriteError` sends a nil `*Error` or a code outside 400–599 as 500.
+  Numbers under an unexported embedded struct settle to `float64`.
+- **`core/stream`.** WebSocket `Close` writes the messages `Write`
+  already accepted before its Close frame, bounded by `WriteTimeout`,
+  which also cuts a frame stalled on a peer that stopped reading; a
+  close the peer started replies at once. A malformed frame closes with
+  1002 and a message past `ReadLimit` with 1009, instead of an empty
+  status. The upgrade refuses
+  HTTP/1.0 and reads `Connection` and `Sec-WebSocket-Protocol` across
+  every header line. A negative `SendBuffer` means the default instead
+  of panicking after the hijack. `Hub` and `StateChannel` stop a
+  registration's close watcher on `Unregister`. An SSE id made only of
+  control bytes writes no empty `id:` line, and a subscriber's `?event=`
+  filter applies before its buffer, so ignored events no longer evict
+  wanted ones.
+- **`router.Handle` names an unclean pattern** (`Group("/api/")` builds
+  `/api//x`) as an invalid route, not a conflict with a registration
+  that does not exist.
+- **Headless accessibility decisions.** `headless.RangeSliderProps` /
+  `ui.RangeSliderConfig` `ValueLow`/`ValueHigh` are `*int` (BREAKING): nil
+  is the unset end and a set `0..0` pair round-trips. `headless.Rating`
+  renders its stars in reading order, so arrow keys move the way the stars
+  read (flipped in RTL); `ui.RatingInput` fills them with `:has()`. The
+  password reveal is a toggle button with one name and word ("Show
+  password", "Show") and `aria-pressed` as its state (BREAKING:
+  `Strings.HidePassword`/`RevealHide`, `i18nui.PasswordInputHide`/
+  `PasswordRevealHide` and the `data-hui-show/hide-*` hooks are removed);
+  `ui.PasswordInput` shades the pressed button, and its typed text uses
+  `--color-text` (a revealed password was black on the dark surface). A
+  `ToggleAction`'s accessible name is its `IdleLabel` in both states. An
+  unlabelled sidebar drawer trigger is named by the new
+  `Strings.SidebarOpenDrawer` ("Open navigation").
+- **Decimal writes are checked against their column.** A `decimal`
+  field refuses, with a 400 naming the field, an exponent past ±1000
+  (`decimal_exponent`), more integer digits than the column holds
+  (`decimal_integer_digits`, 15 for the default `DECIMAL(19,4)`) or more
+  fraction digits than its scale (`decimal_fraction_digits`, 4). Postgres
+  refused the first two with a 500 and rounded the third while SQLite
+  stored all three. A `RawType` of `DECIMAL(p,s)`/`NUMERIC(p,s)` sets the
+  limit.
+- **Malformed JSON bodies answer in the client's terms.** The message names
+  the JSON path and type (`invalid JSON: ids[0]: expected a string, got a
+  number`), the byte of a syntax error, or an empty or cut-off body,
+  instead of `encoding/json`'s text naming the server's Go types. Every
+  part is a phrase; `reason` codes are unchanged. `?where=`, `?cursor=`
+  and `_batch` envelope refusals follow, and MCP `invalid params`
+  messages use the same wording.
+- **A screen answers GET and HEAD only.** POST, PUT, PATCH or DELETE to a
+  screen path no route takes answers 405 with `Allow: GET, HEAD` (problem
+  JSON for a machine Accept) instead of rendering the page, running its
+  policy and `Load` and minting a session. OPTIONS answers 204. A route
+  registered at the path still wins its method.
+- **Slice-backed `ui.Counter`, `ui.Tabs` and `ui.SignalToggle` paint the
+  request's seed**, not the slice's default: a counter seeded to 7
+  rendered 0 while its first + made 8.
+- **Headless.** A pane drawer releases its scroll lock when an island swap
+  removes it; a bare `headless.Counter` steps from its own `Value`; when
+  overlapping SortableList saves fail the list returns to the last order
+  the server confirmed; a tab strip whose signal holds no tab of the strip
+  writes the tab it paints back into the signal. Rating builds its radio
+  ids from `ID` when set.
+- **`ui.Repeater` and `ui.FormRepeater` controls are kit buttons** (ghost
+  or danger Remove, secondary Add) instead of browser buttons or the
+  form repeater's own button CSS; their lists drop bullets and indent.
+- **A repeated scalar nested filter key** (`?author.age_lt=100&author.age_lt=5`)
+  is a 400 `filter.repeated_filter`, as at the top level.
+- **A disabled menu link row renders no `href`.** `aria-disabled` and
+  `pointer-events` stopped a mouse, but a keyboard Enter or an
+  assistive-tech activation still followed the link, as `headless.Button`
+  already prevented.
+- **`?q=` refuses text Postgres cannot bind.** A search term holding
+  invalid UTF-8 or a NUL byte answers 400 naming `q` on both dialects
+  (Postgres answered 500, SQLite an empty 200). BREAKING for direct
+  callers: `filter.SearchConditions` returns `([]Condition, error)`. The
+  search case contract now says that Unicode lowering also folds
+  compatibility look-alikes (the Kelvin sign finds `k`), on purpose.
+- **Query input (`framework/filter`, `framework/dsl`, `framework/pagination`).**
+  Two `_in` keys on one column (its name and its `WireName`) are two
+  ANDed IN lists, at the top level and inside `include=rel(...)`, not one
+  union; new `filter.ParsedFilter.InList` / `SameINList` carry the key.
+  A scalar filter key repeated in one query string is a 400
+  (`filter.repeated_filter`), `LenientFilters` included: before, the
+  first value ran and the rest were dropped. `?where=` decodes strictly
+  (duplicate, case-folded and unknown members, a `value` the op does not
+  read, an empty group: 400). Values Postgres cannot bind are 400s on
+  both dialects: invalid UTF-8 or a NUL (nested `_like` included), a
+  Decimal exponent past ±1000, a year-0 Timestamp or Date. DSL: every
+  `where()` operator follows `filter.OpSuitsType`, `in` is capped at
+  1000 values and `order()` at 16, unbalanced unquoted brackets are
+  refused, `include("x")` keeps the bare name, `ASC`/`DESC` match ASCII
+  only, and `after()` emits one `ORDER BY <cursor> ASC` and refuses an
+  `order()` on another column or `DESC`. `query.Cursor` adds no second
+  ORDER BY key for a column already ordered. `pagination.NewCursorPage`
+  returns `ErrCursorKeyNull` / `ErrCursorKeyMissing` instead of minting a
+  `"null"` cursor or `HasMore` with an empty one.
+- **CRUD.** A `?page=` or `?offset=` whose skip overflows int, or too long
+  to parse, is 400 `offset_too_large` instead of page 1. POST, batch
+  create, `CreateOne` and `UpsertOne` refuse `""` in a one-column
+  caller-chosen key. A batch update item with no key answers
+  `reason: "missing_key"` with a phrase. Batch key-fold and multipart
+  duplicate-key refusals are deterministic and phrased (`keys_fold`,
+  `duplicate_form_key`, `duplicate_file_part`, `malformed_multipart`).
+  llm.md no longer documents a cursor `total`.
+- **UI host.** A `SetStaticFS` directory no longer shadows a screen of the
+  same name (it answered a 301 into a 404). `RenderScreen`'s navigation
+  answer carries the `#gofastr-signals-partial` seed. Navigating to an
+  untitled screen, or a `RenderAlt` alt with no title, titles the tab
+  with the app name instead of keeping the previous page's.
+- **Headless markup.** Enter in a `StepWizard` field submits Next, not
+  Back (a hidden twin of Next, part `default-action`, is the form's first
+  submit); Enter in a `Repeater` field no longer submits row 0's Remove,
+  and `Repeater.Action` is where add/remove post. The Carousel speaks its
+  slide through a live region, off while it rotates. A named `Counter`
+  binds its input's value. Gallery deeplinks survive `&`, `=` and `+`.
+  A `Textarea` value that starts with a line break keeps it. A huge
+  Pagination `Window` keeps the current page. Menu refuses duplicate ids
+  under an id-less submenu and disables a Disabled form row's submit.
+  Combobox Meta is its own part (`combobox-meta`). MultiSelect,
+  NumberInput, Slider, RangeSlider, Rating and TagInput take `Ctx` and
+  get unique ids per page. TagInput's label names its field and Help
+  describes it. A disabled link Button drops its Action wiring. Only the
+  last Href-less breadcrumb is current. JSONTree truncates on character
+  boundaries. Alert names its dismiss from Text without a Title. Tree row
+  links leave the tab order. Carousel and PaneHost words go through
+  Strings (`CarouselRole`, `CarouselSlideRole`, `PaneSecondary`,
+  `PaneTertiary`).
+- **Headless behaviours.** Navigating away from an open phone-width pane
+  drawer no longer leaves the next page scroll-locked. A link click
+  closes only popups (Dismiss, Trap, menus) and only when followed, so a
+  tab or pager inside an accordion no longer collapses it. One Escape
+  closes one level, and Escape outside every disclosure closes popups,
+  never accordion sections. Combobox ignores the Safari IME Enter
+  (keyCode 229). Carousel ignores caret keys in a field and modifier
+  chords, and keeps rotating in kept chrome after a navigation. The
+  animated counter lets a live update stand; the number stepper lands on
+  the step base. The copy button says "Copied" only when the clipboard
+  write succeeds and announces `ui.copy.failed` otherwise. Conditional
+  fields follow a form reset; the leave guard counts `form=` controls.
+  SortableList flips cross-column arrows in RTL, cancels a grab when
+  focus leaves, and a slow failed save no longer reverts a later one.
+  Theme radios flip in RTL. Wizard and repeater focus return survives an
+  unrelated insertion. The selection count uses the page's digits. Menu
+  and tree type-ahead cycle on a repeated letter.
+- **Layout primitives (`framework/ui`).** A bottom-edge `ui.Sticky` with
+  an `Offset` takes it from the bottom instead of also pinning to the top,
+  and a top Sticky draws its hairline only while stuck (browsers that
+  report `scroll-state`), not at rest mid-page. `AspectRatio`, `Sticky`
+  `Edge`/`Offset`, `Box` `Pad` and `Center` `MinHeight` panic on an
+  unknown value, as `ZIndexTier` already did: an empty Ratio collapsed
+  its media to 0px, and a spaced value added classes. A side-only
+  `FormFrame` takes the full width. `Container{Start: true}` on the page
+  measure keeps the band's measure. A nested layer's `.layout-content`
+  inside a has-nav `ContentRow` is not padded a second time. The Sidebar
+  marks `MatchPath: "/"` current on the root page only, compares a
+  trailing-slash `MatchPath` in its bare form the way the runtime does,
+  keeps `RaisedCurrent` on `SidebarBody`, the drawer and the NativeMobile
+  body, and mirrors the compact guide line and the closed section chevron
+  in right-to-left pages. New `HeroSplitConfig.HeadingID` names the hero
+  through its h1 (`aria-labelledby`).
+- **Slugs keep every script's letters.** `ui.Section` anchors and the
+  headless Section, Table and Fieldset ids keep Unicode letters and
+  digits, so a Japanese or Cyrillic heading keeps its anchor and two
+  different ones no longer share `section--title`.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
@@ -498,6 +887,18 @@ few lines, and link the PR or the docs page for the rest.
   `OFFSET $n` alone, which SQLite refuses, so `TypedQuery.Offset`
   without `Limit` failed there and ran on Postgres. An offset alone now
   carries the largest `LIMIT` both dialects accept.
+- **WHERE conditions with comments or `ESCAPE'\'` bind the right
+  arguments.** The `core/query` builders renumber each condition's `$N`
+  placeholders, and three spellings broke that. A quote right after a
+  word ending in E (`ESCAPE'\'`, `LIKE'x\'`) was read as a Postgres
+  `E'…'` string, so the placeholders after it kept their numbers and
+  bound the wrong arguments; only an E that starts a token opens one
+  now. A condition ending in a `--` comment swallowed the closing paren
+  and every clause after it, so the statement did not parse; the
+  builder now ends the line first. A block comment holding `/*` (a glob
+  like `/api/*`) left the placeholders after it unrenumbered, though
+  SQLite ends the comment at the first `*/` and runs them; when the
+  comment would otherwise never close, it now closes there.
 - **`kiln agent` starts when ports 8765–8774 are all busy.** The
   fallback handed serve port 0 while the panel URL said `localhost:0`,
   so the readiness check timed out and killed a healthy server. The
@@ -4502,6 +4903,59 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **A junk-key flood no longer resets an exhausted rate-limit key.**
+  With the default `RefillBy`, eviction at `MaxKeys` shed the exhausted
+  bucket first, so a per-username login throttle came back with a full
+  budget after a burst of made-up usernames. The buckets with the most
+  tokens left go first now.
+- **`router.Param` refuses an empty catch-all segment.** A `{name...}`
+  value with a leading or doubled `/` only arrives as `%2F`, and
+  `/files/%2Fetc/passwd` handed the handler the absolute path
+  `/etc/passwd`. The value is cut there, as a smuggled `..` already is.
+- **A scope added after an `OrWhere` covers the whole WHERE.**
+  `query.Select` wrote its connectors flat, so
+  `Where(a).OrWhere(b).Where(tenant)` built `(a) OR (b) AND (tenant)`,
+  which SQL reads as `a OR (b AND tenant)`. A tenant, owner or
+  soft-delete scope, or a `Cursor`, added to a host-built query after an
+  `OrWhere` bound only to the last condition, and rows matching `a` came
+  back from every tenant. An AND after an OR now wraps everything before
+  it: `((a) OR (b)) AND (tenant)`. A chain with no `OrWhere` before a
+  `Where` builds the same SQL as before.
+- **A `BeforeGet` read scope binds record writes.** A row
+  `GET /<entity>/{id}` answered 404 for, because the caller's own
+  BeforeGet hooks excluded it, could still be changed with PUT, PATCH,
+  DELETE, a transition or a `_batch` item. Those writes now answer the
+  404 a missing id gets, before anything is written; restore, purge and
+  the in-process helpers under `crud.WithReadHooks` follow, and
+  `UpsertOne` refuses a hidden existing key as it refuses another owner's
+  row.
+- **`RedirectPattern` no longer opens an off-origin redirect through a
+  tab, CR or LF in a catch-all value.** `GET /old/%09/evil.example`
+  against `/{rest...}` answered `Location: /\t/evil.example`, which
+  browsers read as `//evil.example`. A resolved target holding any
+  control byte is no redirect, the 308 is gated by
+  `handler.IsSafeRelativePath`, and every Location the UI host writes
+  percent-encodes tab.
+- **The `WithHeadHTML` / `SEOScreen.HeadHTML` scrub runs to a fixpoint**,
+  so removing an inner match can no longer splice a `<script>`, a
+  meta-refresh or an event handler back together. Head HTML still
+  changing after 8 passes is dropped and logged once.
+- **Page markdown is `no-store` with `Vary: Cookie`** (the
+  `Accept: text/markdown` twin, `/<page>/llm.md`, `/llm-pages.md`), like
+  its HTML page: a shared cache could replay a signed-in reader's page.
+- **`WithExtraScripts` holds the `RegisterExternalScript` rules**: an
+  off-origin, protocol-relative or malformed src is dropped with a
+  warning.
+- **BeforeList/BeforeGet read-scope hooks now cover every read surface.**
+  `_events` no longer delivers rows they hide (or hidden rows' delete
+  ids); cascade writes no longer link, update or echo child rows the
+  child's hooks hide, and a hidden child or belongs_to target answers
+  404 like a missing one (closing an existence oracle); a 409/422 state
+  refusal no longer names a hidden row's stored state.
+- **Headless RPC sinks are same-origin.** `MenuItem.RPC`, `RPCAttrs`
+  `data-cui-rpc` (including `/\host`), `TreeNode.LazyPath`, SortableList
+  `RPCPath`/`ConflictRPC` and a static Combobox `NoScriptAction`
+  (`javascript:` shipped) are refused unless same-origin.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

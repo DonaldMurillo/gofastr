@@ -73,7 +73,9 @@ budget instead of sharing its egress address's.
 | `(*Limiter).Middleware()` | `func(http.Handler) http.Handler`, keyed by client IP. |
 | `(*Limiter).MiddlewareByKey(keyFunc)` | Same, keyed by a custom extractor. |
 | `ratelimit.ClientIP(r, trustXFF)` | IP extractor for a single proxy tier; honours `X-Forwarded-For` (its rightmost entry) only when `trustXFF` is true. |
-| `(*Limiter).ClientIP(r)` | The limiter's own extractor: `TrustForwardedFor` plus `TrustedProxies`. `Middleware()` uses it. |
+| `(*Limiter).ClientIP(r)` | The limiter's own extractor: `TrustForwardedFor` plus `TrustedProxies`.  |
+| `(*Limiter).ClientKey(r)` | The per-client key `Middleware()` and the auth battery's per-IP limiters use: `ClientIP` with an IPv6 address collapsed to its `/64` (`ratelimit.IPKey`). |
+| `ratelimit.IPKey(addr)` | An IPv4 address (IPv4-mapped included) as itself, an IPv6 address as its `/64` prefix. |
 
 `Config` fields: `MaxAttempts`, `Window`, `BlockDuration`, `TrustForwardedFor`,
 `TrustedProxies`, `Store`, `Scope`, `DevMode`.
@@ -154,6 +156,16 @@ across every replica; when the whole burst lands at once it can admit fewer,
 and the key blocks either way. A custom `Store` must keep the same property: a
 count followed by a separate insert lets every caller in a burst read the same
 pre-insert count. Record first and count second, or use an atomic counter.
+
+## IPv6 clients share a /64
+
+A subscriber is routinely handed a whole IPv6 `/64`, 2^64 addresses, so
+keying on the full address let one client send each request from a fresh
+source address and never meet a per-IP limit. `Middleware()` and the auth
+battery's per-IP limiters key IPv6 by its `/64` instead
+(`(*Limiter).ClientKey`). Several people on one IPv6 LAN share a budget
+then, the way people behind one IPv4 NAT already do. `ClientIP` still
+returns the full address, for logs and audit rows.
 
 ## X-Forwarded-For and proxies
 

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -27,7 +26,12 @@ type MagicLinkEmailSender interface {
 
 // MagicLinkConfig configures the MagicLinkPlugin.
 type MagicLinkConfig struct {
-	// TokenLength is the number of random bytes in the token (default: 32).
+	// TokenLength is not read by anything. NewMagicLinkPlugin sets it to
+	// 32, the byte count the built-in stores always mint.
+	//
+	// Deprecated: the token stores mint 32 random bytes (256 bits, 64 hex
+	// characters) whatever this says; a custom MagicLinkTokenStore picks
+	// its own length. Setting it changes nothing.
 	TokenLength int
 
 	// TokenTTL is how long the magic link remains valid (default: 15 minutes).
@@ -58,12 +62,30 @@ type MagicLinkConfig struct {
 	// OnSuccessURL is the URL to redirect to after successful login (default: "/").
 	OnSuccessURL string
 
+	// TwoFactorURL is where a sign-in goes when the account still owes
+	// its second factor: the app's page that posts the code to
+	// /2fa/challenge. Same-origin paths only. Init requires it when a 2FA
+	// plugin is registered: the session a magic link mints for such an
+	// account is pending, and OnSuccessURL would refuse it.
+	TwoFactorURL string
+
 	// RateLimit applies a per-IP rate limit to /auth/magic-link/send. It
 	// defaults to 10 attempts/min with a 15-minute block (the register
 	// floor): send is an unauthenticated email-dispatch primitive, every
 	// request mints a token and mails a link. Loosen by passing a config
 	// with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
+
+	// AddressRateLimit limits /auth/magic-link/send per email address,
+	// however many IPs ask: without it a rotating proxy mails a victim an
+	// unbounded stream of sign-in links. It defaults to one mail per
+	// address every two minutes (see defaultAddressRateLimit). Past it
+	// the request gets the same 200 as any other
+	// and nothing is minted or sent, so the limit tells a caller nothing
+	// about the address. The key is a SHA-256 digest of the canonical
+	// address, never the address. Loosen by passing a config with a large
+	// MaxAttempts.
+	AddressRateLimit *RateLimiterConfig
 
 	// VerifyRateLimit applies a per-IP rate limit to
 	// /auth/magic-link/verify. It defaults to 30 attempts/min with a
@@ -85,6 +107,7 @@ type MagicLinkConfig struct {
 }
 
 func (c *MagicLinkConfig) defaults() {
+	// Deprecated field, defaulted only so it reads what the stores mint.
 	if c.TokenLength <= 0 {
 		c.TokenLength = 32
 	}
@@ -225,6 +248,7 @@ type MagicLinkPlugin struct {
 	mgr         *AuthManager
 	tokenStore  MagicLinkTokenStore
 	sendLimit   *RateLimiter
+	addrLimit   *RateLimiter
 	verifyLimit *RateLimiter
 	// basePath is captured at RegisterRoutes so the confirmation page's
 	// form can post back to the same path the link was mounted under.
@@ -266,10 +290,14 @@ func NewMagicLinkPlugin(config MagicLinkConfig) *MagicLinkPlugin {
 			BlockDuration: 5 * time.Minute,
 		}
 	}
+	if config.AddressRateLimit == nil {
+		config.AddressRateLimit = defaultAddressRateLimit()
+	}
 	p := &MagicLinkPlugin{
 		config:      config,
 		tokenStore:  store,
 		sendLimit:   newScopedRateLimiter(*config.RateLimit, "magiclink_send"),
+		addrLimit:   newScopedRateLimiter(*config.AddressRateLimit, "magiclink_address"),
 		verifyLimit: newScopedRateLimiter(*config.VerifyRateLimit, "magiclink_verify"),
 	}
 	return p
@@ -291,8 +319,54 @@ func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
 			return err
 		}
 	}
+	// The passkey plugin's rule: every plugin is registered before any
+	// Init runs, so a 2FA plugin later in the list is already visible.
+	if p.config.TwoFactorURL == "" {
+		for _, name := range mgr.order {
+			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
+				return fmt.Errorf("auth: magic-link plugin: %q handles two-factor sign-in, so set MagicLinkConfig.TwoFactorURL to the page that finishes it: a magic-link sign-in of a 2FA account is pending until /2fa/challenge, and OnSuccessURL would refuse it", name)
+			}
+		}
+	}
 	p.mgr = mgr
 	return nil
+}
+
+// defaultAddressRateLimit is the per-address floor on the two endpoints
+// that mail a link to whatever address they are given (magic-link send,
+// forgot-password): one mail every two minutes, no longer block.
+//
+// It is a cooldown on purpose, not an hourly budget. Anyone can spend an
+// address's budget, and the first version (5 an hour, then an hour's
+// block) let a stranger send six requests and stop every link to the
+// victim for the next hour: for a passwordless app, no sign-in at all.
+// With a two-minute cooldown the mails a stranger triggers still reach
+// the victim's inbox, and each link lives longer than the cooldown, so
+// the owner always holds a working one, while a flood is held to about
+// thirty mails an hour.
+func defaultAddressRateLimit() *RateLimiterConfig {
+	return &RateLimiterConfig{
+		MaxAttempts:   1,
+		Window:        2 * time.Minute,
+		BlockDuration: 2 * time.Minute,
+	}
+}
+
+// allowAddress spends one of the address's mail budget and reports
+// whether it was left. The key is a SHA-256 digest of the canonical
+// address, so a shared RateLimitStore holds no addresses. A nil limiter
+// allows everything.
+func allowAddress(ctx context.Context, rl *RateLimiter, email string) bool {
+	if rl == nil {
+		return true
+	}
+	allowed, _, err := rl.Admit(ctx, "address:"+sha256hex(email))
+	if err != nil {
+		// AllowContext fails closed; say so, or a store outage reads as
+		// the address's own cooldown and mail silently stops.
+		slog.Warn("auth: per-address mail limiter store error: not sending", "err", err)
+	}
+	return allowed
 }
 
 // refuseInMemoryTokenStore is the production gate for the link plugins
@@ -454,6 +528,31 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The event names the account when there is one: an erasure scrubs
+	// the audit trail by actor id, and a row with only the address kept
+	// it after the user was erased. The response does not depend on it.
+	requested := SecurityEvent{
+		Kind:   "magiclink.requested",
+		Email:  body.Email,
+		Remote: remoteHost(r),
+	}
+	if store := p.mgr.UserStore(); store != nil {
+		if u, _, err := store.FindByEmail(r.Context(), body.Email); err == nil && u != nil {
+			requested.UserID = u.GetID()
+		}
+	}
+
+	// Per-address budget, past the per-IP one. Spent, the request gets
+	// the same answer as any other and nothing is minted or mailed: the
+	// limit is the same for every address, so the answer says nothing
+	// about whether an account exists.
+	if !allowAddress(r.Context(), p.addrLimit, body.Email) {
+		requested.Meta = map[string]string{"throttled": "address"}
+		p.mgr.emitSecurity(r.Context(), requested)
+		writeMagicLinkSent(w, r)
+		return
+	}
+
 	token, err := createPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, body.Email, p.config.TokenTTL)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateToken)
@@ -498,15 +597,19 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.mgr.emitSecurity(r.Context(), SecurityEvent{
-		Kind:   "magiclink.requested",
-		Email:  body.Email,
-		Remote: remoteHost(r),
-	})
+	p.mgr.emitSecurity(r.Context(), requested)
+	writeMagicLinkSent(w, r)
+}
 
+// writeMagicLinkSent is send's one success answer, for a link mailed and
+// for an address whose budget is spent alike. The body names no one, but
+// the handler looked the account up, so it is kept out of every cache
+// all the same (the nostore rule).
+func writeMagicLinkSent(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"message": reasonMagicLinkSent.Text(r.Context()),
 		"success": true,
 	})
@@ -613,13 +716,9 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	// Cap the body before any form parse: FormValue/ParseForm would
 	// otherwise read up to the stdlib's 10 MiB floor into memory.
+	// parseAuthForm reads a multipart confirmation form too.
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-	if err := r.ParseForm(); err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return
-		}
-		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
+	if !parseAuthFormOrRefuse(w, r) {
 		return
 	}
 	token := r.PostFormValue("token")
@@ -659,12 +758,12 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// path so password_set=false is recorded for the unlink guard;
 		// fall back to CreateUser+placeholder for stores that don't opt
 		// in. Either way, magic-link users never authenticate via
-		// password and the placeholder bcrypt step is reused.
+		// password; the shared placeholder (made by DefaultHasher) is reused.
 		var err error
 		if creator, ok := userStore.(OAuthUserCreator); ok {
 			user, err = creator.CreateUserNoPassword(r.Context(), email, p.mgr.DefaultRoles())
 		} else {
-			user, err = userStore.CreateUser(r.Context(), email, passwordPlaceholderHash, p.mgr.DefaultRoles())
+			user, err = userStore.CreateUser(r.Context(), email, placeholderPasswordHash(), p.mgr.DefaultRoles())
 		}
 		if errors.Is(err, ErrEmailTaken) {
 			// A concurrent redeem for the same address created it
@@ -738,7 +837,17 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	// so a magic link alone produced a fully-privileged session that
 	// could then disable the factor.
 	cfg := p.mgr.Config()
-	sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
+	sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
+	if errors.Is(err, ErrTwoFactorEnforcement) {
+		// Fail closed like a password login: no session, and the audit
+		// trail says why.
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind: "login.failed", UserID: user.GetID(), Email: email, Remote: remoteHost(r),
+			Meta: map[string]string{"reason": "twofa_failclosed", "via": "magic_link"},
+		})
+		writeAuthError(w, r, http.StatusInternalServerError, reasonTwoFactorUnavailable)
+		return
+	}
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 		return
@@ -763,14 +872,26 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	// exposure Strict closed.
 	mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
-	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+	consumed := SecurityEvent{
 		Kind:   "magiclink.consumed",
 		UserID: user.GetID(),
 		Email:  email,
 		Remote: remoteHost(r),
-	})
+	}
+	if pending {
+		consumed.Meta = map[string]string{"two_factor": "pending"}
+	}
+	p.mgr.emitSecurity(r.Context(), consumed)
 
-	http.Redirect(w, r, safeRedirectURL(p.config.OnSuccessURL), http.StatusFound)
+	// A pending session is refused everywhere but /2fa/challenge, so the
+	// browser goes to the page that posts the code, not OnSuccessURL.
+	// Init made sure TwoFactorURL is set whenever a 2FA plugin can make
+	// a session pending.
+	target := p.config.OnSuccessURL
+	if pending {
+		target = p.config.TwoFactorURL
+	}
+	http.Redirect(w, r, safeRedirectURL(target), http.StatusFound)
 }
 
 // generateRandomPassword creates a hex-encoded random string of the given byte length.

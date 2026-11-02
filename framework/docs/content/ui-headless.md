@@ -260,9 +260,18 @@ classes, so it is the kit's and not the kernel's.
 The stateful family renders through this package the same way, and
 its Island rules are the same rule: a `TagInput` owns its chips
 client-side and needs no Island; a `Repeater` whose add/remove
-re-renders the region needs `Action` plus a complete `Island`, and
-the same buttons stay named submit controls so the surrounding form
-is the no-script path; a `Toast` with a `DismissHref` needs a
+re-renders the region needs `Action` plus a complete `Island` (the
+operations post to `Action`, the answer lands in the Island's
+`Signal`), and the same buttons stay named submit controls so the
+surrounding form is the no-script path. Implicit submission (Enter in
+a field) clicks a form's first submit control, so `Repeater` and
+`StepWizard` each render a hidden default button (part
+`default-action`, `hidden` and out of the tab order; a class map must
+not give it a display) ahead of their visible controls: the wizard's
+is Next's twin, so Enter moves forward, never Back; the repeater's is
+nameless, so Enter never submits a row's Remove, and the collections
+module forwards it to the host form's own first submit control. A
+`Toast` with a `DismissHref` needs a
 complete `Island` exactly as an `Alert`'s dismiss does; a `Tag`
 dismiss is a GET that writes its href to the URL unless
 `DismissMethod` names a mutation (POST, PUT, PATCH, DELETE), which
@@ -357,17 +366,56 @@ DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
 Repeater, Toast, ToastStack, ToastTemplate, NotificationBell,
 StepWizard and BackToTop. The navigation-behaviour members: Rail, TableOfContents,
-Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar and
-SidebarRegion, and the two pure-render trees JSONTree and Gallery.
+Disclosure, Menu, Combobox, DatePicker (with DatePickerMonth, its
+island answer), Tabs, Carousel, PaneHost, Sidebar and SidebarRegion,
+and the two pure-render trees JSONTree and Gallery.
+
+A stateful control with no `ID` builds its ids from its `Name`.
+`MultiSelect`, `NumberInput`, `Slider`, `RangeSlider`, `Rating` and
+`TagInput` take a `Ctx`: through its id scope (`render.UniqueID`) a
+second control with the same `Name` on the page (a filter form and an
+edit form both naming a field `tags`) builds its ids from `tags-2`,
+so no label's `for=` reaches the first one. One instance renders the
+same ids it always did. `RangeSlider`'s `ValueLow` and `ValueHigh`
+are `*int`: nil is unset (the low thumb sits on `Min`, the high on
+`Max`) and any set value is honoured, a 0..0 pair included, then
+clamped into the range and ordered low, high. A `Rating` with an
+`ID` builds its choices' ids from it (`<ID>-1` to `<ID>-<Max>`,
+reserved with the `ID`), so two ratings sharing a `Name` but given
+their own ids never repeat a radio id. A `Rating`'s choices render
+in reading order, 1 to `Max`, so the browser's radio arrows move the
+way the stars read (ArrowRight to the next star, flipped in RTL); a
+sheet fills the stars up to the checked or hovered one with `:has()`
+(`framework/ui`'s `RatingInput` does), and a browser without `:has()`
+still rates, missing only the earlier stars' fill. A `TagInput` with an `ID` gives its draft
+field `<ID>-field` (the root keeps `ID`, so the label names the
+field, not the group), and its `Help` is the field's
+`aria-describedby`. A named `Counter`'s input is an attr binding
+(`data-cui-signal-mode="attr"` writing `value`), so a step moves what
+the form submits. A stepping `Counter` hands its `Value` to its signal
+when it arrives (`data-hui-counter-value`, bound by
+`headless-controls`): the kernel steps the signal store, so without it
+the first + on a counter showing 4 would show 1. `Seeded: true` leaves
+the seed to the page (`ui.Counter` sets it; its `store.Slice` seeds
+the signal). A `Tree` row's link is out of the tab order: the
+tree is one tab stop and Enter on the row follows the link.
 
 The parts the navigation members draw beyond the shared vocabulary:
 
 - **Carousel**: `carousel-stage` (the overflow scroller the slides sit
   in), `carousel-track`, `carousel-slide`, `carousel-dot`,
-  `carousel-prev`, `carousel-next`.
+  `carousel-prev`, `carousel-next`, and a `visually-hidden` live
+  region (`data-hui-carousel-live`) the module says each slide's
+  status sentence through: `aria-live="polite"`, or `"off"` while a
+  carousel with `AutoRotateMS` rotates on its own (the APG carousel
+  pattern), turned polite again whenever the rotation is paused. Its
+  roledescriptions are `Strings.CarouselRole` / `CarouselSlideRole`.
 - **Combobox**: `combobox-form` (the no-script GET form),
   `combobox-input`, `combobox-listbox`, `combobox-option`,
-  `combobox-status`. `Pick` makes it a picker inside a host form: a
+  `combobox-meta` (an option's `Meta` line, its own part so the
+  option's class never lands on it), `combobox-status`.
+  `NoScriptAction` is checked whenever it is set, static or island:
+  same-origin, never `#`. `Pick` makes it a picker inside a host form: a
   hidden input (`data-hui-combobox-value`) submits the picked option's
   `Value`, the search input names a form that does not exist so the
   host form never submits the query, `Options` are the first rows of
@@ -379,20 +427,48 @@ The parts the navigation members draw beyond the shared vocabulary:
   listbox that is the surface's own content, the command palette's
   result list, whose Escape goes on to close the dialog in one press.
   `ComboboxRows` renders an island answer's rows.
+- **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
+  native `<input type=date>`, or a `Range`'s two, which are the value),
+  `datepicker-calendar` (the island region), `datepicker-month` (one
+  month, the island answer's single root), `datepicker-header`,
+  `datepicker-nav` (four anchors, each a real href to the page with the
+  month in its query beside a `data-cui-rpc` GET, no push-state, named
+  by visually hidden text so a disabled one, which has no href, is
+  still named),
+  `datepicker-caption`, `datepicker-grid` (`role=grid`,
+  `aria-multiselectable` for a range), `datepicker-weekday`,
+  `datepicker-cell` (`aria-selected`), `datepicker-day` (a button named
+  by its full date, `aria-pressed` mirroring the selection, one in the
+  tab order), `datepicker-note` and `datepicker-status`. The shown
+  month is held between `Min`'s and `Max`'s months; a nav anchor that
+  would not move is disabled. `Control` hands a single date's input to
+  a host `Field`. `DatePickerMonth` renders the island answer from the
+  same props.
 - **JSONTree**: under each value's shared parts, one part per JSON
   scalar kind so a class map can colour a string without colouring a
   number: `json-colon`, `json-type`, `json-count`, `json-str`,
-  `json-num`, `json-bool`, `json-null`, `json-empty`.
+  `json-num`, `json-bool`, `json-null`, `json-empty`. `MaxStringLen`
+  counts characters, so a cut never splits one.
 - **Sidebar** draws the shell (`sidebar-drawer`, `sidebar-inline`,
   `sidebar-toggle`) and, with `SidebarRegion`, the slot-in version of
   the same content with no shell hooks; items carry `sidebar-item`
   (with a `--sub` variant), `sidebar-nav`, `sidebar-prepend`,
   `sidebar-group`, `sidebar-group-toggle` (the button dialect),
   `sidebar-group-list`, and `icon` with a `--fallback` variant (the
-  label's initial, for rail states). `Gallery` takes a
+  label's initial, for rail states). The drawer trigger (the shell's
+  `sidebar-drawer` and the standalone `SidebarDrawerTrigger`) is named
+  by `DrawerLabel`; an empty or blank one takes
+  `Strings.SidebarOpenDrawer` ("Open navigation", the
+  `ui.sidebar.openDrawer` phrase `ui.Sidebar` names its own trigger
+  with), so the phone's only way into the navigation is never an
+  unnamed button. `Gallery` takes a
   `GalleryLightbox` wiring: the typed prop that renders the widget
   runtime's `data-cui-open` / `data-cui-deeplink` /
-  `data-fui-lightbox-group` trigger family on every item anchor.
+  `data-fui-lightbox-group` trigger family on every item anchor. Each
+  deeplink value is encoded the way the runtime's
+  `decodeURIComponent` reads it back (`&`, `=` and `+` escaped, a
+  space as `%20`), and the viewer's `src` passes the image-source
+  policy the thumbnail does.
 
 ## The behaviour module
 
@@ -412,13 +488,16 @@ What it does, one line per behaviour:
 
 - **selection** writes how many of a floating `Selection`'s rows are
   checked into its `data-hui-selection-count` slot on every change, on
-  a form reset and on each scan; a select-all box is not a row. A CSS
+  a form reset and on each scan, written in the page's digits (the
+  server's first `0` is the reader's zero too); a select-all box is
+  not a row. A CSS
   counter cannot do it: a table is a size container, and the style
   containment that brings walls the counter in.
-- **reveal** retypes the password input, swaps the button's text and
-  accessible name from the `data-hui-show-*` and `data-hui-hide-*`
-  attributes, and keeps focus and the caret where the reader left
-  them.
+- **reveal** retypes the password input, flips the button's
+  `aria-pressed`, and keeps focus and the caret where the reader left
+  them. The button is a toggle button: its name ("Show password") and
+  its word ("Show") never change, so a screen reader hears "Show
+  password, pressed" rather than the state said twice.
 - **color** keeps the swatch and the hex text one value in both
   directions, and marks the shell `data-invalid` when the text holds a
   non-empty value that is neither `#rgb` nor `#rrggbb`.
@@ -437,7 +516,8 @@ What it does, one line per behaviour:
   nest: a region is shown only when its own condition holds and no
   enclosing `data-hui-when` region is hidden, and the controls inside
   any hidden region stay disabled no matter what an inner region's
-  own condition says.
+  own condition says. A form reset moves the watched controls with no
+  input event, so the regions re-sync once the reset has run.
 - **form-errors** moves focus to the summary inside
   `data-hui-form-errors`, once per form element — and the once-mark
   is spent only when a summary was found, so a form whose `Errors`
@@ -488,12 +568,16 @@ same way and each owning one family of the stateful controls:
 
 - **headless-controls** (`[data-hui-counter-animate]`,
   `[data-hui-number-input-decrement]`, `[data-hui-slider-output]`,
-  `[data-hui-range-slider]`): steps the number input inside the bounds
-  its own attributes declare and reports a real input event; mirrors
+  `[data-hui-range-slider]`): steps the number input through the
+  browser's own `stepUp`/`stepDown`, so the next value is one the input
+  accepts (inside `min`/`max` and on the step base: `min=1 step=5`
+  walks 1, 6, 11), and reports real input and change events; mirrors
   the slider's thumb into its output; cross-clamps the range pair and
   re-formats its sentence through the shape the output carries; and
   animates a counter from its recorded start to the SSR value, never
-  touching the number the signals kernel owns. It replaced the retired
+  touching the number the signals kernel owns: a live write to the
+  signal mid-walk stops the walk, and a rescan of the same counter is
+  not a second arrival. It replaced the retired
   `numberinput`, `slider`, `rangeslider` and `animatedcounter`
   runtime modules (the unanimated counter needs no module at all —
   the signals kernel is its whole increment path).
@@ -503,37 +587,54 @@ same way and each owning one family of the stateful controls:
   or Backspace-on-empty; returns focus to the field; announces
   through the `data-hui-tag-input-added`/`-removed` sentences; and
   after a repeater's island swap puts focus back on the row's control
-  or the add control and says the server's status. It replaced the
+  or the add control and says the server's status. The click record
+  waits for its own answer: an unrelated insertion that lands first (a
+  toast, another region's poll) leaves it in place. A click on the
+  repeater's hidden default button (Enter in a row's field) is
+  forwarded to the host form's first submit control outside every
+  repeater. It replaced the
   retired `taginput` and `formrepeater` runtime modules, and the IME
   guard (an Enter that confirms a composition candidate commits
   nothing) moved with it.
 - **headless-wizard** (`[data-hui-step-wizard]`): owns only the
   island path — it records the step the reader left, and after the
   swap focuses the failed submit's summary or the new step's heading
-  and says the step-of sentence when the step moved. The plain POST
+  and says the step-of sentence when the step moved. An unrelated
+  insertion that lands while the step is in flight leaves the record
+  for the answer. The plain POST
   wizard needs none of it.
 
 Two attributes are the `headless` module's own, written by it and
 rendered by no component: `data-hui-when-off` and `data-hui-drop-over`.
-One is `headless-navigation`'s: `data-hui-back-to-top-visible`. Two are
-`headless-feedback`'s: `data-hui-copy-state="done"` on a copy control
-after a successful copy, and `data-hui-toast-leaving` on a toast item
-the moment it is dismissed; the kit's sheets style both.
+One is `headless-navigation`'s: `data-hui-back-to-top-visible`. One is
+`headless-copy`'s: `data-hui-copy-state="done"` on a copy control after
+a successful copy. One is `headless-feedback`'s: `data-hui-toast-leaving`
+on a toast item the moment it is dismissed. The kit's sheets style both.
 
-Three more modules of this package own the feedback and page-control
+More modules of this package own the feedback and page-control
 families:
 
+- **headless-copy** (`[data-hui-copy]`): the copy control (no
+  clipboard mutation without script — the words travel on the wrapper
+  from `Strings`). The copied label, the status sentence and the
+  optional toast wait for `navigator.clipboard.writeText` to resolve;
+  a refused or missing clipboard says the `data-hui-copy-failed`
+  sentence instead. The toast goes through the kernel's
+  `_toastOrFallback`, so it rides `headless-feedback`'s stack, or the
+  kernel's fallback region on a page with none. Its own module so the
+  toast runtime's budget does not carry the clipboard.
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
-  and `[data-cui-toast-stack]`, `[data-hui-network-retry]`): the copy control (no clipboard mutation
-  without script — the words travel on the wrapper from `Strings`),
+  and `[data-cui-toast-stack]`, `[data-hui-network-retry]`; the copy
+  wrapper is a marker so a copy that toasts finds the module loaded):
   the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
   this module now; a row is cloned from the stack's `ToastTemplate` and
   the module names no class and mounts no stack — with no stack on the
   page it returns `null` and the kernel's fallback region takes the
-  toast) and the offline banner's retry link. It replaced the retired
-  `copy`, `toasts` and `networkretrybanner` runtime modules.
+  toast) and the offline banner's retry link. With `headless-copy` it
+  replaced the retired `copy`, `toasts` and `networkretrybanner`
+  runtime modules.
 - **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
@@ -562,7 +663,14 @@ registered the same way:
   runtime module.
 - **headless-disclosure** (`[data-hui-disclosure]`): the exclusive
   accordion group and the trap-and-inert Escape path, with optional
-  session restore through a storage key. It replaced the retired
+  session restore through a storage key. Escape closes one level, and
+  a key something inside already answered (a combobox closing its
+  listbox, a pane, a modal widget) is not answered twice; with focus
+  in no disclosure it closes only the open popups (`Dismiss`, every
+  menu). A followed link closes the popup or trapped drawer it sits in;
+  a reading section (an accordion, an FAQ) stays open, and a click a
+  handler took, a modified or middle click, `target`, `download` and
+  `data-cui-open` links close nothing. It replaced the retired
   `disclosure` runtime module.
 - **headless-menu** (`[data-hui-menu]`): the menu's open/close, arrow
   traversal, typeahead and focus return, on top of the disclosure
@@ -572,13 +680,23 @@ registered the same way:
   list whose input already has focus when the module binds opens that
   list at once (the command palette focuses its input before the module
   loads). The arrow keys, Home and End scroll the list to keep the
-  active option in sight. It replaced the retired `combobox` runtime
+  active option in sight. A key that belongs to an input method (the
+  composition's own, flagged `isComposing` or sent with keyCode 229 by
+  Safari) never picks an option. It replaced the retired `combobox` runtime
   module.
+- **headless-datepicker** (`[data-hui-datepicker]`): the pick into the
+  native inputs (a range's start then end), the APG date-grid keyboard
+  with one tab stop, and focus across the month swap. Keys pressed
+  while a month loads count from the day the last one asked for and
+  the arrival walks on to it; a reader who left the calendar keeps
+  their place; a failed month is toasted by the anchor and ends the
+  wait. It is new, not a port.
 - **headless-navigation** also carries the keyboard-shortcut family
   (`data-hui-shortcut-*`), and **headless-tabs**
   (`[data-hui-tabs]`) owns the roving tabindex and the vacate stash;
   **headless-carousel** (`[data-hui-carousel]`) owns the fragment
-  controls, the status sentence and one rotation timer per root,
+  controls, the status sentence (written into the live region, quiet
+  while the carousel rotates on its own) and one rotation timer per root,
   paused on hidden documents, reduced motion, hover and focus. They
   replaced the retired `tabs` and `carousel` runtime modules.
 - **headless-panehost** (`[data-hui-panehost]`): the pane lifecycle —

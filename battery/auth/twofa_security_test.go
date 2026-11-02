@@ -221,7 +221,7 @@ func TestTwoFARegenerateDoesNotResurrect(t *testing.T) {
 		SessionTTL:          time.Hour,
 		UserStore:           userStore,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: wrapped}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -406,7 +406,7 @@ func setupResurrectRace(t *testing.T, seed *TwoFAState) (*MemoryTwoFAStore, *rac
 		SessionTTL:          time.Hour,
 		UserStore:           userStore,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: wrapped}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

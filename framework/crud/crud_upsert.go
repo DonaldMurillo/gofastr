@@ -27,7 +27,8 @@ import (
 var errSoftDeletedResurrection = errors.New("upsert: target row is soft-deleted; restore explicitly before mutating")
 
 // errUpsertForeignRow signals an UpsertOne whose body PK collides with an
-// existing row owned by a different owner / tenant. Without this guard the
+// existing row owned by a different owner / tenant, or one the caller's
+// BeforeGet hooks hide (upsertTargetHidden). Without this guard the
 // ON CONFLICT DO UPDATE matches purely by primary key and re-stamps
 // ownership/tenant from the caller's context, a cross-principal takeover.
 var errUpsertForeignRow = errors.New("upsert: target row belongs to a different owner or tenant")
@@ -174,6 +175,13 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err != nil {
 			return err
 		}
+		// The conflict arm would overwrite a row the caller's BeforeGet
+		// hooks hide: refused as another owner's row is (hook_scope.go).
+		// Like the preflight it is a separate read; the scope guard on
+		// DO UPDATE below does not carry the hooks' clauses.
+		if existed && ch.upsertTargetHidden(ctx, req, body) {
+			return errUpsertForeignRow
+		}
 		// A file the conflict arm replaces is deleted once the upsert
 		// commits (media_cleanup.go).
 		objs, err := ch.objectsBefore(ctx, req, "", ch.colKeyVals(body), body, false)
@@ -206,7 +214,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			ch.createWrite(ctx, body),
 			{body: body, sets: func(f schema.Field) bool { return ch.upsertSets(ctx, f) }, holds: ch.scopedHeld(ctx)},
 		} {
-			if err := ch.checkBelongsToScope(ctx, w); err != nil {
+			if err := ch.checkBelongsToScope(ctx, req, w); err != nil {
 				return err
 			}
 		}

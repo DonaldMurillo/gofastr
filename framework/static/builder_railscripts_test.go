@@ -121,8 +121,11 @@ func TestBuildLeavesPWARegisterToBuilder(t *testing.T) {
 	}
 }
 
-// Only a same-origin path is the app's to serve: a CDN script loads from
-// its own host on the static deploy, and a relative src is no route.
+// Only a same-origin path is the app's to serve, and a relative src is
+// no route. uihost.WithExtraScripts drops each of these before it
+// reaches the rail (the same grammar RegisterExternalScript holds), so
+// the build sees none of them; the builder's own off-origin skip stays
+// as the second layer.
 func TestBuildSkipsOffOriginRailScripts(t *testing.T) {
 	a := coreapp.NewApp("Rail")
 	a.Register("/", &homeScreen{}, nil)

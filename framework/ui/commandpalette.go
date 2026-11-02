@@ -460,6 +460,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		headless.PartComboboxListbox: "fui-cmd-palette__listbox",
 		headless.PartComboboxOption:  "fui-cmd-palette__option",
 		headless.PartText:            "fui-cmd-palette__option-label",
+		headless.PartComboboxMeta:    "fui-cmd-palette__option-meta",
 		headless.PartComboboxStatus:  "fui-visually-hidden",
 	})
 

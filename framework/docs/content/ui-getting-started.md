@@ -345,10 +345,14 @@ open-redirect guard), and every parameter referenced in `to` must be
 declared in `from`. The `from` pattern obeys the same grammar as a route
 (constraints, trailing catch-all). A one-segment parameter holding `/`
 or `%` is written back as `%2F` or `%25`, so it stays one segment of
-the target. Substituted parameters arrive
-percent-decoded, so C0/DEL control bytes in the request path are
-percent-encoded back into the `Location` header — a redirect target never
-carries raw control bytes.
+the target. Substituted parameters arrive percent-decoded, so a
+resolved target holding a C0 control byte or DEL (tab, CR and LF
+included) is no redirect: the request falls through to the router, which
+answers 404 when no screen matches. A browser deletes tab, CR and LF from
+a `Location` before parsing it, so `/old/%09/evil.example` substituted
+into `/{rest...}` would otherwise read as `//evil.example`. A registered
+target holding a control byte panics, and every `Location` the host
+writes percent-encodes any control byte that reaches it.
 
 Because redirects are consulted **before** screen resolution, a redirect
 whose `from` **overlaps** a registered screen, dynamic or exact, panics

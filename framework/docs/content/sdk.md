@@ -388,6 +388,13 @@ Files the export already produced (or the user static dir) always win.
   filter/sort query params and validation-error `fields` keys are the
   snake_case column names. The JS SDK exports `<entity>Fields`
   constants; the Go README shows the same rule.
+- **Sending a bare key that reads two ways.** With fields `stage` and
+  `stage_in`, `?stage_in=` is a 400: it could be `stage_in`'s equality
+  or `stage`'s IN list. Name the operator in brackets after the whole
+  field name: `filters: { "stage_in[eq]": "x" }` or
+  `filters: { "stage[in]": ["a", "b"] }`. Both READMEs list every such
+  key in the app, and the CLI's filter flags already send the bracket
+  form for them.
 - **Hand-editing `gen/sdk/` output.** The CLI has a `custom.go` seam;
   SDK output has no owned files: every regeneration overwrites in place.
   Wrap the generated client from your own package instead.

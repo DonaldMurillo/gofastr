@@ -94,14 +94,16 @@ SDK form adds the wire-format notes (decimal arrives as a string, image
 and file fields as URLs), and an unknown type labels as `string`.
 
 The skip side of pagination is bounded the same way the limit side is:
-an explicit `?offset=` beyond the handler's ceiling is refused with
-`400` instead of being handed raw to `OFFSET` (a per-request deep-skip
-scan). The ceiling is `CrudHandler.MaxOffset` when set, otherwise the
-page cap × 1000 — 100,000 at the default `Pagination.MaxListLimit` —
-and it can be moved per handler with `WithMaxOffset`, never removed.
-Page-derived offsets keep their own pinned behaviour: a huge `?page=`
-serves the empty window (200), with the arithmetic overflow guarded in
-`pagination.OffsetForPage`.
+an explicit `?offset=`, or a `?page=` whose `(page-1) × limit` skip lies
+beyond the handler's ceiling, is refused with `400 offset_too_large`
+instead of being handed to `OFFSET` (a per-request deep-skip scan). The
+skip is reckoned exactly, so a page or offset too large for an `int`
+(`?page=9223372036854775807`) is refused too, on the buffered and the
+`?stream=true` path alike, rather than served as page 1. The ceiling is
+`CrudHandler.MaxOffset` when set, otherwise the page cap × 1000 — 100,000
+at the default `Pagination.MaxListLimit` — and it can be moved per handler
+with `WithMaxOffset`, never removed. A page within the ceiling past the
+last row answers 200 with no data.
 
 MCP tools are the opposite. They are **off by default** and need
 `Exposure: &framework.ExposureConfig{MCP: true}`. The one exception is the dev
@@ -140,6 +142,14 @@ answer **403** with the include refusal ("include targets entity users, which
 you may not read"). A cascade write through a parent route that would create,
 update or ManyToMany-link its rows is refused the same way. In-process Go
 (`app.CrudHandler`, typed repos, `EagerLoad`) is unaffected.
+
+A `belongs_to` foreign key in a write body is not refused: `POST /posts
+{"author_id": …}` onto a `CRUD: false` `users` writes, as it does from a
+token holding no `users:read` scope. The key is a column of the caller's
+own row and the write returns that row, never the target's fields. The
+key is still checked against the target's own scopes (owner, tenant,
+soft delete, `ReadScope`, its Before hooks): a row the caller may not
+read answers the same 404 as a row that does not exist.
 
 `CRUD: false` turns off the **generated** surface, and only that. Anything in
 the entity's `Endpoints` list is registered either way, so an entity with
@@ -189,7 +199,10 @@ column to null on update, and a blank required field fails with
 `File` on update keeps the stored file, since a file input cannot
 carry it back. An upsert reads a blank as a create does when no row
 holds the key and as an update does when one does. A blank in a key
-column is never dropped, so an `Int` key part still refuses it. Empty
+column is never dropped, so an `Int` key part still refuses it, and a
+`""` in any caller-chosen key column, a one-column key included, is
+refused with `400` (`is required`): no route could name that row again.
+Empty
 text stays an
 empty string, since that is a value a user can mean. A filled number
 input arrives as text too: an `Int` field takes `"42"` and a `Float`
@@ -508,6 +521,7 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 - **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
 - **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. Inside a caller's transaction (`App.InTx`, a handler bound to a `*sql.Tx`) they wait until the whole operation succeeds, so a failed cascade announces no child. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
 - **Child keys**: A nested child's keys are read the way its parent's are. Over HTTP that is the child's wire keys; two keys naming one column (`bodyText` and `body_text` on a camel-case handler) answer 400 `validation.keys_fold` on the child's path, as the parent's own keys do. In process (`CreateOne`, a typed repo) the key `MarshalEntity` derives counts too, so a `Line2` field's `line2` writes `line_2`.
+- **Read scope**: A cascade reaches the child entity's rows the way `?include=` does, so it honours the child's read scope: its `ReadScope`, and the clauses its own `BeforeList` hooks append (plus `BeforeGet` for `has_one` and `belongs_to`). An item that names an existing child the scope hides, by a bare id or with fields to update, answers **404**, the same as a child that is not there, and writes nothing; a `has_one` update with no id treats a hidden existing child as absent. A child the write creates, or moves, out of that scope comes back as its id alone.
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
 `owner_field` mirrors `Scope.OwnerField`: set it to the column
@@ -638,6 +652,29 @@ integer, or as a 64-bit float past about 15 significant digits, so
 `"90071992547409.1234"` reads back rounded there. Keep money that needs
 all 19 digits on Postgres, or store it as an `int` count of the smallest
 unit.
+
+A create or update refuses a `decimal` its column cannot store as sent,
+with a 400 naming the field, on both dialects:
+
+| Value | Refused when | Code |
+| --- | --- | --- |
+| `"1e-1001"`, `"1e1001"` | the exponent is past ±1000 (`schema.MaxDecimalExponent`) | `decimal_exponent` |
+| `"1e16"`, `"12345678901234567"` | it needs more digits before the point than the column has (15 for `DECIMAL(19,4)`) | `decimal_integer_digits` |
+| `"1.23456"`, `"0.00001"` | it needs more digits after the point than the column's scale (4 for `DECIMAL(19,4)`) | `decimal_fraction_digits` |
+
+Postgres refused the first two at write time (22P02, 22003) as a 500,
+and rounded the third to `1.2346`, while SQLite stored each one as
+written. Refusing past the scale, instead of rounding in Go, means both
+dialects keep the number the client sent. Trailing zeros are not
+counted: `"1.23450000"` is `1.2345` and fits. A `RawType` of
+`DECIMAL(p,s)` or `NUMERIC(p,s)` (`NUMERIC(p)` is scale 0) is the
+column, so its own precision and scale are the limit: `RawType:
+"NUMERIC(10,2)"` takes `"12345678.12"` and refuses `"1.123"`. Any other
+`RawType`, a bare `NUMERIC` included, bounds only the exponent.
+`schema.DecimalColumn(f)` returns the precision and scale the check
+uses. A `Default` is held to the same limit at registration. A value an
+older build stored past the column on SQLite still reads back; the next
+update that sends it again is refused.
 
 A `decimal` field's `Min` and `Max` are compared in exact decimal
 arithmetic, reading the float bound as its shortest spelling: `0.1` is
@@ -1136,7 +1173,15 @@ scopes; the query builder wraps each WHERE clause in parens.
 **Case contract.** `LOWER()` is ASCII-only on SQLite and locale-aware on
 Postgres, so matching is ASCII-case-insensitive everywhere. Unicode case
 folding is a Postgres bonus. The token is lowercased before building the
-LIKE pattern so the comparison is consistent across dialects.
+LIKE pattern so the comparison is consistent across dialects. The
+lowering is Unicode-aware on purpose, so an accented capital (`É`) finds a
+stored `é` on Postgres; the same rule folds compatibility look-alikes onto
+ASCII (the Kelvin sign `K` finds `kilo`), on `?q=` and `_like` alike. That
+is accepted, not refused.
+
+**Unstorable text is a 400.** A `?q=` holding invalid UTF-8 or a NUL byte
+answers 400 naming `q`, like any other filter value: Postgres refuses it
+in a text bind. `filter.SearchConditions` returns that error.
 
 **Back-compat.** An entity WITHOUT `SearchFields` ignores `?q=` exactly
 as before: no behavioural change.
@@ -1144,7 +1189,8 @@ as before: no behavioural change.
 **The `q`-column edge case.** An entity WITH `SearchFields` that also
 has a physical column named `q`: plain `?q=value` means **search** (the
 OpEq filter on the `q` column is dropped). Suffixed ops (`?q_like=`,
-`?q_gt=`, …) still filter the column normally.
+`?q_gt=`, …) and the explicit `?q[eq]=value` still filter the column
+normally.
 
 Column names must be known, non-Hidden, and String/Text-typed;
 `entity.Define` panics otherwise (the app spec decoder returns a
@@ -1181,6 +1227,21 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | `_like`  | case-insensitive literal `contains` (`LOWER(col) LIKE '%value%'`) |
 | `_in`    | `IN (…)`, comma-separated, capped at 1000 |
 
+**The bracket form.** Every operator also has a word you can put in
+brackets after the field name: `?price[gte]=5`, `?status[in]=a,b`,
+`?title[like]=foo`, `?check_in[eq]=2026-11-01`. The words are the
+suffixes without the underscore, plus `eq` for equals: `eq`, `ne`,
+`gt`, `gte`, `lt`, `lte`, `like`, `in`. The text before the brackets is
+always the whole field name (or its `WireName`), never cut at a suffix,
+so `check_in[eq]` filters the `check_in` field and `check[in]` filters
+`check` with `IN`. `%5B` and `%5D` decode to the same key. Any other word
+in the brackets (`?price[within]=5`) is a **400** naming it. A bracket
+on an unknown or Hidden field is the same unknown-filter 400 any unknown
+key gets, so the form tells nobody a Hidden field exists. A bracket key
+follows every rule a suffix key does: it is sent once (`[in]` reads every
+occurrence), its operator must suit the field's type, and `?f_in=` beside
+`?f[in]=` are two keys, two IN lists ANDed.
+
 `sort` names a field, with a `-` prefix for descending. Several fields
 go comma-separated (`sort=status,-created_at`) or as repeated `sort`
 keys, at most 16 in all; an unknown field is a 400.
@@ -1197,17 +1258,39 @@ contract" above): `?status_like=OPEN` matches `open` on both dialects,
 where a bare `LIKE` was case-sensitive on Postgres only.
 
 Every key is its own predicate, ANDed: `?score=5&score_gt=3` keeps both,
-and the same query string always compiles to the same SQL. A field whose
-name ends in a suffix but whose name before it is no field (`opt_in`,
-`check_in`) filters as itself, at the top level, in `?rel.field=` and in
-`include=rel(…)`.
+and the same query string always compiles to the same SQL. Two `_in`
+keys that name one column, its name and its `WireName`
+(`?author_id_in=1,2&writer_in=3`), are two lists ANDed, not one union;
+so are the same two terms in a scoped include filter
+(`include=comments(author_id_in=1|2,writer_in=3)`). Code that builds its
+own one-filter-per-value `filter.ParsedFilter` lists tags each value with
+its key (`pf.InList(key)`), and a renderer merges adjacent values into
+one `IN (...)` only while `f.SameINList(next)` holds.
 
-**Field names cannot shadow an operator suffix.** A queryable field whose
-name or wire name is another queryable field's plus a suffix from the
-table above (`status` beside `status_ne`) is refused at entity
-registration: the parser tries the suffix first, so `?status_ne=` would
-filter `status` and the `status_ne` column could never be filtered at
-all. Rename one field or set a `WireName`.
+**A filter key is sent once.** A key other than `_in` repeated in one
+query string (`?price_lt=100&price_lt=5`) is a **400** naming the key,
+`LenientFilters` included (`filter.repeated_filter`). A nested relation
+filter follows the same rule: `?author.age_lt=100&author.age_lt=5`, or
+the bracket form `?author.age[lt]=…` twice, is the same 400 naming the
+dotted key. Before, the first value ran and the rest were
+dropped without a word, so the result was wider than asked and a proxy
+that reads the last value saw a different query from the one the
+database ran. Only `_in` reads every occurrence (below). A field whose
+name ends in a suffix but whose name before it is no field (`opt_in`
+with no `opt` field) filters as itself, at the top level, in
+`?rel.field=` and in `include=rel(…)`.
+
+**A bare key that reads two ways is a 400.** When an entity has both
+`check` and `check_in`, `?check_in=x` could mean `check_in = x` or
+`check IN (x)`. The parser does not guess: it answers **400**
+(`filter.ambiguous_filter`) naming both readings and the keys that pick
+one, `?check_in[eq]=x` or `?check[in]=x`. Hidden fields never count, but
+NoQuery fields do. This holds at the top level (`LenientFilters`
+included), in `?rel.check_in=` and in `include=rel(check_in=…)`. Keys
+that read one way are unchanged. Such a pair of fields registers fine;
+the generated OpenAPI document, MCP list tool, CLI and SDK readmes spell
+the two readings in bracket form and keep the suffix form for every
+other key.
 
 **A wire key names one column.** Two fields resolving to one wire key
 (`WireName`, or a bare column's name and its camelCase form) are refused
@@ -1217,7 +1300,8 @@ so `content` would write whichever field publishes as `content`.
 `CrudHandler.WireKey(column)` returns the key a column's value sits under
 in the rows `ListAll` and `GetOne` return.
 
-**Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
+**Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three
+(the same key repeated; a different key on the same column ANDs, above).
 Every occurrence of the key contributes; the 1000-entry cap
 (`filter.MaxINListEntries`) counts the union, and the same cap applies to
 relation-scoped lists like `?author.name_in=` (which are refused when the
@@ -1229,7 +1313,7 @@ for the same reason unknown filters fail closed below.
 
 **Unknown filters fail closed (strict).** A misspelled or unrecognized
 top-level filter, `?stauts=open`, or a suffixed op on a non-field like
-`?scor_gt=5`, returns a **400** naming the bad key (with a "did you
+`?scor_gt=5` or `?scor[gt]=5`, returns a **400** naming the bad key (with a "did you
 mean" suggestion when a field is an unambiguous near-match), rather than
 being silently dropped. Silently dropping a filter returns an
 **unfiltered** result set: a broken client reads the whole table, and an
@@ -1267,7 +1351,9 @@ app.Entity("things", entity.EntityConfig{
 tracking params) rather than an enumerated set, opt back into the old
 drop-silently behavior with `EntityConfig.LenientFilters: true`. Prefer
 `AllowedFilterParams` or fixing the caller: a dropped filter is a
-data-exposure hazard.
+data-exposure hazard. Lenient drops keys that name no field (a bracket
+on an unknown field included); a key that names a field but cannot be
+read, an ambiguous bare key or an unknown bracket word, is still a 400.
 
 ## Nested predicate filters (`?where=`)
 
@@ -1287,8 +1373,18 @@ GET /api/tickets?where={"or":[
 
 compiles to `WHERE ((status = $1) OR ((priority = $2) AND (assignee =
 $3)))`. A node is either a **leaf** (`{"field","op","value"}`, `op`
-defaults to `eq`; use `"values":[...]` or a comma string with
-`op:"in"`) or a **group** (`{"and":[...]}` / `{"or":[...]}`).
+defaults to `eq`; use `"values":[...]` or a comma string in `"value"`
+with `op:"in"`, not both) or a **group** (`{"and":[...]}` /
+`{"or":[...]}`, non-empty, with no leaf member beside it).
+
+The tree decodes strictly, the rule every client-borne JSON body
+follows (a `?cursor=` token included): a key repeated in one object, two
+keys that differ only in case (`"value"` and `"VALUE"`), an unknown
+member (`"vaule"`), a member name in another case (`"Field"`), and a
+member the node's op does not read (`"values"` on an `eq` leaf) are each
+a **400**. Plain JSON decoding kept the last duplicate and dropped the
+rest, so the tree that ran was not the one a proxy reading the first key
+saw, and a typo compared the field with the empty string.
 
 Operators are the same set as the flat params: `eq, ne, gt, lt, gte, lte,
 like, in` — `ne` is the `!=` twin of `_ne` above, NULL semantics included.
@@ -1334,7 +1430,14 @@ String, Text, Enum, UUID and other Relation columns take any text. A value of
 another type (`?n=abc` on an Int, `?active=yes` on a Bool) is a 400
 naming the field and the type on both dialects. `LenientFilters` does not lift it:
 lenient mode drops unknown keys, not mistyped values. A `like` value is
-a substring and is not checked.
+a substring and is not type-checked.
+
+Every value, a `like` substring included, must also be one Postgres can
+bind, or it is the same 400: text that is valid UTF-8 with no NUL byte
+(`?title=a%FFb` and `%00` are refused), a Decimal exponent within ±1000
+(`1e1001` is refused), and a Timestamp or Date in year 1 or later (in
+UTC for a Timestamp; Postgres has no year 0). Postgres refused each at
+bind time with a 500 while SQLite compared the bytes and answered 200.
 
 **Safety.** Every field is validated against the entity's schema
 (Hidden fields rejected; the same value-disclosure-oracle rationale as

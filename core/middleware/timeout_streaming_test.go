@@ -186,3 +186,71 @@ func TestTimeoutHungHandlerStill504s(t *testing.T) {
 		t.Fatalf("handler output leaked past the 504: %q", body)
 	}
 }
+
+// TestTimeoutFailedHijackKeepsBuffering: Hijack set streaming before the
+// attempt and never undid it when the hijack FAILED (HTTP/2, a writer
+// that cannot hijack). The handler then answered through the writer,
+// but in streaming mode its headers never reached the client, and the
+// deadline was shed, so a hung handler never got its 504. A failed
+// hijack now leaves the writer buffered with the deadline armed.
+func TestTimeoutFailedHijackKeepsBuffering(t *testing.T) {
+	t.Run("headers", func(t *testing.T) {
+		rec := noHijackRecorder{httptest.NewRecorder()}
+		h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if _, _, err := http.NewResponseController(w).Hijack(); err == nil {
+				t.Fatal("premise: the recorder cannot hijack")
+			}
+			w.Header().Set("X-Fallback", "1")
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = io.WriteString(w, "upgrade unavailable")
+		})
+		Timeout(time.Minute)(h).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ws", nil))
+		if got := rec.Header().Get("X-Fallback"); got != "1" || rec.Body.String() != "upgrade unavailable" {
+			t.Fatalf("after a failed hijack: X-Fallback=%q body=%q, want the handler's answer", got, rec.Body.String())
+		}
+	})
+	t.Run("deadline", func(t *testing.T) {
+		rec := noHijackRecorder{httptest.NewRecorder()}
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _, _ = http.NewResponseController(w).Hijack() // fails
+			select {
+			case <-r.Context().Done():
+			case <-time.After(2 * time.Second):
+			}
+		})
+		start := time.Now()
+		Timeout(50*time.Millisecond)(h).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ws", nil))
+		if rec.Code != http.StatusGatewayTimeout || time.Since(start) > time.Second {
+			t.Fatalf("status %d after %v, want 504 at the 50ms deadline", rec.Code, time.Since(start))
+		}
+	})
+}
+
+// TestTimeoutExpireWaitsOutHijack: the hijack attempt runs outside the
+// writer's lock, so the deadline can land mid-attempt. expire must not
+// decide until the answer is in: writing a 504 under a hijack that
+// succeeds races the handler for the connection, and shedding the
+// deadline for one that fails is the bug above.
+func TestTimeoutExpireWaitsOutHijack(t *testing.T) {
+	for _, hijacked := range []bool{true, false} {
+		tw := newTimeoutWriter(httptest.NewRecorder())
+		tw.mu.Lock()
+		tw.hijacking = true
+		tw.mu.Unlock()
+		got := make(chan bool, 1)
+		go func() { got <- tw.expire() }()
+		select {
+		case v := <-got:
+			t.Fatalf("expire decided (%v) while the hijack was still in progress", v)
+		case <-time.After(50 * time.Millisecond):
+		}
+		tw.mu.Lock()
+		tw.hijacking = false
+		tw.streaming = hijacked
+		tw.hijackDone.Broadcast()
+		tw.mu.Unlock()
+		if v := <-got; v != !hijacked {
+			t.Fatalf("hijack succeeded=%v: expire = %v, want %v", hijacked, v, !hijacked)
+		}
+	}
+}

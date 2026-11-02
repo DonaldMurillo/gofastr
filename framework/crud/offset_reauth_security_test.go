@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
@@ -107,7 +108,8 @@ func (failingBody) Close() error               { return nil }
 
 // TestDecodeJSONBodyReadErrors: a body whose read fails with the generic
 // "request body too large" text maps to errBodyTooLarge like the typed
-// MaxBytesError, and any other read failure is reported as invalid JSON.
+// MaxBytesError, and any other read failure is an invalid_body refusal
+// that says the body could not be read, never the read error's own text.
 func TestDecodeJSONBodyReadErrors(t *testing.T) {
 	var v map[string]any
 	big := httptest.NewRequest(http.MethodPost, "/api/reddocs", nil)
@@ -117,8 +119,13 @@ func TestDecodeJSONBodyReadErrors(t *testing.T) {
 	}
 	broken := httptest.NewRequest(http.MethodPost, "/api/reddocs", nil)
 	broken.Body = failingBody{errors.New("connection reset")}
-	if err := decodeJSONBody(broken, &v); err == nil || !strings.Contains(err.Error(), "invalid JSON") {
-		t.Fatalf("a read failure must surface as invalid JSON, got %v", err)
+	err := decodeJSONBody(broken, &v)
+	text, code := i18n.ErrorText(context.Background(), err, reasonInvalidBody)
+	if err == nil || code != "invalid_body" || text != "invalid request body: the body could not be read" {
+		t.Fatalf("a read failure must surface as invalid_body naming an unreadable body, got %q (%q)", text, code)
+	}
+	if strings.Contains(text, "connection reset") {
+		t.Fatalf("the read error's own text reached the client: %q", text)
 	}
 }
 

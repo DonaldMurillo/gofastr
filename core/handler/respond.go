@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -41,12 +42,29 @@ type ResponseType interface {
 }
 
 // Respond writes out the response based on out's type:
-//   - nil → 204 No Content
+//   - nil, or a nil pointer → 204 No Content (a nil slice or map is
+//     still JSON "null", 200: a list handler's empty result is content)
 //   - ResponseType → delegates to the custom type
 //   - any other value → JSON serialization, 200 OK
 func Respond(w http.ResponseWriter, r *http.Request, out any) {
-	if out == nil {
-		w.WriteHeader(http.StatusNoContent)
+	respond(w, r, out, nil)
+}
+
+// respond is Respond that sets *started (when non-nil) just before the
+// status goes out, so HandlerAdapter's recover knows a later panic (in a
+// ResponseType's WriteBody) came after the response began.
+func respond(w http.ResponseWriter, r *http.Request, out any, started *bool) {
+	begin := func(code int) {
+		if started != nil {
+			*started = true
+		}
+		w.WriteHeader(code)
+	}
+	// A Handler[I, *Out] returning (nil, nil) hands over a typed nil,
+	// which is not == nil inside an any: it is still no content, not a
+	// 200 "null".
+	if isNilValue(out) {
+		begin(http.StatusNoContent)
 		return
 	}
 	if rt, ok := out.(ResponseType); ok {
@@ -59,7 +77,7 @@ func Respond(w http.ResponseWriter, r *http.Request, out any) {
 		}
 		w.Header().Set("Content-Type", ct)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.WriteHeader(http.StatusOK)
+		begin(http.StatusOK)
 		rt.WriteBody(w)
 		return
 	}
@@ -73,8 +91,23 @@ func Respond(w http.ResponseWriter, r *http.Request, out any) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
+	begin(http.StatusOK)
 	_, _ = w.Write(append(body, '\n'))
+}
+
+// isNilValue reports whether out is nil or a nil pointer or interface
+// held in an any. A nil slice or map is deliberately not "no content":
+// a list handler that found no rows returns one, and turning its 200 into
+// a bodyless 204 would break every client that parses the body.
+func isNilValue(out any) bool {
+	if out == nil {
+		return true
+	}
+	switch rv := reflect.ValueOf(out); rv.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		return rv.IsNil()
+	}
+	return false
 }
 
 // HTML is a response type that writes text/html.

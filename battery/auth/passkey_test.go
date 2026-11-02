@@ -48,7 +48,7 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 	pk := NewPasskeyPlugin(PasskeyConfig{RPID: rpID, Origins: []string{origin}, OnSuccessURL: "/app", TwoFactorURL: "/2fa"})
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mail := &stubEmailSender{}
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(twofa)
 	mgr.Use(pk)
 	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "https://example.com", EmailSender: mail}))

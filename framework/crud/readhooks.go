@@ -140,6 +140,13 @@ func (ch *CrudHandler) runBeforeGet(ctx context.Context, r *http.Request, id str
 // Gated like the parent read: always on an HTTP request, and in process only
 // under WithReadHooks, where ListAll runs the parent's own BeforeList.
 func (ch *CrudHandler) childBeforeScopes(ctx context.Context, target *entity.Entity, rel entity.Relation) ([]hook.WhereClause, error) {
+	return ch.childBeforeScopesFor(ctx, target, rel, "")
+}
+
+// childBeforeScopesFor is childBeforeScopes for a read that names one
+// target row: a to-one relation's BeforeGet sees its id, as GET
+// /child/{id} would hand it.
+func (ch *CrudHandler) childBeforeScopesFor(ctx context.Context, target *entity.Entity, rel entity.Relation, id string) ([]hook.WhereClause, error) {
 	if ch.ChildHooks == nil || target == nil {
 		return nil, nil
 	}
@@ -158,7 +165,7 @@ func (ch *CrudHandler) childBeforeScopes(ctx context.Context, target *entity.Ent
 	}
 	toOne := rel.Type == entity.RelHasOne || rel.Type == entity.RelManyToOne
 	if toOne && len(reg.HooksFor(hook.BeforeGet)) > 0 {
-		payload := &hook.GetPayload{Request: req}
+		payload := &hook.GetPayload{Request: req, ID: id}
 		if err := runHooks(reg, hookCtx(ctx), hook.BeforeGet, payload); err != nil {
 			return nil, &childHookError{rel: rel.Name, chain: "before-get", err: err}
 		}

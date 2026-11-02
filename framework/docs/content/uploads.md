@@ -63,7 +63,10 @@ The framework:
    `schema.JSON` column is the list-valued shape (an HTML multi-select
    submits one part per selected value), so repeats collect into a JSON
    array. Two file parts under one `Image`/`File` key are refused too;
-   those columns hold a single URL.
+   those columns hold a single URL. The refusals carry their own codes
+   (`duplicate_form_key`, `duplicate_file_part`, `malformed_multipart`
+   for a body that does not parse) and name the first offending key in
+   sorted order, so one body always answers the same bytes.
 3. Streams each file part matching an `Image`/`File` field through
    `Storage`, scoped by entity name and field name. A part for a
    read-only or hidden field is ignored, as the write ignores a value

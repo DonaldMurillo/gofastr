@@ -4,11 +4,36 @@ import (
 	"bytes"
 	"crypto/rand"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
+
+// TestCSRF_MaxInt64FormCapKeepsToken: readAndBufferCapped read through
+// io.LimitReader(body, cap+1); at MaxFormBytes = math.MaxInt64 the +1
+// wrapped negative, the form read as empty, no token was found, and a
+// valid form submit was refused with 403.
+func TestCSRF_MaxInt64FormCapKeepsToken(t *testing.T) {
+	key := []byte("maxint-csrf-key-32-bytes-long!!!")
+	tok, err := generateSignedCSRFToken(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := CSRF(CSRFConfig{SecretKey: key, MaxFormBytes: math.MaxInt64})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	form := url.Values{"_csrf": {tok}, "x": {"1"}}.Encode()
+	r := httptest.NewRequest(http.MethodPost, "/submit", strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(&http.Cookie{Name: "csrf_token", Value: tok})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("valid form submit with MaxFormBytes=MaxInt64 got %d, want 200", w.Code)
+	}
+}
 
 // TestCSRF_FormBodyHasMaxSize pins the DoS fix: an unauthenticated POST
 // with an oversized form body must be rejected with 413 before the

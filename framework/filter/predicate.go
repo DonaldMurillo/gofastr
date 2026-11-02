@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
@@ -68,14 +69,16 @@ var whereOps = map[string]FilterOp{
 }
 
 // rawPred is the wire shape of one `?where=` node. Exactly one of
-// {and, or, field} is expected per node.
+// {and, or, field} is expected per node. The members are pointers so a
+// member that was sent can be told from one that was not: a leaf may
+// carry only the value member its op reads, and a group no leaf member.
 type rawPred struct {
-	And    []json.RawMessage `json:"and"`
-	Or     []json.RawMessage `json:"or"`
-	Field  string            `json:"field"`
-	Op     string            `json:"op"`
-	Value  string            `json:"value"`
-	Values []string          `json:"values"`
+	And    *[]json.RawMessage `json:"and"`
+	Or     *[]json.RawMessage `json:"or"`
+	Field  *string            `json:"field"`
+	Op     *string            `json:"op"`
+	Value  *string            `json:"value"`
+	Values *[]string          `json:"values"`
 }
 
 // ParseWhere parses a `?where=<json>` predicate tree and validates every
@@ -99,7 +102,7 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 	idx := newPredicateFieldIndex(fields)
 	var msg json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
-		return nil, &i18n.Error{Reason: reasonWhereInvalidJSON, Params: map[string]any{"detail": err.Error()}, Err: err}
+		return nil, &i18n.Error{Reason: reasonWhereInvalidJSON, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 	}
 	count := 0
 	p, err := parseNode(msg, idx, 1, &count)
@@ -117,22 +120,41 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 	if *count > maxPredicateNodes {
 		return Predicate{}, i18n.NewError(reasonWhereTooManyNodes, map[string]any{"max": maxPredicateNodes})
 	}
+	// The tree is client-borne JSON, so each node decodes under the rule
+	// every other client-borne body does (handler.UnmarshalStrict; the
+	// cursor token is checked the same way): stdlib json resolves a
+	// duplicate or case-folded key last-wins and drops an unknown one, so
+	// {"field":"status","value":"a","VALUE":"b"} filtered on b while a
+	// proxy reading the first key saw a, and a typo'd "vaule" compared
+	// status with the empty string. UnmarshalStrict refuses a repeated or
+	// folded key at every depth below the node too, and unknown or
+	// case-folded member names on the node itself.
 	var rp rawPred
-	if err := json.Unmarshal(msg, &rp); err != nil {
-		return Predicate{}, &i18n.Error{Reason: reasonWhereInvalidNode, Params: map[string]any{"detail": err.Error()}, Err: err}
+	if err := handler.UnmarshalStrict(msg, &rp); err != nil {
+		return Predicate{}, &i18n.Error{Reason: reasonWhereInvalidNode, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 	}
 
-	hasAnd, hasOr, hasField := len(rp.And) > 0, len(rp.Or) > 0, rp.Field != ""
-	// Exactly one kind per node.
+	// A member sent empty counts as sent: {"and":[],"field":"x"} is not
+	// a leaf with a stray member ignored, it is two shapes at once.
+	hasAnd, hasOr, hasField := rp.And != nil, rp.Or != nil, rp.Field != nil && *rp.Field != ""
+	// Exactly one kind per node, and a group carries no leaf member.
 	if btoi(hasAnd)+btoi(hasOr)+btoi(hasField) != 1 {
 		return Predicate{}, i18n.NewError(reasonWhereNodeShape)
 	}
 
 	if hasAnd || hasOr {
-		kids := rp.And
+		if rp.Field != nil || rp.Op != nil || rp.Value != nil || rp.Values != nil {
+			return Predicate{}, i18n.NewError(reasonWhereNodeShape)
+		}
+		var kids []json.RawMessage
 		or := false
 		if hasOr {
-			kids, or = rp.Or, true
+			kids, or = *rp.Or, true
+		} else {
+			kids = *rp.And
+		}
+		if len(kids) == 0 {
+			return Predicate{}, i18n.NewError(reasonWhereNodeShape)
 		}
 		children := make([]Predicate, 0, len(kids))
 		for _, k := range kids {
@@ -148,30 +170,47 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 	// Leaf. The field/operator/type checks live in validateLeaf, shared
 	// with ValidatePredicate so the URL surface and the Go-built surface
 	// answer identically.
-	opTok := rp.Op
+	opTok := ""
+	if rp.Op != nil {
+		opTok = *rp.Op
+	}
 	if opTok == "" {
 		opTok = "eq"
 	}
 	op, ok := whereOps[opTok]
 	if !ok {
-		return Predicate{}, i18n.NewError(reasonWhereUnknownOp, map[string]any{"op": strconv.Quote(rp.Op)})
+		return Predicate{}, i18n.NewError(reasonWhereUnknownOp, map[string]any{"op": strconv.Quote(opTok)})
 	}
-	leaf := Predicate{Field: rp.Field, Op: op}
+	leaf := Predicate{Field: *rp.Field, Op: op}
 	if op == OpIn {
-		vals := rp.Values
-		if len(vals) == 0 && rp.Value != "" {
+		// in reads "values" or a comma string in "value", never both:
+		// with both sent, one was silently dropped.
+		if rp.Value != nil && rp.Values != nil {
+			return Predicate{}, i18n.NewError(reasonWhereStrayMember, map[string]any{"op": strconv.Quote(opTok), "member": strconv.Quote("value")})
+		}
+		var vals []string
+		if rp.Values != nil {
+			vals = *rp.Values
+		} else if rp.Value != nil && *rp.Value != "" {
 			// Count separators before splitting. The where-body is size-bounded,
 			// so this is defence in depth rather than a live DoS, but the
 			// allocate-then-reject shape is the same one SplitINValuesBounded
 			// exists to avoid on the ?field_in= path, keep them consistent.
-			if strings.Count(rp.Value, ",")+1 > MaxINListEntries {
+			if strings.Count(*rp.Value, ",")+1 > MaxINListEntries {
 				return Predicate{}, i18n.NewError(reasonWhereInOverCap, map[string]any{"max": MaxINListEntries})
 			}
-			vals = strings.Split(rp.Value, ",")
+			vals = strings.Split(*rp.Value, ",")
 		}
 		leaf.Values = vals
 	} else {
-		leaf.Value = rp.Value
+		// A scalar op reads "value" alone; "values" sent beside it was
+		// dropped, and the leaf compared against ''.
+		if rp.Values != nil {
+			return Predicate{}, i18n.NewError(reasonWhereStrayMember, map[string]any{"op": strconv.Quote(opTok), "member": strconv.Quote("values")})
+		}
+		if rp.Value != nil {
+			leaf.Value = *rp.Value
+		}
 	}
 	if err := validateLeaf(&leaf, idx); err != nil {
 		return Predicate{}, err

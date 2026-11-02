@@ -1,8 +1,10 @@
 // headless-feedback: the behaviour module for the feedback family —
-// copy controls, the toast stack runtime and the offline banner's
-// retry control (the bell's spoken count is headless-bell's). Loaded
-// by the kernel on one of its markers, at boot, on insertion, or after
-// a client navigation.
+// the toast stack runtime and the offline banner's retry control (the
+// copy control is headless-copy's, the bell's spoken count
+// headless-bell's). Loaded by the kernel on one of its markers, at
+// boot, on insertion, or after a client navigation. The copy wrapper
+// stays among the markers: a copy that toasts finds the runtime
+// already loaded, with no round trip after the click.
 //
 // The toast runtime is the API the kernel's response-header path and
 // every window.__gofastr.toast caller already speak (NS.toast,
@@ -11,9 +13,8 @@
 // the kernel's loadModule('headless-feedback') retarget is what keeps
 // the X-Gofastr-Toast dispatch working. Every sentence the module
 // writes arrived as a data-hui-* attribute the component rendered
-// from its Strings — the dismiss label and the copy status travel on
-// the stack and the copy control — so a translated page announces in
-// its own language.
+// from its Strings — the dismiss label travels on the stack — so a
+// translated page announces in its own language.
 (() => {
   'use strict';
   const NAME = 'headless-feedback';
@@ -301,55 +302,6 @@
     NS._initToasts(container);
     return id;
   };
-
-  // ─── copy ────────────────────────────────────────────────────────
-
-  // The target stays readable and selectable; without script the page
-  // promises nothing about the clipboard. The words (button label,
-  // copied label, status sentence with {name}) travel on the wrapper
-  // from Strings.
-  document.addEventListener('click', (e) => {
-    const t = e.target;
-    const wrap = t && t.closest && t.closest('[data-hui-copy]');
-    if (!wrap) return;
-    const id = wrap.getAttribute('data-hui-copy-target');
-    const target = id ? document.getElementById(id) : null;
-    if (!target) return;
-    // A <pre> holds its source text verbatim, newlines included, so its
-    // textContent is the copy. innerText re-derives line breaks from the
-    // layout: a block per line doubles every break, and an empty block
-    // (a blank source line) adds none.
-    const text = (target.tagName === 'PRE' ? target.textContent
-      : (target.innerText || target.textContent) || '').trim();
-    if (!text) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {});
-    }
-    wrap.setAttribute('data-hui-copy-state', 'done');
-    const btn = wrap.querySelector('[data-hui-copy-label]');
-    const fmts = wrap.getAttribute('data-hui-copy-copied') || '';
-    if (btn && fmts) btn.textContent = fmts;
-    const status = wrap.querySelector('[data-hui-copy-status]');
-    if (status) {
-      const name = wrap.getAttribute('data-hui-copy-name') || id || '';
-      const sentence = (wrap.getAttribute('data-hui-copy-sentence') || '').replaceAll('{{name}}', () => name);
-      status.textContent = '';
-      requestAnimationFrame(() => { status.textContent = sentence; });
-    }
-    const back = wrap.getAttribute('data-hui-copy-back') || '';
-    setTimeout(() => {
-      wrap.removeAttribute('data-hui-copy-state');
-      if (btn && back) btn.textContent = back;
-    }, 1200);
-    // A toast on copy rides this module's own toast runtime; the
-    // config JSON is read from the wrapper itself (a menu's copy row)
-    // or whichever element under it carries it (ui.CopyButton puts it
-    // on the button).
-    const toastCfg = (wrap.querySelector('[data-hui-copy-toast]') || wrap).getAttribute('data-hui-copy-toast');
-    if (toastCfg) {
-      try { NS.toast(JSON.parse(toastCfg)); } catch (_) {}
-    }
-  });
 
   // ─── network retry ───────────────────────────────────────────────
 

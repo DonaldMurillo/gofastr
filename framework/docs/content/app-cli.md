@@ -60,8 +60,9 @@ Per verb:
 
 - **list**: an equality filter flag per field (`--status active`),
   `--<field>-in` for a comma list (`--status-in active,trialing` sends
-  `status_in`; the bare flag is equality only, so a comma there is part
-  of the value), range flags (`--views-gt/-gte/-lt/-lte`) on
+  `status_in`, or the bracket `status[in]` where the suffix key reads two
+  ways; the bare flag is equality only, so a comma there is part of the
+  value), range flags (`--views-gt/-gte/-lt/-lte`) on
   numeric/date/timestamp fields, `--<field>-like` on text fields,
   plus `--sort`, `--page`/`--limit`, `--cursor` (keyset; `--cursor ""`
   fetches the first keyset page, since the server switches to keyset

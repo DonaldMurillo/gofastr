@@ -186,8 +186,10 @@
     // window. The Enter that confirms a conversion would otherwise
     // pick the highlighted option and its preventDefault would kill
     // the composition; the arrows move through candidates, and Escape
-    // cancels the conversion, not the query.
-    if (e.isComposing) return;
+    // cancels the conversion, not the query. Safari reports the
+    // keydown that ends a composition with isComposing false and the
+    // IME's keyCode 229, so that is the input method's key too.
+    if (e.isComposing || e.keyCode === 229) return;
     const lbId = input.getAttribute('aria-controls');
     if (!lbId) return;
     const lb = document.getElementById(lbId);

@@ -289,6 +289,21 @@ func (s *bucketStore) timeToFull(remaining int, lastSeen, now time.Time) time.Du
 	return 0
 }
 
+// tokensAt is the token count b would hold at now once the refill ticks
+// that have landed since lastSeen are added, capped at capacity: what
+// take would see, without moving the bucket's clock.
+func (s *bucketStore) tokensAt(b *bucket, now time.Time) int {
+	elapsed := now.Sub(b.lastSeen)
+	if elapsed <= 0 || s.rate <= 0 {
+		return b.tokens
+	}
+	ticks := int64(elapsed / s.rate)
+	if ticks >= int64(s.capacity) { // refill >= 1: this many ticks fill any bucket
+		return s.capacity
+	}
+	return min(b.tokens+int(ticks)*s.refill, s.capacity)
+}
+
 // ceilSeconds renders d as whole seconds rounded up, with a floor of 0. Used
 // for RateLimit-Reset so a client never under-waits the reset window.
 func ceilSeconds(d time.Duration) int {
@@ -318,26 +333,39 @@ func (s *bucketStore) reapLocked(now time.Time) {
 
 // evictLocked sheds buckets down to a low-water mark of the cap, so the
 // shed runs at most once per ~10% of new-key inserts under a sustained
-// flood instead of on every insert. It sheds the buckets nearest to full
-// first: a full one loses nothing, and one that owes a single tick loses
-// less enforcement than an exhausted one. A flood's fresh keys have each
-// spent one token, so the flood sheds itself before a key that spent
-// more. At Capacity 1 that one token is a whole budget, so the bucket
-// nearest refill goes first, flood or not. Caller must hold mu.
+// flood instead of on every insert. It sheds the buckets with the most
+// tokens left first: a full one loses nothing, and one that spent a
+// single token loses less enforcement than an exhausted one. A flood's
+// fresh keys have each spent one token, so the flood sheds itself before
+// a key that spent more. Among buckets holding the same tokens, the one
+// nearest to full goes first. At Capacity 1 that one token is a whole
+// budget, so the bucket nearest refill goes first, flood or not.
+//
+// Tokens rank before the time to full because the time is counted in
+// refill ticks: with RefillBy == Capacity (the default) one tick refills
+// any deficit, so an exhausted bucket and a one-token-spent one both owe
+// one tick, and the older one, the exhausted key that was there before
+// the flood, owed less and was shed first. Caller must hold mu.
 func (s *bucketStore) evictLocked(now time.Time) {
 	lowWater := s.maxKeys * 9 / 10
 	if len(s.buckets) <= lowWater {
 		return
 	}
 	type owingBucket struct {
-		key   string
-		owing time.Duration
+		key    string
+		tokens int
+		owing  time.Duration
 	}
 	pending := make([]owingBucket, 0, len(s.buckets))
 	for k, b := range s.buckets {
-		pending = append(pending, owingBucket{key: k, owing: s.timeToFull(b.tokens, b.lastSeen, now)})
+		pending = append(pending, owingBucket{
+			key: k, tokens: s.tokensAt(b, now), owing: s.timeToFull(b.tokens, b.lastSeen, now),
+		})
 	}
 	slices.SortFunc(pending, func(a, b owingBucket) int {
+		if c := cmp.Compare(b.tokens, a.tokens); c != 0 {
+			return c // most tokens left first
+		}
 		return cmp.Compare(a.owing, b.owing)
 	})
 	for i := 0; i < len(pending) && len(s.buckets) > lowWater; i++ {

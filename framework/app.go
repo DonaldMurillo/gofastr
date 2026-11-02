@@ -290,6 +290,11 @@ type App struct {
 	// loops and [App.Shutdown] drains it.
 	processModules *ProcessModuleSupervisor
 
+	// sandbox is the untrusted-tier runner state: the backend
+	// WithSandboxBackend chose (nil = the host default) and the result
+	// of probing it, resolved once by [App.ProcessModuleSandbox].
+	sandbox processModuleSandbox
+
 	// moduleTools is the MCP tool registry shared across every process
 	// module (design §5.1). Lazily constructed alongside processModules;
 	// nil when the app has no process modules. The supervisor uses it as
@@ -2656,11 +2661,10 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		}
 	}
 	// A queryable field whose name is another's plus an operator suffix
-	// (?status_ne= next to a `status_ne` column) is a silent wrong-column
-	// filter, not an error; refuse it at the same gate.
-	if err := checkFilterSuffixCollisions(ent); err != nil {
-		return err
-	}
+	// (`status` beside `status_ne`) registers: the bare key ?status_ne=
+	// reads two ways and every filter parser refuses it with the bracket
+	// spellings that pick one (?status_ne[eq]=, ?status[ne]=), so neither
+	// column is unreachable and no reading is guessed (filter.ReadKey).
 	// Endpoint routes: an endpoint whose (method, path) is already taken,
 	// by an existing route, by a CRUD route this same call is about to
 	// mount, or by a sibling endpoint on this same declaration, would

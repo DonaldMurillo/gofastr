@@ -267,6 +267,13 @@ site-level surface (description, icon, sitemap, robots). See
   `core-ui/seo`; the typed builders escape `</` so content can't
   terminate the script block, and the per-screen `ScreenSchema` hook
   places them correctly.
+  `WithHeadHTML` and `SEOScreen.HeadHTML` are scrubbed anyway: every
+  `<script>` goes, with the other active tag families (`<style>`,
+  `<iframe>`, `<svg>`, media, forms, `<base>`, `<img>`), meta-refresh,
+  `on*=` handlers, `autofocus` and preload/script `<link>`s. The scrub
+  runs until its output stops changing, so `<scr<script></script>ipt>`
+  cannot reassemble into `<script>`; head HTML still changing after the
+  pass cap is dropped whole and the host logs one warning.
 - **Declaring `PWAConfig.Icons` AND expecting `WithAppIcon` to fill
   gaps.** Explicit icons win wholesale; the generated 192/512 pair is
   injected only when the manifest declares none.

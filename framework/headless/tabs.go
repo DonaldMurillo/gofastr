@@ -51,7 +51,10 @@ type TabsProps struct {
 	Name string
 	// Tabs, in order. Required, at least one.
 	Tabs []Tab
-	// Active is the selected tab's index. Out-of-range takes 0.
+	// Active is the selected tab's index. Out-of-range (negative, or
+	// past the last tab) takes 0, and the headless-tabs module writes 0
+	// back into the signal when the store holds no tab of this strip (a
+	// seed of 5 on a three-tab strip), so the paint and the store agree.
 	Active int
 	// VacateHidden ships hidden panels EMPTY with their content in an
 	// adjacent JSON stash the module restores on first show, so

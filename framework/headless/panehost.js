@@ -228,27 +228,15 @@
     }
   });
 
-  // The hosts holding the kernel's scroll lock, each under its own
-  // owner key: two id-less hosts must not share one, or closing either
-  // drawer frees the page while the other is still open. The Map also
-  // keeps a host the page swapped out reachable, so its lock can be
-  // released after it left the document.
-  const held = new Map();
-  let lockSeq = 0;
-  function lock(host) {
-    const owner = 'panehost:' + (++lockSeq);
-    held.set(host, owner);
-    if (NS.doc) NS.doc.lockScroll(owner);
-  }
-  function unlock(host) {
-    host.removeAttribute('data-hui-pane-mode');
-    const owner = held.get(host);
-    held.delete(host);
-    if (owner && NS.doc) NS.doc.unlockScroll(owner);
-  }
-  // A host that left the document holds no drawer anyone can close.
-  function releaseDetached() {
-    for (const host of [...held.keys()]) if (!host.isConnected) unlock(host);
+  // Each host element is its own lock owner: two hosts with no id, or
+  // a detached host and the next page's host under the same id, never
+  // release each other's lock.
+  const owners = new WeakMap();
+  let ownerSeq = 0;
+  function scrollOwner(host) {
+    let o = owners.get(host);
+    if (!o) { o = 'panehost:' + (++ownerSeq); owners.set(host, o); }
+    return o;
   }
 
   // The pane's tabbables, over the kernel's shared focus selector.
@@ -271,6 +259,47 @@
   // drawer the server rendered open on a phone-width first load, or a
   // window narrowed under an open pane, would otherwise leave focus
   // behind the scrim.
+  //
+  // lockers holds the hosts that took the lock, so a host that left
+  // the document can still give it back: a detached host is no longer
+  // in a document query's answer. Two things detach one. A client
+  // navigation takes the old page away BEFORE it announces itself
+  // (the navigate pass below), and an island swap re-renders the
+  // region a host sat in with no navigation at all, so nothing would
+  // ever announce it: while any host holds the lock, a childList
+  // watcher on the body (the detach-watcher shape carousel.js and
+  // disclosure.js use) releases every locker that left the tree. It
+  // observes child lists only, so the attribute writes below never
+  // re-enter it, and it disconnects when the last lock is gone.
+  const lockers = new Set();
+  let detachWatcher = null;
+  function lock(host) {
+    lockers.add(host);
+    if (NS.doc) NS.doc.lockScroll(scrollOwner(host));
+    syncDetachWatcher();
+  }
+  function unlock(host) {
+    lockers.delete(host);
+    if (NS.doc) NS.doc.unlockScroll(scrollOwner(host));
+    syncDetachWatcher();
+  }
+  function releaseDetached() {
+    for (const host of Array.from(lockers)) {
+      if (!host.isConnected) {
+        host.removeAttribute('data-hui-pane-mode');
+        unlock(host);
+      }
+    }
+  }
+  function syncDetachWatcher() {
+    if (lockers.size > 0 && !detachWatcher && typeof MutationObserver === 'function') {
+      detachWatcher = new MutationObserver(releaseDetached);
+      detachWatcher.observe(document.body, { childList: true, subtree: true });
+    } else if (lockers.size === 0 && detachWatcher) {
+      detachWatcher.disconnect();
+      detachWatcher = null;
+    }
+  }
   function syncMode(host) {
     const wantOverlay = window.matchMedia(MQ).matches && !!topmost(host);
     const isOverlay = host.getAttribute('data-hui-pane-mode') === 'overlay';
@@ -283,6 +312,7 @@
       const modal = NS._modalStack && NS._modalStack.length > 0;
       if (pane && !modal && !pane.contains(document.activeElement)) focusIn(pane, false);
     } else {
+      host.removeAttribute('data-hui-pane-mode');
       unlock(host);
     }
   }
@@ -371,18 +401,18 @@
     for (const host of document.querySelectorAll('[data-hui-pane-deeplink]')) syncFromURL(host);
   });
 
-  // Release every overlay lock and clear the mode on a client-side
-  // navigation, so the next page is not left scroll-locked. The event
-  // fires after the swap took the old page out of the document, so the
-  // walk is over the hosts holding a lock, never a document query that
-  // can no longer see them.
+  // Release the lock of every host a client-side navigation took away,
+  // so the next page is not left scroll-locked, without waiting for the
+  // watcher's microtask: the hosts that took the lock are walked from
+  // the module's own record. A host the navigation kept (layout
+  // chrome) is re-synced: its open drawer is still on screen and keeps
+  // its lock.
   window.addEventListener('gofastr:navigate', function () {
-    for (const host of [...held.keys()]) unlock(host);
+    releaseDetached();
+    for (const host of Array.from(lockers)) syncMode(host);
   });
 
   function scan(root) {
-    // An island swap can drop a host with no navigation event.
-    releaseDetached();
     const scope = root && root.querySelectorAll ? root : document;
     for (const host of within(scope, '[data-hui-panehost]')) {
       syncMode(host);

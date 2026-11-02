@@ -747,6 +747,9 @@ func sidebarBodyRegion(ctx context.Context, cfg SidebarConfig, idPrefix, rootCla
 	if cfg.Compact {
 		classes[headless.PartRoot] += " fui-sidebar--compact"
 	}
+	if cfg.RaisedCurrent {
+		classes[headless.PartRoot] += " fui-sidebar--raised-current"
+	}
 	out := headless.SidebarRegion(headless.SidebarProps{
 		NavLabel:      cfg.navLabel(ctx),
 		Title:         cfg.Title,
@@ -761,9 +764,23 @@ func sidebarBodyRegion(ctx context.Context, cfg SidebarConfig, idPrefix, rootCla
 
 // pathMatches reports whether currentPath is the prefix itself or falls
 // under it on a segment boundary. A boundary-less prefix match would
-// mark "/customers-archive" active for MatchPath "/customers".
+// mark "/customers-archive" active for MatchPath "/customers". Both
+// sides compare in their bare form ("/customers/" and "/customers" name
+// one section), and "/" is never a prefix, only the root page itself:
+// the runtime's activelink sweep follows the same rules, so first paint
+// and the sweep agree.
 func pathMatches(currentPath, prefix string) bool {
-	return currentPath == prefix || strings.HasPrefix(currentPath, strings.TrimSuffix(prefix, "/")+"/")
+	bare := func(p string) string {
+		if len(p) > 1 {
+			return strings.TrimSuffix(p, "/")
+		}
+		return p
+	}
+	cur, pre := bare(currentPath), bare(prefix)
+	if pre == "/" || pre == "" {
+		return cur == "/"
+	}
+	return cur == pre || strings.HasPrefix(cur, pre+"/")
 }
 
 // sidebarHasActiveDescendant returns true when any descendant of it matches
@@ -964,6 +981,9 @@ func sidebarCSS(_ style.Theme) string {
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: var(--stroke-thin, 1px) solid transparent; }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-text); font-weight: var(--font-weight-medium); border-inline-start-color: var(--color-text); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist { padding: 0; margin-inline-start: var(--spacing-md); box-shadow: inset 1px 0 var(--color-border); }
+/* The guide line rides the inline start, like the indent and the
+   current marker: in a right-to-left page that is the right edge. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist:dir(rtl) { box-shadow: inset -1px 0 var(--color-border); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group > summary,
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { font-weight: var(--font-weight-semibold); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__item + .fui-sidebar__item > .fui-sidebar__group { margin-block-start: var(--spacing-sm); }
@@ -1284,6 +1304,12 @@ func sidebarCSS(_ style.Theme) string {
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group:not([open]) > summary::after,
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle[aria-expanded="false"]::after {
   rotate: -90deg;
+}
+/* A closed chevron points toward the inline end: right in a
+   left-to-right page, left in a right-to-left one. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group:not([open]) > summary:dir(rtl)::after,
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle[aria-expanded="false"]:dir(rtl)::after {
+  rotate: 90deg;
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels:not([data-collapsed="true"]) .fui-sidebar__group > summary .fui-sidebar__icon,
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels:not([data-collapsed="true"]) .fui-sidebar__group-toggle .fui-sidebar__icon {

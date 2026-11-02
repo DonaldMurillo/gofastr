@@ -641,7 +641,10 @@ func (s *ProcessModuleSupervisor) Register(ctx context.Context, d ProcessModuleD
 	// s.sandbox (or ErrSandboxUnavailable when the host has no
 	// probe-passing backend). ErrSandboxUnavailable is wrapped as
 	// [UntrustedNoSandboxError] so the existing error contract holds.
-	selectedRunner, err := SelectRunner(d.TrustTier, s.runner, s.sandbox)
+	s.mu.Lock()
+	sandbox := s.sandbox
+	s.mu.Unlock()
+	selectedRunner, err := SelectRunner(d.TrustTier, s.runner, sandbox)
 	if err != nil {
 		return RegisterResult{}, &UntrustedNoSandboxError{Module: d.Name, cause: err}
 	}
@@ -703,6 +706,16 @@ func (s *ProcessModuleSupervisor) Register(ctx context.Context, d ProcessModuleD
 		Outcome:         inst.Outcome,
 		PreviousGrants:  inst.PreviousGrants,
 	}, nil
+}
+
+// setSandbox installs the runner TrustUntrusted modules spawn under. The
+// App calls it before the first untrusted Register (the supervisor is
+// built lazily, often for a trusted module first). Slots registered
+// earlier keep the runner they selected.
+func (s *ProcessModuleSupervisor) setSandbox(r *SandboxRunner) {
+	s.mu.Lock()
+	s.sandbox = r
+	s.mu.Unlock()
 }
 
 // UntrustedNoSandboxError is returned by Register when a descriptor with

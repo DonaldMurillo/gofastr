@@ -90,7 +90,8 @@ type AlertProps struct {
 	// real href, so dismissing needs no script and survives the page
 	// being reloaded. The label names what is being dismissed, because
 	// "Dismiss" three times in a row tells a screen reader user
-	// nothing.
+	// nothing. Empty DismissLabel names it after the Title, or the
+	// Text when there is no Title; with neither it is refused.
 	DismissHref  string
 	DismissLabel string
 	// Island is where the dismiss goes with script: dismissing is an
@@ -176,8 +177,16 @@ func Alert(p AlertProps, s Classes) render.HTML {
 		}
 		label := p.DismissLabel
 		if label == "" {
+			// Named from the Title, or the Text when there is none (the
+			// way a Toast falls back to its Body): an empty Title named
+			// the control "Dismiss: ", which tells a screen reader user
+			// nothing.
+			target := orDefault(p.Title, p.Text)
+			if target == "" {
+				panic("headless: Alert with DismissHref and no Title or Text requires DismissLabel — the dismiss control would be named after nothing")
+			}
 			w := p.Strings.Resolve()
-			label = w.fill(w.DismissTitled, "title", p.Title)
+			label = w.fill(w.DismissTitled, "title", target)
 		}
 		// The same element is both destinations: the href is the page
 		// without script, the island contract is the region update

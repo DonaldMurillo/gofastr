@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -139,5 +140,52 @@ func TestWriteError_WrappedErrorGeneric500(t *testing.T) {
 				t.Fatalf("expected generic 500 body, got: %s", body)
 			}
 		})
+	}
+}
+
+// A typed-nil *Error (a helper declared to return *Error handing back
+// nil, then passed as an error) panicked WriteError on herr.Code, and an
+// *Error with Code 0 panicked inside WriteHeader. A 1xx Code was worse:
+// net/http treats it as an informational header, then the error body
+// went out under an implicit 200. Every one of those now answers 500, so
+// an error never reaches the client under a status that reads as success.
+func TestWriteError_NilOrOutOfRangeCodeIs500(t *testing.T) {
+	var nilErr *Error
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"typed nil *Error", nilErr},
+		{"code 0", &Error{Message: "bad thing"}},
+		{"code 100", Errorf(http.StatusContinue, "nope")},
+		{"code 200", Errorf(http.StatusOK, "nope")},
+		{"code 302", Errorf(http.StatusFound, "nope")},
+		{"code 600", Errorf(600, "nope")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				WriteError(w, r, tc.err)
+			}))
+			defer srv.Close()
+			resp, err := http.Get(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusInternalServerError {
+				t.Fatalf("client saw status %d body %s, want 500", resp.StatusCode, body)
+			}
+			if !strings.Contains(string(body), `"code":500`) {
+				t.Errorf("body code does not match the status: %s", body)
+			}
+		})
+	}
+	// The error range itself is sent as built.
+	rec := httptest.NewRecorder()
+	WriteError(rec, nil, Errorf(http.StatusTeapot, "short and stout"))
+	if rec.Code != http.StatusTeapot {
+		t.Errorf("code 418: status %d, want 418", rec.Code)
 	}
 }

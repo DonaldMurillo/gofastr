@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/big"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -457,14 +459,18 @@ func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
 // CheckTopLevelKeys (it walks raw bytes), so the fold check runs on the
 // decoded map instead — exact duplicates cannot survive a decode, the
 // fold collision is the detectable shape.
+//
+// The keys are walked in sorted order and the refusal names both
+// spellings, so one request body always answers the same bytes; ranging
+// the map named whichever spelling the iteration reached second.
 func (ch *CrudHandler) itemKeyFoldsUnambiguous(item map[string]any) error {
-	seen := make(map[string]struct{}, len(item))
-	for k := range item {
+	seen := make(map[string]string, len(item))
+	for _, k := range slices.Sorted(maps.Keys(item)) {
 		col := ch.wireKeyColumn(k)
-		if _, dup := seen[col]; dup {
-			return fmt.Errorf("keys folding onto the same field %q (sent %q and another spelling)", col, k)
+		if prev, dup := seen[col]; dup {
+			return i18n.NewError(reasonKeysFold, map[string]any{"first": prev, "second": k, "column": col})
 		}
-		seen[col] = struct{}{}
+		seen[col] = k
 	}
 	return nil
 }
@@ -604,7 +610,11 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// and append them as Where clauses. They feed the count, data,
 		// cursor, and stream sinks uniformly because listPayload.Where is
 		// applied to each. Zero signature changes.
-		searchWheres := ch.searchWhereClausesQ(q)
+		searchWheres, err := ch.searchWhereClausesQ(q)
+		if err != nil {
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidFilters)
+			return
+		}
 
 		// ?where=<json> nested predicate tree (OR-groups / nested AND-OR).
 		// Compiles to ONE parenthesized WHERE clause that AND-composes with
@@ -831,27 +841,27 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 // (back-compat). The conditions AND-compose safely with owner/tenant/
 // soft-delete scopes because the query builder wraps each Where clause
 // in parens.
-func (ch *CrudHandler) searchWhereClauses(r *http.Request) []hook.WhereClause {
+func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, error) {
 	return ch.searchWhereClausesQ(r.URL.Query())
 }
 
 // searchWhereClausesQ is the no-reparse variant. Accepts a pre-parsed
 // url.Values so the List handler can share its single parse across every
 // helper that previously called r.URL.Query() itself.
-func (ch *CrudHandler) searchWhereClausesQ(q url.Values) []hook.WhereClause {
+func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
 	if len(ch.Entity.Config.SearchFields) == 0 {
-		return nil
+		return nil, nil
 	}
 	qVal := q.Get("q")
-	conds := filter.SearchConditions(ch.Entity.Config.SearchFields, qVal)
-	if len(conds) == 0 {
-		return nil
+	conds, err := filter.SearchConditions(ch.Entity.Config.SearchFields, qVal)
+	if err != nil || len(conds) == 0 {
+		return nil, err
 	}
 	wheres := make([]hook.WhereClause, len(conds))
 	for i, c := range conds {
 		wheres[i] = hook.WhereClause{SQL: c.SQL, Args: c.Args}
 	}
-	return wheres
+	return wheres, nil
 }
 
 // whereTreeClauses parses a ?where=<json> nested predicate tree, validates
@@ -889,14 +899,15 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, erro
 // when the entity has SearchFields AND ?q= is present. This resolves the
 // edge case: an entity WITH SearchFields that also has a physical column
 // named "q", plain ?q= means search (not filter on the column). Suffixed
-// ops (?q_like=, ?q_gt=, …) still filter the column.
+// ops (?q_like=, ?q_gt=, …) and the explicit ?q[eq]= still filter the
+// column.
 func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPresent bool) []filter.ParsedFilter {
 	if !hasSearchFields || !qPresent || len(filters) == 0 {
 		return filters
 	}
 	out := filters[:0]
 	for _, f := range filters {
-		if f.Op == filter.OpEq && f.Field == "q" {
+		if f.Op == filter.OpEq && f.Field == "q" && !filter.IsBracketKey(f.Key()) {
 			continue
 		}
 		out = append(out, f)
@@ -1531,16 +1542,45 @@ func (ch *CrudHandler) maxListOffset() int {
 // scan, so both are refused with 400 rather than served as an empty
 // window at full cost. A page within the cap past the last row still
 // returns 200 with no data.
+//
+// The skip is reckoned exactly, past int: pagination.OffsetForPage answers
+// 0 when (page-1)*limit overflows, and a ?page= or ?offset= too long for
+// strconv.Atoi parses as no value at all, so ?page=9223372036854775807
+// passed the bound and List served page 1's rows labelled as that page.
 func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, q url.Values, page, perPage int) bool {
-	offset, ok := explicitOffsetValues(q)
-	if !ok {
-		offset = pagination.OffsetForPage(page, perPage)
-	}
-	if offset <= ch.maxListOffset() {
+	offset := requestedOffset(q, perPage)
+	if offset.Cmp(big.NewInt(int64(ch.maxListOffset()))) <= 0 {
 		return true
 	}
-	writeJSONError(w, r, http.StatusBadRequest, reasonOffsetTooLarge, map[string]any{"offset": offset, "max": ch.maxListOffset()})
+	var shown any = offset.String()
+	if offset.IsInt64() {
+		shown = offset.Int64()
+	}
+	writeJSONError(w, r, http.StatusBadRequest, reasonOffsetTooLarge, map[string]any{"offset": shown, "max": ch.maxListOffset()})
 	return false
+}
+
+// requestedOffset is the row skip q names, exactly: an explicit ?offset=
+// when it is a non-negative integer (explicitOffsetValues' rule, at any
+// size), else (page-1) × perPage for a positive ?page= (parsePaginationValues'
+// rule, at any size), else 0.
+func requestedOffset(q url.Values, perPage int) *big.Int {
+	whole := func(v string) (*big.Int, bool) {
+		n, ok := new(big.Int).SetString(v, 10)
+		return n, ok && n.Sign() >= 0
+	}
+	if v := q.Get("offset"); v != "" {
+		if n, ok := whole(v); ok {
+			return n
+		}
+	}
+	if v := q.Get("page"); v != "" {
+		if n, ok := whole(v); ok && n.Sign() > 0 {
+			n.Sub(n, big.NewInt(1))
+			return n.Mul(n, big.NewInt(int64(perPage)))
+		}
+	}
+	return new(big.Int)
 }
 
 // listLimitCap is the effective per-request row cap for an entity:

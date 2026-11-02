@@ -307,6 +307,12 @@ func CSRF(cfg CSRFConfig) Middleware {
 				return
 			}
 			ctx := context.WithValue(r.Context(), csrfSubmissionKey{}, csrfSubmission{header: cfg.HeaderName, token: submitted})
+			// The verified token is the page's token too: a handler that
+			// re-renders the form (a validation error) reads it here.
+			// Without it, readers fell back to guessing the cookie name and
+			// rendered no token under a custom CookieName, so the
+			// resubmit answered 403.
+			ctx = context.WithValue(ctx, csrfTokenCtxKey{}, cookie.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -330,7 +336,7 @@ func readAndBufferCapped(r *http.Request, cap int64) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	limited := io.LimitReader(r.Body, cap+1)
+	limited := io.LimitReader(r.Body, sentinelLimit(cap))
 	buf, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, err
@@ -469,6 +475,12 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 	if len(cfg.SecretKey) > 0 {
 		return
 	}
+	// A nil *slog.Logger arrives as a non-nil interface holding a nil
+	// pointer: a host passing its own still-unset logger field. Treat it
+	// as nil, or (*slog.Logger).Warn dereferences nil at startup.
+	if l, ok := logger.(*slog.Logger); ok && l == nil {
+		logger = nil
+	}
 	if logger == nil {
 		// stdlib slog default; keeps this package log-implementation-agnostic.
 		// Importing log/slog here is fine; it's stdlib since Go 1.21.
@@ -480,11 +492,17 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 }
 
 // SkipBearerAuth returns a Skip predicate suitable for CSRFConfig.Skip that
-// bypasses requests using Authorization: Bearer or Api-Key headers; those
-// don't ride on cookies and so aren't subject to CSRF.
+// bypasses requests carrying an Authorization: Bearer or X-API-Key header;
+// those don't ride on cookies and so aren't subject to CSRF.
+//
+// Only the Bearer scheme counts. Basic, Digest, Negotiate and NTLM are
+// credentials the browser attaches by itself, to a cross-site form POST
+// too, once a proxy or intranet challenged for them: skipping on any
+// Authorization value let such a form through CSRF behind an HTTP-auth
+// staging gate, riding the session cookie as well.
 func SkipBearerAuth() func(*http.Request) bool {
 	return func(r *http.Request) bool {
-		if r.Header.Get("Authorization") != "" {
+		if scheme, _, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " "); ok && strings.EqualFold(scheme, "bearer") {
 			return true
 		}
 		if r.Header.Get("X-API-Key") != "" {

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -73,14 +74,23 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 	}, pageHeaderClasses))
 }
 
-// slug normalizes text into a URL/id-safe slug.
+// slug normalizes text into a URL/id-safe slug. Letters and digits of
+// every script survive (lowercased): an ASCII-only slug turned "概要"
+// and "料金" into "", so a Japanese or Arabic heading lost its anchor
+// and two different ones shared a fallback id.
 func slug(s string) string {
 	out := make([]rune, 0, len(s))
 	prevDash := false
-	for _, r := range strings.ToLower(s) {
+	for _, r := range s {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			out = append(out, r)
+			prevDash = false
+		case r >= 'A' && r <= 'Z':
+			out = append(out, r+('a'-'A'))
+			prevDash = false
+		case r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)):
+			out = append(out, unicode.ToLower(r))
 			prevDash = false
 		default:
 			if !prevDash && len(out) > 0 {

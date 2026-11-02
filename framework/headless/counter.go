@@ -13,9 +13,15 @@ import (
 // the kernel's signals module is the one increment path, through the
 // data-cui-signal / data-cui-signal-inc contracts this component
 // renders — so no module of this package owns the number. What this
-// package adds is the animation presentation (AnimateFrom), which
-// never mutates the value: the final number is SSR text, and a reader
-// without script sees the true count, not a zero.
+// package adds is the seed and the animation presentation. The kernel
+// steps the value the signal store holds, not the markup, so a
+// counter nobody seeded would step from zero while showing Value: a
+// stepping counter carries its Value on data-hui-counter-value, and
+// the headless-controls module hands it to the signal when the
+// counter arrives (page load, an island swap, a navigation), so the
+// first + steps from the number on screen. The animation
+// (AnimateFrom) never mutates the value: the final number is SSR
+// text, and a reader without script sees the true count, not a zero.
 
 // Counter parts.
 const (
@@ -36,8 +42,18 @@ type CounterProps struct {
 	// value follows the signal the same way the span does, so the
 	// two variants are one control.
 	Name string
-	// Value is the count's first value, seeded into the markup.
+	// Value is the count's first value, seeded into the markup and,
+	// unless Seeded, into the signal when the counter arrives: a
+	// counter the page re-renders with a new Value (an island swap)
+	// steps from the new number, and a rescan of the same markup
+	// changes nothing.
 	Value int
+	// Seeded reports that the page seeds Signal itself (a store.Slice
+	// in a layer above, whose seed travels in the page's signals block
+	// and every partial): the counter then hands the runtime no value
+	// of its own, so the page's seed is the only one and a server value
+	// that changes across an island swap wins through it.
+	Seeded bool
 	// Step is the increment size. Default 1; must be positive.
 	Step int
 	// Label names the group for assistive technology. Empty takes
@@ -124,6 +140,12 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			own["data-hui-counter-ms"] = strconv.Itoa(p.DurationMS)
 		}
 	}
+	// The seed: only a counter with step buttons reads the store (a
+	// display figure steps nothing), only when no layer above seeds the
+	// signal, and only a value a JavaScript number holds exactly.
+	if !p.Display && !p.Seeded && jsSafeInt(p.Value) {
+		own["data-hui-counter-value"] = strconv.Itoa(p.Value)
+	}
 
 	// The kernel's increment spelling, unchanged: name alone means
 	// +1, name:n means ±n. The decrement always spells its negative —
@@ -139,16 +161,20 @@ func Counter(p CounterProps, s Classes) render.HTML {
 	if p.Name != "" {
 		// The signal writes the input's value attribute, so a named
 		// counter is still one control: the buttons, the display and
-		// the submitted field hold one number.
-		value = b.El("input", PartCounterValue, Internal(html.Attrs{
-			"type":                 "number",
-			"name":                 p.Name,
-			"step":                 strconv.Itoa(step),
-			"value":                strconv.Itoa(p.Value),
-			"aria-label":           label,
-			"data-cui-signal":      p.Signal,
-			"data-cui-signal-attr": "value",
-		}))
+		// the submitted field hold one number. Built through Bind, the
+		// package's one binding spelling: it writes the attr mode the
+		// kernel reads. Without data-cui-signal-mode the kernel took
+		// the input for a text binding, set the void input's
+		// textContent on each step, left its value alone (the form
+		// submitted the server's number), and stamped role=status over
+		// its spinbutton role.
+		value = b.El("input", PartCounterValue, Internal(Merge(html.Attrs{
+			"type":       "number",
+			"name":       p.Name,
+			"step":       strconv.Itoa(step),
+			"value":      strconv.Itoa(p.Value),
+			"aria-label": label,
+		}, Bind{Signal: p.Signal, Mode: "attr", Attr: "value"}.attrs())))
 	} else {
 		// Number mode: the runtime writes each new value the reader's
 		// way, as the server wrote this one.
@@ -182,7 +208,7 @@ func init() {
 	Register(Spec{
 		Name:    "Counter",
 		Anatomy: []Part{PartRoot, PartCounterDecrement, PartCounterValue, PartCounterIncrement},
-		Hooks:   []string{"data-hui-counter-animate", "data-hui-counter-from", "data-hui-counter-to", "data-hui-counter-ms"},
+		Hooks:   []string{"data-hui-counter-value", "data-hui-counter-animate", "data-hui-counter-from", "data-hui-counter-to", "data-hui-counter-ms"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Counter(CounterProps{Signal: "qty", Label: "Quantity", Parts: parts}, s)
 		},

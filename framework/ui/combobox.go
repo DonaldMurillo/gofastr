@@ -92,6 +92,7 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 		headless.PartComboboxOption:  "fui-combobox__option",
 		headless.PartComboboxStatus:  "fui-visually-hidden",
 		headless.PartText:            "fui-combobox__option-label",
+		headless.PartComboboxMeta:    "fui-combobox__option-meta",
 	}
 	out := headless.Combobox(headless.ComboboxProps{
 		ID:             cfg.ID,
@@ -198,6 +199,13 @@ func comboboxCSS(_ style.Theme) string {
   color: var(--color-text, #09090B);
   cursor: pointer;
   user-select: none;
+}
+/* An option's secondary line: its own part, so it no longer takes the
+   option's padding and fill nested inside the option. */
+[data-cui-comp="ui-combobox"] .fui-combobox__option-meta {
+  display: block;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__option.is-active {
   background: var(--color-surface-soft, #F4F4F5);

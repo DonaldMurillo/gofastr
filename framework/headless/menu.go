@@ -61,7 +61,9 @@ type MenuItem struct {
 	Danger bool
 
 	// Disabled removes the row from keyboard navigation and pointer
-	// interaction while keeping it in the panel.
+	// interaction while keeping it in the panel. A disabled link row
+	// renders with no href, so no input (keyboard, assistive tech, a
+	// crawler) can follow it.
 	Disabled bool
 
 	// Separator renders a horizontal divider instead of a row.
@@ -104,7 +106,7 @@ type MenuItem struct {
 	RPCAttrs map[string]string
 
 	// Copy renders the row as a copy-to-clipboard command over another
-	// element's text, the headless-feedback copy contract CopyButton
+	// element's text, the headless-copy contract CopyButton
 	// uses. Mutually exclusive with Href, RPC, RPCAttrs, Action, Radio
 	// and Children.
 	Copy *MenuCopy
@@ -415,6 +417,11 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 			// asks before it POSTs.
 			rowOwn = Merge(own, Attrs(map[string]string{"data-cui-confirm": it.Confirm}))
 		}
+		if it.Disabled {
+			// The submit control's own disabled, as the button row has:
+			// aria-disabled alone left the form submitting on activation.
+			rowOwn = Mark(Merge(rowOwn, nil), "disabled")
+		}
 		// role="none": a form is not one of a menu's required owned
 		// elements (menuitem, menuitemcheckbox, menuitemradio, group,
 		// separator) — the presentation role takes it out of the AX
@@ -431,6 +438,13 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 	}
 
 	if it.Href != "" {
+		if it.Disabled {
+			// A disabled link row carries no href, as a disabled Button
+			// does: aria-disabled and pointer-events stop a mouse, but a
+			// keyboard Enter or an assistive-tech activation followed a
+			// live href. An <a> with no href is a placeholder, not a link.
+			return b.El("a", PartMenuItem, Merge(own, rowMark), kids...)
+		}
 		// safeURL drops javascript:, data:, and friends; a rejected
 		// href degrades to "#" like every link this framework renders.
 		href := urlsafe.CleanAnchor(it.Href)
@@ -575,6 +589,11 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 // checkMenuItemCoherence refuses the caller-incoherent combinations.
 func checkMenuItemCoherence(it MenuItem) {
 	checkMenuRowShape(it)
+	if it.RPC != "" {
+		// Every other RPC sink in the package refuses a cross-origin
+		// endpoint at render; the runtime would silently decline it.
+		checkSameOrigin("MenuItem", "RPC", it.RPC)
+	}
 	if it.Check && it.Radio != "" {
 		panic("headless: MenuItem cannot be both Check and Radio — a row is one kind of option")
 	}
@@ -607,10 +626,9 @@ func checkMenuRowShape(it MenuItem) {
 		if it.Href != "" || it.RPC != "" || it.Action != nil || it.Copy != nil || it.Radio != "" || len(it.Children) > 0 {
 			panic("headless: MenuItem with RPCAttrs cannot also set Href, RPC, Action, Copy, Radio or Children — the row is one RPC")
 		}
-		path := it.RPCAttrs["data-cui-rpc"]
-		if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-			panic("headless: MenuItem RPCAttrs needs data-cui-rpc set to a same-origin path, got " + strconv.Quote(path))
-		}
+		// The package's one same-origin rule: "/\host" is the URL
+		// parser's "//host", which the prefix check here once let by.
+		checkSameOrigin("MenuItem", "RPCAttrs data-cui-rpc", it.RPCAttrs["data-cui-rpc"])
 		for k := range it.RPCAttrs {
 			switch k {
 			case "data-cui-confirm", "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
@@ -636,15 +654,19 @@ func checkMenuRowShape(it MenuItem) {
 // menu (every aria-controls and page anchor would point at the first).
 func menuItemIDs(items []MenuItem, seen *[]string) {
 	for _, it := range items {
-		if it.Separator || it.ID == "" {
+		if it.Separator {
 			continue
 		}
-		for _, s := range *seen {
-			if s == it.ID {
-				panic("headless: Menu renders the row id " + it.ID + " twice — every reference to it now points at the first one")
+		if it.ID != "" {
+			for _, s := range *seen {
+				if s == it.ID {
+					panic("headless: Menu renders the row id " + it.ID + " twice — every reference to it now points at the first one")
+				}
 			}
+			*seen = append(*seen, it.ID)
 		}
-		*seen = append(*seen, it.ID)
+		// Always into the children: an id-less submenu parent still
+		// holds rows whose ids must not repeat.
 		menuItemIDs(it.Children, seen)
 	}
 }

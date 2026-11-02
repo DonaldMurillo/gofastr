@@ -23,14 +23,14 @@ func (ch *CrudHandler) keyCols() []string {
 	return ch.PrimaryKey
 }
 
-// refuseBlankKeyParts refuses a write that would store "" in a column of
-// a key spanning several: entity.SplitKey refuses an empty part, so the
-// row could never be named again by get, update or delete.
+// refuseBlankKeyParts refuses a write that would store "" in a key
+// column: the row could never be named again by get, update or delete.
+// On a key spanning several columns entity.SplitKey refuses an empty
+// part; on a one-column key the record routes answer 400 for an empty
+// {id}. A generated column holds its generated value by now, so only a
+// caller-chosen key (or a hook) can reach here with "".
 func (ch *CrudHandler) refuseBlankKeyParts(body map[string]any) error {
 	cols := ch.keyCols()
-	if len(cols) < 2 {
-		return nil
-	}
 	var fields map[string][]schema.Violation
 	for _, c := range cols {
 		if v, ok := body[c]; ok && v == "" {

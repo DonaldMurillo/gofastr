@@ -8,7 +8,11 @@
 //   - Escape closing the deepest open disclosure that contains focus,
 //     one level per press, with focus returned to that disclosure's
 //     controller (native <details> only handles Escape while the
-//     summary itself has focus),
+//     summary itself has focus); a key something inside already
+//     answered is not answered again, and with focus in none of them
+//     only the open popups close,
+//   - a followed link closing the popup it sits in (a menu, a dismiss
+//     or trap disclosure), never a reading section,
 //   - the close-on-navigation for disclosures that did not ask to
 //     persist, and the restore-from-store for the ones that did,
 //   - light dismiss for the popups that ask for it
@@ -321,25 +325,37 @@
     mirror(d);
   });
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      // An open modal widget's own CloseOnEscape handler runs; one
-      // Escape must not close both.
-      if (NS._modalStack && NS._modalStack.length > 0) return;
-      const open = document.querySelectorAll(HOOK + '[open]');
-      let deepest = null;
-      for (const d of open) {
-        if (d.contains(document.activeElement) && (!deepest || deepest.contains(d))) deepest = d;
-      }
-      if (deepest) {
-        deepest.removeAttribute('open');
-        const c = controllerOf(deepest);
-        if (c) c.focus({ preventScroll: true });
-        return;
-      }
-      for (const d of open) d.removeAttribute('open');
+  // Escape closes one level: the deepest open disclosure holding focus,
+  // focus back on its controller. With focus in no disclosure it closes
+  // the open popups (light-dismiss ones, every menu among them), never
+  // a reading section: an accordion does not fold because the reader
+  // pressed Escape in a field elsewhere. The listener sits on window, so
+  // it runs after every document listener, and a key something inside
+  // already answered (a combobox closing its listbox, a pane closing,
+  // a modal widget) is not answered twice: one Escape, one level.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+    // An open modal widget's own CloseOnEscape handler runs; one
+    // Escape must not close both.
+    if (NS._modalStack && NS._modalStack.length > 0) return;
+    const open = document.querySelectorAll(HOOK + '[open]');
+    let deepest = null;
+    for (const d of open) {
+      if (d.contains(document.activeElement) && (!deepest || deepest.contains(d))) deepest = d;
+    }
+    if (deepest) {
+      e.preventDefault();
+      deepest.removeAttribute('open');
+      const c = controllerOf(deepest);
+      if (c) c.focus({ preventScroll: true });
       return;
     }
+    for (const d of open) {
+      if (d.hasAttribute('data-hui-disclosure-dismiss')) d.removeAttribute('open');
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
     if (e.key !== 'Tab') return;
     // The Tab-cycle fallback: the topmost open trap disclosure keeps
     // focus inside it while no modal widget is above it. The inert
@@ -394,17 +410,42 @@
     if (e.pointerType && e.pointerType !== 'mouse' && !e.target.closest?.('a,button:enabled,input:enabled,select:enabled,textarea:enabled,label,summary,[tabindex]:not([tabindex^="-"])')) dismissOutside(e);
   }, true);
 
-  // A click on an ordinary link inside a disclosure closes it (the
-  // destination page does not need the menu open); a persistent
-  // disclosure keeps its state by contract. A data-cui-open link opens
-  // a widget over this page, no navigation (the kernel's router skips
-  // it too), so the menu stays and the widget returns focus into it.
-  document.addEventListener('click', (e) => {
-    const t = e.target;
-    const a = t && t.closest && t.closest('a[href]');
-    if (!a || a.hasAttribute('data-cui-open')) return;
-    const d = a.closest(HOOK + ':not([data-hui-disclosure-persist])');
+  // Following a link out of a popup closes the popup: a menu, a
+  // light-dismiss dropdown or a trapped drawer is in the way of where
+  // the reader is going (a same-page #anchor included), so the link
+  // takes it down. A reading section (an accordion, an FAQ, a sidebar
+  // group) is page content and stays as the reader left it; the
+  // navigation pass below closes it when the page changes. A persistent
+  // disclosure keeps its state by contract.
+  //
+  // What is not a link being followed leaves the popup alone: a click
+  // something already handled (a tab, a pager or island anchor whose
+  // handler took the click), a modified or middle click, a link that
+  // opens elsewhere (target, download), and a data-cui-open link, which
+  // opens a widget over this page (the kernel's router skips it too),
+  // so the menu stays and the widget returns focus into it. A link the
+  // client router takes is cancelled by the router itself, so it closes
+  // the popup on the router's gofastr:beforenavigate instead, unless a
+  // listener (the leave guard) cancelled that. Both listeners sit on
+  // window, after every document listener, so they read whether one of
+  // them took the event.
+  const CLOSES = HOOK + ':is([data-hui-disclosure-dismiss],[data-hui-disclosure-trap],[data-hui-menu])' +
+    ':not([data-hui-disclosure-persist])';
+  function closeFor(a) {
+    if (!a || a.hasAttribute('data-cui-open') || a.hasAttribute('download')) return;
+    if (a.target && String(a.target).toLowerCase() !== '_self') return;
+    const d = a.closest(CLOSES);
     if (d) d.removeAttribute('open');
+  }
+  window.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const t = e.target;
+    closeFor(t && t.closest && t.closest('a[href]'));
+  });
+  window.addEventListener('gofastr:beforenavigate', (e) => {
+    if (e.defaultPrevented) return; // a leave guard or userland kept the page
+    const t = e.target;
+    closeFor(t && t.closest && t.closest('a[href]'));
   });
 
   // Close the non-persistent disclosures on a client-side navigation —

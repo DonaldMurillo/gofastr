@@ -148,3 +148,38 @@ func TestNotFoundUnderPrefix(t *testing.T) {
 		t.Error("the 404 under /es/ is not in Spanish")
 	}
 }
+
+// TestScreenMethodUnderPrefix: a screen reached through a locale prefix
+// is still a GET resource. POST /es/pricing answers the screen-path 405
+// (Allow: GET, HEAD, no session) in the prefix's language, OPTIONS 204s,
+// and a POST to an unknown prefixed path keeps its 404.
+func TestScreenMethodUnderPrefix(t *testing.T) {
+	a := prefixHostApp(t)
+	serve := func(method, path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		a.Router().ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		return rec
+	}
+	rec := serve("POST", "/es/pricing")
+	if rec.Code != 405 {
+		t.Fatalf("POST /es/pricing: status %d, want 405", rec.Code)
+	}
+	if got := rec.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Errorf("Allow = %q", got)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("minted a session: %v", got)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, ` lang="es">`) || strings.Contains(body, "Precios") {
+		t.Errorf("want the Spanish 405 document without the screen, got %.300s", body)
+	}
+	if rec := serve("OPTIONS", "/es/pricing"); rec.Code != 204 || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Errorf("OPTIONS /es/pricing: status %d Allow %q", rec.Code, rec.Header().Get("Allow"))
+	}
+	if rec := serve("POST", "/es/missing"); rec.Code != 404 {
+		t.Errorf("POST /es/missing: status %d, want 404", rec.Code)
+	}
+	if rec := serve("GET", "/es/pricing"); rec.Code != 200 {
+		t.Errorf("GET /es/pricing: status %d", rec.Code)
+	}
+}

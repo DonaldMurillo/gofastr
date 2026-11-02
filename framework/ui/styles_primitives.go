@@ -941,10 +941,21 @@ func stickyCSS(_ style.Theme) string {
 :where([data-cui-comp="ui-sticky"]).fui-sticky--offset-md { top: calc(var(--ui-sticky-top, 0px) + var(--spacing-md, 8px)); }
 :where([data-cui-comp="ui-sticky"]).fui-sticky--offset-lg { top: calc(var(--ui-sticky-top, 0px) + var(--spacing-lg, 16px)); }
 :where([data-cui-comp="ui-sticky"]).fui-sticky--offset-xl { top: calc(var(--ui-sticky-top, 0px) + var(--spacing-xl, 24px)); }
-/* Show a subtle bottom border when the element is stuck (only top-sticky) */
-@supports ((position: -webkit-sticky) or (position: sticky)) {
-  [data-cui-comp="ui-sticky"].fui-sticky--top:not(:is(:first-child))::after {
-    opacity: 1;
+/* A bottom edge takes its offset from the bottom and leaves top alone:
+   the offset rules above set top, which would also pin a bottom bar to
+   the top of the viewport once it scrolls past. */
+:where([data-cui-comp="ui-sticky"].fui-sticky--bottom):is(.fui-sticky--offset-0, .fui-sticky--offset-sm, .fui-sticky--offset-md, .fui-sticky--offset-lg, .fui-sticky--offset-xl) { top: auto; }
+:where([data-cui-comp="ui-sticky"].fui-sticky--bottom).fui-sticky--offset-sm { bottom: var(--spacing-sm, 4px); }
+:where([data-cui-comp="ui-sticky"].fui-sticky--bottom).fui-sticky--offset-md { bottom: var(--spacing-md, 8px); }
+:where([data-cui-comp="ui-sticky"].fui-sticky--bottom).fui-sticky--offset-lg { bottom: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-sticky"].fui-sticky--bottom).fui-sticky--offset-xl { bottom: var(--spacing-xl, 24px); }
+/* A subtle bottom hairline while a top-sticky element is stuck. Only
+   a browser that can report the stuck state draws it: a rule keyed on
+   document position drew it at rest, mid-page. */
+@supports (container-type: scroll-state) {
+  [data-cui-comp="ui-sticky"].fui-sticky--top { container-type: scroll-state; }
+  @container scroll-state(stuck: top) {
+    [data-cui-comp="ui-sticky"].fui-sticky--top::after { opacity: 1; }
   }
 }`
 }

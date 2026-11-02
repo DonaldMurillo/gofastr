@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"math"
 	"net"
 	"net/http"
 	"sort"
@@ -240,6 +241,15 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyTooLong)
 				return
 			}
+			// A key is printable ASCII (RFC 9110 field-value bytes a
+			// client mints; the IETF draft recommends a UUID). A byte
+			// past 0x7e is not UTF-8 a Postgres text column accepts, so
+			// it reached the store and answered 503 "store down" for a
+			// client's malformed header.
+			if !printableASCII(key) {
+				i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyInvalid)
+				return
+			}
 
 			body, tooLarge, err := readBodyLimit(r, cfg.MaxBodyBytes)
 			if err != nil {
@@ -332,13 +342,6 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				upstreamKeys:   upstreamKeys,
 				maxBody:        cfg.MaxResponseBytes,
 			}
-			next.ServeHTTP(rec, r)
-
-			// Use a fresh context for the cleanup write so a client
-			// disconnect doesn't strand the claim in-flight until the
-			// 30-second TTL; that would block legitimate retries.
-			finishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 			// Finish persists (or releases) the claim AFTER the handler has
 			// answered. A failure here strands the entry: the client already
 			// got its response, but the same Idempotency-Key now 409s on
@@ -346,6 +349,11 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			// only correct action is to make the loss observable; silently
 			// dropping it is the bug this fixes.
 			finish := func(resp *IdempotentResponse) {
+				// Use a fresh context for the cleanup write so a client
+				// disconnect doesn't strand the claim in-flight until the
+				// 30-second TTL; that would block legitimate retries.
+				finishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
 				if err := cfg.Store.Finish(finishCtx, storeKey, fp, resp); err != nil {
 					cfg.Logger.Error("idempotency: Finish failed (claim stranded; retries of this key will 409 until TTL)",
 						// The key is request-borne: scrub it the way every
@@ -354,6 +362,19 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 						"key", textsafe.ScrubControlBytes(key), "error", err)
 				}
 			}
+			// A panicking handler (http.ErrAbortHandler included) skips
+			// the Finish below. Release the claim on the way out, or every
+			// retry of the same request 409s "in flight" until the claim
+			// TTLs although nothing is running; then let the panic go on
+			// to Recovery or net/http.
+			defer func() {
+				if v := recover(); v != nil {
+					finish(nil)
+					panic(v)
+				}
+			}()
+			next.ServeHTTP(rec, r)
+
 			switch {
 			case rec.bodyOverflow, rec.streamed:
 				finish(nil)
@@ -378,7 +399,7 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 	if r.Body == nil {
 		return nil, false, nil
 	}
-	buf, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	buf, err := io.ReadAll(io.LimitReader(r.Body, sentinelLimit(limit)))
 	if err != nil {
 		return nil, false, err
 	}
@@ -386,6 +407,17 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 		return buf, true, nil
 	}
 	return buf, false, nil
+}
+
+// sentinelLimit is limit+1, the one extra byte that tells "exactly
+// limit" from "more than limit". At math.MaxInt64 (no cap) the +1 would
+// wrap negative and io.LimitReader would read nothing, so the cap stays
+// put there: no body can be longer anyway.
+func sentinelLimit(limit int64) int64 {
+	if limit >= math.MaxInt64 {
+		return limit
+	}
+	return limit + 1
 }
 
 // idemStoreKey is the key the store sees: the principal's byte length,
@@ -775,4 +807,15 @@ func (s *memoryIdempotencyStore) reapLocked(now time.Time) {
 			delete(s.entries, k)
 		}
 	}
+}
+
+// printableASCII reports whether s holds only bytes 0x21-0x7e and
+// spaces, the bytes a client-minted Idempotency-Key is made of.
+func printableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x20 || c > 0x7e {
+			return false
+		}
+	}
+	return true
 }

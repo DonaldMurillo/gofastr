@@ -13,5 +13,6 @@ var (
 	reasonIdemKeyMissing    = i18n.Define("idempotency.key_missing", "missing Idempotency-Key header")
 	reasonIdemKeyReused     = i18n.Define("idempotency.key_reused", "Idempotency-Key reused with different request")
 	reasonIdemKeyTooLong    = i18n.Define("idempotency.key_too_long", "Idempotency-Key too long")
+	reasonIdemKeyInvalid    = i18n.Define("idempotency.key_invalid", "Idempotency-Key must be printable ASCII")
 	reasonIdemStoreDown     = i18n.Define("idempotency.store_unavailable", "idempotency store unavailable")
 )

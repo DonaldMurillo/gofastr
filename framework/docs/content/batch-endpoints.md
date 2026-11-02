@@ -48,7 +48,10 @@ the whole transaction.
   `400 Bad Request` before any item runs.
 - `items` (or `ids`) can't be empty.
 - A batch update item names its record by every key column, under the
-  column's wire name. For a composite key, a batch delete's `ids` are
+  column's wire name. An item that omits one answers `missing <key>`
+  with `reason: "missing_key"`. Two keys in one item that name the same
+  column (`bodyText` and `body_text` on a camelCase handler) refuse the
+  batch with 400 before it runs, naming both spellings. For a composite key, a batch delete's `ids` are
   `entity.JoinKey` strings (`"s1/c1"`).
 
 ## Behaviour & guarantees

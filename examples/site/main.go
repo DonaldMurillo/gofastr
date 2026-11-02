@@ -687,6 +687,17 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
+	// DatePicker demo (/components/datepicker): a month change GETs the
+	// calendar for the month in the query, built from the same config the
+	// gallery tile renders, so the page and the island agree on the days.
+	// A read with no state, like the workspace lookups below.
+	fwApp.Router().Get(gallery.DatePickerDemoEndpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := gallery.DatePickerDemo(r.URL.Query().Get("month"))
+		cfg.Ctx = r.Context()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, string(ui.DatePickerMonth(cfg)))
+	}))
+
 	// Multi-step wizard round-trip demo (self-contained full-page form that
 	// POSTs to itself, no site chrome). GET renders step 0; POST advances.
 	fwApp.Router().Get(wizardDemoPath, http.HandlerFunc(WizardDemoHandler))

@@ -45,7 +45,7 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 		// Step 1: fill name + email then Continue.
 		chromedp.SetValue(`#wd-name`, "Ada Lovelace", chromedp.ByQuery),
 		chromedp.SetValue(`#wd-email`, "ada@example.com", chromedp.ByQuery),
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		chromedp.WaitVisible(`input[name="wd-theme"]`, chromedp.ByQuery),
 		// Step 2 visible: assert the step heading, indicator state.
 		chromedp.Evaluate(`JSON.stringify((() => {
@@ -86,7 +86,7 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 			if (r) r.checked = true;
 			return true;
 		})()`, new(bool)),
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#wd-comments`, chromedp.ByQuery),
 		// Step 3: assert heading + Submit visible (no Continue).
 		chromedp.Evaluate(`JSON.stringify((() => {
@@ -119,7 +119,7 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 	// Final: fill comments, Submit.
 	err = chromedp.Run(ctx,
 		chromedp.SetValue(`#wd-comments`, "Looks good!", chromedp.ByQuery),
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		chromedp.WaitVisible(`body[data-wizard-confirm="true"]`, chromedp.ByQuery),
 	)
 	if err != nil {
@@ -162,7 +162,7 @@ func TestE2E_Wizard_EmptySubmitStaysOnStepOne(t *testing.T) {
 		pageReady(),
 		// Continue with BOTH required fields empty (Click, not Submit:
 		// chromedp.Submit does not fire the submit event).
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 	)
 	if err != nil {
 		t.Fatalf("chromedp empty submit: %v", err)
@@ -246,7 +246,7 @@ func TestE2E_Wizard_BackPreservesState(t *testing.T) {
 		// Step 1 → 2
 		chromedp.SetValue(`#wd-name`, "Grace", chromedp.ByQuery),
 		chromedp.SetValue(`#wd-email`, "grace@example.com", chromedp.ByQuery),
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '1'`),
 		pageReady(),
 		// Step 2 → 3 (pick light)
@@ -255,11 +255,11 @@ func TestE2E_Wizard_BackPreservesState(t *testing.T) {
 			if (r) r.checked = true;
 			return true;
 		})()`, new(bool)),
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '2'`),
 		pageReady(),
 		// Step 3 → Back to step 2
-		chromedp.Click(`button[name="wizard_action"][value="back"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="back"]:not([hidden])`, chromedp.ByQuery),
 		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '1'`),
 		pageReady(),
 		// Step 2 must show the previously-checked radio.
@@ -309,10 +309,10 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 		pageReady(),
 		chromedp.SetValue(`#wd-name`, "Ada Lovelace", chromedp.ByQuery),
 		chromedp.SetValue(`#wd-email`, "ada@example.com", chromedp.ByQuery),
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '1'`),
 		pageReady(),
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '2'`),
 		pageReady(),
 	)
@@ -353,7 +353,7 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 	// Now click Submit and confirm the wizard either submits OR re-renders
 	// at the final step, never advances to a non-existent step 4.
 	err = chromedp.Run(ctx,
-		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		chromedp.Click(`button[name="wizard_action"][value="next"]:not([hidden])`, chromedp.ByQuery),
 		waitFor(`!!document.querySelector('[data-wizard-confirm]')`),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {

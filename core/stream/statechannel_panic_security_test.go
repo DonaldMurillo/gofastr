@@ -139,9 +139,9 @@ func TestStateChannelRedPanicNet(t *testing.T) {
 			// Only meaningful once legs 1-2 are fixed; assert liveness then.
 			c.Publish("healthy", scRedEvent{Action: "healthy"})
 			select {
-			case data := <-conn.sendBuffer:
+			case msg := <-conn.sendBuffer:
 				var env SequencedEnvelope[json.RawMessage]
-				if err := json.Unmarshal(data, &env); err != nil {
+				if err := json.Unmarshal(msg.data, &env); err != nil {
 					t.Fatalf("setup broken: decode envelope: %v", err)
 				}
 				if env.Type != "healthy" {
