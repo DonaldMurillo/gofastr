@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`/readyz` no longer races a check that returns at the deadline,
+  and keeps an unnamed check's result.** The timeout fill read the
+  result slice while a check returning in that moment wrote its row, a
+  data race; and a row counted as reported only when it carried a name, so
+  a passing check registered with `RegisterReadiness("", …)` was reported
+  as a timeout and the app as not ready. Each check now hands its row to
+  the one goroutine that builds the response.
 - **Rotating a secret that ends in a newline keeps sessions.**
   `GOFASTR_SECRET` is used as set, so a value read from a file (a
   Kubernetes secret made with `--from-file`) signs with its trailing
