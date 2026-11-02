@@ -5939,7 +5939,7 @@ few lines, and link the PR or the docs page for the rest.
   release and gets the same fix: a failed unlock no longer keeps every
   other replica from leading.
 - **Keyword table, column and index names migrate.** The migrator wrote
-  every name bare while CRUD quotes them, so a field named `order`,
+  every name bare, so a field named `order`,
   `group` or `limit` failed `CREATE TABLE` on both engines, and one
   named `user`, `end`, `desc`, `to`, `offset` or `do` booted on SQLite
   and failed on Postgres. A name that is a keyword on either engine is
@@ -5947,7 +5947,10 @@ few lines, and link the PR or the docs page for the rest.
   migrator writes, and the recorded DDL a snapshot holds is read back
   either way. Other names stay bare, so existing DDL and snapshots are
   byte-identical, and a snapshot that holds a keyword name bare diffs
-  as unchanged.
+  as unchanged. The CRUD statements still name columns bare, so most
+  keyword names still fail on the first insert and `gofastr generate`
+  keeps refusing them in an app spec; `if`, a keyword to SQLite's DDL
+  only, is now allowed there.
 
 ### Security
 - **`core/textsafe` treats Unicode tag characters and Hangul fillers as

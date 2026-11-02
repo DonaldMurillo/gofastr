@@ -1717,9 +1717,10 @@ The generator rejects:
   generated typed client emits it into Go string literals, and the runtime
   interpolates it into DDL as a bare SQL identifier. The entity `name:` is
   already constrained to a Go identifier; `table:` was the way around that.
-- a table, field or index name that bare SQL cannot carry. AutoMigrate
-  writes these names unquoted, so the app would build and then fail at
-  boot or on its first query. The generator refuses a name with a hyphen,
+- a table, field or index name that bare SQL cannot carry. The CRUD
+  routes write these names unquoted (AutoMigrate quotes only a keyword),
+  so the app would build and then fail at boot or on its first query.
+  The generator refuses a name with a hyphen,
   space or dot (`first-name`, `last name`), a name over 63 bytes
   (Postgres keeps only the first 63, so two longer names that share them
   name one table or column), and an SQL word that SQLite or Postgres

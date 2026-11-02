@@ -13,13 +13,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// AutoMigrate writes its DDL with bare identifiers (quoting would make
-// Postgres keep a declared "Widgets" while the rest of the stack folds
-// it), and the CRUD layer's statements name columns the same way. So
-// every table, column and index name an app spec declares reaches SQL
-// unquoted, and a name that bare SQL cannot carry is an app that
-// generates, compiles and then dies at boot ("auto-migrate: near
-// "order": syntax error"). The checks here move that failure to
+// The CRUD layer's statements name tables and columns bare, and so does
+// AutoMigrate's DDL for every name that is not a keyword (it quotes and
+// folds a keyword, framework/migrate keyword.go; quoting every name would
+// make Postgres keep a declared "Widgets" while the rest of the stack
+// folds it). So a name that bare SQL cannot carry is an app that
+// generates, compiles and then dies at boot or on its first insert
+// ("near "order": syntax error"). The checks here move that failure to
 // generate time, where the error can name the field.
 
 // sqlReservedWords are the words SQLite or Postgres refuse as a bare
@@ -29,7 +29,10 @@ import (
 // (pg_get_keywords catcodes R, T and C) as a table name and as a column
 // name, on both engines, and keeping every word either engine refused.
 // TestSQLReservedWordsBreakAutoMigrate proves each entry against
-// AutoMigrate itself, on SQLite and (with TEST_POSTGRES_DSN) Postgres.
+// AutoMigrate plus a CRUD create and list, on SQLite and (with
+// TEST_POSTGRES_DSN) Postgres. "if" left the list when the migrator began
+// quoting keywords: it is a keyword only to SQLite's DDL, so once the
+// DDL quotes it the CRUD statements carry it bare on both engines.
 var sqlReservedWords = map[string]bool{
 	"add": true, "all": true, "alter": true, "analyse": true, "analyze": true,
 	"and": true, "any": true, "array": true, "as": true, "asc": true,
@@ -44,7 +47,7 @@ var sqlReservedWords = map[string]bool{
 	"do": true, "drop": true, "else": true, "end": true, "escape": true,
 	"except": true, "exists": true, "false": true, "fetch": true, "for": true,
 	"foreign": true, "freeze": true, "from": true, "full": true, "grant": true,
-	"group": true, "having": true, "if": true, "ilike": true, "in": true,
+	"group": true, "having": true, "ilike": true, "in": true,
 	"index": true, "initially": true, "inner": true, "insert": true,
 	"intersect": true, "into": true, "is": true, "isnull": true, "join": true,
 	"lateral": true, "leading": true, "left": true, "like": true, "limit": true,
