@@ -856,9 +856,9 @@ notes:
     breaking: true
     guidance: "Each such spec generated an app that failed at boot or on its first query, or on Postgres shared a table between entities. A few words, such as user, desc, end, left and right, only Postgres refuses: an app on SQLite worked with them and now fails validation, so rename the field (or set table:) before regenerating, and migrate the column with renames: on the entity."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
-  - change: "BREAKING - Generated clients (entity model and repo shapes, entities/client, the Go and JS SDKs, the CLI) spell a field's JSON key the way the server does, so a column named Title is sent and read as Title, not title; an app spec field or relation name must start with a lower-case letter"
+  - change: "BREAKING - Generated clients (entity model and repo shapes, entities/client, the Go and JS SDKs, the CLI) spell a field's JSON key the way the server does, so a column named Title is sent and read as Title, not title, and the typed repo's in-process write keeps it; an app spec refuses two field names that become one Go field or one Postgres column"
     breaking: true
-    guidance: "Only names that start with an upper-case letter or an underscore change, and their values were silently dropped before. Regenerate the clients (gofastr generate, gofastr generate sdk). An app spec with such a field fails validation: rename it in snake_case and add the old name under renames: so the column moves."
+    guidance: "Only names that start with an upper-case letter or an underscore change, and their values were silently dropped before. Regenerate the clients (gofastr generate, gofastr generate sdk). An app spec with two fields such as Title and title fails validation: rename one and add the old name under renames: so the column moves."
     nodetect: "the keys change in regenerated files; an app's own code reads them through the generated types"
   - change: "gofastr validate and generate app refuse a screen route that does not start with /, holds ?, #, a backslash, whitespace or a control character, has an empty, . or .. segment, names a parameter twice, or sits at or under an entity's CRUD mount"
     breaking: false
@@ -1171,3 +1171,15 @@ notes:
     breaking: false
     guidance: "Nothing to change. The export holds one pool connection for its whole run and the WAL is not checkpointed past its snapshot until it ends; an app with SetMaxOpenConns(1) queues requests behind a long export. A rollback-journal database still reads table by table, so stop writes during its export."
     nodetect: "the change is in how ExportData reads; nothing in an app's source spells it"
+  - change: "BREAKING - BeforeUpdate and BeforeDelete hooks run after the scope check: update, delete and batch items answer 404 for another owner's or tenant's row, a trashed row or a missing id before the hook is called"
+    breaking: true
+    hits: review
+    guidance: "A hook's database work rolled back with the 404, but an email it sent or a file it deleted did not, for an id the caller could not touch. A hook that created the row it was then asked to update or delete must create it before the call. A sqlmock test that registers such a hook expects one keyed SELECT on the table after BEGIN."
+    find:
+      uses:
+        - gofastr/framework/hook.BeforeUpdate
+        - gofastr/framework/hook.BeforeDelete
+  - change: "BREAKING on SQLite - a decimal value with a fraction and more than 15 significant digits is refused with a 400 (decimal_significant_digits) instead of being stored rounded to a 64-bit float"
+    breaking: true
+    guidance: "SQLite has no exact decimal type, so 999999999999999.1234 read back 999999999999999.1. Postgres keeps every digit of DECIMAL(19,4) and is unchanged. Keep such values on Postgres, store an int count of the smallest unit, or set the field's RawType to TEXT (stored as sent, compared as text)."
+    nodetect: "the refused values arrive in request bodies at runtime; nothing in an app's source spells them"

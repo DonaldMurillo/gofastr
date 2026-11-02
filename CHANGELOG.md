@@ -204,6 +204,22 @@ few lines, and link the PR or the docs page for the rest.
   itself was `prod`. A value that relied on the file's spelling beating
   the environment now reads the environment's. See
   [dotenv](framework/docs/content/dotenv.md#variable-expansion-var).
+- **BREAKING: `BeforeUpdate` and `BeforeDelete` hooks no longer run for
+  an id the caller cannot write.** Update, delete and their batch items
+  check the target under the write's tenant, owner and soft-delete scope
+  (and any `BeforeGet` clause) first; another owner's row, another
+  tenant's, a trashed row or a missing id answers 404 before the hook,
+  so a hook's email or file delete never fires for it. A hook that
+  created the row it was asked to update must do that before the call.
+  One keyed `SELECT` per write, only when such a hook is registered.
+  See `hooks-and-transactions.md`.
+- **BREAKING (SQLite): a `decimal` SQLite would round is refused.** A
+  value with a fraction and more than 15 significant digits
+  (`"999999999999999.1234"` read back `999999999999999.1`) answers 400
+  `decimal_significant_digits` on SQLite instead of storing it rounded.
+  Postgres keeps every digit of `DECIMAL(19,4)` and still takes it. A
+  `RawType: "TEXT"` field is stored as sent. See
+  `entity-declarations.md`; `schema.DecimalExactOnSQLite` is the check.
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
@@ -590,9 +606,12 @@ few lines, and link the PR or the docs page for the rest.
   every field.** The server keys a column `Title` as `Title` and `_note` as
   `Note`; the generated model, typed repo shapes, typed client, Go and JS
   SDKs and CLI lowered the first letter (`title`, `note`), so those
-  fields were dropped on write and read as empty. App specs now refuse a
-  field or relation name that does not start with a lower-case letter,
-  since the typed repo's in-process write cannot keep one either.
+  fields were dropped on write and read as empty. The typed repo's
+  in-process write keeps them too: `CreateOne`, `UpdateOne` and
+  `UpsertOne` map the key `framework.MarshalEntity` derives (`title`,
+  `note`, `h_t_t_p_code`) back to its column, and a cascade relation's
+  the same way. App specs refuse two field names that become one Go
+  field or one Postgres column (`Title` and `title`).
 - **battery/auth bug bash (2026-11-01).** Details in
   [auth.md](framework/docs/content/auth.md):
   - **BREAKING: token management needs the second factor.** On a 2FA

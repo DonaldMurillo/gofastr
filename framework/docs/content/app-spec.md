@@ -1707,12 +1707,13 @@ The generator rejects:
   refuses as a bare name, such as `order`, `group`, `default`, `values`,
   `limit`, `on`, `select`, `user` and `desc`. Go words such as `type`,
   `func` and `range` are fine.
-- a field or relation name that does not start with a lower-case letter
-  (`Title`, `HTTPCode`, `_note`). The server keeps the first letter as
-  written in the JSON key (`Title`, `Note`), and the generated typed repo
-  maps that key back to its column through snake_case, which lowers it,
-  so a create through the repo dropped the value. Write names in
-  snake_case (`title`, `http_code`)
+- two field names of one entity that become one Go struct field or one
+  Postgres column (`Title` and `title`, `_note` and `note`): the generated
+  code would not compile, and Postgres folds the unquoted names
+  AutoMigrate writes into one column. A name that does not start with a
+  lower-case letter is fine on its own: `Title` is served and sent as
+  `Title`, `_note` as `Note`, and the generated typed repo writes and
+  reads both
 - two entities on one table, compared the way Postgres folds an unquoted
   name and with the engine's default schema dropped (`table: Items` or
   `table: public.items` and an entity named `items`): the second entity's

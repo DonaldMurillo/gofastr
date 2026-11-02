@@ -525,7 +525,7 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 - **`many_to_many`**: An array of target IDs or child objects is processed. Existing IDs are verified against caller tenant/owner scope and linked in the pivot table; objects carrying new fields are created or updated. A link already present is skipped; for a registered pivot entity "present" is read under the pivot's own tenant, owner and soft-delete scope, so a soft-deleted link is not present and re-linking it hits the pivot's key. A link insert that breaks a unique constraint answers **409** and rolls the whole write back, unless the link turns out to exist on a recheck: then another request wrote the same pair at the same moment and the write succeeds.
 - **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
 - **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. Inside a caller's transaction (`App.InTx`, a handler bound to a `*sql.Tx`) they wait until the whole operation succeeds, so a failed cascade announces no child. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
-- **Child keys**: A nested child's keys are read the way its parent's are. Over HTTP that is the child's wire keys; two keys naming one column (`bodyText` and `body_text` on a camel-case handler) answer 400 `validation.keys_fold` on the child's path, as the parent's own keys do. In process (`CreateOne`, a typed repo) the key `MarshalEntity` derives counts too, so a `Line2` field's `line2` writes `line_2`.
+- **Child keys**: A nested child's keys are read the way its parent's are. Over HTTP that is the child's wire keys; two keys naming one column (`bodyText` and `body_text` on a camel-case handler) answer 400 `validation.keys_fold` on the child's path, as the parent's own keys do. In process (`CreateOne`, a typed repo) the key `MarshalEntity` derives counts too, so a `Line2` field's `line2` writes `line_2`, a `Title` field's `title` writes `Title`, and `_note`'s `note` (from its wire key `Note`) writes `_note`; a cascade relation's key is matched the same way.
 - **Read scope**: A cascade reaches the child entity's rows the way `?include=` does, so it honours the child's read scope: its `ReadScope`, and the clauses its own `BeforeList` hooks append (plus `BeforeGet` for `has_one` and `belongs_to`). An item that names an existing child the scope hides, by a bare id or with fields to update, answers **404**, the same as a child that is not there, and writes nothing; a `has_one` update with no id treats a hidden existing child as absent. A child the write creates, or moves, out of that scope comes back as its id alone.
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
@@ -651,12 +651,20 @@ entities:
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
 
-A `decimal` column is `DECIMAL(19,4)`. Postgres stores every digit of
-that. SQLite has no exact decimal type: it stores the value as an
-integer, or as a 64-bit float past about 15 significant digits, so
-`"90071992547409.1234"` reads back rounded there. Keep money that needs
-all 19 digits on Postgres, or store it as an `int` count of the smallest
-unit.
+A `decimal` column is `DECIMAL(19,4)`: up to 15 digits before the point
+and 4 after it. Postgres stores every digit of that. SQLite has no exact
+decimal type: it stores a whole number as an integer and a value with a
+fraction as a 64-bit float, which keeps 15 significant digits. So on
+SQLite a create or update refuses a value with a fraction and more than
+15 significant digits (`"90071992547409.1234"`,
+`"999999999999999.1234"`) with a 400 naming the field, code
+`decimal_significant_digits`, instead of storing it rounded; Postgres
+takes it. Whole numbers up to the column's 15 digits, and values such
+as `"12345678901.2345"`, read back as sent on both. Keep money that
+needs all 19 digits on Postgres, store it as an `int` count of the
+smallest unit, or give the field `RawType: "TEXT"`, which SQLite keeps
+as written (and which then sorts and compares as text).
+`schema.DecimalExactOnSQLite` is the check.
 
 A create or update refuses a `decimal` its column cannot store as sent,
 with a 400 naming the field, on both dialects:

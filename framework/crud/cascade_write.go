@@ -18,6 +18,7 @@ import (
 	fwdb "github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // pivotLink is one many_to_many link: the pivot table and its two key
@@ -479,6 +480,12 @@ func (ch *CrudHandler) findCascadeValue(body map[string]any, relName string) (an
 	}
 	wk := ch.wireKeyColumn(relName)
 	if val, ok := body[wk]; ok && val != nil {
+		return val, true
+	}
+	// The key MarshalEntity derives from the wire key: _extras is served
+	// as Extras, which snakes to extras (bodyColumns does the same for a
+	// field).
+	if val, ok := body[casing.ToSnake(conv)]; ok && val != nil {
 		return val, true
 	}
 	return nil, false

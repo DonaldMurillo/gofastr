@@ -38,6 +38,20 @@ on the entity's own List and Get, on a parent's `?include=` or
 `?rel.field=` that runs it, and on the MCP read tools that call those
 routes.
 
+**A Before hook only sees a row the caller can write.** `BeforeUpdate`
+and `BeforeDelete` run after the scope check, not before it: on
+`PUT`, `PATCH` and `DELETE /<entity>/{id}`, every item of the batch
+routes, and in process on `UpdateOne`, `DeleteOne`, `BatchUpdateMany`
+and `BatchDeleteMany`, crud first reads the target row under the
+write's own tenant, owner and soft-delete scope, plus any clause a
+`BeforeGet` hook appends (below). Another owner's row, another
+tenant's, a trashed row and a missing id answer 404 there, and the hook
+is never called. That matters because a hook's database work rolls back
+with the write but an email it sent or a file it deleted does not.
+Restore, purge and state moves already read their target before their
+hooks. The check is one keyed `SELECT` inside the write's transaction,
+and runs only when such a hook is registered.
+
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
 hook that fills in or normalizes a field mutates the body the validator
 then checks; use them to supply server-derived values that must pass

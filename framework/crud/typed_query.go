@@ -503,6 +503,9 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	if !vr.Valid {
 		return 0, &ValidationError{fields: vr.Errors}
 	}
+	if err := q.handler.refuseInexactDecimals(ctx, body); err != nil {
+		return 0, err
+	}
 
 	// The rows it matches can hold different stored values in a column
 	// it keeps, so part of a multi-column reference cannot move here.
