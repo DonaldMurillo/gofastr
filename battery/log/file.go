@@ -3,6 +3,7 @@ package log
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,8 +25,11 @@ type FileOpts struct {
 	// server logs typically contain request paths, request IDs, and
 	// panic stacks; world-readable defaults aren't appropriate on a
 	// multi-user host. Override only if you need broader access. An
-	// existing file is tightened to FileMode when the sink opens it
-	// (bits FileMode lacks are cleared; none are added).
+	// existing file this process owns is tightened to FileMode when the
+	// sink opens it (bits FileMode lacks are cleared; none are added).
+	// A file another user owns keeps its mode, and a tighten the OS
+	// refuses is one warning on stderr, never a failed open. Windows
+	// skips the tighten.
 	FileMode os.FileMode
 }
 
@@ -46,6 +50,10 @@ type fileSink struct {
 	bw     *bufio.Writer
 	size   int64
 	closed bool
+
+	// tightenWarn keeps a failed tighten to one warning per sink, not
+	// one per rotation reopen.
+	tightenWarn sync.Once
 }
 
 // FileSink opens (creating if needed) the file at path and returns a
@@ -123,18 +131,9 @@ func (s *fileSink) open() error {
 		return fmt.Errorf("log: stat %s: %w", s.path, err)
 	}
 	// The mode argument above applies only at create: an existing file
-	// keeps its own, so a server.log an earlier build or a provisioning
-	// step left 0644 stayed world-readable while every file this sink
-	// rotates in is FileMode. Tighten the handle to FileMode (never
-	// loosen: bits FileMode lacks are cleared, none are added). On the
-	// handle, not the path, so a rename racing the open cannot redirect
-	// it.
-	if perm := info.Mode().Perm(); perm&^s.opts.FileMode != 0 {
-		if err := f.Chmod(perm & s.opts.FileMode); err != nil {
-			_ = f.Close()
-			return fmt.Errorf("log: tighten %s: %w", s.path, err)
-		}
-	}
+	// keeps its own, so a server.log an earlier build left 0644 stayed
+	// world-readable while every file this sink rotates in is FileMode.
+	s.tightenLocked(f, info)
 	s.f = f
 	s.bw = bufio.NewWriterSize(f, 16<<10)
 	s.size = info.Size()
@@ -268,3 +267,38 @@ func (s *fileSink) rotateLocked() error {
 
 	return s.open()
 }
+
+// tightenLocked clears the bits FileMode lacks from an existing log
+// file (never adds any), on the handle so a rename racing the open
+// cannot redirect it. It rewrites only a file this process owns: a
+// provisioned /var/log/app/server.log at 0664 root:app that the app
+// appends to as a member of group app is the operator's arrangement, and
+// rewriting a mode somebody else owns is the tightenshared rule's
+// refusal. A chmod that still fails (a read-only bind mount, an LSM) is
+// a one-time warning, never a failed open: the sink appended to that
+// file before it learned to tighten, and must keep doing so.
+func (s *fileSink) tightenLocked(f *os.File, info os.FileInfo) {
+	perm := info.Mode().Perm()
+	if perm&^s.opts.FileMode == 0 {
+		return
+	}
+	uid, ok := fileOwnerUID(info)
+	if !ok || uid != processEUID() {
+		return
+	}
+	if err := chmodHandle(f, perm&s.opts.FileMode); err != nil {
+		s.tightenWarn.Do(func() {
+			fmt.Fprintf(tightenWarnOut, "log: could not tighten %s from %o to %o, appending with its mode unchanged: %v\n",
+				s.path, perm, perm&s.opts.FileMode, err)
+		})
+	}
+}
+
+// Seams for the tighten decision: the container the tests run in is
+// root, where chmod never fails and every file is ours.
+var (
+	fileOwnerUID             = ownerUID
+	processEUID              = os.Geteuid
+	chmodHandle              = (*os.File).Chmod
+	tightenWarnOut io.Writer = os.Stderr
+)
