@@ -72,12 +72,10 @@ func runThemeInit(args []string) {
 	// refuses a symlinked theme/ or a linked theme.go that would carry
 	// the write out of it; an --out the operator spelled outside the
 	// project is theirs to name.
-	if filepath.IsLocal(dest) {
-		if err := project.RefuseEscape(".", dest); err != nil {
-			fmt.Printf("%s %v\n", cli.Red("✗"), err)
-			cli.OsExit(1)
-			return
-		}
+	if err := refuseLinkOutOfProject(dest); err != nil {
+		fmt.Printf("%s %v\n", cli.Red("✗"), err)
+		cli.OsExit(1)
+		return
 	}
 	if _, err := os.Lstat(dest); err == nil && !force {
 		fmt.Printf("%s %s already exists. Pass --force to overwrite.\n", cli.Red("✗"), dest)
@@ -187,4 +185,28 @@ func themeStarterSource(pkg string) string {
 		panic("gofastr: theme starter does not parse: " + err.Error())
 	}
 	return string(src)
+}
+
+// refuseLinkOutOfProject refuses a destination inside the project (the
+// current directory) that a symlinked directory or a linked leaf would
+// carry out of it (project.RefuseEscape). A relative path is inside when
+// filepath.IsLocal says so; an absolute one when it lies under the
+// working directory, so --out=$PWD/theme/theme.go is checked like
+// theme/theme.go. A destination the operator spelled outside the project
+// is theirs to name.
+func refuseLinkOutOfProject(dest string) error {
+	if filepath.IsLocal(dest) {
+		return project.RefuseEscape(".", dest)
+	}
+	if !filepath.IsAbs(dest) {
+		return nil
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if rel, err := filepath.Rel(wd, dest); err == nil && filepath.IsLocal(rel) {
+		return project.RefuseEscape(wd, rel)
+	}
+	return nil
 }

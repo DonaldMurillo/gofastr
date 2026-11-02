@@ -325,8 +325,9 @@ few lines, and link the PR or the docs page for the rest.
   linked `.env` received the generated signing key. Each writer refuses
   a path that leaves the project or names nothing, before creating any
   directory; a link inside the project is still followed. `gofastr
-  theme init` (for a destination inside the project) and `gofastr new
-  handler` refuse the same links. `gofastr init .` refuses a `go.mod`
+  theme init` (for a destination inside the project, relative or an
+  absolute path under the working directory), the `gofastr theme edit`
+  Write button and `gofastr new handler` refuse the same links. `gofastr init .` refuses a `go.mod`
   or `.git` linked out of the project before writing anything: go mod
   init created a dangling `go.mod` link's target, go mod edit rewrote
   the file the link named, and git init reinitialised the repository a

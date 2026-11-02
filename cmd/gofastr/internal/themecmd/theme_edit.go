@@ -81,6 +81,15 @@ func runThemeEdit(args []string) {
 		}
 	}
 
+	// A destination inside the project refuses a theme/ (or theme.go)
+	// linked out of it, as theme init does; writeBack checks again before
+	// every Write.
+	if err := refuseLinkOutOfProject(outPath); err != nil {
+		fmt.Printf("%s %v\n", cli.Red("✗"), err)
+		cli.OsExit(1)
+		return
+	}
+
 	base := uitheme.Default()
 
 	// Stand up the in-process core-ui app: no framework.App, no DB. The
@@ -360,6 +369,11 @@ func (s *ThemeEditServer) writeBack() error {
 	wrote := s.wroteDigest
 	s.mu.Unlock()
 
+	// MkdirAll, CreateTemp and the rename below all follow a linked
+	// theme/ out of the project; refuse it before creating anything.
+	if err := refuseLinkOutOfProject(outPath); err != nil {
+		return err
+	}
 	dir := filepath.Dir(outPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
