@@ -649,3 +649,11 @@ notes:
     find:
       uses:
         - gofastr/battery/cache.NewRedisCache
+  - change: "The slow-query line's sql attr (slowquery.TrimSQL) prints every SQL string literal as '?' and cuts at 240 bytes on a rune boundary"
+    breaking: false
+    guidance: "A value spelled inline in a statement (a password in ALTER ROLE, a token in a hand-built WHERE) went to every log sink verbatim. A log search or alert that matched a literal inside the sql attr now sees '?'; match on the statement's shape instead."
+    find:
+      uses:
+        - gofastr/framework/slowquery.TrimSQL
+        - gofastr/framework/slowquery.NewSlowQueryLogger
+        - gofastr/framework/slowquery.NewSlowQueryLoggerFn

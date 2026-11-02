@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/framework/db"
 )
@@ -133,14 +135,26 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	logger.LogAttrs(ctx, slog.LevelWarn, "slow query", asSlogAttrs(attrs)...)
 }
 
-// TrimSQL collapses internal whitespace so log lines stay readable. Caps the
-// printed query at 240 chars to keep logs from exploding on big builders.
+// maxLoggedSQL caps the printed statement, in bytes.
+const maxLoggedSQL = 240
+
+// TrimSQL masks the statement's literal values, collapses internal
+// whitespace so log lines stay readable, and caps the printed query at
+// 240 bytes (cut on a rune boundary, then "…") to keep logs from
+// exploding on big builders.
+//
+// A string literal ('…', E'…', $tag$…$tag$) prints as '?' (E'?',
+// $tag$?$tag$): a slow-query line is for the statement's shape, and a
+// value spelled inline (ALTER ROLE … PASSWORD '…', SET app.key = '…') went
+// to every sink verbatim. Placeholders, numbers, identifiers and quoted
+// identifiers stay. Bound arguments were never logged, only their count.
 func TrimSQL(q string) string {
-	out := make([]byte, 0, len(q))
+	q = maskLiterals(q)
+	out := make([]byte, 0, min(len(q), maxLoggedSQL+1))
 	lastSpace := false
-	for i := 0; i < len(q); i++ {
+	for i := 0; i < len(q) && len(out) <= maxLoggedSQL; i++ {
 		c := q[i]
-		if c == '\n' || c == '\t' || c == '\r' {
+		if c < 0x20 || c == 0x7f {
 			c = ' '
 		}
 		if c == ' ' {
@@ -152,12 +166,143 @@ func TrimSQL(q string) string {
 			lastSpace = false
 		}
 		out = append(out, c)
-		if len(out) == 240 {
-			out = append(out, "…"...)
-			break
+	}
+	if len(out) <= maxLoggedSQL {
+		return string(out)
+	}
+	// Over the cap: cut at maxLoggedSQL, backed off to the start of the
+	// rune that straddles it, so the line stays valid UTF-8.
+	cut := maxLoggedSQL
+	for cut > 0 && !utf8.RuneStart(out[cut]) {
+		cut--
+	}
+	return string(out[:cut]) + "…"
+}
+
+// maskLiterals replaces the body of every SQL string literal in q with
+// "?": standard '…' strings (a doubled quote escapes one), E'…' strings
+// (backslash escapes too) and Postgres dollar-quoted $tag$…$tag$ bodies.
+// Quoted identifiers ("…") and comments are copied through so a quote
+// inside one does not open a literal. An unterminated literal masks to
+// the end of the statement.
+func maskLiterals(q string) string {
+	if !strings.ContainsAny(q, "'$") {
+		return q
+	}
+	var b strings.Builder
+	b.Grow(len(q))
+	for i := 0; i < len(q); {
+		c := q[i]
+		switch {
+		case c == '-' && i+1 < len(q) && q[i+1] == '-':
+			end := strings.IndexByte(q[i:], '\n')
+			if end < 0 {
+				end = len(q) - i
+			}
+			b.WriteString(q[i : i+end])
+			i += end
+		case c == '/' && i+1 < len(q) && q[i+1] == '*':
+			end := strings.Index(q[i+2:], "*/")
+			if end < 0 {
+				b.WriteString(q[i:])
+				return b.String()
+			}
+			b.WriteString(q[i : i+2+end+2])
+			i += 2 + end + 2
+		case c == '"':
+			j := i + 1
+			for j < len(q) {
+				if q[j] == '"' {
+					if j+1 < len(q) && q[j+1] == '"' {
+						j += 2
+						continue
+					}
+					j++
+					break
+				}
+				j++
+			}
+			b.WriteString(q[i:j])
+			i = j
+		case c == '\'':
+			escapes := i > 0 && (q[i-1] == 'E' || q[i-1] == 'e') && (i < 2 || !isIdentByte(q[i-2]))
+			j := i + 1
+			closed := false
+			for j < len(q) {
+				if escapes && q[j] == '\\' {
+					j += 2
+					continue
+				}
+				if q[j] == '\'' {
+					if j+1 < len(q) && q[j+1] == '\'' {
+						j += 2
+						continue
+					}
+					closed = true
+					j++
+					break
+				}
+				j++
+			}
+			if !closed {
+				b.WriteString("'?")
+				return b.String()
+			}
+			b.WriteString("'?'")
+			i = j
+		case c == '$' && (i == 0 || !isIdentByte(q[i-1])):
+			tag, ok := dollarTag(q[i:])
+			if !ok {
+				b.WriteByte(c)
+				i++
+				continue
+			}
+			body := q[i+len(tag):]
+			end := strings.Index(body, tag)
+			b.WriteString(tag)
+			b.WriteByte('?')
+			if end < 0 {
+				return b.String()
+			}
+			b.WriteString(tag)
+			i += len(tag) + end + len(tag)
+		default:
+			b.WriteByte(c)
+			i++
 		}
 	}
-	return string(out)
+	return b.String()
+}
+
+// dollarTag returns the opening "$tag$" (or "$$") at the start of s. A
+// "$" followed by a digit is a placeholder ($1), not a dollar quote.
+func dollarTag(s string) (string, bool) {
+	if len(s) < 2 {
+		return "", false
+	}
+	if s[1] == '$' {
+		return "$$", true
+	}
+	if !isIdentStart(s[1]) {
+		return "", false
+	}
+	for j := 2; j < len(s); j++ {
+		switch {
+		case s[j] == '$':
+			return s[:j+1], true
+		case !isIdentByte(s[j]):
+			return "", false
+		}
+	}
+	return "", false
+}
+
+func isIdentStart(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
+}
+
+func isIdentByte(c byte) bool {
+	return isIdentStart(c) || (c >= '0' && c <= '9') || c == '$'
 }
 
 // asSlogAttrs converts our []any (alternating slog.Attr) into the expected

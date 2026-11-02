@@ -4382,6 +4382,12 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **Slow-query lines mask SQL string literals.** `slowquery.TrimSQL`
+  (the `sql` attr of every `slow query` line) printed a statement
+  verbatim, so a value spelled inline (`ALTER ROLE … PASSWORD '…'`,
+  `SET app.key = '…'`, a hand-built `WHERE token = '…'`) reached every
+  log sink. Literals now print as `'?'`; placeholders, identifiers and
+  numbers stay. The 240-byte cut also no longer splits a UTF-8 rune.
 - **The log console sink escapes control and bidi runes in the message
   and keys.** Only attr values were escaped; the message, attr keys,
   the time and level fields, and an entry that was not JSON were
