@@ -145,6 +145,9 @@ few lines, and link the PR or the docs page for the rest.
   row, and its row menu's View, to `<list>/<id>`, a page no screen
   serves (every Categories and Reviews row in the ecommerce example).
   Such a list without `create: true` now renders with `.NoLinks()`.
+- **Tracker example: a crumb keeps a multi-byte first letter whole.**
+  The crumb trail upper-cased a path segment's first byte, so `/étude`
+  read "�©tude" and the page carried invalid UTF-8.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
