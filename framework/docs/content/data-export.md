@@ -215,6 +215,8 @@ these is rejected up front, leaving the database untouched:
 - missing or unparseable `manifest.json`;
 - unsupported `format` version;
 - a source that isn't a live entity or registered exporter;
+- a source listed twice in the manifest (a keyless table would take every
+  row twice);
 - a source whose table is not in the live database;
 - an archive table name that doesn't match the live table;
 - an archive column absent from the live schema (incompatible column set);

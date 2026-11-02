@@ -331,11 +331,18 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		phys string // the table as the catalog spells it (physicalTable)
 	}
 	plans := make([]planned, 0, len(manifest.Entities))
+	listed := make(map[string]bool, len(manifest.Entities))
 	for _, ent := range manifest.Entities {
 		src, ok := liveByID[ent.Name]
 		if !ok {
 			return fmt.Errorf("framework: import: source %q is not a live entity or registered exporter", ent.Name)
 		}
+		// A source listed twice names the same file twice: a keyless table
+		// took every row twice and committed.
+		if listed[ent.Name] {
+			return fmt.Errorf("framework: import: source %q is listed twice in the manifest", ent.Name)
+		}
+		listed[ent.Name] = true
 		if ent.Table != src.table {
 			return fmt.Errorf("framework: import: source %q archive table %q != live table %q",
 				ent.Name, ent.Table, src.table)

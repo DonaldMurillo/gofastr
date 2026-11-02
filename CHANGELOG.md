@@ -140,6 +140,9 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`ImportData` refuses a source the manifest lists twice.** The file
+  was restored once per listing: a keyed table failed on its key, but a
+  keyless one took every row twice and committed.
 - **`ExportData` reads one snapshot on Postgres.** Each table was read on
   its own, so an export of an app taking writes held comments whose post
   committed after the posts were read: the archive named parents it did
