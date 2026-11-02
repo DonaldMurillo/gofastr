@@ -91,7 +91,12 @@ scrubbed the same way.
   one handler or route registration into an existing app. `--method`,
   `--path` and `--handler` take `--method=POST` or `--method POST`; an
   unknown flag is an error. A `<name>_handler.go` symlinked out of the
-  directory is refused, dangling or not.
+  directory is refused, dangling or not. `new handler` writes
+  `<name>_handler.go` into the current directory in the package its Go
+  files already declare (`package main` when there are none). It refuses
+  a name the build would reject: a Go keyword, `main`, `init`, `_`, a
+  predeclared name such as `string`, or a name that package already
+  declares.
 - `gofastr agents init|sync|skill [dir]`: generate or refresh `AGENTS.md`
   and the per-battery detail files under `.agents/`, in `dir` (default
   the current directory). The verbs take no flags: a flag or a second
