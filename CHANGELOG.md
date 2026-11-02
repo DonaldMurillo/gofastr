@@ -145,9 +145,10 @@ few lines, and link the PR or the docs page for the rest.
   anywhere: a cloned repo carrying
   `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc` had `agents skill`
   overwrite `~/.bashrc` with the skill, and a `.agents` link sent the
-  detail files to another directory. Writes now go through an `os.Root`
-  on the project; a link inside it is still followed, one out of it is
-  refused.
+  detail files to another directory; `init --reinit --force` did the same
+  to a linked `AGENTS.md` or `CLAUDE.md`, and created a dangling
+  `DESIGN.md` link's target. Writes now go through an `os.Root` on the
+  project; a link inside it is still followed, one out of it is refused.
 - **A slow module answer no longer kills the module.** A `moduleproto`
   peer remembered the last 1,024 calls it gave up on, answered or not,
   so 1,024 timed-out calls answered in time pushed out a slow call still

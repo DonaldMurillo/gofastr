@@ -123,3 +123,32 @@ func replaceInRoot(root *os.Root, name string, data []byte, perm fs.FileMode) (e
 	}
 	return root.Rename(tmp, name)
 }
+
+// ReadProjectFile reads name (slash-separated, relative to dir) through an
+// os.Root on dir: a symlink is followed only while it stays in dir, so a
+// project file linked out of the project reads as an error, never as the
+// file it points at. `gofastr init --reinit` reads AGENTS.md and
+// CLAUDE.md through it.
+func ReadProjectFile(dir, name string) ([]byte, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return readInRoot(root, name)
+}
+
+// WriteProjectFile replaces name (slash-separated, relative to dir) with
+// data through a temporary file and an os.Root on dir, the way the
+// agents writers do: a link inside dir is written through, one out of dir
+// is refused, an existing file keeps its mode and a new one gets 0644.
+// `gofastr init --reinit` writes AGENTS.md, CLAUDE.md and DESIGN.md
+// through it.
+func WriteProjectFile(dir, name string, data []byte) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return replaceInRoot(root, name, data, 0o644)
+}

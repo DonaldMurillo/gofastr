@@ -1328,11 +1328,20 @@ func runReinit(dir string, force bool) {
 	cli.Info("  ✓ .claude/skills/gofastr-host/SKILL.md refreshed")
 
 	// 3. AGENTS.md: sync (preserves user content outside markers).
-	agentsPath := filepath.Join(dir, "AGENTS.md")
-	existing, err := os.ReadFile(agentsPath)
+	//
+	// AGENTS.md, CLAUDE.md and DESIGN.md are read and written through an
+	// os.Root on dir (agentscmd.ReadProjectFile / WriteProjectFile): a
+	// symlink is followed only while it stays in the project, so a cloned
+	// repo cannot aim a refresh at a file elsewhere on disk.
+	existing, err := agentscmd.ReadProjectFile(dir, "AGENTS.md")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		cli.Fail("Cannot read AGENTS.md: %v", err)
+		cli.OsExit(1)
+		return
+	}
 	if err != nil {
 		// Doesn't exist yet: write fresh.
-		if err := writeScaffoldFile(agentsPath, agentscmd.BuildAgentsMD()); err != nil {
+		if err := agentscmd.WriteProjectFile(dir, "AGENTS.md", agentscmd.BuildAgentsMD()); err != nil {
 			cli.Fail("Failed to write AGENTS.md: %v", err)
 			cli.OsExit(1)
 		}
@@ -1343,7 +1352,7 @@ func runReinit(dir string, force bool) {
 		case err != nil && force:
 			// --force overwrites customized onboarding files; an AGENTS.md
 			// whose markers are gone is one.
-			if err := writeScaffoldFile(agentsPath, agentscmd.BuildAgentsMD()); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "AGENTS.md", agentscmd.BuildAgentsMD()); err != nil {
 				cli.Fail("Failed to write AGENTS.md: %v", err)
 				cli.OsExit(1)
 			}
@@ -1354,7 +1363,7 @@ func runReinit(dir string, force bool) {
 			cli.Info("  Run `gofastr init %s --reinit --force` to overwrite it, or fix the markers by hand.", dir)
 			cli.OsExit(1)
 		case changed:
-			if err := writeScaffoldFile(agentsPath, refreshed); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "AGENTS.md", refreshed); err != nil {
 				cli.Fail("Failed to write AGENTS.md: %v", err)
 				cli.OsExit(1)
 			}
@@ -1365,11 +1374,15 @@ func runReinit(dir string, force bool) {
 	}
 
 	// 4. CLAUDE.md: detect user modifications.
-	claudePath := filepath.Join(dir, "CLAUDE.md")
-	existingClaude, err := os.ReadFile(claudePath)
+	existingClaude, err := agentscmd.ReadProjectFile(dir, "CLAUDE.md")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		cli.Fail("Cannot read CLAUDE.md: %v", err)
+		cli.OsExit(1)
+		return
+	}
 	if err != nil {
 		// Doesn't exist yet: write fresh.
-		if err := writeScaffoldFile(claudePath, claudeMDContent()); err != nil {
+		if err := agentscmd.WriteProjectFile(dir, "CLAUDE.md", claudeMDContent()); err != nil {
 			cli.Fail("Failed to write CLAUDE.md: %v", err)
 			cli.OsExit(1)
 		}
@@ -1382,13 +1395,13 @@ func runReinit(dir string, force bool) {
 		if bytes.Equal(agentscmd.NormalizeMD(existingClaude), agentscmd.NormalizeMD(generated)) ||
 			bytes.Equal(agentscmd.NormalizeMD(existingClaude), agentscmd.NormalizeMD(legacyGenerated)) {
 			// Unmodified: safe to overwrite.
-			if err := writeScaffoldFile(claudePath, generated); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "CLAUDE.md", generated); err != nil {
 				cli.Fail("Failed to write CLAUDE.md: %v", err)
 				cli.OsExit(1)
 			}
 			cli.Info("  ✓ CLAUDE.md refreshed (unchanged from generated)")
 		} else if force {
-			if err := writeScaffoldFile(claudePath, generated); err != nil {
+			if err := agentscmd.WriteProjectFile(dir, "CLAUDE.md", generated); err != nil {
 				cli.Fail("Failed to write CLAUDE.md: %v", err)
 				cli.OsExit(1)
 			}
@@ -1402,7 +1415,7 @@ func runReinit(dir string, force bool) {
 
 	designPath := filepath.Join(dir, "DESIGN.md")
 	if _, err := os.Stat(designPath); os.IsNotExist(err) {
-		if err := writeDesignMD(dir); err != nil {
+		if err := agentscmd.WriteProjectFile(dir, "DESIGN.md", designMDContent()); err != nil {
 			cli.Fail("Failed to write DESIGN.md: %v", err)
 			cli.OsExit(1)
 		}
