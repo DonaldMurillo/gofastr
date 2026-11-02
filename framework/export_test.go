@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,5 +107,45 @@ func TestStartExportsWhenAsked(t *testing.T) {
 	}
 	if !strings.Contains(string(page), `"/sub/__gofastr/`) {
 		t.Error("the export ignored GOFASTR_EXPORT_BASE")
+	}
+}
+
+// TestStartWritesExportReceipt: with GOFASTR_EXPORT_RUN set, Start writes
+// a receipt naming that run beside the export, so `gofastr export` can
+// tell a finished export from a main that exited 0 without exporting
+// (and left an empty or stale directory behind).
+func TestStartWritesExportReceipt(t *testing.T) {
+	site := coreapp.NewApp("export-receipt-test")
+	site.Register("/", &exportHomeComp{}, nil)
+	fwApp := NewApp(WithoutDefaultMiddleware()).Mount(uihost.New(site))
+	dir := t.TempDir()
+	t.Setenv("GOFASTR_EXPORT", dir)
+	t.Setenv("GOFASTR_EXPORT_BASE", "")
+	t.Setenv("GOFASTR_EXPORT_RUN", "run-abc123")
+
+	done := make(chan error, 1)
+	go func() { done <- fwApp.Start("127.0.0.1:0") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		_ = fwApp.Shutdown(context.Background())
+		t.Fatal("Start served instead of exporting")
+	}
+	body, err := os.ReadFile(filepath.Join(dir, ExportReceiptFile))
+	if err != nil {
+		t.Fatalf("receipt missing: %v", err)
+	}
+	var got struct {
+		Run   string `json:"run"`
+		Pages int    `json:"pages"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("receipt %s: %v", body, err)
+	}
+	if got.Run != "run-abc123" || got.Pages < 1 {
+		t.Errorf("receipt = %+v, want run-abc123 and at least one page", got)
 	}
 }

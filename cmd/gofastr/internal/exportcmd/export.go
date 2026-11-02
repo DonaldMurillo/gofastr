@@ -85,15 +85,46 @@ func RunExport(args []string) {
 		cli.OsExit(1)
 		return
 	}
+	run, err := newExportRun()
+	if err == nil {
+		err = clearReceipt(dir)
+	}
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 	cmd := exec.Command("go", "run", opts.pkg)
-	cmd.Env = append(os.Environ(), "GOFASTR_EXPORT="+dir, "GOFASTR_EXPORT_BASE="+opts.base)
+	cmd.Env = append(os.Environ(), "GOFASTR_EXPORT="+dir, "GOFASTR_EXPORT_BASE="+opts.base, "GOFASTR_EXPORT_RUN="+run)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		cli.Fail("export: the app exited with %v", err)
 		cli.OsExit(1)
 		return
 	}
-	cli.Success("Exported to %s", dir)
+	// Exit 0 is not proof: a main that returns before App.Start exits 0
+	// having exported nothing, over an empty or stale directory. App.Start
+	// writes a receipt naming this run once the export is on disk.
+	got, pages, ok, err := readReceipt(dir)
+	switch {
+	case err != nil:
+		cli.Fail("export: %v", err)
+		cli.OsExit(1)
+		return
+	case ok && got != run:
+		cli.Fail("export: the receipt in %s names another run; this run exported nothing", dir)
+		cli.OsExit(1)
+		return
+	case ok:
+		cli.Success("Exported %d page(s) to %s", pages, dir)
+	case exportReceiptPolicy(opts.pkg) == receiptRequired:
+		cli.Fail("export: the app exited 0 but exported nothing to %s", dir)
+		cli.Info("App.Start writes the export and returns. Check that main calls app.Start, and returns once it does.")
+		cli.OsExit(1)
+	default:
+		cli.Warn("The app exited 0, but its GoFastr version (before %s, or replaced) writes no export receipt, so the export could not be confirmed.", firstReceiptVersion)
+		cli.Success("Exported to %s", dir)
+	}
 }
 
 func printExportUsage() {
@@ -103,7 +134,9 @@ Renders every page of the app into <dir> as a static site: it runs the
 app's main package with GOFASTR_EXPORT set, and App.Start exports
 instead of serving. Dynamic routes export through StaticPaths; a
 battery that adds export files (battery/sitesearch's index) writes them
-too. The app's main must return once Start does.
+too. The app's main must return once Start does. On GoFastr v0.96.0 or
+later the app writes a receipt for the run, and an exit 0 without one
+fails: nothing was exported.
 
 --pkg=<path>      the app's main package (default .)
 --base=<subpath>  URL subpath the site is served under ("/docs"); default none`)

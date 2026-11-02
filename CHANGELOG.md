@@ -201,6 +201,14 @@ few lines, and link the PR or the docs page for the rest.
   quiet. A CI gate on `gofastr verify` can newly fail: check the error,
   or mark a deliberate site `// best-effort: <why>`. The blog, spa and
   backoffice examples' seeds now check every insert.
+- **`gofastr export` checks that the app exported.** An exit 0 reported
+  "Exported to <dir>" even when `main` returned before `App.Start` and
+  the directory was empty or stale. The CLI now passes a run id in
+  `GOFASTR_EXPORT_RUN`, `App.Start` writes it back in
+  `<dir>/.gofastr-export.json` (`framework.ExportReceiptFile`) after the
+  export, and the CLI checks and deletes it. A missing receipt fails the
+  export for an app on v0.96.0 or later; an older pin or a `replace`
+  directive gets a warning. See `static-export.md`.
 
 
 ### Fixed

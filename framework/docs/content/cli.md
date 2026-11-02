@@ -278,7 +278,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   page into `<dir>` as a static site. It runs the app with
   `GOFASTR_EXPORT` set and `App.Start` exports instead of serving, so
   any app gets it ([static export](static-export.md)); a registered
-  [site search](site-search.md) battery writes its index too.
+  [site search](site-search.md) battery writes its index too. On GoFastr
+  v0.96.0 or later an app that exits 0 without exporting (a `main` that
+  returns before `Start`) fails the command instead of reporting success.
 - `gofastr generate cli`: a customer-facing terminal client for your
   API, with scoped API-token auth. Derived: every run rebuilds its
   `*.gen.go` files and keeps `custom.go` ([app-cli](app-cli.md)).

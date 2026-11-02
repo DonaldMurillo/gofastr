@@ -46,6 +46,18 @@ has to return once `Start` does, which the generated `main.go` does.
 gofastr export --base /gofastr _site
 ```
 
+An exit status of 0 does not prove the export ran: a `main` that returns
+before `Start` exits 0 too, over an empty or stale directory. So the CLI
+also sets `GOFASTR_EXPORT_RUN` to a fresh run id, and `Start` writes it
+back in `<dir>/.gofastr-export.json` (`framework.ExportReceiptFile`)
+once every page is on disk. The CLI checks the id, prints the page
+count, and deletes the receipt so it does not ship with the site. For an
+app on GoFastr v0.96.0 or later (or a package inside this repository), a
+missing receipt fails the export. An older pin or a `replace` directive
+cannot be told apart from an app that never exported, so the CLI warns
+and keeps the exit status as the only signal. An app that sets
+`GOFASTR_EXPORT` itself, without `GOFASTR_EXPORT_RUN`, gets no receipt.
+
 A registered battery that implements `static.Contributor` sees every
 rendered page and adds files of its own; [site search](site-search.md)
 writes its index this way. A contributor file at a page's path, in any

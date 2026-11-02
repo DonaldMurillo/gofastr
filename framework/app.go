@@ -3609,8 +3609,13 @@ func (a *App) Start(addr string) error {
 	// every page now (migrations and seeds have run, so data-backed
 	// pages render their rows) and return instead of serving.
 	if dir := os.Getenv(envExport); dir != "" {
-		if err := a.ExportStatic(a.appCtx, dir, os.Getenv(envExportBase)); err != nil {
+		res, err := a.exportStatic(a.appCtx, dir, os.Getenv(envExportBase))
+		if err != nil {
 			return abort(fmt.Errorf("export: %w", err))
+		}
+		// The receipt goes last: it says the export above is complete.
+		if err := writeExportReceipt(dir, os.Getenv(envExportRun), len(res.Pages)); err != nil {
+			return abort(fmt.Errorf("export receipt: %w", err))
 		}
 		a.Logger().Info("static export written", "dir", dir)
 		return abort(nil)

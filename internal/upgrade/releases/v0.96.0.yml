@@ -1088,3 +1088,7 @@ notes:
     breaking: true
     guidance: "Each finding names its line. Check the Exec error (if _, err := db.Exec(...); err != nil { ... }) or mark a deliberate site with // best-effort: <why>. For Vary, use Header().Add(\"Vary\", ...) or append to the existing entry."
     nodetect: "gofastr verify reports every site itself, with its file and line"
+  - change: "gofastr export fails when the app exits 0 without exporting: App.Start writes a receipt (framework.ExportReceiptFile, .gofastr-export.json) for the run id the CLI passes in GOFASTR_EXPORT_RUN, and the CLI requires it for an app on v0.96.0 or later"
+    breaking: false
+    guidance: "An app whose main returns before app.Start used to report success over an empty or stale directory; make main call Start and return once it does. The CLI deletes the receipt after reading it, so it never ships with the site. Nothing changes for an app that sets GOFASTR_EXPORT itself."
+    nodetect: "the check runs in the CLI at export time; nothing in an app's source spells it"
