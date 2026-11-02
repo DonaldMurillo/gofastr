@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -140,11 +141,61 @@ func applyViews(ctx context.Context, exec execQueryer, views []View, dialect Dia
 				}
 			}
 		}
+		if dialect == DialectPostgres && !v.Materialized {
+			if err := pgReplaceView(ctx, exec, v, dependents[v.Name]); err != nil {
+				return fmt.Errorf("migrate view %s: %w", v.Name, err)
+			}
+			continue
+		}
 		if _, err := exec.ExecContext(ctx, v.routine(dialect).Up); err != nil {
 			return fmt.Errorf("migrate view %s: %w", v.Name, err)
 		}
 	}
 	return nil
+}
+
+// pgReplaceView runs a plain Postgres view's CREATE OR REPLACE VIEW, and
+// when Postgres refuses it, drops the view and creates it again. CREATE OR
+// REPLACE keeps the view's grants but refuses a body whose columns are not
+// the old ones plus new ones at the end ("cannot drop columns from view",
+// "cannot change name of view column"), so a view that lost, renamed or
+// retyped a column failed every boot from then on, while SQLite, which
+// always drops and creates, booted. The statement runs under a savepoint,
+// since a failed one aborts the boot's transaction. The plan's views that
+// read v are dropped first, deepest first, and the loop recreates them
+// after v. A view outside the plan that reads v still refuses the DROP,
+// and then the boot fails with CREATE OR REPLACE's own error.
+func pgReplaceView(ctx context.Context, exec execQueryer, v View, dependents []View) error {
+	up, down := v.render(DialectPostgres)
+	if _, err := exec.ExecContext(ctx, "SAVEPOINT gofastr_view"); err != nil {
+		return err
+	}
+	_, replaceErr := exec.ExecContext(ctx, up)
+	if replaceErr == nil {
+		_, err := exec.ExecContext(ctx, "RELEASE SAVEPOINT gofastr_view")
+		return err
+	}
+	if _, err := exec.ExecContext(ctx, "ROLLBACK TO SAVEPOINT gofastr_view"); err != nil {
+		return replaceErr
+	}
+	recreate := func() error {
+		for _, d := range slices.Backward(dependents) {
+			if err := pgDropView(ctx, exec, d); err != nil {
+				return err
+			}
+		}
+		if _, err := exec.ExecContext(ctx, down); err != nil {
+			return err
+		}
+		_, err := exec.ExecContext(ctx, strings.Replace(up, "CREATE OR REPLACE VIEW", "CREATE VIEW", 1))
+		return err
+	}
+	if err := recreate(); err != nil {
+		_, _ = exec.ExecContext(ctx, "ROLLBACK TO SAVEPOINT gofastr_view")
+		return fmt.Errorf("%w (dropping the view to recreate it also failed: %v)", replaceErr, err)
+	}
+	_, err := exec.ExecContext(ctx, "RELEASE SAVEPOINT gofastr_view")
+	return err
 }
 
 // pgLiveViewKind returns the kind of the live relation named like v: "v"

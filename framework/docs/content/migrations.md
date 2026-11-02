@@ -1024,7 +1024,11 @@ app.View(migrate.View{
   materialized view and refreshes its rows. Postgres refuses to drop a
   materialized view another view reads, so boot first drops the plan's
   views that depend on it, deepest first, and recreates them after it. A
-  view outside the plan that reads it still fails the boot. Changing a
+  view outside the plan that reads it still fails the boot. A plain view
+  whose columns changed other than by new ones added at the end (one
+  dropped, renamed or retyped) is one `CREATE OR REPLACE VIEW` refuses,
+  so boot drops it (its dependents in the plan first) and creates it
+  again; its grants go with the drop. Changing a
   view between plain and `Materialized` drops the live object of the
   other kind (and its dependents) first. `migrate generate` tracks
   the definition by checksum and writes a reversible migration when it

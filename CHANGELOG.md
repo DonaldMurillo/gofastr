@@ -4406,6 +4406,12 @@ few lines, and link the PR or the docs page for the rest.
   It was refused only for `CASCADE` and `SET NULL` keys; every key the
   snapshot records now counts. Write the rebuild by hand, or apply it with
   `ApplySchemaDiffWithOptions`.
+- **A Postgres view whose columns changed boots.** Boot applies a plain
+  view with `CREATE OR REPLACE VIEW`, which refuses a body that drops,
+  renames or retypes a column, so such a view failed every boot from
+  then on while SQLite booted. Boot now drops the view, and the plan's
+  views that read it, and creates them again when Postgres refuses the
+  replace. A view outside the plan that reads it still stops the boot.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
