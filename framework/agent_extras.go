@@ -18,6 +18,7 @@ package framework
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/webbotauth"
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
@@ -59,6 +60,14 @@ type WebBotAuthVerifyConfig struct {
 	// bug in draft-tracking verification middleware must not be able
 	// to take an app's traffic down.
 	Require bool
+
+	// MaxValidity caps the expires - created window a signature may
+	// carry; a longer one is invalid. Zero means
+	// webbotauth.DefaultMaxValidity (5 minutes): a captured signature
+	// replays until its expires, so the cap bounds that whatever window
+	// the signer chose. A negative value panics when the app wires the
+	// verifier.
+	MaxValidity time.Duration
 }
 
 // WithWebBotAuth serves /.well-known/http-message-signatures-directory with

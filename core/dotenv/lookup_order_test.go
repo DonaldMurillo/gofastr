@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// The documented ${NAME} lookup order is: the value an earlier file in
-// the precedence chain set, then this file's earlier keys, then
-// os.Environ, then empty. Load used to expand each file against its own
-// keys only, so the docs' own example PATH_TPL="${HOME}/bin" loaded as
+// The documented ${NAME} lookup order is: os.Environ, then the value an
+// earlier file in the precedence chain set, then this file's earlier
+// keys, then empty: the order Apply keeps values in. Load used to expand
+// each file against its own keys only, so the docs' own example PATH_TPL="${HOME}/bin" loaded as
 // "/bin", and a .env DATABASE_URL built from ${DB_HOST} kept the .env
 // host while .env.local's DB_HOST was the one applied.
 
@@ -52,7 +52,11 @@ func TestLoad_ExpandReadsEarlierFileValue(t *testing.T) {
 	}
 }
 
-func TestLoad_SameFileKeyBeatsEnviron(t *testing.T) {
+// A real environment variable wins inside ${...} too, because Apply
+// keeps it over the dotfile: with DB_HOST=prod set, DB_HOST is prod, so
+// DATABASE_URL built from ${DB_HOST} must be prod as well, not the
+// dotfile's host (the old order read file keys before os.Environ).
+func TestLoad_EnvironBeatsFileKeys(t *testing.T) {
 	t.Setenv("GOFASTR_DOTENV_TEST_X", "from-env")
 	dir := t.TempDir()
 	p := writeEnvFile(t, dir, ".env", "GOFASTR_DOTENV_TEST_X=from-file\nY=\"${GOFASTR_DOTENV_TEST_X}\"\n")
@@ -60,8 +64,22 @@ func TestLoad_SameFileKeyBeatsEnviron(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["Y"] != "from-file" {
-		t.Fatalf("Y = %q, want from-file (documented order: file keys before os.Environ)", got["Y"])
+	if got["Y"] != "from-env" {
+		t.Fatalf("Y = %q, want from-env (the value Apply keeps)", got["Y"])
+	}
+}
+
+func TestLoad_EnvironBeatsEarlierFile(t *testing.T) {
+	t.Setenv("GOFASTR_DOTENV_TEST_DBHOST", "prod")
+	dir := t.TempDir()
+	local := writeEnvFile(t, dir, ".env.local", "GOFASTR_DOTENV_TEST_DBHOST=db.internal\n")
+	base := writeEnvFile(t, dir, ".env", "URL=\"postgres://${GOFASTR_DOTENV_TEST_DBHOST}/app\"\n")
+	got, err := Load(local, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["URL"] != "postgres://prod/app" {
+		t.Fatalf("URL = %q, want the environment's host", got["URL"])
 	}
 }
 

@@ -1115,3 +1115,39 @@ notes:
     find:
       strings:
         match: '~[0-9]'
+  - change: "BREAKING - battery/relay refuses an upstream response whose Content-Type is not script, style, image, font, JSON or text/plain with a 502; SVG gains Content-Security-Policy: sandbox and a body with no Content-Type is sent as application/octet-stream"
+    breaking: true
+    hits: review
+    guidance: "A relayed response runs on the app's origin, so a vendor HTML page was reflected script. A route that relays a vendor's iframe page (text/html) or another type adds it with Route.ContentTypes, for example ContentTypes: []string{\"text/html\"}, trusting that vendor as much as the app's own code."
+    find:
+      uses:
+        - gofastr/battery/relay.New
+  - change: "Web Bot Auth verification refuses a signature whose expires - created window is longer than 5 minutes (webbotauth.DefaultMaxValidity)"
+    breaking: false
+    guidance: "Agents sign per request with short windows, so most apps notice nothing. If a signer you rely on signs longer windows, set WebBotAuthVerifyConfig.MaxValidity (or pass webbotauth.WithMaxValidity to webbotauth.New); in observe mode such a request now logs an invalid signature and carries no VerifiedAgent."
+    find:
+      uses:
+        - gofastr/framework.WebBotAuthVerifyConfig
+        - gofastr/core/webbotauth.New
+  - change: "BREAKING - dotenv.Load (and NewApp's .env loading) resolves ${NAME} from os.Environ first, then an earlier file, then the same file; the environment used to come last"
+    breaking: true
+    hits: review
+    guidance: "A dotfile value built from ${NAME} now matches the NAME the app runs with, because Apply never overwrites a set environment variable. If a deployment sets a variable in the environment and a dotfile value relied on the file's own spelling of it, that value now uses the environment's: unset the variable, or rename the dotfile key the value reads. dotenv.Parse and dotenv.Expand are unchanged."
+    find:
+      uses:
+        - gofastr/core/dotenv.Load
+        - gofastr/core/dotenv.LoadAndApply
+  - change: "core/textsafe counts the Unicode tag characters (U+E0000-U+E007F) and the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0) as invisible, so every strip and gate built on it (display names, canonical emails, titles, filenames, log and header scrubs) removes or refuses them; the string helpers keep a subdivision flag such as Scotland's whole"
+    breaking: false
+    guidance: "A display name made of a Hangul filler, or one carrying hidden tag text, is now refused by auth.CleanName with ErrInvalidName, and such characters are stripped from emails before matching. A per-rune caller of IsInvisible or IsUnsafe sees every tag character, flags included; call StripInvisible, StripUnsafe, ContainsInvisible or ContainsUnsafe on the whole string to keep flags."
+    nodetect: "the change is in which runes the predicate reports; stored names and emails are data, not Go source"
+  - change: "BREAKING - core/yaml (gofastr.yml, kiln, pack, codegen) resolves plain scalars by the YAML 1.2 core schema: only true/True/TRUE, false/False/FALSE and null/Null/NULL/~ resolve, a hex float or digit underscores stay strings, an out-of-range float such as 1e999 is an error, and a local tag such as !foo is refused"
+    breaking: true
+    hits: review
+    guidance: "Write booleans and null in one of the three core casings (tRuE is now the string tRuE; the scan does not find these, the app's own load does when a field expects a boolean). Quote a value that starts with ! (\"!important\") or that you meant as a string. Replace a hex float with its decimal value, and fix any float too large for 64 bits; both fail the load with the line and column."
+    find:
+      text:
+        - glob: "**/*.yml"
+          match: '(:|-)[[:space:]]+(![A-Za-z!]|[-+]?0[xX][0-9a-fA-F]*\.?[0-9a-fA-F]*[pP][-+]?[0-9])'
+        - glob: "**/*.yaml"
+          match: '(:|-)[[:space:]]+(![A-Za-z!]|[-+]?0[xX][0-9a-fA-F]*\.?[0-9a-fA-F]*[pP][-+]?[0-9])'

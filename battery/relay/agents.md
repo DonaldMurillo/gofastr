@@ -41,6 +41,9 @@ base := r.Base() // point SDKs/templates here, don't hard-code the path
 - Bodies are capped (8 MiB default, `MaxBodyBytes` per route);
   responses default to `Cache-Control: no-store` unless
   `CacheOK: true`.
+- Responses are limited to script, style, image, font, JSON and
+  `text/plain`; anything else (HTML first) is a `502`. A route relaying
+  a vendor iframe page opts in with `ContentTypes: []string{"text/html"}`.
 - A global `app.Use(auth.CSRF(...))` 403s the relay's POST beacons —
   exempt the mount with `auth.WithCSRFSkipPaths`. Do not gate the
   relay behind `RequireSession` (beacons fire logged-out).

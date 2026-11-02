@@ -515,6 +515,20 @@ setting keeps the dial-time check. A transport that would speak HTTP/2
 on its own still does after the swap. Any other transport gets the
 weaker per-request check.
 
+### textsafe
+
+The one predicate for characters that forge, reorder or hide text: C0
+and C1 controls, the Unicode line separators, and the invisible set
+(zero-width, joiners, bidi overrides and isolates, the tag characters
+U+E0000–U+E007F that hide ASCII in a prompt, and the Hangul fillers
+U+115F, U+1160, U+3164, U+FFA0). `IsInvisible` and `IsUnsafe` judge one
+rune, so they report every tag character. The string helpers
+(`StripInvisible`, `StripUnsafe`, `ContainsInvisible`, `ContainsUnsafe`)
+keep a subdivision flag whole: U+1F3F4, then 3 to 7 tag lowercase
+letters or digits, then CANCEL TAG (Scotland, England, Wales). Any other
+tag run, one behind a black flag included, is stripped or refused. Start
+at `core/textsafe/textsafe.go`.
+
 ### webbotauth
 
 Inbound Web Bot Auth verification: RFC 9421 signature-base assembly,

@@ -52,10 +52,11 @@ func Parse(r io.Reader) (map[string]string, error) {
 }
 
 // parse is Parse with the two lookup sources Load adds around the
-// file's own keys. A ${NAME} reads shadow first (the values a
-// higher-precedence file already set, which are the values Load keeps),
-// then the keys parsed earlier in this file, then envFn (os.LookupEnv).
-// Either may be nil.
+// file's own keys. A ${NAME} reads envFn first (os.LookupEnv: Apply
+// never overwrites a set variable, so it is the value that runs), then
+// shadow (the values a higher-precedence file already set, which are the
+// values Load keeps), then the keys parsed earlier in this file. Either
+// may be nil.
 //
 // A value read from shadow or envFn did not come from this file, so it
 // counts as input for the expansion budget, once per name: the budget

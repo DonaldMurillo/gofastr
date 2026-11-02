@@ -162,6 +162,21 @@ is required. Supported syntax:
   or after a space or tab
 - a leading byte order mark, which is skipped
 
+Plain (unquoted) scalars resolve by the YAML 1.2 core schema, so a file
+reads the same here as in any other YAML tool:
+
+- `true`, `True`, `TRUE` and the three `false` spellings are booleans;
+  `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
+  a string.
+- a run of digits is an integer; a decimal with a fraction or exponent
+  (`1.5`, `.5`, `-2.5e3`) is a float. A float too large for 64 bits
+  (`1e999`) is an error, not infinity. Go-only spellings stay strings:
+  a hex float (`0x1.8p1`), digit underscores (`1_000.5`), `Infinity`.
+  `.inf` and `.nan` are strings too: nothing in a spec reads one.
+- a value starting with `!` is a tag, and tags are refused: the core
+  `!!str` and a local `!env HOME` alike. Quote it (`"!important"`) for
+  the string.
+
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, a nested list on its parent's dash line
 (`- - a`), and mixed advanced YAML forms are not part of the app spec format.

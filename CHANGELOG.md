@@ -179,6 +179,24 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: `core/yaml` resolves plain scalars by the YAML 1.2 core
+  schema.** It read Go's spellings instead: a hex float (`0x1.8p1`) as
+  3, any casing of `true`/`false`/`null` (`tRuE`), and `1_000.5` as a
+  number; `1e999` as a string; and a local tag (`!foo bar`) as the
+  string `!foo bar`. Now only `true`/`True`/`TRUE` (and the `false` and
+  `null` spellings) resolve, hex floats and underscores stay strings, an
+  out-of-range float is an error, and every `!` tag is refused. App
+  specs, kiln, pack and codegen read through it. No file in this repo
+  used the old spellings. See
+  [app spec](framework/docs/content/app-spec.md#yaml-subset).
+- **BREAKING: a real environment variable wins inside a dotfile's
+  `${…}`.** `dotenv.Load` (and so `NewApp`) now resolves `${NAME}` from
+  `os.Environ` first, then an earlier file, then the same file: the
+  order `Apply` keeps values in. With `DB_HOST=prod` set,
+  `DATABASE_URL="…${DB_HOST}…"` used the dotfile's host while `DB_HOST`
+  itself was `prod`. A value that relied on the file's spelling beating
+  the environment now reads the environment's. See
+  [dotenv](framework/docs/content/dotenv.md#variable-expansion-var).
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
@@ -5259,6 +5277,29 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`core/textsafe` treats Unicode tag characters and Hangul fillers as
+  invisible.** Tag characters (U+E0000–U+E007F) spell ASCII nobody sees,
+  the way instructions are hidden in a prompt, and a Hangul filler
+  (U+115F, U+1160, U+3164, U+FFA0) draws a blank that passes for an
+  empty name. Every strip and gate built on textsafe now removes or
+  refuses them: `auth.CleanName` refuses them in a display name and
+  `auth.CanonicalEmail` strips them. The string helpers keep a
+  subdivision flag (Scotland's black flag and tag letters) whole. See
+  [core packages](framework/docs/content/core-packages.md#textsafe).
+- **Web Bot Auth caps a signature's validity window at 5 minutes.** A
+  signature was accepted until its own `expires`, however far out, so a
+  captured one replayed for as long as the signer chose. One whose
+  `expires - created` exceeds the cap is now invalid. Raise it with
+  `WebBotAuthVerifyConfig.MaxValidity` or `webbotauth.WithMaxValidity`.
+  See [Web Bot Auth](framework/docs/content/web-bot-auth.md#what-a-signature-must-satisfy).
+- **BREAKING: `battery/relay` relays script, style, image, font, JSON
+  and `text/plain` only.** A relayed response answers on the app's
+  origin, so a vendor HTML page echoing the query string was reflected
+  XSS. Any other type is now a `502`; a route serving a vendor iframe
+  page opts in with `Route.ContentTypes: []string{"text/html"}`. SVG
+  passes under `Content-Security-Policy: sandbox`, and a body with no
+  `Content-Type` goes out as `application/octet-stream`. See
+  [relay](framework/docs/content/relay.md#threat-model).
 - **`core/static` contains a root directory created after the handler.**
   The symlink containment binds the `os.DirFS` root when `Handler` is
   built. A directory that did not exist yet (a build step or a watcher

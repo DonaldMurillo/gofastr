@@ -2074,7 +2074,7 @@ func NewApp(opts ...AppOption) *App {
 	// the router resolves the chain per request, so ordering here does
 	// not weaken coverage.
 	if a.webBotAuth != nil && a.webBotAuth.Verify != nil {
-		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger())
+		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger(), webbotauth.WithMaxValidity(a.webBotAuth.Verify.MaxValidity))
 		a.router.Use(a.webBotAuthVerifier.Middleware)
 	}
 

@@ -163,11 +163,12 @@ func (e *expander) lookup(name string) {
 	}
 }
 
-// lookupSources resolves name in the order Load documents: the value a
-// higher-precedence file set (the one Load keeps) first, then this
-// file's earlier keys, then the process environment. A value from
-// outside the file counts as input for the budget, once per name (see
-// parse), so the limit grows with it before the value is written.
+// lookupSources resolves name in the order Load documents, the order
+// Apply keeps values in: the process environment first (Apply never
+// overwrites it), then the value a higher-precedence file set (the one
+// Load keeps), then this file's earlier keys. A value from outside the
+// file counts as input for the budget, once per name (see parse), so the
+// limit grows with it before the value is written.
 func (e *expander) lookupSources(name string) {
 	src := e.src
 	outside := func(v string) {
@@ -180,18 +181,18 @@ func (e *expander) lookupSources(name string) {
 		}
 		e.write(v)
 	}
+	if src.envFn != nil {
+		//gofastr:allow(recovercallback) envFn is os.LookupEnv from Load, called synchronously on the caller's goroutine; no dispatch loop runs it
+		if v, ok := src.envFn(name); ok {
+			outside(v)
+			return
+		}
+	}
 	if v, ok := src.shadow[name]; ok {
 		outside(v)
 		return
 	}
 	if v, ok := src.local[name]; ok {
 		e.write(v)
-		return
-	}
-	if src.envFn != nil {
-		//gofastr:allow(recovercallback) envFn is os.LookupEnv from Load, called synchronously on the caller's goroutine; no dispatch loop runs it
-		if v, ok := src.envFn(name); ok {
-			outside(v)
-		}
 	}
 }

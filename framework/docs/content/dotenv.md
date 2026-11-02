@@ -53,24 +53,26 @@ Hard rules:
 Only inside double-quoted values. Bracket form **only**: bare `$VAR`
 is left verbatim (less ambiguous, fewer footguns).
 
-Lookup order for `${NAME}` when `Load` (and so `NewApp`) reads the files:
+Lookup order for `${NAME}` when `Load` (and so `NewApp`) reads the
+files is the order `Apply` keeps values in, so a value built from a
+name reads the same value the app runs with:
 
-1. The value an earlier file in the precedence chain set. That is the
+1. `os.Environ`. `Apply` never overwrites a set variable, so with
+   `DB_HOST=prod` in the environment, `DB_HOST` is `prod` and
+   `DATABASE_URL="postgres://${DB_HOST}/app"` is built on `prod` too.
+2. The value an earlier file in the precedence chain set. That is the
    value `Load` keeps, so a `.env` line
    `DATABASE_URL="postgres://${DB_HOST}/app"` follows the `DB_HOST`
    from `.env.local`, not the one `.env` itself shadowed.
-2. Keys parsed earlier in the same file.
-3. `os.Environ`.
+3. Keys parsed earlier in the same file.
 4. Empty string (no error, matching shell behaviour).
 
 `dotenv.Parse` on its own reads no environment: it expands against the
 keys earlier in the same input only.
 
-A process variable set by the operator still wins over a dotfile key
-of the same name when `Apply` runs, but a dotfile value built from it
-reads the file's own spelling first (steps 1 and 2 come before 3).
-Reference a name the files do not define when you want the
-environment's value.
+Before v0.96 the environment came third, after the files' own keys, so
+a dotfile value built from `${DB_HOST}` used the file's host while the
+environment's `DB_HOST` was the one applied.
 
 A value read from an earlier file or the environment counts as input
 for the expansion budget once, so one `${PATH}` in a short file is
