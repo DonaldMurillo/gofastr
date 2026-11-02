@@ -1138,3 +1138,12 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "BREAKING - core/config.Load promotes the fields of an embedded struct the way encoding/json does: in type Cfg struct{ Base }, Base's config:\"PORT\" field reads PORT, no longer BASE_PORT, and the prefixed key is not read at all"
+    breaking: true
+    hits: review
+    guidance: "For each struct you pass to config.Load, LoadWith or MustLoad, look for an embedded struct (a field with a type and no name, value or pointer). Rename its <TYPE>_<KEY> environment and file keys to <KEY> (BASE_PORT becomes PORT), or name the field (Base Base) to keep reading BASE_PORT. Pointer embeds and unexported embedded types are promoted too; an unexported one used to be skipped. Load now fails when two embedded structs promote one key at the same depth (declare the field on the outer struct, which wins, or give one a different config tag) and when an embedded struct carries a config tag. Named struct fields (DB DBConfig reads DB_HOST) are unchanged."
+    find:
+      uses:
+        - gofastr/core/config.Load
+        - gofastr/core/config.LoadWith
+        - gofastr/core/config.MustLoad

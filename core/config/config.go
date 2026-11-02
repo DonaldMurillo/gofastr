@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,6 +100,16 @@ type ConfigValidator interface {
 // source, and left nil when none is. A `required` leaf inside a struct
 // that stayed nil is therefore not enforced — use the value spelling
 // when absence must fail the boot.
+//
+// The fields of an EMBEDDED struct are promoted the way encoding/json
+// promotes them, with no prefix: in `type Cfg struct{ Base }`, Base's
+// `config:"PORT"` field reads PORT (never BASE_PORT). That holds for a
+// pointer embed (allocated when one of its keys is present, left nil
+// otherwise) and for an unexported embedded type's exported fields. A
+// shallower field wins over a promoted one with the same key; two
+// promoted at the same depth are ambiguous and Load refuses the type.
+// Name the field (`Base Base`) to read its keys under BASE_. A config
+// tag on an embedded struct is refused.
 //
 // `required:"true"` demands a non-empty value: a key that is present
 // but set to the empty string ("SECRET=" in a .env, a ConfigMap key
@@ -226,90 +237,267 @@ func jsonBody(s string, escapeHTML bool) string {
 	return q[1 : len(q)-1]
 }
 
-// srcHasKey reports whether src holds any key the fields of t would read
-// at prefix — leaves at prefix+key (tag or uppercased name), nested
-// structs at prefix+NAME_… — mirroring bindStruct's key derivation
-// exactly. It is the presence probe that decides whether a nil
-// pointer-to-struct field is allocated or left nil.
-func srcHasKey(t reflect.Type, prefix string, src Source) bool {
-	for i := 0; i < t.NumField(); i++ {
+// configField is one field Load binds in a struct: a leaf it reads one
+// key for, or a named nested struct whose fields it reads under key as
+// a prefix ("DB_"). Fields of embedded structs are promoted into their
+// parent's list, as encoding/json promotes them, so index is the path
+// from the struct through each embedded field to this one.
+type configField struct {
+	index  []int
+	key    string
+	nested bool
+	path   string // Go spelling for errors: "Base.Port"
+	sf     reflect.StructField
+}
+
+// keyLabel is how an error names the field's key.
+func (f configField) keyLabel() string {
+	if f.nested {
+		return f.key + "*"
+	}
+	return f.key
+}
+
+// isNestedStruct reports whether a named field of type t recurses under
+// a NAME_ prefix: a struct, or a pointer to one.
+func isNestedStruct(t reflect.Type) bool {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t.Kind() == reflect.Struct
+}
+
+// configFields lists the fields Load binds in t, in field order, with
+// the fields of embedded structs promoted the way encoding/json promotes
+// them: `type Cfg struct{ Base }` reads Base's `config:"PORT"` as PORT.
+// An unexported embedded type promotes its exported fields too, and a
+// pointer embed is followed.
+//
+// Two fields reading one key resolve as encoding/json resolves two
+// fields with one name: the shallower one wins and the deeper one is not
+// read at all. Two at the same depth are ambiguous, and where
+// encoding/json drops both silently, Load refuses the type.
+//
+// A config tag on an embedded struct is refused rather than read as a
+// prefix: naming the field (`Base Base`) is how a struct's keys get one.
+func configFields(t reflect.Type) ([]configField, error) {
+	var all []configField
+	if err := collectConfigFields(t, nil, "", map[reflect.Type]bool{t: true}, &all); err != nil {
+		return nil, err
+	}
+	byKey := map[string][]configField{}
+	var keys []string
+	for _, f := range all {
+		if _, seen := byKey[f.key]; !seen {
+			keys = append(keys, f.key)
+		}
+		byKey[f.key] = append(byKey[f.key], f)
+	}
+	out := make([]configField, 0, len(keys))
+	for _, k := range keys {
+		group := byKey[k]
+		depth := len(group[0].index)
+		for _, f := range group[1:] {
+			depth = min(depth, len(f.index))
+		}
+		var winners []configField
+		for _, f := range group {
+			if len(f.index) == depth {
+				winners = append(winners, f)
+			}
+		}
+		if len(winners) > 1 {
+			paths := make([]string, len(winners))
+			for i, f := range winners {
+				paths[i] = f.path
+			}
+			return nil, fmt.Errorf("config: %s: key %s is ambiguous: %s are promoted from embedded structs at the same depth; give one a different config tag, or declare the field on %s itself so it wins",
+				t, winners[0].keyLabel(), strings.Join(paths, " and "), t)
+		}
+		out = append(out, winners[0])
+	}
+	slices.SortFunc(out, func(a, b configField) int { return slices.Compare(a.index, b.index) })
+	return out, nil
+}
+
+// collectConfigFields appends every candidate field of t, descending into
+// embedded structs. active holds the embedded types on the current path,
+// so a type that embeds itself is refused instead of walked forever.
+func collectConfigFields(t reflect.Type, index []int, path string, active map[reflect.Type]bool, out *[]configField) error {
+	for i := range t.NumField() {
 		f := t.Field(i)
+		idx := append(slices.Clone(index), i)
+		p := f.Name
+		if path != "" {
+			p = path + "." + f.Name
+		}
+		if f.Anonymous {
+			ft := f.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				if tag := f.Tag.Get("config"); tag != "" {
+					return fmt.Errorf("config: %s: embedded struct %s has config tag %q, but an embedded struct's fields are promoted and read without a prefix; name the field (%s %s) to read them under %s_",
+						t, p, tag, f.Name, f.Type, strings.ToUpper(f.Name))
+				}
+				if active[ft] {
+					return fmt.Errorf("config: recursive struct %s is unsupported", ft)
+				}
+				active[ft] = true
+				err := collectConfigFields(ft, idx, p, active, out)
+				delete(active, ft)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			// An embedded non-struct is a field named after its type, as
+			// in encoding/json; an unexported one is not read.
+		}
 		if !f.IsExported() {
 			continue
 		}
-		if f.Type.Kind() == reflect.Struct && f.Type != reflect.TypeFor[time.Duration]() {
-			if srcHasKey(f.Type, prefix+strings.ToUpper(f.Name)+"_", src) {
-				return true
-			}
-			continue
-		}
-		if f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct {
-			if srcHasKey(f.Type.Elem(), prefix+strings.ToUpper(f.Name)+"_", src) {
-				return true
-			}
+		if isNestedStruct(f.Type) {
+			*out = append(*out, configField{index: idx, key: strings.ToUpper(f.Name) + "_", nested: true, path: p, sf: f})
 			continue
 		}
 		key := f.Tag.Get("config")
 		if key == "" {
 			key = strings.ToUpper(f.Name)
 		}
-		if _, ok := src.Get(prefix + key); ok {
+		*out = append(*out, configField{index: idx, key: key, path: p, sf: f})
+	}
+	return nil
+}
+
+// srcHasKey reports whether src holds any key the fields of t would read
+// at prefix — leaves at prefix+key (tag or uppercased name), nested
+// structs at prefix+NAME_…, promoted fields without their embed's name —
+// mirroring bindStruct's key derivation exactly (both read configFields).
+// It is the presence probe that decides whether a nil pointer-to-struct
+// field, or a nil pointer embed, is allocated or left nil.
+func srcHasKey(t reflect.Type, prefix string, src Source) bool {
+	fields, err := configFields(t)
+	if err != nil {
+		return false // checkConfigShape refused the type before any probe
+	}
+	for _, f := range fields {
+		if fieldHasKey(f, prefix, src) {
 			return true
 		}
 	}
 	return false
 }
 
+// fieldHasKey reports whether src holds a key f reads at prefix.
+func fieldHasKey(f configField, prefix string, src Source) bool {
+	if f.nested {
+		t := f.sf.Type
+		if t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		return srcHasKey(t, prefix+f.key, src)
+	}
+	_, ok := src.Get(prefix + f.key)
+	return ok
+}
+
+// allocEmbeds allocates every nil pointer embed on f's path in elem. An
+// unexported one cannot be allocated through reflect (encoding/json
+// refuses it the same way), so a key present behind one is an error
+// rather than a silently dropped value.
+func allocEmbeds(elem reflect.Value, f configField, prefix string) error {
+	v := elem
+	for _, i := range f.index[:len(f.index)-1] {
+		v = v.Field(i)
+		if v.Kind() != reflect.Pointer {
+			continue
+		}
+		if v.IsNil() {
+			if !v.CanSet() {
+				return fmt.Errorf("config: field %s: key %s is set, but the embedded pointer to unexported struct %s is nil and cannot be allocated; embed it by value, or set the pointer before Load",
+					f.path, prefix+f.keyLabel(), v.Type().Elem())
+			}
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = v.Elem()
+	}
+	return nil
+}
+
+// reachField returns the field at f's path in elem, or false when a nil
+// pointer embed on the path leaves it unreachable.
+func reachField(elem reflect.Value, f configField) (reflect.Value, bool) {
+	v := elem
+	for n, i := range f.index {
+		if n > 0 && v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				return reflect.Value{}, false
+			}
+			v = v.Elem()
+		}
+		v = v.Field(i)
+	}
+	return v, true
+}
+
 // bindStruct walks the fields of elem, reading from src under the given
-// prefix. Nested struct fields recurse with prefix+FieldName+"_".
+// prefix. Named nested struct fields recurse with prefix+FieldName+"_";
+// fields of embedded structs are promoted (see [configFields]).
 //
 // Every value bound into a `sensitive:"true"` field is appended to
 // secrets so [redactSecrets] can scrub it out of a ConfigValidator's
 // error text.
 func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string) error {
-	t := elem.Type()
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		fieldVal := elem.Field(i)
-
-		if !fieldVal.CanSet() {
-			continue
-		}
-
-		// A nested struct behind a POINTER recurses like the value form:
-		// allocated and bound when any of its nested keys is present,
-		// left nil otherwise. It used to fall through to the leaf path,
-		// whose uppercase-name key is almost never set, so `DB
-		// *DBConfig` silently ignored DB_HOST/DB_PORT while Load
-		// returned nil (2026-09-04 red-probe round).
-		if fieldVal.Kind() == reflect.Pointer && fieldVal.Type().Elem().Kind() == reflect.Struct {
-			nestedPrefix := prefix + strings.ToUpper(field.Name) + "_"
-			if fieldVal.IsNil() {
-				if !srcHasKey(fieldVal.Type().Elem(), nestedPrefix, src) {
-					continue // no nested key present: leave the pointer nil
-				}
-				fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
-			}
-			if err := bindStruct(fieldVal.Elem(), nestedPrefix, src, secrets); err != nil {
+	fields, err := configFields(elem.Type())
+	if err != nil {
+		return err
+	}
+	// A nil pointer embed is allocated when any field promoted through it
+	// has a key present, before any field binds, so a required or
+	// defaulted field ahead of the present one in the embed is still
+	// enforced. One with no key present stays nil and its fields are
+	// skipped, as a nil `DB *DBConfig` is.
+	for _, f := range fields {
+		if fieldHasKey(f, prefix, src) {
+			if err := allocEmbeds(elem, f, prefix); err != nil {
 				return err
 			}
+		}
+	}
+
+	for _, cf := range fields {
+		field := cf.sf
+		fieldVal, ok := reachField(elem, cf)
+		if !ok || !fieldVal.CanSet() {
 			continue
 		}
-		// Recurse into value structs (but not time.Duration, which is an int64).
-		if fieldVal.Kind() == reflect.Struct && fieldVal.Type() != reflect.TypeFor[time.Duration]() {
-			nestedPrefix := prefix + strings.ToUpper(field.Name) + "_"
+
+		if cf.nested {
+			nestedPrefix := prefix + cf.key
+			// A nested struct behind a POINTER recurses like the value
+			// form: allocated and bound when any of its nested keys is
+			// present, left nil otherwise. It used to fall through to the
+			// leaf path, whose uppercase-name key is almost never set, so
+			// `DB *DBConfig` silently ignored DB_HOST/DB_PORT while Load
+			// returned nil (2026-09-04 red-probe round).
+			if fieldVal.Kind() == reflect.Pointer {
+				if fieldVal.IsNil() {
+					if !srcHasKey(fieldVal.Type().Elem(), nestedPrefix, src) {
+						continue // no nested key present: leave the pointer nil
+					}
+					fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
+				}
+				fieldVal = fieldVal.Elem()
+			}
 			if err := bindStruct(fieldVal, nestedPrefix, src, secrets); err != nil {
 				return err
 			}
 			continue
 		}
 
-		key := field.Tag.Get("config")
-		if key == "" {
-			key = strings.ToUpper(field.Name)
-		}
-		key = prefix + key
+		key := prefix + cf.key
 
 		required := field.Tag.Get("required") == "true"
 		defaultVal := field.Tag.Get("default")
@@ -526,26 +714,32 @@ func validateTags(v reflect.Value, tag string) error {
 	return schema.Validate(f, value)
 }
 
-// Recursive struct shapes make key discovery unbounded. Refuse them before
-// reading sources or allocating nested configuration pointers.
+// checkConfigShape refuses, before any source is read or any pointer
+// allocated, a struct shape Load cannot bind: a recursive one (key
+// discovery would be unbounded, through a named field or an embed), a
+// key two embedded structs promote at the same depth, and a config tag
+// on an embedded struct. It walks the same field list bindStruct binds
+// ([configFields]), so every nested struct Load could reach is checked.
 func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {
 	if active[t] {
 		return fmt.Errorf("config: recursive struct %s is unsupported", t)
 	}
 	active[t] = true
 	defer delete(active, t)
-	for f := range t.Fields() {
-		if !f.IsExported() {
+	fields, err := configFields(t)
+	if err != nil {
+		return err
+	}
+	for _, f := range fields {
+		if !f.nested {
 			continue
 		}
-		ft := f.Type
+		ft := f.sf.Type
 		if ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
 		}
-		if ft.Kind() == reflect.Struct {
-			if err := checkConfigShape(ft, active); err != nil {
-				return err
-			}
+		if err := checkConfigShape(ft, active); err != nil {
+			return err
 		}
 	}
 	return nil
