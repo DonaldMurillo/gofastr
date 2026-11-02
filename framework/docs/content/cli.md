@@ -291,7 +291,7 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (each as `--run=X` or `--run X`), `--race`, `--cover`, `--short`; an
   unknown flag is an error.
 - `gofastr docs [topic]`: these docs, offline, versioned with the
-  binary (`--list` every topic, `--grep <term>` to search).
+  binary (`--list` every topic, `--grep <term>` or `--grep=<term>` to search).
 - `gofastr docs serve`: the docs website on `127.0.0.1:8083`, for
   offline browsing. The first run downloads the static export attached
   to this binary's release (about 6 MB, checked against its published
