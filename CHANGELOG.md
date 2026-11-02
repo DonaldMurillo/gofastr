@@ -187,6 +187,11 @@ few lines, and link the PR or the docs page for the rest.
   every test while `make analyze` and CI stopped running them. The test
   now reads every exported `&analysis.Analyzer{}` in every file of each
   package, and only a `<name> — <reason>` line holds one back.
+- **An analyzer marker needs a reason in words.**
+  `//gofastr:allow(<analyzer>) --` silenced the vettool and the
+  `core-ui/check` lints while `gofastr verify` reported the same marker as
+  having no reason. Separator punctuation alone (`--`, `—`, `:`) no
+  longer counts as a reason anywhere.
 - **An analyzer change selects the generated-code vet gates.** The gates
   that vet emitted code with the repo vettool (`TestUnionApp`, the
   generated-CLI and styles gates in `appgen` and `generatecmd`) build

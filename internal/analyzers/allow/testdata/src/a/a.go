@@ -36,6 +36,14 @@ func bareMarker(b []byte) {
 	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
 }
 
+// Separator punctuation is not a reason: the contracts pipeline trims
+// the same run and calls this marker reasonless.
+func punctuationOnly(b []byte) {
+	var x v
+	//gofastr:allow(discardeddecode) --
+	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
+}
+
 func otherRule(b []byte) {
 	var x v
 	_ = json.Unmarshal(b, &x) //gofastr:allow(mapwriter) unrelated marker // want `json.Unmarshal error discarded`

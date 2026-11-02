@@ -127,11 +127,17 @@ func readFile(pass *analysis.Pass, name string) []byte {
 // reason returns the marker's reason: the text after the parenthesis,
 // less a block comment's closing delimiter, so `/* gofastr:allow(x) */`
 // carries none.
+//
+// Separator punctuation is not a reason either: `//gofastr:allow(x) --`
+// or `— :` says nothing, and framework/contracts/suppress.go already
+// trims the same "-—:" run before it demands one, so gofastr verify
+// reported such a marker as reasonless while the vettool honoured it
+// (2026-11-02 guard bash).
 func reason(text, rest string) string {
 	if strings.HasPrefix(text, "/*") {
 		rest = strings.TrimSuffix(strings.TrimSpace(rest), "*/")
 	}
-	return strings.TrimSpace(rest)
+	return strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(rest), "-—:"))
 }
 
 // standsAlone reports whether the comment is the only thing on its
