@@ -191,6 +191,12 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **A restore keeps the modules an operator turned off turned off.**
+  `ExportData` left out `gofastr_modules` and the process-module
+  desired-state table, so a restored app booted every disabled module
+  back on and a process module got back the grants an operator had
+  revoked. Both tables are in the archive now; the heartbeat table stays
+  out. See [data export](framework/docs/content/data-export.md).
 - **`gofastr pack` keeps an app spec fragment a fragment.** A spec with
   no `app:` section was written back with `app: {api_prefix: ""}`, so the
   next decode read it as a whole app mounting its CRUD API at the root and

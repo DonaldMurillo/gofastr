@@ -1080,3 +1080,7 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "ExportData archives carry gofastr_modules and gofastr_process_modules, so a restore keeps a module an operator turned off turned off"
+    breaking: false
+    guidance: "Nothing to change. An archive gains gofastr_modules.ndjson and gofastr_process_modules.ndjson when those tables exist; ImportData restores them into a fresh database like any other registered table. Restart after an import so the module manager and the process supervisor read the restored rows."
+    nodetect: "the change is in what ExportData writes; nothing in an app's source spells it"

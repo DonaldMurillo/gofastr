@@ -96,7 +96,14 @@ views, the A2A task and push-config stores, feature flags, the SQL
 idempotency store, the event outbox, the webhook delivery and inbound
 stores, the entity admin's bulk jobs, and the RBAC `access.GrantStore`
 (its grants and its revocation tombstones, registered by `EnsureSchema`;
-restart after an import so `LoadInto` reads them). Registration replaces an entry
+restart after an import so `LoadInto` reads them). The framework's own
+module state is registered the same way: `gofastr_modules` (each module an
+operator turned on or off, registered when the module store opens) and
+`gofastr_process_modules` (a process module's desired state: on or off,
+its approved artifact, its grants and the grants an operator revoked,
+registered by `EnsureSchema`), so a restore keeps a module turned off that
+was off. The process-module heartbeat table stays out: which replicas were
+alive is something a restored deployment observes afresh. Registration replaces an entry
 with the same `Name`, so these stores name each entry with
 `datexport.ScopedName(base, table)`: the default table keeps the bare name
 (`feature_flags.ndjson`), and any other table is appended after a `-`
