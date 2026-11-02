@@ -25,6 +25,11 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`App.Serve(net.Listener)`**. Runs the same lifecycle as `Start` on a
+  listener the host supplies, instead of binding a TCP address: an
+  in-process listener for a mobile WebView, or one a supervisor holds.
+  Isolation never remaps it, and every return closes it. See
+  [Plugins](framework/docs/content/plugins.md#init-lifecycle).
 - **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
   A calendar that stays on the page beside the native date input it
   fills, for a range in one control, refused days, or notes on days. The

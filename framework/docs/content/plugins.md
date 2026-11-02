@@ -65,6 +65,14 @@ framework gates their listing on the entity's `Access` permission.)
 - `InitPlugins` runs every queued plugin's `Init` in registration
   order, then every battery's `Init` in dependency-resolved order.
 - `App.Start` calls `InitPlugins` then binds the HTTP listener.
+- `App.Serve(ln net.Listener)` runs the same lifecycle (migrate, seed,
+  `InitPlugins`, `OnStart`, the full handler chain, `OnReady`, graceful
+  `Shutdown`) on a listener the host supplies instead of binding a TCP
+  address. It is the seam for a host that owns the transport, such as
+  an in-process listener feeding a mobile WebView, where no socket may
+  be opened. Worktree isolation never remaps it, `OnReady` receives
+  `ln.Addr().String()`, and every return closes `ln`, including a
+  start phase that fails before the server exists.
 - Tests can call `InitPlugins` manually before driving the router
   in-memory; the call is idempotent. `framework.TestHarness(t, app)`
   invokes it automatically.

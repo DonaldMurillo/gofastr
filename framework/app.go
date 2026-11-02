@@ -3501,16 +3501,26 @@ func (a *App) warnUnresolvableRelations() {
 }
 
 // Start starts the HTTP server on the given address.
-func (a *App) Start(addr string) error {
-	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
-	// drives the real binary over HTTP still records what it exercised.
-	// No-op in every other process.
-	a.enableSemanticCoverageFromEnv()
+func (a *App) Start(addr string) error { return a.start(addr, nil) }
 
-	if len(a.pendingEndpoints) > 0 {
-		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+// Serve runs the app exactly as Start does (migrate, seed, init plugins,
+// start hooks, the composed handler chain, OnReady, graceful Shutdown),
+// but accepts connections on ln instead of binding a TCP address. It is
+// the seam for a host that owns the transport: an in-process listener
+// for a mobile shell's WebView, where no socket may be opened, or a
+// listener a supervisor already holds. Worktree isolation does not
+// remap a caller-supplied listener. OnReady hooks receive
+// ln.Addr().String(). Serve closes ln when it returns.
+func (a *App) Serve(ln net.Listener) error {
+	if ln == nil {
+		return errors.New("framework: Serve: nil listener")
 	}
+	return a.start("", ln)
+}
 
+// resolveListenAddr applies worktree isolation to a Start address.
+func (a *App) resolveListenAddr(addrp *string) error {
+	addr := *addrp
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		return fmt.Errorf("resolve isolation: %w", err)
@@ -3533,6 +3543,35 @@ func (a *App) Start(addr string) error {
 			"resolved", addr,
 			"isolation", runtimeIsolation.ID(),
 			"disable", "GOFASTR_ISOLATION=off (or GOFASTR_ISOLATION_REWRITE=0 for explicit values only)")
+	}
+	*addrp = addr
+	return nil
+}
+
+// start is Start and Serve: ln nil binds addr, a non-nil ln is served
+// as given.
+func (a *App) start(addr string, ln net.Listener) error {
+	if ln != nil {
+		// Every return closes a caller-supplied listener, the early
+		// aborts included (Serve's contract); the bind path closes its
+		// own listener after binding.
+		defer func() { _ = ln.Close() }()
+	}
+	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
+	// drives the real binary over HTTP still records what it exercised.
+	// No-op in every other process.
+	a.enableSemanticCoverageFromEnv()
+
+	if len(a.pendingEndpoints) > 0 {
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	}
+
+	if ln != nil {
+		// A caller-supplied listener is served as given: there is no
+		// address to remap, and the guards below read its own address.
+		addr = ln.Addr().String()
+	} else if err := a.resolveListenAddr(&addr); err != nil {
+		return err
 	}
 
 	// Create the app's lifecycle context early so AutoMigrate, RunSeeds,
@@ -3992,12 +4031,15 @@ func (a *App) Start(addr string) error {
 	// Bind first, then Serve, split from ListenAndServe so OnReady hooks
 	// fire only after the port is actually held. http.ListenAndServe
 	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
-	ln, err := net.Listen("tcp", listenAddrFor(addr))
-	if err != nil {
-		// Bind failure (port in use is the common case), drain like every
-		// earlier start phase does, otherwise the batteries/cron/queue and
-		// OnStart workers spawned above leak past Start returning.
-		return abort(fmt.Errorf("listen and serve: %w", err))
+	if ln == nil {
+		bound, err := net.Listen("tcp", listenAddrFor(addr))
+		if err != nil {
+			// Bind failure (port in use is the common case), drain like every
+			// earlier start phase does, otherwise the batteries/cron/queue and
+			// OnStart workers spawned above leak past Start returning.
+			return abort(fmt.Errorf("listen and serve: %w", err))
+		}
+		ln = bound
 	}
 	// Serve closes the listener on Shutdown; this extra Close only matters
 	// on the Shutdown-raced path where Serve returns without adopting ln.
