@@ -1602,6 +1602,23 @@ func packReadTheme(file *ast.File) (map[string]string, map[string]string) {
 		if !ok || len(asn.Lhs) != 1 || len(asn.Rhs) != 1 {
 			continue
 		}
+		// The generator's overlay spelling: one index assignment per key
+		// the spec names, theme.DarkColors["background"] = "#15141B". A
+		// right side that is not a literal is the ink the generator
+		// derives for a fill named without its -fg; the spec never said
+		// it, so it is not packed.
+		if ix, ok := asn.Lhs[0].(*ast.IndexExpr); ok {
+			if p := selectorPath(ix.X); len(p) == 2 && p[1] == "DarkColors" {
+				key := appspec.AstString(ix.Index)
+				if lit, ok := asn.Rhs[0].(*ast.BasicLit); ok && lit.Kind == token.STRING && key != "" {
+					if dark == nil {
+						dark = map[string]string{}
+					}
+					dark[key] = appspec.AstString(lit)
+				}
+			}
+			continue
+		}
 		path := selectorPath(asn.Lhs[0])
 		switch {
 		case len(path) == 4 && path[1] == "Colors" && path[3] == "Value":
