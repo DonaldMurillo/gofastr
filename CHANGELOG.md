@@ -5267,6 +5267,15 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`core/textsafe` treats Unicode tag characters and Hangul fillers as
+  invisible.** Tag characters (U+E0000–U+E007F) spell ASCII nobody sees,
+  the way instructions are hidden in a prompt, and a Hangul filler
+  (U+115F, U+1160, U+3164, U+FFA0) draws a blank that passes for an
+  empty name. Every strip and gate built on textsafe now removes or
+  refuses them: `auth.CleanName` refuses them in a display name and
+  `auth.CanonicalEmail` strips them. The string helpers keep a
+  subdivision flag (Scotland's black flag and tag letters) whole. See
+  [core packages](framework/docs/content/core-packages.md#textsafe).
 - **Web Bot Auth caps a signature's validity window at 5 minutes.** A
   signature was accepted until its own `expires`, however far out, so a
   captured one replayed for as long as the signer chose. One whose

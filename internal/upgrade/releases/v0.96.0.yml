@@ -1102,3 +1102,7 @@ notes:
       uses:
         - gofastr/core/dotenv.Load
         - gofastr/core/dotenv.LoadAndApply
+  - change: "core/textsafe counts the Unicode tag characters (U+E0000-U+E007F) and the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0) as invisible, so every strip and gate built on it (display names, canonical emails, titles, filenames, log and header scrubs) removes or refuses them; the string helpers keep a subdivision flag such as Scotland's whole"
+    breaking: false
+    guidance: "A display name made of a Hangul filler, or one carrying hidden tag text, is now refused by auth.CleanName with ErrInvalidName, and such characters are stripped from emails before matching. A per-rune caller of IsInvisible or IsUnsafe sees every tag character, flags included; call StripInvisible, StripUnsafe, ContainsInvisible or ContainsUnsafe on the whole string to keep flags."
+    nodetect: "the change is in which runes the predicate reports; stored names and emails are data, not Go source"

@@ -16,14 +16,32 @@
 // framework/pagination first enumerated as isUnicodeInvisible.
 package textsafe
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // IsInvisible reports whether r is a zero-width, joiner, or bidi
 // control codepoint: no glyph of its own, present only to reorder or
 // hide neighbouring text. Trojan-Source (the bidi overrides and
-// isolates) and the zero-width smuggling set both live here.
+// isolates) and the zero-width smuggling set both live here, with the
+// Unicode tag characters (U+E0000–U+E007F, which spell ASCII nobody
+// sees: the way text is hidden in a prompt) and the Hangul fillers
+// (U+115F, U+1160, U+3164, U+FFA0, a letter-wide blank that passes for
+// an empty name).
+//
+// A tag character is part of a subdivision flag (Scotland's is U+1F3F4
+// followed by the tag letters "gbsct" and U+E007F). IsInvisible sees
+// one rune and cannot tell, so it reports every tag character; the
+// string helpers below (StripInvisible, StripUnsafe, ContainsInvisible,
+// ContainsUnsafe) keep a valid flag sequence whole.
 func IsInvisible(r rune) bool {
+	if r >= tagFirst && r <= tagLast {
+		return true
+	}
 	switch r {
+	case 0x115F, 0x1160, 0x3164, 0xFFA0: // Hangul fillers
+		return true
 	case 0x200B, 0x200C, 0x200D, // zero-width space / non-joiner / joiner
 		0x200E, 0x200F, // LRM / RLM
 		0x202A, 0x202B, 0x202C, 0x202D, 0x202E, // LRE/RLE/PDF/LRO/RLO
@@ -61,40 +79,99 @@ func IsUnsafe(r rune) bool {
 	return r < 0x20 || r == 0x7F || IsC1(r) || IsLineSeparator(r) || IsInvisible(r)
 }
 
-// StripInvisible removes every invisible/bidi codepoint from s. It
-// leaves C0/C1 controls in place for callers that scrub those
-// separately; use StripUnsafe to remove the whole set at once.
-func StripInvisible(s string) string {
-	if !strings.ContainsFunc(s, IsInvisible) {
+// The tag block, and the pieces of an emoji subdivision flag.
+const (
+	tagFirst  = 0xE0000
+	tagLast   = 0xE007F
+	cancelTag = 0xE007F
+	blackFlag = 0x1F3F4
+)
+
+// flagTagLen returns the byte length of the tag run that completes a
+// subdivision flag at s, which follows a U+1F3F4 BLACK FLAG: 3 to 7 tag
+// lowercase letters or digits (a unicode_subdivision_id, UTS #51) then
+// CANCEL TAG. It returns 0 when s does not start such a run, so a black
+// flag cannot launder an arbitrary tag payload (uppercase, spaces,
+// punctuation, or a long run).
+func flagTagLen(s string) int {
+	n, i := 0, 0
+	for i < len(s) {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == cancelTag:
+			if n >= 3 && n <= 7 {
+				return i + size
+			}
+			return 0
+		case r >= tagFirst+'a' && r <= tagFirst+'z', r >= tagFirst+'0' && r <= tagFirst+'9':
+			n++
+			if n > 7 {
+				return 0
+			}
+			i += size
+		default:
+			return 0
+		}
+	}
+	return 0
+}
+
+// scan walks s and calls keep for each run of runes that is not hit, and
+// reports whether any rune was hit. A subdivision flag's tag run is kept
+// whole. keep may be nil when only the answer is wanted.
+func scan(s string, hit func(rune) bool, keep func(string)) bool {
+	found, start := false, 0
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == blackFlag {
+			i += size + flagTagLen(s[i+size:])
+			continue
+		}
+		if !hit(r) {
+			i += size
+			continue
+		}
+		found = true
+		if keep == nil {
+			return true
+		}
+		keep(s[start:i])
+		i += size
+		start = i
+	}
+	if keep != nil && found {
+		keep(s[start:])
+	}
+	return found
+}
+
+// strip removes every rune hit reports from s, keeping subdivision flags.
+func strip(s string, hit func(rune) bool) string {
+	if !scan(s, hit, nil) {
 		return s
 	}
-	return strings.Map(func(r rune) rune {
-		if IsInvisible(r) {
-			return -1
-		}
-		return r
-	}, s)
+	var b strings.Builder
+	b.Grow(len(s))
+	scan(s, hit, func(part string) { b.WriteString(part) })
+	return b.String()
 }
+
+// StripInvisible removes every invisible/bidi codepoint from s, keeping
+// a valid subdivision flag's tag characters. It leaves C0/C1 controls in
+// place for callers that scrub those separately; use StripUnsafe to
+// remove the whole set at once.
+func StripInvisible(s string) string { return strip(s, IsInvisible) }
 
 // StripUnsafe removes every C0 control, DEL, C1 control, and
-// invisible/bidi codepoint from s. The fast path returns s unchanged
-// when it is already clean.
-func StripUnsafe(s string) string {
-	if !strings.ContainsFunc(s, IsUnsafe) {
-		return s
-	}
-	return strings.Map(func(r rune) rune {
-		if IsUnsafe(r) {
-			return -1
-		}
-		return r
-	}, s)
-}
+// invisible/bidi codepoint from s, keeping a valid subdivision flag's tag
+// characters. It returns s unchanged when it is already clean.
+func StripUnsafe(s string) string { return strip(s, IsUnsafe) }
 
 // ContainsInvisible reports whether s carries any invisible/bidi
-// codepoint. Refusal-style gates use it in place of stripping.
-func ContainsInvisible(s string) bool { return strings.ContainsFunc(s, IsInvisible) }
+// codepoint outside a valid subdivision flag. Refusal-style gates use it
+// in place of stripping.
+func ContainsInvisible(s string) bool { return scan(s, IsInvisible, nil) }
 
 // ContainsUnsafe reports whether s carries any C0/DEL/C1/invisible
-// codepoint.
-func ContainsUnsafe(s string) bool { return strings.ContainsFunc(s, IsUnsafe) }
+// codepoint outside a valid subdivision flag.
+func ContainsUnsafe(s string) bool { return scan(s, IsUnsafe, nil) }
