@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`RedisCache` stores nothing for a negative TTL.** The `Cache`
+  contract says a negative `ttl` stores nothing and drops what the key
+  held, and `MemoryCache` does that. `RedisCache.Set` handed the
+  negative duration to the client, and a go-redis adapter sends any
+  non-positive expiry other than 0 as a SET with no expiry (and -1 as
+  KEEPTTL), so the value was kept forever over the old one, and
+  `GetOrSet` with a negative `ttl` returned it. `RedisCache.Set` now
+  deletes the key instead. See [cache](framework/docs/content/cache.md).
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does

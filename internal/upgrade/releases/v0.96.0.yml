@@ -751,3 +751,7 @@ notes:
     breaking: false
     guidance: "Each such screen was unreachable from a browser, stopped the app at boot (on the CRUD mount), or was answered by the CRUD API (under it). Fix the route in the app spec before regenerating."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "RedisCache.Set with a negative ttl (or a negative WithTTL default) deletes the key and stores nothing, as MemoryCache does; it used to pass the duration to the RedisClient, and a go-redis adapter stored the value with no expiry"
+    breaking: false
+    guidance: "Nothing to change. A caller that passed a negative ttl got a never-expiring entry before; it now reads a miss, which is what the Cache contract always said."
+    nodetect: "the ttl is a runtime value; no spelling in an app's source marks a negative one"
