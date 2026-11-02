@@ -33,6 +33,7 @@ var Analyzers = []string{
 	"fixedtmp",
 	"floatnum",
 	"intwrap",
+	"iounderlock",
 	"keytrim",
 	"laxcoerce",
 	"laxenvelope",
