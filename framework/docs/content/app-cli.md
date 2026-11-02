@@ -266,7 +266,9 @@ no entities package, no framework dependency. `custom.go` and the
 `*.gen.go` rebuild behave exactly as below.
 
 Supported subset, by design: local `#/components/...` `$ref`s (`allOf`
-of objects shallow-merges; `oneOf`/`anyOf` bodies fall back to
+of objects shallow-merges, and an `allOf` whose members name one scalar
+type reads as that scalar, the way FastAPI wraps an enum parameter that
+has a default; `oneOf`/`anyOf` bodies fall back to
 `--json`), JSON or YAML documents. Cookie parameters, external refs,
 `$ref` cycles, path/template mismatches, and multipart bodies fail
 generation with a precise error instead of guessing. A spec whose

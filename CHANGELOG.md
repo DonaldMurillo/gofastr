@@ -526,6 +526,8 @@ few lines, and link the PR or the docs page for the rest.
   - A JSON body property named `url`, `token`, `file` or `json`, one whose
     flag a parameter holds, or one that is no flag name (`@type`) goes by
     `--json`; it failed generation of the whole document.
+  - An `allOf` wrapping one scalar schema (FastAPI's enum parameter with
+    a default) is that scalar; it failed generation as non-scalar.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

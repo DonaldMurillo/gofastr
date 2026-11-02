@@ -263,6 +263,11 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 				own[k] = v
 			}
 		}
+		// typed holds the members that name a type. When none carries
+		// properties and all of them name the same type other than object,
+		// the allOf is that one scalar: FastAPI wraps an enum parameter
+		// with a default as {allOf: [{$ref: Color}], default: red}.
+		var typed []map[string]any
 		for _, p := range append(parts, any(own)) {
 			pm, ok := p.(map[string]any)
 			if !ok {
@@ -272,6 +277,9 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if err != nil {
 				return nil, err
 			}
+			if _, has := pm["type"]; has {
+				typed = append(typed, pm)
+			}
 			if pp, ok := pm["properties"].(map[string]any); ok {
 				for k, v := range pp {
 					props[k] = v
@@ -280,6 +288,10 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if rq, ok := pm["required"].([]any); ok {
 				required = append(required, rq...)
 			}
+		}
+		if len(props) == 0 && len(typed) > 0 && typed[0]["type"] != "object" &&
+			!slices.ContainsFunc(typed, func(m map[string]any) bool { return fmt.Sprint(m["type"]) != fmt.Sprint(typed[0]["type"]) }) {
+			return typed[0], nil
 		}
 		merged["properties"] = props
 		if len(required) > 0 {
