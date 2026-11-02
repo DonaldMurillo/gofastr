@@ -737,15 +737,16 @@ few lines, and link the PR or the docs page for the rest.
   a horizontal page scroll, and over the neighbouring cell's label in a
   `ui.StatStrip`.
 - **BREAKING: the app generator refuses names its app could not boot
-  with.** A few words (`user`, `desc`, `end`, `left`, `right`) only
-  Postgres refuses, so an SQLite app spec using one stops validating. A
-  table, field or index name that bare SQL cannot carry (`order`, `on`,
-  `user`, `first-name`, a name over 63 bytes), two entities on one
-  table, and an entity on a battery's table (`auth_users`,
-  `auth_sessions`, `audit_log`, …, bare or as `public.` / `main.`) used to generate an app that compiled
-  and then failed at boot, 500ed on every request, shared one Postgres
-  table between two entities, or served the accounts table through CRUD.
-  `gofastr validate` and `generate` now name each one. See
+  with.** A table, field or index name SQL cannot carry (`first-name`,
+  `last name`, a name over 63 bytes), two entities on one table, and an
+  entity on a battery's table (`auth_users`, `auth_sessions`,
+  `audit_log`, …, bare or as `public.` / `main.`) used to generate an
+  app that compiled and then failed at boot, 500ed on every request,
+  shared one Postgres table between two entities, or served the accounts
+  table through CRUD. `gofastr validate` and `generate` now name each
+  one. An SQL keyword (`order`, `group`, `user`, `desc`, `select`, …) is
+  an ordinary name: AutoMigrate and the CRUD statements both quote it.
+  See
   [app spec validation](framework/docs/content/app-spec.md#validation).
 - **The app generator refuses screen routes no browser can reach.** A
   route without a leading `/` (`café`), with `?`, `#`, an empty or `..`
@@ -5947,8 +5948,7 @@ few lines, and link the PR or the docs page for the rest.
   migrator writes, and the recorded DDL a snapshot holds is read back
   either way. Other names stay bare, so existing DDL and snapshots are
   byte-identical, and a snapshot that holds a keyword name bare diffs
-  as unchanged. `if`, a keyword to SQLite's DDL only, is now allowed in
-  an app spec.
+  as unchanged.
 - **CRUD quotes keyword column and table names.** The migrator created a
   column named `order`, `group`, `user`, `end`, `desc` or `limit`, but
   every CRUD statement named it bare, so the first insert failed
