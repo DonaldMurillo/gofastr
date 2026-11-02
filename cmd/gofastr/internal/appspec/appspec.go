@@ -70,6 +70,11 @@ func (bp *AppSpec) PhraseCollector() *AppSpecPhrases { return bp.phrases }
 // them.
 func (bp *AppSpec) MarkFragment() { bp.appless = true }
 
+// IsFragment reports whether bp was decoded with no app: section (or
+// marked with MarkFragment). A serializer writes no app: section for one,
+// so the fragment stays a fragment on the next decode.
+func (bp *AppSpec) IsFragment() bool { return bp.appless }
+
 // SetPhraseCollector installs the phrase collector a file renderer
 // emits through, on that renderer's own copy of the spec.
 func (bp *AppSpec) SetPhraseCollector(p *AppSpecPhrases) { bp.phrases = p }

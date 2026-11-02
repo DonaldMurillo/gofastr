@@ -172,16 +172,15 @@ func TestPack_EntityRenamesRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPack_QuotedValuesRoundTripExactBytes guards the #330 quoting fix: a
-// quoted value goes through core/yaml's parseQuoted → strconv.Unquote, which
-// replaces invalid UTF-8 bytes with U+FFFD. Before quoteYAMLString escaped
-// them, "a\xffb'" re-parsed as "a\ufffdb'" — corruption the quoting itself
-// introduced (pre-#323 the value was emitted bare and survived). Non-printable
-// runes get the same treatment; printable multi-byte runes must NOT be
-// escaped — mangling café to \u00e9 would round-trip but ship unreadable YAML.
+// TestPack_QuotedValuesRoundTripExactBytes guards the #330 quoting fix:
+// non-printable runes are escaped so they come back exactly, and printable
+// multi-byte runes must NOT be escaped — mangling café to \u00e9 would
+// round-trip but ship unreadable YAML. A byte that is not UTF-8 has no YAML
+// spelling at all (YAML 1.2 reads "\xff" as U+00FF, which core/yaml now
+// does), so the serializer refuses it rather than write a value that
+// decodes as another string; see TestPack_InvalidUTF8ValueRefused.
 func TestPack_QuotedValuesRoundTripExactBytes(t *testing.T) {
 	values := []string{
-		"a\xffb'",             // invalid UTF-8 byte (the reported corruption)
 		"x\x01y'",             // non-printable control rune
 		"d\x7fe'",             // DEL
 		"n\u00a0m'",           // NBSP: non-printable per unicode.IsPrint, needs \uNNNN
@@ -1159,5 +1158,17 @@ func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
 	}
 	if got, _ := signup.Props["login_href"].(string); got != "/login" {
 		t.Errorf("signup login_href = %q, want /login", got)
+	}
+}
+
+// A value holding a byte that is not UTF-8 cannot be written as YAML: the
+// "\xff" escape the serializer used to write decodes, per YAML 1.2, as
+// U+00FF, so "a\xffb" came back as "aÿb" with no error. The serializer
+// refuses it and names where it sits.
+func TestPack_InvalidUTF8ValueRefused(t *testing.T) {
+	a := appspec.AppSpec{Seed: []appspec.AppSpecSeedEntity{{Entity: "notes", Rows: []map[string]any{{"note": "a\xffb'"}}}}}
+	_, err := encodeAppSpecYAML(a)
+	if err == nil || !strings.Contains(err.Error(), "not UTF-8") || !strings.Contains(err.Error(), "note") {
+		t.Fatalf("encodeAppSpecYAML of an invalid UTF-8 value: %v, want a refusal naming the field", err)
 	}
 }

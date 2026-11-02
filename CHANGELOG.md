@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+
+- **`gofastr pack` keeps an app spec fragment a fragment.** A spec with
+  no `app:` section was written back with `app: {api_prefix: ""}`, so the
+  next decode read it as a whole app mounting its CRUD API at the root and
+  ran the checks a fragment skips. Packing a value that holds a byte that
+  is not UTF-8 now fails and names the field: YAML cannot carry the byte,
+  and the `\xff` escape it used to write decodes, per YAML 1.2, as `ÿ`.
 - **The relay drops vendor headers that set policy for the app's
   origin.** A relayed response is served on the app's origin, so a
   vendor's `NEL` with `Report-To` had the browser report requests to
