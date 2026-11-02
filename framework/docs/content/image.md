@@ -77,8 +77,20 @@ file of 64 scans over 64 MP took ~2.8 s of CPU. Raising `MaxJPEGScans`
 admits more scans only on frames small enough for the budget; a host
 that wants many scans on huge frames raises both.
 
+A progressive JPEG has a memory budget too. Go's decoder keeps the
+coefficients of a progressive frame for the whole decode: 256 bytes per
+8×8 block of every component, on top of the pixels. A few-hundred-byte
+progressive 3-component 8192×8192 file allocated ~1 GB, against ~192 MB
+for the same frame baseline. Decode reads the frame header first and
+refuses with `ErrDecompressionBomb` when that buffer would exceed
+`Config.MaxProgressiveJPEGBytes` (default `DefaultMaxProgressiveJPEGBytes`
+= 512 MiB; zero or negative means the default). At the default a
+progressive 64 MP frame passes in grayscale (256 MiB) or 4:2:0 color
+(384 MiB) and is refused at 4:4:4 (768 MiB). Baseline JPEGs keep no
+coefficients and are not affected.
+
 `file.StripMetadata`'s orientation bake counts the SOS segments its own
-walk keeps and applies the same cap and budget.
+walk keeps and applies the same cap, scan budget and memory budget.
 
 `Open(path)` rejects paths containing `..` segments that escape the
 working directory (e.g. `../etc/passwd`). Callers handling user input
@@ -481,6 +493,7 @@ hand it directly to `storage.Save`).
 | Max source bytes | 64 MiB (`ErrSourceTooLarge` past it) | `Config.MaxSourceBytes` |
 | Max JPEG scans | 64 (`ErrDecompressionBomb` past it) | `Config.MaxJPEGScans` |
 | Max JPEG scans × pixels | 10 × `MaxPixels` (`ErrDecompressionBomb` past it) | `Config.MaxJPEGScanPixels` |
+| Max progressive JPEG coefficients | 512 MiB (`ErrDecompressionBomb` past it) | `Config.MaxProgressiveJPEGBytes` |
 | Max encoded WebP dim | 16384 per axis | hard cap (spec) |
 | `VariantSet.Variants` | 64 entries | `MaxVariantsPerSet` const |
 | `BlurHash` working size | 64 px longest side | hard cap (perf) |

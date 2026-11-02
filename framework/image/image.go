@@ -38,6 +38,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/internal/jpegcost"
 )
 
 // DefaultMaxPixels caps decoded image area at 64 MP, an 8192×8192
@@ -108,7 +110,24 @@ type Config struct {
 	// this budget. Zero or negative means ten times the effective
 	// MaxPixels (DefaultMaxJPEGScanPixels at the default MaxPixels).
 	MaxJPEGScanPixels int64
+
+	// MaxProgressiveJPEGBytes caps the coefficient buffer a progressive
+	// (SOF2) JPEG makes the decoder allocate, read from the frame header
+	// before any pixel is decoded; past it decode returns
+	// ErrDecompressionBomb. Zero or negative means
+	// DefaultMaxProgressiveJPEGBytes. Baseline JPEGs keep no coefficients
+	// and are not affected.
+	MaxProgressiveJPEGBytes int64
 }
+
+// DefaultMaxProgressiveJPEGBytes caps the coefficients image/jpeg keeps
+// for a progressive JPEG, 512 MiB. The decoder holds 256 bytes (64 int32s)
+// per block of every component for the whole frame, on top of the pixel
+// buffer the pixel cap already bounds: a few-hundred-byte progressive
+// 3-component 8192×8192 file allocated ~1 GB, against ~192 MB for the
+// same frame baseline. At this default a 64 MP frame passes in grayscale
+// (256 MiB) or 4:2:0 color (384 MiB) and is refused at 4:4:4 (768 MiB).
+const DefaultMaxProgressiveJPEGBytes int64 = 512 << 20
 
 // Image is the chainable pipeline value. Transformations return a new
 // *Image, so the same source may be branched into independent pipelines.
@@ -259,6 +278,13 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 		pixels := int64(icfg.Width) * int64(icfg.Height)
 		if budget := jpegScanBudget(cfg); int64(scans) > budget/pixels {
 			return nil, fmt.Errorf("%w: JPEG carries %d scans of %d pixels (budget %d pixel-scans)", ErrDecompressionBomb, scans, pixels, budget)
+		}
+		maxCoeff := cfg.MaxProgressiveJPEGBytes
+		if maxCoeff <= 0 {
+			maxCoeff = DefaultMaxProgressiveJPEGBytes
+		}
+		if n, ok := jpegcost.ProgressiveCoeffBytes(data); ok && n > maxCoeff {
+			return nil, fmt.Errorf("%w: progressive JPEG needs %d bytes of coefficients (max %d)", ErrDecompressionBomb, n, maxCoeff)
 		}
 	}
 	img, _, err := stdimage.Decode(bytes.NewReader(data))

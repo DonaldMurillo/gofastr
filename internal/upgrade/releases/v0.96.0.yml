@@ -1086,3 +1086,10 @@ notes:
     find:
       uses:
         - gofastr/framework/image.Config.MaxJPEGScans
+  - change: "framework/image and file.StripMetadata refuse a progressive JPEG whose coefficient buffer exceeds Config.MaxProgressiveJPEGBytes (default 512 MiB) with ErrDecompressionBomb: a progressive 64 MP 4:4:4 color frame is refused, grayscale and 4:2:0 pass"
+    breaking: false
+    guidance: "Baseline JPEGs and ordinary progressive photos decode as before. A host that decodes very large progressive 4:4:4 JPEGs and has the memory for them raises Config.MaxProgressiveJPEGBytes."
+    find:
+      uses:
+        - gofastr/framework/image.DecodeBytesWithConfig
+        - gofastr/framework/image.DecodeWithConfig

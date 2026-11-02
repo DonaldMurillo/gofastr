@@ -6102,6 +6102,14 @@ few lines, and link the PR or the docs page for the rest.
   (default ten times `MaxPixels`): ten scans at 64 MP, the full 64 up to
   10 MP. `file.StripMetadata`'s orientation bake applies the same
   budget. See [image](framework/docs/content/image.md).
+- **`framework/image` caps a progressive JPEG's coefficient memory.** Go's
+  decoder keeps 256 bytes per block of every component for a progressive
+  frame, so a few-hundred-byte 3-component 8192×8192 file allocated ~1 GB
+  inside the pixel cap. Decode now reads the frame header and refuses with
+  `ErrDecompressionBomb` past `Config.MaxProgressiveJPEGBytes` (default
+  512 MiB: a progressive 64 MP 4:4:4 color frame is refused, grayscale and
+  4:2:0 pass). `file.StripMetadata`'s orientation bake applies the same
+  cap. See [image](framework/docs/content/image.md).
 
 ## [0.95.0] - 2026-10-26
 

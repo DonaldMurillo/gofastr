@@ -13,21 +13,35 @@ import "bytes"
 // decode CPU grows with scans × pixels and the file with scans alone.
 // w and h must each fit in 16 bits.
 func ScanBomb(w, h, scans int) []byte {
+	return Progressive(w, h, 1, scans)
+}
+
+// Progressive returns a valid progressive JPEG of w×h pixels with comps
+// components (1 or 3, each sampled 1×1) and scans AC scans, each the
+// ScanBomb scan over one component in turn. A few hundred bytes buy the
+// decoder's whole-frame coefficient buffer: image/jpeg keeps 256 bytes per
+// block of every component a scan names, so a 3-component 8192×8192
+// frame allocates 768 MB of coefficients before its pixels.
+func Progressive(w, h, comps, scans int) []byte {
 	var b bytes.Buffer
 	b.Write([]byte{0xFF, 0xD8}) // SOI
 	// DQT: table 0, all ones.
 	b.Write([]byte{0xFF, 0xDB, 0x00, 67, 0x00})
 	b.Write(bytes.Repeat([]byte{1}, 64))
-	// SOF2 (progressive): 8-bit, h×w, one component, 1×1 sampling, table 0.
-	b.Write([]byte{0xFF, 0xC2, 0x00, 11, 8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 1, 1, 0x11, 0})
+	// SOF2 (progressive): 8-bit, h×w, comps components, 1×1 sampling, table 0.
+	n := 8 + 3*comps
+	b.Write([]byte{0xFF, 0xC2, byte(n >> 8), byte(n), 8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), byte(comps)})
+	for c := range comps {
+		b.Write([]byte{byte(c + 1), 0x11, 0})
+	}
 	// DHT: AC table 0 with one 1-bit code, symbol 0xE0 (EOBRUN, 14 extra bits).
 	b.Write([]byte{0xFF, 0xC4, 0x00, 20, 0x10, 1})
 	b.Write(make([]byte, 15))
 	b.WriteByte(0xE0)
 	blocks := ((w + 7) / 8) * ((h + 7) / 8)
-	for range scans {
+	for s := range scans {
 		// SOS: one component, AC table 0, spectral 1..63, no approximation.
-		b.Write([]byte{0xFF, 0xDA, 0x00, 8, 1, 1, 0x00, 1, 63, 0x00})
+		b.Write([]byte{0xFF, 0xDA, 0x00, 8, 1, byte(s%comps + 1), 0x00, 1, 63, 0x00})
 		var bw bitWriter
 		for covered := 0; covered < blocks; covered += 1<<15 - 1 {
 			bw.put(0, 1)       // the EOBRUN code
