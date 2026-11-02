@@ -228,6 +228,28 @@ few lines, and link the PR or the docs page for the rest.
   inline CSS, and answers 404 under its mount except at the page and
   spec paths. The webhook SQL tables gain `auth`, `response_status`
   and `response_body`, added when the store opens.
+- **Search docs list what each backend counts as the same word.**
+  `search.md` gains a table of matches that differ by backend: SQLite
+  FTS5 folds diacritics (`cafe` finds `café`) and Memory and Postgres do
+  not; Postgres finds no `½`, `v1.2` or email address; doubled hyphens
+  match differently on each. Nothing changed in the backends; normalize
+  text yourself if every backend must agree.
+- **BREAKING: `gofastr verify` reports two more spellings.** GOFASTR1601
+  (write result discarded) now fires on a bare `db.Exec(...)` or
+  `ExecContext(...)` statement, plain, deferred or in a goroutine, not
+  only on `_, _ = db.Exec(...)`. GOFASTR1413 (Vary overwritten) now fires
+  on `w.Header()["Vary"] = …`; an append to the existing entry stays
+  quiet. A CI gate on `gofastr verify` can newly fail: check the error,
+  or mark a deliberate site `// best-effort: <why>`. The blog, spa and
+  backoffice examples' seeds now check every insert.
+- **`gofastr export` checks that the app exported.** An exit 0 reported
+  "Exported to <dir>" even when `main` returned before `App.Start` and
+  the directory was empty or stale. The CLI now passes a run id in
+  `GOFASTR_EXPORT_RUN`, `App.Start` writes it back in
+  `<dir>/.gofastr-export.json` (`framework.ExportReceiptFile`) after the
+  export, and the CLI checks and deletes it. A missing receipt fails the
+  export for an app on v0.96.0 or later; an older pin or a `replace`
+  directive gets a warning. See `static-export.md`.
 
 - **A `data-cui-rpc` POST form sends one request at a time (D-09).**
   A re-submit of a form whose method is POST is ignored while its own
@@ -5347,6 +5369,13 @@ few lines, and link the PR or the docs page for the rest.
   errors. Every shell now refuses an extension containing `;` and a
   default name containing `\`. On Windows a `*` extension matches
   everything, and so does a filter with no extensions.
+- **BREAKING: `gofastr migrate` and `gofastr validate` refuse extra
+  arguments.** `migrate up 3` applied every pending migration, `migrate
+  status x` and `migrate generate a b` dropped the extras, and `validate
+  a.yml b.yml` checked only `a.yml`. Each is now a usage error, exit 2,
+  before anything opens. `migrate` with a `postgres://` or
+  `postgresql://` database URL and no `--db` uses the Postgres driver
+  instead of failing with a SQLite error. See `migrations.md`.
 
 ### Security
 - **`core/textsafe` treats Unicode tag characters and Hangul fillers as
@@ -6246,6 +6275,24 @@ few lines, and link the PR or the docs page for the rest.
   static dir and the static export), as the backslash split already
   does. A file served under such a name (`photo~1.png`) needs renaming.
   See [core packages](framework/docs/content/core-packages.md#static).
+- **Harness quiet mode reads only under the working directory.** The
+  preset was documented as reads "under the repo" but allowed any path,
+  so `Read:/proc/self/environ`, `~/.ssh/id_rsa`, `cat
+  /proc/self/environ`, `grep -r . ~/.config/gofastr` and `find / -name
+  creds.enc` ran with no prompt. Read, Glob, Ls, Grep and the quiet Bash
+  readers now auto-allow only paths that resolve, symlinks included,
+  under the working directory; `..`, `~`, an outside path or a symlink
+  out of the repo prompts. See `harness-architecture.md`.
+- **Harness asks before using a repository's provider keys.** A cloned
+  repo's `.harness-secrets/env` supplied provider keys whenever you had
+  none, so the session ran on the repo author's account. `gofastr
+  harness` now names the keys and asks once per repository and key set
+  on a terminal, remembered in `~/.config/gofastr/harness/repo-secrets.json`;
+  with nobody to ask (`harness mcp`, CI) the keys are refused unless
+  approved earlier or `--allow-repo-secrets` is passed. Keys your
+  environment sets are untouched. The threat model now notes that
+  `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY` are
+  readable by other processes of the same user.
 
 ## [0.95.0] - 2026-10-26
 

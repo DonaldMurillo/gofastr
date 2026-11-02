@@ -70,11 +70,39 @@ func findSecretsFile(start string) (string, bool) {
 }
 
 func loadFile(path string) error {
-	f, err := os.Open(path)
+	pending, err := pendingFromFile(path)
 	if err != nil {
 		return err
 	}
+	return apply(pending)
+}
+
+// pair is one assignment the file would make.
+type pair struct{ key, val string }
+
+// apply sets each pending key the process has not set by now.
+func apply(pending []pair) error {
+	for _, p := range pending {
+		if _, present := os.LookupEnv(p.key); present {
+			continue
+		}
+		if err := os.Setenv(p.key, p.val); err != nil {
+			return fmt.Errorf("secrets: setenv %q: %w", p.key, err)
+		}
+	}
+	return nil
+}
+
+// pendingFromFile returns, in file order, the provider credentials the
+// file at path would set: allowed keys with a value that the process
+// environment does not already hold.
+func pendingFromFile(path string) ([]pair, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
 	defer f.Close()
+	var pending []pair
 	scanner := bufio.NewScanner(f)
 	lineNo := 0
 	for scanner.Scan() {
@@ -85,7 +113,7 @@ func loadFile(path string) error {
 		}
 		before, after, ok := strings.Cut(line, "=")
 		if !ok {
-			return fmt.Errorf("secrets: %s:%d: missing '='", path, lineNo)
+			return nil, fmt.Errorf("secrets: %s:%d: missing '='", path, lineNo)
 		}
 		key := strings.TrimSpace(before)
 		val := strings.TrimSpace(after)
@@ -116,11 +144,12 @@ func loadFile(path string) error {
 		if _, present := os.LookupEnv(key); present {
 			continue
 		}
-		if err := os.Setenv(key, val); err != nil {
-			return fmt.Errorf("secrets: setenv %q: %w", key, err)
-		}
+		pending = append(pending, pair{key, val})
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return pending, nil
 }
 
 // isProviderCredentialKey reports whether key names a provider

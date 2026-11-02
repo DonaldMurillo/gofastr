@@ -119,7 +119,8 @@ type Engine struct {
 
 	// QuietMode pre-shipped preset; default ON. When ON, common
 	// read-only argv shapes (git status, ls, grep, find, …) are
-	// allowed without prompting.
+	// allowed without prompting, as long as every path they read
+	// resolves under WorkingDir.
 	QuietMode bool
 
 	// StrictPermissions overrides QuietMode (default off). When ON,
@@ -182,7 +183,7 @@ func (e *Engine) Evaluate(session ids.SessionID, toolName, argv string, mutating
 	// Quiet-mode preset applies to known-safe shapes regardless of
 	// the tool's is_mutating flag. Bash is always is_mutating=true
 	// because it CAN mutate, but `git status` is safe in practice.
-	if e.QuietMode && quietModeAllows(toolName, argv) {
+	if e.QuietMode && quietModeAllows(e.WorkingDir, toolName, argv) {
 		return DecisionAllow
 	}
 	if mutating {
@@ -256,15 +257,16 @@ func AnswerToRule(toolName, argvSummary string, ans control.AnswerPermission) (R
 // quietModeAllows returns true for known-safe read-only argv shapes
 // that the quiet-mode preset permits without prompting.
 //
-// Coverage: Read/Glob/Ls/Grep against anywhere (the tools themselves
-// are non-mutating); Bash patterns matching the read-only allowlist
-// in the doc (git status, ls, pwd, grep, find, …).
-func quietModeAllows(toolName, argv string) bool {
+// Coverage: Read/Glob/Ls/Grep, and Bash patterns matching the read-only
+// allowlist in the doc (git status, ls, pwd, grep, find, …), each only
+// while every path it reads resolves under workingDir (the process
+// working directory when empty). See quietPathsInside.
+func quietModeAllows(workingDir, toolName, argv string) bool {
 	switch toolName {
 	case "Read", "Glob", "Ls", "Grep":
-		return true
+		return quietPathsInside(workingDir, toolName, argv)
 	case "Bash":
-		return bashQuietAllow(argv)
+		return bashQuietAllow(argv) && quietPathsInside(workingDir, toolName, argv)
 	}
 	return false
 }

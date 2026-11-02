@@ -55,3 +55,24 @@ func TestValidateCmdModuleMismatchExits1(t *testing.T) {
 		t.Fatalf("output should name the enclosing module:\n%s", out)
 	}
 }
+
+// `gofastr validate a.yml b.yml` checked a.yml and reported success
+// while b.yml was never read. One app spec per run; a second path is a
+// usage error (exit 2), not a silent skip.
+func TestValidateRefusesSecondPath(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "a.yml")
+	clitest.WriteFileAll(t, good, "app:\n  name: Demo\n")
+	bad := filepath.Join(dir, "b.yml")
+	clitest.WriteFileAll(t, bad, "entities:\n  - name: posts\n    bogus_key: 1\n")
+	var code int
+	out := clitest.CovT_capStdout(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunValidate([]string{good, bad}) })
+	})
+	if code != 2 {
+		t.Fatalf("validate a.yml b.yml exited %d, want 2\n%s", code, out)
+	}
+	if !strings.Contains(out, "Usage") || !strings.Contains(out, "b.yml") {
+		t.Fatalf("want a usage error naming the extra path, got:\n%s", out)
+	}
+}

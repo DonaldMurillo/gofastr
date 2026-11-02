@@ -69,7 +69,9 @@ func main() {
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		log.Fatal(err)
 	}
-	seed(db)
+	if err := seed(db); err != nil {
+		log.Fatal(err)
+	}
 	if err := indexPosts(context.Background(), app, searchIndex); err != nil {
 		log.Fatal(err)
 	}
@@ -215,14 +217,21 @@ func postsByStatus(app *framework.App, status string) http.HandlerFunc {
 	}
 }
 
-func seed(db *sql.DB) {
-	db.Exec(`INSERT OR IGNORE INTO users (id, name, email, role) VALUES ('u1', 'Alice', 'alice@example.com', 'author')`)
-	db.Exec(`INSERT OR IGNORE INTO users (id, name, email, role) VALUES ('u2', 'Bob', 'bob@example.com', 'reader')`)
-	db.Exec(`INSERT OR IGNORE INTO posts (id, title, body, status, author_id) VALUES ('p1', 'Hello World', 'My first post!', 'published', 'u1')`)
-	db.Exec(`INSERT OR IGNORE INTO posts (id, title, body, status, author_id) VALUES ('p2', 'GoFastr Framework', 'Building the future', 'published', 'u1')`)
-	db.Exec(`INSERT OR IGNORE INTO posts (id, title, body, status, author_id) VALUES ('p3', 'Draft', 'Work in progress...', 'draft', 'u1')`)
-	db.Exec(`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c1', 'Great post!', 'p1', 'u2')`)
-	db.Exec(`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c2', 'Interesting', 'p2', 'u2')`)
+func seed(db *sql.DB) error {
+	for _, stmt := range []string{
+		`INSERT OR IGNORE INTO users (id, name, email, role) VALUES ('u1', 'Alice', 'alice@example.com', 'author')`,
+		`INSERT OR IGNORE INTO users (id, name, email, role) VALUES ('u2', 'Bob', 'bob@example.com', 'reader')`,
+		`INSERT OR IGNORE INTO posts (id, title, body, status, author_id) VALUES ('p1', 'Hello World', 'My first post!', 'published', 'u1')`,
+		`INSERT OR IGNORE INTO posts (id, title, body, status, author_id) VALUES ('p2', 'GoFastr Framework', 'Building the future', 'published', 'u1')`,
+		`INSERT OR IGNORE INTO posts (id, title, body, status, author_id) VALUES ('p3', 'Draft', 'Work in progress...', 'draft', 'u1')`,
+		`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c1', 'Great post!', 'p1', 'u2')`,
+		`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c2', 'Interesting', 'p2', 'u2')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("seed: %w", err)
+		}
+	}
+	return nil
 }
 
 // postsReadScope keeps anonymous readers to published posts. A caller

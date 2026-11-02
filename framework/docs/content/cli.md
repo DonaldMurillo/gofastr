@@ -118,7 +118,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 ## App specs
 
 - `gofastr validate <yml>`: validate an app spec without generating
-  (exit 0 = valid; includes the unscoped-PII lint).
+  (exit 0 = valid; includes the unscoped-PII lint). One app spec per run:
+  a second path is a usage error, exit 2.
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
@@ -277,7 +278,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   page into `<dir>` as a static site. It runs the app with
   `GOFASTR_EXPORT` set and `App.Start` exports instead of serving, so
   any app gets it ([static export](static-export.md)); a registered
-  [site search](site-search.md) battery writes its index too.
+  [site search](site-search.md) battery writes its index too. On GoFastr
+  v0.96.0 or later an app that exits 0 without exporting (a `main` that
+  returns before `Start`) fails the command instead of reporting success.
 - `gofastr generate cli`: a customer-facing terminal client for your
   API, with scoped API-token auth. Derived: every run rebuilds its
   `*.gen.go` files and keeps `custom.go` ([app-cli](app-cli.md)).
@@ -555,7 +558,9 @@ does not cover: a runtime browser scan, and the dependency report.
   runs it as a stdio MCP server; `harness creds` manages encrypted API
   keys — `creds add <provider> <account> -` reads the secret from
   `GOFASTR_HARNESS_SECRET` or piped stdin, and a literal argv value
-  warns the same way).
+  warns the same way). Provider keys from a repository's
+  `.harness-secrets/env` are used only after you approve them once on a
+  terminal, or with `--allow-repo-secrets` for one run.
 - `gofastr version`: print version info.
 
 ## Common mistakes

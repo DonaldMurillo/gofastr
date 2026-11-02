@@ -2,6 +2,8 @@ package analyzers
 
 import (
 	"go/ast"
+	"go/token"
+	"go/types"
 	"net/textproto"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -31,11 +33,23 @@ import (
 //   - .Add("Vary", …), the append-only spelling every correct site
 //     uses (cors.go, wellknown.go, embed/middleware.go, uihost, bff);
 //   - Set of any other header (this rule is about Vary only);
+//   - h["Vary"] = append(h["Vary"], …), which keeps the earlier entries
+//     (a direct map write h["Vary"] = … is reported like Set: it
+//     replaces the slice the same way);
 //   - _test.go and generated files (AppFiles already excludes both);
 //   - any site annotated //gofastr:allow(GOFASTR1413) <why>.
 func ruleVarySet(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	ast.Inspect(file, func(n ast.Node) bool {
+		if as, ok := n.(*ast.AssignStmt); ok {
+			for i, lhs := range as.Lhs {
+				if varyMapWrite(as, i, lhs) {
+					out = append(out, diag(p, contracts.RuleVarySet, rel, lhs.Pos(),
+						`Vary is append-only in a middleware chain: assigning the header map's "Vary" entry replaces what earlier middlewares added, as Set does — use .Add("Vary", …), or append to the existing entry`))
+				}
+			}
+			return true
+		}
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
@@ -55,4 +69,30 @@ func ruleVarySet(p *contracts.Pass, rel string, file *ast.File) []contracts.Diag
 		return true
 	})
 	return out
+}
+
+// varyMapWrite reports whether the i-th left-hand side of as writes the
+// "Vary" entry of a header map (w.Header()["Vary"] = …, h["Vary"] = …)
+// with a value that is not an append to that same entry.
+func varyMapWrite(as *ast.AssignStmt, i int, lhs ast.Expr) bool {
+	if as.Tok != token.ASSIGN && as.Tok != token.DEFINE {
+		return false
+	}
+	idx, ok := lhs.(*ast.IndexExpr)
+	if !ok {
+		return false
+	}
+	key, ok := stringLit(idx.Index)
+	if !ok || textproto.CanonicalMIMEHeaderKey(key) != "Vary" {
+		return false
+	}
+	if len(as.Rhs) == len(as.Lhs) {
+		if call, ok := as.Rhs[i].(*ast.CallExpr); ok {
+			if fn, ok := call.Fun.(*ast.Ident); ok && fn.Name == "append" && len(call.Args) > 0 &&
+				types.ExprString(call.Args[0]) == types.ExprString(idx) {
+				return false
+			}
+		}
+	}
+	return true
 }

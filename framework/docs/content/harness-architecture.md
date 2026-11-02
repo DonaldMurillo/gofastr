@@ -302,6 +302,40 @@ audited against this matrix.
 - The agent being prompt-injected into doing something harmful
   *within* its allowlist (no protection; the allowlist is the
   policy boundary).
+- Other processes running as the same user reading the credstore
+  key. `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY`
+  live in the harness's environment, and any process of the same
+  user can read another's environment (`/proc/<pid>/environ` on
+  Linux, `ps eww` on macOS) and its memory through a debugger.
+  Encrypting `creds.enc` at rest protects against a copied disk or
+  backup, not against code already running as you. Every Bash child
+  inherits both variables too; redaction masks a `NAME=value` it sees
+  in what the session stores, not what a command sends elsewhere. Use
+  a dedicated user, or a machine key held only by the CI job, where
+  that matters.
+
+### Repository-supplied provider keys
+
+`.harness-secrets/env` is found by walking up from the working
+directory, so in a cloned repository it is the author's file. It may
+only deliver provider credentials (keys ending `_API_KEY` or
+`_TOKEN`), and only ones your environment lacks, but those alone
+would run your session on the author's account, where the author can
+read your prompts on their provider dashboard. So the harness asks
+before using them:
+
+- On a terminal, `gofastr harness` names the file and the keys and
+  asks once. A yes is remembered in
+  `~/.config/gofastr/harness/repo-secrets.json` for that repository
+  directory and that key set, like an Allow-always permission; a key
+  the file gains later asks again. A no leaves the keys unset.
+- With nobody to ask (`gofastr harness mcp`, whose stdin is the MCP
+  protocol, a pipe, CI), the keys are refused unless an earlier
+  approval covers them or the run passes `--allow-repo-secrets`, which
+  uses them for that run without remembering.
+
+A key already set in your environment is never asked about: the shell
+always wins.
 
 ---
 
@@ -653,10 +687,23 @@ patterns (default ON, configurable per-permission-preset):
 
 ```
 Bash: git status, git log, git diff, git branch
-Bash: ls *, pwd, cat <repo-file>, head, tail, wc
-Bash: grep *, rg *, find . *
-Read, Glob, Ls (anywhere under the repo)
+Bash: ls <repo-path>, pwd, cat <repo-file>, head, tail, wc
+Bash: grep <repo-path>, rg <repo-path>, find . *
+Read, Glob, Ls, Grep (anywhere under the repo)
 ```
+
+"Under the repo" is enforced: every path one of these reads must
+resolve, symlinks included, under the working directory (the directory
+the harness runs in, which the file tools and Bash resolve relative
+paths against). That covers `Read:`/`Ls:` paths, a Glob's `--root` and
+pattern, a Grep's `--path` and `--glob`, and every argument and flag
+value of `cat`, `head`, `tail`, `wc`, `grep`, `rg`, `find`, `ls` and
+`git`; a shell glob counts by what it matches there. A path outside
+(`/proc/self/environ`, `~/.ssh/id_rsa`, `find / -name creds.enc`), a
+`..` segment, a leading `~`, or a symlink out of the repo prompts
+instead, and so does a summary the check cannot read. Variables and
+command substitution never reach the check: any `$`, backtick or other
+shell metacharacter already prompts.
 
 Never prompts for these. `--strict-permissions` disables the
 preset for users who want every call gated. Because they never
@@ -2063,7 +2110,10 @@ attacker-authored: the loader delivers **provider credentials only**
 `PATH`, loader, and `HOME` settings in that file are ignored — the
 operator's shell stays the only source for anything that shapes the
 process. Variables already set in the environment always win over the
-file.
+file. Even the provider keys are used only with your consent: asked
+once per repository and key set on a terminal, refused otherwise unless
+remembered or `--allow-repo-secrets` is passed (§ Threat model,
+"Repository-supplied provider keys").
 
 ### Config
 

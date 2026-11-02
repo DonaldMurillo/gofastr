@@ -580,6 +580,58 @@ func f(db *sql.DB, id string) {
 	assertNot(t, ds, contracts.RuleIgnoredExec, "the annotation states the intent")
 }
 
+// A bare db.Exec(...) statement drops the result and the error as
+// surely as `_, _ =` does; the line-shaped matcher only knew the
+// assignment, so ~20 seed statements in the examples went unreported.
+func TestBareExecStatementIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"seed.go": `package main
+
+import (
+	"context"
+	"database/sql"
+)
+
+func seed(ctx context.Context, db *sql.DB, tx *sql.Tx) {
+	db.Exec("INSERT INTO posts (title) VALUES ('hello')")
+	tx.ExecContext(ctx, "DELETE FROM posts")
+	defer db.Exec("DELETE FROM sessions")
+}
+`,
+	})
+	if found := countRule(t, ds, contracts.RuleIgnoredExec); len(found) != 3 {
+		t.Fatalf("want 3 findings (Exec, ExecContext, deferred Exec), got %d: %v", len(found), found)
+	}
+}
+
+// A checked Exec, an Exec whose result is kept, and a best-effort
+// annotation are quiet; so is a method named Exec* that is not Exec.
+func TestCheckedOrAnnotatedBareExecIsQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"seed.go": `package main
+
+import (
+	"database/sql"
+	"text/template"
+	"os"
+)
+
+func seed(db *sql.DB, t *template.Template) error {
+	if _, err := db.Exec("INSERT INTO posts (title) VALUES ('a')"); err != nil {
+		return err
+	}
+	res, err := db.Exec("DELETE FROM posts")
+	_ = res
+	// best-effort: the table is dropped on the next boot anyway
+	db.Exec("DELETE FROM scratch")
+	t.Execute(os.Stdout, nil)
+	return err
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleIgnoredExec, "checked, kept or annotated writes are not discarded")
+}
+
 // ----------------------------------------------------------------------
 // Performance
 // ----------------------------------------------------------------------
