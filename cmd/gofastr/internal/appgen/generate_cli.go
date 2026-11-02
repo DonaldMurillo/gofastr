@@ -2374,7 +2374,7 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list || transition || endpoint {
 		imports = append(imports, "\t\"net/url\"")
 	}
-	if batchDel || endpoint || uploads {
+	if list || batchDel || endpoint || uploads {
 		imports = append(imports, "\t\"os\"") // usage errors go to stderr; files open from disk
 	}
 	if uploads {
@@ -2428,6 +2428,10 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 		return code
 	}
 	if strayArgs(cmd, fs) {
+		return 2
+	}
+	if *outF != "json" && *outF != "table" {
+		fmt.Fprintf(os.Stderr, "%s %s: -o %q: the output format is json|table\n", binaryName, cmd, *outF)
 		return 2
 	}
 	q := url.Values{}

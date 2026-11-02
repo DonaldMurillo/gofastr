@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 )
 
 // runCLICode runs the CLI and returns its combined output and exit code.
@@ -18,6 +20,32 @@ func runCLICode(t *testing.T, bin string, env []string, args ...string) (string,
 		t.Fatalf("%v: %v\n%s", args, err, out)
 	}
 	return string(out), 0
+}
+
+// list -o names one of the formats it prints: `-o yaml` or a typo printed
+// JSON and exited 0, so a script that asked for a table got JSON.
+func TestCLIRefusesUnknownOutputFormat(t *testing.T) {
+	bin, env := buildFixtureCLI(t, cliMutationFixtureYAML)
+	rec := newWireRecorder(t)
+	env = append(env, "MYAPP_URL="+rec.URL)
+	out, code := runCLICode(t, bin, env, "gadgets", "list", "-o", "tabel")
+	if code != 2 || !strings.Contains(out, "json|table") {
+		t.Errorf("list -o tabel exited %d, want 2 naming json|table:\n%s", code, out)
+	}
+	if _, _, hits := rec.last(); hits != 0 {
+		t.Fatal("list -o tabel sent a request")
+	}
+	for _, format := range []string{"json", "table"} {
+		if out, code := runCLICode(t, bin, env, "gadgets", "list", "-o", format); code != 0 {
+			t.Errorf("list -o %s exited %d:\n%s", format, code, out)
+		}
+	}
+	// The refusal writes to stderr, so a list-only CLI imports os too.
+	appgen.RunGenerateCLI([]string{"--binary=myapp", "--verbs=list"})
+	build := exec.Command("go", "build", "-o", bin, "./cmd/myapp")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build a list-only CLI: %v\n%s", err, out)
+	}
 }
 
 // An argument left after a verb's flags is refused before any request.

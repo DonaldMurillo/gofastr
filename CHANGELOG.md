@@ -527,6 +527,8 @@ few lines, and link the PR or the docs page for the rest.
   - A verb refuses an argument left after its flags with exit 2 before
     any request. `patch 42 --published false --views 3` stopped parsing
     at `false`, sent `published: true`, dropped `--views` and exited 0.
+  - `list -o` other than `json` or `table` exits 2 before the request.
+    A typo printed JSON and exited 0.
 - **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
   in [app-cli.md](framework/docs/content/app-cli.md):
   - **BREAKING: an acronym is one word in command and flag names.**

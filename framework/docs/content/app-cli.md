@@ -72,7 +72,8 @@ Per verb:
   `--fields`, and `--param k=v` (repeatable) as the escape hatch for
   anything else. `-q` appears only when the entity declares
   `SearchFields`; `--trashed` only with `SoftDelete`. `-o table`
-  renders an aligned table instead of JSON. Table headers and cells,
+  renders an aligned table instead of JSON (`-o json`, the default); any
+  other `-o` value exits 2 before the request. Table headers and cells,
   the cursor line and API error lines drop control bytes (C0 but tab,
   DEL and C1) and the bidi overrides and zero-width characters that
   reorder or hide text, so a stored `\x1b[2J` cannot clear the reader's
