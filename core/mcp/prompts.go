@@ -135,7 +135,7 @@ func (s *Server) hasPrompts() bool {
 // key is absent on the final page, and on every page when the whole
 // listing fits (the pre-pagination wire shape).
 type promptsListResult struct {
-	Prompts    []Prompt `json:"prompts"`
+	Prompts    []Prompt `json:"prompts"` //gofastr:required-array
 	NextCursor string   `json:"nextCursor,omitempty"`
 }
 
@@ -152,7 +152,7 @@ type promptsGetParams struct {
 // description and the prompt's messages.
 type promptsGetResult struct {
 	Description string          `json:"description,omitempty"`
-	Messages    []PromptMessage `json:"messages"`
+	Messages    []PromptMessage `json:"messages"` //gofastr:required-array
 }
 
 // handlePromptsList returns one page of the prompts visible to the

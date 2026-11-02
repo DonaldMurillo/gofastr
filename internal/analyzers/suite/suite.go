@@ -106,6 +106,9 @@ import (
 	// 2026-11 bug-bash rules (results)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/siblingresult"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/silentskip"
+	// 2026-11 bug-bash rules (maps-reflect)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/growmap"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/nullarray"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -212,6 +215,11 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// dropped where its siblings keep it.
 	allow.Guard(siblingresult.Analyzer),
 	allow.Guard(silentskip.Analyzer),
+	// 2026-11 bug-bash rules (maps-reflect): per-caller map growth and
+	// marker-scoped required arrays; the embedskip, laxcoerce and
+	// compositekey arms from the same batch live in those packages.
+	allow.Guard(growmap.Analyzer),
+	allow.Guard(nullarray.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

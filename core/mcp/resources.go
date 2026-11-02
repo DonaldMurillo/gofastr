@@ -131,7 +131,7 @@ func (s *Server) hasResources() bool {
 // nextCursor key is absent on the final page, and on every page when the
 // whole listing fits (the pre-pagination wire shape).
 type resourcesListResult struct {
-	Resources  []Resource `json:"resources"`
+	Resources  []Resource `json:"resources"` //gofastr:required-array
 	NextCursor string     `json:"nextCursor,omitempty"`
 }
 
@@ -142,7 +142,7 @@ type resourcesReadParams struct {
 
 // resourceReadResult is the result shape for resources/read.
 type resourceReadResult struct {
-	Contents []resourceContentItem `json:"contents"`
+	Contents []resourceContentItem `json:"contents"` //gofastr:required-array
 }
 
 // resourceContentItem is the spec's TextResourceContents |
