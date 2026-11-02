@@ -5407,6 +5407,17 @@ few lines, and link the PR or the docs page for the rest.
   as unchanged.
 
 ### Security
+- **A relation behind a Hidden field is no longer includable.**
+  `?include=` on a Hidden relation field, or on a `belongs_to` whose
+  foreign key is Hidden, attached the related record under the
+  relation's name, so the hidden key and its record reached any caller
+  who could read the row; a nested filter across it (`?owner_ref.email=`)
+  tested the record's values. Both now answer the same 400 a name that
+  is no relation gets (`unknown_include`, `nested_unknown_relation`) on
+  every include path, the in-process `GetOne`, `ListAll` and
+  `TypedQuery.Include` included, no near-miss hint names one, and llm.md
+  leaves it out. The rule is the new `entity.Entity.HidesRelation`,
+  which `/openapi.json` shares. See [includes.md](framework/docs/content/includes.md).
 - **The trash view's Restore and Delete permanently routes honor read
   hooks.** `entityui.RestoreHandler` and `PurgeHandler` wrote any
   trashed row the caller's scope reached by id, including one a

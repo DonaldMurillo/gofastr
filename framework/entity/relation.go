@@ -1,5 +1,7 @@
 package entity
 
+import "slices"
+
 // RelationType enumerates the kinds of entity relationships.
 type RelationType int
 
@@ -82,6 +84,25 @@ func HasMany(name, ent, foreignKey string, more ...string) Relation {
 // order keyed on (store, no).
 func BelongsTo(name, ent, foreignKey string, more ...string) Relation {
 	return Relation{Type: RelManyToOne, Name: name, Entity: ent, ForeignKey: append([]string{foreignKey}, more...)}
+}
+
+// HidesRelation reports whether rel sits behind a Hidden field of e: rel
+// is named after one (the belongs_to a Hidden relation field derives), or
+// it is a belongs_to whose foreign key holds a Hidden column. Loading such
+// a relation puts the related record, and with it the hidden key, under
+// the relation's name, so crud answers ?include= and nested filters on it
+// as it answers a relation that does not exist, and neither /openapi.json
+// nor llm.md names it.
+func (e *Entity) HidesRelation(rel Relation) bool {
+	for _, f := range e.Config.Fields {
+		if !f.Hidden {
+			continue
+		}
+		if f.Name == rel.Name || (rel.Type == RelManyToOne && slices.Contains(rel.ForeignKey, f.Name)) {
+			return true
+		}
+	}
+	return false
 }
 
 // ManyToMany declares a many-to-many relationship through a pivot/join table.
