@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`static.Mount` works under a prefix.** It registered both
+  `/static/` and `/static/{path...}`, which the router reads as one
+  pattern, so `Mount` with any `Prefix` but the root panicked at boot
+  with a route conflict (the spelling `porting.md` shows). A trailing
+  slash (`/static/`) is now accepted too. The handler also strips
+  `Prefix` on a segment boundary only: `/staticsecret.txt` served
+  `secret.txt`. A path holding a NUL byte (`/a%00b`) answers 404 (or
+  the SPA index) instead of 500.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
@@ -4365,6 +4373,12 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`core/static` refuses a hidden file named with a backslash.** The
+  dot-segment and config-file checks split on `/` only, so
+  `/sub%5C.env` read as one harmless segment, while a disk `FS` on
+  Windows opens it through `os.Root`, where `\` is a separator, and
+  served `sub/.env`. `static.Refuses` (and the static export's
+  publish filter that uses it) now treats `\` as a separator.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

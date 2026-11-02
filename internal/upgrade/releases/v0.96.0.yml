@@ -643,3 +643,10 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
+  - change: "core/static strips Config.Prefix on a path-segment boundary only, and its dot-segment and config-file refusals (static.Refuses) treat a backslash as a path separator"
+    breaking: false
+    guidance: "With Prefix /static a request for /staticname.js used to serve name.js; it now looks up staticname.js. A URL naming a hidden or config file with a backslash (/sub%5C.env) answers 404, as a slash already did. static.Mount under a prefix, which panicked at boot, now mounts. Nothing to change unless a client relied on the old prefix reading."
+    find:
+      uses:
+        - gofastr/core/static.Handler
+        - gofastr/core/static.Mount
