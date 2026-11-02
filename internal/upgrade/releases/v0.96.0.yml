@@ -755,3 +755,9 @@ notes:
     breaking: false
     guidance: "Only apps that set JSONCase: snake_case see a change. Clients written against the camelCase keys those routes actually sent read the snake_case keys the setting always promised; drop the setting to keep camelCase."
     nodetect: "the setting is one AppConfig field whose meaning did not change; the keys change at runtime"
+  - change: "factory.New(app.Registry, ...) creates rows through the handler the app's routes serve, so the app's registered hooks and events run on factory rows and the returned map follows the app's JSONCase"
+    breaking: false
+    guidance: "Tests that relied on a factory skipping app hooks (to seed a row a BeforeCreate hook would refuse) pass factory.WithHandler(crud.NewCrudHandler(ent, db)) to keep the bare handler."
+    find:
+      uses:
+        - gofastr/framework/factory.New

@@ -1875,6 +1875,10 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
+	// The registry hands out the handler this App wires (hooks, events,
+	// JSON case, storage), so code holding only app.Registry, the
+	// documented factory.New(app.Registry, …), runs the app's pipeline.
+	a.Registry.handlerFor = a.CrudHandlerForEntity
 	// A recovered battery start or stop panic logs where the App logs.
 	a.Batteries.logger = a.Logger
 

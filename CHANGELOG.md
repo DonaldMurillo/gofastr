@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A factory built from `app.Registry` runs the app's hooks.**
+  `factory.New(app.Registry, …)` built a bare CRUD handler, so a row
+  seeded through it skipped every `BeforeCreate`/`AfterCreate` hook and
+  event the app registered, though the docs promised the production
+  pipeline, and came back camelCase under a `snake_case` app. The
+  registry now hands out the app's own handler through the new
+  `Registry.CrudHandlerFor`.
 - **`AppConfig.JSONCase: snake_case` reaches the routes and the spec.**
   App set the case on each entity's handler after the handler had keyed
   its field cache in camelCase, so every auto-CRUD route kept answering
