@@ -248,6 +248,9 @@ func TestTrackerIssueFlowE2E(t *testing.T) {
 		chromedp.Poll(`location.pathname === '/projects/billing/issues/42'`, nil)); err != nil {
 		t.Fatalf("clear filter: %v", err)
 	}
+	// The list is a route area, re-rendered by that navigation: wait for
+	// its commit before picking the next row out of it.
+	waitText(t, ctx, crumbsSel, "BIL-42")
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`a.fui-card[data-key][data-key="BIL-57"]`, chromedp.ByQuery)); err != nil {
 		t.Fatalf("open BIL-57: %v", err)

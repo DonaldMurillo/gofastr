@@ -148,6 +148,13 @@ few lines, and link the PR or the docs page for the rest.
 - **Tracker example: a crumb keeps a multi-byte first letter whole.**
   The crumb trail upper-cased a path segment's first byte, so `/étude`
   read "�©tude" and the page carried invalid UTF-8.
+- **Tracker example: the issue list follows the URL's filter.** The
+  project layer drew the list from `?filter=` while the router keeps
+  that layer across a project's pages, so Reset, or the sidebar's
+  project link from a filtered issue, left the filtered list and its
+  filter text under an unfiltered URL. The list is the layer's `issues`
+  route area now. An unsubmitted filter draft no longer survives
+  opening an issue.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
