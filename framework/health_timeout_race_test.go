@@ -14,6 +14,14 @@ import (
 // `go test -race` reports and which can hand the JSON encoder a torn
 // string header. Run under -race; the late check finishes after the
 // response is built, and the race detector sees the two accesses.
+//
+// Without -race the test passes on the buggy code: only the race
+// detector sees the unsynchronized access. Both race gates include
+// this package, so it is not a test that never runs: `make test-race`
+// (go test -race -short over every affected package; this test does not
+// skip under -short) and CI's "Race detector (concurrency packages)"
+// step in .github/workflows/ci.yml, whose -match regexp names
+// gofastr/framework.
 func TestReadinessTimeoutDoesNotRaceLateCheck(t *testing.T) {
 	// Sleep, not a channel the test closes: a channel would order the
 	// check's write after the test's read and hide the race.
