@@ -444,3 +444,16 @@ func holdStreamStatus(t *testing.T, addr string) int {
 	_ = res.Body.Close()
 	return res.StatusCode
 }
+
+// One removal pass spliced a nested escape back together: the text/plain
+// hold body (curl in a terminal) still carried a live "\x1b[31m".
+func TestStripANSIDoesNotReassemble(t *testing.T) {
+	for _, in := range []string{"\x1b[\x1b[31m31mred", "\x1b[\x1b[\x1b[0m0m1mx"} {
+		if got := stripANSI(in); strings.Contains(got, "\x1b[") {
+			t.Errorf("stripANSI(%q) = %q, still an escape sequence", in, got)
+		}
+	}
+	if got := stripANSI("\x1b[1mok\x1b[0m"); got != "ok" {
+		t.Errorf("stripANSI kept %q, want ok", got)
+	}
+}

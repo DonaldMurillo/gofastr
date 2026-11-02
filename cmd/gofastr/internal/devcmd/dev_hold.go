@@ -322,7 +322,19 @@ func holdPage(title, lead, detail, id string) string {
 
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
-func stripANSI(s string) string { return ansiEscape.ReplaceAllString(s, "") }
+// stripANSI removes ANSI escape sequences from build output, run until
+// nothing changes: one pass over "\x1b[\x1b[31m31m" removes the inner
+// sequence and splices the outer one back together. Each changing pass
+// shortens the string, so the loop ends.
+func stripANSI(s string) string {
+	for {
+		next := ansiEscape.ReplaceAllString(s, "")
+		if next == s {
+			return s
+		}
+		s = next
+	}
+}
 
 func tailString(s string, limit int) string {
 	if len(s) <= limit {
