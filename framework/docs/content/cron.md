@@ -59,7 +59,8 @@ A `cron.Schedule` answers these questions about a spec:
 | `MatchesDay(t)` | Whether `t`'s date passes the month and day fields, whatever the minute and hour say. |
 | `SkipDay(t)` | The next minute a forward walk from `t` must test: 21:00 local of the same date when `MatchesDay(t)` is false and that is later than `t`, else `t` plus a minute. |
 | `Satisfiable()` | Whether the spec ever fires. `"0 0 30 2 *"` does not. |
-| `FixedTime()` | Whether neither the minute nor the hour field begins with `*`. The durable queue scheduler gives such a spec vixie cron's once-only handling across a DST change. |
+| `FixedTime()` | Whether neither the minute nor the hour field begins with `*`. Every scheduler gives such a spec vixie cron's once-only handling across a DST change (see `FiresAt`). |
+| `FiresAt(prev, t)` | Whether the spec fires at the minute holding `t`, in `t`'s location, for a walk that evaluated `prev` just before it: `Matches` plus vixie cron's DST handling. A fixed-time spec fires in the first pass of a repeated (fall-back) hour only, and once at the first minute after a spring-forward that skipped its time; every other spec fires by the wall clock as it runs. `framework.Scheduler` and both `battery/queue` schedulers decide every firing here. |
 
 ## Quickstart
 
@@ -137,6 +138,19 @@ Supported within each field:
   guarding against overlap (e.g. via a `sync.Mutex` or a DB lock).
 - **No persistence.** Pending firings are not durable. If the process
   restarts mid-minute, that minute's jobs are skipped.
+- **Daylight-saving changes behave like vixie cron.** Ticks are read in
+  the host's local zone (`TZ`; a container is usually UTC, where nothing
+  changes). A fixed-time job, one whose minute and hour fields both name
+  values, runs once per wall-clock time: on a fall-back night
+  `"30 1 * * *"` runs at 01:30 daylight time and not again at 01:30
+  standard time, and on a spring-forward day `"30 2 * * *"`, whose time
+  does not exist, runs once at 03:00, right after the jump. A job whose
+  minute or hour begins with `*` runs by real elapsed time:
+  `"*/15 * * * *"` runs every 15 minutes through both changes. The same
+  holds for 30-minute shifts (Lord Howe Island). Replicas under leader
+  election must share one zone: the tick claim is per UTC minute, and the
+  once-only rule is what keeps the repeated hour from running a
+  fixed-time job twice.
 - **Default: no distributed coordination.** Every replica runs every
   job. For more than one process, either:
   - Install leader election (`Scheduler.WithLeaderElection`) so only the

@@ -492,7 +492,11 @@ same floor as the durable scheduler; `Every(0)` fires on every tick of
 the one-minute floor); `Cron(spec)` schedules
 fire when the cron expression's next time arrives; use it for
 time-of-day work like "every day at 02:00" that an interval cannot
-express. The spec is parsed by [`framework/cron`](cron.md) (`cron.Parse`),
+express. A cron schedule is evaluated in the zone of the time it was
+registered at (`Register` uses the local zone, `RegisterAt(t)` uses
+`t`'s) and handles daylight-saving changes like the durable scheduler
+below: a fixed-time spec runs once in a repeated hour and once, right
+after the jump, when a spring-forward skips its time. The spec is parsed by [`framework/cron`](cron.md) (`cron.Parse`),
 so the queue does not carry a second cron parser; it accepts the same
 5-field syntax and `@shortcuts` (e.g. `@daily`). The two kinds coexist
 in one scheduler.
