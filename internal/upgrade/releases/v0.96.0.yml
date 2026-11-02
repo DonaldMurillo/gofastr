@@ -739,3 +739,15 @@ notes:
     breaking: false
     guidance: "Nothing to change. A form that set data-cui-rpc-error-toast only to get the network-failure toast can drop it; keep it to choose the title. An app that showed its own offline message on a form's submit should drop it to avoid two."
     nodetect: "the change is in the runtime's behavior on a failed fetch; nothing in an app's source spells it"
+  - change: "gofastr validate and generate app refuse an app spec table, field or index name that is an SQL reserved word on SQLite or Postgres, is not letters, digits and underscores, or is over 63 bytes; two entities on one table; and an entity on a battery's table (auth_users, auth_sessions, audit_log and the rest)"
+    breaking: false
+    guidance: "Each such spec generated an app that failed at boot or on its first query, or on Postgres shared a table between entities. A few words, such as user, desc, end, left and right, only Postgres refuses: an app on SQLite worked with them and now fails validation, so rename the field (or set table:) before regenerating, and migrate the column with renames: on the entity."
+    nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "Generated clients (entity model and repo shapes, entities/client, the Go and JS SDKs, the CLI) spell a field's JSON key the way the server does, so a column named Title is sent and read as Title, not title; an app spec field or relation name must start with a lower-case letter"
+    breaking: false
+    guidance: "Only names that start with an upper-case letter or an underscore change, and their values were silently dropped before. Regenerate the clients (gofastr generate, gofastr generate sdk). An app spec with such a field fails validation: rename it in snake_case and add the old name under renames: so the column moves."
+    nodetect: "the keys change in regenerated files; an app's own code reads them through the generated types"
+  - change: "gofastr validate and generate app refuse a screen route that does not start with /, holds ?, #, a backslash, whitespace or a control character, has an empty, . or .. segment, names a parameter twice, or equals an entity's CRUD mount"
+    breaking: false
+    guidance: "Each such screen was unreachable from a browser, or (on the CRUD mount) stopped the app at boot. Fix the route in the app spec before regenerating."
+    nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"

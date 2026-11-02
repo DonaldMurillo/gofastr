@@ -109,7 +109,7 @@ func nestedKey(rel framework.Relation, decls []framework.EntityDeclaration) (nam
 			continue
 		}
 		if cols := declKeyCols(d); !appspec.DeclKeyIsID(d) && len(cols) == 1 {
-			return appspec.ToCamelCase(cols[0].Name), entityFieldGoType(appspec.ToCamelCase(d.Name), cols[0].Field), appspec.ToCamelJSON(cols[0].Name)
+			return appspec.ToCamelCase(cols[0].Name), entityFieldGoType(appspec.ToCamelCase(d.Name), cols[0].Field), appspec.WireKey(cols[0].Name)
 		}
 		return "ID", goIDType(d), "id"
 	}

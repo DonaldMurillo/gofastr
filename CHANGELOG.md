@@ -232,6 +232,28 @@ few lines, and link the PR or the docs page for the rest.
   `$1,000,000,001,193.00` ran out of the card: past a phone's edge into
   a horizontal page scroll, and over the neighbouring cell's label in a
   `ui.StatStrip`.
+- **The app generator refuses names its app could not boot with.** A
+  table, field or index name that bare SQL cannot carry (`order`, `on`,
+  `user`, `first-name`, a name over 63 bytes), two entities on one
+  table, and an entity on a battery's table (`auth_users`,
+  `auth_sessions`, `audit_log`, …) used to generate an app that compiled
+  and then failed at boot, 500ed on every request, shared one Postgres
+  table between two entities, or served the accounts table through CRUD.
+  `gofastr validate` and `generate` now name each one. See
+  [app spec validation](framework/docs/content/app-spec.md#validation).
+- **The app generator refuses screen routes no browser can reach.** A
+  route without a leading `/` (`café`), with `?`, `#`, an empty or `..`
+  segment (`//evil.com`, `/x/../admin`) or a repeated parameter
+  generated a screen that never rendered, and a route on an entity's CRUD
+  mount (`/api/posts`) stopped the boot with a panic. See
+  [app spec validation](framework/docs/content/app-spec.md#validation).
+- **Generated clients send the JSON key the server reads for every
+  field.** The server keys a column `Title` as `Title` and `_note` as
+  `Note`; the generated model, typed repo shapes, typed client, Go and JS
+  SDKs and CLI lowered the first letter (`title`, `note`), so those
+  fields were dropped on write and read as empty. App specs now refuse a
+  field or relation name that does not start with a lower-case letter,
+  since the typed repo's in-process write cannot keep one either.
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

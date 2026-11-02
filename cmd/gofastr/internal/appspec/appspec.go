@@ -52,11 +52,23 @@ type AppSpec struct {
 	// serializer's coverage test); appgen reaches it through
 	// PhraseCollector and SetPhraseCollector.
 	phrases *AppSpecPhrases
+
+	// appless is set by the decoders when the file (or every file of a
+	// directory) has no app: section: a fragment for generate app --add,
+	// whose App holds no api_prefix default, so the checks that need the
+	// project's app settings skip it. Unexported for the reason phrases is.
+	appless bool
 }
 
 // PhraseCollector returns the phrase collector of the file being
 // rendered, nil outside a file renderer.
 func (bp *AppSpec) PhraseCollector() *AppSpecPhrases { return bp.phrases }
+
+// MarkFragment records that bp is a fragment added to an existing
+// project (generate app --add, generate entity|screen): its App does not
+// carry the project's settings, so validation skips the checks that read
+// them.
+func (bp *AppSpec) MarkFragment() { bp.appless = true }
 
 // SetPhraseCollector installs the phrase collector a file renderer
 // emits through, on that renderer's own copy of the spec.
@@ -283,6 +295,7 @@ func LoadAppSpecPath(path string, validate bool) (AppSpec, error) {
 			}
 			merged.App = app
 		}
+		merged.appless = len(appKeyFile) == 0
 		if validate {
 			if err := ValidateAppSpec(merged); err != nil {
 				return AppSpec{}, err
@@ -513,6 +526,8 @@ func DecodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 			return AppSpec{}, err
 		}
 		bp.App = app
+	} else {
+		bp.appless = true
 	}
 	if child := m["entities"]; child != nil {
 		entities, err := decodeAppSpecEntities(child)
@@ -2616,6 +2631,8 @@ func ValidateAppSpec(bp AppSpec) error {
 		for _, f := range decl.Fields {
 			if !project.IsGoIdentifier(ToCamelCase(f.Name)) {
 				errs.add(fmt.Errorf("app spec: entity %q field %q does not produce a valid Go identifier: rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name))
+			} else if !startsLower(f.Name) {
+				errs.add(fmt.Errorf("app spec: entity %q field %q must start with a lower-case letter: %s", decl.Name, f.Name, wireCaseWhy))
 			}
 			for _, v := range f.Values {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
@@ -2636,6 +2653,7 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
 		}
 	}
+	errs.add(validateAppSpecSQLNames(bp))
 	for _, decl := range bp.Entities {
 		// Relation-TYPED FIELDS (`type: relation, to: X`) become BelongsTo
 		// relations at runtime. Catch a dangling target here so the failure
@@ -2706,6 +2724,9 @@ func ValidateAppSpec(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: entity %q relation %q collides with %s: both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel))
 				continue
 			}
+			if !startsLower(rel.Name) {
+				errs.add(fmt.Errorf("app spec: entity %q relation %q must start with a lower-case letter: %s", decl.Name, rel.Name, wireCaseWhy))
+			}
 			relNames[camel] = "relation " + rel.Name
 			if rel.Entity == "" {
 				errs.add(fmt.Errorf("app spec: entity %q relation %q target entity is required: add `entity: <name>` referencing a declared entity", decl.Name, rel.Name))
@@ -2757,6 +2778,14 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		if screen.Route == "" {
 			errs.add(fmt.Errorf("app spec: screen %q route is required", screen.Name))
+			continue
+		}
+		if why := screenRouteProblem(screen.Route); why != "" {
+			errs.add(fmt.Errorf("app spec: screen %q route %q %s", screen.Name, screen.Route, why))
+			continue
+		}
+		if mount := screenRouteOnEntityAPI(bp, screen.Route); mount != "" {
+			errs.add(fmt.Errorf("app spec: screen %q route %q is %s, where an entity's CRUD API mounts: the app would refuse to boot; move the screen", screen.Name, screen.Route, mount))
 			continue
 		}
 		if routes[screen.Route] {

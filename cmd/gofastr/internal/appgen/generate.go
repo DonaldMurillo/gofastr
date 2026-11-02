@@ -895,6 +895,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			cli.Fail("Failed to load app spec: %v", cerr)
 			cli.OsExit(1)
 		}
+		bp.MarkFragment()
 		if verr := appspec.ValidateAppSpec(bp); verr != nil {
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(verr)
@@ -2323,7 +2324,7 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 		if keyIsID && field.Name == "id" {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(field.Name), entityFieldGoType(structName, field), appspec.ToCamelJSON(field.Name)))
+		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(field.Name), entityFieldGoType(structName, field), appspec.WireKey(field.Name)))
 	}
 	// Relation fields: populated by TypedQuery.Include() and Repo.Get(...,
 	// includes...). Singular relations (HasOne/BelongsTo) get *Target;
@@ -2333,7 +2334,7 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 	for _, rel := range decl.Relations {
 		targetStruct := appspec.ToCamelCase(rel.Entity)
 		fieldName := appspec.ToCamelCase(rel.Name)
-		jsonTag := appspec.ToCamelJSON(rel.Name)
+		jsonTag := appspec.WireKey(rel.Name)
 		switch rel.Type {
 		case framework.RelHasOne, framework.RelManyToOne:
 			sb.WriteString(fmt.Sprintf("\t%s *%s `json:\"%s,omitempty\"`\n", fieldName, targetStruct, jsonTag))

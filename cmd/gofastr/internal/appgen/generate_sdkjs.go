@@ -117,7 +117,7 @@ func tsKeyType(decl framework.EntityDeclaration) string {
 	}
 	parts := make([]string, len(cols))
 	for i, k := range cols {
-		parts[i] = appspec.ToCamelJSON(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
+		parts[i] = appspec.WireKey(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
 	}
 	return "readonly [" + strings.Join(parts, ", ") + "]"
 }
@@ -134,7 +134,7 @@ func tsKeyArgs(decl framework.EntityDeclaration) string {
 	cols := declKeyCols(decl)
 	fields := make([]string, len(cols))
 	for i, k := range cols {
-		fields[i] = appspec.ToCamelJSON(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
+		fields[i] = appspec.WireKey(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
 	}
 	return ", " + tsKeyType(decl) + ", { " + strings.Join(fields, "; ") + " }"
 }
@@ -168,7 +168,7 @@ func jsUploadColumns(decl framework.EntityDeclaration) string {
 		if f.Hidden || dropCreate(f) {
 			continue
 		}
-		pairs = append(pairs, fmt.Sprintf("%q: %q", appspec.ToCamelJSON(f.Name), f.Name))
+		pairs = append(pairs, fmt.Sprintf("%q: %q", appspec.WireKey(f.Name), f.Name))
 	}
 	return ", { " + strings.Join(pairs, ", ") + " }"
 }
@@ -218,7 +218,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if slices.Contains(decl.PrimaryKey, fd.Name) {
 			opt = ""
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values)+dtsNull(decl, fd))
+		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.WireKey(fd.Name), opt, tsTypeForField(fd.Type, fd.Values)+dtsNull(decl, fd))
 	}
 	dts.WriteString("}\n\n")
 
@@ -235,7 +235,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 			continue
 		}
 		if dropUpdate(fd) {
-			patchOmit = append(patchOmit, fmt.Sprintf("%q", appspec.ToCamelJSON(fd.Name)))
+			patchOmit = append(patchOmit, fmt.Sprintf("%q", appspec.WireKey(fd.Name)))
 		}
 		opt := "?"
 		if inputTakesValue(fd) {
@@ -246,7 +246,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 			// A Blob (a File is one) is uploaded; a string is a stored URL.
 			typ += " | Blob"
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.ToCamelJSON(fd.Name), opt, typ)
+		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.WireKey(fd.Name), opt, typ)
 	}
 	dts.WriteString("}\n\n")
 

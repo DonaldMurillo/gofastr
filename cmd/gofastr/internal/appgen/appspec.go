@@ -774,7 +774,7 @@ func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 		}
 		if !appspec.DeclKeyIsID(decl) {
 			for _, k := range decl.PrimaryKey {
-				t.keys = append(t.keys, appspec.ToCamelJSON(k))
+				t.keys = append(t.keys, appspec.WireKey(k))
 			}
 		}
 		if dr, ok := detailOf[e]; ok {
@@ -3950,7 +3950,7 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
 		if !ok || len(keys) != 1 {
 			continue
 		}
-		targets[f.To] = relTarget{Key: appspec.ToCamelJSON(keys[0]), Path: appSpecEntityAPIPath(apiBase, decl)}
+		targets[f.To] = relTarget{Key: appspec.WireKey(keys[0]), Path: appSpecEntityAPIPath(apiBase, decl)}
 	}
 	// json.Marshal sorts map keys, so the emitted literal is stable.
 	targetsJSON, err := json.Marshal(targets)
