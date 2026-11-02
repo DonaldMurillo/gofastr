@@ -129,6 +129,18 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING for custom A2A stores: retention counts per tier.**
+  `a2a.Config.TerminalTaskRetention` and `PausedTaskRetention` now bound
+  one owner's tasks per tier (`a2a.RetentionTier`: the tenant and scope
+  set a task was made under), not per owner. A narrow token's tasks, or
+  the same user's tasks in another tenant, pushed the user's other tasks
+  past the bound, deleting results and canceling paused work that tier
+  could not even read. `RetentionTrimmer.TrimTerminalTasks` gains a tier
+  argument: `TrimTerminalTasks(ctx, owner, tier, keep)`. A custom store
+  implementing the old signature no longer satisfies `RetentionTrimmer`
+  and is silently not trimmed; update the method to filter by
+  `tier.Tenant` and `tier.Scope`. An owner now retains up to 64 terminal
+  and 64 paused tasks per tenant and scope set.
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep

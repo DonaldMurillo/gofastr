@@ -651,3 +651,11 @@ notes:
     breaking: false
     guidance: "A 2025-03-26 client now gets 2025-03-26 back. Hosts that asserted the handshake reply was always 2025-06-18 should compare against mcp.SupportedProtocolVersions()."
     nodetect: "the change is in the server's answer to a wire method; nothing in an app's source spells it"
+  - change: "BREAKING for custom A2A stores - a2a.RetentionTrimmer.TrimTerminalTasks takes a tier: TrimTerminalTasks(ctx, owner, tier a2a.RetentionTier, keep int); Config.TerminalTaskRetention and PausedTaskRetention now bound each (owner, tenant, scope) tier instead of each owner"
+    breaking: true
+    hits: edit
+    guidance: "A narrow token's tasks, or the same user's tasks in another tenant, trimmed the user's other tasks. Add the tier parameter and delete only rows whose tenant and scope equal tier.Tenant and tier.Scope. A store still declaring the old method no longer satisfies RetentionTrimmer and is silently not trimmed. Apps on the built-in memory or SQL store change nothing; an owner now retains up to 64 terminal and 64 paused tasks per tenant and scope set."
+    find:
+      shapes:
+        - symbol: gofastr/core/a2a.RetentionTrimmer.TrimTerminalTasks
+          type: '^func\(([_[:alnum:]]+ )?context\.Context, ([_[:alnum:]]+ )?string, ([_[:alnum:]]+ )?int\) error$'
