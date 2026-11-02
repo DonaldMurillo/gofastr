@@ -5947,10 +5947,29 @@ few lines, and link the PR or the docs page for the rest.
   migrator writes, and the recorded DDL a snapshot holds is read back
   either way. Other names stay bare, so existing DDL and snapshots are
   byte-identical, and a snapshot that holds a keyword name bare diffs
-  as unchanged. The CRUD statements still name columns bare, so most
-  keyword names still fail on the first insert and `gofastr generate`
-  keeps refusing them in an app spec; `if`, a keyword to SQLite's DDL
-  only, is now allowed there.
+  as unchanged. `if`, a keyword to SQLite's DDL only, is now allowed in
+  an app spec.
+- **CRUD quotes keyword column and table names.** The migrator created a
+  column named `order`, `group`, `user`, `end`, `desc` or `limit`, but
+  every CRUD statement named it bare, so the first insert failed
+  (`near "order": syntax error` on both engines, `user`, `end`, `desc`
+  and the rest on Postgres), and on Postgres a bare `user` in an owner
+  scope read the session user, so an entity with `OwnerField: "user"`
+  found none of its rows. The keyword set moved to `core/query`
+  (`query.IsKeyword`, `query.QuoteKeyword`, `query.QuoteKeywords`), the
+  migrator reads it there, and every statement the framework writes
+  quotes a keyword name with it the way the DDL does: the builders'
+  table and column slots (`Insert`, `Update`, `Delete`, `Count`,
+  `Select`, `Returning`, `Order`, `Cursor`, `Join`'s table), the CRUD
+  key, owner, tenant and state conditions, filters, sorts, `?where=`,
+  `?q=` search, keyset cursors, upserts (columns, `ON CONFLICT` target,
+  `EXCLUDED` sets), includes and nested filters across a relation keyed
+  on a keyword column, belongs-to and many-to-many reference checks,
+  the typed query columns (`entity.StringColumn` and the rest) and the
+  query DSL. Names that are not keywords are written bare as before, so
+  the SQL of a schema without them is byte-identical. See
+  [query DSL](framework/docs/content/query-dsl.md) and
+  [entity declarations](framework/docs/content/entity-declarations.md#column-naming).
 
 ### Security
 - **`core/textsafe` treats Unicode tag characters and Hangul fillers as

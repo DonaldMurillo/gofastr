@@ -302,7 +302,7 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		// the shape crud's cursor path emits. query.Cursor appended its
 		// own ORDER BY after any order(), so order(id).after(…) ordered
 		// by id twice.
-		qb.Where(cursorField+" > $1", after)
+		qb.Where(query.QuoteKeyword(cursorField)+" > $1", after)
 		qb.Order(cursorField, "ASC")
 	}
 	return qb, nil
@@ -530,7 +530,7 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		return field.Name + " " + op + " $1", []any{value}, nil
+		return query.QuoteKeyword(field.Name) + " " + op + " $1", []any{value}, nil
 	case "contains":
 		// Case-insensitive on both dialects, the ?q= and ?field_like=
 		// shape (filter.LikeClause). On a non-text column the substring
@@ -566,7 +566,7 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 			}
 			args[i] = v
 		}
-		return field.Name + " IN (" + strings.Join(placeholders, ", ") + ")", args, nil
+		return query.QuoteKeyword(field.Name) + " IN (" + strings.Join(placeholders, ", ") + ")", args, nil
 	default:
 		return "", nil, i18n.NewError(reasonUnsupportedOperator, map[string]any{"op": strconv.Quote(op)})
 	}

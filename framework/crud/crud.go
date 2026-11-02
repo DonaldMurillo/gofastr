@@ -250,7 +250,7 @@ func applyTenantScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b
 	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
-			b.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
+			b.Where(query.QuoteKeyword(ch.Entity.Config.TenantColumn())+" = $1", tenantID)
 		}
 	}
 }

@@ -97,7 +97,8 @@ func TestBracketInReadsEveryOccurrence(t *testing.T) {
 	qb := query.Select("*").From("t")
 	ApplyToQuery(qb, fs)
 	sql, args := qb.Build()
-	if !strings.Contains(sql, "check IN ($1,$2,$3)") || len(args) != 3 {
+	// check is a keyword, so the column is quoted (query.QuoteKeyword).
+	if !strings.Contains(sql, `"check" IN ($1,$2,$3)`) || len(args) != 3 {
 		t.Fatalf("SQL %q args %v, want one 3-value IN", sql, args)
 	}
 }

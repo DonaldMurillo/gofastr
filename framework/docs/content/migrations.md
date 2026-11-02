@@ -497,7 +497,10 @@ that is a keyword on either engine cannot go bare (`CREATE TABLE posts
 `"order"`, `"user"`, `"group"`. The set is Postgres's reserved keywords
 (including `user`, `end`, `desc`, `to`, `offset`, `do`, which SQLite
 takes bare) plus the SQLite keywords that break a statement the
-migrator writes (`index`, `set`, `values`, `drop`, …). Every other name
+migrator writes (`index`, `set`, `values`, `drop`, …). The set lives in
+`core/query` (`query.IsKeyword`, `query.QuoteKeyword`), and the CRUD
+statements quote the same names the same way, so the column the DDL
+created is the one every query names. Every other name
 stays bare, so a schema without keyword names writes the same DDL and
 snapshot as before. A snapshot an older build wrote with such a name
 bare (it ran on SQLite) reads the same: a change of quoting alone is no

@@ -616,7 +616,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		from[i] = v
 	}
-	ub.Where(st.Field+" IN ("+strings.Join(placeholders, ", ")+")", from...)
+	ub.Where(query.QuoteKeyword(st.Field)+" IN ("+strings.Join(placeholders, ", ")+")", from...)
 	ch.ApplyTenantScopeUpdate(ub, r)
 	ch.ApplyOwnerScopeUpdate(ub, r)
 	if ch.Entity.Config.Scope.SoftDelete {

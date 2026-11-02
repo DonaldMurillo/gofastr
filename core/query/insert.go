@@ -42,7 +42,7 @@ func (ib *InsertBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
 	sb.WriteString("INSERT INTO ")
-	sb.WriteString(sanitizeFragment(ib.table))
+	sb.WriteString(identSlot(sanitizeFragment(ib.table)))
 	if len(ib.columns) == 0 && len(ib.values) == 0 {
 		sb.WriteString(" DEFAULT VALUES")
 	} else {
@@ -52,7 +52,7 @@ func (ib *InsertBuilder) Build() (string, []any) {
 		sb.WriteString(" (")
 		sanitized := make([]string, len(ib.columns))
 		for i, c := range ib.columns {
-			sanitized[i] = sanitizeColumn(c)
+			sanitized[i] = identSlot(sanitizeColumn(c))
 		}
 		sb.WriteString(strings.Join(sanitized, ", "))
 		sb.WriteString(")")
@@ -72,7 +72,7 @@ func (ib *InsertBuilder) Build() (string, []any) {
 		sb.WriteString(" RETURNING ")
 		sanitizedRet := make([]string, len(ib.returning))
 		for i, c := range ib.returning {
-			sanitizedRet[i] = sanitizeColumn(c)
+			sanitizedRet[i] = identSlot(sanitizeColumn(c))
 		}
 		sb.WriteString(strings.Join(sanitizedRet, ", "))
 	}

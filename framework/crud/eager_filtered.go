@@ -118,7 +118,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 		if mtmSoftDelete != "" {
 			// The ManyToMany SELECT JOINs target + pivot, so a bare
 			// `deleted_at` would be ambiguous, qualify it with the target.
-			mtmSoftDelete = " AND " + safeEntity + ".deleted_at IS NULL"
+			mtmSoftDelete = " AND " + query.QuoteKeyword(safeEntity) + ".deleted_at IS NULL"
 		}
 		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node, scope, ids, result, mtmSoftDelete, served, budget)
 	}
@@ -240,7 +240,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, 
 		readClause = " AND " + readClause
 	}
 	q := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		safeEntity, scope.and(where), extra, readClause, softDeleteFilter)
+		query.QuoteKeyword(safeEntity), scope.and(where), extra, readClause, softDeleteFilter)
 	args = append(args, extraArgs...)
 	args = append(args, readArgs...)
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -300,7 +300,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable strin
 		readClause = " AND " + readClause
 	}
 	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		safeEntity, scope.and(where), extra, readClause, softDeleteFilter)
+		query.QuoteKeyword(safeEntity), scope.and(where), extra, readClause, softDeleteFilter)
 	fkArgs = append(fkArgs, extraArgs...)
 	fkArgs = append(fkArgs, readArgs...)
 
@@ -392,11 +392,11 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	pivotWhere, pivotArgs := pivotClause(node.Pivot, node.PivotScopes, safeThrough, len(args)+len(extraArgs)+len(readArgs)+1)
 	q := fmt.Sprintf(
 		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s%s.%s IN (%s)%s%s%s%s",
-		safeEntity,
-		safeThrough, safeLocalKey,
-		safeEntity, safeThrough,
-		safeEntity, targetPK, safeThrough, safeFKTarget,
-		scope.and(""), safeThrough, safeLocalKey,
+		query.QuoteKeyword(safeEntity),
+		query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
+		query.QuoteKeyword(safeEntity), query.QuoteKeyword(safeThrough),
+		query.QuoteKeyword(safeEntity), query.QuoteKeyword(targetPK), query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeFKTarget),
+		scope.and(""), query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
 		strings.Join(placeholders, ", "),
 		extra,
 		readClause,
@@ -497,9 +497,9 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 	}
 	col := func(field string) string {
 		if table != "" {
-			return table + "." + field
+			return query.QuoteKeyword(table + "." + field)
 		}
-		return field
+		return query.QuoteKeyword(field)
 	}
 	var parts []string
 	var args []any

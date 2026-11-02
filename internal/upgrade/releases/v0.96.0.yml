@@ -1059,6 +1059,10 @@ notes:
     breaking: false
     guidance: "Nothing to do. Names that are not keywords are written as before. On SQLite a column named end, desc, to, offset, do or user already worked bare; the next migrate generate writes it quoted for new statements and proposes no change for the quoting alone. Raw SQL of your own that names such a column on Postgres must quote it, as CRUD does."
     nodetect: "the names are entity field and table declarations; any keyword among them is affected, which no single spelling marks"
+  - change: "The query builders and every CRUD statement quote a table or column name that is a keyword (order, group, user, end, desc, limit, …) the way the migrator's DDL does, through the new query.IsKeyword / query.QuoteKeyword / query.QuoteKeywords; other names stay bare and their SQL is byte-identical"
+    breaking: false
+    guidance: "An entity with such a field now takes inserts, reads, filters, sorts, cursors, includes and scopes on both engines; before, its first insert failed, and on Postgres an owner scope on a column named user matched no row. A condition you write yourself (Where, Join's ON, raw SQL) is raw SQL: quote a keyword column in it with query.QuoteKeyword(\"order\") + \" = $1\". A builder slot that held a bare keyword as an expression (Select(\"NULL\"), Order(\"desc\")) now names a column of that name; pass such text in a Where condition instead."
+    nodetect: "the names are entity field and table declarations; any keyword among them is affected, which no single spelling marks"
   - change: "RedisCache.Set with a negative TTL (or a negative WithTTL default) deletes the key and stores nothing, as MemoryCache does; it used to hand the negative duration to RedisClient.Set"
     breaking: false
     guidance: "A go-redis adapter stores a non-positive expiration other than -1 with no expiry, and -1 as KEEPTTL, so such a write made an entry that never expired. Nothing to change unless code relied on that: pass 0 for the default TTL, or a positive lifetime."

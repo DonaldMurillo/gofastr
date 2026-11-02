@@ -45,7 +45,7 @@ func beforeScopeHidesKey(ctx context.Context, conn DBExecutor, table string, key
 	}
 	qb := query.Select(key[0]).From(table)
 	for i, k := range key {
-		qb.Where(k+" = $1", vals[i])
+		qb.Where(query.QuoteKeyword(k)+" = $1", vals[i])
 	}
 	return clausesFindNothing(ctx, conn, qb, clauses)
 }

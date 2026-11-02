@@ -482,7 +482,7 @@ func buildExistsSubquery(parentTable string, parentKey []string, nf nestedFilter
 func keyJoin(lt string, lcols []string, rt string, rcols []string) string {
 	conds := make([]string, len(lcols))
 	for i := range lcols {
-		conds[i] = fmt.Sprintf("%s.%s = %s.%s", lt, lcols[i], rt, rcols[i])
+		conds[i] = query.QuoteKeyword(lt+"."+lcols[i]) + " = " + query.QuoteKeyword(rt+"."+rcols[i])
 	}
 	return strings.Join(conds, " AND ")
 }
@@ -525,10 +525,10 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 	}
 
 	subTable := relTable
-	aliasClause := relTable
+	aliasClause := query.QuoteKeyword(relTable)
 	if relTable == parentTable {
 		subTable = selfJoinAlias(relTable)
-		aliasClause = fmt.Sprintf("%s %s", relTable, subTable)
+		aliasClause = fmt.Sprintf("%s %s", query.QuoteKeyword(relTable), query.QuoteKeyword(subTable))
 	}
 
 	var args []any
@@ -565,13 +565,13 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 				ph[i] = fmt.Sprintf("$%d", len(args)+1)
 				args = append(args, filter.TypedBind(nf.colType, v))
 			}
-			fieldPred = fmt.Sprintf("%s.%s IN (%s)", subTable, col, strings.Join(ph, ","))
+			fieldPred = fmt.Sprintf("%s IN (%s)", query.QuoteKeyword(subTable+"."+col), strings.Join(ph, ","))
 		} else if nf.Op == filter.OpLike {
 			var arg string
 			fieldPred, arg = filter.LikeClause(subTable+"."+col, len(args)+1, nf.Value)
 			args = append(args, arg)
 		} else {
-			fieldPred = fmt.Sprintf("%s.%s %s $%d", subTable, col, opToSQL(nf.Op), len(args)+1)
+			fieldPred = fmt.Sprintf("%s %s $%d", query.QuoteKeyword(subTable+"."+col), opToSQL(nf.Op), len(args)+1)
 			args = append(args, filter.TypedBind(nf.colType, nf.Value))
 		}
 		innerPredicate = fieldPred
@@ -585,7 +585,7 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 		innerPredicate = scopeClause + " AND " + innerPredicate
 	}
 	if hop.SoftDelete {
-		innerPredicate = fmt.Sprintf("%s.deleted_at IS NULL AND %s", subTable, innerPredicate)
+		innerPredicate = fmt.Sprintf("%s.deleted_at IS NULL AND %s", query.QuoteKeyword(subTable), innerPredicate)
 	}
 
 	switch rel.Type {
@@ -613,10 +613,10 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 			args = append(args, hookArgs...)
 		}
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s%s)",
-			aliasClause, rel.Through,
-			subTable, targetKey[0], rel.Through, rel.ForeignKeyTarget,
-			rel.Through, rel.LocalKey, parentTable, parentKey[0],
+			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s = %s WHERE %s = %s AND %s%s)",
+			aliasClause, query.QuoteKeyword(rel.Through),
+			query.QuoteKeyword(subTable+"."+targetKey[0]), query.QuoteKeyword(rel.Through+"."+rel.ForeignKeyTarget),
+			query.QuoteKeyword(rel.Through+"."+rel.LocalKey), query.QuoteKeyword(parentTable+"."+parentKey[0]),
 			innerPredicate,
 			pivotWhere,
 		), args

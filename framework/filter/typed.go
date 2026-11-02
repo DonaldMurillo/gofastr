@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -166,7 +167,7 @@ func valueTypeError(field string, t schema.FieldType) error {
 // ASCII-case-insensitive everywhere, Unicode folding a Postgres bonus
 // (SQLite's LOWER folds only ASCII, so a stored "É" is not matched there).
 func LikeClause(col string, n int, value string) (string, string) {
-	return "LOWER(" + col + ") LIKE $" + strconv.Itoa(n) + LikeEscapeSuffix, LikeArg(value)
+	return "LOWER(" + query.QuoteKeyword(col) + ") LIKE $" + strconv.Itoa(n) + LikeEscapeSuffix, LikeArg(value)
 }
 
 // LikeArg is the bind value LikeClause pairs with its placeholder: value
