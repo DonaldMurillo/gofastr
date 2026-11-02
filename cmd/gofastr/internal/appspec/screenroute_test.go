@@ -34,6 +34,14 @@ func TestScreenRoutesRefused(t *testing.T) {
 		{"/x/{id}/{id}", "api", "{id} twice"},
 		{"/api/posts", "api", "/api/posts"},
 		{"/api/posts/", "api", "/api/posts"},
+		// Under the mount, CRUD's own GET patterns ({id}, llm.md,
+		// _events, a composite key's segments) win over the screen, which
+		// UIHost serves from its catch-all: GET /api/posts/abc answered
+		// the CRUD 401 instead of the page.
+		{"/api/posts/{id}", "api", "/api/posts"},
+		{"/api/posts/{slug}", "api", "/api/posts"},
+		{"/api/posts/llm.md", "api", "/api/posts"},
+		{"/api/posts/a/b", "api", "/api/posts"},
 		{"/posts", "", "/posts"},
 	}
 	for _, tc := range cases {
@@ -47,7 +55,7 @@ func TestScreenRoutesRefused(t *testing.T) {
 			t.Errorf("route %q (api_prefix %q): got %v, want an error naming %q", tc.route, tc.prefix, err, tc.want)
 		}
 	}
-	for _, ok := range []string{"/", "/posts", "/café", "/a/{id}", "/a/:id", "/docs/{path...}", "/app/posts/{id}/edit", "/api/reports"} {
+	for _, ok := range []string{"/", "/posts", "/café", "/a/{id}", "/a/:id", "/docs/{path...}", "/app/posts/{id}/edit", "/api/reports", "/api/postsx"} {
 		bp := AppSpec{
 			App:      AppSpecApp{APIPrefix: "api"},
 			Entities: []framework.EntityDeclaration{posts},

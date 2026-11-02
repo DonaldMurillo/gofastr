@@ -253,8 +253,9 @@ few lines, and link the PR or the docs page for the rest.
 - **The app generator refuses screen routes no browser can reach.** A
   route without a leading `/` (`café`), with `?`, `#`, an empty or `..`
   segment (`//evil.com`, `/x/../admin`) or a repeated parameter
-  generated a screen that never rendered, and a route on an entity's CRUD
-  mount (`/api/posts`) stopped the boot with a panic. See
+  generated a screen that never rendered, a route on an entity's CRUD
+  mount (`/api/posts`) stopped the boot with a panic, and a route under
+  it (`/api/posts/{id}`) was answered by the CRUD API instead. See
   [app spec validation](framework/docs/content/app-spec.md#validation).
 - **Generated clients send the JSON key the server reads for every
   field.** The server keys a column `Title` as `Title` and `_note` as

@@ -2785,7 +2785,7 @@ func ValidateAppSpec(bp AppSpec) error {
 			continue
 		}
 		if mount := screenRouteOnEntityAPI(bp, screen.Route); mount != "" {
-			errs.add(fmt.Errorf("app spec: screen %q route %q is %s, where an entity's CRUD API mounts: the app would refuse to boot; move the screen", screen.Name, screen.Route, mount))
+			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, where an entity's CRUD API mounts: the app would refuse to boot or its API would answer instead of the screen; move the screen", screen.Name, screen.Route, mount))
 			continue
 		}
 		if routes[screen.Route] {

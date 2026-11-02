@@ -56,9 +56,10 @@ func screenRouteProblem(route string) string {
 }
 
 // screenRouteOnEntityAPI returns the CRUD mount path of the entity whose
-// routes a screen at route would take, or "". App.Mount panics on that
-// collision at boot (entityScreenCollisionMessage); the comparison is the
-// framework's, trailing slashes trimmed.
+// routes a screen at route would take, or "": the mount itself, where
+// App.Mount panics at boot (entityScreenCollisionMessage), or any path
+// under it, where the CRUD routes shadow the screen. Trailing slashes are
+// trimmed, as the framework compares.
 func screenRouteOnEntityAPI(bp AppSpec, route string) string {
 	if bp.appless {
 		// A fragment with no app: section (generate app --add, generate
@@ -75,7 +76,11 @@ func screenRouteOnEntityAPI(bp AppSpec, route string) string {
 			continue
 		}
 		mount := base + "/" + entityTable(decl)
-		if strings.TrimRight(route, "/") == mount {
+		// At the mount App.Mount panics; under it, CRUD's GET patterns
+		// ({id}, a composite key's segments, llm.md, _events) are
+		// registered routes and win over a screen UIHost serves from
+		// its catch-all, so the page is never shown.
+		if r := strings.TrimRight(route, "/"); r == mount || strings.HasPrefix(r, mount+"/") {
 			return mount
 		}
 	}
