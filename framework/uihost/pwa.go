@@ -1054,6 +1054,7 @@ func (ds *UIHost) handlePWAServiceWorker(w http.ResponseWriter, r *http.Request)
 	// The browser re-fetches the worker to detect updates; long-lived
 	// caching here would pin every client to a stale deployment.
 	w.Header().Set("Cache-Control", "no-cache")
+	//gofastr:allow(nostore) the worker is built once under context.Background() (offline page included): deployment-constant, no caller to vary on
 	fmt.Fprint(w, ds.pwaSW)
 }
 
@@ -1066,5 +1067,6 @@ func (ds *UIHost) handlePWARegisterJS(w http.ResponseWriter, _ *http.Request) {
 func (ds *UIHost) handlePWAOffline(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	//gofastr:allow(nostore) PWAOfflineHTML renders under context.Background() for the precache: deployment-constant, no caller to vary on
 	fmt.Fprint(w, ds.PWAOfflineHTML())
 }
