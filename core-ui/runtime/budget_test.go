@@ -1719,7 +1719,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestDispatchRPC_FormAnsweredSaveIsNotANetworkError): a 2xx with
 		// an unparsable body threw into the same catch and toasted
 		// "Network error" over a save the server committed.
-		"rpc": 3747,
+		// 3800 measured (3798 + 2) after a data-cui-rpc FORM whose method
+		// is POST drops a re-submit while its own POST is in flight
+		// (2026-11-02, D-09, TestFormPOSTResubmitInFlightSendsOnce): a
+		// double-click plus Ctrl+S sent three POSTs and an entity with no
+		// unique key got three rows. The in-flight set is dispatch state
+		// only this module holds.
+		"rpc": 3800,
 	}
 	const coreOverride = 0
 

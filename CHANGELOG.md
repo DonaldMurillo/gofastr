@@ -188,6 +188,11 @@ few lines, and link the PR or the docs page for the rest.
   spec paths. The webhook SQL tables gain `auth`, `response_status`
   and `response_body`, added when the store opens.
 
+- **A `data-cui-rpc` POST form sends one request at a time (D-09).**
+  A re-submit of a form whose method is POST is ignored while its own
+  POST is in flight, so a double click plus Ctrl+S no longer creates
+  three rows. PUT and PATCH forms, input-triggered forms, buttons and
+  controls still send every dispatch, the newest winning.
 
 ### Fixed
 
