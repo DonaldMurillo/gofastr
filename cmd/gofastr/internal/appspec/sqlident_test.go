@@ -44,6 +44,12 @@ func TestAppSpecSQLNamesRefused(t *testing.T) {
 		{"two entities on one folded table", []framework.EntityDeclaration{{Name: "posts", Table: "Items", Fields: field("title")}, {Name: "items", Fields: field("title")}}, []string{`both use the table "items"`}},
 		{"the auth battery's accounts", []framework.EntityDeclaration{{Name: "auth_users", Fields: field("nickname")}}, []string{`"auth_users"`, "auth battery's accounts"}},
 		{"the auth battery's sessions", []framework.EntityDeclaration{{Name: "sessions", Table: "auth_sessions", Fields: field("note")}}, []string{`"auth_sessions"`, "auth battery's sessions"}},
+		// The engines' default schema names the same table as the bare
+		// name: public.auth_users is the auth battery's accounts on
+		// Postgres, main.items is entity items' table on SQLite.
+		{"the auth accounts in the public schema", []framework.EntityDeclaration{{Name: "mine", Table: "public.auth_users", Fields: field("note")}}, []string{`"public.auth_users"`, "auth battery's accounts"}},
+		{"the auth sessions in SQLite's main schema", []framework.EntityDeclaration{{Name: "mine", Table: "MAIN.auth_sessions", Fields: field("note")}}, []string{`"MAIN.auth_sessions"`, "auth battery's sessions"}},
+		{"two entities on one table, one schema-qualified", []framework.EntityDeclaration{{Name: "items", Fields: field("title")}, {Name: "other", Table: "public.items", Fields: field("title")}}, []string{`entities "items" and "other" both use the table "public.items"`}},
 		{"the admin audit log", []framework.EntityDeclaration{{Name: "audit_log", Fields: field("note")}}, []string{`"audit_log"`, "audit log"}},
 	}
 	for _, tc := range cases {

@@ -111,6 +111,20 @@ func entityTable(decl framework.EntityDeclaration) string {
 	return fwentity.Define(decl.Name, fwentity.EntityConfig{Table: decl.Table}).GetTable()
 }
 
+// tableKey is the name two tables are compared by: folded, since Postgres
+// folds an unquoted name, and with the engine's default schema dropped,
+// since public.auth_users on Postgres and main.auth_users on SQLite are the
+// same table as a bare auth_users.
+func tableKey(table string) string {
+	folded := asciicase.Lower(table)
+	for _, schema := range []string{"public.", "main."} {
+		if rest, ok := strings.CutPrefix(folded, schema); ok {
+			return rest
+		}
+	}
+	return folded
+}
+
 // validateAppSpecSQLNames checks every name the entities put into SQL: each
 // table (every dot-separated part of a declared one), each field's column,
 // and each declared index name; and that no two entities, and no entity
@@ -131,7 +145,7 @@ func validateAppSpecSQLNames(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: entity %q table %q %s; set table: to another name", decl.Name, part, why))
 			}
 		}
-		folded := asciicase.Lower(table)
+		folded := tableKey(table)
 		if owner, ok := appSpecBatteryTables[folded]; ok {
 			errs.add(fmt.Errorf("app spec: entity %q uses the table %q, which is %s: the entity would be migrated onto it and serve or break its rows; rename the entity or set table: to another name", decl.Name, table, owner))
 		}
