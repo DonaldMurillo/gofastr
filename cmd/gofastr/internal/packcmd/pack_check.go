@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // packCheck is what pack reports beside the spec it writes: the Go files it
@@ -276,20 +277,33 @@ func reportPackCheck(c packCheck, toStderr bool) {
 // stderr: a line ahead of the document is not valid YAML.
 // The stderr spellings carry no color: yellow and red key on stdout's
 // terminal, not stderr's.
+//
+// The message names files and values from the app directory, so it is
+// scrubbed (packMessage) before it reaches the terminal.
 func packNote(toStderr bool, format string, args ...any) {
+	msg := packMessage(format, args...)
 	if toStderr {
-		fmt.Fprintf(os.Stderr, "  ⚠ %s\n", fmt.Sprintf(format, args...))
+		fmt.Fprintf(os.Stderr, "  ⚠ %s\n", msg)
 		return
 	}
-	cli.Warn(format, args...)
+	cli.Warn("%s", msg)
 }
 
 // packFail reports a pack error and exits 1.
 func packFail(toStderr bool, format string, args ...any) {
+	msg := packMessage(format, args...)
 	if toStderr {
-		fmt.Fprintf(os.Stderr, "  ✗ %s\n", fmt.Sprintf(format, args...))
+		fmt.Fprintf(os.Stderr, "  ✗ %s\n", msg)
 	} else {
-		cli.Fail(format, args...)
+		cli.Fail("%s", msg)
 	}
 	cli.OsExit(1)
+}
+
+// packMessage formats a pack note with every terminal-control and
+// invisible rune percent-encoded (textsafe.ScrubControlBytes): a file
+// name or source string carrying an ESC, an 8-bit CSI/OSC or a bidi
+// override would otherwise drive the terminal the note prints to.
+func packMessage(format string, args ...any) string {
+	return textsafe.ScrubControlBytes(fmt.Sprintf(format, args...))
 }

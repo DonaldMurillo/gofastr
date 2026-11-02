@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr pack` prints no terminal escapes.** A string from the app's
+  source with an ESC, a C1 control, a bidi override or a zero-width
+  space went into the YAML bare, so `gofastr pack` in a cloned repo
+  could drive the terminal (an OSC 52 sequence writes the clipboard).
+  Such a value is now double-quoted with the character escaped and reads
+  back unchanged; a map key holding one is refused, and the check's
+  notes percent-encode them in file names.
 - **`gofastr agents` writes only inside the project.** `agents skill`,
   `agents init`, `agents sync` and `init --reinit` followed a symlink
   anywhere: a cloned repo carrying

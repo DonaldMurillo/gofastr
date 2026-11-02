@@ -693,6 +693,14 @@ prints to stdout, or to a file with `-o`:
 gofastr pack examples/meridian -o recovered.yml
 ```
 
+Every string in the output comes from the app's source, and none reaches
+the terminal raw if it could drive it: a value holding a control or
+invisible character (an ESC, a C1 control, a bidi override, a zero-width
+space) is written double-quoted with that character escaped, and reads
+back as the same bytes. A map key holding one is refused, since keys
+cannot be quoted. The notes pack prints percent-encode the same
+characters in file names.
+
 Pack refuses a `schema.Field` it cannot write back as a spec field,
 naming the field and key, rather than drop it: a set `WireName`,
 `RawType` or other key the spec has no field for, a `Type` with no
