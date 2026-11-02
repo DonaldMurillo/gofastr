@@ -525,6 +525,18 @@ wins over a promoted one with the same key; two embedded structs
 promoting one key at the same depth make `Load` fail with an error
 naming both, as does a `config:` tag on an embedded struct. To keep a
 prefix, name the field (`Base Base` reads `BASE_PORT`).
+
+A promoted field the outer one shadows is never read from a source, so
+it gets its own `default:` tag. When `Cfg` embeds `Base` (whose
+`Port` reads `PORT` with `default:"8080"`) and declares its own `Port`
+reading `PORT`, `cfg.Port` reads `PORT` and `cfg.Base.Port` holds
+`8080`, so a method on `Base` reading `b.Port` sees its default, not
+`0`. The shadowed field's `required:` and `validate:` tags do not
+apply. When a source still holds a key spelled the old way
+(`BASE_PORT`) and no field reads it, `Load` logs one warning per key
+through `slog`'s default logger, naming the key it reads now; `Load`
+still succeeds.
+
 Direct: call `config.Load(&cfg)` at startup. Start at
 `core/config/config.go`: `Load`.
 

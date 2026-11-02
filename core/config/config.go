@@ -23,6 +23,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -111,6 +113,20 @@ type ConfigValidator interface {
 // Name the field (`Base Base`) to read its keys under BASE_. A config
 // tag on an embedded struct is refused.
 //
+// A shadowed field (Base.Port under an outer Port reading the same key)
+// is never bound from a source, so it takes its own `default:` tag, the
+// only value Load can give it: a method on Base reading b.Port then
+// reads what it read before promotion when BASE_PORT was unset, not
+// zero. Its `required` and `validate` tags do not apply. A shadowed
+// named struct takes its fields' defaults the same way; a shadowed
+// pointer is left as it is.
+//
+// The fields of an embedded struct used to be read under the embed's
+// name (BASE_PORT). When a source still holds such a key and no field
+// reads it, Load logs a warning through log/slog's default logger,
+// once per key per process, naming the key it reads now. It never
+// fails Load.
+//
 // `required:"true"` demands a non-empty value: a key that is present
 // but set to the empty string ("SECRET=" in a .env, a ConfigMap key
 // with no value) fails the same way an absent key does. A `default:`
@@ -142,6 +158,7 @@ func LoadWith(cfg any, sources ...Source) error {
 	if len(sources) == 0 {
 		src = ChainedSource{EnvSource{}}
 	}
+	warnLegacyKeys(v.Elem().Type(), src)
 
 	var secrets []string
 	if err := bindStruct(v.Elem(), "", src, &secrets); err != nil {
@@ -248,6 +265,15 @@ type configField struct {
 	nested bool
 	path   string // Go spelling for errors: "Base.Port"
 	sf     reflect.StructField
+	// shadowed marks a promoted field a shallower one with the same key
+	// hides: it is never bound from a source and takes its own default.
+	shadowed bool
+	// legacy is the key the field was read at before embedded fields
+	// were promoted: each embed on its path added "<NAME>_" ahead of
+	// key. hasLegacy is false when an unexported embed is on the path,
+	// since such a field was not read at all.
+	legacy    string
+	hasLegacy bool
 }
 
 // keyLabel is how an error names the field's key.
@@ -275,14 +301,15 @@ func isNestedStruct(t reflect.Type) bool {
 //
 // Two fields reading one key resolve as encoding/json resolves two
 // fields with one name: the shallower one wins and the deeper one is not
-// read at all. Two at the same depth are ambiguous, and where
+// read from any source; it comes back marked shadowed, so Load can give
+// it its default. Two at the same depth are ambiguous, and where
 // encoding/json drops both silently, Load refuses the type.
 //
 // A config tag on an embedded struct is refused rather than read as a
 // prefix: naming the field (`Base Base`) is how a struct's keys get one.
 func configFields(t reflect.Type) ([]configField, error) {
 	var all []configField
-	if err := collectConfigFields(t, nil, "", map[reflect.Type]bool{t: true}, &all); err != nil {
+	if err := collectConfigFields(t, nil, "", "", true, map[reflect.Type]bool{t: true}, &all); err != nil {
 		return nil, err
 	}
 	byKey := map[string][]configField{}
@@ -304,6 +331,9 @@ func configFields(t reflect.Type) ([]configField, error) {
 		for _, f := range group {
 			if len(f.index) == depth {
 				winners = append(winners, f)
+			} else {
+				f.shadowed = true
+				out = append(out, f)
 			}
 		}
 		if len(winners) > 1 {
@@ -323,7 +353,11 @@ func configFields(t reflect.Type) ([]configField, error) {
 // collectConfigFields appends every candidate field of t, descending into
 // embedded structs. active holds the embedded types on the current path,
 // so a type that embeds itself is refused instead of walked forever.
-func collectConfigFields(t reflect.Type, index []int, path string, active map[reflect.Type]bool, out *[]configField) error {
+//
+// legacy is the key prefix the embeds on the path spelled before
+// promotion ("BASE_"), and legacyOK is false once an unexported embed is
+// on the path.
+func collectConfigFields(t reflect.Type, index []int, path, legacy string, legacyOK bool, active map[reflect.Type]bool, out *[]configField) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
 		idx := append(slices.Clone(index), i)
@@ -345,7 +379,7 @@ func collectConfigFields(t reflect.Type, index []int, path string, active map[re
 					return fmt.Errorf("config: recursive struct %s is unsupported", ft)
 				}
 				active[ft] = true
-				err := collectConfigFields(ft, idx, p, active, out)
+				err := collectConfigFields(ft, idx, p, legacy+strings.ToUpper(f.Name)+"_", legacyOK && f.IsExported(), active, out)
 				delete(active, ft)
 				if err != nil {
 					return err
@@ -359,14 +393,15 @@ func collectConfigFields(t reflect.Type, index []int, path string, active map[re
 			continue
 		}
 		if isNestedStruct(f.Type) {
-			*out = append(*out, configField{index: idx, key: strings.ToUpper(f.Name) + "_", nested: true, path: p, sf: f})
+			key := strings.ToUpper(f.Name) + "_"
+			*out = append(*out, configField{index: idx, key: key, nested: true, path: p, sf: f, legacy: legacy + key, hasLegacy: legacyOK})
 			continue
 		}
 		key := f.Tag.Get("config")
 		if key == "" {
 			key = strings.ToUpper(f.Name)
 		}
-		*out = append(*out, configField{index: idx, key: key, path: p, sf: f})
+		*out = append(*out, configField{index: idx, key: key, path: p, sf: f, legacy: legacy + key, hasLegacy: legacyOK})
 	}
 	return nil
 }
@@ -460,7 +495,9 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 	// enforced. One with no key present stays nil and its fields are
 	// skipped, as a nil `DB *DBConfig` is.
 	for _, f := range fields {
-		if fieldHasKey(f, prefix, src) {
+		// A shadowed field's key belongs to the field that shadows it, so
+		// its presence allocates nothing on the shadowed path.
+		if !f.shadowed && fieldHasKey(f, prefix, src) {
 			if err := allocEmbeds(elem, f, prefix); err != nil {
 				return err
 			}
@@ -471,6 +508,13 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 		field := cf.sf
 		fieldVal, ok := reachField(elem, cf)
 		if !ok || !fieldVal.CanSet() {
+			continue
+		}
+
+		if cf.shadowed {
+			if err := applyDefaults(fieldVal, field); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -542,6 +586,124 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 	}
 
 	return nil
+}
+
+// applyDefaults gives a shadowed field the value Load can: its own
+// default tag, never a source's value (the key belongs to the field that
+// shadows it). A struct takes each field's default, recursively; a
+// pointer is left as it is, nil or not, and a field with no default
+// keeps what it holds.
+func applyDefaults(v reflect.Value, sf reflect.StructField) error {
+	if isNestedStruct(sf.Type) {
+		if v.Kind() == reflect.Pointer {
+			return nil
+		}
+		fields, err := configFields(v.Type())
+		if err != nil {
+			return err
+		}
+		for _, f := range fields {
+			fv, ok := reachField(v, f)
+			if !ok || !fv.CanSet() {
+				continue
+			}
+			if err := applyDefaults(fv, f.sf); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	def := sf.Tag.Get("default")
+	if def == "" {
+		return nil
+	}
+	if err := setField(v, def, sf.Name); err != nil {
+		if sf.Tag.Get("sensitive") == "true" {
+			return fmt.Errorf("config: field %s: invalid sensitive default (redacted)", sf.Name)
+		}
+		return err
+	}
+	return nil
+}
+
+// legacyWarned holds the old-spelling keys Load already warned about, so
+// each is reported once per process.
+var legacyWarned sync.Map
+
+// legacyKey is a key spelled the way Load read a promoted field before
+// promotion, and the key that field reads now ("" when it is shadowed).
+type legacyKey struct {
+	old, now, path string
+}
+
+// warnLegacyKeys logs, once per key, every pre-promotion key spelling
+// ("BASE_PORT" for Base's PORT in `struct{ Base }`) that src holds and
+// no field of t reads. It reads only presence, never values, and never
+// fails: the warning is how an app that still sets the old key learns
+// it is ignored.
+func warnLegacyKeys(t reflect.Type, src Source) {
+	read := map[string]bool{}
+	var legacy []legacyKey
+	collectLegacyKeys(t, "", "", true, false, read, &legacy, map[reflect.Type]bool{})
+	for _, l := range legacy {
+		if read[l.old] {
+			continue
+		}
+		if _, ok := src.Get(l.old); !ok {
+			continue
+		}
+		if _, dup := legacyWarned.LoadOrStore(l.old, true); dup {
+			continue
+		}
+		if l.now == "" {
+			slog.Warn("config: key is no longer read: the embedded struct field it named is shadowed by an outer field with the same key and takes its default tag",
+				"key", l.old, "field", l.path)
+			continue
+		}
+		slog.Warn("config: key is no longer read: embedded struct fields are promoted without the embed's name; set the key this field reads now",
+			"key", l.old, "reads", l.now, "field", l.path)
+	}
+}
+
+// collectLegacyKeys walks t's fields as Load binds them, recording every
+// key Load reads in read and every leaf whose pre-promotion key differs
+// from its key now in legacy. prefix and legacyPrefix are the two
+// spellings' prefixes so far; legacyOK is false below an unexported
+// embed, whose fields were never read, and shadowed marks a subtree no
+// source binds.
+func collectLegacyKeys(t reflect.Type, prefix, legacyPrefix string, legacyOK, shadowed bool, read map[string]bool, legacy *[]legacyKey, active map[reflect.Type]bool) {
+	if active[t] {
+		return
+	}
+	active[t] = true
+	defer delete(active, t)
+	fields, err := configFields(t)
+	if err != nil {
+		return // checkConfigShape refused the type before this walk
+	}
+	for _, f := range fields {
+		hidden := shadowed || f.shadowed
+		ok := legacyOK && f.hasLegacy
+		now, old := prefix+f.key, legacyPrefix+f.legacy
+		if f.nested {
+			ft := f.sf.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			collectLegacyKeys(ft, now, old, ok, hidden, read, legacy, active)
+			continue
+		}
+		if !hidden {
+			read[now] = true
+		}
+		if ok && old != now {
+			l := legacyKey{old: old, now: now, path: f.path}
+			if hidden {
+				l.now = ""
+			}
+			*legacy = append(*legacy, l)
+		}
+	}
 }
 
 // setField sets a reflect.Value from a string, converting to the

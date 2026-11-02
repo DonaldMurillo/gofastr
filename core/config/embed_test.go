@@ -127,7 +127,8 @@ func TestUnexportedPointerEmbed(t *testing.T) {
 }
 
 // A shallower field shadows a promoted one with the same key: only the
-// outer field is bound, and the shadowed field's tags do not apply.
+// outer field is bound from the source; the shadowed field takes only its
+// own default (none here), never its required tag.
 func TestShallowerFieldWins(t *testing.T) {
 	type Inner struct {
 		Port int `config:"PORT" required:"true"`
