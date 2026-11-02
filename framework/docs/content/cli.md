@@ -379,7 +379,9 @@ A file none of those reach is listed in a NOTE at the top of the
 report, with its reason: a constraint nothing satisfies
 (`linux && windows`), a `//go:build ignore` file declaring its
 directory's own package (disabled code that no build includes), or a
-configuration that did not compile it. Read those by hand.
+configuration that did not compile it. A `gofastr.yml` (or
+`*.gofastr.yml`) the YAML parser refuses is listed the same way, with
+the parse error: no `config` matcher read it. Read those by hand.
 
 Each matcher reads the code the way its language means it:
 

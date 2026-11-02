@@ -140,6 +140,10 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr upgrade` lists a `gofastr.yml` it could not parse.** The
+  config matchers skipped the file silently, so every `config:` note
+  read "Nothing found" over a spec nobody had read. It now sits in the
+  report's "could not be scanned" NOTE with the parse error.
 - **`gofastr upgrade` handles vendored apps and release candidates.**
   `--apply` runs `go mod vendor` after `go mod tidy` when the app has
   `vendor/modules.txt`; its `go build` used to fail on inconsistent
