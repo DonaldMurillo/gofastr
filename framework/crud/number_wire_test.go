@@ -241,7 +241,11 @@ func TestBatchNumbersMatchCreate(t *testing.T) {
 	w.ch.Hooks = hook.NewHookRegistry()
 	w.ch.Hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, data any) error {
 		m, _ := data.(map[string]any)
-		seen = append(seen, fmt.Sprintf("%T %T", m["amount"], m["meta"].(map[string]any)["n"]))
+		// Only the two probes below carry meta; a hook that panicked on
+		// the others would fail them with 500 before validation runs.
+		if meta, ok := m["meta"].(map[string]any); ok {
+			seen = append(seen, fmt.Sprintf("%T %T", m["amount"], meta["n"]))
+		}
 		return nil
 	})
 	w.post(`{"amount":7,"meta":{"n":1.5}}`)

@@ -28,6 +28,11 @@ A Before hook that returns an error refuses the write: the HTTP handlers
 answer 400, and an in-process caller (`CreateOne`, `UpdateOne`,
 `DeleteOne`) gets an error `crud.IsHookRefusal` reports true for.
 
+A hook that panics has faulted rather than refused. The registry
+recovers it, logs the value and stack, and returns a `*hook.PanicError`;
+the write rolls back and the HTTP handlers answer 500 with the generic
+body, never the panic value, and `crud.IsHookRefusal` reports false.
+
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
 hook that fills in or normalizes a field mutates the body the validator
 then checks; use them to supply server-derived values that must pass

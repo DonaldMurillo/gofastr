@@ -751,3 +751,7 @@ notes:
     breaking: false
     guidance: "Each such screen was unreachable from a browser, stopped the app at boot (on the CRUD mount), or was answered by the CRUD API (under it). Fix the route in the app spec before regenerating."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "A Before hook that panics fails the write with 500 and the generic body; it used to answer 400 with \"hook panic: <value>\", and crud.IsHookRefusal now reports false for it"
+    breaking: false
+    guidance: "A client that read a 400 for a hook panic now reads 500. A hook that means to refuse a write returns an error instead of panicking."
+    nodetect: "a panic inside a hook is a runtime behaviour, not a source shape"

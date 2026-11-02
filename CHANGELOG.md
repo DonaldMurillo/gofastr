@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A panicking Before hook answers 500, not 400 with its panic value.**
+  The hook registry turned a panic into `hook panic: <value>`, and the
+  CRUD routes answered every Before hook error with 400 and its text, so
+  whatever the hook held when it faulted (a DSN, a query) reached the
+  client and the fault read as the caller's mistake. A recovered panic is
+  now a `*hook.PanicError`, logged with its stack; create, update, delete
+  and batch items answer it with the generic 500 body, and
+  `crud.IsHookRefusal` reports false for it.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
