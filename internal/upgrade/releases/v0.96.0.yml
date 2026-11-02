@@ -1100,3 +1100,11 @@ notes:
       uses:
         - gofastr/battery/storage.NewLocalStorage
         - gofastr/core/upload.NewLocalStorage
+  - change: "BREAKING - battery/storage S3Storage and DefaultKeyValidator refuse an absolute key, a key with a control byte, and a key not in its clean form (a//b, ./a, a/./b, a trailing slash, .) with upload.ErrInvalidKey; S3Storage.PresignedGetURL and PresignedPutURL refuse an expiry <= 0"
+    breaking: true
+    hits: review
+    guidance: "Keys the framework mints are already clean. A key your code builds by joining strings goes through path.Clean with no leading slash before Save, and objects already stored under such a key in a bucket need renaming. Pass a positive duration to the presign calls."
+    find:
+      uses:
+        - gofastr/battery/storage.NewS3Storage
+        - gofastr/battery/storage.DefaultKeyValidator

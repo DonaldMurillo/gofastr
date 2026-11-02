@@ -6116,6 +6116,15 @@ few lines, and link the PR or the docs page for the rest.
   different long name, so a save under one could overwrite the other.
   Windows now always lists; elsewhere a `~` in a name does. See
   [uploads](framework/docs/content/uploads.md).
+- BREAKING: **`battery/storage` S3 keys and `DefaultKeyValidator` refuse
+  absolute, control-byte and unclean keys; presigning refuses a
+  non-positive expiry.** `DefaultKeyValidator` passed `/etc/passwd` and a
+  NUL byte despite its doc, and `S3Storage` refused only `..`: `a//b`,
+  `./a` and a leading `/` reached the bucket as objects distinct from the
+  key they spell. Both now refuse those with `upload.ErrInvalidKey`, and
+  `PresignedGetURL` / `PresignedPutURL` refuse `expires <= 0`. A host
+  that stored such keys renames them (`path.Clean`, no leading `/`). See
+  [storage](framework/docs/content/storage.md).
 
 ## [0.95.0] - 2026-10-26
 
