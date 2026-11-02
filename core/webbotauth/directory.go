@@ -614,6 +614,12 @@ func responseTTL(h http.Header, now time.Time) (time.Duration, bool) {
 			part = strings.TrimSpace(part)
 			if v, ok := strings.CutPrefix(part, "max-age="); ok {
 				if secs, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && secs >= 0 {
+					// Bound the seconds before they become a Duration: a
+					// max-age past MaxInt64 nanoseconds wrapped, and the
+					// clamp then saw the wrapped value.
+					if secs > int64(maxPositiveTTL/time.Second) {
+						return maxPositiveTTL, true
+					}
 					return clampTTL(time.Duration(secs) * time.Second), true
 				}
 			}
