@@ -417,6 +417,7 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 			}
 		}
 		if s.passDone != nil {
+			//gofastr:allow(recovercallback) package-test seam, nil in production; a panicking test hook should fail its test
 			s.passDone(now, delay)
 		}
 		if !timer.Stop() {

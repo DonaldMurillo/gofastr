@@ -1261,6 +1261,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		}
 		q.noteClaimOK()
 		if q.afterClaim != nil {
+			//gofastr:allow(recovercallback) package-test seam, nil in production; a panicking test hook should fail its test
 			q.afterClaim(job)
 		}
 		h, ok := q.handlerFor(job.Type)
