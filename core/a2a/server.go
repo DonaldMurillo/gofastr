@@ -111,9 +111,12 @@ type Config struct {
 	DefaultPageSize, MaxPageSize int
 
 	// TerminalTaskRetention bounds how many TERMINAL task rows
-	// (completed / failed / canceled / rejected) one owner retains:
-	// past the bound the OLDEST terminal rows are deleted after each
-	// settle. 0 = 64 (every row carries the caller's message body, and
+	// (completed / failed / canceled / rejected) one owner retains in
+	// each tier (RetentionTier: the tenant and scope set a task was made
+	// under): past the bound the tier's OLDEST terminal rows are
+	// deleted after each settle in that tier, and no other tier's rows
+	// are counted or touched. An owner therefore retains up to this
+	// many per tenant and scope set it acts in. 0 = 64 (every row carries the caller's message body, and
 	// the default store is in-RAM, so cheap authenticated writes must
 	// not grow it without end); negative disables trimming for hosts
 	// that own retention themselves. Applies to stores implementing
@@ -121,11 +124,12 @@ type Config struct {
 	TerminalTaskRetention int
 
 	// PausedTaskRetention bounds how many PAUSED task rows (input or
-	// auth required) one owner retains: a skill that pauses on every
-	// send would otherwise mint a row per send that terminal retention
-	// never reaches. Past the bound the OLDEST paused tasks are
-	// canceled after each pause, and terminal retention then trims
-	// them. 0 = 64; negative disables.
+	// auth required) one owner retains in each tier, as
+	// TerminalTaskRetention counts: a skill that pauses on every send
+	// would otherwise mint a row per send that terminal retention never
+	// reaches. Past the bound the tier's OLDEST paused tasks are
+	// canceled after each pause in that tier, and terminal retention
+	// then trims them. 0 = 64; negative disables.
 	PausedTaskRetention int
 
 	// MaxPushConfigsPerTask bounds push-notification configs per task
@@ -1240,13 +1244,14 @@ func (s *Server) storePushConfig(ctx context.Context, owner string, cfg *PushNot
 	return nil
 }
 
-// trimTerminalTasks bounds the owner's retained TERMINAL task rows
-// (Config.TerminalTaskRetention). Called after every persist that
-// leaves a task terminal. A store that does not implement
-// RetentionTrimmer keeps its own policy. Failure is a log line, never
-// a task-write failure: retention is an internal bound behind the
-// write it follows.
-func (s *Server) trimTerminalTasks(owner string) {
+// trimTerminalTasks bounds the TERMINAL task rows one tier retains
+// (Config.TerminalTaskRetention per owner, tenant and scope). Called
+// after every persist that leaves a task terminal, with that task's
+// tier: one tier's writes never trim another's rows. A store that does
+// not implement RetentionTrimmer keeps its own policy. Failure is a log
+// line, never a task-write failure: retention is an internal bound
+// behind the write it follows.
+func (s *Server) trimTerminalTasks(owner string, tier RetentionTier) {
 	if s.maxTerminalTasks < 0 {
 		return
 	}
@@ -1256,7 +1261,7 @@ func (s *Server) trimTerminalTasks(owner string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 	defer cancel()
-	if err := rt.TrimTerminalTasks(ctx, owner, s.maxTerminalTasks); err != nil {
+	if err := rt.TrimTerminalTasks(ctx, owner, tier, s.maxTerminalTasks); err != nil {
 		s.log.Error("a2a: trim terminal tasks", "owner", owner, "err", err)
 	}
 }
@@ -1265,28 +1270,42 @@ func (s *Server) trimTerminalTasks(owner string) {
 // per state. Every pause trims, so the excess is normally one row.
 const pausedTrimBatch = 16
 
-// trimPausedTasks bounds the owner's PAUSED task rows
-// (Config.PausedTaskRetention). Called after every persist that leaves a
-// task paused. Past the bound the oldest are canceled through the store,
-// so it works on any Store, and the canceled rows then fall to terminal
+// trimPausedTasks bounds the PAUSED task rows one tier retains
+// (Config.PausedTaskRetention per owner, tenant and scope). Called after
+// every persist that leaves a task paused, with that task's tier. Past
+// the bound the tier's oldest are canceled through the store, so it
+// works on any Store, and the canceled rows then fall to terminal
 // retention. A handler still running on a canceled task gets a version
 // conflict on its next write, as after CancelTask. Failure is a log
 // line, like the other trims.
-func (s *Server) trimPausedTasks(owner string) {
+func (s *Server) trimPausedTasks(owner string, tier RetentionTier) {
 	if s.maxPausedTasks < 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 	defer cancel()
+	// A store that filters by scope and tenant pages the tier itself; one
+	// that does not may return every tier, so it is read whole and the
+	// tier picked out below (a page cut across tiers could miss the
+	// tier's own oldest rows).
+	_, scopeFilters := s.store.(ScopeFilter)
+	_, tenantFilters := s.store.(TenantFilter)
 	var paused []*TaskRecord
 	for _, st := range []TaskState{TaskStateInputRequired, TaskStateAuthRequired} {
-		recs, _, err := s.store.ListTasks(ctx, owner, ListQuery{Status: st, Limit: s.maxPausedTasks + pausedTrimBatch})
+		q := ListQuery{Status: st, Scoped: true, Scope: tier.Scope, Tenanted: true, Tenant: tier.Tenant}
+		if scopeFilters && tenantFilters {
+			q.Limit = s.maxPausedTasks + pausedTrimBatch
+		}
+		recs, _, err := s.store.ListTasks(ctx, owner, q)
 		if err != nil {
 			s.log.Error("a2a: list paused tasks", "owner", owner, "err", err)
 			return
 		}
 		paused = append(paused, recs...)
 	}
+	// Never count or cancel another tier's row, whatever the store's
+	// filtering did.
+	paused = slices.DeleteFunc(paused, func(rec *TaskRecord) bool { return !tier.holds(rec) })
 	// A task that moved between the two states while they were listed
 	// shows up in both; count it once, at its newest state.
 	sortRecsNewestFirst(paused)
@@ -1318,7 +1337,7 @@ func (s *Server) trimPausedTasks(owner string) {
 		canceled = true
 	}
 	if canceled {
-		s.trimTerminalTasks(owner)
+		s.trimTerminalTasks(owner, tier)
 	}
 }
 
@@ -1854,7 +1873,7 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request, req *r
 		s.writeResult(w, req.ID, SendMessageResponse{Task: &task}, nil)
 		// The cancel write left the task terminal: same retention hook
 		// as the run's own finalize.
-		s.trimTerminalTasks(owner)
+		s.trimTerminalTasks(owner, TierOf(cand))
 		return
 	}
 	s.writeResult(w, req.ID, nil, Errorf(CodeInternalError, "internal error"))

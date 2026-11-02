@@ -260,7 +260,7 @@ func (m *MemoryStore) DeletePushConfig(_ context.Context, owner, taskID, id stri
 }
 
 // TrimTerminalTasks implements RetentionTrimmer: it keeps the newest
-// `keep` terminal rows for owner and deletes the older ones.
+// `keep` terminal rows of owner in tier and deletes the older ones.
 // Non-terminal rows (a task in flight, or paused on input) are never
 // retention's to touch. A trimmed task's push configs go with it: no
 // event can reach them again.
@@ -270,7 +270,7 @@ func (m *MemoryStore) DeletePushConfig(_ context.Context, owner, taskID, id stri
 // between the replica that wrote created_at and the one trimming.
 const orphanPushGrace = 10 * time.Minute
 
-func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, keep int) error {
+func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, tier RetentionTier, keep int) error {
 	if keep < 0 {
 		return nil
 	}
@@ -278,7 +278,7 @@ func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, keep in
 	defer m.mu.Unlock()
 	var terminal []*TaskRecord
 	for key, rec := range m.tasks {
-		if key.owner == owner && rec.Task.Status.State.Terminal() {
+		if key.owner == owner && tier.holds(rec) && rec.Task.Status.State.Terminal() {
 			terminal = append(terminal, rec)
 		}
 	}
