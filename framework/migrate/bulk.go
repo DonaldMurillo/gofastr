@@ -9,7 +9,9 @@ import (
 )
 
 // ReadLiveColumnsBulk reads column metadata for multiple tables in a
-// single query. Returns a map of table name → {column name → type}.
+// single query. Returns a map of table name → {column name → type}, the
+// types ReadLiveColumns reports (on Postgres, data_type with a character
+// type's width: "character varying(255)").
 //
 // This replaces N individual ReadLiveColumns calls with one bulk
 // WHERE table_name IN (...) query, reducing SchemaDiff from ~59ms

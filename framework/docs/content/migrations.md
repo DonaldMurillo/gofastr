@@ -372,7 +372,11 @@ hand-tighten. A `String` whose `Max` changed is a type change on
 Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
 VARCHAR(200)` widens it, and a narrower width fails on a row that no
 longer fits rather than cutting it. SQLite ignores the width, so the
-same change there rebuilds nothing. On SQLite,
+same change there rebuilds nothing. To see the width, the live column read
+behind this, `migrate.ReadLiveColumns` (and `ReadLiveColumnsPostgres`,
+`ReadLiveColumnsBulk`), reports a Postgres character column as
+`character varying(255)`, information_schema's `data_type` plus the
+width; other types are the bare `data_type`. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old

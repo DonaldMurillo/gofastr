@@ -1070,8 +1070,12 @@ type queryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// ReadLiveColumns returns a map of column_name → data_type from the live
-// DB. Empty map means "table doesn't exist".
+// ReadLiveColumns returns a map of column name → column type from the live
+// DB. Empty map means "table doesn't exist". On Postgres the type is
+// information_schema's data_type plus the width a character type declares
+// ("character varying(255)", "character(2)"; "text", "bigint" and the like
+// carry none). On SQLite it is the type the table was declared with, as
+// PRAGMA table_info reports it.
 func ReadLiveColumns(ctx context.Context, db *sql.DB, table string, dialect Dialect) (map[string]string, error) {
 	return readLiveColumnsQ(ctx, db, table, dialect)
 }
@@ -1095,6 +1099,8 @@ func readEntityColumnsQ(ctx context.Context, q queryer, table string, dialect Di
 	return readLiveColumnsSQLiteQ(ctx, q, table)
 }
 
+// ReadLiveColumnsPostgres is ReadLiveColumns on Postgres: column name →
+// data_type, with a character type's width ("character varying(255)").
 func ReadLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
 	return readLiveColumnsPostgresQ(ctx, db, table, false)
 }
