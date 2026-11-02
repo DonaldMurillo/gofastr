@@ -140,6 +140,9 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`access.Can(nil, …)` returns false.** It read the context without
+  the nil check `GetPermissions`, `CanResource` and `CanResourceExact`
+  already hold, and panicked.
 - **A strict replica applies a revoke after a capability it does not
   know.** In a rolling deploy, a newer replica granted a role a
   capability the older strict replica had not registered, and every
