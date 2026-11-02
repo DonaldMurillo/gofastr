@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`email.SMTPSender` refuses a `Headers` key that is not one field
+  name, or that names a field the `Email` carries.** A key went out as
+  the field name with only a CR/LF check: `"X-A: b"` or `"X A"` wrote a
+  line that reads as another field, a leading space folded it into the
+  header above, and `To`, `Cc`, `From` or `Subject` gave the message two
+  of that field, so a reader showed one recipient list while the envelope
+  used the other. `Bcc` published the blind list the sender never writes.
+  These now fail with `ErrSendFailed`; see [email](framework/docs/content/email.md).
 - **Local storage no longer lists a directory to serve one file.** The
   fold check behind both local backends (`upload.RefuseFoldedKey`) read
   the whole parent directory, with an lstat per entry, on every Get,

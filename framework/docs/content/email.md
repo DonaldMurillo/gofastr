@@ -42,9 +42,13 @@ err := sender.Send(ctx, email.Email{
 |               |                  | message is `multipart/alternative` (text first,    |
 |               |                  | HTML last), so a client shows one of them.         |
 | `Attachments` | `[]Attachment`   | Optional.                                          |
-| `Headers`     | `map[string]string` | Optional custom headers. `Content-Type`,       |
-|               |                  | `Content-Transfer-Encoding` and `MIME-Version`   |
-|               |                  | are refused: the sender writes them.             |
+| `Headers`     | `map[string]string` | Optional custom headers. A key must be a       |
+|               |                  | header field name (printable ASCII, no colon or  |
+|               |                  | space). `From`, `To`, `Cc`, `Bcc`, `Subject`,    |
+|               |                  | `Content-Type`, `Content-Transfer-Encoding` and  |
+|               |                  | `MIME-Version` are refused in any ASCII case:    |
+|               |                  | the sender writes them from the `Email` (and     |
+|               |                  | never writes `Bcc`).                             |
 
 `Attachment` carries `Filename`, `Content` (`[]byte`), and `ContentType`.
 A message with attachments is `multipart/mixed`: the body comes first

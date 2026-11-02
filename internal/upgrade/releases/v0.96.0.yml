@@ -721,3 +721,7 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
+  - change: "email.SMTPSender refuses a Headers key that is not a header field name (printable ASCII, no colon or space) or that names From, To, Cc, Bcc or Subject, with ErrSendFailed"
+    breaking: false
+    guidance: "Set those fields on the Email itself (Email.From, To, CC, BCC, Subject). A Headers copy gave the message two of the field, or, for Bcc, published the blind list. A key with a colon or space was never a working header."
+    nodetect: "Headers keys are map keys built at runtime; no fixed spelling in an app's source marks them"
