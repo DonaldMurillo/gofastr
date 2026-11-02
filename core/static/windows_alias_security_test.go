@@ -107,6 +107,70 @@ func TestRefusesWindowsPathAliases(t *testing.T) {
 	}
 }
 
+// shortNameFS adds NTFS 8.3 short names to windowsFS: a volume with 8.3
+// generation on opens WEB~1.CON as web.config and ENV~1 as .env (the
+// leading dot is dropped from a short name), so a refusal that reads the
+// long names never sees the request.
+type shortNameFS struct {
+	windowsFS
+	short map[string]string
+}
+
+func (s shortNameFS) Open(name string) (fs.File, error) {
+	segs := strings.Split(name, "/")
+	for i, seg := range segs {
+		for sn, long := range s.short {
+			if strings.EqualFold(seg, sn) {
+				segs[i] = long
+			}
+		}
+	}
+	return s.windowsFS.Open(strings.Join(segs, "/"))
+}
+
+// TestStaticRefusesWindowsShortNames: on a Windows volume that generates
+// 8.3 names, GET /WEB~1.CON served web.config and /ENV~1 served .env past
+// the config and dotfile refusals, which judge the spelled name. A segment
+// holding "~" then a digit is the short-name shape, refused on every OS
+// as the backslash split is, so every platform gives one answer.
+func TestStaticRefusesWindowsShortNames(t *testing.T) {
+	files := fstest.MapFS{
+		".env":           {Data: []byte("SECRET_KEY=abc123")},
+		".git/config":    {Data: []byte("[remote]")},
+		"web.config":     {Data: []byte("<configuration/>")},
+		"assets/app.css": {Data: []byte("body{}")},
+		"a~b.txt":        {Data: []byte("tilde")},
+	}
+	sfs := shortNameFS{windowsFS{files}, map[string]string{"WEB~1.CON": "web.config", "ENV~1": ".env", "GIT~1": ".git"}}
+	if f, err := sfs.Open("ENV~1"); err != nil {
+		t.Fatalf("setup: the emulated short name does not reach .env: %v", err)
+	} else {
+		f.Close()
+	}
+	h := Handler(Config{FS: sfs})
+	for _, p := range []string{"/WEB~1.CON", "/web~1.con", "/ENV~1", "/GIT~1/config", "/assets/..%5CWEB~1.CON"} {
+		if rr := doGet(h, p); rr.Code != http.StatusNotFound {
+			t.Errorf("GET %s: status %d (body %q), want 404: the short name opens a refused file on Windows", p, rr.Code, rr.Body.String())
+		}
+	}
+	for _, p := range []string{"/assets/app.css", "/a~b.txt"} {
+		if rr := doGet(h, p); rr.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200: a ~ not followed by a digit is no short name", p, rr.Code)
+		}
+	}
+
+	for _, p := range []string{`WEB~1.CON`, `sub/ENV~1`, `GIT~12\config`, `x/PROGRA~1`} {
+		if !Refuses(p) {
+			t.Errorf("Refuses(%q) = false, want true", p)
+		}
+	}
+	for _, p := range []string{"a~b.txt", "notes.txt~", "~/x.css", "v1.2/app.css"} {
+		if Refuses(p) {
+			t.Errorf("Refuses(%q) = true, want false", p)
+		}
+	}
+}
+
 // TestStaticRefusesBackslashDotfileOnDisk runs the same request against a
 // real directory through *os.Root. It is the end-to-end proof on Windows;
 // elsewhere a backslash is an ordinary byte and the open misses anyway.

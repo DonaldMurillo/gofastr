@@ -6125,6 +6125,14 @@ few lines, and link the PR or the docs page for the rest.
   `PresignedGetURL` / `PresignedPutURL` refuse `expires <= 0`. A host
   that stored such keys renames them (`path.Clean`, no leading `/`). See
   [storage](framework/docs/content/storage.md).
+- BREAKING: **`core/static` refuses Windows 8.3 short names.** On a
+  Windows volume that generates them, `GET /WEB~1.CON` served
+  `web.config` and `/ENV~1` served `.env` past the config and dotfile
+  refusals. A path segment holding `~` followed by a digit now answers
+  404 on every OS, in the handler and `static.Refuses` (the UI host's
+  static dir and the static export), as the backslash split already
+  does. A file served under such a name (`photo~1.png`) needs renaming.
+  See [core packages](framework/docs/content/core-packages.md#static).
 
 ## [0.95.0] - 2026-10-26
 

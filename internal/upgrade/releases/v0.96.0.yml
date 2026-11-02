@@ -1108,3 +1108,10 @@ notes:
       uses:
         - gofastr/battery/storage.NewS3Storage
         - gofastr/battery/storage.DefaultKeyValidator
+  - change: "BREAKING - core/static (and static.Refuses, so the UI host's static dir and the static export) answers 404 for a path segment holding ~ followed by a digit on every OS: a Windows 8.3 short name such as WEB~1.CON opened web.config past the config and dotfile refusals"
+    breaking: true
+    hits: review
+    guidance: "Rename any served asset whose name holds ~ then a digit (photo~1.png to photo-1.png) and update the links to it. A ~ followed by anything else (a~b.txt, notes.txt~) is still served."
+    find:
+      strings:
+        match: '~[0-9]'

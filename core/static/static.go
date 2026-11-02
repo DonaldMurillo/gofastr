@@ -145,6 +145,12 @@ func Handler(config Config) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// Refuse Windows 8.3 short names (WEB~1.CON opens web.config,
+		// ENV~1 opens .env), which the two refusals above cannot read.
+		if hasShortNameSegment(reqPath) {
+			http.NotFound(w, r)
+			return
+		}
 
 		// Reopen the original directory for this request. No idle handle
 		// pins it on Windows, and identity checking refuses a replacement.
@@ -566,20 +572,43 @@ func hasDotDotSegment(p string) bool {
 	return false
 }
 
+// Refuses reports whether the handler refuses p, a slash-separated path
+// below the served root: one with a dot segment (.env, .git/config), a
+// well-known server config file (web.config), or a Windows 8.3 short
+// name (WEB~1.CON). Code that serves or publishes a file tree by another
+// route calls it to refuse the same paths.
+func Refuses(p string) bool {
+	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p) || hasShortNameSegment(p)
+}
+
+// hasShortNameSegment reports whether any path component holds a "~"
+// followed by a digit, the shape of an NTFS 8.3 short name. On a volume
+// that generates them, Windows opens WEB~1.CON as web.config and ENV~1
+// as .env, names the dotfile and config refusals never see. Which long
+// name a short one stands for is the volume's choice, so every such
+// segment is refused, on every OS like the backslash split
+// (pathSegments), so every platform gives one answer.
+func hasShortNameSegment(p string) bool {
+	for _, component := range pathSegments(p) {
+		for i := strings.IndexByte(component, '~'); i >= 0; {
+			if i+1 < len(component) && component[i+1] >= '0' && component[i+1] <= '9' {
+				return true
+			}
+			next := strings.IndexByte(component[i+1:], '~')
+			if next < 0 {
+				break
+			}
+			i += 1 + next
+		}
+	}
+	return false
+}
+
 // hasDotfileSegment reports whether any path component starts with a
 // dot (excluding the bare "." and ".." segments path.Clean would have
 // already resolved). Dotfiles routinely hold secrets (.env, .htpasswd)
 // or VCS metadata (.git) and must not be served by a public static
 // handler.
-// Refuses reports whether the handler refuses p, a slash-separated path
-// below the served root: one with a dot segment (.env, .git/config) or a
-// well-known server config file (web.config). Code that serves or
-// publishes a file tree by another route calls it to refuse the same
-// paths.
-func Refuses(p string) bool {
-	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p)
-}
-
 func hasDotfileSegment(p string) bool {
 	for _, component := range pathSegments(p) {
 		if component == "" || component == "." || component == ".." {
