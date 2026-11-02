@@ -41,9 +41,13 @@ type Cache interface {
 
 Values are stored as JSON. Reading one back into a typed destination
 works as `json.Unmarshal` does; into an interface (`*any`,
-`map[string]any`, `[]any`) every number stays exact: a float64 when a
-float64 holds it, a `json.Number` for an integer past 2^53, so a cached
-id `9007199254740993` does not come back as `…992`.
+`map[string]any`, `[]any`) every number stays exact. The line is the
+magnitude: a number below 2^53 (9007199254740992) in absolute value
+reads back as a float64, and every number at or past it as a
+`json.Number`, so a cached id `9007199254740993` does not come back as
+`…992`. That includes values a float64 holds exactly, such as `1e20` or
+a `UnixNano` timestamp (about `1.7e18`): accept `json.Number` there, or
+read into a typed destination.
 
 All call sites depend only on this interface. Swap `MemoryCache` for
 `RedisCache` (or a future backend) without touching business logic.

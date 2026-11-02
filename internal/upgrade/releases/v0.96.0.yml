@@ -967,9 +967,9 @@ notes:
         - gofastr/battery/log.MustFileSink
         - gofastr/battery/log.DefaultFileSink
         - gofastr/battery/log.New
-  - change: "battery/cache reads a value back into an interface (map[string]any, *any, []any) with integers past 2^53 as json.Number instead of a rounded float64"
+  - change: "battery/cache reads a value back into an interface (map[string]any, *any, []any) with every number of magnitude 2^53 or more as json.Number instead of a float64"
     breaking: false
-    guidance: "A cached id 9007199254740993 came back as 9007199254740992. Numbers a float64 holds exactly are still float64, so most code sees no change; code that type-asserts a large integer under an interface to float64 should accept json.Number (or decode into a typed struct)."
+    guidance: "A cached id 9007199254740993 came back as 9007199254740992. Numbers below 2^53 in magnitude are still float64, so most code sees no change; code that type-asserts a number at or past 2^53 under an interface to float64 (a large id, a UnixNano timestamp, 1e20) should accept json.Number (or decode into a typed struct)."
     find:
       uses:
         - gofastr/battery/cache.NewMemoryCache

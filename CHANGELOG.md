@@ -496,8 +496,10 @@ few lines, and link the PR or the docs page for the rest.
   `MemoryCache`, `RedisCache` and `GetOrSet` decoded with
   `json.Unmarshal`, so a value read into `map[string]any` or `*any` had
   every number as float64 and a cached id `9007199254740993` came back
-  as `9007199254740992`. An integer past 2^53 now reads back as a
-  `json.Number`; every other number is still a float64.
+  as `9007199254740992`. A number whose magnitude is 2^53 or more now
+  reads back as a `json.Number`, even one a float64 holds exactly
+  (`1e20`, a `UnixNano` timestamp); every smaller number is still a
+  float64.
 - **`cache.GetOrSet` returns a loaded value whose entry was already
   evicted.** Every waiter read its value back from the cache after the
   fill, so an entry an LRU bound or Redis `maxmemory` evicted (or a short
