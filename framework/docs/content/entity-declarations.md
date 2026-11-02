@@ -1209,6 +1209,9 @@ is accepted, not refused.
 **Unstorable text is a 400.** A `?q=` holding invalid UTF-8 or a NUL byte
 answers 400 naming `q`, like any other filter value: Postgres refuses it
 in a text bind. `filter.SearchConditions` returns that error.
+The same holds for a record id in the path: `GET`, `PUT`, `PATCH` and
+`DELETE /{id}` answer 400 for an id that is not storable text instead of
+reaching the store.
 
 **Back-compat.** An entity WITHOUT `SearchFields` ignores `?q=` exactly
 as before: no behavioural change.

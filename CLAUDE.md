@@ -526,6 +526,110 @@ expose them to agents connected to a live app.**
   violation. Matcher bugs with no code shape (audit key spellings, email
   body and header redaction, chart NaN) were red probes and are now
   permanent `*_security_test.go` / `_test.go` tests.
+  The 2026-11 bug bashes (PRs #642–#646 and round 2, ~116 fix commits)
+  produced the next set, one per repeated shape; about half of that
+  corpus was parity drift, races and protocol semantics no lint reaches.
+  Numbers: `optzero` (an exported With*/Set* option storing a numeric
+  parameter unchecked into a field with a nonzero default, where no use
+  site compares the field to 0: a 0 lease, TTL or poll interval meant
+  "expire at once"; its twin arm is `if x == 0 { x = default }` with no
+  ordered check before make, a timer, WithTimeout, Add or LIMIT — fix
+  `if d > 0 { o.f = d }`), `bareduration` (a positive untyped integer
+  implicitly converted to time.Duration: `Every(5)` is five
+  nanoseconds), and `intwrap` grew shape D (`time.Duration(x) *
+  time.<Unit>` on a wire/parse/parameter int with no upper bound BEFORE
+  the multiply), shape E (`cap+1` into io.LimitReader/CopyN/
+  MaxBytesReader on a configured cap; fix `sentinelLimit`) and shape F
+  (`(page-1)*limit` with no pre-check). Lifecycle: `recovercallback` now
+  links goroutine literals' own calls (it attributed them to the
+  enclosing function and missed a2a's finalize goroutine) and counts an
+  `*http.Client` send through a host-fillable field as host code;
+  `settlectx` treats a claim as work and its hand-back (release,
+  handBack, requeue, unlock) as an outcome, fires on an audit sink handed
+  `r.Context()` after an earlier call on it, and on an unbounded
+  WithoutCancel handed to a host interface; `iounderlock` (network I/O
+  under any sync lock, database I/O under a mutex that guards a
+  throttle/TTL timestamp — the sweep and JWKS shapes; claim under the
+  lock, do the I/O outside); `poisonedconn` (a session reset —
+  pg_advisory_unlock, RESET, SET, DISCARD, ROLLBACK — on a pinned
+  `*sql.Conn` with no `conn.Raw(… driver.ErrBadConn)` retire, or an
+  unlock whose false is lost); `deferreset` (a flag or claim set before
+  ServeHTTP/Hijack/a callback and reset after it outside a defer).
+  Response writers: `wrapwriter` gained a partial-latch arm (Flush,
+  FlushError or ReadFrom skipping a latch Write/WriteHeader set; a
+  pass-through Write with no ReadFrom, which loses sendfile; a latch set
+  before the forwarded WriteHeader returns); `recoverwrite` (a deferred
+  recover that writes a response with no started check — log and
+  `panic(http.ErrAbortHandler)`); `statusrange` (a non-constant status
+  reaching WriteHeader/http.Error with no range check; helper sinks are
+  checked at their callers, unexported status fields at their stores);
+  `doublewrite` (a deferred write plus an earlier answer on the same
+  writer); `nostore` now credits only no-store or private; `listheader`
+  (`Header.Get` of a list header — Connection, Upgrade,
+  Sec-WebSocket-*, Accept-Encoding, TE, Cache-Control, Vary — then split
+  or token-compared; use `Values`). Request data: `textbind` (request
+  text bound into a SQL value position with no storable-text check —
+  Postgres answers invalid UTF-8 or NUL with 22021, a 500; refuse first
+  with `utf8.ValidString && no NUL`, credited by body; flows through
+  helpers and same-package interface implementations by fact, not yet
+  through struct fields); `controlbytes` grew a Location arm (a scrub
+  that exempts tab clears nothing at a redirect) and a guard-then-strip
+  arm (test the stripped value, not the raw one); `sanitizefix` (a
+  one-pass multi-character removal in a scrub/strip/sanitize function:
+  `<scr<script></script>ipt>`; loop to a fixpoint); `errleak` fires on
+  encoding/json error text reaching a client at ANY status (use
+  `handler.JSONErrorDetail`) and on `&T{Message: err.Error()}` with no
+  `errors.As` for `*T` first. Small request shapes: `authpresence`
+  (Authorization presence used as a scheme test — the browser sends
+  Basic/Negotiate on its own; and a cookie list naming the bare name
+  before its `__Host-`/`__Secure-` twin), `multipartparse` (multipart
+  accepted, only ParseForm called), `ratelimitkey` (a raw client address
+  as a limiter key; go through `clientip.RateKey`/`ratelimit.IPKey`,
+  credited by what the helper returns), `fanoutreq` (a backend call per
+  element of r.Cookies()/Header.Values/Form[k] with no cap), and
+  `rsakeysize` (an RSA modulus from decoded bytes with no BitLen() upper
+  bound; refuse past 8192 bits). Results and maps: `siblingresult` (a
+  call blanking a result its function marks `//gofastr:mustuse <name>`
+  in its doc — MintSession's `pending`, whose drop skipped 2FA; the
+  statistical form measured 333 sites and is not shipped), `silentskip`
+  (an `if err != nil` in a loop that waits then continues without
+  reading err — an outage that looks like an empty queue),
+  `discardeddecode` grew an encode arm for JSON-RPC envelopes that can
+  fail to encode, `mapwriter` grew a return arm (a map range over
+  decoded wire input returning an error built from the entry it
+  reached), `embedskip` grew three tag-walk arms (a struct-kind gate one
+  Elem below the param with no pointer loop; a SetString/SetInt binder
+  that never tries encoding.TextUnmarshaler; a pointer recursion with no
+  visited set), `laxcoerce` a nil-fold arm (a type switch whose `case
+  nil` and unknown arm return the same zero into a Revoked/Expires-style
+  field: fail closed with `timePtrFailClosed`), `compositekey` a
+  print-key arm (`%v` of an interface or pointer as a map key),
+  `growmap` (a long-lived map grown from request identity with no len
+  cap, timed sweep or deferred release), and `nullarray` (a
+  `//gofastr:required-array` field set from a value not proven non-nil
+  encodes as JSON null). Streams and text: `unrechecked` now requires a
+  time-driven case to reach the re-check (delivery-only re-checks leave
+  an idle stream unchecked), and `rawtext`'s ctxless fires on
+  `store.Slice.Default()` where a request context is in scope (read
+  `Slice.Value(ctx)`). Contracts: `GOFASTR1415 erasecover` no longer
+  lets a literal-default registration cover a table field the package
+  also writes from a parameter (WithTable); `GOFASTR1416 ddlconstraint`
+  (UNIQUE/REFERENCES inside `CREATE TABLE IF NOT EXISTS` for a table an
+  entity also declares — AutoMigrate creates it first, so the
+  constraint never exists — or an inline UNIQUE beside a single-column
+  unique index); `GOFASTR1417 settlestamp` (a status UPDATE writing no
+  stamp column when every sibling status UPDATE on the table does);
+  `GOFASTR1826 flexreverse` (row-reverse/column-reverse in kit CSS:
+  screen readers and Tab follow DOM order). Browser JS lints in
+  core-ui/check: `dateutcyear` (`Date.UTC(y, …)`/`new Date(y, m, …)`
+  with a year that is not a literal ≥ 100 maps 0–99 to 1900s; use
+  `setUTCFullYear`), `keyguard` (an Enter handler reading isComposing
+  but not keyCode 229 — Safari's composition-ending Enter; ArrowLeft/
+  ArrowRight sent different ways with no direction read), and
+  `clipboardawait` (a dropped clipboard promise followed by a status
+  write). Tried and dropped as unsharp: a catalog-name 63-byte-cut rule,
+  keyguard's Escape/defaultPrevented arm (Escape ownership is a design
+  decision), and silentskip's file-walk arm.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

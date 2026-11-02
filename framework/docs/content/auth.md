@@ -2199,6 +2199,9 @@ IdP endpoint moves. The document's `issuer` MUST match the configured
 an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
 (local IdPs and tests).
 
+A JWKS RSA key over 8192 bits is refused, like one under 2048: a huge
+modulus would make every sign-in burn CPU on verification.
+
 Discovery and JWKS fetches run one at a time and never under a lock
 other logins wait on. A login waiting for another login's discovery
 fetch gives up at its own deadline. Once a key set is cached, a login
