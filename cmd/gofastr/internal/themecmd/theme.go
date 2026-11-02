@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
@@ -67,7 +68,18 @@ func runThemeInit(args []string) {
 		}
 	}
 
-	if _, err := os.Stat(dest); err == nil && !force {
+	// A destination inside the project (the default theme/theme.go)
+	// refuses a symlinked theme/ or a linked theme.go that would carry
+	// the write out of it; an --out the operator spelled outside the
+	// project is theirs to name.
+	if filepath.IsLocal(dest) {
+		if err := project.RefuseEscape(".", dest); err != nil {
+			fmt.Printf("%s %v\n", cli.Red("✗"), err)
+			cli.OsExit(1)
+			return
+		}
+	}
+	if _, err := os.Lstat(dest); err == nil && !force {
 		fmt.Printf("%s %s already exists. Pass --force to overwrite.\n", cli.Red("✗"), dest)
 		cli.OsExit(1)
 	}

@@ -39,7 +39,7 @@ each command to the doc that covers it.
   it lacks. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes. `init`, `init --reinit` and
-  `gofastr agents init|sync|skill` refuse to write through a symlink
+  `gofastr agents init|sync|skill`, `theme init` and `new handler` refuse to write through a symlink
   that leaves the project or names nothing (a cloned repo's
   `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, a linked
   `.agents/` or `.env`), creating nothing on the way; a link inside the

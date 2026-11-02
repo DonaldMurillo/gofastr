@@ -147,7 +147,9 @@ few lines, and link the PR or the docs page for the rest.
   the skill; a linked `.agents/` received every detail file, and a
   linked `.env` received the generated signing key. Each writer refuses
   a path that leaves the project or names nothing, before creating any
-  directory; a link inside the project is still followed.
+  directory; a link inside the project is still followed. `gofastr
+  theme init` (for a destination inside the project) and `gofastr new
+  handler` refuse the same links.
 - **The `gofastr dev` hold page keeps its build output from a rebound
   page.** On a loopback bind the hold answered any `Host`, so a page on
   another site whose name a rebinding DNS server pointed at 127.0.0.1

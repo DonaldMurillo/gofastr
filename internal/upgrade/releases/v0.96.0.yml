@@ -759,7 +759,7 @@ notes:
     breaking: false
     guidance: "A new finding names markup built around a variable with no escape at that call. Escape the value (render.Text, render.Escape) or compose core-ui/html; if every interpolated value is already escaped, annotate the call //gofastr:allow(GOFASTR1403) <why>. For a cookie, set HttpOnly, Secure and SameSite."
     nodetect: "the change is in the analyzer; whether an app's call sites now fire depends on what they pass"
-  - change: "gofastr init, init --reinit and gofastr agents init/sync/skill refuse to write through a symlink that leaves the project or names nothing"
+  - change: "gofastr init, init --reinit, gofastr agents init/sync/skill, theme init and new handler refuse to write through a symlink that leaves the project or names nothing"
     breaking: false
     guidance: "Replace such a link with a regular file (or a link inside the project) and re-run. A link that stays inside the project is followed as before."
     nodetect: "the check is on the files on disk when the command runs; nothing in an app's source spells it"
