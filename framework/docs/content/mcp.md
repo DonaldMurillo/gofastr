@@ -466,10 +466,10 @@ caller anything the matching methods would not:
   session revoked mid-stream has its stream closed at the next
   notification, and so does a caller the re-check places in another
   tenant (`tenant.ResolveMiddleware` re-resolves it).
-- A quiet stream re-checks its caller too: every 15 seconds without a
-  notification, the stream re-checks the caller the same way and
-  writes an SSE comment line (`: keep-alive`), which SSE clients
-  ignore. A revoked caller's idle stream closes within one interval
+- A quiet stream re-checks its caller too: every 15 seconds, whether
+  or not notifications went out in between, the stream re-checks the
+  caller the same way and writes an SSE comment line (`: keep-alive`),
+  which SSE clients ignore. A revoked caller's idle stream closes within one interval
   instead of holding its seat until the next notification, and a
   connection that went half-open fails that write and frees its seat.
 - Nothing fires when a gate changes its answer for a connected caller

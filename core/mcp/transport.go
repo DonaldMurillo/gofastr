@@ -34,8 +34,8 @@ const maxMCPBodyBytes = 1 << 20
 const sseWriteTimeout = 10 * time.Second
 
 // sseKeepAliveEvery paces the comment line the held notification stream
-// writes while no notification is due. Each tick also re-checks the
-// caller, so a stream whose session was revoked, or whose connection
+// writes on a fixed interval, whether or not notifications went out in
+// between. Each tick also re-checks the caller, so a stream whose session was revoked, or whose connection
 // went half-open, ends within one interval instead of whenever the next
 // notification happens to arrive. Server.sseKeepAlive overrides it
 // (tests).
@@ -599,7 +599,8 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, path string) 
 	}
 
 	// The keep-alive tick re-checks the caller and writes an SSE comment
-	// while the server is quiet. Without it the re-check ran only before
+	// on a fixed interval; a delivery does not reset it. Without it the
+	// re-check ran only before
 	// a delivery, and a revoked caller held its seat for as long as no
 	// notification was raised; a half-open connection was never written
 	// to, so it was never found dead either.
