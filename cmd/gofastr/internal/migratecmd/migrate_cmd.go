@@ -461,12 +461,12 @@ func runMigrateStatus(args []string) {
 		return fmt.Sprintf("%d %s", rec.Version, rec.Name)
 	}
 	for _, rec := range status.Modified {
-		fmt.Printf("    %s %s: MODIFIED since it was applied (up refuses; revert the file, or roll it back and re-apply)\n",
-			cli.Yellow("⚠"), label(rec))
+		cli.Printf("    "+cli.Yellow("⚠")+" %s: MODIFIED since it was applied (up refuses; revert the file, or roll it back and re-apply)\n",
+			label(rec))
 	}
 	for _, rec := range status.Unregistered {
-		fmt.Printf("    %s %s: applied, but no file in migrations/ registers it (down cannot roll it back)\n",
-			cli.Yellow("⚠"), label(rec))
+		cli.Printf("    "+cli.Yellow("⚠")+" %s: applied, but no file in migrations/ registers it (down cannot roll it back)\n",
+			label(rec))
 	}
 }
 
