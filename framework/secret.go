@@ -132,21 +132,30 @@ func sessionKeysForMount(secret []byte, previous [][]byte, fanoutAttached bool) 
 // GOFASTR_SECRET_PREVIOUS) into trimmed, non-empty entries. Each entry is
 // validated against the length floor by the caller, not here.
 //
-// An entry that ends in a line break is also kept with it. GOFASTR_SECRET
-// is used untrimmed, so a secret read from a file with a trailing newline
-// (a Kubernetes secret made with --from-file) signed with the newline in
-// it, and moving that value here on rotation must still verify what it
-// signed. The entries are verify-only, so the extra spelling grants
-// nothing the operator did not configure.
+// An entry that carries whitespace is also kept with it. GOFASTR_SECRET is
+// used untrimmed, so a secret read from a file with a trailing newline (a
+// Kubernetes secret made with --from-file), or pasted with a leading or
+// trailing space or tab, signed with that whitespace in it, and moving the
+// value here on rotation must still verify what it signed. A variable
+// holding one value keeps it exactly as written; in a list, where spaces
+// around the commas are layout, an entry keeps its line break (trimmed of
+// spaces and tabs only). The entries are verify-only, so the extra
+// spellings grant nothing the operator did not configure.
 func splitSecretList(s string) []string {
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			out = append(out, t)
-			if k := strings.Trim(p, " \t"); k != t {
-				out = append(out, k)
-			}
+		t := strings.TrimSpace(p)
+		if t == "" {
+			continue
+		}
+		out = append(out, t)
+		k := strings.Trim(p, " \t")
+		if len(parts) == 1 {
+			k = p
+		}
+		if k != t {
+			out = append(out, k)
 		}
 	}
 	return out

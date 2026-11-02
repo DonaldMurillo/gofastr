@@ -306,7 +306,9 @@ few lines, and link the PR or the docs page for the rest.
   newline. `GOFASTR_SECRET_PREVIOUS` trimmed its entries, so moving that
   same value there on rotation derived a different verify key and every
   session and embed grant the old secret signed stopped verifying. An
-  entry ending in a line break is now also accepted as written.
+  entry ending in a line break is now also accepted as written, and a
+  value alone in the variable is also accepted exactly as written, so
+  one with a leading or trailing space or tab verifies too.
 - **`ImportData` refuses a source the manifest lists twice.** The file
   was restored once per listing: a keyed table failed on its key, but a
   keyless one took every row twice and committed.
