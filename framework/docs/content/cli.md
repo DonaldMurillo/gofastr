@@ -605,7 +605,11 @@ does not cover: a runtime browser scan, and the dependency report.
   warns the same way). Provider keys from a repository's
   `.harness-secrets/env` are used only after you approve them once on a
   terminal, or with `--allow-repo-secrets` for one run.
-- `gofastr version`: print version info.
+- `gofastr version`: print version info. `gofastr --version` and
+  `gofastr -v` do the same in the command's place only; after a command
+  the flag is that command's (`verify -v` is verbose, `desktop build
+  --version` the app's version, and `test -v` is refused as an unknown
+  flag rather than answered with the version and exit 0).
 
 ## Common mistakes
 

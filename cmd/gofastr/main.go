@@ -196,20 +196,17 @@ func dispatch(args []string) {
 		return
 	}
 
-	// Global flags. --version/-v is intercepted anywhere except where a
-	// desktop builder/feed consumes --version as its own value. --help/-h is routed
-	// through to subcommands in ownsHelp, which implement it; for every
-	// other command it is intercepted anywhere in args (a side-effectful
-	// command like `dev --help` must never start a server because it
-	// lacks its own help path).
-	for i, a := range args {
-		if a == "--version" || a == "-v" {
-			if a == "--version" && desktopCommandOwnsVersionFlag(args, i) {
-				continue
-			}
-			cli.Println(project.VersionLine())
-			return
-		}
+	// Global flags. --version/-v prints the version in the command's
+	// place only; after a command it is that command's argument (verify's
+	// -v, a desktop build's --version, and `test -v`, which go test users
+	// type and which must be refused rather than answered with the version
+	// and exit 0). --help/-h is routed through to subcommands in ownsHelp,
+	// which implement it; for every other command it is intercepted
+	// anywhere in args (a side-effectful command like `dev --help` must
+	// never start a server because it lacks its own help path).
+	if isGlobalVersionFlag(args) {
+		cli.Println(project.VersionLine())
+		return
 	}
 	if !ownsHelp[args[0]] {
 		for _, a := range args {
@@ -351,9 +348,8 @@ func projectDirFlag(cmd string, args []string) string {
 	return dir
 }
 
-func desktopCommandOwnsVersionFlag(args []string, index int) bool {
-	if index < 2 || len(args) < 2 || args[0] != "desktop" {
-		return false
-	}
-	return args[1] == "build" || args[1] == "feed"
+// isGlobalVersionFlag reports whether argv asks for the version as a
+// global flag: --version or -v where the command name goes.
+func isGlobalVersionFlag(args []string) bool {
+	return len(args) > 0 && (args[0] == "--version" || args[0] == "-v")
 }
