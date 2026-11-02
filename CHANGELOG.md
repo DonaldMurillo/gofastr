@@ -201,6 +201,11 @@ few lines, and link the PR or the docs page for the rest.
   lint also flags `app.QueryFromContext` in a layout build, and a
   `Key.Get` there whose same-package resolver reads the query or the
   request, outside a `RouteArea`.
+- **SDK `manifest.json` has no generation time by default (D-18).**
+  `gofastr generate` and `gofastr generate sdk` rerun over an unchanged
+  schema rewrite every file byte for byte. `gofastr generate sdk
+  --stamp-time` writes `generatedAt` as before, and `sdkdocs` shows the
+  date only then. `sdk.Manifest.GeneratedAt` is omitted when zero.
 
 ### Fixed
 

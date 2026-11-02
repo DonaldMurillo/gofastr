@@ -1088,3 +1088,9 @@ notes:
     breaking: false
     guidance: "A kept layout that drew query-dependent content stayed filtered after Reset, because the client router swapped only the screen cell. Nothing to change for that. If the lint now flags your layout build, read the value inside l.RouteArea's fn, or give the region to an outlet a screen fills."
     nodetect: "the Reset change is in rendered markup and the lint finds its own sites; the source that configures a FilterToolbar is unchanged"
+  - change: "gofastr generate sdk writes manifest.json without generatedAt unless --stamp-time is given, so a rerun over an unchanged schema is byte-identical; the SDK reference page drops the date from its download stamp then"
+    breaking: false
+    guidance: "Pass --stamp-time to keep the date. Code that read sdk.Manifest.GeneratedAt gets the zero time from an unstamped manifest: check IsZero, as sdkdocs does."
+    find:
+      uses:
+        - gofastr/framework/sdk.Manifest
