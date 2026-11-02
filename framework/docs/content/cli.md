@@ -7,6 +7,13 @@ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 One binary. `gofastr <command> --help` prints every flag; this page maps
 each command to the doc that covers it.
 
+Status lines (`✓`, `✗`, `→`, `⚠`) print paths, errors and values read
+from your project with terminal control characters removed: C0 controls
+but tab and newline, DEL, C1, escape sequences, bidi overrides
+(U+202A–U+202E, U+2066–U+2069) and zero-width characters. A directory
+name or a file in a cloned repo cannot write your clipboard (OSC 52),
+clear the screen or reorder the line you are reading.
+
 ## Scaffold
 
 - `gofastr init <name>`: a new project with framework UI, `DESIGN.md`, a

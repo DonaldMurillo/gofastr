@@ -201,6 +201,16 @@ few lines, and link the PR or the docs page for the rest.
   to the grace longer: the default SIGTERM handler's deadline is
   `ShutdownTimeout` plus the grace. See
   [Health and readiness](framework/docs/content/health-checks.md#draining-on-shutdown).
+- **The gofastr CLI's status lines print arguments inert.** `✓`, `✗`,
+  `→` and `⚠` lines (`cli.Success`, `Fail`, `Info`, `Warn`) remove
+  terminal control characters from every value they print: C0 but tab
+  and newline, DEL, C1, escape sequences, bidi overrides and zero-width
+  characters. A cloned repo whose directory name carried an OSC 52
+  clipboard write drove the terminal of whoever ran `gofastr validate`,
+  `migrate generate` or `agents sync` on it; each command scrubbed, or
+  forgot to, on its own. The mark keeps its colour. The generated app
+  CLI's `-o table` now also drops bidi overrides and zero-width
+  characters, from its headers as well as its cells.
 - **BREAKING for custom A2A stores: retention counts per tier.**
   `a2a.Config.TerminalTaskRetention` and `PausedTaskRetention` now bound
   one owner's tasks per tier (`a2a.RetentionTier`: the tenant and scope
