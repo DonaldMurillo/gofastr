@@ -32,8 +32,14 @@
 //     (processmodule's scratch dir derives from the InstanceID nonce
 //     mintInstanceID mints with crypto/rand);
 //   - paths not rooted at the shared temp root: os.TempDir() or a
-//     "/tmp" literal as the Join/concat root, or a "/tmp/..." literal
-//     — anywhere else is another filesystem's problem;
+//     "/tmp" or "/tmp/..." literal as the filepath.Join / path.Join /
+//     concat root, a fmt.Sprintf whose format opens "/tmp/" (or "%s/"
+//     over os.TempDir()), or a "/tmp/..." literal — anywhere else is
+//     another filesystem's problem. (Until the 2026-11-02 guard bash
+//     only an exact "/tmp" operand counted, so "/tmp/app-"+pid,
+//     Join("/tmp/app", name) and fmt.Sprintf("/tmp/app-%d", pid) were
+//     silent; so was an exec.Cmd{Dir: …, Path: …} literal, which is now
+//     read like the c.Dir assignment and exec.Command's argv0.)
 //   - os.Remove and reads: an unlink follows no symlink target and
 //     leaks nothing, so dev.go's shutdown cleanup stays quiet;
 //   - _test.go files.
@@ -146,6 +152,34 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 		switch x := n.(type) {
 		case *ast.CallExpr:
 			checkCall(pass, x, bound, hist, fn, ctx)
+		case *ast.CompositeLit:
+			// exec.Cmd{Dir: <path>, Path: <path>}: the literal spelling
+			// of the c.Dir assignment below and of exec.Command's argv0.
+			if !isExecCmd(pass, x) {
+				return true
+			}
+			for _, elt := range x.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				key, ok := kv.Key.(*ast.Ident)
+				if !ok || (key.Name != "Dir" && key.Name != "Path") {
+					continue
+				}
+				if !tainted(pass, kv.Value, bound, hist, fn, ctx, 0) {
+					continue
+				}
+				if key.Name == "Dir" {
+					pass.Reportf(kv.Pos(),
+						"exec Dir is a fixed path under the shared temp root (%s): a local co-user can pre-create the directory or plant a symlink and own the child's working directory (CWE-377); os.MkdirTemp per invocation (unique and 0700), or 0700 plus an ownership check",
+						types.ExprString(kv.Value))
+				} else {
+					pass.Reportf(kv.Pos(),
+						"exec/build reaches a fixed path under the shared temp root (%s): the name is guessable (pid-only at best), so a pre-planted symlink turns the build into an arbitrary clobber and the exec into the attacker's binary (CWE-377); build and exec a path minted with os.MkdirTemp/os.CreateTemp per process",
+						types.ExprString(kv.Value))
+				}
+			}
 		case *ast.AssignStmt:
 			// exec.Cmd cwd: c.Dir = <tainted path>.
 			if len(x.Lhs) == 1 && len(x.Rhs) == 1 {
@@ -275,6 +309,9 @@ func tempRootedPredictableWith(pass *analysis.Pass, e ast.Expr, bound map[types.
 			switch x := r.(type) {
 			case *ast.CallExpr:
 				tail = x.Args[1:]
+				if pathflow.QualifiedFunc(pass, x.Fun) == "fmt.Sprintf" && len(x.Args) > 1 && isTempRootExpr(pass, x.Args[1]) {
+					tail = x.Args[2:] // Sprintf("%s/…", os.TempDir(), …)
+				}
 			case *ast.BinaryExpr:
 				ops := pathflow.ConcatOperands(x, nil)
 				tail = ops[1:]
@@ -308,10 +345,29 @@ func tempRootedPredictableWith(pass *analysis.Pass, e ast.Expr, bound map[types.
 func tempRootedShape(pass *analysis.Pass, e ast.Expr) bool {
 	switch x := e.(type) {
 	case *ast.CallExpr:
-		if pathflow.QualifiedFunc(pass, x.Fun) != "path/filepath.Join" || len(x.Args) < 1 {
-			return false
+		switch pathflow.QualifiedFunc(pass, x.Fun) {
+		case "path/filepath.Join", "path.Join":
+			return len(x.Args) > 0 && isTempRootExpr(pass, x.Args[0])
+		case "fmt.Sprintf":
+			// fmt.Sprintf("/tmp/app-%d", pid) and
+			// fmt.Sprintf("%s/app-%d", os.TempDir(), pid).
+			if len(x.Args) == 0 {
+				return false
+			}
+			lit, ok := x.Args[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return false
+			}
+			format, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				return false
+			}
+			if strings.HasPrefix(format, "/tmp/") {
+				return true
+			}
+			return strings.HasPrefix(format, "%s/") && len(x.Args) > 1 && isTempRootExpr(pass, x.Args[1])
 		}
-		return isTempRootExpr(pass, x.Args[0])
+		return false
 	case *ast.BinaryExpr:
 		if x.Op != token.ADD {
 			return false
@@ -328,13 +384,30 @@ func tempRootedShape(pass *analysis.Pass, e ast.Expr) bool {
 	return false
 }
 
-// isTempRootExpr matches os.TempDir() and the "/tmp" literal.
+// isExecCmd reports whether lit is an os/exec.Cmd literal.
+func isExecCmd(pass *analysis.Pass, lit *ast.CompositeLit) bool {
+	t := pass.TypesInfo.TypeOf(lit)
+	if t == nil {
+		return false
+	}
+	named, ok := t.(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return false
+	}
+	return named.Obj().Pkg().Path() == "os/exec" && named.Obj().Name() == "Cmd"
+}
+
+// isTempRootExpr matches os.TempDir() and a "/tmp" literal, or one
+// under it: "/tmp/" + name and Join("/tmp/app", name) are rooted there
+// as surely as Join("/tmp", name). Until the 2026-11-02 guard bash only
+// the exact "/tmp" counted, so "/tmp/app-"+strconv.Itoa(os.Getpid())
+// was silent.
 func isTempRootExpr(pass *analysis.Pass, e ast.Expr) bool {
 	if call, ok := e.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "os.TempDir" {
 		return true
 	}
 	if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-		if v, err := strconv.Unquote(lit.Value); err == nil && v == "/tmp" {
+		if v, err := strconv.Unquote(lit.Value); err == nil && (v == "/tmp" || strings.HasPrefix(v, "/tmp/")) {
 			return true
 		}
 	}

@@ -20,7 +20,12 @@
 // The family is the single-error-result parse set: json/xml/yaml
 // Unmarshal, Decode on a json/xml Decoder, and ParseForm /
 // ParseMultipartForm on an *http.Request — reported when the only
-// result is blanked or dropped as a bare expression statement.
+// result is blanked or dropped as a bare expression statement. The
+// repo's own decoders belong to it too (core/handler UnmarshalStrict
+// and DecodeStrict, internal/jsonexact Unmarshal and Decode), as does
+// Decode on a yaml Decoder: until the 2026-11-02 guard bash the rule
+// knew only the stdlib spellings, so the decoders every inbound seam
+// is told to use could drop their error unseen.
 //
 // Division of labor with discardederr: that rule polices
 // MULTI-VALUE assignments that drop an error while keeping the values
@@ -136,6 +141,19 @@ func familyCall(pass *analysis.Pass, call *ast.CallExpr) (string, bool) {
 			}
 		}
 		if pkgName != nil {
+			// The repo's own decoders, the spellings CLAUDE.md steers
+			// every inbound seam to: discarding their error is the same
+			// bug, and the zero value marches on all the same.
+			switch pkgName.Imported().Path() + "." + sel.Sel.Name {
+			case handlerPath + ".UnmarshalStrict", handlerPath + ".DecodeStrict",
+				jsonexactPath + ".Unmarshal", jsonexactPath + ".Decode":
+				if len(call.Args) > 0 {
+					if _, isProbe := call.Args[0].(*ast.IndexExpr); isProbe {
+						return "", false // map-index optional-field probe
+					}
+				}
+				return pkgName.Name() + "." + sel.Sel.Name, true
+			}
 			return "", false
 		}
 	}
@@ -146,6 +164,8 @@ func familyCall(pass *analysis.Pass, call *ast.CallExpr) (string, bool) {
 	case recv == "encoding/json.Decoder" && sel.Sel.Name == "Decode":
 		return "Decode", true
 	case recv == "encoding/xml.Decoder" && sel.Sel.Name == "Decode":
+		return "Decode", true
+	case strings.HasSuffix(recv, ".Decoder") && isYAML(strings.TrimSuffix(recv, ".Decoder")) && sel.Sel.Name == "Decode":
 		return "Decode", true
 	case recv == "net/http.Request" && (sel.Sel.Name == "ParseForm" || sel.Sel.Name == "ParseMultipartForm"):
 		return sel.Sel.Name, true
@@ -183,6 +203,12 @@ func receiverType(pass *analysis.Pass, sel *ast.SelectorExpr) string {
 
 // isYAML reports whether an import path is one of the yaml packages
 // whose Unmarshal is in the family.
+// The repo's strict and lossless decoders.
+const (
+	handlerPath   = "github.com/DonaldMurillo/gofastr/core/handler"
+	jsonexactPath = "github.com/DonaldMurillo/gofastr/internal/jsonexact"
+)
+
 func isYAML(path string) bool {
 	return path == "gopkg.in/yaml.v2" || path == "gopkg.in/yaml.v3" || path == "sigs.k8s.io/yaml"
 }

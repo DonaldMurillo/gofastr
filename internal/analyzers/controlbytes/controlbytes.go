@@ -717,7 +717,10 @@ var sinks = []sink{
 				return false
 			}
 			switch sel.Sel.Name {
-			case "Print", "Printf", "Println":
+			case "Print", "Printf", "Println",
+				// Fatal* and Panic* print the same message through the
+				// logger before they exit or panic.
+				"Fatal", "Fatalf", "Fatalln", "Panic", "Panicf", "Panicln":
 			default:
 				return false
 			}

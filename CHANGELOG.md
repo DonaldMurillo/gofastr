@@ -129,6 +129,27 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`gofastr verify` and `make analyze` read more spellings of the shapes
+  they already refuse.** A 2026-11-02 pass wrote small variations of each
+  analyzer's own bug shape and widened every rule that missed one:
+  - `fixedtmp`: `"/tmp/app-" + pid`, `filepath.Join("/tmp/app", name)`,
+    `path.Join`, `fmt.Sprintf("/tmp/app-%d", pid)` and an
+    `exec.Cmd{Dir: …, Path: …}` literal;
+  - `timestampid`: an id bound in `Session{ID: …}`, `var token = …` or
+    a multi-value assignment, built with `fmt.Sprint`, or made from
+    `time.Now().Format(…)` / `.String()`. A `make([]byte, 16)` rand
+    buffer now silences it as a `[16]byte` array always did;
+  - `errleak`: `fmt.Sprintf("query failed: %v", err)` and
+    `fmt.Sprint(err)` on a 5xx;
+  - `discardeddecode`: a discarded `handler.UnmarshalStrict`,
+    `handler.DecodeStrict`, `jsonexact.Unmarshal` or yaml `Decode`;
+  - `recoverlog` and `controlbytes`: `log.Fatal*` / `log.Panic*` (they
+    print the message before exiting), and for `recoverlog`
+    `os.Stderr.WriteString`.
+
+  Code that passed verify can fail it on upgrade. Fix the finding, or
+  mark a site that is the shape on purpose with
+  `//gofastr:allow(<analyzer>) <why>`.
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep

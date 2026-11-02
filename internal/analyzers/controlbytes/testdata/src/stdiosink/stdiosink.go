@@ -100,6 +100,14 @@ func badLogPrint(lg *log.Logger, r *http.Request) {
 	lg.Print(r.Host)                      // want `controlbytes: request-derived value reaches std log print unscrubbed`
 }
 
+// badLogFatal: Fatal* and Panic* print the message through the logger
+// before they exit or panic (2026-11-02 guard bash: the arm read only
+// Print*).
+func badLogFatal(lg *log.Logger, r *http.Request) {
+	log.Fatalf("bad path %s", r.URL.Path) // want `controlbytes: request-derived value reaches std log print unscrubbed`
+	lg.Panicln("remote", r.RemoteAddr)    // want `controlbytes: request-derived value reaches std log print unscrubbed`
+}
+
 func goodLogPrint(lg *log.Logger, r *http.Request) {
 	log.Printf("bad path %q", quoteCtl(r.URL.Path))
 	lg.Print("static line")
