@@ -755,3 +755,7 @@ notes:
     breaking: false
     guidance: "Pass one count. A script that passed two rolled back the second number; keep the count it meant."
     nodetect: "the change is in the CLI's argument parsing; nothing in an app's source spells it"
+  - change: "gofastr verify reports GOFASTR1403 on render.HTML over fmt.Sprintf/Sprint/Sprintln or a concatenation split over lines, and GOFASTR1404 on an http.Cookie literal under an aliased net/http import"
+    breaking: false
+    guidance: "A new finding names markup built around a variable with no escape at that call. Escape the value (render.Text, render.Escape) or compose core-ui/html; if every interpolated value is already escaped, annotate the call //gofastr:allow(GOFASTR1403) <why>. For a cookie, set HttpOnly, Secure and SameSite."
+    nodetect: "the change is in the analyzer; whether an app's call sites now fire depends on what they pass"

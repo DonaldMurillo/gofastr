@@ -140,6 +140,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr verify` finds GOFASTR1403 and GOFASTR1404 however the code
+  spells them.** GOFASTR1404 keyed on the identifier `http`, so a cookie
+  built as `nethttp.Cookie{...}` under an import alias passed.
+  GOFASTR1403 was a one-line pattern for `render.HTML(... + ...)`, so
+  `render.HTML(fmt.Sprintf("<p>%s</p>", name))`, a concatenation split
+  over lines, and `render.HTML(esc(a) + b)` put the same unescaped value
+  into markup unreported. Both rules read the syntax tree now; a build
+  from constants alone stays quiet. The kit's four escaped builds carry
+  `//gofastr:allow(GOFASTR1403)`.
 - **`gofastr migrate down` takes one count.** With two counts the last
   one won, so `migrate down 1 3` ran three Down sections (three
   `DROP TABLE`s) where one was asked for. A second count is refused

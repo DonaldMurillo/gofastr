@@ -87,6 +87,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 			Variant: ui.StatusWarning,
 		})
 		if alert != "" {
+			//gofastr:allow(GOFASTR1403) both halves are ui.Notification output, already markup
 			alert = render.HTML(string(alert) + string(forceAlert))
 		} else {
 			alert = forceAlert

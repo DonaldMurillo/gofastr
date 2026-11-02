@@ -108,6 +108,7 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	// Construct the full button element.
 	// data-cui-signal-toggle: click handler flips the signal
 	// data-cui-signal + data-cui-signal-mode="attr": binds signal value to aria-checked
+	//gofastr:allow(GOFASTR1403) every operand is render.Escape output, render.Attr output or the fixed inner markup
 	return render.HTML(fmt.Sprintf(
 		`<button class="%s" data-cui-comp="fui-toggle"`+
 			` data-cui-signal-toggle="%s"`+

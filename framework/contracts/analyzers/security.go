@@ -51,9 +51,11 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 		lines := strings.Split(string(body), "\n")
 		out = append(out, ruleSQLConcat(p, f.Rel, string(body), lines)...)
-		out = append(out, ruleHTMLConcat(p, f.Rel, lines)...)
+		htmlConcat := ruleHTMLConcat(p, f.Rel, lines)
+		out = append(out, htmlConcat...)
 		out = append(out, ruleFormCSRF(p, f.Rel, string(body), lines)...)
 		if file, parsed := p.AST(f.Rel); parsed {
+			out = append(out, ruleHTMLBuiltAST(p, f.Rel, file, lines, htmlConcat)...)
 			out = append(out, ruleInsecureCookie(p, f.Rel, file, lines)...)
 			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
 			out = append(out, ruleForwardedProto(p, f.Rel, file)...)
@@ -157,6 +159,90 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 	return out
 }
 
+// ruleHTMLBuiltAST reports the render.HTML calls the line regex above
+// cannot see: a string built by fmt.Sprintf/Sprint/Sprintln, a
+// concatenation split over lines, and one whose first operand is itself
+// a call (render.HTML(esc(a) + b): the regex stops at the first `)`).
+// Each puts a variable into markup unescaped exactly as the one-line `+`
+// does. It resolves core/render under any alias, and reports only a
+// build with a non-literal operand, so a constant split for width stays
+// quiet. A line the regex already reported is not reported twice.
+func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
+	seen := map[int]bool{}
+	for _, d := range already {
+		seen[d.Line] = true
+	}
+	aliases := importAliases(file)
+	var out []contracts.Diagnostic
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := qualifiedCall(n, aliases, "core/render", "HTML")
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		how := htmlBuild(call.Args[0], aliases)
+		if how == "" {
+			return true
+		}
+		line := p.Position(call.Pos()).Line
+		if seen[line] || hasLegacyAnnotation(lines, line, "safe-html:") {
+			return true
+		}
+		seen[line] = true
+		d := diag(p, contracts.RuleHTMLConcat, rel, call.Pos(),
+			"render.HTML receives a string built by "+how+": the interpolated value is not escaped")
+		out = append(out, d)
+		return true
+	})
+	return out
+}
+
+// htmlBuild names how e builds a string around a non-literal value
+// ("concatenation", "fmt.Sprintf"), or "" when it does not.
+func htmlBuild(e ast.Expr, aliases map[string]string) string {
+	for {
+		paren, ok := e.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		e = paren.X
+	}
+	if bin, ok := e.(*ast.BinaryExpr); ok && bin.Op == token.ADD {
+		if !constantString(bin) {
+			return "concatenation"
+		}
+		return ""
+	}
+	for _, fn := range []string{"Sprintf", "Sprint", "Sprintln"} {
+		call, ok := qualifiedCall(e, aliases, "fmt", fn)
+		if !ok {
+			continue
+		}
+		args := call.Args
+		if fn == "Sprintf" && len(args) > 0 {
+			args = args[1:]
+		}
+		for _, a := range args {
+			if _, lit := a.(*ast.BasicLit); !lit {
+				return "fmt." + fn
+			}
+		}
+	}
+	return ""
+}
+
+// constantString reports whether e is built from string literals only.
+func constantString(e ast.Expr) bool {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		return true
+	case *ast.ParenExpr:
+		return constantString(v.X)
+	case *ast.BinaryExpr:
+		return v.Op == token.ADD && constantString(v.X) && constantString(v.Y)
+	}
+	return false
+}
+
 // ----------------------------------------------------------------------
 // GOFASTR1402: POST form without a CSRF input.
 // ----------------------------------------------------------------------
@@ -209,6 +295,7 @@ func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contrac
 
 func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
+	aliases := importAliases(file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.CompositeLit)
 		if !ok {
@@ -218,7 +305,12 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 		if !ok || sel.Sel.Name != "Cookie" {
 			return true
 		}
-		if pkg, isIdent := sel.X.(*ast.Ident); !isIdent || pkg.Name != "http" {
+		// net/http under any alias: `nethttp.Cookie{...}` is the same
+		// cookie, and keying on the spelling "http" let an aliased import
+		// past the rule. A bare `http` the file never imports stays in, for
+		// the snippets the catalog checks.
+		pkg, isIdent := sel.X.(*ast.Ident)
+		if !isIdent || (aliases[pkg.Name] != "net/http" && (pkg.Name != "http" || aliases["http"] != "")) {
 			return true
 		}
 		set := map[string]bool{}
