@@ -212,6 +212,12 @@ func New(cfg Config) (*Harness, error) {
 	// $XDG_CONFIG/gofastr/harness/permissions.json.
 	h.Perms = permission.New(nil)
 	h.Perms.PersistencePath = filepath.Join(cfg.XDGConfig, "permissions.json")
+	// "Allow always" rules are scoped to the directory the tools run
+	// in: the process working directory, which Bash and the file tools
+	// resolve relative paths against.
+	if wd, err := os.Getwd(); err == nil {
+		h.Perms.WorkingDir = wd
+	}
 	if err := h.Perms.LoadPersistentRules(); err != nil {
 		// Non-fatal: corrupt or unreadable file means the user re-grants
 		// permissions this session. Log + continue.

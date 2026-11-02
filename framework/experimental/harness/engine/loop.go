@@ -355,6 +355,9 @@ func (e *Engine) Spawn(ctx context.Context, systemHint, userPrompt string) (stri
 	// New dispatcher pointed at the private bus so tool calls
 	// dispatched by the sub-agent also stay private.
 	subDisp := NewDispatcher(subBus, e.Dispatcher.Registry(), e.Dispatcher.mws...)
+	// Hiding the meta tools from the catalog does not stop a model
+	// naming one; the dispatcher refuses them.
+	subDisp.refused = metaToolNames
 	sub := &Engine{
 		Session:    e.Session,
 		Bus:        subBus,
@@ -427,8 +430,9 @@ func isSubAgentCtx(ctx context.Context) bool {
 // metaToolNames are tools that orchestrate the agent loop itself.
 // We hide them from sub-agents so a sub-agent can't re-plan the
 // parent's TaskList or recursively chain more Agent spawns. The
-// registry still has them, but the model never sees the schema
-// in its sub-agent context, so it won't call them.
+// registry still has them, so the sub-agent's dispatcher refuses
+// them by name as well: the model's output can name a tool its
+// catalog never showed.
 var metaToolNames = map[string]bool{
 	"TaskList": true,
 	"Agent":    true,

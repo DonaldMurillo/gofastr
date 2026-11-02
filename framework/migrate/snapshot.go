@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 
@@ -190,6 +191,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		all = UnionEntities(plan.Registry)
 		ordered, err = topoSortEntities(all)
 		if err != nil {
+			return "", "", SchemaSnapshot{}, err
+		}
+		if err := checkIndexNames(ordered, all); err != nil {
 			return "", "", SchemaSnapshot{}, err
 		}
 	}
@@ -382,6 +386,27 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 				c.sqliteRebuildOf, strings.Join(refs, ", "))
 		}
 	}
+	// A plain foreign key (no ON DELETE action, or RESTRICT) onto the table
+	// fails the DROP instead: SQLite's implicit DELETE FROM finds the child
+	// rows still referencing it. The file applied on a database whose child
+	// tables were empty and failed with "FOREIGN KEY constraint failed" on
+	// every one where a child held a row, the database it was written for.
+	// A child this file drops still exists when the rebuild runs, since the
+	// drops come last, so it counts too.
+	for _, c := range changes {
+		if c.sqliteRebuildOf == "" {
+			continue
+		}
+		ent := all[c.sqliteRebuildOf]
+		refs := slices.Sorted(maps.Keys(recordedReferencesOnto(dialect, prev.TableDDL, ent.GetTable())))
+		if len(refs) > 0 {
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite table rebuild: it drops the table, "+
+				"and the foreign keys in %s that reference it fail the DROP while any of their rows do; "+
+				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
+				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",
+				c.sqliteRebuildOf, strings.Join(refs, ", "))
+		}
+	}
 
 	// Tables in the snapshot that no entity declares anymore → DROP TABLE.
 	dropped := make([]string, 0)
@@ -414,7 +439,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: drop table", table),
-			SQL:         fmt.Sprintf("DROP TABLE IF EXISTS %s", qtable),
+			SQL:         fmt.Sprintf("DROP TABLE IF EXISTS %s", ddlIdent(qtable)),
 			Down:        down,
 			Destructive: true,
 		})
@@ -613,10 +638,10 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 // the FALLBACK Down for a dropped table when the snapshot predates TableDDL.
 // Constraints (PK/NOT NULL/UNIQUE/FK) are not recoverable from a column→type
 // map, so this is column-and-type only; the TableDDL path is faithful.
-// Identifiers are validated but UNQUOTED (via MustIdent), the same convention
-// as buildCreateTableSQL, so a mixed-case name folds to lowercase on Postgres
-// consistently with the original CREATE rather than being case-preserved by
-// quoting. Column order is sorted for deterministic output.
+// Identifiers are validated (via MustIdent) and bare unless they are keywords
+// (ddlIdent), the same convention as buildCreateTableSQL, so a mixed-case name
+// folds to lowercase on Postgres consistently with the original CREATE rather
+// than being case-preserved by quoting. Column order is sorted for deterministic output.
 func recreateTableSQL(table string, cols map[string]string) string {
 	names := make([]string, 0, len(cols))
 	for n := range cols {
@@ -625,10 +650,10 @@ func recreateTableSQL(table string, cols map[string]string) string {
 	sort.Strings(names)
 	defs := make([]string, 0, len(names))
 	for _, n := range names {
-		defs = append(defs, fmt.Sprintf("%s %s", query.MustIdent(n), cols[n]))
+		defs = append(defs, fmt.Sprintf("%s %s", ddlIdent(query.MustIdent(n)), cols[n]))
 	}
 	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		query.MustIdent(table), strings.Join(defs, ",\n\t"))
+		ddlIdent(query.MustIdent(table)), strings.Join(defs, ",\n\t"))
 }
 
 // ErrDirectiveInSQL is returned when rendered SQL contains a line the
@@ -638,7 +663,10 @@ var ErrDirectiveInSQL = errors.New("migrate: rendered SQL contains a line that w
 // containsDirectiveLine reports whether any line of sql would be read as
 // a directive by the runner, which scans line by line for the
 // "-- +migrate" prefix with no idea whether it is inside a string
-// literal.
+// literal. It asks the parser's own predicate (coremig.IsDirectiveLine),
+// which also covers the near misses the parser refuses ("--+migrate
+// Down", "-- +Migrate Down"): matching the exact prefix alone wrote files
+// the runner then refused to load.
 //
 // A column DEFAULT is author-supplied and may be multi-line, so a value
 // like "x\n-- +migrate Down\nDROP TABLE victims;-- " renders as valid
@@ -649,7 +677,7 @@ var ErrDirectiveInSQL = errors.New("migrate: rendered SQL contains a line that w
 // teaching the runner to parse SQL string literals.
 func containsDirectiveLine(sql string) bool {
 	for line := range strings.SplitSeq(sql, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "-- +migrate") {
+		if coremig.IsDirectiveLine(line) {
 			return true
 		}
 	}
@@ -767,11 +795,11 @@ func SaveSnapshot(path string, snap SchemaSnapshot) error {
 // reFKReferences matches a REFERENCES clause in a recorded CREATE TABLE,
 // capturing the table it references, schema included: a reference onto
 // app.a captured as app made the child no dependency of its parent.
-var reFKReferences = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)`)
+var reFKReferences = regexp.MustCompile(`(?i)\bREFERENCES\s+("?[a-zA-Z0-9_]+"?(?:\."?[a-zA-Z0-9_]+"?)*)`)
 
 // reMutatingFK matches a foreign key in a recorded CREATE TABLE whose
 // ON DELETE action changes rows, capturing the table it references.
-var reMutatingFK = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*\([^)]*\)\s*ON\s+DELETE\s+(?:CASCADE|SET\s+NULL)\b`)
+var reMutatingFK = regexp.MustCompile(`(?i)\bREFERENCES\s+("?[a-zA-Z0-9_]+"?(?:\."?[a-zA-Z0-9_]+"?)*)\s*\([^)]*\)\s*ON\s+DELETE\s+(?:CASCADE|SET\s+NULL)\b`)
 
 // ddlWithoutLiterals blanks the string literals and comments of a recorded
 // CREATE TABLE, so the patterns above read only its definitions: a text
@@ -803,7 +831,7 @@ func snapshotMutatingReferrers(dialect Dialect, prev SchemaSnapshot, table strin
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(prev.TableDDL)) {
 		for _, m := range reMutatingFK.FindAllStringSubmatch(ddlWithoutLiterals(prev.TableDDL[name]), -1) {
-			if refersTo(dialect, name, m[1], table) {
+			if refersTo(dialect, name, unquoteDDLIdent(m[1]), table) {
 				out = append(out, name)
 				break
 			}
@@ -848,7 +876,7 @@ func sortDroppedTables(dialect Dialect, tables []string, tableDDL map[string]str
 			}
 			for _, u := range tables {
 				target := asciicase.Lower(u)
-				if target != low && !seenRef[target] && refersTo(dialect, t, m[1], u) {
+				if target != low && !seenRef[target] && refersTo(dialect, t, unquoteDDLIdent(m[1]), u) {
 					seenRef[target] = true
 					dep[low] = append(dep[low], target)
 					inDegree[target]++
@@ -1044,7 +1072,7 @@ func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string)
 				SQL:     ddl,
 				Down:    dropIndexSQL(safeTable, safeName),
 			})
-		} else if strings.TrimRight(strings.TrimSpace(prevDDL), ";") != strings.TrimRight(strings.TrimSpace(ddl), ";") {
+		} else if unquoteDDLIdent(strings.TrimRight(strings.TrimSpace(prevDDL), ";")) != unquoteDDLIdent(strings.TrimRight(strings.TrimSpace(ddl), ";")) {
 			// Index definition changed under the same index name (e.g. Unique flip, or column change under explicit name).
 			// Drop the old index and create the new index.
 			// Down reverses this: drops the new index and restores the old index DDL.

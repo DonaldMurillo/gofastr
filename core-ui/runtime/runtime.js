@@ -1454,15 +1454,18 @@
   // that would float over the destination content is
   // headless-disclosure's contract (framework/headless/disclosure.js,
   // on gofastr:navigate), not the navigator's.
-  // Whether the navigation in flight began from a POINTER (detail > 0;
-  // keyboard activations synthesize clicks with detail 0). The swap
-  // moves focus onto the fresh cell either way, but a pointer-initiated
-  // navigation must not paint the focus ring: focusVisible:false keeps
-  // the ring keyboard signal.
-  let _navPointer = false;
+  // The focus ring the navigation in flight asks for: false when it
+  // began from a POINTER (detail > 0), true from a keyboard activation
+  // (a synthesized click with detail 0). The swap moves focus onto the
+  // fresh cell either way, but a pointer-initiated navigation must not
+  // paint the ring: focusVisible:false keeps it keyboard signal.
+  // undefined is a programmatic navigation (no click of its own): the
+  // browser's heuristic decides. focusVisible:true there forced the
+  // ring after a mouse-submitted RPC form.
+  let _navRing;
   const _focusSwapTarget = (el) => {
     if (typeof el.focus !== 'function') return;
-    try { el.focus({ preventScroll: true, focusVisible: !_navPointer }); } catch (_) { /* older Safari */ }
+    try { el.focus({ preventScroll: true, focusVisible: _navRing }); } catch (_) { /* older Safari */ }
   };
 
   const swapAtSlot = (slot, html) => {
@@ -1598,7 +1601,7 @@
       // the opts: the module demand-loads beside the FIRST fetch,
       // after the click, so a listener of its own would miss that
       // click and paint the ring on the first mouse navigation.
-      opts = Object.assign({ pointer: _navPointer }, opts);
+      opts = Object.assign({ ring: _navRing }, opts);
       if (N) return N(path, opts);
       // loadModule resolves only when the module registered its hooks,
       // so nav is there on the success arm.
@@ -2030,7 +2033,7 @@
     const origin = currentPath;
     // detail > 0 is a real pointer click; Enter/Space on a focused
     // link synthesize a click with detail 0 (keyboard: keep the ring).
-    _navPointer = e.detail > 0;
+    _navRing = e.detail < 1;
     _pushPub(fullPath + navHash);
     loadPage(fullPath, { from: origin });
   });
@@ -2163,7 +2166,7 @@
         return;
       }
       const origin = currentPath;
-      _navPointer = false; // programmatic: the browser's heuristic decides
+      _navRing = void 0; // programmatic: the browser's heuristic decides
       _pushPub(path, { replace: replace || path === currentPath });
       loadPage(path, { bypassCache: force, from: origin });
     },
@@ -2201,7 +2204,7 @@
     /** Re-fetch and re-render the current screen from the server,
         bypassing the cache. Goes straight to loadPage, history is not
         touched, so a #fragment on the URL survives. */
-    refresh() { _navPointer = false; loadPage(currentPath, { bypassCache: true }); },
+    refresh() { _navRing = void 0; loadPage(currentPath, { bypassCache: true }); },
 
     // X-Gofastr-Invalidate consumer, takes the whole Response (keeps
     // the header literal in one module; the callers in rpc/widgets/

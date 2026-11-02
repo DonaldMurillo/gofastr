@@ -15,7 +15,8 @@
 // The profile enforced per signature (draft section 5.2):
 //
 //   - tag MUST be "web-bot-auth"
-//   - created and expires MUST be present and currently valid
+//   - created and expires MUST be present and currently valid, and no
+//     more than MaxValidity apart (DefaultMaxValidity, 5 minutes)
 //   - keyid MUST be the base64url JWK thumbprint of the signing key
 //   - @authority or @target-uri MUST be covered
 //   - the Signature-Agent member keyed to the signature label MUST be
@@ -98,20 +99,61 @@ type Result struct {
 // Verifier verifies inbound signed requests. Construct with New and
 // install with Middleware. Safe for concurrent use.
 type Verifier struct {
-	resolver *directoryResolver
-	require  bool
-	log      *slog.Logger
-	now      func() time.Time
+	resolver    *directoryResolver
+	require     bool
+	log         *slog.Logger
+	now         func() time.Time
+	maxValidity time.Duration
+}
+
+// DefaultMaxValidity caps how long one signature is accepted: a
+// signature whose expires lies more than this past its created is
+// invalid. A signature is a bearer credential for every request it
+// covers, so a captured one replays until its expires; the cap bounds
+// that whatever window the signer chose. The draft leaves the window to
+// the verifier's policy, and real agents sign per request with windows
+// of seconds to a minute or two.
+const DefaultMaxValidity = 5 * time.Minute
+
+// Option configures a Verifier at New.
+type Option func(*Verifier)
+
+// WithMaxValidity sets the longest expires - created window a signature
+// may carry (DefaultMaxValidity when unset or zero). It panics on a
+// negative duration, a configuration error that would otherwise read as
+// "no cap".
+func WithMaxValidity(d time.Duration) Option {
+	if d < 0 {
+		panic("webbotauth: WithMaxValidity: negative duration")
+	}
+	return func(v *Verifier) { v.maxValidity = d }
 }
 
 // New builds a Verifier. A nil logger silences the observe-mode logs.
-func New(require bool, log *slog.Logger) *Verifier {
+func New(require bool, log *slog.Logger, opts ...Option) *Verifier {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	v := &Verifier{require: require, log: log, now: time.Now}
+	for _, o := range opts {
+		o(v)
+	}
 	v.resolver = newDirectoryResolver(log)
 	return v
+}
+
+// MaxValidity reports the longest expires - created window this
+// Verifier accepts.
+func (v *Verifier) MaxValidity() time.Duration {
+	if v.maxValidity == 0 {
+		return DefaultMaxValidity
+	}
+	return v.maxValidity
+}
+
+// validityCap is MaxValidity in whole seconds.
+func (v *Verifier) validityCap() int64 {
+	return int64(v.MaxValidity() / time.Second)
 }
 
 // Middleware returns the verification middleware. In observe mode (the
@@ -270,6 +312,11 @@ func (v *Verifier) verifyOne(r *http.Request, inputs, sigs *sfDictionary, m sfMe
 	}
 	if now.Unix() >= expires {
 		return Result{Outcome: OutcomeInvalid, Label: label, Reason: fmt.Sprintf("signature expired at %d (now %d)", expires, now.Unix())}
+	}
+	// expires is required above, so capping the window also caps the
+	// signature's age: now < expires <= created + cap.
+	if limit := v.validityCap(); expires-created > limit {
+		return Result{Outcome: OutcomeInvalid, Label: label, Reason: fmt.Sprintf("signature validity window %ds exceeds the %ds limit", expires-created, limit)}
 	}
 	keyidItem, ok := params.get("keyid")
 	if !ok || keyidItem.typ != sfString || keyidItem.str == "" {

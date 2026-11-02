@@ -537,7 +537,10 @@ func (l *Live) rebuild() (err error) {
 		if appName == "" {
 			appName = "Kiln"
 		}
-		spec := framework.EntityOpenAPI(app.Registry, appName, "1.0.0")
+		// The app's own document: its api_prefix'd paths, its json_case
+		// keys and the CRUD routes registration mounted, the same one
+		// App.Start would serve.
+		spec := app.OpenAPISpec(appName)
 		// Kiln is build-mode tooling: the in-studio API browser is part
 		// of the developer experience and must remain reachable without
 		// the auth chain the framework adds by default. PublicHandler

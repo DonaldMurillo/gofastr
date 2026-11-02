@@ -18,7 +18,7 @@
 //     (GET the conflict endpoint, replace the list's rows with the
 //     fresh server-rendered ones) instead of a blanket rollback; the
 //     409 body is read under hard bounds first (JSON content-type,
-//     ~4 KB, {"error":{"message":string}}, capped ~300 chars) so a
+//     ~4 KB, {"error":string}, capped ~300 chars) so a
 //     hostile body cannot buffer or inject. A real message is
 //     announced AND shown as an error toast (the live region is
 //     visually hidden), and it replaces the generic conflict copy;
@@ -119,16 +119,17 @@
     })();
   }
 
-  // conflictMessage: safely extract error.message from a 409
-  // problem-detail body. JSON content-type only, ~4 KB max, string
-  // message capped ~300 chars; malformed/oversized/empty → cb('') so
-  // the caller falls back to the generic copy.
+  // conflictMessage: safely extract the "error" message from a 409 in
+  // the one error envelope every route answers ({error: "...", code,
+  // reason}). JSON content-type only, ~4 KB max, string message capped
+  // ~300 chars; malformed/oversized/empty → cb('') so the caller falls
+  // back to the generic copy.
   function conflictMessage(res, cb) {
     if (!(res.headers.get('Content-Type') || '').toLowerCase().includes('application/json')) return cb('');
     readBounded(res, 4096, (txt) => {
       // An empty or malformed body throws in the parse: generic copy.
       try {
-        const m = JSON.parse(txt)?.error?.message;
+        const m = JSON.parse(txt)?.error;
         cb(typeof m === 'string' ? m.slice(0, 300) : '');
       } catch (_) { cb(''); }
     });

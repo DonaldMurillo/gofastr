@@ -143,7 +143,7 @@ func printHelp() {
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
-`, cli.Bold("GoFastr"), project.CliVersion(), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
+`, cli.Bold("GoFastr"), cli.ScrubTerminalOutput(project.CliVersion()), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
 }
 
 func main() {
@@ -207,7 +207,7 @@ func dispatch(args []string) {
 			if a == "--version" && desktopCommandOwnsVersionFlag(args, i) {
 				continue
 			}
-			fmt.Println(project.VersionLine())
+			cli.Println(project.VersionLine())
 			return
 		}
 	}
@@ -268,14 +268,15 @@ func dispatch(args []string) {
 	case "desktop":
 		desktopcmd.RunDesktop(cmdArgs)
 	case "version":
-		fmt.Println(project.VersionLine())
+		cli.Println(project.VersionLine())
 	default:
-		fmt.Printf("%s Unknown command: %s\n\n", cli.Red("✗"), cmd)
+		cli.Fail("Unknown command: %s", cmd)
+		fmt.Println()
 		// Fuzzy suggestion: check if it's close to a known command
 		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
-				fmt.Printf("  Did you mean: %s?\n", cli.Bold("gofastr "+s))
+				cli.Printf("  Did you mean: "+cli.Bold("gofastr %s")+"?\n", s)
 			}
 		}
 		printHelp()
@@ -327,7 +328,7 @@ func warnVersionMismatch(cmd string, args []string) {
 		wd = dir
 	}
 	if w := project.VersionMismatch(wd); w != "" {
-		fmt.Fprintf(os.Stderr, "%s %s\n", cli.Yellow("warning:"), w)
+		cli.Fprintf(os.Stderr, cli.Yellow("warning:")+" %s\n", w)
 	}
 }
 

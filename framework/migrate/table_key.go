@@ -97,7 +97,7 @@ func respellTables(prev SchemaSnapshot, declared []string, dialect Dialect) Sche
 		respelled := make([]string, len(ddls))
 		for i, ddl := range ddls {
 			name := parseIndexName(ddl)
-			respelled[i] = strings.Replace(ddl, " "+query.IndexOn(sqlite, name, from)+" (", " "+query.IndexOn(sqlite, name, to)+" (", 1)
+			respelled[i] = strings.Replace(ddl, " "+query.IndexOn(sqlite, ddlIdent(name), ddlIdent(from))+" (", " "+query.IndexOn(sqlite, ddlIdent(name), ddlIdent(to))+" (", 1)
 		}
 		out.Indices[to] = respelled
 	}

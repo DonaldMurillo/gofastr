@@ -9,7 +9,13 @@ import (
 )
 
 // Load reads one or more .env files and returns the merged key/value
-// map. EARLIER paths take precedence on key conflict. The convention
+// map. EARLIER paths take precedence on key conflict, and a ${NAME} in
+// a double-quoted value reads the value that ends up applied: os.Environ
+// first (Apply never overwrites it), then an earlier file's value, then
+// the same file's earlier keys, then empty. With DB_HOST=prod in the
+// environment, DATABASE_URL="postgres://${DB_HOST}/app" is built on
+// prod, and a later file's ${DB_HOST} matches the DB_HOST that is
+// applied, not the one an earlier file shadowed. The convention
 // is to pass most-specific first (e.g. .env.local, .env.<APP_ENV>,
 // .env). Missing files are silently skipped; a malformed file returns
 // an error naming the file.
@@ -23,7 +29,7 @@ func Load(paths ...string) (map[string]string, error) {
 			}
 			return nil, fmt.Errorf("dotenv: open %s: %w", p, err)
 		}
-		parsed, err := Parse(f)
+		parsed, err := parse(f, merged, os.LookupEnv)
 		_ = f.Close()
 		if err != nil {
 			return nil, fmt.Errorf("dotenv: parse %s: %w", p, err)

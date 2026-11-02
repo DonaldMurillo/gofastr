@@ -150,13 +150,32 @@ GoFastr ships its own small YAML parser in `core/yaml`; no external YAML parser
 is required. Supported syntax:
 
 - indentation-based maps and lists
-- strings, quoted strings, booleans, numbers, and `null`
+- strings, quoted strings, booleans, numbers, and `null`. A
+  double-quoted string takes the YAML 1.2 escapes (`\n`, `\t`, `\"`,
+  `\\`, `\/`, `\e`, `\xE9`, `é`, `\U0001F600` and the rest of the
+  table); `\xNN` is the character U+00NN, and an escape YAML does not
+  define, such as Go's octal `\101`, is an error
 - inline scalar lists such as `[draft, published]`; a trailing comma
   (`[draft, published,]`) adds no item, an empty item (`[a,,b]`) is an
   error, and an empty string is written `""`
 - comments starting with `#` outside quoted strings, at the start of a line
   or after a space or tab
 - a leading byte order mark, which is skipped
+
+Plain (unquoted) scalars resolve by the YAML 1.2 core schema, so a file
+reads the same here as in any other YAML tool:
+
+- `true`, `True`, `TRUE` and the three `false` spellings are booleans;
+  `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
+  a string.
+- a run of digits is an integer; a decimal with a fraction or exponent
+  (`1.5`, `.5`, `-2.5e3`) is a float. A float too large for 64 bits
+  (`1e999`) is an error, not infinity. Go-only spellings stay strings:
+  a hex float (`0x1.8p1`), digit underscores (`1_000.5`), `Infinity`.
+  `.inf` and `.nan` are strings too: nothing in a spec reads one.
+- a value starting with `!` is a tag, and tags are refused: the core
+  `!!str` and a local `!env HOME` alike. Quote it (`"!important"`) for
+  the string.
 
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, a nested list on its parent's dash line
@@ -696,6 +715,14 @@ prints to stdout, or to a file with `-o`:
 gofastr pack examples/meridian -o recovered.yml
 ```
 
+Every string in the output comes from the app's source, and none reaches
+the terminal raw if it could drive it: a value holding a control or
+invisible character (an ESC, a C1 control, a bidi override, a zero-width
+space) is written double-quoted with that character escaped, and reads
+back as the same bytes. A map key holding one is refused, since keys
+cannot be quoted. The notes pack prints percent-encode the same
+characters in file names.
+
 Pack refuses a `schema.Field` it cannot write back as a spec field,
 naming the field and key, rather than drop it: a set `WireName`,
 `RawType` or other key the spec has no field for, a `Type` with no
@@ -742,7 +769,7 @@ spec seeds no admin. Pack says so before the check names `app.go` and
 `main.go`; add `seed_password` under `app.admin` before generating from
 it.
 
-The synthesized `/create` screen is dropped (it wasn't authored). Generate and pack are a matched inverse pair for the declarative
+The synthesized `/create` screen, and the `/login` screen added for an app spec with auth and no login form, are dropped (they weren't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for an app spec of those
 constructs (modulo comments + formatting). When you add a new construct to
@@ -818,6 +845,12 @@ partial and keeps the shell).
   (a dashboard's recent rows) gets `.Base(<home route>)`, so its record
   links and New reach the home's detail and create screens instead of
   `<dashboard>/<id>`.
+- An entity with **no** `entity_detail` screen has no page at
+  `<list>/<id>`, so its lists without `create: true` render with
+  `.NoLinks()`: the rows draw as text with no row menu, instead of
+  linking every row to a 404. A `create: true` list keeps its links
+  (`NoLinks` also removes New), so give a writable entity a detail
+  screen.
 - `entity_detail` renders `appUI.Record("<entity>", id).Delete().Duplicate()`
   from the screen's `{id}` route param. The record page holds the edit
   form and a button per declared move, so there is no `/<detail>/edit`
@@ -1422,6 +1455,17 @@ screens:
           register_href: /signup  # optional link
 ```
 
+An app spec with `app.auth.enabled: true` and no `login_form` on any
+screen gets one anyway: the generator adds a `/login` screen holding a
+`login_form` with the defaults above (it links a `signup_form` screen's
+route as `register_href` when there is one), the way a writable list gets
+its `<list>/create`. Gated screens, the Sign in button and a failed form
+login all point there, so none of them lands on a 404. It takes the
+`marketing` layout when the app spec has marketing screens, and is not
+added to nav. Write your own `login_form` screen (any route), or a
+screen named `login` or routed `/login`, and nothing is added. `gofastr
+pack` drops the added screen, as it drops a synthesized create screen.
+
 ### Admin back-office (`app.admin`)
 
 ```yaml
@@ -1650,6 +1694,16 @@ The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
 - duplicate entity names, routes, endpoints, middleware, plugins, or helpers
+- a screen route a browser cannot ask for: one that does not start with
+  `/`, has an empty, `.` or `..` segment (`//evil.com` is a
+  protocol-relative link, `/x/../admin` is `/admin` to a browser), holds
+  `?`, `#`, a backslash, a space or a control character, or names one
+  parameter twice (`/x/{id}/{id}`)
+- a screen route at or under an entity's CRUD mount (`/api/posts`,
+  `/api/posts/{id}`, or `/posts` with `api_prefix: ""`): the framework
+  refuses to boot on the mount itself, and under it the CRUD routes
+  (`{id}`, `llm.md`, `_events`) answer instead of the screen. A fragment with no `app:` section (`generate app --add`) is
+  not checked for it, since it does not carry the project's `api_prefix`
 - two screen routes that differ only in parameter names or syntax
   (`/posts/{id}` and `/posts/{slug}` or `/posts/:id`): the router tries
   dynamic routes in registration order, so the second would never render
@@ -1663,6 +1717,33 @@ The generator rejects:
   generated typed client emits it into Go string literals, and the runtime
   interpolates it into DDL as a bare SQL identifier. The entity `name:` is
   already constrained to a Go identifier; `table:` was the way around that.
+- a table, field or index name SQL cannot carry, which would build and
+  then fail at boot or on its first query: a name with a hyphen, space or
+  dot (`first-name`, `last name`), and a name over 63 bytes (Postgres
+  keeps only the first 63, so two longer names that share them name one
+  table or column). An SQL keyword such as `order`, `group`, `default`,
+  `values`, `limit`, `on`, `select`, `user` or `desc` is fine: AutoMigrate
+  and the CRUD routes write a keyword name quoted (`"order"`) and every
+  other name bare. Go words such as `type`, `func` and `range` are fine
+  too.
+- two field names of one entity that become one Go struct field or one
+  Postgres column (`Title` and `title`, `_note` and `note`): the generated
+  code would not compile, and Postgres folds the unquoted names
+  AutoMigrate writes into one column. A name that does not start with a
+  lower-case letter is fine on its own: `Title` is served and sent as
+  `Title`, `_note` as `Note`, and the generated typed repo writes and
+  reads both
+- two entities on one table, compared the way Postgres folds an unquoted
+  name and with the engine's default schema dropped (`table: Items` or
+  `table: public.items` and an entity named `items`): the second entity's
+  routes collide with the first's, or both entities share rows
+- an entity on a table a battery of the generated app keeps for itself:
+  `auth_users`, `auth_users_oauth_links`, `auth_sessions`, `audit_log`,
+  `admin_saved_views`, `gofastr_modules` and `_gofastr_migrate_lock`,
+  bare or qualified by the default schema (`public.auth_users`,
+  `main.auth_sessions`). An
+  entity named `auth_users` was migrated onto the accounts table and
+  served it to every signed-in user through its CRUD routes.
 - enum `values:` entries carrying a quote, backtick, backslash, or newline
   (they break the generated Go), or carrying a terminal-invisible character —
   a C1 control (U+0080–U+009F), a bidi override, or a zero-width/BOM rune:

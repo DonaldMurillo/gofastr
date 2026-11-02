@@ -738,7 +738,9 @@ notes:
     breaking: true
     hits: edit
     find:
-      uses: [gofastr/framework/entityui.AccessDeniedTitle]
+      shapes:
+        - symbol: gofastr/framework/entityui.AccessDeniedTitle
+          type: '^untyped string$'
     guidance: "Use entityui.AccessDeniedTitle.Text(ctx) for the reader's locale, or .English() in a test that compares the English."
   - change: "ui.ShortcutList and uinoderender.New take a context first"
     breaking: true

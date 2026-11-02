@@ -196,8 +196,8 @@ func TestExportManifestChecksumsAndSchema(t *testing.T) {
 	if man.CreatedAt != fixedExportTime().Format(time.RFC3339Nano) {
 		t.Errorf("created_at not the supplied time: %q", man.CreatedAt)
 	}
-	if len(man.Entities) != 2 {
-		t.Fatalf("expected 2 manifest entities, got %d", len(man.Entities))
+	if n := len(withoutModuleState(man.Entities)); n != 2 {
+		t.Fatalf("expected 2 manifest entities, got %d", n)
 	}
 	if man.Schema.Tables == nil {
 		t.Fatal("manifest schema fingerprint missing")

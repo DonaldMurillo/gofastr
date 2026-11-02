@@ -196,9 +196,9 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 }
 
 // sweepParents settles pending parents that per-delivery completion won't
-// reach on its own. Both paths are snapshot-free (no dependency on the
-// live declared set), so they are safe across a rolling deploy that changes
-// the consumer set:
+// reach on its own. Neither path completes a parent because of the live
+// declared set; (ii) reads it only to hold a parent back, so both are safe
+// across a rolling deploy that changes the consumer set:
 //
 //	(i)  Orphan drop: a pending parent older than handlerGrace, with NO
 //	     delivery rows, whose event type has no declared consumer here.
@@ -218,7 +218,10 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 //	     a consumer being rolled out on another replica). This is also what
 //	     actually completes the common case: completeParent no-ops while a
 //	     parent is young, so this sweep finishes it once past the grace.
-//	     EXISTS(delivery) keeps a never-expanded parent out of this path.
+//	     EXISTS(delivery) keeps a never-expanded parent out of this path,
+//	     and the per-consumer EXISTS keeps out a parent that some consumer
+//	     declared here for its type has no delivery for yet (see
+//	     declaredFor).
 func (o *Outbox) sweepParents(ctx context.Context) error {
 	now := o.now().UTC()
 	cutoff := now.Add(-o.handlerGrace)
@@ -256,15 +259,23 @@ func (o *Outbox) sweepParents(ctx context.Context) error {
 			return err
 		}
 	}
-	// (ii) completion backstop: old parent, all deliveries terminal.
+	// (ii) completion backstop: old parent, all deliveries terminal, and
+	// a delivery for every consumer declared here for its type.
+	args := []any{now, cutoff}
+	var covered strings.Builder
+	for _, c := range o.declaredPairs() {
+		args = append(args, c.eventType, c.name)
+		fmt.Fprintf(&covered, "\n\t\t\t  AND (p.type <> $%d OR EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.consumer = $%d))",
+			len(args)-1, o.qd(), len(args))
+	}
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s AS p SET status='dispatched', dispatched_at=$1
 			WHERE p.status='pending'
 			  AND p.created_at <= $2
 			  AND EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id)
-			  AND NOT EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.status='pending')`,
-			o.qt(), o.qd(), o.qd()),
-		now, cutoff)
+			  AND NOT EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.status='pending')%s`,
+			o.qt(), o.qd(), o.qd(), covered.String()),
+		args...)
 	return err
 }
 
@@ -326,24 +337,31 @@ func (o *Outbox) purgeExpired(ctx context.Context) error {
 }
 
 // completeParent marks one parent dispatched iff it has no pending
-// deliveries left (all dispatched/dead/abandoned) AND it is older than the
-// handler grace. The age gate is essential and symmetric with abandonment:
+// deliveries left (all dispatched/dead/abandoned), every consumer this
+// relay declares for eventType holds a delivery (see consumerCoverage),
+// AND it is older than the handler grace. The age gate is essential and symmetric with abandonment:
 // a consumer added on another replica has not yet had its delivery row
 // created, so "no pending delivery" does NOT prove "fully delivered" for a
 // young parent, completing it would let expand (WHERE status='pending')
 // skip the parent forever and lose that consumer's event. Waiting the grace
 // gives every replica time to expand its declared consumers. A parent may
 // complete with some deliveries dead/abandoned; dead ones await Replay.
-func (o *Outbox) completeParent(ctx context.Context, rowID string) {
+func (o *Outbox) completeParent(ctx context.Context, rowID, eventType string) {
 	now := o.now().UTC()
+	args := []any{now, rowID, now.Add(-o.handlerGrace)}
+	var covered strings.Builder
+	for _, c := range o.declaredFor(eventType) {
+		args = append(args, c)
+		fmt.Fprintf(&covered, "\n\t\t\t  AND EXISTS (SELECT 1 FROM %s WHERE row_id=$2 AND consumer=$%d)", o.qd(), len(args))
+	}
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET status='dispatched', dispatched_at=$1
 			WHERE id=$2 AND status='pending'
 			  AND created_at <= $3
 			  AND NOT EXISTS (
 			      SELECT 1 FROM %s WHERE row_id=$2 AND status='pending'
-			  )`, o.qt(), o.qd()),
-		now, rowID, now.Add(-o.handlerGrace)); err != nil {
+			  )%s`, o.qt(), o.qd(), covered.String()),
+		args...); err != nil {
 		slog.Default().Error("outbox: complete parent failed; relay will retry the pending row",
 			"row_id", rowID, "error", err)
 	}
@@ -669,7 +687,7 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 		d.RowID, d.Consumer, now.Add(-o.handlerGrace), d.ClaimedUntil)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n > 0 {
-			o.completeParent(ctx, d.RowID)
+			o.completeParent(ctx, d.RowID, d.Type)
 			return
 		}
 	}

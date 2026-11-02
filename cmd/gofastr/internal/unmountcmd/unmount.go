@@ -609,7 +609,7 @@ func listUnmounted(entries []settings.Unmounted) {
 	}
 	fmt.Println("Unmounted packages:")
 	for _, e := range entries {
-		fmt.Printf("  %s %s -> %s (%s)\n", e.Source, e.Version, e.Path, e.Date)
+		cli.Printf("  %s %s -> %s (%s)\n", e.Source, e.Version, e.Path, e.Date)
 	}
 }
 
@@ -677,15 +677,15 @@ func unmountPackage(arg, outDir string, dryRun bool, wd, modulePath, moduleRoot,
 		return fmt.Errorf("find the imports to rewire: %w", err)
 	}
 	if dryRun {
-		fmt.Printf("Would copy %s %s into %s:\n", source, version, tgt.Display)
+		cli.Printf("Would copy %s %s into %s:\n", source, version, tgt.Display)
 		for _, f := range files {
-			fmt.Printf("  %s\n", path.Join(tgt.Display, f.Name))
+			cli.Printf("  %s\n", path.Join(tgt.Display, f.Name))
 		}
 		fmt.Printf("Would rewire the imports in %d file(s):\n", len(plan))
 		for _, r := range plan {
-			fmt.Printf("  %s\n", r.name)
+			cli.Printf("  %s\n", r.name)
 		}
-		fmt.Printf("Would record it in %s\n", settingsPath)
+		cli.Printf("Would record it in %s\n", settingsPath)
 		return nil
 	}
 	undoCopy, err := appgen.WritePackageCopy(tgt, files)
@@ -781,15 +781,15 @@ func remountPackage(arg string, dryRun, force bool) error {
 		return fmt.Errorf("find the imports to rewire: %w", err)
 	}
 	if dryRun {
-		fmt.Printf("Would rewire the imports in %d file(s) back to %s:\n", len(plan), entry.Source)
+		cli.Printf("Would rewire the imports in %d file(s) back to %s:\n", len(plan), entry.Source)
 		for _, r := range plan {
-			fmt.Printf("  %s\n", r.name)
+			cli.Printf("  %s\n", r.name)
 		}
-		fmt.Printf("Would delete %s and its entry in %s\n", entry.Path, settingsPath)
+		cli.Printf("Would delete %s and its entry in %s\n", entry.Path, settingsPath)
 		if len(changed) > 0 && !force {
 			fmt.Printf("Changed since unmount, so remount needs --force and deletes them:\n")
 			for _, c := range changed {
-				fmt.Printf("  %s\n", c)
+				cli.Printf("  %s\n", c)
 			}
 		}
 		return nil

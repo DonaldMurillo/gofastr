@@ -55,14 +55,17 @@ func (o Order) Apply(qb *query.QueryBuilder) {
 // type so they live here.
 type rawColumn string
 
-func (c rawColumn) name() string { return string(c) }
+// name is the column as a condition writes it: bare, or quoted when it is
+// a keyword (query.QuoteKeyword), the spelling the migrator gave the DDL.
+// Order keeps the raw name; the builder's ORDER BY slot quotes it.
+func (c rawColumn) name() string { return query.QuoteKeyword(string(c)) }
 func (c rawColumn) Asc() Order   { return Order{column: string(c), dir: "ASC"} }
 func (c rawColumn) Desc() Order  { return Order{column: string(c), dir: "DESC"} }
 func (c rawColumn) IsNull() Condition {
-	return Condition{sql: string(c) + " IS NULL"}
+	return Condition{sql: c.name() + " IS NULL"}
 }
 func (c rawColumn) IsNotNull() Condition {
-	return Condition{sql: string(c) + " IS NOT NULL"}
+	return Condition{sql: c.name() + " IS NOT NULL"}
 }
 
 // And combines conditions with AND. Useful inside Or(...) to nest a group

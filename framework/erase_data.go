@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -98,6 +99,23 @@ type eraseConfig struct {
 	dryRun         bool
 	auditTable     string
 	auditTombstone string
+	// tenant is WithEraseTenant's tenant; tenantSet says it was given
+	// (an explicit "" overrides the request's tenant).
+	tenant    string
+	tenantSet bool
+}
+
+// WithEraseTenant names the tenant the erased user belongs to, for the
+// stores that qualify a user by tenant: a member list registered with a
+// datexport.DataEraser MemberSeparator (a feature flag's user allow list,
+// "acme:42") loses only that tenant's entry for the user and the bare
+// entries, since user ids are per tenant. Without this option the tenant
+// the request's context carries (core/handler.GetTenantID, which the
+// tenant middleware fills) is used; WithEraseTenant("") overrides it and
+// removes every tenant's entry for the user id, the behaviour with no
+// tenant at all. Other erasers match the user id as before.
+func WithEraseTenant(tenantID string) EraseOption {
+	return func(c *eraseConfig) { c.tenant, c.tenantSet = tenantID, true }
 }
 
 // WithEraseDryRun switches EraseUserData to count-only mode: the returned
@@ -221,6 +239,13 @@ func (a *App) EraseUserData(ctx context.Context, userID string, opts ...EraseOpt
 	if err != nil {
 		return EraseReport{}, err
 	}
+	tenant := cfg.tenant
+	if !cfg.tenantSet {
+		tenant = handler.GetTenantID(ctx)
+	}
+	for i := range resolved {
+		resolved[i].tenant = tenant
+	}
 	plan, err := a.planErase(ctx, dialect, resolved)
 	if err != nil {
 		return EraseReport{}, err
@@ -243,6 +268,9 @@ type resolvedEraser struct {
 	// table is the eraser's table as the catalog spells it
 	// (physicalTable), set once the table is found.
 	table string
+	// tenant is the erased user's tenant (WithEraseTenant or the
+	// request's), "" for none. Only a MemberSeparator eraser reads it.
+	tenant string
 }
 
 // resolveEraserIdentities resolves the bound match value for every eraser,
@@ -1632,24 +1660,72 @@ func eraseDelete(ctx context.Context, tx *sql.Tx, e resolvedEraser) (int, error)
 // conditions. The rest of the array keeps its order; an array left with
 // no members is written as []. The value is a bound argument, $1 in
 // every position.
+//
+// With a MemberSeparator, a member may carry a tenant qualifier ahead of
+// the value (a feature flag's "acme:42", featureflag.UserEntry). Which
+// members go depends on the erasure's tenant:
+//
+//   - With a tenant (WithEraseTenant, or the request's): the member equal
+//     to the value, the bare qualified form (":42"), and that tenant's
+//     form ("acme:42", the tenant written with '%' and the separator
+//     percent-escaped, featureflag's spelling). Another tenant's "beta:42"
+//     names another user, since ids are per tenant, and stays.
+//   - Without one: the member equal to the value, and every member whose
+//     part after its first separator equals it, so every tenant's entry.
+//
+// A member equal to the whole value always goes. A list written before
+// entries were qualified holds a user id with a separator ("google:42")
+// whole; erasing that user must not leave it behind, though the entry
+// also reads as tenant google's user 42. Privacy wins the ambiguity: the
+// worst case is that tenant google's user 42 loses a flag entry.
 func eraseRemoveMember(ctx context.Context, tx *sql.Tx, dialect migrate.Dialect, e resolvedEraser) (int, error) {
 	qt := quotePhysical(e.table)
 	qc := query.QuoteFolded(query.MustIdent(e.eraser.Column))
+	args := []any{e.value}
+	matches := func(v string) string { return fmt.Sprintf("%s = $1", v) }
+	if sep := e.eraser.MemberSeparator; sep != "" && e.tenant != "" {
+		args = append(args, sep+e.value, memberQualifier(e.tenant, sep)+sep+e.value)
+		matches = func(v string) string { return fmt.Sprintf("%s IN ($1, $2, $3)", v) }
+	} else if sep != "" {
+		args = append(args, sep)
+		find, width := "instr(%s, $2)", "length($2)"
+		if dialect == migrate.DialectPostgres {
+			find, width = "strpos(%s, $2::text)", "length($2::text)"
+		}
+		matches = func(v string) string {
+			at := fmt.Sprintf(find, v)
+			return fmt.Sprintf("(%[1]s = $1 OR (CASE WHEN %[2]s > 0 THEN substr(%[1]s, %[2]s + %[3]s) ELSE %[1]s END) = $1)", v, at, width)
+		}
+	}
 	var rest, holds string
 	if dialect == migrate.DialectPostgres {
-		rest = fmt.Sprintf("COALESCE((SELECT json_agg(m.v ORDER BY m.n)::text FROM json_array_elements_text(%s::json) WITH ORDINALITY AS m(v, n) WHERE m.v <> $1), '[]')", qc)
-		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_array_elements_text(%s::json) AS h(v) WHERE h.v = $1)", qc)
+		rest = fmt.Sprintf("COALESCE((SELECT json_agg(m.v ORDER BY m.n)::text FROM json_array_elements_text(%s::json) WITH ORDINALITY AS m(v, n) WHERE NOT %s), '[]')", qc, matches("m.v"))
+		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_array_elements_text(%s::json) AS h(v) WHERE %s)", qc, matches("h.v"))
 	} else {
-		rest = fmt.Sprintf("(SELECT json_group_array(m.value) FROM (SELECT value FROM json_each(%s) WHERE value <> $1 ORDER BY key) AS m)", qc)
-		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_each(%s) WHERE value = $1)", qc)
+		rest = fmt.Sprintf("(SELECT json_group_array(m.value) FROM (SELECT value FROM json_each(%s) WHERE NOT %s ORDER BY key) AS m)", qc, matches("value"))
+		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_each(%s) WHERE %s)", qc, matches("value"))
 	}
 	// The match column is the array itself, so only the Where conditions
-	// narrow the rows; their placeholders follow the value's.
-	conds, wargs := whereConds(e.eraser, 2)
+	// narrow the rows; their placeholders follow the value's (and the
+	// separator's, or the tenant's spellings).
+	conds, wargs := whereConds(e.eraser, len(args)+1)
 	if conds != "" {
 		holds += " AND " + conds
 	}
-	return execCount(ctx, tx, fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s", qt, qc, rest, holds), append([]any{e.value}, wargs...)...)
+	return execCount(ctx, tx, fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s", qt, qc, rest, holds), append(args, wargs...)...)
+}
+
+// memberQualifier writes tenantID as a member's qualifier: '%' and then
+// every byte of sep percent-escaped, so the member's first sep still ends
+// the qualifier. With sep ":" it is featureflag.UserEntry's spelling
+// ("a:b%c" is "a%3Ab%25c").
+func memberQualifier(tenantID, sep string) string {
+	q := strings.ReplaceAll(tenantID, "%", "%25")
+	var esc strings.Builder
+	for i := range len(sep) {
+		fmt.Fprintf(&esc, "%%%02X", sep[i])
+	}
+	return strings.ReplaceAll(q, sep, esc.String())
 }
 
 // eraserMatch is the condition an eraser's rows meet: its match column

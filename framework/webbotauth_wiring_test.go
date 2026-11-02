@@ -10,6 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/webbotauth"
 )
 
 const pinnedJWKSBody = "{\n  \"keys\": [\n    {\n      \"kid\": \"bot-1\",\n      \"kty\": \"OKP\",\n      \"use\": \"sig\"\n    }\n  ]\n}"
@@ -129,5 +132,23 @@ func TestWebBotAuth_RequireModeBlocksUnsigned(t *testing.T) {
 func TestVerifiedAgent_PlainContext(t *testing.T) {
 	if VerifiedAgent(context.Background()) != nil {
 		t.Error("VerifiedAgent on a plain context must be nil")
+	}
+}
+
+// WebBotAuthVerifyConfig.MaxValidity reaches the verifier, and zero
+// leaves the 5-minute default.
+func TestWebBotAuth_MaxValidityWired(t *testing.T) {
+	for _, tc := range []struct {
+		cfg  time.Duration
+		want time.Duration
+	}{{0, webbotauth.DefaultMaxValidity}, {time.Minute, time.Minute}} {
+		app, cleanup := startApp(t, NewApp(WithWebBotAuth(WebBotAuthConfig{
+			Verify: &WebBotAuthVerifyConfig{MaxValidity: tc.cfg},
+		})))
+		got := app.webBotAuthVerifier.MaxValidity()
+		cleanup()
+		if got != tc.want {
+			t.Errorf("MaxValidity %v: verifier caps at %v, want %v", tc.cfg, got, tc.want)
+		}
 	}
 }

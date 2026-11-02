@@ -178,6 +178,13 @@ func chatPage(w http.ResponseWriter, r *http.Request, sess ids.SessionID, token 
 	// theme_edit_page.go sets the same header for a page carrying no
 	// token at all.
 	w.Header().Set("Cache-Control", "no-store")
+	// Never framed: the Host guard stops a rebound page from reading
+	// the token, not a page on any site from loading this one in an
+	// iframe and steering the operator's click onto the permission
+	// modal's "Allow for session" button. frame-ancestors is the only
+	// CSP directive set, so the inline bootstrap script still runs.
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 	if r.URL.Path != "/" {
 		// The /endpoints sub-page is a fallback developer reference.
 		if r.URL.Path == "/endpoints" {

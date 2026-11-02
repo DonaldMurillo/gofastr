@@ -129,7 +129,7 @@ func (ch *CrudHandler) tableNamesKey(ctx context.Context, key string) (bool, err
 	var conds []string
 	var args []any
 	for i, mf := range ch.mediaFields() {
-		conds = append(conds, mf[0]+" = $"+strconv.Itoa(i+1))
+		conds = append(conds, query.QuoteKeyword(mf[0])+" = $"+strconv.Itoa(i+1))
 		args = append(args, key)
 	}
 	sqlStr, args := query.Select("1").

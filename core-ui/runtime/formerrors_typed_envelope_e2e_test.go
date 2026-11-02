@@ -14,9 +14,10 @@ import (
 )
 
 // typedRefusalServer answers /rpc/fields with the real handler.WriteError
-// of a handler.ValidationError (the shape every typed handler, through
-// HandlerAdapter, sends: {"success":false,"error":{"code","message",
-// "fields"}}), and /rpc/plain with a WriteError that names no field.
+// of a handler.ValidationError (the envelope every typed handler,
+// through HandlerAdapter, sends: {"error","code","reason","fields",
+// "field_reasons","success"}), and /rpc/plain with a WriteError that
+// names no field.
 // The page records every toast the runtime asks for in window.__toasts.
 func typedRefusalServer(t *testing.T, body string) string {
 	t.Helper()
@@ -51,12 +52,12 @@ func typedRefusalServer(t *testing.T, body string) string {
 	return srv.URL + "/"
 }
 
-// A typed handler's refusal reaches the form. handler.WriteError nests
-// the message and the field errors under "error" ({"error":{"message",
-// "fields"}}), while the formerrors module read only the flat CRUD
-// envelope ({"error": "...", "fields"}): the field got no aria-invalid
-// and no error node, and the toast said "Request failed (400)" with the
-// server's message lost.
+// A typed handler's refusal reaches the form. handler.WriteError used
+// to nest the message and the field errors under "error"
+// ({"error":{"message","fields"}}) while the formerrors module read only
+// the flat CRUD envelope: the field got no aria-invalid and no error
+// node, and the toast said "Request failed (400)" with the server's
+// message lost. Both now write the one flat envelope (issue #652).
 func TestFormErrorsReadTypedHandlerEnvelope(t *testing.T) {
 	url := typedRefusalServer(t, `
 <form id="f" data-cui-rpc="/rpc/fields" data-cui-rpc-method="POST">

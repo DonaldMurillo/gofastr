@@ -29,7 +29,12 @@ part of the body went out) is logged and aborts the connection with
 `http.ErrAbortHandler`, so the client sees a broken response, never an
 error document spliced onto a success. `WriteError` sends an `*Error`'s
 `Code` when it is in 400-599; a nil `*Error`, or a `Code` outside that
-range (a forgotten zero, a 1xx, a 2xx), is sent as 500.
+range (a forgotten zero, a 1xx, a 2xx), is sent as 500. Its body is the
+one error envelope every route shares, crud's included:
+`{"error": "<message>", "code": 400, "reason": "<stable code>",
+"fields": {...}, "field_reasons": {...}, "success": false}`, with
+`reason` absent for `Errorf`'s own wording and `fields`/`field_reasons`
+absent with no violations.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
 A present higher-priority value replaces an earlier value, including a JSON
@@ -449,15 +454,49 @@ file. On a disk-backed
 `FS` (`os.DirFS`), a request whose target resolves through a symlink
 out of the root is refused with 404 — the read side is contained by
 the configured root the same way write sinks elsewhere in the repo
-are; `embed.FS` cannot carry symlinks and is unaffected. Direct: call
+are, including a root directory created after `Handler` was built,
+which the handler binds on the first request that finds it; `embed.FS`
+cannot carry symlinks and is unaffected. Direct: call
 `Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
-uses it for its own assets too. `NotFoundFile` answers a miss with a
+uses it for its own assets too. `Prefix` is `/static`, `static` or
+`/static/` alike; `Mount` serves `/static/...` and redirects a bare
+`/static`. The handler strips the prefix on a segment boundary only
+(`/staticx.js` is not `x.js`), and a path without it is served from
+the root, so the handler also works behind `http.StripPrefix`. A
+request for a directory without the trailing slash (`/docs`) gets
+`301` to the slash form (`/docs/`, query kept) when the directory has
+an `IndexFile`, as `net/http`'s `FileServer` does, so the index's
+relative links resolve under it. The `Location` is relative
+(`./docs/`): it lands under the handler's `Prefix` or an outer
+`StripPrefix`, and never on another host, whatever the path spells
+(`//evil.com`, `/\evil.com`). With `SPA: true`, a miss is a client
+route (`/dashboard/settings`, `/users/42`, `/u/jane.doe`, `/blog/v1.2`)
+and gets `IndexFile`, served `no-cache` whatever `MaxAge` says, so the
+shell is never stored under a URL that names no file. A miss whose last
+segment ends in a well-known asset extension gets `404`, not the shell:
+a browser would run that HTML as a script or a stylesheet. The asset
+extensions, matched in any case, are `.js` `.mjs` `.css` `.map`, `.png`
+`.jpg` `.jpeg` `.gif` `.svg` `.webp` `.avif` `.ico`, `.woff` `.woff2`
+`.ttf`, and `.json` `.wasm` `.txt` `.xml`. A client route that ends in
+one of those (`/feeds/latest.json` as a screen) needs a server route of
+its own; any other dot is part of the route.
+`NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
 `404.html`; `gofastr docs serve` uses it). For a handler that serves
 its own bytes, `Refuses(path)` reports whether the handler would refuse
-a path for a dot segment or a config file name (the UI host's static
-dir and the static export use it), and `IfNoneMatch(r, etag)` checks
-an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
+a path for a dot segment, a config file name or an 8.3 short name (the UI host's static
+dir and the static export use it). Both read a path the way Windows
+opens it, on every OS: `\` separates segments, and a config name
+matches with trailing dots or spaces or an `::$DATA` stream suffix, so
+`/assets%5C..%5C.env` and `/web.config.` are refused. On every OS a file
+whose name holds a backslash is judged by the pieces it splits into:
+`a\b.txt` is served, `a\.env` and `x\web.config` are refused. A segment
+holding `~` followed by a digit is refused too, on every OS: it is the
+shape of an NTFS 8.3 short name, and a Windows volume that generates
+them opens `WEB~1.CON` as `web.config` and `ENV~1` as `.env`. A name
+like `a~b.txt` or `notes.txt~` is served.
+`IfNoneMatch(r, etag)`
+checks an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
 comparison. Start at `core/static/static.go`: `Handler`.
 
 ## App plumbing
@@ -478,6 +517,29 @@ choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
 fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
 the `default:` tag, and the rules still check it. Recursive configuration
 struct shapes are rejected.
+
+A named struct field (`DB DBConfig`) reads its keys under `DB_`. An
+embedded struct does not: its fields are promoted the way
+`encoding/json` promotes them, so in `type Cfg struct{ Base }` Base's
+`config:"PORT"` reads `PORT`, never `BASE_PORT`. A pointer embed is
+allocated when one of its keys is present, and an unexported embedded
+type promotes its exported fields. A field declared on the outer struct
+wins over a promoted one with the same key; two embedded structs
+promoting one key at the same depth make `Load` fail with an error
+naming both, as does a `config:` tag on an embedded struct. To keep a
+prefix, name the field (`Base Base` reads `BASE_PORT`).
+
+A promoted field the outer one shadows is never read from a source, so
+it gets its own `default:` tag. When `Cfg` embeds `Base` (whose
+`Port` reads `PORT` with `default:"8080"`) and declares its own `Port`
+reading `PORT`, `cfg.Port` reads `PORT` and `cfg.Base.Port` holds
+`8080`, so a method on `Base` reading `b.Port` sees its default, not
+`0`. The shadowed field's `required:` and `validate:` tags do not
+apply. When a source still holds a key spelled the old way
+(`BASE_PORT`) and no field reads it, `Load` logs one warning per key
+through `slog`'s default logger, naming the key it reads now; `Load`
+still succeeds.
+
 Direct: call `config.Load(&cfg)` at startup. Start at
 `core/config/config.go`: `Load`.
 
@@ -502,6 +564,20 @@ own and gives the clone the guarded dialer, so a custom TLS or pool
 setting keeps the dial-time check. A transport that would speak HTTP/2
 on its own still does after the swap. Any other transport gets the
 weaker per-request check.
+
+### textsafe
+
+The one predicate for characters that forge, reorder or hide text: C0
+and C1 controls, the Unicode line separators, and the invisible set
+(zero-width, joiners, bidi overrides and isolates, the tag characters
+U+E0000–U+E007F that hide ASCII in a prompt, and the Hangul fillers
+U+115F, U+1160, U+3164, U+FFA0). `IsInvisible` and `IsUnsafe` judge one
+rune, so they report every tag character. The string helpers
+(`StripInvisible`, `StripUnsafe`, `ContainsInvisible`, `ContainsUnsafe`)
+keep a subdivision flag whole: U+1F3F4, then 3 to 7 tag lowercase
+letters or digits, then CANCEL TAG (Scotland, England, Wales). Any other
+tag run, one behind a black flag included, is stripped or refused. Start
+at `core/textsafe/textsafe.go`.
 
 ### webbotauth
 

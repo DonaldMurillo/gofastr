@@ -1,0 +1,136 @@
+CREATE TABLE IF NOT EXISTS authors (
+	id TEXT PRIMARY KEY NOT NULL,
+	email VARCHAR(120) UNIQUE NOT NULL,
+	status TEXT DEFAULT 'active',
+	score BIGINT DEFAULT 0,
+	created_at TIMESTAMPTZ,
+	updated_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_authors_status_score ON authors (status, score);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_authors_lower_email ON authors (lower(email));
+CREATE TABLE IF NOT EXISTS lines (
+	post_id BIGINT NOT NULL,
+	seq BIGINT NOT NULL,
+	text TEXT,
+	legacy TEXT,
+	PRIMARY KEY (post_id, seq)
+);
+CREATE TABLE IF NOT EXISTS posts (
+	id BIGSERIAL PRIMARY KEY,
+	author_id TEXT NOT NULL,
+	title TEXT NOT NULL,
+	body TEXT,
+	meta JSONB,
+	created_at TIMESTAMPTZ,
+	updated_at TIMESTAMPTZ,
+	deleted_at TIMESTAMPTZ,
+	FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
+CREATE TABLE IF NOT EXISTS tags (
+	id TEXT PRIMARY KEY NOT NULL,
+	label TEXT
+);
+CREATE TABLE IF NOT EXISTS author_tags (
+	author_id TEXT NOT NULL,
+	tag_id TEXT NOT NULL,
+	PRIMARY KEY (author_id, tag_id),
+	FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE,
+	FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_author_tags_tag_id ON author_tags (tag_id);
+---
+{
+  "tables": {
+    "author_tags": {
+      "author_id": "TEXT",
+      "tag_id": "TEXT"
+    },
+    "authors": {
+      "created_at": "TIMESTAMPTZ",
+      "email": "VARCHAR(120)",
+      "id": "TEXT",
+      "score": "BIGINT",
+      "status": "TEXT",
+      "updated_at": "TIMESTAMPTZ"
+    },
+    "lines": {
+      "legacy": "TEXT",
+      "post_id": "BIGINT",
+      "seq": "BIGINT",
+      "text": "TEXT"
+    },
+    "posts": {
+      "author_id": "TEXT",
+      "body": "TEXT",
+      "created_at": "TIMESTAMPTZ",
+      "deleted_at": "TIMESTAMPTZ",
+      "id": "BIGSERIAL",
+      "meta": "JSONB",
+      "title": "TEXT",
+      "updated_at": "TIMESTAMPTZ"
+    },
+    "tags": {
+      "id": "TEXT",
+      "label": "TEXT"
+    }
+  },
+  "table_ddl": {
+    "author_tags": "CREATE TABLE IF NOT EXISTS author_tags (\n\tauthor_id TEXT NOT NULL,\n\ttag_id TEXT NOT NULL,\n\tPRIMARY KEY (author_id, tag_id),\n\tFOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE,\n\tFOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE\n)",
+    "authors": "CREATE TABLE IF NOT EXISTS authors (\n\tid TEXT PRIMARY KEY NOT NULL,\n\temail VARCHAR(120) UNIQUE NOT NULL,\n\tstatus TEXT DEFAULT 'active',\n\tscore BIGINT DEFAULT 0,\n\tcreated_at TIMESTAMPTZ,\n\tupdated_at TIMESTAMPTZ\n)",
+    "lines": "CREATE TABLE IF NOT EXISTS lines (\n\tpost_id BIGINT NOT NULL,\n\tseq BIGINT NOT NULL,\n\ttext TEXT,\n\tlegacy TEXT,\n\tPRIMARY KEY (post_id, seq)\n)",
+    "posts": "CREATE TABLE IF NOT EXISTS posts (\n\tid BIGSERIAL PRIMARY KEY,\n\tauthor_id TEXT NOT NULL,\n\ttitle TEXT NOT NULL,\n\tbody TEXT,\n\tmeta JSONB,\n\tcreated_at TIMESTAMPTZ,\n\tupdated_at TIMESTAMPTZ,\n\tdeleted_at TIMESTAMPTZ,\n\tFOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE\n)",
+    "tags": "CREATE TABLE IF NOT EXISTS tags (\n\tid TEXT PRIMARY KEY NOT NULL,\n\tlabel TEXT\n)"
+  },
+  "indices": {
+    "author_tags": [
+      "CREATE INDEX IF NOT EXISTS idx_author_tags_tag_id ON author_tags (tag_id)"
+    ],
+    "authors": [
+      "CREATE INDEX IF NOT EXISTS idx_authors_status_score ON authors (status, score)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS ux_authors_lower_email ON authors (lower(email))"
+    ],
+    "posts": [
+      "CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id)"
+    ]
+  },
+  "primary_keys": {
+    "authors": [
+      "id"
+    ],
+    "lines": [
+      "post_id",
+      "seq"
+    ],
+    "posts": [
+      "id"
+    ],
+    "tags": [
+      "id"
+    ]
+  },
+  "unique_columns": {
+    "authors": [
+      "email"
+    ],
+    "lines": [],
+    "posts": [],
+    "tags": []
+  }
+}
+---
+ALTER TABLE lines ALTER COLUMN text DROP DEFAULT, ALTER COLUMN text TYPE BIGINT USING text::BIGINT;
+ALTER TABLE lines DROP COLUMN legacy;
+ALTER TABLE tags RENAME COLUMN label TO caption;
+ALTER TABLE tags ADD COLUMN weight BIGINT;
+CREATE INDEX IF NOT EXISTS idx_tags_weight ON tags (weight);
+ALTER TABLE tags ADD COLUMN hits BIGINT DEFAULT 1;
+CREATE UNIQUE INDEX IF NOT EXISTS tags_caption_key ON tags (caption);
+---
+DROP INDEX IF EXISTS tags_caption_key;
+ALTER TABLE tags DROP COLUMN hits;
+DROP INDEX IF EXISTS idx_tags_weight;
+ALTER TABLE tags DROP COLUMN weight;
+ALTER TABLE tags RENAME COLUMN caption TO label;
+ALTER TABLE lines ADD COLUMN legacy TEXT;
+ALTER TABLE lines ALTER COLUMN text TYPE TEXT;

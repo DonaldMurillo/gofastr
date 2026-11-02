@@ -36,6 +36,32 @@ The response embeds the loaded relations inline under each parent row:
 }
 ```
 
+A relation sits under its name's wire key. A `belongs_to` derived from
+a relation field (`author_id` → `relation` to `users`) shares the
+field's key, so `?include=author_id` replaces the `authorId` key with
+the record it names. `/openapi.json` documents the read view that way:
+such a property is `anyOf` the key, the related record's schema, or
+null, and a relation with no field of its own is an optional property
+(an array of records for has-many and many-to-many). Request bodies
+still take the key.
+
+A relation behind a Hidden field (a Hidden relation field, or a
+`belongs_to` whose foreign key is Hidden) is not includable: its record
+would carry the hidden key out. `?include=` on it, at any depth and in
+the in-process `GetOne`, `ListAll` and `TypedQuery.Include`, answers
+`unknown_include` the way a name that is no relation does, a nested
+filter across it (`?owner_ref.email=`) answers `nested_unknown_relation`,
+and no near-miss hint names it. `entity.HidesRelation` is the rule;
+`/openapi.json` and llm.md leave such a relation out too.
+
+A has-many or has-one whose foreign key is Hidden on the *target* stays
+includable: `users` has_many `notes` through a Hidden `notes.owner_ref`
+still answers `?include=notes` with the user's notes, which is usually
+the point ("my notes"). To keep such a relation out of reads, set
+`Hidden: true` on the relation (`hidden: true` under the relation in
+`gofastr.yml`): it is then refused like any hidden relation, on every
+surface above.
+
 ## Path syntax
 
 ```
@@ -171,7 +197,7 @@ beside the message, which is in the request's locale (see
 
 - `unknown include "x"` (`unknown_include`, or `unknown_include_hint`
   when a near miss is suggested): the named relation does not exist on
-  the entity at that depth.
+  the entity at that depth, or sits behind a Hidden field.
 - `streaming list does not support include` (`stream_include`):
   `?stream=true` was combined with `?include=`.
 - `relation "y" targets entity "z", which is not registered`

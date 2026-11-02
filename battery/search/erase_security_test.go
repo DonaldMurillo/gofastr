@@ -162,3 +162,42 @@ func TestPostgresIndexAddsOwnerColumn(t *testing.T) {
 		t.Errorf("hits %v, want %v", got, want)
 	}
 }
+
+// The in-memory twin: Memory holds every document's text in the process,
+// where no SQL eraser reaches, so it registers a store eraser. Close
+// unregisters it, and an erasure after Close no longer names the index.
+func TestEraseRemovesMemoryDocuments(t *testing.T) {
+	m := NewMemory()
+	indexOwned(t, m)
+	eraseVictim(t, openSQLiteDB(t), m)
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := m.Index(context.Background(), Document{ID: "late", Type: "note", Text: "diary late", Owner: "victim"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := framework.NewApp(framework.WithDB(openSQLiteDB(t))).EraseUserData(context.Background(), "victim"); err != nil {
+		t.Fatalf("EraseUserData after Close: %v", err)
+	}
+	if got := searchOwners(t, m, "late"); !slices.Equal(got, []string{"late:victim"}) {
+		t.Errorf("an erasure after Close reached the closed index: hits %v", got)
+	}
+}
+
+// The battery wrapper closes its backend on stop, so an app that registers
+// search.NewBattery(search.NewMemory()) drops the eraser at shutdown.
+func TestBatteryStopClosesMemory(t *testing.T) {
+	m := NewMemory()
+	if err := NewBattery(m).OnStop(context.Background()); err != nil {
+		t.Fatalf("OnStop: %v", err)
+	}
+	if err := m.Index(context.Background(), Document{ID: "d", Type: "note", Text: "diary", Owner: "victim"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := framework.NewApp(framework.WithDB(openSQLiteDB(t))).EraseUserData(context.Background(), "victim"); err != nil {
+		t.Fatalf("EraseUserData: %v", err)
+	}
+	if got := searchOwners(t, m, "diary"); !slices.Equal(got, []string{"d:victim"}) {
+		t.Errorf("an erasure after the battery stopped reached its index: hits %v", got)
+	}
+}

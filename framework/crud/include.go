@@ -504,10 +504,14 @@ func scopedTyped(pf filter.ParsedFilter, col string, t schema.FieldType, pathFor
 // cheap DoS even before SQL parameter limits start refusing the query.
 const maxScopedINEntries = 256
 
-// relationByName looks up a Relation on an entity by name.
+// relationByName looks up a Relation a caller may name on an entity. A
+// relation behind a Hidden field (entity.HidesRelation) is not found, the
+// answer a name that is no relation gets: its include would put the
+// related record, and the hidden key, in the response, and a nested
+// filter across it would test the record's values.
 func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 	for _, rel := range ent.Config.Relations {
-		if rel.Name == name {
+		if rel.Name == name && !ent.HidesRelation(rel) {
 			return rel, true
 		}
 	}
@@ -519,9 +523,13 @@ func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 // foreign key, ?include=issue for issue_id), the foreign key itself, or
 // the target entity in either number (?include=users for author). Only
 // a guess this close gets an answer; the error never lists the entity's
-// relations, so an unrelated probe learns nothing about the schema.
+// relations, so an unrelated probe learns nothing about the schema, and
+// it never names a relation relationByName would not find.
 func includeNearMiss(ent *entity.Entity, seg string) string {
 	for _, rel := range ent.Config.Relations {
+		if ent.HidesRelation(rel) {
+			continue
+		}
 		switch seg {
 		case strings.TrimSuffix(rel.Name, "_id"), strings.TrimSuffix(oneFK(rel), "_id"),
 			rel.Entity, strings.TrimSuffix(rel.Entity, "s"):

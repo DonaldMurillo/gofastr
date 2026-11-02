@@ -35,6 +35,24 @@ func TestStatic_BlocksServerConfigFiles(t *testing.T) {
 	}
 }
 
+// TestStatic_RefusesBackslashSeparatedHiddenFiles: a URL may carry a
+// backslash (/sub%5C.env decodes to "sub\.env"). The dot-segment and
+// config-file refusals split on "/" only, so that path read as one
+// innocent segment, while a disk FS on Windows opens it through os.Root,
+// where "\" IS a separator, and served sub/.env. Refuses must read "\" as
+// the separator the filesystem may read it as.
+func TestStatic_RefusesBackslashSeparatedHiddenFiles(t *testing.T) {
+	t.Parallel()
+	for _, p := range []string{`sub\.env`, `.git\config`, `sub\Web.Config`, `a/b\.htpasswd`} {
+		if !static.Refuses(p) {
+			t.Errorf("SECURITY: [static] Refuses(%q) = false: a backslash is a path separator on Windows, so this names a hidden or server config file", p)
+		}
+	}
+	if static.Refuses(`assets/app.js`) {
+		t.Errorf("Refuses(assets/app.js) = true, want false")
+	}
+}
+
 // TestStatic_NoSniffHeader verifies every served file gets
 // X-Content-Type-Options: nosniff to prevent the browser from
 // interpreting a non-HTML response as HTML.

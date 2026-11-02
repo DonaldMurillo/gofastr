@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=aee6ded36f65e6b3
+//gofastr:generated generator=app kind=scaffold version=dev sum=5cc3d35bc75a210b
 
 package main
 
@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
@@ -34,6 +35,7 @@ var (
 	chromeTextCategories = i18n.Define("shopfront.chrome.categories", "Categories")
 	chromeTextOrders     = i18n.Define("shopfront.chrome.orders", "Orders")
 	chromeTextReviews    = i18n.Define("shopfront.chrome.reviews", "Reviews")
+	chromeTextSignIn     = i18n.Define("shopfront.chrome.sign_in", "Sign in")
 )
 
 const (
@@ -51,6 +53,18 @@ const (
 // generated app ships no bespoke styling. Add app CSS here or in static/app.css.
 func appBaseCSS() string {
 	return ""
+}
+
+// guestPolicy gates a guest-only screen (login / signup): a
+// signed-in visitor is redirected to the app instead of seeing a sign-in
+// form they're already past.
+func guestPolicy(appHome string) app.Policy {
+	return app.PolicyFunc(func(ctx context.Context) app.Decision {
+		if u, ok := handler.GetUser(ctx); ok && u != nil {
+			return decide.Redirect(appHome)
+		}
+		return decide.Allow()
+	})
 }
 
 func appTheme() style.Theme {
@@ -86,6 +100,8 @@ func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
 		authAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: "/"})
+	} else {
+		authAction = ui.LinkButton(ui.LinkButtonConfig{Label: chromeTextSignIn.Text(ctx), Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})
 	}
 	cfg.Footer = authAction
 	return cfg

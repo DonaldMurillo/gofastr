@@ -3,6 +3,7 @@ package docscmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -57,18 +58,18 @@ func RunDocs(args []string) {
 	topic := args[0]
 	body, err := docs.Get(topic)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		cli.Fprintln(os.Stderr, err.Error())
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Run `gofastr docs` to see every available topic.")
 		cli.OsExit(1)
 	}
-	fmt.Print(string(body))
+	cli.Print(string(body))
 }
 
 func runDocsList() {
 	topics, err := docs.List()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		cli.Fprintln(os.Stderr, err.Error())
 		cli.OsExit(1)
 	}
 	fmt.Printf("%s framework docs (%d topics); `gofastr docs <topic>` to read one\n\n",
@@ -95,8 +96,8 @@ func runDocsList() {
 			}
 			summary = summary[:cut] + "…"
 		}
-		fmt.Printf("  %s%s  %s\n",
-			cli.Green(t.Name),
+		cli.Printf("  "+cli.Green("%s")+"%s  %s\n",
+			t.Name,
 			strings.Repeat(" ", maxName-len(t.Name)),
 			summary,
 		)
@@ -112,30 +113,31 @@ const grepHitCap = 50
 func runDocsGrep(term string) {
 	hits, err := docs.SearchWithLimit(term, grepHitCap+1)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		cli.Fprintln(os.Stderr, err.Error())
 		cli.OsExit(1)
 		return
 	}
 	if len(hits) == 0 {
-		fmt.Printf("No matches for %q.\n", term)
+		cli.Printf("No matches for %q.\n", term)
 		return
 	}
 	if len(hits) > grepHitCap {
 		hits = hits[:grepHitCap]
-		fmt.Printf("More than %d matches for %q; the first %d, most relevant topics first (narrow the term to see the rest):\n\n", grepHitCap, term, grepHitCap)
+		cli.Printf("More than %d matches for %q; the first %d, most relevant topics first (narrow the term to see the rest):\n\n", grepHitCap, term, grepHitCap)
 	} else {
-		fmt.Printf("%d match%s for %q:\n\n", len(hits), pluralS(len(hits)), term)
+		cli.Printf("%d match%s for %q:\n\n", len(hits), pluralS(len(hits)), term)
 	}
 	currentTopic := ""
 	for _, h := range hits {
 		if h.Topic != currentTopic {
-			fmt.Printf("\n%s %s\n", cli.Bold("─"), cli.Bold(h.Topic))
+			cli.Printf("\n"+cli.Bold("─")+" "+cli.Bold("%s")+"\n", h.Topic)
 			currentTopic = h.Topic
 		}
 		if h.Heading != "" {
-			fmt.Printf("  %s%s  %s\n", cli.Dim(fmt.Sprintf("L%d", h.Line)), strings.Repeat(" ", 4), cli.Dim(h.Heading))
+			cli.Printf("  "+cli.Dim("L%d")+"    "+cli.Dim("%s")+"\n", h.Line, h.Heading)
 		}
-		fmt.Printf("  %s  %s\n", cli.Green(fmt.Sprintf("L%d", h.Line)), highlight(h.Excerpt, term))
+		// highlight scrubs the excerpt before it bolds the matches in it.
+		fmt.Print("  " + cli.Green("L"+strconv.Itoa(h.Line)) + "  " + highlight(h.Excerpt, term) + "\n")
 	}
 }
 
@@ -163,7 +165,9 @@ func pluralS(n int) string {
 }
 
 // highlight wraps each case-insensitive occurrence of `term` in `s`
-// with ANSI bold so the matching word stands out in --grep output.
+// with ANSI bold so the matching word stands out in --grep output. The
+// text is scrubbed (cli.ScrubTerminalOutput) before the bold goes on,
+// so the caller prints the result raw and keeps the colour.
 //
 // It scans s directly, rune by rune, rather than locating the match in
 // strings.ToLower(s) and slicing the original. strings.ToLower is not
@@ -174,17 +178,17 @@ func pluralS(n int) string {
 // with "slice bounds out of range".
 func highlight(s, term string) string {
 	if term == "" {
-		return s
+		return cli.ScrubTerminalOutput(s)
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); {
 		if end, ok := foldPrefixLen(s[i:], term); ok {
-			b.WriteString(cli.Bold(s[i : i+end]))
+			b.WriteString(cli.Bold(cli.ScrubTerminalOutput(s[i : i+end])))
 			i += end
 			continue
 		}
 		_, size := utf8.DecodeRuneInString(s[i:])
-		b.WriteString(s[i : i+size])
+		b.WriteString(cli.ScrubTerminalOutput(s[i : i+size]))
 		i += size
 	}
 	return b.String()

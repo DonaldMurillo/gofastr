@@ -8,15 +8,20 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Config holds the configuration for serving static files.
@@ -41,8 +46,16 @@ type Config struct {
 	// Defaults to "index.html".
 	IndexFile string
 
-	// SPA enables single-page application mode. When true, requests for
-	// paths that don't match any file will serve IndexFile instead of 404.
+	// SPA enables single-page application mode. When true, a request
+	// that matches no file is a client route (/dashboard/settings,
+	// /users/42, /u/jane.doe, /blog/v1.2) and is answered with IndexFile
+	// instead of 404, unless its last path segment ends in a well-known
+	// asset extension, in any case: .js .mjs .css .map, .png .jpg .jpeg
+	// .gif .svg .webp .avif .ico, .woff .woff2 .ttf, .json .wasm .txt
+	// .xml. A missing asset (/app.3f2a.js, /x.css,
+	// /logo.png) is a 404: the index in its place is HTML a browser
+	// would run as a script or a stylesheet, and a cache would store it
+	// under the asset's URL.
 	SPA bool
 
 	// NotFoundFile, when set, names a file in FS whose body answers a
@@ -65,7 +78,7 @@ type Config struct {
 	digests *digestCache
 
 	// resolvedRoot is the FS root's on-disk path with every symlink
-	// resolved, computed once by Handler. Empty when the FS is not
+	// resolved, bound by Handler (see rootBinding). Empty when the FS is not
 	// disk-backed (embed.FS, fstest.MapFS), which disables the
 	// read-containment check in serveFile — those filesystems cannot
 	// carry symlinks, so there is nothing to contain.
@@ -81,6 +94,11 @@ type Config struct {
 	// symlinks to follow) and for a disk FS whose root could not be
 	// opened; those keep the plain FS.Open path.
 	root *os.Root
+
+	// dirRequest is the request's file path when the URL did not end in
+	// a slash, set per request. serveFile answers a directory of that
+	// name with a redirect to the slash form instead of its index.
+	dirRequest string
 }
 
 // defaults fills in zero-value fields with sensible defaults.
@@ -88,11 +106,30 @@ func (c Config) defaults() Config {
 	if c.IndexFile == "" {
 		c.IndexFile = "index.html"
 	}
-	// Ensure prefix starts with /
+	// Normalise the prefix to "/seg[/seg...]": a leading slash and no
+	// trailing one. "/" and "" both mean the root. A trailing slash used to
+	// survive into Mount's patterns ("/static//"), which ServeMux refuses
+	// as unclean.
+	c.Prefix = strings.TrimRight(c.Prefix, "/")
 	if c.Prefix != "" && !strings.HasPrefix(c.Prefix, "/") {
 		c.Prefix = "/" + c.Prefix
 	}
 	return c
+}
+
+// stripPrefix removes prefix from p only on a segment boundary: "/static"
+// and "/static/app.js" lose it, "/staticsecret.txt" keeps every byte. A
+// bare TrimPrefix read "/staticsecret.txt" as "secret.txt", a file the URL
+// never named. A path that does not carry the prefix at all is served
+// as-is, so the handler also works behind an http.StripPrefix.
+func stripPrefix(p, prefix string) string {
+	if prefix == "" {
+		return p
+	}
+	if rest, ok := strings.CutPrefix(p, prefix); ok && (rest == "" || rest[0] == '/') {
+		return rest
+	}
+	return p
 }
 
 // Handler returns an http.Handler that serves static files according to the
@@ -100,17 +137,8 @@ func (c Config) defaults() Config {
 func Handler(config Config) http.Handler {
 	config = config.defaults()
 	config.digests = newDigestCache()
-	config.resolvedRoot = resolveFSRoot(config.FS)
-	if config.resolvedRoot != "" {
-		// Kernel-enforced containment for the disk-backed branch (see
-		// Config.root). An OpenRoot failure here — the root vanished
-		// between the resolve and this call — leaves resolvedRoot set,
-		// so serveFile falls back to the post-open containment check.
-		if root, rerr := os.OpenRoot(config.resolvedRoot); rerr == nil {
-			config.rootIdentity, _ = openedRootInfo(root)
-			_ = root.Close()
-		}
-	}
+	binding := &rootBinding{}
+	binding.load(config.FS)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve GET and HEAD.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -127,11 +155,7 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
-		reqPath := path.Clean(r.URL.Path)
-		if config.Prefix != "" {
-			reqPath = strings.TrimPrefix(reqPath, config.Prefix)
-		}
-		reqPath = strings.TrimPrefix(reqPath, "/")
+		reqPath := strings.TrimPrefix(stripPrefix(path.Clean(r.URL.Path), config.Prefix), "/")
 
 		if reqPath == "" {
 			reqPath = config.IndexFile
@@ -153,10 +177,17 @@ func Handler(config Config) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// Refuse Windows 8.3 short names (WEB~1.CON opens web.config,
+		// ENV~1 opens .env), which the two refusals above cannot read.
+		if hasShortNameSegment(reqPath) {
+			http.NotFound(w, r)
+			return
+		}
 
 		// Reopen the original directory for this request. No idle handle
 		// pins it on Windows, and identity checking refuses a replacement.
 		config := config
+		config.resolvedRoot, config.rootIdentity = binding.load(config.FS)
 		if config.rootIdentity != nil {
 			root, err := os.OpenRoot(config.resolvedRoot)
 			if err != nil {
@@ -179,6 +210,9 @@ func Handler(config Config) http.Handler {
 			}
 			config.root = root
 		}
+		if !strings.HasSuffix(r.URL.Path, "/") {
+			config.dirRequest = reqPath
+		}
 
 		// Try to open and serve the file.
 		served := serveFile(w, r, config, reqPath)
@@ -186,9 +220,21 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
-		// If SPA mode, try serving the index file as fallback.
-		if config.SPA && reqPath != config.IndexFile {
-			if serveFile(w, r, config, config.IndexFile) {
+		// If SPA mode, try serving the index file as fallback, for a
+		// client route only: a last segment ending in a well-known asset
+		// extension names a file (a fingerprinted asset a newer replica
+		// links mid-deploy, a stale bundle), and the shell in its place
+		// is HTML the browser would run as a script or a stylesheet.
+		// Those get the 404. Any other dot (/u/jane.doe, /blog/v1.2) is
+		// part of a route.
+		// The fallback is no-cache whatever MaxAge says: MaxAge is for the
+		// files the URLs name, and a long one here would store the shell
+		// under a client route for that long. The index's ETag keeps each
+		// revalidation a body-less 304.
+		if config.SPA && reqPath != config.IndexFile && !isAssetPath(reqPath) {
+			fallback := config
+			fallback.MaxAge = 0
+			if serveFile(w, r, fallback, config.IndexFile) {
 				return
 			}
 		}
@@ -199,6 +245,77 @@ func Handler(config Config) http.Handler {
 
 		http.NotFound(w, r)
 	})
+}
+
+// assetExtensions are the file extensions the SPA fallback treats as an
+// asset rather than a client route: a missing path whose last segment
+// ends in one gets 404, never IndexFile. Matching ignores ASCII case.
+// The list is the assets a page loads by URL: scripts and source maps,
+// stylesheets, images, fonts, data and WebAssembly. Any other extension
+// is part of a route.
+var assetExtensions = []string{
+	".js", ".mjs", ".css", ".map",
+	".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif", ".ico",
+	".woff", ".woff2", ".ttf",
+	".json", ".wasm", ".txt", ".xml",
+}
+
+// isAssetPath reports whether p's last segment ends in one of
+// [assetExtensions], ignoring ASCII case.
+func isAssetPath(p string) bool {
+	ext := asciicase.Lower(path.Ext(path.Base(p)))
+	return ext != "" && slices.Contains(assetExtensions, ext)
+}
+
+// rootBinding is where a disk-backed FS lives: its resolved root and the
+// identity of the directory first opened there. Handler binds it when it
+// is built, but a root that does not exist yet (a build step or a dev
+// watcher creates the public directory after the server starts) cannot
+// be bound then. Binding once at construction left such a handler on the
+// bare os.DirFS for good, which follows a symlink anywhere on disk, so
+// an unbound root is retried on every request until it binds.
+type rootBinding struct {
+	mu       sync.Mutex
+	bound    bool
+	resolved string
+	identity fs.FileInfo
+}
+
+// load returns the resolved root and its identity, binding them first if
+// they are not bound yet. Both are empty for a filesystem that is not
+// disk-backed (embed.FS, fstest.MapFS), which binds at once.
+func (b *rootBinding) load(fsys fs.FS) (string, fs.FileInfo) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.bound {
+		return b.resolved, b.identity
+	}
+	resolved, known := resolveFSRoot(fsys)
+	if !known {
+		// Open(".") failed: the root is missing for now, or this FS
+		// cannot say. Try again on the next request.
+		return "", nil
+	}
+	if resolved == "" {
+		b.bound = true
+		return "", nil
+	}
+	// Kernel-enforced containment for the disk-backed branch (see
+	// Config.root). An OpenRoot failure — the root vanished between the
+	// resolve and this call — leaves resolvedRoot set for this request,
+	// so serveFile falls back to the post-open containment check, and
+	// the next request tries to bind again.
+	root, err := os.OpenRoot(resolved)
+	if err != nil {
+		return resolved, nil
+	}
+	defer root.Close()
+	identity, err := openedRootInfo(root)
+	if err != nil {
+		return resolved, nil
+	}
+	b.bound, b.resolved, b.identity = true, resolved, identity
+	return resolved, identity
 }
 
 func openedRootInfo(root *os.Root) (os.FileInfo, error) {
@@ -256,6 +373,12 @@ func (w *notFoundWriter) Write(b []byte) (int, error) {
 // serveFile attempts to serve a file from the filesystem. Returns true if
 // the file was successfully served.
 func serveFile(w http.ResponseWriter, r *http.Request, config Config, name string) bool {
+	// No file name holds a NUL byte, and a disk open of one (/a%00b)
+	// fails with EINVAL, which is neither ErrNotExist nor ErrInvalid and
+	// would surface as a 500 below. It names no file: a miss.
+	if strings.IndexByte(name, 0) >= 0 {
+		return false
+	}
 	var f fs.File
 	var err error
 	if config.root != nil {
@@ -311,6 +434,17 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	// If it's a directory, try to serve the index file.
 	if stat.IsDir() {
 		indexPath := path.Join(name, config.IndexFile)
+		if config.dirRequest != "" && name == config.dirRequest {
+			// /docs names a directory: send the client to /docs/, as
+			// net/http's FileServer does, so the index's relative links
+			// resolve under it rather than under its parent. Only when
+			// there is an index to serve there.
+			if !config.hasFile(indexPath) {
+				return false
+			}
+			redirectToDir(w, r)
+			return true
+		}
 		return serveFile(w, r, config, indexPath)
 	}
 
@@ -418,6 +552,38 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	return true
 }
 
+// hasFile reports whether name opens, inside the root, as a regular file.
+func (c Config) hasFile(name string) bool {
+	f, err := c.reopen(name)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	return err == nil && st.Mode().IsRegular()
+}
+
+// redirectToDir answers 301 with the request's own path plus a slash,
+// query kept. The Location is relative, "./<last segment>/", so it
+// resolves under whatever prefix the client used, including one an outer
+// http.StripPrefix removed before this handler saw the path. It can
+// never leave the origin. The "./" is the guard: it keeps a segment like
+// "http:evil.com" from reading as a scheme, and a slash or a backslash
+// (which a browser folds into one) after it only starts a path. Escaping
+// is a second layer that keeps such bytes out of the header at all.
+func redirectToDir(w http.ResponseWriter, r *http.Request) {
+	base := path.Base(path.Clean("/" + r.URL.Path))
+	loc := "./" + (&url.URL{Path: base}).EscapedPath() + "/"
+	if r.URL.RawQuery != "" {
+		// net/http refuses a control byte in the request target, so
+		// this is a no-op for a served request; for a hand-built one it
+		// percent-encodes the byte rather than splitting the header.
+		loc += "?" + textsafe.ScrubControlBytes(r.URL.RawQuery)
+	}
+	w.Header().Set("Location", loc)
+	w.WriteHeader(http.StatusMovedPermanently)
+}
+
 // errOutsideRoot is reopen's answer for a file that opened but resolves
 // outside the root: the tree was swapped since the first open.
 var errOutsideRoot = errors.New("static: file resolves outside the root")
@@ -448,21 +614,23 @@ func (c Config) reopen(name string) (fs.File, error) {
 // that is what makes the containment check in serveFile possible
 // without knowing the DirFS argument here. embed.FS and fstest.MapFS
 // return their own file types, cannot carry symlinks, and land on "".
-func resolveFSRoot(fsys fs.FS) string {
+// known is false when the answer is not settled yet: the root could not
+// be opened or resolved, as when the directory does not exist yet.
+func resolveFSRoot(fsys fs.FS) (resolved string, known bool) {
 	f, err := fsys.Open(".")
 	if err != nil {
-		return ""
+		return "", false
 	}
 	defer f.Close()
 	of, ok := f.(*os.File)
 	if !ok {
-		return ""
+		return "", true
 	}
-	resolved, err := filepath.EvalSymlinks(of.Name())
+	resolved, err = filepath.EvalSymlinks(of.Name())
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return resolved
+	return resolved, true
 }
 
 // fileInRoot reports whether an already-opened file still resolves
@@ -499,22 +667,52 @@ func Mount(r *router.Router, config Config) {
 	config = config.defaults()
 	handler := Handler(config)
 
-	if config.Prefix == "" || config.Prefix == "/" {
-		// Root mount: catch-all handles everything including /
-		r.Get("/{path...}", handler)
-	} else {
-		r.Get(config.Prefix+"/", handler)
-		r.Get(config.Prefix+"/{path...}", handler)
-	}
+	// One pattern: "{path...}" matches the empty remainder too, so
+	// Prefix+"/" is already covered. Registering both used to panic at
+	// boot, since ServeMux reads them as the same pattern. A request for
+	// the bare prefix ("/static") is redirected (307) to "/static/" by ServeMux.
+	r.Get(config.Prefix+"/{path...}", handler)
 }
 
 // hasDotDotSegment reports whether the *raw* (uncleaned) path contains a
 // `..` segment. Run this before path.Clean so traversal segments can't be
 // collapsed silently.
 func hasDotDotSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
+	for _, component := range pathSegments(p) {
 		if component == ".." {
 			return true
+		}
+	}
+	return false
+}
+
+// Refuses reports whether the handler refuses p, a slash-separated path
+// below the served root: one with a dot segment (.env, .git/config), a
+// well-known server config file (web.config), or a Windows 8.3 short
+// name (WEB~1.CON). Code that serves or publishes a file tree by another
+// route calls it to refuse the same paths.
+func Refuses(p string) bool {
+	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p) || hasShortNameSegment(p)
+}
+
+// hasShortNameSegment reports whether any path component holds a "~"
+// followed by a digit, the shape of an NTFS 8.3 short name. On a volume
+// that generates them, Windows opens WEB~1.CON as web.config and ENV~1
+// as .env, names the dotfile and config refusals never see. Which long
+// name a short one stands for is the volume's choice, so every such
+// segment is refused, on every OS like the backslash split
+// (pathSegments), so every platform gives one answer.
+func hasShortNameSegment(p string) bool {
+	for _, component := range pathSegments(p) {
+		for i := strings.IndexByte(component, '~'); i >= 0; {
+			if i+1 < len(component) && component[i+1] >= '0' && component[i+1] <= '9' {
+				return true
+			}
+			next := strings.IndexByte(component[i+1:], '~')
+			if next < 0 {
+				break
+			}
+			i += 1 + next
 		}
 	}
 	return false
@@ -525,17 +723,8 @@ func hasDotDotSegment(p string) bool {
 // already resolved). Dotfiles routinely hold secrets (.env, .htpasswd)
 // or VCS metadata (.git) and must not be served by a public static
 // handler.
-// Refuses reports whether the handler refuses p, a slash-separated path
-// below the served root: one with a dot segment (.env, .git/config) or a
-// well-known server config file (web.config). Code that serves or
-// publishes a file tree by another route calls it to refuse the same
-// paths.
-func Refuses(p string) bool {
-	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p)
-}
-
 func hasDotfileSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
+	for _, component := range pathSegments(p) {
 		if component == "" || component == "." || component == ".." {
 			continue
 		}
@@ -560,15 +749,36 @@ var forbiddenConfigFiles = map[string]struct{}{
 
 // hasForbiddenConfigSegment matches the forbidden-config list case-
 // insensitively so a request for `/Web.Config` is treated the same as
-// `/web.config`.
+// `/web.config`, and by the name Windows opens (see windowsName).
 func hasForbiddenConfigSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
-		if component == "" {
-			continue
-		}
-		if _, ok := forbiddenConfigFiles[strings.ToLower(component)]; ok {
+	for _, component := range pathSegments(p) {
+		if _, ok := forbiddenConfigFiles[windowsName(component)]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+// pathSegments splits p on "/" and on "\", dropping empty segments.
+// The backslash is a separator on every platform because it is one
+// where the open runs on Windows: *os.Root resolves a name through
+// GetFullPathName there, so "assets\..\.env" opens .env while a check
+// that splits on "/" alone sees one segment with no leading dot. On
+// another OS a file whose name holds a backslash is judged by the same
+// split, so every platform gives one answer: "a\b.txt" is served, while
+// a name whose backslash-separated pieces include a dotfile or a config
+// name ("a\.env", "x\web.config") is refused.
+func pathSegments(p string) []string {
+	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
+}
+
+// windowsName is the name Windows opens for a path segment, lower-cased
+// for comparison: NTFS reads "web.config::$DATA" as the file's default
+// data stream, and GetFullPathName strips the trailing dots and spaces
+// of "web.config." and "web.config ".
+func windowsName(segment string) string {
+	if i := strings.IndexByte(segment, ':'); i >= 0 {
+		segment = segment[:i]
+	}
+	return strings.ToLower(strings.TrimRight(segment, ". "))
 }

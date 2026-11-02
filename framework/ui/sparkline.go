@@ -212,6 +212,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	}
 
 	out := `<svg ` + svgAttrs.String() + ` data-cui-comp="ui-sparkline"` + extraAttrs + `>` + body + `</svg>`
+	//gofastr:allow(GOFASTR1403) every interpolated value is escaped above: escapeXML on the class, id and labelledby, render.Attr on the extras, and numbers formatted by strconv/ftoa
 	return sparklineStyle.WrapHTML(render.HTML(out))
 }
 

@@ -493,7 +493,8 @@ type LinkButtonConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rendered <a>. The
 	// data-cui-* keys that make sense on a link (push-state, prefetch,
-	// open, deeplink, intercept-page, intercept-swap, intercept-panel)
+	// open, deeplink, intercept-page, intercept-swap, intercept-panel,
+	// nav="off" for a full document load)
 	// go through the typed
 	// Action seam;
 	// every other data-cui-* key is refused, as it always was — a
@@ -645,7 +646,7 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 		case lk == "data-cui-push-state", lk == "data-cui-prefetch",
 			lk == "data-cui-open", lk == "data-cui-deeplink",
 			lk == "data-cui-intercept-page", lk == "data-cui-intercept-swap",
-			lk == "data-cui-intercept-panel":
+			lk == "data-cui-intercept-panel", lk == "data-cui-nav":
 			action[lk] = v
 		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"):
 			// Refused, as before the seam existed.

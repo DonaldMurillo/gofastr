@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -111,7 +112,7 @@ func (ch *CrudHandler) keyCond(vals []any) (string, []any) {
 	}
 	conds := make([]string, len(cols))
 	for i, c := range cols {
-		conds[i] = c + " = $" + strconv.Itoa(i+1)
+		conds[i] = query.QuoteKeyword(c) + " = $" + strconv.Itoa(i+1)
 	}
 	return strings.Join(conds, " AND "), vals
 }

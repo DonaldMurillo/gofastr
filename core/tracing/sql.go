@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/sqlredact"
 )
 
 // maxQueryText caps db.query.text. A bulk insert's placeholder list can
@@ -49,29 +50,7 @@ func OpenDB(driverName, dsn string) (*sql.DB, error) {
 // a registered name. system is the db.system.name attribute:
 // "postgresql", "sqlite", "mysql".
 func WrapConnector(c driver.Connector, system string) driver.Connector {
-	return &connector{inner: c, system: attribute.String("db.system.name", system), quoting: quotingFor(system)}
-}
-
-// quoting is how a database reads quoted text, which decides what
-// queryText redacts.
-type quoting struct {
-	// dqString: "double-quoted" text may be a string. MySQL reads it as
-	// one by default, and SQLite falls back to one when no column has that
-	// name, which the statement alone cannot rule out.
-	dqString bool
-	// backslash: a backslash escapes the next character in every string,
-	// as MySQL reads them by default.
-	backslash bool
-}
-
-func quotingFor(system string) quoting {
-	switch system {
-	case "mysql", "mariadb":
-		return quoting{dqString: true, backslash: true}
-	case "sqlite":
-		return quoting{dqString: true}
-	}
-	return quoting{}
+	return &connector{inner: c, system: attribute.String("db.system.name", system), dialect: sqlredact.ForSystem(system)}
 }
 
 // dbSystem maps a database/sql driver name to its db.system.name value.
@@ -98,7 +77,7 @@ func (c dsnConnector) Driver() driver.Driver                        { return c.d
 type connector struct {
 	inner   driver.Connector
 	system  attribute.KeyValue
-	quoting quoting
+	dialect sqlredact.Dialect
 }
 
 func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -106,7 +85,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &tracedConn{inner: conn, system: c.system, quoting: c.quoting}, nil
+	return &tracedConn{inner: conn, system: c.system, dialect: c.dialect}, nil
 }
 
 func (c *connector) Driver() driver.Driver { return c.inner.Driver() }
@@ -127,7 +106,7 @@ func (c *connector) Close() error {
 type tracedConn struct {
 	inner   driver.Conn
 	system  attribute.KeyValue
-	quoting quoting
+	dialect sqlredact.Dialect
 }
 
 // end records the span for one call that started at start. The query text
@@ -139,7 +118,7 @@ func (c *tracedConn) end(ctx context.Context, query string, start time.Time, err
 	if !span.IsRecording() {
 		return
 	}
-	span.SetAttributes(attribute.String("db.query.text", queryText(query, c.quoting)))
+	span.SetAttributes(attribute.String("db.query.text", queryText(query, c.dialect)))
 	if err != nil {
 		markError(span, err)
 	}
@@ -410,131 +389,11 @@ func skipComments(q string) string {
 	}
 }
 
-// queryText is the statement with its literals replaced by ?, comments
-// dropped and whitespace collapsed: 'single-quoted' strings,
-// PostgreSQL $tag$dollar-quoted$tag$ strings, and numbers that do not
-// continue an identifier or a placeholder ($1, ?2, :n stay as written).
-// Double-quoted names are identifiers and stay, unless q.dqString makes
-// "double-quoted" text a string too. A backslash escapes the next
-// character inside a PostgreSQL E'...' string, and in every string with
-// q.backslash set.
-func queryText(query string, q quoting) string {
-	var b strings.Builder
-	b.Grow(len(query))
-	space := false
-	emit := func(s string) {
-		if space && b.Len() > 0 {
-			b.WriteByte(' ')
-		}
-		space = false
-		b.WriteString(s)
-	}
-	for i := 0; i < len(query); {
-		c := query[i]
-		switch {
-		case c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v':
-			space = true
-			i++
-		case c == '-' && i+1 < len(query) && query[i+1] == '-':
-			j := strings.IndexByte(query[i:], '\n')
-			if j < 0 {
-				i = len(query)
-			} else {
-				i += j
-			}
-			space = true
-		case c == '/' && i+1 < len(query) && query[i+1] == '*':
-			j := strings.Index(query[i+2:], "*/")
-			if j < 0 {
-				i = len(query)
-			} else {
-				i += j + 4
-			}
-			space = true
-		case c == '\'' || (q.dqString && c == '"'):
-			escapes := q.backslash || (i > 0 && query[i-1]|0x20 == 'e' && (i == 1 || !continuesName(query[i-2])))
-			i = skipQuoted(query, i, escapes)
-			emit("?")
-		case c == '"' || c == '`':
-			j := i + 1
-			for j < len(query) && query[j] != c {
-				j++
-			}
-			if j < len(query) {
-				j++
-			}
-			emit(query[i:j])
-			i = j
-		case c == '$' && dollarTag(query[i:]) != "":
-			tag := dollarTag(query[i:])
-			j := strings.Index(query[i+len(tag):], tag)
-			if j < 0 {
-				i = len(query)
-			} else {
-				i += len(tag) + j + len(tag)
-			}
-			emit("?")
-		case isDigit(c) && (i == 0 || !continuesName(query[i-1])):
-			j := i
-			for j < len(query) && (isDigit(query[j]) || isASCIILetter(query[j]) || query[j] == '.' ||
-				((query[j] == '+' || query[j] == '-') && (query[j-1] == 'e' || query[j-1] == 'E'))) {
-				j++
-			}
-			emit("?")
-			i = j
-		default:
-			j := i + 1
-			for continuesName(c) && j < len(query) && continuesName(query[j]) {
-				j++
-			}
-			emit(query[i:j])
-			i = j
-		}
-	}
-	return textsafe.Truncate(textsafe.ScrubControlBytes(b.String()), maxQueryText)
+// queryText is the statement's shape for db.query.text: every literal
+// replaced by ? under the engine's quoting rules (internal/sqlredact,
+// which framework/slowquery's line shares), capped at maxQueryText.
+func queryText(query string, d sqlredact.Dialect) string {
+	return textsafe.Truncate(sqlredact.Text(query, d), maxQueryText)
 }
 
-// skipQuoted returns the index after the string opened by the quote at i,
-// where a doubled quote is an escaped one and, with escapes set, so is
-// any character after a backslash. An unterminated string runs to the end.
-func skipQuoted(q string, i int, escapes bool) int {
-	quote := q[i]
-	for j := i + 1; j < len(q); j++ {
-		if escapes && q[j] == '\\' {
-			j++
-			continue
-		}
-		if q[j] == quote {
-			if j+1 < len(q) && q[j+1] == quote {
-				j++
-				continue
-			}
-			return j + 1
-		}
-	}
-	return len(q)
-}
-
-// dollarTag returns the $tag$ opening a PostgreSQL dollar-quoted string
-// at the start of s, or "" when s opens a $1 placeholder or nothing.
-func dollarTag(s string) string {
-	for j := 1; j < len(s); j++ {
-		switch c := s[j]; {
-		case c == '$':
-			return s[:j+1]
-		case isASCIILetter(c) || c == '_' || (j > 1 && isDigit(c)):
-		default:
-			return ""
-		}
-	}
-	return ""
-}
-
-func isDigit(c byte) bool       { return c >= '0' && c <= '9' }
 func isASCIILetter(c byte) bool { return c|0x20 >= 'a' && c|0x20 <= 'z' }
-
-// continuesName reports whether c can sit inside an identifier or a
-// placeholder, so a digit after it is part of that token, not a number.
-func continuesName(c byte) bool {
-	return isASCIILetter(c) || isDigit(c) || c == '_' || c == '$' || c == '?' || c == ':' || c == '@' || c >= 0x80
-}

@@ -734,8 +734,9 @@ func TestCacheMiddleware_StoreableStatuses(t *testing.T) {
 // documented as "fall back to the default".
 // Surfaces: battery/cache/memory.go::Set, battery/cache/cache.go::GetOrSet
 // (forwards its ttl into Set after the loader ran), and
-// battery/cache/redis.go::Set (the Redis twin already fails closed:
-// the server refuses a non-positive expiry).
+// battery/cache/redis.go::Set (its twin is
+// TestRedisCache_NegativeTTLNotImmortal: the adapter, not the server,
+// reads the ttl, and go-redis stores a negative one forever).
 func TestMemoryCache_NegativeTTLNotImmortal(t *testing.T) {
 	ctx := context.Background()
 	c := NewMemoryCache()
@@ -761,7 +762,7 @@ func TestMemoryCache_NegativeTTLNotImmortal(t *testing.T) {
 			"entry (Get succeeded with %q after the negative lifetime elapsed): a negative TTL "+
 			"is the caller saying \"already gone\", but hasExpiry=ttl>0 silently maps it to "+
 			"immortal retention — the maximal inversion of the caller's intent, and the "+
-			"opposite of the Redis twin, which refuses non-positive expiries.", got)
+			"opposite of what a negative lifetime asks for.", got)
 	}
 
 	// Sweep, same invariant: a negative Set over an existing entry must

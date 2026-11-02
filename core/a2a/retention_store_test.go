@@ -46,7 +46,7 @@ func TestTrimDropsTrimmedTaskPushConfigs(t *testing.T) {
 				t.Fatalf("create other owner's push config: %v", err)
 			}
 
-			if err := rt.TrimTerminalTasks(ctx, owner, 1); err != nil {
+			if err := rt.TrimTerminalTasks(ctx, owner, RetentionTier{}, 1); err != nil {
 				t.Fatalf("trim: %v", err)
 			}
 			for _, id := range ids[:2] {
@@ -90,7 +90,7 @@ func TestTrimTieKeepsListedNewest(t *testing.T) {
 					t.Fatalf("create %s: %v", id, err)
 				}
 			}
-			if err := st.(RetentionTrimmer).TrimTerminalTasks(ctx, owner, 1); err != nil {
+			if err := st.(RetentionTrimmer).TrimTerminalTasks(ctx, owner, RetentionTier{}, 1); err != nil {
 				t.Fatalf("trim: %v", err)
 			}
 			if _, err := st.GetTask(ctx, owner, pfx+"b"); err != nil {
@@ -179,7 +179,7 @@ func TestTrimSweepsOrphanPushConfigs(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := rt.TrimTerminalTasks(ctx, owner, 1); err != nil {
+			if err := rt.TrimTerminalTasks(ctx, owner, RetentionTier{}, 1); err != nil {
 				t.Fatalf("trim: %v", err)
 			}
 			if cfgs, err := st.ListPushConfigs(ctx, owner, pfx+"gone"); err != nil || len(cfgs) != 0 {

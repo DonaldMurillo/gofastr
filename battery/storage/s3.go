@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strings"
 	"time"
-
-	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
 // S3Client is a minimal interface for S3-compatible operations.
@@ -74,15 +71,12 @@ func NewS3Storage(bucket, region string, opts ...S3Option) *S3Storage {
 	return s
 }
 
-// validateKey checks that a key is non-empty and doesn't contain path traversal.
+// validateKey refuses an S3 key that is empty, holds "..", a control byte
+// or a leading slash, or is not its own clean form (checkObjectKey). S3
+// itself would store "a//b" and "./a" as objects distinct from "a/b" and
+// "a", so a row naming the alias serves or erases what its key never named.
 func validateKey(key string) error {
-	if key == "" {
-		return fmt.Errorf("storage: empty key")
-	}
-	if strings.Contains(key, "..") {
-		return fmt.Errorf("%w: key contains a path traversal sequence: %s", upload.ErrInvalidKey, key)
-	}
-	return nil
+	return checkObjectKey(key)
 }
 
 // Save stores the contents of r as an S3 object with the given key.
@@ -130,11 +124,13 @@ func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
 }
 
 // PresignedGetURL returns a presigned URL for downloading the object.
+// expires must be positive.
 func (s *S3Storage) PresignedGetURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
 	return s.presignedURL(ctx, key, expires, Presigner.PresignGet)
 }
 
 // PresignedPutURL returns a presigned URL for uploading the object directly.
+// expires must be positive.
 func (s *S3Storage) PresignedPutURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
 	return s.presignedURL(ctx, key, expires, Presigner.PresignPut)
 }
@@ -147,6 +143,11 @@ func (s *S3Storage) PresignedPutURL(ctx context.Context, key string, expires tim
 func (s *S3Storage) presignedURL(ctx context.Context, key string, expires time.Duration, presign func(Presigner, context.Context, string, string, time.Duration) (*url.URL, error)) (*url.URL, error) {
 	if err := validateKey(key); err != nil {
 		return nil, err
+	}
+	// A zero or negative expiry is none a presigner can honor: one SDK
+	// clamps it to its own (longer) default, another signs a dead URL.
+	if expires <= 0 {
+		return nil, fmt.Errorf("storage: presign expiry must be positive, got %v", expires)
 	}
 	if s.presigner == nil {
 		return nil, fmt.Errorf("storage: presigner not configured")

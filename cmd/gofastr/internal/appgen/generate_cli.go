@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -393,12 +394,12 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		}
 		cli.Info("Would generate %d file(s) in %s:", len(files), opts.OutDir)
 		for _, f := range files {
-			fmt.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
+			cli.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
 		}
 		if len(removals) > 0 {
 			cli.Info("Would remove %d file(s) the CLI no longer produces:", len(removals))
 			for _, r := range removals {
-				fmt.Printf("    %s\n", filepath.Join(opts.OutDir, r.name))
+				cli.Printf("    %s\n", filepath.Join(opts.OutDir, r.name))
 			}
 		}
 		return
@@ -462,17 +463,22 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 	}
 	fmt.Println()
 	fmt.Println("  Next steps:")
-	fmt.Printf("    go build -o %s ./%s   : build the CLI\n", spec.Binary, opts.OutDir)
-	fmt.Printf("    ./%s login --url https://your-app.example.com --with-token   : store a scoped API token\n", spec.Binary)
+	cli.Printf("    go build -o %s ./%s   : build the CLI\n", spec.Binary, opts.OutDir)
+	cli.Printf("    ./%s login --url https://your-app.example.com --with-token   : store a scoped API token\n", spec.Binary)
 	fmt.Println("    custom.go is yours: add or override commands there. The *.gen.go files are rebuilt on every run")
 	if opts.settingsEntry {
 		fmt.Println("    gofastr build rebuilds it from the cli entry in gofastr.settings.yml")
 		return
 	}
+	entry, err := cliEntryYAML(opts, spec.Binary)
+	if err != nil {
+		cli.Printf("    no gofastr.settings.yml entry reproduces this run: %v\n", err)
+		return
+	}
 	fmt.Println("    add this entry to codegen.generators in gofastr.settings.yml and gofastr build keeps the CLI current (gofastr docs app-cli):")
 	fmt.Println()
-	for _, line := range strings.Split(strings.TrimRight(cliEntryYAML(opts, spec.Binary), "\n"), "\n") {
-		fmt.Println("      " + line)
+	for _, line := range strings.Split(strings.TrimRight(entry, "\n"), "\n") {
+		cli.Println("      " + line)
 	}
 }
 
@@ -804,13 +810,13 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 			// for the fields the client has an upload slot for; list and
 			// get leave the stored URL out of their tables.
 			if slices.ContainsFunc(uploads, func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
-				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: appspec.ToCamelJSON(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
+				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: appspec.WireKey(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
 			}
 			continue
 		}
 		f := cliField{
 			Snake:    fd.Name,
-			Wire:     appspec.ToCamelJSON(fd.Name),
+			Wire:     appspec.WireKey(fd.Name),
 			Flag:     strings.ReplaceAll(fd.Name, "_", "-"),
 			Type:     typ,
 			GoType:   goTypeForField(fd.Type),
@@ -1407,6 +1413,23 @@ func runLogout(args []string) int {
 `
 }
 
+// cliInvisibleRunes renders, as a Go case list, every rune
+// core/textsafe.IsInvisible names: the bidi overrides and zero-width
+// runes the generated CLI's scrubTerminal drops beside C0, DEL and C1.
+// The generated CLI may live in a module with no GoFastr dependency
+// (--from-openapi), so it cannot call textsafe; the set is read from
+// textsafe at generation time instead of copied by hand, so the two
+// cannot drift.
+func cliInvisibleRunes() string {
+	var cases []string
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		if textsafe.IsInvisible(r) {
+			cases = append(cases, fmt.Sprintf("%#x", r))
+		}
+	}
+	return strings.Join(cases, ", ")
+}
+
 func renderCLIOutput(spec cliSpec) string {
 	return `package main
 
@@ -1592,7 +1615,11 @@ func printJSON(v any) int {
 // keys in column order; headers the matching titles.
 func printListTable(headers, keys []string, rows []map[string]any) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, strings.Join(headers, "\t"))
+	titles := make([]string, len(headers))
+	for i, h := range headers {
+		titles[i] = scrubTerminal(h)
+	}
+	fmt.Fprintln(w, strings.Join(titles, "\t"))
 	for _, row := range rows {
 		cells := make([]string, len(keys))
 		for i, k := range keys {
@@ -1622,14 +1649,19 @@ func apiFail(err error) int {
 }
 
 // scrubTerminal drops what a terminal acts on instead of printing: C0
-// controls but tab, DEL, and C1 controls (0x9b is a one-byte CSI), with
-// an invalid byte read as U+FFFD. Record text and server error bodies
-// pass through it before a human-format line: a stored title
-// "\x1b[2J..." cleared the screen of whoever ran list -o table. JSON
-// output needs no scrub: its encoder escapes control bytes.
+// controls but tab, DEL, C1 controls (0x9b is a one-byte CSI), and the
+// bidi overrides and zero-width runes that reorder or hide text, with an
+// invalid byte read as U+FFFD. Record text, table headers and server
+// error bodies pass through it before a human-format line: a stored
+// title "\x1b[2J..." cleared the screen of whoever ran list -o table.
+// JSON output needs no scrub: its encoder escapes control bytes.
 func scrubTerminal(s string) string {
 	return strings.Map(func(r rune) rune {
 		if (r < 0x20 && r != '\t') || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		switch r {
+		case ` + cliInvisibleRunes() + `:
 			return -1
 		}
 		return r

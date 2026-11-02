@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -212,6 +213,9 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	names := b.actorNames(ctx, rows)
 	now := time.Now()
 	events := make([]ui.TimelineEvent, len(rows))
+	// One answer per record from the app's read hooks, however many of
+	// the rows name it.
+	ctx = entityui.WithChangeCache(ctx)
 	for i, r := range rows {
 		before, after := b.scopedSides(ctx, r)
 		events[i] = ui.TimelineEvent{

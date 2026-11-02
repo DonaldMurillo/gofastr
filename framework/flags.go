@@ -62,7 +62,8 @@ func (a *App) SetFlagStore(s featureflag.Store) *App {
 // The context is expected to already carry an EvalContext (via
 // featureflag.WithContext) when user/tenant gating matters; without
 // one, the call still works but only the kill-switch (Flag.Enabled)
-// and uniform rollout are consulted.
+// and the Tenants list and rollout for the request's resolved tenant
+// (handler.GetTenantID), if any, are consulted.
 func (a *App) IsEnabled(ctx context.Context, key string) bool {
 	return a.Flags().Bool(ctx, key)
 }

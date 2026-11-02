@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -103,4 +104,11 @@ func resolverForServer(t *testing.T, srv *testTLSServer) *directoryResolver {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	return res
+}
+
+// freshWindow is a created/expires parameter pair inside the default
+// validity cap, for hand-built inputs that must reach the resolver.
+func freshWindow() string {
+	now := time.Now().Unix()
+	return "created=" + strconv.FormatInt(now, 10) + ";expires=" + strconv.FormatInt(now+60, 10)
 }

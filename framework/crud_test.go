@@ -466,6 +466,9 @@ func TestCrudUpdate_ExecutesHooks(t *testing.T) {
 	ch.Hooks = hooks
 
 	mock.ExpectBegin()
+	// The scope check before the Before hooks: the row is the caller's.
+	mock.ExpectQuery(`SELECT id FROM posts WHERE .*`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("p1"))
 	mock.ExpectQuery(`UPDATE posts .*`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("p1", "Updated"))
@@ -519,6 +522,9 @@ func TestCrudDelete_ExecutesHooks(t *testing.T) {
 	ch.Hooks = hooks
 
 	mock.ExpectBegin()
+	// The scope check before the Before hooks: the row is the caller's.
+	mock.ExpectQuery(`SELECT id FROM posts WHERE .*`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("p1"))
 	mock.ExpectExec(`DELETE FROM posts .*`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))

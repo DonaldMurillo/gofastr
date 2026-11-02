@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -255,7 +256,7 @@ func (s *webhookSink) postOnce(body []byte) error {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, s.opts.Method, s.url, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return redactURLError(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range s.opts.Headers {
@@ -266,7 +267,7 @@ func (s *webhookSink) postOnce(body []byte) error {
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return redactURLError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 500 {
@@ -279,6 +280,31 @@ func (s *webhookSink) postOnce(body []byte) error {
 		return nonRetryableError{fmt.Errorf("log: webhook %d", resp.StatusCode)}
 	}
 	return nil
+}
+
+// redactURLError strips the webhook URL down to its scheme and host in a
+// *url.Error. net/http renders the whole URL into the message, and an
+// incoming-webhook URL is its own credential (Slack's
+// /services/T…/B…/<secret>, a collector's ?token=…): the give-up warning
+// wrote it to stderr. The host stays so an operator can still tell which
+// receiver failed. Retryability is unchanged: the result is still a
+// *url.Error around the same cause.
+func redactURLError(err error) error {
+	ue, ok := errors.AsType[*url.Error](err)
+	if !ok {
+		return err
+	}
+	return &url.Error{Op: ue.Op, URL: redactURL(ue.URL), Err: ue.Err}
+}
+
+// redactURL keeps scheme://host of raw and drops userinfo, path, query
+// and fragment. A string that does not parse becomes a placeholder.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "(webhook url redacted)"
+	}
+	return u.Scheme + "://" + u.Host + "/…"
 }
 
 // buildEnvelope serializes batch as {"entries":[ <raw entry 1>, <raw entry 2>, ...]}.

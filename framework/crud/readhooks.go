@@ -263,7 +263,7 @@ func hookScopeSubquery(qualifier, table string, key []string, clauses []hook.Whe
 	sub, args := qb.Build()
 	lhs := make([]string, len(key))
 	for i, k := range key {
-		lhs[i] = qualifier + "." + k
+		lhs[i] = query.QuoteKeyword(qualifier + "." + k)
 	}
 	left := lhs[0]
 	if len(lhs) > 1 {

@@ -151,9 +151,9 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 			return
 		}
 		if len(fields) == 1 {
-			qb.Where(fmt.Sprintf("%s %s $1", fields[0], op), args[0])
+			qb.Where(fmt.Sprintf("%s %s $1", query.QuoteKeyword(fields[0]), op), args[0])
 		} else {
-			cols := strings.Join(fields, ", ")
+			cols := strings.Join(query.QuoteKeywords(fields), ", ")
 			placeholders := make([]string, len(fields))
 			for i := range fields {
 				placeholders[i] = fmt.Sprintf("$%d", i+1)
@@ -362,7 +362,7 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 	qb := query.Select(fields...)
 	qb.From(ch.Entity.GetTable())
 	for _, k := range keys {
-		qb.Where(k+" = $1", carried[k])
+		qb.Where(query.QuoteKeyword(k)+" = $1", carried[k])
 	}
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)

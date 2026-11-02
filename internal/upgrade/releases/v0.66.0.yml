@@ -20,9 +20,9 @@ notes:
         - symbol: gofastr/battery/queue.RedisQueue.Nack
           type: '^func\(ctx context\.Context, jobID string\) error$'
         - symbol: gofastr/battery/queue.MemoryQueue.Ack
-          type: '^func\(_ context\.Context, jobID string\) error$'
+          type: '^func\(\w+ context\.Context, jobID string\) error$'
         - symbol: gofastr/battery/queue.MemoryQueue.Nack
-          type: '^func\(_ context\.Context, jobID string\) error$'
+          type: '^func\(\w+ context\.Context, jobID string\) error$'
   - change: Multipart request bodies are capped on the wire and rejected 413
     breaking: false
     guidance: "CRUD write handlers previously wrapped every body in a 1 MiB reader before checking the content type, so any multipart upload over 1 MiB failed with a 400. Multipart bodies now cap at crud.MaxMultipartBodyBytes (64 MiB) and over-limit requests get a 413. If you relied on the 400, expect 413; if you need a different ceiling, the constant is exported."

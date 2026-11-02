@@ -28,6 +28,30 @@ A Before hook that returns an error refuses the write: the HTTP handlers
 answer 400, and an in-process caller (`CreateOne`, `UpdateOne`,
 `DeleteOne`) gets an error `crud.IsHookRefusal` reports true for.
 
+A hook that panics has faulted rather than refused. The registry
+recovers it, logs the value and stack, and returns a `*hook.PanicError`;
+the write rolls back and the HTTP handlers answer 500 with the generic
+body, never the panic value, and `crud.IsHookRefusal` reports false.
+Reads hold the same line: a `BeforeList` or `BeforeGet` hook that
+returns an error answers 400 with it, and one that panics answers 500,
+on the entity's own List and Get, on a parent's `?include=` or
+`?rel.field=` that runs it, and on the MCP read tools that call those
+routes.
+
+**A Before hook only sees a row the caller can write.** `BeforeUpdate`
+and `BeforeDelete` run after the scope check, not before it: on
+`PUT`, `PATCH` and `DELETE /<entity>/{id}`, every item of the batch
+routes, and in process on `UpdateOne`, `DeleteOne`, `BatchUpdateMany`
+and `BatchDeleteMany`, crud first reads the target row under the
+write's own tenant, owner and soft-delete scope, plus any clause a
+`BeforeGet` hook appends (below). Another owner's row, another
+tenant's, a trashed row and a missing id answer 404 there, and the hook
+is never called. That matters because a hook's database work rolls back
+with the write but an email it sent or a file it deleted does not.
+Restore, purge and state moves already read their target before their
+hooks. The check is one keyed `SELECT` inside the write's transaction,
+and runs only when such a hook is registered.
+
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
 hook that fills in or normalizes a field mutates the body the validator
 then checks; use them to supply server-derived values that must pass
@@ -478,6 +502,10 @@ change the stored row (Create/Update has already committed it) but DO redact
 the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
 path. See "Redaction implication" below for the surfaces this covers.
+
+`T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
+models use) or snake_case (`json:"is_admin"`): the payload is offered
+under both spellings, and a change lands back on the payload's own key.
 
 The body `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` decode has already had
 its form values cleaned (entity-declarations.md, "Blank form values"),

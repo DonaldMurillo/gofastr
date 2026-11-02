@@ -937,6 +937,20 @@ func maskedFields(m *meta, raw, hooked map[string]any) map[string]bool {
 	return masked
 }
 
+// rewrittenFields reports every visible column an AfterGet hook rewrites
+// on this record, locked and system ones included: maskedFields narrowed
+// to what a form edits, this is what a display surface beside the record
+// (the Activity tab's change list) must not draw from stored values.
+func rewrittenFields(m *meta, raw, hooked map[string]any) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range m.fields {
+		if cell(m.rowValue(raw, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
+			out[f.Name] = true
+		}
+	}
+	return out
+}
+
 // showWhenCond is a parsed ShowWhen: the controller field and the
 // values that show the target.
 type showWhenCond struct {

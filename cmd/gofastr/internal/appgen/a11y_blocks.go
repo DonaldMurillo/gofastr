@@ -44,7 +44,7 @@ func a11yScreenBody(path, route string, jsonMode bool) ([]appspec.AppSpecBlock, 
 	blocks, warnings := mapA11yToBlocks(nodes, route)
 	for _, w := range warnings {
 		if jsonMode {
-			fmt.Fprintln(os.Stderr, "warning: "+w)
+			cli.Fprintln(os.Stderr, "warning: "+w)
 			continue
 		}
 		cli.Warn("%s", w)

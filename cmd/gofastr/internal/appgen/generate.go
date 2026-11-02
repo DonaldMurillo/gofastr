@@ -553,7 +553,7 @@ func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery cod
 		}
 		cli.Info("Would generate %d files in %s:", len(files), cfg.Codegen.Output)
 		for _, file := range files {
-			fmt.Printf("    %s\n", filepath.Join(cfg.Codegen.Output, file.Path))
+			cli.Printf("    %s\n", filepath.Join(cfg.Codegen.Output, file.Path))
 		}
 		return
 	}
@@ -895,6 +895,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			cli.Fail("Failed to load app spec: %v", cerr)
 			cli.OsExit(1)
 		}
+		bp.MarkFragment()
 		if verr := appspec.ValidateAppSpec(bp); verr != nil {
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(verr)
@@ -1008,12 +1009,12 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			}
 			cli.Info("Would add %d file(s) in %s:", len(written), displayDir)
 			for _, file := range written {
-				fmt.Printf("    %s\n", filepath.Join(outDir, file.Name))
+				cli.Printf("    %s\n", filepath.Join(outDir, file.Name))
 			}
 			if len(skipNames) > 0 {
 				cli.Info("Would skip %d existing:", len(skipNames))
 				for _, name := range skipNames {
-					fmt.Printf("    %s\n", filepath.Join(outDir, name))
+					cli.Printf("    %s\n", filepath.Join(outDir, name))
 				}
 			}
 			return
@@ -1059,7 +1060,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			if rebuilt, err := RefreshAppClient(writeRoot, false, options.json); err != nil {
 				// stderr under --json: stdout is the document.
 				if options.json {
-					fmt.Fprintf(os.Stderr, "warning: could not rebuild %s: %v\n", appClientPath, err)
+					cli.Fprintf(os.Stderr, "warning: could not rebuild %s: %v\n", appClientPath, err)
 				} else {
 					cli.Warn("could not rebuild %s: %v", appClientPath, err)
 				}
@@ -1100,7 +1101,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			cli.Success("Added %d file(s) in %s (skipped %d existing)", len(written), displayDir, len(skipNames))
 			cli.Info("Skipped existing files:")
 			for _, name := range skipNames {
-				fmt.Printf("    %s\n", filepath.Join(outDir, name))
+				cli.Printf("    %s\n", filepath.Join(outDir, name))
 			}
 		} else {
 			cli.Success("Added %d file(s) in %s", len(written), displayDir)
@@ -1114,7 +1115,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		}
 		cli.Info("Would generate %d files in %s:", len(files), displayDir)
 		for _, file := range files {
-			fmt.Printf("    %s\n", filepath.Join(outDir, file.Name))
+			cli.Printf("    %s\n", filepath.Join(outDir, file.Name))
 		}
 		return
 	}
@@ -1228,11 +1229,11 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		if len(LintModuleCollision(bp)) > 0 {
 			fmt.Println("    (set app.module to a path you own first: see the warning above)")
 		} else {
-			fmt.Printf("    go mod init %s\n", bp.App.Module)
+			cli.Printf("    go mod init %s\n", bp.App.Module)
 		}
 		printFrameworkGetStep(project.InstalledFrameworkVersion())
 		fmt.Println("    go mod tidy          : the generated code pulls new imports")
-		fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
+		cli.Printf("    %-20s : dev server with hot-reload\n", devCmd)
 		return
 	}
 	fmt.Println("  Next steps:")
@@ -1240,7 +1241,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		printFrameworkGetStep("")
 	}
 	fmt.Println("    go mod tidy          : the generated code pulls new imports")
-	fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
+	cli.Printf("    %-20s : dev server with hot-reload\n", devCmd)
 }
 
 // printFrameworkGetStep prints the `go get` that must precede `go mod
@@ -1251,7 +1252,7 @@ func printFrameworkGetStep(release string) {
 	if release == "" {
 		release = "vX.Y.Z"
 	}
-	fmt.Printf("    go get %s@%s : pin the framework before tidy\n", project.GofastrModule, release)
+	cli.Printf("    go get %s@%s : pin the framework before tidy\n", project.GofastrModule, release)
 }
 
 // frameworkPin reports what pinFrameworkRequire did to the enclosing
@@ -1354,13 +1355,14 @@ func removeRetiredAppSpecFiles(writeRoot string) error {
 // is how the protocol says "the input is wrong". Dropping it turned a refusal
 // into a silent pass.
 //
-// Extension output reaches a terminal, so messages go through the same scrub the
+// Extension output reaches a terminal, so messages get the same scrub the
 // child's stderr does; an extension does not get to drive the operator's
-// terminal through a JSON field either.
+// terminal through a JSON field either. The cli helpers scrub every
+// argument (cli.ScrubTerminalOutput), so the message goes to them as is.
 func reportCodegenDiagnostics(diags []codegen.Diagnostic) bool {
 	failed := false
 	for _, d := range diags {
-		message := cli.ScrubTerminalOutput(d.Message)
+		message := d.Message
 		switch strings.ToLower(strings.TrimSpace(d.Severity)) {
 		case "error":
 			cli.Fail("%s", message)
@@ -2323,7 +2325,7 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 		if keyIsID && field.Name == "id" {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(field.Name), entityFieldGoType(structName, field), appspec.ToCamelJSON(field.Name)))
+		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(field.Name), entityFieldGoType(structName, field), appspec.WireKey(field.Name)))
 	}
 	// Relation fields: populated by TypedQuery.Include() and Repo.Get(...,
 	// includes...). Singular relations (HasOne/BelongsTo) get *Target;
@@ -2333,7 +2335,7 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 	for _, rel := range decl.Relations {
 		targetStruct := appspec.ToCamelCase(rel.Entity)
 		fieldName := appspec.ToCamelCase(rel.Name)
-		jsonTag := appspec.ToCamelJSON(rel.Name)
+		jsonTag := appspec.WireKey(rel.Name)
 		switch rel.Type {
 		case framework.RelHasOne, framework.RelManyToOne:
 			sb.WriteString(fmt.Sprintf("\t%s *%s `json:\"%s,omitempty\"`\n", fieldName, targetStruct, jsonTag))
@@ -2497,7 +2499,7 @@ func printGeneratedFilesJSON(files []GeneratedFile) {
 		if i == len(files)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
+		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
 	}
 	fmt.Println(`]}`)
 }
@@ -2515,7 +2517,7 @@ func printAdditiveFilesJSON(written []GeneratedFile, skipped, updated []string) 
 		if i == len(written)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
+		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
 	}
 	fmt.Print("]")
 	printJSONNames("skipped_existing", skipped)
@@ -2526,16 +2528,16 @@ func printAdditiveFilesJSON(written []GeneratedFile, skipped, updated []string) 
 // printJSONNames continues a JSON object with key holding names.
 func printJSONNames(key string, names []string) {
 	if len(names) == 0 {
-		fmt.Printf(",%q:[]", key)
+		cli.Printf(",%q:[]", key)
 		return
 	}
-	fmt.Printf(",%q:[\n", key)
+	cli.Printf(",%q:[\n", key)
 	for i, name := range names {
 		comma := ","
 		if i == len(names)-1 {
 			comma = ""
 		}
-		fmt.Printf("  %q%s\n", name, comma)
+		cli.Printf("  %q%s\n", name, comma)
 	}
 	fmt.Print("]")
 }
@@ -2552,7 +2554,7 @@ func printCodegenFilesJSON(files []codegen.GeneratedFile) {
 		if i == len(files)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Path, len(file.Content), comma)
+		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Path, len(file.Content), comma)
 	}
 	fmt.Println(`]}`)
 }
@@ -2564,7 +2566,11 @@ func printGeneratedErrorsJSON(errs ...error) {
 		if i == len(errs)-1 {
 			comma = ""
 		}
-		fmt.Printf("  {\"message\":%q}%s\n", err.Error(), comma)
+		// json.Marshal, not %q: Go's quoting spells a control byte \x1b
+		// or \a, which no JSON parser reads, and an error can carry one
+		// from a spec it refused.
+		msg, _ := json.Marshal(err.Error())
+		cli.Printf("  {\"message\":%s}%s\n", msg, comma)
 	}
 	fmt.Println(`]}`)
 }

@@ -20,7 +20,8 @@ and SHA-256 digest; keeping the digest (to detect bit-rot or an
 interrupted write later) is the caller's job.
 
 LocalStorage and S3Storage each validate keys before use and refuse
-path traversal; LocalStorage also refuses a key that resolves outside its
+path traversal, control bytes, absolute keys and keys not in their clean
+form; LocalStorage also refuses a key that resolves outside its
 directory. MemoryStorage takes keys as given. DefaultKeyValidator is a
 standalone check a caller can apply to keys of its own.
 */

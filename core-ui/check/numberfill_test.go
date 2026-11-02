@@ -85,6 +85,30 @@ const sayFillFixture = `(() => {
 })();
 `
 
+// numberFillSpellingsFixture: the same {{n}} pattern in the spellings the
+// 2026-11-02 guard bash found the rule blind to. JavaScript reads `{{n}}`
+// in a template literal exactly as '{{n}}', and a regex need not escape
+// the braces: /{{n}}/g (no quantifier digits follow the brace) matches
+// the same text as /\{\{n\}\}/g. ~ stands for a backtick.
+const numberFillSpellingsFixture = `(() => {
+  fmt.replaceAll(~{{n}}~, () => String(n));
+  fmt.replace(/{{n}}/g, String(count));
+  fmt.split(~{{n}}~).join(n);
+  fmt.replace(~{{n}}~, NS.formatNumber(n));
+  fmt.replace(/{{q}}/g, String(q));
+  fmt.replace(~{{n}} of ${t}~, String(n));
+})();
+`
+
+func TestNumberFillReadsEveryPatternSpelling(t *testing.T) {
+	dir := writeRuntimeFixture(t, "spell.js", strings.ReplaceAll(numberFillSpellingsFixture, "~", "`"))
+	res, err := LintNumberFill(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLines(t, res, []int{2, 3, 4})
+}
+
 func TestNumberFillReadsSayParams(t *testing.T) {
 	dir := writeRuntimeFixture(t, "say.js", sayFillFixture)
 	res, err := LintNumberFill(dir)

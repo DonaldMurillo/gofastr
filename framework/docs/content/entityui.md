@@ -162,7 +162,18 @@ keeps the UI unchanged; without a callback the default stays
   way the list's cell draws it (a badge, a money figure, a related
   record's title). An update that changed no field the caller may see
   reads "… saved this invoice". Masked (`NoQuery`) and `Hidden` fields
-  never appear, and an override's reason shows under it. The form's
+  never appear, nor does a field an `AfterGet` hook rewrites (the audit
+  row stored what was written, which the hook hides): one it rewrites
+  on the record's stored value, or on a non-empty probe value, so a
+  hook that masks only a value that is there is caught while the
+  record's own value is empty. The probe runs the entity's `AfterGet`
+  chain once over a copy of the stored row with each empty field
+  filled, reads and writes nothing itself, and a chain that fails on it
+  keeps every probed field out. The hooks run with the caller's context,
+  so they must be side-effect free (see `Changes` below for what they
+  see). A hook that masks only some non-empty values
+  (one prefix, one owner) is caught only on the values the record and
+  the probe hold. An override's reason shows under the entry. The form's
   side column holds Details: the id with a copy button, the created and
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
@@ -404,8 +415,38 @@ out. A list names its page's rows in one batch: each relation part is
 one read for the page, not one per row.
 `appUI.Changes(ctx, entity, before, after)` draws what one edit changed
 as the Activity tab's change list, "" when no field the caller may see
-differs; `before` and `after` are keyed by the API's wire names, the way
-the audit log stores them. `appUI.WithActorName(name)` returns a UI whose
+differs. It leaves out the fields the entity's `AfterGet` hooks rewrite
+for the caller on the record the entry names (its key values in
+`before` or `after`), found the way the record screen finds them: the
+stored row and the row through the caller's read hooks are read and
+every field they differ on is left out, then the chain runs once more
+over the stored row with only its empty fields given a probe value,
+with the record's real id. So a hook that masks a field unless the
+caller owns the row masks it here too and leaves the others drawn. A
+caller whose hooked read of the record fails or is refused sees no
+field of it. A record that no longer exists (deleted, purged) has no
+row to ask about, so the chain runs over a probe row whose every field
+holds a value, with no id, as the fallback: a hook that refuses that
+probe keeps every field out. `before` and `after` are keyed by the API's
+wire names, the way the audit log stores them.
+`entityui.WithChangeCache(ctx)` returns a context under which `Changes`
+asks the hooks about each record once and reuses the answer for every
+later entry of the same record; a page drawing many entries installs it
+once per render (the admin's audit page and dashboard do), so the hooks
+run once per record shown, not once per entry. Do not keep it past the
+render.
+
+Masking calls the app's `AfterGet` hooks as the caller (elevation
+removed) with a request carrying the caller's context, outside any
+read the app made itself, so those hooks must be free of side effects.
+On the Activity tab, and once per record on each page that draws
+changes, a hook sees: a `GetPayload` for the record's real id holding
+its stored row (the hooked read), and a second one for the same id
+whose empty fields hold `"entityui-probe"`, `1` or `true` by type; for
+a deleted record, one with an empty `ID` and every field holding a
+probe value. A hook that counts reads, stamps "last viewed", sends a
+notification or writes an access log fires on these too, and a probe
+value it writes anywhere is a made-up one. `appUI.WithActorName(name)` returns a UI whose
 Activity tab names each actor by `name(ctx, id)` (the admin passes the
 account's email), the id where it answers "" or panics.
 
@@ -415,6 +456,9 @@ Extensions whose writes (save, delete, moves, bulk, export) post to
 draws that entity read-only. A back office uses it to send writes through
 routes it gates itself: `battery/admin` mounts the CRUD handler's write
 routes under `/admin/api/<entity>` this way. Reads are unchanged.
+`appUI.WritePath(e)` reports where a UI's screens send `e`'s writes, and
+false when they draw it read-only, so a host that wraps a UI again can
+fall back on the base it had.
 
 `appUI.WithRecordPath(path)` returns a UI whose list cells draw a
 relation's title as a chip linking to `path(e) + "/" + id`, the related
@@ -682,7 +726,10 @@ _ = list.RenderCtx(ctx)
   The handlers run the CRUD handler's `RestoreOne` / `PurgeOne` under
   the caller's own context, so permission, the Decider and owner and
   tenant scope are the write route's own gates; a purge of a live row
-  answers 409 and touches nothing. A form-RPC caller gets a status and
+  answers 409 and touches nothing. Before the write each handler reads
+  the row through the caller's read hooks (`crud.WithReadHooks`), as the
+  trash view and the bulk restore do, so a row a `BeforeList` hook hides
+  answers 404 and is not restored or purged. A form-RPC caller gets a status and
   a toast; a plain form post gets a 303 back to the Deleted view, along
   a same-origin relative return path the form carried — never an
   absolute URL. Cross-site posts are refused, the body is capped and

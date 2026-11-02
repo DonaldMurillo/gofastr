@@ -8,72 +8,31 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
-// This file implements vixie/cronie-parity DST semantics for location-aware
-// cron schedules, as a thin wrapper around framework/cron's location-blind
-// bitmask matching. The framework parser/matcher is unchanged: it evaluates
-// cron fields against a time.Time's wall-clock fields (.Minute(), .Hour(),
-// .Day(), .Month(), .Weekday()) regardless of zone, so the only thing it
-// gets wrong on its own is the DST transition itself, a minute-by-minute
-// absolute-time walk skips over (spring-forward) or double-counts
-// (fall-back) the transition's wall-clock minutes. The two helpers below
-// wrap that walk to recover vixie semantics:
+// This file implements the durable scheduler's location-aware walks over a
+// cron spec: the next firing after an instant (nextFire) and every firing
+// in a catch-up range (firesInRange). Whether a given minute fires is
+// cron.Schedule.FiresAt, the vixie/cronie DST handling framework/cron's
+// in-process Scheduler and this package's in-memory Scheduler share:
 //
-//   - Fall-back (wall clock repeats): a wall-clock match in the REPEATED
+//   - Fall-back (wall clock repeats): a fixed-time match in the REPEATED
 //     hour fires only at its EARLIER absolute instant (the EDT side for US
-//     Eastern). Detected statelessly from the zone period an instant falls
-//     in (fallBackRepeat), so the rule holds across heartbeat boundaries.
-//   - Spring-forward (wall clock skips): a wall-clock match inside the
-//     transition's skipped window fires once AT the transition instant (the
-//     first absolute minute after the skip). Detected by an absolute-minute
-//     step that advances the wall clock by more than one minute; each
-//     skipped wall minute is tested against the cron fields.
+//     Eastern), read statelessly from the zone period the instant falls in.
+//   - Spring-forward (wall clock skips): a fixed-time match inside the
+//     skipped window fires once AT the transition instant (the first
+//     absolute minute after the skip).
 //
 // Both rules apply to fixed-time specs only, those whose minute and hour
 // fields name values rather than begin with "*" (cron.Schedule.FixedTime).
 // Vixie cron runs every other job by the new wall clock, so "*/5 * * * *"
 // fires straight through the repeated hour and not at a transition.
-//
-// These rules implement what queue.md's "including across DST shifts" claim
-// promises. All logic lives here (no framework/cron change) because the
-// semantics belong to the durable scheduler's location-aware catch-up, not
-// to the location-agnostic in-process scheduler that shares the parser.
 
-// fallBackRepeat reports whether t's wall-clock minute already occurred at
-// an earlier absolute instant: t sits in the first d of a zone period whose
-// offset is d smaller than the previous period's (the clocks went back by
-// d). Only zone data is consulted, so two heartbeats either side of a fire
-// agree on every repeat without carrying any memory of what fired. Before
-// this, the walk remembered only the LAST fire's wall minute, and a spec
-// with two firing minutes in the repeated hour ("0,30 1") fired the repeat
-// of the first one on the next heartbeat.
-func fallBackRepeat(t time.Time) bool {
-	start, _ := t.ZoneBounds()
-	if start.IsZero() {
-		return false // zone in effect since the beginning of time
-	}
-	_, prevOff := start.Add(-time.Nanosecond).Zone()
-	_, off := t.Zone()
-	back := time.Duration(prevOff-off) * time.Second
-	return back > 0 && t.Before(start.Add(back))
-}
-
-// fires reports whether the minute t (rendered in loc, reached by one
-// absolute-minute step from prevWall) is a cron firing under vixie DST
-// semantics: a direct wall-clock match, or the transition instant of a
-// spring-forward gap whose skipped window holds a match, and in either case
-// not a fall-back repeat.
+// fires reports whether a walk at t, having evaluated prevWall just before
+// it, fires: cron.Schedule.FiresAt's vixie handling (a fixed-time spec runs
+// once across a fall-back and once after a spring-forward skipped its
+// time), shared with framework/cron's Scheduler. loc is the zone both
+// times are already in.
 func fires(parsed cron.Schedule, loc *time.Location, prevWall, t time.Time) bool {
-	// Vixie cron keeps its once-only DST handling for fixed-time jobs. A
-	// job with a wildcard minute or hour ("*/5 * * * *", "15 * * * *")
-	// runs by the new wall clock: through the repeated hour, and not at the
-	// transition for minutes the jump skipped.
-	if !parsed.FixedTime() {
-		return parsed.Matches(t)
-	}
-	if !parsed.Matches(t) && !skippedMatchInGap(parsed, loc, prevWall, t) {
-		return false
-	}
-	return !fallBackRepeat(t)
+	return parsed.FiresAt(prevWall.In(loc), t.In(loc))
 }
 
 // nextFire returns the earliest cron firing strictly after `after` (evaluated
@@ -163,52 +122,6 @@ func firesInRange(parsed cron.Schedule, loc *time.Location, cursor, now time.Tim
 	copy(out, ring[head:])
 	copy(out[limit-head:], ring[:head])
 	return out, nil
-}
-
-// skippedMatchInGap reports whether the absolute-minute step from `a` to `b`
-// (where b = a.Add(time.Minute)) crossed a spring-forward DST transition
-// whose skipped wall-clock window contains a cron match. Both `a` and `b`
-// are interpreted in `loc` (the schedule's registration zone).
-//
-// A spring-forward is detected by the zone offset INCREASING from a to b
-// (e.g., US Eastern EST→EDT shifts the offset from -5 to -4). Real-world DST
-// is ≤ 1h so the skipped window is at most 60 minutes, but the loop is
-// bounded by the wall-clock gap regardless, so a pathological shift would
-// still terminate.
-//
-// Each skipped wall-minute is tested by constructing a synthetic time.Time
-// in a FixedZone matching a's offset. The fixed offset means time.Date does
-// not scale the wall fields (the way it would if `loc` were used, since Go
-// pre-normalizes nonexistent wall times inside `loc`). cron.Matches inspects
-// only wall fields (.Minute/.Hour/.Day/.Month/.Weekday), so a synthetic time
-// with the desired wall fields matches correctly even though the absolute
-// instant it represents never occurs in `loc`.
-func skippedMatchInGap(parsed cron.Schedule, loc *time.Location, a, b time.Time) bool {
-	aWall := a.In(loc)
-	bWall := b.In(loc)
-	_, aOff := aWall.Zone()
-	_, bOff := bWall.Zone()
-	if bOff <= aOff {
-		return false // not a spring-forward (offset didn't increase)
-	}
-	fixed := time.FixedZone("dst-gap", aOff)
-	start := time.Date(aWall.Year(), aWall.Month(), aWall.Day(),
-		aWall.Hour(), aWall.Minute(), 0, 0, fixed).Add(time.Minute)
-	end := time.Date(bWall.Year(), bWall.Month(), bWall.Day(),
-		bWall.Hour(), bWall.Minute(), 0, 0, fixed)
-	// Safety cap (real DST shifts are ≤ 60 minutes); the bound also keeps
-	// this O(1) per transition regardless of the gap size.
-	const maxGapMinutes = 120
-	for range maxGapMinutes {
-		if !start.Before(end) {
-			break
-		}
-		if parsed.Matches(start) {
-			return true
-		}
-		start = start.Add(time.Minute)
-	}
-	return false
 }
 
 // earliestTime returns the earlier of a or b. Used by commitOccurrences to

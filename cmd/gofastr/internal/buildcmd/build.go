@@ -136,7 +136,7 @@ func RunBuild(args []string) {
 
 	elapsed := time.Since(start)
 	cli.Success("Build completed in %s", elapsed.Round(time.Millisecond))
-	fmt.Printf("  Binary: %s\n", cli.Bold(opts.output))
+	cli.Printf("  Binary: "+cli.Bold("%s")+"\n", opts.output)
 }
 
 // buildContractsGate runs the contract analyzers for `gofastr build` and
@@ -146,17 +146,17 @@ func RunBuild(args []string) {
 func buildContractsGate(root string) bool {
 	cfg, err := contracts.LoadConfig(root, "")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "contracts: %v\n", err)
+		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
 		return false
 	}
 	pass, err := contracts.NewPass(root, cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "contracts: %v\n", err)
+		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
 		return false
 	}
 	report, err := contracts.Run(pass, contracts.RunOptions{})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "contracts: %v\n", err)
+		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
 		return false
 	}
 	// `gofastr verify --baseline-write` is how an existing app adopts
@@ -166,7 +166,7 @@ func buildContractsGate(root string) bool {
 	// user finds from that is --no-contracts, which turns everything off.
 	baseline, baselineErr := contracts.ReadBaseline(filepath.Join(root, contracts.BaselineFileName))
 	if baselineErr != nil {
-		fmt.Fprintf(os.Stderr, "contracts: %v\n", baselineErr)
+		cli.Fprintf(os.Stderr, "contracts: %v\n", baselineErr)
 		return false
 	}
 	if baseline != nil {
@@ -187,7 +187,7 @@ func buildContractsGate(root string) bool {
 func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	findings, unresolved, fset, err := embedcheck.CheckAll(pattern)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "check-embed: %v\n", err)
+		cli.Fprintf(os.Stderr, "check-embed: %v\n", err)
 		return false
 	}
 	// Print every note; fail only on the BLOCKING class.
@@ -207,7 +207,7 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	// "hold the child in a field" is impossible for a wrapper.
 	var blocking int
 	for _, u := range unresolved {
-		fmt.Fprintf(os.Stderr, "check-embed: %s: %s\n", fset.Position(u.Pos), u.Format())
+		cli.Fprintf(os.Stderr, "check-embed: %s: %s\n", fset.Position(u.Pos), u.Format())
 		if u.Blocking {
 			blocking++
 		}
@@ -218,11 +218,11 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	if len(findings) > 0 {
 		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface(s) register a server action:\n\n", len(findings))
 		for _, f := range findings {
-			fmt.Fprintf(os.Stderr, "%s: %s\n\n", fset.Position(f.Pos), f.Format())
+			cli.Fprintf(os.Stderr, "%s: %s\n\n", fset.Position(f.Pos), f.Format())
 		}
 	}
 	if blocking > 0 && !allowUnverified {
-		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified; see the notes above.\n"+
+		cli.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified; see the notes above.\n"+
 			"Hold the child in a field rather than building it in Render, or move its type into the surface's package. "+
 			"If the surface genuinely cannot be analysed and you have verified it by hand, pass --allow-unverified-embeds.\n\n",
 			blocking)

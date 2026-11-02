@@ -65,7 +65,7 @@ func runGeneratePackage(args []string) {
 	if name == "" {
 		fmt.Println("Canonical chrome packages (copy one into your app as owned code):")
 		for _, p := range infos {
-			fmt.Printf("  %-12s %s\n", p.Name, p.Summary)
+			cli.Printf("  %-12s %s\n", p.Name, p.Summary)
 		}
 		fmt.Println()
 		fmt.Println("Copy one: gofastr generate package <name> [--out=DIR] [--dry-run]")
@@ -147,9 +147,9 @@ func runGeneratePackage(args []string) {
 	if dryRun {
 		fmt.Println("Would write:")
 		for _, f := range files {
-			fmt.Printf("  %s\n", filepath.ToSlash(filepath.Join(tgt.Display, f.Name)))
+			cli.Printf("  %s\n", filepath.ToSlash(filepath.Join(tgt.Display, f.Name)))
 		}
-		fmt.Printf("Would record it in %s\n", settingsPath)
+		cli.Printf("Would record it in %s\n", settingsPath)
 		return
 	}
 	undoCopy, err := WritePackageCopy(tgt, files)
@@ -168,7 +168,7 @@ func runGeneratePackage(args []string) {
 	fmt.Println()
 	fmt.Println("  Next steps:")
 	if hasTokens {
-		fmt.Printf("    site.WithTheme(theme.Default().Extend(%s.Tokens)) : add the package's own tokens to your theme\n", name)
+		cli.Printf("    site.WithTheme(theme.Default().Extend(%s.Tokens)) : add the package's own tokens to your theme\n", name)
 	}
 	if hasChromiumTest {
 		fmt.Println("    go mod tidy          : the chromium test pulls github.com/chromedp/chromedp and github.com/chromedp/cdproto")
@@ -177,7 +177,7 @@ func runGeneratePackage(args []string) {
 	if hasTokens {
 		generated += " / " + name + "_tokens.gen.go"
 	}
-	fmt.Printf("    gofastr gen styles   : regenerate %s after editing the sheets\n", generated)
+	cli.Printf("    gofastr gen styles   : regenerate %s after editing the sheets\n", generated)
 }
 
 // ErrPackageNoModule names the missing-module failure; the caller prints

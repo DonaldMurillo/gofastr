@@ -299,7 +299,7 @@ func TestGateDeferNoStrand(t *testing.T) {
 				t.Fatalf("fill %d: %v", i, err)
 			}
 		}
-		q.processJob(Job{Type: "gated", Payload: json.RawMessage(`{}`)})
+		q.processJob(&runningJob{job: Job{Type: "gated", Payload: json.RawMessage(`{}`)}})
 		time.Sleep(3 * gateDeferDelay) // timer fires while backlog is pending
 
 		enabled.Store(true)

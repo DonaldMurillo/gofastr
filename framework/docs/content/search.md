@@ -46,8 +46,8 @@ The blog example wires this into `GET /posts/search?q=...`. See
 
 `Owner` is a storage tag, not a search filter: scope searches through
 `Fields` and `FieldEquals`. Its job is erasure. The SQLite and Postgres
-backends register a data eraser, so `App.EraseUserData` deletes every
-document indexed for the erased user. Set it on any document whose text
+backends register a data eraser and `search.Memory` a store eraser, so
+`App.EraseUserData` deletes every document indexed for the erased user. Set it on any document whose text
 or fields carry one user's data, or erasure leaves that copy behind.
 
 ### `Query`
@@ -100,6 +100,12 @@ Documents are stored in a map, so:
 - Memory usage is `O(total text size)`.
 - Search is `O(n)` over the corpus.
 
+`NewMemory` registers a store eraser (`search:memory`), so
+`App.EraseUserData` deletes the documents whose `Owner` is the erased
+user. The registration holds the index until `Close` removes it: close an
+index you are done with, including one built for a test. `search.Battery`
+closes its backend on stop.
+
 It splits the query and the documents into words the way the SQL
 backends do (letters, digits, `-` and `_`; a hyphenated word also
 matches its parts) and matches whole words, the last query term as the
@@ -107,6 +113,9 @@ start of a word, so `error` does not find `xerror`. Two differences
 remain: it does not stem (`pages` does not find `page`), and it also
 searches a document's string `Fields`, which the SQL backends store
 but do not index.
+The words themselves still differ at the edges (diacritics, symbols,
+repeated hyphens): see
+[What each backend counts as the same word](#what-each-backend-counts-as-the-same-word).
 
 The implementation is in `battery/search/memory.go`; read it before
 using it in anything user-facing.
@@ -363,6 +372,61 @@ All three share AND-of-terms semantics, prefix matching on the last term,
 the same empty-query (match-all) and pure-punctuation (match-none) edge
 cases, and the string-only `FieldEquals` scoping contract.
 
+### What each backend counts as the same word
+
+They do not share a tokenizer, so the same query can find a document on
+one backend and miss it on another. Each backend keeps its own engine's
+rules on purpose: making them agree would mean re-tokenizing in Go
+before every write and query, and losing what the engine does well
+(Postgres stemming, FTS5 diacritic folding). If the same results on every
+backend matter to you, normalize `Document.Text` and `Query.Text` the
+same way yourself before calling `Index` and `Search` (for example strip
+diacritics with `golang.org/x/text/unicode/norm` and drop the combining
+marks).
+
+| Document text | Query | Memory | SQLite FTS5 | Postgres |
+|---------------|-------|--------|-------------|----------|
+| `café` | `cafe` | no | yes | no |
+| `cafe` | `café` | no | yes | no |
+| `Café` | `café` | yes | yes | yes |
+| `ÉCOLE` | `école` | yes | yes | yes |
+| `straße` | `strasse` | no | no | no |
+| `½ cup` | `½` | yes | yes | no |
+| `v1.2 notes` | `v1.2` | yes | yes | no |
+| `v1.2 notes` | `v1` | yes | yes | yes |
+| `user@example.com` | `example` | yes | yes | no |
+| `user@example.com` | `user@example.com` | yes | yes | no |
+| `load--balancer` | `load--balancer` | yes | yes | yes |
+| `load--balancer` | `balancer` | yes | yes | yes |
+| `load--balancer` | `load-balancer` | no | yes | no |
+| `load-balancer` | `load--balancer` | no | yes | yes |
+| `pages` | `page` | yes (prefix) | yes | yes |
+
+Why they differ:
+
+- **Diacritics.** FTS5's `unicode61` tokenizer removes diacritics by
+  default, so `cafe` and `café` are the same word. Memory and Postgres
+  (the `english` and `simple` configs, without the `unaccent` extension)
+  keep them, so the spelling has to match. All three fold case.
+- **Symbols, versions and addresses.** Postgres's parser gives `½` no
+  word at all, reads `v1.2` as a single file-name token, and reads
+  `user@example.com` as a single email token; the query side does not
+  produce the same tokens, so none of them is found. Memory and FTS5 split
+  at every rune that is not a letter or digit, so each part is a word.
+- **Repeated hyphens.** Memory keeps a hyphenated word whole as well as
+  its parts, so `load--balancer` and `load-balancer` are different
+  whole words there; FTS5 drops the hyphens and matches the parts.
+  Postgres reads `load-balancer` as a compound word plus its parts but
+  `load--balancer` as two separate words, so a single-hyphen query finds
+  only a single-hyphen document.
+- **Stemming.** Postgres and FTS5 stem (`pages` finds `page`); Memory
+  does not, and `page` finds `pages` there only because the last term
+  matches as a prefix.
+
+The table is what the backends do today, checked against SQLite 3 with
+FTS5 and Postgres 16. It is behaviour to know about, not a contract:
+a newer engine version may move a row.
+
 ## Battery wrapper
 
 `search.NewBattery(backend)` wraps any `Backend` in a
@@ -381,11 +445,9 @@ sb := b.(*search.Battery)
 results, _ := sb.Backend().Search(ctx, search.Query{Text: "..."})
 ```
 
-`search.Memory` has no background goroutine, so `Battery` implements
-`framework.Battery` only: `Name` and `Init` (a no-op); there is no
-`OnStop`. A future backend that starts a background goroutine will need
-an `OnStop` added to this wrapper (it does not exist today): implement
-`io.Closer` on that backend type and call `Close` from the new hook.
+`Battery` implements `framework.BatteryLifecycle`: `Init` and `OnStart`
+are no-ops, and `OnStop` calls `Close` on a backend that implements
+`io.Closer`, which for `search.Memory` unregisters its store eraser.
 
 ## Common mistakes
 

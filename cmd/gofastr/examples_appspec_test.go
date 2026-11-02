@@ -797,6 +797,8 @@ func generateAndCompileAppSpec(dir, scratchModule, appSpecPath, src, name string
 // (GOPROXY=off): a module-resolution failure skips with a message. The
 // boot test runs it as its own subtest, so that skip (or its failure)
 // leaves the boot alone.
+//
+//gofastr:test-reads internal/analyzers/ cmd/vettool/
 func vetWithRepoVettool(t *testing.T, appDir string) {
 	t.Helper()
 	vettool, err := clitest.RepoVettool()

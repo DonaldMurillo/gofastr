@@ -2,7 +2,9 @@ package migrate
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -43,13 +45,15 @@ func defaultIndexName(table string, cols []string) string {
 
 // createIndexSQL renders CREATE INDEX IF NOT EXISTS for an index named name
 // (bare) on a validated table. The index lives in its table's schema:
-// Postgres takes that schema on the table, SQLite on the index name.
+// Postgres takes that schema on the table, SQLite on the index name. A
+// keyword name or table is quoted (ddlIdent); body is the caller's, its
+// column names already rendered.
 func createIndexSQL(dialect Dialect, unique bool, name, table, body string) string {
 	u := ""
 	if unique {
 		u = "UNIQUE "
 	}
-	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s (%s)", u, query.IndexOn(dialect == DialectSQLite, name, table), body)
+	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s (%s)", u, query.IndexOn(dialect == DialectSQLite, ddlIdent(name), ddlIdent(table)), body)
 }
 
 // dropIndexSQL drops index name on table. Both engines resolve a bare
@@ -60,7 +64,7 @@ func dropIndexSQL(table, name string) string {
 	if s, _ := splitTable(table); s != "" {
 		name = s + "." + name
 	}
-	return "DROP INDEX IF EXISTS " + name
+	return "DROP INDEX IF EXISTS " + ddlIdent(name)
 }
 
 // referencedTable is how a REFERENCES clause names table. SQLite takes no
@@ -68,9 +72,9 @@ func dropIndexSQL(table, name string) string {
 // Postgres takes the name as written.
 func referencedTable(dialect Dialect, table string) string {
 	if dialect == DialectSQLite {
-		return tableBase(table)
+		return ddlIdent(tableBase(table))
 	}
-	return table
+	return ddlIdent(table)
 }
 
 // sqlitePragma renders PRAGMA fn(table) for a table: SQLite takes a schema
@@ -81,7 +85,9 @@ func sqlitePragma(fn, table string) (string, error) {
 	if _, err := query.SafeIdent(table); err != nil {
 		return "", err
 	}
-	return query.SQLitePragma(fn, table), nil
+	// A keyword table name is quoted, as in the DDL: PRAGMA table_info(table)
+	// is a syntax error.
+	return query.SQLitePragma(fn, ddlIdent(table)), nil
 }
 
 // sqliteMaster names the sqlite_master of a table's schema: each attached
@@ -105,12 +111,84 @@ func pgTableRefs(tables []string) (string, []any) {
 		s, n := splitTable(t)
 		var schema any
 		if s != "" {
-			schema = strings.ToLower(s)
+			schema = pgIdentCut(strings.ToLower(s))
 		}
 		rows[i] = fmt.Sprintf("($%d::int, $%d::text, $%d::text)", 3*i+1, 3*i+2, 3*i+3)
-		args = append(args, i, schema, strings.ToLower(n))
+		args = append(args, i, schema, pgIdentCut(strings.ToLower(n)))
 	}
 	return "(VALUES " + strings.Join(rows, ", ") + ") AS t(i, s, n)", args
+}
+
+// pgIdentCut is name as Postgres stores it: an identifier past 63 bytes
+// (query.MaxIdentBytes) is cut to its first 63 with only a NOTICE, in DDL
+// and queries alike, so the catalog holds the cut name. Compared whole, a
+// longer table name read as absent on every boot and never gained a
+// column. SafeIdent admits ASCII only, so the cut splits no character.
+func pgIdentCut(name string) string {
+	if len(name) > query.MaxIdentBytes {
+		return name[:query.MaxIdentBytes]
+	}
+	return name
+}
+
+// uncutLiveColumns re-keys the live columns Postgres cut to 63 bytes under
+// the declared field names they were created from. The catalog holds the
+// cut name, so a field named past 63 bytes read as missing: the next boot
+// that had anything to add ran ADD COLUMN for it, which Postgres cut to
+// the existing column's name and refused, and DiffSchema proposed dropping
+// the column it had just failed to add. live is returned as it is when no
+// field is that long, and never modified.
+func uncutLiveColumns(ent *entity.Entity, live map[string]string, dialect Dialect) map[string]string {
+	if dialect != DialectPostgres || len(live) == 0 {
+		return live
+	}
+	var out map[string]string
+	for _, f := range ent.GetFields() {
+		if len(f.Name) <= query.MaxIdentBytes {
+			continue
+		}
+		cut := pgIdentCut(strings.ToLower(f.Name))
+		typ, ok := live[cut]
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = maps.Clone(live)
+		}
+		delete(out, cut)
+		out[f.Name] = typ
+	}
+	if out == nil {
+		return live
+	}
+	return out
+}
+
+// uncutKey is cols, a live column list of ent's table (its primary key, or
+// a foreign key's columns on either side), with each column Postgres cut
+// to 63 bytes spelled as the declared field it was created from, so a key
+// on a long column compares equal to the declaration instead of reading as
+// a change on every boot.
+func uncutKey(ent *entity.Entity, cols []string, dialect Dialect) []string {
+	if dialect != DialectPostgres {
+		return cols
+	}
+	var out []string
+	for i, c := range cols {
+		for _, f := range ent.GetFields() {
+			if len(f.Name) > query.MaxIdentBytes && strings.EqualFold(c, pgIdentCut(f.Name)) {
+				if out == nil {
+					out = slices.Clone(cols)
+				}
+				out[i] = f.Name
+				break
+			}
+		}
+	}
+	if out == nil {
+		return cols
+	}
+	return out
 }
 
 // reCreateObject matches the head of a CREATE TABLE, INDEX or TRIGGER up to

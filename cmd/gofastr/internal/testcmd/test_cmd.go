@@ -55,9 +55,7 @@ func RunTest(args []string) {
 	failed := 0
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		line := scanner.Text()
-		colored := colorizeTestLine(line, &passed, &failed)
-		fmt.Println(colored)
+		fmt.Println(colorizeTestLine(scanner.Text(), &passed, &failed))
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -79,8 +77,12 @@ func RunTest(args []string) {
 	cli.Success("All tests passed! (%d passed, %d failed)", passed, failed)
 }
 
-// colorizeTestLine adds color to go test -v output lines.
+// colorizeTestLine adds color to go test -v output lines. The line is
+// the project's test output (test names, t.Log text, panics quoting
+// data), so it is scrubbed before the colour goes on and the caller
+// prints the result raw.
 func colorizeTestLine(line string, passed, failed *int) string {
+	line = cli.ScrubTerminalOutput(line)
 	switch {
 	case strings.HasPrefix(line, "=== RUN"):
 		return "  " + cli.Bold(line)

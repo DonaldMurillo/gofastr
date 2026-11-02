@@ -539,8 +539,8 @@ What it removes:
 | Format | Removed | How |
 |--------|---------|-----|
 | JPEG | every APPn segment (EXIF, XMP, ICC, Photoshop data) and COM comments; anything after EOI. The Adobe APP14 colour marker stays, cut to its 12 bytes: a CMYK JPEG does not decode without it | segments spliced out; no re-encode unless a rotation is needed |
-| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks | re-encoded (PNG is lossless, pixels unchanged); an animated PNG is spliced instead, every frame chunk kept |
-| WebP | `EXIF` and `XMP ` chunks | container rewritten, image bytes untouched |
+| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks; anything after IEND | re-encoded (PNG is lossless, pixels unchanged); an animated PNG is spliced instead, every frame chunk kept; a PNG with only a trailer is cut at IEND |
+| WebP | `EXIF` and `XMP ` chunks; anything past the RIFF size | container rewritten, image bytes untouched |
 
 An EXIF orientation of 2–8 is applied first so the stripped photo still
 displays upright: JPEG and PNG bake the rotation into the pixels (the
@@ -594,7 +594,11 @@ Built-in implementations:
   stored under a byte-different spelling (`TenantA/x` vs `tenanta/x`,
   NFC vs NFD) is refused with the same key error instead of silently
   overwriting it, and a delete under such a key is refused rather than
-  removing the other spelling's object. A key that is not its own clean
+  removing the other spelling's object. The check lists a key's directory
+  only where folding is possible: always on Windows, where an NTFS 8.3
+  short name (`PHOTO~1.PNG`) aliases a different long name, and for any
+  name holding `~` or a byte that can normalize; elsewhere a case-swap
+  probe proves the directory keeps the name apart. A key that is not its own clean
   form (`a//b`, `a/./b`, `./a`, a trailing `/`), a leading `/` and `.`
   are refused with `ErrInvalidKey` on every operation, never cleaned to
   the object they alias. Errors never carry the absolute storage path.

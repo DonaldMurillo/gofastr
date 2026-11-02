@@ -24,7 +24,7 @@ type Artifact struct {
 
 // Manifest is the machine-readable index `gofastr generate sdk` writes as
 // manifest.json beside the artifacts. The serving side reads it to render
-// download links (size, version, generated-at) and to detect drift between
+// download links (size, version, generated-at when stamped) and to detect drift between
 // the generated artifacts and the live entity registry via SchemaHash.
 type Manifest struct {
 	SchemaVersion int `json:"schemaVersion"`
@@ -34,8 +34,11 @@ type Manifest struct {
 	SDKVersion string `json:"sdkVersion"`
 	// GofastrVersion is the gofastr toolchain version that generated the
 	// artifacts (from the host app's go.mod require line, or "dev").
-	GofastrVersion string    `json:"gofastrVersion"`
-	GeneratedAt    time.Time `json:"generatedAt"`
+	GofastrVersion string `json:"gofastrVersion"`
+	// GeneratedAt is when the artifacts were generated, written only by
+	// `gofastr generate sdk --stamp-time`: a rerun over an unchanged
+	// schema is byte-identical without it. Zero means unstamped.
+	GeneratedAt time.Time `json:"generatedAt,omitzero"`
 	// Entities lists the entity names the SDKs cover, sorted. The serving
 	// side restricts its live SchemaHash computation to this set so the
 	// drift check compares like with like even when the SDK was generated

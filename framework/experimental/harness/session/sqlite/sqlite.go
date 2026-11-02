@@ -51,6 +51,16 @@ type Redactor interface {
 	Redact(text string) string
 }
 
+// MemberRedactor is a Redactor that also judges a JSON string by the
+// object member it is the value of: key is the member name, or "" for
+// an object key or an array element. DefaultRedactor implements it, so
+// {"ZAI_API_KEY": "<v>"} loses its value although neither string alone
+// matches a pattern.
+type MemberRedactor interface {
+	Redactor
+	RedactMember(key, value string) string
+}
+
 // Open opens (or creates) the SQLite session log at path. Creates
 // the parent directory and applies the v1 schema on first use.
 func Open(path string) (*Store, error) {
@@ -125,7 +135,15 @@ func (s *Store) redactPayload(raw []byte) string {
 		}
 		return text
 	}
-	if out, ok := jsonredact.Strings(raw, apply); ok {
+	member := func(key, text string) string {
+		for _, r := range s.Redactors {
+			if mr, ok := r.(MemberRedactor); ok && key != "" {
+				text = mr.RedactMember(key, text)
+			}
+		}
+		return apply(text)
+	}
+	if out, ok := jsonredact.Members(raw, member); ok {
 		return string(out)
 	}
 	return apply(string(raw))
@@ -439,6 +457,15 @@ func (DefaultRedactor) Redact(text string) string {
 	}
 	return text
 }
+
+// RedactMember replaces a JSON member's value when the member name is a
+// secret-suffixed variable name (ZAI_API_KEY, GOFASTR_HARNESS_PASSPHRASE).
+func (DefaultRedactor) RedactMember(key, value string) string {
+	out, _ := redactSecretMember(key, value)
+	return out
+}
+
+var _ MemberRedactor = DefaultRedactor{}
 
 // Compile-time assertion that Store satisfies session.Store.
 var _ session.Store = (*Store)(nil)

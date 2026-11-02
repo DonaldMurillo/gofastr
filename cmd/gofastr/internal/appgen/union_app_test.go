@@ -36,6 +36,11 @@ const unionCatalog = `{"union":{"screens":{"enrollments_crud":{"enrollment_recor
 // (TestCompositeKeyScreens), app spec hooks (the hooks security tests)
 // and the per-screen file layout (generate_perscreen_test.go). Each was
 // proved by breaking the emission and watching this test fail.
+//
+// It vets the app with ./cmd/vettool, built in a subprocess no import
+// edge shows, so an analyzer change names it to select this package.
+//
+//gofastr:test-reads internal/analyzers/ cmd/vettool/
 func TestUnionApp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, vets and boots the union app; skipped under -short")

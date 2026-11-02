@@ -20,6 +20,8 @@ const proseMarkerFixture = `(function () {
   el.textContent = 'Quoted marker below';
   // gofastr:allow(runtimeprose) stand-alone marker with a reason
   el.textContent = 'Covered by the line above';
+  // gofastr:allow(runtimeprose) --
+  el.textContent = 'Punctuation is not a reason';
 })();
 `
 
@@ -30,7 +32,7 @@ func TestTrailingProseMarkerOwnLineOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertLines(t, res, []int{3, 5, 6, 8})
+	assertLines(t, res, []int{3, 5, 6, 8, 12})
 }
 
 const layerMarkerJSFixture = `(function () {

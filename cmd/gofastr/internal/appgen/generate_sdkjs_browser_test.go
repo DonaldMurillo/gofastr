@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net"
@@ -9,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
@@ -69,12 +72,23 @@ func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
 		framework.WithDB(db),
 		framework.WithoutDefaultMiddleware(),
 	)
+	// Two declared endpoints refuse outside the CRUD writer: "gated"
+	// at the endpoint gate (no session: 401), "typed" from a typed
+	// handler's handler.Fail. Both answer in core/handler.WriteError's
+	// envelope, which must parse in ApiError exactly like a CRUD refusal.
+	typed := handler.HandlerAdapter(func(context.Context, struct{}) (struct{}, error) {
+		return struct{}{}, handler.Fail(http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
+	})
 	app.Entity("posts", framework.EntityConfig{Table: "posts", Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true},
 		{Name: "author_name", Type: schema.String, Required: true},
 		{Name: "views", Type: schema.Int},
 		{Name: "published", Type: schema.Bool},
 	},
+		Endpoints: []framework.Endpoint{
+			{Method: "POST", Path: "gated", Handler: typed},
+			{Method: "POST", Path: "typed", Handler: typed, Public: true},
+		},
 	}.WithTimestamps(false))
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		t.Fatal(err)
@@ -135,6 +149,15 @@ func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
     r.valFields = e.fields ? Object.keys(e.fields).join(',') : 'none';
     r.valReason = e.reason;
     r.valFieldReasons = e.fieldReasons ? (e.fieldReasons.author_name || []).join(',') : 'none';
+  }
+
+  for (const [key, path] of [['gate', '/posts/gated'], ['typed', '/posts/typed']]) {
+    try {
+      await api.do('POST', path, {});
+      r[key] = 'no-error';
+    } catch (e) {
+      r[key] = { isApiError: e instanceof ApiError, status: e.status, code: e.code, reason: e.reason, message: e.message };
+    }
   }
 
   const rb = await api.posts.batchCreate([{ title: 'ok', authorName: 'c' }, {}]);
@@ -215,5 +238,22 @@ true`
 	}
 	if r["getAfterDelete"] != float64(404) {
 		t.Errorf("delete/get-after broken: %v", r["getAfterDelete"])
+	}
+	// The gate's and a typed handler's refusals parse like a CRUD one:
+	// a nested {"error": {...}} read as "api: 401: [object Object]" with
+	// no reason.
+	for key, want := range map[string]struct {
+		status float64
+		reason string
+		text   string
+	}{
+		"gate":  {401, "authentication_required", "authentication required"},
+		"typed": {409, "conflict", "conflict"},
+	} {
+		got, _ := r[key].(map[string]any)
+		if got == nil || got["isApiError"] != true || got["status"] != want.status || got["code"] != want.status ||
+			got["reason"] != want.reason || got["message"] != fmt.Sprintf("api: %d: %s", int(want.status), want.text) {
+			t.Errorf("%s refusal parsed as %v, want status/code %v, reason %q, message %q", key, r[key], want.status, want.reason, want.text)
+		}
 	}
 }

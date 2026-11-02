@@ -223,7 +223,10 @@ itself in those windows, so a request gets an answer instead of
   HTML: what is happening, and for a failed build the compiler, lint
   or sandbox output. A browser gets the same as a page. On an address
   other machines can reach, the output is left out (it carries absolute
-  paths and quoted source) and the page points at the terminal.
+  paths and quoted source) and the page points at the terminal. So is a
+  request whose `Host` is not a loopback name for the address
+  (`127.0.0.1`, `localhost`, `[::1]` with the port): that is a page on
+  another site whose name a rebinding DNS server points at this machine.
 - `/__livereload` answers too. An open tab reloads into the page when a
   build fails or the app exits, but not for an ordinary rebuild, and
   reloads back into the app when its new build comes up. On an address

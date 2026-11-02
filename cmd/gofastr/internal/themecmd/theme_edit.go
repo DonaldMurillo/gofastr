@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/loopback"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -61,7 +63,8 @@ func runThemeEdit(args []string) {
 			printThemeEditHelp()
 			return
 		default:
-			fmt.Printf("%s Unknown flag: %s\n\n", cli.Red("✗"), a)
+			cli.Fail("Unknown flag: %s", a)
+			fmt.Println()
 			printThemeEditHelp()
 			cli.OsExit(1)
 		}
@@ -73,12 +76,21 @@ func runThemeEdit(args []string) {
 	// accident.
 	if !force {
 		if _, err := os.Stat(outPath); err == nil {
-			fmt.Printf("%s %s already exists.\n", cli.Yellow("⚠"), outPath)
+			cli.Warn("%s already exists.", outPath)
 			fmt.Println("  The editor regenerates it whole on write-back, which would")
 			fmt.Println("  overwrite any hand-edited values. Pass --force to proceed, or")
 			fmt.Println("  write to a new path via --out=<path>.")
 			cli.OsExit(1)
 		}
+	}
+
+	// A destination inside the project refuses a theme/ (or theme.go)
+	// linked out of it, as theme init does, before serving an editor
+	// whose Write could only fail; writeBack confines every write too.
+	if err := projectfs.Check(projectfs.Split(outPath)); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
 
 	base := uitheme.Default()
@@ -116,7 +128,7 @@ func runThemeEdit(args []string) {
 	// guard states (framework/devmcp_bind.go).
 	bound, err := themeEditBindAddr(addr)
 	if err != nil {
-		fmt.Printf("%s refusing to bind the theme editor to %q: %v\n", cli.Red("✗"), addr, err)
+		cli.Fail("refusing to bind the theme editor to %q: %v", addr, err)
 		fmt.Println("  The page carries its own bearer token and the write-back endpoint")
 		fmt.Println("  rewrites a Go file on disk. The Host pin stops DNS rebinding from a")
 		fmt.Println("  browser, not a direct TCP client. Bind to 127.0.0.1 or localhost.")
@@ -125,7 +137,7 @@ func runThemeEdit(args []string) {
 	addr = bound
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Printf("%s listen %s: %v\n", cli.Red("✗"), addr, err)
+		cli.Fail("listen %s: %v", addr, err)
 		cli.OsExit(1)
 	}
 	boundAddr := ln.Addr().String()
@@ -161,8 +173,8 @@ func runThemeEdit(args []string) {
 	url := "http://" + boundAddr
 	fmt.Println("━─────────────────────────────────────────────")
 	fmt.Println("  gofastr theme edit")
-	fmt.Printf("  %s\n", url)
-	fmt.Printf("  write-back → %s\n", outPath)
+	cli.Printf("  %s\n", url)
+	cli.Printf("  write-back → %s\n", outPath)
 	fmt.Println("  Ctrl-C to stop")
 	fmt.Println("━─────────────────────────────────────────────")
 
@@ -360,9 +372,17 @@ func (s *ThemeEditServer) writeBack() error {
 	wrote := s.wroteDigest
 	s.mu.Unlock()
 
-	dir := filepath.Dir(outPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
+	// The theme file is read and written through an os.Root (projectfs):
+	// the default theme/theme.go is confined to the working directory, so
+	// a theme/ or theme.go linked out of the checkout is refused rather
+	// than written through. An --out outside the working directory names
+	// its own directory, and only the file in it is confined.
+	rootDir, rel, err := projectfs.UserPath(outPath)
+	if err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(outPath), err)
+	}
+	if err := projectfs.MkdirAll(rootDir, path.Dir(rel), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(outPath), err)
 	}
 	if !force {
 		// A file THIS session wrote is ours to rewrite. Anything else is
@@ -370,12 +390,13 @@ func (s *ThemeEditServer) writeBack() error {
 		// the button worked exactly once: the first Write created the file, and
 		// every later Write refused, citing a file the tool itself had just
 		// produced.
-		if existing, err := os.ReadFile(outPath); err == nil && sha256.Sum256(existing) == wrote {
+		if existing, err := projectfs.ReadFile(rootDir, rel); err == nil && sha256.Sum256(existing) == wrote {
 			force = true
 		}
 	}
 	if !force {
-		if _, err := os.Stat(outPath); err == nil {
+		// Lstat: a dangling theme.go link is a file already there.
+		if _, err := projectfs.LstatFile(rootDir, rel); err == nil {
 			return fmt.Errorf("%s already exists; pass --force to replace it", outPath)
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("stat %s: %w", outPath, err)
@@ -386,34 +407,15 @@ func (s *ThemeEditServer) writeBack() error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(outPath)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("create temporary theme file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o644); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod temporary theme file: %w", err)
-	}
-	if _, err := tmp.Write(src); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write temporary theme file: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("fsync temporary theme file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temporary theme file: %w", err)
-	}
 	// Remember what we wrote, so this session can rewrite its own file without
 	// --force on the next click.
 	s.mu.Lock()
 	s.wroteDigest = sha256.Sum256(src)
 	s.mu.Unlock()
-	if err := os.Rename(tmpPath, outPath); err != nil {
-		return fmt.Errorf("rename temporary theme file: %w", err)
+	// Through a temporary file renamed over the old one, so a crash
+	// mid-write leaves the previous theme, never a truncated one.
+	if err := projectfs.WriteFile(rootDir, rel, src, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 	return nil
 }

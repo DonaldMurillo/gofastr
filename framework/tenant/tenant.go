@@ -2,10 +2,14 @@ package tenant
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"reflect"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -63,6 +67,13 @@ func DefaultTenantConfig() TenantConfig {
 // single source of the column name used by entity injection, auto-migrate, and
 // the CRUD insert/scope/filter paths. A blank or default "tenant_id" leaves
 // TenantField unset (the default applies).
+//
+// The entity has already been through entity.Define, which adds the tenant
+// column to the fields of an entity declared multi-tenant, so this adds it
+// the same way: a hidden, read-only String. Without it AutoMigrate created
+// no tenant column and the first create failed on the column CRUD writes.
+// The tenant_id column Define injected for a MultiTenant entity is renamed
+// to a custom Field rather than kept beside it.
 func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 	if ent.Config.Scope == nil {
 		ent.Config.Scope = &entity.ScopeConfig{}
@@ -71,7 +82,45 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 	if config.Field != "" && config.Field != "tenant_id" {
 		ent.Config.Scope.TenantField = config.Field
 	}
+	col := ent.Config.TenantColumn()
+	if _, err := query.SafeIdent(col); err != nil {
+		panic(fmt.Sprintf("entity %q: TenantField %q is not a valid SQL identifier: %v", ent.Config.Name, col, err))
+	}
+	injected := -1
+	for i, f := range ent.Config.Fields {
+		if f.Name == col {
+			return ent
+		}
+		if f.Name == "tenant_id" && isInjectedTenantField(f) {
+			injected = i
+		}
+	}
+	if injected >= 0 {
+		fields := slices.Clone(ent.Config.Fields)
+		fields[injected].Name = col
+		ent.Config.Fields = fields
+		return ent
+	}
+	ent.Config.Fields = append(slices.Clone(ent.Config.Fields), schema.Field{
+		Name:         col,
+		Type:         schema.String,
+		AutoGenerate: schema.AutoNone,
+		ReadOnly:     true,
+		Hidden:       true,
+	})
 	return ent
+}
+
+// isInjectedTenantField reports whether f is the tenant column entity.Define
+// adds, and nothing an app declared itself.
+func isInjectedTenantField(f schema.Field) bool {
+	return reflect.DeepEqual(f, schema.Field{
+		Name:         f.Name,
+		Type:         schema.String,
+		AutoGenerate: schema.AutoNone,
+		ReadOnly:     true,
+		Hidden:       true,
+	})
 }
 
 // ApplyTenantFilter adds a WHERE tenant_id = ? clause to the query
