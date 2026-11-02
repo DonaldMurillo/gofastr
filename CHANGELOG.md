@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`/openapi.json` lists only a view's read routes.** `App.View`
+  mounts its entity read-only, and `llm.md` says so, but the spec
+  documented create, update, delete and the `_batch` family on every
+  view, each a 405. It now lists List, Get and `_events`
+  (`openapi.Options.ReadOnlyMounted`).
 - **The OpenAPI spec types a relation by its target's key.** Every
   Relation column was a uuid string, so a column pointing at an
   AutoIncrement table, which the route answers as a JSON number, failed

@@ -3690,8 +3690,11 @@ func (a *App) Start(addr string) error {
 		spec := openapi.EntityOpenAPIWith(a.Registry, appName, "1.0.0", openapi.Options{
 			CRUDMounted: a.entityCRUDEnabled,
 			BulkMounted: a.entityUIMounted,
-			JSONCase:    a.JSONCasing(),
-			BasePath:    a.apiPrefix(),
+			// The same mount facts the llm.md index reads (#358): a view
+			// serves its read routes only.
+			ReadOnlyMounted: func(e *entity.Entity) bool { return a.entityCrudMount(e).ReadOnly },
+			JSONCase:        a.JSONCasing(),
+			BasePath:        a.apiPrefix(),
 		})
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))

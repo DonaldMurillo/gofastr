@@ -513,8 +513,10 @@ predicate and also documents the `_bulk`, `_export.csv` and `_pick` routes
 `App.EntityUI` mounts; the served spec passes it. `EntityOpenAPIWith`
 takes the same inputs as an `openapi.Options` struct plus the app's
 `JSONCase`, so under `snake_case` the served spec names each field by
-the key the routes answer under (`author_id`, not `authorId`); the app
-builds its document through it. Plugin-registered HTTP handlers go
+the key the routes answer under (`author_id`, not `authorId`), and
+`ReadOnlyMounted`, which keeps a read-only mount (`App.View`) to its
+List, Get and `_events` operations; the app builds its document through
+it. Plugin-registered HTTP handlers go
 through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no
 plugin → OpenAPI extension hook today.

@@ -65,6 +65,10 @@ type Options struct {
 	// CRUDMounted and BulkMounted are EntityOpenAPIWithBulk's
 	// crudMounted and bulkMounted predicates.
 	CRUDMounted, BulkMounted func(*entity.Entity) bool
+	// ReadOnlyMounted reports an entity mounted read-only (App.View:
+	// List, Get and _events only). The document then lists those three
+	// routes and none of the writes, as llm.md does. nil is never.
+	ReadOnlyMounted func(*entity.Entity) bool
 	// JSONCase is the key case the app's CRUD handlers read and write
 	// (App.JSONCasing). Empty is crud.CaseCamel. A field's WireName is
 	// verbatim under either case.
@@ -79,10 +83,7 @@ type Options struct {
 // snake_case the routes answer `author_id`, and a spec saying `authorId`
 // generated clients that read nothing back.
 func EntityOpenAPIWith(registry entity.Registry, title, version string, opts Options) *openapi.Spec {
-	crudMounted, bulkMounted := opts.CRUDMounted, opts.BulkMounted
-	basePath := []string{opts.BasePath}
-	jc := opts.JSONCase
-	s := entityOpenAPI(registry, title, version, crudMounted, bulkMounted, nil, jc, basePath...)
+	s := entityOpenAPI(registry, title, version, opts, nil)
 	// The auth-gated serving path (core/openapi Handler) rebuilds the
 	// document per request through RequestView, keeping only the
 	// entities THIS caller can read — llm.md parity: the spec is the
@@ -94,9 +95,9 @@ func EntityOpenAPIWith(registry entity.Registry, title, version string, opts Opt
 	// and keeps serving the full spec.
 	s.RequestView = func(r *http.Request) *openapi.Spec {
 		ctx := r.Context()
-		return entityOpenAPI(registry, title, version, crudMounted, bulkMounted, func(ent *entity.Entity) bool {
+		return entityOpenAPI(registry, title, version, opts, func(ent *entity.Entity) bool {
 			return canReadSpecEntity(ctx, ent)
-		}, jc, basePath...)
+		})
 	}
 	return s
 }
@@ -126,13 +127,13 @@ func objectSchemaWith(props map[string]any) map[string]any {
 }
 
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
-// which registered entities reach the document; jc is the handlers' key
-// case (casedFields).
-func entityOpenAPI(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, jc crud.JSONCase, basePath ...string) *openapi.Spec {
+// which registered entities reach the document.
+func entityOpenAPI(registry entity.Registry, title, version string, opts Options, keep func(*entity.Entity) bool) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
+	crudMounted, bulkMounted, jc := opts.CRUDMounted, opts.BulkMounted, opts.JSONCase
 	apiPrefix := ""
-	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
-		apiPrefix = "/" + strings.Trim(basePath[0], "/")
+	if opts.BasePath != "" && opts.BasePath != "/" {
+		apiPrefix = "/" + strings.Trim(opts.BasePath, "/")
 	}
 	s.AddServer("/", "current")
 
@@ -329,6 +330,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// Tag for grouping
 		s.AddTag(tagName, entityName+" operations")
 
+		// A read-only mount (App.View) serves List, Get and _events; every
+		// write below would answer 405, so none reaches the document.
+		readOnly := opts.ReadOnlyMounted != nil && opts.ReadOnlyMounted(ent)
+		addWrite := func(method, p string, op openapi.Operation) {
+			if !readOnly {
+				s.AddPath(method, p, op)
+			}
+		}
+
 		// Reference to entity schema
 		entityRef := map[string]any{"$ref": "#/components/schemas/" + schemaName}
 		singleRef := map[string]any{
@@ -514,7 +524,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			createOp.AddSecurity("bearerAuth", nil)
 			createOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("POST", path, *createOp)
+		addWrite("POST", path, *createOp)
 
 		// --- GET /{table}/:id: Get by ID ---
 		getOp := openapi.NewOperation()
@@ -554,7 +564,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			updateOp.AddSecurity("cookieAuth", nil)
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PUT", recPath, *updateOp)
+		addWrite("PUT", recPath, *updateOp)
 
 		// --- PATCH /{table}/:id: Sparse update ---
 		patchOp := openapi.NewOperation()
@@ -575,7 +585,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			patchOp.AddSecurity("cookieAuth", nil)
 		}
 		patchOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PATCH", recPath, *patchOp)
+		addWrite("PATCH", recPath, *patchOp)
 
 		// --- DELETE /{table}/:id: Delete ---
 		deleteOp := openapi.NewOperation()
@@ -592,7 +602,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			deleteOp.AddSecurity("cookieAuth", nil)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("DELETE", recPath, *deleteOp)
+		addWrite("DELETE", recPath, *deleteOp)
 
 		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
 		// The router mounts the transition route when States holds a
@@ -638,7 +648,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				moveOp.AddSecurity("bearerAuth", nil)
 				moveOp.AddSecurity("cookieAuth", nil)
 			}
-			s.AddPath("POST", recPath+"/transitions/"+t.Key, *moveOp)
+			addWrite("POST", recPath+"/transitions/"+t.Key, *moveOp)
 		}
 
 		// --- POST /{table}/_batch: BatchCreate ---
@@ -666,7 +676,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			batchCreateOp.AddSecurity("bearerAuth", nil)
 			batchCreateOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("POST", path+"/_batch", *batchCreateOp)
+		addWrite("POST", path+"/_batch", *batchCreateOp)
 
 		// --- PATCH /{table}/_batch: BatchUpdate ---
 		// An item names its record in the body, so each key column takes
@@ -716,7 +726,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			batchUpdateOp.AddSecurity("bearerAuth", nil)
 			batchUpdateOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
+		addWrite("PATCH", path+"/_batch", *batchUpdateOp)
 
 		// --- GET /{table}/_events: SSE entity subscription stream ---
 		eventsOp := openapi.NewOperation()
@@ -765,8 +775,8 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			batchDeleteOp.AddSecurity("bearerAuth", nil)
 			batchDeleteOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
-		if bulkMounted != nil && bulkMounted(ent) {
+		addWrite("DELETE", path+"/_batch", *batchDeleteOp)
+		if !readOnly && bulkMounted != nil && bulkMounted(ent) {
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
