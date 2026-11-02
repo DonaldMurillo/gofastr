@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A semantic index refuses an empty vector.** With an embedder whose
+  `Dim()` is 0 until first use, an empty vector fixed no dimension and
+  was stored; the next real vector set one, and every query after
+  panicked in the dot product, the snapshot carrying the chunk into each
+  restart. `Index.Add` (before the WAL logs the write, so it cannot
+  leave a half-applied write that blocks later ones), `FlatStore.Add`
+  and `LoadSnapshot` now refuse it. See
+  [semantic search](framework/docs/content/semantic-search.md).
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

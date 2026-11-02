@@ -389,6 +389,9 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	if expectedDim == 0 && len(vecs) > 0 {
 		expectedDim = len(vecs[0])
 	}
+	if expectedDim == 0 {
+		return fmt.Errorf("semantic: embedder.Embed: %w", errEmptyVector)
+	}
 	for j := range chunks {
 		if len(vecs[j]) != expectedDim {
 			return errVecDim(expectedDim, len(vecs[j]))

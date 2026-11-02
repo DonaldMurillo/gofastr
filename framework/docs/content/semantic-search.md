@@ -80,8 +80,9 @@ persist state. Snapshot loading validates chunk counts and vector
 dimensions before changing the store.
 
 Replacing a document with empty text removes its previous chunks. Invalid
-embedding dimensions or non-finite coordinates are rejected before removing
-the previous document. Go declaration chunks include their documentation
+embedding dimensions, an empty vector, or non-finite coordinates are
+rejected before removing the previous document, even from an embedder
+whose `Dim()` is 0 until first use. Go declaration chunks include their documentation
 comments; structural subchunks keep IDs derived from their global offsets.
 
 Snapshots, the WAL, and the directory that holds them are owner-only
