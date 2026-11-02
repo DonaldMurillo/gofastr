@@ -4365,6 +4365,12 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **The log webhook sink no longer writes its URL to stderr.** When a
+  batch was given up on a transport error, the warning quoted net/http's
+  error, which carries the full URL, so a Slack incoming-webhook secret
+  or a `?token=` query landed in journald and the container log. The
+  warning (and `HTTPErrorReporter`, which shares the sink) now names
+  only `scheme://host`.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

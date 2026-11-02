@@ -246,6 +246,9 @@ POSTs a JSON envelope `{"entries":[<entry>, <entry>, ...]}` to `url`.
 - `Headers` lets you inject auth (`Authorization: Bearer …`) or routing
   hints. `Content-Type` is forced to `application/json`.
 - `Close` flushes pending entries before returning (App.Stop awaits it).
+- The URL is treated as a credential (a Slack incoming-webhook path, a
+  `?token=` query). The stderr warning written when a batch is given up
+  names only `scheme://host`, never the path or query.
 
 ### `JSONSink(opts)`
 
