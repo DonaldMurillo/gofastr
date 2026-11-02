@@ -140,6 +140,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Local storage no longer lists a directory to serve one file.** The
+  fold check behind both local backends (`upload.RefuseFoldedKey`) read
+  the whole parent directory, with an lstat per entry, on every Get,
+  Exists, Delete and overwriting Save. Upload directories are flat, so
+  with 50,000 objects in one field each GET of `/uploads/...` spent about
+  85ms in syscalls, and Save held the process-wide commit lock through
+  it. The check now lists only where the filesystem can fold the name;
+  see [storage](framework/docs/content/storage.md).
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

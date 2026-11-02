@@ -76,6 +76,16 @@ func RefuseFoldedKey(key, _ string, root string, rt *os.Root) error {
 		// name means the key as spelled is what Lstat hit (the kernel
 		// tries the exact name first): intended overwrite, not a fold.
 		parent := filepath.Join(append([]string{parentBase}, parts[:i]...)...)
+		if !dirMayFold(fi, part, parent, rt) {
+			// The directory provably does not fold this name, so the
+			// Lstat hit IS the name as spelled. Enumerating the parent
+			// here cost a readdir plus an lstat per entry on every Get,
+			// Exists, Delete and overwriting Save: a flat upload
+			// directory of 50,000 objects made each GET ~85ms of
+			// syscalls, and Save ran the walk under the process-wide
+			// commit lock.
+			continue
+		}
 		exact, onDisk := foldedEntryName(fi, part, parent, rt)
 		if !exact && onDisk != "" {
 			return fmt.Errorf("%w: key %q collides with existing object stored under a "+
@@ -107,12 +117,73 @@ func CommitUnfolded(key, root string, rt *os.Root, rename func() error) error {
 	return rename()
 }
 
+// dirMayFold reports whether the Lstat hit fi for part could be an entry
+// stored under a different spelling, which only a directory listing can
+// tell. It answers false only when that is impossible, so the listing
+// stays the authority wherever folding can happen:
+//
+//   - A name with a non-ASCII byte, or with 'K', ';' or '`', may fold by
+//     normalization alone, even on a case-sensitive filesystem (APFS in
+//     its case-sensitive variant still compares normalized names):
+//     U+212A KELVIN SIGN, U+037E GREEK QUESTION MARK and U+1FEF GREEK
+//     VARIA are the canonical singletons that normalize to ASCII. Always
+//     listed.
+//   - Otherwise the name is ASCII, and only case folding can map another
+//     entry onto it. The same name with its ASCII letters case-swapped is
+//     probed: a directory that folds case resolves it to the same file,
+//     one that does not reports it missing (or a different file, a key
+//     that differs only in case). A letterless ASCII name has nothing to
+//     fold. A probe that errors for any reason but absence lists.
+//
+// foldListHook is the test seam that counts the listings this saves.
+func dirMayFold(fi os.FileInfo, part, parent string, rt *os.Root) bool {
+	if strings.ContainsAny(part, "K;`") {
+		return true
+	}
+	swapped := []byte(part)
+	letters := false
+	for i, c := range swapped {
+		switch {
+		case c >= 0x80:
+			return true
+		case c >= 'a' && c <= 'z':
+			swapped[i] = c - ('a' - 'A')
+			letters = true
+		case c >= 'A' && c <= 'Z':
+			swapped[i] = c + ('a' - 'A')
+			letters = true
+		}
+	}
+	if !letters {
+		return false
+	}
+	probe := filepath.Join(parent, string(swapped))
+	var pfi os.FileInfo
+	var err error
+	if rt != nil {
+		pfi, err = rt.Lstat(probe)
+	} else {
+		pfi, err = os.Lstat(probe)
+	}
+	if err != nil {
+		return !errors.Is(err, fs.ErrNotExist)
+	}
+	return os.SameFile(fi, pfi)
+}
+
+// foldListHook, when non-nil, runs each time the fold walk enumerates a
+// directory. Test seam only; nothing installs it outside the tests.
+var foldListHook func(parent string)
+
 // foldedEntryName reports whether the parent directory holds a byte-equal
 // entry for part, and if not, the differently spelled entry that fi (the
 // Lstat result for part) identifies via os.SameFile — the filesystem's own
 // answer to "what name did this request actually hit". Unreadable
 // directories return no fold: containment is not this check's job.
 func foldedEntryName(fi os.FileInfo, part, parent string, rt *os.Root) (exact bool, onDisk string) {
+	if foldListHook != nil {
+		foldListHook(parent)
+	}
 	var entries []os.DirEntry
 	if rt != nil {
 		f, err := rt.Open(parent)

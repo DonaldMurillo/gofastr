@@ -92,6 +92,13 @@ they alias. S3 keys are byte-exact and unchanged. Saves from another
 process sharing the directory are not serialized. Re-saving the exact
 stored key stays an ordinary overwrite. Objects planted straight onto disk by other tools
 with folded spellings follow the filesystem's folding, not the store's.
+Finding the stored spelling means listing the directory, so the check
+lists only where folding is possible: a name with a non-ASCII byte or a
+`K`, `;` or `` ` `` (the ASCII targets of Unicode normalization), or one
+whose case-swapped spelling opens the same file. On a case-sensitive
+filesystem the cost of serving one object no longer grows with the number
+of objects beside it; on a folding one each operation still lists every
+directory on the key's path.
 
 `LocalStorage` implements `RangeGetter`, so HTTP range requests
 (`Range:` bytes) are answered with a `206` from the seekable file
