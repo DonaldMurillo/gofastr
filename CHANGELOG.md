@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A large file on disk gets its ETag after a HEAD, a 304 or a short
+  range.** `core/static` hashes a file over 16 MiB in the background,
+  and the goroutine opened it through the request's `*os.Root`, which
+  the handler closes when the response is done. A quick answer closed it
+  first, so a file only revalidated or range-read never got an ETag. The
+  file is now opened on the request and only read in the background. See
+  [core packages](framework/docs/content/core-packages.md#static).
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
