@@ -1615,7 +1615,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// commit seam now passes, instead of the outgoing page's copy on
 		// <html> (2026-11-01 bug hunt R7-093,
 		// TestTransitionPickUsesIncomingVocab).
-		"transition": 1440,
+		// 1448 measured (1446 + 2) after commit handles the ready
+		// promise a skipped transition rejects, which surfaced as an
+		// unhandled rejection on every rage click (2026-11-02 bug bash,
+		// TestSkippedTransitionRaisesNoUnhandledRejection).
+		"transition": 1448,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's
