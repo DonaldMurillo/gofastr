@@ -149,6 +149,13 @@ few lines, and link the PR or the docs page for the rest.
   table between two entities, or served the accounts table through CRUD.
   `gofastr validate` and `generate` now name each one. See
   [app spec validation](framework/docs/content/app-spec.md#validation).
+- **Generated clients send the JSON key the server reads for every
+  field.** The server keys a column `Title` as `Title` and `_note` as
+  `Note`; the generated model, typed repo shapes, typed client, Go and JS
+  SDKs and CLI lowered the first letter (`title`, `note`), so those
+  fields were dropped on write and read as empty. App specs now refuse a
+  field or relation name that does not start with a lower-case letter,
+  since the typed repo's in-process write cannot keep one either.
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

@@ -2616,6 +2616,8 @@ func ValidateAppSpec(bp AppSpec) error {
 		for _, f := range decl.Fields {
 			if !project.IsGoIdentifier(ToCamelCase(f.Name)) {
 				errs.add(fmt.Errorf("app spec: entity %q field %q does not produce a valid Go identifier: rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name))
+			} else if !startsLower(f.Name) {
+				errs.add(fmt.Errorf("app spec: entity %q field %q must start with a lower-case letter: %s", decl.Name, f.Name, wireCaseWhy))
 			}
 			for _, v := range f.Values {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
@@ -2706,6 +2708,9 @@ func ValidateAppSpec(bp AppSpec) error {
 			if owner, dup := relNames[camel]; dup {
 				errs.add(fmt.Errorf("app spec: entity %q relation %q collides with %s: both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel))
 				continue
+			}
+			if !startsLower(rel.Name) {
+				errs.add(fmt.Errorf("app spec: entity %q relation %q must start with a lower-case letter: %s", decl.Name, rel.Name, wireCaseWhy))
 			}
 			relNames[camel] = "relation " + rel.Name
 			if rel.Entity == "" {

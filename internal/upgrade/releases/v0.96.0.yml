@@ -725,3 +725,7 @@ notes:
     breaking: false
     guidance: "Each such spec generated an app that failed at boot or on its first query, or on Postgres shared a table between entities. A few words, such as user, desc, end, left and right, only Postgres refuses: an app on SQLite worked with them and now fails validation, so rename the field (or set table:) before regenerating, and migrate the column with renames: on the entity."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "Generated clients (entity model and repo shapes, entities/client, the Go and JS SDKs, the CLI) spell a field's JSON key the way the server does, so a column named Title is sent and read as Title, not title; an app spec field or relation name must start with a lower-case letter"
+    breaking: false
+    guidance: "Only names that start with an upper-case letter or an underscore change, and their values were silently dropped before. Regenerate the clients (gofastr generate, gofastr generate sdk). An app spec with such a field fails validation: rename it in snake_case and add the old name under renames: so the column moves."
+    nodetect: "the keys change in regenerated files; an app's own code reads them through the generated types"

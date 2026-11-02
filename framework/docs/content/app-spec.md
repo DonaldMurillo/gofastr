@@ -1672,6 +1672,12 @@ The generator rejects:
   refuses as a bare name, such as `order`, `group`, `default`, `values`,
   `limit`, `on`, `select`, `user` and `desc`. Go words such as `type`,
   `func` and `range` are fine.
+- a field or relation name that does not start with a lower-case letter
+  (`Title`, `HTTPCode`, `_note`). The server keeps the first letter as
+  written in the JSON key (`Title`, `Note`), and the generated typed repo
+  maps that key back to its column through snake_case, which lowers it,
+  so a create through the repo dropped the value. Write names in
+  snake_case (`title`, `http_code`)
 - two entities on one table, compared the way Postgres folds an unquoted
   name (`table: Items` and an entity named `items`): the second entity's
   routes collide with the first's, or both entities share rows

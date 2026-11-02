@@ -40,6 +40,36 @@ func ToCamelJSON(value string) string {
 	return strings.ToLower(camel[:1]) + camel[1:]
 }
 
+// WireKey is the JSON key the server puts a column or relation under in
+// its default camel JSONCase (framework/internal/casing.ToCamel, which
+// crud.CrudHandler.WireKey applies): split on "_", keep the first word as
+// written, capitalize the first letter of each later word. It is
+// ToCamelJSON for a name that starts with a lower-case letter, and differs
+// for one that does not: Title stays Title and _note becomes Note, where
+// ToCamelJSON gives title and note, keys the server never reads. Generated
+// code that sends or reads a field's value spells its key with WireKey;
+// ToCamelJSON stays for names that are only identifiers (a method, a
+// parameter, a JS property).
+func WireKey(name string) string {
+	parts := strings.Split(name, "_")
+	for i := 1; i < len(parts); i++ {
+		if p := parts[i]; p != "" && p[0] >= 'a' && p[0] <= 'z' {
+			parts[i] = string(p[0]-'a'+'A') + p[1:]
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+// startsLower reports whether name starts with a lower-case ASCII letter.
+func startsLower(name string) bool {
+	return name != "" && name[0] >= 'a' && name[0] <= 'z'
+}
+
+// wireCaseWhy is the reason a field or relation name must start lower:
+// the generated typed repo writes through framework.MarshalEntity, which
+// maps a JSON key back to its column through snake_case.
+const wireCaseWhy = "the server keeps the first letter as written in the JSON key (Title stays Title, _note becomes Note), and the generated typed repo maps that key back to its column through snake_case, which lowers it, so a create or update would drop the value; rename it in snake_case (title, http_code, note)"
+
 // ToSnakeCase converts a name to snake_case for generated file names,
 // routes, and endpoints. It handles already-snake input ("blog_posts"),
 // CamelCase including acronyms ("HTTPServer" → "http_server",

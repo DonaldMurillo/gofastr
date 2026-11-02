@@ -249,7 +249,7 @@ func renderClientUploads(decl framework.EntityDeclaration, route string) string 
 		if f.Hidden || dropCreate(f) {
 			continue
 		}
-		fmt.Fprintf(&sb, "\t%q: %q,\n", appspec.ToCamelJSON(f.Name), f.Name)
+		fmt.Fprintf(&sb, "\t%q: %q,\n", appspec.WireKey(f.Name), f.Name)
 	}
 	sb.WriteString("}\n\n")
 

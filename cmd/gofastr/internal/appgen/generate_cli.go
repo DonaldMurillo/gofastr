@@ -784,13 +784,13 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 			// for the fields the client has an upload slot for; list and
 			// get leave the stored URL out of their tables.
 			if slices.ContainsFunc(uploads, func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
-				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: appspec.ToCamelJSON(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
+				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: appspec.WireKey(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
 			}
 			continue
 		}
 		f := cliField{
 			Snake:    fd.Name,
-			Wire:     appspec.ToCamelJSON(fd.Name),
+			Wire:     appspec.WireKey(fd.Name),
 			Flag:     strings.ReplaceAll(fd.Name, "_", "-"),
 			Type:     typ,
 			GoType:   goTypeForField(fd.Type),
