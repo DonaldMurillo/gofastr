@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`AppConfig.JSONCase: crud.CaseSnake` reaches the entity routes
+  again.** Since v0.94.0 every `App.Entity`, `App.GroupEntity` and
+  `App.View` route answered camelCase keys in a snake_case app: the
+  handler built its wire keys before the app set the case. They are
+  snake_case again, as `entity-declarations.md` says; clients written
+  against the camelCase keys need the column names back.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
