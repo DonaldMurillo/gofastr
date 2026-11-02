@@ -62,6 +62,7 @@ var Analyzers = []string{
 	"settlectx",
 	"siblingresult",
 	"silentskip",
+	"textbind",
 	"tightenshared",
 	"timestampid",
 	"unboundedbody",

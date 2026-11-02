@@ -109,6 +109,8 @@ import (
 	// 2026-11 bug-bash rules (maps-reflect)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/growmap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nullarray"
+	// 2026-11 bug-bash rules (request-data)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/textbind"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -220,6 +222,8 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// compositekey arms from the same batch live in those packages.
 	allow.Guard(growmap.Analyzer),
 	allow.Guard(nullarray.Analyzer),
+	// 2026-11 bug-bash rules (request-data): one per repeated bug shape.
+	allow.Guard(textbind.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means
