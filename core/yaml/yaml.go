@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type Kind int
@@ -545,11 +546,70 @@ func parseQuoted(raw string) (string, error) {
 		}
 		return strings.ReplaceAll(body, "''", "'"), nil
 	}
-	unquoted, err := strconv.Unquote(raw)
-	if err != nil {
-		return "", err
+	return decodeDoubleQuoted(raw[1 : len(raw)-1])
+}
+
+// yamlEscapes maps the single-character escapes of a YAML 1.2
+// double-quoted scalar (section 5.7) to what they stand for.
+var yamlEscapes = map[byte]string{
+	'0': "\x00", 'a': "\a", 'b': "\b", 't': "\t", '\t': "\t", 'n': "\n",
+	'v': "\v", 'f': "\f", 'r': "\r", 'e': "\x1b", ' ': " ", '"': `"`,
+	'/': "/", '\\': `\`, 'N': "\u0085", '_': " ", 'L': " ",
+	'P': " ",
+}
+
+// decodeDoubleQuoted decodes the body of a double-quoted scalar by the
+// YAML 1.2 escape rules. It replaced strconv.Unquote, which reads Go
+// syntax: "\xe9" came back as the lone byte 0xE9 (invalid UTF-8) where
+// YAML means U+00E9 "é", and the Go-only octal "\101" read as "A" where
+// YAML has no such escape. Both were wrong values with no error; an
+// escape YAML does not define now fails like any unsupported syntax.
+func decodeDoubleQuoted(body string) (string, error) {
+	if !strings.ContainsAny(body, `\"`) {
+		return body, nil
 	}
-	return unquoted, nil
+	var b strings.Builder
+	b.Grow(len(body))
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if c == '"' {
+			return "", fmt.Errorf("unescaped quote in scalar")
+		}
+		if c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+		i++
+		if i >= len(body) {
+			return "", fmt.Errorf("unterminated quoted scalar")
+		}
+		e := body[i]
+		if s, ok := yamlEscapes[e]; ok {
+			b.WriteString(s)
+			continue
+		}
+		width := map[byte]int{'x': 2, 'u': 4, 'U': 8}[e]
+		if width == 0 {
+			return "", fmt.Errorf("unknown escape \\%c in double-quoted scalar", e)
+		}
+		if i+1+width > len(body) {
+			return "", fmt.Errorf("escape \\%c needs %d hex digits", e, width)
+		}
+		hex := body[i+1 : i+1+width]
+		// ParseUint with an explicit base takes no sign, prefix or
+		// underscore, so this accepts exactly width hex digits.
+		n, err := strconv.ParseUint(hex, 16, 32)
+		if err != nil {
+			return "", fmt.Errorf("escape \\%c needs %d hex digits", e, width)
+		}
+		r := rune(n)
+		if n > utf8.MaxRune || (r >= 0xD800 && r <= 0xDFFF) {
+			return "", fmt.Errorf("escape \\%c%s is not a Unicode scalar value", e, hex)
+		}
+		b.WriteRune(r)
+		i += width
+	}
+	return b.String(), nil
 }
 
 // A mapping separator is an unquoted colon followed by whitespace or EOF.

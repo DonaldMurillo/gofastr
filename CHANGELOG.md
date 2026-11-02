@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`core/yaml` decodes double-quoted escapes by the YAML rules.** It
+  ran them through Go's `strconv.Unquote`, so `"caf\xe9"` came back as
+  invalid UTF-8 instead of `café`, Go's octal `"\101"` read as `A`, and
+  YAML's own `\/`, `\e`, `\N`, `\_`, `\L`, `\P` and `\ ` failed with
+  "invalid syntax". App specs, `gofastr.settings.yml` and the other
+  files read through it get the YAML value; an escape YAML does not
+  define is an error. See [app spec](framework/docs/content/app-spec.md#yaml-subset).
 - **`textsafe.IsUnsafe` covers U+2028 and U+2029.** The set had NEL
   (U+0085) because it breaks a line, and not the Unicode line and
   paragraph separators, which Python's `splitlines` and JavaScript's line

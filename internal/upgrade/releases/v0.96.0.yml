@@ -759,3 +759,7 @@ notes:
     breaking: false
     guidance: "Text log lines percent-encode the two separators, and sinks that refuse unsafe text, such as auth.CleanName, refuse a value carrying one. A display name or title that held one loses it or is refused; nothing else changes."
     nodetect: "the change is inside core/textsafe's predicate; callers spell nothing new"
+  - change: "core/yaml (app specs, gofastr.settings.yml, codegen and isolation configs) decodes a double-quoted string by the YAML 1.2 escape table instead of Go's strconv.Unquote: \\xNN is U+00NN, \\/ \\e \\N \\_ \\L \\P and \\<space> are accepted, and Go-only escapes such as octal \\101 are refused"
+    breaking: false
+    guidance: "A double-quoted value that used \\xNN for a byte above 0x7F now reads as the character U+00NN, and one that used a Go octal or \\' escape fails to parse with the escape named. Write the character itself or a \\u escape."
+    nodetect: "the change is in how YAML files are read; nothing in an app's Go source spells it"
