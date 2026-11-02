@@ -23,7 +23,9 @@ type FileOpts struct {
 	// FileMode is the permission for the log file. Default 0o600,
 	// server logs typically contain request paths, request IDs, and
 	// panic stacks; world-readable defaults aren't appropriate on a
-	// multi-user host. Override only if you need broader access.
+	// multi-user host. Override only if you need broader access. An
+	// existing file is tightened to FileMode when the sink opens it
+	// (bits FileMode lacks are cleared; none are added).
 	FileMode os.FileMode
 }
 
@@ -119,6 +121,19 @@ func (s *fileSink) open() error {
 	if err != nil {
 		_ = f.Close()
 		return fmt.Errorf("log: stat %s: %w", s.path, err)
+	}
+	// The mode argument above applies only at create: an existing file
+	// keeps its own, so a server.log an earlier build or a provisioning
+	// step left 0644 stayed world-readable while every file this sink
+	// rotates in is FileMode. Tighten the handle to FileMode (never
+	// loosen: bits FileMode lacks are cleared, none are added). On the
+	// handle, not the path, so a rename racing the open cannot redirect
+	// it.
+	if perm := info.Mode().Perm(); perm&^s.opts.FileMode != 0 {
+		if err := f.Chmod(perm & s.opts.FileMode); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("log: tighten %s: %w", s.path, err)
+		}
 	}
 	s.f = f
 	s.bw = bufio.NewWriterSize(f, 16<<10)

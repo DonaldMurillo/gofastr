@@ -372,6 +372,33 @@ few lines, and link the PR or the docs page for the rest.
   owed, and its answer faulted the peer as unsolicited; the supervisor
   then killed the module and every request in flight. The window now
   counts only ids still owed an answer.
+- **`/readyz` no longer races a check that outlives its deadline.** On
+  timeout the handler read and copied the result rows while a check that
+  ignored `ctx` could still write its own row, a data race `go test
+  -race` reports. Checks now hand their rows over a channel, and a late
+  one is dropped. A check registered with an empty name that had passed
+  is no longer reported as `"timeout"` when another check hangs.
+- **`log_filter historical=true` skips a log line past 1 MiB.** The
+  file tail used `bufio.Scanner`, which stops the scan on such a line,
+  and the error was swallowed, so the historical read returned nothing
+  while one large entry sat in its window. The line is now skipped.
+- **The cache keeps large integers exact under an interface.**
+  `MemoryCache`, `RedisCache` and `GetOrSet` decoded with
+  `json.Unmarshal`, so a value read into `map[string]any` or `*any` had
+  every number as float64 and a cached id `9007199254740993` came back
+  as `9007199254740992`. An integer past 2^53 now reads back as a
+  `json.Number`; every other number is still a float64.
+- **`cache.GetOrSet` returns a loaded value whose entry was already
+  evicted.** Every waiter read its value back from the cache after the
+  fill, so an entry an LRU bound or Redis `maxmemory` evicted (or a short
+  TTL expired) in between made a successful load return `ErrCacheMiss`.
+  The waiters now get the loader's value; a negative `ttl` still
+  surfaces the miss.
+- **`RedisCache.Set` with a negative TTL deletes the key.** It passed
+  the negative duration to `RedisClient.Set`, and a go-redis adapter
+  stores that with no expiry (`-1` is KEEPTTL), so a lifetime already in
+  the past made an entry that never expired. It now matches
+  `MemoryCache`: nothing is stored and the existing entry is dropped.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
@@ -4689,6 +4716,31 @@ few lines, and link the PR or the docs page for the rest.
   The admin's Audit log page and the dashboard's recent activity
   (`UI.Changes`) leave out the fields the hooks mask on a probe row too:
   they printed the stored values the admin's own record screen masks.
+- **The log file sink tightens an existing file to `FileMode`.** The
+  `0600` default applied only when the sink created the file, so a
+  `server.log` an older build, a `touch` or a provisioning step left
+  `0644` stayed world-readable, while every file the sink rotated in
+  was `0600`. Opening now clears the bits `FileMode` lacks (it never
+  adds any). Set `FileOpts.FileMode: 0o640` if a shipper reads the file
+  through its group.
+- **Slow-query lines mask SQL string literals.** `slowquery.TrimSQL`
+  (the `sql` attr of every `slow query` line) printed a statement
+  verbatim, so a value spelled inline (`ALTER ROLE … PASSWORD '…'`,
+  `SET app.key = '…'`, a hand-built `WHERE token = '…'`) reached every
+  log sink. Literals now print as `'?'`; placeholders, identifiers and
+  numbers stay. The 240-byte cut also no longer splits a UTF-8 rune.
+- **The log console sink escapes control and bidi runes in the message
+  and keys.** Only attr values were escaped; the message, attr keys,
+  the time and level fields, and an entry that was not JSON were
+  written raw, and slog escapes C0 only, so a C1 CSI or a right-to-left
+  override in a message built from request data reached the terminal
+  live. A quote in a message also printed as `\"`.
+- **The log webhook sink no longer writes its URL to stderr.** When a
+  batch was given up on a transport error, the warning quoted net/http's
+  error, which carries the full URL, so a Slack incoming-webhook secret
+  or a `?token=` query landed in journald and the container log. The
+  warning (and `HTTPErrorReporter`, which shares the sink) now names
+  only `scheme://host`.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.

@@ -141,9 +141,11 @@ func (s *consoleSink) Write(entry []byte) error {
 		_, err := s.w.Write(line)
 		return err
 	}
-	// Malformed JSON: write raw + newline so the entry is at least
-	// visible. Better to surface garbage than to silently drop it.
-	_, err := s.w.Write(append(entry, '\n'))
+	// Malformed JSON: write it + newline so the entry is at least
+	// visible. Better to surface garbage than to silently drop it, but
+	// never raw: an entry that is not JSON was not escaped by slog
+	// either, so an ESC or C1 byte in it would drive the terminal.
+	_, err := io.WriteString(s.w, escapeUnsafe(string(entry))+"\n")
 	return err
 }
 
@@ -182,15 +184,21 @@ func (s *consoleSink) render(entry []byte) ([]byte, bool) {
 		if err := dec.Decode(&raw); err != nil {
 			return nil, false
 		}
+		// time, level, msg and every key are written bare, so each
+		// is the decoded string with its unsafe runes escaped: slog's
+		// JSON encoder escapes C0 only, and a C1 CSI or a bidi override
+		// in a message built from request data reached the terminal
+		// live. Trimming the quotes off the JSON text also printed a
+		// quote in the message as \".
 		switch key {
 		case "time":
-			ts = strings.Trim(string(raw), `"`)
+			ts = escapeUnsafe(jsonText(raw))
 		case "level":
-			level = strings.Trim(string(raw), `"`)
+			level = escapeUnsafe(jsonText(raw))
 		case "msg":
-			msg = strings.Trim(string(raw), `"`)
+			msg = escapeUnsafe(jsonText(raw))
 		default:
-			rest = append(rest, kv{key: key, val: raw})
+			rest = append(rest, kv{key: escapeUnsafe(key), val: raw})
 		}
 	}
 
@@ -285,6 +293,44 @@ func formatValue(raw json.RawMessage) string {
 		return s
 	}
 	return string(raw)
+}
+
+// jsonText returns raw decoded as a JSON string, or raw's own text when
+// it is some other JSON value.
+func jsonText(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return string(raw)
+}
+
+// escapeUnsafe returns s with every C0/DEL/C1 control and zero-width or
+// bidi rune written as a \uXXXX escape (\n, \r and \t as their short
+// forms), for text the console writes bare: the message, keys, and the
+// time and level fields. Everything else, spaces and quotes included,
+// stays as it is.
+func escapeUnsafe(s string) string {
+	if !textsafe.ContainsUnsafe(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for _, r := range s {
+		switch {
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case textsafe.IsUnsafe(r):
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // quoteTerminalSafe renders s as a JSON-style double-quoted literal in

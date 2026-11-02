@@ -103,6 +103,11 @@ app.Metrics().RegisterCollector("webhook", mgr.MetricsCollector())
 app.Metrics().RegisterCollector("slow_queries", slowquery.MetricsCollector(slowDB))
 ```
 
+A `SlowQueryLogger` line logs the statement's shape: whitespace collapsed,
+cut at 240 bytes, every string literal (`'…'`, `E'…'`, `$tag$…$tag$`)
+printed as `'?'`, and bound arguments as a count only. A value spelled
+inline, such as `ALTER ROLE … PASSWORD '…'`, never reaches the log.
+
 `RegisterCollector` replaces by name, so re-registration never duplicates.
 Collectors must be cheap and must not panic; a transient DB error should emit
 nothing for that scrape rather than break `/metrics`.

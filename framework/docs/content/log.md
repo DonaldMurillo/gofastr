@@ -78,7 +78,7 @@ running app live:
 | Tool            | Use                                                                                                  |
 |-----------------|------------------------------------------------------------------------------------------------------|
 | `log_recent`    | Last N entries from the ring, optional level filter.                                                 |
-| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level` (`since_ts`/`until_ts` are RFC 3339 strings; another JSON type is an error, never an ignored filter). `historical=true` tails the file sink for entries evicted from the ring. |
+| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level` (`since_ts`/`until_ts` are RFC 3339 strings; another JSON type is an error, never an ignored filter). `historical=true` tails the file sink for entries evicted from the ring; a line past 1 MiB is skipped, the rest still return. |
 | `log_metrics`   | Current counter snapshot, the same data as `Plugin.Metrics()`.                                          |
 | `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterward). Only registered when `AllowMCPMutation` is set. |
 
@@ -229,6 +229,11 @@ in the path cannot forge log lines or repaint an operator's tail.
   backups shift up (`.1` → `.2`, …), and anything past `MaxBackups`
   is removed.
 - Default rotation: 100 MiB cap, 5 backups.
+- File mode: `FileMode`, default `0600`. A log file that already exists
+  is tightened to `FileMode` when the sink opens it (bits `FileMode`
+  lacks are cleared, none are added), so a `server.log` an older build
+  left `0644` does not stay world-readable. Set `FileMode: 0o640` when a
+  log shipper reads the file through its group.
 
 ### `WebhookSink(url, opts)`
 
@@ -246,6 +251,9 @@ POSTs a JSON envelope `{"entries":[<entry>, <entry>, ...]}` to `url`.
 - `Headers` lets you inject auth (`Authorization: Bearer …`) or routing
   hints. `Content-Type` is forced to `application/json`.
 - `Close` flushes pending entries before returning (App.Stop awaits it).
+- The URL is treated as a credential (a Slack incoming-webhook path, a
+  `?token=` query). The stderr warning written when a batch is given up
+  names only `scheme://host`, never the path or query.
 
 ### `JSONSink(opts)`
 

@@ -753,3 +753,34 @@ notes:
     breaking: false
     guidance: "Nothing to do. Names that are not keywords are written as before. On SQLite a column named end, desc, to, offset, do or user already worked bare; the next migrate generate writes it quoted for new statements and proposes no change for the quoting alone. Raw SQL of your own that names such a column on Postgres must quote it, as CRUD does."
     nodetect: "the names are entity field and table declarations; any keyword among them is affected, which no single spelling marks"
+  - change: "RedisCache.Set with a negative TTL (or a negative WithTTL default) deletes the key and stores nothing, as MemoryCache does; it used to hand the negative duration to RedisClient.Set"
+    breaking: false
+    guidance: "A go-redis adapter stores a non-positive expiration other than -1 with no expiry, and -1 as KEEPTTL, so such a write made an entry that never expired. Nothing to change unless code relied on that: pass 0 for the default TTL, or a positive lifetime."
+    find:
+      uses:
+        - gofastr/battery/cache.NewRedisCache
+  - change: "The slow-query line's sql attr (slowquery.TrimSQL) prints every SQL string literal as '?' and cuts at 240 bytes on a rune boundary"
+    breaking: false
+    guidance: "A value spelled inline in a statement (a password in ALTER ROLE, a token in a hand-built WHERE) went to every log sink verbatim. A log search or alert that matched a literal inside the sql attr now sees '?'; match on the statement's shape instead."
+    find:
+      uses:
+        - gofastr/framework/slowquery.TrimSQL
+        - gofastr/framework/slowquery.NewSlowQueryLogger
+        - gofastr/framework/slowquery.NewSlowQueryLoggerFn
+  - change: "battery/log's file sink tightens an existing log file to FileOpts.FileMode (default 0600) when it opens it; it used to keep whatever mode the file had"
+    breaking: false
+    guidance: "A server.log left 0644 by an older build or a provisioning step was world-readable. If a log shipper reads the file through its group, set FileOpts.FileMode: 0o640 (or the mode it needs); the sink clears only the bits FileMode lacks and never adds any."
+    find:
+      uses:
+        - gofastr/battery/log.FileSink
+        - gofastr/battery/log.MustFileSink
+        - gofastr/battery/log.DefaultFileSink
+        - gofastr/battery/log.New
+  - change: "battery/cache reads a value back into an interface (map[string]any, *any, []any) with integers past 2^53 as json.Number instead of a rounded float64"
+    breaking: false
+    guidance: "A cached id 9007199254740993 came back as 9007199254740992. Numbers a float64 holds exactly are still float64, so most code sees no change; code that type-asserts a large integer under an interface to float64 should accept json.Number (or decode into a typed struct)."
+    find:
+      uses:
+        - gofastr/battery/cache.NewMemoryCache
+        - gofastr/battery/cache.NewRedisCache
+        - gofastr/battery/cache.GetOrSet

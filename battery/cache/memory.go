@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // memoryEntry holds a cached item with its expiration time.
@@ -140,7 +142,7 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 		mc.touchLocked(entry)
 		data := entry.data
 		mc.mu.Unlock()
-		return json.Unmarshal(data, dest)
+		return jsonexact.Unmarshal(data, dest)
 	}
 
 	mc.mu.RLock()
@@ -159,7 +161,7 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 		}
 		return ErrCacheMiss
 	}
-	return json.Unmarshal(entry.data, dest)
+	return jsonexact.Unmarshal(entry.data, dest)
 }
 
 // Set stores a value in the cache with the given TTL. A ttl of 0 falls
@@ -183,10 +185,10 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Du
 	// (deadline passed, clock skew across replicas, a unit mix-up).
 	// Fail closed on it: drop whatever is stored under the key and
 	// store nothing. The old hasExpiry = ttl > 0 mapping filed it as
-	// never-expiring — the maximal inversion of the caller's intent,
-	// and the silent opposite of the Redis twin, whose SET refuses a
-	// non-positive expiry outright. Only ttl == 0 is the documented
-	// "use the default" sentinel.
+	// never-expiring — the maximal inversion of the caller's intent.
+	// RedisCache.Set does the same: it deletes the key rather than
+	// hand a negative expiry to a client. Only ttl == 0 is the
+	// documented "use the default" sentinel.
 	if effectiveTTL < 0 {
 		mc.mu.Lock()
 		if existing, ok := mc.items[k]; ok {

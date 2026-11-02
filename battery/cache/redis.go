@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // RedisClient defines the minimal interface needed for a Redis cache backend.
@@ -18,7 +20,8 @@ type RedisClient interface {
 	Get(ctx context.Context, key string) (string, error)
 
 	// Set stores a string value with an optional expiration. A TTL of 0
-	// means no expiration.
+	// means no expiration. RedisCache never passes a negative TTL: it
+	// deletes the key instead.
 	Set(ctx context.Context, key string, value string, ttl time.Duration) error
 
 	// Del removes one or more keys.
@@ -92,7 +95,7 @@ func (rc *RedisCache) Get(ctx context.Context, key string, dest any) error {
 		}
 		return fmt.Errorf("cache: redis get %q: %w", key, err)
 	}
-	return json.Unmarshal([]byte(val), dest)
+	return jsonexact.Unmarshal([]byte(val), dest)
 }
 
 // isRedisMiss reports whether err is the client's "no such key" signal
@@ -114,7 +117,16 @@ func isRedisMiss(err error) bool {
 	return strings.Contains(msg, "redis: nil") || msg == "nil"
 }
 
-// Set stores a value in Redis with the given TTL.
+// Set stores a value in Redis with the given TTL. A ttl of 0 falls back
+// to the configured default (WithTTL; no expiry when unset). A NEGATIVE
+// effective ttl is "already expired", as on MemoryCache: the key is
+// deleted and nothing is stored.
+//
+// A negative duration never reaches RedisClient.Set. go-redis, the
+// client the KeyScanner example adapts, reads -1 as KEEPTTL and every
+// other non-positive expiration as "no expiry", so passing it through
+// turned a lifetime already in the past into an entry that never
+// expires.
 func (rc *RedisCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	k := rc.prefixedKey(key)
 	data, err := json.Marshal(value)
@@ -125,6 +137,9 @@ func (rc *RedisCache) Set(ctx context.Context, key string, value any, ttl time.D
 	effectiveTTL := ttl
 	if effectiveTTL == 0 {
 		effectiveTTL = rc.cfg.defaultTTL
+	}
+	if effectiveTTL < 0 {
+		return rc.client.Del(ctx, k)
 	}
 
 	return rc.client.Set(ctx, k, string(data), effectiveTTL)
