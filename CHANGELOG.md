@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A skipped durable schedule no longer spins `DurableScheduler.Start`.**
+  A schedule the pass skips (a corrupted row, a stored interval under the
+  floor, a cron spec that no longer parses) keeps its past `next_run`,
+  and the loop woke for it every 10ms: a hundred passes a second, each
+  writing the lease row and logging the skip at ERROR. It now waits for
+  the next schedule that is not yet due, or the heartbeat.
 - **A DBQueue job dead-lettered by lease expiry says so.** The sweep that
   fails a final-attempt claim whose worker died wrote only the status: the
   job listed with its claim's `updated_at` and an earlier attempt's

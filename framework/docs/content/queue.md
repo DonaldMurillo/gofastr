@@ -560,7 +560,9 @@ row.
 the remaining due schedules still fire, and a transient database failure is
 logged and retried at the next heartbeat instead of ending the loop. The
 loop only exits when `ctx` is cancelled, so one poison row cannot stop
-every schedule on the replica.
+every schedule on the replica. A skipped row is tried again at the next
+heartbeat (a third of `LeaseDuration`), not on every wake, so it logs once
+per heartbeat and does not keep the loop busy.
 
 The same `Lane` / `Priority` / `MaxAttempts` options exist on the durable
 builder. They PERSIST alongside the schedule definition: re-registering
