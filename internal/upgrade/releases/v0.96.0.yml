@@ -900,9 +900,9 @@ notes:
     breaking: false
     guidance: "Nothing to change to run the built-in profiles. To run an edited profile from a checkout of the gofastr repo, pass --profile framework/experimental/harness/profile/<name>.toml. A repo that carried that path no longer replaces the profile."
     nodetect: "the profile is chosen by the harness command at run time; nothing in an app's source spells it"
-  - change: "apiversions.ApplyToEntityConfig panics when the version's projection names, in Include, Exclude or a Rename key, a field the base entity config does not declare"
+  - change: "apiversions.ApplyToEntityConfig panics when the version's projection names, in Include, Exclude or a Rename key, a field the base entity config does not declare and entity.Define does not inject; Exclude and Rename now apply to an injected column (id, created_at, updated_at, scope columns)"
     breaking: false
-    guidance: "Use the field name (internal_notes), not its wire key (internalNotes), and drop names of fields the entity no longer has. Each such name was ignored before, so an Exclude typo left the column on that version's responses."
+    guidance: "Use the field name (internal_notes), not its wire key (internalNotes), and drop names of fields the entity no longer has. Each such name was ignored before, so an Exclude typo left the column on that version's responses. An Exclude or Rename naming an injected column such as updated_at used to do nothing; it now hides or renames that column on the version, so drop it if the column should stay as it was."
     find:
       uses:
         - gofastr/framework/experimental/apiversions.ApplyToEntityConfig

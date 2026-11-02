@@ -329,9 +329,14 @@ narrows them with `Exclude`, and can remap JSON keys per version with
 `Rename`. `ApplyToEntityConfig` returns a copy of the base config shaped
 for that version. Every name in `Include`, `Exclude` and the keys of
 `Rename` is a field name the base config declares (`internal_notes`, not
-its wire key `internalNotes`); `ApplyToEntityConfig` panics at startup on
-any other, since an `Exclude` that matched nothing left the column on
-that version's wire output.
+its wire key `internalNotes`) or a column `entity.Define` injects (`id`,
+`created_at`, `updated_at`, and the tenant, owner and soft-delete columns
+the config's `Scope` turns on); `ApplyToEntityConfig` panics at startup
+on any other, since an `Exclude` that matched nothing left the column on
+that version's wire output. `Exclude` and `Rename` apply to an injected
+column too (`Exclude: []string{"updated_at"}` hides it from that
+version). `Include` shapes only the declared fields: naming `id` there is
+allowed, and the injected columns stay visible whether named or not.
 
 **How it works:** `Exclude` sets the field's `Hidden` flag (the column
 stays in the shared table, just hidden from that version's wire output).

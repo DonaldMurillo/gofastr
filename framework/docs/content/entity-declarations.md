@@ -1706,6 +1706,14 @@ translation keys Display's names produce (`entity.<entity>.*`,
 nil, the key is the one column `id`, which `Define` injects as a generated
 UUID unless `Fields` declares it.
 
+`EntityConfig.WithSystemFields()` returns a copy whose `Fields` already
+hold every column `Define` would inject (`id`, `created_at`/`updated_at`,
+and the tenant, owner and soft-delete scope columns), in the order
+`Define` adds them. `Define` keeps a declared field as it is, so code that
+adjusts one of those columns before `Define` (hides it, gives it a
+`WireName`) edits it there; `apiversions.ApplyToEntityConfig` does this
+for a projection that excludes or renames one.
+
 A plain join table keeps that `id` and holds its pair unique with an
 index. Every surface then names a row by one value, and another entity
 can belong to it:

@@ -63,15 +63,33 @@ func ApplyToEntityConfig(base entity.EntityConfig, ps *ProjectionSet, version st
 	if p == nil {
 		return base
 	}
-	checkProjectionNames(base, p)
+	// The columns Define injects (id, timestamps, scope columns) are
+	// columns of the entity too. A projection that excludes or renames one
+	// declares it here, as Define would, so the adjustment lands on it;
+	// Include shapes only the declared fields, so a version's Include
+	// never hides a system column it did not name before.
+	declared := make(map[string]bool, len(base.Fields))
+	for _, f := range base.Fields {
+		declared[f.Name] = true
+	}
+	full := base.WithSystemFields().Fields
+	checkProjectionNames(full, p)
 
-	adjusted := make([]schema.Field, len(base.Fields))
-	for i, f := range base.Fields {
-		f.Hidden = f.Hidden || !shouldInclude(f.Name, p)
+	adjusted := make([]schema.Field, 0, len(full))
+	for _, f := range full {
+		if declared[f.Name] {
+			f.Hidden = f.Hidden || !shouldInclude(f.Name, p)
+		} else {
+			_, renamed := p.Rename[f.Name]
+			if !renamed && !slices.Contains(p.Exclude, f.Name) {
+				continue // Define injects it unchanged
+			}
+			f.Hidden = f.Hidden || slices.Contains(p.Exclude, f.Name)
+		}
 		if rename, ok := p.Rename[f.Name]; ok {
 			f.WireName = rename
 		}
-		adjusted[i] = f
+		adjusted = append(adjusted, f)
 	}
 
 	cfg := base
@@ -89,19 +107,20 @@ func shouldInclude(fieldName string, p *Projection) bool {
 	return true
 }
 
-// checkProjectionNames panics when p names a field base does not
-// declare, the way Version panics on a bad prefix: at startup, never in
-// the request path. Exclude is how a version hides a column; a name
-// that matched nothing (a typo, or the column's wire key instead of its
-// field name) left that column on the version's wire output silently.
-func checkProjectionNames(base entity.EntityConfig, p *Projection) {
-	declared := make(map[string]bool, len(base.Fields))
-	for _, f := range base.Fields {
+// checkProjectionNames panics when p names a column the entity will not
+// have, the way Version panics on a bad prefix: at startup, never in the
+// request path. fields is the base config's Fields plus the columns
+// Define injects. Exclude is how a version hides a column; a name that
+// matched nothing (a typo, or the column's wire key instead of its field
+// name) left that column on the version's wire output silently.
+func checkProjectionNames(fields []schema.Field, p *Projection) {
+	declared := make(map[string]bool, len(fields))
+	for _, f := range fields {
 		declared[f.Name] = true
 	}
 	check := func(kind, name string) {
 		if !declared[name] {
-			panic(fmt.Sprintf("apiversions: projection %q: %s names field %q, which the entity does not declare (use the field name, not its wire key)", p.Version, kind, name))
+			panic(fmt.Sprintf("apiversions: projection %q: %s names field %q, which the entity does not declare and Define does not inject (use the field name, not its wire key)", p.Version, kind, name))
 		}
 	}
 	for _, n := range p.Include {

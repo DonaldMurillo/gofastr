@@ -5288,8 +5288,14 @@ few lines, and link the PR or the docs page for the rest.
   or the column's camelCase wire key instead of its field name) was
   ignored, so the column a version meant to hide stayed on its wire
   output. A name in `Include`, `Exclude` or a `Rename` key that the base
-  config does not declare now panics at startup, like `Version` does on
-  a bad prefix. See [API versioning](framework/docs/content/api-versioning.md).
+  config does not declare, and that `entity.Define` does not inject
+  either, now panics at startup, like `Version` does on a bad prefix.
+  The columns `Define` injects (`id`, the timestamps, the scope columns)
+  count as declared, so `Include: {"id", "title"}` works as it did, and
+  `Exclude` and `Rename` reach an injected column: `Exclude:
+  {"updated_at"}` hides it. `EntityConfig.WithSystemFields` returns a
+  config with those columns already in `Fields`. See
+  [API versioning](framework/docs/content/api-versioning.md).
 - **The harness `Read` and `Edit` tools refuse a path that is not a
   regular file.** `Grep` already skipped FIFOs and devices; `Read` opened
   any path, and opening a FIFO blocks until a writer appears with no
