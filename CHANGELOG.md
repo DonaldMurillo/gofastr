@@ -535,6 +535,8 @@ few lines, and link the PR or the docs page for the rest.
   - An array header parameter is sent as one line, `X-Tags: a,b`; each
     item went on its own line, and a server reading the header's value
     saw the first item only.
+  - A path naming a parameter twice (`/users/{id}/files/{id}`) fills
+    both; the second went out as a literal `%7Bid%7D`.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

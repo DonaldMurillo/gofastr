@@ -463,8 +463,10 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	fmt.Fprintf(sb, "\tpath := %q\n", op.PathTemplate)
 	for i, p := range op.PathParams {
 		// The placeholder literal goes through %q so a hostile spec's
-		// param name cannot break out of the generated string.
-		fmt.Fprintf(sb, "\tpath = strings.Replace(path, %q, url.PathEscape(%s), 1)\n", "{"+p.Name+"}", paramString(fmt.Sprintf("pp%d", i), p))
+		// param name cannot break out of the generated string. Every
+		// occurrence: /users/{id}/files/{id} names one value twice, and
+		// PathEscape leaves no brace in it for a later pass to match.
+		fmt.Fprintf(sb, "\tpath = strings.ReplaceAll(path, %q, url.PathEscape(%s))\n", "{"+p.Name+"}", paramString(fmt.Sprintf("pp%d", i), p))
 	}
 
 	// Query assembly: only flags the caller actually set are sent.
