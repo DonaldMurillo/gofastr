@@ -455,6 +455,10 @@ the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
 path. See "Redaction implication" below for the surfaces this covers.
 
+`T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
+models use) or snake_case (`json:"is_admin"`): the payload is offered
+under both spellings, and a change lands back on the payload's own key.
+
 The body `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` decode has already had
 its form values cleaned (entity-declarations.md, "Blank form values"),
 so a form post's `""`, `"2"` and `"true"` fit an `*int64` or `bool`

@@ -208,8 +208,7 @@ func (e *hookBodyError) Phrased() (i18n.Phrase, map[string]any) { return hookBod
 // up.
 func unmarshalHookPayload(data any, dest any) error {
 	if m, ok := data.(map[string]any); ok {
-		camel := casing.MapToCamel(m)
-		b, err := json.Marshal(camel)
+		b, err := json.Marshal(hookDecodeKeys(m))
 		if err != nil {
 			return err
 		}
@@ -222,6 +221,29 @@ func unmarshalHookPayload(data any, dest any) error {
 		return err
 	}
 	return jsonexact.Unmarshal(b, dest)
+}
+
+// hookDecodeKeys is the payload a typed hook's T decodes from: every key
+// under its own spelling, its camelCase spelling and its snake_case one.
+// The payload is snake_cased for a Before hook and keyed by wire names
+// (camelCase by default) for an After hook, and T may tag its fields in
+// either case. Offering only the camelCase spelling left a field tagged
+// `json:"is_admin"` zero: the hook read false for a body that said true,
+// and its `IsAdmin = false` override compared equal to the zero it
+// started from, so the merge skipped it and the client's true was
+// written. An alias never replaces a key the payload holds itself.
+// mergeFields writes a change back under the payload's own key.
+func hookDecodeKeys(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m)*2)
+	maps.Copy(out, m)
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		for _, alias := range []string{casing.ToCamel(k), casing.ToSnake(k)} {
+			if _, taken := out[alias]; !taken {
+				out[alias] = m[k]
+			}
+		}
+	}
+	return out
 }
 
 // snapshotDeepCopy returns a deep copy of v via a JSON round-trip, so the

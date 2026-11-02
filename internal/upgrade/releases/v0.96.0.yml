@@ -755,3 +755,7 @@ notes:
     breaking: false
     guidance: "A client that read a 400 for a hook panic now reads 500. A hook that means to refuse a write returns an error instead of panicking."
     nodetect: "a panic inside a hook is a runtime behaviour, not a source shape"
+  - change: "Typed write hooks (OnBeforeCreate[T], OnBeforeUpdate[T], OnAfterCreate[T], OnAfterUpdate[T]) fill a field tagged in snake_case (json:\"is_admin\") from the payload; it used to stay at its zero value, so an override or redaction on it did nothing"
+    breaking: false
+    guidance: "A hook on a snake-tagged T now reads the client's value where it read the zero value, and its writes to that field take effect. Check hooks that relied on the field reading as zero."
+    nodetect: "which hooks are affected depends on the json tags of the type a hook is instantiated with"

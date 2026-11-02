@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Typed hooks see fields tagged in snake_case.** `OnBeforeCreate[T]`
+  and the other typed write hooks decoded the payload with camelCase
+  keys only, so a `T` field tagged `json:"is_admin"` read its zero value.
+  A Before hook forcing `IsAdmin = false` compared equal to that zero and
+  was skipped, so the client's `true` was written; an After hook clearing
+  an `api_key` field left it in the response. The payload is now offered
+  under its own, camelCase and snake_case spellings.
 - **A panicking Before hook answers 500, not 400 with its panic value.**
   The hook registry turned a panic into `hook panic: <value>`, and the
   CRUD routes answered every Before hook error with 400 and its text, so
