@@ -21,10 +21,18 @@ func TestTrackerFilterFollowsURLE2E(t *testing.T) {
 	visibleRows := `Array.from(document.querySelectorAll('.fui-card[data-key]')).filter(r => r.offsetParent !== null).length`
 	wantAll := func(step string) {
 		t.Helper()
+		// Reset is a full document load when the toolbar has no
+		// ClientNavigation (D-37): a poll running while the old page is
+		// torn down errors with a destroyed context, so poll again on the
+		// new document.
 		var ok bool
-		if err := chromedp.Run(ctx, chromedp.Poll(
-			`location.search === '' && `+visibleRows+` === 8 && document.querySelector('#filter-search-filter').value === ''`,
-			&ok, chromedp.WithPollingTimeout(10*time.Second))); err != nil || !ok {
+		var err error
+		for attempt := 0; attempt < 3 && !ok; attempt++ {
+			err = chromedp.Run(ctx, chromedp.Poll(
+				`location.search === '' && `+visibleRows+` === 8 && document.querySelector('#filter-search-filter').value === ''`,
+				&ok, chromedp.WithPollingTimeout(10*time.Second)))
+		}
+		if err != nil || !ok {
 			var rows int
 			var val, loc string
 			_ = chromedp.Run(ctx, chromedp.Evaluate(visibleRows, &rows),
