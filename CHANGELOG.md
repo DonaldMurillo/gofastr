@@ -4377,6 +4377,12 @@ few lines, and link the PR or the docs page for the rest.
   `ALTER COLUMN … TYPE VARCHAR(n)` (a destructive change, like every
   retype); the live Postgres column read carries the width. SQLite
   ignores widths and is unchanged.
+- **`tenant.WithMultiTenant` adds the tenant column.** It runs after
+  `entity.Define`, which is where a multi-tenant entity's column is
+  injected, so it set `MultiTenant` and `TenantField` on an entity with
+  no such field: auto-migrate created no tenant column and the first
+  create failed on the column CRUD writes. It now adds the column, and
+  renames the `tenant_id` that `Define` injected to a custom `Field`.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**

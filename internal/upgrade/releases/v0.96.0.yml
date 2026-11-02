@@ -655,3 +655,10 @@ notes:
         - gofastr/framework/migrate.ReadLiveColumns
         - gofastr/framework/migrate.ReadLiveColumnsPostgres
         - gofastr/framework/migrate.ReadLiveColumnsBulk
+  - change: "tenant.WithMultiTenant (and framework.WithMultiTenant) adds the tenant column to the entity's fields, renaming a tenant_id that entity.Define injected to a custom Field, so auto-migrate creates it"
+    breaking: false
+    guidance: "The column was never declared, so the first create on such an entity failed on the column CRUD writes. A database an older build migrated gains the column at the next boot; with a custom Field over an injected tenant_id, the old tenant_id column stays in the table and can be dropped once its rows are moved."
+    find:
+      uses:
+        - gofastr/framework/tenant.WithMultiTenant
+        - gofastr/framework.WithMultiTenant
