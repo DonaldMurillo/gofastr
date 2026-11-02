@@ -6110,6 +6110,12 @@ few lines, and link the PR or the docs page for the rest.
   512 MiB: a progressive 64 MP 4:4:4 color frame is refused, grayscale and
   4:2:0 pass). `file.StripMetadata`'s orientation bake applies the same
   cap. See [image](framework/docs/content/image.md).
+- **The local storage fold check lists the directory on Windows and for
+  names holding `~`.** Its case-swap probe cannot see an NTFS 8.3 short
+  name (`PHOTO~1.PNG` for `photo-original.png`), a second spelling of a
+  different long name, so a save under one could overwrite the other.
+  Windows now always lists; elsewhere a `~` in a name does. See
+  [uploads](framework/docs/content/uploads.md).
 
 ## [0.95.0] - 2026-10-26
 

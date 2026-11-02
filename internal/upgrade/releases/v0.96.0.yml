@@ -1093,3 +1093,10 @@ notes:
       uses:
         - gofastr/framework/image.DecodeBytesWithConfig
         - gofastr/framework/image.DecodeWithConfig
+  - change: "The local storage backends' fold check lists a key's directory on every Windows lookup and for any name holding ~, so an NTFS 8.3 short name (PHOTO~1.PNG) is refused as an alias of the long name it stands for"
+    breaking: false
+    guidance: "Nothing to change. On Windows each Get, Exists, Delete and overwriting Save lists the key's directories again, so a very large flat upload directory costs more per request there; shard keys into subdirectories if that shows."
+    find:
+      uses:
+        - gofastr/battery/storage.NewLocalStorage
+        - gofastr/core/upload.NewLocalStorage
