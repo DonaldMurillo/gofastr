@@ -153,9 +153,16 @@ func WithDBLogger(l *slog.Logger) DBQueueOption {
 
 // WithLeaseTimeout sets how long a claimed-but-unacked job may stay in-flight
 // before it is considered abandoned (the worker crashed/was killed) and
-// becomes eligible for re-dequeue. Defaults to 5 minutes.
+// becomes eligible for re-dequeue. Defaults to 5 minutes; d <= 0 keeps the
+// default. A zero lease is not "no lease": it made every claim abandoned
+// the moment it was written, so the next poll ran a live job again and the
+// dead-letter sweep failed a final attempt that was still running.
 func WithLeaseTimeout(d time.Duration) DBQueueOption {
-	return func(q *DBQueue) { q.lease = d }
+	return func(q *DBQueue) {
+		if d > 0 {
+			q.lease = d
+		}
+	}
 }
 
 // WithBackoff enables exponential retry backoff. On a Nack with retries
@@ -411,9 +418,12 @@ func (q *DBQueue) RegisterHandler(jobType string, h Handler) {
 }
 
 // SetLeaseTimeout adjusts the in-flight lease duration after construction.
-// See WithLeaseTimeout for semantics. Safe to call concurrently with a
-// running worker loop.
+// See WithLeaseTimeout for semantics; d <= 0 leaves the lease unchanged.
+// Safe to call concurrently with a running worker loop.
 func (q *DBQueue) SetLeaseTimeout(d time.Duration) {
+	if d <= 0 {
+		return
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.lease = d

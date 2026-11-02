@@ -70,6 +70,11 @@ q.Start(ctx)
 defer q.Close()
 ```
 
+`WithLeaseTimeout` (default 5 minutes) is how long a claimed job may run
+before another worker treats its worker as dead and claims it again.
+Keep it longer than your slowest handler. A zero or negative value keeps
+the default, as does the same value passed to `SetLeaseTimeout`.
+
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
 exist. Pass `WithTable("my_jobs")` to use a custom table name. An
 index name longer than Postgres's 63-byte limit ends in a hash of the

@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`queue.WithLeaseTimeout(0)` keeps the five-minute lease.** A zero or
+  negative lease made every claim count as abandoned the moment it was
+  written: the next poll ran a live job a second time, and on a job's
+  last attempt the dead-letter sweep failed it while it was still
+  running. `WithLeaseTimeout` and `SetLeaseTimeout` now ignore
+  `d <= 0`, as the durable scheduler's `LeaseDuration` already did.
 - **The in-memory `queue.Scheduler` refuses an interval below one
   millisecond.** `Every(5)` (five nanoseconds) made the scheduler's
   timer loop enqueue a job per iteration, over 12,000 in 20ms. `Register`
