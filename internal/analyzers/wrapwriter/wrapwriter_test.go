@@ -10,5 +10,5 @@ import (
 )
 
 func TestWrapWriter(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), allow.Guard(wrapwriter.Analyzer), "a")
+	analysistest.Run(t, analysistest.TestData(), allow.Guard(wrapwriter.Analyzer), "a", "latch")
 }
