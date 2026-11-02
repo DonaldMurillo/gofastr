@@ -195,14 +195,14 @@ and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
 
 - `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
   a `.env` file in the working directory contains `DATABASE_URL=...`.
-- `--db=<name>` (or its alias `--driver=<name>`): `sqlite`, `postgres`
-  or `mysql`; `sqlite3` and `postgresql` are accepted as aliases, the
+- `--db=<name>` (or its alias `--driver=<name>`): `sqlite` or
+  `postgres`; `sqlite3` and `postgresql` are accepted as aliases, the
   same table `gofastr init --db=` uses. Without the flag, a database URL
   that starts with `postgres://` or `postgresql://` uses `postgres` and
-  anything else `sqlite`. The stock `gofastr` binary links the SQLite and
-  Postgres drivers; MySQL requires building a `gofastr` binary that
-  blank-imports the driver. An unregistered driver is refused, never
-  replaced by SQLite.
+  anything else `sqlite`. Both drivers ship in the `gofastr` binary. The
+  runner and `generate` write SQLite and Postgres SQL only, so any other
+  name (`mysql`, a typo) is refused before anything opens or is written,
+  never replaced by SQLite.
 - `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
   for fresh deploys where the database named in the DSN has not been created

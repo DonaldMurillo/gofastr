@@ -465,7 +465,23 @@ func migrateArgsError(args []string) error {
 	if getMigrateDBURL(args) == "" {
 		return fmt.Errorf("database URL is required; set DATABASE_URL or pass --db-url=<url>")
 	}
-	return ensureDriverRegistered(getMigrateDriver(args))
+	driver := getMigrateDriver(args)
+	if !hasMigrationDialect(driver) {
+		return fmt.Errorf("the migration runner speaks SQLite and Postgres; --db=%q is neither (use sqlite or postgres)", driver)
+	}
+	return ensureDriverRegistered(driver)
+}
+
+// hasMigrationDialect reports whether the runner has SQL for driver.
+// dialectForDriver maps everything that is not SQLite to Postgres, so a
+// MySQL driver linked into a custom build would have run Postgres SQL
+// (placeholders, advisory lock) against MySQL.
+func hasMigrationDialect(driver string) bool {
+	switch driver {
+	case "sqlite", "sqlite3", "postgres", "pgx":
+		return true
+	}
+	return false
 }
 
 func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
@@ -560,9 +576,9 @@ func getMigrateDBURL(args []string) string {
 }
 
 // ensureDriverRegistered fails fast with a useful message if the requested
-// database/sql driver is not blank-imported into the binary. The default CLI
-// build only links sqlite3; users who need postgres or mysql build their own
-// gofastr binary that imports the appropriate driver.
+// database/sql driver is not blank-imported into the binary. The CLI links
+// the SQLite and Postgres drivers, the two the runner has a dialect for
+// (hasMigrationDialect refuses the rest first).
 func ensureDriverRegistered(driver string) error {
 	for _, registered := range sql.Drivers() {
 		if registered == driver {
