@@ -55,6 +55,12 @@ type fieldCacheData struct {
 	// key to its column, "" where two columns share one. It resolves the
 	// snake keys MarshalEntity derives from json tags (bodyColumns).
 	columnOfCamel map[string]string
+	// columnOfSnake maps the snake_case form of every column name and
+	// wire key to its column, "" where two columns share one. It resolves
+	// the key MarshalEntity derives from a wire key that does not start
+	// lower-case: Title snakes to title and HTTPCode to h_t_t_p_code,
+	// which no camel form reaches (bodyColumns).
+	columnOfSnake map[string]string
 	// jsonColumns / jsonWireKeys hold the schema.JSON fields by column and
 	// by wire key. The write path binds by column, the read path (scanned
 	// rows are already key-converted) by wire key.
@@ -166,6 +172,7 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 		wireKeyOf:       map[string]string{},
 		columnOfWire:    map[string]string{},
 		columnOfCamel:   map[string]string{},
+		columnOfSnake:   map[string]string{},
 		jsonColumns:     map[string]struct{}{},
 		jsonWireKeys:    map[string]struct{}{},
 		decimalWireKeys: map[string]struct{}{},
@@ -206,6 +213,13 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 				continue
 			}
 			s.columnOfCamel[key] = f.Name
+		}
+		for _, key := range []string{casing.ToSnake(f.Name), casing.ToSnake(wk)} {
+			if prev, exists := s.columnOfSnake[key]; exists && prev != f.Name {
+				s.columnOfSnake[key] = "" // two columns, no answer
+				continue
+			}
+			s.columnOfSnake[key] = f.Name
 		}
 		if f.Type == schema.JSON {
 			s.jsonColumns[f.Name] = struct{}{}

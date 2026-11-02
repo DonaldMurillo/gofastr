@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
@@ -2633,11 +2634,21 @@ func ValidateAppSpec(bp AppSpec) error {
 		// SQL identifiers and CSS. Nothing downstream re-escapes them,
 		// so they are validated here, at the generate-time boundary,
 		// where the error can name the offending field.
+		// Two field names one Go struct field or one Postgres column would
+		// carry (Title and title, _note and note) are refused: AutoMigrate
+		// writes names unquoted, so Postgres folds them together.
+		fieldOwner := map[string]string{}
 		for _, f := range decl.Fields {
 			if !project.IsGoIdentifier(ToCamelCase(f.Name)) {
 				errs.add(fmt.Errorf("app spec: entity %q field %q does not produce a valid Go identifier: rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name))
-			} else if !startsLower(f.Name) {
-				errs.add(fmt.Errorf("app spec: entity %q field %q must start with a lower-case letter: %s", decl.Name, f.Name, wireCaseWhy))
+			} else {
+				for _, key := range []string{"go:" + ToCamelCase(f.Name), "sql:" + asciicase.Lower(f.Name)} {
+					if prev, dup := fieldOwner[key]; dup && prev != f.Name {
+						errs.add(fmt.Errorf("app spec: entity %q field %q collides with field %q: both become one Go struct field or one Postgres column; rename one", decl.Name, f.Name, prev))
+						break
+					}
+					fieldOwner[key] = f.Name
+				}
 			}
 			for _, v := range f.Values {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
@@ -2728,9 +2739,6 @@ func ValidateAppSpec(bp AppSpec) error {
 			if owner, dup := relNames[camel]; dup {
 				errs.add(fmt.Errorf("app spec: entity %q relation %q collides with %s: both become the Go struct field %s, which would not compile; rename one", decl.Name, rel.Name, owner, camel))
 				continue
-			}
-			if !startsLower(rel.Name) {
-				errs.add(fmt.Errorf("app spec: entity %q relation %q must start with a lower-case letter: %s", decl.Name, rel.Name, wireCaseWhy))
 			}
 			relNames[camel] = "relation " + rel.Name
 			if rel.Entity == "" {

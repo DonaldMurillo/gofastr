@@ -60,16 +60,6 @@ func WireKey(name string) string {
 	return strings.Join(parts, "")
 }
 
-// startsLower reports whether name starts with a lower-case ASCII letter.
-func startsLower(name string) bool {
-	return name != "" && name[0] >= 'a' && name[0] <= 'z'
-}
-
-// wireCaseWhy is the reason a field or relation name must start lower:
-// the generated typed repo writes through framework.MarshalEntity, which
-// maps a JSON key back to its column through snake_case.
-const wireCaseWhy = "the server keeps the first letter as written in the JSON key (Title stays Title, _note becomes Note), and the generated typed repo maps that key back to its column through snake_case, which lowers it, so a create or update would drop the value; rename it in snake_case (title, http_code, note)"
-
 // ToSnakeCase converts a name to snake_case for generated file names,
 // routes, and endpoints. It handles already-snake input ("blog_posts"),
 // CamelCase including acronyms ("HTTPServer" → "http_server",

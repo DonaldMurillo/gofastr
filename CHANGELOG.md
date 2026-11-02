@@ -559,9 +559,12 @@ few lines, and link the PR or the docs page for the rest.
   every field.** The server keys a column `Title` as `Title` and `_note` as
   `Note`; the generated model, typed repo shapes, typed client, Go and JS
   SDKs and CLI lowered the first letter (`title`, `note`), so those
-  fields were dropped on write and read as empty. App specs now refuse a
-  field or relation name that does not start with a lower-case letter,
-  since the typed repo's in-process write cannot keep one either.
+  fields were dropped on write and read as empty. The typed repo's
+  in-process write keeps them too: `CreateOne`, `UpdateOne` and
+  `UpsertOne` map the key `framework.MarshalEntity` derives (`title`,
+  `note`, `h_t_t_p_code`) back to its column, and a cascade relation's
+  the same way. App specs refuse two field names that become one Go
+  field or one Postgres column (`Title` and `title`).
 - **battery/auth bug bash (2026-11-01).** Details in
   [auth.md](framework/docs/content/auth.md):
   - **BREAKING: token management needs the second factor.** On a 2FA

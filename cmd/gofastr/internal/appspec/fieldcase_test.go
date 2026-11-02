@@ -10,33 +10,37 @@ import (
 )
 
 // A field or relation name that does not start with a lower-case letter
-// (Title, HTTPCode, _note) cannot be written through the generated typed
-// repo: framework.MarshalEntity turns the struct's JSON keys back into
-// columns through snake_case, which lowers Title to title, a column that
-// does not exist, so Create returned the row with the field empty. The
-// HTTP clients spell the server's key (appspec.WireKey); the in-process
-// path has no spelling that survives, so the validator refuses the name.
-func TestAppSpecRefusesNamesTheRepoCannotWrite(t *testing.T) {
+// (Title, HTTPCode, _note) is accepted. App specs used to refuse one: the
+// generated typed repo writes through framework.MarshalEntity, which
+// turned the struct's JSON key Title into title, a key CreateOne matched
+// to no column, so the value was dropped. CreateOne now maps that key back
+// to its column, which the second half pins through the same path the
+// repo takes. Two names one Go field or one Postgres column would carry
+// are refused instead.
+func TestAppSpecAcceptsNamesTheRepoCanWrite(t *testing.T) {
 	for _, name := range []string{"Title", "HTTPCode", "_note"} {
 		bp := AppSpec{Entities: []framework.EntityDeclaration{
 			{Name: "authors", Fields: []framework.FieldDeclaration{{Name: "email", Type: "string"}}},
 			{Name: "posts", Fields: []framework.FieldDeclaration{{Name: name, Type: "string"}}},
 		}}
-		err := ValidateAppSpec(bp)
-		if err == nil || !strings.Contains(err.Error(), `field "`+name+`"`) || !strings.Contains(err.Error(), "lower-case letter") {
-			t.Errorf("field %q: %v", name, err)
+		if err := ValidateAppSpec(bp); err != nil && strings.Contains(err.Error(), `"`+name+`"`) {
+			t.Errorf("field %q refused: %v", name, err)
 		}
 		bp.Entities[1].Fields = []framework.FieldDeclaration{{Name: "headline", Type: "string"}, {Name: "author_id", Type: "string"}}
 		bp.Entities[1].Relations = []framework.Relation{{Type: framework.RelManyToOne, Name: name, Entity: "authors", ForeignKey: []string{"author_id"}}}
-		err = ValidateAppSpec(bp)
-		if err == nil || !strings.Contains(err.Error(), `relation "`+name+`"`) || !strings.Contains(err.Error(), "lower-case letter") {
-			t.Errorf("relation %q: %v", name, err)
+		if err := ValidateAppSpec(bp); err != nil && strings.Contains(err.Error(), `"`+name+`"`) {
+			t.Errorf("relation %q refused: %v", name, err)
+		}
+	}
+	for _, pair := range [][2]string{{"Title", "title"}, {"_note", "note"}} {
+		bp := AppSpec{Entities: []framework.EntityDeclaration{
+			{Name: "posts", Fields: []framework.FieldDeclaration{{Name: pair[0], Type: "string"}, {Name: pair[1], Type: "string"}}},
+		}}
+		if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "collides with field") {
+			t.Errorf("fields %q and %q: %v, want a collision", pair[0], pair[1], err)
 		}
 	}
 
-	// The reason still holds: a struct keyed by the server's wire key Title
-	// loses the value on the in-process create. When MarshalEntity learns
-	// to map such a key back to its column, this fails and the rule can go.
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -58,12 +62,12 @@ func TestAppSpecRefusesNamesTheRepoCannotWrite(t *testing.T) {
 	}
 	body, err := framework.MarshalEntity(struct {
 		Title *string `json:"Title,omitempty"`
-	}{Title: new("kept?")})
+	}{Title: new("kept")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	row, err := framework.NewCrudHandler(ent, db).CreateOne(context.Background(), body)
-	if err == nil && row["Title"] == "kept?" {
-		t.Fatal("the in-process create now keeps a Title field: the lower-case-first rule can be relaxed")
+	if err != nil || row["Title"] != "kept" {
+		t.Fatalf("in-process create of a Title field: row %v, err %v", row, err)
 	}
 }
