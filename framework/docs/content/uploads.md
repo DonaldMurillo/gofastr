@@ -536,8 +536,8 @@ What it removes:
 | Format | Removed | How |
 |--------|---------|-----|
 | JPEG | every APPn segment (EXIF, XMP, ICC, Photoshop data) and COM comments; anything after EOI. The Adobe APP14 colour marker stays, cut to its 12 bytes: a CMYK JPEG does not decode without it | segments spliced out; no re-encode unless a rotation is needed |
-| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks | re-encoded (PNG is lossless, pixels unchanged); an animated PNG is spliced instead, every frame chunk kept |
-| WebP | `EXIF` and `XMP ` chunks | container rewritten, image bytes untouched |
+| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks; anything after IEND | re-encoded (PNG is lossless, pixels unchanged); an animated PNG is spliced instead, every frame chunk kept; a PNG with only a trailer is cut at IEND |
+| WebP | `EXIF` and `XMP ` chunks; anything past the RIFF size | container rewritten, image bytes untouched |
 
 An EXIF orientation of 2–8 is applied first so the stripped photo still
 displays upright: JPEG and PNG bake the rotation into the pixels (the

@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`file.StripMetadata` cuts PNG and WebP trailers.** Bytes after a PNG's
+  IEND chunk or past a WebP's RIFF size were stored whenever the image had
+  no metadata chunk to strip, while a JPEG's post-EOI trailer was always
+  dropped. Readers ignore those bytes and tools park data there, so the
+  stored original now ends at the format's end marker. See
+  [uploads](framework/docs/content/uploads.md).
 - **A refused print request no longer holds a PDF render slot.** The
   `/pdf` route took one of the `MaxConcurrentRenders` slots before it ran
   the document's access policy, so a signed-in caller asking for other

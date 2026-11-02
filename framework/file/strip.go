@@ -18,7 +18,8 @@ import (
 // metadata from stored image originals: EXIF (GPS coordinates, camera
 // serials, embedded thumbnails), XMP, and equivalent segments — JPEG
 // APPn (bar the Adobe APP14 colour marker) and COM segments, PNG tEXt/zTXt/iTXt/eXIf chunks, and WebP EXIF
-// and XMP chunks. A non-trivial EXIF orientation is applied first, so
+// and XMP chunks, plus any trailer after the format's end marker (JPEG
+// EOI, PNG IEND, the WebP RIFF size). A non-trivial EXIF orientation is applied first, so
 // the stripped original still displays upright: JPEG and still PNG
 // re-encode with the orientation baked into the pixels; WebP (no encoder
 // at this layer) and animated PNG (no APNG encoder) are spliced, every
@@ -235,7 +236,8 @@ func stripJPEG(data []byte) ([]byte, error) {
 // (tEXt/zTXt/iTXt/eXIf), which drops them all: the stdlib encoder
 // writes only the chunks it understands, no text or EXIF survives, and
 // PNG is lossless so the re-encode costs nothing but CPU. A PNG with no
-// metadata chunk is returned unchanged, byte-for-byte. An eXIf
+// metadata chunk is returned unchanged up to the end of its IEND chunk;
+// a trailer after it is cut. An eXIf
 // orientation of 2..8 is baked into the pixels before re-encoding.
 //
 // An animated PNG (an acTL chunk) is spliced instead, see
@@ -250,6 +252,7 @@ func stripPNG(data []byte) ([]byte, error) {
 		return nil, errors.New("png: bad signature")
 	}
 	orient, hasMeta, animated := 0, false, false
+	iendEnd := 0 // offset just past the IEND chunk; 0 when there is none
 	pos := 8
 	for pos+8 <= len(data) {
 		length := binary.BigEndian.Uint32(data[pos : pos+4])
@@ -270,14 +273,19 @@ func stripPNG(data []byte) ([]byte, error) {
 		case "acTL":
 			animated = true
 		case "IEND":
-			// Stop like the decoder does; bytes after IEND only
-			// survive when there is nothing to strip.
+			// Stop like the decoder does. Bytes after IEND are a
+			// trailer readers ignore and tools park data in; they are
+			// cut below, as stripJPEG cuts what follows EOI.
+			iendEnd = pos + 12 + int(length)
 			pos = len(data)
 			continue
 		}
 		pos += 12 + int(length)
 	}
 	if !hasMeta {
+		if iendEnd > 0 && iendEnd < len(data) {
+			return data[:iendEnd], nil
+		}
 		return data, nil
 	}
 	if animated {
@@ -402,7 +410,9 @@ func stripWebP(data []byte) ([]byte, error) {
 		}
 	}
 	if !changed {
-		return data, nil
+		// Bytes past the RIFF size are a trailer no reader looks at;
+		// cut them, as stripJPEG cuts what follows EOI.
+		return data[:riffEnd], nil
 	}
 	keepEXIF := false
 	if orient >= 2 && orient <= 8 {
