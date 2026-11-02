@@ -87,12 +87,15 @@ scrubbed the same way.
   `--path` and `--handler` take `--method=POST` or `--method POST`; an
   unknown flag is an error. A `<name>_handler.go` symlinked out of the
   directory is refused, dangling or not.
-- `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
-  and the per-battery detail files under `.agents/`. Every write stays in
-  the project: a symlink there (`.agents`, `.claude`, `AGENTS.md`, a
-  detail file or the skill's `SKILL.md`) is followed only while it points
-  inside the project, and one that leads out is refused, so running the
-  command in a cloned repo cannot write over a file elsewhere on disk.
+- `gofastr agents init|sync|skill [dir]`: generate or refresh `AGENTS.md`
+  and the per-battery detail files under `.agents/`, in `dir` (default
+  the current directory). The verbs take no flags: a flag or a second
+  argument is refused with exit 2 before anything is written. Every write
+  stays in the project: a symlink there (`.agents`, `.claude`,
+  `AGENTS.md`, a detail file or the skill's `SKILL.md`) is followed only
+  while it points inside the project, and one that leads out is refused,
+  so running the command in a cloned repo cannot write over a file
+  elsewhere on disk.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.
