@@ -81,6 +81,8 @@ func TestDigestCacheServesRepeatRequests(t *testing.T) {
 // embed.FS answer fs.ErrInvalid, not fs.ErrNotExist, for a URL like /%ff.
 // That is a malformed request, not a server fault: answering 500 let any
 // client drive a 5xx with a two-character URL, and skipped SPA fallback.
+// A NUL byte (/a%00b) is the same class: os.Open answers EINVAL, which is
+// neither ErrNotExist nor ErrInvalid, and the handler answered 500.
 func TestInvalidPathIsNotAServerError(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("app shell"), 0o644); err != nil {
@@ -97,7 +99,7 @@ func TestInvalidPathIsNotAServerError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := Handler(Config{FS: os.DirFS(dir), SPA: tc.spa})
-			for _, p := range []string{"/\xff", "/\xc3\x28"} {
+			for _, p := range []string{"/\xff", "/\xc3\x28", "/a\x00b", "/\x00"} {
 				req := httptest.NewRequest(http.MethodGet, "/", nil)
 				req.URL.Path = p
 				rec := httptest.NewRecorder()

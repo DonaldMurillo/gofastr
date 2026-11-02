@@ -88,11 +88,30 @@ func (c Config) defaults() Config {
 	if c.IndexFile == "" {
 		c.IndexFile = "index.html"
 	}
-	// Ensure prefix starts with /
+	// Normalise the prefix to "/seg[/seg...]": a leading slash and no
+	// trailing one. "/" and "" both mean the root. A trailing slash used to
+	// survive into Mount's patterns ("/static//"), which ServeMux refuses
+	// as unclean.
+	c.Prefix = strings.TrimRight(c.Prefix, "/")
 	if c.Prefix != "" && !strings.HasPrefix(c.Prefix, "/") {
 		c.Prefix = "/" + c.Prefix
 	}
 	return c
+}
+
+// stripPrefix removes prefix from p only on a segment boundary: "/static"
+// and "/static/app.js" lose it, "/staticsecret.txt" keeps every byte. A
+// bare TrimPrefix read "/staticsecret.txt" as "secret.txt", a file the URL
+// never named. A path that does not carry the prefix at all is served
+// as-is, so the handler also works behind an http.StripPrefix.
+func stripPrefix(p, prefix string) string {
+	if prefix == "" {
+		return p
+	}
+	if rest, ok := strings.CutPrefix(p, prefix); ok && (rest == "" || rest[0] == '/') {
+		return rest
+	}
+	return p
 }
 
 // Handler returns an http.Handler that serves static files according to the
@@ -127,11 +146,7 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
-		reqPath := path.Clean(r.URL.Path)
-		if config.Prefix != "" {
-			reqPath = strings.TrimPrefix(reqPath, config.Prefix)
-		}
-		reqPath = strings.TrimPrefix(reqPath, "/")
+		reqPath := strings.TrimPrefix(stripPrefix(path.Clean(r.URL.Path), config.Prefix), "/")
 
 		if reqPath == "" {
 			reqPath = config.IndexFile
@@ -187,8 +202,15 @@ func Handler(config Config) http.Handler {
 		}
 
 		// If SPA mode, try serving the index file as fallback.
+		// The fallback is no-cache whatever MaxAge says: MaxAge is for the
+		// files the URLs name, and a long one here would store the shell
+		// under a URL that names no file (a fingerprinted asset a newer
+		// replica links mid-deploy, a client route) for that long. The
+		// index's ETag keeps each revalidation a body-less 304.
 		if config.SPA && reqPath != config.IndexFile {
-			if serveFile(w, r, config, config.IndexFile) {
+			fallback := config
+			fallback.MaxAge = 0
+			if serveFile(w, r, fallback, config.IndexFile) {
 				return
 			}
 		}
@@ -256,6 +278,12 @@ func (w *notFoundWriter) Write(b []byte) (int, error) {
 // serveFile attempts to serve a file from the filesystem. Returns true if
 // the file was successfully served.
 func serveFile(w http.ResponseWriter, r *http.Request, config Config, name string) bool {
+	// No file name holds a NUL byte, and a disk open of one (/a%00b)
+	// fails with EINVAL, which is neither ErrNotExist nor ErrInvalid and
+	// would surface as a 500 below. It names no file: a miss.
+	if strings.IndexByte(name, 0) >= 0 {
+		return false
+	}
 	var f fs.File
 	var err error
 	if config.root != nil {
@@ -499,20 +527,27 @@ func Mount(r *router.Router, config Config) {
 	config = config.defaults()
 	handler := Handler(config)
 
-	if config.Prefix == "" || config.Prefix == "/" {
-		// Root mount: catch-all handles everything including /
-		r.Get("/{path...}", handler)
-	} else {
-		r.Get(config.Prefix+"/", handler)
-		r.Get(config.Prefix+"/{path...}", handler)
-	}
+	// One pattern: "{path...}" matches the empty remainder too, so
+	// Prefix+"/" is already covered. Registering both used to panic at
+	// boot, since ServeMux reads them as the same pattern. A request for
+	// the bare prefix ("/static") is redirected (307) to "/static/" by ServeMux.
+	r.Get(config.Prefix+"/{path...}", handler)
+}
+
+// segments splits p on "/" AND "\": a URL can carry a backslash
+// (/sub%5C.env), and a disk filesystem opened through os.Root on Windows
+// reads it as a separator. Splitting on "/" alone read "sub\.env" as one
+// innocent segment and served sub/.env there. Empty segments are dropped;
+// no caller counts them.
+func segments(p string) []string {
+	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
 }
 
 // hasDotDotSegment reports whether the *raw* (uncleaned) path contains a
 // `..` segment. Run this before path.Clean so traversal segments can't be
 // collapsed silently.
 func hasDotDotSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
+	for _, component := range segments(p) {
 		if component == ".." {
 			return true
 		}
@@ -535,7 +570,7 @@ func Refuses(p string) bool {
 }
 
 func hasDotfileSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
+	for _, component := range segments(p) {
 		if component == "" || component == "." || component == ".." {
 			continue
 		}
@@ -562,7 +597,7 @@ var forbiddenConfigFiles = map[string]struct{}{
 // insensitively so a request for `/Web.Config` is treated the same as
 // `/web.config`.
 func hasForbiddenConfigSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
+	for _, component := range segments(p) {
 		if component == "" {
 			continue
 		}

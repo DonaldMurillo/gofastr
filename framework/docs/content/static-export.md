@@ -179,8 +179,9 @@ go build -o site ./examples/site/
 - Every file in the app's static dir (or embedded static FS), copied
   to the same path, `index.html` files included. Two kinds of file are
   refused: one the UI host would not serve (a path with a dot segment
-  such as `.env` or `.git/config`, or a server config file name such
-  as `web.config`), and one at the path of a page the build rendered,
+  such as `.env` or `.git/config`, a server config file name such
+  as `web.config`, or a symlink whose target leaves the static dir or
+  is not a regular file), and one at the path of a page the build rendered,
   in any case (`about/index.html` or `About/index.html` beside an
   `/about` route). The build log names
   each. Files under a leading `.well-known/`, unless they are dotfiles
@@ -199,7 +200,10 @@ go build -o site ./examples/site/
   build wrote fails the build. Which file wins is decided by this
   build and the static source, never by what an earlier build left in
   the output directory, so `Builder.Watch` (which rebuilds into the
-  same directory) picks up a changed extra file.
+  same directory) picks up a changed extra file. `Watch` leaves
+  `OutDir` out of what it polls, so the output directory may sit under
+  a watched one (watch `.`, write `./dist`) without each rebuild
+  triggering the next.
 
 In an app that routes by locale prefix (`framework.WithLocalePrefixes`)
 each prefixed locale gets its own page tree (`/es/about/index.html`)

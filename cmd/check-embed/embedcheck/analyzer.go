@@ -958,16 +958,42 @@ func (r *resolver) clientJSLiteral(call *ast.CallExpr) (string, bool) {
 // executableServerActionCall scans JavaScript without treating text in
 // comments or string/template literals as code. It accepts whitespace and
 // comments between the callee and "(", both legal JavaScript forms that the
-// compiler cannot rewrite and that this gate must reject.
+// compiler cannot rewrite and that this gate must reject. A template
+// literal's ${...} interpolations ARE code, and the compiler's rewrite is
+// lexical, so a call inside one is scanned like any other.
 func executableServerActionCall(src string) bool {
-	for i := 0; i < len(src); {
+	found, _ := scanJSCode(src, 0, false)
+	return found
+}
+
+// scanJSCode scans code from i. With inInterpolation it stops at the "}"
+// that closes a template interpolation (braces nest) and returns the index
+// after it; otherwise it runs to the end of src.
+func scanJSCode(src string, i int, inInterpolation bool) (bool, int) {
+	depth := 0
+	for i < len(src) {
 		switch {
 		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
 			i = skipJSLineComment(src, i+2)
 		case src[i] == '/' && i+1 < len(src) && src[i+1] == '*':
 			i = skipJSBlockComment(src, i+2)
-		case src[i] == '\'' || src[i] == '"' || src[i] == '`':
+		case src[i] == '`':
+			found, end := scanJSTemplate(src, i+1)
+			if found {
+				return true, end
+			}
+			i = end
+		case src[i] == '\'' || src[i] == '"':
 			i = skipJSString(src, i+1, src[i])
+		case inInterpolation && src[i] == '{':
+			depth++
+			i++
+		case inInterpolation && src[i] == '}':
+			if depth == 0 {
+				return false, i + 1
+			}
+			depth--
+			i++
 		case strings.HasPrefix(src[i:], serverActionName) &&
 			(i == 0 || !isJSIdentByte(src[i-1])):
 			after := i + len(serverActionName)
@@ -977,14 +1003,37 @@ func executableServerActionCall(src string) bool {
 			}
 			after = skipJSTrivia(src, after)
 			if after < len(src) && src[after] == '(' {
-				return true
+				return true, after
 			}
 			i = after
 		default:
 			i++
 		}
 	}
-	return false
+	return false, i
+}
+
+// scanJSTemplate scans a template literal from just after its opening
+// backtick, reading each ${...} interpolation as code, and returns the
+// index after the closing backtick.
+func scanJSTemplate(src string, i int) (bool, int) {
+	for i < len(src) {
+		switch {
+		case src[i] == '\\' && i+1 < len(src):
+			i += 2
+		case src[i] == '`':
+			return false, i + 1
+		case src[i] == '$' && i+1 < len(src) && src[i+1] == '{':
+			found, end := scanJSCode(src, i+2, true)
+			if found {
+				return true, end
+			}
+			i = end
+		default:
+			i++
+		}
+	}
+	return false, i
 }
 
 func skipJSTrivia(src string, i int) int {

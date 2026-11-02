@@ -309,7 +309,9 @@ and silently cost the block its syntax highlighting.
 ### static
 
 A hardened file server for `embed.FS` / `fs.FS`: ETag caching,
-configurable `Cache-Control`, MIME detection, SPA fallback, and
+configurable `Cache-Control`, MIME detection, SPA fallback (served
+`no-cache` whatever `MaxAge` says, so the shell is never stored under a
+URL that names no file), and
 traversal / dotfile / forbidden-config rejection. Seekable files (disk,
 `embed.FS`) are served through `http.ServeContent`, so `Range`,
 `If-Range` and multi-range requests get `206` and video can seek; a
@@ -324,7 +326,13 @@ out of the root is refused with 404 — the read side is contained by
 the configured root the same way write sinks elsewhere in the repo
 are; `embed.FS` cannot carry symlinks and is unaffected. Direct: call
 `Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
-uses it for its own assets too. `NotFoundFile` answers a miss with a
+uses it for its own assets too. `Prefix` is `/static`, `static` or
+`/static/` alike; `Mount` serves `/static/...` and redirects a bare
+`/static`. The handler strips the prefix on a segment boundary only
+(`/staticx.js` is not `x.js`), and a path without it is served from
+the root, so the handler also works behind `http.StripPrefix`. A
+backslash counts as a path separator in the dot-segment and config-file
+checks, as it does to a Windows filesystem. `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
 `404.html`; `gofastr docs serve` uses it). For a handler that serves
 its own bytes, `Refuses(path)` reports whether the handler would refuse

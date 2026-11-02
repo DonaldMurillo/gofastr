@@ -612,7 +612,9 @@ each sees a different slice; neither is total on its own:
   actions into the frame, so a gate that stopped at the root passed a surface
   whose button fails in the customer's page. It follows struct fields,
   components handed to the constructor expression, and components named in
-  `Render` / `RenderCtx`. Where it cannot follow, an interface-typed field, a
+  `Render` / `RenderCtx`. In each literal ClientJS it skips comments and
+  string text but reads a template literal's `${…}` as code, since the action
+  compiler rewrites a call there too. Where it cannot follow, an interface-typed field, a
   component type from another package, a child built inside `Render` whose type
   lives elsewhere, ClientJS that is not a literal, it prints a note saying so
   instead of passing in silence. Most notes are advisory; the boot walk below

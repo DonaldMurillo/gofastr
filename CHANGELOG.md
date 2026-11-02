@@ -399,6 +399,31 @@ few lines, and link the PR or the docs page for the rest.
   stores that with no expiry (`-1` is KEEPTTL), so a lifetime already in
   the past made an entry that never expired. It now matches
   `MemoryCache`: nothing is stored and the existing entry is dropped.
+- **`check-embed` reads a template literal's `${…}` as code.** It skipped
+  the whole template as a string, so a ClientJS like
+  ``G.toast(`saved ${G.serverAction("save")}`)``, which the action
+  compiler rewrites into a live server action, passed `gofastr build`'s
+  gate and was refused only at boot.
+- **`static.Mount` works under a prefix.** It registered both
+  `/static/` and `/static/{path...}`, which the router reads as one
+  pattern, so `Mount` with any `Prefix` but the root panicked at boot
+  with a route conflict (the spelling `porting.md` shows). A trailing
+  slash (`/static/`) is now accepted too. The handler also strips
+  `Prefix` on a segment boundary only: `/staticsecret.txt` served
+  `secret.txt`. A path holding a NUL byte (`/a%00b`) answers 404 (or
+  the SPA index) instead of 500.
+- **`static.Builder.Watch` no longer rebuilds forever.** It polled
+  every file under the watched dirs, `OutDir` included when it sat under
+  one (watch `.`, write `./dist`), and every rebuild rewrites the
+  export, so one source edit started a loop that never settled. `OutDir`
+  is left out of the poll.
+- **The SPA fallback is `no-cache`.** `core/static` answered a URL that
+  names no file with the index under `Config.MaxAge`, so a long
+  `MaxAge` meant for fingerprinted assets stored the app shell, as
+  `text/html`, under a client route or under a new asset's name that a
+  newer replica linked mid-deploy, for that long. The fallback now
+  revalidates every time (its ETag makes that a 304); files that exist
+  keep `MaxAge`.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
@@ -4741,6 +4766,20 @@ few lines, and link the PR or the docs page for the rest.
   or a `?token=` query landed in journald and the container log. The
   warning (and `HTTPErrorReporter`, which shares the sink) now names
   only `scheme://host`.
+- **A static export no longer publishes a symlink out of the static
+  dir.** The UI host reads the static dir through `os.Root` and answers
+  404 for `static/config.json -> ../config/prod.json`, but the export
+  copied it with `os.Open`, so the target's bytes went out with the
+  site. Both the static dir and a disk-backed static FS now skip such a
+  link (and any entry that is not a regular file) and log it; an
+  in-tree symlink still ships. A symlinked directory in the static dir
+  used to fail the build halfway with an empty file left behind.
+- **`core/static` refuses a hidden file named with a backslash.** The
+  dot-segment and config-file checks split on `/` only, so
+  `/sub%5C.env` read as one harmless segment, while a disk `FS` on
+  Windows opens it through `os.Root`, where `\` is a separator, and
+  served `sub/.env`. `static.Refuses` (and the static export's
+  publish filter that uses it) now treats `\` as a separator.
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**
   `gofastr generate sdk` covers every entity unless `--only` or
   `--exclude` narrows it, while the docs site documents only `Public` entities by default.
