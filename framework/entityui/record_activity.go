@@ -157,11 +157,11 @@ func recordHookMask(ctx context.Context, m *meta, id string) map[string]bool {
 	if id == "" {
 		return hookMaskedFields(ctx, m, "", nil)
 	}
-	raw, err := m.ch.GetOne(ctx, id, nil)
+	raw, err := m.getRowUnhooked(ctx, id)
 	if err != nil || raw == nil {
 		return hookMaskedFields(ctx, m, "", nil)
 	}
-	row, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+	row, err := m.getRow(ctx, id)
 	if err != nil || row == nil {
 		all := make(map[string]bool, len(m.fields))
 		for _, f := range m.fields {
