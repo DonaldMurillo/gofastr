@@ -151,6 +151,11 @@ few lines, and link the PR or the docs page for the rest.
   every test while `make analyze` and CI stopped running them. The test
   now reads every exported `&analysis.Analyzer{}` in every file of each
   package, and only a `<name> — <reason>` line holds one back.
+- **`core-ui/check.LintNumberFill` reads every spelling of the `{{n}}`
+  pattern.** It matched only a quoted `'{{n}}'` and a regex with escaped
+  braces, so `.replace(` + "`{{n}}`" + `, String(n))` (a template
+  literal) and `.replace(/{{n}}/g, String(n))` (unescaped braces, the
+  same regex to JavaScript) filled the count with ASCII digits unseen.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
