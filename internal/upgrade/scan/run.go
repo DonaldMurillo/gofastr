@@ -371,8 +371,18 @@ func (e *engine) scansPackage(p *packages.Package) bool {
 // (_cgo_gotypes.go) keep their cache name and stay outside the root.
 func compiledSources(p *packages.Package) []string {
 	out := make([]string, len(p.CompiledGoFiles))
+	own := make(map[string]bool, len(p.GoFiles))
+	for _, f := range p.GoFiles {
+		own[f] = true
+	}
 	for i, f := range p.CompiledGoFiles {
 		out[i] = f
+		// Only cgo's cache copy is renamed: an app file compiled as is
+		// keeps its own name, whatever its //line directives say (goyacc
+		// output points them at the .y grammar, inside the root or not).
+		if own[f] {
+			continue
+		}
 		if i < len(p.Syntax) && p.Fset != nil {
 			if pkg := p.Syntax[i].Package; pkg.IsValid() {
 				if name := p.Fset.Position(pkg).Filename; name != "" {

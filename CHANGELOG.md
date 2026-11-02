@@ -197,7 +197,9 @@ few lines, and link the PR or the docs page for the rest.
   imports, fields and strings matchers dropped every hit in it and the
   report called it "not compiled"; under `CGO_ENABLED=0` no load
   reached it at all. Hits now land on the file as written, and a
-  cgo-off scan loads it with cgo on.
+  cgo-off scan loads it with cgo on. Only cgo's copy is renamed back:
+  a goyacc-style file whose `//line` directive names its `.y` grammar
+  keeps its own name and its hits.
 - **`gofastr upgrade` lists a `gofastr.yml` it could not parse.** The
   config matchers skipped the file silently, so every `config:` note
   read "Nothing found" over a spec nobody had read. It now sits in the
