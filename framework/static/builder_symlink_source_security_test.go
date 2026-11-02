@@ -48,7 +48,7 @@ func TestExportRefusesSymlinkOutOfStaticDir(t *testing.T) {
 		}
 	}
 	link(filepath.Join("..", "private", "prod.json"), "config.json") // escapes
-	link(filepath.Join(outside, "prod.json"), "abs.json")           // escapes, absolute
+	link(filepath.Join(outside, "prod.json"), "abs.json")            // escapes, absolute
 	link("app.css", "theme.css")                                     // stays in the tree
 	link("img", "images")                                            // a directory in the tree
 	link(outside, "secrets")                                         // a directory out of it
