@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // RedisClient defines the minimal interface needed for a Redis cache backend.
@@ -93,7 +95,7 @@ func (rc *RedisCache) Get(ctx context.Context, key string, dest any) error {
 		}
 		return fmt.Errorf("cache: redis get %q: %w", key, err)
 	}
-	return json.Unmarshal([]byte(val), dest)
+	return jsonexact.Unmarshal([]byte(val), dest)
 }
 
 // isRedisMiss reports whether err is the client's "no such key" signal

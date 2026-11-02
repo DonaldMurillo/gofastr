@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // memoryEntry holds a cached item with its expiration time.
@@ -140,7 +142,7 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 		mc.touchLocked(entry)
 		data := entry.data
 		mc.mu.Unlock()
-		return json.Unmarshal(data, dest)
+		return jsonexact.Unmarshal(data, dest)
 	}
 
 	mc.mu.RLock()
@@ -159,7 +161,7 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 		}
 		return ErrCacheMiss
 	}
-	return json.Unmarshal(entry.data, dest)
+	return jsonexact.Unmarshal(entry.data, dest)
 }
 
 // Set stores a value in the cache with the given TTL. A ttl of 0 falls

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // ErrCacheMiss is returned when a key is not found in the cache.
@@ -245,7 +246,7 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 		if merr != nil {
 			return merr
 		}
-		return json.Unmarshal(data, dest)
+		return jsonexact.Unmarshal(data, dest)
 	}
 	return err
 }
