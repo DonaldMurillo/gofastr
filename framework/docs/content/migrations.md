@@ -102,7 +102,13 @@ other `-- +migrate` line that is not one of `Version`, `Name`, `Group`,
 with its spacing or case off (`--+migrate Down`, `-- +Migrate Down`),
 is refused too: the parser used to pass over it with the section above
 still open, so a misspelled `Down` put the Down statements into `Up` and
-the rollback ran as part of the apply.
+the rollback ran as part of the apply. A prose comment that starts the
+same way, such as `-- +migrated from v1`, is refused as an unknown
+directive, so write it without the `+` (`-- migrated from v1`).
+`migrate generate` refuses a SQL body (a multi-line `DEFAULT`, a view or
+a routine) holding any line the parser would read either way, using the
+parser's own test, `migrate.IsDirectiveLine` in `core/migrate`, so it
+never writes a file the runner then refuses to load.
 
 ### Non-transactional migrations
 

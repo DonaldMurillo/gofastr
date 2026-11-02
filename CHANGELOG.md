@@ -4389,7 +4389,11 @@ few lines, and link the PR or the docs page for the rest.
   `Up`: the rollback ran as part of the apply (a `DELETE` or `DROP` with
   it) and the version was recorded applied. An unknown directive, and a
   comment that reads as one with its spacing or case off
-  (`--+migrate Down`, `-- +Migrate Down`), now fail the parse.
+  (`--+migrate Down`, `-- +Migrate Down`), now fail the parse; so does a
+  prose comment such as `-- +migrated from v1`. `migrate generate`
+  refuses a SQL body holding any such line through the parser's own
+  test, the new `migrate.IsDirectiveLine` (`core/migrate`), so it no
+  longer writes a file the runner refuses to load.
 - **Tables and columns named past 63 bytes migrate on Postgres.**
   Postgres cuts such a name to 63 bytes and the catalog holds the cut
   one, which the migrator compared with the whole name. A long table

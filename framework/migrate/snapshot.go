@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 
@@ -662,7 +663,10 @@ var ErrDirectiveInSQL = errors.New("migrate: rendered SQL contains a line that w
 // containsDirectiveLine reports whether any line of sql would be read as
 // a directive by the runner, which scans line by line for the
 // "-- +migrate" prefix with no idea whether it is inside a string
-// literal.
+// literal. It asks the parser's own predicate (coremig.IsDirectiveLine),
+// which also covers the near misses the parser refuses ("--+migrate
+// Down", "-- +Migrate Down"): matching the exact prefix alone wrote files
+// the runner then refused to load.
 //
 // A column DEFAULT is author-supplied and may be multi-line, so a value
 // like "x\n-- +migrate Down\nDROP TABLE victims;-- " renders as valid
@@ -673,7 +677,7 @@ var ErrDirectiveInSQL = errors.New("migrate: rendered SQL contains a line that w
 // teaching the runner to parse SQL string literals.
 func containsDirectiveLine(sql string) bool {
 	for line := range strings.SplitSeq(sql, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "-- +migrate") {
+		if coremig.IsDirectiveLine(line) {
 			return true
 		}
 	}

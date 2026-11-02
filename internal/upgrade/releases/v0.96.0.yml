@@ -664,7 +664,7 @@ notes:
         - gofastr/framework.WithMultiTenant
   - change: "BREAKING - migration files with an unknown -- +migrate directive, or a comment that reads as one with its spacing or case off (--+migrate Down, -- +Migrate Down), fail to parse"
     breaking: true
-    guidance: "The parser passed over such a line with the section above it still open, so a misspelled Down put the Down statements into Up and the rollback ran during the apply. Spell each directive as -- +migrate Version|Name|Group|Up|Down|NoTransaction. Before fixing the file of an already-applied migration, check whether its Down statements ran with its Up; the corrected file changes the Up checksum, so reconcile with gofastr migrate force <version> once the schema is right."
+    guidance: "The parser passed over such a line with the section above it still open, so a misspelled Down put the Down statements into Up and the rollback ran during the apply. Spell each directive as -- +migrate Version|Name|Group|Up|Down|NoTransaction, and drop the + from a prose comment such as -- +migrated from v1. Before fixing the file of an already-applied migration, check whether its Down statements ran with its Up; the corrected file changes the Up checksum, so reconcile with gofastr migrate force <version> once the schema is right."
     nodetect: "the directives live in .sql migration files, not in Go source"
   - change: "BREAKING - on SQLite, migrate generate and GeneratePlan refuse a table rebuild (a retype, key, unique or NOT NULL/default change) of a table another table's recorded foreign key references, with or without an ON DELETE action"
     breaking: true
