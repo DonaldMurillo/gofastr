@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Config holds the configuration for serving static files.
@@ -45,12 +47,15 @@ type Config struct {
 	IndexFile string
 
 	// SPA enables single-page application mode. When true, a request
-	// that matches no file and whose last path segment has no file
-	// extension (a client route: /dashboard/settings, /users/42) is
-	// answered with IndexFile instead of 404. A missing file with an
-	// extension (/app.3f2a.js, /x.css, /logo.png) is still a 404: the
-	// index in its place is HTML a browser would run as a script or a
-	// stylesheet, and a cache would store it under the asset's URL.
+	// that matches no file is a client route (/dashboard/settings,
+	// /users/42, /u/jane.doe, /blog/v1.2) and is answered with IndexFile
+	// instead of 404, unless its last path segment ends in a well-known
+	// asset extension, in any case: .js .mjs .css .map, .png .jpg .jpeg
+	// .gif .svg .webp .avif .ico, .woff .woff2 .ttf, .json .wasm .txt
+	// .xml. A missing asset (/app.3f2a.js, /x.css,
+	// /logo.png) is a 404: the index in its place is HTML a browser
+	// would run as a script or a stylesheet, and a cache would store it
+	// under the asset's URL.
 	SPA bool
 
 	// NotFoundFile, when set, names a file in FS whose body answers a
@@ -216,15 +221,17 @@ func Handler(config Config) http.Handler {
 		}
 
 		// If SPA mode, try serving the index file as fallback, for a
-		// client route only: a last segment with a file extension names a
-		// file (a fingerprinted asset a newer replica links mid-deploy, a
-		// stale bundle), and the shell in its place is HTML the browser
-		// would run as a script or a stylesheet. Those get the 404.
+		// client route only: a last segment ending in a well-known asset
+		// extension names a file (a fingerprinted asset a newer replica
+		// links mid-deploy, a stale bundle), and the shell in its place
+		// is HTML the browser would run as a script or a stylesheet.
+		// Those get the 404. Any other dot (/u/jane.doe, /blog/v1.2) is
+		// part of a route.
 		// The fallback is no-cache whatever MaxAge says: MaxAge is for the
 		// files the URLs name, and a long one here would store the shell
 		// under a client route for that long. The index's ETag keeps each
 		// revalidation a body-less 304.
-		if config.SPA && reqPath != config.IndexFile && path.Ext(path.Base(reqPath)) == "" {
+		if config.SPA && reqPath != config.IndexFile && !isAssetPath(reqPath) {
 			fallback := config
 			fallback.MaxAge = 0
 			if serveFile(w, r, fallback, config.IndexFile) {
@@ -238,6 +245,26 @@ func Handler(config Config) http.Handler {
 
 		http.NotFound(w, r)
 	})
+}
+
+// assetExtensions are the file extensions the SPA fallback treats as an
+// asset rather than a client route: a missing path whose last segment
+// ends in one gets 404, never IndexFile. Matching ignores ASCII case.
+// The list is the assets a page loads by URL: scripts and source maps,
+// stylesheets, images, fonts, data and WebAssembly. Any other extension
+// is part of a route.
+var assetExtensions = []string{
+	".js", ".mjs", ".css", ".map",
+	".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif", ".ico",
+	".woff", ".woff2", ".ttf",
+	".json", ".wasm", ".txt", ".xml",
+}
+
+// isAssetPath reports whether p's last segment ends in one of
+// [assetExtensions], ignoring ASCII case.
+func isAssetPath(p string) bool {
+	ext := asciicase.Lower(path.Ext(path.Base(p)))
+	return ext != "" && slices.Contains(assetExtensions, ext)
 }
 
 // rootBinding is where a disk-backed FS lives: its resolved root and the

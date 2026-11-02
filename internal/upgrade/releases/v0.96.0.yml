@@ -1423,9 +1423,10 @@ notes:
     breaking: true
     guidance: "The include put the related record, and with it the hidden key, in the response. A client that relied on it reads the related record some other way the app grants (a declared endpoint, or the field made visible on purpose). entity.Entity.HidesRelation reports which relations this covers."
     nodetect: "include names come from clients' query strings and in-process include lists at request time; a Hidden flag on a relation spans lines no pattern reads reliably"
-  - change: "core/static.Handler with SPA true serves IndexFile only for a missing path whose last segment has no file extension; a missing /app.3f2a.js, /x.css or /logo.png gets 404 instead of the index"
-    breaking: false
-    guidance: "The index served as a missing script or stylesheet was HTML the browser could not run, and a cache could store it under the asset's URL. Client routes without a dot in their last segment (/dashboard/settings, /users/42) still get the index. A client route whose last segment has a dot (/files/report.pdf) now 404s: give it a server route that serves the index, or drop the dot from the route."
+  - change: "BREAKING - core/static.Handler with SPA true answers a missing path whose last segment ends in a well-known asset extension (.js .mjs .css .map .png .jpg .jpeg .gif .svg .webp .avif .ico .woff .woff2 .ttf .json .wasm .txt .xml, any case) with 404 instead of the index; every other miss still gets the index"
+    breaking: true
+    hits: review
+    guidance: "The index served as a missing script or stylesheet was HTML the browser could not run, and a cache could store it under the asset's URL. Client routes still get the index, a dot in the last segment included (/dashboard/settings, /u/jane.doe, /blog/v1.2). A client route that ends in one of the listed extensions (/feeds/latest.json as a screen) now 404s: give it a server route that serves the index, or rename the route. Code that fetched a missing asset and read the 200 HTML body now gets 404."
     find:
       uses:
         - gofastr/core/static.Handler
