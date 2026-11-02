@@ -171,7 +171,9 @@ type AppConfig struct {
 
 	// ShutdownTimeout bounds the graceful drain that the default
 	// SIGINT/SIGTERM handler runs via App.Shutdown. Zero installs the
-	// 15s default. The drain stops accepting connections, waits for
+	// 15s default. The handler's deadline is this plus the readiness
+	// grace (WithReadinessDrain) Shutdown spends first, serving while
+	// /readyz answers 503. The drain then stops accepting connections, waits for
 	// in-flight requests, force-closes whatever remains at the deadline
 	// (an open SSE stream never goes idle), then stops batteries and
 	// runs OnStop hooks.
@@ -309,6 +311,9 @@ type App struct {
 	// down again. Guarded by shutdownMu.
 	shutdownMu   sync.Mutex
 	shutdownDone chan struct{}
+	// draining is set when Shutdown starts: /readyz answers 503 from
+	// then on, through the readiness grace and the drain after it.
+	draining atomic.Bool
 	// newConns holds connections the server accepted that have not sent
 	// a request yet (net/http's StateNew): a browser's speculative
 	// preconnect, a Transport's spare dial. Server.Shutdown spares such a
@@ -3288,7 +3293,10 @@ func (a *App) closeNewConns() {
 
 // Shutdown gracefully stops the HTTP server, stops every registered
 // battery in reverse dependency order, then runs each OnStop hook in
-// reverse registration order. Matches net/http.Server.Shutdown's
+// reverse registration order. It first turns /readyz to 503 and, while
+// the server is serving, keeps serving for the readiness grace
+// (WithReadinessDrain, 5s by default) so a load balancer stops routing
+// here before the listener closes; /healthz stays 200. Matches net/http.Server.Shutdown's
 // signature (takes a deadline ctx) but does the FULL lifecycle teardown.
 // Safe to call multiple times: the teardown runs once, and a later or
 // concurrent call waits for it to finish, then returns nil, or returns
@@ -3322,6 +3330,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 // shutdown is Shutdown's teardown, run once.
 func (a *App) shutdown(ctx context.Context) error {
+	a.drainReadiness(ctx)
 	// Snapshot the cancel func and detach the server under the same lock
 	// that Start/runStartHooks use to assign them. Invoke cancel OUTSIDE
 	// the lock so a cancel-triggered teardown can't re-enter and deadlock.
@@ -4027,10 +4036,7 @@ func (a *App) Start(addr string) error {
 			defer signal.Stop(sigCh)
 			select {
 			case sig := <-sigCh:
-				timeout := a.Config.ShutdownTimeout
-				if timeout <= 0 {
-					timeout = defaultShutdownTimeout
-				}
+				timeout := a.signalShutdownTimeout()
 				a.Logger().Info("shutdown signal received; draining",
 					"signal", sig.String(), "timeout", timeout.String())
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)

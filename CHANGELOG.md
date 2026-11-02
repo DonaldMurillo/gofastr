@@ -179,6 +179,15 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **`/readyz` drains before shutdown.** `App.Shutdown` now turns
+  `/readyz` to `503` (`{"status":"draining"}`) at once and keeps serving
+  for a grace period, so a load balancer stops routing here before the
+  listener closes; `/healthz` stays `200` until exit. The grace is 5s by
+  default, set with `framework.WithReadinessDrain` (`0` skips it), and
+  `0` in a Go test binary and under `gofastr dev`. A stop now takes up
+  to the grace longer: the default SIGTERM handler's deadline is
+  `ShutdownTimeout` plus the grace. See
+  [Health and readiness](framework/docs/content/health-checks.md#draining-on-shutdown).
 - **BREAKING for custom A2A stores: retention counts per tier.**
   `a2a.Config.TerminalTaskRetention` and `PausedTaskRetention` now bound
   one owner's tasks per tier (`a2a.RetentionTier`: the tenant and scope

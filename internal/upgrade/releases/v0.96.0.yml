@@ -1,6 +1,14 @@
 version: v0.96.0
 title: unreleased
 notes:
+  - change: "App.Shutdown answers /readyz with 503 at once and keeps serving for a readiness grace (default 5s, framework.WithReadinessDrain) before it stops accepting; a stop takes up to the grace longer"
+    breaking: false
+    guidance: "A load balancer probing /readyz stops routing here before the listener closes; /healthz stays 200 until exit. The default SIGTERM handler's deadline is AppConfig.ShutdownTimeout plus the grace, so keep both inside the orchestrator's kill window (Kubernetes' terminationGracePeriodSeconds, 30s by default). Pass framework.WithReadinessDrain(0) to stop at once, as before, or a longer grace to match a slow balancer. Test binaries and gofastr dev default to 0."
+    find:
+      uses:
+        - gofastr/framework.App.Shutdown
+        - gofastr/framework.App.Start
+        - gofastr/framework.App.RunWithSignals
   - change: "BREAKING for direct callers of the llm.md index - crud.RegistryLLMMD / RegistryLLMMDHandler take a trailing pagesIndex string, the path the app serves its page index at; empty drops the index's Pages section, which used to link /llm-pages.md even when nothing served it"
     breaking: true
     hits: review

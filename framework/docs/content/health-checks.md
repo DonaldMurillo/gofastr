@@ -18,8 +18,9 @@ GET /healthz
 200 ok
 ```
 
-Unconditional 200. The contract is: "the HTTP server is accepting
-connections." Liveness probes that fail should restart the pod.
+Unconditional 200, through shutdown until the process exits. The
+contract is: "the HTTP server is accepting connections." Liveness
+probes that fail should restart the pod.
 
 ## Readiness
 
@@ -45,6 +46,48 @@ its dependencies aren't.
 All checks run in parallel under a 5-second overall deadline.
 Per-check duration is reported in `durationMs` so a slow probe is
 visible without a full timeout.
+
+## Draining on shutdown
+
+When `App.Shutdown` starts (the default `SIGTERM` handler calls it),
+`/readyz` answers `503` at once, without running the checks:
+
+```
+GET /readyz
+503 Service Unavailable
+
+{"status": "draining", "checks": []}
+```
+
+The app then keeps serving for a grace period, so a load balancer
+probing `/readyz` notices and stops sending new requests before the
+listener closes. Requests that arrive during the grace are served as
+usual, and `/healthz` stays `200`. After the grace, the normal drain
+runs: stop accepting, finish in-flight requests, stop batteries.
+
+The grace is 5 seconds by default. Set it with `WithReadinessDrain`;
+`0` skips the wait. In a Go test binary (and a process one starts) and
+under `gofastr dev` the default is `0`, so tests and dev reloads stop at
+once. The grace ends early if `Shutdown`'s context does. The default
+`SIGTERM` handler adds the grace to `AppConfig.ShutdownTimeout`, so a
+stop takes up to the grace longer than before.
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "time"
+-->
+```go
+app := framework.NewApp(
+    // Match the balancer: probe period x failure threshold, plus a margin.
+    framework.WithReadinessDrain(10*time.Second),
+)
+```
+
+Size it to how fast your balancer reacts: Kubernetes removes a pod from
+its Service endpoints once the readiness probe fails `failureThreshold`
+times, `periodSeconds` apart. Keep the grace plus `ShutdownTimeout`
+inside the pod's `terminationGracePeriodSeconds` (30s by default).
 
 ## Registering checks
 

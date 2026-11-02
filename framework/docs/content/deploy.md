@@ -151,8 +151,14 @@ serve HTTPS itself (next section). `App.Start` installs signal handling and
 drains in-flight requests on `SIGINT`/`SIGTERM` via `App.Shutdown`, so
 rolling deploys don't cut active requests.
 
-The drain is **bounded**: `AppConfig.ShutdownTimeout` (default 15s) caps
-it, and anything still open at the deadline is force-closed so the process
+First, `/readyz` turns `503` and the app keeps serving for the readiness
+grace (default 5s, `framework.WithReadinessDrain`; see
+[Health and readiness](health-checks.md#draining-on-shutdown)), so the
+load balancer stops routing here before the listener closes. `/healthz`
+stays `200` until exit.
+
+The drain after it is **bounded**: `AppConfig.ShutdownTimeout` (default
+15s, on top of the grace) caps it, and anything still open at the deadline is force-closed so the process
 exits well inside Kubernetes' 30s SIGTERM→SIGKILL window. Long-lived
 connections never go idle, so the drain does not wait on them; it ends
 them when it starts, and the client reconnects to another replica or to
