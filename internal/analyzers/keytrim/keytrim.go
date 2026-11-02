@@ -13,6 +13,10 @@
 //
 // Shape: a strings.TrimSpace call whose operand is an identity value
 // and whose result is used as a value, not only tested for emptiness.
+// The same rewrite spelled strings.Trim / TrimLeft / TrimRight /
+// TrimFunc or bytes.TrimSpace counts, and so does an operand that is a
+// local bound once to an identity value (raw := vals.Get("user_id")):
+// both were silent until the 2026-11-02 guard bash.
 // An identity value is:
 //   - an identifier or field selector whose name is id or ids, ends in
 //     ID, IDs, Id or Ids (userID, s.OwnerID, recordIds), or names a
@@ -87,32 +91,96 @@ func run(pass *analysis.Pass) (any, error) {
 			stack = append(stack, n)
 			return true
 		})
+		bound := singleBindings(pass, f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) != 1 || !isTrimSpace(pass, call) {
+			if !ok {
+				return true
+			}
+			name := trimName(pass, call)
+			if name == "" {
 				return true
 			}
 			arg := ast.Unparen(call.Args[0])
-			if !isIdentity(pass, arg) || presenceOnly(call, parents) {
+			if c, ok := arg.(*ast.CallExpr); ok && len(c.Args) == 1 {
+				// string(b) / []byte(s): the conversion keeps the value.
+				if tv, ok := pass.TypesInfo.Types[c.Fun]; ok && tv.IsType() {
+					arg = ast.Unparen(c.Args[0])
+				}
+			}
+			ident := isIdentity(pass, arg)
+			if id, ok := arg.(*ast.Ident); ok && !ident {
+				if b, ok := bound[pass.TypesInfo.ObjectOf(id)]; ok {
+					ident = isIdentity(pass, ast.Unparen(b))
+				}
+			}
+			if !ident || presenceOnly(call, parents) {
 				return true
 			}
 			pass.Reportf(call.Pos(),
-				"keytrim: strings.TrimSpace rewrites the identity value %s, so \" x \" becomes \"x\" and names a different record; use the value byte-exact and refuse an invalid id instead",
-				types.ExprString(arg))
+				"keytrim: %s rewrites the identity value %s, so \" x \" becomes \"x\" and names a different record; use the value byte-exact and refuse an invalid id instead",
+				name, types.ExprString(arg))
 			return true
 		})
 	}
 	return nil, nil
 }
 
-// isTrimSpace: call is strings.TrimSpace.
-func isTrimSpace(pass *analysis.Pass, call *ast.CallExpr) bool {
+// trimName returns "strings.TrimSpace" (or the matching spelling) when
+// call trims its first argument: strings.TrimSpace, and the same rewrite
+// spelled strings.Trim / TrimLeft / TrimRight / TrimFunc or
+// bytes.TrimSpace. Until the 2026-11-02 guard bash only
+// strings.TrimSpace counted, so strings.Trim(id, " ") rewrote the same
+// key unseen.
+func trimName(pass *analysis.Pass, call *ast.CallExpr) string {
 	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "TrimSpace" {
-		return false
+	if !ok || len(call.Args) == 0 {
+		return ""
 	}
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
-	return ok && fn.Pkg() != nil && fn.Pkg().Path() == "strings"
+	if !ok || fn.Pkg() == nil {
+		return ""
+	}
+	switch fn.Pkg().Path() + "." + sel.Sel.Name {
+	case "strings.TrimSpace", "bytes.TrimSpace":
+		if len(call.Args) == 1 {
+			return fn.Pkg().Name() + "." + sel.Sel.Name
+		}
+	case "strings.Trim", "strings.TrimLeft", "strings.TrimRight", "strings.TrimFunc":
+		if len(call.Args) == 2 {
+			return "strings." + sel.Sel.Name
+		}
+	}
+	return ""
+}
+
+// singleBindings maps each local bound exactly once in f to its value,
+// so `raw := vals.Get("user_id")` then strings.TrimSpace(raw) reads as
+// the request read it is.
+func singleBindings(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
+	out := map[types.Object]ast.Expr{}
+	count := map[types.Object]int{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != len(as.Rhs) {
+			return true
+		}
+		for i, lhs := range as.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+					count[obj]++
+					out[obj] = as.Rhs[i]
+				}
+			}
+		}
+		return true
+	})
+	for obj, n := range count {
+		if n > 1 {
+			delete(out, obj)
+		}
+	}
+	return out
 }
 
 // isIdentity reports whether e is an identity-named value or a request

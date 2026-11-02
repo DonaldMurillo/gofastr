@@ -153,7 +153,14 @@ few lines, and link the PR or the docs page for the rest.
     `bufio.NewReader` or a `body := r.Body` alias, and for responses
     `io.Copy` into anything but `io.Discard`;
   - `GOFASTR1413`: `Header().Del("Vary")` and `h["Vary"] = …`, which
-    clobber the earlier entries as `Set` does.
+    clobber the earlier entries as `Set` does;
+  - `secretcompare`: `bytes.Equal` / `bytes.Compare` / `strings.Compare`
+    on a credential pair, a `switch token { case stored: }`, a
+    `string(sig)` conversion, and a `~string` type parameter;
+  - `credfetch`: `req.SetBasicAuth`, which writes `Authorization`;
+  - `keytrim`: `strings.Trim` / `TrimLeft` / `TrimRight` / `TrimFunc`
+    and `bytes.TrimSpace` on an id, and a request read that reaches the
+    trim through a local.
 
   Code that passed verify can fail it on upgrade. Fix the finding, or
   mark a site that is the shape on purpose with
