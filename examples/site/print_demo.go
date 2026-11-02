@@ -76,6 +76,7 @@ type printInvoiceDemo struct{ id string }
 
 func (d printInvoiceDemo) Render() render.HTML {
 	id := render.Escape(d.id)
+	//gofastr:allow(GOFASTR1403) id is render.Escape output
 	return render.HTML(fmt.Sprintf(`
 <header>
   <h1>Invoice %s</h1>

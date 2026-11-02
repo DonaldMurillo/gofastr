@@ -179,7 +179,15 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if err != nil {
 		return fmt.Errorf("resolve base dir: %w", err)
 	}
-	filename := filepath.Join(realDir, strings.ToLower(name)+"_handler.go")
+	base := strings.ToLower(name) + "_handler.go"
+	// The base dir is resolved, the leaf is not: a dangling link at the
+	// file name passed the exists check and the write created its target
+	// outside the project; one leaving it was written through with
+	// -overwrite.
+	if err := project.RefuseEscape(realDir, base); err != nil {
+		return err
+	}
+	filename := filepath.Join(realDir, base)
 	if !overwrite {
 		if _, err := os.Stat(filename); err == nil {
 			return fmt.Errorf("handler file already exists: %s", filename)

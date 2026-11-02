@@ -647,7 +647,7 @@ func securityRules() []Rule {
 	}, {
 		ID: RuleHTMLConcat, Slug: "security/html-concat",
 		Title: "Untrusted value concatenated into HTML", Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`render.HTML` is called on a concatenated string.",
+		Summary: "`render.HTML` is called on a string built around a variable: a concatenation (on one line or several) or a `fmt.Sprintf`/`Sprint`/`Sprintln`.",
 		Why: "`render.HTML` means \"this is already safe markup: do not escape it\". Concatenating a " +
 			"variable into it hands the user's string straight to the browser as markup. That is stored XSS.",
 		Fix: "Use `render.Text` for untrusted values (it escapes), or compose `core-ui/html` elements. If the concatenated half is genuinely a constant, annotate `//gofastr:allow(GOFASTR1403) <why>`.",
@@ -659,7 +659,7 @@ func securityRules() []Rule {
 	}, {
 		ID: RuleInsecureCookie, Slug: "security/insecure-cookie",
 		Title: "Cookie without security attributes", Capability: CapSecurity, Severity: SeverityError,
-		Summary: "An `http.Cookie` is constructed without HttpOnly, Secure, or SameSite.",
+		Summary: "An `http.Cookie` literal (net/http under any import alias) is constructed without HttpOnly, Secure, or SameSite.",
 		Why: "A cookie without HttpOnly is readable by any script that gets injected. Without Secure " +
 			"it travels over plain HTTP on the first request after a downgrade. Without SameSite it " +
 			"rides along on cross-site requests, the CSRF token's whole reason for existing.",

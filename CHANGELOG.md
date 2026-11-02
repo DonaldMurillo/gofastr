@@ -267,6 +267,36 @@ few lines, and link the PR or the docs page for the rest.
   served neither the pool gauges nor `outbox_pending`/dead-letter counts,
   and an alert on them had no series to fire on. Start mounts the
   endpoint through `app.Metrics()` now.
+- **`gofastr init` and `gofastr agents` no longer write through a
+  symlink out of the project.** In a cloned repo carrying
+  `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, `gofastr agents
+  skill` and `gofastr init . --reinit` replaced the developer's file with
+  the skill; a linked `.agents/` received every detail file, and a
+  linked `.env` received the generated signing key. Each writer refuses
+  a path that leaves the project or names nothing, before creating any
+  directory; a link inside the project is still followed. `gofastr
+  theme init` (for a destination inside the project) and `gofastr new
+  handler` refuse the same links.
+- **The `gofastr dev` hold page keeps its build output from a rebound
+  page.** On a loopback bind the hold answered any `Host`, so a page on
+  another site whose name a rebinding DNS server pointed at 127.0.0.1
+  read the failed build's absolute paths and quoted source as
+  same-origin. A request whose `Host` is not a loopback name for the
+  address gets the page without the output, as an exposed bind does.
+- **`gofastr verify` finds GOFASTR1403 and GOFASTR1404 however the code
+  spells them.** GOFASTR1404 keyed on the identifier `http`, so a cookie
+  built as `nethttp.Cookie{...}` under an import alias passed.
+  GOFASTR1403 was a one-line pattern for `render.HTML(... + ...)`, so
+  `render.HTML(fmt.Sprintf("<p>%s</p>", name))`, a concatenation split
+  over lines, and `render.HTML(esc(a) + b)` put the same unescaped value
+  into markup unreported. Both rules read the syntax tree now; a build
+  from constants alone stays quiet. The kit's four escaped builds carry
+  `//gofastr:allow(GOFASTR1403)`.
+- **`gofastr migrate down` takes one count.** With two counts the last
+  one won, so `migrate down 1 3` ran three Down sections (three
+  `DROP TABLE`s) where one was asked for. A second count is refused
+  before anything rolls back, the way `migrate force` refuses a second
+  version.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does

@@ -809,3 +809,15 @@ notes:
     breaking: false
     guidance: "A subscriber whose write used to fail with \"transaction has already been committed\" now succeeds. A subscriber that needs the emitter's transaction runs synchronously (Emit), on the emitter's goroutine."
     nodetect: "whether a subscriber writes through the inherited context is runtime behaviour"
+  - change: "gofastr migrate down refuses a second count (migrate down 1 3), which used to roll back the last count's number of migrations"
+    breaking: false
+    guidance: "Pass one count. A script that passed two rolled back the second number; keep the count it meant."
+    nodetect: "the change is in the CLI's argument parsing; nothing in an app's source spells it"
+  - change: "gofastr verify reports GOFASTR1403 on render.HTML over fmt.Sprintf/Sprint/Sprintln or a concatenation split over lines, and GOFASTR1404 on an http.Cookie literal under an aliased net/http import"
+    breaking: false
+    guidance: "A new finding names markup built around a variable with no escape at that call. Escape the value (render.Text, render.Escape) or compose core-ui/html; if every interpolated value is already escaped, annotate the call //gofastr:allow(GOFASTR1403) <why>. For a cookie, set HttpOnly, Secure and SameSite."
+    nodetect: "the change is in the analyzer; whether an app's call sites now fire depends on what they pass"
+  - change: "gofastr init, init --reinit, gofastr agents init/sync/skill, theme init and new handler refuse to write through a symlink that leaves the project or names nothing"
+    breaking: false
+    guidance: "Replace such a link with a regular file (or a link inside the project) and re-run. A link that stays inside the project is followed as before."
+    nodetect: "the check is on the files on disk when the command runs; nothing in an app's source spells it"
