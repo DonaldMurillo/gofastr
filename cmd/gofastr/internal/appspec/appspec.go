@@ -2645,6 +2645,17 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		entityNames[decl.Name] = true
 		entitiesByName[decl.Name] = decl
+		// A field declared twice was caught only by the render pass, as
+		// "generated code declares Products.Title twice
+		// (entities/client/client.go and entities/client/client.go)",
+		// naming a file the author never wrote instead of the spec line.
+		seenField := map[string]bool{}
+		for _, f := range decl.Fields {
+			if seenField[f.Name] {
+				errs.add(fmt.Errorf("app spec: entity %q declares field %q twice: remove or rename one", decl.Name, f.Name))
+			}
+			seenField[f.Name] = true
+		}
 		// Field names and enum values are transcribed into emitted Go,
 		// SQL identifiers and CSS. Nothing downstream re-escapes them,
 		// so they are validated here, at the generate-time boundary,
