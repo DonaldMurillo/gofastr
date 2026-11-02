@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -597,6 +598,13 @@ func (f *frameFriendlyWriter) WriteHeader(code int) {
 func (f *frameFriendlyWriter) Write(b []byte) (int, error) {
 	f.strip()
 	return f.rw.Write(b)
+}
+
+// ReadFrom strips, then keeps the host writer's ReaderFrom (its sendfile
+// path) for a file the host serves through io.Copy or http.ServeContent.
+func (f *frameFriendlyWriter) ReadFrom(src io.Reader) (int64, error) {
+	f.strip()
+	return io.Copy(f.rw, src)
 }
 
 func (f *frameFriendlyWriter) Flush() {
