@@ -1455,8 +1455,10 @@ func readNDJSON(path string) ([]map[string]any, error) {
 		if err := dec.Decode(&m); err != nil {
 			return nil, err
 		}
-		for k, v := range m {
-			switch x := v.(type) {
+		// Sorted, so a row with two refusable columns names the same
+		// one on every restore.
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			switch x := m[k].(type) {
 			case json.Number:
 				m[k] = jsonNumberValue(x)
 			case map[string]any:
