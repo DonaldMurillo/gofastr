@@ -330,7 +330,6 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 						Name:   c.Name,
 						Status: "error",
 						Error:  redactError(fmt.Sprintf("panic: %v", textsafe.Recovered(r)), verbose),
-						DurMS:  0,
 					}
 				}
 				resultCh <- indexed{i: i, res: res}
@@ -339,15 +338,15 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 			if c.Check == nil {
 				res.Status = "error"
 				res.Error = redactError("nil check function", verbose)
+				return
+			}
+			err := c.Check(ctx)
+			res.DurMS = time.Since(start).Milliseconds()
+			if err != nil {
+				res.Status = "error"
+				res.Error = redactError(err.Error(), verbose)
 			} else {
-				err := c.Check(ctx)
-				res.DurMS = time.Since(start).Milliseconds()
-				if err != nil {
-					res.Status = "error"
-					res.Error = redactError(err.Error(), verbose)
-				} else {
-					res.Status = "ok"
-				}
+				res.Status = "ok"
 			}
 		}(i, c)
 	}
@@ -365,7 +364,6 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 						Name:   c.Name,
 						Status: "timeout",
 						Error:  redactError("deadline exceeded", verbose),
-						DurMS:  0,
 					}
 				}
 			}

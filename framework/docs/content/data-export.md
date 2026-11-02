@@ -95,7 +95,16 @@ exported and erased: `queue.NewDBQueue` (a `WithTable` name), the auth
 API-token and OAuth-token stores, admin saved
 views, the A2A task and push-config stores, feature flags, the SQL
 idempotency store, the event outbox, the webhook delivery and inbound
-stores, and the entity admin's bulk jobs. Registration replaces an entry
+stores, the entity admin's bulk jobs, and the RBAC `access.GrantStore`
+(its grants and its revocation tombstones, registered by `EnsureSchema`;
+restart after an import so `LoadInto` reads them). The framework's own
+module state is registered the same way: `gofastr_modules` (each module an
+operator turned on or off, registered when the module store opens) and
+`gofastr_process_modules` (a process module's desired state: on or off,
+its approved artifact, its grants and the grants an operator revoked,
+registered by `EnsureSchema`), so a restore keeps a module turned off that
+was off. The process-module heartbeat table stays out: which replicas were
+alive is something a restored deployment observes afresh. Registration replaces an entry
 with the same `Name`, so these stores name each entry with
 `datexport.ScopedName(base, table)`: the default table keeps the bare name
 (`feature_flags.ndjson`), and any other table is appended after a `-`
@@ -214,6 +223,8 @@ these is rejected up front, leaving the database untouched:
 - missing or unparseable `manifest.json`;
 - unsupported `format` version;
 - a source that isn't a live entity or registered exporter;
+- a source listed twice in the manifest (a keyless table would take every
+  row twice);
 - a source whose table is not in the live database;
 - an archive table name that doesn't match the live table;
 - an archive column absent from the live schema (incompatible column set);
@@ -304,6 +315,22 @@ datexport.Register(datexport.DataExporter{
   and import share the same database (each pool connection otherwise gets its
   own private `:memory:`). A file-backed SQLite or Postgres DB has no such
   constraint.
+- **Exporting a live app**: on Postgres the export reads every table in one
+  read-only `REPEATABLE READ` snapshot, so the archive is the database at a
+  single moment, however busy the app is, and writers are never blocked. A
+  SQLite database in WAL mode (`PRAGMA journal_mode=WAL`) gets the same: the
+  export reads every table in one read-only deferred transaction, which holds
+  its snapshot while writers keep committing to the WAL. Two costs: the WAL
+  cannot be checkpointed past that snapshot until the export ends, so it
+  grows while a long export runs, and the transaction holds one pool
+  connection for the whole export, so an app limited to one open connection
+  (`SetMaxOpenConns(1)`) queues its requests behind it. A SQLite database in
+  rollback-journal mode (the default `delete`, or `truncate`/`persist`) has
+  no such snapshot, since a read transaction there would block every writer
+  for the whole export. Each table is read on its own: stop writes during
+  the export, or a child row written after its parent's table was read can
+  land in the archive without its parent, and the restore fails on the
+  foreign key.
 - **Cross-dialect restore**: an archive is portable across SQLite and Postgres
   at the row level, but Postgres enforces column types strictly: bind a string
   into a `TIMESTAMPTZ` column and it parses; bind a JSON number into a typed
@@ -533,11 +560,13 @@ stored files are deleted. Each result is listed in `report.Stores` with
 | a semantic index with no `Path` | `semantic.Open` (`semantic:memory`) | the chunks whose `Owner` is the user, from memory |
 | `queue.RedisQueue` | `queue.NewRedisQueue` (`queue_redis:<queue>`) | every job whose `UserID` is the user, from the main, delayed and dead lists and the pop and processing hashes |
 | `queue.MemoryQueue` | `queue.NewMemoryQueue` (`queue_memory`) | every job whose `UserID` is the user: pending, delayed, handed out by `Dequeue`, and dead; the unique keys they held are freed |
+| `search.Memory` | `search.NewMemory` (`search:memory`) | every document whose `Owner` is the user |
 | `queue.Scheduler` (in-memory) | `queue.NewScheduler` (`queue_scheduler_memory`) | every schedule whose `UserID` is the user, so it is neither kept nor fired again |
 | `battery/auth` in-memory stores (`MemorySessionStore`, `MemoryTwoFAStore`, `MemoryPasskeyStore`, `MemoryMagicLinkTokenStore`) | `AuthManager.Init`, for the ones the manager runs with (`auth_memory`); `AuthManager.OnStop` removes it | the user's sessions, 2FA state, passkeys, and password-reset, email-verification and passkey-registration tokens. Magic-link sign-in tokens are keyed by email, which is gone by the time a store eraser runs; they expire on their own (15 minutes by default) |
 
 **A store eraser stays registered until the store closes**: `Index.Close`,
-`RedisQueue.Close`, `MemoryQueue.Close` or `Scheduler.Close` removes it.
+`RedisQueue.Close`, `MemoryQueue.Close`, `Scheduler.Close` or
+`search.Memory.Close` removes it.
 Until then the registry holds the store, so it is never garbage-collected,
 and every erasure reaches it. Close each one you are done with, including
 one built for a single request or a test.

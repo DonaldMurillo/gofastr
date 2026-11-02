@@ -77,7 +77,8 @@ verifying, verify without publishing, or both.
 ### What a signature must satisfy
 
 Ed25519 only (`alg="ed25519"`, OKP keys). Each signature must carry
-`tag="web-bot-auth"`, valid `created` and `expires` parameters, a
+`tag="web-bot-auth"`, valid `created` and `expires` parameters no more
+than `MaxValidity` apart (5 minutes by default), a
 `keyid` equal to the signing key's JWK thumbprint, coverage of
 `@authority` or `@target-uri`, and coverage of the `Signature-Agent`
 member it resolves keys from — the legacy bare-string header form is
@@ -85,6 +86,14 @@ accepted. The verified identity is the pair (resolved directory URL,
 key thumbprint); it says a key that URL published signed the covered
 message, nothing more. Authorization, reputation, and rate limits
 remain the origin's policy.
+
+A signature verifies every request that repeats its covered
+components, so a captured one replays until its `expires`. The
+`expires - created` cap bounds that: a signature with a longer window
+is invalid, whatever its `expires` says. Agents sign per request with
+windows of seconds to a minute or two. Raise the cap with
+`WebBotAuthVerifyConfig.MaxValidity` (or `webbotauth.WithMaxValidity`
+on a bare `webbotauth.New`) only for a signer you know signs longer.
 
 `@path`, `@request-target` and `@target-uri` carry the path as the
 client sent it, before percent-decoding (RFC 9421 section 2.2.6), so a

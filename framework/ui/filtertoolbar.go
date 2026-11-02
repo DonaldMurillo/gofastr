@@ -33,7 +33,9 @@ import (
 // filtered view belongs to the screen. Native GET remains the default for
 // hosts whose kept layouts also render query-dependent content.
 // Reset is a plain <a> back to the bare action, so it clears every param
-// with zero JavaScript.
+// with zero JavaScript. Without ClientNavigation it carries
+// data-cui-nav="off", so it loads the whole document the way the native
+// GET submit does.
 //
 // Responsive by construction (this is the whole point, two independent
 // eval apps hand-rolled this and clipped the Apply button off-screen at
@@ -315,11 +317,21 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		if resetLabel == "" {
 			resetLabel = i18nui.FilterReset.Text(ctx)
 		}
+		// Reset follows the submit: without ClientNavigation the
+		// filtered view reaches into a kept layout, so the bare action
+		// loads as a whole document, the way Apply's native GET does.
+		// A router-taken Reset swapped only the screen cell and left
+		// that layout's query-dependent content filtered.
+		var resetAttrs html.Attrs
+		if !cfg.ClientNavigation {
+			resetAttrs = html.Attrs{"data-cui-nav": "off"}
+		}
 		actionsKids = append(actionsKids, LinkButton(LinkButtonConfig{
-			Label:   resetLabel,
-			Href:    action,
-			Variant: ButtonGhost,
-			Class:   "fui-filter-toolbar__reset",
+			Label:      resetLabel,
+			Href:       action,
+			Variant:    ButtonGhost,
+			Class:      "fui-filter-toolbar__reset",
+			ExtraAttrs: resetAttrs,
 		}))
 	}
 	// Hidden inputs first: carried state, not controls. A name shared

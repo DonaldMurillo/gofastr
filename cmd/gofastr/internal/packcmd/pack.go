@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -57,6 +58,13 @@ func decodeAppSpecString(yml string) (appspec.AppSpec, error) {
 // would forge structure. Refusing is the honest inverse.
 func encodeAppSpecYAML(bp appspec.AppSpec) (string, error) {
 	root := appSpecToMap(bp)
+	// YAML text is Unicode: a string holding a byte that is not UTF-8 has
+	// no spelling a YAML 1.2 decoder reads back (core/yaml reads "\xff"
+	// as U+00FF, as the spec says), so refuse it as an unrepresentable key
+	// is refused.
+	if at := invalidUTF8At(reflect.ValueOf(root), "app spec"); at != "" {
+		return "", fmt.Errorf("%s holds a byte that is not UTF-8; YAML cannot carry it", at)
+	}
 	var sb strings.Builder
 	if err := writeYAMLMap(&sb, root, 0, topLevelOrder, ""); err != nil {
 		return "", err
@@ -68,7 +76,11 @@ func encodeAppSpecYAML(bp appspec.AppSpec) (string, error) {
 
 func appSpecToMap(bp appspec.AppSpec) map[string]any {
 	m := map[string]any{}
-	if app := appToMap(bp.App); len(app) > 0 {
+	// A fragment has no app: section: writing the decoder's zero App
+	// (api_prefix: "") would turn it into a whole app that mounts its CRUD
+	// API at the root, and the next decode would run the checks a
+	// fragment skips.
+	if app := appToMap(bp.App); len(app) > 0 && !bp.IsFragment() {
 		m["app"] = app
 	}
 	if len(bp.Entities) > 0 {
@@ -2606,10 +2618,14 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 			for _, a := range c.Args {
 				omit = append(omit, appspec.AstString(a))
 			}
-		case "Key", "Base", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
+		case "Key", "Base", "NoLinks", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
 			// structural: no app spec key (RenderCtx turns the builder
 			// into the HTML the screen's stack takes; Actions, Related and
-			// RelatedAt are app-side extensions pack does not declare)
+			// RelatedAt are app-side extensions pack does not declare).
+			// NoLinks follows from the spec: the generator emits it on a
+			// list without create when the entity has no record screen,
+			// so the packed spec regenerates it; a NoLinks written by hand
+			// on a list that has one is a difference pack check reports.
 		default:
 			return appspec.AppSpecBlock{}, false
 		}
@@ -2919,6 +2935,13 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Screens, err = packReadScreens(dir); err != nil {
 		return bp, err
 	}
+	// The /login screen generate synthesized for an app spec with auth on
+	// and no login form was not authored: drop it, so the packed spec
+	// regenerates it in the same place, as it does a list's create screen.
+	read := bp
+	bp.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s appspec.AppSpecScreen) bool {
+		return appspec.IsSynthesizedLoginScreen(read, s)
+	})
 	packResolveOmits(bp)
 	packFoldRecordKeys(bp)
 	if bp.Nav, err = packReadNav(dir); err != nil {
@@ -3082,4 +3105,44 @@ func RunPack(args []string) {
 // and a crash mid-write leaves the previous file, never a truncated one.
 func writeSecretFile(path, content string) error {
 	return fileperm.ReplaceOwnerOnly(path, []byte(content))
+}
+
+// invalidUTF8At returns the path of the first string under v (map keys
+// and values, slices, struct fields) that is not valid UTF-8, or "".
+func invalidUTF8At(v reflect.Value, path string) string {
+	switch v.Kind() {
+	case reflect.String:
+		if !utf8.ValidString(v.String()) {
+			return path
+		}
+	case reflect.Interface, reflect.Pointer:
+		if !v.IsNil() {
+			return invalidUTF8At(v.Elem(), path)
+		}
+	case reflect.Slice, reflect.Array:
+		for i := range v.Len() {
+			if at := invalidUTF8At(v.Index(i), fmt.Sprintf("%s[%d]", path, i)); at != "" {
+				return at
+			}
+		}
+	case reflect.Map:
+		keys := v.MapKeys()
+		slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
+		for _, k := range keys {
+			kp := fmt.Sprintf("%s.%v", path, k)
+			if at := invalidUTF8At(k, kp); at != "" {
+				return at
+			}
+			if at := invalidUTF8At(v.MapIndex(k), kp); at != "" {
+				return at
+			}
+		}
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if at := invalidUTF8At(v.Field(i), path+"."+v.Type().Field(i).Name); at != "" {
+				return at
+			}
+		}
+	}
+	return ""
 }

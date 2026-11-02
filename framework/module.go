@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -156,8 +157,22 @@ func (s *SQLModuleStore) ensureTable() error {
 		enabled    BOOLEAN NOT NULL,
 		updated_at TIMESTAMP NOT NULL
 	)`
-	_, err := s.db.Exec(stmt)
-	return err
+	if _, err := s.db.Exec(stmt); err != nil {
+		return err
+	}
+	registerModuleExport()
+	return nil
+}
+
+// registerModuleExport declares gofastr_modules to App.ExportData. Left
+// out, a restore booted every module an operator had turned off back on:
+// a module with no row is enabled. No eraser: the rows name modules, not
+// users.
+func registerModuleExport() {
+	datexport.Register(datexport.DataExporter{
+		Name: "gofastr_modules", Source: "modules", Table: "gofastr_modules",
+		PrimaryKey: "name", Columns: []string{"name", "enabled", "updated_at"},
+	})
 }
 
 // Load returns every persisted enable/disable row.

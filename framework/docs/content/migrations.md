@@ -182,23 +182,27 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 |--------------|---------------------------------------------------------------|
 | `up`         | Apply all pending migrations in version order.                |
 | `status`     | Print applied count, pending versions, and any dirty version. |
-| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be a positive integer; anything else is refused before a rollback. |
+| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be one positive integer; anything else, a second count included, is refused before a rollback. |
 | `generate N` | Write a versioned, reversible migration file from entity changes. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 | `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
 
 Flags & inputs (each valued flag is written `--name=<value>`; a flag the
 subcommand does not read, or a valued one without `=`, is refused before
-anything opens):
+anything opens). `up`, `status` and `repair` take no positional argument,
+and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
+`migrate generate a b`) is a usage error, exit 2, before anything opens.
 
 - `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
   a `.env` file in the working directory contains `DATABASE_URL=...`.
-- `--db=<name>` (or its alias `--driver=<name>`): `sqlite` (the
-  default), `postgres` or `mysql`; `sqlite3` and `postgresql` are
-  accepted as aliases, the same table `gofastr init --db=` uses.
-  Postgres or MySQL require building a `gofastr` binary that
-  blank-imports the matching driver; an unregistered driver is refused,
-  never replaced by SQLite.
+- `--db=<name>` (or its alias `--driver=<name>`): `sqlite`, `postgres`
+  or `mysql`; `sqlite3` and `postgresql` are accepted as aliases, the
+  same table `gofastr init --db=` uses. Without the flag, a database URL
+  that starts with `postgres://` or `postgresql://` uses `postgres` and
+  anything else `sqlite`. The stock `gofastr` binary links the SQLite and
+  Postgres drivers; MySQL requires building a `gofastr` binary that
+  blank-imports the driver. An unregistered driver is refused, never
+  replaced by SQLite.
 - `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
   for fresh deploys where the database named in the DSN has not been created

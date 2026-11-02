@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -72,7 +73,7 @@ type Config struct {
 	digests *digestCache
 
 	// resolvedRoot is the FS root's on-disk path with every symlink
-	// resolved, computed once by Handler. Empty when the FS is not
+	// resolved, bound by Handler (see rootBinding). Empty when the FS is not
 	// disk-backed (embed.FS, fstest.MapFS), which disables the
 	// read-containment check in serveFile — those filesystems cannot
 	// carry symlinks, so there is nothing to contain.
@@ -131,17 +132,8 @@ func stripPrefix(p, prefix string) string {
 func Handler(config Config) http.Handler {
 	config = config.defaults()
 	config.digests = newDigestCache()
-	config.resolvedRoot = resolveFSRoot(config.FS)
-	if config.resolvedRoot != "" {
-		// Kernel-enforced containment for the disk-backed branch (see
-		// Config.root). An OpenRoot failure here — the root vanished
-		// between the resolve and this call — leaves resolvedRoot set,
-		// so serveFile falls back to the post-open containment check.
-		if root, rerr := os.OpenRoot(config.resolvedRoot); rerr == nil {
-			config.rootIdentity, _ = openedRootInfo(root)
-			_ = root.Close()
-		}
-	}
+	binding := &rootBinding{}
+	binding.load(config.FS)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve GET and HEAD.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -180,10 +172,17 @@ func Handler(config Config) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// Refuse Windows 8.3 short names (WEB~1.CON opens web.config,
+		// ENV~1 opens .env), which the two refusals above cannot read.
+		if hasShortNameSegment(reqPath) {
+			http.NotFound(w, r)
+			return
+		}
 
 		// Reopen the original directory for this request. No idle handle
 		// pins it on Windows, and identity checking refuses a replacement.
 		config := config
+		config.resolvedRoot, config.rootIdentity = binding.load(config.FS)
 		if config.rootIdentity != nil {
 			root, err := os.OpenRoot(config.resolvedRoot)
 			if err != nil {
@@ -239,6 +238,57 @@ func Handler(config Config) http.Handler {
 
 		http.NotFound(w, r)
 	})
+}
+
+// rootBinding is where a disk-backed FS lives: its resolved root and the
+// identity of the directory first opened there. Handler binds it when it
+// is built, but a root that does not exist yet (a build step or a dev
+// watcher creates the public directory after the server starts) cannot
+// be bound then. Binding once at construction left such a handler on the
+// bare os.DirFS for good, which follows a symlink anywhere on disk, so
+// an unbound root is retried on every request until it binds.
+type rootBinding struct {
+	mu       sync.Mutex
+	bound    bool
+	resolved string
+	identity fs.FileInfo
+}
+
+// load returns the resolved root and its identity, binding them first if
+// they are not bound yet. Both are empty for a filesystem that is not
+// disk-backed (embed.FS, fstest.MapFS), which binds at once.
+func (b *rootBinding) load(fsys fs.FS) (string, fs.FileInfo) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.bound {
+		return b.resolved, b.identity
+	}
+	resolved, known := resolveFSRoot(fsys)
+	if !known {
+		// Open(".") failed: the root is missing for now, or this FS
+		// cannot say. Try again on the next request.
+		return "", nil
+	}
+	if resolved == "" {
+		b.bound = true
+		return "", nil
+	}
+	// Kernel-enforced containment for the disk-backed branch (see
+	// Config.root). An OpenRoot failure — the root vanished between the
+	// resolve and this call — leaves resolvedRoot set for this request,
+	// so serveFile falls back to the post-open containment check, and
+	// the next request tries to bind again.
+	root, err := os.OpenRoot(resolved)
+	if err != nil {
+		return resolved, nil
+	}
+	defer root.Close()
+	identity, err := openedRootInfo(root)
+	if err != nil {
+		return resolved, nil
+	}
+	b.bound, b.resolved, b.identity = true, resolved, identity
+	return resolved, identity
 }
 
 func openedRootInfo(root *os.Root) (os.FileInfo, error) {
@@ -537,21 +587,23 @@ func (c Config) reopen(name string) (fs.File, error) {
 // that is what makes the containment check in serveFile possible
 // without knowing the DirFS argument here. embed.FS and fstest.MapFS
 // return their own file types, cannot carry symlinks, and land on "".
-func resolveFSRoot(fsys fs.FS) string {
+// known is false when the answer is not settled yet: the root could not
+// be opened or resolved, as when the directory does not exist yet.
+func resolveFSRoot(fsys fs.FS) (resolved string, known bool) {
 	f, err := fsys.Open(".")
 	if err != nil {
-		return ""
+		return "", false
 	}
 	defer f.Close()
 	of, ok := f.(*os.File)
 	if !ok {
-		return ""
+		return "", true
 	}
-	resolved, err := filepath.EvalSymlinks(of.Name())
+	resolved, err = filepath.EvalSymlinks(of.Name())
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return resolved
+	return resolved, true
 }
 
 // fileInRoot reports whether an already-opened file still resolves
@@ -595,22 +647,45 @@ func Mount(r *router.Router, config Config) {
 	r.Get(config.Prefix+"/{path...}", handler)
 }
 
-// segments splits p on "/" AND "\": a URL can carry a backslash
-// (/sub%5C.env), and a disk filesystem opened through os.Root on Windows
-// reads it as a separator. Splitting on "/" alone read "sub\.env" as one
-// innocent segment and served sub/.env there. Empty segments are dropped;
-// no caller counts them.
-func segments(p string) []string {
-	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
-}
-
 // hasDotDotSegment reports whether the *raw* (uncleaned) path contains a
 // `..` segment. Run this before path.Clean so traversal segments can't be
 // collapsed silently.
 func hasDotDotSegment(p string) bool {
-	for _, component := range segments(p) {
+	for _, component := range pathSegments(p) {
 		if component == ".." {
 			return true
+		}
+	}
+	return false
+}
+
+// Refuses reports whether the handler refuses p, a slash-separated path
+// below the served root: one with a dot segment (.env, .git/config), a
+// well-known server config file (web.config), or a Windows 8.3 short
+// name (WEB~1.CON). Code that serves or publishes a file tree by another
+// route calls it to refuse the same paths.
+func Refuses(p string) bool {
+	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p) || hasShortNameSegment(p)
+}
+
+// hasShortNameSegment reports whether any path component holds a "~"
+// followed by a digit, the shape of an NTFS 8.3 short name. On a volume
+// that generates them, Windows opens WEB~1.CON as web.config and ENV~1
+// as .env, names the dotfile and config refusals never see. Which long
+// name a short one stands for is the volume's choice, so every such
+// segment is refused, on every OS like the backslash split
+// (pathSegments), so every platform gives one answer.
+func hasShortNameSegment(p string) bool {
+	for _, component := range pathSegments(p) {
+		for i := strings.IndexByte(component, '~'); i >= 0; {
+			if i+1 < len(component) && component[i+1] >= '0' && component[i+1] <= '9' {
+				return true
+			}
+			next := strings.IndexByte(component[i+1:], '~')
+			if next < 0 {
+				break
+			}
+			i += 1 + next
 		}
 	}
 	return false
@@ -621,17 +696,8 @@ func hasDotDotSegment(p string) bool {
 // already resolved). Dotfiles routinely hold secrets (.env, .htpasswd)
 // or VCS metadata (.git) and must not be served by a public static
 // handler.
-// Refuses reports whether the handler refuses p, a slash-separated path
-// below the served root: one with a dot segment (.env, .git/config) or a
-// well-known server config file (web.config). Code that serves or
-// publishes a file tree by another route calls it to refuse the same
-// paths.
-func Refuses(p string) bool {
-	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p)
-}
-
 func hasDotfileSegment(p string) bool {
-	for _, component := range segments(p) {
+	for _, component := range pathSegments(p) {
 		if component == "" || component == "." || component == ".." {
 			continue
 		}
@@ -656,15 +722,36 @@ var forbiddenConfigFiles = map[string]struct{}{
 
 // hasForbiddenConfigSegment matches the forbidden-config list case-
 // insensitively so a request for `/Web.Config` is treated the same as
-// `/web.config`.
+// `/web.config`, and by the name Windows opens (see windowsName).
 func hasForbiddenConfigSegment(p string) bool {
-	for _, component := range segments(p) {
-		if component == "" {
-			continue
-		}
-		if _, ok := forbiddenConfigFiles[strings.ToLower(component)]; ok {
+	for _, component := range pathSegments(p) {
+		if _, ok := forbiddenConfigFiles[windowsName(component)]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+// pathSegments splits p on "/" and on "\", dropping empty segments.
+// The backslash is a separator on every platform because it is one
+// where the open runs on Windows: *os.Root resolves a name through
+// GetFullPathName there, so "assets\..\.env" opens .env while a check
+// that splits on "/" alone sees one segment with no leading dot. On
+// another OS a file whose name holds a backslash is judged by the same
+// split, so every platform gives one answer: "a\b.txt" is served, while
+// a name whose backslash-separated pieces include a dotfile or a config
+// name ("a\.env", "x\web.config") is refused.
+func pathSegments(p string) []string {
+	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
+}
+
+// windowsName is the name Windows opens for a path segment, lower-cased
+// for comparison: NTFS reads "web.config::$DATA" as the file's default
+// data stream, and GetFullPathName strips the trailing dots and spaces
+// of "web.config." and "web.config ".
+func windowsName(segment string) string {
+	if i := strings.IndexByte(segment, ':'); i >= 0 {
+		segment = segment[:i]
+	}
+	return strings.ToLower(strings.TrimRight(segment, ". "))
 }

@@ -449,7 +449,9 @@ file. On a disk-backed
 `FS` (`os.DirFS`), a request whose target resolves through a symlink
 out of the root is refused with 404 — the read side is contained by
 the configured root the same way write sinks elsewhere in the repo
-are; `embed.FS` cannot carry symlinks and is unaffected. Direct: call
+are, including a root directory created after `Handler` was built,
+which the handler binds on the first request that finds it; `embed.FS`
+cannot carry symlinks and is unaffected. Direct: call
 `Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
 uses it for its own assets too. `Prefix` is `/static`, `static` or
 `/static/` alike; `Mount` serves `/static/...` and redirects a bare
@@ -469,15 +471,24 @@ so the shell is never stored under a URL that names no file. A miss
 with an extension (`/app.3f2a.js`, `/x.css`, `/logo.png`) gets `404`,
 not the shell: a browser would run that HTML as a script or a
 stylesheet. A client route with a dot in its last segment
-(`/files/report.pdf` as a route) needs a server route of its own. A
-backslash counts as a path separator in the dot-segment and config-file
-checks, as it does to a Windows filesystem. `NotFoundFile` answers a miss with a
+(`/files/report.pdf` as a route) needs a server route of its own.
+`NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
 `404.html`; `gofastr docs serve` uses it). For a handler that serves
 its own bytes, `Refuses(path)` reports whether the handler would refuse
-a path for a dot segment or a config file name (the UI host's static
-dir and the static export use it), and `IfNoneMatch(r, etag)` checks
-an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
+a path for a dot segment, a config file name or an 8.3 short name (the UI host's static
+dir and the static export use it). Both read a path the way Windows
+opens it, on every OS: `\` separates segments, and a config name
+matches with trailing dots or spaces or an `::$DATA` stream suffix, so
+`/assets%5C..%5C.env` and `/web.config.` are refused. On every OS a file
+whose name holds a backslash is judged by the pieces it splits into:
+`a\b.txt` is served, `a\.env` and `x\web.config` are refused. A segment
+holding `~` followed by a digit is refused too, on every OS: it is the
+shape of an NTFS 8.3 short name, and a Windows volume that generates
+them opens `WEB~1.CON` as `web.config` and `ENV~1` as `.env`. A name
+like `a~b.txt` or `notes.txt~` is served.
+`IfNoneMatch(r, etag)`
+checks an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
 comparison. Start at `core/static/static.go`: `Handler`.
 
 ## App plumbing
@@ -533,6 +544,20 @@ own and gives the clone the guarded dialer, so a custom TLS or pool
 setting keeps the dial-time check. A transport that would speak HTTP/2
 on its own still does after the swap. Any other transport gets the
 weaker per-request check.
+
+### textsafe
+
+The one predicate for characters that forge, reorder or hide text: C0
+and C1 controls, the Unicode line separators, and the invisible set
+(zero-width, joiners, bidi overrides and isolates, the tag characters
+U+E0000–U+E007F that hide ASCII in a prompt, and the Hangul fillers
+U+115F, U+1160, U+3164, U+FFA0). `IsInvisible` and `IsUnsafe` judge one
+rune, so they report every tag character. The string helpers
+(`StripInvisible`, `StripUnsafe`, `ContainsInvisible`, `ContainsUnsafe`)
+keep a subdivision flag whole: U+1F3F4, then 3 to 7 tag lowercase
+letters or digits, then CANCEL TAG (Scotland, England, Wales). Any other
+tag run, one behind a black flag included, is stripped or refused. Start
+at `core/textsafe/textsafe.go`.
 
 ### webbotauth
 

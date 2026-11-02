@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type Kind int
@@ -431,7 +432,10 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	if strings.HasPrefix(raw, "{") {
 		return nil, flowMapError(line, column)
 	}
-	if strings.HasPrefix(raw, "&") || strings.HasPrefix(raw, "*") || strings.HasPrefix(raw, "!!") {
+	// "!" opens a tag in every spelling: a !!core tag, a local !foo, and
+	// the bare non-specific "!". This parser resolves none of them, so a
+	// local tag is refused rather than read as the plain string "!foo".
+	if strings.HasPrefix(raw, "&") || strings.HasPrefix(raw, "*") || strings.HasPrefix(raw, "!") {
 		return nil, fmt.Errorf("yaml:%d:%d: anchors, aliases, and tags are not supported", line, column)
 	}
 	if strings.HasPrefix(raw, "[") {
@@ -448,25 +452,74 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 		}
 		return &Node{Kind: Scalar, Value: value, Line: line, Column: column}, nil
 	}
-	switch strings.ToLower(raw) {
-	case "true":
+	// The YAML 1.2 core schema (section 10.3.2) spells each of these in
+	// three cases only: tRuE is a string, as it is to every other tool.
+	switch raw {
+	case "true", "True", "TRUE":
 		return &Node{Kind: Scalar, Value: true, Line: line, Column: column}, nil
-	case "false":
+	case "false", "False", "FALSE":
 		return &Node{Kind: Scalar, Value: false, Line: line, Column: column}, nil
-	case "null", "~":
+	case "null", "Null", "NULL", "~":
 		return &Node{Kind: Scalar, Value: nil, Line: line, Column: column}, nil
 	}
 	if i, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		return &Node{Kind: Scalar, Value: i, Line: line, Column: column}, nil
 	}
-	//gofastr:allow(nonfinite) YAML permits .inf/.nan scalar literals; the parser preserves the float and consumers validate it, this is not a bound check.
-	if f, err := strconv.ParseFloat(raw, 64); err == nil && strings.ContainsAny(raw, ".eE") {
+	if isCoreFloat(raw) {
+		//gofastr:allow(nonfinite) isCoreFloat admits only decimal digits, so no inf or nan spelling reaches ParseFloat, and the only non-finite result, an out-of-range value, is refused on its error just below.
+		f, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return nil, fmt.Errorf("yaml:%d:%d: float %s is out of range", line, column, raw)
+		}
 		return &Node{Kind: Scalar, Value: f, Line: line, Column: column}, nil
 	}
 	if strings.Contains(raw, ": ") {
 		return nil, fmt.Errorf("yaml:%d:%d: nested mapping must be on an indented line", line, column)
 	}
 	return &Node{Kind: Scalar, Value: raw, Line: line, Column: column}, nil
+}
+
+// isCoreFloat reports whether raw is a decimal float in the YAML 1.2 core
+// schema with a fraction or an exponent: [-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)
+// ([eE][-+]?[0-9]+)?. strconv.ParseFloat alone also reads Go's own
+// spellings, a hex float (0x1.8p1 as 3) and digit underscores (1_000.5),
+// which are strings to every other YAML reader. A digits-only spelling is
+// an integer, so one too large for int64 stays a string as before.
+// .inf and .nan are left strings: no consumer reads a non-finite number.
+func isCoreFloat(raw string) bool {
+	i := 0
+	if i < len(raw) && (raw[i] == '-' || raw[i] == '+') {
+		i++
+	}
+	digits := func() int {
+		start := i
+		for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+			i++
+		}
+		return i - start
+	}
+	intDigits := digits()
+	fracOrExp := false
+	if i < len(raw) && raw[i] == '.' {
+		i++
+		fracOrExp = true
+		if digits() == 0 && intDigits == 0 {
+			return false
+		}
+	} else if intDigits == 0 {
+		return false
+	}
+	if i < len(raw) && (raw[i] == 'e' || raw[i] == 'E') {
+		i++
+		fracOrExp = true
+		if i < len(raw) && (raw[i] == '-' || raw[i] == '+') {
+			i++
+		}
+		if digits() == 0 {
+			return false
+		}
+	}
+	return fracOrExp && i == len(raw)
 }
 
 func parseInlineList(raw string, line, column, depth int) ([]*Node, error) {
@@ -545,11 +598,70 @@ func parseQuoted(raw string) (string, error) {
 		}
 		return strings.ReplaceAll(body, "''", "'"), nil
 	}
-	unquoted, err := strconv.Unquote(raw)
-	if err != nil {
-		return "", err
+	return decodeDoubleQuoted(raw[1 : len(raw)-1])
+}
+
+// yamlEscapes maps the single-character escapes of a YAML 1.2
+// double-quoted scalar (section 5.7) to what they stand for.
+var yamlEscapes = map[byte]string{
+	'0': "\x00", 'a': "\a", 'b': "\b", 't': "\t", '\t': "\t", 'n': "\n",
+	'v': "\v", 'f': "\f", 'r': "\r", 'e': "\x1b", ' ': " ", '"': `"`,
+	'/': "/", '\\': `\`, 'N': "\u0085", '_': " ", 'L': " ",
+	'P': " ",
+}
+
+// decodeDoubleQuoted decodes the body of a double-quoted scalar by the
+// YAML 1.2 escape rules. It replaced strconv.Unquote, which reads Go
+// syntax: "\xe9" came back as the lone byte 0xE9 (invalid UTF-8) where
+// YAML means U+00E9 "é", and the Go-only octal "\101" read as "A" where
+// YAML has no such escape. Both were wrong values with no error; an
+// escape YAML does not define now fails like any unsupported syntax.
+func decodeDoubleQuoted(body string) (string, error) {
+	if !strings.ContainsAny(body, `\"`) {
+		return body, nil
 	}
-	return unquoted, nil
+	var b strings.Builder
+	b.Grow(len(body))
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if c == '"' {
+			return "", fmt.Errorf("unescaped quote in scalar")
+		}
+		if c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+		i++
+		if i >= len(body) {
+			return "", fmt.Errorf("unterminated quoted scalar")
+		}
+		e := body[i]
+		if s, ok := yamlEscapes[e]; ok {
+			b.WriteString(s)
+			continue
+		}
+		width := map[byte]int{'x': 2, 'u': 4, 'U': 8}[e]
+		if width == 0 {
+			return "", fmt.Errorf("unknown escape \\%c in double-quoted scalar", e)
+		}
+		if i+1+width > len(body) {
+			return "", fmt.Errorf("escape \\%c needs %d hex digits", e, width)
+		}
+		hex := body[i+1 : i+1+width]
+		// ParseUint with an explicit base takes no sign, prefix or
+		// underscore, so this accepts exactly width hex digits.
+		n, err := strconv.ParseUint(hex, 16, 32)
+		if err != nil {
+			return "", fmt.Errorf("escape \\%c needs %d hex digits", e, width)
+		}
+		r := rune(n)
+		if n > utf8.MaxRune || (r >= 0xD800 && r <= 0xDFFF) {
+			return "", fmt.Errorf("escape \\%c%s is not a Unicode scalar value", e, hex)
+		}
+		b.WriteRune(r)
+		i += width
+	}
+	return b.String(), nil
 }
 
 // A mapping separator is an unquoted colon followed by whitespace or EOF.

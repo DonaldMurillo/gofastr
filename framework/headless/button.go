@@ -80,14 +80,15 @@ type ButtonProps struct {
 // deep-linking its data, writing the URL, prefetching a module,
 // leaving an intercept stack for the page, swapping the target into
 // the top intercept layer, opening a record as a layer over the target
-// page. The
+// page, declining the client router (data-cui-nav="off"). The
 // rest of the vocabulary needs a button, because a link navigates and
 // a button acts: a request, a pane, a toast or a local mutation on an
 // anchor is a click the href and the runtime would both answer.
 func linkLegal(key string) bool {
 	switch key {
 	case "data-cui-open", "data-cui-push-state", "data-cui-deeplink", "data-cui-prefetch",
-		"data-cui-intercept-page", "data-cui-intercept-swap", "data-cui-intercept-panel":
+		"data-cui-intercept-page", "data-cui-intercept-swap", "data-cui-intercept-panel",
+		"data-cui-nav":
 		return true
 	}
 	return false
@@ -174,6 +175,14 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			// enclosing intercept overlay — the runtime's own family
 			// (fragments.go owns it), carried the same way a page
 			// carries pane-close.
+			out[k] = v
+		case "data-cui-nav":
+			// A link the client router must not take: the destination
+			// gets a full document load (nav.js). "off" is the only
+			// value the runtime reads.
+			if v != "off" {
+				panic("headless: Action carries data-cui-nav " + strconv.Quote(v) + ", and off is the only value the runtime reads")
+			}
 			out[k] = v
 		case "data-cui-action":
 			// The enclosing widget's own close, read by its scoped

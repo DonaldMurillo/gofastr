@@ -240,8 +240,13 @@ repeat this so consumers stop guessing.
 gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>]
     [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>]
     [--base-url=<url>] [--sdk-version=<semver>] [--no-archive]
-    [--dry-run] [--json]
+    [--stamp-time] [--dry-run] [--json]
 ```
+
+`manifest.json` carries no generation time, so rerunning the generator
+over an unchanged schema rewrites every file byte for byte.
+`--stamp-time` adds `generatedAt`, and the reference page then shows the
+date beside the version.
 
 Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
 a generator entry named

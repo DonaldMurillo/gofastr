@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=aee15fc55c1c1175
+//gofastr:generated generator=app kind=scaffold version=dev sum=057c8e9c3a639ca6
 
 package main
 
@@ -58,7 +58,7 @@ func TestE2E(t *testing.T) {
 	}
 
 	// Public screens render for anonymous visitors.
-	for _, p := range []string{"/", "/products", "/categories", "/orders", "/reviews", "/new-product"} {
+	for _, p := range []string{"/", "/products", "/categories", "/orders", "/reviews", "/new-product", "/login"} {
 		if code, body := e2eDo(t, e2eClient, "GET", base+p, ""); code != http.StatusOK {
 			t.Errorf("public screen %s = %d, want 200", p, code)
 		} else if len(body) < 120 {

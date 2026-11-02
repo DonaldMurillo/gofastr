@@ -51,9 +51,11 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 		lines := strings.Split(string(body), "\n")
 		out = append(out, ruleSQLConcat(p, f.Rel, string(body), lines)...)
-		out = append(out, ruleHTMLConcat(p, f.Rel, lines)...)
+		htmlConcat := ruleHTMLConcat(p, f.Rel, lines)
+		out = append(out, htmlConcat...)
 		out = append(out, ruleFormCSRF(p, f.Rel, string(body), lines)...)
 		if file, parsed := p.AST(f.Rel); parsed {
+			out = append(out, ruleHTMLBuiltAST(p, f.Rel, file, lines, htmlConcat)...)
 			out = append(out, ruleInsecureCookie(p, f.Rel, file, lines)...)
 			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
 			out = append(out, ruleForwardedProto(p, f.Rel, file)...)
@@ -157,6 +159,150 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 	return out
 }
 
+// ruleHTMLBuiltAST reports the render.HTML calls the line regex above
+// cannot see: a string built by fmt.Sprintf/Sprint/Sprintln (a
+// non-literal Sprintf format counts as a variable operand) or
+// strings.Join, a concatenation split over lines, one whose first operand
+// is itself a call (render.HTML(esc(a) + b): the regex stops at the first
+// `)`), and a local variable the same function assigned such a build
+// (s := "<p>" + name + "</p>"; render.HTML(s)). Each puts a variable into
+// markup unescaped exactly as the one-line `+` does. It resolves
+// core/render under any alias, and reports only a build with a
+// non-literal operand, so a constant split for width stays quiet. A line
+// the regex already reported is not reported twice.
+func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
+	seen := map[int]bool{}
+	for _, d := range already {
+		seen[d.Line] = true
+	}
+	aliases := importAliases(file)
+	var out []contracts.Diagnostic
+	for _, decl := range file.Decls {
+		// The file parses without object resolution, so a local is
+		// matched by name across its function: the builds any assignment
+		// in the function gave it.
+		var locals map[string][]ast.Expr
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
+			locals = localAssignments(fn.Body)
+		}
+		ast.Inspect(decl, func(n ast.Node) bool {
+			call, ok := qualifiedCall(n, aliases, "core/render", "HTML")
+			if !ok || len(call.Args) != 1 {
+				return true
+			}
+			how := htmlBuild(call.Args[0], aliases)
+			if id, isIdent := unparen(call.Args[0]).(*ast.Ident); how == "" && isIdent {
+				for _, rhs := range locals[id.Name] {
+					if b := htmlBuild(rhs, aliases); b != "" {
+						how = b + " (assigned to " + id.Name + ")"
+						break
+					}
+				}
+			}
+			if how == "" {
+				return true
+			}
+			line := p.Position(call.Pos()).Line
+			if seen[line] || hasLegacyAnnotation(lines, line, "safe-html:") {
+				return true
+			}
+			seen[line] = true
+			d := diag(p, contracts.RuleHTMLConcat, rel, call.Pos(),
+				"render.HTML receives a string built by "+how+": the interpolated value is not escaped")
+			out = append(out, d)
+			return true
+		})
+	}
+	return out
+}
+
+// localAssignments maps each name assigned in body (name := e, name = e,
+// var name = e, one value per name) to the values assigned to it.
+func localAssignments(body *ast.BlockStmt) map[string][]ast.Expr {
+	locals := map[string][]ast.Expr{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.AssignStmt:
+			if len(v.Lhs) == len(v.Rhs) {
+				for i, lhs := range v.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						locals[id.Name] = append(locals[id.Name], v.Rhs[i])
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			if len(v.Names) == len(v.Values) {
+				for i, id := range v.Names {
+					locals[id.Name] = append(locals[id.Name], v.Values[i])
+				}
+			}
+		}
+		return true
+	})
+	return locals
+}
+
+func unparen(e ast.Expr) ast.Expr {
+	for {
+		paren, ok := e.(*ast.ParenExpr)
+		if !ok {
+			return e
+		}
+		e = paren.X
+	}
+}
+
+// htmlBuild names how e builds a string around a non-literal value
+// ("concatenation", "fmt.Sprintf", "strings.Join"), or "" when it does
+// not.
+func htmlBuild(e ast.Expr, aliases map[string]string) string {
+	e = unparen(e)
+	if bin, ok := e.(*ast.BinaryExpr); ok && bin.Op == token.ADD {
+		if !constantString(bin) {
+			return "concatenation"
+		}
+		return ""
+	}
+	for _, fn := range []string{"Sprintf", "Sprint", "Sprintln"} {
+		call, ok := qualifiedCall(e, aliases, "fmt", fn)
+		if !ok {
+			continue
+		}
+		for _, a := range call.Args {
+			if _, lit := a.(*ast.BasicLit); !lit {
+				return "fmt." + fn
+			}
+		}
+	}
+	if call, ok := qualifiedCall(e, aliases, "strings", "Join"); ok && len(call.Args) == 2 {
+		if elems, isLit := unparen(call.Args[0]).(*ast.CompositeLit); isLit {
+			for _, el := range elems.Elts {
+				if !constantString(el) {
+					return "strings.Join"
+				}
+			}
+			if constantString(call.Args[1]) {
+				return ""
+			}
+		}
+		return "strings.Join"
+	}
+	return ""
+}
+
+// constantString reports whether e is built from string literals only.
+func constantString(e ast.Expr) bool {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		return true
+	case *ast.ParenExpr:
+		return constantString(v.X)
+	case *ast.BinaryExpr:
+		return v.Op == token.ADD && constantString(v.X) && constantString(v.Y)
+	}
+	return false
+}
+
 // ----------------------------------------------------------------------
 // GOFASTR1402: POST form without a CSRF input.
 // ----------------------------------------------------------------------
@@ -209,6 +355,7 @@ func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contrac
 
 func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
+	aliases := importAliases(file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.CompositeLit)
 		if !ok {
@@ -218,7 +365,12 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 		if !ok || sel.Sel.Name != "Cookie" {
 			return true
 		}
-		if pkg, isIdent := sel.X.(*ast.Ident); !isIdent || pkg.Name != "http" {
+		// net/http under any alias: `nethttp.Cookie{...}` is the same
+		// cookie, and keying on the spelling "http" let an aliased import
+		// past the rule. A bare `http` the file never imports stays in, for
+		// the snippets the catalog checks.
+		pkg, isIdent := sel.X.(*ast.Ident)
+		if !isIdent || (aliases[pkg.Name] != "net/http" && (pkg.Name != "http" || aliases["http"] != "")) {
 			return true
 		}
 		set := map[string]bool{}
@@ -1876,19 +2028,64 @@ func runData(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			continue
 		}
 		lines := strings.Split(string(body), "\n")
-		for i, line := range lines {
-			if !reIgnoredExec.MatchString(line) {
-				continue
+		flagged := map[int]bool{}
+		report := func(lineNo int) {
+			if flagged[lineNo] || hasLegacyAnnotation(lines, lineNo, "best-effort", "ignore the error", "errors here") {
+				return
 			}
-			if hasLegacyAnnotation(lines, i+1, "best-effort", "ignore the error", "errors here") {
-				continue
-			}
+			flagged[lineNo] = true
 			out = append(out, contracts.Diagnostic{
-				RuleID: contracts.RuleIgnoredExec, File: f.Rel, Line: i + 1,
+				RuleID: contracts.RuleIgnoredExec, File: f.Rel, Line: lineNo,
 				Message: "both the result and the error of this write are discarded",
-				Snippet: strings.TrimSpace(line),
+				Snippet: strings.TrimSpace(lines[lineNo-1]),
 			})
+		}
+		for i, line := range lines {
+			if reIgnoredExec.MatchString(line) {
+				report(i + 1)
+			}
+		}
+		if file, parsed := p.AST(f.Rel); parsed {
+			for _, pos := range bareExecStatements(file) {
+				if line := p.Position(pos).Line; line >= 1 && line <= len(lines) {
+					report(line)
+				}
+			}
 		}
 	}
 	return out, nil
+}
+
+// bareExecStatements returns the position of every Exec or ExecContext
+// call that stands as a statement of its own (plain, deferred or in a
+// goroutine): the result and the error both go nowhere, exactly as with
+// `_, _ =`. The line matcher above only knew the assignment.
+func bareExecStatements(file *ast.File) []token.Pos {
+	var out []token.Pos
+	isExec := func(e ast.Expr) bool {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		return ok && (sel.Sel.Name == "Exec" || sel.Sel.Name == "ExecContext")
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.ExprStmt:
+			if isExec(s.X) {
+				out = append(out, s.Pos())
+			}
+		case *ast.DeferStmt:
+			if isExec(s.Call) {
+				out = append(out, s.Pos())
+			}
+		case *ast.GoStmt:
+			if isExec(s.Call) {
+				out = append(out, s.Pos())
+			}
+		}
+		return true
+	})
+	return out
 }

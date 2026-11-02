@@ -452,7 +452,19 @@ func (ls *LocalStorage) Delete(ctx context.Context, key string) error {
 	// other key's file. The check and the unlink share Save's commit lock.
 	rt := ls.rootFor(root)
 	return upload.CommitUnfolded(key, root, rt, func() error {
+		// Only a regular file is an object: a key naming a prefix
+		// directory is not found (no error, as for a missing file), and
+		// the directory stays.
+		var fi os.FileInfo
 		var err error
+		if rt != nil {
+			fi, err = rt.Lstat(rootRel(path, root))
+		} else {
+			fi, err = os.Lstat(path)
+		}
+		if err == nil && fi.IsDir() {
+			return nil
+		}
 		if rt != nil {
 			// Kernel-contained unlink: a parent directory swapped for a
 			// symlink after resolution is refused here instead of followed.
@@ -516,6 +528,15 @@ func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) 
 		}
 		return nil, fmt.Errorf("storage: open %q: %w", key, scrubPathError(err))
 	}
+	// A directory is a key prefix, not an object: handed back, its first
+	// read fails, and upload.ServeHandler answered 500 for it.
+	if fi, err := f.Stat(); err != nil || fi.IsDir() {
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("storage: open %q: %w", key, scrubPathError(err))
+		}
+		return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
+	}
 	return f, nil
 }
 
@@ -536,12 +557,13 @@ func (ls *LocalStorage) Exists(ctx context.Context, key string) (bool, error) {
 		return false, err
 	}
 
+	var fi os.FileInfo
 	if rt != nil {
 		// Kernel-contained stat: no existence oracle for paths a
 		// post-resolution symlink plant funnels outside the root.
-		_, err = rt.Stat(rootRel(path, root))
+		fi, err = rt.Stat(rootRel(path, root))
 	} else {
-		_, err = os.Stat(path)
+		fi, err = os.Stat(path)
 	}
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -549,5 +571,6 @@ func (ls *LocalStorage) Exists(ctx context.Context, key string) (bool, error) {
 		}
 		return false, fmt.Errorf("storage: stat %q: %w", key, scrubPathError(err))
 	}
-	return true, nil
+	// A directory is a key prefix, not an object; see open.
+	return !fi.IsDir(), nil
 }

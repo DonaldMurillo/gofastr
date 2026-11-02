@@ -50,8 +50,10 @@ func TestTrackerProjectResolverGatesSlug(t *testing.T) {
 
 // TestTrackerProjectLayerKeyedByProject: ONE group at
 // /projects/{project} — between one project's pages the layer is KEPT
-// (the typed filter survives), between projects it RE-RENDERS (the
-// new project's header and list replace it).
+// (the layer's element survives; the issue list inside it is a route
+// area that follows each URL's ?filter=, so it is not the witness),
+// between projects it RE-RENDERS (the new project's header and list
+// replace it).
 func TestTrackerProjectLayerKeyedByProject(t *testing.T) {
 	base := trackerServe(t)
 	ctx, _ := trackerTab(t, trackerBrowser(t, 1280, 800), 120*time.Second)
@@ -62,8 +64,10 @@ func TestTrackerProjectLayerKeyedByProject(t *testing.T) {
 	); err != nil {
 		t.Fatalf("navigate billing: %v", err)
 	}
-	if err := chromedp.Run(ctx, chromedp.SendKeys(filterSel, "retry")); err != nil {
-		t.Fatalf("filter: %v", err)
+	// Mark the layer's live element: a kept layer is the same node.
+	layerEl := `document.querySelector('[data-cui-layout-key^="g:/projects/"]')`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(layerEl+`.__keptMark = 'billing'`, nil)); err != nil {
+		t.Fatalf("mark layer: %v", err)
 	}
 	// Same project, deeper: kept.
 	if err := chromedp.Run(ctx,
@@ -74,11 +78,14 @@ func TestTrackerProjectLayerKeyedByProject(t *testing.T) {
 	}
 	var kept string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(
-		`document.getElementById('filter-search-filter').value`, &kept)); err != nil {
+		`(`+layerEl+` || {}).__keptMark || ''`, &kept)); err != nil {
 		t.Fatal(err)
 	}
-	if kept != "retry" {
-		t.Fatalf("same project must keep the layer (filter = %q, want retry)", kept)
+	if kept != "billing" {
+		t.Fatalf("same project must keep the layer (mark = %q, want billing)", kept)
+	}
+	if err := chromedp.Run(ctx, chromedp.SendKeys(filterSel, "retry")); err != nil {
+		t.Fatalf("filter: %v", err)
 	}
 	// Another project: the layer re-renders under the new key.
 	if err := chromedp.Run(ctx,
@@ -95,6 +102,14 @@ func TestTrackerProjectLayerKeyedByProject(t *testing.T) {
 	}
 	if reset != "" {
 		t.Fatalf("another project must re-render the layer (filter = %q, want empty)", reset)
+	}
+	var gone string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`(`+layerEl+` || {}).__keptMark || ''`, &gone)); err != nil {
+		t.Fatal(err)
+	}
+	if gone != "" {
+		t.Fatalf("another project must re-render the layer, but its element is the kept one (mark = %q)", gone)
 	}
 	var key string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {

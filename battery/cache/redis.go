@@ -138,6 +138,13 @@ func (rc *RedisCache) Set(ctx context.Context, key string, value any, ttl time.D
 	if effectiveTTL == 0 {
 		effectiveTTL = rc.cfg.defaultTTL
 	}
+
+	// A negative TTL is "already expired" (the Cache contract): drop
+	// the key and store nothing. It must not reach the client: the
+	// RedisClient contract only defines 0, and go-redis, the adapter
+	// the docs show, sends any other non-positive duration as a SET
+	// with no expiry (and -1 as KEEPTTL), so the value the caller said
+	// was already gone was stored forever, over the old one.
 	if effectiveTTL < 0 {
 		return rc.client.Del(ctx, k)
 	}

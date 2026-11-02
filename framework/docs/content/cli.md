@@ -53,7 +53,14 @@ clear the screen or reorder the line you are reading.
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes, and nothing outside the project:
   a symlinked `AGENTS.md`, `CLAUDE.md` or `DESIGN.md` that leads out of it
-  is refused. An unknown flag is an error
+  is refused. `gofastr agents init|sync|skill`, `theme init`, `theme edit`
+  (at startup and on every Write) and `new handler` hold the same rule: a
+  link that leaves the project, dangling or not (a cloned repo's
+  `.claude/skills/gofastr-host/SKILL.md -> ~/.bashrc`, a linked
+  `.agents/` or `.env`), is refused and nothing is written through it; a
+  link inside the project is followed. `init .` also refuses a `go.mod`
+  or `.git` that links out of the directory, before writing any file,
+  since `go mod` and `git init` would write through it. An unknown flag is an error
   (exit 2). A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
@@ -82,7 +89,8 @@ clear the screen or reorder the line you are reading.
   `theme/theme.go`.
 - `gofastr theme init`: scaffold a typed `theme/theme.go` you own
   (`--out=<path>` writes elsewhere; `--force` overwrites). Both theme
-  commands keep a path inside the working directory there: a `theme/` or
+  commands keep a path inside the working directory there, spelled
+  relative or absolute (`--out=$PWD/theme/theme.go`): a `theme/` or
   `theme.go` symlinked out of it is refused. An `--out` outside it names
   its own directory, and only the file in it is checked.
 
@@ -134,7 +142,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 ## App specs
 
 - `gofastr validate <yml>`: validate an app spec without generating
-  (exit 0 = valid; includes the unscoped-PII lint).
+  (exit 0 = valid; includes the unscoped-PII lint). One app spec per run:
+  a second path is a usage error, exit 2.
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
@@ -293,7 +302,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   page into `<dir>` as a static site. It runs the app with
   `GOFASTR_EXPORT` set and `App.Start` exports instead of serving, so
   any app gets it ([static export](static-export.md)); a registered
-  [site search](site-search.md) battery writes its index too.
+  [site search](site-search.md) battery writes its index too. On GoFastr
+  v0.96.0 or later an app that exits 0 without exporting (a `main` that
+  returns before `Start`) fails the command instead of reporting success.
 - `gofastr generate cli`: a customer-facing terminal client for your
   API, with scoped API-token auth. Derived: every run rebuilds its
   `*.gen.go` files and keeps `custom.go` ([app-cli](app-cli.md)).
@@ -583,7 +594,9 @@ does not cover: a runtime browser scan, and the dependency report.
   runs it as a stdio MCP server; `harness creds` manages encrypted API
   keys — `creds add <provider> <account> -` reads the secret from
   `GOFASTR_HARNESS_SECRET` or piped stdin, and a literal argv value
-  warns the same way).
+  warns the same way). Provider keys from a repository's
+  `.harness-secrets/env` are used only after you approve them once on a
+  terminal, or with `--allow-repo-secrets` for one run.
 - `gofastr version`: print version info.
 
 ## Common mistakes

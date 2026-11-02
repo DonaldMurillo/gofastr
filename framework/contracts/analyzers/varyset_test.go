@@ -125,3 +125,40 @@ func mark(w http.ResponseWriter, h http.Header, other []string) {
 		}
 	}
 }
+
+// Writing the header map directly replaces Vary exactly as Set does:
+// w.Header()["Vary"] = []string{…} drops the CORS Add the same way.
+func TestVaryMapAssignIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"cache.go": `package middleware
+
+import "net/http"
+
+func mark(w http.ResponseWriter, h http.Header) {
+	w.Header()["Vary"] = []string{"Accept"}
+	h["Vary"] = nil
+}
+`,
+	})
+	if found := countRule(t, ds, contracts.RuleVarySet); len(found) != 2 {
+		t.Fatalf("want 2 findings (Header() map and a header var), got %d: %v", len(found), found)
+	}
+}
+
+// Appending to the map entry keeps what earlier middlewares wrote, and
+// reading it or writing another key is not a Vary write.
+func TestVaryMapAppendAndReadAreQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"cache.go": `package middleware
+
+import "net/http"
+
+func mark(w http.ResponseWriter) []string {
+	w.Header()["Vary"] = append(w.Header()["Vary"], "Accept")
+	w.Header()["Cache-Control"] = []string{"no-store"}
+	return w.Header()["Vary"]
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleVarySet, "an append keeps earlier entries and a read writes nothing")
+}

@@ -88,12 +88,14 @@ engine itself knows about *clients*, never about transports.
    two preset bundles loaded from `profile/framework.toml` and
    `profile/default.toml`. Adding a third profile must never require
    touching the loop or core packages. The two built-in presets are
-   also **embedded into the `gofastr` binary** (`go:embed`): when an
-   installed binary runs outside the source tree and the on-disk
-   `profile/*.toml` is absent, the loader falls back to the embedded
-   copy, so `gofastr harness` / `gofastr harness --framework` work
-   anywhere. An explicit `--profile <path>` still requires an on-disk
-   file (no embedded fallback).
+   also **embedded into the `gofastr` binary** (`go:embed`), and
+   `gofastr harness` / `gofastr harness --framework` always load the
+   embedded copy. A `profile/*.toml` under the working directory is
+   never read in its place: on a cloned repo that directory is
+   attacker-authored, and a planted profile's `prompt_header` would be
+   the system prompt outside the untrusted-content tags (rule 12). An
+   explicit `--profile <path>` loads an on-disk file (no embedded
+   fallback); use it to run an edited profile.
 7. **The engine knows about *clients*, never transports.** Transports
    are owned by `control/`. The engine sees an opaque `Client` and
    tracks per-client identity (originator, `identity_class`) without
@@ -300,6 +302,40 @@ audited against this matrix.
 - The agent being prompt-injected into doing something harmful
   *within* its allowlist (no protection; the allowlist is the
   policy boundary).
+- Other processes running as the same user reading the credstore
+  key. `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY`
+  live in the harness's environment, and any process of the same
+  user can read another's environment (`/proc/<pid>/environ` on
+  Linux, `ps eww` on macOS) and its memory through a debugger.
+  Encrypting `creds.enc` at rest protects against a copied disk or
+  backup, not against code already running as you. Every Bash child
+  inherits both variables too; redaction masks a `NAME=value` it sees
+  in what the session stores, not what a command sends elsewhere. Use
+  a dedicated user, or a machine key held only by the CI job, where
+  that matters.
+
+### Repository-supplied provider keys
+
+`.harness-secrets/env` is found by walking up from the working
+directory, so in a cloned repository it is the author's file. It may
+only deliver provider credentials (keys ending `_API_KEY` or
+`_TOKEN`), and only ones your environment lacks, but those alone
+would run your session on the author's account, where the author can
+read your prompts on their provider dashboard. So the harness asks
+before using them:
+
+- On a terminal, `gofastr harness` names the file and the keys and
+  asks once. A yes is remembered in
+  `~/.config/gofastr/harness/repo-secrets.json` for that repository
+  directory and that key set, like an Allow-always permission; a key
+  the file gains later asks again. A no leaves the keys unset.
+- With nobody to ask (`gofastr harness mcp`, whose stdin is the MCP
+  protocol, a pipe, CI), the keys are refused unless an earlier
+  approval covers them or the run passes `--allow-repo-secrets`, which
+  uses them for that run without remembering.
+
+A key already set in your environment is never asked about: the shell
+always wins.
 
 ---
 
@@ -651,13 +687,29 @@ patterns (default ON, configurable per-permission-preset):
 
 ```
 Bash: git status, git log, git diff, git branch
-Bash: ls *, pwd, cat <repo-file>, head, tail, wc
-Bash: grep *, rg *, find . *
-Read, Glob, Ls (anywhere under the repo)
+Bash: ls <repo-path>, pwd, cat <repo-file>, head, tail, wc
+Bash: grep <repo-path>, rg <repo-path>, find . *
+Read, Glob, Ls, Grep (anywhere under the repo)
 ```
 
+"Under the repo" is enforced: every path one of these reads must
+resolve, symlinks included, under the working directory (the directory
+the harness runs in, which the file tools and Bash resolve relative
+paths against). That covers `Read:`/`Ls:` paths, a Glob's `--root` and
+pattern, a Grep's `--path` and `--glob`, and every argument and flag
+value of `cat`, `head`, `tail`, `wc`, `grep`, `rg`, `find`, `ls` and
+`git`; a shell glob counts by what it matches there. A path outside
+(`/proc/self/environ`, `~/.ssh/id_rsa`, `find / -name creds.enc`), a
+`..` segment, a leading `~`, or a symlink out of the repo prompts
+instead, and so does a summary the check cannot read. Variables and
+command substitution never reach the check: any `$`, backtick or other
+shell metacharacter already prompts.
+
 Never prompts for these. `--strict-permissions` disables the
-preset for users who want every call gated. `git branch` counts
+preset for users who want every call gated. Because they never
+prompt, `Read` (like `Grep`) opens regular files only: a FIFO, a
+device such as `/dev/tty`, or a symlink to one is refused, since the
+open would block past `CancelTurn`. `Edit` applies the same rule. `git branch` counts
 only when it lists: listing flags alone (`-a`, `-r`, `-v`, `-vv`,
 `--show-current`), and patterns only behind `--list`.
 
@@ -669,8 +721,23 @@ becomes `cd <dir> && ` in front and an `env` map becomes
 names a program) is prompted, and a rule written for the bare
 command does not match it.
 
+A Grep or Glob summary names where the search reads, the same way:
+`Grep:<pattern> --path <dir> --glob <glob>` and
+`Glob:<pattern> --root <dir>`, each flag only when the call sets it,
+and any word holding whitespace or a quote single-quoted. A rule
+approved for `Grep:TODO` (the working directory) does not match
+`Grep:TODO --path /home/u/.ssh`, and no pattern can spell a
+summary that names a directory.
+
 Session-scoped allows persist for the `EngineRun` only; they
-never carry across sessions or persist to disk. The user can
+never carry across sessions or persist to disk. An **Allow always**
+answer is written to `$XDG_CONFIG_HOME/gofastr/harness/permissions.json`
+with the working directory it was granted in, and is honoured only
+while the harness runs in that directory. A summary leaves the working
+directory implicit (Bash's default cwd, Grep's default path), so a
+global rule would let one approval of `go test ./...` in your own repo
+run a cloned repo's tests with no prompt. A rule saved before rules
+carried a directory prompts once more. The user can
 promote a session-scoped allow to a profile-level rule via
 `/permissions:promote <rule>`.
 
@@ -731,6 +798,12 @@ parent session's log tagged with `subAgent` (the sub-agent's client
 id) in the envelope, so the audit log and `sessions export` show what
 a sub-agent ran. They stay off the parent's client streams (SSE, WS,
 MCP, TUI): those carry the parent session's own conversation.
+
+**Sub-agent tools.** A sub-agent gets the parent's tools minus the
+meta tools, `TaskList` and `Agent`, so it cannot re-plan the
+parent's task list or spawn more agents. Its dispatcher refuses a
+call to either by name too, with an error result the model reads,
+since a model can name a tool its catalog never showed.
 
 ### 4. Pluggable backends
 
@@ -1333,7 +1406,10 @@ it never sees how clients are wired.
   token for whoever loads it, and the `Host` check stops DNS
   rebinding, not a peer that reaches the port and sends
   `Host: localhost`. The check reads the address the listener bound,
-  not the spelling passed. There is no LAN mode.
+  not the spelling passed. There is no LAN mode. The chat page is
+  never framed (`X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`):
+  a page on another site could otherwise load it in an iframe and steer
+  the operator's click onto the permission modal.
 - **`--no-listen`**: in-process clients only (engine speaks only
   through `inproc`). Useful for tests or pure-CLI use.
 - **`gofastr harness mcp`** (v0.2): launches a one-shot stdio MCP
@@ -1879,7 +1955,14 @@ event-write path matches secret regexes against `ToolResult.Content`,
 tokens), and `TextDelta` (pasted secrets). Patterns: AWS access
 keys (`AKIA…`), GitHub PATs (`ghp_…`, `github_pat_…`),
 `-----BEGIN .* KEY-----`, `Bearer [A-Za-z0-9-_\.]+`, JWT-shaped
-tokens, common cloud-provider key prefixes. Matched substrings are
+tokens, common cloud-provider key prefixes, and `NAME=value`
+assignments whose name ends in `_API_KEY`, `_TOKEN`, `_SECRET`,
+`_PASSWORD`, `_PASSPHRASE`, `_ACCESS_KEY` or `_MACHINE_KEY` (the
+last two cover the credstore's own `GOFASTR_HARNESS_PASSPHRASE` and
+`GOFASTR_HARNESS_MACHINE_KEY`, which every Bash child inherits). The
+same names redact a JSON member's value, so a Bash call's
+`"env": {"ZAI_API_KEY": "…"}` is caught although the name and the
+value are two strings. Matched substrings are
 replaced with `«redacted:KIND»` markers and the original is
 discarded, not stored anywhere. The patterns run on each decoded
 string of the event payload, never on the serialized JSON, so a
@@ -2027,7 +2110,10 @@ attacker-authored: the loader delivers **provider credentials only**
 `PATH`, loader, and `HOME` settings in that file are ignored — the
 operator's shell stays the only source for anything that shapes the
 process. Variables already set in the environment always win over the
-file.
+file. Even the provider keys are used only with your consent: asked
+once per repository and key set on a terminal, refused otherwise unless
+remembered or `--allow-repo-secrets` is passed (§ Threat model,
+"Repository-supplied provider keys").
 
 ### Config
 

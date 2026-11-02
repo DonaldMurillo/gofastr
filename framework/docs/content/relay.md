@@ -76,6 +76,16 @@ want at startup, not a runtime surprise.
   are already sent when the cap is reached, so the relay aborts the
   stream: the client sees a broken response, never a clean one cut
   short. A response of exactly the budget arrives whole.
+- **Content types** are an allow-list too. A route relays script
+  (`text/javascript`, `application/javascript`), `text/css`, images,
+  fonts, JSON (`application/json` and any `application/*+json`) and
+  `text/plain`. Anything else the vendor sends, `text/html` above all,
+  is replaced with a plain `502`. A route that relays a vendor's iframe
+  page opts the type back in with `ContentTypes: []string{"text/html"}`
+  (lowercase `type/subtype`, no parameters; `New` panics otherwise).
+  An SVG passes with `Content-Security-Policy: sandbox` added, unless
+  the route names `image/svg+xml` in `ContentTypes`. A body with no
+  `Content-Type` goes out as `application/octet-stream`.
 - **Caching**: `CacheOK: false` (default) forces
   `Cache-Control: no-store` on every response. `CacheOK: true` passes
   upstream cache headers through, for immutable versioned assets.
@@ -90,11 +100,12 @@ posture is fixed:
 |---|---|
 | Fixed origins | Scheme, host, and port come ONLY from `Route.Upstream`. The path tail and query are the only attacker-influenced parts of the outbound request. |
 | Tail validation | Traversal (`..`, `%2e%2e`), backslashes, NUL/control bytes, empty segments (`//`), encoded slashes (`%2F`, caught via `RawPath`), and fragment markers are refused with `400`. The router bounds path params; the relay still validates at the sink. |
-| Credentials stripped (inbound) | `Cookie`, `Authorization`, `Proxy-Authorization`, `X-CSRF-Token`, `X-API-Key`, every `X-Forwarded-*`, and every `X-Gofastr-*` (the app's own headers, among them the embed grant an embed frame sends on each fetch) never reach the vendor. |
+| Credentials stripped (inbound) | `Cookie`, `Authorization`, `Proxy-Authorization`, `X-CSRF-Token`, `X-API-Key`, every `X-Forwarded-*`, and every `X-Gofastr-*` (the app's own headers, among them the embed grant an embed frame sends on each fetch) never reach the vendor. `Referer` is cut to its origin (`https://app.example/`): a relayed request is same-origin, so the browser sends the full page URL, query string and any token in it included, where a request straight to the vendor would carry the origin alone. A `Referer` that is not an absolute `http(s)` URL is dropped. |
 | Forwarded metadata | `X-Forwarded-For` is the connection's peer (or your `Config.ClientIP`), `X-Forwarded-Proto` comes from the actual TLS state. Inbound forwarding headers are never trusted — they are one `curl -H` away from arbitrary values. |
 | Auth stripped (outbound) | `Set-Cookie`, `WWW-Authenticate`, `Proxy-Authenticate`, and `Access-Control-*` never reach the browser. `X-Content-Type-Options: nosniff` is always added. |
-| Browser state stripped (outbound) | `Refresh` (a header-driven navigation to any origin) `Clear-Site-Data` (deletes the visitor's app-origin storage from the vendor's side) and `Service-Worker-Allowed` (lets vendor script register a service worker over every app page) never reach the browser. A `Link` header whose target is an absolute or protocol-relative URL is dropped; relative targets (`</page/2>; rel="next"`) resolve against the app origin and are forwarded. |
+| Browser state stripped (outbound) | `Refresh` (a header-driven navigation to any origin) `Clear-Site-Data` (deletes the visitor's app-origin storage from the vendor's side) and `Service-Worker-Allowed` (lets vendor script register a service worker over every app page) never reach the browser. Neither do the headers that set policy for the whole app origin and outlive the response: `NEL`, `Report-To` and `Reporting-Endpoints` (the browser would report requests to every app URL to a vendor endpoint, outside your CSP), `Alt-Svc`, `Accept-CH`, `Critical-CH`, `Strict-Transport-Security` and `Set-Login`. A value your app set before the relay ran stays. A `Link` header value with a target on another origin is dropped whole. The target is read the way the browser's URL parser reads it: tabs and newlines removed, `\` as `/`, so `<\\vendor.example/x>` is the protocol-relative URL it parses as. A target with a scheme (`https:`, `data:`) or an authority (`//host`) counts as another origin; relative targets (`</page/2>; rel="next"`) resolve against the app origin and are forwarded. |
 | No informational responses | An upstream `1xx` (`103 Early Hints`) is not forwarded: its headers skip the outbound strips, so a vendor `Link` preload would reach the browser. The headers the app set before the relay ran (the security headers) stay on the final response, ahead of the vendor's. |
+| Content types | Only script, style, image, font, JSON and `text/plain` responses pass; the rest are a `502`, logged with the vendor's type. `Route.ContentTypes` adds types per route. SVG carries `Content-Security-Policy: sandbox`. A missing `Content-Type` becomes `application/octet-stream` rather than being sniffed. |
 | No redirects | Any `3xx` carrying a `Location` header is replaced with a plain `502` and logged: forwarding it would leak the vendor origin (absolute) or point outside the mount (relative). `304` passes. |
 | No protocol switches | WebSockets and other upgrades are not relayed. The inbound `Connection: Upgrade` / `Upgrade` pair is dropped, so the vendor sees a plain HTTP request, and a `101 Switching Protocols` the vendor sends anyway is refused with a `502` and its connection closed: an open socket would run past the body cap and the request deadline. A chat widget that needs a socket connects to the vendor directly. |
 | Compression | Proxied bytes are never decompressed or re-encoded: a gzip body arrives byte-identical. |
@@ -109,6 +120,15 @@ upstream at construction, request data cannot select scheme, host, or
 port (verified by hostile-tail tests in `battery/relay`), credentials
 flow neither direction, and the outbound surface per route is bounded
 by the method list and the body cap.
+
+**A relayed response runs as your app.** It answers on your origin,
+so an HTML page from the vendor, whether an error page that echoes the
+query string or a compromised vendor, would be script with your
+cookies and your CSP's blessing: reflected XSS. That is why the relay
+refuses document types by default and adds `nosniff`, and why opting
+`text/html` in with `Route.ContentTypes` means trusting that vendor as
+much as your own code. Prefer pointing the iframe at the vendor's own
+origin.
 
 **Egress is your cost now.** Every relayed byte leaves from your
 servers, and every request your page makes to the vendor is a request

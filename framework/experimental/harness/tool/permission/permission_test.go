@@ -7,11 +7,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
+// The read-only tools pass without a prompt when what they read is in
+// the working directory (here the process's, since WorkingDir is unset).
+// quiet_paths_security_test.go holds the paths outside it.
 func TestQuietModeAllowsReadOnlyTools(t *testing.T) {
 	e := New(nil)
-	for _, name := range []string{"Read", "Glob", "Ls", "Grep"} {
-		if got := e.Evaluate(ids.NewSessionID(), name, "", false); got != DecisionAllow {
-			t.Errorf("%s mutating=false → %s, want allow", name, got)
+	for name, argv := range map[string]string{
+		"Read": "Read:permission.go", "Glob": "Glob:*.go", "Ls": "Ls:.", "Grep": "Grep:Engine",
+	} {
+		if got := e.Evaluate(ids.NewSessionID(), name, argv, false); got != DecisionAllow {
+			t.Errorf("%s mutating=false → %s, want allow", argv, got)
 		}
 	}
 }
@@ -24,7 +29,7 @@ func TestQuietModeAllowsSafeBash(t *testing.T) {
 		"git diff HEAD",
 		"ls -la",
 		"pwd",
-		"cat /etc/hosts",
+		"cat permission.go",
 		"grep -R foo .",
 		"find . -name *.go",
 	}

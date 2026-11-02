@@ -402,6 +402,19 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 	root := s.rootFor(rk)
 	var rmErr error
 	if err := CommitUnfolded(key, rk.root, root, func() error {
+		// Only a regular file is an object: a key naming a prefix
+		// directory is not found, and the directory stays.
+		var fi os.FileInfo
+		var stErr error
+		if root != nil {
+			fi, stErr = root.Lstat(rk.rel())
+		} else {
+			fi, stErr = os.Lstat(rk.path)
+		}
+		if stErr == nil && fi.IsDir() {
+			rmErr = &os.PathError{Op: "remove", Path: rk.path, Err: os.ErrNotExist}
+			return nil
+		}
 		if root != nil {
 			// Kernel-contained unlink: a parent directory swapped for a
 			// symlink after resolution is refused here instead of followed.
@@ -482,6 +495,16 @@ func (s *LocalStorage) open(key string) (*os.File, error) {
 		// HTTP handler that surfaces this back to the caller would
 		// otherwise leak the storage layout.
 		return nil, fmt.Errorf("opening file: %s", ScrubPath(err.Error(), rk.absBase, rk.path))
+	}
+	// A directory (the uploads/<entity>/<field> prefixes) is not an
+	// object: handed back, its first read failed and ServeHandler
+	// answered 500 for every GET of a prefix.
+	if fi, err := f.Stat(); err != nil || fi.IsDir() {
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("opening file: %s", ScrubPath(err.Error(), rk.absBase, rk.path))
+		}
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, rk.safeKey)
 	}
 
 	return f, nil
@@ -604,12 +627,13 @@ func (s *LocalStorage) Exists(_ context.Context, key string) (bool, error) {
 		return false, err
 	}
 
+	var fi os.FileInfo
 	if root != nil {
 		// Kernel-contained stat: no existence oracle for paths a
 		// post-resolution symlink plant funnels outside the root.
-		_, err = root.Stat(rk.rel())
+		fi, err = root.Stat(rk.rel())
 	} else {
-		_, err = os.Stat(rk.path)
+		fi, err = os.Stat(rk.path)
 	}
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -618,5 +642,6 @@ func (s *LocalStorage) Exists(_ context.Context, key string) (bool, error) {
 		return false, fmt.Errorf("checking file: %s", ScrubPath(err.Error(), rk.absBase, rk.path))
 	}
 
-	return true, nil
+	// A directory is a key prefix, not an object; see open.
+	return !fi.IsDir(), nil
 }

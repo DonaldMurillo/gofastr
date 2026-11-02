@@ -470,9 +470,14 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		fmt.Println("    gofastr build rebuilds it from the cli entry in gofastr.settings.yml")
 		return
 	}
+	entry, err := cliEntryYAML(opts, spec.Binary)
+	if err != nil {
+		fmt.Printf("    no gofastr.settings.yml entry reproduces this run: %v\n", err)
+		return
+	}
 	fmt.Println("    add this entry to codegen.generators in gofastr.settings.yml and gofastr build keeps the CLI current (gofastr docs app-cli):")
 	fmt.Println()
-	for _, line := range strings.Split(strings.TrimRight(cliEntryYAML(opts, spec.Binary), "\n"), "\n") {
+	for _, line := range strings.Split(strings.TrimRight(entry, "\n"), "\n") {
 		fmt.Println("      " + line)
 	}
 }
@@ -805,13 +810,13 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 			// for the fields the client has an upload slot for; list and
 			// get leave the stored URL out of their tables.
 			if slices.ContainsFunc(uploads, func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
-				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: appspec.ToCamelJSON(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
+				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: appspec.WireKey(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
 			}
 			continue
 		}
 		f := cliField{
 			Snake:    fd.Name,
-			Wire:     appspec.ToCamelJSON(fd.Name),
+			Wire:     appspec.WireKey(fd.Name),
 			Flag:     strings.ReplaceAll(fd.Name, "_", "-"),
 			Type:     typ,
 			GoType:   goTypeForField(fd.Type),

@@ -126,6 +126,14 @@ func RunInit(args []string) {
 			cli.OsExit(1)
 		}
 		projName = filepath.Base(wd)
+		// go mod init/edit and git init follow a go.mod or .git link out
+		// of the directory; refuse one before any file is written.
+		if err := refuseLinkedToolFiles("."); err != nil {
+			cli.Fail("%v", err)
+			cli.Info("This invocation has not written any files.")
+			cli.OsExit(1)
+			return
+		}
 		// A go.mod already here names the module every generated import
 		// must use; go mod init cannot replace it, so a local/<dir>
 		// default would leave main.go importing a module that does not
@@ -323,7 +331,15 @@ bin/
 		cli.OsExit(1)
 	}
 
-	// Run go mod init to generate a proper go.mod
+	// Run go mod init to generate a proper go.mod. go mod init creates a
+	// dangling go.mod link's target and go mod edit rewrites whatever the
+	// link names, so a go.mod (or .git, for git init) that leaves the
+	// project is refused before either runs.
+	if err := refuseLinkedToolFiles(name); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 	minimumGo, preferredGo, err := scaffoldGoRequirements(name)
 	if err != nil {
 		cli.Fail("Could not read the existing go.mod: %v", err)
@@ -331,8 +347,9 @@ bin/
 		return
 	}
 	// An existing go.mod (init .) already declares modulePath; go mod
-	// init would only refuse to overwrite it.
-	if _, err := os.Stat(filepath.Join(name, "go.mod")); os.IsNotExist(err) {
+	// init would only refuse to overwrite it. Lstat: a dangling go.mod
+	// link is a file already there, not one go mod init should create.
+	if _, err := os.Lstat(filepath.Join(name, "go.mod")); os.IsNotExist(err) {
 		cmd := exec.Command("go", "mod", "init", modulePath)
 		cmd.Dir = name
 		cmd.Stdout = os.Stdout
@@ -417,6 +434,20 @@ bin/
 	}
 	fmt.Println("  Only use a local `replace` directive while hacking on GoFastr itself.")
 	fmt.Println()
+}
+
+// refuseLinkedToolFiles refuses a go.mod or .git under dir that leaves
+// dir through a symlink (projectfs.Check): go mod init creates a dangling
+// go.mod link's target, go mod edit rewrites the file the link names,
+// and git init reinitialises the repository a linked .git names. None of
+// them runs inside an os.Root, so the check comes first.
+func refuseLinkedToolFiles(dir string) error {
+	for _, rel := range []string{"go.mod", ".git"} {
+		if err := projectfs.Check(dir, rel); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // existingModulePath returns the module path of dir/go.mod, or "" when

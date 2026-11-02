@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
@@ -52,11 +53,28 @@ type AppSpec struct {
 	// serializer's coverage test); appgen reaches it through
 	// PhraseCollector and SetPhraseCollector.
 	phrases *AppSpecPhrases
+
+	// appless is set by the decoders when the file (or every file of a
+	// directory) has no app: section: a fragment for generate app --add,
+	// whose App holds no api_prefix default, so the checks that need the
+	// project's app settings skip it. Unexported for the reason phrases is.
+	appless bool
 }
 
 // PhraseCollector returns the phrase collector of the file being
 // rendered, nil outside a file renderer.
 func (bp *AppSpec) PhraseCollector() *AppSpecPhrases { return bp.phrases }
+
+// MarkFragment records that bp is a fragment added to an existing
+// project (generate app --add, generate entity|screen): its App does not
+// carry the project's settings, so validation skips the checks that read
+// them.
+func (bp *AppSpec) MarkFragment() { bp.appless = true }
+
+// IsFragment reports whether bp was decoded with no app: section (or
+// marked with MarkFragment). A serializer writes no app: section for one,
+// so the fragment stays a fragment on the next decode.
+func (bp *AppSpec) IsFragment() bool { return bp.appless }
 
 // SetPhraseCollector installs the phrase collector a file renderer
 // emits through, on that renderer's own copy of the spec.
@@ -283,6 +301,7 @@ func LoadAppSpecPath(path string, validate bool) (AppSpec, error) {
 			}
 			merged.App = app
 		}
+		merged.appless = len(appKeyFile) == 0
 		if validate {
 			if err := ValidateAppSpec(merged); err != nil {
 				return AppSpec{}, err
@@ -513,6 +532,8 @@ func DecodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 			return AppSpec{}, err
 		}
 		bp.App = app
+	} else {
+		bp.appless = true
 	}
 	if child := m["entities"]; child != nil {
 		entities, err := decodeAppSpecEntities(child)
@@ -2614,9 +2635,21 @@ func ValidateAppSpec(bp AppSpec) error {
 		// SQL identifiers and CSS. Nothing downstream re-escapes them,
 		// so they are validated here, at the generate-time boundary,
 		// where the error can name the offending field.
+		// Two field names one Go struct field or one Postgres column would
+		// carry (Title and title, _note and note) are refused: AutoMigrate
+		// writes names unquoted, so Postgres folds them together.
+		fieldOwner := map[string]string{}
 		for _, f := range decl.Fields {
 			if !project.IsGoIdentifier(ToCamelCase(f.Name)) {
 				errs.add(fmt.Errorf("app spec: entity %q field %q does not produce a valid Go identifier: rename it to letters, digits and underscores starting with a letter", decl.Name, f.Name))
+			} else {
+				for _, key := range []string{"go:" + ToCamelCase(f.Name), "sql:" + asciicase.Lower(f.Name)} {
+					if prev, dup := fieldOwner[key]; dup && prev != f.Name {
+						errs.add(fmt.Errorf("app spec: entity %q field %q collides with field %q: both become one Go struct field or one Postgres column; rename one", decl.Name, f.Name, prev))
+						break
+					}
+					fieldOwner[key] = f.Name
+				}
 			}
 			for _, v := range f.Values {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
@@ -2637,6 +2670,7 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
 		}
 	}
+	errs.add(validateAppSpecSQLNames(bp))
 	for _, decl := range bp.Entities {
 		// Relation-TYPED FIELDS (`type: relation, to: X`) become BelongsTo
 		// relations at runtime. Catch a dangling target here so the failure
@@ -2758,6 +2792,14 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		if screen.Route == "" {
 			errs.add(fmt.Errorf("app spec: screen %q route is required", screen.Name))
+			continue
+		}
+		if why := screenRouteProblem(screen.Route); why != "" {
+			errs.add(fmt.Errorf("app spec: screen %q route %q %s", screen.Name, screen.Route, why))
+			continue
+		}
+		if mount := screenRouteOnEntityAPI(bp, screen.Route); mount != "" {
+			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, where an entity's CRUD API mounts: the app would refuse to boot or its API would answer instead of the screen; move the screen", screen.Name, screen.Route, mount))
 			continue
 		}
 		if routes[screen.Route] {
@@ -3680,6 +3722,10 @@ func isGoFastrActionEvent(event string) bool {
 // renders appUI.Create(entity), it inherits the home screen's layout +
 // access, and it is not added to nav.
 // The record page holds the edit form, so no edit screen is synthesized.
+//
+// It also appends the sign-in screen an app spec with auth on and no
+// login_form needs (AppSpecLoginScreen): the gates, the Sign in button
+// and the battery's failed-login redirect all point at /login.
 func AppSpecSynthesizeCRUDScreens(bp AppSpec) AppSpec {
 	existing := map[string]bool{}
 	for _, s := range bp.Screens {
@@ -3713,8 +3759,76 @@ func AppSpecSynthesizeCRUDScreens(bp AppSpec) AppSpec {
 			}
 		}
 	}
+	if s, ok := AppSpecLoginScreen(bp); ok {
+		add(s)
+	}
 	bp.Screens = append(bp.Screens, extra...)
 	return bp
+}
+
+// AppSpecLoginScreen is the /login screen synthesized for an app spec with
+// auth on and no screen hosting a login_form. Without it every gated
+// screen, the Sign in button and a failed form login sent the visitor to
+// a /login nobody registered (ecommerce). The body is the login_form
+// block an author would write, so the screen composes ui.AuthCard and
+// ui.Form like an authored one and ships no CSS. It takes the marketing
+// layout when the app spec has one (where an authored sign-in screen
+// sits), links a signup_form screen when there is one, and is not added
+// to nav. A screen whose name makes the login file or type, or one
+// already routed /login, keeps its place: nothing is synthesized.
+func AppSpecLoginScreen(bp AppSpec) (AppSpecScreen, bool) {
+	if !bp.App.Auth.Enabled {
+		return AppSpecScreen{}, false
+	}
+	layout, signup := "", ""
+	for _, s := range bp.Screens {
+		if ToSnakeCase(s.Name) == "login" || ToCamelCase(s.Name) == "Login" || s.Route == "/login" {
+			return AppSpecScreen{}, false
+		}
+		if s.Layout == "marketing" {
+			layout = "marketing"
+		}
+		for _, b := range AppSpecBlocksDeep(s.Body) {
+			if AppSpecBlockKindIs(b, "login_form") {
+				return AppSpecScreen{}, false
+			}
+			if AppSpecBlockKindIs(b, "signup_form") && signup == "" && !strings.Contains(s.Route, "{") {
+				signup = s.Route
+			}
+		}
+	}
+	// The block spells out the defaults the renderer would fill in, the
+	// way gofastr pack reads an AuthCard back, so pack recognizes this
+	// screen as the synthesized one (IsSynthesizedLoginScreen) and drops it.
+	authBase := bp.App.Auth.BasePath
+	if authBase == "" {
+		authBase = "/auth"
+	}
+	block := AppSpecBlock{Kind: "login_form", Text: "Sign in", Props: map[string]any{"action": authBase + "/login", "next": "/"}}
+	if signup != "" {
+		block.Props["register_href"] = signup
+	}
+	return AppSpecScreen{
+		Name:   "login",
+		Route:  "/login",
+		Layout: layout,
+		Title:  "Sign in",
+		Body:   []AppSpecBlock{block},
+	}, true
+}
+
+// IsSynthesizedLoginScreen reports whether screen, read back from a
+// generated app, is exactly the sign-in screen AppSpecLoginScreen adds to
+// bp without it. gofastr pack drops it, as it drops a synthesized create
+// screen: the regenerate adds it again in the same place.
+func IsSynthesizedLoginScreen(bp AppSpec, screen AppSpecScreen) bool {
+	if screen.Route != "/login" {
+		return false
+	}
+	rest := bp
+	rest.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s AppSpecScreen) bool { return s.Route == "/login" })
+	synth, ok := AppSpecLoginScreen(rest)
+	return ok && reflect.DeepEqual(synth, screen)
 }
 
 // AppSpecKeyColNames lists the columns the record's id is made of: the
@@ -4187,6 +4301,15 @@ func entityListOn(blocks []AppSpecBlock, entity string) (found, create bool) {
 		}
 	}
 	return found, create
+}
+
+// AppSpecHasRecordScreen reports whether some screen shows a record of
+// entity (an entity_detail block). validateDetailRoutes holds that screen
+// to <list route>/{id} under one of the entity's lists, the home list's
+// row links point there, and without one every row link is a 404.
+func AppSpecHasRecordScreen(bp AppSpec, entity string) bool {
+	_, ok := appSpecDetailBase(bp, entity)
+	return ok
 }
 
 // appSpecDetailBase returns the route the entity's first detail screen

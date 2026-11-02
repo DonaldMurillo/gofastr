@@ -71,6 +71,10 @@ type Options struct {
 	// BulkMounted reports the entities App.EntityUI mounts _bulk,
 	// _export.csv and _pick for; nil documents none.
 	BulkMounted func(*entity.Entity) bool
+	// ReadOnlyMounted reports an entity mounted read-only (App.View:
+	// List, Get and _events only). The document then lists those three
+	// routes and none of the writes, as llm.md does. nil is never.
+	ReadOnlyMounted func(*entity.Entity) bool
 	// BasePath is the API prefix baked into every path key ("/api").
 	BasePath string
 	// JSONCase is the casing the CRUD handlers answer in, the app's
@@ -347,6 +351,15 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		// Tag for grouping
 		s.AddTag(tagName, entityName+" operations")
 
+		// A read-only mount (App.View) serves List, Get and _events; every
+		// write below would answer 405, so none reaches the document.
+		readOnly := o.ReadOnlyMounted != nil && o.ReadOnlyMounted(ent)
+		addWrite := func(method, p string, op openapi.Operation) {
+			if !readOnly {
+				s.AddPath(method, p, op)
+			}
+		}
+
 		// Reference to entity schema
 		entityRef := map[string]any{"$ref": "#/components/schemas/" + schemaName}
 		singleRef := map[string]any{
@@ -440,7 +453,11 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		listOp.OperationID = "list_" + schemaName
 		listOp.Tags = []string{tagName}
 		listOp.AddParameter("page", "query", "Page number (offset mode)", false, map[string]any{"type": "integer", "default": 1})
-		listOp.AddParameter("limit", "query", "Items per page (max 100)", false, map[string]any{"type": "integer", "default": 20})
+		// The entity's own cap, the numbers the list clamps with: a larger
+		// ?limit is cut to it, not refused, so it is described, not a
+		// schema maximum a strict client would refuse to send.
+		defLimit, maxLimit := crud.ListLimits(ent.Config.Pagination.MaxListLimit)
+		listOp.AddParameter("limit", "query", fmt.Sprintf("Items per page (max %d; a larger limit is cut to it)", maxLimit), false, map[string]any{"type": "integer", "default": defLimit})
 		listOp.AddParameter("sort", "query", "Sort field (offset mode only; ignored when ?cursor is present)", false, map[string]any{"type": "string"})
 		listOp.AddParameter("cursor", "query", "Opaque cursor; presence (even empty) switches the response to CursorPage shape and uses keyset pagination by primary key.", false, map[string]any{"type": "string"})
 		listOp.AddParameter("direction", "query", "Cursor walk direction: forward (default) or backward.", false, map[string]any{"type": "string", "enum": []string{"forward", "backward"}, "default": "forward"})
@@ -544,7 +561,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			createOp.AddSecurity("bearerAuth", nil)
 			createOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("POST", path, *createOp)
+		addWrite("POST", path, *createOp)
 
 		// --- GET /{table}/:id: Get by ID ---
 		getOp := openapi.NewOperation()
@@ -586,7 +603,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			updateOp.AddSecurity("cookieAuth", nil)
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PUT", recPath, *updateOp)
+		addWrite("PUT", recPath, *updateOp)
 
 		// --- PATCH /{table}/:id: Sparse update ---
 		patchOp := openapi.NewOperation()
@@ -609,7 +626,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			patchOp.AddSecurity("cookieAuth", nil)
 		}
 		patchOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PATCH", recPath, *patchOp)
+		addWrite("PATCH", recPath, *patchOp)
 
 		// --- DELETE /{table}/:id: Delete ---
 		deleteOp := openapi.NewOperation()
@@ -627,7 +644,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		deleteOp.AddResponse(409, "Other records still reference this one", errorRef)
-		s.AddPath("DELETE", recPath, *deleteOp)
+		addWrite("DELETE", recPath, *deleteOp)
 
 		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
 		// The router mounts the transition route when States holds a
@@ -673,7 +690,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 				moveOp.AddSecurity("bearerAuth", nil)
 				moveOp.AddSecurity("cookieAuth", nil)
 			}
-			s.AddPath("POST", recPath+"/transitions/"+t.Key, *moveOp)
+			addWrite("POST", recPath+"/transitions/"+t.Key, *moveOp)
 		}
 
 		// --- POST /{table}/_batch: BatchCreate ---
@@ -702,7 +719,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			batchCreateOp.AddSecurity("bearerAuth", nil)
 			batchCreateOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("POST", path+"/_batch", *batchCreateOp)
+		addWrite("POST", path+"/_batch", *batchCreateOp)
 
 		// --- PATCH /{table}/_batch: BatchUpdate ---
 		// An item names its record in the body, so each key column takes
@@ -753,7 +770,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			batchUpdateOp.AddSecurity("bearerAuth", nil)
 			batchUpdateOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
+		addWrite("PATCH", path+"/_batch", *batchUpdateOp)
 
 		// --- GET /{table}/_events: SSE entity subscription stream ---
 		eventsOp := openapi.NewOperation()
@@ -803,8 +820,8 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			batchDeleteOp.AddSecurity("bearerAuth", nil)
 			batchDeleteOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
-		if bulkMounted != nil && bulkMounted(ent) {
+		addWrite("DELETE", path+"/_batch", *batchDeleteOp)
+		if !readOnly && bulkMounted != nil && bulkMounted(ent) {
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 

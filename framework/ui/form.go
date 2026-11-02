@@ -268,6 +268,7 @@ const csrfFormField = "_csrf"
 // cycle since framework/ui sits below battery/*). Token values are
 // base64url + "." + base64url(HMAC) so HTMLEscapeString is defense-in-depth.
 func csrfHiddenInput(tok string) render.HTML {
+	//gofastr:allow(GOFASTR1403) the token goes through template.HTMLEscapeString
 	return render.HTML(`<input type="hidden" name="` + csrfFormField +
 		`" value="` + template.HTMLEscapeString(tok) + `">`)
 }

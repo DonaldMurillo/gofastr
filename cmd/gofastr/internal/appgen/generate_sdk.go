@@ -44,8 +44,11 @@ type SdkOptions struct {
 	only       []string
 	exclude    []string
 	noArchive  bool
-	dryRun     bool
-	json       bool
+	// stampTime writes the generation time into manifest.json. Off by
+	// default so a rerun over an unchanged schema is byte-identical.
+	stampTime bool
+	dryRun    bool
+	json      bool
 	// set names the value flags given on the command line, empty ones
 	// included: an explicit --only= clears the settings entry's list
 	// rather than leaving it to fill in.
@@ -61,7 +64,8 @@ type sdkSpec struct {
 	GofastrVersion string
 	Module         string
 	BaseURL        string
-	APIPrefix      string // "" or "/api": baked into docs/examples, not client paths
+	APIPrefix      string    // "" or "/api": baked into docs/examples, not client paths
+	GeneratedAt    time.Time // zero unless --stamp-time; the manifest omits it then
 	Decls          []framework.EntityDeclaration
 	Entities       []cliEntity
 }
@@ -170,7 +174,7 @@ func RunGenerateSDK(args []string) {
 	opts, err := parseSDKOptions(args)
 	if err != nil {
 		cli.Fail("%v", err)
-		cli.Info("Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--dry-run] [--json]")
+		cli.Info("Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]")
 		cli.OsExit(1)
 		return
 	}
@@ -284,6 +288,8 @@ func parseSDKOptions(args []string) (SdkOptions, error) {
 		switch {
 		case arg == "--no-archive":
 			opts.noArchive = true
+		case arg == "--stamp-time":
+			opts.stampTime = true
 		case arg == "--dry-run":
 			opts.dryRun = true
 		case arg == "--json":
@@ -462,6 +468,9 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 		BaseURL:        opts.baseURL,
 		APIPrefix:      apiPrefix,
 	}
+	if opts.stampTime {
+		spec.GeneratedAt = time.Now().UTC()
+	}
 
 	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
 		for _, name := range names {
@@ -635,7 +644,7 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 			App:            spec.App,
 			SDKVersion:     spec.SDKVersion,
 			GofastrVersion: spec.GofastrVersion,
-			GeneratedAt:    time.Now().UTC(),
+			GeneratedAt:    spec.GeneratedAt,
 			Entities:       names,
 			SchemaHash:     hash,
 			Artifacts:      artifacts,

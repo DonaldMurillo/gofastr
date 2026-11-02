@@ -85,7 +85,13 @@ declaration's full shape. `App.View` entities and any registration built
 with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
 batch and Create/Update-column sections — those routes answer 404/405 —
 and the `limit` row reports the same cap the List route clamps `?limit`
-with (`Pagination.MaxListLimit`, never above 1000, 100 when unset). A doc
+with (`Pagination.MaxListLimit`, never above 1000, 100 when unset), and
+the default page size, 20 or the cap when that is smaller.
+`/openapi.json` states the same two numbers on its `limit` parameter
+(`crud.ListLimits` returns them), and lists the 409 a write answers (a
+unique value or key already in use, a relation naming no record, or on a
+delete other rows still referencing it) and the 413 and 415 a too-large
+or non-JSON body gets. A doc
 that advertises routes or limits the server refuses sends agents into
 404s; the generators read the mount, not the declaration.
 The type column of its field tables and the SDK reference screens
@@ -521,7 +527,7 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 - **`many_to_many`**: An array of target IDs or child objects is processed. Existing IDs are verified against caller tenant/owner scope and linked in the pivot table; objects carrying new fields are created or updated. A link already present is skipped; for a registered pivot entity "present" is read under the pivot's own tenant, owner and soft-delete scope, so a soft-deleted link is not present and re-linking it hits the pivot's key. A link insert that breaks a unique constraint answers **409** and rolls the whole write back, unless the link turns out to exist on a recheck: then another request wrote the same pair at the same moment and the write succeeds.
 - **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
 - **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. Inside a caller's transaction (`App.InTx`, a handler bound to a `*sql.Tx`) they wait until the whole operation succeeds, so a failed cascade announces no child. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
-- **Child keys**: A nested child's keys are read the way its parent's are. Over HTTP that is the child's wire keys; two keys naming one column (`bodyText` and `body_text` on a camel-case handler) answer 400 `validation.keys_fold` on the child's path, as the parent's own keys do. In process (`CreateOne`, a typed repo) the key `MarshalEntity` derives counts too, so a `Line2` field's `line2` writes `line_2`.
+- **Child keys**: A nested child's keys are read the way its parent's are. Over HTTP that is the child's wire keys; two keys naming one column (`bodyText` and `body_text` on a camel-case handler) answer 400 `validation.keys_fold` on the child's path, as the parent's own keys do. In process (`CreateOne`, a typed repo) the key `MarshalEntity` derives counts too, so a `Line2` field's `line2` writes `line_2`, a `Title` field's `title` writes `Title`, and `_note`'s `note` (from its wire key `Note`) writes `_note`; a cascade relation's key is matched the same way.
 - **Read scope**: A cascade reaches the child entity's rows the way `?include=` does, so it honours the child's read scope: its `ReadScope`, and the clauses its own `BeforeList` hooks append (plus `BeforeGet` for `has_one` and `belongs_to`). An item that names an existing child the scope hides, by a bare id or with fields to update, answers **404**, the same as a child that is not there, and writes nothing; a `has_one` update with no id treats a hidden existing child as absent. A child the write creates, or moves, out of that scope comes back as its id alone.
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
@@ -647,12 +653,20 @@ entities:
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
 
-A `decimal` column is `DECIMAL(19,4)`. Postgres stores every digit of
-that. SQLite has no exact decimal type: it stores the value as an
-integer, or as a 64-bit float past about 15 significant digits, so
-`"90071992547409.1234"` reads back rounded there. Keep money that needs
-all 19 digits on Postgres, or store it as an `int` count of the smallest
-unit.
+A `decimal` column is `DECIMAL(19,4)`: up to 15 digits before the point
+and 4 after it. Postgres stores every digit of that. SQLite has no exact
+decimal type: it stores a whole number as an integer and a value with a
+fraction as a 64-bit float, which keeps 15 significant digits. So on
+SQLite a create or update refuses a value with a fraction and more than
+15 significant digits (`"90071992547409.1234"`,
+`"999999999999999.1234"`) with a 400 naming the field, code
+`decimal_significant_digits`, instead of storing it rounded; Postgres
+takes it. Whole numbers up to the column's 15 digits, and values such
+as `"12345678901.2345"`, read back as sent on both. Keep money that
+needs all 19 digits on Postgres, store it as an `int` count of the
+smallest unit, or give the field `RawType: "TEXT"`, which SQLite keeps
+as written (and which then sorts and compares as text).
+`schema.DecimalExactOnSQLite` is the check.
 
 A create or update refuses a `decimal` its column cannot store as sent,
 with a 400 naming the field, on both dialects:
@@ -767,7 +781,9 @@ If you want snake_case columns, write them snake_case in the declaration:
 `flare_verdict` → column `flare_verdict`. The framework never rewrites field
 names; the only auto-casing happens at the JSON layer (via `AppConfig.JSONCase`
 / `CrudHandler.WithJSONCase`), which converts column names to/from `camel` or
-`snake` on the wire and leaves the underlying column untouched.
+`snake` on the wire and leaves the underlying column untouched. The
+served `/openapi.json` names fields in the same case the routes answer
+in.
 
 Rule of thumb: name fields in whatever case you want the column to be in.
 camelCase is the convention used in the example apps; snake_case is the
@@ -1428,8 +1444,9 @@ value with `filter.CoerceValue` and binds it as that type:
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).
 `/openapi.json` types it the same way: an `integer` property and an
-integer `?<field>=` filter, where a relation to a `uuid` key is a
-`uuid`-format string and one to any other key a plain string.
+integer `?<field>=` filter. Any other belongs_to column takes its target
+key's type and format there: a relation to a `uuid` key is a
+`uuid`-format string, one to a text key a plain string.
 String, Text, Enum, UUID and other Relation columns take any text. A value of
 another type (`?n=abc` on an Int, `?active=yes` on a Bool) is a 400
 naming the field and the type on both dialects. `LenientFilters` does not lift it:
@@ -1700,6 +1717,14 @@ translation keys Display's names produce (`entity.<entity>.*`,
 `EntityConfig.PrimaryKey` names the primary-key columns in order. Left
 nil, the key is the one column `id`, which `Define` injects as a generated
 UUID unless `Fields` declares it.
+
+`EntityConfig.WithSystemFields()` returns a copy whose `Fields` already
+hold every column `Define` would inject (`id`, `created_at`/`updated_at`,
+and the tenant, owner and soft-delete scope columns), in the order
+`Define` adds them. `Define` keeps a declared field as it is, so code that
+adjusts one of those columns before `Define` (hides it, gives it a
+`WireName`) edits it there; `apiversions.ApplyToEntityConfig` does this
+for a projection that excludes or renames one.
 
 A plain join table keeps that `id` and holds its pair unique with an
 index. Every surface then names a row by one value, and another entity

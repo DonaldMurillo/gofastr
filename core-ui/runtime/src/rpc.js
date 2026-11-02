@@ -26,6 +26,12 @@
   // dropped: a span or link cannot be disabled, and two clicks during the
   // cold module load both reached dispatch, so both POSTs landed.
   const _rpcBusy = new WeakSet();
+  // FORM nodes with a submitted POST in flight. A POST creates: a
+  // double-click plus Ctrl+S sent three and an entity with no unique key
+  // got three rows. A re-submit is dropped until the first settles. PUT
+  // and PATCH replace state, so their newest value still supersedes, and
+  // an input-triggered dispatch (search as you type) always goes out.
+  const _formPosting = new WeakSet();
   // Input-triggered RPC debounce belongs with dispatch state, not the core
   // bridge. The bridge loads this module on the first input and asks this map
   // to schedule the request.
@@ -191,9 +197,12 @@
     // request or leave an unused controller in the per-signal map.
     // opts.confirmed === true means the caller (a submit bridge) already ran
     // the gate on this submit; skip so the user is not prompted twice.
+    const postOnce = node.tagName === 'FORM' && method === 'POST' && !(opts && opts.input);
+    if (postOnce && _formPosting.has(node)) return;
     if (node.getAttribute('data-cui-confirm') && !(opts && opts.confirmed === true)) {
       await NS.loadModule('confirm');
       if (!(await NS.ask(node))) return;
+      if (postOnce && _formPosting.has(node)) return;
     }
 
     // A form control that belongs to a form (every radio/input/select/
@@ -290,8 +299,10 @@
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
     if (wantDisable) node.disabled = true;
     if (guardBusy) _rpcBusy.add(node);
+    if (postOnce) _formPosting.add(node);
     node.classList.add('cui-loading');
     node.setAttribute('aria-busy', 'true');
+    let answered = false; // a later throw is no network failure
     try {
       if (!NS._originOK(resolvedPath)) return;
       const r = await fetch(NS._lp?.(resolvedPath) ?? resolvedPath, {
@@ -301,6 +312,7 @@
         signal: ctl.signal,
         credentials: 'same-origin',
       });
+      answered = true;
       if (stale()) return;
       // fetch followed a 3xx (an expired session sends the action to the
       // sign-in page), so this 200 is another URL's answer, not the
@@ -445,7 +457,11 @@
       }
     } catch (err) {
       if ((err && err.name === 'AbortError') || stale()) return;
-      if (errToast !== null) {
+      // A form fetch that never answered (offline) toasts, opted in or
+      // not, and the leave guard keeps the edits unsaved.
+      const lost = formSource && !answered;
+      if (lost) formResult(formSource, false);
+      if (lost || errToast !== null) {
         NS._toastOrFallback?.({ variant: 'error', title: errToast || NS.say('runtime.request_failed', 'Request failed'), body: NS.say('runtime.network_error', 'Network error: please try again'), ttl: 6000 });
       }
       if (responseSignal) {
@@ -460,6 +476,7 @@
         _rpcInFlight.delete(responseSignal);
       }
       if (guardBusy) _rpcBusy.delete(node);
+      if (postOnce) _formPosting.delete(node);
       // A superseded dispatch leaves the busy state to the newer one.
       if (_rpcLatest.get(node) === tok) {
         const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
@@ -492,7 +509,7 @@
         // A form that left the page (a navigation, a swap) is gone
         // with what the reader typed: its stale value must not land
         // on the next page.
-        if (node.isConnected) _dispatchRPC(node);
+        if (node.isConnected) _dispatchRPC(node, { input: true });
       }, ms));
       return;
     }

@@ -118,6 +118,23 @@ func outErr(link, target string) error {
 	return fmt.Errorf("%s is a symlink out of the project (to %q); move it, then re-run", link, target)
 }
 
+// Check refuses name (relative to dir) when a symlink on the way to it,
+// or name itself, leads out of dir, dangling or not; a missing name, or
+// a link that stays in dir, passes. The writers here confine
+// themselves, so Check is for what they cannot cover: a step that runs
+// outside an os.Root (the go and git subprocesses of init, an editor
+// that writes only later), and a refusal that must come before anything
+// is written, so a refused command leaves no half-made project.
+func Check(dir, name string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	_, err = Resolve(root, name)
+	return err
+}
+
 // Read reads name under root, following a link only while it stays in
 // root.
 func Read(root *os.Root, name string) ([]byte, error) {
@@ -298,11 +315,20 @@ func UserPath(p string) (dir, name string, err error) {
 // Split splits a path the user named into the directory to confine to
 // and the name under it. A local path (theme/theme.go) is confined to
 // the working directory, so a symlinked theme/ in the checkout cannot
-// carry the write out. A path that is absolute or climbs (../x, /abs/x)
-// names its own directory on purpose; only its last element is confined.
+// carry the write out; so is an absolute path that lies under the
+// working directory ($PWD/theme/theme.go), which names the same file. A
+// path that climbs or is absolute elsewhere (../x, /abs/x) names its own
+// directory on purpose; only its last element is confined.
 func Split(p string) (dir, name string) {
 	if filepath.IsLocal(p) {
 		return ".", filepath.ToSlash(filepath.Clean(p))
+	}
+	if filepath.IsAbs(p) {
+		if wd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(wd, p); err == nil && filepath.IsLocal(rel) {
+				return wd, filepath.ToSlash(rel)
+			}
+		}
 	}
 	return filepath.Dir(p), filepath.Base(p)
 }

@@ -132,6 +132,13 @@ func hashETag(r io.Reader) (string, error) {
 // handler. The digest is stored only when the handle it read still has
 // the revision the key was built from, before and after the read,
 // so a file replaced mid-hash never lends its digest to the old revision.
+//
+// The handle is opened HERE, on the request's goroutine, and only the
+// read runs in the background: open goes through the request's *os.Root,
+// which the handler closes when the response is done. Opened inside the
+// goroutine, it raced that close and lost on every quick answer, a HEAD,
+// a 304 or a short range, so a large file reached only that way never
+// got its ETag.
 func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, error)) {
 	if _, running := c.inflight.LoadOrStore(key, struct{}{}); running {
 		return
@@ -142,19 +149,21 @@ func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, erro
 		c.inflight.Delete(key)
 		return
 	}
+	release := func() {
+		<-c.slots
+		c.inflight.Delete(key)
+	}
+	f, err := openRecovered(open)
+	if err != nil {
+		release()
+		return
+	}
 	go func() {
-		defer func() {
-			<-c.slots
-			c.inflight.Delete(key)
-		}()
+		defer release()
+		defer f.Close()
 		// No request owns this goroutine, so no recovery middleware sits
 		// above it. A custom fs.File that panics must cost only its ETag.
 		defer func() { _ = recover() }()
-		f, err := open()
-		if err != nil {
-			return
-		}
-		defer f.Close()
 		if !sameRevision(f, key) {
 			return
 		}
@@ -164,6 +173,21 @@ func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, erro
 		}
 		c.done.Store(key, etag)
 	}()
+}
+
+// openRecovered calls open and turns a panic into an error, so a custom
+// fs.FS that panics in Open costs the ETag, not the request.
+func openRecovered(open func() (fs.File, error)) (f fs.File, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			f, err = nil, fs.ErrInvalid
+		}
+	}()
+	f, err = open()
+	if err == nil && f == nil {
+		err = fs.ErrNotExist
+	}
+	return f, err
 }
 
 func sameRevision(f fs.File, key digestKey) bool {

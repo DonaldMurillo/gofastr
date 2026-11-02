@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -447,10 +449,13 @@ func crumbsArea(_ context.Context, m uiapp.Match) render.HTML {
 	return ui.Breadcrumbs(ui.BreadcrumbsConfig{Label: "Breadcrumb", CompactMobile: true}, crumbs...)
 }
 
-// titleCase upper-cases the first rune of a path segment.
+// titleCase upper-cases the first rune of a path segment. A rune, not
+// a byte: s[:1] of "étude" is half a letter, and upper-casing it wrote
+// U+FFFD plus a stray continuation byte into the crumb.
 func titleCase(s string) string {
-	if s == "" {
+	r, n := utf8.DecodeRuneInString(s)
+	if n == 0 || r == utf8.RuneError {
 		return s
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	return string(unicode.ToTitle(r)) + s[n:]
 }

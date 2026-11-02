@@ -34,9 +34,12 @@ import (
 	stdimage "image"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/internal/jpegcost"
 )
 
 // DefaultMaxPixels caps decoded image area at 64 MP, an 8192×8192
@@ -54,6 +57,30 @@ const DefaultMaxPixels int64 = 64 * 1024 * 1024
 // sources configure Config.MaxSourceBytes explicitly.
 const DefaultMaxSourceBytes int64 = 64 << 20
 
+// DefaultMaxJPEGScans caps the scans a JPEG may carry before it is
+// decoded. The pixel cap bounds the frame, not how often the decoder
+// walks it: a progressive scan that is one end-of-band run per 32,767
+// blocks costs about ten bytes and still revisits every block, so at
+// 64 MP each scan was ~37ms of CPU and a 10 KB file of 100 scans took
+// four seconds. Common encoders write at most a few dozen scans (libjpeg's
+// progressive script writes 10 for a color image). Callers with stranger
+// inputs configure Config.MaxJPEGScans.
+const DefaultMaxJPEGScans = 64
+
+// DefaultMaxJPEGScanPixels is the default JPEG scan budget: scans times
+// pixels, the block walks a decode costs. The flat scan cap alone still
+// let a 6.5 KB progressive file of 64 scans hold a core for ~2.8 s at
+// 64 MP, against ~0.38 s for one scan, so the budget gives a small image
+// many scans and a huge one few: ten full walks of a 64 MP frame, or the
+// flat cap's 64 scans of anything up to 10 MP. It is ten times
+// DefaultMaxPixels; with Config.MaxJPEGScanPixels unset the budget is ten
+// times the effective Config.MaxPixels.
+const DefaultMaxJPEGScanPixels = jpegScanWalksAtPixelCap * DefaultMaxPixels
+
+// jpegScanWalksAtPixelCap is how many full-frame walks the default scan
+// budget allows at the pixel cap.
+const jpegScanWalksAtPixelCap = 10
+
 // Config holds knobs that propagate through a pipeline.
 type Config struct {
 	// MaxPixels caps decoded image area. Inputs whose reported width*height
@@ -68,7 +95,39 @@ type Config struct {
 	// more than the cap returns ErrSourceTooLarge. Zero or negative
 	// means DefaultMaxSourceBytes, mirroring MaxPixels.
 	MaxSourceBytes int64
+
+	// MaxJPEGScans caps the scans (start-of-scan markers) a JPEG source
+	// may carry; past it decode returns ErrDecompressionBomb before any
+	// pixel is decoded. Zero or negative means DefaultMaxJPEGScans.
+	// It is a flat ceiling: MaxJPEGScanPixels applies as well, so raising
+	// it admits more scans only on frames small enough for the budget.
+	MaxJPEGScans int
+
+	// MaxJPEGScanPixels caps a JPEG's scans times its pixels, the block
+	// walks its decode costs; past it decode returns ErrDecompressionBomb
+	// before any pixel is decoded. Both caps apply: a JPEG is refused when
+	// its scans exceed MaxJPEGScans or its scans × width × height exceed
+	// this budget. Zero or negative means ten times the effective
+	// MaxPixels (DefaultMaxJPEGScanPixels at the default MaxPixels).
+	MaxJPEGScanPixels int64
+
+	// MaxProgressiveJPEGBytes caps the coefficient buffer a progressive
+	// (SOF2) JPEG makes the decoder allocate, read from the frame header
+	// before any pixel is decoded; past it decode returns
+	// ErrDecompressionBomb. Zero or negative means
+	// DefaultMaxProgressiveJPEGBytes. Baseline JPEGs keep no coefficients
+	// and are not affected.
+	MaxProgressiveJPEGBytes int64
 }
+
+// DefaultMaxProgressiveJPEGBytes caps the coefficients image/jpeg keeps
+// for a progressive JPEG, 512 MiB. The decoder holds 256 bytes (64 int32s)
+// per block of every component for the whole frame, on top of the pixel
+// buffer the pixel cap already bounds: a few-hundred-byte progressive
+// 3-component 8192×8192 file allocated ~1 GB, against ~192 MB for the
+// same frame baseline. At this default a 64 MP frame passes in grayscale
+// (256 MiB) or 4:2:0 color (384 MiB) and is refused at 4:4:4 (768 MiB).
+const DefaultMaxProgressiveJPEGBytes int64 = 512 << 20
 
 // Image is the chainable pipeline value. Transformations return a new
 // *Image, so the same source may be branched into independent pipelines.
@@ -205,6 +264,29 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	if int64(icfg.Width) > cfg.MaxPixels/int64(icfg.Height) {
 		return nil, ErrDecompressionBomb
 	}
+	if format == FormatJPEG {
+		maxScans := cfg.MaxJPEGScans
+		if maxScans <= 0 {
+			maxScans = DefaultMaxJPEGScans
+		}
+		scans := countJPEGScans(data)
+		if scans > maxScans {
+			return nil, fmt.Errorf("%w: JPEG carries %d scans (max %d)", ErrDecompressionBomb, scans, maxScans)
+		}
+		// Divide rather than multiply: width×height is bounded by
+		// MaxPixels, but a host-raised MaxJPEGScans leaves scans open.
+		pixels := int64(icfg.Width) * int64(icfg.Height)
+		if budget := jpegScanBudget(cfg); int64(scans) > budget/pixels {
+			return nil, fmt.Errorf("%w: JPEG carries %d scans of %d pixels (budget %d pixel-scans)", ErrDecompressionBomb, scans, pixels, budget)
+		}
+		maxCoeff := cfg.MaxProgressiveJPEGBytes
+		if maxCoeff <= 0 {
+			maxCoeff = DefaultMaxProgressiveJPEGBytes
+		}
+		if n, ok := jpegcost.ProgressiveCoeffBytes(data); ok && n > maxCoeff {
+			return nil, fmt.Errorf("%w: progressive JPEG needs %d bytes of coefficients (max %d)", ErrDecompressionBomb, n, maxCoeff)
+		}
+	}
 	img, _, err := stdimage.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("image: decode: %w", err)
@@ -218,6 +300,57 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 		frames = countGIFFrames(data)
 	}
 	return &Image{img: img, format: format, orient: orient, frames: frames, cfg: cfg}, nil
+}
+
+// jpegScanBudget is cfg's scans × pixels budget: MaxJPEGScanPixels, or
+// jpegScanWalksAtPixelCap walks of the (already defaulted) MaxPixels,
+// saturating instead of wrapping for a host MaxPixels near MaxInt64.
+func jpegScanBudget(cfg Config) int64 {
+	if cfg.MaxJPEGScanPixels > 0 {
+		return cfg.MaxJPEGScanPixels
+	}
+	if cfg.MaxPixels > math.MaxInt64/jpegScanWalksAtPixelCap {
+		return math.MaxInt64
+	}
+	return jpegScanWalksAtPixelCap * cfg.MaxPixels
+}
+
+// countJPEGScans counts the SOS markers image/jpeg would act on: it walks
+// the marker segments from SOI, skips each segment's payload by its length
+// field, steps over entropy-coded data (stuffed FF 00, RSTn, fill bytes)
+// and stops at the first EOI, where the decoder stops. Counting FF DA byte
+// pairs over the whole file instead counted an APPn payload (an ICC
+// profile, a MakerNote preview) and a motion photo's video clip after EOI,
+// and refused a one-scan phone photo as a bomb. A stray FF DA inside
+// entropy data still counts, so the walk over-counts at worst and never
+// misses a scan the decoder runs.
+func countJPEGScans(d []byte) int {
+	n := 0
+	for i := 2; i+1 < len(d); {
+		if d[i] != 0xFF {
+			i++ // entropy-coded data
+			continue
+		}
+		m := d[i+1]
+		switch {
+		case m == 0xFF: // fill byte
+			i++
+			continue
+		case m == 0x00 || m == 0x01 || m == 0xD8 || (m >= 0xD0 && m <= 0xD7): // no length field
+			i += 2
+			continue
+		case m == 0xD9: // EOI
+			return n
+		}
+		if m == 0xDA {
+			n++
+		}
+		if i+3 >= len(d) {
+			return n
+		}
+		i += 2 + (int(d[i+2])<<8 | int(d[i+3]))
+	}
+	return n
 }
 
 // countGIFFrames returns the frame count of a GIF byte stream without

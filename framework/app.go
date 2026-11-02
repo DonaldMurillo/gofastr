@@ -717,7 +717,10 @@ func (a *App) OpenAPISpec(title string) *coreoa.Spec {
 	return openapi.EntityOpenAPIFor(a.Registry, openapi.Options{
 		Title: title, Version: "1.0.0",
 		CRUDMounted: a.entityCRUDEnabled, BulkMounted: a.entityUIMounted,
-		BasePath: a.apiPrefix(), JSONCase: a.JSONCasing(),
+		// The same mount facts the llm.md index reads (#358): a view
+		// serves its read routes only.
+		ReadOnlyMounted: func(e *entity.Entity) bool { return a.entityCrudMount(e).ReadOnly },
+		BasePath:        a.apiPrefix(), JSONCase: a.JSONCasing(),
 	})
 }
 
@@ -1906,6 +1909,10 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
+	// The registry hands out the handler this App wires (hooks, events,
+	// JSON case, storage), so code holding only app.Registry, the
+	// documented factory.New(app.Registry, …), runs the app's pipeline.
+	a.Registry.handlerFor = a.CrudHandlerForEntity
 	// A recovered battery start or stop panic logs where the App logs.
 	a.Batteries.logger = a.Logger
 
@@ -2096,7 +2103,7 @@ func NewApp(opts ...AppOption) *App {
 	// the router resolves the chain per request, so ordering here does
 	// not weaken coverage.
 	if a.webBotAuth != nil && a.webBotAuth.Verify != nil {
-		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger())
+		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger(), webbotauth.WithMaxValidity(a.webBotAuth.Verify.MaxValidity))
 		a.router.Use(a.webBotAuthVerifier.Middleware)
 	}
 
@@ -3637,8 +3644,13 @@ func (a *App) Start(addr string) error {
 	// every page now (migrations and seeds have run, so data-backed
 	// pages render their rows) and return instead of serving.
 	if dir := os.Getenv(envExport); dir != "" {
-		if err := a.ExportStatic(a.appCtx, dir, os.Getenv(envExportBase)); err != nil {
+		res, err := a.exportStatic(a.appCtx, dir, os.Getenv(envExportBase))
+		if err != nil {
 			return abort(fmt.Errorf("export: %w", err))
+		}
+		// The receipt goes last: it says the export above is complete.
+		if err := writeExportReceipt(dir, os.Getenv(envExportRun), len(res.Pages)); err != nil {
+			return abort(fmt.Errorf("export receipt: %w", err))
 		}
 		a.Logger().Info("static export written", "dir", dir)
 		return abort(nil)
@@ -3759,7 +3771,10 @@ func (a *App) Start(addr string) error {
 	// Prometheus /metrics endpoint when metrics are enabled (WithMetrics).
 	// Unauthenticated by design, scrape from inside the network boundary.
 	if a.metrics != nil {
-		a.router.Get("/metrics", middleware.MetricsHandler(a.metrics))
+		// Through Metrics(), not the bare store: it attaches the
+		// framework-owned collectors (db_pool, outbox), which otherwise
+		// appeared only once a battery happened to take the handle.
+		a.router.Get("/metrics", middleware.MetricsHandler(a.Metrics()))
 	}
 
 	if a.Config.DebugEndpoints {
@@ -3820,7 +3835,9 @@ func (a *App) Start(addr string) error {
 	// OAuth Protected Resource metadata (RFC 9728). Opt-in; advertises how
 	// OAuth-token-protected resources accept tokens.
 	if a.oauthResource != nil {
-		a.router.Get("/.well-known/oauth-protected-resource", http.HandlerFunc(a.handleOAuthProtectedResource))
+		for _, p := range a.oauthResource.metadataPaths() {
+			a.router.Get(p, http.HandlerFunc(a.handleOAuthProtectedResource))
+		}
 	}
 	// Agent-readiness well-known endpoints (isitagentready.com). The API
 	// catalog (RFC 9727 linkset) + MCP server card are auto-served when

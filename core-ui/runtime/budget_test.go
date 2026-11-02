@@ -1630,7 +1630,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// commit seam now passes, instead of the outgoing page's copy on
 		// <html> (2026-11-01 bug hunt R7-093,
 		// TestTransitionPickUsesIncomingVocab).
-		"transition": 1440,
+		// 1448 measured (1446 + 2) after commit handles the ready
+		// promise a skipped transition rejects, which surfaced as an
+		// unhandled rejection on every rage click (2026-11-02 bug bash,
+		// TestSkippedTransitionRaisesNoUnhandledRejection).
+		"transition": 1448,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's
@@ -1705,7 +1709,23 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// any other dispatch of a node cancels its pending debounced
 		// input request (2026-11-01, TestRPCErrorToastReadsTypedHandlerEnvelope,
 		// TestSubmitCancelsPendingInputRPC, TestDetachedFormSkipsPendingInputRPC).
-		"rpc": 3709,
+		// 3718 measured (3716 + 2) after a data-cui-rpc form whose fetch
+		// never answers reports it (a toast and a failed form result)
+		// without opting in to data-cui-rpc-error-toast (2026-11-02,
+		// TestDispatchRPC_FormNetworkErrorIsNotSilent): an offline submit
+		// did nothing at all. The catch arm is this dispatcher's.
+		// 3747 measured (3745 + 2) after that report is limited to a
+		// fetch that never answered (2026-11-02,
+		// TestDispatchRPC_FormAnsweredSaveIsNotANetworkError): a 2xx with
+		// an unparsable body threw into the same catch and toasted
+		// "Network error" over a save the server committed.
+		// 3800 measured (3798 + 2) after a data-cui-rpc FORM whose method
+		// is POST drops a re-submit while its own POST is in flight
+		// (2026-11-02, D-09, TestFormPOSTResubmitInFlightSendsOnce): a
+		// double-click plus Ctrl+S sent three POSTs and an entity with no
+		// unique key got three rows. The in-flight set is dispatch state
+		// only this module holds.
+		"rpc": 3800,
 	}
 	const coreOverride = 0
 

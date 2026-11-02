@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +98,12 @@ func (editImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (
 	if args.OldString == args.NewString {
 		return errorResult("Edit: old_string and new_string are identical"), nil
 	}
-	data, err := os.ReadFile(args.Path)
+	f, err := openRegularPath(args.Path)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Edit: read: %v", err)), nil
+	}
+	data, err := io.ReadAll(f)
+	_ = f.Close()
 	if err != nil {
 		return errorResult(fmt.Sprintf("Edit: read: %v", err)), nil
 	}
@@ -117,6 +123,7 @@ func (editImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (
 	} else {
 		updated = strings.Replace(content, args.OldString, args.NewString, 1)
 	}
+	//gofastr:allow(worldreadable) Edit rewrites a file it just read, which keeps its own mode; 0o644 applies only if the file vanished in between, and an agent's working-tree source file is not a secret
 	if err := os.WriteFile(args.Path, []byte(updated), 0o644); err != nil {
 		return errorResult(fmt.Sprintf("Edit: write: %v", err)), nil
 	}

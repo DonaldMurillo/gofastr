@@ -25,7 +25,7 @@ Rules are grouped into capabilities, and each capability is also a filter:
 | `routing` | duplicate routes, `:id` where ServeMux wants `{id}`, lowercase methods, in-page state modelled as navigation, routes no test mentions, path prefixes matched without a segment boundary |
 | `permissions` | per-user data exposed with no owner field, mutating routes outside any guarded group, auth configured but never mounted |
 | `security` | SQL built by concatenation, POST forms with no CSRF input, `render.HTML` on a concatenation, cookies missing HttpOnly/Secure/SameSite, committed credentials, `X-Forwarded-Proto` spliced into a URL without an http/https check, request bodies decoded with `encoding/json` outside `core/handler`'s strict binder |
-| `data` | writes whose result and error are both discarded |
+| `data` | writes whose result and error are both discarded (`_, _ = db.Exec(…)`, or a bare `db.Exec(…)` statement) |
 | `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
 | `architecture` | imports that point up the layer stack, explicitly forbidden edges |
 | `rendering` | CSS outside the design system, stylesheets with no owner, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body, `var(--…)` in project CSS naming a token the theme does not emit, design-system CSS hardcoding a literal a theme token already declares, the owned-style (`*.style.css`) checks |
