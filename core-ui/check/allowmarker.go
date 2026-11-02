@@ -42,7 +42,9 @@ func allowedLines(comments []markerComment, name string) map[int]bool {
 		if strings.HasPrefix(c.text, "/*") {
 			rest = strings.TrimSuffix(strings.TrimSpace(rest), "*/")
 		}
-		if strings.TrimSpace(rest) == "" {
+		// Separator punctuation alone ("--", "— :") is not a reason,
+		// the rule framework/contracts and internal/analyzers/allow hold.
+		if strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(rest), "-—:")) == "" {
 			continue
 		}
 		out[c.line] = true

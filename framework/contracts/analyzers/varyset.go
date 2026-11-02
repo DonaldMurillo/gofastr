@@ -25,7 +25,12 @@ import (
 // spell Add; this rule keeps the one Set from coming back.
 //
 // The header name is compared the way Header.Set canonicalizes it, so
-// Set("vary", …) and Set("VARY", …) are the same finding.
+// Set("vary", …) and Set("VARY", …) are the same finding. Two more
+// spellings clobber the same way and report too (2026-11-02 guard
+// bash, both were silent): Del("Vary"), which drops every earlier entry
+// before whatever Add follows, and the map write h["Vary"] = …, which
+// replaces them. A map write under a non-canonical key ("vary") is a
+// separate header line, not a clobber.
 //
 // Deliberately silent on:
 //   - .Add("Vary", …), the append-only spelling every correct site
@@ -36,12 +41,30 @@ import (
 func ruleVarySet(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	ast.Inspect(file, func(n ast.Node) bool {
+		// h["Vary"] = []string{…}: the map write replaces every entry
+		// exactly as Set does. Only the canonical key is the same entry;
+		// h["vary"] is a second header line, not a clobber.
+		if as, ok := n.(*ast.AssignStmt); ok {
+			for _, lhs := range as.Lhs {
+				ix, ok := lhs.(*ast.IndexExpr)
+				if !ok {
+					continue
+				}
+				if key, ok := stringLit(ix.Index); ok && key == "Vary" {
+					out = append(out, diag(p, contracts.RuleVarySet, rel, lhs.Pos(),
+						`Vary is append-only in a middleware chain: assigning h["Vary"] replaces the entries earlier middlewares added (CORS Adds "Vary: Origin") — use .Add("Vary", …)`))
+				}
+			}
+			return true
+		}
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel == nil || sel.Sel.Name != "Set" {
+		// Del drops every entry earlier middlewares added; an Add after
+		// it leaves the same single-entry header Set would.
+		if !ok || sel.Sel == nil || (sel.Sel.Name != "Set" && sel.Sel.Name != "Del") {
 			return true
 		}
 		name, ok := stringLit(call.Args[0])

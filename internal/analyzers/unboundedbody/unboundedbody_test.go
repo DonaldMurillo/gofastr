@@ -9,5 +9,5 @@ import (
 )
 
 func TestUnboundedBody(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), unboundedbody.Analyzer, "a", "capped", "helper", "parseform", "i12")
+	analysistest.Run(t, analysistest.TestData(), unboundedbody.Analyzer, "a", "capped", "helper", "parseform", "i12", "spellings")
 }

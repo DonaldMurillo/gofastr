@@ -25,6 +25,14 @@
 // zipcode and encoding are single words that contain the letters, not
 // the token, and stay quiet).
 //
+// The compare has more spellings than ==/!=, and each short-circuits
+// the same way: bytes.Equal, bytes.Compare and strings.Compare on the
+// pair (bytes.Equal on a MAC is the textbook timing bug), a switch whose
+// tag is compared against each case, and an operand behind parentheses
+// or a string <-> []byte conversion (`string(sig) == want`). A type
+// parameter whose every constraint term is a string or []byte counts as
+// one. The 2026-11-02 guard bash found the rule blind to all of them.
+//
 // Silent postures, deliberately:
 //   - a literal, named constant, or nil on either side: an empty-check
 //     (`code == ""`), a sentinel, a typed enum constant, and `!= nil`
@@ -72,49 +80,102 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
-			be, ok := n.(*ast.BinaryExpr)
-			if !ok || (be.Op != token.EQL && be.Op != token.NEQ) {
-				return true
-			}
-			if !stringish(pass, be.X) || !stringish(pass, be.Y) {
-				return true
-			}
-			xName, xCred := operandCredential(be.X)
-			yName, yCred := operandCredential(be.Y)
-			if !xCred && !yCred {
-				return true
-			}
-			// A literal, constant, or nil on either side is an
-			// empty-check / sentinel / enum compare, not a compare of
-			// two secrets.
-			if isConstOperand(pass, be.X) || isConstOperand(pass, be.Y) {
-				return true
-			}
-			// A credential against a plain local of unknown provenance
-			// leaks nothing an attacker can steer: both surviving shapes
-			// have a guessable side, either another credential-named
-			// value (the client's presentation) or an input-fetching
-			// call (env, header, query, form).
-			other := be.Y
-			if yCred {
-				other = be.X
-			}
-			if !xCred || !yCred {
-				if _, ok := operandName(other); ok || !inputFetch(pass, other) {
+			switch v := n.(type) {
+			case *ast.BinaryExpr:
+				if v.Op == token.EQL || v.Op == token.NEQ {
+					check(pass, v.X, v.Y, v.Pos())
+				}
+			case *ast.CallExpr:
+				// bytes.Equal and strings.Compare are == spelled as a
+				// call: the same byte-at-a-time short circuit.
+				switch pathflow.QualifiedFunc(pass, v.Fun) {
+				case "bytes.Equal", "bytes.Compare", "strings.Compare":
+					if len(v.Args) == 2 {
+						check(pass, v.Args[0], v.Args[1], v.Pos())
+					}
+				}
+			case *ast.SwitchStmt:
+				// `switch token { case want: }` compares the tag with ==
+				// against every case expression.
+				if v.Tag == nil {
 					return true
 				}
+				for _, st := range v.Body.List {
+					cc, ok := st.(*ast.CaseClause)
+					if !ok {
+						continue
+					}
+					for _, e := range cc.List {
+						check(pass, v.Tag, e, e.Pos())
+					}
+				}
 			}
-			named := xName
-			if named == "" {
-				named = yName
-			}
-			pass.Reportf(be.Pos(),
-				"%s compared with ==/!=: a short-circuit compare on a credential leaks match status through timing; use subtle.ConstantTimeCompare or hmac.Equal",
-				named)
 			return true
 		})
 	}
 	return nil, nil
+}
+
+// check reports a compare of x against y at pos when one side is
+// credential-shaped and the other is guessable.
+func check(pass *analysis.Pass, x, y ast.Expr, pos token.Pos) {
+	x, y = unwrap(pass, x), unwrap(pass, y)
+	if !stringish(pass, x) || !stringish(pass, y) {
+		return
+	}
+	xName, xCred := operandCredential(x)
+	yName, yCred := operandCredential(y)
+	if !xCred && !yCred {
+		return
+	}
+	// A literal, constant, or nil on either side is an empty-check /
+	// sentinel / enum compare, not a compare of two secrets.
+	if isConstOperand(pass, x) || isConstOperand(pass, y) {
+		return
+	}
+	// A credential against a plain local of unknown provenance leaks
+	// nothing an attacker can steer: both surviving shapes have a
+	// guessable side, either another credential-named value (the
+	// client's presentation) or an input-fetching call (env, header,
+	// query, form).
+	other := y
+	if yCred {
+		other = x
+	}
+	if !xCred || !yCred {
+		if _, ok := operandName(other); ok || !inputFetch(pass, other) {
+			return
+		}
+	}
+	named := xName
+	if named == "" {
+		named = yName
+	}
+	pass.Reportf(pos,
+		"%s compared with ==/!=: a short-circuit compare on a credential leaks match status through timing; use subtle.ConstantTimeCompare or hmac.Equal",
+		named)
+}
+
+// unwrap strips what does not change the bytes compared: parentheses
+// and a string <-> []byte conversion (`string(sig) == want` compares
+// sig's bytes). A conversion is a call whose callee is a type, which the
+// type checker tells apart from a computed call.
+func unwrap(pass *analysis.Pass, e ast.Expr) ast.Expr {
+	for {
+		switch v := e.(type) {
+		case *ast.ParenExpr:
+			e = v.X
+			continue
+		case *ast.CallExpr:
+			if len(v.Args) == 1 {
+				if tv, ok := pass.TypesInfo.Types[v.Fun]; ok && tv.IsType() && stringish(pass, v.Args[0]) {
+					e = v.Args[0]
+					continue
+				}
+			}
+		}
+		return e
+	}
 }
 
 // operandName returns the identifier a comparison operand is named by:
@@ -178,6 +239,33 @@ func stringish(pass *analysis.Pass, e ast.Expr) bool {
 	t := pass.TypesInfo.TypeOf(e)
 	if t == nil {
 		return false
+	}
+	return stringType(t)
+}
+
+// stringType reports whether t is a string or a []byte, or a type
+// parameter every term of whose constraint is one (`T ~string`).
+func stringType(t types.Type) bool {
+	if tp, ok := t.(*types.TypeParam); ok {
+		iface, ok := tp.Constraint().Underlying().(*types.Interface)
+		if !ok || iface.NumEmbeddeds() == 0 {
+			return false
+		}
+		for i := range iface.NumEmbeddeds() {
+			switch et := iface.EmbeddedType(i).(type) {
+			case *types.Union:
+				for j := range et.Len() {
+					if !stringType(et.Term(j).Type()) {
+						return false
+					}
+				}
+			default:
+				if !stringType(et) {
+					return false
+				}
+			}
+		}
+		return true
 	}
 	u := t.Underlying()
 	switch v := u.(type) {

@@ -779,7 +779,7 @@ func securityRules() []Rule {
 		ID: RuleVarySet, Slug: "security/vary-set-overwrites",
 		Title:      "`Vary` written with Set in a middleware chain",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`Header().Set(\"Vary\", …)`, in any case, replaces the Vary entries earlier middlewares added.",
+		Summary: "`Header().Set(\"Vary\", …)` in any case, `Header().Del(\"Vary\")`, or `h[\"Vary\"] = …` replaces the Vary entries earlier middlewares added.",
 		Why:     "Vary is append-only in a middleware chain: a response crosses CORS (which Adds `Vary: Origin`), an idempotency layer, a cache layer, and a later Set replaces every earlier entry — a shared cache then serves one principal's variant to another. The 2026-09-07 probe TestIdempotencyVaryEatsCors pinned it live: CORS(...)(Idempotency(...)) on an over-cap POST produced ACAO with Vary listing ONLY Idempotency-Key.",
 		Fix:     "Use `.Add(\"Vary\", …)`, the spelling core/middleware/cors.go, wellknown.go, embed, uihost, and the auth BFF all already use. Set is for headers one layer owns end to end; Vary is never one of them.",
 		Doc:     "security",

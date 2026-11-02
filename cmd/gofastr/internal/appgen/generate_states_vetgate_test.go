@@ -12,6 +12,11 @@ import (
 
 // The vetgate's own fixtures carry no states entity; this leg renders the
 // entity-mode module WITH moves and runs the same repo vettool over it.
+//
+// It builds ./cmd/vettool in a subprocess, which no import edge shows,
+// so an analyzer change has to name it to select this package.
+//
+//gofastr:test-reads internal/analyzers/ cmd/vettool/
 func TestGeneratedCLIWithStatesPassesRepoVettool(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("no go toolchain: %v", err)

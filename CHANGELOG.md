@@ -141,6 +141,42 @@ few lines, and link the PR or the docs page for the rest.
   and is silently not trimmed; update the method to filter by
   `tier.Tenant` and `tier.Scope`. An owner now retains up to 64 terminal
   and 64 paused tasks per tenant and scope set.
+- **`gofastr verify` and `make analyze` read more spellings of the shapes
+  they already refuse.** A 2026-11-02 pass wrote small variations of each
+  analyzer's own bug shape and widened every rule that missed one:
+  - `fixedtmp`: `"/tmp/app-" + pid`, `filepath.Join("/tmp/app", name)`,
+    `path.Join`, `fmt.Sprintf("/tmp/app-%d", pid)` and an
+    `exec.Cmd{Dir: …, Path: …}` literal;
+  - `timestampid`: an id bound in `Session{ID: …}`, `var token = …` or
+    a multi-value assignment, built with `fmt.Sprint`, or made from
+    `time.Now().Format(…)` / `.String()`. A `make([]byte, 16)` rand
+    buffer now silences it as a `[16]byte` array always did;
+  - `errleak`: `fmt.Sprintf("query failed: %v", err)` and
+    `fmt.Sprint(err)` on a 5xx;
+  - `discardeddecode`: a discarded `handler.UnmarshalStrict`,
+    `handler.DecodeStrict`, `jsonexact.Unmarshal` or yaml `Decode`;
+  - `recoverlog` and `controlbytes`: `log.Fatal*` / `log.Panic*` (they
+    print the message before exiting), and for `recoverlog`
+    `os.Stderr.WriteString`;
+  - `worldreadable`: a mode that is constant but not a bare literal —
+    `os.FileMode(0o644)`, a named const, `fs.ModePerm`, `0o600|0o044`;
+  - `unboundedbody` and `unboundedresp`: `ioutil.ReadAll`,
+    `io.CopyBuffer`, `buf.ReadFrom(body)`, a body read through
+    `bufio.NewReader` or a `body := r.Body` alias, and for responses
+    `io.Copy` into anything but `io.Discard`;
+  - `GOFASTR1413`: `Header().Del("Vary")` and `h["Vary"] = …`, which
+    clobber the earlier entries as `Set` does;
+  - `secretcompare`: `bytes.Equal` / `bytes.Compare` / `strings.Compare`
+    on a credential pair, a `switch token { case stored: }`, a
+    `string(sig)` conversion, and a `~string` type parameter;
+  - `credfetch`: `req.SetBasicAuth`, which writes `Authorization`;
+  - `keytrim`: `strings.Trim` / `TrimLeft` / `TrimRight` / `TrimFunc`
+    and `bytes.TrimSpace` on an id, and a request read that reaches the
+    trim through a local.
+
+  Code that passed verify can fail it on upgrade. Fix the finding, or
+  mark a site that is the shape on purpose with
+  `//gofastr:allow(<analyzer>) <why>`.
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
@@ -424,6 +460,45 @@ few lines, and link the PR or the docs page for the rest.
   newer replica linked mid-deploy, for that long. The fallback now
   revalidates every time (its ETag makes that a 304); files that exist
   keep `MaxAge`.
+- **The analyzer wiring test checks every analyzer, not every
+  package.** `TestEveryAnalyzerIsWiredOrExplained` read one variable
+  named `Analyzer` in `<pkg>/<pkg>.go` and counted any mention of the
+  package name in a `suite.go` comment as the reason it was held back.
+  So `hygiene` (whose two analyzers are not named `Analyzer`) was
+  skipped, `unseated`'s two arms in `arms.go` were never looked at, and
+  `rawtext` was "explained" by the comment above its own registration.
+  Deleting those four registrations, with their marker names, passed
+  every test while `make analyze` and CI stopped running them. The test
+  now reads every exported `&analysis.Analyzer{}` in every file of each
+  package, and only a `<name> — <reason>` line holds one back.
+- **An analyzer marker needs a reason in words.**
+  `//gofastr:allow(<analyzer>) --` silenced the vettool and the
+  `core-ui/check` lints while `gofastr verify` reported the same marker as
+  having no reason. Separator punctuation alone (`--`, `—`, `:`) no
+  longer counts as a reason anywhere.
+- **An analyzer change selects the generated-code vet gates.** The gates
+  that vet emitted code with the repo vettool (`TestUnionApp`, the
+  generated-CLI and styles gates in `appgen` and `generatecmd`) build
+  `./cmd/vettool` in a subprocess, which no import edge shows, so
+  `cmd/affected` never selected them for a change under
+  `internal/analyzers/`: a widened rule that fired on emitted code passed
+  the pull request and failed main. Each now declares
+  `//gofastr:test-reads internal/analyzers/ cmd/vettool/`, and
+  `TestRepoVettoolCallersDeclareTheirReads` holds every future caller of
+  `clitest.RepoVettool` to the same directive.
+- **`core-ui/check.LintNumberFill` reads every spelling of the `{{n}}`
+  pattern.** It matched only a quoted `'{{n}}'` and a regex with escaped
+  braces, so `.replace(` + "`{{n}}`" + `, String(n))` (a template
+  literal) and `.replace(/{{n}}/g, String(n))` (unescaped braces, the
+  same regex to JavaScript) filled the count with ASCII digits unseen.
+- **`core-ui/check.LintRuntimeProse` reads every reader-facing sink.**
+  `alert` / `confirm` / `prompt`, a literal passed to `append`,
+  `prepend`, `replaceChildren`, `before`, `after` or `replaceWith`
+  (each makes a text node), `nodeValue`, and the ARIA text attributes
+  and properties beyond `aria-label` (`aria-valuetext`,
+  `aria-roledescription`, `aria-placeholder`, `ariaDescription`, …)
+  all put English in front of a reader with the lint silent. The
+  shipped JavaScript stays clean under the wider rule.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

@@ -71,3 +71,27 @@ func mark(w http.ResponseWriter, h http.Header) {
 		t.Fatalf("want 2 findings (lower + upper case), got %d: %v", len(found), found)
 	}
 }
+
+// The clobber has two more spellings than Set (2026-11-02 guard bash):
+// assigning the canonical map key outright replaces every entry the
+// same way, and Del drops them all before any Add that follows. A map
+// write under a non-canonical key ("vary") is a separate header line,
+// not a clobber, and stays quiet.
+func TestVaryMapWriteAndDelAreReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"cache.go": `package middleware
+
+import "net/http"
+
+func mark(w http.ResponseWriter, h http.Header) {
+	w.Header()["Vary"] = []string{"Accept"}
+	h.Del("vary")
+	h.Add("Vary", "Cookie")
+	h["vary"] = []string{"Cookie"}
+}
+`,
+	})
+	if found := countRule(t, ds, contracts.RuleVarySet); len(found) != 2 {
+		t.Fatalf("want 2 findings (map write + Del), got %d: %v", len(found), found)
+	}
+}

@@ -39,6 +39,14 @@
 // posture). Format+args spellings ("...: %v", err) are deliberately
 // not resolved: the format string reaches the helper, not the wire,
 // and the helper's own gate decides.
+//
+// Both arms read the error's text in every spelling that builds the
+// body string in place: err.Error(), "prefix: "+err.Error(),
+// fmt.Sprint(err), and fmt.Sprintf with a text verb (%v %s %q) and the
+// error among its operands — fmt.Sprintf("query failed: %v", err) is a
+// built string, not a format handed to a helper. Until the 2026-11-02
+// guard bash the HTTP arm read only .Error(), and the JSON-RPC arm only
+// the bare "%v"/"%s" format.
 package errleak
 
 import (
@@ -46,6 +54,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -72,7 +81,11 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 			if hasServerErrorStatus(pass, call.Args) {
 				for _, arg := range call.Args {
-					if pos, found := findErrorText(pass, arg); found {
+					pos, found := findErrorText(pass, arg)
+					if !found {
+						pos, found = findSprintfErr(pass, arg)
+					}
+					if found {
 						pass.Reportf(pos,
 							"sends an internal error's text on a 5xx response: a server-side error string carries DSNs, paths and SQL to the client — log it and write a fixed message")
 						return true
@@ -161,9 +174,14 @@ func findErrorText(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found boo
 	return pos, found
 }
 
-// findSprintfErr looks for fmt.Sprintf whose format is "%v" or "%s"
-// with an error-typed argument — the other spelling of "hand the
-// error's text over".
+// findSprintfErr looks for an fmt string formatter handed an
+// error-typed argument — the other spelling of "hand the error's text
+// over": fmt.Sprint / fmt.Sprintln of the error, or fmt.Sprintf whose
+// format renders an operand as text (%v, %s, %q, with any flags), as in
+// fmt.Sprintf("query failed: %v", err). Until the 2026-11-02 guard bash
+// only the bare "%v"/"%s" format counted and only on the JSON-RPC arm,
+// so http.Error(w, fmt.Sprintf("query failed: %v", err), 500) was
+// silent.
 func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bool) {
 	ast.Inspect(expr, func(n ast.Node) bool {
 		if found {
@@ -174,7 +192,7 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Sprintf" {
+		if !ok {
 			return true
 		}
 		xid, ok := sel.X.(*ast.Ident)
@@ -185,23 +203,33 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 		if !ok || pkg.Imported().Path() != "fmt" {
 			return true
 		}
-		if len(call.Args) < 2 {
+		args := call.Args
+		switch sel.Sel.Name {
+		case "Sprint", "Sprintln":
+		case "Sprintf":
+			if len(args) < 2 {
+				return true
+			}
+			lit, ok := args[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			s, e := strconv.Unquote(lit.Value)
+			if e != nil || !textVerb.MatchString(s) {
+				return true
+			}
+			args = args[1:]
+		default:
 			return true
 		}
-		lit, ok := call.Args[0].(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		if s, e := strconv.Unquote(lit.Value); e == nil && (s == "%v" || s == "%s") {
-			for _, a := range call.Args[1:] {
-				tv, ok := pass.TypesInfo.Types[a]
-				if !ok {
-					continue
-				}
-				if types.Implements(tv.Type, errorInterface) {
-					pos, found = call.Pos(), true
-					return false
-				}
+		for _, a := range args {
+			tv, ok := pass.TypesInfo.Types[a]
+			if !ok {
+				continue
+			}
+			if types.Implements(tv.Type, errorInterface) {
+				pos, found = call.Pos(), true
+				return false
 			}
 		}
 		return true
@@ -210,3 +238,6 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 }
 
 var errorInterface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+
+// textVerb matches a format verb that renders its operand as text.
+var textVerb = regexp.MustCompile(`%[-+# 0-9.*]*[vsq]`)

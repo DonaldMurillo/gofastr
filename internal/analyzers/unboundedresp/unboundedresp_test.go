@@ -7,5 +7,5 @@ import (
 )
 
 func TestUnboundedResp(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), Analyzer, "a", "helper", "i15")
+	analysistest.Run(t, analysistest.TestData(), Analyzer, "a", "helper", "i15", "spellings")
 }

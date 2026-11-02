@@ -34,7 +34,18 @@
 // capped reading helper. A limiter bounds what reads through it; a read
 // of the raw body beside it is unbounded.
 //
+// A read is any spelling that pulls the body to EOF: io.ReadAll and
+// ioutil.ReadAll, a json/xml/yaml decoder, io.Copy / io.CopyBuffer into
+// anything but io.Discard, and ReadFrom on any io.ReaderFrom
+// (bytes.Buffer). The body may reach it through a local bound once to
+// resp.Body, or through bufio.NewReader / NewReaderSize / io.TeeReader,
+// none of which bounds anything. The 2026-11-02 guard bash found every
+// one of these silent; only io.ReadAll and the decoders on the bare
+// resp.Body selector counted.
+//
 // Silent postures, deliberately:
+//   - io.Copy(io.Discard, resp.Body): the keep-alive drain holds no
+//     memory (the client timeout bounds the drip feed);
 //   - request bodies (http.Request.Body): unboundedbody owns them;
 //   - _test.go files: a test client POSTing fixtures to a local
 //     httptest server is not attacker surface;
@@ -120,26 +131,43 @@ func run(pass *analysis.Pass) (any, error) {
 			return true
 		})
 
+		aliases := readerAliases(pass, f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			// io.ReadAll(resp.Body)
-			if qualified(pass, call.Fun) == "io.ReadAll" && len(call.Args) == 1 {
-				if obj, ok := bodyOwner(pass, call.Args[0]); ok {
-					reportIfUnbounded(pass, f, call, obj, literalResp, cappingHelpers)
+			var src ast.Expr
+			switch qualified(pass, call.Fun) {
+			case "io.ReadAll", "ioutil.ReadAll":
+				// io.ReadAll(resp.Body), and its deprecated alias.
+				if len(call.Args) == 1 {
+					src = call.Args[0]
 				}
+			case "json.NewDecoder", "xml.NewDecoder", "yaml.NewDecoder":
+				// json.NewDecoder(resp.Body) / xml.NewDecoder / yaml decoders
+				if len(call.Args) >= 1 {
+					src = call.Args[0]
+				}
+			case "io.Copy", "io.CopyBuffer":
+				// io.Copy(&buf, resp.Body) reads it all as surely as
+				// ReadAll. Draining into io.Discard holds no memory and
+				// is the keep-alive idiom; it stays quiet.
+				if len(call.Args) >= 2 && qualified(pass, call.Args[0]) != "io.Discard" {
+					src = call.Args[1]
+				}
+			default:
+				// buf.ReadFrom(resp.Body): bytes.Buffer, bufio.Writer
+				// and every io.ReaderFrom read to EOF.
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ReadFrom" && len(call.Args) == 1 {
+					src = call.Args[0]
+				}
+			}
+			if src == nil {
 				return true
 			}
-			// json.NewDecoder(resp.Body) / xml.NewDecoder / yaml decoders
-			switch qualified(pass, call.Fun) {
-			case "json.NewDecoder", "xml.NewDecoder", "yaml.NewDecoder":
-				if len(call.Args) >= 1 {
-					if obj, ok := bodyOwner(pass, call.Args[0]); ok {
-						reportIfUnbounded(pass, f, call, obj, literalResp, cappingHelpers)
-					}
-				}
+			if obj, ok := bodyOwner(pass, readSource(pass, src, aliases)); ok {
+				reportIfUnbounded(pass, f, call, obj, literalResp, cappingHelpers)
 			}
 			return true
 		})
@@ -273,6 +301,80 @@ func respObject(pass *analysis.Pass, e ast.Expr) types.Object {
 		return pass.TypesInfo.ObjectOf(x.Sel)
 	}
 	return nil
+}
+
+// readSource sees through what does not bound a read: parentheses, a
+// local that was bound to the body (body := resp.Body), and the
+// pass-through wrappers bufio.NewReader / NewReaderSize and
+// io.TeeReader, each of which reads its source to EOF on demand. A
+// limiter is not unwrapped: a read through io.LimitReader is bounded.
+func readSource(pass *analysis.Pass, e ast.Expr, aliases map[types.Object]ast.Expr) ast.Expr {
+	for range 8 {
+		e = ast.Unparen(e)
+		switch x := e.(type) {
+		case *ast.Ident:
+			b, ok := aliases[pass.TypesInfo.ObjectOf(x)]
+			if !ok {
+				return e
+			}
+			e = b
+		case *ast.CallExpr:
+			switch qualified(pass, x.Fun) {
+			case "bufio.NewReader", "bufio.NewReaderSize", "io.TeeReader":
+				if len(x.Args) == 0 {
+					return e
+				}
+				e = x.Args[0]
+			default:
+				return e
+			}
+		default:
+			return e
+		}
+	}
+	return e
+}
+
+// readerAliases maps each local bound exactly once, by a single-value
+// assignment or declaration, to its value: the alias a read may name
+// in place of resp.Body. A local bound more than once is left out,
+// since which binding the read sees is flow-dependent.
+func readerAliases(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
+	out := map[types.Object]ast.Expr{}
+	seen := map[types.Object]int{}
+	bind := func(id *ast.Ident, v ast.Expr) {
+		obj := pass.TypesInfo.ObjectOf(id)
+		if obj == nil || id.Name == "_" {
+			return
+		}
+		seen[obj]++
+		out[obj] = v
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch st := n.(type) {
+		case *ast.AssignStmt:
+			if len(st.Lhs) == len(st.Rhs) {
+				for i, lhs := range st.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						bind(id, st.Rhs[i])
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			if len(st.Names) == len(st.Values) {
+				for i, id := range st.Names {
+					bind(id, st.Values[i])
+				}
+			}
+		}
+		return true
+	})
+	for obj, n := range seen {
+		if n > 1 {
+			delete(out, obj)
+		}
+	}
+	return out
 }
 
 // bodyOwner resolves X in X.Body to X's object, when X.Body is the

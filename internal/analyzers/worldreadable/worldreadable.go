@@ -54,9 +54,12 @@
 // at all (a lock file, a log: nothing claims owner-only for an existing
 // file there, and firing on every such open is noise).
 // Silent postures, deliberately:
-//   - mode expressions that are not constant literals (a variable, a
+//   - mode expressions that are not constants (a variable, a
 //     parameter, a struct field like battery/log's FileMode or the
-//     codegen file.Mode branch): the caller owns the policy;
+//     codegen file.Mode branch): the caller owns the policy. A
+//     constant is anything the type checker folds — os.FileMode(0o644),
+//     a named const, fs.ModePerm, 0o600|0o044 — not only a bare
+//     literal (widened 2026-11-02: each of those spellings was silent);
 //   - a FILE whose constant mode carries execute bits (0755 scripts,
 //     shims, binaries): the group/other bits are the deployment
 //     posture of an executable, not a read leak;
@@ -108,6 +111,7 @@ package worldreadable
 
 import (
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"strconv"
@@ -129,8 +133,8 @@ var Analyzer = &analysis.Analyzer{
 type site struct {
 	call  *ast.CallExpr
 	path  ast.Expr
-	mode  *ast.BasicLit // nil for os.Create
-	perm  uint64        // effective constant perm; os.Create reports 0o666
+	mode  ast.Expr // nil for os.Create
+	perm  uint64   // effective constant perm; os.Create reports 0o666
 	isDir bool
 }
 
@@ -435,19 +439,19 @@ func collectSites(pass *analysis.Pass, body *ast.BlockStmt) []site {
 		}
 		switch q {
 		case "os.WriteFile":
-			if mode, perm, ok := constPerm(pathflow.ArgAt(call, 2)); ok {
+			if mode, perm, ok := constPerm(pass, pathflow.ArgAt(call, 2)); ok {
 				out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), mode: mode, perm: perm})
 			}
 		case "os.OpenFile":
 			if pathflow.HasWriteFlag(pathflow.ArgAt(call, 1)) {
-				if mode, perm, ok := constPerm(pathflow.ArgAt(call, 2)); ok {
+				if mode, perm, ok := constPerm(pass, pathflow.ArgAt(call, 2)); ok {
 					out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), mode: mode, perm: perm})
 				}
 			}
 		case "os.Create":
 			out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), perm: 0o666})
 		case "os.Mkdir", "os.MkdirAll":
-			if mode, perm, ok := constPerm(pathflow.ArgAt(call, 1)); ok {
+			if mode, perm, ok := constPerm(pass, pathflow.ArgAt(call, 1)); ok {
 				out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), mode: mode, perm: perm, isDir: true})
 			}
 		}
@@ -891,7 +895,7 @@ func dirOfCallerOwnedWrite(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound 
 		if modeArg == nil {
 			return true
 		}
-		if _, _, isConst := constPerm(modeArg); !isConst {
+		if _, _, isConst := constPerm(pass, modeArg); !isConst {
 			if p := pathflow.ArgAt(w, 0); p != nil && exprString(pathflow.Resolve(pass, p, bound, 0)) == x {
 				found = true
 				return false
@@ -1039,17 +1043,25 @@ func isDirOf(pass *analysis.Pass, fileExpr, dirExpr ast.Expr, bound map[types.Ob
 	return exprString(pathflow.Resolve(pass, call.Args[0], bound, 0)) == exprString(fileExpr)
 }
 
-// constPerm evaluates e as a constant permission literal.
-func constPerm(e ast.Expr) (*ast.BasicLit, uint64, bool) {
-	lit, ok := e.(*ast.BasicLit)
-	if !ok || lit.Kind != token.INT {
+// constPerm evaluates e as a constant permission: any expression the
+// type checker folds to a constant — a literal, os.FileMode(0o644), a
+// named constant, fs.ModePerm, 0o600|0o044. Until the 2026-11-02 guard
+// bash only a bare integer literal counted, so the same 0644 spelled
+// through a conversion or a const sailed past as "caller-owned policy".
+// The permission bits are what is read; type bits (fs.ModeDir) are not.
+func constPerm(pass *analysis.Pass, e ast.Expr) (ast.Expr, uint64, bool) {
+	if e == nil {
 		return nil, 0, false
 	}
-	v, err := strconv.ParseUint(lit.Value, 0, 32)
-	if err != nil {
+	tv, ok := pass.TypesInfo.Types[e]
+	if !ok || tv.Value == nil {
 		return nil, 0, false
 	}
-	return lit, v, true
+	v, ok := constant.Uint64Val(constant.ToInt(tv.Value))
+	if !ok {
+		return nil, 0, false
+	}
+	return e, v & 0o777, true
 }
 
 // sprintfTail returns everything after the last format verb of a

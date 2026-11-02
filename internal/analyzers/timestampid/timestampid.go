@@ -21,7 +21,15 @@
 // The rule fires when the formatted wall-clock value is bound to a
 // credential-shaped name: a variable or struct field whose last
 // camelCase word is one of the seven suffixes above, or a return from
-// a function so named.
+// a function so named. Every binding spelling counts — an assignment
+// (multi-value included), a `var token = …` declaration, and a keyed
+// struct-literal field (Session{ID: …}) — and so does every format:
+// fmt.Sprint/Sprintln beside Sprintf, and the clock rendered as text
+// with time.Now().Format / .String / .AppendFormat. Until the
+// 2026-11-02 guard bash only a single-value assignment and the Unix*
+// readings counted, and a make([]byte, 16) rand buffer was never sized
+// (the builtin is an identifier, not a pkg.Func selector), so the
+// 16-byte silence below held for arrays only.
 //
 // Silent postures, deliberately:
 //   - timestamps that are values, not identifiers: names like now,
@@ -88,15 +96,44 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		switch st := n.(type) {
 		case *ast.AssignStmt:
-			if len(st.Lhs) != 1 || len(st.Rhs) != 1 {
+			if len(st.Lhs) != len(st.Rhs) {
 				return true
 			}
-			name, ok := bindingName(st.Lhs[0])
-			if !ok || !capabilityName(name) {
+			for i, lhs := range st.Lhs {
+				name, ok := bindingName(lhs)
+				if !ok || !capabilityName(name) {
+					continue
+				}
+				if minted(pass, st.Rhs[i], bound, bigRand, 0) {
+					report(pass, st.Pos(), name)
+				}
+			}
+		case *ast.ValueSpec:
+			// var sessionToken = fmt.Sprintf(...): the declaration
+			// spelling of the assignment above.
+			if len(st.Names) != len(st.Values) {
 				return true
 			}
-			if minted(pass, st.Rhs[0], bound, bigRand, 0) {
-				report(pass, st.Pos(), name)
+			for i, id := range st.Names {
+				if id.Name == "_" || !capabilityName(id.Name) {
+					continue
+				}
+				if minted(pass, st.Values[i], bound, bigRand, 0) {
+					report(pass, st.Pos(), id.Name)
+				}
+			}
+		case *ast.KeyValueExpr:
+			// Session{ID: fmt.Sprintf(...)}: a keyed field of a struct
+			// literal, the field-assignment spelling.
+			key, ok := st.Key.(*ast.Ident)
+			if !ok || !capabilityName(key.Name) {
+				return true
+			}
+			if _, isField := pass.TypesInfo.ObjectOf(key).(*types.Var); !isField {
+				return true // a map key or other non-field spelling
+			}
+			if minted(pass, st.Value, bound, bigRand, 0) {
+				report(pass, st.Pos(), key.Name)
 			}
 		case *ast.ReturnStmt:
 			if !capabilityName(fn.Name.Name) {
@@ -176,12 +213,17 @@ func minted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, bi
 	case *ast.CallExpr:
 		q := pathflow.QualifiedFunc(pass, v.Fun)
 		switch q {
-		case "fmt.Sprintf", "strconv.FormatInt", "strconv.FormatUint", "strconv.Itoa":
+		case "fmt.Sprintf", "fmt.Sprint", "fmt.Sprintln", "strconv.FormatInt", "strconv.FormatUint", "strconv.Itoa":
 			for _, a := range v.Args {
 				if mentionsWallClock(pass, a, bound, depth) {
 					return true
 				}
 			}
+		}
+		// time.Now().Format(layout) / .String(): the clock itself
+		// formatted as text is the same enumerable mint.
+		if sel, ok := v.Fun.(*ast.SelectorExpr); ok && clockText[sel.Sel.Name] && isNow(pass, sel.X, bound, depth) {
+			return true
 		}
 		return false
 	case *ast.BinaryExpr:
@@ -221,8 +263,9 @@ func mentionsWallClock(pass *analysis.Pass, e ast.Expr, bound map[types.Object]a
 		if !ok {
 			return true
 		}
-		switch sel.Sel.Name {
-		case "Unix", "UnixMilli", "UnixMicro", "UnixNano":
+		switch {
+		case sel.Sel.Name == "Unix", sel.Sel.Name == "UnixMilli", sel.Sel.Name == "UnixMicro", sel.Sel.Name == "UnixNano":
+		case clockText[sel.Sel.Name]:
 		default:
 			return true
 		}
@@ -233,6 +276,21 @@ func mentionsWallClock(pass *analysis.Pass, e ast.Expr, bound map[types.Object]a
 	})
 	return found
 }
+
+// isBuiltin reports whether fun names the predeclared builtin name.
+func isBuiltin(pass *analysis.Pass, fun ast.Expr, name string) bool {
+	id, ok := fun.(*ast.Ident)
+	if !ok || id.Name != name {
+		return false
+	}
+	_, ok = pass.TypesInfo.ObjectOf(id).(*types.Builtin)
+	return ok
+}
+
+// clockText are the time.Time methods that render the clock reading as
+// text: an id built from one carries the same zero unpredictable bits
+// as a formatted UnixNano.
+var clockText = map[string]bool{"Format": true, "String": true, "AppendFormat": true}
 
 // isNow reports whether e is time.Now() itself or a local whose
 // binding is time.Now(). A clock passed as a parameter is the
@@ -326,7 +384,12 @@ func bigRandBuffers(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Ob
 // of make([]byte, N) or var b [N]byte, or -1 when it cannot be read.
 func bufSize(pass *analysis.Pass, obj types.Object, bound map[types.Object]ast.Expr) int {
 	if b, ok := bound[obj]; ok && b != nil {
-		if call, ok := b.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "make" {
+		// make is a builtin, an identifier: QualifiedFunc reads only
+		// pkg.Func selectors, so the old `QualifiedFunc(...) == "make"`
+		// test never matched and a make([]byte, 16) buffer read as
+		// unsized (2026-11-02 guard bash: the documented 16-byte
+		// silence held only for arrays).
+		if call, ok := b.(*ast.CallExpr); ok && isBuiltin(pass, call.Fun, "make") {
 			if len(call.Args) == 2 || len(call.Args) == 3 {
 				if tv, ok := pass.TypesInfo.Types[call.Args[1]]; ok && tv.Value != nil {
 					if n, ok := constant.Int64Val(tv.Value); ok {

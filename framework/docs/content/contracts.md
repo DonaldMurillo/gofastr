@@ -693,7 +693,8 @@ contracts use, with a reason, on its line or the line above:
 resp, err := http.Get(probeURL)
 ```
 
-The reason is mandatory; a bare marker silences nothing.
+The reason is mandatory; a bare marker silences nothing, and neither
+does one whose only "reason" is separator punctuation (`--`, `— :`).
 
 A running app built with `framework.WithMCPIntrospection()` also serves
 the catalog over MCP through `contracts_list`, `contracts_explain`,
