@@ -6124,6 +6124,14 @@ few lines, and link the PR or the docs page for the rest.
   `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` keeps livereload on.
 - **webmcp-remote-assist closes an expired credential's sockets and
   limits incoming frames.**
+- **Harness quiet mode reads only under the working directory.** The
+  preset was documented as reads "under the repo" but allowed any path,
+  so `Read:/proc/self/environ`, `~/.ssh/id_rsa`, `cat
+  /proc/self/environ`, `grep -r . ~/.config/gofastr` and `find / -name
+  creds.enc` ran with no prompt. Read, Glob, Ls, Grep and the quiet Bash
+  readers now auto-allow only paths that resolve, symlinks included,
+  under the working directory; `..`, `~`, an outside path or a symlink
+  out of the repo prompts. See `harness-architecture.md`.
 
 ## [0.95.0] - 2026-10-26
 

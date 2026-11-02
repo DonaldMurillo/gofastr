@@ -1092,3 +1092,7 @@ notes:
     breaking: false
     guidance: "An app whose main returns before app.Start used to report success over an empty or stale directory; make main call Start and return once it does. The CLI deletes the receipt after reading it, so it never ships with the site. Nothing changes for an app that sets GOFASTR_EXPORT itself."
     nodetect: "the check runs in the CLI at export time; nothing in an app's source spells it"
+  - change: "Harness quiet mode auto-allows Read, Glob, Ls, Grep and the read-only Bash commands only for paths under the working directory; a path outside it, a .. segment, a leading ~ or a symlink out of the repo prompts"
+    breaking: false
+    guidance: "Reads outside the repo now raise a permission prompt. Approve it once, or add a session or Allow-always rule for the paths you read on purpose. --strict-permissions is unchanged."
+    nodetect: "the decision is made at tool-call time from the model's arguments; nothing in an app's source spells it"

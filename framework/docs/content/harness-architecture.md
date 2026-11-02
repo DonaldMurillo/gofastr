@@ -653,10 +653,23 @@ patterns (default ON, configurable per-permission-preset):
 
 ```
 Bash: git status, git log, git diff, git branch
-Bash: ls *, pwd, cat <repo-file>, head, tail, wc
-Bash: grep *, rg *, find . *
-Read, Glob, Ls (anywhere under the repo)
+Bash: ls <repo-path>, pwd, cat <repo-file>, head, tail, wc
+Bash: grep <repo-path>, rg <repo-path>, find . *
+Read, Glob, Ls, Grep (anywhere under the repo)
 ```
+
+"Under the repo" is enforced: every path one of these reads must
+resolve, symlinks included, under the working directory (the directory
+the harness runs in, which the file tools and Bash resolve relative
+paths against). That covers `Read:`/`Ls:` paths, a Glob's `--root` and
+pattern, a Grep's `--path` and `--glob`, and every argument and flag
+value of `cat`, `head`, `tail`, `wc`, `grep`, `rg`, `find`, `ls` and
+`git`; a shell glob counts by what it matches there. A path outside
+(`/proc/self/environ`, `~/.ssh/id_rsa`, `find / -name creds.enc`), a
+`..` segment, a leading `~`, or a symlink out of the repo prompts
+instead, and so does a summary the check cannot read. Variables and
+command substitution never reach the check: any `$`, backtick or other
+shell metacharacter already prompts.
 
 Never prompts for these. `--strict-permissions` disables the
 preset for users who want every call gated. Because they never
