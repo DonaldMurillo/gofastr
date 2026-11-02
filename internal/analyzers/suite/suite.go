@@ -92,6 +92,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/poisonedconn"
 	// 2026-11 bug-bash rules (response)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverwrite"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/statusrange"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -182,6 +183,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// 2026-11 bug-bash rules (response): the http.ResponseWriter
 	// lifecycle, one per repeated bug shape.
 	allow.Guard(recoverwrite.Analyzer),
+	allow.Guard(statusrange.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means
