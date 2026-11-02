@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 )
 
 func RunInit(args []string) {
@@ -67,6 +68,13 @@ func RunInit(args []string) {
 			modulePath = strings.TrimPrefix(arg, "--module=")
 			if modulePath == "" {
 				cli.Fail("--module requires a non-empty value.")
+				cli.OsExit(1)
+			}
+			// go mod init runs last, after every other file is written, so
+			// a path it refuses must be refused here, before any of them.
+			if err := module.CheckImportPath(modulePath); err != nil {
+				cli.Fail("--module=%q is not a valid Go module path: %v", modulePath, err)
+				cli.Info("This invocation has not written any files. Example: --module=github.com/you/app")
 				cli.OsExit(1)
 			}
 		case arg == "--no-entity":

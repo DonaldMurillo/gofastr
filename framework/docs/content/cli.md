@@ -23,7 +23,9 @@ scrubbed the same way.
 
 - `gofastr init <name>`: a new project with framework UI, `DESIGN.md`, a
   sample entity (`--no-entity` to skip), git, and the agent onboarding
-  files. `--module=<path>` sets the Go module; `--db=sqlite|postgres`
+  files. `--module=<path>` sets the Go module (a path that is not a
+  valid Go import path is refused before any file is written);
+  `--db=sqlite|postgres`
   picks the driver (default `sqlite`; `sqlite3` and `postgresql` are
   accepted aliases, anything else is an error). The DSN lives in the
   0600 gitignored `.env` only: with `--db=postgres` the generated

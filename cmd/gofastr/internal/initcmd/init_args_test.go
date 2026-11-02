@@ -63,6 +63,22 @@ func TestInitModuleFlagSpaceForm(t *testing.T) {
 	}
 }
 
+// A --module go mod init refuses was caught only after every other file
+// was written: init left a half-scaffolded directory and told the user to
+// run go mod init by hand with the same bad path. It is refused before
+// anything is written.
+func TestInitRefusesMalformedModuleBeforeWriting(t *testing.T) {
+	inPlaceDir(t, "work")
+	for _, mod := range []string{"bad module", "example.com/a//b", "/abs/path", "example.com/a\x01"} {
+		if code := runInitCode(t, "app", "--module="+mod); code != 1 {
+			t.Fatalf("init --module=%q exited %d, want 1", mod, code)
+		}
+		if _, err := os.Stat("app"); err == nil {
+			t.Fatalf("init --module=%q created the project before refusing it", mod)
+		}
+	}
+}
+
 // A missing value is a usage error, exit 2, and writes nothing.
 func TestInitModuleFlagMissingValue(t *testing.T) {
 	inPlaceDir(t, "work")
