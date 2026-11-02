@@ -153,6 +153,13 @@ few lines, and link the PR or the docs page for the rest.
   `Prefix` on a segment boundary only: `/staticsecret.txt` served
   `secret.txt`. A path holding a NUL byte (`/a%00b`) answers 404 (or
   the SPA index) instead of 500.
+- **The SPA fallback is `no-cache`.** `core/static` answered a URL that
+  names no file with the index under `Config.MaxAge`, so a long
+  `MaxAge` meant for fingerprinted assets stored the app shell, as
+  `text/html`, under a client route or under a new asset's name that a
+  newer replica linked mid-deploy, for that long. The fallback now
+  revalidates every time (its ETag makes that a 304); files that exist
+  keep `MaxAge`.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

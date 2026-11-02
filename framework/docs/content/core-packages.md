@@ -309,7 +309,9 @@ and silently cost the block its syntax highlighting.
 ### static
 
 A hardened file server for `embed.FS` / `fs.FS`: ETag caching,
-configurable `Cache-Control`, MIME detection, SPA fallback, and
+configurable `Cache-Control`, MIME detection, SPA fallback (served
+`no-cache` whatever `MaxAge` says, so the shell is never stored under a
+URL that names no file), and
 traversal / dotfile / forbidden-config rejection. Seekable files (disk,
 `embed.FS`) are served through `http.ServeContent`, so `Range`,
 `If-Range` and multi-range requests get `206` and video can seek; a

@@ -202,8 +202,15 @@ func Handler(config Config) http.Handler {
 		}
 
 		// If SPA mode, try serving the index file as fallback.
+		// The fallback is no-cache whatever MaxAge says: MaxAge is for the
+		// files the URLs name, and a long one here would store the shell
+		// under a URL that names no file (a fingerprinted asset a newer
+		// replica links mid-deploy, a client route) for that long. The
+		// index's ETag keeps each revalidation a body-less 304.
 		if config.SPA && reqPath != config.IndexFile {
-			if serveFile(w, r, config, config.IndexFile) {
+			fallback := config
+			fallback.MaxAge = 0
+			if serveFile(w, r, fallback, config.IndexFile) {
 				return
 			}
 		}

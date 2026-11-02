@@ -650,6 +650,13 @@ notes:
       uses:
         - gofastr/core/static.Handler
         - gofastr/core/static.Mount
+  - change: "core/static's SPA fallback (Config.SPA) answers with Cache-Control no-cache instead of the handler's MaxAge"
+    breaking: false
+    guidance: "The index served for a URL that names no file is revalidated on every request (a 304 while unchanged) instead of being cached under that URL for MaxAge. Nothing to change; a CDN rule that relied on the fallback's long max-age sees no-cache now."
+    find:
+      uses:
+        - gofastr/core/static.Handler
+        - gofastr/core/static.Mount
   - change: "A static export (App.ExportStatic, gofastr build) skips a static-dir symlink whose target leaves the static dir, dangles, or is not a regular file, and logs it; it used to publish the target, which the live host answers 404 for"
     breaking: false
     guidance: "A file the export now skips was never served by the running app. Copy the file into the static dir, or point the link at a file inside it, if it is meant to be public."
