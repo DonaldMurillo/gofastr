@@ -1733,12 +1733,14 @@ func pageStatus(res app.RenderResult, recorded int) int {
 	if res.NotFoundOutlet {
 		return http.StatusNotFound
 	}
+	// A code outside 100-999 is ignored, as app.SetStatus ignores one:
+	// net/http panics on it in WriteHeader.
 	if sc, ok := res.Component.(ScreenStatusCode); ok {
-		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
+		if code := sc.ScreenStatusCode(); code >= 100 && code <= 999 && code != http.StatusOK {
 			return code
 		}
 	}
-	if recorded == http.StatusOK {
+	if recorded < 100 || recorded > 999 || recorded == http.StatusOK {
 		return 0
 	}
 	return recorded
