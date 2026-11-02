@@ -666,6 +666,11 @@ reconnecting replica's `LoadInto` reloads authoritative state on boot,
 and because tombstones live in the DB, a missed revoke signal does not
 resurrect on restart. The boot re-applies the tombstone.
 
+**Backups.** `EnsureSchema` registers both tables with `App.ExportData`,
+so an archive carries the runtime grants and the tombstones, and a restore
+keeps every revoke of a permission the code declares. Restart after
+`App.ImportData`: `LoadInto` reads the restored rows at boot.
+
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,
 unknown concrete grants remain persisted for compatibility. The admin roles

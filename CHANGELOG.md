@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A backup keeps the RBAC grants and revokes.** `App.ExportData` left
+  out the `access.GrantStore` tables, so a restore lost every runtime
+  grant, and the code seed brought back every permission an admin had
+  revoked. `EnsureSchema` now registers both tables with the export;
+  restart after an import so `LoadInto` reads them.
 - **`access.Can(nil, …)` returns false.** It read the context without
   the nil check `GetPermissions`, `CanResource` and `CanResourceExact`
   already hold, and panicked.

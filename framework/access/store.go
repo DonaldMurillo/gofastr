@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
@@ -181,7 +182,24 @@ func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, revStmt); err != nil {
 		return err
 	}
+	s.registerExport()
 	return nil
+}
+
+// registerExport declares both tables to App.ExportData under their
+// configured names. Left out, a restore lost every runtime grant and every
+// tombstone, and the restored app's code seed brought back each permission
+// an admin had revoked. No eraser: the rows name roles, not users.
+func (s *GrantStore) registerExport() {
+	for _, t := range [...]struct{ base, table string }{
+		{"access_grants", s.table},
+		{"access_grants_revoked", s.revokedTable()},
+	} {
+		datexport.Register(datexport.DataExporter{
+			Name: datexport.ScopedName(t.base, t.table), Source: "access", Table: t.table,
+			PrimaryKey: "role,permission", Columns: []string{"role", "permission"},
+		})
+	}
 }
 
 // LoadInto reads all persisted grant rows and calls policy.Grant for each,

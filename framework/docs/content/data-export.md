@@ -94,7 +94,9 @@ instead, under the name it was given, so a renamed table is the one
 exported and erased: the auth API-token and OAuth-token stores, admin saved
 views, the A2A task and push-config stores, feature flags, the SQL
 idempotency store, the event outbox, the webhook delivery and inbound
-stores, and the entity admin's bulk jobs. Registration replaces an entry
+stores, the entity admin's bulk jobs, and the RBAC `access.GrantStore`
+(its grants and its revocation tombstones, registered by `EnsureSchema`;
+restart after an import so `LoadInto` reads them). Registration replaces an entry
 with the same `Name`, so these stores name each entry with
 `datexport.ScopedName(base, table)`: the default table keeps the bare name
 (`feature_flags.ndjson`), and any other table is appended after a `-`
