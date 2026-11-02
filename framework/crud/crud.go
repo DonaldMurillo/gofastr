@@ -1797,8 +1797,19 @@ func writeJSONError(w http.ResponseWriter, r *http.Request, code int, reason i18
 	writeErrorBody(w, code, phraseRefusal(r.Context(), code, reason, params...).body())
 }
 
-// writeErrJSON writes err as a JSON error response (errRefusal).
+// writeErrJSON writes err as a JSON error response (errRefusal). A hook
+// that panicked has faulted, whatever status the call site gives its
+// refusals: it answers the generic 500, and the panic value (logged with
+// its stack where the hook ran, scrubbed here) never reaches the client.
+// Every surface that hands a hook's error to the client comes through
+// here, so a List or Get answering a BeforeList/BeforeGet refusal, and an
+// include answering a child's, all hold that line.
 func writeErrJSON(w http.ResponseWriter, r *http.Request, code int, err error, frame i18n.Phrase) {
+	if isHookPanic(err) {
+		logf("crud: internal error: %v", err)
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	writeErrorBody(w, code, errRefusal(r.Context(), code, err, frame).body())
 }
 

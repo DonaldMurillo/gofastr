@@ -32,6 +32,11 @@ A hook that panics has faulted rather than refused. The registry
 recovers it, logs the value and stack, and returns a `*hook.PanicError`;
 the write rolls back and the HTTP handlers answer 500 with the generic
 body, never the panic value, and `crud.IsHookRefusal` reports false.
+Reads hold the same line: a `BeforeList` or `BeforeGet` hook that
+returns an error answers 400 with it, and one that panics answers 500,
+on the entity's own List and Get, on a parent's `?include=` or
+`?rel.field=` that runs it, and on the MCP read tools that call those
+routes.
 
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
 hook that fills in or normalizes a field mutates the body the validator

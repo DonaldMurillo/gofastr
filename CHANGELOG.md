@@ -282,7 +282,10 @@ few lines, and link the PR or the docs page for the rest.
   client and the fault read as the caller's mistake. A recovered panic is
   now a `*hook.PanicError`, logged with its stack; create, update, delete
   and batch items answer it with the generic 500 body, and
-  `crud.IsHookRefusal` reports false for it.
+  `crud.IsHookRefusal` reports false for it. A panicking `BeforeList` or
+  `BeforeGet` does the same on List and Get (and the MCP read tools that
+  call them), and on a parent's `?include=` or `?rel.field=` that runs a
+  child's hook; each answered 400 with the panic value.
 - **OAuth protected-resource metadata is served at the path-inserted URL.**
   RFC 9728 §3.1 puts the metadata of `https://api.example.com/mcp` at
   `/.well-known/oauth-protected-resource/mcp`, and §3.3 has a client refuse a

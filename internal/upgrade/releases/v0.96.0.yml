@@ -910,7 +910,7 @@ notes:
     breaking: false
     guidance: "Each Allow always rule saved before this release names no directory and prompts once more; answer it again in each checkout that should keep it. An embedder that builds its own permission.Engine sets WorkingDir to keep rules per directory; left empty, rules saved with an empty WorkingDir behave as before."
     nodetect: "the rules live in the harness's persisted permission file, not in app source"
-  - change: "A Before hook that panics fails the write with 500 and the generic body; it used to answer 400 with \"hook panic: <value>\", and crud.IsHookRefusal now reports false for it"
+  - change: "A Before hook that panics (BeforeCreate/Update/Delete, and BeforeList/BeforeGet on List, Get, ?include= and ?rel.field=) answers 500 with the generic body; it used to answer 400 with \"hook panic: <value>\", and crud.IsHookRefusal now reports false for it"
     breaking: false
     guidance: "A client that read a 400 for a hook panic now reads 500. A hook that means to refuse a write returns an error instead of panicking."
     nodetect: "a panic inside a hook is a runtime behaviour, not a source shape"

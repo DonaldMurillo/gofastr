@@ -95,3 +95,65 @@ func TestHookPanicIsNotARefusal(t *testing.T) {
 		t.Error("IsHookRefusal no longer reports a returned hook error")
 	}
 }
+
+// TestReadHookPanicIsAServerError is the read side of
+// TestBeforeHookPanicIsAServerError: List and Get answered a panicking
+// BeforeList/BeforeGet with 400 and "hook panic: <value>" (MCP read tools
+// re-dispatch through the same routes), and a child entity's panicking
+// BeforeList reached through ?include= or ?rel.field= did the same. A read
+// hook's panic answers the generic 500; a returned error stays a 400.
+func TestReadHookPanicIsAServerError(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	ddl := `CREATE TABLE hkrpanic (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT)`
+	cfg := makeEntityConfig("hkrpanic", "hkrpanic", "user_id", []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "name", Type: schema.String, Required: true},
+	})
+	ent := entity.Define("hkrpanic", cfg)
+	db := setupDB(t, ddl)
+	ent.SetDB(db)
+	if _, err := db.Exec(`INSERT INTO hkrpanic (id, user_id, name) VALUES ('r1', 'alice', 'x')`); err != nil {
+		t.Fatal(err)
+	}
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	ch.Hooks = hook.NewHookRegistry()
+	for _, ht := range []hook.HookType{hook.BeforeList, hook.BeforeGet} {
+		ch.Hooks.RegisterHook(ht, func(context.Context, any) error { panic(hookPanicSecret) })
+	}
+	check := func(t *testing.T, code int, body string) {
+		t.Helper()
+		if code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want 500; body %s", code, body)
+		}
+		if strings.Contains(body, "hunter2") || strings.Contains(body, "hook panic") {
+			t.Errorf("SECURITY: a read hook's panic value reached the client: %s", body)
+		}
+	}
+	for _, c := range []struct {
+		name, path, id string
+		h              http.HandlerFunc
+	}{
+		{"list", "/hkrpanic", "", ch.List()},
+		{"get", "/hkrpanic/r1", "r1", ch.Get()},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: c.path, UserID: "alice"})
+			if c.id != "" {
+				req.SetPathValue("id", c.id)
+			}
+			rr := httptest.NewRecorder()
+			c.h(rr, req)
+			check(t, rr.Code, rr.Body.String())
+		})
+	}
+
+	notesHooks := hook.NewHookRegistry()
+	notesHooks.RegisterHook(hook.BeforeList, func(context.Context, any) error { panic(hookPanicSecret) })
+	projects, _ := projectNotes(t, map[string]*hook.HookRegistry{"notes": notesHooks})
+	for _, target := range []string{"/projects?include=notes", "/projects?notes.body=x"} {
+		t.Run("child "+target, func(t *testing.T) {
+			code, body := listBody(t, projects, target)
+			check(t, code, body)
+		})
+	}
+}
