@@ -198,10 +198,14 @@ func postgresKeyChange(ent *entity.Entity, all map[string]*entity.Entity, qtable
 			if err != nil {
 				return "", fmt.Errorf("invalid key column %q: %w", c, err)
 			}
-			safe[i] = q
+			safe[i] = ddlIdent(q)
 		}
 		return strings.Join(safe, ", "), nil
 	}
+	// The statements name the table and its columns as the DDL does: a
+	// keyword quoted, anything else bare. qtable stays the plain name for
+	// the detach block and the catalog reads.
+	tq := ddlIdent(qtable)
 	// keepsNotNull reports whether a column outside a key stays NOT NULL on
 	// its own: a Required field with no generated value.
 	keepsNotNull := func(col string) bool {
@@ -225,7 +229,7 @@ func postgresKeyChange(ent *entity.Entity, all map[string]*entity.Entity, qtable
 	}
 	if len(lk.cols) > 0 {
 		//gofastr:allow(quoteident) lk.constraint was read from pg_constraint with its case kept
-		up = append(up, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", qtable, query.QuoteIdent(lk.constraint)))
+		up = append(up, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", tq, query.QuoteIdent(lk.constraint)))
 	}
 	for _, col := range lk.cols {
 		if keyHas(newKey, col) {
@@ -244,15 +248,15 @@ func postgresKeyChange(ent *entity.Entity, all map[string]*entity.Entity, qtable
 		if err != nil {
 			return SchemaChange{}, fmt.Errorf("invalid column name %q: %w", col, err)
 		}
-		up = append(up, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", qtable, qcol))
+		up = append(up, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", tq, ddlIdent(qcol)))
 	}
 	if len(newKey) > 0 {
 		cols, err := quoteAll(newKey)
 		if err != nil {
 			return SchemaChange{}, err
 		}
-		up = append(up, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s)", qtable, cols))
-		down = append(down, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", qtable, defaultPKName(ent.GetTable())))
+		up = append(up, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s)", tq, cols))
+		down = append(down, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", tq, ddlIdent(defaultPKName(ent.GetTable()))))
 		for _, col := range newKey {
 			if keyHas(lk.cols, col) || keepsNotNull(col) {
 				continue
@@ -261,7 +265,7 @@ func postgresKeyChange(ent *entity.Entity, all map[string]*entity.Entity, qtable
 			if err != nil {
 				return SchemaChange{}, fmt.Errorf("invalid column name %q: %w", col, err)
 			}
-			down = append(down, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", qtable, qcol))
+			down = append(down, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", tq, ddlIdent(qcol)))
 		}
 	}
 	if len(lk.cols) > 0 {
@@ -269,7 +273,7 @@ func postgresKeyChange(ent *entity.Entity, all map[string]*entity.Entity, qtable
 		if err != nil {
 			return SchemaChange{}, err
 		}
-		down = append(down, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s)", qtable, cols))
+		down = append(down, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s)", tq, cols))
 	}
 	up = append(up, readd...)
 	downSQL := ""
@@ -328,7 +332,7 @@ func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all 
 	if sameKey(cur.cols, declared) {
 		return nil
 	}
-	rows, err := exec.QueryContext(ctx, fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", qtable))
+	rows, err := exec.QueryContext(ctx, fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", ddlIdent(qtable)))
 	if err != nil {
 		return fmt.Errorf("count rows of %s: %w", table, err)
 	}

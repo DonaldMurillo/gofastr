@@ -670,3 +670,7 @@ notes:
     breaking: true
     guidance: "SQLite empties a table before dropping it, so the generated file failed with FOREIGN KEY constraint failed wherever a child row pointed at the table. Write the rebuild by hand under -- +migrate NoTransaction with PRAGMA foreign_keys=OFF before it and ON after it, or apply the change with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild."
     nodetect: "the refusal depends on the relations between entities and the snapshot, not on a spelling in the source"
+  - change: "AutoMigrate, DiffSchema and migrate generate write a table, column or index name that is a keyword on SQLite or Postgres (order, group, user, end, desc, to, offset, do, …) quoted and folded, so such names migrate on both engines"
+    breaking: false
+    guidance: "Nothing to do. Names that are not keywords are written as before. On SQLite a column named end, desc, to, offset, do or user already worked bare; the next migrate generate writes it quoted for new statements and proposes no change for the quoting alone. Raw SQL of your own that names such a column on Postgres must quote it, as CRUD does."
+    nodetect: "the names are entity field and table declarations; any keyword among them is affected, which no single spelling marks"

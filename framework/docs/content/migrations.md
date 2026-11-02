@@ -486,6 +486,20 @@ foreign key you added by hand may depend on a unique index and the drop
 would fail. The snapshot keeps recording the old index while the new
 one is declared, so removing or changing the index later drops both.
 
+The migrator writes table, column and index names bare, so Postgres
+folds them to lowercase, the spelling CRUD's quoted SQL names. A name
+that is a keyword on either engine cannot go bare (`CREATE TABLE posts
+(order TEXT)` is a syntax error), so it is written quoted and folded:
+`"order"`, `"user"`, `"group"`. The set is Postgres's reserved keywords
+(including `user`, `end`, `desc`, `to`, `offset`, `do`, which SQLite
+takes bare) plus the SQLite keywords that break a statement the
+migrator writes (`index`, `set`, `values`, `drop`, …). Every other name
+stays bare, so a schema without keyword names writes the same DDL and
+snapshot as before. A snapshot an older build wrote with such a name
+bare (it ran on SQLite) reads the same: a change of quoting alone is no
+change, and generation proposes nothing for it. Keywords both engines
+take bare, such as `key`, `status` or `action`, stay bare.
+
 A table or column named past 63 bytes works on Postgres, which cuts it
 to its first 63 bytes in DDL and in queries alike, so the catalog holds
 the cut name. The migrator reads the catalog by the cut name too, so

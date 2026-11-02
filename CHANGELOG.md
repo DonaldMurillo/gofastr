@@ -4426,6 +4426,16 @@ few lines, and link the PR or the docs page for the rest.
   and releases the lock. `cron.NewPostgresAdvisoryLease` had the same
   release and gets the same fix: a failed unlock no longer keeps every
   other replica from leading.
+- **Keyword table, column and index names migrate.** The migrator wrote
+  every name bare while CRUD quotes them, so a field named `order`,
+  `group` or `limit` failed `CREATE TABLE` on both engines, and one
+  named `user`, `end`, `desc`, `to`, `offset` or `do` booted on SQLite
+  and failed on Postgres. A name that is a keyword on either engine is
+  now written quoted and folded (`"order"`) in every statement the
+  migrator writes, and the recorded DDL a snapshot holds is read back
+  either way. Other names stay bare, so existing DDL and snapshots are
+  byte-identical, and a snapshot that holds a keyword name bare diffs
+  as unchanged.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**

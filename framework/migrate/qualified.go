@@ -45,13 +45,15 @@ func defaultIndexName(table string, cols []string) string {
 
 // createIndexSQL renders CREATE INDEX IF NOT EXISTS for an index named name
 // (bare) on a validated table. The index lives in its table's schema:
-// Postgres takes that schema on the table, SQLite on the index name.
+// Postgres takes that schema on the table, SQLite on the index name. A
+// keyword name or table is quoted (ddlIdent); body is the caller's, its
+// column names already rendered.
 func createIndexSQL(dialect Dialect, unique bool, name, table, body string) string {
 	u := ""
 	if unique {
 		u = "UNIQUE "
 	}
-	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s (%s)", u, query.IndexOn(dialect == DialectSQLite, name, table), body)
+	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s (%s)", u, query.IndexOn(dialect == DialectSQLite, ddlIdent(name), ddlIdent(table)), body)
 }
 
 // dropIndexSQL drops index name on table. Both engines resolve a bare
@@ -62,7 +64,7 @@ func dropIndexSQL(table, name string) string {
 	if s, _ := splitTable(table); s != "" {
 		name = s + "." + name
 	}
-	return "DROP INDEX IF EXISTS " + name
+	return "DROP INDEX IF EXISTS " + ddlIdent(name)
 }
 
 // referencedTable is how a REFERENCES clause names table. SQLite takes no
@@ -70,9 +72,9 @@ func dropIndexSQL(table, name string) string {
 // Postgres takes the name as written.
 func referencedTable(dialect Dialect, table string) string {
 	if dialect == DialectSQLite {
-		return tableBase(table)
+		return ddlIdent(tableBase(table))
 	}
-	return table
+	return ddlIdent(table)
 }
 
 // sqlitePragma renders PRAGMA fn(table) for a table: SQLite takes a schema
@@ -83,7 +85,9 @@ func sqlitePragma(fn, table string) (string, error) {
 	if _, err := query.SafeIdent(table); err != nil {
 		return "", err
 	}
-	return query.SQLitePragma(fn, table), nil
+	// A keyword table name is quoted, as in the DDL: PRAGMA table_info(table)
+	// is a syntax error.
+	return query.SQLitePragma(fn, ddlIdent(table)), nil
 }
 
 // sqliteMaster names the sqlite_master of a table's schema: each attached

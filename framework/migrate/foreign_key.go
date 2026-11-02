@@ -384,10 +384,10 @@ func foreignKeyChanges(ent *entity.Entity, all map[string]*entity.Entity, dialec
 			}
 			replaced[i] = true
 			//gofastr:allow(quoteident) l.name was read from pg_constraint with its case kept
-			drops = append(drops, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", qtable, query.QuoteIdent(l.name)))
+			drops = append(drops, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", ddlIdent(qtable), query.QuoteIdent(l.name)))
 			from = append(from, describeFK(l.cols, l.refTable, l.refCols))
 		}
-		stmts := append(drops, fmt.Sprintf("ALTER TABLE %s ADD %s", qtable, d.clause(DialectPostgres)))
+		stmts := append(drops, fmt.Sprintf("ALTER TABLE %s ADD %s", ddlIdent(qtable), d.clause(DialectPostgres)))
 		summary := fmt.Sprintf("%s: add foreign key %s", ent.GetName(), describeFK(d.cols, d.refTable, d.refCols))
 		if len(from) > 0 {
 			summary = fmt.Sprintf("%s: change foreign key %s → %s", ent.GetName(), strings.Join(from, ", "), describeFK(d.cols, d.refTable, d.refCols))
@@ -408,7 +408,7 @@ func foreignKeyChanges(ent *entity.Entity, all map[string]*entity.Entity, dialec
 		changes = append(changes, SchemaChange{
 			Summary: fmt.Sprintf("%s: drop foreign key %s (destructive: no relation declares it)", ent.GetName(), describeFK(l.cols, l.refTable, l.refCols)),
 			//gofastr:allow(quoteident) l.name was read from pg_constraint with its case kept
-			SQL:          fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", qtable, query.QuoteIdent(l.name)),
+			SQL:          fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", ddlIdent(qtable), query.QuoteIdent(l.name)),
 			Destructive:  true,
 			irreversible: true,
 		})
@@ -488,7 +488,7 @@ func fkKeepKey(table string, cols []string) string {
 // reFKReferenceCols matches a foreign key's REFERENCES clause in a
 // recorded CREATE TABLE, capturing the table (schema included) and, when
 // named, its columns.
-var reFKReferenceCols = regexp.MustCompile(`(?i)\bREFERENCES\s+"?([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)"?\s*(?:\(([^)]*)\))?`)
+var reFKReferenceCols = regexp.MustCompile(`(?i)\bREFERENCES\s+("?[a-zA-Z0-9_]+"?(?:\."?[a-zA-Z0-9_]+"?)*)\s*(?:\(([^)]*)\))?`)
 
 // recordedReferencesOnto lists, per table, the column lists of the foreign
 // keys onto table that the snapshot's recorded CREATE TABLEs hold: the keys
@@ -500,7 +500,7 @@ func recordedReferencesOnto(dialect Dialect, tableDDL map[string]string, table s
 			continue
 		}
 		for _, m := range reFKReferenceCols.FindAllStringSubmatch(ddlWithoutLiterals(tableDDL[name]), -1) {
-			if !refersTo(dialect, name, m[1], table) {
+			if !refersTo(dialect, name, unquoteDDLIdent(m[1]), table) {
 				continue
 			}
 			var cols []string
@@ -546,7 +546,7 @@ func incomingForeignKeys(ent *entity.Entity, all map[string]*entity.Entity, tabl
 				}
 			}
 			in.keep = append(in.keep, fkKeepKey(table, old))
-			stmt := fmt.Sprintf("ALTER TABLE %s ADD %s", qchild, fk.clause(DialectPostgres))
+			stmt := fmt.Sprintf("ALTER TABLE %s ADD %s", ddlIdent(qchild), fk.clause(DialectPostgres))
 			if hasColumns(cols, fk.cols) {
 				in.readd = append(in.readd, stmt)
 				continue

@@ -72,7 +72,7 @@ func recordedUniqueColumns(ddl string) ([]string, bool) {
 		head, _, _ := strings.Cut(def, " DEFAULT ")
 		name, rest, _ := strings.Cut(head, " ")
 		if strings.Contains(" "+rest+" ", " UNIQUE ") {
-			out = append(out, name)
+			out = append(out, unquoteDDLIdent(name))
 		}
 	}
 	return out, true
@@ -125,7 +125,7 @@ func uniqueFlipChanges(ent *entity.Entity, dialect Dialect, qtable string, liveL
 			}
 			adds = append(adds, SchemaChange{
 				Summary: fmt.Sprintf("%s: unique index %s", ent.GetName(), name),
-				SQL:     createIndexSQL(dialect, true, name, qtable, qcol),
+				SQL:     createIndexSQL(dialect, true, name, qtable, ddlIdent(qcol)),
 				Down:    dropIndexSQL(qtable, name),
 			})
 			continue
@@ -147,7 +147,7 @@ func uniqueFlipChanges(ent *entity.Entity, dialect Dialect, qtable string, liveL
 		drops = append(drops, SchemaChange{
 			Summary: fmt.Sprintf("%s: drop unique on %s", ent.GetName(), f.Name),
 			SQL:     dropUniqueConstraintSQL(qtable, src, f.Name) + ";\n" + dropIndexSQL(qtable, name),
-			Down:    createIndexSQL(dialect, true, name, qtable, qcol),
+			Down:    createIndexSQL(dialect, true, name, qtable, ddlIdent(qcol)),
 		})
 	}
 	return adds, drops, cleared, nil
@@ -219,7 +219,7 @@ func ensureUniqueIndexes(ctx context.Context, q execQueryer, ent *entity.Entity,
 		// this name belongs to another table or column (t_a.b and t.a_b
 		// both name t_a_b_key), and skipping it left the column taking
 		// duplicates while boot succeeded.
-		ddl := strings.Replace(createIndexSQL(dialect, true, name, qtable, qcol), " IF NOT EXISTS", "", 1)
+		ddl := strings.Replace(createIndexSQL(dialect, true, name, qtable, ddlIdent(qcol)), " IF NOT EXISTS", "", 1)
 		if _, err := q.ExecContext(ctx, ddl); err != nil {
 			return fmt.Errorf("%s.%s is declared unique, and its unique index %s could not be created (do rows repeat a value, or does another table hold an index of that name? a unique index of another name on the column alone also counts): %w", ent.GetTable(), c, name, err)
 		}

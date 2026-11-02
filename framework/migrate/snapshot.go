@@ -439,7 +439,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: drop table", table),
-			SQL:         fmt.Sprintf("DROP TABLE IF EXISTS %s", qtable),
+			SQL:         fmt.Sprintf("DROP TABLE IF EXISTS %s", ddlIdent(qtable)),
 			Down:        down,
 			Destructive: true,
 		})
@@ -638,10 +638,10 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 // the FALLBACK Down for a dropped table when the snapshot predates TableDDL.
 // Constraints (PK/NOT NULL/UNIQUE/FK) are not recoverable from a column→type
 // map, so this is column-and-type only; the TableDDL path is faithful.
-// Identifiers are validated but UNQUOTED (via MustIdent), the same convention
-// as buildCreateTableSQL, so a mixed-case name folds to lowercase on Postgres
-// consistently with the original CREATE rather than being case-preserved by
-// quoting. Column order is sorted for deterministic output.
+// Identifiers are validated (via MustIdent) and bare unless they are keywords
+// (ddlIdent), the same convention as buildCreateTableSQL, so a mixed-case name
+// folds to lowercase on Postgres consistently with the original CREATE rather
+// than being case-preserved by quoting. Column order is sorted for deterministic output.
 func recreateTableSQL(table string, cols map[string]string) string {
 	names := make([]string, 0, len(cols))
 	for n := range cols {
@@ -650,10 +650,10 @@ func recreateTableSQL(table string, cols map[string]string) string {
 	sort.Strings(names)
 	defs := make([]string, 0, len(names))
 	for _, n := range names {
-		defs = append(defs, fmt.Sprintf("%s %s", query.MustIdent(n), cols[n]))
+		defs = append(defs, fmt.Sprintf("%s %s", ddlIdent(query.MustIdent(n)), cols[n]))
 	}
 	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n\t%s\n)",
-		query.MustIdent(table), strings.Join(defs, ",\n\t"))
+		ddlIdent(query.MustIdent(table)), strings.Join(defs, ",\n\t"))
 }
 
 // ErrDirectiveInSQL is returned when rendered SQL contains a line the
@@ -795,11 +795,11 @@ func SaveSnapshot(path string, snap SchemaSnapshot) error {
 // reFKReferences matches a REFERENCES clause in a recorded CREATE TABLE,
 // capturing the table it references, schema included: a reference onto
 // app.a captured as app made the child no dependency of its parent.
-var reFKReferences = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)`)
+var reFKReferences = regexp.MustCompile(`(?i)\bREFERENCES\s+("?[a-zA-Z0-9_]+"?(?:\."?[a-zA-Z0-9_]+"?)*)`)
 
 // reMutatingFK matches a foreign key in a recorded CREATE TABLE whose
 // ON DELETE action changes rows, capturing the table it references.
-var reMutatingFK = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*\([^)]*\)\s*ON\s+DELETE\s+(?:CASCADE|SET\s+NULL)\b`)
+var reMutatingFK = regexp.MustCompile(`(?i)\bREFERENCES\s+("?[a-zA-Z0-9_]+"?(?:\."?[a-zA-Z0-9_]+"?)*)\s*\([^)]*\)\s*ON\s+DELETE\s+(?:CASCADE|SET\s+NULL)\b`)
 
 // ddlWithoutLiterals blanks the string literals and comments of a recorded
 // CREATE TABLE, so the patterns above read only its definitions: a text
@@ -831,7 +831,7 @@ func snapshotMutatingReferrers(dialect Dialect, prev SchemaSnapshot, table strin
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(prev.TableDDL)) {
 		for _, m := range reMutatingFK.FindAllStringSubmatch(ddlWithoutLiterals(prev.TableDDL[name]), -1) {
-			if refersTo(dialect, name, m[1], table) {
+			if refersTo(dialect, name, unquoteDDLIdent(m[1]), table) {
 				out = append(out, name)
 				break
 			}
@@ -876,7 +876,7 @@ func sortDroppedTables(dialect Dialect, tables []string, tableDDL map[string]str
 			}
 			for _, u := range tables {
 				target := asciicase.Lower(u)
-				if target != low && !seenRef[target] && refersTo(dialect, t, m[1], u) {
+				if target != low && !seenRef[target] && refersTo(dialect, t, unquoteDDLIdent(m[1]), u) {
 					seenRef[target] = true
 					dep[low] = append(dep[low], target)
 					inDegree[target]++
@@ -1072,7 +1072,7 @@ func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string)
 				SQL:     ddl,
 				Down:    dropIndexSQL(safeTable, safeName),
 			})
-		} else if strings.TrimRight(strings.TrimSpace(prevDDL), ";") != strings.TrimRight(strings.TrimSpace(ddl), ";") {
+		} else if unquoteDDLIdent(strings.TrimRight(strings.TrimSpace(prevDDL), ";")) != unquoteDDLIdent(strings.TrimRight(strings.TrimSpace(ddl), ";")) {
 			// Index definition changed under the same index name (e.g. Unique flip, or column change under explicit name).
 			// Drop the old index and create the new index.
 			// Down reverses this: drops the new index and restores the old index DDL.
