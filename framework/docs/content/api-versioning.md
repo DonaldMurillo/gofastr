@@ -327,7 +327,11 @@ app.GroupEntity(v2.Group(), "posts", apiversions.ApplyToEntityConfig(basePostsCo
 A `Projection` selects fields with `Include` (allow-list; empty = all),
 narrows them with `Exclude`, and can remap JSON keys per version with
 `Rename`. `ApplyToEntityConfig` returns a copy of the base config shaped
-for that version.
+for that version. Every name in `Include`, `Exclude` and the keys of
+`Rename` is a field name the base config declares (`internal_notes`, not
+its wire key `internalNotes`); `ApplyToEntityConfig` panics at startup on
+any other, since an `Exclude` that matched nothing left the column on
+that version's wire output.
 
 **How it works:** `Exclude` sets the field's `Hidden` flag (the column
 stays in the shared table, just hidden from that version's wire output).

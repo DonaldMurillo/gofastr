@@ -4703,6 +4703,60 @@ few lines, and link the PR or the docs page for the rest.
   (the UI host's static dir and the static export) now judge the name
   Windows opens, on every OS, so a file whose name holds a backslash is
   refused everywhere. See [core packages](framework/docs/content/core-packages.md#static).
+- **A harness "Allow always" rule covers the working directory it was
+  granted in.** The rule file is one per user and an argv summary leaves
+  the working directory implicit, so approving `go test ./...` forever in
+  your own repo also ran `go test ./...`, and with it a cloned repo's
+  test code, in every other checkout with no prompt; `Grep:TODO` saved in
+  one checkout covered all of them. A persistent rule now records
+  `Rule.Dir` (`permission.Engine.WorkingDir`, the process working
+  directory) and applies only there. Rules saved earlier name no
+  directory and prompt once more. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **The harness session log redacts the credstore's key material and
+  secrets passed in a Bash call's `env`.** The `NAME=value` pattern
+  knew `_API_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` and `_ACCESS_KEY`,
+  so `GOFASTR_HARNESS_PASSPHRASE` and `GOFASTR_HARNESS_MACHINE_KEY`
+  (which every Bash child inherits, and a quiet-mode
+  `cat /proc/self/environ` prints with no prompt) were stored, and
+  exported, verbatim. And the patterns ran on each JSON string apart, so
+  `"env": {"ZAI_API_KEY": "<v>"}` in a `ToolCallStarted` never matched.
+  Both names now count, and a JSON member whose name is a secret name
+  loses its value (`sqlite.MemberRedactor`, which `DefaultRedactor`
+  implements). Events already stored keep what they had. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **`apiversions.ApplyToEntityConfig` panics on a projection naming an
+  undeclared field.** An `Exclude` entry that matched no field (a typo,
+  or the column's camelCase wire key instead of its field name) was
+  ignored, so the column a version meant to hide stayed on its wire
+  output. A name in `Include`, `Exclude` or a `Rename` key that the base
+  config does not declare now panics at startup, like `Version` does on
+  a bad prefix. See [API versioning](framework/docs/content/api-versioning.md).
+- **The harness `Read` and `Edit` tools refuse a path that is not a
+  regular file.** `Grep` already skipped FIFOs and devices; `Read` opened
+  any path, and opening a FIFO blocks until a writer appears with no
+  regard for the turn's context. A quiet-mode `Read` of one (no prompt)
+  wedged the turn past `CancelTurn`, and the session with it; `/dev/tty`
+  never ends, and `Edit` read `/dev/zero` without bound. Both now refuse
+  a FIFO, device, socket, directory or symlink to one with an error
+  result. See [harness architecture](framework/docs/content/harness-architecture.md).
+- **The `gofastr harness` chat page refuses to be framed.** It holds a
+  24 h human-class token and the permission modal, and it sent no
+  framing policy, so a page on any site could load it in an iframe and
+  overlay its own content to steer the operator's click onto "Allow for
+  session". It now sends `X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'`. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **`gofastr harness` no longer loads its built-in profile from the
+  working directory.** It preferred a
+  `framework/experimental/harness/profile/<name>.toml` relative to the
+  working directory over the copy in the binary, so a cloned repo
+  carrying that path replaced the trusted profile: its `prompt_header`
+  became the system prompt outside the untrusted-content tags, and its
+  `default_model` and `tool_packs` chose the provider and the tools. The
+  built-in profiles now always come from the binary; pass
+  `--profile <path>` to run an edited one. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 - **A harness sub-agent can no longer call `TaskList` or `Agent`.** The
   sub-agent's catalog left both out, but its dispatcher ran any tool in
   the shared registry, so a tool_use naming one (a page the sub-agent

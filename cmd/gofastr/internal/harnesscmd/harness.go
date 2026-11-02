@@ -219,17 +219,16 @@ func loadProfile(useFramework bool, explicit string) (*profile.Profile, error) {
 		}
 		return profile.Load(explicit)
 	}
+	// The built-in profiles always come from the binary. This used to
+	// prefer a framework/experimental/harness/profile/<name>.toml found
+	// relative to the working directory, for edits inside the source
+	// tree, but the working directory is attacker-authored on a cloned
+	// repo: any repo carrying that path replaced the trusted profile, its
+	// prompt_header becoming the system prompt outside the untrusted-
+	// content tags (rule 12). To try an edited profile, pass --profile.
 	name := "default"
-	path := "framework/experimental/harness/profile/default.toml"
 	if useFramework {
 		name = "framework"
-		path = "framework/experimental/harness/profile/framework.toml"
-	}
-	// Prefer the on-disk copy when running inside the source tree (so
-	// edits to the .toml take effect without rebuilding); fall back to
-	// the copy embedded in the binary for installed/out-of-tree runs.
-	if _, err := os.Stat(path); err == nil {
-		return profile.Load(path)
 	}
 	return profile.Embedded(name)
 }

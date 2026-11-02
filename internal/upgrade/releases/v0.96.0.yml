@@ -783,3 +783,17 @@ notes:
     breaking: false
     guidance: "A double-quoted value that used \\xNN for a byte above 0x7F now reads as the character U+00NN, and one that used a Go octal or \\' escape fails to parse with the escape named. Write the character itself or a \\u escape."
     nodetect: "the change is in how YAML files are read; nothing in an app's Go source spells it"
+  - change: "gofastr harness and gofastr harness mcp always load the built-in default and framework profiles from the binary; a framework/experimental/harness/profile/<name>.toml under the working directory is no longer read in their place"
+    breaking: false
+    guidance: "Nothing to change to run the built-in profiles. To run an edited profile from a checkout of the gofastr repo, pass --profile framework/experimental/harness/profile/<name>.toml. A repo that carried that path no longer replaces the profile."
+    nodetect: "the profile is chosen by the harness command at run time; nothing in an app's source spells it"
+  - change: "apiversions.ApplyToEntityConfig panics when the version's projection names, in Include, Exclude or a Rename key, a field the base entity config does not declare"
+    breaking: false
+    guidance: "Use the field name (internal_notes), not its wire key (internalNotes), and drop names of fields the entity no longer has. Each such name was ignored before, so an Exclude typo left the column on that version's responses."
+    find:
+      uses:
+        - gofastr/framework/experimental/apiversions.ApplyToEntityConfig
+  - change: "A harness Allow always permission rule is saved with the working directory it was granted in (Rule.Dir) and applies only while the harness runs there; permission.Engine has a WorkingDir field the harness sets to the process working directory"
+    breaking: false
+    guidance: "Each Allow always rule saved before this release names no directory and prompts once more; answer it again in each checkout that should keep it. An embedder that builds its own permission.Engine sets WorkingDir to keep rules per directory; left empty, rules saved with an empty WorkingDir behave as before."
+    nodetect: "the rules live in the harness's persisted permission file, not in app source"

@@ -59,6 +59,9 @@ func (e *Engine) LoadPersistentRules() error {
 // in-memory list is still updated either way (best-effort durability).
 func (e *Engine) AddPersistentRule(r Rule) error {
 	e.mu.Lock()
+	if r.Dir == "" {
+		r.Dir = e.WorkingDir
+	}
 	e.persistentRules = append(e.persistentRules, r)
 	rules := append([]Rule{}, e.persistentRules...) // snapshot for write
 	e.mu.Unlock()

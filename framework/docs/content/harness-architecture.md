@@ -88,12 +88,14 @@ engine itself knows about *clients*, never about transports.
    two preset bundles loaded from `profile/framework.toml` and
    `profile/default.toml`. Adding a third profile must never require
    touching the loop or core packages. The two built-in presets are
-   also **embedded into the `gofastr` binary** (`go:embed`): when an
-   installed binary runs outside the source tree and the on-disk
-   `profile/*.toml` is absent, the loader falls back to the embedded
-   copy, so `gofastr harness` / `gofastr harness --framework` work
-   anywhere. An explicit `--profile <path>` still requires an on-disk
-   file (no embedded fallback).
+   also **embedded into the `gofastr` binary** (`go:embed`), and
+   `gofastr harness` / `gofastr harness --framework` always load the
+   embedded copy. A `profile/*.toml` under the working directory is
+   never read in its place: on a cloned repo that directory is
+   attacker-authored, and a planted profile's `prompt_header` would be
+   the system prompt outside the untrusted-content tags (rule 12). An
+   explicit `--profile <path>` loads an on-disk file (no embedded
+   fallback); use it to run an edited profile.
 7. **The engine knows about *clients*, never transports.** Transports
    are owned by `control/`. The engine sees an opaque `Client` and
    tracks per-client identity (originator, `identity_class`) without
@@ -657,7 +659,10 @@ Read, Glob, Ls (anywhere under the repo)
 ```
 
 Never prompts for these. `--strict-permissions` disables the
-preset for users who want every call gated. `git branch` counts
+preset for users who want every call gated. Because they never
+prompt, `Read` (like `Grep`) opens regular files only: a FIFO, a
+device such as `/dev/tty`, or a symlink to one is refused, since the
+open would block past `CancelTurn`. `Edit` applies the same rule. `git branch` counts
 only when it lists: listing flags alone (`-a`, `-r`, `-v`, `-vv`,
 `--show-current`), and patterns only behind `--list`.
 
@@ -678,7 +683,14 @@ approved for `Grep:TODO` (the working directory) does not match
 summary that names a directory.
 
 Session-scoped allows persist for the `EngineRun` only; they
-never carry across sessions or persist to disk. The user can
+never carry across sessions or persist to disk. An **Allow always**
+answer is written to `$XDG_CONFIG_HOME/gofastr/harness/permissions.json`
+with the working directory it was granted in, and is honoured only
+while the harness runs in that directory. A summary leaves the working
+directory implicit (Bash's default cwd, Grep's default path), so a
+global rule would let one approval of `go test ./...` in your own repo
+run a cloned repo's tests with no prompt. A rule saved before rules
+carried a directory prompts once more. The user can
 promote a session-scoped allow to a profile-level rule via
 `/permissions:promote <rule>`.
 
@@ -1347,7 +1359,10 @@ it never sees how clients are wired.
   token for whoever loads it, and the `Host` check stops DNS
   rebinding, not a peer that reaches the port and sends
   `Host: localhost`. The check reads the address the listener bound,
-  not the spelling passed. There is no LAN mode.
+  not the spelling passed. There is no LAN mode. The chat page is
+  never framed (`X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`):
+  a page on another site could otherwise load it in an iframe and steer
+  the operator's click onto the permission modal.
 - **`--no-listen`**: in-process clients only (engine speaks only
   through `inproc`). Useful for tests or pure-CLI use.
 - **`gofastr harness mcp`** (v0.2): launches a one-shot stdio MCP
@@ -1893,7 +1908,14 @@ event-write path matches secret regexes against `ToolResult.Content`,
 tokens), and `TextDelta` (pasted secrets). Patterns: AWS access
 keys (`AKIA…`), GitHub PATs (`ghp_…`, `github_pat_…`),
 `-----BEGIN .* KEY-----`, `Bearer [A-Za-z0-9-_\.]+`, JWT-shaped
-tokens, common cloud-provider key prefixes. Matched substrings are
+tokens, common cloud-provider key prefixes, and `NAME=value`
+assignments whose name ends in `_API_KEY`, `_TOKEN`, `_SECRET`,
+`_PASSWORD`, `_PASSPHRASE`, `_ACCESS_KEY` or `_MACHINE_KEY` (the
+last two cover the credstore's own `GOFASTR_HARNESS_PASSPHRASE` and
+`GOFASTR_HARNESS_MACHINE_KEY`, which every Bash child inherits). The
+same names redact a JSON member's value, so a Bash call's
+`"env": {"ZAI_API_KEY": "…"}` is caught although the name and the
+value are two strings. Matched substrings are
 replaced with `«redacted:KIND»` markers and the original is
 discarded, not stored anywhere. The patterns run on each decoded
 string of the event payload, never on the serialized JSON, so a
