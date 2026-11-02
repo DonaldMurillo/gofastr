@@ -146,6 +146,10 @@ few lines, and link the PR or the docs page for the rest.
   -race` reports. Checks now hand their rows over a channel, and a late
   one is dropped. A check registered with an empty name that had passed
   is no longer reported as `"timeout"` when another check hangs.
+- **`log_filter historical=true` skips a log line past 1 MiB.** The
+  file tail used `bufio.Scanner`, which stops the scan on such a line,
+  and the error was swallowed, so the historical read returned nothing
+  while one large entry sat in its window. The line is now skipped.
 - **The cache keeps large integers exact under an interface.**
   `MemoryCache`, `RedisCache` and `GetOrSet` decoded with
   `json.Unmarshal`, so a value read into `map[string]any` or `*any` had

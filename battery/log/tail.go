@@ -2,6 +2,7 @@ package log
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -59,29 +60,65 @@ func tailFileWithWindow(path string, maxLines int, window int64) ([]map[string]a
 		return nil, fmt.Errorf("log: tail seek %s: %w", path, err)
 	}
 
+	// Lines up to 1 MiB are read; the recovery middleware caps stacks at
+	// 64 KiB and panic values at 4 KiB, so this is comfortable. A longer
+	// line (an app can log a large attr; the fanout caps nothing) is
+	// skipped, not fatal: bufio.Scanner ended the whole scan on one with
+	// ErrTooLong, and the historical read returned nothing while that
+	// line sat in the window.
+	rd := bufio.NewReaderSize(f, 64*1024)
 	// If we seeked into the middle of a line, discard the partial one.
-	scanner := bufio.NewScanner(f)
-	// Allow up to 1 MiB per line, the recovery middleware caps stacks
-	// at 64 KiB and panic values at 4 KiB, so this is comfortable.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	if offset > 0 && scanner.Scan() {
-		// Skipped the (possibly partial) first line.
-	}
+	skipFirst := offset > 0
 
 	// Accumulate. Drop oldest if we exceed maxLines.
 	out := make([]map[string]any, 0, maxLines)
-	for scanner.Scan() {
-		var m map[string]any
-		if err := jsonexact.Unmarshal(scanner.Bytes(), &m); err != nil {
-			continue // ignore malformed lines
+	for {
+		line, err := readLineCapped(rd, 1<<20)
+		if line != nil && !skipFirst {
+			var m map[string]any
+			if jsonexact.Unmarshal(line, &m) == nil { // ignore malformed lines
+				if len(out) == maxLines {
+					out = out[1:]
+				}
+				out = append(out, m)
+			}
 		}
-		if len(out) == maxLines {
-			out = out[1:]
+		skipFirst = false
+		if err == io.EOF {
+			return out, nil
 		}
-		out = append(out, m)
+		if err != nil {
+			return nil, fmt.Errorf("log: tail scan %s: %w", path, err)
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("log: tail scan %s: %w", path, err)
+}
+
+// readLineCapped returns the next '\n'-terminated line of rd without its
+// terminator, or nil when the line is longer than limit (the line is
+// consumed either way). At end of input it returns the final unterminated
+// line, if any, with io.EOF.
+func readLineCapped(rd *bufio.Reader, limit int) ([]byte, error) {
+	var buf []byte
+	over := false
+	for {
+		chunk, err := rd.ReadSlice('\n')
+		if !over {
+			if len(buf)+len(chunk) > limit+1 { // +1: the '\n' is not content
+				over, buf = true, nil
+			} else {
+				buf = append(buf, chunk...)
+			}
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if over {
+			return nil, err
+		}
+		buf = bytes.TrimSuffix(buf, []byte{'\n'})
+		if err == io.EOF && len(buf) == 0 {
+			return nil, io.EOF
+		}
+		return buf, err
 	}
-	return out, nil
 }
