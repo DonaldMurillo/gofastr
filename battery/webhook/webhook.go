@@ -280,7 +280,12 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 //
 // LeasePeriod controls how long a claimed delivery is hidden from
 // other workers when the store implements LeasedStore. Must be
-// longer than the worst-case handler latency; default 30s.
+// longer than the worst-case handler latency; default 30s. A lease no
+// longer than HTTPClient.Timeout (10s on the default client) is raised
+// by New to twice that timeout, with a line to Logger: a receiver
+// answering inside the timeout would otherwise outlive its claim, and a
+// second Manager on the same store would re-claim and send the delivery
+// again mid-POST.
 type Options struct {
 	MaxAttempts          int
 	Backoff              []time.Duration
@@ -421,6 +426,12 @@ func New(s Store, opts Options) *Manager {
 		// opts out.
 		opts.HTTPClient = ssrfGuardClient(opts.HTTPClient)
 	}
+	if t := opts.HTTPClient.Timeout; t > 0 && opts.LeasePeriod <= t {
+		raised := leaseForClientTimeout(t)
+		opts.Logger("webhook: LeasePeriod %s is not longer than the HTTP client timeout %s; raised to %s "+
+			"so a slow receiver cannot outlive its claim and be sent the delivery twice", opts.LeasePeriod, t, raised)
+		opts.LeasePeriod = raised
+	}
 	// A delivery that carries a credential goes through a copy of the
 	// client that never follows a redirect: Go drops Authorization on a
 	// cross-host redirect but not X-API-Key or any custom header, and a
@@ -434,6 +445,18 @@ func New(s Store, opts Options) *Manager {
 		stopCh:     make(chan struct{}),
 		nowFn:      time.Now,
 	}
+}
+
+// leaseForClientTimeout is the lease New raises a too-short LeasePeriod
+// to: twice the client timeout, so the tick's start bar (one timeout of
+// lease left, capped at half the lease) always leaves a started POST its
+// whole timeout. It saturates instead of wrapping near the Duration limit.
+func leaseForClientTimeout(timeout time.Duration) time.Duration {
+	const maxLease = time.Duration(1<<63 - 1)
+	if timeout > maxLease/2 {
+		return maxLease
+	}
+	return 2 * timeout
 }
 
 // logf writes an operational warning through the configured Logger. It
