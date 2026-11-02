@@ -26,12 +26,42 @@
   // dropped: a span or link cannot be disabled, and two clicks during the
   // cold module load both reached dispatch, so both POSTs landed.
   const _rpcBusy = new WeakSet();
-  // FORM nodes with a submitted POST in flight. A POST creates: a
-  // double-click plus Ctrl+S sent three and an entity with no unique key
-  // got three rows. A re-submit is dropped until the first settles. PUT
-  // and PATCH replace state, so their newest value still supersedes, and
-  // an input-triggered dispatch (search as you type) always goes out.
-  const _formPosting = new WeakSet();
+  // FORM node -> its submitted POST in flight: {sig, tok, q}. A POST
+  // creates: a double-click plus Ctrl+S sent three and an entity with no
+  // unique key got three rows. A re-submit of the payload in flight is
+  // dropped; one that differs is queued (the latest only, in q) and goes
+  // out when the first settles, because the newest value must reach the
+  // server. The queued save supersedes the one in flight, so the older
+  // answer touches nothing. A POST that has not answered in POST_HOLD_MS
+  // releases the form (the request is left to finish), so a hung request
+  // never locks it until reload. PUT and PATCH replace state, so their
+  // newest value supersedes at once, and an input-triggered dispatch
+  // (search as you type) always goes out.
+  const _formPosting = new WeakMap();
+  const POST_HOLD_MS = 30000;
+  // _formSig is what a POST form would send: a re-submit is a double
+  // click only when it matches the request in flight.
+  const _formSig = (f, o) => f.getAttribute('data-cui-rpc-body') ||
+    JSON.stringify([...new FormData(f, o?.submitter?.form === f ? o.submitter : null)]
+      .map(([k, v]) => [k, v.name ? [v.name, v.size, v.lastModified] : v]));
+  // _formHold reports whether a POST is in flight for form, dropping a
+  // re-submit of its payload (and any queued edit: the newest value is
+  // the one already out) or queueing a different one.
+  const _formHold = (form, sig, opts) => {
+    const f = _formPosting.get(form);
+    if (!f) return false;
+    if (f.sig !== sig) _rpcLatest.set(form, f.q = { ...opts, confirmed: true });
+    else if (f.q) { f.q = null; _rpcLatest.set(form, f.tok); }
+    return true;
+  };
+  // _formRelease ends the hold tok placed and sends the queued save.
+  const _formRelease = (form, tok) => {
+    const f = _formPosting.get(form);
+    if (!f || f.tok !== tok) return;
+    clearTimeout(f.timer);
+    _formPosting.delete(form);
+    if (f.q && form.isConnected) _dispatchRPC(form, f.q);
+  };
   // Input-triggered RPC debounce belongs with dispatch state, not the core
   // bridge. The bridge loads this module on the first input and asks this map
   // to schedule the request.
@@ -198,12 +228,15 @@
     // opts.confirmed === true means the caller (a submit bridge) already ran
     // the gate on this submit; skip so the user is not prompted twice.
     const postOnce = node.tagName === 'FORM' && method === 'POST' && !(opts && opts.input);
-    if (postOnce && _formPosting.has(node)) return;
+    const sig = postOnce ? _formSig(node, opts) : '';
+    // A double click drops before the confirm asks; a changed save asks
+    // first, so the queued one goes out confirmed.
+    if (postOnce && _formPosting.get(node)?.sig === sig) return void _formHold(node, sig, opts);
     if (node.getAttribute('data-cui-confirm') && !(opts && opts.confirmed === true)) {
       await NS.loadModule('confirm');
       if (!(await NS.ask(node))) return;
-      if (postOnce && _formPosting.has(node)) return;
     }
+    if (postOnce && _formHold(node, sig, opts)) return;
 
     // A form control that belongs to a form (every radio/input/select/
     // textarea with node.form set) carries its value exactly like a FORM
@@ -299,7 +332,11 @@
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
     if (wantDisable) node.disabled = true;
     if (guardBusy) _rpcBusy.add(node);
-    if (postOnce) _formPosting.add(node);
+    if (postOnce) {
+      const f = { sig, tok, q: null };
+      f.timer = setTimeout(() => _formRelease(node, tok), POST_HOLD_MS);
+      _formPosting.set(node, f);
+    }
     node.classList.add('cui-loading');
     node.setAttribute('aria-busy', 'true');
     let answered = false; // a later throw is no network failure
@@ -476,7 +513,6 @@
         _rpcInFlight.delete(responseSignal);
       }
       if (guardBusy) _rpcBusy.delete(node);
-      if (postOnce) _formPosting.delete(node);
       // A superseded dispatch leaves the busy state to the newer one.
       if (_rpcLatest.get(node) === tok) {
         const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
@@ -485,6 +521,7 @@
         node.classList.remove('cui-loading');
         node.removeAttribute('aria-busy');
       }
+      if (postOnce) _formRelease(node, tok);
     }
   }
 

@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -89,6 +90,87 @@ func hookMaskedFields(ctx context.Context, m *meta, id string, base map[string]a
 			masked[f.Name] = true
 		}
 	}
+	return masked
+}
+
+// changeCacheKey carries a WithChangeCache memo.
+type changeCacheKey struct{}
+
+// changeRecord names one record of one entity in the memo.
+type changeRecord struct{ entity, id string }
+
+// changeCache is one page render's hook masks, by record.
+type changeCache struct {
+	mu     sync.Mutex
+	masked map[changeRecord]map[string]bool
+}
+
+// WithChangeCache returns a context under which Changes asks an entity's
+// read hooks about each record once: every later entry for the same
+// record reuses the first answer. A page that draws many audit entries
+// (the admin audit log, the dashboard's activity) installs it once per
+// render, so the app's AfterGet hooks run once per record shown, not once
+// per entry. The memo lives as long as the context; do not keep it past
+// the render, or a record's later change of owner or mask is missed.
+func WithChangeCache(ctx context.Context) context.Context {
+	return context.WithValue(ctx, changeCacheKey{}, &changeCache{masked: map[changeRecord]map[string]bool{}})
+}
+
+// changeMask is the fields Changes leaves out of an entry for record id:
+// recordHookMask, memoized per (entity, record) when ctx carries a
+// WithChangeCache memo. An entity with no AfterGet hook masks nothing and
+// reads nothing.
+func changeMask(ctx context.Context, m *meta, id string) map[string]bool {
+	if m.ch == nil || m.ch.Hooks == nil || len(m.ch.Hooks.HooksFor(hook.AfterGet)) == 0 {
+		return nil
+	}
+	c, _ := ctx.Value(changeCacheKey{}).(*changeCache)
+	if c == nil {
+		return recordHookMask(ctx, m, id)
+	}
+	k := changeRecord{entity: m.name, id: id}
+	c.mu.Lock()
+	masked, ok := c.masked[k]
+	c.mu.Unlock()
+	if ok {
+		return masked
+	}
+	masked = recordHookMask(ctx, m, id)
+	c.mu.Lock()
+	c.masked[k] = masked
+	c.mu.Unlock()
+	return masked
+}
+
+// recordHookMask asks the entity's AfterGet hooks, as the caller, which
+// fields they rewrite on record id, the way the record screen's Activity
+// tab does: it reads the stored row and the row through the caller's
+// read hooks, masks every field the two differ on, and probes only the
+// fields empty on the stored row (hookMaskedFields with the real id and
+// row, so a hook that branches on the record's owner or id answers as it
+// does on the record screen). A caller whose hooked read of the record
+// fails or is refused sees no field of it. A record that cannot be read
+// raw (deleted or purged since, or no id in the entry) has no row to ask
+// about, so the hooks are probed with a made-up row and no id, which
+// stays fail-closed: a hook that refuses the probe hides every field.
+func recordHookMask(ctx context.Context, m *meta, id string) map[string]bool {
+	if id == "" {
+		return hookMaskedFields(ctx, m, "", nil)
+	}
+	raw, err := m.ch.GetOne(ctx, id, nil)
+	if err != nil || raw == nil {
+		return hookMaskedFields(ctx, m, "", nil)
+	}
+	row, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+	if err != nil || row == nil {
+		all := make(map[string]bool, len(m.fields))
+		for _, f := range m.fields {
+			all[f.Name] = true
+		}
+		return all
+	}
+	masked := rewrittenFields(m, raw, row)
+	maps.Copy(masked, hookMaskedFields(ctx, m, id, raw))
 	return masked
 }
 
@@ -277,17 +359,23 @@ func activityVariant(op string) ui.TimelineEventVariant {
 // related records by title. It is "" for an entity this UI does not
 // draw, an entry missing either side (a create or a delete), and an edit
 // that changed nothing the caller may see. A field the entity's AfterGet
-// hooks rewrite when it holds a value is left out (hookMaskedFields with
-// no record: the stored diff would print what every read masks).
-// Relation titles are read through the related entity's own gate as the
-// caller.
+// hooks rewrite for the caller is left out: the stored diff would print
+// what the caller's read masks. The hooks are asked about the record the
+// entry names (its key values in either side), the way the record
+// screen asks them: see recordHookMask, and WithChangeCache to ask once
+// per record across a page of entries. Relation titles are read through
+// the related entity's own gate as the caller.
 func (u *UI) Changes(ctx context.Context, entityName string, before, after map[string]any) render.HTML {
 	m, err := u.meta(entityName)
-	if err != nil {
+	if err != nil || before == nil || after == nil {
 		return ""
 	}
 	e := AuditEntry{Before: before, After: after}
-	masked := hookMaskedFields(ctx, m, "", nil)
+	id := m.rowID(after)
+	if id == "" {
+		id = m.rowID(before)
+	}
+	masked := changeMask(ctx, m, id)
 	s := &listState{m: m, masked: masked}
 	labels := u.resolveRowLabels(ctx, s, []map[string]any{before, after}, m.changeColumns([]AuditEntry{e}, masked))
 	changes := u.changes(ctx, s, labels, before, after)

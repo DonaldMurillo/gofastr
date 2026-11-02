@@ -44,6 +44,8 @@ base := r.Base() // point SDKs/templates here, don't hard-code the path
 - Responses are limited to script, style, image, font, JSON and
   `text/plain`; anything else (HTML first) is a `502`. A route relaying
   a vendor iframe page opts in with `ContentTypes: []string{"text/html"}`.
+  A response with no body (`204`, `304`, an empty `200`) passes whatever
+  its type: there is nothing in it to run.
 - A global `app.Use(auth.CSRF(...))` 403s the relay's POST beacons —
   exempt the mount with `auth.WithCSRFSkipPaths`. Do not gate the
   relay behind `RequireSession` (beacons fire logged-out).

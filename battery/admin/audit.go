@@ -20,6 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
@@ -330,6 +331,9 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 	names := b.actorNames(ctx, rows)
 	now := time.Now()
 	data := make([]ui.Row, len(rows))
+	// One answer per record from the app's read hooks, however many of
+	// the page's rows name it.
+	ctx = entityui.WithChangeCache(ctx)
 	for i, r := range rows {
 		before, after := b.scopedSides(ctx, r)
 		record, changes := b.auditRecord(ctx, r, before, after)

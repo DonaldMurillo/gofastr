@@ -364,11 +364,30 @@ few lines, and link the PR or the docs page for the rest.
   export for an app on v0.96.0 or later; an older pin or a `replace`
   directive gets a warning. See `static-export.md`.
 
+- **Audit change lists ask the app's read hooks about the real record.**
+  `entityui.UI.Changes`, behind the admin's audit page and dashboard
+  activity, ran the entity's `AfterGet` hooks over a made-up row with no
+  id, once per entry. A hook that looks the record up by id refused it,
+  and the common "mask unless the caller owns the row" hook masked it, so
+  the fail-closed probe hid every field and the audit log showed no
+  changes. It now reads the record the entry names (stored, and through
+  the caller's read hooks, as the record screen does), leaves out what
+  differs, and probes only the fields empty on that row, with the real
+  id. A deleted record falls back to the old probe. The new
+  `entityui.WithChangeCache(ctx)` makes the hooks run once per record per
+  page; the admin installs it. Masking calls `AfterGet` hooks with the
+  caller's context, so they must be side-effect free: see `Changes` in
+  [entityui](framework/docs/content/entityui.md).
 - **A `data-cui-rpc` POST form sends one request at a time (D-09).**
-  A re-submit of a form whose method is POST is ignored while its own
-  POST is in flight, so a double click plus Ctrl+S no longer creates
-  three rows. PUT and PATCH forms, input-triggered forms, buttons and
-  controls still send every dispatch, the newest winning.
+  A re-submit of a form whose method is POST waits while its own POST
+  is in flight. One that sends the same fields as the request in flight
+  is ignored, so a double click plus Ctrl+S no longer creates three
+  rows. One that sends different fields (save A, edit to B, save again)
+  is held, the latest only, and goes out when the first answers; the
+  first answer then changes nothing on the page, the newer one does. A
+  POST that has not answered in 30 seconds stops holding the form, and
+  a held save goes out then. PUT and PATCH forms, input-triggered forms,
+  buttons and controls still send every dispatch, the newest winning.
 - **FilterToolbar Reset follows the submit (D-37).** Without
   `ClientNavigation`, Reset carries `data-cui-nav="off"` and loads the
   whole document, as the native GET submit does, so a kept layout that
@@ -5993,7 +6012,10 @@ few lines, and link the PR or the docs page for the rest.
   XSS. Any other type is now a `502`; a route serving a vendor iframe
   page opts in with `Route.ContentTypes: []string{"text/html"}`. SVG
   passes under `Content-Security-Policy: sandbox`, and a body with no
-  `Content-Type` goes out as `application/octet-stream`. See
+  `Content-Type` goes out as `application/octet-stream`. A response
+  that forwards no body (a `204` or `304`, an empty `200`, chunked or
+  `Content-Length: 0`) passes whatever its type, so a vendor beacon
+  answering `204` under `text/html` is not turned into a `502`. See
   [relay](framework/docs/content/relay.md#threat-model).
 - **`core/static` contains a root directory created after the handler.**
   The symlink containment binds the `os.DirFS` root when `Handler` is

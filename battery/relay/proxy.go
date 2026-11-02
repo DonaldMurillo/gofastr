@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -447,6 +448,9 @@ func (r *Relay) restrictContentType(rt *routeRuntime, resp *http.Response) {
 		}
 		return
 	}
+	if bodiless(resp) {
+		return
+	}
 	r.logger.Warn("relay: refused upstream content type",
 		"status", resp.StatusCode,
 		"content_type", url.PathEscape(ct),
@@ -459,6 +463,34 @@ func (r *Relay) restrictContentType(rt *routeRuntime, resp *http.Response) {
 	resp.Body = io.NopCloser(strings.NewReader(body))
 	resp.ContentLength = int64(len(body))
 	resp.Header = http.Header{"Content-Type": {"text/plain; charset=utf-8"}}
+}
+
+// bodiless reports whether resp forwards no body, so its type cannot put
+// anything on the page: a vendor beacon answering 204, or 200 with an
+// empty body, under a text/html label is a success the vendor accepted,
+// not a document. A 204 or 304 has no body by definition; otherwise a
+// declared Content-Length of 0 settles it, and an unknown length
+// (chunked) is decided by reading one byte, which is put back in front
+// of the body when there is one. A read error counts as a body, so the
+// refusal stands.
+func bodiless(resp *http.Response) bool {
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified ||
+		resp.ContentLength == 0 || resp.Body == nil {
+		return true
+	}
+	if resp.ContentLength > 0 {
+		return false
+	}
+	var one [1]byte
+	n, err := io.ReadFull(resp.Body, one[:])
+	if n == 0 && err == io.EOF {
+		return true
+	}
+	resp.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(one[:n]), resp.Body), resp.Body}
+	return false
 }
 
 // refererOrigin reduces a Referer to its origin with a trailing slash,

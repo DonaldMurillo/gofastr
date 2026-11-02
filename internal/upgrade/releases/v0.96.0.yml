@@ -1300,7 +1300,7 @@ notes:
   - change: "BREAKING - battery/relay refuses an upstream response whose Content-Type is not script, style, image, font, JSON or text/plain with a 502; SVG gains Content-Security-Policy: sandbox and a body with no Content-Type is sent as application/octet-stream"
     breaking: true
     hits: review
-    guidance: "A relayed response runs on the app's origin, so a vendor HTML page was reflected script. A route that relays a vendor's iframe page (text/html) or another type adds it with Route.ContentTypes, for example ContentTypes: []string{\"text/html\"}, trusting that vendor as much as the app's own code."
+    guidance: "A relayed response runs on the app's origin, so a vendor HTML page was reflected script. A route that relays a vendor's iframe page (text/html) or another type adds it with Route.ContentTypes, for example ContentTypes: []string{\"text/html\"}, trusting that vendor as much as the app's own code. A response with no body (204, 304, an empty 200) passes whatever its type, so a beacon endpoint answering 204 under text/html still succeeds."
     find:
       uses:
         - gofastr/battery/relay.New
@@ -1368,9 +1368,9 @@ notes:
     breaking: true
     guidance: "SQLite has no exact decimal type, so 999999999999999.1234 read back 999999999999999.1. Postgres keeps every digit of DECIMAL(19,4) and is unchanged. Keep such values on Postgres, store an int count of the smallest unit, or set the field's RawType to TEXT (stored as sent, compared as text)."
     nodetect: "the refused values arrive in request bodies at runtime; nothing in an app's source spells them"
-  - change: "A data-cui-rpc form whose method is POST ignores a re-submit while its own POST is in flight; PUT and PATCH forms still send every submit"
+  - change: "A data-cui-rpc form whose method is POST holds a re-submit while its own POST is in flight: the same fields are ignored, different fields go out (the latest only) when the first answers or after 30 seconds without an answer; PUT and PATCH forms still send every submit"
     breaking: false
-    guidance: "A double click plus Ctrl+S sent three POSTs and an entity with no unique key got three rows. A form that relied on a second POST while the first was out (a resend from a gofastr:formresult listener, say) sends it after the first answers, or uses data-cui-rpc-method=\"PUT\" or \"PATCH\" to keep the newest-value rule."
+    guidance: "A double click plus Ctrl+S sent three POSTs and an entity with no unique key got three rows. Save A, edit to B, save again now sends A, then B once A answers, and only B's answer touches the page (its navigate, reset, toast and field errors). A form that relied on a second identical POST while the first was out (a resend from a gofastr:formresult listener, say) sends it after the first answers, or uses data-cui-rpc-method=\"PUT\" or \"PATCH\" to keep the newest-value rule."
     nodetect: "the change is in the browser runtime; a form's markup is unchanged"
   - change: "ui.FilterToolbar without ClientNavigation renders Reset with data-cui-nav=off, a whole document load like its native GET submit; the layoutfunc lint flags app.QueryFromContext, and Key.Get of a same-package resolver that reads the query or the request, in a layout build outside a RouteArea"
     breaking: false
@@ -1449,3 +1449,7 @@ notes:
         - gofastr/framework.App.Shutdown
         - gofastr/framework.App.Start
         - gofastr/framework.App.RunWithSignals
+  - change: "entityui UI.Changes (the admin's audit page and dashboard activity) asks the entity's AfterGet hooks about the record each entry names, with its real id and stored row, instead of a made-up row with no id; new entityui.WithChangeCache runs them once per record per page"
+    breaking: false
+    guidance: "An audit log that showed no field changes for an entity whose AfterGet hook looks the record up by id, or masks unless the caller owns the row, now shows every change but the masked fields. The hooks now see the record's real id, its stored row (through the caller's read hooks) and a copy with only its empty fields set to probe values, as the signed-in admin, once per record on each page that draws changes; a deleted record still gets the old probe with an empty ID. Keep AfterGet hooks free of side effects (read counters, last-viewed stamps, notifications). A host drawing many entries with UI.Changes wraps the render's context in entityui.WithChangeCache once."
+    nodetect: "the change is in how the change list calls the app's hooks at render time; nothing in an app's source spells it"
