@@ -103,5 +103,8 @@ func readArchiveRows(t *testing.T, dir, name string) []map[string]any {
 		}
 		out = append(out, m)
 	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
