@@ -45,7 +45,7 @@ few lines, and link the PR or the docs page for the rest.
   `deferreset`, `recoverwrite`, `statusrange`, `doublewrite`,
   `listheader`, `textbind`, `sanitizefix`, `authpresence`,
   `multipartparse`, `ratelimitkey`, `fanoutreq`, `rsakeysize`,
-  `siblingresult`, `silentskip`, `growmap`, `nullarray`), new arms on
+  `siblingresult`, `silentskip`, `growmap`, `nullarray`, `hookedread`), new arms on
   `intwrap`, `recovercallback`, `settlectx`, `wrapwriter`, `nostore`,
   `controlbytes`, `errleak`, `discardeddecode`, `mapwriter`, `embedskip`,
   `laxcoerce`, `compositekey`, `unrechecked` and `rawtext`, contracts
@@ -912,6 +912,9 @@ few lines, and link the PR or the docs page for the rest.
     line.
   - `core/config.Load` binds `encoding.TextUnmarshaler` fields
     (`time.Time`, `slog.Level`, `netip.Addr`, validated enums).
+  - admin: the Audit log and dashboard activity no longer print the
+    title or changed values of a record a `BeforeGet`/`BeforeList` hook
+    hides from the admin; they show its id only.
   - Browser: a Date field in localentity keeps years 0–99;
     `data-cui-submit-on-enter` and the tag field ignore Safari's
     IME-confirming Enter (keyCode 229); Tree and Lightbox arrows swap in

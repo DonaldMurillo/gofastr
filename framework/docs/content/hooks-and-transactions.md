@@ -444,6 +444,12 @@ in-process Go API still returns stored values unless the caller passes
 lookups and aggregates correct, and generated screens opt in.
 The same opt-in applies a `BeforeList`/`BeforeGet` scope, so a row the
 HTTP route hides is hidden from a rendered screen too.
+`TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
+(battery/admin) list every surface that serves a row; a new surface adds
+a case there. Generated screens read through entityui's hooked readers
+(`getRow`, `listRows`, …); a deliberate stored-value read lives in a
+function named `*Unhooked`, and the `hookedread` analyzer holds
+entityui and battery/admin to that.
 
 On `?include=`, a child hook may redact in place or by replacing a row
 with a projection; both are folded back into the attached row. Sorting

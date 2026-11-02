@@ -627,7 +627,13 @@ expose them to agents connected to a live app.**
   but not keyCode 229 — Safari's composition-ending Enter; ArrowLeft/
   ArrowRight sent different ways with no direction read), and
   `clipboardawait` (a dropped clipboard promise followed by a status
-  write). Tried and dropped as unsharp: a catalog-name 63-byte-cut rule,
+  write). Structural: `hookedread` (in framework/entityui and battery/admin,
+  a crud read-API call whose context is not `crud.WithReadHooks` — the
+  screens read through the hooked `meta` readers `getRow`/`listRows`/…,
+  and a stored-value read lives in a function named `*Unhooked`); the
+  read-hook invariant itself, fixed five times piecemeal, is held by the
+  parity matrices `TestReadHookParityCrud` and `TestReadHookParityAdmin`,
+  where a new surface adds its case. Tried and dropped as unsharp: a catalog-name 63-byte-cut rule,
   keyguard's Escape/defaultPrevented arm (Escape ownership is a design
   decision), and silentskip's file-walk arm.
 

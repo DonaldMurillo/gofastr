@@ -410,6 +410,13 @@ app's own bulk action keeps the run id. On a phone each row is a card.
 Both read elevated: the page is behind the admin gate, and the trail
 names records whatever the entity's own read permission says.
 
+**Hidden records stay hidden.** The Audit log page and the dashboard's
+activity feed show only the id and operation of a record that is still
+stored (live or in the trash) but hidden from the admin by its
+`BeforeGet`/`BeforeList` hooks (`entityui.UI.RecordHidden`): its title
+and changed values stay out of the page, the answer the owner-scope check
+already gave.
+
 **Audit filters.** The audit page carries a GET filter form, the list
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a
 filter lives in the page's own query string and works without script:
