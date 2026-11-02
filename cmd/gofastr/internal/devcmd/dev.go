@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -256,7 +257,31 @@ func parseDevFlags(args []string) (addr, dir, pkg string, noA11y bool, err error
 		}
 		addr = "localhost:" + port
 	}
+	if err := checkDevAddr(addr); err != nil {
+		return addr, dir, pkg, noA11y, err
+	}
 	return addr, dir, pkg, noA11y, nil
+}
+
+// checkDevAddr refuses an address no listener can take, before the loop
+// starts: a port that is not a number from 0 to 65535 (an empty one bound
+// a random port the banner never named), or no port at all. A bare port
+// ("9000") is accepted, as isolation reads it as ":9000".
+func checkDevAddr(addr string) error {
+	hostport := addr
+	if !strings.Contains(addr, ":") {
+		hostport = ":" + addr
+	}
+	_, port, err := net.SplitHostPort(hostport)
+	if err == nil {
+		if n, perr := strconv.Atoi(port); perr != nil || n < 0 || n > 65535 || port != strconv.Itoa(n) {
+			err = fmt.Errorf("port %q is not a number from 0 to 65535", port)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("invalid listen address %q: %v (want host:port, :port or -p <port>)", addr, err)
+	}
+	return nil
 }
 
 // SplitFlagEqual splits "--name=value" into ("--name", "value", true). A bare

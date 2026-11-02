@@ -268,7 +268,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   `--dir` sets the watch root, `--pkg` the main package under it,
   `--addr`/`-p` the port (not both); `--no-a11y` skips the accessibility
   lint on each rebuild. Each takes its value as `--addr=x` or `--addr x`;
-  an unknown flag, or a flag whose value is missing, is an error. While the app is building, failed to build, or exited,
+  an unknown flag, or a flag whose value is missing, is an error, and so
+  is an address whose port is missing or not a number from 0 to 65535
+  (`-p abc`, `-p 99999`, `--addr localhost:`). While the app is building, failed to build, or exited,
   the address answers 503 with what happened (the build error
   included) instead of refusing connections.
 - `gofastr build`: codegen + `go vet` + accessibility lint + the embed
