@@ -540,6 +540,9 @@ few lines, and link the PR or the docs page for the rest.
   - A Swagger 2.0 document, and a parameter whose `in` is not path,
     query, header or cookie, fail generation. Both generated a CLI that
     dropped the parameter (`in: body`, `in: querry`), required or not.
+  - An apiKey scheme whose `name` is not an HTTP header name (`X-Key(1)`)
+    fails generation; the CLI built and then failed every request with
+    `invalid header field name`.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

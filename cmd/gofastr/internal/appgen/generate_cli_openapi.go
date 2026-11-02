@@ -686,10 +686,28 @@ func oaSchemeHeader(n string, s map[string]any) (header, prefix string, err erro
 		return "Authorization", "Bearer ", nil
 	}
 	name, _ := s["name"].(string)
-	if name == "" || strings.ContainsAny(name, " \t\r\n\"\\") {
+	if !oaHeaderName(name) {
 		return "", "", fmt.Errorf("apiKey security scheme %q needs a plain header name, got %q", n, name)
 	}
 	return name, "", nil
+}
+
+// oaHeaderName reports whether s is an HTTP field name, an RFC 9110
+// token. net/http refuses any other name at send time, so a CLI built
+// on one (X-Key(1)) failed every request it sent.
+func oaHeaderName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case strings.ContainsRune("!#$%&'*+-.^_`|~", r):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // oaRequiredScheme picks the scheme a security requirement list (the
@@ -888,7 +906,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		case "query":
 			op.QueryParams = append(op.QueryParams, cp)
 		case "header":
-			if strings.ContainsAny(name, " \t\r\n\"\\") {
+			if !oaHeaderName(name) {
 				return op, fmt.Errorf("header parameter %q is not a plain header name", name)
 			}
 			op.HeaderParams = append(op.HeaderParams, cp)

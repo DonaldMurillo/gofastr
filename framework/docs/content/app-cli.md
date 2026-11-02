@@ -252,7 +252,8 @@ ends in the prefix is used as it is, so a `login` stored with
 `https://pets.example/api/v3` still requests `/api/v3/pet/7`.
 A templated server URL (`{host}`) seeds neither. An `http: bearer` or
 header `apiKey` security scheme wires into the same env/`login`
-machinery. The token goes under the scheme the document's top-level
+machinery; an apiKey `name` that is not an HTTP header name (`X-Key(1)`)
+fails generation, since no request could carry it. The token goes under the scheme the document's top-level
 `security` requires (its first alternative naming one supported scheme),
 or the first supported scheme by name when `security` names none; an
 operation whose own `security` names another scheme sends the token
