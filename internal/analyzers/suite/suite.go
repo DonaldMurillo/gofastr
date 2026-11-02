@@ -90,6 +90,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/deferreset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/iounderlock"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/poisonedconn"
+	// 2026-11 bug-bash rules (response)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverwrite"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -177,6 +179,9 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(iounderlock.Analyzer),
 	allow.Guard(poisonedconn.Analyzer),
 	allow.Guard(deferreset.Analyzer),
+	// 2026-11 bug-bash rules (response): the http.ResponseWriter
+	// lifecycle, one per repeated bug shape.
+	allow.Guard(recoverwrite.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means
