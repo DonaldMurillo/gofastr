@@ -54,6 +54,16 @@ const DefaultMaxPixels int64 = 64 * 1024 * 1024
 // sources configure Config.MaxSourceBytes explicitly.
 const DefaultMaxSourceBytes int64 = 64 << 20
 
+// DefaultMaxJPEGScans caps the scans a JPEG may carry before it is
+// decoded. The pixel cap bounds the frame, not how often the decoder
+// walks it: a progressive scan that is one end-of-band run per 32,767
+// blocks costs about ten bytes and still revisits every block, so at
+// 64 MP each scan was ~37ms of CPU and a 10 KB file of 100 scans took
+// four seconds. Common encoders write at most a few dozen scans (libjpeg's
+// progressive script writes 10 for a color image). Callers with stranger
+// inputs configure Config.MaxJPEGScans.
+const DefaultMaxJPEGScans = 64
+
 // Config holds knobs that propagate through a pipeline.
 type Config struct {
 	// MaxPixels caps decoded image area. Inputs whose reported width*height
@@ -68,6 +78,11 @@ type Config struct {
 	// more than the cap returns ErrSourceTooLarge. Zero or negative
 	// means DefaultMaxSourceBytes, mirroring MaxPixels.
 	MaxSourceBytes int64
+
+	// MaxJPEGScans caps the scans (start-of-scan markers) a JPEG source
+	// may carry; past it decode returns ErrDecompressionBomb before any
+	// pixel is decoded. Zero or negative means DefaultMaxJPEGScans.
+	MaxJPEGScans int
 }
 
 // Image is the chainable pipeline value. Transformations return a new
@@ -205,6 +220,19 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	if int64(icfg.Width) > cfg.MaxPixels/int64(icfg.Height) {
 		return nil, ErrDecompressionBomb
 	}
+	if format == FormatJPEG {
+		maxScans := cfg.MaxJPEGScans
+		if maxScans <= 0 {
+			maxScans = DefaultMaxJPEGScans
+		}
+		// Every scan the decoder runs starts at an FF DA marker, and
+		// entropy-coded data never holds one (a data FF is stuffed), so
+		// counting the byte pair over-counts at worst (metadata payloads)
+		// and never misses a scan.
+		if scans := bytes.Count(data, jpegSOS); scans > maxScans {
+			return nil, fmt.Errorf("%w: JPEG carries %d scans (max %d)", ErrDecompressionBomb, scans, maxScans)
+		}
+	}
 	img, _, err := stdimage.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("image: decode: %w", err)
@@ -219,6 +247,9 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	}
 	return &Image{img: img, format: format, orient: orient, frames: frames, cfg: cfg}, nil
 }
+
+// jpegSOS is the JPEG start-of-scan marker.
+var jpegSOS = []byte{0xFF, 0xDA}
 
 // countGIFFrames returns the frame count of a GIF byte stream without
 // materialising any pixel buffer. It walks the GIF block structure

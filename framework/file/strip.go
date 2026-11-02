@@ -55,6 +55,16 @@ const stripJPEGQuality = 95
 // ~300 KB upload force a ~256 MiB raster per request.
 const stripMaxPixels int64 = 64 * 1024 * 1024
 
+// stripMaxJPEGScans caps the scans a JPEG may carry before the
+// orientation bake decodes it, matching framework/image.DefaultMaxJPEGScans
+// (local for the same layering reason as stripMaxPixels, and pinned to it
+// by TestStripMetadataRefusesJPEGScanBomb). A progressive scan of one
+// end-of-band run costs about ten bytes and makes the decoder walk every
+// block again, so the pixel cap alone let a few KB buy seconds of CPU.
+// Every scan starts at an FF DA marker and entropy data never holds one,
+// so counting the pair cannot miss a scan.
+const stripMaxJPEGScans = 64
+
 // checkStripPixelCap refuses header dimensions whose decoded raster would
 // exceed stripMaxPixels, before any pixel decode runs. Overflow-safe by
 // division (a multiply of two near-uint32 dimensions wraps int64).
@@ -196,6 +206,11 @@ func stripJPEG(data []byte) ([]byte, error) {
 		i = segLenAt + segLen
 	}
 	if orient >= 2 && orient <= 8 {
+		// The pixel cap bounds the frame, not how often a progressive
+		// decode walks it; see stripMaxJPEGScans.
+		if scans := bytes.Count(out, []byte{0xFF, 0xDA}); scans > stripMaxJPEGScans {
+			return nil, fmt.Errorf("strip: JPEG carries %d scans, over the %d-scan decode cap", scans, stripMaxJPEGScans)
+		}
 		cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
 		if err != nil {
 			return nil, fmt.Errorf("jpeg: decoding header for orientation bake: %w", err)

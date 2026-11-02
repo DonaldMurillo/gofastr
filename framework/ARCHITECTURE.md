@@ -268,6 +268,8 @@ framework/
 │                    module, not part of the public API)
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
+├── internal/jpegtest/ hostile JPEG fixtures (the scan bomb) shared by the
+│                    image/ and file/ tests; imported by _test.go files only
 ├── internal/jsonexact/ JSON decode that keeps numbers under `any` exact,
 │                    shared by typed hooks (framework) and typed reads (crud/)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases

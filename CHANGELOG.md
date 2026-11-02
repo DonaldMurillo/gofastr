@@ -140,6 +140,15 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Image decode refuses a JPEG with more than 64 scans.** The pixel cap
+  bounded the frame but not how often the decoder walks it: a
+  progressive scan of one end-of-band run costs about ten bytes and
+  revisits every block, so a 10 KB upload of 100 scans held a core for
+  four seconds at 64 MP, through `framework/image` decode, the image
+  field pipeline and `file.StripMetadata`'s orientation bake. Past
+  `Config.MaxJPEGScans` (default `DefaultMaxJPEGScans`, 64) decode returns
+  `ErrDecompressionBomb` before any pixel is decoded; see
+  [image](framework/docs/content/image.md).
 - **`email.SMTPSender` refuses a `Headers` key that is not one field
   name, or that names a field the `Email` carries.** A key went out as
   the field name with only a CR/LF check: `"X-A: b"` or `"X A"` wrote a
