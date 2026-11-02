@@ -313,7 +313,11 @@ hit read from a compile error is always an edit. The parser is strict:
 an unknown key, a regex that does not compile, a malformed symbol or a
 breaking `find:` note with no `hits:` fails the build's registry
 tests, never a user's upgrade. CI also refuses a `hits: review` note
-naming a symbol its own release removed. A review note earns its
+naming a symbol its own release removed, a `hits: edit` note whose
+`uses` symbol (or unconditioned `fields` entry) survives its release
+(the ported spelling would stay a hit: name the old shape under
+`shapes`), and a `shapes` regex that does not match the symbol's type
+at the release before, or still matches it at the release itself. A review note earns its
 `find:` only when each hit is a place to decide something: a note
 whose condition is an absence (an entity declaring no posture, an
 owner field with no matching column), a fact of the database, or a

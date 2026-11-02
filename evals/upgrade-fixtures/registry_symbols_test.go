@@ -129,6 +129,52 @@ releases:
 	}
 }
 
+// TestSymbolGateCatchesSurvivingEditSymbol proves the gate refuses a
+// hits: edit note whose uses or unconditioned fields entry still exists
+// at the note's release (app.NewLayout and ui.SidebarConfig.Items
+// survived v0.86.0 with new shapes), and accepts one naming a symbol the
+// release removed (ui.SiteHeader).
+func TestSymbolGateCatchesSurvivingEditSymbol(t *testing.T) {
+	if os.Getenv("GOFASTR_UPGRADE_FIXTURES") != "1" {
+		t.Skip("set GOFASTR_UPGRADE_FIXTURES=1 to run the registry symbol gate (reads git history)")
+	}
+	const doc = `through: v0.86.0
+releases:
+  - version: v0.86.0
+    title: t
+    notes:
+      - change: survives
+        breaking: true
+        hits: edit
+        guidance: g
+        find:
+          uses:
+            - gofastr/core-ui/app.NewLayout
+          fields:
+            - field: gofastr/framework/ui.SidebarConfig.Items
+      - change: removed
+        breaking: true
+        hits: edit
+        guidance: g
+        find:
+          uses:
+            - gofastr/framework/ui.SiteHeader
+`
+	reg, err := upgrade.Parse(doc)
+	if err != nil {
+		t.Fatalf("parse synthetic registry: %v", err)
+	}
+	rep := checkRegistrySymbols(reg, openSymbolSource(t, repoRoot(t)))
+	for _, want := range []string{"uses " + upgrade.ModulePath + "/core-ui/app.NewLayout still exists", "fields " + upgrade.ModulePath + "/framework/ui.SidebarConfig.Items still exists"} {
+		if !slices.ContainsFunc(rep.failures, func(f string) bool { return strings.Contains(f, want) }) {
+			t.Errorf("gate failures do not mention %q:\n%s", want, strings.Join(rep.failures, "\n"))
+		}
+	}
+	if slices.ContainsFunc(rep.failures, func(f string) bool { return strings.Contains(f, "SiteHeader") }) {
+		t.Errorf("gate refused a hits: edit note naming a symbol its release removed:\n%s", strings.Join(rep.failures, "\n"))
+	}
+}
+
 // TestSymbolGateAcceptsRealSymbols proves the checker resolves real symbols
 // (package-level, method, field) and real import paths at the tags where
 // they existed, so its failures mean registry mistakes, not checker noise.
@@ -299,6 +345,43 @@ func checkRegistrySymbols(reg *upgrade.Registry, src *symbolSource) symbolReport
 			}
 			for _, fm := range note.Find.Fields {
 				src.checkSymbol(&rep, fm.Field, where, "fields", ref)
+			}
+		}
+	}
+
+	// The inverse: a hits: edit note says every hit spells something its
+	// release no longer accepts. A uses symbol, or a fields entry with no
+	// condition, that still exists at the release matches the ported
+	// spelling too, so the report tells an app that finished the port to
+	// edit lines that are already right, on every run. A symbol that
+	// survives with a new shape is a shapes entry, which falls silent
+	// once the code is ported.
+	for _, rel := range reg.Releases {
+		ref := rel.Version
+		if !src.hasTag(ref) {
+			ref = "HEAD"
+		}
+		for _, note := range rel.Notes {
+			if !note.Breaking || note.Review {
+				continue
+			}
+			where := fmt.Sprintf("%s:%d (%s, hits: edit)", note.File, note.Line, rel.Version)
+			survives := func(kind string, sym upgrade.Symbol) {
+				if _, ok := pkgDirInModule(sym.Pkg); !ok {
+					return
+				}
+				if missing, _ := src.symbolMissing(ref, sym); !missing {
+					rep.failures = append(rep.failures, fmt.Sprintf("%s: %s %s still exists at %s, so every ported use stays a hit; name its old shape under shapes instead",
+						where, kind, sym.String(), ref))
+				}
+			}
+			for _, sym := range note.Find.Uses {
+				survives("uses", sym)
+			}
+			for _, fm := range note.Find.Fields {
+				if !fm.Conditioned() {
+					survives("fields", fm.Field)
+				}
 			}
 		}
 	}

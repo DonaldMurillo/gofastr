@@ -32,9 +32,11 @@ notes:
     hits: edit
     guidance: "Pass the request context: app.ScreenLLMMD(r.Context(), screen) and app.ScreenLLMMDWithMeta(r.Context(), screen, meta). The UI host calls these itself, so apps that never call them change nothing."
     find:
-      uses:
-        - gofastr/core-ui/app.ScreenLLMMD
-        - gofastr/core-ui/app.ScreenLLMMDWithMeta
+      shapes:
+        - symbol: gofastr/core-ui/app.ScreenLLMMD
+          type: '^func\(screen \*app\.Screen\) string$'
+        - symbol: gofastr/core-ui/app.ScreenLLMMDWithMeta
+          type: '^func\(screen \*app\.Screen, metaPrefix string\) string$'
   - change: "BREAKING in production mode - the magic-link, password-reset and email-verification plugins refuse to boot on the in-memory token store they mint when TokenStore is unset, as the session and 2FA stores already do"
     breaking: true
     hits: review
@@ -56,8 +58,9 @@ notes:
     hits: edit
     guidance: "Replace m.HTML with m.HTML(ctx), passing the request context so the loading content reads in the reader's language. Most apps never read the manifest: the UI host builds it."
     find:
-      uses:
-        - gofastr/core-ui/app.LoadingManifest.HTML
+      shapes:
+        - symbol: gofastr/core-ui/app.LoadingManifest.HTML
+          type: '^string$'
   - change: "BREAKING - EraseUserData follows foreign keys: a row in any table that references an erased row is erased too, whoever owns it, and a RESTRICT or NO ACTION relation refuses the erasure while such a row survives"
     breaking: true
     hits: review
@@ -204,7 +207,6 @@ notes:
     guidance: "The bundled outbox implements AppendFor already, so apps that pass outbox.New to crud need nothing. A custom EventOutbox renames Append to AppendFor and takes the owner id as its third argument; store it so App.EraseUserData can find the row."
     find:
       uses:
-        - gofastr/framework/crud.EventOutbox
         - gofastr/framework/crud.EventOutbox.Append
   - change: "BREAKING for outboxes built WithoutEnsureTable - the outbox table needs an owner column, owner TEXT NOT NULL DEFAULT ''"
     breaking: true
@@ -222,8 +224,9 @@ notes:
     hits: edit
     guidance: "Steps() rebuilt a bare list, so a keyed list read the wrong params and a View or Where pin was dropped: the drawer stepped onto records the list did not show. Pass the same ListBuilder the list screen renders, for example a func that builds it, called from both the list screen and Steps(list())."
     find:
-      uses:
-        - gofastr/framework/entityui.RecordBuilder.Steps
+      shapes:
+        - symbol: gofastr/framework/entityui.RecordBuilder.Steps
+          type: '^func\(\) \*entityui\.RecordBuilder$'
   - change: "BREAKING for process modules - the proxy copies only Cache-Control, Content-Language, ETag, Expires, Last-Modified and Retry-After from a module.http response, adds its Vary to the host's, always sets the body kind's Content-Type with nosniff, and answers 503 for a status outside 200-599"
     breaking: true
     hits: review
@@ -421,7 +424,7 @@ notes:
     nodetect: "the address is a command-line argument; nothing in an app's source spells it"
   - change: "BREAKING for battery/semantic on pgvector - Open refuses Options.Keyword: semantic.NewMemoryKeyword() with a PgVectorStore; pass store.Keyword(), which searches the table with Postgres full-text search"
     breaking: true
-    hits: edit
+    hits: review
     guidance: "A MemoryKeyword held only the writes of the process that made it, so a document written through one replica never reached another's keyword leg and hybrid results differed by replica until a restart. Replace Keyword: semantic.NewMemoryKeyword() with Keyword: store.Keyword() where Store is the PgVectorStore. For a large table, CREATE INDEX ON <table> USING gin (to_tsvector('simple', text)). FlatStore apps change nothing."
     find:
       uses:
@@ -438,8 +441,9 @@ notes:
     hits: edit
     guidance: "Pass the request context, or context.Background() for the default locale: ds.PWAManifestJSON(r.Context(), basePath). The UI host and the static export call it themselves, so apps that never call it change nothing."
     find:
-      uses:
-        - gofastr/framework/uihost.UIHost.PWAManifestJSON
+      shapes:
+        - symbol: gofastr/framework/uihost.UIHost.PWAManifestJSON
+          type: '^func\(basePath string\) \(\[\]byte, error\)$'
   - change: "BREAKING - widget.Mount panics on an RPC method other than GET, POST, PUT, PATCH, DELETE or empty, where it registered any other value as POST; PATCH now registers as PATCH"
     breaking: true
     hits: review
@@ -465,8 +469,9 @@ notes:
     hits: edit
     guidance: "AuthPrincipal stamped the confirm-time tenant unchecked, so a queued bulk delete or update kept writing tenant A's rows after its creator left A. Pass your membership lookup, func(ctx, userID, tenantID string) (bool, error). An app with no tenants can pass nil, and one whose users never leave a tenant passes admin.AnyTenant."
     find:
-      uses:
-        - gofastr/battery/admin.AuthPrincipal
+      shapes:
+        - symbol: gofastr/battery/admin.AuthPrincipal
+          type: '^func\(am \*auth\.AuthManager\) admin\.PrincipalFunc$'
   - change: "BREAKING - the print battery's RegisterRoutes (and Init) fails on a PathPrefix of / or one with no leading slash"
     breaking: true
     guidance: "PathPrefix / mounted every print route at the root, outside the embed reservation that keeps grants off the headless-Chrome PDF route. Name a path below the root, such as /print (the default when PathPrefix is empty)."
@@ -488,8 +493,9 @@ notes:
     hits: edit
     guidance: "A generator that exited while a child it started still held the output pipe hung the call. Pass the request or command context: freeze.FreezeAndGenerate(ctx, w, dir, out). Output is collected for at most two seconds after the generator exits."
     find:
-      uses:
-        - gofastr/kiln/freeze.FreezeAndGenerate
+      shapes:
+        - symbol: gofastr/kiln/freeze.FreezeAndGenerate
+          type: '^func\(w \*world\.World, dir string, pkgPath string\) error$'
   - change: "BREAKING - ui.SparklineConfig.Color is a ui.SparklineColor (success, warning, danger, info or empty) and panics on any other value; it took any string and drew the default for all but those four"
     breaking: true
     hits: review
@@ -602,8 +608,9 @@ notes:
     hits: edit
     guidance: "Take the error: page, err := pagination.NewCursorPage(rows, field, limit). A refused page carries no cursor; the old helper handed out a token the next request refused as too long. Key such a list on a shorter column, or page it by offset."
     find:
-      uses:
-        - gofastr/framework/pagination.NewCursorPage
+      shapes:
+        - symbol: gofastr/framework/pagination.NewCursorPage
+          type: '^func\(data \[\]map\[string\](any|interface\{\}), cursorField string, limit int\) pagination\.CursorPage$'
   - change: "BREAKING for apps that erase user data with a RedisQueue - the queue's store eraser runs as one Lua script and needs a client that implements queue.ScriptRunner (Eval); with a client that does not, App.EraseUserData reports the queue_redis store as failed and removes nothing from it"
     breaking: true
     hits: review

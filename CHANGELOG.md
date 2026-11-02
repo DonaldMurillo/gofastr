@@ -140,6 +140,19 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr upgrade` stops telling a ported app to edit correct lines.**
+  Thirteen `hits: edit` notes named a symbol that survives its release
+  with a new shape (`app.ScreenLLMMD`, `pagination.NewCursorPage`,
+  `admin.AuthPrincipal`, `ui.WorkbenchConfig.RailWidth` and ten more),
+  so every ported call stayed under "Edit these". They now name the old
+  shape under `shapes`, a value condition, only the removed member
+  (`crud.EventOutbox.Append`, not the interface), or `hits: review`
+  (`semantic.NewPgVector`, whose signature did not change). The v0.66.0
+  queue note never found a `MemoryQueue.Nack` call: its regex spelled
+  the first parameter `_` where v0.65.0 named it `ctx`. Two registry
+  gates in `evals/upgrade-fixtures` now refuse both shapes of mistake
+  (`TestRegistryShapesMatchTheirRelease`, and the edit arm of
+  `TestRegistrySymbolsExistedAtPriorTag`).
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
