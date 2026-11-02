@@ -29,9 +29,12 @@ func RunMigrate(args []string) {
 	// The subcommand is optional (see printHelp: "migrate (m) [up|down|…]"),
 	// so a bare `gofastr migrate` must default to "up" without slicing past
 	// the end of an empty arg vector (which panicked with slice bounds [1:0]).
+	// A leading flag is the default subcommand's: `gofastr migrate
+	// --db-url=<url>` is up with a flag, not a subcommand named
+	// "--db-url=<url>".
 	subcmd := "up"
 	rest := args
-	if len(args) > 0 {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		subcmd = args[0]
 		rest = args[1:]
 	}
