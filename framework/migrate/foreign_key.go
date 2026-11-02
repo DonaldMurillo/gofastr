@@ -45,14 +45,24 @@ type liveFK struct {
 // table is in the search-path schema, a qualified one in its schema. A key
 // onto other.parents is not one onto the declared parents. SQLite keys
 // name no schema, so there the name alone matches.
+//
+// Postgres reports a key's columns, referenced table and referenced columns
+// by the names it cut to 63 bytes, so each is spelled as the declaration
+// spells it (pgIdentCut, uncutKey); compared whole, a converged key onto a
+// long table or on a long column diffed as an add and a drop on every run.
 func canonicalRefTables(fks map[string][]liveFK, all map[string]*entity.Entity, dialect Dialect) {
 	names := slices.Sorted(maps.Keys(all))
 	for _, table := range slices.Sorted(maps.Keys(fks)) {
 		list := fks[table]
+		child := entityForTable(all, table)
 		for i := range list {
+			if child != nil {
+				list[i].cols = uncutKey(child, list[i].cols, dialect)
+			}
 			for _, n := range names {
 				if e := all[n]; !e.Config.Unmanaged && refIsTable(list[i], e.GetTable(), dialect) {
 					list[i].refTable = e.GetTable()
+					list[i].refCols = uncutKey(e, list[i].refCols, dialect)
 					break
 				}
 			}
@@ -63,16 +73,16 @@ func canonicalRefTables(fks map[string][]liveFK, all map[string]*entity.Entity, 
 // refIsTable reports whether a live foreign key references table.
 func refIsTable(fk liveFK, table string, dialect Dialect) bool {
 	schema, name := splitTable(table)
-	if !strings.EqualFold(tableBase(fk.refTable), name) {
-		return false
-	}
 	if dialect != DialectPostgres {
-		return true
+		return strings.EqualFold(tableBase(fk.refTable), name)
+	}
+	if !strings.EqualFold(tableBase(fk.refTable), pgIdentCut(name)) {
+		return false
 	}
 	if schema == "" {
 		return fk.refCurrent
 	}
-	return strings.EqualFold(schema, fk.refSchema)
+	return strings.EqualFold(pgIdentCut(schema), fk.refSchema)
 }
 
 // canonicalOnDelete folds an ON DELETE action to the spelling liveFK holds:

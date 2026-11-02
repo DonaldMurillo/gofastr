@@ -160,10 +160,11 @@ func uncutLiveColumns(ent *entity.Entity, live map[string]string, dialect Dialec
 	return out
 }
 
-// uncutKey is cols, a live primary key, with each column Postgres cut to
-// 63 bytes spelled as the declared field it was created from, so a key on
-// a long column compares equal to the declaration instead of reading as a
-// key change on every boot.
+// uncutKey is cols, a live column list of ent's table (its primary key, or
+// a foreign key's columns on either side), with each column Postgres cut
+// to 63 bytes spelled as the declared field it was created from, so a key
+// on a long column compares equal to the declaration instead of reading as
+// a change on every boot.
 func uncutKey(ent *entity.Entity, cols []string, dialect Dialect) []string {
 	if dialect != DialectPostgres {
 		return cols

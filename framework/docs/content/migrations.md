@@ -480,7 +480,10 @@ A table or column named past 63 bytes works on Postgres, which cuts it
 to its first 63 bytes in DDL and in queries alike, so the catalog holds
 the cut name. The migrator reads the catalog by the cut name too, so
 such a table gains its new columns at boot and such a column is not
-added a second time, proposed for a drop, or read as a key change.
+added a second time, proposed for a drop, or read as a key change. The
+same holds for foreign keys: `DiffSchema` matches a live key onto a long
+table, or on a long column on either side, to the relation that declares
+it, rather than proposing to drop it and add it back on every run.
 
 An index name belongs to the schema, not the table, on both engines, and
 the migrator creates every index with `CREATE INDEX IF NOT EXISTS`. Two

@@ -4396,8 +4396,9 @@ few lines, and link the PR or the docs page for the rest.
   read as absent on every boot and never gained a column; a long column
   read as missing, so the next boot with a column to add failed on a
   duplicate `ADD COLUMN`, `DiffSchema` proposed dropping it, and a long
-  key column read as a key change. The catalog is now read by the cut
-  name.
+  key column read as a key change. A foreign key onto a long table, or on
+  a long column on either side, diffed as a destructive drop plus an add
+  on every run. The catalog is now read by the cut name.
 - **BREAKING: `migrate generate` refuses a SQLite rebuild of a table
   another table references.** SQLite empties a table before dropping it,
   and with foreign keys on, a child row still pointing at it fails the
