@@ -43,6 +43,7 @@ var Analyzers = []string{
 	"nonfinite",
 	"nowritedeadline",
 	"optzero",
+	"poisonedconn",
 	"nowaitdelay",
 	"nostore",
 	"quoteident",

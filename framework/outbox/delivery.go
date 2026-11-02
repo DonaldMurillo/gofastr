@@ -513,6 +513,7 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 			// fails means the connection is unusable, which the pool
 			// discovers on its own — but silence here would hide a
 			// leaked write lock, so it is logged.
+			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
 			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
 				slog.Default().Warn("outbox: rolling back an abandoned claim", "err", err)
 			}

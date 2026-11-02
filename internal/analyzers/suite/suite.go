@@ -88,6 +88,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/optzero"
 	// 2026-11 bug-bash rules (lifecycle)
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/iounderlock"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/poisonedconn"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -173,6 +174,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// 2026-11 bug-bash rules (lifecycle): one per lifecycle bug shape
 	// (locks, contexts, connections, callbacks) the round fixed by hand.
 	allow.Guard(iounderlock.Analyzer),
+	allow.Guard(poisonedconn.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

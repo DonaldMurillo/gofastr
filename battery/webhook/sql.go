@@ -628,6 +628,7 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 	defer func() {
 		if !committed {
 			// best-effort: the claim already failed with the error the caller gets; a failed rollback means a broken connection the pool discards on its own.
+			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
 			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
 		}
 	}()
