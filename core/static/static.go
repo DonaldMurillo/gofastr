@@ -512,7 +512,7 @@ func Mount(r *router.Router, config Config) {
 // `..` segment. Run this before path.Clean so traversal segments can't be
 // collapsed silently.
 func hasDotDotSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
+	for _, component := range pathSegments(p) {
 		if component == ".." {
 			return true
 		}
@@ -535,7 +535,7 @@ func Refuses(p string) bool {
 }
 
 func hasDotfileSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
+	for _, component := range pathSegments(p) {
 		if component == "" || component == "." || component == ".." {
 			continue
 		}
@@ -560,15 +560,34 @@ var forbiddenConfigFiles = map[string]struct{}{
 
 // hasForbiddenConfigSegment matches the forbidden-config list case-
 // insensitively so a request for `/Web.Config` is treated the same as
-// `/web.config`.
+// `/web.config`, and by the name Windows opens (see windowsName).
 func hasForbiddenConfigSegment(p string) bool {
-	for _, component := range strings.Split(p, "/") {
-		if component == "" {
-			continue
-		}
-		if _, ok := forbiddenConfigFiles[strings.ToLower(component)]; ok {
+	for _, component := range pathSegments(p) {
+		if _, ok := forbiddenConfigFiles[windowsName(component)]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+// pathSegments splits p on "/" and on "\", dropping empty segments.
+// The backslash is a separator on every platform because it is one
+// where the open runs on Windows: *os.Root resolves a name through
+// GetFullPathName there, so "assets\..\.env" opens .env while a check
+// that splits on "/" alone sees one segment with no leading dot. A file
+// whose name holds a backslash on another OS is refused as well, a
+// small price for one answer on every platform.
+func pathSegments(p string) []string {
+	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
+}
+
+// windowsName is the name Windows opens for a path segment, lower-cased
+// for comparison: NTFS reads "web.config::$DATA" as the file's default
+// data stream, and GetFullPathName strips the trailing dots and spaces
+// of "web.config." and "web.config ".
+func windowsName(segment string) string {
+	if i := strings.IndexByte(segment, ':'); i >= 0 {
+		segment = segment[:i]
+	}
+	return strings.ToLower(strings.TrimRight(segment, ". "))
 }

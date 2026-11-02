@@ -4628,6 +4628,15 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`core/static` refuses dotfiles and config files under their Windows
+  spellings.** On Windows every disk-backed request opens through
+  `*os.Root`, which reads `\` as a separator and drops trailing dots,
+  spaces and an `::$DATA` suffix, while the refusals split the path on
+  `/` alone. `GET /assets%5C..%5C.env` served `.env`, and
+  `/web.config.` served `web.config`. The handler and `static.Refuses`
+  (the UI host's static dir and the static export) now judge the name
+  Windows opens, on every OS, so a file whose name holds a backslash is
+  refused everywhere. See [core packages](framework/docs/content/core-packages.md#static).
 - **A harness sub-agent can no longer call `TaskList` or `Agent`.** The
   sub-agent's catalog left both out, but its dispatcher ran any tool in
   the shared registry, so a tool_use naming one (a page the sub-agent
