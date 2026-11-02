@@ -83,6 +83,12 @@ type DBQueue struct {
 	// scheduled_at math. Defaults to time.Now; tests substitute a fake clock
 	// so lease-reclaim behaviour can be asserted without wall-clock sleeps.
 	now func() time.Time
+
+	// afterClaim is a deterministic seam for package tests: the worker
+	// loop calls it with each job it claimed, before it decides whether
+	// to run it, so a test can land a shutdown in that gap. Production
+	// code leaves it nil.
+	afterClaim func(Job)
 }
 
 type dbDialect int
@@ -1222,6 +1228,9 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			continue
 		}
 		q.noteClaimOK()
+		if q.afterClaim != nil {
+			q.afterClaim(job)
+		}
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
 			// No handler, drop the row so it doesn't loop forever.
