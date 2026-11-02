@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -65,7 +66,7 @@ type Config struct {
 	digests *digestCache
 
 	// resolvedRoot is the FS root's on-disk path with every symlink
-	// resolved, computed once by Handler. Empty when the FS is not
+	// resolved, bound by Handler (see rootBinding). Empty when the FS is not
 	// disk-backed (embed.FS, fstest.MapFS), which disables the
 	// read-containment check in serveFile — those filesystems cannot
 	// carry symlinks, so there is nothing to contain.
@@ -100,17 +101,8 @@ func (c Config) defaults() Config {
 func Handler(config Config) http.Handler {
 	config = config.defaults()
 	config.digests = newDigestCache()
-	config.resolvedRoot = resolveFSRoot(config.FS)
-	if config.resolvedRoot != "" {
-		// Kernel-enforced containment for the disk-backed branch (see
-		// Config.root). An OpenRoot failure here — the root vanished
-		// between the resolve and this call — leaves resolvedRoot set,
-		// so serveFile falls back to the post-open containment check.
-		if root, rerr := os.OpenRoot(config.resolvedRoot); rerr == nil {
-			config.rootIdentity, _ = openedRootInfo(root)
-			_ = root.Close()
-		}
-	}
+	binding := &rootBinding{}
+	binding.load(config.FS)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve GET and HEAD.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -157,6 +149,7 @@ func Handler(config Config) http.Handler {
 		// Reopen the original directory for this request. No idle handle
 		// pins it on Windows, and identity checking refuses a replacement.
 		config := config
+		config.resolvedRoot, config.rootIdentity = binding.load(config.FS)
 		if config.rootIdentity != nil {
 			root, err := os.OpenRoot(config.resolvedRoot)
 			if err != nil {
@@ -199,6 +192,57 @@ func Handler(config Config) http.Handler {
 
 		http.NotFound(w, r)
 	})
+}
+
+// rootBinding is where a disk-backed FS lives: its resolved root and the
+// identity of the directory first opened there. Handler binds it when it
+// is built, but a root that does not exist yet (a build step or a dev
+// watcher creates the public directory after the server starts) cannot
+// be bound then. Binding once at construction left such a handler on the
+// bare os.DirFS for good, which follows a symlink anywhere on disk, so
+// an unbound root is retried on every request until it binds.
+type rootBinding struct {
+	mu       sync.Mutex
+	bound    bool
+	resolved string
+	identity fs.FileInfo
+}
+
+// load returns the resolved root and its identity, binding them first if
+// they are not bound yet. Both are empty for a filesystem that is not
+// disk-backed (embed.FS, fstest.MapFS), which binds at once.
+func (b *rootBinding) load(fsys fs.FS) (string, fs.FileInfo) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.bound {
+		return b.resolved, b.identity
+	}
+	resolved, known := resolveFSRoot(fsys)
+	if !known {
+		// Open(".") failed: the root is missing for now, or this FS
+		// cannot say. Try again on the next request.
+		return "", nil
+	}
+	if resolved == "" {
+		b.bound = true
+		return "", nil
+	}
+	// Kernel-enforced containment for the disk-backed branch (see
+	// Config.root). An OpenRoot failure — the root vanished between the
+	// resolve and this call — leaves resolvedRoot set for this request,
+	// so serveFile falls back to the post-open containment check, and
+	// the next request tries to bind again.
+	root, err := os.OpenRoot(resolved)
+	if err != nil {
+		return resolved, nil
+	}
+	defer root.Close()
+	identity, err := openedRootInfo(root)
+	if err != nil {
+		return resolved, nil
+	}
+	b.bound, b.resolved, b.identity = true, resolved, identity
+	return resolved, identity
 }
 
 func openedRootInfo(root *os.Root) (os.FileInfo, error) {
@@ -448,21 +492,23 @@ func (c Config) reopen(name string) (fs.File, error) {
 // that is what makes the containment check in serveFile possible
 // without knowing the DirFS argument here. embed.FS and fstest.MapFS
 // return their own file types, cannot carry symlinks, and land on "".
-func resolveFSRoot(fsys fs.FS) string {
+// known is false when the answer is not settled yet: the root could not
+// be opened or resolved, as when the directory does not exist yet.
+func resolveFSRoot(fsys fs.FS) (resolved string, known bool) {
 	f, err := fsys.Open(".")
 	if err != nil {
-		return ""
+		return "", false
 	}
 	defer f.Close()
 	of, ok := f.(*os.File)
 	if !ok {
-		return ""
+		return "", true
 	}
-	resolved, err := filepath.EvalSymlinks(of.Name())
+	resolved, err = filepath.EvalSymlinks(of.Name())
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return resolved
+	return resolved, true
 }
 
 // fileInRoot reports whether an already-opened file still resolves

@@ -322,7 +322,9 @@ file. On a disk-backed
 `FS` (`os.DirFS`), a request whose target resolves through a symlink
 out of the root is refused with 404 — the read side is contained by
 the configured root the same way write sinks elsewhere in the repo
-are; `embed.FS` cannot carry symlinks and is unaffected. Direct: call
+are, including a root directory created after `Handler` was built,
+which the handler binds on the first request that finds it; `embed.FS`
+cannot carry symlinks and is unaffected. Direct: call
 `Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
 uses it for its own assets too. `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's

@@ -4635,6 +4635,13 @@ few lines, and link the PR or the docs page for the rest.
   everything, and so does a filter with no extensions.
 
 ### Security
+- **`core/static` contains a root directory created after the handler.**
+  The symlink containment binds the `os.DirFS` root when `Handler` is
+  built. A directory that did not exist yet (a build step or a watcher
+  that creates it after the server starts) bound nothing, and every
+  later request opened through the bare `os.DirFS`, which follows a
+  symlink anywhere on disk. An unbound root is now retried on each
+  request until it binds. See [core packages](framework/docs/content/core-packages.md#static).
 - **`core/static` refuses dotfiles and config files under their Windows
   spellings.** On Windows every disk-backed request opens through
   `*os.Root`, which reads `\` as a separator and drops trailing dots,
