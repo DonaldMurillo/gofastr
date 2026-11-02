@@ -35,7 +35,10 @@ type Storage interface {
 ```
 
 `Save` writes the contents of `r` under `key`; `Get` returns a reader;
-`Delete` removes the object; `Exists` reports presence. Keys are opaque
+`Delete` removes the object; `Exists` reports presence. On the local
+backends a key that names a directory (a prefix such as `uploads/posts`)
+is not an object: `Get` returns `ErrNotFound` (404 through
+`upload.ServeHandler`) and `Exists` reports false. Keys are opaque
 strings the upload layer assigns. A backend rejects a key that escapes
 its namespace (path traversal, empty key) with an error; it does not
 rewrite the key.
@@ -92,6 +95,13 @@ they alias. S3 keys are byte-exact and unchanged. Saves from another
 process sharing the directory are not serialized. Re-saving the exact
 stored key stays an ordinary overwrite. Objects planted straight onto disk by other tools
 with folded spellings follow the filesystem's folding, not the store's.
+Finding the stored spelling means listing the directory, so the check
+lists only where folding is possible: a name with a non-ASCII byte or a
+`K`, `;` or `` ` `` (the ASCII targets of Unicode normalization), or one
+whose case-swapped spelling opens the same file. On a case-sensitive
+filesystem the cost of serving one object no longer grows with the number
+of objects beside it; on a folding one each operation still lists every
+directory on the key's path.
 
 `LocalStorage` implements `RangeGetter`, so HTTP range requests
 (`Range:` bytes) are answered with a `206` from the seekable file

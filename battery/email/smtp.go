@@ -291,11 +291,21 @@ func buildMessage(email Email) ([]byte, error) {
 			return nil, err
 		}
 	}
-	// The MIME structure headers are written below; a caller's copy
-	// would give the message two that disagree.
-	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version"} {
+	// A key is written as the field name, so it must be one: a colon or a
+	// space made the line read as another field, and a leading space
+	// folded it into the header above.
+	for k := range email.Headers {
+		if !isFieldName(k) {
+			return nil, fmt.Errorf("%w: Headers key %q is not a header field name (printable ASCII, no colon or space)", ErrSendFailed, k)
+		}
+	}
+	// The MIME structure headers are written below, and the address and
+	// subject fields come from the Email itself; a caller's copy would
+	// give the message two that disagree. Bcc is never written: the
+	// envelope carries it, and a header would publish the blind list.
+	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version", "From", "To", "Cc", "Bcc", "Subject"} {
 		if hasHeader(email.Headers, name) {
-			return nil, fmt.Errorf("%w: Headers cannot set %s; the sender writes it", ErrSendFailed, name)
+			return nil, fmt.Errorf("%w: Headers cannot set %s; the sender writes it from the Email", ErrSendFailed, name)
 		}
 	}
 	for _, att := range email.Attachments {
@@ -546,6 +556,20 @@ func hasHeader(headers map[string]string, name string) bool {
 		}
 	}
 	return false
+}
+
+// isFieldName reports whether s is an RFC 5322 field-name: one or more
+// printable US-ASCII characters (33-126) other than the colon.
+func isFieldName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := range len(s) {
+		if c := s[i]; c < 33 || c > 126 || c == ':' {
+			return false
+		}
+	}
+	return true
 }
 
 // reMessageIDDomain is a plain host name: dot-separated labels of

@@ -169,6 +169,49 @@ few lines, and link the PR or the docs page for the rest.
   issued afterwards never reached it and it kept the permission. A
   reload now leaves out, with a warning, a grant the policy refuses and
   applies the rest. `LoadInto` still refuses at boot.
+- **A directory key is not found on the local storage backends.** `Get`
+  of a prefix such as `uploads/posts` opened the directory, so
+  `upload.ServeHandler` answered 500 for it, and `Exists` reported it as
+  a stored object. Both local backends now return `ErrNotFound` (404)
+  and false. See [storage](framework/docs/content/storage.md).
+- **`file.StripMetadata` cuts PNG and WebP trailers.** Bytes after a PNG's
+  IEND chunk or past a WebP's RIFF size were stored whenever the image had
+  no metadata chunk to strip, while a JPEG's post-EOI trailer was always
+  dropped. Readers ignore those bytes and tools park data there, so the
+  stored original now ends at the format's end marker. See
+  [uploads](framework/docs/content/uploads.md).
+- **A refused print request no longer holds a PDF render slot.** The
+  `/pdf` route took one of the `MaxConcurrentRenders` slots before it ran
+  the document's access policy, so a signed-in caller asking for other
+  people's documents kept the slots busy while `RequireOwner`'s callback
+  looked them up, and the owners' own PDFs answered `503`. The policy now
+  runs first; a refused caller gets its `401` or `403` even when every
+  slot is busy. See [print](framework/docs/content/print.md).
+- **Image decode refuses a JPEG with more than 64 scans.** The pixel cap
+  bounded the frame but not how often the decoder walks it: a
+  progressive scan of one end-of-band run costs about ten bytes and
+  revisits every block, so a 10 KB upload of 100 scans held a core for
+  four seconds at 64 MP, through `framework/image` decode, the image
+  field pipeline and `file.StripMetadata`'s orientation bake. Past
+  `Config.MaxJPEGScans` (default `DefaultMaxJPEGScans`, 64) decode returns
+  `ErrDecompressionBomb` before any pixel is decoded; see
+  [image](framework/docs/content/image.md).
+- **`email.SMTPSender` refuses a `Headers` key that is not one field
+  name, or that names a field the `Email` carries.** A key went out as
+  the field name with only a CR/LF check: `"X-A: b"` or `"X A"` wrote a
+  line that reads as another field, a leading space folded it into the
+  header above, and `To`, `Cc`, `From` or `Subject` gave the message two
+  of that field, so a reader showed one recipient list while the envelope
+  used the other. `Bcc` published the blind list the sender never writes.
+  These now fail with `ErrSendFailed`; see [email](framework/docs/content/email.md).
+- **Local storage no longer lists a directory to serve one file.** The
+  fold check behind both local backends (`upload.RefuseFoldedKey`) read
+  the whole parent directory, with an lstat per entry, on every Get,
+  Exists, Delete and overwriting Save. Upload directories are flat, so
+  with 50,000 objects in one field each GET of `/uploads/...` spent about
+  85ms in syscalls, and Save held the process-wide commit lock through
+  it. The check now lists only where the filesystem can fold the name;
+  see [storage](framework/docs/content/storage.md).
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

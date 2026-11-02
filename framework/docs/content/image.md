@@ -54,6 +54,16 @@ mirroring `MaxPixels`. Tune via `DecodeBytesWithConfig` or
 Bun.Image's 268 MP after a security review found a 45-byte crafted
 PNG declaring 16383×16383 trip the guard.
 
+A JPEG is also refused with `ErrDecompressionBomb` when it carries more
+than `Config.MaxJPEGScans` scans (default `DefaultMaxJPEGScans` = 64;
+zero or negative means the default). The pixel cap bounds the frame,
+not how many times the decoder walks it: a progressive scan of one
+end-of-band run costs about ten bytes and revisits every block, so a
+10 KB file of 100 scans took four seconds of CPU at 64 MP. Common
+encoders write a few dozen scans at most. The count runs on the bytes,
+before any pixel is decoded, and `file.StripMetadata`'s orientation
+bake applies the same cap.
+
 `Open(path)` rejects paths containing `..` segments that escape the
 working directory (e.g. `../etc/passwd`). Callers handling user input
 should validate at their layer too; prefer `OpenFS` rooted in an
@@ -453,6 +463,7 @@ hand it directly to `storage.Save`).
 | Max decoded pixels | 64 MP (8192²) | `Config.MaxPixels` |
 | Max resize target | the image's `MaxPixels` (`ErrTargetTooLarge` past it) | `Config.MaxPixels` at decode |
 | Max source bytes | 64 MiB (`ErrSourceTooLarge` past it) | `Config.MaxSourceBytes` |
+| Max JPEG scans | 64 (`ErrDecompressionBomb` past it) | `Config.MaxJPEGScans` |
 | Max encoded WebP dim | 16384 per axis | hard cap (spec) |
 | `VariantSet.Variants` | 64 entries | `MaxVariantsPerSet` const |
 | `BlurHash` working size | 64 px longest side | hard cap (perf) |
