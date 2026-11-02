@@ -1511,7 +1511,22 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// abort signal (2026-11-01, TestWidgetOpenWithOtherCtxRemounts,
 		// TestSSRWidgetRPCWorksBeforeMount,
 		// TestWidgetDismissedAtMountLeavesNoOutsideHandler).
-		"widgets": 3324,
+		// 3466 measured (3464 + 2, on top of the 3324 line above): "the
+		// reader left" is now a
+		// navigation begun AFTER the open committing (the epoch the last
+		// gofastr:navigate committed under), not any commit swapping the
+		// chrome cache, so an open issued while a navigation was already
+		// in flight lands on the page it was asked on instead of being
+		// dropped; _syncDeepLinks spares a widget whose open has not
+		// written its deep link yet under the same epoch and URL; and the
+		// close-modals-on-navigate loop moved here from core's boot
+		// fragment (core shrinks by the same loop) so it can spare a
+		// modal opened during the committing navigation (2026-11-01, the
+		// TestTrackerBellPopoverE2E flake,
+		// TestOpenDuringNavigationSurvivesCommit). No smaller spelling:
+		// the minifier keeps identifiers, already shortened here, and the
+		// module's own-property _widgets reads share one helper (own).
+		"widgets": 3466,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top

@@ -2527,12 +2527,30 @@ page), the stale instance is dismissed instead (`fui:widget-close`,
 root lifted out) and the navigate catalog pass hydrates the fresh
 node, so two live roots for one registration never coexist.
 
-Closing is unchanged: the navigate listener closes every open modal
-widget (backdrop'd drawers and modals ride `_modalStack`), a fetched
-root is removed from the DOM, an SSR-hydrated root is re-hidden, the
-chrome cache is cleared, and the next open re-fetches and fires
+Closing is unchanged: the widgets module's navigate listener closes
+every open modal widget (backdrop'd drawers and modals ride
+`_modalStack`) opened on the page being left, a fetched root is
+removed from the DOM, an SSR-hydrated root is re-hidden, the chrome
+cache is cleared, and the next open re-fetches and fires
 `fui:widget-open` again. Consumers that bind into chrome rebind on
 every `fui:widget-open` rather than assuming a root mounts once.
+
+**An open belongs to the navigation it was issued under.** Both
+navigators bump the shared `_navEpoch` synchronously at entry, and
+every commit dispatches `gofastr:navigate` under its own live epoch.
+An open is stale only when a navigation that BEGAN after it commits:
+then a chrome or deep-link module that lands late mounts nothing and
+writes no deep link, and a chrome failure raises no toast. An open
+issued while a navigation was already in flight (the reader clicked a
+link, then a trigger in chrome both pages share before the page
+painted) lands on the destination: the commit neither drops it nor,
+for a modal, closes it, and the catalog re-fetch's `_syncDeepLinks`
+does not close it while its deep link is still being written under the
+same epoch and URL. Comparing chrome-cache objects, the earlier test,
+read every commit as a leave and dropped such opens without a word
+(the `TestTrackerBellPopoverE2E` flake; pinned by
+`TestOpenDuringNavigationSurvivesCommit` and, for the stale side,
+`TestStaleChromeSkipsNextPage`).
 
 ---
 
