@@ -3,6 +3,7 @@ package middleware
 import (
 	"bufio"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -163,6 +164,14 @@ func (s stripCredsWriter) WriteHeader(code int) {
 func (s stripCredsWriter) Write(b []byte) (int, error) {
 	s.stripCredentialsForWildcard()
 	return s.ResponseWriter.Write(b)
+}
+
+// ReadFrom strips, then keeps the connection's sendfile path: io.Copy
+// and http.ServeContent use the writer's ReaderFrom when it has one,
+// and embedding http.ResponseWriter does not promote it.
+func (s stripCredsWriter) ReadFrom(src io.Reader) (int64, error) {
+	s.stripCredentialsForWildcard()
+	return io.Copy(s.ResponseWriter, src)
 }
 
 // Flush strips before flushing: a streaming handler that sets the header and

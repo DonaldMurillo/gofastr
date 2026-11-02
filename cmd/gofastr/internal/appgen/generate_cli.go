@@ -3,6 +3,7 @@ package appgen
 import (
 	"fmt"
 	"go/token"
+	"maps"
 	"net/url"
 	"path/filepath"
 	"slices"
@@ -661,7 +662,9 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 			}
 		}
 	}
-	for name := range perEntityVerbs {
+	// Sorted, so --verbs naming two unknown entities is refused naming
+	// the same one on every run.
+	for _, name := range slices.Sorted(maps.Keys(perEntityVerbs)) {
 		if !cliAnyEntityMatches(decls, name) {
 			return cliSpec{}, fmt.Errorf("%s: no entity named %q", opts.selectionSource("verbs"), name)
 		}

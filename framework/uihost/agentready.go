@@ -920,7 +920,12 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		http.Redirect(w, r, scrubCtl(res.Decision.URL), http.StatusSeeOther)
 		return true
 	case app.DecisionBlock:
+		// As writeBlock answers it through i18n.HTTPError: a status
+		// outside 400-599 (decide.Block(0) included) is a 500.
 		status = res.Decision.Status
+		if status < 400 || status > 599 {
+			status = http.StatusInternalServerError
+		}
 	}
 	md := res.MD
 	if res.Allowed {

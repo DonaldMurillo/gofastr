@@ -73,7 +73,7 @@ func (u *UI) resolveLabelsAt(ctx context.Context, m *meta, col string, ids []str
 	}
 	pred := &filter.Predicate{Field: tm.pk, Op: filter.OpIn, Values: ids}
 	opts := crud.ListOptions{Where: pred, Fields: tm.readTitleFields(), Limit: len(ids)}
-	rows, err := tm.ch.ListAll(crud.WithReadHooks(ctx), opts)
+	rows, err := tm.listRows(ctx, opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: relation labels", "entity", m.name, "column", col, "target", target.GetName(), "error", err)
 		// A failed label read is redaction, not raw ids.
@@ -105,7 +105,7 @@ func (u *UI) relationFacetOptions(ctx context.Context, m *meta, col string) []ui
 		return nil
 	}
 	opts := crud.ListOptions{Fields: tm.readTitleFields(), Limit: relationFacetCap}
-	rows, err := tm.ch.ListAll(crud.WithReadHooks(ctx), opts)
+	rows, err := tm.listRows(ctx, opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: relation facet", "entity", m.name, "column", col, "target", target.GetName(), "error", err)
 		return nil

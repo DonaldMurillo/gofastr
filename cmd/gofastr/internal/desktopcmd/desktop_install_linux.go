@@ -502,6 +502,7 @@ func verifyLinuxInstallFile(root *os.Root, entry linuxBundleFile) error {
 	}
 	defer f.Close()
 	h := sha256.New()
+	//gofastr:allow(intwrap) entry.Size is refused past maxSize when the manifest is read (openLinuxInstallBundle)
 	n, err := io.Copy(h, io.LimitReader(f, entry.Size+1))
 	if err != nil {
 		return err
@@ -531,6 +532,7 @@ func copyLinuxInstallFile(source, dest *os.Root, entry linuxBundleFile) (err err
 		}
 	}()
 	h := sha256.New()
+	//gofastr:allow(intwrap) entry.Size is refused past maxSize when the manifest is read (openLinuxInstallBundle)
 	n, err := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, entry.Size+1))
 	err = errors.Join(err, out.Close())
 	if err != nil {

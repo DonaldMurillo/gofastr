@@ -55,7 +55,7 @@ func (u *UI) neighbours(ctx context.Context, m *meta, list *ListBuilder, base, i
 	if err != nil {
 		return "", ""
 	}
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
+	rows, err := m.listRows(ctx, crud.ListOptions{
 		Where:   where,
 		Filters: s.facetFilters(),
 		Search:  s.search,

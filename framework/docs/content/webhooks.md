@@ -401,7 +401,10 @@ attempt per claimed row, so a concurrent Manager sees them as
 not-yet-due and skips them. The Manager auto-detects the interface and
 uses the claim path, which makes multi-instance deployments safe
 against double delivery. Set `Options.LeasePeriod` (default 30s) above
-your worst-case handler latency. A worker sends a claimed batch one
+your worst-case handler latency. A `LeasePeriod` no longer than
+`HTTPClient.Timeout` (10s on the default client) is raised by `New` to
+twice that timeout and logged, so a slow receiver is not sent the same
+delivery by a second Manager. A worker sends a claimed batch one
 delivery at a time; when less of the lease is left than the HTTP
 client's timeout (capped at half the lease), it hands that delivery
 and the rest of the batch back, attempt refunded, for the next tick.

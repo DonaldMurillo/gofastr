@@ -772,6 +772,7 @@ func (p *TwoFAPlugin) completeStepUp(w http.ResponseWriter, r *http.Request, ses
 		writeAuthError(w, r, status, reason)
 		return false
 	}
+	//gofastr:allow(siblingresult) the step-up has just verified the factor: the fresh session is pending by construction and markSessionTwoFA clears it below
 	fresh, _, err := p.mgr.MintSession(ctx, sess.UserID, p.mgr.Config().SessionTTL)
 	if err != nil {
 		return fail(http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp, nil)

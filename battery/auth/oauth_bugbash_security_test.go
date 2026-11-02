@@ -614,6 +614,32 @@ func TestLinkFlowLosingBindingRaceIsRefused(t *testing.T) {
 
 // ── 10. JWKS and discovery fetches ─────────────────────────────────────────
 
+// jwksTestClock pins c's clock and returns a func that moves it forward,
+// so a test makes the key set stale without sleeping past its TTL.
+func jwksTestClock(c *jwksCache) (advance func(time.Duration)) {
+	var mu sync.Mutex
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	c.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	return func(d time.Duration) {
+		mu.Lock()
+		defer mu.Unlock()
+		now = now.Add(d)
+	}
+}
+
+// jwksWaiter returns a channel closed the first time a caller of c finds
+// the fetch slot held and commits to waiting for it.
+func jwksWaiter(c *jwksCache) <-chan struct{} {
+	ch := make(chan struct{})
+	var once sync.Once
+	c.waiting = func() { once.Do(func() { close(ch) }) }
+	return ch
+}
+
 // A failed JWKS refresh with a usable stale set backs off instead of
 // re-fetching on every login.
 func TestJWKSRefreshFailureBacksOff(t *testing.T) {
@@ -628,11 +654,12 @@ func TestJWKSRefreshFailureBacksOff(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := &jwksCache{httpClient: srv.Client(), ttl: time.Millisecond}
+	advance := jwksTestClock(c)
 	ctx := context.Background()
 	if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	advance(time.Second)
 	for range 5 {
 		if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil {
 			t.Fatalf("stale key not served during the outage: %v", err)
@@ -662,11 +689,12 @@ func TestJWKSRefreshDoesNotBlockStaleReaders(t *testing.T) {
 	unblock := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(unblock)
 	c := &jwksCache{httpClient: srv.Client(), ttl: time.Millisecond}
+	advance := jwksTestClock(c)
 	ctx := context.Background()
 	if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	advance(time.Second)
 	go func() { _, _ = c.getKey(ctx, srv.URL, "kid-a") }()
 	<-entered
 	done := make(chan error, 1)
@@ -708,6 +736,7 @@ func TestJWKSConcurrentRotatedKidWaitsForInFlightFetch(t *testing.T) {
 	unblock := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(unblock)
 	c := &jwksCache{httpClient: srv.Client(), ttl: time.Hour}
+	waited := jwksWaiter(c)
 	ctx := context.Background()
 	if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil {
 		t.Fatal(err)
@@ -723,7 +752,14 @@ func TestJWKSConcurrentRotatedKidWaitsForInFlightFetch(t *testing.T) {
 		_, err := c.getKey(ctx, srv.URL, "kid-b")
 		second <- err
 	}()
-	time.Sleep(20 * time.Millisecond) // let the second login reach the spent slot
+	// Release the rotation fetch only once the second login, finding the
+	// kid's slot spent, is waiting for it. A second login that gives up
+	// instead returns before it ever waits.
+	select {
+	case <-waited:
+	case err := <-second:
+		t.Fatalf("the second login returned without waiting for the in-flight fetch: %v", err)
+	}
 	unblock()
 	for i, ch := range []chan error{first, second} {
 		select {
@@ -756,10 +792,11 @@ func TestJWKSDeadlineFailureBacksOff(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := &jwksCache{httpClient: srv.Client(), ttl: time.Millisecond}
+	advance := jwksTestClock(c)
 	if _, err := c.getKey(context.Background(), srv.URL, "kid-a"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	advance(time.Second)
 	for range 3 {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 		_, err := c.getKey(ctx, srv.URL, "kid-a")
@@ -801,11 +838,13 @@ func TestJWKSForcedRefetchDoesNotReuseStaleInFlightFetch(t *testing.T) {
 	unblock := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(unblock)
 	c := &jwksCache{httpClient: srv.Client(), ttl: time.Millisecond}
+	advance := jwksTestClock(c)
+	waited := jwksWaiter(c)
 	ctx := context.Background()
 	if _, err := c.getKey(ctx, srv.URL, "kid-a"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	advance(time.Second)
 	go func() { _, _ = c.getKey(ctx, srv.URL, "kid-a") }() // starts the stale refresh
 	<-entered
 	rotated := make(chan error, 1)
@@ -813,7 +852,13 @@ func TestJWKSForcedRefetchDoesNotReuseStaleInFlightFetch(t *testing.T) {
 		_, err := c.getKey(ctx, srv.URL, "kid-b")
 		rotated <- err
 	}()
-	time.Sleep(20 * time.Millisecond) // the rotated login queues behind the stale fetch
+	// The rotated login queues behind the stale fetch: release that fetch
+	// only once the login is committed to waiting for the slot.
+	select {
+	case <-waited:
+	case err := <-rotated:
+		t.Fatalf("the rotated login returned without queueing for the fetch slot: %v", err)
+	}
 	unblock()
 	select {
 	case err := <-rotated:

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 
@@ -154,9 +155,13 @@ func (w *tracingResponseWriter) WriteHeader(code int) {
 		w.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
 		return
 	}
+	// Latch only once the call returned: net/http panics on a code
+	// outside 100-999 before sending anything, and a panicked request
+	// is recorded under the 500 Recovery sends unless this latch says
+	// the response had already started.
+	w.ResponseWriter.WriteHeader(code)
 	w.status = code
 	w.wroteHeader = true
-	w.ResponseWriter.WriteHeader(code)
 }
 
 func (w *tracingResponseWriter) Write(b []byte) (int, error) {
@@ -164,6 +169,17 @@ func (w *tracingResponseWriter) Write(b []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	return w.ResponseWriter.Write(b)
+}
+
+// ReadFrom keeps the connection's sendfile path: io.Copy and
+// http.ServeContent use the writer's ReaderFrom when it has one, and
+// embedding http.ResponseWriter does not promote it. It latches the
+// implicit 200 the way Write does.
+func (w *tracingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return io.Copy(w.ResponseWriter, src)
 }
 
 func (w *tracingResponseWriter) Flush() {

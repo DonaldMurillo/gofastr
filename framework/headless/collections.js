@@ -143,8 +143,9 @@
     // IME composition (CJK input): the Enter that confirms a
     // conversion candidate carries isComposing=true and the field
     // still holds the pre-conversion text; committing there ships the
-    // raw romaji as a tag.
-    if (ev.isComposing) return;
+    // raw romaji as a tag. Safari sends the confirming keydown with
+    // isComposing already false and the IME's keyCode 229.
+    if (ev.isComposing || ev.keyCode === 229) return;
     if (ev.key === 'Enter' || ev.key === ',') {
       ev.preventDefault();
       suppressSubmit = true;

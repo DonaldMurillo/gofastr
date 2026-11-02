@@ -7,7 +7,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -104,7 +103,7 @@ func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta, base string) 
 			slog.WarnContext(ctx, "entityui: related count", "entity", om.name, "error", err)
 			continue
 		}
-		n, err := om.ch.CountAll(crud.WithReadHooks(ctx), read)
+		n, err := om.countRows(ctx, read)
 		if err != nil {
 			slog.WarnContext(ctx, "entityui: related count", "entity", om.name, "error", err)
 			continue

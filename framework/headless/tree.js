@@ -5,7 +5,8 @@
 //
 //   - the roving tabindex: one treeitem carries tabindex=0 and every
 //     other carries -1; arrows, Home and End move it,
-//   - expand/collapse: ArrowRight opens, ArrowLeft closes, Enter and
+//   - expand/collapse: ArrowRight opens, ArrowLeft closes (swapped in
+//     a right-to-left tree), Enter and
 //     Space toggle — every keyboard path drives the same toggle
 //     button a click drives, so any lazy-load wiring on the toggle
 //     (the kernel's rpc primitive) fires either way,
@@ -131,7 +132,14 @@
     const toggleOf = function () {
       return item.querySelector('[data-hui-tree-toggle]');
     };
-    switch (e.key) {
+    // A right-to-left tree indents from the right, so the arrows swap:
+    // ArrowLeft opens and goes in, ArrowRight closes and goes out (the
+    // menu's submenu keys follow the same rule).
+    let key = e.key;
+    if ((key === 'ArrowLeft' || key === 'ArrowRight') && getComputedStyle(item).direction === 'rtl') {
+      key = key === 'ArrowLeft' ? 'ArrowRight' : 'ArrowLeft';
+    }
+    switch (key) {
       case 'ArrowDown': return move(idx + 1);
       case 'ArrowUp':   return move(idx - 1);
       case 'Home':      return move(0);

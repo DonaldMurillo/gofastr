@@ -163,7 +163,8 @@ A subscriber is routinely handed a whole IPv6 `/64`, 2^64 addresses, so
 keying on the full address let one client send each request from a fresh
 source address and never meet a per-IP limit. `Middleware()` and the auth
 battery's per-IP limiters key IPv6 by its `/64` instead
-(`(*Limiter).ClientKey`). Several people on one IPv6 LAN share a budget
+(`(*Limiter).ClientKey`), and so do `core/middleware.RateLimit`'s default
+and proxy-aware keys and `webbotauth.RateLimitKey(nil)`. Several people on one IPv6 LAN share a budget
 then, the way people behind one IPv4 NAT already do. `ClientIP` still
 returns the full address, for logs and audit rows.
 

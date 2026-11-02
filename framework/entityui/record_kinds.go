@@ -6,7 +6,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -203,7 +202,7 @@ func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v an
 	if err != nil {
 		return muted()
 	}
-	row, err := om.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+	row, err := om.getRow(ctx, id)
 	if err != nil || row == nil {
 		return render.Text(id)
 	}

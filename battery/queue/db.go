@@ -83,6 +83,12 @@ type DBQueue struct {
 	// scheduled_at math. Defaults to time.Now; tests substitute a fake clock
 	// so lease-reclaim behaviour can be asserted without wall-clock sleeps.
 	now func() time.Time
+
+	// afterClaim is a deterministic seam for package tests: the worker
+	// loop calls it with each job it claimed, before it decides whether
+	// to run it, so a test can land a shutdown in that gap. Production
+	// code leaves it nil.
+	afterClaim func(Job)
 }
 
 type dbDialect int
@@ -124,9 +130,15 @@ func WithDBLaneWorkers(lane string, n int) DBQueueOption {
 }
 
 // WithWorkers sets the number of background worker goroutines started by
-// Start(). Defaults to 1 when not set.
+// Start(). Defaults to 1 when not set. Zero starts no shared workers (only
+// the WithDBLaneWorkers lanes run); a negative count keeps the default,
+// since Start sized a channel with it and panicked.
 func WithWorkers(n int) DBQueueOption {
-	return func(q *DBQueue) { q.workers = n }
+	return func(q *DBQueue) {
+		if n >= 0 {
+			q.workers = n
+		}
+	}
 }
 
 // WithDBHandlerTimeout caps a single handler invocation's wall-clock
@@ -137,7 +149,11 @@ func WithWorkers(n int) DBQueueOption {
 // one stuck job stalls the entire queue — the job is nacked at the
 // deadline and retried/dead-lettered, so a late side effect is the
 // duplicate the at-least-once contract already allows. Zero (default)
-// means no timeout; set it whenever handlers touch the network. (Named
+// means no timeout; set it whenever handlers touch the network. The budget
+// must be shorter than the claim lease ([WithLeaseTimeout], five minutes
+// by default): NewDBQueue refuses one that is not, since a handler still
+// inside its budget would outlive its claim and have its job re-claimed
+// and run again while it runs. (Named
 // distinctly from the MemoryQueue's WithHandlerTimeout because both live
 // in this package.)
 func WithDBHandlerTimeout(d time.Duration) DBQueueOption {
@@ -162,7 +178,9 @@ func WithDBLogger(l *slog.Logger) DBQueueOption {
 // becomes eligible for re-dequeue. Defaults to 5 minutes; d <= 0 keeps the
 // default. A zero lease is not "no lease": it made every claim abandoned
 // the moment it was written, so the next poll ran a live job again and the
-// dead-letter sweep failed a final attempt that was still running.
+// dead-letter sweep failed a final attempt that was still running. With a
+// handler budget set ([WithDBHandlerTimeout]) the lease must be longer
+// than it; NewDBQueue refuses the pair otherwise.
 func WithLeaseTimeout(d time.Duration) DBQueueOption {
 	return func(q *DBQueue) {
 		if d > 0 {
@@ -217,6 +235,9 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	}
 	for _, opt := range opts {
 		opt(q)
+	}
+	if err := leaseCoversBudget(q.lease, q.handlerTimeout); err != nil {
+		return nil, err
 	}
 	// Validate table name once at construction time.
 	query.MustIdent(q.table)
@@ -425,15 +446,38 @@ func (q *DBQueue) RegisterHandler(jobType string, h Handler) {
 }
 
 // SetLeaseTimeout adjusts the in-flight lease duration after construction.
-// See WithLeaseTimeout for semantics; d <= 0 leaves the lease unchanged.
+// See WithLeaseTimeout for semantics; d <= 0 leaves the lease unchanged,
+// and so does a lease no longer than the handler budget
+// ([WithDBHandlerTimeout]), which is logged at WARN: NewDBQueue refuses
+// that pair, and this setter has no error to return.
 // Safe to call concurrently with a running worker loop.
 func (q *DBQueue) SetLeaseTimeout(d time.Duration) {
 	if d <= 0 {
 		return
 	}
+	if err := leaseCoversBudget(d, q.handlerTimeout); err != nil {
+		q.logger.Warn("queue: SetLeaseTimeout ignored; the lease is unchanged", "err", err.Error())
+		return
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.lease = d
+}
+
+// leaseCoversBudget refuses a claim lease no longer than the handler
+// budget. Each is valid alone, but together a handler still inside its
+// budget outlives its claim: the next poll re-claims the job and runs it
+// again concurrently, the first run's settle is fenced out, and on a
+// final attempt the dead-letter sweep fails a job about to succeed (the
+// outbox relay's e5616f008 shape). A zero budget is "no timeout", which
+// the lease docs already cover.
+func leaseCoversBudget(lease, handlerTimeout time.Duration) error {
+	if handlerTimeout > 0 && lease <= handlerTimeout {
+		return fmt.Errorf("queue: the claim lease (%s) must be longer than the handler budget WithDBHandlerTimeout(%s): "+
+			"a handler still inside its budget would have its job re-claimed and run again; raise WithLeaseTimeout above it",
+			lease, handlerTimeout)
+	}
+	return nil
 }
 
 // SetGate installs a gate checked in the worker loop after a handler is
@@ -723,6 +767,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 			// fails means the connection is unusable, which the pool
 			// discovers on its own — but silence here would hide a
 			// leaked write lock, so it is logged.
+			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
 			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
 				if q.logger != nil {
 					q.logger.Warn("queue: rolling back an abandoned claim", "err", err)
@@ -1215,6 +1260,10 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			continue
 		}
 		q.noteClaimOK()
+		if q.afterClaim != nil {
+			//gofastr:allow(recovercallback) package-test seam, nil in production; a panicking test hook should fail its test
+			q.afterClaim(job)
+		}
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
 			// No handler, drop the row so it doesn't loop forever.

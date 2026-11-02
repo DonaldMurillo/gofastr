@@ -191,7 +191,7 @@ requests carry no content type. Multipart RPC forms let the browser set
 | `data-cui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-cui-open` to make the floating surface dismissible. |
 | `data-cui-style="<name>"` | Set on the runtime-injected `<link rel="stylesheet">` so duplicates are dedup'd by component name. |
 | `data-hui-shortcut-click="<chord>"` / `data-hui-shortcut-focus="<chord>"` | Global keyboard shortcut: e.g. `Meta+K` or `/` focuses or clicks the target element. Rendered by `ui.GlobalSearch`, `ui.CommandPalette`, `ui.ShortcutHint` (BindTarget) and host chrome; bound by the registered `headless-navigation` module, which owns one document keydown with an isComposing guard and resolves the first connected target outside an `inert` subtree, so a chord under an open drawer's lower layers or the page beneath reaches the top layer's control. A chord without Mod or Alt never fires while focus is in an input, a contenteditable editor or a `role="textbox"` widget, and a modifier the chord does not name makes it a different chord (Shift+K is not `k`), except Shift on a non-letter, which is how `?` is typed. |
-| `data-cui-submit-on-enter` | On a `<form>`, Enter inside any child textarea submits the form. |
+| `data-cui-submit-on-enter` | On a `<form>`, Enter inside any child textarea submits the form. An Enter that confirms an IME composition (`isComposing`, or keyCode 229, Safari's spelling) does not. |
 | `data-cui-clear-on-esc` | On an `<input>`/`<textarea>`, Escape clears the value. |
 | `data-cui-autogrow` | On a `<textarea>`, height auto-grows with content. |
 | `data-cui-charcount-source="<id>"` | An element that displays the live character count of the referenced input. |

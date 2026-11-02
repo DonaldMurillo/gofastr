@@ -39,6 +39,23 @@ few lines, and link the PR or the docs page for the rest.
   relation (`hidden: true` in `gofastr.yml`) refuses it on `?include=`
   and nested filters the way an unknown relation is refused, and leaves
   it out of `/openapi.json` and llm.md (`entity.HidesRelation`).
+- **Thirty-odd new static rules from the 2026-11 bug bashes.** One per
+  bug shape that recurred across PRs #642–#646 and round 2: vet
+  analyzers (`optzero`, `bareduration`, `iounderlock`, `poisonedconn`,
+  `deferreset`, `recoverwrite`, `statusrange`, `doublewrite`,
+  `listheader`, `textbind`, `sanitizefix`, `authpresence`,
+  `multipartparse`, `ratelimitkey`, `fanoutreq`, `rsakeysize`,
+  `siblingresult`, `silentskip`, `growmap`, `nullarray`, `hookedread`), new arms on
+  `intwrap`, `recovercallback`, `settlectx`, `wrapwriter`, `nostore`,
+  `controlbytes`, `errleak`, `discardeddecode`, `mapwriter`, `embedskip`,
+  `laxcoerce`, `compositekey`, `unrechecked` and `rawtext`, contracts
+  rules GOFASTR1416 `ddlconstraint`, GOFASTR1417 `settlestamp` and
+  GOFASTR1826 `flexreverse` (GOFASTR1415 tightened), and the runtime JS
+  lints `dateutcyear`, `keyguard` and `clipboardawait`. They run in
+  `make analyze` and in an app's `gofastr verify`; a deliberate site
+  carries `//gofastr:allow(<rule>) <why>`. Two new markers:
+  `//gofastr:mustuse <result>` on a function's doc and
+  `//gofastr:required-array` on a slice field.
 - **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
   A calendar that stays on the page beside the native date input it
   fills, for a range in one control, refused days, or notes on days. The
@@ -848,6 +865,68 @@ few lines, and link the PR or the docs page for the rest.
   quote inside a regular expression (`s.replace(/"/g, '')`) and missed a
   real call after it. Both now call one scanner that skips comments,
   strings, template text and regex literals, and reads `${…}` as code.
+- **Bugs the 2026-11 rules found on the tree.** Each has a test that
+  failed before its fix.
+  - A zero or negative option no longer means "expire at once" or a
+    panic: `lifecycle.WithTimeout`/`SetShutdownTimeout`,
+    `WithSQLIdempotencyTTL`/`WithSQLIdempotencyInFlightTTL` (a retry ran
+    the handler twice), `WithBrokerHandleTTL`, and `queue.WithWorkers(-1)`
+    (`Start` panicked).
+  - A `math.MaxInt64` cap no longer wraps: `image.Config.MaxSourceBytes`
+    and semantic's `MaxFileSize` read every source as empty,
+    `upload.Config.MaxSize` refused every upload. A huge webbotauth
+    `max-age` caches for 24h instead of 1 minute; a huge harness Bash
+    `timeout_ms` takes the 10-minute ceiling instead of killing the
+    command.
+  - A panicking host component no longer crashes the process: the
+    battery/log webhook `HTTPClient`, `RedisQueue.Reclaim`'s client, a
+    harness session log during `SubscribeSince`.
+  - entityui: an in-request bulk run's summary audit survives a client
+    hang-up, and a queued run's lease hand-back is bounded at 10s.
+    `EntitySessionStore`'s expiry sweep no longer holds its mutex across
+    the DELETE.
+  - The metrics, tracing and CORS middleware and the battery/log, webmcp
+    and theme-preview writers forward `ReadFrom` (sendfile survives) and
+    record the status the client got after a `Flush`; metrics and
+    tracing record a `WriteHeader(0)` panic as 500.
+  - battery/log's recovery and kiln's `recover` middleware (now core
+    Recovery) cut a started response instead of appending a 500 to it.
+  - `i18n.HTTPError` sends a status outside 400–599 as 500; uihost
+    ignores a `ScreenStatusCode` outside 100–999, and a blocked page's
+    markdown twin answers with the HTML page's status.
+  - WebSocket upgrades (core/stream, battery/rtc), Compress
+    (Accept-Encoding, `immutable`), the cache's `Vary: *` and the
+    webbotauth directory TTL read every field line of the header.
+  - RateLimit's default and proxy-aware keys and webbotauth's
+    `RateLimitKey(nil)` group an IPv6 client by its /64.
+  - OIDC JWKS RSA keys over 8192 bits are refused.
+  - A record id, auth unlink/token path value, admin queue-replay id or
+    semantic `DELETE /doc` id that is not storable text (invalid UTF-8,
+    NUL) is refused instead of reaching Postgres as a 500.
+  - acp decode errors no longer echo encoding/json text naming Go types;
+    the dev hold page strips ANSI escapes to a fixpoint.
+  - Refusals that walked a map now name the same key every time: MCP
+    tool arguments, a restored export row, kiln seed rows and page
+    props, `gofastr` CLI `--verbs`, entity form items. The harness MCP
+    server answers an unencodable result with -32603 instead of an empty
+    line.
+  - `core/config.Load` binds `encoding.TextUnmarshaler` fields
+    (`time.Time`, `slog.Level`, `netip.Addr`, validated enums).
+  - Option pairs that break an invariant together: `NewDBQueue` refuses
+    a `WithDBHandlerTimeout` no shorter than the claim lease (a handler
+    inside its budget was re-claimed and run twice); webhook `New` raises
+    a `LeasePeriod` no longer than the HTTP client timeout to twice that
+    timeout (a second Manager re-sent a slow delivery); a `RequestTimeout`
+    raised past the write deadline raises an unset `WriteTimeout`, and an
+    explicit conflicting pair fails `Start` (slow buffered responses were
+    lost at the write deadline).
+  - admin: the Audit log and dashboard activity no longer print the
+    title or changed values of a record a `BeforeGet`/`BeforeList` hook
+    hides from the admin; they show its id only.
+  - Browser: a Date field in localentity keeps years 0–99;
+    `data-cui-submit-on-enter` and the tag field ignore Safari's
+    IME-confirming Enter (keyCode 229); Tree and Lightbox arrows swap in
+    right-to-left.
 - **MCP `initialize` negotiates the protocol version.** It answered
   `2025-06-18` whatever the client asked for. Per the 2025-06-18
   Lifecycle spec it now echoes a requested version the server supports

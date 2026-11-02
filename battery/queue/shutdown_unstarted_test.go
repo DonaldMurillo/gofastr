@@ -38,15 +38,13 @@ func assertShutdownBeforeStartRefunds(t *testing.T, db *sql.DB, q *DBQueue) {
 		ran.Add(1)
 		return ctx.Err()
 	})
-	var calls atomic.Int32
-	q.SetGate(func(string) bool {
-		// The second call is the re-check after the claim: the shutdown
-		// lands there, and the gate itself still allows the job.
-		if calls.Add(1) == 2 {
-			cancel()
-		}
-		return true
-	})
+	var claimed atomic.Int32
+	q.afterClaim = func(Job) {
+		// The shutdown lands right after the claim, before the worker
+		// starts the handler.
+		claimed.Add(1)
+		cancel()
+	}
 	if err := q.Enqueue(context.Background(), Job{ID: "j", Type: "t", MaxAttempts: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +54,11 @@ func assertShutdownBeforeStartRefunds(t *testing.T, db *sql.DB, q *DBQueue) {
 	var attempts int
 	if err := db.QueryRow("SELECT status, attempts FROM "+q.qt()+" WHERE id = 'j'").Scan(&status, &attempts); err != nil {
 		t.Fatal(err)
+	}
+	if claimed.Load() != 1 {
+		// Without the claim the job never left pending, and the check
+		// below would pass with nothing tested.
+		t.Fatalf("the worker claimed the job %d times, want once", claimed.Load())
 	}
 	if n := ran.Load(); n != 0 || status != "pending" || attempts != 0 {
 		t.Fatalf("job claimed as the shutdown landed: handler ran %d times, %q with %d attempts; want unstarted, pending with 0", n, status, attempts)

@@ -154,8 +154,14 @@ func DecodeWithConfig(r io.Reader, cfg Config) (*Image, error) {
 		limit = DefaultMaxSourceBytes
 	}
 	// One byte past the cap distinguishes "exactly at the cap" from
-	// "more behind it" without buffering the whole stream first.
-	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	// "more behind it" without buffering the whole stream first. At
+	// math.MaxInt64 the +1 would wrap negative and LimitReader would read
+	// nothing, so the cap stays put there: no source is longer anyway.
+	sentinel := limit
+	if limit < math.MaxInt64 {
+		sentinel = limit + 1
+	}
+	data, err := io.ReadAll(io.LimitReader(r, sentinel))
 	if err != nil {
 		return nil, fmt.Errorf("image: read source: %w", err)
 	}

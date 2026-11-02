@@ -11,10 +11,12 @@ import (
 	"time"
 )
 
-// TestStripPort_PreservesBareIPv6 pins the contract that
-// defaultRateLimitKey returns bare-IPv6 addresses unchanged. The old
-// last-colon split mangled "2001:db8::1" to "2001:db8:", which split
-// the bucket per address and silently defeated the rate limit.
+// TestStripPort_PreservesBareIPv6 pins the contract that stripPort, the
+// host extraction under defaultRateLimitKey, returns bare-IPv6 addresses
+// unchanged. The old last-colon split mangled "2001:db8::1" to
+// "2001:db8:", which split the bucket per address and silently defeated
+// the rate limit. (The key itself then collapses IPv6 to its /64:
+// TestRateLimit_IPv6Slash64SharesOneBucket.)
 func TestStripPort_PreservesBareIPv6(t *testing.T) {
 	cases := []string{
 		"::1",
@@ -27,9 +29,7 @@ func TestStripPort_PreservesBareIPv6(t *testing.T) {
 	}
 	for _, in := range cases {
 		t.Run(in, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/", nil)
-			req.RemoteAddr = in
-			got := defaultRateLimitKey(req)
+			got := stripPort(in)
 			switch in {
 			case "[::1]:8080":
 				if got != "::1" {

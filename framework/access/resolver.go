@@ -63,6 +63,7 @@ type CachedResolverOption func(*CachedResolver)
 // duration retains single-flight behavior but expires the result immediately.
 func WithTTL(ttl time.Duration) CachedResolverOption {
 	return func(resolver *CachedResolver) {
+		//gofastr:allow(optzero) a zero or negative TTL is the documented "single-flight, no caching" setting
 		resolver.ttl = ttl
 	}
 }

@@ -231,7 +231,9 @@ func CheckUpgradeRequest(r *http.Request, originOK func(*http.Request) bool) err
 	if !r.ProtoAtLeast(1, 1) {
 		return errors.New("stream: websocket upgrade requires HTTP/1.1 or later")
 	}
-	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+	// Every Upgrade line, as for Connection below: the websocket token
+	// may sit on a later line (RFC 9110 §5.3).
+	if !headerHasToken(r.Header.Values("Upgrade"), "websocket") {
 		return errors.New("stream: not a websocket upgrade request")
 	}
 

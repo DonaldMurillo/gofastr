@@ -40,6 +40,7 @@ func runAgent(ctx context.Context, req agentRequest) error {
 		return runCodex(ctx, codexInvocation{
 			Program: req.Config.Program,
 			Args:    args, Env: req.Env, Dir: req.Workspace, Stdin: req.Prompt,
+			//gofastr:allow(intwrap) TimeoutMinutes is the eval suite author's own checked-in config, not caller input
 			LogPath: req.LogPath, Timeout: time.Duration(req.Config.TimeoutMinutes) * time.Minute,
 		})
 	case "omp":
@@ -126,6 +127,7 @@ func runCapturedAgent(ctx context.Context, cfg AgentConfig, args []string, dir s
 		_ = stdout.Close()
 		return err
 	}
+	//gofastr:allow(intwrap) TimeoutMinutes is the eval suite author's own checked-in config, not caller input
 	timeout := time.Duration(cfg.TimeoutMinutes) * time.Minute
 	if timeout <= 0 {
 		timeout = 30 * time.Minute

@@ -540,6 +540,10 @@ apply. When a source still holds a key spelled the old way
 through `slog`'s default logger, naming the key it reads now; `Load`
 still succeeds.
 
+A field whose type (or pointer type) implements
+`encoding.TextUnmarshaler` (`time.Time`, `slog.Level`, `netip.Addr`, a
+validated enum) is bound through `UnmarshalText`, so a bad value fails
+`Load` instead of binding unvalidated text or being skipped.
 Direct: call `config.Load(&cfg)` at startup. Start at
 `core/config/config.go`: `Load`.
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/backoff"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // WebhookOpts configures a webhook sink. All fields have sensible defaults.
@@ -248,7 +249,16 @@ func (s *webhookSink) send(batch [][]byte) {
 	}
 }
 
-func (s *webhookSink) postOnce(body []byte) error {
+func (s *webhookSink) postOnce(body []byte) (err error) {
+	// The client is the host's (WebhookOpts.HTTPClient): its Transport
+	// runs here on the worker goroutine, which has no recover net. A panic
+	// is one failed delivery, final for this batch (it would panic again),
+	// not the end of the process.
+	defer func() {
+		if r := recover(); r != nil {
+			err = nonRetryableError{fmt.Errorf("log: webhook delivery panicked: %s", textsafe.Recovered(r))}
+		}
+	}()
 	// Bounded by Timeout; we DON'T cancel on s.closed here because the
 	// flush-on-Close path needs the final attempt to complete normally.
 	// Mid-retry shutdown is handled by the post-attempt check in send.

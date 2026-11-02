@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -302,9 +303,15 @@ func (w *Watcher) readCapped(root *os.Root, rel string) (data []byte, skip bool,
 
 // readLimited reads at most max+1 bytes of src: max or fewer is the
 // file, one more says it grew past the limit (skip), and the rest of a
-// file that keeps growing is never read.
+// file that keeps growing is never read. At math.MaxInt64 the +1 would
+// wrap negative and LimitReader would read nothing, so the limit stays
+// put there: no file is longer anyway.
 func readLimited(src io.Reader, max int64) (data []byte, skip bool, err error) {
-	data, err = io.ReadAll(io.LimitReader(src, max+1))
+	sentinel := max
+	if max < math.MaxInt64 {
+		sentinel = max + 1
+	}
+	data, err = io.ReadAll(io.LimitReader(src, sentinel))
 	if err != nil {
 		return nil, false, err
 	}

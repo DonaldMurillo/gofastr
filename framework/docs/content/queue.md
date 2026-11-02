@@ -73,7 +73,11 @@ defer q.Close()
 `WithLeaseTimeout` (default 5 minutes) is how long a claimed job may run
 before another worker treats its worker as dead and claims it again.
 Keep it longer than your slowest handler. A zero or negative value keeps
-the default, as does the same value passed to `SetLeaseTimeout`.
+the default, as does the same value passed to `SetLeaseTimeout`. The
+handler budget (`WithDBHandlerTimeout`) must be shorter than the lease:
+`NewDBQueue` refuses a pair where it is not, since a handler still inside
+its budget would be claimed and run a second time, and `SetLeaseTimeout`
+ignores such a lease and logs a WARN.
 
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
 exist. Pass `WithTable("my_jobs")` to use a custom table name; it is

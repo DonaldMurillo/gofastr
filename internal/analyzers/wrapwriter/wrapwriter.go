@@ -64,7 +64,68 @@
 // a closure deferred before the dispatch, in the same block, counts as
 // after it.
 //
-// Silent postures, deliberately:
+// The bug, arm three (partial latch): a wrapper that records what the
+// client got (a wroteHeader, started or status latch) has to record it
+// on every path that sends the response, not only Write and
+// WriteHeader. Found by the 2026-11 bug bash in core/middleware:
+//   - c0d6e99e: the metrics and tracing writers latched wroteHeader in
+//     WriteHeader and Write but not in Flush, so a WriteHeader(500)
+//     after a flush (which net/http drops) was recorded as the status
+//     a 200 stream got;
+//   - f44e9c7b: Recovery's writer had no ReadFrom, so io.Copy and
+//     http.ServeContent behind it lost the connection's sendfile path
+//     (embedding http.ResponseWriter promotes Header, Write and
+//     WriteHeader only), and the fix's ReadFrom had to latch started;
+//   - 39de7827: Recovery's WriteHeader set started before forwarding,
+//     so net/http's panic on code 0 (raised before anything is sent)
+//     reached Recovery's recover as a started response, and the client
+//     got a cut connection instead of its 500.
+//
+// Shape, on a wrapper type arm one would consider (wraps a writer,
+// implements http.ResponseWriter, dispatched in the package), whose
+// Write or WriteHeader is OBSERVING: it forwards to the wrapped
+// writer's Write/WriteHeader in a top-level statement of its body. Its
+// latches are the fields that observing Write/WriteHeader set (directly
+// or through the package's own methods): a bool set to true, or an
+// integer set to a constant (`if s.status == 0 { s.status = 200 }`).
+//   - (a) a Flush, FlushError or ReadFrom declared in the package that
+//     assigns none of a latch (directly, through a method that does, or
+//     by handing its receiver to a call: io.Copy(writerOnly{w}, src)
+//     routes the body through Write). Reported at the method.
+//   - (b) a Write that forwards its byte slice to the wrapped writer's
+//     Write and calls no other Write, on a type with no ReadFrom.
+//     Reported at Write. The fix spelling is recoveryWriter's: a
+//     ReadFrom that does first what Write does (latch, strip a header,
+//     count), then io.Copy(w.ResponseWriter, src), which reaches the
+//     next writer's ReadFrom.
+//   - (c) an observing WriteHeader that sets a bool to true before the
+//     top-level statement that forwards WriteHeader, when that field is
+//     read inside a deferred function literal that calls recover() in
+//     the same package. Reported at the assignment. The fix is to latch
+//     after the forwarded call returns.
+//
+// Silent postures, deliberately (arm three):
+//   - Hijack: it sends no status through the writer (recoveryWriter
+//     keeps its status at 0 after a bare hijack by design), and a
+//     WriteHeader after it fails with ErrHijacked rather than being
+//     dropped as superfluous;
+//   - a sender that sets a bool field of its own receiver to true,
+//     itself or through its own methods (the idempotency recorder's
+//     streamed, the cache recorder's overflow): the wrapper decided what
+//     a flush means, and the latch it skips is not read for a streamed
+//     response;
+//   - a buffering wrapper, whose forward sits under an if (Timeout
+//     forwards only once streaming): its wroteHeader is the handler's
+//     intent, not what was sent;
+//   - `status = code`: recording a parameter is not a latch, and a
+//     constructor default of 200 is already right after a flush;
+//   - a Write that tees or transforms (a second Write into a buffer or
+//     a gzip writer): a raw ReadFrom would skip the transform, so none
+//     is asked for;
+//   - (c) on a field no deferred recover reads: the logging wrapper's
+//     order is harmless when nothing reads its latch from a panic.
+//
+// Silent postures, deliberately (arms one and two):
 //   - a wrapper with Unwrap() http.ResponseWriter, on either receiver
 //     of the implementing method set;
 //   - a type that holds a writer but is not one (core/stream's
@@ -116,7 +177,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "wrapwriter",
-	Doc:  "report ResponseWriter wrappers with no Unwrap (ResponseController cannot reach the connection) and header mutations after the next handler ran",
+	Doc:  "report ResponseWriter wrappers with no Unwrap (ResponseController cannot reach the connection), header mutations after the next handler ran, and wrappers whose Flush/ReadFrom skip the latch Write/WriteHeader set (or that hide ReadFrom)",
 	Run:  run,
 }
 
@@ -127,6 +188,7 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	dispatched := dispatchedTypes(pass)
+	checkLatch(pass, rw, dispatched, indexMethods(pass))
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
 			continue

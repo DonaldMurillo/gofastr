@@ -316,3 +316,23 @@ func TestDashboardFailedJobsFigure(t *testing.T) {
 		t.Errorf("SECURITY: a reader read the jobs figure: %d", rr.Code)
 	}
 }
+
+// The replay id arrives percent-decoded: /admin/queue/_replay/a%FFb handed
+// the queue a 0xff byte, and Postgres refuses invalid UTF-8 or a NUL in a
+// text bind (22021), a 500 from both the replay and its audit row. It is
+// bad input now, refused before the queue or the audit log sees it.
+func TestQueueReplayRefusesUnstorableID(t *testing.T) {
+	q := &fakeQueue{}
+	x := queueEnv(t, q)
+	for _, id := range []string{"a%FFb", "a%00b"} {
+		if got := resultOf(t, post(x.as(theAdmin), "/admin/queue/_replay/"+id, nil)); got != "bad-input" {
+			t.Errorf("replay %s: result = %q, want bad-input", id, got)
+		}
+	}
+	if len(q.replayed) != 0 {
+		t.Errorf("replayed %q; an id that is not storable text must not reach the queue", q.replayed)
+	}
+	if ops := x.auditOps("queue"); len(ops) != 0 {
+		t.Errorf("a refused replay audited %v", ops)
+	}
+}

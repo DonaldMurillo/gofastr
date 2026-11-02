@@ -21,6 +21,7 @@
 package config
 
 import (
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -139,7 +140,9 @@ type ConfigValidator interface {
 // Validate is called after binding and its error is returned.
 //
 // Supported field types: string, int, int64, float64, bool, Duration,
-// and nested structs (value or pointer form).
+// any type whose pointer implements encoding.TextUnmarshaler (time.Time,
+// slog.Level, netip.Addr; value or pointer form), and nested structs
+// (value or pointer form).
 func Load(cfg any, sources ...Source) error {
 	return LoadWith(cfg, sources...)
 }
@@ -286,11 +289,21 @@ func (f configField) keyLabel() string {
 
 // isNestedStruct reports whether a named field of type t recurses under
 // a NAME_ prefix: a struct, or a pointer to one.
+//
+// A type that parses its own text (time.Time, netip.Addr) is a leaf, not
+// a nested struct: its fields are not config keys.
 func isNestedStruct(t reflect.Type) bool {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	return t.Kind() == reflect.Struct
+	return t.Kind() == reflect.Struct && !parsesText(t)
+}
+
+var textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
+
+// parsesText reports whether *t implements encoding.TextUnmarshaler.
+func parsesText(t reflect.Type) bool {
+	return reflect.PointerTo(t).Implements(textUnmarshalerType)
 }
 
 // configFields lists the fields Load binds in t, in field order, with
@@ -707,8 +720,27 @@ func collectLegacyKeys(t reflect.Type, prefix, legacyPrefix string, legacyOK, sh
 }
 
 // setField sets a reflect.Value from a string, converting to the
-// appropriate type.
+// appropriate type. A type that parses its own text (time.Time,
+// slog.Level, netip.Addr, an enum whose UnmarshalText admits only its
+// members), directly or through a pointer, binds through UnmarshalText,
+// ahead of the kind switch: slog.Level is an int, and the int case
+// refused "debug"; a validated `type Tier string` bound "bogus" raw
+// through the string case.
 func setField(v reflect.Value, s string, fieldName string) error {
+	if v.Kind() == reflect.Pointer && parsesText(v.Type().Elem()) {
+		p := reflect.New(v.Type().Elem())
+		if err := setField(p.Elem(), s, fieldName); err != nil {
+			return err
+		}
+		v.Set(p)
+		return nil
+	}
+	if v.CanAddr() && parsesText(v.Type()) {
+		if err := v.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText([]byte(s)); err != nil {
+			return fmt.Errorf("config: field %s: %q is not a valid %s: %w", fieldName, s, v.Type(), err)
+		}
+		return nil
+	}
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(s)

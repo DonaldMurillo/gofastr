@@ -82,6 +82,38 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unseated"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/worldreadable"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/wrapwriter"
+
+	// 2026-11 bug-bash rules (numbers)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/bareduration"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/optzero"
+	// 2026-11 bug-bash rules (lifecycle)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/deferreset"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/iounderlock"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/poisonedconn"
+	// 2026-11 bug-bash rules (response)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/doublewrite"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/listheader"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverwrite"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/statusrange"
+
+	// 2026-11 bug-bash rules (request-misc)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/authpresence"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/fanoutreq"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/multipartparse"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/ratelimitkey"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/rsakeysize"
+
+	// 2026-11 bug-bash rules (results)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/siblingresult"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/silentskip"
+	// 2026-11 bug-bash rules (maps-reflect)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/growmap"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/nullarray"
+	// 2026-11 bug-bash rules (request-data)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/sanitizefix"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/textbind"
+	// 2026-11 bug-bash rules (read hooks)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/hookedread"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -159,6 +191,46 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(wrapwriter.Analyzer),
 	allow.Guard(unseated.RecheckAnalyzer),
 	allow.Guard(unseated.WriteDeadlineAnalyzer),
+
+	// 2026-11 bug-bash rules (numbers): unit and zero-value mistakes on
+	// numeric configuration and the integer math that bounds it.
+	allow.Guard(bareduration.Analyzer),
+	allow.Guard(optzero.Analyzer),
+	// 2026-11 bug-bash rules (lifecycle): one per lifecycle bug shape
+	// (locks, contexts, connections, callbacks) the round fixed by hand.
+	allow.Guard(iounderlock.Analyzer),
+	allow.Guard(poisonedconn.Analyzer),
+	allow.Guard(deferreset.Analyzer),
+	// 2026-11 bug-bash rules (response): the http.ResponseWriter
+	// lifecycle, one per repeated bug shape.
+	allow.Guard(recoverwrite.Analyzer),
+	allow.Guard(statusrange.Analyzer),
+	allow.Guard(doublewrite.Analyzer),
+	allow.Guard(listheader.Analyzer),
+	// 2026-11 bug-bash rules (read hooks): the entity screens read rows
+	// through the hooked reader or a named *Unhooked one.
+	allow.Guard(hookedread.Analyzer),
+
+	// 2026-11 bug-bash rules (request-misc): request-shaped trust and
+	// cost mistakes, one per bug the battery/auth bash found.
+	allow.Guard(authpresence.Analyzer),
+	allow.Guard(fanoutreq.Analyzer),
+	allow.Guard(multipartparse.Analyzer),
+	allow.Guard(ratelimitkey.Analyzer),
+	allow.Guard(rsakeysize.Analyzer),
+
+	// 2026-11 bug-bash rules (results): a result, an error or an entry
+	// dropped where its siblings keep it.
+	allow.Guard(siblingresult.Analyzer),
+	allow.Guard(silentskip.Analyzer),
+	// 2026-11 bug-bash rules (maps-reflect): per-caller map growth and
+	// marker-scoped required arrays; the embedskip, laxcoerce and
+	// compositekey arms from the same batch live in those packages.
+	allow.Guard(growmap.Analyzer),
+	allow.Guard(nullarray.Analyzer),
+	// 2026-11 bug-bash rules (request-data): one per repeated bug shape.
+	allow.Guard(textbind.Analyzer),
+	allow.Guard(sanitizefix.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

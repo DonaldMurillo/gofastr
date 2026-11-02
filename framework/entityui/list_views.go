@@ -255,7 +255,7 @@ func (b *ListBuilder) tabCount(ctx context.Context, s *listState, view, filt *fi
 	if err != nil {
 		return ""
 	}
-	n, err := s.m.ch.CountAll(crud.WithReadHooks(ctx), crud.ListOptions{
+	n, err := s.m.countRows(ctx, crud.ListOptions{
 		Where:   where,
 		Filters: s.facetFilters(),
 		Search:  s.search,

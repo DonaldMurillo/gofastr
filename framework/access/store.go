@@ -139,6 +139,7 @@ const DefaultReconcileInterval = 5 * time.Minute
 // then heals on the next change to that role or a restart.
 func WithReconcileInterval(d time.Duration) GrantStoreOption {
 	return func(gs *GrantStore) {
+		//gofastr:allow(optzero) zero or negative is the documented "reconcile off"; refreshWorker arms its ticker only when reconcile > 0
 		gs.reconcileEvery = d
 	}
 }

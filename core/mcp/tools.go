@@ -14,7 +14,7 @@ import (
 // nextCursor key is absent on the final page, and on every page when the
 // whole listing fits (the pre-pagination wire shape).
 type toolsListResult struct {
-	Tools      []Tool `json:"tools"`
+	Tools      []Tool `json:"tools"` //gofastr:required-array
 	NextCursor string `json:"nextCursor,omitempty"`
 }
 
@@ -27,7 +27,7 @@ type toolsCallParams struct {
 
 // toolsCallResult wraps a tool execution result per MCP spec.
 type toolsCallResult struct {
-	Content           []Content `json:"content"`
+	Content           []Content `json:"content"` //gofastr:required-array
 	StructuredContent any       `json:"structuredContent,omitempty"`
 	IsError           bool      `json:"isError,omitempty"`
 }

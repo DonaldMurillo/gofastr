@@ -89,7 +89,7 @@ func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) (ok,
 func writeEnvelopeError(w http.ResponseWriter, resp Response) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(encodeResponse(resp))
 }
 
 // encodeResponse is the wire form of a dispatched response, one JSON
@@ -110,7 +110,7 @@ func encodeResponse(resp Response) []byte {
 	if err != nil {
 		// Only an in-process id could fail here (a NaN float): answer
 		// with a null id rather than with nothing.
-		b, _ = json.Marshal(newErrorResponse(nil, ErrInternalError, "internal error"))
+		b, _ = json.Marshal(newErrorResponse(nil, ErrInternalError, "internal error")) //gofastr:allow(discardeddecode) the last-resort reply: a null id and a fixed message hold nothing that can fail to encode
 	}
 	return append(b, '\n')
 }
@@ -388,7 +388,7 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		var req Request
 		notification, errResp := decodeEnvelope(line, &req)
 		if errResp != nil {
-			encoder.Encode(*errResp)
+			_, _ = out.Write(encodeResponse(*errResp))
 			continue
 		}
 

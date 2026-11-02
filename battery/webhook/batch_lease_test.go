@@ -41,8 +41,10 @@ func (rt *slowReceiverRT) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // The bar for starting a claimed delivery is one client timeout of lease
-// left, capped at half the lease: a client timeout as long as the lease
-// must not stop a fresh claim from starting.
+// left, capped at half the lease: a client timeout past half the lease
+// must not stop a fresh claim from starting. (A timeout as long as the
+// lease no longer reaches the bar: New raises that lease to twice the
+// timeout, see TestLeaseOutlivesClientTimeout.)
 func TestTickStartBarFollowsClientTimeout(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -50,7 +52,7 @@ func TestTickStartBarFollowsClientTimeout(t *testing.T) {
 		want    int // POSTs in the first tick
 	}{
 		{"10s timeout, 30s lease", 10 * time.Second, 3}, // starts at 30s, 22s, 14s of lease left
-		{"60s timeout, 30s lease", time.Minute, 2},      // capped at 15s: 30s, 22s
+		{"25s timeout, 30s lease", 25 * time.Second, 2}, // capped at 15s: 30s, 22s
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -99,7 +99,7 @@ type Message struct {
 	ContextID        string         `json:"contextId,omitempty"`
 	TaskID           string         `json:"taskId,omitempty"`
 	Role             Role           `json:"role"`
-	Parts            []Part         `json:"parts"`
+	Parts            []Part         `json:"parts"` //gofastr:required-array
 	Metadata         map[string]any `json:"metadata,omitempty"`
 	Extensions       []string       `json:"extensions,omitempty"`
 	ReferenceTaskIDs []string       `json:"referenceTaskIds,omitempty"`
@@ -227,7 +227,7 @@ type Artifact struct {
 	ArtifactID  string         `json:"artifactId"`
 	Name        string         `json:"name,omitempty"`
 	Description string         `json:"description,omitempty"`
-	Parts       []Part         `json:"parts"`
+	Parts       []Part         `json:"parts"` //gofastr:required-array
 	Metadata    map[string]any `json:"metadata,omitempty"`
 	Extensions  []string       `json:"extensions,omitempty"`
 }
@@ -378,7 +378,7 @@ type ListTasksRequest struct {
 // ListTasksResponse is the result of ListTasks. Tasks is never null on the
 // wire: an empty page encodes as [].
 type ListTasksResponse struct {
-	Tasks         []Task `json:"tasks"`
+	Tasks         []Task `json:"tasks"` //gofastr:required-array
 	NextPageToken string `json:"nextPageToken"`
 	PageSize      int    `json:"pageSize"`
 	TotalSize     int    `json:"totalSize"`
@@ -437,7 +437,7 @@ type ListTaskPushNotificationConfigsRequest struct {
 // ListTaskPushNotificationConfigsResponse is the result of
 // ListTaskPushNotificationConfigs. Configs is never null on the wire.
 type ListTaskPushNotificationConfigsResponse struct {
-	Configs       []PushNotificationConfig `json:"configs"`
+	Configs       []PushNotificationConfig `json:"configs"` //gofastr:required-array
 	NextPageToken string                   `json:"nextPageToken,omitempty"`
 }
 

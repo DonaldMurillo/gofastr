@@ -27,6 +27,8 @@ var WriteDeadlineAnalyzer = &analysis.Analyzer{
 
 const recheckMsg = "long-lived stream for a resolved principal delivers from this loop with no principal re-check on its path: a session revoked, a token expired, or a user deleted after connect keeps receiving (and, on a socket, keeps acting) until the client disconnects — call handler.RecheckPrincipal before each delivery and on an idle ticker and close on refusal (the framework/crud event stream and core/mcp GET spelling), or re-run the connect-time resolver inside the loop"
 
+const idleRecheckMsg = "long-lived stream re-checks its principal only when this select delivers an event: while the stream is idle nothing re-checks, so a session revoked after connect holds its seat and goroutine (and a half-open connection is never found) until the next event happens to arrive — add a time-driven case (a keep-alive ticker) that calls handler.RecheckPrincipal and closes on refusal, beside the per-delivery check (core/mcp's GET stream, framework/crud's EventStream)"
+
 const decisionMsg = "connect-time decision %s is never re-run on this stream's delivery path: handler.RecheckPrincipal re-validates the identity, not this decision, so a principal whose access changes after connect (topic access removed, tenant left) keeps receiving — re-run it against the refreshed context before delivery and close or drop on refusal"
 
 const deadlineMsg = "client write in a long-lived stream's park loop with no write deadline on its path: an evicted, revoked, or shutting-down stream blocked on a client that stopped reading never leaves (WriteTimeout 0 is the SSE-heavy app posture) — arm http.ResponseController.SetWriteDeadline (or conn.SetWriteDeadline) per write, or cut with a past deadline from whatever closes the stream (core/mcp's GET stream, core/a2a's sseStream.write, core/stream's SSEBroker cut)"
@@ -227,6 +229,20 @@ func runRecheck(pass *analysis.Pass) (any, error) {
 			}
 			continue
 		}
+		// A select-parked delivery loop whose re-check runs only when an
+		// event arrives re-checks nothing while the stream is idle: the
+		// core/mcp GET stream re-established its caller on the delivery
+		// case alone (2bb698d2e), so a revoked session held its seat for
+		// as long as no notification was raised. Some park loop of the
+		// stream must reach the re-check on a timer.
+		if !a.anyTickRecheck(all) {
+			for _, l := range delivery {
+				if sel := loopSelect(l); sel != nil && !reportedLoop[l.node] && a.reaches(l.body, l.fam, "recheckany", a.recheckAny) {
+					reportedLoop[l.node] = true
+					pass.Reportf(l.node.Pos(), "%s", idleRecheckMsg)
+				}
+			}
+		}
 		// The identity is re-checked; every connect-time decision the
 		// stream's own families make must be re-run on a loop path too.
 		for r := range reach {
@@ -261,6 +277,89 @@ func runRecheck(pass *analysis.Pass) (any, error) {
 		}
 	}
 	return nil, nil
+}
+
+// recheckAny: a principal re-check or a resolver re-run.
+func (a *arms) recheckAny(call *ast.CallExpr) bool {
+	return a.recheckCall(call) || a.resolverCall(call)
+}
+
+// anyTickRecheck: some park loop of the stream reaches a re-check on a
+// timer — a time-driven select case that reaches it, a loop body that
+// reaches it beside a select holding a time-driven case (every tick
+// runs the body again), or a range over a time channel.
+func (a *arms) anyTickRecheck(loops []*parkLoop) bool {
+	for _, l := range loops {
+		if a.tickRecheck(l) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *arms) tickRecheck(l *parkLoop) bool {
+	if rs, ok := l.node.(*ast.RangeStmt); ok {
+		return timeChan(a.pass, rs.X) && a.reaches(l.body, l.fam, "recheckany", a.recheckAny)
+	}
+	sel := loopSelect(l)
+	if sel == nil {
+		return false
+	}
+	ticks := false
+	for _, cl := range sel.Body.List {
+		cc, ok := cl.(*ast.CommClause)
+		if !ok || !timeCase(a.pass, cc) {
+			continue
+		}
+		ticks = true
+		for _, st := range cc.Body {
+			if a.reaches(st, l.fam, "recheckany", a.recheckAny) {
+				return true
+			}
+		}
+	}
+	if !ticks {
+		return false
+	}
+	for _, st := range l.body.List {
+		if st != ast.Stmt(sel) && a.reaches(st, l.fam, "recheckany", a.recheckAny) {
+			return true
+		}
+	}
+	return false
+}
+
+// loopSelect: the select statement a park loop's body parks on, written
+// directly in the body.
+func loopSelect(l *parkLoop) *ast.SelectStmt {
+	for _, st := range l.body.List {
+		if sel, ok := st.(*ast.SelectStmt); ok {
+			return sel
+		}
+	}
+	return nil
+}
+
+// timeCase: a select case receiving from a channel of time.Time (a
+// Ticker's or Timer's C, time.After, time.Tick).
+func timeCase(pass *analysis.Pass, cc *ast.CommClause) bool {
+	var x ast.Expr
+	switch c := cc.Comm.(type) {
+	case *ast.ExprStmt:
+		x = c.X
+	case *ast.AssignStmt:
+		if len(c.Rhs) == 1 {
+			x = c.Rhs[0]
+		}
+	}
+	recv, ok := x.(*ast.UnaryExpr)
+	return ok && recv.Op == token.ARROW && timeChan(pass, recv.X)
+}
+
+// timeChan: e is a channel whose element is time.Time.
+func timeChan(pass *analysis.Pass, e ast.Expr) bool {
+	ch, ok := underlyingChan(typeOf(pass, e))
+	return ok && astx.IsNamed(ch.Elem(), "time", "Time")
 }
 
 func holdsLoop(loops []*parkLoop, f *family) bool {

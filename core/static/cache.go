@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -294,12 +293,4 @@ func FingerprintURL(filePath, hash string) string {
 func contentHash(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:6])
-}
-
-// parseMaxAge parses a Cache-Control max-age value from a string like "3600".
-func parseMaxAge(s string) time.Duration {
-	if n, err := strconv.Atoi(s); err == nil && n >= 0 {
-		return time.Duration(n) * time.Second
-	}
-	return 0
 }
