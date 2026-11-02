@@ -20,7 +20,7 @@ func TestAppSpecRefusesEntityOnBatteryTable(t *testing.T) {
 		App: appspec.AppSpecApp{
 			Name: "Tables", Module: "example.com/tables",
 			Auth:  appspec.AppSpecAuth{Enabled: true, DevMode: true},
-			Admin: appspec.AppSpecAdmin{Enabled: true, Path: "/admin", Role: "admin", LoginPath: "/login", SeedEmail: "admin@example.com", SeedPassword: "roster-pw-123"},
+			Admin: appspec.AppSpecAdmin{Enabled: true, Path: "/admin", Role: "admin", LoginPath: "/login", SeedEmail: "admin@example.com", SeedPassword: "roster-pw-123"}, // not-a-secret: test fixture seed password
 		},
 		Entities: []framework.EntityDeclaration{{Name: "posts", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}}},
 	}
