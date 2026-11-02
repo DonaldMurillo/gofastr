@@ -32,3 +32,23 @@ func TestToolResultContentNeverNull(t *testing.T) {
 		})
 	}
 }
+
+// prompts/get answers a messages ARRAY for the same reason: the schema
+// requires one, and a prompt handler that returns no messages put
+// "messages": null on the wire.
+func TestPromptMessagesNeverNull(t *testing.T) {
+	s := NewServer()
+	if err := s.RegisterPrompt("empty", func(context.Context, map[string]string) ([]PromptMessage, error) {
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "prompts/get", Params: json.RawMessage(`{"name":"empty"}`)})
+	b, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"messages":[]`) {
+		t.Fatalf("reply %s, want \"messages\":[]", b)
+	}
+}

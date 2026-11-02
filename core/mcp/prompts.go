@@ -288,6 +288,11 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 		return handlerErrorResponse(req, err, "mcp: prompt handler failed", "internal prompt error",
 			slog.String("prompt", p.Name))
 	}
+	if messages == nil {
+		// The schema requires a messages array; null fails a validating
+		// client the way a null tools/call content does (contentArray).
+		messages = []PromptMessage{}
+	}
 	return newSuccessResponse(req.ID, promptsGetResult{Description: p.Description, Messages: messages})
 }
 
