@@ -86,6 +86,11 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// rw records whether the response started (a final status, a
+			// body byte, a flush). A panic after that cannot become a 500:
+			// net/http would drop the status and append the error body to
+			// the bytes already sent.
+			rw := &countingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
 				if v := recover(); v != nil {
 					// net/http's abort signal, not a bug: re-raise it so the
@@ -104,10 +109,16 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 						RequestID: textsafe.ScrubControlBytes(middleware.GetRequestID(r.Context())),
 						ctx:       r.Context(),
 					})
+					if rw.wroteHeader {
+						// Reported above; cut the connection so the client
+						// sees a truncated response, not a 500 body spliced
+						// onto the one it was already reading.
+						panic(http.ErrAbortHandler)
+					}
 					i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				}
 			}()
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(rw, r)
 		})
 	}
 }
@@ -127,9 +138,12 @@ func (rw *countingResponseWriter) WriteHeader(code int) {
 		rw.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
 		return
 	}
+	// Latch only once the call returned: net/http panics on a code
+	// outside 100-999 before sending anything, and the recovery
+	// middleware still owes that request its 500.
+	rw.ResponseWriter.WriteHeader(code)
 	rw.status = code
 	rw.wroteHeader = true
-	rw.ResponseWriter.WriteHeader(code)
 }
 
 func (rw *countingResponseWriter) Write(b []byte) (int, error) {

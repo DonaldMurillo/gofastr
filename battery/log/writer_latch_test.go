@@ -54,3 +54,40 @@ func TestAccessWriterKeepsReadFrom(t *testing.T) {
 		t.Fatalf("logged status %d after the body, want 200", rw.status)
 	}
 }
+
+// TestRecoveryAfterStartCutsConnection: the log battery's recover wrote
+// its 500 unconditionally, so a panic after the handler had sent a 200
+// and part of the body appended the error document to that body. It now
+// reports the panic and aborts the connection once the response started.
+func TestRecoveryAfterStartCutsConnection(t *testing.T) {
+	h := recoveryMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "partial")
+		panic("mid-body bug")
+	}))
+	rec := httptest.NewRecorder()
+	var v any
+	func() {
+		defer func() { v = recover() }()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	}()
+	if v != http.ErrAbortHandler {
+		t.Fatalf("recovered %v, want http.ErrAbortHandler (cut the started response)", v)
+	}
+	if rec.Body.String() != "partial" {
+		t.Fatalf("body %q: the 500 was spliced onto the started response", rec.Body.String())
+	}
+}
+
+// TestRecoveryInvalidCodeStill500: WriteHeader(0) panics in net/http
+// before anything is sent, so the response has not started and the
+// client is still owed its 500.
+func TestRecoveryInvalidCodeStill500(t *testing.T) {
+	h := recoveryMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(0)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d, want 500", rec.Code)
+	}
+}
