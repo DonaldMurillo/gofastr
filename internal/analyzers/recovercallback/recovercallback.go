@@ -108,8 +108,34 @@
 // R9); the rule saw only a named function call. An accessor that
 // returns a closure it built, or a method value, stays quiet.
 //
+// The 2026-11 lifecycle round fixed two blind spots core/a2a's run
+// finalize and push drain goroutines slipped through (fixed by hand in
+// 6fce08fe6). First, literal nodes link their own bodies: `go func(){
+// ...; s.finalize(ctx, t, err) }()` is a hot seed, and its call to
+// finalize is the literal's edge. Linking only the declarations, with a
+// walk that did not stop at nested literals, attributed that call to
+// startRun, which no dispatch path reached. The flood also stops at a
+// protected node — a recover on a frame catches every panic its
+// synchronous callees raise — which is the fix spelling 6fce08fe6 used:
+// the goroutine literal's deferred recover covers finalize and all it
+// calls. Second, an *http.Client send (Do/Get/Post/Head/PostForm)
+// through a field the host can fill is a host callback: the method is
+// concrete stdlib code, but it runs the host's Transport and its
+// CheckRedirect. "Host can fill" means the field is exported, or some
+// assignment in the package fills it from anything but a client the
+// package built (an http.Client literal, http.DefaultClient, or a local
+// only ever assigned one). That arm fires only on a path a goroutine
+// the package launched reaches: a read loop the host calls on its own
+// goroutine (a generated client's SSE watch) unwinds into the host.
+//
 // Postures it deliberately stays silent on, because they are not this
-// bug: http.Handler-shaped callbacks — a value whose type is
+// bug: interface methods that are unexported (only this package can
+// implement them, so the interface is a test seam over package code and
+// the edge flood reaches the implementations — battery/service's
+// toolRunner), interfaces declared in a main package (a command is the
+// host and declares no extension point — examples/site's
+// dashIslandPusher over *island.Manager), `func() *slog.Logger`
+// accessor fields (logging plumbing, like the printf sinks), http.Handler-shaped callbacks — a value whose type is
 // http.HandlerFunc or whose signature is func(http.ResponseWriter,
 // *http.Request) — because net/http recovers handler panics per
 // request, and likewise an http-handler-shaped function never seeds
@@ -134,6 +160,7 @@ package recovercallback
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"regexp"
 	"strings"
@@ -200,6 +227,11 @@ type node struct {
 type callbackCall struct {
 	call *ast.CallExpr
 	desc string
+	// asyncOnly: an *http.Client send through a host-filled field. It
+	// fires only on a path a goroutine the package launched reaches: a
+	// read loop the host calls synchronously (a generated client's SSE
+	// watch) runs the host's Transport on the host's own goroutine.
+	asyncOnly bool
 }
 
 type graph struct {
@@ -211,10 +243,14 @@ type graph struct {
 	decls   map[types.Object]*ast.FuncDecl // every package-local declaration, for slotAccessor
 	seeds   []*node
 	hot     map[*node]bool
+	async   map[*node]bool // hot from a goroutine/AfterFunc seed, read loops aside
+	// hostClients: the *http.Client fields a host-supplied value can
+	// fill (see hostClientFields).
+	hostClients map[*types.Var]bool
 }
 
 func buildGraph(pass *analysis.Pass) *graph {
-	g := &graph{pass: pass, byObj: map[types.Object]*node{}, decls: map[types.Object]*ast.FuncDecl{}, modPath: *moduleFlag}
+	g := &graph{pass: pass, byObj: map[types.Object]*node{}, decls: map[types.Object]*ast.FuncDecl{}, modPath: *moduleFlag, hostClients: hostClientFields(pass)}
 	if g.modPath == "" && pass.Module != nil {
 		g.modPath = pass.Module.Path
 	}
@@ -250,7 +286,13 @@ func buildGraph(pass *analysis.Pass) *graph {
 			g.collectAll(n)
 		}
 	}
-	for _, n := range g.nodes {
+	// Every node links, literals included: a goroutine literal is a hot
+	// seed, and the named calls in its body are ITS edges. Linking only
+	// the declarations attributed `go func(){ s.finalize(...) }()`'s
+	// call to the enclosing declaration, which no dispatch path reached,
+	// so core/a2a's run-finalize goroutine was never flagged (fixed by
+	// hand in 6fce08fe6).
+	for _, n := range g.all {
 		g.link(pass, n)
 	}
 	return g
@@ -290,7 +332,8 @@ func (g *graph) makeNode(body *ast.BlockStmt, typ types.Type, owner *node) *node
 		}
 		if call, ok := x.(*ast.CallExpr); ok {
 			if desc, ok := g.callbackCallee(call, n); ok {
-				n.calls = append(n.calls, callbackCall{call: call, desc: desc})
+				sel, isSel := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+				n.calls = append(n.calls, callbackCall{call: call, desc: desc, asyncOnly: isSel && g.hostClientCall(sel)})
 			}
 		}
 		return true
@@ -318,9 +361,16 @@ func paramObjects(typ types.Type) map[types.Object]bool {
 // link resolves named calls to package-local functions and marks
 // asynchronous dispatch (`go f()`, time.AfterFunc): the target stops
 // being a synchronous edge and becomes a hot seed instead.
+//
+// Each walk stops at a nested function literal: the literal is its own
+// node and links its own body, so a call inside it is an edge of the
+// literal, never of the function that encloses it.
 func (g *graph) link(pass *analysis.Pass, n *node) {
 	var goCalls map[*ast.CallExpr]bool
 	ast.Inspect(n.body, func(x ast.Node) bool {
+		if _, ok := x.(*ast.FuncLit); ok {
+			return false
+		}
 		goStmt, ok := x.(*ast.GoStmt)
 		if !ok {
 			return true
@@ -340,6 +390,9 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 	// frame and cannot catch a panic from this node, so only
 	// directRecover counts here.
 	ast.Inspect(n.body, func(x ast.Node) bool {
+		if _, ok := x.(*ast.FuncLit); ok {
+			return false
+		}
 		def, ok := x.(*ast.DeferStmt)
 		if !ok {
 			return true
@@ -352,6 +405,9 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 		return true
 	})
 	ast.Inspect(n.body, func(x ast.Node) bool {
+		if _, ok := x.(*ast.FuncLit); ok {
+			return false
+		}
 		call, ok := x.(*ast.CallExpr)
 		if !ok || goCalls[call] {
 			return true
@@ -512,6 +568,9 @@ func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 			}
 			return "", false
 		}
+		if g.hostClientCall(fun) {
+			return types.ExprString(fun), true
+		}
 		return g.ifaceMethodCallee(fun, n)
 	case *ast.IndexExpr:
 		// Only a map element counts; an IndexExpr over a function is
@@ -565,6 +624,19 @@ func (g *graph) ifaceMethodCallee(sel *ast.SelectorExpr, n *node) (string, bool)
 	}
 	if !g.isModulePkg(named.Obj().Pkg()) {
 		return "", false // stdlib or third-party interface: data plumbing, not an app callback
+	}
+	if named.Obj().Pkg().Name() == "main" {
+		// A command declares no extension point: it IS the host, and an
+		// interface it declares is a seam over its own wiring
+		// (examples/site's dashIslandPusher over *island.Manager).
+		return "", false
+	}
+	if !fn.Exported() {
+		// An unexported method can only be implemented inside this
+		// package: the interface is a test seam over package code
+		// (battery/service's toolRunner over exec), and the edge flood
+		// already reaches every implementation.
+		return "", false
 	}
 	if readMethodName.MatchString(fn.Name()) {
 		return "", false // the loop's own input plumbing (Read/Scan/Recv/...), not a registry callback
@@ -818,29 +890,44 @@ func (g *graph) derivedIfaceVars(body *ast.BlockStmt, n *node) map[types.Object]
 // edges. Seeds: goroutine/AfterFunc targets, and any node whose body
 // blocks on input in a loop — unless it is http-handler-shaped.
 func (g *graph) propagate() {
-	g.hot = map[*node]bool{}
+	var loops []*node
+	for _, n := range g.all {
+		if n.readLoop && !n.handlerShpd {
+			loops = append(loops, n)
+		}
+	}
+	g.hot = g.flood(append(loops, g.seeds...))
+	g.async = g.flood(g.seeds)
+}
+
+func (g *graph) flood(seeds []*node) map[*node]bool {
+	hot := map[*node]bool{}
 	var queue []*node
 	add := func(n *node) {
-		if !g.hot[n] {
-			g.hot[n] = true
+		if !hot[n] {
+			hot[n] = true
 			queue = append(queue, n)
 		}
 	}
-	for _, n := range g.all {
-		if n.readLoop && !n.handlerShpd {
-			add(n)
-		}
-	}
-	for _, s := range g.seeds {
+	for _, s := range seeds {
 		add(s)
 	}
 	for len(queue) > 0 {
 		n := queue[0]
 		queue = queue[1:]
+		if g.protected(n) {
+			// A recover on this frame catches every panic its
+			// synchronous callees raise: the flood stops here. A
+			// goroutine it launches is a seed of its own. This is the
+			// a2a fix spelling (6fce08fe6): the run goroutine's deferred
+			// recover covers finalize and everything finalize calls.
+			continue
+		}
 		for _, e := range n.edges {
 			add(e)
 		}
 	}
+	return hot
 }
 
 func (g *graph) report() {
@@ -849,6 +936,9 @@ func (g *graph) report() {
 			continue
 		}
 		for _, c := range n.calls {
+			if c.asyncOnly && !g.async[n] {
+				continue
+			}
 			g.pass.Reportf(c.call.Pos(),
 				"recovercallback: %s is invoked with no recover in scope; it sits on a dispatch path with no per-request net (goroutine/read loop), so a panicking callback kills the process",
 				c.desc)
@@ -1029,7 +1119,7 @@ func isCallbackType(t types.Type) bool {
 	if t == nil {
 		return false
 	}
-	if isHandlerType(t) || isCancelFunc(t) || isClockType(t) || isPrintfType(t) {
+	if isHandlerType(t) || isCancelFunc(t) || isClockType(t) || isPrintfType(t) || isLoggerAccessor(t) {
 		return false
 	}
 	_, ok := t.Underlying().(*types.Signature)
@@ -1055,6 +1145,18 @@ func isPrintfType(t types.Type) bool {
 func isString(t types.Type) bool {
 	b, ok := t.Underlying().(*types.Basic)
 	return ok && b.Info()&types.IsString != 0
+}
+
+// isLoggerAccessor: `func() *slog.Logger`, the owning App's logger
+// handed down as a getter (BatteryManager.logger). Logging plumbing,
+// like the printf sinks.
+func isLoggerAccessor(t types.Type) bool {
+	sig, ok := t.Underlying().(*types.Signature)
+	if !ok || sig.Params().Len() != 0 || sig.Results().Len() != 1 {
+		return false
+	}
+	ptr, ok := sig.Results().At(0).Type().(*types.Pointer)
+	return ok && astx.IsNamed(ptr.Elem(), "log/slog", "Logger")
 }
 
 func isClockType(t types.Type) bool {
@@ -1109,4 +1211,172 @@ func isAfterFunc(pass *analysis.Pass, call *ast.CallExpr) bool {
 	}
 	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
 	return ok && pkg.Imported().Path() == "time" && sel.Sel.Name == "AfterFunc"
+}
+
+// clientSendMethods: the *http.Client methods that run the client's
+// Transport and CheckRedirect.
+var clientSendMethods = map[string]bool{"Do": true, "Get": true, "Post": true, "Head": true, "PostForm": true}
+
+// hostClientCall: `p.client.Do(req)` where p.client is an *http.Client
+// field the host can fill. The method is concrete stdlib code, but it
+// runs the host's Transport (a RoundTripper the host wrote) and its
+// CheckRedirect: host code by construction, the PushOptions.Client
+// delivery core/a2a's push drain ran bare until 6fce08fe6. A client the
+// package builds itself from a literal runs net/http's own transport and
+// stays quiet.
+func (g *graph) hostClientCall(sel *ast.SelectorExpr) bool {
+	if !clientSendMethods[sel.Sel.Name] {
+		return false
+	}
+	s, ok := g.pass.TypesInfo.Selections[sel]
+	if !ok || s.Kind() != types.MethodVal || !isHTTPClient(s.Recv()) {
+		return false
+	}
+	recv, ok := ast.Unparen(sel.X).(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	rs, ok := g.pass.TypesInfo.Selections[recv]
+	if !ok || rs.Kind() != types.FieldVal {
+		return false
+	}
+	v, ok := rs.Obj().(*types.Var)
+	return ok && g.hostClients[v]
+}
+
+func isHTTPClient(t types.Type) bool {
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	return astx.IsNamed(t, "net/http", "Client")
+}
+
+// hostClientFields collects the *http.Client struct fields declared in
+// this package that a host-supplied value can fill: an exported field
+// (the host sets it directly, an options struct's Client), or one
+// assigned anywhere in the package — keyed composite literal or field
+// assignment — from something other than a client the package builds:
+// a parameter, a call result, another struct's field. A field filled
+// only by `&http.Client{...}` literals or http.DefaultClient, directly
+// or through a local every assignment of which is one, runs net/http's
+// own code and is not host code.
+func hostClientFields(pass *analysis.Pass) map[*types.Var]bool {
+	out := map[*types.Var]bool{}
+	for _, f := range pass.Files {
+		if pathflow.IsTestFile(pass, f) {
+			continue
+		}
+		for _, d := range f.Decls {
+			if gd, ok := d.(*ast.GenDecl); ok {
+				ast.Inspect(gd, func(x ast.Node) bool {
+					if fld, ok := x.(*ast.Field); ok {
+						for _, name := range fld.Names {
+							if v, ok := pass.TypesInfo.Defs[name].(*types.Var); ok && v.IsField() && v.Exported() && isHTTPClient(v.Type()) {
+								out[v] = true
+							}
+						}
+					}
+					return true
+				})
+				continue
+			}
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			ast.Inspect(fd.Body, func(x ast.Node) bool {
+				switch x := x.(type) {
+				case *ast.CompositeLit:
+					for _, el := range x.Elts {
+						kv, ok := el.(*ast.KeyValueExpr)
+						if !ok {
+							continue
+						}
+						id, ok := kv.Key.(*ast.Ident)
+						if !ok {
+							continue
+						}
+						if v, ok := pass.TypesInfo.ObjectOf(id).(*types.Var); ok && v.IsField() && isHTTPClient(v.Type()) && !builtClient(pass, fd.Body, kv.Value, 0) {
+							out[v] = true
+						}
+					}
+				case *ast.AssignStmt:
+					if len(x.Lhs) != len(x.Rhs) {
+						return true
+					}
+					for i, lhs := range x.Lhs {
+						sel, ok := ast.Unparen(lhs).(*ast.SelectorExpr)
+						if !ok {
+							continue
+						}
+						rs, ok := pass.TypesInfo.Selections[sel]
+						if !ok || rs.Kind() != types.FieldVal {
+							continue
+						}
+						if v, ok := rs.Obj().(*types.Var); ok && isHTTPClient(v.Type()) && !builtClient(pass, fd.Body, x.Rhs[i], 0) {
+							out[v] = true
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	return out
+}
+
+// builtClient: e is a client the package built — an http.Client
+// composite literal (addressed or not), http.DefaultClient, nil, or a
+// local of the same function every assignment of which is one of those.
+// A local with no assignment in the body is a parameter or a capture:
+// the caller's value, so not built.
+func builtClient(pass *analysis.Pass, body *ast.BlockStmt, e ast.Expr, depth int) bool {
+	e = ast.Unparen(e)
+	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		e = ast.Unparen(u.X)
+	}
+	switch e := e.(type) {
+	case *ast.CompositeLit:
+		return isHTTPClient(pass.TypesInfo.TypeOf(e))
+	case *ast.SelectorExpr:
+		obj, ok := pass.TypesInfo.ObjectOf(e.Sel).(*types.Var)
+		return ok && obj.Pkg() != nil && obj.Pkg().Path() == "net/http" && obj.Name() == "DefaultClient"
+	case *ast.Ident:
+		if e.Name == "nil" {
+			return true
+		}
+		v, ok := pass.TypesInfo.ObjectOf(e).(*types.Var)
+		if !ok || v.IsField() || depth > 2 || v.Pkg() == nil || v.Parent() == v.Pkg().Scope() {
+			return false
+		}
+		srcs := 0
+		allBuilt := true
+		ast.Inspect(body, func(x ast.Node) bool {
+			switch x := x.(type) {
+			case *ast.AssignStmt:
+				for i, lhs := range x.Lhs {
+					id, ok := lhs.(*ast.Ident)
+					if !ok || pass.TypesInfo.ObjectOf(id) != v {
+						continue
+					}
+					srcs++
+					if len(x.Lhs) != len(x.Rhs) {
+						allBuilt = false
+						continue
+					}
+					allBuilt = allBuilt && builtClient(pass, body, x.Rhs[i], depth+1)
+				}
+			case *ast.ValueSpec:
+				for i, name := range x.Names {
+					if pass.TypesInfo.ObjectOf(name) == v && i < len(x.Values) {
+						srcs++
+						allBuilt = allBuilt && builtClient(pass, body, x.Values[i], depth+1)
+					}
+				}
+			}
+			return true
+		})
+		return srcs > 0 && allBuilt
+	}
+	return false
 }

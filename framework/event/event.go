@@ -140,6 +140,7 @@ func (eb *EventBus) invokeTap(ctx context.Context, event Event) {
 	h := eb.tap
 	eb.mu.RUnlock()
 	if h != nil && h.fn != nil {
+		//gofastr:allow(recovercallback) the tap is this package's own fanout-bridge closure, installed only by the unexported setTap from AttachFanout; it recovers its marshal (marshalEvent) and only does non-blocking channel sends, and no host code is stored in it
 		h.fn(ctx, event)
 	}
 }
