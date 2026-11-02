@@ -499,6 +499,17 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 	if binary == "" {
 		return cliSpec{}, fmt.Errorf("--binary must not be empty")
 	}
+	// A Swagger 2.0 document reads as OpenAPI 3 without an error and
+	// loses its basePath, its body and formData parameters and every
+	// parameter's type; refuse it, and any other major version.
+	if v, set := doc["swagger"]; set {
+		return cliSpec{}, fmt.Errorf("the document is Swagger %q; --from-openapi reads OpenAPI 3 (convert it first)", fmt.Sprint(v))
+	}
+	if v, set := doc["openapi"]; set {
+		if s, _ := v.(string); !strings.HasPrefix(s, "3.") {
+			return cliSpec{}, fmt.Errorf("the document is openapi %q; --from-openapi reads OpenAPI 3", fmt.Sprint(v))
+		}
+	}
 	for _, v := range []string{binary, opts.FromOpenAPI} {
 		for _, r := range v {
 			if r < 0x20 || r == 0x7f {
@@ -822,6 +833,11 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		}
 		if in == "cookie" {
 			return op, fmt.Errorf("cookie parameter %q is not supported", name)
+		}
+		// Any other in (Swagger 2's body/formData, a typo) matched no case
+		// below and the parameter vanished from the CLI, required or not.
+		if in != "path" && in != "query" && in != "header" {
+			return op, fmt.Errorf("parameter %q has in %q; the CLI sends path, query or header parameters", name, in)
 		}
 		schema, _ := pm["schema"].(map[string]any)
 		if schema != nil {

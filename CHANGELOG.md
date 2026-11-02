@@ -537,6 +537,9 @@ few lines, and link the PR or the docs page for the rest.
     saw the first item only.
   - A path naming a parameter twice (`/users/{id}/files/{id}`) fills
     both; the second went out as a literal `%7Bid%7D`.
+  - A Swagger 2.0 document, and a parameter whose `in` is not path,
+    query, header or cookie, fail generation. Both generated a CLI that
+    dropped the parameter (`in: body`, `in: querry`), required or not.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

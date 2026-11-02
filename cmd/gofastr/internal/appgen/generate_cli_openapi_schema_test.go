@@ -50,3 +50,38 @@ func TestOpenAPIAllOfOfAScalar(t *testing.T) {
 		t.Errorf("an allOf of string and integer must be refused as non-scalar, got %v", err)
 	}
 }
+
+// A parameter is in path, query, header or cookie. Any other in (Swagger
+// 2's body and formData, a typo like querry, none at all) was dropped
+// without a word: the CLI generated, lacking the parameter, and a
+// required one never reached the server.
+func TestOpenAPIUnknownParamLocationFails(t *testing.T) {
+	for _, in := range []string{"querry", "body", "formData", ""} {
+		doc := mustDecodeDoc(t, `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":"a","parameters":[
+		  {"name":"limit","in":"`+in+`","required":true,"schema":{"type":"integer"}}]}}}}`)
+		_, err := BuildOpenAPICLISpec(doc, CliOptions{Binary: "x"}, "c")
+		if err == nil || !strings.Contains(err.Error(), `parameter "limit"`) || !strings.Contains(err.Error(), "path, query or header") {
+			t.Errorf("in %q: err = %v, want a refusal naming the parameter", in, err)
+		}
+	}
+}
+
+// A Swagger 2.0 document reads differently (host and basePath for the
+// server, body and formData parameters, a type on the parameter itself),
+// and generating from it as OpenAPI 3 dropped its base path, its body
+// and every parameter's type. Refuse it, and any openapi other than 3.x.
+func TestOpenAPINotVersion3Fails(t *testing.T) {
+	for _, head := range []string{`"swagger":"2.0"`, `"openapi":"2.0"`, `"openapi":"4.0.0"`} {
+		doc := mustDecodeDoc(t, `{`+head+`,"paths":{"/a":{"get":{"operationId":"a"}}}}`)
+		_, err := BuildOpenAPICLISpec(doc, CliOptions{Binary: "x"}, "c")
+		if err == nil || !strings.Contains(err.Error(), "OpenAPI 3") {
+			t.Errorf("%s: err = %v, want the OpenAPI 3 refusal", head, err)
+		}
+	}
+	for _, head := range []string{`"openapi":"3.0.3"`, `"openapi":"3.1.0"`} {
+		doc := mustDecodeDoc(t, `{`+head+`,"paths":{"/a":{"get":{"operationId":"a"}}}}`)
+		if _, err := BuildOpenAPICLISpec(doc, CliOptions{Binary: "x"}, "c"); err != nil {
+			t.Errorf("%s: %v", head, err)
+		}
+	}
+}
