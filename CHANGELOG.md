@@ -140,6 +140,26 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A `data-cui-rpc` form says when its fetch never answers.** Offline
+  or on a dropped connection the submit did nothing at all unless the
+  form set `data-cui-rpc-error-toast`. It now always toasts ("Request
+  failed", or that attribute's title) and reports `gofastr:formresult`
+  `{ok: false}`. See [Runtime contract](framework/docs/content/runtime-contract.md).
+- **A programmatic navigation no longer forces the focus ring.**
+  `__gofastr.navigate()` (an RPC form's `data-cui-rpc-navigate`, a
+  widget, app code) focused the swapped region with `focusVisible: true`,
+  so a form submitted with the mouse landed on a page ringed in a focus
+  outline. The browser's `:focus-visible` heuristic decides now, as the
+  runtime contract already said.
+- **`ui.DataTable` draws its phone header while it holds focus.** In
+  `ResponsiveCards` and `ResponsiveRows` mode the header row is clipped
+  on a phone but its sort links and select-all box stayed in the tab
+  order, so Tab moved through controls nobody could see. The row is
+  drawn while one of them has focus.
+- **A long `ui.StatCard` value wraps inside its card.** A figure such as
+  `$1,000,000,001,193.00` ran out of the card: past a phone's edge into
+  a horizontal page scroll, and over the neighbouring cell's label in a
+  `ui.StatStrip`.
 - **A list on a bare filter key is no longer sent as an IN.** The
   server reads `?status=a,b` as equality with the literal `a,b`, so a
   list there matched nothing it was meant to. The generated JS SDK sent

@@ -206,7 +206,7 @@
       // re-delivered navigation reads as the pointer click it stands
       // in for — el.click() would synthesize detail 0, the keyboard
       // shape, and paint the focus ring — with no side channel into
-      // core (frag/nav.js keys _navPointer off e.detail alone).
+      // core (frag/nav.js keys _navRing off e.detail alone).
       try {
         el.dispatchEvent(new MouseEvent('click', {
           bubbles: true, cancelable: true,

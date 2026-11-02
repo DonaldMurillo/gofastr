@@ -967,6 +967,10 @@ func statCardCSS(_ style.Theme) string {
   letter-spacing: var(--tracking-tight, -0.02em);
   line-height: var(--leading-tight, 1.2);
   color: var(--color-text);
+  /* A figure is one word with no break point: a large one wraps in
+     its card instead of running out of it (into a strip neighbour, or
+     past a phone's edge). */
+  overflow-wrap: anywhere;
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__trend {
   margin: 0;
@@ -1513,6 +1517,33 @@ func dataTableCSS(_ style.Theme) string {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+  /* Clipped, not removed: a header control that takes focus (a sort
+     link, the select-all box) draws the row, the way a skip link
+     appears, so a keyboard user sees where focus is and can sort. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead:focus-within {
+    position: static;
+    display: block;
+    inline-size: auto;
+    block-size: auto;
+    overflow: visible;
+    clip: auto;
+    /* Room for the focus ring inside the scroll wrapper's clip. */
+    padding-block-start: var(--spacing-sm, 4px);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead:focus-within tr {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--spacing-md, 8px);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead:focus-within th {
+    display: block;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead:focus-within th:empty {
+    display: none;
+  }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr {
     border: var(--stroke-thin, 1px) solid var(--color-border);
     border-radius: var(--radii-lg);
@@ -1592,6 +1623,33 @@ func dataTableCSS(_ style.Theme) string {
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
+  }
+  /* Clipped, not removed: a header control that takes focus (a sort
+     link, the select-all box) draws the row, the way a skip link
+     appears, so a keyboard user sees where focus is and can sort. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table thead:focus-within {
+    position: static;
+    display: block;
+    inline-size: auto;
+    block-size: auto;
+    overflow: visible;
+    clip: auto;
+    /* Room for the focus ring inside the scroll wrapper's clip. */
+    padding-block-start: var(--spacing-sm, 4px);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table thead:focus-within tr {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--spacing-md, 8px);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table thead:focus-within th {
+    display: block;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table thead:focus-within th:empty {
+    display: none;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr {
     display: grid;

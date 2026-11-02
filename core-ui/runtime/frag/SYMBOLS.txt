@@ -230,7 +230,7 @@ nav	2	_entrySeq
 nav	2	_focusSwapTarget
 nav	2	_followed
 nav	2	_navLive
-nav	2	_navPointer
+nav	2	_navRing
 nav	2	_onlyStatefulDiff
 nav	2	_pendingNav
 nav	2	_persistScroll
