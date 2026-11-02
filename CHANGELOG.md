@@ -198,6 +198,13 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
+  SQLite table by table, so a comment written while the export ran could
+  land in the archive without its post, and the restore failed on the
+  foreign key. In WAL mode every table is read in one read-only deferred
+  transaction now, as Postgres already was; writers are not blocked. A
+  rollback-journal database still reads table by table: stop writes during
+  its export. See [data export](framework/docs/content/data-export.md#operational-notes).
 - **`App.EraseUserData` reaches `search.Memory`.** The in-memory search
   index kept every document indexed for an erased user. `NewMemory`
   registers a store eraser now, the new `Memory.Close` removes it, and

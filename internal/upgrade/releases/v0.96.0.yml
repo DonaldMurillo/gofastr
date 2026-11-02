@@ -1096,3 +1096,7 @@ notes:
     find:
       uses:
         - gofastr/battery/search.NewMemory
+  - change: "ExportData on a SQLite database in WAL mode reads every table in one read-only transaction, so a live export is one snapshot"
+    breaking: false
+    guidance: "Nothing to change. The export holds one pool connection for its whole run and the WAL is not checkpointed past its snapshot until it ends; an app with SetMaxOpenConns(1) queues requests behind a long export. A rollback-journal database still reads table by table, so stop writes during its export."
+    nodetect: "the change is in how ExportData reads; nothing in an app's source spells it"
