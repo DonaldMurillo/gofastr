@@ -268,13 +268,17 @@ few lines, and link the PR or the docs page for the rest.
   It now answers `301` to `./dir/` (query kept), like `net/http`'s
   `FileServer`; the relative `Location` keeps the prefix and cannot
   name another host.
-- **`core/static`'s SPA fallback answers only client routes.** With
-  `SPA: true`, a missing path whose last segment has a file extension
-  (`/app.3f2a.js`, `/x.css`, `/logo.png`) now gets `404` instead of the
+- **BREAKING: `core/static`'s SPA fallback answers only client routes.**
+  With `SPA: true`, a missing path whose last segment ends in a
+  well-known asset extension (`.js` `.mjs` `.css` `.map`, `.png` `.jpg`
+  `.jpeg` `.gif` `.svg` `.webp` `.avif` `.ico`, `.woff` `.woff2` `.ttf`,
+  `.json` `.wasm` `.txt` `.xml`, any case) now gets `404` instead of the
   index: the browser ran the HTML as a script or a stylesheet, and a
-  CDN could store it under the asset's URL. Extensionless paths
-  (`/dashboard/settings`) still get the index. See
-  [core packages](framework/docs/content/core-packages.md#static).
+  CDN could store it under the asset's URL. Every other miss is a client
+  route and still gets the index, a dot in its last segment included
+  (`/u/jane.doe`, `/blog/v1.2`). A client route ending in one of those
+  extensions (`/feeds/latest.json`) now 404s and needs a server route.
+  See [core packages](framework/docs/content/core-packages.md#static).
 - **BREAKING: `/readyz` drains before shutdown.** `App.Shutdown` now
   turns `/readyz` to `503` (`{"status":"draining"}`) at once and keeps
   serving for a grace period, so a load balancer stops routing here

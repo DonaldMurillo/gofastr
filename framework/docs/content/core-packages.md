@@ -469,14 +469,17 @@ an `IndexFile`, as `net/http`'s `FileServer` does, so the index's
 relative links resolve under it. The `Location` is relative
 (`./docs/`): it lands under the handler's `Prefix` or an outer
 `StripPrefix`, and never on another host, whatever the path spells
-(`//evil.com`, `/\evil.com`). With `SPA: true`, a miss whose last path
-segment has no file extension (a client route: `/dashboard/settings`,
-`/users/42`) gets `IndexFile`, served `no-cache` whatever `MaxAge` says,
-so the shell is never stored under a URL that names no file. A miss
-with an extension (`/app.3f2a.js`, `/x.css`, `/logo.png`) gets `404`,
-not the shell: a browser would run that HTML as a script or a
-stylesheet. A client route with a dot in its last segment
-(`/files/report.pdf` as a route) needs a server route of its own.
+(`//evil.com`, `/\evil.com`). With `SPA: true`, a miss is a client
+route (`/dashboard/settings`, `/users/42`, `/u/jane.doe`, `/blog/v1.2`)
+and gets `IndexFile`, served `no-cache` whatever `MaxAge` says, so the
+shell is never stored under a URL that names no file. A miss whose last
+segment ends in a well-known asset extension gets `404`, not the shell:
+a browser would run that HTML as a script or a stylesheet. The asset
+extensions, matched in any case, are `.js` `.mjs` `.css` `.map`, `.png`
+`.jpg` `.jpeg` `.gif` `.svg` `.webp` `.avif` `.ico`, `.woff` `.woff2`
+`.ttf`, and `.json` `.wasm` `.txt` `.xml`. A client route that ends in
+one of those (`/feeds/latest.json` as a screen) needs a server route of
+its own; any other dot is part of the route.
 `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
 `404.html`; `gofastr docs serve` uses it). For a handler that serves
