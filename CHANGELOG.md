@@ -4370,6 +4370,13 @@ few lines, and link the PR or the docs page for the rest.
   too (table `a_b` on `c` and table `a` on `b_c` are both `idx_a_b_c`).
   Boot, `DiffSchema` and `migrate generate` now name both tables; give
   one index its own `Name`.
+- **A `String` whose `Max` changed migrates on Postgres.** Neither
+  `DiffSchema` nor `migrate generate` compared the `VARCHAR` width, so
+  a `Max` raised from 50 to 200 left `VARCHAR(50)` in place, validation
+  passed a 150-character value and the insert failed. Both now emit
+  `ALTER COLUMN … TYPE VARCHAR(n)` (a destructive change, like every
+  retype); the live Postgres column read carries the width. SQLite
+  ignores widths and is unchanged.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**

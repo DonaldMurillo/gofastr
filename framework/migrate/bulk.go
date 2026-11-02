@@ -42,13 +42,13 @@ func readLiveColumnsBulkPostgres(ctx context.Context, db *sql.DB, tables []strin
 	// title), and reading it as one skipped the ADD COLUMN.
 	refs, args := pgTableRefs(tables)
 	query := fmt.Sprintf(`
-		SELECT t.i, c.column_name, c.data_type
+		SELECT t.i, c.column_name, %s
 		FROM %s
 		JOIN information_schema.columns c
 			ON c.table_schema = coalesce(t.s, current_schema()) AND c.table_name = t.n
 		WHERE c.column_name = lower(c.column_name)
 		ORDER BY t.i, c.ordinal_position
-	`, refs)
+	`, pgColumnType("c."), refs)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -147,4 +147,14 @@ func tableExistsBulkSQLite(ctx context.Context, db *sql.DB, tables []string) (ma
 		existing[t] = count > 0
 	}
 	return existing, nil
+}
+
+// pgColumnType is the information_schema expression a live Postgres
+// column's type is read with: data_type, plus the width a character type
+// declares ("character varying(255)"). data_type alone names no width, so
+// a String whose Max changed read as in sync. p prefixes the columns
+// ("c." in a join, "" alone).
+func pgColumnType(p string) string {
+	return fmt.Sprintf("CASE WHEN %[1]scharacter_maximum_length IS NULL THEN %[1]sdata_type "+
+		"ELSE %[1]sdata_type || '(' || %[1]scharacter_maximum_length || ')' END", p)
 }

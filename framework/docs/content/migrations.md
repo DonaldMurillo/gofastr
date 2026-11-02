@@ -356,7 +356,11 @@ numeric text converts and anything else fails the migration; a text
 default is dropped before the retype and the declared default set
 after it, since Postgres cannot cast the old one; other
 changes may still need a data-specific `USING` clause, so review and
-hand-tighten. On SQLite,
+hand-tighten. A `String` whose `Max` changed is a type change on
+Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
+VARCHAR(200)` widens it, and a narrower width fails on a row that no
+longer fits rather than cutting it. SQLite ignores the width, so the
+same change there rebuilds nothing. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
