@@ -146,6 +146,12 @@ few lines, and link the PR or the docs page for the rest.
   -race` reports. Checks now hand their rows over a channel, and a late
   one is dropped. A check registered with an empty name that had passed
   is no longer reported as `"timeout"` when another check hangs.
+- **`cache.GetOrSet` returns a loaded value whose entry was already
+  evicted.** Every waiter read its value back from the cache after the
+  fill, so an entry an LRU bound or Redis `maxmemory` evicted (or a short
+  TTL expired) in between made a successful load return `ErrCacheMiss`.
+  The waiters now get the loader's value; a negative `ttl` still
+  surfaces the miss.
 - **`RedisCache.Set` with a negative TTL deletes the key.** It passed
   the negative duration to `RedisClient.Set`, and a go-redis adapter
   stores that with no expiry (`-1` is KEEPTTL), so a lifetime already in

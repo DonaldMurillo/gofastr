@@ -160,7 +160,11 @@ with `ctx.Err()`; the loader's context is cancelled when the last
 waiter leaves, and a fill nobody waits for any more stores nothing, so
 it cannot overwrite a value a later caller filled. A cache with value
 receivers has no identity to share a fill by, so each caller fills on
-its own, and still leaves at its deadline.
+its own, and still leaves at its deadline. A value that was loaded and
+stored but is gone by the time a waiter reads it back (evicted by
+`WithMaxEntries` or Redis `maxmemory`, or expired under a short TTL)
+still reaches `dest`, through the same JSON round trip; only a negative
+`ttl` surfaces the miss.
 
 ## HTTP caching middleware
 
