@@ -3723,7 +3723,10 @@ func (a *App) Start(addr string) error {
 	// Prometheus /metrics endpoint when metrics are enabled (WithMetrics).
 	// Unauthenticated by design, scrape from inside the network boundary.
 	if a.metrics != nil {
-		a.router.Get("/metrics", middleware.MetricsHandler(a.metrics))
+		// Through Metrics(), not the bare store: it attaches the
+		// framework-owned collectors (db_pool, outbox), which otherwise
+		// appeared only once a battery happened to take the handle.
+		a.router.Get("/metrics", middleware.MetricsHandler(a.Metrics()))
 	}
 
 	if a.Config.DebugEndpoints {
@@ -3784,7 +3787,9 @@ func (a *App) Start(addr string) error {
 	// OAuth Protected Resource metadata (RFC 9728). Opt-in; advertises how
 	// OAuth-token-protected resources accept tokens.
 	if a.oauthResource != nil {
-		a.router.Get("/.well-known/oauth-protected-resource", http.HandlerFunc(a.handleOAuthProtectedResource))
+		for _, p := range a.oauthResource.metadataPaths() {
+			a.router.Get(p, http.HandlerFunc(a.handleOAuthProtectedResource))
+		}
 	}
 	// Agent-readiness well-known endpoints (isitagentready.com). The API
 	// catalog (RFC 9727 linkset) + MCP server card are auto-served when

@@ -89,7 +89,8 @@ if m != nil {
 ```
 
 The framework-owned surfaces (`db_pool`, `outbox`) register themselves this
-way inside `app.Metrics()`. Library-owned surfaces register when you wire
+way inside `app.Metrics()`, which Start calls when it mounts `/metrics`, so
+they appear whether or not any battery takes the handle. Library-owned surfaces register when you wire
 them, because the framework does not construct them for you:
 
 ```go

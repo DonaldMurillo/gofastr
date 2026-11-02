@@ -229,6 +229,44 @@ few lines, and link the PR or the docs page for the rest.
   now a `*hook.PanicError`, logged with its stack; create, update, delete
   and batch items answer it with the generic 500 body, and
   `crud.IsHookRefusal` reports false for it.
+- **OAuth protected-resource metadata is served at the path-inserted URL.**
+  RFC 9728 §3.1 puts the metadata of `https://api.example.com/mcp` at
+  `/.well-known/oauth-protected-resource/mcp`, and §3.3 has a client refuse a
+  document whose `resource` does not match the identifier it built the URL
+  from. `WithOAuthProtectedResource` served only the bare prefix, so a
+  compliant client of a path-scoped resource found nothing. Both URLs answer
+  now.
+- **`/readyz` no longer races a check that returns at the deadline,
+  and keeps an unnamed check's result.** The timeout fill read the
+  result slice while a check returning in that moment wrote its row, a
+  data race; and a row counted as reported only when it carried a name, so
+  a passing check registered with `RegisterReadiness("", …)` was reported
+  as a timeout and the app as not ready. Each check now hands its row to
+  the one goroutine that builds the response.
+- **Rotating a secret that ends in a newline keeps sessions.**
+  `GOFASTR_SECRET` is used as set, so a value read from a file (a
+  Kubernetes secret made with `--from-file`) signs with its trailing
+  newline. `GOFASTR_SECRET_PREVIOUS` trimmed its entries, so moving that
+  same value there on rotation derived a different verify key and every
+  session and embed grant the old secret signed stopped verifying. An
+  entry ending in a line break is now also accepted as written.
+- **`ImportData` refuses a source the manifest lists twice.** The file
+  was restored once per listing: a keyed table failed on its key, but a
+  keyless one took every row twice and committed.
+- **`ExportData` reads one snapshot on Postgres.** Each table was read on
+  its own, so an export of an app taking writes held comments whose post
+  committed after the posts were read: the archive named parents it did
+  not hold and its restore tripped the foreign key. Keyset paging could
+  also chase rows inserted ahead of its cursor for as long as the writes
+  kept coming. Every table is read in one read-only `REPEATABLE READ`
+  transaction now. SQLite still reads table by table.
+- **`/metrics` carries the `db_pool` and `outbox` series with no battery.**
+  Start mounted the bare metrics store, and the framework-owned
+  collectors attach only inside `app.Metrics()`, so an app with `WithDB`
+  + `WithMetrics` (+ `WithOutbox`) whose batteries never took the handle
+  served neither the pool gauges nor `outbox_pending`/dead-letter counts,
+  and an alert on them had no series to fire on. Start mounts the
+  endpoint through `app.Metrics()` now.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does

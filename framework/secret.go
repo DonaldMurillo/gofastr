@@ -131,12 +131,22 @@ func sessionKeysForMount(secret []byte, previous [][]byte, fanoutAttached bool) 
 // splitSecretList splits a comma-separated secret list (e.g.
 // GOFASTR_SECRET_PREVIOUS) into trimmed, non-empty entries. Each entry is
 // validated against the length floor by the caller, not here.
+//
+// An entry that ends in a line break is also kept with it. GOFASTR_SECRET
+// is used untrimmed, so a secret read from a file with a trailing newline
+// (a Kubernetes secret made with --from-file) signed with the newline in
+// it, and moving that value here on rotation must still verify what it
+// signed. The entries are verify-only, so the extra spelling grants
+// nothing the operator did not configure.
 func splitSecretList(s string) []string {
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if t := strings.TrimSpace(p); t != "" {
 			out = append(out, t)
+			if k := strings.Trim(p, " \t"); k != t {
+				out = append(out, k)
+			}
 		}
 	}
 	return out
