@@ -224,6 +224,14 @@ func (r *CachedResolver) sweep() {
 // Invalidate removes one user's cached roles in every tenant. An in-flight
 // result is not cached; calls waiting on it observe the invalidation and
 // resolve again.
+//
+// Invalidate is process-local: it clears this replica's cache only. Behind
+// a load balancer every other replica keeps serving the user's old roles
+// until its own entry expires, up to the TTL (30 s by default, see
+// [WithTTL]). No fanout carries it. When a role change must take effect
+// everywhere at once, shorten the TTL to the window you accept, or keep
+// role inputs in a [GrantStore], whose grants and revokes reach every
+// replica on its fanout.
 func (r *CachedResolver) Invalidate(userID string) {
 	r.mu.Lock()
 	for key := range r.entries {
@@ -235,7 +243,8 @@ func (r *CachedResolver) Invalidate(userID string) {
 }
 
 // InvalidateAll removes every cached role resolution. In-flight results are
-// not cached, and calls waiting on them resolve again.
+// not cached, and calls waiting on them resolve again. Like [Invalidate], it
+// clears this replica's cache only.
 func (r *CachedResolver) InvalidateAll() {
 	r.mu.Lock()
 	r.entries = make(map[resolverKey]*cachedRoleEntry)

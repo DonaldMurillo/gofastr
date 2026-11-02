@@ -191,6 +191,10 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Docs: `CachedResolver.Invalidate` is process-local.** It clears the
+  calling replica's cache only; other replicas serve a user's old roles
+  for up to the TTL (30 seconds by default). Said beside `Invalidate` and
+  in [access control](framework/docs/content/access-control.md).
 - **A restore keeps the modules an operator turned off turned off.**
   `ExportData` left out `gofastr_modules` and the process-module
   desired-state table, so a restored app booted every disabled module
