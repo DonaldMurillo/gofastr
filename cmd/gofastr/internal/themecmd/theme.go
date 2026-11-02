@@ -2,14 +2,14 @@ package themecmd
 
 import (
 	"fmt"
-	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 // RunTheme dispatches `gofastr theme <subcommand>`.
@@ -67,14 +67,26 @@ func runThemeInit(args []string) {
 		}
 	}
 
-	if _, err := os.Stat(dest); err == nil && !force {
-		fmt.Printf("%s %s already exists. Pass --force to overwrite.\n", cli.Red("✗"), dest)
-		cli.OsExit(1)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+	// dest is read and written through an os.Root (projectfs): a local
+	// path is confined to the working directory, so a theme/ or theme.go
+	// linked out of the checkout is refused rather than written through.
+	// Lstat, not Stat: a dangling theme.go link is a file already there.
+	rootDir, rel, err := projectfs.UserPath(dest)
+	if err != nil {
 		fmt.Printf("%s mkdir %s: %v\n", cli.Red("✗"), filepath.Dir(dest), err)
 		cli.OsExit(1)
+		return
+	}
+	if _, err := projectfs.LstatFile(rootDir, rel); err == nil && !force {
+		fmt.Printf("%s %s already exists. Pass --force to overwrite.\n", cli.Red("✗"), dest)
+		cli.OsExit(1)
+		return
+	}
+
+	if err := projectfs.MkdirAll(rootDir, path.Dir(rel), 0o755); err != nil {
+		fmt.Printf("%s mkdir %s: %v\n", cli.Red("✗"), filepath.Dir(dest), err)
+		cli.OsExit(1)
+		return
 	}
 
 	// The file joins whatever package already lives in its directory
@@ -87,7 +99,7 @@ func runThemeInit(args []string) {
 	}
 	// --force replaces an existing theme through a temporary file, so a
 	// crash mid-write leaves the old one, not an empty one.
-	if err := atomicfile.Rewrite(dest, []byte(src), 0o644); err != nil {
+	if err := projectfs.WriteFile(rootDir, rel, []byte(src), 0o644); err != nil {
 		fmt.Printf("%s write %s: %v\n", cli.Red("✗"), dest, err)
 		cli.OsExit(1)
 	}

@@ -530,6 +530,18 @@ few lines, and link the PR or the docs page for the rest.
   project root instead of `real/target.md`. A new file was forced to
   0644 whatever the umask said; it is now created the way `os.WriteFile`
   creates one.
+- **`gofastr init .`, `new handler` and `theme init|edit` write only
+  inside the project.** The plain `init .` path still wrote through
+  links: a cloned repo with `.gitignore -> ~/.bashrc` had `gen/`, `.env`
+  and the rest appended to `~/.bashrc`, a `static/` or `migrations/` link
+  took the `.gitkeep` elsewhere, a dangling `go.mod` link had `go mod
+  init` create its target, and with `--force` `main.go`, `screens.go`,
+  the onboarding files, `.env` (with a fresh `JWT_SECRET`) and
+  `gofastr.settings.yml` were written over the link targets. `new
+  handler --overwrite` did the same to a linked `<name>_handler.go`, and
+  `theme init` / the theme editor's Write to a linked `theme/` or
+  `theme.go`. All of them now read and write through an `os.Root` on the
+  project; a link inside it is still followed.
 - **A slow module answer no longer kills the module.** A `moduleproto`
   peer remembered the last 1,024 calls it gave up on, answered or not,
   so 1,024 timed-out calls answered in time pushed out a slow call still
