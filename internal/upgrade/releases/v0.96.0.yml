@@ -751,3 +751,7 @@ notes:
     breaking: false
     guidance: "Each such screen was unreachable from a browser, stopped the app at boot (on the CRUD mount), or was answered by the CRUD API (under it). Fix the route in the app spec before regenerating."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "A generated entity_list of an entity with no entity_detail screen renders with NoLinks(): its rows draw as text with no row menu, where each linked to <list>/<id>, a page no screen served"
+    breaking: false
+    guidance: "Regenerate to pick it up. To keep record links, add an entity_detail screen at <list route>/{id}; a create: true list keeps its links."
+    nodetect: "the change is in regenerated screen files; an app's Go source already generated is unaffected"

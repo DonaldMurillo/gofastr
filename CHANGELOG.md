@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Generated lists no longer link every row to a 404.** An app spec
+  `entity_list` of an entity with no `entity_detail` screen linked each
+  row, and its row menu's View, to `<list>/<id>`, a page no screen
+  serves (every Categories and Reviews row in the ecommerce example).
+  Such a list without `create: true` now renders with `.NoLinks()`.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does

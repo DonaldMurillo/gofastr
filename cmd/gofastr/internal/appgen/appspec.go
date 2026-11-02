@@ -2898,6 +2898,14 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	if !block.Create {
 		expr += ".NoCreate()"
 	}
+	// No record screen means no page at <list route>/<id>: the rows'
+	// record links and their row menu's View would each be a 404, so the
+	// rows draw as text. A writable list keeps them: NoLinks also takes
+	// New away, and its create screen is synthesized beside the list.
+	noLinks := !block.Create && !appspec.AppSpecHasRecordScreen(bp, entity)
+	if noLinks {
+		expr += ".NoLinks()"
+	}
 	if block.Bulk {
 		expr += ".Bulk()"
 	}
@@ -2917,7 +2925,7 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	// Off the entity's home screen the rows still link to the home list,
 	// where the detail and create screens sit; the default base is the
 	// current path, which has neither.
-	if home := appspec.AppSpecEntityListScreen(bp, entity); home != nil {
+	if home := appspec.AppSpecEntityListScreen(bp, entity); home != nil && !noLinks {
 		if base := strings.TrimRight(home.Route, "/"); base != "" && base != strings.TrimRight(screen.Route, "/") {
 			expr += fmt.Sprintf(".Base(%q)", base)
 		}
