@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -132,7 +133,13 @@ func Handler(cfg Config) http.HandlerFunc {
 		if maxSize <= 0 {
 			maxSize = DefaultMaxSize
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxSize+multipartFramingSlack)
+		// The slack saturates: at MaxInt64 the sum wrapped negative and
+		// MaxBytesReader refused the first byte, so every upload was 413.
+		bodyCap := maxSize
+		if maxSize <= math.MaxInt64-multipartFramingSlack {
+			bodyCap = maxSize + multipartFramingSlack
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, bodyCap)
 
 		// Parse multipart form. Use a small fixed in-memory threshold so
 		// large parts spill predictably; do NOT pass MaxSize here.
