@@ -257,3 +257,94 @@ func TestOpenAPI_SnakeCaseAppDocumentsColumnKeys(t *testing.T) {
 	})
 }
 
+// A relation field holds the key of the record it names. The document
+// typed every one as a uuid string, so a foreign key to an integer key
+// (stored and answered as a JSON number) failed every read, and a client
+// built from the document sent a string the create refuses; a key to a
+// text slug carried a uuid format no value of it meets.
+func TestOpenAPI_RelationFieldsTypedByTargetKey(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithPublicOpenAPI())
+		app.Entity("counters", entity.EntityConfig{
+			Table: "counters",
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.Int, AutoGenerate: schema.AutoIncrement},
+				{Name: "label", Type: schema.String, Required: true},
+			},
+		})
+		app.Entity("slugs", entity.EntityConfig{
+			Table: "slugs",
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.String, Required: true},
+				{Name: "label", Type: schema.String},
+			},
+		})
+		app.Entity("people", entity.EntityConfig{
+			Table:  "people",
+			Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}},
+		})
+		app.Entity("gadgets", entity.EntityConfig{
+			Table: "gadgets",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "counter_id", Type: schema.Relation, To: "counters"},
+				{Name: "slug_id", Type: schema.Relation, To: "slugs"},
+				{Name: "owner_id", Type: schema.Relation, To: "people"},
+			},
+		})
+		doc := servedSpecApp(t, db, app)
+		props := doc["components"].(map[string]any)["schemas"].(map[string]any)["gadgets"].(map[string]any)["properties"].(map[string]any)
+		if p := props["ownerId"].(map[string]any); p["format"] != "uuid" {
+			t.Errorf("a relation to a uuid key lost its format: %v", p)
+		}
+		create := specOp(t, doc, "/gadgets", "post")["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		var counter, person map[string]any
+		_ = ta.Post("/counters", map[string]any{"label": "c"}).JSON(&counter)
+		_ = ta.Post("/people", map[string]any{"name": "p"}).JSON(&person)
+		ta.Post("/slugs", map[string]any{"id": "intro", "label": "s"}).AssertStatus(t, http.StatusCreated)
+		body := map[string]any{
+			"title":     "g",
+			"counterId": counter["data"].(map[string]any)["id"],
+			"slugId":    "intro",
+			"ownerId":   person["data"].(map[string]any)["id"],
+		}
+		var asJSON any
+		raw, _ := json.Marshal(body)
+		_ = json.Unmarshal(raw, &asJSON)
+		if msg := specCheck(doc, create, asJSON, ""); msg != "" {
+			t.Errorf("the create schema refuses a body the route accepts: %s", msg)
+		}
+		created := ta.Post("/gadgets", body)
+		created.AssertStatus(t, http.StatusCreated)
+		conformsResponse(t, doc, "/gadgets", "post", created)
+		var got map[string]any
+		_ = created.JSON(&got)
+		id, _ := got["data"].(map[string]any)["id"].(string)
+		conformsResponse(t, doc, "/gadgets/{id}", "get", ta.Get("/gadgets/"+id))
+
+		// The filter parser reads the integer foreign key as an Int column:
+		// every operator the document advertises on it is one it takes.
+		advertised := 0
+		for _, p := range specOp(t, doc, "/gadgets", "get")["parameters"].([]any) {
+			name := p.(map[string]any)["name"].(string)
+			if !strings.HasPrefix(name, "counter_id") {
+				continue
+			}
+			advertised++
+			if name == "counter_id" {
+				if typ := p.(map[string]any)["schema"].(map[string]any)["type"]; typ != "integer" {
+					t.Errorf("?counter_id= is documented as %v; the parser refuses anything but an integer", typ)
+				}
+			}
+			resp := ta.Get("/gadgets?" + name + "=1")
+			if resp.Status() != http.StatusOK {
+				t.Errorf("advertised filter ?%s=1 answered %d: %s", name, resp.Status(), resp.Body())
+			}
+		}
+		if advertised == 0 {
+			t.Fatal("the list documents no counter_id filter")
+		}
+	})
+}

@@ -278,6 +278,11 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		// The route stores a null for an optional field, so reads return
 		// it. A generated value and a key column are never null.
 		wireProps := entitySchema["properties"].(map[string]any)
+		for i, f := range visibleFields {
+			if f.Type == schema.Relation {
+				typeRelationKey(wireProps[wireFields[i].Name].(map[string]any), registry, ent, f)
+			}
+		}
 		keyCols := ent.KeyColumns()
 		for i, f := range visibleFields {
 			if !f.Required && f.AutoGenerate == schema.AutoNone && !slices.Contains(keyCols, f.Name) {
@@ -439,6 +444,12 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			name := f.Name
 			if f.WireName != "" {
 				name = f.WireName
+			}
+			// The filter parser reads a foreign key to an integer key as
+			// the integer it holds (crud's queryFields, entity.ValueFields),
+			// so its operators and schema are an Int column's.
+			if f.Type == schema.Relation && f.RawType == "" && entity.RelationHoldsInt(registry, ent, f.Name) {
+				f.Type = schema.Int
 			}
 			filterSchema := fieldToFilterSchema(f)
 			// The advertised set is derived from filter.OpSuitsType, the same
@@ -1000,6 +1011,54 @@ func columnKey(col string, jc crud.JSONCase) string {
 		return col
 	}
 	return casing.ToCamel(col)
+}
+
+// typeRelationKey types a relation field's property by the key of the
+// record it names, which core/openapi cannot see: FieldToSchema writes
+// every relation as a uuid string. A belongs_to foreign key to an
+// integer key holds that integer, and crud stores and answers it as a
+// JSON number (entity.ValueFields); a key of another type (a text slug, a
+// date) is a string without the uuid format. A many relation keeps its
+// string items and drops the uuid format the same way. A target the
+// registry does not resolve, or a composite-keyed one, keeps the
+// declared shape.
+func typeRelationKey(prop map[string]any, reg entity.Registry, ent *entity.Entity, f schema.Field) {
+	if prop == nil || f.RawType != "" {
+		return
+	}
+	if !f.Many && entity.RelationHoldsInt(reg, ent, f.Name) {
+		prop["type"] = "integer"
+		delete(prop, "format")
+		return
+	}
+	target, err := entity.ResolveTarget(reg, ent, f.To)
+	if err != nil || target == nil {
+		return
+	}
+	pk, err := target.KeyColumn()
+	if err != nil {
+		return
+	}
+	i := slices.IndexFunc(target.GetFields(), func(tf schema.Field) bool { return tf.Name == pk })
+	if i < 0 {
+		return
+	}
+	key := target.GetFields()[i]
+	if key.Type == schema.UUID || key.Type == schema.Relation {
+		return // a uuid, or a chain RelationHoldsInt already ruled out of integers
+	}
+	at := prop
+	if f.Many {
+		at, _ = prop["items"].(map[string]any)
+		if at == nil {
+			return
+		}
+	}
+	at["type"] = "string"
+	delete(at, "format")
+	if format, ok := openapi.FieldToSchema(key)["format"]; ok && !f.Many && key.Type != schema.Text {
+		at["format"] = format
+	}
 }
 
 // recordKey returns the path naming one record of ent under path, and

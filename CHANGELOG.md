@@ -152,6 +152,11 @@ few lines, and link the PR or the docs page for the rest.
   `openapi.EntityOpenAPIFor(registry, openapi.Options{…, JSONCase})`
   takes the case; `EntityOpenAPI` and `EntityOpenAPIWithBulk` keep
   camelCase.
+- **`/openapi.json` types a relation field by the key it names.** Every
+  relation was a `uuid` string. A foreign key to an `int` key is an
+  `integer` property and filter now, as crud stores, answers and parses
+  it; a key to a text slug or other non-uuid key drops the `uuid`
+  format no value of it met.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
