@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -1407,6 +1408,23 @@ func runLogout(args []string) int {
 `
 }
 
+// cliInvisibleRunes renders, as a Go case list, every rune
+// core/textsafe.IsInvisible names: the bidi overrides and zero-width
+// runes the generated CLI's scrubTerminal drops beside C0, DEL and C1.
+// The generated CLI may live in a module with no GoFastr dependency
+// (--from-openapi), so it cannot call textsafe; the set is read from
+// textsafe at generation time instead of copied by hand, so the two
+// cannot drift.
+func cliInvisibleRunes() string {
+	var cases []string
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		if textsafe.IsInvisible(r) {
+			cases = append(cases, fmt.Sprintf("%#x", r))
+		}
+	}
+	return strings.Join(cases, ", ")
+}
+
 func renderCLIOutput(spec cliSpec) string {
 	return `package main
 
@@ -1592,7 +1610,11 @@ func printJSON(v any) int {
 // keys in column order; headers the matching titles.
 func printListTable(headers, keys []string, rows []map[string]any) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, strings.Join(headers, "\t"))
+	titles := make([]string, len(headers))
+	for i, h := range headers {
+		titles[i] = scrubTerminal(h)
+	}
+	fmt.Fprintln(w, strings.Join(titles, "\t"))
 	for _, row := range rows {
 		cells := make([]string, len(keys))
 		for i, k := range keys {
@@ -1622,14 +1644,19 @@ func apiFail(err error) int {
 }
 
 // scrubTerminal drops what a terminal acts on instead of printing: C0
-// controls but tab, DEL, and C1 controls (0x9b is a one-byte CSI), with
-// an invalid byte read as U+FFFD. Record text and server error bodies
-// pass through it before a human-format line: a stored title
-// "\x1b[2J..." cleared the screen of whoever ran list -o table. JSON
-// output needs no scrub: its encoder escapes control bytes.
+// controls but tab, DEL, C1 controls (0x9b is a one-byte CSI), and the
+// bidi overrides and zero-width runes that reorder or hide text, with an
+// invalid byte read as U+FFFD. Record text, table headers and server
+// error bodies pass through it before a human-format line: a stored
+// title "\x1b[2J..." cleared the screen of whoever ran list -o table.
+// JSON output needs no scrub: its encoder escapes control bytes.
 func scrubTerminal(s string) string {
 	return strings.Map(func(r rune) rune {
 		if (r < 0x20 && r != '\t') || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		switch r {
+		case ` + cliInvisibleRunes() + `:
 			return -1
 		}
 		return r

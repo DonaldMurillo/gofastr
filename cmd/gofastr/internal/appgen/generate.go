@@ -1354,13 +1354,14 @@ func removeRetiredAppSpecFiles(writeRoot string) error {
 // is how the protocol says "the input is wrong". Dropping it turned a refusal
 // into a silent pass.
 //
-// Extension output reaches a terminal, so messages go through the same scrub the
+// Extension output reaches a terminal, so messages get the same scrub the
 // child's stderr does; an extension does not get to drive the operator's
-// terminal through a JSON field either.
+// terminal through a JSON field either. The cli helpers scrub every
+// argument (cli.ScrubTerminalOutput), so the message goes to them as is.
 func reportCodegenDiagnostics(diags []codegen.Diagnostic) bool {
 	failed := false
 	for _, d := range diags {
-		message := cli.ScrubTerminalOutput(d.Message)
+		message := d.Message
 		switch strings.ToLower(strings.TrimSpace(d.Severity)) {
 		case "error":
 			cli.Fail("%s", message)

@@ -7,6 +7,13 @@ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 One binary. `gofastr <command> --help` prints every flag; this page maps
 each command to the doc that covers it.
 
+Status lines (`✓`, `✗`, `→`, `⚠`) print paths, errors and values read
+from your project with terminal control characters removed: C0 controls
+but tab and newline, DEL, C1, escape sequences, bidi overrides
+(U+202A–U+202E, U+2066–U+2069) and zero-width characters. A directory
+name or a file in a cloned repo cannot write your clipboard (OSC 52),
+clear the screen or reorder the line you are reading.
+
 ## Scaffold
 
 - `gofastr init <name>`: a new project with framework UI, `DESIGN.md`, a
@@ -36,7 +43,13 @@ each command to the doc that covers it.
   overwrites them, each through a temporary file renamed over the old
   one, so a crash or a full disk leaves the old file whole and a
   replaced file keeps its mode. An existing `.gitignore` is kept and gains the entries
-  it lacks. `init <name> --reinit` or `init . --reinit` refreshes the
+  it lacks. Every file `init` writes, and every file it reads to merge
+  into (`.gitignore`, `go.mod`), stays in the project: a symlink there,
+  whether the file itself, a dangling one, or a directory on the way
+  (`static/`, `migrations/`, `entities/`), is followed only while it
+  points inside the project, and one that leads out is refused, so
+  `init .` in a cloned repo cannot append to a `.gitignore` linked to
+  your shell profile. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes, and nothing outside the project:
   a symlinked `AGENTS.md`, `CLAUDE.md` or `DESIGN.md` that leads out of it
@@ -56,7 +69,8 @@ each command to the doc that covers it.
 - `gofastr new handler <name>` / `gofastr new route <path>`: scaffold
   one handler or route registration into an existing app. `--method`,
   `--path` and `--handler` take `--method=POST` or `--method POST`; an
-  unknown flag is an error.
+  unknown flag is an error. A `<name>_handler.go` symlinked out of the
+  directory is refused, dangling or not.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
   and the per-battery detail files under `.agents/`. Every write stays in
   the project: a symlink there (`.agents`, `.claude`, `AGENTS.md`, a
@@ -67,7 +81,10 @@ each command to the doc that covers it.
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.
 - `gofastr theme init`: scaffold a typed `theme/theme.go` you own
-  (`--out=<path>` writes elsewhere; `--force` overwrites).
+  (`--out=<path>` writes elsewhere; `--force` overwrites). Both theme
+  commands keep a path inside the working directory there: a `theme/` or
+  `theme.go` symlinked out of it is refused. An `--out` outside it names
+  its own directory, and only the file in it is checked.
 
 ### Windows init reports an existing directory
 

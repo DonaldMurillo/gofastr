@@ -85,10 +85,10 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/actionscan"
 )
 
 // renderWrapperPackages hold components that WRAP another component rather
@@ -104,7 +104,6 @@ const (
 	embedPkgPath     = "github.com/DonaldMurillo/gofastr/framework/embed"
 	appPkgPath       = "github.com/DonaldMurillo/gofastr/core-ui/app"
 	componentPkgPath = "github.com/DonaldMurillo/gofastr/core-ui/component"
-	serverActionName = "G.serverAction"
 )
 
 // Analyzer is the go/analysis pass. analysistest exercises it directly, and a
@@ -955,149 +954,14 @@ func (r *resolver) clientJSLiteral(call *ast.CallExpr) (string, bool) {
 	return "", false
 }
 
-// executableServerActionCall scans JavaScript without treating text in
-// comments or string/template literals as code. It accepts whitespace and
-// comments between the callee and "(", both legal JavaScript forms that the
-// compiler cannot rewrite and that this gate must reject. A template
-// literal's ${...} interpolations ARE code, and the compiler's rewrite is
-// lexical, so a call inside one is scanned like any other.
+// executableServerActionCall reports whether src calls G.serverAction
+// outside comments, strings, template text and regular-expression
+// literals, reading a template's ${...} as code and accepting whitespace
+// or a comment before "(" (internal/actionscan). The boot walk in
+// framework/uihost asks the same function, so the two gates cannot
+// disagree about the same ClientJS.
 func executableServerActionCall(src string) bool {
-	found, _ := scanJSCode(src, 0, false)
-	return found
-}
-
-// scanJSCode scans code from i. With inInterpolation it stops at the "}"
-// that closes a template interpolation (braces nest) and returns the index
-// after it; otherwise it runs to the end of src.
-func scanJSCode(src string, i int, inInterpolation bool) (bool, int) {
-	depth := 0
-	for i < len(src) {
-		switch {
-		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
-			i = skipJSLineComment(src, i+2)
-		case src[i] == '/' && i+1 < len(src) && src[i+1] == '*':
-			i = skipJSBlockComment(src, i+2)
-		case src[i] == '`':
-			found, end := scanJSTemplate(src, i+1)
-			if found {
-				return true, end
-			}
-			i = end
-		case src[i] == '\'' || src[i] == '"':
-			i = skipJSString(src, i+1, src[i])
-		case inInterpolation && src[i] == '{':
-			depth++
-			i++
-		case inInterpolation && src[i] == '}':
-			if depth == 0 {
-				return false, i + 1
-			}
-			depth--
-			i++
-		case strings.HasPrefix(src[i:], serverActionName) &&
-			(i == 0 || !isJSIdentByte(src[i-1])):
-			after := i + len(serverActionName)
-			if after < len(src) && isJSIdentByte(src[after]) {
-				i = after
-				continue
-			}
-			after = skipJSTrivia(src, after)
-			if after < len(src) && src[after] == '(' {
-				return true, after
-			}
-			i = after
-		default:
-			i++
-		}
-	}
-	return false, i
-}
-
-// scanJSTemplate scans a template literal from just after its opening
-// backtick, reading each ${...} interpolation as code, and returns the
-// index after the closing backtick.
-func scanJSTemplate(src string, i int) (bool, int) {
-	for i < len(src) {
-		switch {
-		case src[i] == '\\' && i+1 < len(src):
-			i += 2
-		case src[i] == '`':
-			return false, i + 1
-		case src[i] == '$' && i+1 < len(src) && src[i+1] == '{':
-			found, end := scanJSCode(src, i+2, true)
-			if found {
-				return true, end
-			}
-			i = end
-		default:
-			i++
-		}
-	}
-	return false, i
-}
-
-func skipJSTrivia(src string, i int) int {
-	for i < len(src) {
-		if size := jsSpaceLen(src[i:]); size > 0 {
-			i += size
-			continue
-		}
-		switch {
-		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
-			i = skipJSLineComment(src, i+2)
-		case src[i] == '/' && i+1 < len(src) && src[i+1] == '*':
-			i = skipJSBlockComment(src, i+2)
-		default:
-			return i
-		}
-	}
-	return i
-}
-
-func skipJSLineComment(src string, i int) int {
-	for i < len(src) && src[i] != '\n' && src[i] != '\r' {
-		i++
-	}
-	return i
-}
-
-func skipJSBlockComment(src string, i int) int {
-	for i+1 < len(src) {
-		if src[i] == '*' && src[i+1] == '/' {
-			return i + 2
-		}
-		i++
-	}
-	return len(src)
-}
-
-func skipJSString(src string, i int, quote byte) int {
-	for i < len(src) {
-		if src[i] == '\\' && i+1 < len(src) {
-			i += 2
-			continue
-		}
-		if src[i] == quote {
-			return i + 1
-		}
-		i++
-	}
-	return len(src)
-}
-
-func jsSpaceLen(src string) int {
-	r, size := utf8.DecodeRuneInString(src)
-	if unicode.IsSpace(r) {
-		return size
-	}
-	return 0
-}
-
-func isJSIdentByte(c byte) bool {
-	return c == '_' || c == '$' ||
-		c >= 'a' && c <= 'z' ||
-		c >= 'A' && c <= 'Z' ||
-		c >= '0' && c <= '9'
+	return actionscan.ServerActionCall(src)
 }
 
 // funcDeclForMethod finds the FuncDecl for methodName on named by receiver type

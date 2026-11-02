@@ -70,9 +70,11 @@ Per verb:
   `--fields`, and `--param k=v` (repeatable) as the escape hatch for
   anything else. `-q` appears only when the entity declares
   `SearchFields`; `--trashed` only with `SoftDelete`. `-o table`
-  renders an aligned table instead of JSON. Table cells, the cursor
-  line and API error lines drop control bytes (C0 but tab, DEL and
-  C1), so a stored `\x1b[2J` cannot clear the reader's screen. JSON
+  renders an aligned table instead of JSON. Table headers and cells,
+  the cursor line and API error lines drop control bytes (C0 but tab,
+  DEL and C1) and the bidi overrides and zero-width characters that
+  reorder or hide text, so a stored `\x1b[2J` cannot clear the reader's
+  screen and a `U+202E` cannot flip a column. JSON
   output keeps numbers exact: a value past 2^53 in a `--json` body, a
   json-field flag or a response prints with every digit.
 - **create / update / patch**: per-field flags OR `--json`

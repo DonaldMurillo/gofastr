@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const cliValuesFixtureYAML = `app:
@@ -36,7 +38,7 @@ type valuesServer struct {
 
 func newValuesServer(t *testing.T) *valuesServer {
 	s := &valuesServer{}
-	row := `{"id":"w1","title":"\u001b[2Jforged\u009b31m","meta":{"n":` + bigInt + `}}`
+	row := `{"id":"w1","title":"\u001b[2Jforged\u009b31m\u202eflipped\u200b\u007f","meta":{"n":` + bigInt + `}}`
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		s.mu.Lock()
@@ -102,8 +104,14 @@ func TestCLITableStripsControlBytes(t *testing.T) {
 	if !strings.Contains(out, "forged") {
 		t.Fatalf("table lost the title:\n%q", out)
 	}
-	if strings.ContainsAny(out, "\x1b\u009b") {
-		t.Errorf("table output carries a control sequence:\n%q", out)
+	// Bidi overrides and zero-width runes too (owner decision, 2026-11):
+	// the table printer drops what core/textsafe calls unsafe, the set the
+	// gofastr CLI's own helpers scrub.
+	for _, r := range out {
+		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
+			t.Errorf("table output carries %U live:\n%q", r, out)
+			break
+		}
 	}
 	out = runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL+"/fail")
 	if !strings.Contains(out, "bad request") || strings.Contains(out, "\x1b") {

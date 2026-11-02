@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -179,9 +180,19 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if err != nil {
 		return fmt.Errorf("resolve base dir: %w", err)
 	}
-	filename := filepath.Join(realDir, strings.ToLower(name)+"_handler.go")
+	// The file itself goes through an os.Root on that directory
+	// (projectfs): a <name>_handler.go linked out of it, dangling or not,
+	// is refused, never written through. Lstat, not Stat, so a dangling
+	// link counts as a file that is already there.
+	leaf := strings.ToLower(name) + "_handler.go"
+	filename := filepath.Join(realDir, leaf)
+	root, err := os.OpenRoot(realDir)
+	if err != nil {
+		return fmt.Errorf("open base dir: %w", err)
+	}
+	defer root.Close()
 	if !overwrite {
-		if _, err := os.Stat(filename); err == nil {
+		if _, err := projectfs.Lstat(root, leaf); err == nil {
 			return fmt.Errorf("handler file already exists: %s", filename)
 		}
 	}
@@ -201,7 +212,7 @@ func %s(w http.ResponseWriter, r *http.Request) {
 }
 `, name, name, method, path, name)
 
-	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
+	if err := projectfs.Replace(root, leaf, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", filename, err)
 	}
 	return nil

@@ -43,7 +43,7 @@ func TestEnvFileIsOwnerOnly(t *testing.T) {
 				}
 			}
 
-			if err := writeEnvFile(path, "GOFASTR_SECRET=shhh\n"); err != nil {
+			if err := writeEnvFile(filepath.Dir(path), "GOFASTR_SECRET=shhh\n"); err != nil {
 				t.Fatalf("writeEnvFile: %v", err)
 			}
 
@@ -78,10 +78,10 @@ func TestInitRewritesReplaceWhole(t *testing.T) {
 		}
 	}
 	oldEnv, oldMain := heldInit(t, env), heldInit(t, gi)
-	if err := writeEnvFile(env, "NEW=1\n"); err != nil {
+	if err := writeEnvFile(dir, "NEW=1\n"); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeScaffoldFile(gi, []byte("package main\n")); err != nil {
+	if err := writeScaffoldFile(dir, "main.go", []byte("package main\n")); err != nil {
 		t.Fatal(err)
 	}
 	if a, b := oldEnv(), oldMain(); a != "old" || b != "old" {
