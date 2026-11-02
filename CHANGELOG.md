@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
+  reloads every role from the database every 5 minutes by default, so a
+  replica that missed a refresh signal stops honouring a revoked
+  permission within one interval. A full reload also covers a role whose
+  last grant was revoked (only tombstones left), which it used to skip.
+  Zero or negative turns it off. See
+  [access control](framework/docs/content/access-control.md#cross-replica-grant-propagation).
 - **`ui.DatePicker`** ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)).
   A calendar that stays on the page beside the native date input it
   fills, for a range in one control, refused days, or notes on days. The
@@ -209,6 +216,28 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
+  SQLite table by table, so a comment written while the export ran could
+  land in the archive without its post, and the restore failed on the
+  foreign key. In WAL mode every table is read in one read-only deferred
+  transaction now, as Postgres already was; writers are not blocked. A
+  rollback-journal database still reads table by table: stop writes during
+  its export. See [data export](framework/docs/content/data-export.md#operational-notes).
+- **`App.EraseUserData` reaches `search.Memory`.** The in-memory search
+  index kept every document indexed for an erased user. `NewMemory`
+  registers a store eraser now, the new `Memory.Close` removes it, and
+  `search.Battery` closes its backend on stop. Close an index built for a
+  test. See [search](framework/docs/content/search.md#the-in-memory-backend).
+- **Docs: `CachedResolver.Invalidate` is process-local.** It clears the
+  calling replica's cache only; other replicas serve a user's old roles
+  for up to the TTL (30 seconds by default). Said beside `Invalidate` and
+  in [access control](framework/docs/content/access-control.md).
+- **A restore keeps the modules an operator turned off turned off.**
+  `ExportData` left out `gofastr_modules` and the process-module
+  desired-state table, so a restored app booted every disabled module
+  back on and a process module got back the grants an operator had
+  revoked. Both tables are in the archive now; the heartbeat table stays
+  out. See [data export](framework/docs/content/data-export.md).
 - **`gofastr pack` keeps an app spec fragment a fragment.** A spec with
   no `app:` section was written back with `app: {api_prefix: ""}`, so the
   next decode read it as a whole app mounting its CRUD API at the root and

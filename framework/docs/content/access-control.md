@@ -350,6 +350,15 @@ calls waiting on a lookup share its result, and the next call looks up
 again. A lookup invalidated while it runs shares nothing, so its waiters
 look up again.
 
+**`Invalidate` and `InvalidateAll` clear this replica's cache only.** No
+fanout carries them. With several replicas behind a load balancer, the
+others keep serving a user's old roles until their own entries expire, up
+to the TTL (30 seconds by default). A demoted admin can still act as admin
+on another replica for that long. If that window is too wide, shorten it
+with `access.WithTTL`, or keep the role inputs in a `GrantStore`, whose
+grants and revokes reach every replica on its fanout (see
+[Cross-replica grant propagation](#cross-replica-grant-propagation)).
+
 The map is bounded, not just expired-on-read: a later `Resolve` sweeps
 entries whose TTL has lapsed at most once per TTL, and once 100,000
 distinct user ids are cached it sheds entries to a low-water mark
@@ -606,6 +615,15 @@ swaps them into its local policy via `RolePolicy.ReplaceRole` (the store
 rebuilds the role as `(code baseline ∪ DB grants) − revocation tombstones`).
 The message body is never trusted: a crafted payload can only trigger a
 re-read, never pollute the policy directly.
+
+A refresh signal is best effort: a stalled bus drops frames. So every
+replica with a fanout also reloads every role from the database on a
+timer, every 5 minutes by default (`access.DefaultReconcileInterval`). A
+replica that missed a revoke stops honouring it within one interval
+instead of keeping it until the next change to that role or a restart.
+Set the interval with `access.WithReconcileInterval(d)`; zero or negative
+turns the reconcile off. The timer starts with `SetFanout` and stops with
+the stop function it returns, so a store without a fanout runs none.
 
 ### Revocation tombstones
 

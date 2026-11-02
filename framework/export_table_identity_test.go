@@ -180,8 +180,8 @@ func TestExportFoldsTableIdentity(t *testing.T) {
 		if err := app.ExportData(ctx, dir); err != nil {
 			t.Fatal(err)
 		}
-		if m := readManifest(t, dir); len(m.Entities) != 2 {
-			t.Fatalf("archive has %d sources for widgets and parts, want 2: %+v", len(m.Entities), m.Entities)
+		if es := withoutModuleState(readManifest(t, dir).Entities); len(es) != 2 {
+			t.Fatalf("archive has %d sources for widgets and parts, want 2: %+v", len(es), es)
 		}
 		identityExec(t, db, `DELETE FROM parts`, `DELETE FROM widgets`)
 		if err := app.ImportData(ctx, dir); err != nil {

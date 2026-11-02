@@ -214,9 +214,25 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 	// after the posts were read (a restore then trips the foreign key),
 	// and keyset paging could chase rows inserted ahead of its cursor
 	// without end. A read-only snapshot takes no lock a writer waits on.
+	//
+	// SQLite in WAL mode gets the same: a deferred read transaction holds
+	// its snapshot from the first read while writers commit to the WAL. It
+	// is opened ReadOnly because the sqlite3 driver begins every other
+	// transaction IMMEDIATE (_txlock=immediate), which would take the write
+	// lock for the whole export. A rollback-journal database has no such
+	// snapshot: a read transaction there holds a SHARED lock that blocks
+	// every writer, so it keeps reading table by table and the docs say to
+	// stop writes during the export.
 	var rd exportReader = a.DB
-	if dialect == migrate.DialectPostgres {
-		tx, err := a.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	var snapshot *sql.TxOptions
+	switch {
+	case dialect == migrate.DialectPostgres:
+		snapshot = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+	case dialect == migrate.DialectSQLite && sqliteWAL(ctx, a.DB):
+		snapshot = &sql.TxOptions{ReadOnly: true}
+	}
+	if snapshot != nil {
+		tx, err := a.DB.BeginTx(ctx, snapshot)
 		if err != nil {
 			return fmt.Errorf("framework: export snapshot: %w", err)
 		}
@@ -277,6 +293,17 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 		return fmt.Errorf("framework: export manifest: %w", err)
 	}
 	return nil
+}
+
+// sqliteWAL reports whether a SQLite database runs in WAL mode. A probe
+// that fails reads as no: the export then reads table by table, as it
+// always did on SQLite.
+func sqliteWAL(ctx context.Context, db *sql.DB) bool {
+	var mode string
+	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		return false
+	}
+	return asciicase.Lower(mode) == "wal"
 }
 
 // ImportData restores an archive written by ExportData into the live database.
