@@ -124,9 +124,15 @@ func WithDBLaneWorkers(lane string, n int) DBQueueOption {
 }
 
 // WithWorkers sets the number of background worker goroutines started by
-// Start(). Defaults to 1 when not set.
+// Start(). Defaults to 1 when not set. Zero starts no shared workers (only
+// the WithDBLaneWorkers lanes run); a negative count keeps the default,
+// since Start sized a channel with it and panicked.
 func WithWorkers(n int) DBQueueOption {
-	return func(q *DBQueue) { q.workers = n }
+	return func(q *DBQueue) {
+		if n >= 0 {
+			q.workers = n
+		}
+	}
 }
 
 // WithDBHandlerTimeout caps a single handler invocation's wall-clock
