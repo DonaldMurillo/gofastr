@@ -523,6 +523,13 @@ few lines, and link the PR or the docs page for the rest.
   to a linked `AGENTS.md` or `CLAUDE.md`, and created a dangling
   `DESIGN.md` link's target. Writes now go through an `os.Root` on the
   project; a link inside it is still followed, one out of it is refused.
+- **The onboarding writers follow an in-project link the way the kernel
+  does, and respect the umask.** A relative link target was resolved
+  against the link's lexical directory, so with `docs -> real/sub`,
+  `docs/AGENTS.md -> ../target.md` read and replaced `target.md` at the
+  project root instead of `real/target.md`. A new file was forced to
+  0644 whatever the umask said; it is now created the way `os.WriteFile`
+  creates one.
 - **A slow module answer no longer kills the module.** A `moduleproto`
   peer remembered the last 1,024 calls it gave up on, answered or not,
   so 1,024 timed-out calls answered in time pushed out a slow call still
