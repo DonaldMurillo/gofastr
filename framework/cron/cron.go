@@ -335,7 +335,10 @@ func (s *Scheduler) StopContext(ctx context.Context) error {
 	}
 }
 
-// RunOnce fires every job whose schedule matches the given minute. Exported
+// RunOnce fires every job whose schedule fires at the given minute, in
+// now's location, with the daylight-saving handling Schedule.FiresAt
+// describes: a fixed-time job runs once across a fall-back and once
+// after a spring-forward skipped its time. Exported
 // for tests that drive the tick manually instead of waiting on the wall clock;
 // production code lets the loop call this.
 //
@@ -364,7 +367,10 @@ func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.W
 	var gate func(jobName string) bool
 	for i := range s.jobs {
 		sj := &s.jobs[i]
-		if sj.expr.matches(now) {
+		// Vixie DST handling (Schedule.FiresAt): a fixed-time job runs
+		// once in a repeated hour and once after a skipped one, in now's
+		// location. The previous tick is a real minute earlier.
+		if (Schedule{expr: sj.expr}).FiresAt(now.Add(-time.Minute), now) {
 			firing = append(firing, sj.job)
 		}
 	}

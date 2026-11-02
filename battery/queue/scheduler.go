@@ -41,6 +41,9 @@ type ScheduledJob struct {
 	// cron, when set, drives NextRun from a cron expression instead of
 	// Interval. Nil for interval schedules (the pre-existing behaviour).
 	cron *cron.Schedule
+	// loc is the zone a cron schedule is evaluated in: the location of
+	// the time it was registered at.
+	loc *time.Location
 }
 
 // Scheduler is the non-durable, single-process scheduler. Its watermarks live
@@ -301,7 +304,11 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 			return err
 		}
 		job.cron = &sc
-		job.NextRun = sc.Next(base)
+		// The zone base carries is the one every later firing is read
+		// in; nextFire gives a fixed-time spec vixie cron's handling
+		// across a DST change (cron.Schedule.FiresAt).
+		job.loc = base.Location()
+		job.NextRun = nextFire(sc, job.loc, base)
 		// Next returns the zero time for a spec that never fires
 		// (February 30), and a zero NextRun is due on every tick.
 		if job.NextRun.IsZero() {
@@ -434,7 +441,7 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 			}
 
 			if sch.cron != nil {
-				sch.NextRun = sch.cron.Next(now)
+				sch.NextRun = nextFire(*sch.cron, sch.loc, now)
 				if sch.NextRun.IsZero() {
 					// Registration refuses a spec that never fires, so
 					// this guards Next alone: a zero NextRun would fire

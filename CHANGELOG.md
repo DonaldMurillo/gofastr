@@ -231,6 +231,17 @@ few lines, and link the PR or the docs page for the rest.
   gates in `evals/upgrade-fixtures` now refuse both shapes of mistake
   (`TestRegistryShapesMatchTheirRelease`, and the edit arm of
   `TestRegistrySymbolsExistedAtPriorTag`).
+- **Cron jobs run once across a daylight-saving change.** The in-process
+  `framework.Scheduler` and `battery/queue`'s in-memory `Scheduler`
+  matched each tick's wall clock with no DST handling: on a fall-back
+  night `"30 1 * * *"` ran at both 01:30s, and leader election did not
+  stop it (the tick claim is per UTC minute); on a spring-forward day
+  `"30 2 * * *"` did not run at all. Both now follow vixie cron, as the
+  durable scheduler already did: a fixed-time job runs once in a repeated
+  hour and once right after a skipped one, and a job with a wildcard
+  minute or hour keeps real elapsed time. The rule is the new
+  `cron.Schedule.FiresAt`, which all three schedulers share. Hosts in UTC
+  see no change.
 - **A DBQueue built `WithTable` is exported and erased.** The queue
   registered only the default `queue_jobs` table, so a queue on
   `billing_jobs` sat outside `App.ExportData` and `App.EraseUserData`: an

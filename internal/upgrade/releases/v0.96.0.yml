@@ -730,3 +730,10 @@ notes:
     find:
       uses:
         - gofastr/battery/queue.WithTable
+  - change: "framework.Scheduler and battery/queue's in-memory Scheduler handle daylight-saving changes like vixie cron: a fixed-time job runs once in a repeated (fall-back) hour and once right after a spring-forward that skipped its time"
+    breaking: false
+    guidance: "On a host whose local zone has DST, a job like \"30 1 * * *\" used to run twice on the fall-back night and \"30 2 * * *\" not at all on the spring-forward day. Nothing to change; if you worked around either (a guard against the second run, a duplicate \"0 3\" entry for the skipped day), remove it. Replicas under leader election must run in the same time zone. A UTC host is unaffected."
+    find:
+      uses:
+        - gofastr/framework/cron.Scheduler.Register
+        - gofastr/battery/queue.Scheduler.Cron
