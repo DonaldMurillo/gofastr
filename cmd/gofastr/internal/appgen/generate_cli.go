@@ -1721,6 +1721,21 @@ func takeKey(verb string, keys, args []string) (tail, id string, rest []string, 
 	return tail, id, args[len(keys):], true
 }
 
+// strayArgs reports, and explains on stderr, an argument left after a
+// verb's flags. The flag package stops at the first positional, so
+// "--published false --views 3" read false as an argument: the call went
+// out with published=true and without --views, and exited 0.
+func strayArgs(cmd string, fs *flag.FlagSet) bool {
+	if fs.NArg() == 0 {
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "%s %s: unexpected argument %q; the flags after it were not read\n", binaryName, cmd, fs.Arg(0))
+	if fs.Arg(0) == "true" || fs.Arg(0) == "false" {
+		fmt.Fprintln(os.Stderr, "a bool flag takes its value after =, as in --flag=false")
+	}
+	return true
+}
+
 // askedHelp reports whether args holds one of the flag package's help
 // spellings.
 func askedHelp(args []string) bool {
@@ -2412,6 +2427,9 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
 	q := url.Values{}
 	set := func(key, val string) {
 		if val != "" {
@@ -2476,6 +2494,9 @@ func runGetVerb(cmd, base string, keys, args []string) int {
 	g, code := parseGlobals(fs, rest)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	var out singleResponse
 	if err := g.client.Do(g.ctx, http.MethodGet, base+"/"+tail, nil, &out); err != nil {
@@ -2599,6 +2620,9 @@ func runMutationVerb(cmd, method string, keys []string, base string, fields []mu
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
 	body, code := buildBody(fs, *jsonBody, apply)
 	if code != 0 {
 		return code
@@ -2625,6 +2649,9 @@ func runDeleteVerb(cmd, base string, keys, args []string) int {
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
 	if err := g.client.Do(g.ctx, http.MethodDelete, base+"/"+tail, nil, nil); err != nil {
 		return apiFail(err)
 	}
@@ -2648,6 +2675,9 @@ func runTransitionVerb(cmd, base, key string, keys, args []string) int {
 	g, code := parseGlobals(fs, rest)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	var out singleResponse
 	path := base + "/" + tail + "/transitions/" + url.PathEscape(key)
@@ -2708,6 +2738,9 @@ func runEndpointVerb(cmd, base string, call endpointCall, args []string) int {
 	g, code := parseGlobals(fs, args)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
@@ -2774,6 +2807,9 @@ func runBatchJSONVerb(cmd, base, method string, args []string) int {
 	if g == nil {
 		return code
 	}
+	if strayArgs(cmd, fs) {
+		return 2
+	}
 	items, code := readJSONArrayArg(*jsonBody)
 	if code != 0 {
 		return code
@@ -2832,6 +2868,9 @@ func runWatchVerb(cmd string, watch func(c *client.Client, ctx context.Context, 
 	g, code := parseGlobals(fs, args)
 	if g == nil {
 		return code
+	}
+	if strayArgs(cmd, fs) {
+		return 2
 	}
 	// g.ctx is already signal-cancellable: parseGlobals built it with
 	// signal.NotifyContext, so Ctrl-C cancels the stream here too.

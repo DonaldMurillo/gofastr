@@ -412,7 +412,10 @@ field or exclude the entity.
 - **Expecting `--published false` to parse.** Bool field flags follow
   stdlib `flag` semantics: bare `--published` sets true, and the
   explicit-value form needs `=`, as in `--published=false`. The space form
-  treats `false` as a positional and stops flag parsing.
+  reads `false` as a positional argument, where flag parsing stops, so
+  the verb refuses it with exit 2 before sending anything. Every verb
+  but `batch-delete`, whose ids may follow its flags, refuses an argument
+  left after its flags the same way.
 
 ## Sibling: SDKs
 

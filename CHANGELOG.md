@@ -524,6 +524,9 @@ few lines, and link the PR or the docs page for the rest.
     (`get`, `update`, `patch`, `delete`, a move, an endpoint) prints its
     flag reference and exits 0 without the key. It printed one usage
     line and exited 2.
+  - A verb refuses an argument left after its flags with exit 2 before
+    any request. `patch 42 --published false --views 3` stopped parsing
+    at `false`, sent `published: true`, dropped `--views` and exited 0.
 - **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
   in [app-cli.md](framework/docs/content/app-cli.md):
   - **BREAKING: an acronym is one word in command and flag names.**
