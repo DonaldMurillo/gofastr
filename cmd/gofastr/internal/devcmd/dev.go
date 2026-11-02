@@ -129,7 +129,7 @@ func RunDev(args []string) {
 	// stall on a module proxy, and shutdown does not wait for it.
 	watchCtx, endWatch := context.WithCancel(context.Background())
 	defer endWatch()
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(signals, ShutdownSignals...)
 	go func() {
 		<-signals
 		close(shutdown)
@@ -220,6 +220,13 @@ func RunDev(args []string) {
 		}
 	}
 }
+
+// ShutdownSignals end a dev loop cleanly: the app is stopped, the hold
+// released and the binary directory removed. SIGHUP is among them: a
+// closed terminal or a supervisor's hangup otherwise killed gofastr dev
+// outright and left the app running on the dev address, reparented to
+// init, with its binary left in the temp directory.
+var ShutdownSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP}
 
 // closed reports whether ch is closed, without blocking.
 func closed(ch <-chan struct{}) bool {
@@ -378,6 +385,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
 	runCmd.Env = childEnv
+	TieToParent(runCmd)
 
 	mu.Lock()
 	*cmd = runCmd
