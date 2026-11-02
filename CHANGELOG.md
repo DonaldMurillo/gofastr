@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **MCP `tools/call` always answers a `content` array.** A handler
+  returning a nil `[]mcp.Content`, or an `mcp.ToolResult` flagging
+  `IsError` with no blocks, put `"content": null` on the wire; the MCP
+  schema requires an array and validating clients rejected the reply.
+  It is now `[]`.
 - **A2A: a panicking `Store` or push client no longer crashes the
   process.** A run's finalize (the store read and write after the
   handler returns, the publish, the retention trim) and each push

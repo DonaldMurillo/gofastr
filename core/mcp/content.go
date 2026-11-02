@@ -123,7 +123,7 @@ func normalizeToolResult(result any) (toolsCallResult, error) {
 	case Content:
 		return toolsCallResult{Content: []Content{v}}, nil
 	case []Content:
-		return toolsCallResult{Content: v}, nil
+		return toolsCallResult{Content: contentArray(v)}, nil
 	case string:
 		return toolsCallResult{Content: []Content{TextContent(v)}}, nil
 	default:
@@ -147,5 +147,16 @@ func richResult(r ToolResult) (toolsCallResult, error) {
 			content = []Content{TextContent(string(b))}
 		}
 	}
-	return toolsCallResult{Content: content, StructuredContent: r.Structured, IsError: r.IsError}, nil
+	return toolsCallResult{Content: contentArray(content), StructuredContent: r.Structured, IsError: r.IsError}, nil
+}
+
+// contentArray keeps a nil block list off the wire as null: the MCP
+// schema makes CallToolResult.content a required array, and a validating
+// client rejects null. A handler's nil []Content, or a ToolResult that
+// flags IsError with no blocks, answers "content": [].
+func contentArray(c []Content) []Content {
+	if c == nil {
+		return []Content{}
+	}
+	return c
 }
