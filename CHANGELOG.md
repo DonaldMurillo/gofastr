@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **OAuth protected-resource metadata is served at the path-inserted URL.**
+  RFC 9728 §3.1 puts the metadata of `https://api.example.com/mcp` at
+  `/.well-known/oauth-protected-resource/mcp`, and §3.3 has a client refuse a
+  document whose `resource` does not match the identifier it built the URL
+  from. `WithOAuthProtectedResource` served only the bare prefix, so a
+  compliant client of a path-scoped resource found nothing. Both URLs answer
+  now.
 - **`/readyz` no longer races a check that returns at the deadline,
   and keeps an unnamed check's result.** The timeout fill read the
   result slice while a check returning in that moment wrote its row, a

@@ -637,6 +637,10 @@ framework.WithOAuthProtectedResource(framework.OAuthProtectedResourceConfig{
 })
 ```
 
+When `Resource` has a path (`https://api.example.com/mcp`), the document is
+also served at `/.well-known/oauth-protected-resource/mcp`, the URL RFC 9728
+§3.1 has a client build for it.
+
 The framework serves the document; emitting the companion
 `WWW-Authenticate: … resource_metadata=…` header on 401s (RFC 9728 §5) is left
 to the host's auth middleware so it can be scoped to the exact token-protected
