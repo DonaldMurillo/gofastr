@@ -37,3 +37,27 @@ func TestStripMetadataRefusesJPEGScanBomb(t *testing.T) {
 		t.Errorf("a JPEG at the pipeline's scan cap was refused by the strip path: %v", err)
 	}
 }
+
+// The flat scan cap priced the bake by the frame: 64 scans over a 64 MP
+// frame cost ~2.8 s of decode for a few KB. Property: the bake applies
+// the pipeline's scans × pixels budget (framework/image.
+// DefaultMaxJPEGScanPixels) before it decodes. Count-based: both
+// refusals land on the header, before any pixel is decoded.
+func TestStripMetadataBudgetsJPEGScansByPixels(t *testing.T) {
+	orient := app1ExifSegment(tiffWithGPSAndOrientation(6))
+	for _, tc := range []struct {
+		side, scans int
+	}{
+		{8192, fwimage.DefaultMaxJPEGScans}, // the pixel cap, the flat cap's scans
+		// A 16 MP frame one scan past the budget pins the strip budget
+		// no looser than the pipeline's.
+		{4096, int(fwimage.DefaultMaxJPEGScanPixels/(4096*4096)) + 1},
+	} {
+		bomb := jpegWithSegments(t, jpegtest.ScanBomb(tc.side, tc.side, tc.scans), orient)
+		if _, err := file.ProcessFileField(context.Background(), &captureStorage{},
+			bytes.NewReader(bomb), "bomb.jpg", "posts", "photo", file.StripMetadata()); err == nil {
+			t.Errorf("StripMetadata decoded %d scans of a %d² JPEG for its orientation bake; want a refusal past %d pixel-scans",
+				tc.scans, tc.side, fwimage.DefaultMaxJPEGScanPixels)
+		}
+	}
+}

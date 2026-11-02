@@ -1080,3 +1080,9 @@ notes:
     breaking: false
     guidance: "A heading such as Caf\u00e9 menu anchors at #caf\u00e9-menu, no longer #caf-menu, and a Japanese or Cyrillic heading gets an anchor at all. Update links, bookmarks, rail hrefs and e2e selectors that name an old derived id, or give the component an explicit ID, which always wins."
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
+  - change: "framework/image and file.StripMetadata refuse a JPEG whose scans times pixels exceed Config.MaxJPEGScanPixels (default ten times MaxPixels) with ErrDecompressionBomb: a 64 MP frame keeps ten scans, frames up to 10 MP keep the flat cap's 64"
+    breaking: false
+    guidance: "Common encoders write about ten scans, so ordinary photos decode as before. A host that decodes huge progressive JPEGs with many scans raises Config.MaxJPEGScanPixels, and MaxJPEGScans as well if it needs past 64; raising MaxJPEGScans alone no longer lifts the cost bound."
+    find:
+      uses:
+        - gofastr/framework/image.Config.MaxJPEGScans

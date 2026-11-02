@@ -64,9 +64,21 @@ encoders write a few dozen scans at most. The count runs on the bytes,
 before any pixel is decoded: it walks the marker segments from SOI to
 the first EOI, skipping each segment by its length, so an APPn payload
 (an ICC profile, a MakerNote preview) and a motion photo's video clip
-after EOI are not counted as scans. `file.StripMetadata`'s orientation
-bake counts the SOS segments its own walk keeps, and `file.StripMetadata`'s orientation
-bake applies the same cap.
+after EOI are not counted as scans.
+
+The scan cap is a flat ceiling; a budget applies as well. A JPEG is
+refused when its scans × width × height exceed
+`Config.MaxJPEGScanPixels`, the block walks its decode costs. Zero or
+negative means ten times the effective `MaxPixels`
+(`DefaultMaxJPEGScanPixels` = 640 M pixel-scans at the default 64 MP).
+So a frame at the pixel cap gets ten scans, while anything up to 10 MP
+keeps the flat cap's 64: at the flat cap alone, a 6.5 KB progressive
+file of 64 scans over 64 MP took ~2.8 s of CPU. Raising `MaxJPEGScans`
+admits more scans only on frames small enough for the budget; a host
+that wants many scans on huge frames raises both.
+
+`file.StripMetadata`'s orientation bake counts the SOS segments its own
+walk keeps and applies the same cap and budget.
 
 `Open(path)` rejects paths containing `..` segments that escape the
 working directory (e.g. `../etc/passwd`). Callers handling user input
@@ -468,6 +480,7 @@ hand it directly to `storage.Save`).
 | Max resize target | the image's `MaxPixels` (`ErrTargetTooLarge` past it) | `Config.MaxPixels` at decode |
 | Max source bytes | 64 MiB (`ErrSourceTooLarge` past it) | `Config.MaxSourceBytes` |
 | Max JPEG scans | 64 (`ErrDecompressionBomb` past it) | `Config.MaxJPEGScans` |
+| Max JPEG scans × pixels | 10 × `MaxPixels` (`ErrDecompressionBomb` past it) | `Config.MaxJPEGScanPixels` |
 | Max encoded WebP dim | 16384 per axis | hard cap (spec) |
 | `VariantSet.Variants` | 64 entries | `MaxVariantsPerSet` const |
 | `BlurHash` working size | 64 px longest side | hard cap (perf) |

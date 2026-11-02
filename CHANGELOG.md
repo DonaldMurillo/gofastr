@@ -6095,6 +6095,13 @@ few lines, and link the PR or the docs page for the rest.
   `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` keeps livereload on.
 - **webmcp-remote-assist closes an expired credential's sockets and
   limits incoming frames.**
+- **`framework/image` budgets JPEG scans by pixels.** At the flat
+  64-scan cap a 6.5 KB progressive file over a 64 MP frame still cost
+  ~2.8 s of CPU. A JPEG is now also refused with `ErrDecompressionBomb`
+  when scans × width × height exceed `Config.MaxJPEGScanPixels`
+  (default ten times `MaxPixels`): ten scans at 64 MP, the full 64 up to
+  10 MP. `file.StripMetadata`'s orientation bake applies the same
+  budget. See [image](framework/docs/content/image.md).
 
 ## [0.95.0] - 2026-10-26
 

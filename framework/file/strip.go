@@ -66,6 +66,13 @@ const stripMaxPixels int64 = 64 * 1024 * 1024
 // so counting the pair cannot miss a scan.
 const stripMaxJPEGScans = 64
 
+// stripMaxJPEGScanPixels caps scans × pixels, the block walks the bake's
+// decode costs, matching framework/image.DefaultMaxJPEGScanPixels (ten
+// walks of a frame at the pixel cap; local for the same layering reason,
+// pinned by TestStripMetadataBudgetsJPEGScansByPixels). The flat scan cap
+// alone let 64 scans of a 64 MP frame cost ~2.8 s of decode.
+const stripMaxJPEGScanPixels = 10 * stripMaxPixels
+
 // checkStripPixelCap refuses header dimensions whose decoded raster would
 // exceed stripMaxPixels, before any pixel decode runs. Overflow-safe by
 // division (a multiply of two near-uint32 dimensions wraps int64).
@@ -219,6 +226,10 @@ func stripJPEG(data []byte) ([]byte, error) {
 		}
 		if err := checkStripPixelCap(cfg.Width, cfg.Height); err != nil {
 			return nil, err
+		}
+		// Divide: the pixel cap bounds width×height, so the quotient is exact.
+		if int64(scans) > stripMaxJPEGScanPixels/(int64(cfg.Width)*int64(cfg.Height)) {
+			return nil, fmt.Errorf("strip: JPEG carries %d scans of a %dx%d frame, over the %d pixel-scan decode budget", scans, cfg.Width, cfg.Height, stripMaxJPEGScanPixels)
 		}
 		img, err := jpeg.Decode(bytes.NewReader(out))
 		if err != nil {
