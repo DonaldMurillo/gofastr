@@ -357,9 +357,19 @@ func (s *Server) route(ctx context.Context, req rpcRequest) {
 
 func (s *Server) write(resp rpcResponse) {
 	resp.JSONRPC = "2.0"
+	body, err := json.Marshal(resp)
+	if err != nil {
+		// A result JSON cannot encode (a NaN or ±Inf in a tool's
+		// output): answer an internal error under the request's id, or
+		// the client waits on a line that never comes. The id came off
+		// the wire as JSON, so this envelope always encodes.
+		body, _ = json.Marshal(rpcResponse{ //gofastr:allow(discardeddecode) a fixed error under a wire-decoded RawMessage id holds nothing that can fail to encode
+			JSONRPC: "2.0", ID: resp.ID,
+			Error: &rpcError{Code: -32603, Message: "internal error: the result could not be encoded"},
+		})
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	body, _ := json.Marshal(resp)
 	_, _ = s.out.Write(body)
 	_, _ = s.out.Write([]byte{'\n'})
 }
