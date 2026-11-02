@@ -3723,7 +3723,10 @@ func (a *App) Start(addr string) error {
 	// Prometheus /metrics endpoint when metrics are enabled (WithMetrics).
 	// Unauthenticated by design, scrape from inside the network boundary.
 	if a.metrics != nil {
-		a.router.Get("/metrics", middleware.MetricsHandler(a.metrics))
+		// Through Metrics(), not the bare store: it attaches the
+		// framework-owned collectors (db_pool, outbox), which otherwise
+		// appeared only once a battery happened to take the handle.
+		a.router.Get("/metrics", middleware.MetricsHandler(a.Metrics()))
 	}
 
 	if a.Config.DebugEndpoints {

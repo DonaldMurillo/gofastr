@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`/metrics` carries the `db_pool` and `outbox` series with no battery.**
+  Start mounted the bare metrics store, and the framework-owned
+  collectors attach only inside `app.Metrics()`, so an app with `WithDB`
+  + `WithMetrics` (+ `WithOutbox`) whose batteries never took the handle
+  served neither the pool gauges nor `outbox_pending`/dead-letter counts,
+  and an alert on them had no series to fire on. Start mounts the
+  endpoint through `app.Metrics()` now.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does
