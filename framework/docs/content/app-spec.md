@@ -1693,7 +1693,8 @@ before writing any file.
 The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
-- duplicate entity names, routes, endpoints, middleware, plugins, or helpers
+- duplicate entity names, routes, endpoints, middleware, plugins, or helpers,
+  and a field name an entity declares twice
 - a screen route a browser cannot ask for: one that does not start with
   `/`, has an empty, `.` or `..` segment (`//evil.com` is a
   protocol-relative link, `/x/../admin` is `/admin` to a browser), holds

@@ -2,6 +2,10 @@ package newcmd
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,6 +176,12 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if textsafe.ContainsUnsafe(method) || textsafe.ContainsUnsafe(path) {
 		return fmt.Errorf("handler method %q or path %q carries control, invisible, or bidi bytes: they ride a // comment slot and cannot be scaffolded safely", method, path)
 	}
+	// A keyword does not parse at `func %s(`; main and init redeclare the
+	// package's entry points; a predeclared name (string, len, error)
+	// shadows it for every other file of the package; _ cannot be called.
+	if reason := unusableFuncName(rawName); reason != "" {
+		return fmt.Errorf("invalid handler name %q: %s; pick another name", rawName, reason)
+	}
 	name := rawName
 	// Resolve the base dir before joining: a symlinked component would
 	// otherwise redirect the scaffolded file outside it undetected
@@ -197,23 +207,98 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 		}
 	}
 
+	// The file joins the package already in the directory (package main
+	// beside main.go, package entities under entities/); writing package
+	// main everywhere broke the build with "found packages entities and
+	// main". A name that package already declares would be redeclared.
+	pkg, declared := dirPackage(realDir, filepath.Base(filename))
+	if declared[name] {
+		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
+	}
+
 	content := fmt.Sprintf(`// %s handler: scaffolded by gofastr new handler.
-package main
+package %s
 
 import (
-    "net/http"
+	"net/http"
 )
 
 // %s handles %s %s.
 func %s(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("{\"ok\": true}"))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("{\"ok\": true}"))
 }
-`, name, name, method, path, name)
+`, name, pkg, name, method, path, name)
 
 	if err := projectfs.Replace(root, leaf, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", filename, err)
 	}
 	return nil
+}
+
+// unusableFuncName says why name, a Go identifier, cannot be the
+// scaffolded handler's function name, or "" when it can.
+func unusableFuncName(name string) string {
+	switch {
+	case token.IsKeyword(name):
+		return "it is a Go keyword"
+	case name == "main" || name == "init":
+		return "func " + name + " is reserved for the package's entry points"
+	case name == "_":
+		return "a blank function cannot be called"
+	case types.Universe.Lookup(name) != nil:
+		return "it would shadow Go's predeclared " + name + " in the whole package"
+	}
+	return ""
+}
+
+// dirPackage returns the package the non-test Go files in dir declare
+// ("main" when there are none) and the names that package declares at
+// top level. skip, the file being scaffolded, is left out: -overwrite
+// rewrites it. A file that does not parse is skipped, as go build would
+// report it on its own.
+func dirPackage(dir, skip string) (string, map[string]bool) {
+	pkg := ""
+	declared := map[string]bool{}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || n == skip || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, n), nil, parser.SkipObjectResolution)
+		if err != nil {
+			continue
+		}
+		if pkg == "" {
+			pkg = f.Name.Name
+		}
+		if f.Name.Name != pkg {
+			continue
+		}
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Recv == nil {
+					declared[d.Name.Name] = true
+				}
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					switch spec := spec.(type) {
+					case *ast.TypeSpec:
+						declared[spec.Name.Name] = true
+					case *ast.ValueSpec:
+						for _, id := range spec.Names {
+							declared[id.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if pkg == "" {
+		pkg = "main"
+	}
+	return pkg, declared
 }

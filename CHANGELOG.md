@@ -526,6 +526,60 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
+  (entity mode); regenerate the CLI to pick these up. Details in
+  [app-cli.md](framework/docs/content/app-cli.md):
+  - `--help` on a verb that takes a record key or a path value
+    (`get`, `update`, `patch`, `delete`, a move, an endpoint) prints its
+    flag reference and exits 0 without the key. It printed one usage
+    line and exited 2.
+  - A verb refuses an argument left after its flags with exit 2 before
+    any request. `patch 42 --published false --views 3` stopped parsing
+    at `false`, sent `published: true`, dropped `--views` and exited 0.
+  - `list -o` other than `json` or `table` exits 2 before the request.
+    A typo printed JSON and exited 0.
+  - A server URL that is not an absolute `http(s)` URL exits 2, from
+    `login --url`, `--url`, `<BINARY>_URL` or the stored config. `login
+    --url 127.0.0.1:8080` stored it, and every later call failed on a
+    URL parse error with the stored token withheld.
+  - `list -o table` prints a json field's object or array as JSON and a
+    tab or line break as a space. It printed Go's `map[a:[1 2]]`, glued
+    `line1\nline2` into `line1line2`, and a tab opened a phantom column.
+  - `login --url` replaces a corrupt config file, and `logout` writes an
+    empty one over it. Both refused it, though the refusal told the
+    reader to run `login` again.
+  - `list` prints the envelope the server sent. A keyset page printed
+    `"total": 0`, `"page": 0` and `"totalPages": 0` it never sent, and a
+    key the CLI did not know was dropped.
+  - A 2xx response past the generated client's 1 MiB cap fails with
+    `response body exceeds 1048576 bytes` (`entities/client` and the Go
+    SDK). The truncated decode said `unexpected EOF`.
+- **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
+  in [app-cli.md](framework/docs/content/app-cli.md):
+  - **BREAKING: an acronym is one word in command and flag names.**
+    `getUserByID` is `get-user-by-id` and `HTTPCode` `--http-code`, where
+    every capital started a word (`get-user-by-i-d`). Scripts calling the
+    old spelling need the new one.
+  - A JSON body property named `url`, `token`, `file` or `json`, one whose
+    flag a parameter holds, or one that is no flag name (`@type`) goes by
+    `--json`; it failed generation of the whole document.
+  - An `allOf` wrapping one scalar schema (FastAPI's enum parameter with
+    a default) is that scalar; it failed generation as non-scalar.
+  - A binary body's schema may be a `$ref`; it failed generation. A
+    multipart or form-urlencoded body with a `format: binary` schema now
+    fails generation; it sent the file raw under `multipart/form-data`
+    with no boundary.
+  - An array header parameter is sent as one line, `X-Tags: a,b`; each
+    item went on its own line, and a server reading the header's value
+    saw the first item only.
+  - A path naming a parameter twice (`/users/{id}/files/{id}`) fills
+    both; the second went out as a literal `%7Bid%7D`.
+  - A Swagger 2.0 document, and a parameter whose `in` is not path,
+    query, header or cookie, fail generation. Both generated a CLI that
+    dropped the parameter (`in: body`, `in: querry`), required or not.
+  - An apiKey scheme whose `name` is not an HTTP header name (`X-Key(1)`)
+    fails generation; the CLI built and then failed every request with
+    `invalid header field name`.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

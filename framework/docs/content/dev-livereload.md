@@ -177,7 +177,13 @@ the drain is usually at once. Windows has no `SIGTERM`, so there the app
 is killed at once, and `gofastr dev` and `gofastr desktop` still wait
 up to the five seconds for it to exit before going on, so shutdown can
 remove the temp directory holding the binary (a running `.exe` cannot
-be deleted). A `SIGINT` or `SIGTERM` to `gofastr dev`
+be deleted). `SIGINT`, `SIGTERM` and `SIGHUP` (a closed terminal) all
+shut `gofastr dev` down the same way: the app is stopped and the temp
+binary directory removed. On Linux the app also gets `SIGTERM` from the
+kernel when `gofastr dev` dies without cleanup (`SIGKILL`, the OOM
+killer), so it never keeps the dev address after its watcher is gone;
+elsewhere such an app keeps running until stopped by hand. A shutdown
+signal to `gofastr dev`
 during a build kills the build and exits; it does not wait for the build
 and the app it would start. The build runs in a process group of its
 own, so the kill reaches the compiler, the linker and cgo's C toolchain

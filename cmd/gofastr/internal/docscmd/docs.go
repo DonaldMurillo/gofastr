@@ -27,9 +27,14 @@ func RunDocs(args []string) {
 		runDocsServe(args[1:])
 		return
 	}
-	// --grep / -g
+	// --grep / -g, as `--grep <term>` or `--grep=<term>`
 	for i := 0; i < len(args); i++ {
-		switch args[i] {
+		arg := args[i]
+		if name, value, ok := strings.Cut(arg, "="); ok && (name == "--grep" || name == "-g") {
+			args = append(args[:i:i], append([]string{name, value}, args[i+1:]...)...)
+			arg = name
+		}
+		switch arg {
 		case "--grep", "-g":
 			term := ""
 			if i+1 < len(args) {
@@ -147,7 +152,7 @@ func printDocsHelp() {
 Usage:
   gofastr docs                  List every topic
   gofastr docs <topic>          Print the topic's markdown body
-  gofastr docs --grep <term>    Search across every topic
+  gofastr docs --grep <term>    Search across every topic (or --grep=<term>)
   gofastr docs --list           List every topic (same as no args)
   gofastr docs serve            Browse the docs site on localhost (see --help)
 

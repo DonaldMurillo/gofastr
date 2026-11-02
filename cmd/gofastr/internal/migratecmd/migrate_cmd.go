@@ -29,9 +29,12 @@ func RunMigrate(args []string) {
 	// The subcommand is optional (see printHelp: "migrate (m) [up|down|…]"),
 	// so a bare `gofastr migrate` must default to "up" without slicing past
 	// the end of an empty arg vector (which panicked with slice bounds [1:0]).
+	// A leading flag is the default subcommand's: `gofastr migrate
+	// --db-url=<url>` is up with a flag, not a subcommand named
+	// "--db-url=<url>".
 	subcmd := "up"
 	rest := args
-	if len(args) > 0 {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		subcmd = args[0]
 		rest = args[1:]
 	}
@@ -449,6 +452,22 @@ func runMigrateStatus(args []string) {
 			}
 		}
 	}
+	// The drift up and down refuse on: without these lines status read
+	// clean while both refused.
+	label := func(rec migrate.MigrationRecord) string {
+		if showGroup {
+			return fmt.Sprintf("%d %s [%s]", rec.Version, rec.Name, groupLabel(rec.Group))
+		}
+		return fmt.Sprintf("%d %s", rec.Version, rec.Name)
+	}
+	for _, rec := range status.Modified {
+		cli.Printf("    "+cli.Yellow("⚠")+" %s: MODIFIED since it was applied (up refuses; revert the file, or roll it back and re-apply)\n",
+			label(rec))
+	}
+	for _, rec := range status.Unregistered {
+		cli.Printf("    "+cli.Yellow("⚠")+" %s: applied, but no file in migrations/ registers it (down cannot roll it back)\n",
+			label(rec))
+	}
 }
 
 // migrateArgsError is what migratorFromArgs refuses before it opens
@@ -462,7 +481,23 @@ func migrateArgsError(args []string) error {
 	if getMigrateDBURL(args) == "" {
 		return fmt.Errorf("database URL is required; set DATABASE_URL or pass --db-url=<url>")
 	}
-	return ensureDriverRegistered(getMigrateDriver(args))
+	driver := getMigrateDriver(args)
+	if !hasMigrationDialect(driver) {
+		return fmt.Errorf("the migration runner speaks SQLite and Postgres; --db=%q is neither (use sqlite or postgres)", driver)
+	}
+	return ensureDriverRegistered(driver)
+}
+
+// hasMigrationDialect reports whether the runner has SQL for driver.
+// dialectForDriver maps everything that is not SQLite to Postgres, so a
+// MySQL driver linked into a custom build would have run Postgres SQL
+// (placeholders, advisory lock) against MySQL.
+func hasMigrationDialect(driver string) bool {
+	switch driver {
+	case "sqlite", "sqlite3", "postgres", "pgx":
+		return true
+	}
+	return false
 }
 
 func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
@@ -557,9 +592,9 @@ func getMigrateDBURL(args []string) string {
 }
 
 // ensureDriverRegistered fails fast with a useful message if the requested
-// database/sql driver is not blank-imported into the binary. The default CLI
-// build only links sqlite3; users who need postgres or mysql build their own
-// gofastr binary that imports the appropriate driver.
+// database/sql driver is not blank-imported into the binary. The CLI links
+// the SQLite and Postgres drivers, the two the runner has a dialect for
+// (hasMigrationDialect refuses the rest first).
 func ensureDriverRegistered(driver string) error {
 	for _, registered := range sql.Drivers() {
 		if registered == driver {

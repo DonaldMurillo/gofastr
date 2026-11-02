@@ -5,9 +5,10 @@ import (
 )
 
 func printAgentsUsage() {
-	fmt.Println(`Usage: gofastr agents [init|sync|skill]
+	fmt.Println(`Usage: gofastr agents [init|sync|skill] [dir]
 
-Generate or refresh AGENTS.md and the per-battery detail files.
+Generate or refresh AGENTS.md and the per-battery detail files in dir
+(default: the current directory).
 
   init    write a fresh AGENTS.md (errors if it exists; use 'sync' to refresh)
   sync    regenerate the battery inventory section in an existing AGENTS.md

@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -86,6 +87,12 @@ func RunDev(args []string) {
 		return
 	}
 
+	if err := checkDevDir(dir); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+
 	runtimeIsolation, resolvedAddr, err := resolveDevIsolation(dir, addr)
 	if err != nil {
 		cli.Fail("Isolation failed: %v", err)
@@ -129,7 +136,7 @@ func RunDev(args []string) {
 	// stall on a module proxy, and shutdown does not wait for it.
 	watchCtx, endWatch := context.WithCancel(context.Background())
 	defer endWatch()
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(signals, ShutdownSignals...)
 	go func() {
 		<-signals
 		close(shutdown)
@@ -221,6 +228,13 @@ func RunDev(args []string) {
 	}
 }
 
+// ShutdownSignals end a dev loop cleanly: the app is stopped, the hold
+// released and the binary directory removed. SIGHUP is among them: a
+// closed terminal or a supervisor's hangup otherwise killed gofastr dev
+// outright and left the app running on the dev address, reparented to
+// init, with its binary left in the temp directory.
+var ShutdownSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP}
+
 // closed reports whether ch is closed, without blocking.
 func closed(ch <-chan struct{}) bool {
 	select {
@@ -249,7 +263,45 @@ func parseDevFlags(args []string) (addr, dir, pkg string, noA11y bool, err error
 		}
 		addr = "localhost:" + port
 	}
+	if err := checkDevAddr(addr); err != nil {
+		return addr, dir, pkg, noA11y, err
+	}
 	return addr, dir, pkg, noA11y, nil
+}
+
+// checkDevAddr refuses an address no listener can take, before the loop
+// starts: a port that is not a number from 0 to 65535 (an empty one bound
+// a random port the banner never named), or no port at all. A bare port
+// ("9000") is accepted, as isolation reads it as ":9000".
+func checkDevAddr(addr string) error {
+	hostport := addr
+	if !strings.Contains(addr, ":") {
+		hostport = ":" + addr
+	}
+	_, port, err := net.SplitHostPort(hostport)
+	if err == nil {
+		if n, perr := strconv.Atoi(port); perr != nil || n < 0 || n > 65535 || port != strconv.Itoa(n) {
+			err = fmt.Errorf("port %q is not a number from 0 to 65535", port)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("invalid listen address %q: %v (want host:port, :port or -p <port>)", addr, err)
+	}
+	return nil
+}
+
+// checkDevDir refuses a --dir that is not a directory. The loop used to
+// start on one anyway: the first build failed, and "Fixing and saving
+// will retry" waited on a tree that does not exist.
+func checkDevDir(dir string) error {
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("--dir %s: %w", dir, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("--dir %s is not a directory", dir)
+	}
+	return nil
 }
 
 // SplitFlagEqual splits "--name=value" into ("--name", "value", true). A bare
@@ -378,6 +430,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
 	runCmd.Env = childEnv
+	TieToParent(runCmd)
 
 	mu.Lock()
 	*cmd = runCmd
@@ -386,8 +439,15 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	// Hand the address to the app: it binds it itself.
 	hold.release()
 	if err := runCmd.Start(); err != nil {
-		cli.Fail("Failed to start: %v", err)
-		hold.show(holdBuildFailed, fmt.Sprintf("Failed to start the app: %v", err))
+		msg := fmt.Sprintf("Failed to start the app: %v", err)
+		// go build -o writes a non-main package's archive without
+		// complaint, and the exec of it fails with "permission denied":
+		// say what is wrong instead.
+		if name := packageName(dir, pkg); name != "" && name != "main" {
+			msg = fmt.Sprintf("%s is package %s, not a main package. gofastr dev runs a command: pass --pkg ./cmd/<name> when main lives below the project root", pkg, name)
+		}
+		cli.Fail("%s", msg)
+		hold.show(holdBuildFailed, msg)
 		return false
 	}
 
@@ -417,6 +477,21 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	}(os.Stdout)
 
 	return true
+}
+
+// packageName is the Go package name of pkg, listed in dir, or "" when
+// go list cannot say.
+func packageName(dir, pkg string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
+	defer cancel()
+	list := exec.CommandContext(ctx, "go", "list", "-f", "{{.Name}}", pkg)
+	list.Dir = dir
+	list.WaitDelay = 5 * time.Second
+	out, err := list.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // buildGatesAndBinary runs the rebuild's gates and go build, copying

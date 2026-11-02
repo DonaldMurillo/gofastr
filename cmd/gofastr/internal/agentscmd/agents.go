@@ -49,7 +49,7 @@ func RunAgents(args []string) {
 	}
 	if len(args) == 0 {
 		cli.Fail("Subcommand required.")
-		cli.Info("Usage: gofastr agents [init|sync]")
+		cli.Info("Usage: gofastr agents [init|sync|skill] [dir]")
 		cli.OsExit(1)
 	}
 	switch args[0] {
@@ -66,14 +66,32 @@ func RunAgents(args []string) {
 	}
 }
 
+// agentsDirArg is the project directory an agents verb works in: the
+// one optional positional argument, "." when there is none. A flag or a
+// second argument is a usage error (exit 2): every verb used to take its
+// first argument as the directory whatever it was, so `agents init
+// --force` created a directory named "--force" and reported success.
+func agentsDirArg(args []string) string {
+	switch {
+	case len(args) == 0:
+		return "."
+	case len(args) > 1:
+		cli.Fail("Unexpected argument %q: an agents verb takes at most one directory.", args[1])
+	case strings.HasPrefix(args[0], "-"):
+		cli.Fail("Unknown flag %q.", args[0])
+	default:
+		return args[0]
+	}
+	printAgentsUsage()
+	cli.OsExit(2)
+	return ""
+}
+
 // runAgentsInit writes a fresh AGENTS.md in the current directory (or
 // the path given as the first argument). Errors if the file already
 // exists. Use `agents sync` to refresh.
 func runAgentsInit(args []string) {
-	dir := "."
-	if len(args) > 0 {
-		dir = args[0]
-	}
+	dir := agentsDirArg(args)
 	target := filepath.Join(dir, "AGENTS.md")
 	if err := createAgentsMD(dir); err != nil {
 		if errors.Is(err, fs.ErrExist) {
@@ -117,10 +135,7 @@ func createAgentsMD(dir string) error {
 // current project's .claude/skills/ tree. Useful when a host that
 // pre-dates `gofastr init --skill` wants the skill retroactively.
 func runAgentsSkill(args []string) {
-	dir := "."
-	if len(args) > 0 {
-		dir = args[0]
-	}
+	dir := agentsDirArg(args)
 	if err := WriteHostSkill(dir); err != nil {
 		cli.Fail("Failed to write skill: %v", err)
 		cli.OsExit(1)
@@ -132,10 +147,7 @@ func runAgentsSkill(args []string) {
 // touching anything outside them. Lets host apps refresh after a
 // framework upgrade.
 func runAgentsSync(args []string) {
-	dir := "."
-	if len(args) > 0 {
-		dir = args[0]
-	}
+	dir := agentsDirArg(args)
 	target := filepath.Join(dir, "AGENTS.md")
 	root, err := os.OpenRoot(dir)
 	if err != nil {
