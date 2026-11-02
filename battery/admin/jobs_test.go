@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -44,6 +45,12 @@ type jobsEnv struct {
 // and EntityUI runs once per app.
 func buildJobsEnv(t *testing.T, posts int) *jobsEnv {
 	t.Helper()
+	return buildJobsEnvWith(t, posts, lockedPosts())
+}
+
+// buildJobsEnvWith is buildJobsEnv over the given posts declaration.
+func buildJobsEnvWith(t *testing.T, posts int, postsCfg entity.EntityConfig) *jobsEnv {
+	t.Helper()
 	policy := access.NewRolePolicy()
 	if err := policy.Grant("editor", "posts:read", "posts:write"); err != nil {
 		t.Fatal(err)
@@ -59,7 +66,10 @@ func buildJobsEnv(t *testing.T, posts int) *jobsEnv {
 	}
 	app := framework.NewUIHostApp(uihost.New(appui.NewApp("admin-test")),
 		framework.WithDB(db), framework.WithoutDefaultMiddleware())
-	app.Entity("posts", lockedPosts())
+	app.Entity("posts", postsCfg)
+	// notes is the app's own: the admin does not expose it, but its
+	// public bulk route queues on the same runner.
+	app.Entity("notes", notesConfig())
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -226,6 +236,67 @@ func TestBulkOverCapQueuedThenRunByDrain(t *testing.T) {
 	}
 	if deletes != 120 {
 		t.Fatalf("audit wrote %d delete rows, want one per record", deletes)
+	}
+}
+
+// A named entity with CRUD off is written only through the admin's own
+// routes. A queued run over it runs through the same UI the bulk route
+// served, so it finishes instead of stopping on "no write routes".
+func TestBulkQueuedRunsOnCRUDOffEntity(t *testing.T) {
+	cfg := lockedPosts()
+	no := false
+	cfg.Exposure.CRUD = &no
+	j := buildJobsEnvWith(t, 120, cfg)
+	j.init(t)
+	j.setRoles("u1", "admin", "editor")
+
+	code, out := j.confirmBulk(t, "u1", 120)
+	if code != http.StatusAccepted {
+		t.Fatalf("confirm = %d %v, want 202", code, out)
+	}
+	jobID, _ := out["job"].(string)
+	j.q.Start()
+	waitFor(t, "the drained job to settle", func() bool { return j.bulkJobStatus(t, jobID) != entityui.BulkQueued })
+	if s := j.bulkJobStatus(t, jobID); s != entityui.BulkDone {
+		t.Fatalf("job status = %q, want done: the runner refused a run the bulk route accepted", s)
+	}
+	if n := j.countPosts(t); n != 0 {
+		t.Fatalf("the drained run left %d rows", n)
+	}
+}
+
+// The app's own bulk route queues on the runner the admin binds: a run
+// over an entity the admin does not expose still finishes under the
+// app's REST routes.
+func TestBulkQueuedRunsOnAppOnlyEntity(t *testing.T) {
+	j := newJobsEnv(t, 0)
+	j.setRoles("u1", "editor")
+	ids := make([]string, 120)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("n%03d", i)
+		j.env.insert("notes", map[string]any{"id": ids[i], "text": "note"})
+	}
+	body, _ := json.Marshal(map[string]any{"action": "delete", "scope": "selected", "ids": ids})
+	req := httptest.NewRequest(http.MethodPost, "/notes/_bulk", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rr := serve(j.asUser("u1"), req)
+	out := map[string]any{}
+	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("confirm = %d %v, want 202", rr.Code, out)
+	}
+	jobID, _ := out["job"].(string)
+	j.q.Start()
+	waitFor(t, "the drained job to settle", func() bool { return j.bulkJobStatus(t, jobID) != entityui.BulkQueued })
+	if s := j.bulkJobStatus(t, jobID); s != entityui.BulkDone {
+		t.Fatalf("job status = %q, want done", s)
+	}
+	var n int
+	if err := j.db.QueryRow(`SELECT COUNT(*) FROM notes`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("the drained run left %d notes", n)
 	}
 }
 

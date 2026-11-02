@@ -327,10 +327,11 @@ func (b *Battery) Init(app *framework.App) error {
 	}
 	if b.cfg.BulkJobs != nil {
 		b.cfg.BulkJobs.setAdmit(b.admitJob)
+		jobsUI := b.jobsUI()
 		// Bind first: a job resumed before its handler was registered
 		// would be dead-lettered by the queue as an unknown type.
-		b.cfg.BulkJobs.Bind(b.cfg.UI)
-		if n, err := b.cfg.UI.ResumeBulkJobs(context.Background(), bulkResumeGrace); err != nil {
+		b.cfg.BulkJobs.Bind(jobsUI)
+		if n, err := jobsUI.ResumeBulkJobs(context.Background(), bulkResumeGrace); err != nil {
 			b.logger().Error("admin: resume bulk jobs", "resumed", n, "error", err)
 		} else if n > 0 {
 			b.logger().Info("admin: resumed bulk jobs", "count", n)
@@ -338,6 +339,22 @@ func (b *Battery) Init(app *framework.App) error {
 	}
 	b.mount()
 	return nil
+}
+
+// jobsUI is the UI a bound BulkJobs runs queued runs through. Both the
+// admin's bulk route and the app's own queue runs, so an entity counts
+// as written wherever either route writes it: under the admin's write
+// base when the admin exposes it (a named CRUD-off entity has no other),
+// else under the app's REST routes. Binding Config.UI alone stopped
+// every queued run over an entity only the admin writes.
+func (b *Battery) jobsUI() *entityui.UI {
+	app := b.cfg.UI
+	return app.WithAPIPath(func(e *entity.Entity) (string, bool) {
+		if b.exposed(e) {
+			return b.apiBase(e), true
+		}
+		return app.WritePath(e)
+	})
 }
 
 // SavedViews returns the saved views store, or nil when Config.SavedViews

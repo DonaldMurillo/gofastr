@@ -417,6 +417,9 @@ Extensions whose writes (save, delete, moves, bulk, export) post to
 draws that entity read-only. A back office uses it to send writes through
 routes it gates itself: `battery/admin` mounts the CRUD handler's write
 routes under `/admin/api/<entity>` this way. Reads are unchanged.
+`appUI.WritePath(e)` reports where a UI's screens send `e`'s writes, and
+false when they draw it read-only, so a host that wraps a UI again can
+fall back on the base it had.
 
 `appUI.WithRecordPath(path)` returns a UI whose list cells draw a
 relation's title as a chip linking to `path(e) + "/" + id`, the related

@@ -475,7 +475,11 @@ runner at `app.EntityUI` time (`Extensions.Jobs`), and the runner needs
 the UI to run jobs, so `Config.BulkJobs` closes the cycle — the admin's
 `Init` binds the runner to `Config.UI` and then calls
 `UI.ResumeBulkJobs`, handing back any job a crash left between its
-snapshot and its `Enqueue`. The queue job's payload carries only the job
+snapshot and its `Enqueue`. The bound UI counts an entity the admin
+exposes as written through the admin's routes and any other entity
+through the app's own (`UI.WritePath`), so a queued run over a named
+entity with CRUD off finishes, and so does one the app's own bulk route
+queued. The queue job's payload carries only the job
 id; the confirmed selection lives in the host's snapshot store.
 
 `PrincipalFunc` (the second argument) rebuilds the confirming user's
