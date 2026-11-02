@@ -183,10 +183,10 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Du
 	// (deadline passed, clock skew across replicas, a unit mix-up).
 	// Fail closed on it: drop whatever is stored under the key and
 	// store nothing. The old hasExpiry = ttl > 0 mapping filed it as
-	// never-expiring — the maximal inversion of the caller's intent,
-	// and the silent opposite of the Redis twin, whose SET refuses a
-	// non-positive expiry outright. Only ttl == 0 is the documented
-	// "use the default" sentinel.
+	// never-expiring — the maximal inversion of the caller's intent.
+	// RedisCache.Set does the same: it deletes the key rather than
+	// hand a negative expiry to a client. Only ttl == 0 is the
+	// documented "use the default" sentinel.
 	if effectiveTTL < 0 {
 		mc.mu.Lock()
 		if existing, ok := mc.items[k]; ok {

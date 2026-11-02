@@ -44,9 +44,11 @@ All call sites depend only on this interface. Swap `MemoryCache` for
 
 `Set`'s `ttl` of `0` uses the configured default. A negative `ttl` is
 honoured as "already expired": nothing is stored and any existing
-entry under the key is dropped (`MemoryCache`), or refused by the
-backend (`RedisCache`, whose SET rejects a non-positive expiry) — a
-mis-computed lifetime can never widen into retention. Via `GetOrSet`
+entry under the key is dropped, on both `MemoryCache` and `RedisCache`
+(which deletes the key and never hands the negative expiry to the
+client: go-redis reads one as "no expiry") — a mis-computed lifetime
+can never widen into retention. A negative `WithTTL` default behaves
+the same. Via `GetOrSet`
 a negative `ttl` still runs the loader, stores nothing, and surfaces
 the miss.
 

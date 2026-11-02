@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`RedisCache.Set` with a negative TTL deletes the key.** It passed
+  the negative duration to `RedisClient.Set`, and a go-redis adapter
+  stores that with no expiry (`-1` is KEEPTTL), so a lifetime already in
+  the past made an entry that never expired. It now matches
+  `MemoryCache`: nothing is stored and the existing entry is dropped.
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to
