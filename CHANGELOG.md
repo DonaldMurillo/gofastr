@@ -179,6 +179,14 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: a real environment variable wins inside a dotfile's
+  `${…}`.** `dotenv.Load` (and so `NewApp`) now resolves `${NAME}` from
+  `os.Environ` first, then an earlier file, then the same file: the
+  order `Apply` keeps values in. With `DB_HOST=prod` set,
+  `DATABASE_URL="…${DB_HOST}…"` used the dotfile's host while `DB_HOST`
+  itself was `prod`. A value that relied on the file's spelling beating
+  the environment now reads the environment's. See
+  [dotenv](framework/docs/content/dotenv.md#variable-expansion-var).
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
