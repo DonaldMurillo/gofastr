@@ -83,6 +83,43 @@ func f(name string, esc func(string) string) []r.HTML {
 	}
 }
 `, []int{11, 12, 13, 15}},
+		{"render.HTML over a non-literal format, strings.Join and a built local", contracts.RuleHTMLConcat, `package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
+func f(tmpl, name string, parts []string) []render.HTML {
+	s := "<p>" + name + "</p>"
+	var t = fmt.Sprintf("<b>%s</b>", name)
+	return []render.HTML{
+		render.HTML(fmt.Sprintf(tmpl)),
+		render.HTML(strings.Join(parts, "")),
+		render.HTML(s),
+		render.HTML(t),
+	}
+}
+`, []int{14, 15, 16, 17}},
+		{"render.HTML over a constant local, Join of literals and a plain variable stays quiet", contracts.RuleHTMLConcat, `package main
+
+import (
+	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
+func f(trusted string) []render.HTML {
+	s := "<p>" + "</p>"
+	return []render.HTML{
+		render.HTML(s),
+		render.HTML(strings.Join([]string{"<p>", "</p>"}, "")),
+		render.HTML(trusted),
+	}
+}
+`, nil},
 		{"render.HTML over constants stays quiet", contracts.RuleHTMLConcat, `package main
 
 import (

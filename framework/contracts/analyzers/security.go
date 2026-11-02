@@ -160,13 +160,16 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 }
 
 // ruleHTMLBuiltAST reports the render.HTML calls the line regex above
-// cannot see: a string built by fmt.Sprintf/Sprint/Sprintln, a
-// concatenation split over lines, and one whose first operand is itself
-// a call (render.HTML(esc(a) + b): the regex stops at the first `)`).
-// Each puts a variable into markup unescaped exactly as the one-line `+`
-// does. It resolves core/render under any alias, and reports only a
-// build with a non-literal operand, so a constant split for width stays
-// quiet. A line the regex already reported is not reported twice.
+// cannot see: a string built by fmt.Sprintf/Sprint/Sprintln (a
+// non-literal Sprintf format counts as a variable operand) or
+// strings.Join, a concatenation split over lines, one whose first operand
+// is itself a call (render.HTML(esc(a) + b): the regex stops at the first
+// `)`), and a local variable the same function assigned such a build
+// (s := "<p>" + name + "</p>"; render.HTML(s)). Each puts a variable into
+// markup unescaped exactly as the one-line `+` does. It resolves
+// core/render under any alias, and reports only a build with a
+// non-literal operand, so a constant split for width stays quiet. A line
+// the regex already reported is not reported twice.
 func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
@@ -174,38 +177,86 @@ func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []str
 	}
 	aliases := importAliases(file)
 	var out []contracts.Diagnostic
-	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := qualifiedCall(n, aliases, "core/render", "HTML")
-		if !ok || len(call.Args) != 1 {
-			return true
+	for _, decl := range file.Decls {
+		// The file parses without object resolution, so a local is
+		// matched by name across its function: the builds any assignment
+		// in the function gave it.
+		var locals map[string][]ast.Expr
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
+			locals = localAssignments(fn.Body)
 		}
-		how := htmlBuild(call.Args[0], aliases)
-		if how == "" {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			call, ok := qualifiedCall(n, aliases, "core/render", "HTML")
+			if !ok || len(call.Args) != 1 {
+				return true
+			}
+			how := htmlBuild(call.Args[0], aliases)
+			if id, isIdent := unparen(call.Args[0]).(*ast.Ident); how == "" && isIdent {
+				for _, rhs := range locals[id.Name] {
+					if b := htmlBuild(rhs, aliases); b != "" {
+						how = b + " (assigned to " + id.Name + ")"
+						break
+					}
+				}
+			}
+			if how == "" {
+				return true
+			}
+			line := p.Position(call.Pos()).Line
+			if seen[line] || hasLegacyAnnotation(lines, line, "safe-html:") {
+				return true
+			}
+			seen[line] = true
+			d := diag(p, contracts.RuleHTMLConcat, rel, call.Pos(),
+				"render.HTML receives a string built by "+how+": the interpolated value is not escaped")
+			out = append(out, d)
 			return true
-		}
-		line := p.Position(call.Pos()).Line
-		if seen[line] || hasLegacyAnnotation(lines, line, "safe-html:") {
-			return true
-		}
-		seen[line] = true
-		d := diag(p, contracts.RuleHTMLConcat, rel, call.Pos(),
-			"render.HTML receives a string built by "+how+": the interpolated value is not escaped")
-		out = append(out, d)
-		return true
-	})
+		})
+	}
 	return out
 }
 
-// htmlBuild names how e builds a string around a non-literal value
-// ("concatenation", "fmt.Sprintf"), or "" when it does not.
-func htmlBuild(e ast.Expr, aliases map[string]string) string {
+// localAssignments maps each name assigned in body (name := e, name = e,
+// var name = e, one value per name) to the values assigned to it.
+func localAssignments(body *ast.BlockStmt) map[string][]ast.Expr {
+	locals := map[string][]ast.Expr{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.AssignStmt:
+			if len(v.Lhs) == len(v.Rhs) {
+				for i, lhs := range v.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						locals[id.Name] = append(locals[id.Name], v.Rhs[i])
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			if len(v.Names) == len(v.Values) {
+				for i, id := range v.Names {
+					locals[id.Name] = append(locals[id.Name], v.Values[i])
+				}
+			}
+		}
+		return true
+	})
+	return locals
+}
+
+func unparen(e ast.Expr) ast.Expr {
 	for {
 		paren, ok := e.(*ast.ParenExpr)
 		if !ok {
-			break
+			return e
 		}
 		e = paren.X
 	}
+}
+
+// htmlBuild names how e builds a string around a non-literal value
+// ("concatenation", "fmt.Sprintf", "strings.Join"), or "" when it does
+// not.
+func htmlBuild(e ast.Expr, aliases map[string]string) string {
+	e = unparen(e)
 	if bin, ok := e.(*ast.BinaryExpr); ok && bin.Op == token.ADD {
 		if !constantString(bin) {
 			return "concatenation"
@@ -217,15 +268,24 @@ func htmlBuild(e ast.Expr, aliases map[string]string) string {
 		if !ok {
 			continue
 		}
-		args := call.Args
-		if fn == "Sprintf" && len(args) > 0 {
-			args = args[1:]
-		}
-		for _, a := range args {
+		for _, a := range call.Args {
 			if _, lit := a.(*ast.BasicLit); !lit {
 				return "fmt." + fn
 			}
 		}
+	}
+	if call, ok := qualifiedCall(e, aliases, "strings", "Join"); ok && len(call.Args) == 2 {
+		if elems, isLit := unparen(call.Args[0]).(*ast.CompositeLit); isLit {
+			for _, el := range elems.Elts {
+				if !constantString(el) {
+					return "strings.Join"
+				}
+			}
+			if constantString(call.Args[1]) {
+				return ""
+			}
+		}
+		return "strings.Join"
 	}
 	return ""
 }

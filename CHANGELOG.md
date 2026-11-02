@@ -349,7 +349,10 @@ few lines, and link the PR or the docs page for the rest.
   `render.HTML(fmt.Sprintf("<p>%s</p>", name))`, a concatenation split
   over lines, and `render.HTML(esc(a) + b)` put the same unescaped value
   into markup unreported. Both rules read the syntax tree now; a build
-  from constants alone stays quiet. The kit's four escaped builds carry
+  from constants alone stays quiet. GOFASTR1403 also reads a Sprintf
+  whose format is a variable, a `strings.Join`, and a local the function
+  assigned such a build (`s := "<p>" + name + "</p>"; render.HTML(s)`).
+  The escaped builds in the kit (the sparkline among them) carry
   `//gofastr:allow(GOFASTR1403)`.
 - **`gofastr migrate down` takes one count.** With two counts the last
   one won, so `migrate down 1 3` ran three Down sections (three

@@ -647,7 +647,7 @@ func securityRules() []Rule {
 	}, {
 		ID: RuleHTMLConcat, Slug: "security/html-concat",
 		Title: "Untrusted value concatenated into HTML", Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`render.HTML` is called on a string built around a variable: a concatenation (on one line or several) or a `fmt.Sprintf`/`Sprint`/`Sprintln`.",
+		Summary: "`render.HTML` is called on a string built around a variable: a concatenation (on one line or several), a `fmt.Sprintf`/`Sprint`/`Sprintln` (a non-literal format counts), a `strings.Join`, or a local the function assigned one of these.",
 		Why: "`render.HTML` means \"this is already safe markup: do not escape it\". Concatenating a " +
 			"variable into it hands the user's string straight to the browser as markup. That is stored XSS.",
 		Fix: "Use `render.Text` for untrusted values (it escapes), or compose `core-ui/html` elements. If the concatenated half is genuinely a constant, annotate `//gofastr:allow(GOFASTR1403) <why>`.",
