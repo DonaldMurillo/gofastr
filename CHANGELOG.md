@@ -4363,6 +4363,13 @@ few lines, and link the PR or the docs page for the rest.
   errors. Every shell now refuses an extension containing `;` and a
   default name containing `\`. On Windows a `*` extension matches
   everything, and so does a filter with no extensions.
+- **BREAKING: two indexes that share a name are refused.** Index names
+  belong to the schema on both engines and every index is created with
+  `IF NOT EXISTS`, so the second table's index was skipped and a
+  `Unique` one let that table take duplicates. A default name collides
+  too (table `a_b` on `c` and table `a` on `b_c` are both `idx_a_b_c`).
+  Boot, `DiffSchema` and `migrate generate` now name both tables; give
+  one index its own `Name`.
 
 ### Security
 - **sdkdocs no longer serves SDK downloads that cover gated entities.**

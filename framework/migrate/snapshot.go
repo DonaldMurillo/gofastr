@@ -192,6 +192,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		if err != nil {
 			return "", "", SchemaSnapshot{}, err
 		}
+		if err := checkIndexNames(ordered, all); err != nil {
+			return "", "", SchemaSnapshot{}, err
+		}
 	}
 	prev = respellTables(prev, declaredTableNames(all), dialect)
 

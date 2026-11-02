@@ -643,3 +643,7 @@ notes:
     find:
       uses:
         - gofastr/battery/desktop/ui.Theme
+  - change: "BREAKING - boot, DiffSchema and migrate generate refuse two indexes that share a name (set in Index.Name or derived as idx_<table>_<columns>) on two tables, or one table declaring two different indexes under one name"
+    breaking: true
+    guidance: "Index names belong to the schema on SQLite and Postgres and every index is created with IF NOT EXISTS, so the second index was never created and a Unique one let its table take duplicate rows. Give one of the two indexes its own Index.Name; on a database an older build migrated, check the second table for duplicates before the new index is created."
+    nodetect: "the collision is between two entities' index declarations, which no single spelling in the source marks"

@@ -462,6 +462,16 @@ foreign key you added by hand may depend on a unique index and the drop
 would fail. The snapshot keeps recording the old index while the new
 one is declared, so removing or changing the index later drops both.
 
+An index name belongs to the schema, not the table, on both engines, and
+the migrator creates every index with `CREATE INDEX IF NOT EXISTS`. Two
+tables whose indexes share a name, whether set in `Index.Name` or
+derived (table `a_b` on `c` and table `a` on `b_c` are both
+`idx_a_b_c`), would get one index between them, so boot, `DiffSchema`
+and `migrate generate` refuse the pair and name both tables, as they do
+one table declaring two different indexes under one name. Names are
+compared folded and cut at 63 bytes, the way Postgres stores them, on
+both dialects. Give one of the indexes its own `Name`.
+
 A `Unique` field's `<table>_<column>_key` is the name Postgres gives
 the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
 `entity.UniqueKeyName`'s (`query.FitObjectName`): the longer of the
