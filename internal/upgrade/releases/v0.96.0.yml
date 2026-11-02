@@ -888,10 +888,6 @@ notes:
     breaking: false
     guidance: "On Windows these spellings opened .env, .git/config and web.config past the refusals. Elsewhere the only change is that a file whose name holds a backslash, or a name like web.config. , now answers 404: rename such a file if it must be served."
     nodetect: "the refusal reads request paths at runtime; nothing in an app's source spells it"
-  - change: "dotenv.Load and NewApp's .env auto-load expand ${NAME} against an earlier file's value, then the same file's earlier keys, then os.Environ, as documented; they used to read the same file's keys only, so ${HOME} loaded empty and a later file's ${DB_HOST} kept the value an earlier file shadowed"
-    breaking: false
-    guidance: "A dotfile value that references a variable the file does not define now gets the environment's value instead of an empty string, and one built from a key a higher-precedence file overrides now uses the override. Check any value that relied on the empty result."
-    nodetect: "the change is in how .env files are read at boot; nothing in an app's Go source spells it"
   - change: "textsafe.IsUnsafe (and so StripUnsafe, ContainsUnsafe and ScrubControlBytes) treats U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR as unsafe, like NEL"
     breaking: false
     guidance: "Text log lines percent-encode the two separators, and sinks that refuse unsafe text, such as auth.CleanName, refuse a value carrying one. A display name or title that held one loses it or is refused; nothing else changes."
@@ -904,9 +900,10 @@ notes:
     breaking: false
     guidance: "Nothing to change to run the built-in profiles. To run an edited profile from a checkout of the gofastr repo, pass --profile framework/experimental/harness/profile/<name>.toml. A repo that carried that path no longer replaces the profile."
     nodetect: "the profile is chosen by the harness command at run time; nothing in an app's source spells it"
-  - change: "apiversions.ApplyToEntityConfig panics when the version's projection names, in Include, Exclude or a Rename key, a field the base entity config does not declare and entity.Define does not inject; Exclude and Rename now apply to an injected column (id, created_at, updated_at, scope columns)"
-    breaking: false
-    guidance: "Use the field name (internal_notes), not its wire key (internalNotes), and drop names of fields the entity no longer has. Each such name was ignored before, so an Exclude typo left the column on that version's responses. An Exclude or Rename naming an injected column such as updated_at used to do nothing; it now hides or renames that column on the version, so drop it if the column should stay as it was."
+  - change: "BREAKING - apiversions.ApplyToEntityConfig panics at boot when the version's projection names, in Include, Exclude or a Rename key, a field the base entity config does not declare and entity.Define does not inject; Exclude and Rename now apply to an injected column (id, created_at, updated_at, scope columns)"
+    breaking: true
+    hits: review
+    guidance: "An app whose projection holds such a name no longer starts: the panic names the version and the field. Use the field name (internal_notes), not its wire key (internalNotes), and drop names of fields the entity no longer has. Each such name was ignored before, so an Exclude typo left the column on that version's responses. An Exclude or Rename naming an injected column such as updated_at used to do nothing; it now hides or renames that column on the version, so drop it if the column should stay as it was."
     find:
       uses:
         - gofastr/framework/experimental/apiversions.ApplyToEntityConfig
@@ -1129,10 +1126,10 @@ notes:
     breaking: false
     nodetect: "the case is AppConfig data and the keys live in the app's clients"
     guidance: "A snake_case app's REST bodies use the column names again, as entity-declarations.md documents. A client written against the camelCase keys those routes served since v0.94.0 reads and sends the column names instead. Apps on the default camelCase change nothing."
-  - change: "/openapi.json documents the ?include= read view: a relation field's property in an entity's schema component is anyOf its key, the related record or null, and a relation with no field of its own is an optional property; request bodies still take the key"
-    breaking: false
+  - change: "BREAKING for generated API clients - /openapi.json documents the ?include= read view: a relation field's property in an entity's schema component is anyOf its key, the related record or null, and a relation with no field of its own is an optional property; request bodies still take the key"
+    breaking: true
     nodetect: "the document is generated at runtime; what reads it is a client generator outside the app"
-    guidance: "Nothing to change in the app. A client generated from the document types each relation field as a union where it was a uuid string; regenerate it, and read the key alternative where the code did not ask for an include."
+    guidance: "Nothing to change in the app itself. A client generated from the document types each relation field as a union where it was a uuid string, so code that used the field as a string stops compiling once the client is regenerated (TypeScript, Go, Kotlin, Swift generators alike). Regenerate the client and narrow the union where you read it: take the key alternative where the code did not ask for an include, the record where it did. Pin the old document if a client cannot move yet."
   - change: "ui.AspectRatioComponent (empty or unknown Ratio), ui.Sticky (unknown Edge or Offset), ui.Box (unknown Pad) and ui.Center (MinHeight other than viewport or screen) panic, as Sticky's ZIndexTier already did"
     breaking: false
     guidance: "Each such value rendered a class with no rule: an AspectRatio with no ratio collapsed its media to 0px. Use the exported constants; the panic names the value."
@@ -1307,10 +1304,10 @@ notes:
       uses:
         - gofastr/framework.WebBotAuthVerifyConfig
         - gofastr/core/webbotauth.New
-  - change: "BREAKING - dotenv.Load (and NewApp's .env loading) resolves ${NAME} from os.Environ first, then an earlier file, then the same file; the environment used to come last"
+  - change: "BREAKING - dotenv.Load (and NewApp's .env loading) resolves ${NAME} from os.Environ first, then an earlier (higher-precedence) file's value, then the same file's earlier keys; v0.95.0 read the same file's earlier keys only, so ${HOME} loaded empty and a later file's ${DB_HOST} kept the value an earlier file shadowed"
     breaking: true
     hits: review
-    guidance: "A dotfile value built from ${NAME} now matches the NAME the app runs with, because Apply never overwrites a set environment variable. If a deployment sets a variable in the environment and a dotfile value relied on the file's own spelling of it, that value now uses the environment's: unset the variable, or rename the dotfile key the value reads. dotenv.Parse and dotenv.Expand are unchanged."
+    guidance: "A dotfile value built from ${NAME} now matches the NAME the app runs with, because Apply never overwrites a set environment variable. Three things can change: a reference to a variable the file does not define gets the environment's (or an earlier file's) value instead of an empty string; one built from a key a higher-precedence file overrides uses the override; and when a deployment sets a variable in the environment, a value that relied on the file's own spelling of it now uses the environment's. Check values that relied on the empty result or on the file's spelling; unset the variable, or rename the dotfile key the value reads. dotenv.Parse still reads only the same file's keys, and dotenv.Expand is unchanged."
     find:
       uses:
         - gofastr/core/dotenv.Load

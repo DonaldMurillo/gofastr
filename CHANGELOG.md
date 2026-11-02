@@ -203,13 +203,18 @@ few lines, and link the PR or the docs page for the rest.
   specs, kiln, pack and codegen read through it. No file in this repo
   used the old spellings. See
   [app spec](framework/docs/content/app-spec.md#yaml-subset).
-- **BREAKING: a real environment variable wins inside a dotfile's
-  `${…}`.** `dotenv.Load` (and so `NewApp`) now resolves `${NAME}` from
-  `os.Environ` first, then an earlier file, then the same file: the
-  order `Apply` keeps values in. With `DB_HOST=prod` set,
-  `DATABASE_URL="…${DB_HOST}…"` used the dotfile's host while `DB_HOST`
-  itself was `prod`. A value that relied on the file's spelling beating
-  the environment now reads the environment's. See
+- **BREAKING: `.env` `${NAME}` reads the value that is applied.**
+  `dotenv.Load` (and so `NewApp`'s auto-load) now resolves `${NAME}`
+  from `os.Environ` first, then an earlier (higher-precedence) file's
+  value, then the same file's earlier keys: the order `Apply` keeps
+  values in. v0.95.0 expanded each file against its own keys only, so
+  the docs' own `PATH_TPL="${HOME}/bin"` loaded as `/bin`, a `.env`
+  `DATABASE_URL="postgres://${DB_HOST}/app"` kept the `.env` host while
+  `.env.local`'s `DB_HOST` was the one applied, and with `DB_HOST=prod`
+  in the environment the URL still used the dotfile's host. A value
+  that relied on the empty result or on the file's spelling beating the
+  environment now reads the applied value. `dotenv.Parse` alone still
+  reads no environment. See
   [dotenv](framework/docs/content/dotenv.md#variable-expansion-var).
 - **BREAKING: `BeforeUpdate` and `BeforeDelete` hooks no longer run for
   an id the caller cannot write.** Update, delete and their batch items
@@ -337,13 +342,16 @@ few lines, and link the PR or the docs page for the rest.
   the Windows `EvalAsync` result slot is numbered by a counter, not the
   clock; and `gofastr desktop build` writes its cached WebView2 SDK
   package with `fileperm.WriteOwnerOnly`.
-- **`/openapi.json` documents what `?include=` returns.** An entity's
+- **BREAKING for generated clients: `/openapi.json` documents what
+  `?include=` returns.** An entity's
   schema component is its read view: a relation field's property is
   `anyOf` its key, the related record or null, since an include replaces
   the key with the record, and each other relation is an optional
   property (a record or null, or an array of records). Request bodies
-  still take the key. A generated client reads the field as a union
-  (see `includes.md`).
+  still take the key. A generated client reads the field as a union, so
+  code that used a relation field as a string stops compiling once the
+  client is regenerated; narrow the union where you read it (see
+  `includes.md`).
 - **Local run registry registers local runs only (#635).** A server
   bound to every interface or a LAN address, with no `gofastr dev` and
   no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
@@ -522,14 +530,6 @@ few lines, and link the PR or the docs page for the rest.
   percent-encodes them in text log lines, and every `StripUnsafe` /
   `ContainsUnsafe` sink (display names, notification and email text,
   page titles) strips or refuses them. New `textsafe.IsLineSeparator`.
-- **`.env` `${NAME}` expansion follows its documented lookup order.**
-  `dotenv.Load` (and `NewApp`'s auto-load) expanded each file against
-  its own keys only, so the docs' own `PATH_TPL="${HOME}/bin"` loaded
-  as `/bin`, and a `.env` `DATABASE_URL="postgres://${DB_HOST}/app"`
-  kept the `.env` host while `.env.local`'s `DB_HOST` was the one
-  applied. A reference now reads an earlier file's value, then the same
-  file's earlier keys, then `os.Environ`. `dotenv.Parse` alone still
-  reads no environment. See [dotenv](framework/docs/content/dotenv.md).
 - **An `EmitAsync` subscriber no longer joins the emitter's
   transaction.** The subscriber's context kept every emitter value,
   the open `*sql.Tx` included, so a subscriber that wrote through
@@ -6036,8 +6036,8 @@ few lines, and link the PR or the docs page for the rest.
   loses its value (`sqlite.MemberRedactor`, which `DefaultRedactor`
   implements). Events already stored keep what they had. See
   [harness architecture](framework/docs/content/harness-architecture.md).
-- **`apiversions.ApplyToEntityConfig` panics on a projection naming an
-  undeclared field.** An `Exclude` entry that matched no field (a typo,
+- **BREAKING: `apiversions.ApplyToEntityConfig` panics on a projection
+  naming an undeclared field.** An `Exclude` entry that matched no field (a typo,
   or the column's camelCase wire key instead of its field name) was
   ignored, so the column a version meant to hide stayed on its wire
   output. A name in `Include`, `Exclude` or a `Rename` key that the base
@@ -6046,7 +6046,9 @@ few lines, and link the PR or the docs page for the rest.
   The columns `Define` injects (`id`, the timestamps, the scope columns)
   count as declared, so `Include: {"id", "title"}` works as it did, and
   `Exclude` and `Rename` reach an injected column: `Exclude:
-  {"updated_at"}` hides it. `EntityConfig.WithSystemFields` returns a
+  {"updated_at"}` hides it, where it used to do nothing, so a version
+  that listed it now drops the column from its responses.
+  `EntityConfig.WithSystemFields` returns a
   config with those columns already in `Fields`. See
   [API versioning](framework/docs/content/api-versioning.md).
 - **The harness `Read` and `Edit` tools refuse a path that is not a
