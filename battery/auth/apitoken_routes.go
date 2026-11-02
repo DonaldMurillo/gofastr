@@ -302,6 +302,12 @@ func (p *TokensPlugin) revokeTokenHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusBadRequest, reasonTokenIdRequired)
 			return
 		}
+		// An id that is not storable text names no token, and Postgres
+		// would refuse it in the bind (22021, a 500).
+		if !storableText(id) {
+			writeAuthError(w, r, http.StatusNotFound, reasonTokenNotFound)
+			return
+		}
 		// Revoke is owner-scoped: a foreign id returns ErrTokenNotFound → 404.
 		// The same id revoking twice is a no-op success (idempotent).
 		if err := p.tokens.Revoke(r.Context(), id, OwnerKindUser, userID); err != nil {

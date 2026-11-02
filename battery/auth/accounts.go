@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -189,6 +191,13 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, r, http.StatusBadRequest, reasonProviderRequired)
 		return
 	}
+	// router.Param cuts a NUL but keeps invalid UTF-8, which Postgres
+	// refuses in a text bind (22021, a 500). No account is linked under
+	// a name that cannot be stored.
+	if !storableText(provider) {
+		writeAuthError(w, r, http.StatusNotFound, reasonAccountNotLinked)
+		return
+	}
 
 	lister, listerOK := p.mgr.UserStore().(AccountLister)
 	unlinker, unlinkerOK := p.mgr.UserStore().(AccountUnlinker)
@@ -316,4 +325,12 @@ func (p *AccountsPlugin) revokeProviderTokens(ctx context.Context, userID, provi
 		return nil
 	}
 	return ts.Delete(ctx, userID, provider)
+}
+
+// storableText reports whether s is text a database stores: valid
+// UTF-8 holding no NUL byte. Postgres refuses anything else in a text
+// bind with 22021, so a path value bound unchecked answered 500 there
+// and a plain miss on SQLite.
+func storableText(s string) bool {
+	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
 }
