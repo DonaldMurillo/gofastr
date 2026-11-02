@@ -238,7 +238,7 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		if _, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil); err != nil {
+		if _, err := m.getRow(ctx, id); err != nil {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}

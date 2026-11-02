@@ -347,7 +347,7 @@ func (u *UI) readIDs(ctx context.Context, m *meta, ids []string, deleted bool) (
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := m.listByIDs(crud.WithReadHooks(ctx), ids, crud.ListOptions{
+	rows, err := m.listByIDs(ctx, ids, crud.ListOptions{
 		Fields:  m.keys,
 		Deleted: deleted,
 	})
@@ -431,7 +431,7 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 	if err != nil {
 		return nil, err
 	}
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
+	rows, err := m.listRows(ctx, crud.ListOptions{
 		Where:   where,
 		Filters: s.facetFilters(),
 		Search:  s.search,

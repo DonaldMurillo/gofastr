@@ -59,7 +59,7 @@ func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bo
 	if err != nil || !canReadRecord(ctx, m.ch, id) {
 		return "", false
 	}
-	row, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+	row, err := m.getRow(ctx, id)
 	if err != nil || row == nil {
 		return "", false
 	}
@@ -82,18 +82,18 @@ func (u *UI) RecordHidden(ctx context.Context, entityName, id string) bool {
 		len(m.ch.Hooks.HooksFor(hook.BeforeGet))+len(m.ch.Hooks.HooksFor(hook.BeforeList)) == 0 {
 		return false
 	}
-	if row, err := m.ch.GetOne(ctx, id, nil); err == nil && row != nil {
-		hooked, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+	if row, err := m.getRowUnhooked(ctx, id); err == nil && row != nil {
+		hooked, err := m.getRow(ctx, id)
 		return err != nil || hooked == nil
 	}
 	if m.e.Config.Scope == nil || !m.e.Config.Scope.SoftDelete {
 		return false
 	}
 	opts := crud.ListOptions{Fields: m.keys, Deleted: true}
-	if raw, err := m.listByIDs(ctx, []string{id}, opts); err != nil || len(raw) == 0 {
+	if raw, err := m.listByIDsUnhooked(ctx, []string{id}, opts); err != nil || len(raw) == 0 {
 		return false
 	}
-	hooked, err := m.listByIDs(crud.WithReadHooks(ctx), []string{id}, opts)
+	hooked, err := m.listByIDs(ctx, []string{id}, opts)
 	return err != nil || len(hooked) == 0
 }
 
@@ -142,7 +142,7 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 	out := make([]RecordMatch, 0, limit)
 	var found []map[string]any
 	for page := range searchPages {
-		rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
+		rows, err := m.listRows(ctx, crud.ListOptions{
 			Search: q, Limit: limit, Offset: page * limit, Sorts: m.keySorts(),
 		})
 		if err != nil {

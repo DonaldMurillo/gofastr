@@ -77,7 +77,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// The count only feeds pagination chrome; a refused count degrades to
 	// unknown totals rather than a failed screen, and only a known total
 	// may clamp the requested page.
-	total, countErr := m.ch.CountAll(crud.WithReadHooks(ctx), read)
+	total, countErr := m.countRows(ctx, read)
 	known := countErr == nil
 	if countErr != nil {
 		slog.WarnContext(ctx, "entityui: count", "entity", m.name, "error", countErr)
@@ -87,8 +87,8 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	listOpts.Sorts = s.sorts
 	listOpts.Limit = s.limit
 	listOpts.Offset = fwpagination.OffsetForPage(page, s.limit)
-	// WithReadHooks: these rows are rendered to an end user.
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), listOpts)
+	// Hooked (listRows): these rows are rendered to an end user.
+	rows, err := m.listRows(ctx, listOpts)
 	if err != nil {
 		return ui.Callout(ui.CalloutConfig{
 			Title:   i18nui.EntityLoadFailed.Text(ctx, map[string]any{"entity": m.plural(ctx)}),
@@ -102,7 +102,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	if b.inlineEdit && !s.deletedView && !b.top && m.hasAPI {
 		// The same page read without read hooks: an inline editor
 		// prefills only a value the hooks left as stored.
-		if raw, err := m.ch.ListAll(ctx, listOpts); err == nil {
+		if raw, err := m.listRowsUnhooked(ctx, listOpts); err == nil {
 			s.rawRows = make(map[string]map[string]any, len(raw))
 			for _, r := range raw {
 				s.rawRows[m.rowID(r)] = r
