@@ -285,6 +285,29 @@ the index `"x_idx"` on `"main"."events"` it gives
 on Postgres. `query.SQLitePragma("table_info", table)`
 puts the schema on the pragma the same way:
 `PRAGMA "main".table_info("events")`.
+The builders name a table or column bare, the way the DDL does, except
+a keyword (`order`, `group`, `user`, `end`, `desc`, `limit`, …), which
+they quote and fold as the migrator's DDL does: every slot that holds a
+name (`From`, `Join`'s table, `Insert`, `Update`, `Delete` and `Count`'s
+table, `Select`, `Columns`, `Set`, `Returning` and `Matching` columns,
+`Order` and `Cursor`'s column) goes through `query.QuoteKeyword`:
+
+```go
+query.Insert("posts").Columns("order", "title").Values(1, "t").Build()
+// INSERT INTO posts ("order", title) VALUES ($1, $2)
+```
+
+A slot holding anything but a plain or dotted name (`*`, an expression)
+is left as written. A condition you pass to `Where` or `Join`'s `ON` is
+raw SQL, so a keyword column in it is yours to quote:
+`query.QuoteKeyword("order") + " = $1"` gives `"order" = $1`, and
+`query.QuoteKeyword("posts.user")` gives `posts."user"`. On Postgres a
+bare `user` in a condition is not a syntax error: it reads the session
+user, so `user = $1` silently matches nothing. `query.IsKeyword(name)`
+reports whether a name is in the set. A name that is not a keyword comes
+back unchanged, so a query without one builds byte for byte what it did
+before v0.96.0.
+
 `QuoteIdent` keeps the name as given and is for a name read back from
 the database catalog; the `quoteident` vet check refuses it anywhere
 else outside `core/query`.

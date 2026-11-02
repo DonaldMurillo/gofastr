@@ -1717,16 +1717,15 @@ The generator rejects:
   generated typed client emits it into Go string literals, and the runtime
   interpolates it into DDL as a bare SQL identifier. The entity `name:` is
   already constrained to a Go identifier; `table:` was the way around that.
-- a table, field or index name that bare SQL cannot carry. The CRUD
-  routes write these names unquoted (AutoMigrate quotes only a keyword),
-  so the app would build and then fail at boot or on its first query.
-  The generator refuses a name with a hyphen,
-  space or dot (`first-name`, `last name`), a name over 63 bytes
-  (Postgres keeps only the first 63, so two longer names that share them
-  name one table or column), and an SQL word that SQLite or Postgres
-  refuses as a bare name, such as `order`, `group`, `default`, `values`,
-  `limit`, `on`, `select`, `user` and `desc`. Go words such as `type`,
-  `func` and `range` are fine.
+- a table, field or index name SQL cannot carry, which would build and
+  then fail at boot or on its first query: a name with a hyphen, space or
+  dot (`first-name`, `last name`), and a name over 63 bytes (Postgres
+  keeps only the first 63, so two longer names that share them name one
+  table or column). An SQL keyword such as `order`, `group`, `default`,
+  `values`, `limit`, `on`, `select`, `user` or `desc` is fine: AutoMigrate
+  and the CRUD routes write a keyword name quoted (`"order"`) and every
+  other name bare. Go words such as `type`, `func` and `range` are fine
+  too.
 - two field names of one entity that become one Go struct field or one
   Postgres column (`Title` and `title`, `_note` and `note`): the generated
   code would not compile, and Postgres folds the unquoted names

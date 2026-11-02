@@ -2,8 +2,6 @@ package appspec
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
@@ -13,58 +11,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// The CRUD layer's statements name tables and columns bare, and so does
-// AutoMigrate's DDL for every name that is not a keyword (it quotes and
-// folds a keyword, framework/migrate keyword.go; quoting every name would
-// make Postgres keep a declared "Widgets" while the rest of the stack
-// folds it). So a name that bare SQL cannot carry is an app that
-// generates, compiles and then dies at boot or on its first insert
-// ("near "order": syntax error"). The checks here move that failure to
-// generate time, where the error can name the field.
+// AutoMigrate's DDL and the CRUD layer's statements name a table or column
+// bare, except a keyword (order, group, user, desc, …), which both write
+// quoted and folded (query.QuoteKeyword), so a keyword is an ordinary name.
+// A name bare SQL cannot carry at all is an app that generates, compiles
+// and then dies at boot or on its first insert. The checks here move that
+// failure to generate time, where the error can name the field.
 
-// sqlReservedWords are the words SQLite or Postgres refuse as a bare
-// table, column or index name. The list was taken by running CREATE TABLE
-// and SELECT … WHERE … ORDER BY with each SQLite keyword and each
-// Postgres reserved, type/function and column-name keyword
-// (pg_get_keywords catcodes R, T and C) as a table name and as a column
-// name, on both engines, and keeping every word either engine refused.
-// TestSQLReservedWordsBreakAutoMigrate proves each entry against
-// AutoMigrate plus a CRUD create and list, on SQLite and (with
-// TEST_POSTGRES_DSN) Postgres. "if" left the list when the migrator began
-// quoting keywords: it is a keyword only to SQLite's DDL, so once the
-// DDL quotes it the CRUD statements carry it bare on both engines.
-var sqlReservedWords = map[string]bool{
-	"add": true, "all": true, "alter": true, "analyse": true, "analyze": true,
-	"and": true, "any": true, "array": true, "as": true, "asc": true,
-	"asymmetric": true, "authorization": true, "autoincrement": true,
-	"between": true, "binary": true, "both": true, "case": true, "cast": true,
-	"check": true, "collate": true, "collation": true, "column": true,
-	"commit": true, "concurrently": true, "constraint": true, "create": true,
-	"cross": true, "current_catalog": true, "current_date": true,
-	"current_role": true, "current_schema": true, "current_time": true,
-	"current_timestamp": true, "current_user": true, "default": true,
-	"deferrable": true, "delete": true, "desc": true, "distinct": true,
-	"do": true, "drop": true, "else": true, "end": true, "escape": true,
-	"except": true, "exists": true, "false": true, "fetch": true, "for": true,
-	"foreign": true, "freeze": true, "from": true, "full": true, "grant": true,
-	"group": true, "having": true, "ilike": true, "in": true,
-	"index": true, "initially": true, "inner": true, "insert": true,
-	"intersect": true, "into": true, "is": true, "isnull": true, "join": true,
-	"lateral": true, "leading": true, "left": true, "like": true, "limit": true,
-	"localtime": true, "localtimestamp": true, "natural": true, "not": true,
-	"nothing": true, "notnull": true, "null": true, "offset": true, "on": true,
-	"only": true, "or": true, "order": true, "outer": true, "overlaps": true,
-	"placing": true, "primary": true, "raise": true, "references": true,
-	"returning": true, "right": true, "select": true, "session_user": true,
-	"set": true, "similar": true, "some": true, "symmetric": true,
-	"system_user": true, "table": true, "tablesample": true, "then": true,
-	"to": true, "trailing": true, "transaction": true, "true": true,
-	"union": true, "unique": true, "update": true, "user": true, "using": true,
-	"values": true, "variadic": true, "verbose": true, "when": true,
-	"where": true, "window": true, "with": true,
-}
-
-// sqlNameProblem says why name cannot be a bare SQL table, column or index
+// sqlNameProblem says why name cannot be an SQL table, column or index
 // name, or returns "" when it can. Postgres truncates an identifier to
 // query.MaxIdentBytes (63) bytes without a word, so two longer names that
 // share their first 63 bytes would name one table or one column.
@@ -80,9 +34,6 @@ func sqlNameProblem(name string) string {
 	}
 	if len(name) > query.MaxIdentBytes {
 		return fmt.Sprintf("is %d bytes long: Postgres cuts a name to its first %d bytes, so two names that share those would be one", len(name), query.MaxIdentBytes)
-	}
-	if sqlReservedWords[asciicase.Lower(name)] {
-		return "is an SQL reserved word that SQLite or Postgres refuses as a bare name"
 	}
 	return ""
 }
@@ -162,7 +113,7 @@ func validateAppSpecSQLNames(bp AppSpec) error {
 				continue // reported by ValidateAppSpec
 			}
 			if why := sqlNameProblem(f.Name); why != "" {
-				errs.add(fmt.Errorf("app spec: entity %q field %q %s: the field is a column, and AutoMigrate writes column names bare; rename the field", decl.Name, f.Name, why))
+				errs.add(fmt.Errorf("app spec: entity %q field %q %s: the field is a column; rename the field", decl.Name, f.Name, why))
 			}
 		}
 		for _, idx := range decl.Indices {
@@ -175,9 +126,4 @@ func validateAppSpecSQLNames(bp AppSpec) error {
 		}
 	}
 	return errs.err()
-}
-
-// sqlReservedWordList is sqlReservedWords sorted, for tests and docs.
-func sqlReservedWordList() []string {
-	return slices.Sorted(maps.Keys(sqlReservedWords))
 }

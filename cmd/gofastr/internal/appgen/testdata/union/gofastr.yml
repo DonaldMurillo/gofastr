@@ -300,7 +300,8 @@ entities:
       - name: contract
         type: file
 
-  # A column the list may show but never filter or sort on.
+  # A column the list may show but never filter or sort on, and two
+  # columns named with SQL keywords, which AutoMigrate and CRUD quote.
   - name: cards
     crud: true
     fields:
@@ -309,6 +310,10 @@ entities:
       - name: number
         type: string
         no_query: true
+      - name: order
+        type: int
+      - name: group
+        type: string
 
   # A name that is not snake_case and no table: the server mounts
   # /api/blog_post, and the generated CLI and SDK must call that route.

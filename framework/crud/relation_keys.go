@@ -17,7 +17,8 @@ import (
 // key, "(a, b) IN (($1, $2), ($3, $4))" for a composite one. Each id is a
 // record id as entity.JoinKey spells it; one that does not split into
 // the key columns is skipped. It reports false when no id survives.
-// Columns go in validated but unquoted, the way the DDL wrote them.
+// Columns go in validated and spelled the way the DDL wrote them: bare,
+// a keyword quoted (query.QuoteKeyword).
 func keyInClause(cols, ids []string, start int) (string, []any, bool, error) {
 	safe := make([]string, len(cols))
 	for i, c := range cols {
@@ -25,7 +26,7 @@ func keyInClause(cols, ids []string, start int) (string, []any, bool, error) {
 		if err != nil {
 			return "", nil, false, fmt.Errorf("invalid key column %q: %w", c, err)
 		}
-		safe[i] = s
+		safe[i] = query.QuoteKeyword(s)
 	}
 	var tuples []string
 	var args []any
@@ -133,7 +134,7 @@ func belongsToFKs(ctx context.Context, db DBExecutor, table string, cols, fks []
 		return nil, nil, err
 	}
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s",
-		strings.Join(cols, ", "), strings.Join(safeFKs, ", "), safeTable, where), args...)
+		strings.Join(query.QuoteKeywords(cols), ", "), strings.Join(query.QuoteKeywords(safeFKs), ", "), query.QuoteKeyword(safeTable), where), args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -189,7 +190,7 @@ func pivotScopes(ctx context.Context, pivot *entity.Entity) []filter.ParsedFilte
 func pivotClause(pivot *entity.Entity, scopes []filter.ParsedFilter, safeThrough string, startIdx int) (string, []any) {
 	out := ""
 	if pivot != nil && pivot.Config.Scope.SoftDelete {
-		out = " AND " + safeThrough + ".deleted_at IS NULL"
+		out = " AND " + query.QuoteKeyword(safeThrough) + ".deleted_at IS NULL"
 	}
 	clause, args := renderReadScope(scopes, safeThrough, startIdx)
 	if clause != "" {

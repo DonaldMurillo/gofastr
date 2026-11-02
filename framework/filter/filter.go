@@ -825,7 +825,7 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 // (status = $1 AND status = $2), which no single row can satisfy.
 func inClause(field string, values []any) (string, []any) {
 	var sb strings.Builder
-	sb.WriteString(field)
+	sb.WriteString(query.QuoteKeyword(field))
 	sb.WriteString(" IN (")
 	args := make([]any, len(values))
 	for i, v := range values {
@@ -859,19 +859,20 @@ func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
 func applyFilters[B interface{ Where(string, ...any) B }](b B, filters []ParsedFilter) {
 	for i := 0; i < len(filters); i++ {
 		f := filters[i]
+		col := query.QuoteKeyword(f.Field)
 		switch f.Op {
 		case OpEq:
-			b.Where(f.Field+" = $1", f.BindValue())
+			b.Where(col+" = $1", f.BindValue())
 		case OpNe:
-			b.Where(f.Field+" != $1", f.BindValue())
+			b.Where(col+" != $1", f.BindValue())
 		case OpGt:
-			b.Where(f.Field+" > $1", f.BindValue())
+			b.Where(col+" > $1", f.BindValue())
 		case OpLt:
-			b.Where(f.Field+" < $1", f.BindValue())
+			b.Where(col+" < $1", f.BindValue())
 		case OpGte:
-			b.Where(f.Field+" >= $1", f.BindValue())
+			b.Where(col+" >= $1", f.BindValue())
 		case OpLte:
-			b.Where(f.Field+" <= $1", f.BindValue())
+			b.Where(col+" <= $1", f.BindValue())
 		case OpLike:
 			b.Where(LikeClause(f.Field, 1, f.Value))
 		case OpIn:

@@ -785,6 +785,16 @@ names; the only auto-casing happens at the JSON layer (via `AppConfig.JSONCase`
 served `/openapi.json` names fields in the same case the routes answer
 in.
 
+A field or table name may be an SQL keyword (`order`, `group`, `user`,
+`end`, `desc`, `limit`, `select`, …). AutoMigrate writes such a name
+quoted and folded (`"order"`), and so does every statement the
+framework writes for the entity: the CRUD routes and their filters,
+sorts, `?where=`, `?q=` search, cursors and includes, the owner, tenant
+and soft-delete scopes, the typed query columns, and the export and
+erasure SQL. Other names stay bare. Raw SQL of your own names such a
+column through `query.QuoteKeyword` (see
+[query DSL](query-dsl.md)).
+
 Rule of thumb: name fields in whatever case you want the column to be in.
 camelCase is the convention used in the example apps; snake_case is the
 SQL-traditional choice. Pick one per project and stick with it.

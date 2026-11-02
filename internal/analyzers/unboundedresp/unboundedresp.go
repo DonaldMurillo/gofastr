@@ -73,6 +73,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/readsrc"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -138,7 +139,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return true
 		})
 
-		aliases := readerAliases(pass, f)
+		aliases := readsrc.SingleBindings(pass, f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -175,7 +176,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if src == nil {
 				return true
 			}
-			if obj, ok := bodyOwner(pass, readSource(pass, src, aliases)); ok {
+			if obj, ok := bodyOwner(pass, readsrc.Source(pass, src, aliases)); ok {
 				reportIfUnbounded(pass, f, call, obj, literalResp, cappingHelpers)
 			}
 			return true
@@ -339,80 +340,6 @@ func respObject(pass *analysis.Pass, e ast.Expr) types.Object {
 		return pass.TypesInfo.ObjectOf(x.Sel)
 	}
 	return nil
-}
-
-// readSource sees through what does not bound a read: parentheses, a
-// local that was bound to the body (body := resp.Body), and the
-// pass-through wrappers bufio.NewReader / NewReaderSize and
-// io.TeeReader, each of which reads its source to EOF on demand. A
-// limiter is not unwrapped: a read through io.LimitReader is bounded.
-func readSource(pass *analysis.Pass, e ast.Expr, aliases map[types.Object]ast.Expr) ast.Expr {
-	for range 8 {
-		e = ast.Unparen(e)
-		switch x := e.(type) {
-		case *ast.Ident:
-			b, ok := aliases[pass.TypesInfo.ObjectOf(x)]
-			if !ok {
-				return e
-			}
-			e = b
-		case *ast.CallExpr:
-			switch qualified(pass, x.Fun) {
-			case "bufio.NewReader", "bufio.NewReaderSize", "io.TeeReader":
-				if len(x.Args) == 0 {
-					return e
-				}
-				e = x.Args[0]
-			default:
-				return e
-			}
-		default:
-			return e
-		}
-	}
-	return e
-}
-
-// readerAliases maps each local bound exactly once, by a single-value
-// assignment or declaration, to its value: the alias a read may name
-// in place of resp.Body. A local bound more than once is left out,
-// since which binding the read sees is flow-dependent.
-func readerAliases(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
-	out := map[types.Object]ast.Expr{}
-	seen := map[types.Object]int{}
-	bind := func(id *ast.Ident, v ast.Expr) {
-		obj := pass.TypesInfo.ObjectOf(id)
-		if obj == nil || id.Name == "_" {
-			return
-		}
-		seen[obj]++
-		out[obj] = v
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch st := n.(type) {
-		case *ast.AssignStmt:
-			if len(st.Lhs) == len(st.Rhs) {
-				for i, lhs := range st.Lhs {
-					if id, ok := lhs.(*ast.Ident); ok {
-						bind(id, st.Rhs[i])
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			if len(st.Names) == len(st.Values) {
-				for i, id := range st.Names {
-					bind(id, st.Values[i])
-				}
-			}
-		}
-		return true
-	})
-	for obj, n := range seen {
-		if n > 1 {
-			delete(out, obj)
-		}
-	}
-	return out
 }
 
 // bodyOwner resolves X in X.Body to X's object, when X.Body is the

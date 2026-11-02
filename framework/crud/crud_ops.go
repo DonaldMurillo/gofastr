@@ -502,7 +502,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request,
 		conds := make([]string, len(keyCols))
 		allArgs := make([]any, len(keyCols))
 		for i, c := range keyCols {
-			conds[i] = fmt.Sprintf("%s = $%d", c, i+1)
+			conds[i] = fmt.Sprintf("%s = $%d", query.QuoteKeyword(c), i+1)
 			allArgs[i] = coercePKValue(ch.Registry, target, targetKey[i], raws[i])
 		}
 		preds := eagerScopeFilters(ctx, target)
@@ -512,7 +512,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request,
 		if readClause != "" {
 			readClause = " AND " + readClause
 		}
-		q := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s%s", keyCols[0], table, strings.Join(conds, " AND "), clause, readClause)
+		q := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s%s", query.QuoteKeyword(keyCols[0]), query.QuoteKeyword(table), strings.Join(conds, " AND "), clause, readClause)
 		if target.Config.Scope.SoftDelete {
 			q += " AND deleted_at IS NULL"
 		}
