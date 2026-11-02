@@ -111,6 +111,12 @@ type AppConfig struct {
 	// disable the timeout middleware entirely, set
 	// DisableRequestTimeout. Overloading sign for "disable" is too
 	// easy to trip on (e.g. accidentally subtracting two timestamps).
+	//
+	// A budget at or past the server's write deadline would lose every
+	// buffered response finished after that deadline, so the two move
+	// together: an unset HTTPServerTimeouts.WriteTimeout (60s) is raised
+	// to the budget plus 10s, and an explicit one no longer than the
+	// budget makes Start return an error.
 	RequestTimeout time.Duration
 
 	// DisableRequestTimeout removes the Timeout middleware from the
@@ -231,7 +237,39 @@ const (
 	defaultServerReadTimeout       = 60 * time.Second
 	defaultServerWriteTimeout      = 60 * time.Second
 	defaultServerIdleTimeout       = 120 * time.Second
+
+	// requestTimeoutWriteSlack is how far past a raised RequestTimeout an
+	// unset WriteTimeout is moved, so the timeout middleware's own 503
+	// (or a response finished just inside the budget) is still written.
+	requestTimeoutWriteSlack = 10 * time.Second
 )
+
+// requestBudget is the RequestTimeout the host asked the default chain's
+// timeout middleware to enforce: zero when it set none (the framework's
+// own 30s default) or when that middleware is not installed.
+func (a *App) requestBudget() time.Duration {
+	if a.noDefaults || a.Config.DisableRequestTimeout || a.Config.RequestTimeout <= 0 {
+		return 0
+	}
+	return a.Config.RequestTimeout
+}
+
+// checkRequestWriteTimeouts refuses an explicit WriteTimeout no longer
+// than an explicit RequestTimeout. Each is valid alone; together a
+// buffered response finished between the two is never delivered (the
+// client sees the connection drop, not the response or the timeout
+// middleware's 503) while its handler runs on to the budget. An unset
+// WriteTimeout is raised instead (see Start); 0 disables the deadline.
+func (a *App) checkRequestWriteTimeouts() error {
+	budget := a.requestBudget()
+	w := a.Config.HTTPServerTimeouts.WriteTimeout
+	if budget == 0 || w == nil || *w <= 0 || *w > budget {
+		return nil
+	}
+	return fmt.Errorf("framework: HTTPServerTimeouts.WriteTimeout (%s) must be longer than RequestTimeout (%s): "+
+		"a response finished after the write deadline is never delivered; raise WriteTimeout above RequestTimeout, "+
+		"set it to 0, or lower RequestTimeout", *w, budget)
+}
 
 // App is the top-level application container.
 // It wires together the entity registry, router, MCP server, and database.
@@ -3561,6 +3599,9 @@ func (a *App) Start(addr string) error {
 	if len(a.pendingEndpoints) > 0 {
 		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
 	}
+	if err := a.checkRequestWriteTimeouts(); err != nil {
+		return err
+	}
 
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
@@ -4021,6 +4062,13 @@ func (a *App) Start(addr string) error {
 		if to.WriteTimeout == nil {
 			srv.WriteTimeout = 0
 		}
+	}
+	if budget := a.requestBudget(); budget > 0 && to.WriteTimeout == nil && srv.WriteTimeout <= budget {
+		// A RequestTimeout raised past the default write deadline: the
+		// handler it was raised for would finish inside its budget and
+		// lose its response at the deadline. An explicit WriteTimeout in
+		// the same position is refused by checkRequestWriteTimeouts.
+		srv.WriteTimeout = budget + requestTimeoutWriteSlack
 	}
 	if p := a.Config.HTTPProtocols; p != nil {
 		protos := *p
