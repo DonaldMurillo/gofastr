@@ -548,9 +548,10 @@ it. A semantic index over a store shared across processes
 eraser, and neither does one over a custom `Store` that cannot list its
 chunks (`AllChunks`): register a store eraser for it yourself.
 
-A job a worker is running when the sweep passes is not stopped. If it fails
-and is retried after the sweep, it is back in the queue until the next
-erasure. The Redis erasure is one Lua script, which the server runs with
+A job a worker is running when the sweep passes is not stopped, but it is
+counted, and when its handler returns the queue drops it instead of
+retrying, dead-lettering or deferring it: a `DBQueue` or `RedisQueue`
+settle finds the job gone, and a `MemoryQueue` worker skips the settle. The Redis erasure is one Lua script, which the server runs with
 no other command in between, so no worker step lands between its reads and
 its deletes. A worker that read a job just before the script ran (a job
 `Dequeue` popped but has not claimed, a `Nack`, a `Replay`) does not write

@@ -140,6 +140,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An erasure drops the job a `MemoryQueue` worker is running.** A job a
+  `Start` worker had taken off the heap sat in no store the erasure read,
+  so it was not counted, and when its handler failed the worker put the
+  user's payload back on the heap or the dead list after an erasure that
+  had reported success. The erasure now counts it, and the worker drops
+  it when the handler returns, as a `DBQueue` or `RedisQueue` settle
+  already did.
 - **A gated DBQueue job survives a shutdown during its hand-back.** A
   worker that claimed a job and then found its type gated released it on
   the worker's context; a shutdown at that moment left the row claimed
