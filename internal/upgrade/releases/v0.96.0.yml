@@ -1177,3 +1177,7 @@ notes:
       fields:
         - field: gofastr/core/featureflag.Flag.Users
         - field: gofastr/core/featureflag.EvalContext.TenantID
+  - change: "BREAKING - a relation behind a Hidden field (a Hidden relation field, or a belongs_to whose foreign key is Hidden) is not includable: ?include= on it, at any depth and through GetOne, ListAll and TypedQuery.Include, answers 400 unknown_include, a nested filter across it answers 400 nested_unknown_relation, and llm.md and /openapi.json leave it out"
+    breaking: true
+    guidance: "The include put the related record, and with it the hidden key, in the response. A client that relied on it reads the related record some other way the app grants (a declared endpoint, or the field made visible on purpose). entity.Entity.HidesRelation reports which relations this covers."
+    nodetect: "include names come from clients' query strings and in-process include lists at request time; a Hidden flag on a relation spans lines no pattern reads reliably"

@@ -140,22 +140,30 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("\n")
 
 	// --- Relations / Includes ---
-	if len(ent.Config.Relations) > 0 {
+	// A relation behind a Hidden field is no include: crud answers it as
+	// unknown, and its row would name the hidden column.
+	includable := make([]entity.Relation, 0, len(ent.Config.Relations))
+	for _, rel := range ent.Config.Relations {
+		if !ent.HidesRelation(rel) {
+			includable = append(includable, rel)
+		}
+	}
+	if len(includable) > 0 {
 		b.WriteString("## Includes\n\n")
 		b.WriteString("Use `?include=relationName` to eager-load related data. Separate multiple with commas. Use dots for nested includes.\n\n")
 		b.WriteString("| Name | Type | Target | Key |\n")
 		b.WriteString("|------|------|--------|-----|\n")
-		for _, rel := range ent.Config.Relations {
+		for _, rel := range includable {
 			fmt.Fprintf(&b, "| `%s` | %s | `%s` | `%s` |\n", rel.Name, relationTypeLabel(rel.Type), rel.Entity, strings.Join(rel.ForeignKey, ", "))
 		}
 		b.WriteString("\n")
 		b.WriteString("Examples:\n")
-		fmt.Fprintf(&b, "- `?include=%s`\n", ent.Config.Relations[0].Name)
-		if len(ent.Config.Relations) > 1 {
-			fmt.Fprintf(&b, "- `?include=%s,%s`\n", ent.Config.Relations[0].Name, ent.Config.Relations[1].Name)
+		fmt.Fprintf(&b, "- `?include=%s`\n", includable[0].Name)
+		if len(includable) > 1 {
+			fmt.Fprintf(&b, "- `?include=%s,%s`\n", includable[0].Name, includable[1].Name)
 		}
 		// Show scoped filter example if HasMany/ManyToMany
-		for _, rel := range ent.Config.Relations {
+		for _, rel := range includable {
 			if rel.Type == entity.RelHasMany || rel.Type == entity.RelManyToMany {
 				fmt.Fprintf(&b, "- `?include=%s(status=published)`: scoped eager-load\n", rel.Name)
 				break
