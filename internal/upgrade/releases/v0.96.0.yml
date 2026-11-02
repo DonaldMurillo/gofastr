@@ -761,3 +761,7 @@ notes:
     find:
       uses:
         - gofastr/framework/factory.New
+  - change: "/openapi.json types a Relation field by its target's key: integer for a target keyed by an AutoIncrement int, the key's own type and format otherwise; it was always a uuid string"
+    breaking: false
+    guidance: "Regenerate any client built from /openapi.json for an entity whose Relation points at an integer- or code-keyed entity; the server's wire format did not change, only the document now matches it."
+    nodetect: "the change is in the served document; nothing in an app's source spells it"

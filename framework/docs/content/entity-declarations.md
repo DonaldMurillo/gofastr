@@ -1332,7 +1332,9 @@ value with `filter.CoerceValue` and binds it as that type:
 
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).
-String, Text, Enum, UUID and other Relation columns take any text. A value of
+`/openapi.json` types such a column, and its filter parameter, as an
+integer; any other belongs_to column takes its target key's type and
+format there. String, Text, Enum, UUID and other Relation columns take any text. A value of
 another type (`?n=abc` on an Int, `?active=yes` on a Bool) is a 400
 naming the field and the type on both dialects. `LenientFilters` does not lift it:
 lenient mode drops unknown keys, not mistyped values. A `like` value is

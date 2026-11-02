@@ -275,6 +275,18 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// The route stores a null for an optional field, so reads return
 		// it. A generated value and a key column are never null.
 		wireProps := entitySchema["properties"].(map[string]any)
+		// A belongs_to column holds its target's key, typed the target's
+		// way: crud answers a key to an AutoIncrement table as a JSON
+		// number, and a code key is text, not a uuid.
+		for i, f := range visibleFields {
+			if f.Type == schema.Relation && !f.Many && f.RawType == "" {
+				if ks := relationKeySchema(registry, ent, f.Name, map[*entity.Entity]bool{}); ks != nil {
+					p := wireProps[wireFields[i].Name].(map[string]any)
+					delete(p, "format")
+					maps.Copy(p, ks)
+				}
+			}
+		}
 		keyCols := ent.KeyColumns()
 		for i, f := range visibleFields {
 			if !f.Required && f.AutoGenerate == schema.AutoNone && !slices.Contains(keyCols, f.Name) {
@@ -438,6 +450,11 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				name = f.WireName
 			}
 			filterSchema := fieldToFilterSchema(f)
+			if f.Type == schema.Relation && !f.Many && f.RawType == "" {
+				if ks := relationKeySchema(registry, ent, f.Name, map[*entity.Entity]bool{}); ks != nil && ks["type"] == "integer" {
+					filterSchema = map[string]any{"type": "integer"}
+				}
+			}
 			// The advertised set is derived from filter.OpSuitsType, the same
 			// type predicate CheckOpType applies to ?field_<op>= (and every
 			// other filter surface), so the spec can never list an operator
@@ -1010,6 +1027,51 @@ func casedFields(fields []schema.Field, jc crud.JSONCase) []schema.Field {
 		}
 	}
 	return out
+}
+
+// relationKeySchema returns the type (and format) of the value column col
+// of ent holds when it is a belongs_to's one-column foreign key: its
+// target key field's, followed through a key that is itself such a
+// reference. nil when the target does not resolve (the field keeps its
+// declared uuid shape). entity.RelationHoldsInt is the same walk crud
+// types the column's values by.
+func relationKeySchema(reg entity.Registry, ent *entity.Entity, col string, seen map[*entity.Entity]bool) map[string]any {
+	if reg == nil || seen[ent] {
+		return nil
+	}
+	seen[ent] = true
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || len(rel.ForeignKey) != 1 || !strings.EqualFold(rel.ForeignKey[0], col) {
+			continue
+		}
+		target, err := entity.ResolveTarget(reg, ent, rel.Entity)
+		if err != nil || target == nil {
+			return nil
+		}
+		pk, err := target.KeyColumn()
+		if err != nil {
+			return nil
+		}
+		for _, kf := range target.GetFields() {
+			if !strings.EqualFold(kf.Name, pk) {
+				continue
+			}
+			if kf.Type == schema.Relation {
+				if kf.RawType != "" {
+					return nil
+				}
+				return relationKeySchema(reg, target, kf.Name, seen)
+			}
+			ks := openapi.FieldToSchema(schema.Field{Type: kf.Type})
+			out := map[string]any{"type": ks["type"]}
+			if f, ok := ks["format"]; ok && f != "textarea" {
+				out["format"] = f
+			}
+			return out
+		}
+		return nil
+	}
+	return nil
 }
 
 // recordKey returns the path naming one record of ent under path, and

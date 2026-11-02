@@ -140,6 +140,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The OpenAPI spec types a relation by its target's key.** Every
+  Relation column was a uuid string, so a column pointing at an
+  AutoIncrement table, which the route answers as a JSON number, failed
+  a strict client on every row, and a code key read as a uuid. The spec
+  now takes the target key's type and format, and types an integer
+  key's filter parameter as an integer.
 - **A factory built from `app.Registry` runs the app's hooks.**
   `factory.New(app.Registry, …)` built a bare CRUD handler, so a row
   seeded through it skipped every `BeforeCreate`/`AfterCreate` hook and
