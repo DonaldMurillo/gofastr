@@ -3,10 +3,30 @@ package scan
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
+	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
+
+// A gofastr.yml the parser refuses is not a file with nothing in it:
+// the config matchers never read it, so it is listed as unscanned
+// instead of every config note reading "nothing found".
+func TestConfigUnparsableFileUnscanned(t *testing.T) {
+	yml := "app:\n  - one\n  name: two\n"
+	if _, err := coreyaml.Parse(yml); err == nil {
+		t.Fatal("the fixture must be YAML the parser refuses")
+	}
+	n := &upgrade.Note{Find: upgrade.Find{Config: []upgrade.ConfigMatch{{Key: "app.name"}}}}
+	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"gofastr.yml": yml,
+	}), n)
+	if len(res.Unscanned) != 1 || !strings.HasPrefix(res.Unscanned[0], "gofastr.yml (") {
+		t.Fatalf("Unscanned = %q, want gofastr.yml with its parse error", res.Unscanned)
+	}
+}
 
 func TestConfigNestedKey(t *testing.T) {
 	yml := `app:

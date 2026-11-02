@@ -304,11 +304,12 @@ func (e *engine) matchPackage(ip indexedPkg) {
 	if p.TypesInfo != nil {
 		e.usesPackage(p)
 		e.defsPackage(p)
+		srcs := compiledSources(p)
 		for i, f := range p.Syntax {
-			if i >= len(p.CompiledGoFiles) {
+			if i >= len(srcs) {
 				break
 			}
-			rel, ok := e.relToRoot(p.CompiledGoFiles[i])
+			rel, ok := e.relToRoot(srcs[i])
 			if !ok {
 				continue
 			}
@@ -352,12 +353,35 @@ type indexedPkg struct {
 // under the scan root. Test-main variants generated in the build cache
 // fail this check, as do dependencies.
 func (e *engine) scansPackage(p *packages.Package) bool {
-	for _, f := range p.CompiledGoFiles {
+	for _, f := range compiledSources(p) {
 		if _, ok := e.relToRoot(f); ok {
 			return true
 		}
 	}
 	return false
+}
+
+// compiledSources names the source file behind each of p's compiled
+// files, index for index with CompiledGoFiles (and Syntax). For a file
+// that imports "C" the go command compiles cgo's rewrite of it, which
+// sits in the build cache: CompiledGoFiles names that copy, so a match
+// keyed on it lands outside the root and is dropped. The copy's //line
+// directives carry the app's own file name, which the package clause's
+// adjusted position reads back. Files cgo generates from nothing
+// (_cgo_gotypes.go) keep their cache name and stay outside the root.
+func compiledSources(p *packages.Package) []string {
+	out := make([]string, len(p.CompiledGoFiles))
+	for i, f := range p.CompiledGoFiles {
+		out[i] = f
+		if i < len(p.Syntax) && p.Fset != nil {
+			if pkg := p.Syntax[i].Package; pkg.IsValid() {
+				if name := p.Fset.Position(pkg).Filename; name != "" {
+					out[i] = name
+				}
+			}
+		}
+	}
+	return out
 }
 
 // pkgPathKey strips the test-variant suffix go/packages appends

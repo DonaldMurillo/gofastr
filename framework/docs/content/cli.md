@@ -286,7 +286,11 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   points at the exact lines each change affects — Go through the type
   checker, CSS through its tokenizer, `gofastr.yml` through its parser;
   the registry format is documented under "The migration registry"
-  below. `--apply` runs the steps ([upgrading](upgrading.md)). If
+  below. `--apply` runs the steps ([upgrading](upgrading.md)), with
+  `go mod vendor` after `go mod tidy` when the app vendors
+  (`vendor/modules.txt`). Without `--to` the newest release is picked,
+  never a newer prerelease; a prerelease `--to` (`v0.96.0-rc.1`) shows
+  the notes of the release it precedes. If
   `go.mod` was bumped before the run, pass `--from vX.Y.Z` (the release
   the code was written for); otherwise the range is empty.
 
@@ -313,7 +317,11 @@ hit read from a compile error is always an edit. The parser is strict:
 an unknown key, a regex that does not compile, a malformed symbol or a
 breaking `find:` note with no `hits:` fails the build's registry
 tests, never a user's upgrade. CI also refuses a `hits: review` note
-naming a symbol its own release removed. A review note earns its
+naming a symbol its own release removed, a `hits: edit` note whose
+`uses` symbol (or unconditioned `fields` entry) survives its release
+(the ported spelling would stay a hit: name the old shape under
+`shapes`), and a `shapes` regex that does not match the symbol's type
+at the release before, or still matches it at the release itself. A review note earns its
 `find:` only when each hit is a place to decide something: a note
 whose condition is an absence (an entity declaring no posture, an
 owner field with no matching column), a fact of the database, or a
@@ -362,7 +370,9 @@ configuration, tests included:
   suffix), loaded under one GOOS, GOARCH and tag set that satisfies
   it. Only that file's hits are reported from that load, and an error
   in a file the host load already checked does not mark the app
-  broken;
+  broken. A file that imports `"C"` counts as constrained to cgo: under
+  `CGO_ENABLED=0` it is loaded with cgo on (which needs a C compiler),
+  and its hits land on the file as written, not on cgo's rewrite of it;
 - a `//go:build ignore` file declaring a package other than its
   directory's: a program run by name, loaded alone the way
   `go run gen.go` builds it.
@@ -371,7 +381,9 @@ A file none of those reach is listed in a NOTE at the top of the
 report, with its reason: a constraint nothing satisfies
 (`linux && windows`), a `//go:build ignore` file declaring its
 directory's own package (disabled code that no build includes), or a
-configuration that did not compile it. Read those by hand.
+configuration that did not compile it. A `gofastr.yml` (or
+`*.gofastr.yml`) the YAML parser refuses is listed the same way, with
+the parse error: no `config` matcher read it. Read those by hand.
 
 Each matcher reads the code the way its language means it:
 
@@ -555,8 +567,9 @@ does not cover: a runtime browser scan, and the dependency report.
 
 - **Updating `go.mod` but not the CLI** (or the other way around). They
   version independently. After `go get …@vX.Y.Z`, also
-  `go install …/cmd/gofastr@vX.Y.Z`. `gofastr upgrade --apply` keeps
-  them in step ([upgrading](upgrading.md)).
+  `go install …/cmd/gofastr@vX.Y.Z`. `gofastr upgrade --apply` moves
+  `go.mod` only and prints the `go install` as the step left to you
+  ([upgrading](upgrading.md)).
 - **`generate app --force` on an app you've edited.** It regenerates the
   *entire* set and discards your changes. To add to an existing app use
   `generate app --add` / `generate entity <name>`; owned files are never

@@ -192,6 +192,38 @@ few lines, and link the PR or the docs page for the rest.
   counts the admin's routes for the entities it exposes and the app's
   for the rest. New `entityui.UI.WritePath(e)` reports a UI's write
   base.
+- **`gofastr upgrade` scans files that import `"C"`.** The go command
+  compiles cgo's rewrite of such a file from the build cache, so the
+  imports, fields and strings matchers dropped every hit in it and the
+  report called it "not compiled"; under `CGO_ENABLED=0` no load
+  reached it at all. Hits now land on the file as written, and a
+  cgo-off scan loads it with cgo on.
+- **`gofastr upgrade` lists a `gofastr.yml` it could not parse.** The
+  config matchers skipped the file silently, so every `config:` note
+  read "Nothing found" over a spec nobody had read. It now sits in the
+  report's "could not be scanned" NOTE with the parse error.
+- **`gofastr upgrade` handles vendored apps and release candidates.**
+  `--apply` runs `go mod vendor` after `go mod tidy` when the app has
+  `vendor/modules.txt`; its `go build` used to fail on inconsistent
+  vendoring. Resolving the newest release without `--to` no longer
+  fails inside a vendored module ("offline?") and picks the newest
+  release over a newer prerelease, the way `go get …@latest` does. A
+  prerelease `--to v0.96.0-rc.1` shows v0.96.0's notes instead of none,
+  and `--to v0.95.0+meta` on a v0.95.0 app is the same release, not a
+  downgrade.
+- **`gofastr upgrade` stops telling a ported app to edit correct lines.**
+  Thirteen `hits: edit` notes named a symbol that survives its release
+  with a new shape (`app.ScreenLLMMD`, `pagination.NewCursorPage`,
+  `admin.AuthPrincipal`, `ui.WorkbenchConfig.RailWidth` and ten more),
+  so every ported call stayed under "Edit these". They now name the old
+  shape under `shapes`, a value condition, only the removed member
+  (`crud.EventOutbox.Append`, not the interface), or `hits: review`
+  (`semantic.NewPgVector`, whose signature did not change). The v0.66.0
+  queue note never found a `MemoryQueue.Nack` call: its regex spelled
+  the first parameter `_` where v0.65.0 named it `ctx`. Two registry
+  gates in `evals/upgrade-fixtures` now refuse both shapes of mistake
+  (`TestRegistryShapesMatchTheirRelease`, and the edit arm of
+  `TestRegistrySymbolsExistedAtPriorTag`).
 - **`axetest.Scan` fails when an axe rule crashes.** A rule that throws
   checks no node, and axe files it as incomplete, which the scan never
   read. The docs site's header had a `color-mix()` that serialised to

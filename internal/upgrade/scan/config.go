@@ -39,6 +39,9 @@ func (e *engine) configMatchers() {
 		}
 		doc, err := coreyaml.Parse(string(data))
 		if err != nil {
+			// No config note can read it: say so, or every one of them
+			// reads "nothing found" over a file nobody looked at.
+			e.noteUnscanned(name, "did not parse: "+err.Error())
 			continue
 		}
 		for _, n := range e.configNotes {

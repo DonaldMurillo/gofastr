@@ -205,8 +205,9 @@ type errAt struct {
 // symbols appear bare in the source and in the errors about them.
 func importAliases(p *packages.Package) map[string]map[string][]string {
 	out := map[string]map[string][]string{}
+	srcs := compiledSources(p)
 	for i, f := range p.Syntax {
-		if i >= len(p.CompiledGoFiles) {
+		if i >= len(srcs) {
 			break
 		}
 		byPath := map[string][]string{}
@@ -218,7 +219,7 @@ func importAliases(p *packages.Package) map[string]map[string][]string {
 				byPath[ipath] = append(byPath[ipath], spec.Name.Name)
 			}
 		}
-		out[p.CompiledGoFiles[i]] = byPath
+		out[srcs[i]] = byPath
 	}
 	return out
 }
