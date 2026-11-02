@@ -170,7 +170,7 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 |--------------|---------------------------------------------------------------|
 | `up`         | Apply all pending migrations in version order.                |
 | `status`     | Print applied count, pending versions, and any dirty version. |
-| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be a positive integer; anything else is refused before a rollback. |
+| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be one positive integer; anything else, a second count included, is refused before a rollback. |
 | `generate N` | Write a versioned, reversible migration file from entity changes. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 | `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |

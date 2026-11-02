@@ -751,3 +751,7 @@ notes:
     breaking: false
     guidance: "Each such screen was unreachable from a browser, stopped the app at boot (on the CRUD mount), or was answered by the CRUD API (under it). Fix the route in the app spec before regenerating."
     nodetect: "the check runs on the app spec at generate time; an app's Go source already generated is unaffected"
+  - change: "gofastr migrate down refuses a second count (migrate down 1 3), which used to roll back the last count's number of migrations"
+    breaking: false
+    guidance: "Pass one count. A script that passed two rolled back the second number; keep the count it meant."
+    nodetect: "the change is in the CLI's argument parsing; nothing in an app's source spells it"

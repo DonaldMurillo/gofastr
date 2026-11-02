@@ -316,19 +316,22 @@ func runMigrateUp(args []string) {
 
 func runMigrateDown(args []string) {
 	// The count is a positive integer or absent. Sscanf read "all" as no
-	// number and "3x" as 3, so a typo rolled back one or three.
+	// number and "3x" as 3, so a typo rolled back one or three. With two
+	// counts the last one won, so `down 1 3` dropped three tables: one
+	// count at most, as force takes one version.
 	n := 1
+	haveCount := false
 	for _, a := range args {
 		if strings.HasPrefix(a, "--") {
 			continue
 		}
 		v, err := strconv.Atoi(a)
-		if err != nil || v < 1 {
-			cli.Fail("migrate down takes a positive number of migrations to roll back, got %q", a)
+		if err != nil || v < 1 || haveCount {
+			cli.Fail("migrate down takes at most one positive number of migrations to roll back, got %q", a)
 			cli.OsExit(1)
 			return
 		}
-		n = v
+		n, haveCount = v, true
 	}
 
 	fmt.Printf("\n  %s\n\n", cli.Bold("Rolling back migrations..."))

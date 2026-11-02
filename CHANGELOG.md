@@ -140,6 +140,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr migrate down` takes one count.** With two counts the last
+  one won, so `migrate down 1 3` ran three Down sections (three
+  `DROP TABLE`s) where one was asked for. A second count is refused
+  before anything rolls back, the way `migrate force` refuses a second
+  version.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does

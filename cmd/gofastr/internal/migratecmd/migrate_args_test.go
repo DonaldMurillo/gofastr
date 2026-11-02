@@ -10,16 +10,17 @@ import (
 )
 
 // `migrate down all` read no number, kept the default of one and rolled
-// a migration back. A count that is not a positive integer is refused
-// before anything is rolled back.
+// a migration back, and `migrate down 1 3` let the last count win. A
+// count that is not one positive integer is refused before anything is
+// rolled back.
 func TestMigrateDownRefusesBadCount(t *testing.T) {
 	dir := covT_migrationsDir(t)
 	path := filepath.Join(dir, "x.db")
 	dbURL := "--db-url=" + path
 	clitest.CovT_capStdout(t, func() { runMigrateUp([]string{dbURL}) })
-	for _, bad := range []string{"all", "3x", "0", "-1", "99999999999999999999"} {
+	for _, bad := range [][]string{{"all"}, {"3x"}, {"0"}, {"-1"}, {"99999999999999999999"}, {"1", "1"}, {"1", dbURL, "2"}} {
 		code := clitest.CovT_capExit(t, func() {
-			clitest.CovT_capStdout(t, func() { runMigrateDown([]string{bad, dbURL}) })
+			clitest.CovT_capStdout(t, func() { runMigrateDown(append(bad, dbURL)) })
 		})
 		if code != 1 {
 			t.Errorf("down %q exited %d, want 1", bad, code)
