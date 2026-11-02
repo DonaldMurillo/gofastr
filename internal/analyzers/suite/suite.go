@@ -102,6 +102,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/multipartparse"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/ratelimitkey"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rsakeysize"
+
+	// 2026-11 bug-bash rules (results)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/siblingresult"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -203,6 +206,10 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(multipartparse.Analyzer),
 	allow.Guard(ratelimitkey.Analyzer),
 	allow.Guard(rsakeysize.Analyzer),
+
+	// 2026-11 bug-bash rules (results): a result, an error or an entry
+	// dropped where its siblings keep it.
+	allow.Guard(siblingresult.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

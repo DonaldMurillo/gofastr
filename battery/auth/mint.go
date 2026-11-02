@@ -22,6 +22,14 @@ var ErrTwoFactorEnforcement = errors.New("auth: two-factor enforcement unavailab
 //
 // Fail-closed: when the pending mark cannot be established the session is
 // deleted and an error returned; the caller must reject the login.
+//
+// pending must be read: a pending session is refused everywhere but
+// /2fa/challenge, so a sign-in path that drops it sends a 2FA account to
+// a page that refuses it (the magic-link and OAuth callbacks did, until
+// b508cc0d and b9b236eb). The siblingresult analyzer holds every caller
+// to it.
+//
+//gofastr:mustuse pending
 func (m *AuthManager) MintSession(ctx context.Context, userID string, ttl time.Duration) (sess *Session, pending bool, err error) {
 	sess, err = m.SessionStore().Create(ctx, userID, ttl)
 	if err != nil {

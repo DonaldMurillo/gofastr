@@ -58,6 +58,7 @@ var Analyzers = []string{
 	"rootwrite",
 	"secretcompare",
 	"settlectx",
+	"siblingresult",
 	"tightenshared",
 	"timestampid",
 	"unboundedbody",
