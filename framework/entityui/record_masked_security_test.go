@@ -134,6 +134,13 @@ func formFields(body, formID string) map[string]string {
 
 func maskToken(t *testing.T, x *testUI) {
 	t.Helper()
+	maskInvoiceField(t, x, "token")
+}
+
+// maskInvoiceField installs an AfterGet hook on invoices that answers
+// "****" for field.
+func maskInvoiceField(t *testing.T, x *testUI, field string) {
+	t.Helper()
 	ch, err := x.host.Crud(mustEntity(t, x, "invoices"))
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +148,7 @@ func maskToken(t *testing.T, x *testUI) {
 	ch.Hooks = hook.NewHookRegistry()
 	ch.Hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
 		if p, ok := data.(*hook.GetPayload); ok && p.Result != nil {
-			p.Result["token"] = "****"
+			p.Result[field] = "****"
 		}
 		return nil
 	})
@@ -235,23 +242,6 @@ func TestMaskedTextReplaceForm(t *testing.T) {
 	}
 }
 
-// maskMemo installs an AfterGet hook that masks the queryable memo
-// column (no NoQuery: the hook alone keeps its value off the API).
-func maskMemo(t *testing.T, x *testUI) {
-	t.Helper()
-	ch, err := x.host.Crud(mustEntity(t, x, "invoices"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
-		if p, ok := data.(*hook.GetPayload); ok && p.Result != nil {
-			p.Result["memo"] = "****"
-		}
-		return nil
-	})
-}
-
 // The Activity tab never draws a value an AfterGet hook masks on the
 // record: the audit log stored the column as written, and the JSON API
 // answers the same caller "****" for it. A locked masked field is held
@@ -273,7 +263,8 @@ func TestActivityHidesHookMaskedField(t *testing.T) {
 			Before: map[string]any{"memo": "old-secret-memo", "issuedOn": "2026-01-05"},
 			After:  map[string]any{"memo": "new-secret-memo", "issuedOn": "2026-02-09"},
 		}}}))
-		maskMemo(t, x)
+		// memo is queryable (no NoQuery): the hook alone keeps it off the API.
+		maskInvoiceField(t, x, "memo")
 		body := activityBody(t, x)
 		if strings.Contains(body, "secret-memo") {
 			t.Fatalf("SECURITY (locked=%v): the Activity tab drew a hook-masked value:\n%s", locked, body)
