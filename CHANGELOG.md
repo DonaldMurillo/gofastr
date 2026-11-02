@@ -517,6 +517,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr generate cli --from-openapi` bug bash (2026-11-02).** Details
+  in [app-cli.md](framework/docs/content/app-cli.md):
+  - **BREAKING: an acronym is one word in command and flag names.**
+    `getUserByID` is `get-user-by-id` and `HTTPCode` `--http-code`, where
+    every capital started a word (`get-user-by-i-d`). Scripts calling the
+    old spelling need the new one.
 - **A live SQLite export in WAL mode is one snapshot.** `ExportData` read
   SQLite table by table, so a comment written while the export ran could
   land in the archive without its post, and the restore failed on the

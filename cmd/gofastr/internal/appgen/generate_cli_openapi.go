@@ -370,16 +370,26 @@ func oaGoType(schema map[string]any) (goType string, repeated, ok bool) {
 // A bracketed operator splits the same way: a GoFastr spec names the two
 // readings of a colliding filter key x[in] and x_in[eq], which become
 // --x-in and --x-in-eq while the wire name stays exactly as declared.
+// An acronym stays one word, by appspec.ToSnakeCase's boundary rule: a
+// capital starts a word after a lowercase letter or digit, or when it
+// ends a run of capitals that a lowercase letter follows. getUserByID is
+// get-user-by-id and HTTPServer http-server, where splitting at every
+// capital gave get-user-by-i-d.
 func oaKebab(s string) string {
+	runes := []rune(s)
 	var out []rune
-	for i, r := range s {
+	for i, r := range runes {
 		switch {
 		case r == '_' || r == ' ' || r == '.' || r == '[':
 			out = append(out, '-')
 		case r == ']':
 		case unicode.IsUpper(r):
 			if i > 0 && len(out) > 0 && out[len(out)-1] != '-' {
-				out = append(out, '-')
+				prev := runes[i-1]
+				nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+				if unicode.IsLower(prev) || unicode.IsDigit(prev) || unicode.IsUpper(prev) && nextLower {
+					out = append(out, '-')
+				}
 			}
 			out = append(out, unicode.ToLower(r))
 		default:

@@ -191,8 +191,10 @@ gofastr generate cli --from-openapi openapi.json --binary=barc
 gofastr generate cli --from-openapi https://barc.example.com/openapi.json
 ```
 
-One subcommand per operation, named from `operationId` — a missing,
-duplicate, or non-identifier id fails generation, no auto-naming.
+One subcommand per operation, named from `operationId` in kebab case,
+an acronym one word (`getUserByID` is `get-user-by-id`, and a parameter
+or property `HTTPCode` is `--http-code`) — a missing, duplicate, or
+non-identifier id fails generation, no auto-naming.
 Operation summaries carrying terminal-control bytes (ESC, CR, BEL, DEL —
 the bytes that rewrite terminal output — or their 8-bit C1 spellings,
 U+0080–U+009F, which drive the same escapes without an ESC prefix) are
