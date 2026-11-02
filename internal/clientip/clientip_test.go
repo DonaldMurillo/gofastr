@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestRateKeyCollapsesIPv6ToSlash64(t *testing.T) {
+	for in, want := range map[string]string{
+		"203.0.113.9":              "203.0.113.9",
+		"::ffff:203.0.113.9":       "203.0.113.9",
+		"2001:db8:1:2::1":          "2001:db8:1:2::/64",
+		"2001:db8:1:2:ffff:ffff::": "2001:db8:1:2::/64",
+		"fe80::1%eth0":             "fe80::/64",
+		"not-an-ip":                "not-an-ip",
+	} {
+		if got := RateKey(in); got != want {
+			t.Errorf("RateKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestForwardedWalksFromTheRight(t *testing.T) {
 	trusted := ParseProxies([]string{"10.0.0.0/8", "192.0.2.1", "not-an-ip", ""})
 	cases := []struct {
