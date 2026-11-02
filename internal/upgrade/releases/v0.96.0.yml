@@ -1296,7 +1296,7 @@ notes:
   - change: "BREAKING - battery/relay refuses an upstream response whose Content-Type is not script, style, image, font, JSON or text/plain with a 502; SVG gains Content-Security-Policy: sandbox and a body with no Content-Type is sent as application/octet-stream"
     breaking: true
     hits: review
-    guidance: "A relayed response runs on the app's origin, so a vendor HTML page was reflected script. A route that relays a vendor's iframe page (text/html) or another type adds it with Route.ContentTypes, for example ContentTypes: []string{\"text/html\"}, trusting that vendor as much as the app's own code."
+    guidance: "A relayed response runs on the app's origin, so a vendor HTML page was reflected script. A route that relays a vendor's iframe page (text/html) or another type adds it with Route.ContentTypes, for example ContentTypes: []string{\"text/html\"}, trusting that vendor as much as the app's own code. A response with no body (204, 304, an empty 200) passes whatever its type, so a beacon endpoint answering 204 under text/html still succeeds."
     find:
       uses:
         - gofastr/battery/relay.New

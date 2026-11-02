@@ -85,7 +85,12 @@ want at startup, not a runtime surprise.
   (lowercase `type/subtype`, no parameters; `New` panics otherwise).
   An SVG passes with `Content-Security-Policy: sandbox` added, unless
   the route names `image/svg+xml` in `ContentTypes`. A body with no
-  `Content-Type` goes out as `application/octet-stream`.
+  `Content-Type` goes out as `application/octet-stream`. The check
+  guards a body: a response that forwards none (a `204` or `304`, a
+  `Content-Length: 0`, or a chunked body that ends before its first
+  byte) passes whatever its type, so a beacon endpoint answering `204`
+  or an empty `200` under `text/html` stays the success it was
+  upstream.
 - **Caching**: `CacheOK: false` (default) forces
   `Cache-Control: no-store` on every response. `CacheOK: true` passes
   upstream cache headers through, for immutable versioned assets.
@@ -105,7 +110,7 @@ posture is fixed:
 | Auth stripped (outbound) | `Set-Cookie`, `WWW-Authenticate`, `Proxy-Authenticate`, and `Access-Control-*` never reach the browser. `X-Content-Type-Options: nosniff` is always added. |
 | Browser state stripped (outbound) | `Refresh` (a header-driven navigation to any origin) `Clear-Site-Data` (deletes the visitor's app-origin storage from the vendor's side) and `Service-Worker-Allowed` (lets vendor script register a service worker over every app page) never reach the browser. Neither do the headers that set policy for the whole app origin and outlive the response: `NEL`, `Report-To` and `Reporting-Endpoints` (the browser would report requests to every app URL to a vendor endpoint, outside your CSP), `Alt-Svc`, `Accept-CH`, `Critical-CH`, `Strict-Transport-Security` and `Set-Login`. A value your app set before the relay ran stays. A `Link` header value with a target on another origin is dropped whole. The target is read the way the browser's URL parser reads it: tabs and newlines removed, `\` as `/`, so `<\\vendor.example/x>` is the protocol-relative URL it parses as. A target with a scheme (`https:`, `data:`) or an authority (`//host`) counts as another origin; relative targets (`</page/2>; rel="next"`) resolve against the app origin and are forwarded. |
 | No informational responses | An upstream `1xx` (`103 Early Hints`) is not forwarded: its headers skip the outbound strips, so a vendor `Link` preload would reach the browser. The headers the app set before the relay ran (the security headers) stay on the final response, ahead of the vendor's. |
-| Content types | Only script, style, image, font, JSON and `text/plain` responses pass; the rest are a `502`, logged with the vendor's type. `Route.ContentTypes` adds types per route. SVG carries `Content-Security-Policy: sandbox`. A missing `Content-Type` becomes `application/octet-stream` rather than being sniffed. |
+| Content types | Only script, style, image, font, JSON and `text/plain` responses pass; the rest are a `502`, logged with the vendor's type. `Route.ContentTypes` adds types per route. SVG carries `Content-Security-Policy: sandbox`. A missing `Content-Type` becomes `application/octet-stream` rather than being sniffed. A response with no body (`204`, `304`, empty `200`) passes whatever its type. |
 | No redirects | Any `3xx` carrying a `Location` header is replaced with a plain `502` and logged: forwarding it would leak the vendor origin (absolute) or point outside the mount (relative). `304` passes. |
 | No protocol switches | WebSockets and other upgrades are not relayed. The inbound `Connection: Upgrade` / `Upgrade` pair is dropped, so the vendor sees a plain HTTP request, and a `101 Switching Protocols` the vendor sends anyway is refused with a `502` and its connection closed: an open socket would run past the body cap and the request deadline. A chat widget that needs a socket connects to the vendor directly. |
 | Compression | Proxied bytes are never decompressed or re-encoded: a gzip body arrives byte-identical. |

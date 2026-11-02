@@ -5974,7 +5974,10 @@ few lines, and link the PR or the docs page for the rest.
   XSS. Any other type is now a `502`; a route serving a vendor iframe
   page opts in with `Route.ContentTypes: []string{"text/html"}`. SVG
   passes under `Content-Security-Policy: sandbox`, and a body with no
-  `Content-Type` goes out as `application/octet-stream`. See
+  `Content-Type` goes out as `application/octet-stream`. A response
+  that forwards no body (a `204` or `304`, an empty `200`, chunked or
+  `Content-Length: 0`) passes whatever its type, so a vendor beacon
+  answering `204` under `text/html` is not turned into a `502`. See
   [relay](framework/docs/content/relay.md#threat-model).
 - **`core/static` contains a root directory created after the handler.**
   The symlink containment binds the `os.DirFS` root when `Handler` is

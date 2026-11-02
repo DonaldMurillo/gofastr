@@ -139,3 +139,54 @@ func TestNewPanicsOnBadContentType(t *testing.T) {
 		}()
 	}
 }
+
+// The type refusal guards a body: a response with none carries nothing a
+// browser could run, and the vendor accepted the beacon upstream. A 204,
+// or an empty 200, labelled text/html passes as the success it is,
+// whether the vendor sent Content-Length: 0 or an empty chunked body. A
+// chunked HTML body is still refused.
+func TestBodilessResponsePassesAnyType(t *testing.T) {
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+		want    int
+	}{
+		{"204 text/html", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusNoContent)
+		}, http.StatusNoContent},
+		{"empty 200 text/html", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusOK)
+		}, http.StatusOK},
+		{"empty chunked 200 text/html", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+		}, http.StatusOK},
+		{"chunked 200 html body", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+			_, _ = io.WriteString(w, "<script>alert(1)</script>")
+		}, http.StatusBadGateway},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			base := startRelay(t, defaultCfg, tc.handler)
+			res, err := http.Get(base + "/__gofastr/t/e/collect")
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			if res.StatusCode != tc.want {
+				t.Fatalf("status = %d, want %d (body %q)", res.StatusCode, tc.want, body)
+			}
+			if strings.Contains(string(body), "<script>") {
+				t.Errorf("relayed the upstream script: %q", body)
+			}
+		})
+	}
+}
