@@ -72,6 +72,9 @@ var Analyzers = []string{
 	"statusrange",
 	"doublewrite",
 	"listheader",
+	// 2026-11 bug-bash rules (request-misc)
+	"multipartparse",
+	"rsakeysize",
 }
 
 // Lints is every source lint outside the vettool that shares the

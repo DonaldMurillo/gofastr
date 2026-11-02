@@ -97,6 +97,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/statusrange"
 
 	// 2026-11 bug-bash rules (request-misc)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/multipartparse"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rsakeysize"
 )
 
@@ -194,6 +195,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 
 	// 2026-11 bug-bash rules (request-misc): request-shaped trust and
 	// cost mistakes, one per bug the battery/auth bash found.
+	allow.Guard(multipartparse.Analyzer),
 	allow.Guard(rsakeysize.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
