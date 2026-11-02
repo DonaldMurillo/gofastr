@@ -191,7 +191,11 @@ func pgReplaceView(ctx context.Context, exec execQueryer, v View, dependents []V
 		return err
 	}
 	if err := recreate(); err != nil {
-		_, _ = exec.ExecContext(ctx, "ROLLBACK TO SAVEPOINT gofastr_view")
+		// A rollback that fails leaves the transaction in a state the
+		// caller must know about, so its error is reported, not dropped.
+		if _, rbErr := exec.ExecContext(ctx, "ROLLBACK TO SAVEPOINT gofastr_view"); rbErr != nil {
+			return fmt.Errorf("%w (dropping the view to recreate it also failed: %v; rolling back to the savepoint failed: %v)", replaceErr, err, rbErr)
+		}
 		return fmt.Errorf("%w (dropping the view to recreate it also failed: %v)", replaceErr, err)
 	}
 	_, err := exec.ExecContext(ctx, "RELEASE SAVEPOINT gofastr_view")
