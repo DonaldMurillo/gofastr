@@ -12,6 +12,14 @@ the entire production pipeline: `BeforeCreate` hooks → INSERT →
 HTTP path uses. Integration tests stay close to real-world behaviour
 without rebuilding the wiring.
 
+That holds because `app.Registry` hands the factory the handler the
+app's own routes serve (`Registry.CrudHandlerFor`, the same handler
+`App.CrudHandlerForEntity` builds): hooks registered on the app, its
+event bus, its `JSONCase` and storage. `Create` returns the row keyed
+the way the API answers. Any other `EntityRegistry` gets a bare
+`crud.NewCrudHandler`, which runs none of the app's hooks; pass
+`factory.WithHandler` to choose the handler yourself.
+
 ## Wiring
 
 ```go

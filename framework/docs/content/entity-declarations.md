@@ -85,7 +85,12 @@ declaration's full shape. `App.View` entities and any registration built
 with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
 batch and Create/Update-column sections — those routes answer 404/405 —
 and the `limit` row reports the same cap the List route clamps `?limit`
-with (`Pagination.MaxListLimit`, never above 1000, 100 when unset). A doc
+with (`Pagination.MaxListLimit`, never above 1000, 100 when unset), and
+the default page size, 20 or the cap when that is smaller.
+`/openapi.json` states the same two numbers on its `limit` parameter
+(`crud.ListLimits` returns them), and lists the 409 a write answers when
+it collides with a unique field or a client-supplied key and the 415 a
+non-JSON body gets. A doc
 that advertises routes or limits the server refuses sends agents into
 404s; the generators read the mount, not the declaration.
 The type column of its field tables and the SDK reference screens
@@ -729,7 +734,9 @@ If you want snake_case columns, write them snake_case in the declaration:
 `flare_verdict` → column `flare_verdict`. The framework never rewrites field
 names; the only auto-casing happens at the JSON layer (via `AppConfig.JSONCase`
 / `CrudHandler.WithJSONCase`), which converts column names to/from `camel` or
-`snake` on the wire and leaves the underlying column untouched.
+`snake` on the wire and leaves the underlying column untouched. The
+served `/openapi.json` names fields in the same case the routes answer
+in.
 
 Rule of thumb: name fields in whatever case you want the column to be in.
 camelCase is the convention used in the example apps; snake_case is the
@@ -1330,7 +1337,9 @@ value with `filter.CoerceValue` and binds it as that type:
 
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).
-String, Text, Enum, UUID and other Relation columns take any text. A value of
+`/openapi.json` types such a column, and its filter parameter, as an
+integer; any other belongs_to column takes its target key's type and
+format there. String, Text, Enum, UUID and other Relation columns take any text. A value of
 another type (`?n=abc` on an Int, `?active=yes` on a Bool) is a 400
 naming the field and the type on both dialects. `LenientFilters` does not lift it:
 lenient mode drops unknown keys, not mistyped values. A `like` value is

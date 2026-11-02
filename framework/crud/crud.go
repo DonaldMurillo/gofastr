@@ -1569,6 +1569,16 @@ func listLimitCap(entityMax int) int {
 	return limitCap
 }
 
+// ListLimits reports the page size a list answers with when ?limit is
+// absent, and the most rows a ?limit can get (a larger one is clamped),
+// for an entity whose Pagination.MaxListLimit is entityMax: the numbers
+// parsePagination applies. The OpenAPI document and llm.md describe a
+// list's limit parameter with them.
+func ListLimits(entityMax int) (def, max int) {
+	max = listLimitCap(entityMax)
+	return min(20, max), max
+}
+
 // scanRows scans all rows into a slice of maps, applying keyFunc to column names.
 // scanRowsPooled is the pool-backed version in pool.go.
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {

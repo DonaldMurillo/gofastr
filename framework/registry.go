@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
@@ -32,6 +33,9 @@ type Registry struct {
 	mu       sync.RWMutex
 	entities map[entityKey]*entity.Entity
 	db       *sql.DB
+	// handlerFor is the owning App's CrudHandlerForEntity, set by NewApp;
+	// nil on a registry no App owns. See CrudHandlerFor.
+	handlerFor func(*entity.Entity) (*crud.CrudHandler, error)
 }
 
 // NewRegistry creates a new empty entity registry.
@@ -249,6 +253,19 @@ func (r *Registry) SetDB(db *sql.DB) {
 	for _, e := range r.entities {
 		e.DB = db
 	}
+}
+
+// CrudHandlerFor returns the CRUD handler the App owning this registry
+// wires for ent: its hooks, event bus, JSON case, storage and relation
+// registry, the handler its own routes serve. It is App.CrudHandlerForEntity
+// reached through app.Registry, so a helper handed only the registry
+// (factory.New) writes through the app's pipeline. A registry no App owns
+// (NewRegistry) answers nil, nil.
+func (r *Registry) CrudHandlerFor(ent *entity.Entity) (*crud.CrudHandler, error) {
+	if r.handlerFor == nil {
+		return nil, nil
+	}
+	return r.handlerFor(ent)
 }
 
 // checkColumnConflicts verifies that every column the new entity declares is

@@ -297,6 +297,39 @@ few lines, and link the PR or the docs page for the rest.
   `DROP TABLE`s) where one was asked for. A second count is refused
   before anything rolls back, the way `migrate force` refuses a second
   version.
+- **`/openapi.json` lists the 409 and 415 writes answer, and the
+  entity's page size.** A write colliding with a unique field or a
+  client-supplied key answers 409 naming the field, and a body without
+  the JSON content type answers 415; neither was documented. The `limit`
+  parameter said "default 20, max 100" whatever `Pagination.MaxListLimit`
+  set, and `llm.md` said default 20 under a smaller cap; both now state
+  the numbers the list applies (new `crud.ListLimits`).
+- **`/openapi.json` lists only a view's read routes.** `App.View`
+  mounts its entity read-only, and `llm.md` says so, but the spec
+  documented create, update, delete and the `_batch` family on every
+  view, each a 405. It now lists List, Get and `_events`
+  (`openapi.Options.ReadOnlyMounted`).
+- **The OpenAPI spec types a relation by its target's key.** Every
+  Relation column was a uuid string, so a column pointing at an
+  AutoIncrement table, which the route answers as a JSON number, failed
+  a strict client on every row, and a code key read as a uuid. The spec
+  now takes the target key's type and format, and types an integer
+  key's filter parameter as an integer.
+- **A factory built from `app.Registry` runs the app's hooks.**
+  `factory.New(app.Registry, …)` built a bare CRUD handler, so a row
+  seeded through it skipped every `BeforeCreate`/`AfterCreate` hook and
+  event the app registered, though the docs promised the production
+  pipeline, and came back camelCase under a `snake_case` app. The
+  registry now hands out the app's own handler through the new
+  `Registry.CrudHandlerFor`.
+- **`AppConfig.JSONCase: snake_case` reaches the routes and the spec.**
+  App set the case on each entity's handler after the handler had keyed
+  its field cache in camelCase, so every auto-CRUD route kept answering
+  `authorId`, and `/openapi.json` assumed camelCase outright. The
+  routes and the spec now both name `author_id`. A handler whose
+  `JSONCase` field is assigned after `NewCrudHandler` (generated typed
+  handlers do this) rekeys on its next request. New
+  `openapi.EntityOpenAPIWith` takes the case in `openapi.Options`.
 - **MMR diversity no longer depends on the embedder's vector length.**
   The stores normalize what they keep, but `Query` passed the query
   vector to MMR as the embedder returned it, so an embedder that does

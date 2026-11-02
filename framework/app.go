@@ -1875,6 +1875,10 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
+	// The registry hands out the handler this App wires (hooks, events,
+	// JSON case, storage), so code holding only app.Registry, the
+	// documented factory.New(app.Registry, …), runs the app's pipeline.
+	a.Registry.handlerFor = a.CrudHandlerForEntity
 	// A recovered battery start or stop panic logs where the App logs.
 	a.Batteries.logger = a.Logger
 
@@ -3683,7 +3687,15 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPIWithBulk(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.entityUIMounted, a.apiPrefix())
+		spec := openapi.EntityOpenAPIWith(a.Registry, appName, "1.0.0", openapi.Options{
+			CRUDMounted: a.entityCRUDEnabled,
+			BulkMounted: a.entityUIMounted,
+			// The same mount facts the llm.md index reads (#358): a view
+			// serves its read routes only.
+			ReadOnlyMounted: func(e *entity.Entity) bool { return a.entityCrudMount(e).ReadOnly },
+			JSONCase:        a.JSONCasing(),
+			BasePath:        a.apiPrefix(),
+		})
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {

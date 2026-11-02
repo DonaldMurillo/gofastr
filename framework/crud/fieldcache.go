@@ -75,7 +75,13 @@ type fieldCacheData struct {
 	// boolColumns holds the schema.Bool fields by column: the write path
 	// binds a declared default's "true" as the boolean, as a body's.
 	boolColumns map[string]struct{}
-	sig         uint64
+	// jsonCase is the handler's JSONCase this snapshot was keyed under.
+	// JSONCase is an exported field App's wiring and generated typed
+	// handlers assign AFTER NewCrudHandler built the first snapshot, so
+	// snapshot() rebuilds when the two differ instead of serving the
+	// camelCase keys NewCrudHandler seeded.
+	jsonCase JSONCase
+	sig      uint64
 }
 
 // fieldCache is the shared holder. The handler stores a POINTER to it, so
@@ -121,7 +127,7 @@ var fieldCacheInitMu sync.Mutex
 // and safe to read from any goroutine forever.
 func (ch *CrudHandler) snapshot() *fieldCacheData {
 	if fc := ch.fcache; fc != nil {
-		if s := fc.load(); s != nil {
+		if s := fc.load(); s != nil && s.jsonCase == ch.JSONCase {
 			return s
 		}
 	}
@@ -129,6 +135,11 @@ func (ch *CrudHandler) snapshot() *fieldCacheData {
 	defer fieldCacheInitMu.Unlock()
 	if ch.fcache == nil {
 		ch.fcache = newFieldCache(ch)
+	}
+	if s := ch.fcache.load(); s == nil || s.jsonCase != ch.JSONCase {
+		// A direct `ch.JSONCase = …` after construction (App's wiring,
+		// generated typed handlers): republish under the case now set.
+		ch.fcache.publish(buildFieldSnapshot(ch))
 	}
 	return ch.fcache.load()
 }
@@ -164,6 +175,7 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 		timestampColumns: map[string]struct{}{},
 		boolColumns:      map[string]struct{}{},
 	}
+	s.jsonCase = ch.JSONCase
 	if ch.Entity == nil {
 		s.sig = ch.fieldCacheSignature()
 		return s

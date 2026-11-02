@@ -53,7 +53,37 @@ func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 // and GET <path>/_export.csv, for each entity bulkMounted reports. nil
 // documents neither, which is EntityOpenAPI.
 func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
-	s := entityOpenAPI(registry, title, version, crudMounted, bulkMounted, nil, basePath...)
+	opts := Options{CRUDMounted: crudMounted, BulkMounted: bulkMounted}
+	if len(basePath) > 0 {
+		opts.BasePath = basePath[0]
+	}
+	return EntityOpenAPIWith(registry, title, version, opts)
+}
+
+// Options configures EntityOpenAPIWith.
+type Options struct {
+	// CRUDMounted and BulkMounted are EntityOpenAPIWithBulk's
+	// crudMounted and bulkMounted predicates.
+	CRUDMounted, BulkMounted func(*entity.Entity) bool
+	// ReadOnlyMounted reports an entity mounted read-only (App.View:
+	// List, Get and _events only). The document then lists those three
+	// routes and none of the writes, as llm.md does. nil is never.
+	ReadOnlyMounted func(*entity.Entity) bool
+	// JSONCase is the key case the app's CRUD handlers read and write
+	// (App.JSONCasing). Empty is crud.CaseCamel. A field's WireName is
+	// verbatim under either case.
+	JSONCase crud.JSONCase
+	// BasePath is the API prefix baked into every path key ("/api").
+	BasePath string
+}
+
+// EntityOpenAPIWith is EntityOpenAPIWithBulk configured by opts. App
+// builds its /openapi.json through it so the document names each field
+// by the key its handlers answer under: with AppConfig.JSONCase set to
+// snake_case the routes answer `author_id`, and a spec saying `authorId`
+// generated clients that read nothing back.
+func EntityOpenAPIWith(registry entity.Registry, title, version string, opts Options) *openapi.Spec {
+	s := entityOpenAPI(registry, title, version, opts, nil)
 	// The auth-gated serving path (core/openapi Handler) rebuilds the
 	// document per request through RequestView, keeping only the
 	// entities THIS caller can read — llm.md parity: the spec is the
@@ -65,9 +95,9 @@ func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crud
 	// and keeps serving the full spec.
 	s.RequestView = func(r *http.Request) *openapi.Spec {
 		ctx := r.Context()
-		return entityOpenAPI(registry, title, version, crudMounted, bulkMounted, func(ent *entity.Entity) bool {
+		return entityOpenAPI(registry, title, version, opts, func(ent *entity.Entity) bool {
 			return canReadSpecEntity(ctx, ent)
-		}, basePath...)
+		})
 	}
 	return s
 }
@@ -98,11 +128,12 @@ func objectSchemaWith(props map[string]any) map[string]any {
 
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
 // which registered entities reach the document.
-func entityOpenAPI(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
+func entityOpenAPI(registry entity.Registry, title, version string, opts Options, keep func(*entity.Entity) bool) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
+	crudMounted, bulkMounted, jc := opts.CRUDMounted, opts.BulkMounted, opts.JSONCase
 	apiPrefix := ""
-	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
-		apiPrefix = "/" + strings.Trim(basePath[0], "/")
+	if opts.BasePath != "" && opts.BasePath != "/" {
+		apiPrefix = "/" + strings.Trim(opts.BasePath, "/")
 	}
 	s.AddServer("/", "current")
 
@@ -203,7 +234,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		}
 		entityName := ent.GetName()
 		tableName := ent.GetTable()
-		fields := ent.GetFields()
+		fields := casedFields(ent.GetFields(), jc)
 
 		// Version-aware disambiguation. Unversioned entities (App.Entity)
 		// keep the historical bare names, schema "posts", tag "posts",
@@ -245,6 +276,18 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// The route stores a null for an optional field, so reads return
 		// it. A generated value and a key column are never null.
 		wireProps := entitySchema["properties"].(map[string]any)
+		// A belongs_to column holds its target's key, typed the target's
+		// way: crud answers a key to an AutoIncrement table as a JSON
+		// number, and a code key is text, not a uuid.
+		for i, f := range visibleFields {
+			if f.Type == schema.Relation && !f.Many && f.RawType == "" {
+				if ks := relationKeySchema(registry, ent, f.Name, map[*entity.Entity]bool{}); ks != nil {
+					p := wireProps[wireFields[i].Name].(map[string]any)
+					delete(p, "format")
+					maps.Copy(p, ks)
+				}
+			}
+		}
 		keyCols := ent.KeyColumns()
 		for i, f := range visibleFields {
 			if !f.Required && f.AutoGenerate == schema.AutoNone && !slices.Contains(keyCols, f.Name) {
@@ -287,6 +330,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// Tag for grouping
 		s.AddTag(tagName, entityName+" operations")
 
+		// A read-only mount (App.View) serves List, Get and _events; every
+		// write below would answer 405, so none reaches the document.
+		readOnly := opts.ReadOnlyMounted != nil && opts.ReadOnlyMounted(ent)
+		addWrite := func(method, p string, op openapi.Operation) {
+			if !readOnly {
+				s.AddPath(method, p, op)
+			}
+		}
+
 		// Reference to entity schema
 		entityRef := map[string]any{"$ref": "#/components/schemas/" + schemaName}
 		singleRef := map[string]any{
@@ -328,7 +380,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		if ent.Version != "" {
 			path = pathPrefix + "/" + tableName
 		}
-		recPath, keyProps, keyReq := recordKey(ent, path)
+		recPath, keyProps, keyReq := recordKey(ent, fields, path)
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
@@ -371,13 +423,27 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		}
 		fieldsSchema := map[string]any{"type": "string"}
 
+		// conflicts reports whether a write can collide with a stored row:
+		// a Unique field, or a key the client supplies. The route answers
+		// that collision 409 with the field named.
+		conflicts := false
+		for _, f := range fields {
+			if f.Unique || (slices.Contains(ent.KeyColumns(), f.Name) && f.AutoGenerate == schema.AutoNone) {
+				conflicts = true
+			}
+		}
+
 		// --- GET /{table}: List ---
 		listOp := openapi.NewOperation()
 		listOp.Summary = "List " + entityName
 		listOp.OperationID = "list_" + schemaName
 		listOp.Tags = []string{tagName}
 		listOp.AddParameter("page", "query", "Page number (offset mode)", false, map[string]any{"type": "integer", "default": 1})
-		listOp.AddParameter("limit", "query", "Items per page (max 100)", false, map[string]any{"type": "integer", "default": 20})
+		// The entity's own cap, the numbers the list clamps with: a larger
+		// ?limit is cut to it, not refused, so it is described, not a
+		// schema maximum a strict client would refuse to send.
+		defLimit, maxLimit := crud.ListLimits(ent.Config.Pagination.MaxListLimit)
+		listOp.AddParameter("limit", "query", fmt.Sprintf("Items per page (max %d; a larger limit is cut to it)", maxLimit), false, map[string]any{"type": "integer", "default": defLimit})
 		listOp.AddParameter("sort", "query", "Sort field (offset mode only; ignored when ?cursor is present)", false, map[string]any{"type": "string"})
 		listOp.AddParameter("cursor", "query", "Opaque cursor; presence (even empty) switches the response to CursorPage shape and uses keyset pagination by primary key.", false, map[string]any{"type": "string"})
 		listOp.AddParameter("direction", "query", "Cursor walk direction: forward (default) or backward.", false, map[string]any{"type": "string", "enum": []string{"forward", "backward"}, "default": "forward"})
@@ -408,6 +474,11 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				name = f.WireName
 			}
 			filterSchema := fieldToFilterSchema(f)
+			if f.Type == schema.Relation && !f.Many && f.RawType == "" {
+				if ks := relationKeySchema(registry, ent, f.Name, map[*entity.Entity]bool{}); ks != nil && ks["type"] == "integer" {
+					filterSchema = map[string]any{"type": "integer"}
+				}
+			}
 			// The advertised set is derived from filter.OpSuitsType, the same
 			// type predicate CheckOpType applies to ?field_<op>= (and every
 			// other filter surface), so the spec can never list an operator
@@ -458,6 +529,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
+		addWriteRefusals(createOp, conflicts, errorRef)
 		if statesGuarded {
 			createOp.AddResponse(422, "Tried to set the state field to a non-initial value, or to set a stamp", stateErrRef)
 		}
@@ -467,7 +539,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			createOp.AddSecurity("bearerAuth", nil)
 			createOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("POST", path, *createOp)
+		addWrite("POST", path, *createOp)
 
 		// --- GET /{table}/:id: Get by ID ---
 		getOp := openapi.NewOperation()
@@ -497,6 +569,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, scopeSkip, true), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
+		addWriteRefusals(updateOp, conflicts, errorRef)
 		if statesGuarded {
 			updateOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
 		}
@@ -507,7 +580,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			updateOp.AddSecurity("cookieAuth", nil)
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PUT", recPath, *updateOp)
+		addWrite("PUT", recPath, *updateOp)
 
 		// --- PATCH /{table}/:id: Sparse update ---
 		patchOp := openapi.NewOperation()
@@ -518,6 +591,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
+		addWriteRefusals(patchOp, conflicts, errorRef)
 		if statesGuarded {
 			patchOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
 		}
@@ -528,7 +602,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			patchOp.AddSecurity("cookieAuth", nil)
 		}
 		patchOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PATCH", recPath, *patchOp)
+		addWrite("PATCH", recPath, *patchOp)
 
 		// --- DELETE /{table}/:id: Delete ---
 		deleteOp := openapi.NewOperation()
@@ -545,7 +619,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			deleteOp.AddSecurity("cookieAuth", nil)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("DELETE", recPath, *deleteOp)
+		addWrite("DELETE", recPath, *deleteOp)
 
 		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
 		// The router mounts the transition route when States holds a
@@ -591,7 +665,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				moveOp.AddSecurity("bearerAuth", nil)
 				moveOp.AddSecurity("cookieAuth", nil)
 			}
-			s.AddPath("POST", recPath+"/transitions/"+t.Key, *moveOp)
+			addWrite("POST", recPath+"/transitions/"+t.Key, *moveOp)
 		}
 
 		// --- POST /{table}/_batch: BatchCreate ---
@@ -613,13 +687,14 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		batchCreateOp.SetRequestBody("application/json", batchCreateBody, true)
 		batchCreateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchCreateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		batchCreateOp.AddResponse(415, "Content-Type must be application/json", errorRef)
 		if gated {
 			batchCreateOp.AddResponse(401, "Authentication required", errorRef)
 			batchCreateOp.AddResponse(403, "Forbidden", errorRef)
 			batchCreateOp.AddSecurity("bearerAuth", nil)
 			batchCreateOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("POST", path+"/_batch", *batchCreateOp)
+		addWrite("POST", path+"/_batch", *batchCreateOp)
 
 		// --- PATCH /{table}/_batch: BatchUpdate ---
 		// An item names its record in the body, so each key column takes
@@ -663,13 +738,14 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		batchUpdateOp.SetRequestBody("application/json", batchUpdateBody, true)
 		batchUpdateOp.AddResponse(200, "All items committed", batchRespRef)
 		batchUpdateOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		batchUpdateOp.AddResponse(415, "Content-Type must be application/json", errorRef)
 		if gated {
 			batchUpdateOp.AddResponse(401, "Authentication required", errorRef)
 			batchUpdateOp.AddResponse(403, "Forbidden", errorRef)
 			batchUpdateOp.AddSecurity("bearerAuth", nil)
 			batchUpdateOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("PATCH", path+"/_batch", *batchUpdateOp)
+		addWrite("PATCH", path+"/_batch", *batchUpdateOp)
 
 		// --- GET /{table}/_events: SSE entity subscription stream ---
 		eventsOp := openapi.NewOperation()
@@ -712,14 +788,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		batchDeleteOp.SetRequestBody("application/json", batchDeleteBody, true)
 		batchDeleteOp.AddResponse(200, "All items committed", batchRespRef)
 		batchDeleteOp.AddResponse(400, "Batch rolled back; see results[]", batchRespRef)
+		batchDeleteOp.AddResponse(415, "Content-Type must be application/json", errorRef)
 		if gated {
 			batchDeleteOp.AddResponse(401, "Authentication required", errorRef)
 			batchDeleteOp.AddResponse(403, "Forbidden", errorRef)
 			batchDeleteOp.AddSecurity("bearerAuth", nil)
 			batchDeleteOp.AddSecurity("cookieAuth", nil)
 		}
-		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
-		if bulkMounted != nil && bulkMounted(ent) {
+		addWrite("DELETE", path+"/_batch", *batchDeleteOp)
+		if !readOnly && bulkMounted != nil && bulkMounted(ent) {
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
@@ -755,6 +832,17 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		})
 	}
 	return s
+}
+
+// addWriteRefusals documents the refusals every JSON-body write shares:
+// 415 for a body without the JSON content type, and, when the entity has
+// a Unique field or a client-supplied key, 409 for a write that collides
+// with a stored row (fields names the column, field_reasons unique_taken).
+func addWriteRefusals(op *openapi.Operation, conflicts bool, errorRef map[string]any) {
+	if conflicts {
+		op.AddResponse(409, "Conflicts with a stored row: a unique field or the key is already in use", errorRef)
+	}
+	op.AddResponse(415, "Content-Type must be application/json", errorRef)
 }
 
 // requestSchema returns the write-request view of the entity schema:
@@ -952,12 +1040,10 @@ func versionSlug(prefix string) string {
 // Filter and sort parameters are a DELIBERATE exception: the filter
 // parser (framework/filter) matches against the raw DB column name plus
 // a WireName alias, never the camelCase form, so those params use
-// f.Name / f.WireName directly rather than this helper. Sharing
-// framework/crud's convertKey is impossible here: it is a method on
-// CrudHandler that depends on the per-handler JSONCase config, which
-// the OpenAPI builder (registry-only, no handler instance) does not
-// see. The OpenAPI builder assumes the default camelCase casing, which
-// is what convertKey returns when JSONCase is CaseCamel (the default).
+// f.Name / f.WireName directly rather than this helper. The handlers'
+// JSONCase reaches it through casedFields: under snake_case every field
+// arrives with its column name as WireName, so this camelCase fallback
+// only ever runs for the default case.
 func wireKeyOf(f schema.Field) string {
 	if f.WireName != "" {
 		return f.WireName
@@ -965,19 +1051,84 @@ func wireKeyOf(f schema.Field) string {
 	return casing.ToCamel(f.Name)
 }
 
+// casedFields returns fields as the handlers' JSONCase keys them. Under
+// crud.CaseSnake a field with no WireName answers under its column name
+// (crud's convertKeyRaw), so the copy pins that name as WireName and
+// every surface wireKeyOf feeds (properties, required, request bodies,
+// ?fields=, record keys) names the key the route answers under. The
+// filter parameters read WireName-or-Name, the same name either way.
+func casedFields(fields []schema.Field, jc crud.JSONCase) []schema.Field {
+	if jc != crud.CaseSnake {
+		return fields
+	}
+	out := slices.Clone(fields)
+	for i := range out {
+		if out[i].WireName == "" {
+			out[i].WireName = out[i].Name
+		}
+	}
+	return out
+}
+
+// relationKeySchema returns the type (and format) of the value column col
+// of ent holds when it is a belongs_to's one-column foreign key: its
+// target key field's, followed through a key that is itself such a
+// reference. nil when the target does not resolve (the field keeps its
+// declared uuid shape). entity.RelationHoldsInt is the same walk crud
+// types the column's values by.
+func relationKeySchema(reg entity.Registry, ent *entity.Entity, col string, seen map[*entity.Entity]bool) map[string]any {
+	if reg == nil || seen[ent] {
+		return nil
+	}
+	seen[ent] = true
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || len(rel.ForeignKey) != 1 || !strings.EqualFold(rel.ForeignKey[0], col) {
+			continue
+		}
+		target, err := entity.ResolveTarget(reg, ent, rel.Entity)
+		if err != nil || target == nil {
+			return nil
+		}
+		pk, err := target.KeyColumn()
+		if err != nil {
+			return nil
+		}
+		for _, kf := range target.GetFields() {
+			if !strings.EqualFold(kf.Name, pk) {
+				continue
+			}
+			if kf.Type == schema.Relation {
+				if kf.RawType != "" {
+					return nil
+				}
+				return relationKeySchema(reg, target, kf.Name, seen)
+			}
+			ks := openapi.FieldToSchema(schema.Field{Type: kf.Type})
+			out := map[string]any{"type": ks["type"]}
+			if f, ok := ks["format"]; ok && f != "textarea" {
+				out["format"] = f
+			}
+			return out
+		}
+		return nil
+	}
+	return nil
+}
+
 // recordKey returns the path naming one record of ent under path, and
 // the properties and required list a batch-update item names it with.
 // A one-column key is the path's {id} and the item's key column; a
 // composite key takes one path segment per column (crud.KeyPath), each
-// named after its column's wire key.
-func recordKey(ent *entity.Entity, path string) (string, map[string]any, []string) {
+// named after its column's wire key. fields are ent's fields as
+// casedFields keyed them.
+func recordKey(ent *entity.Entity, fields []schema.Field, path string) (string, map[string]any, []string) {
 	cols := ent.KeyColumns()
 	props := make(map[string]any, len(cols))
 	req := make([]string, 0, len(cols))
 	rec := path
 	for _, c := range cols {
 		w := casing.ToCamel(c)
-		for _, f := range ent.GetFields() {
+		for _, f := range fields {
 			if f.Name == c {
 				w = wireKeyOf(f)
 			}

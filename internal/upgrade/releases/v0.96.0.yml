@@ -821,3 +821,21 @@ notes:
     breaking: false
     guidance: "Replace such a link with a regular file (or a link inside the project) and re-run. A link that stays inside the project is followed as before."
     nodetect: "the check is on the files on disk when the command runs; nothing in an app's source spells it"
+  - change: "An app with AppConfig.JSONCase set to snake_case answers its auto-CRUD routes in snake_case (author_id); they answered camelCase (authorId) whatever the setting, and /openapi.json now names the same keys"
+    breaking: false
+    guidance: "Only apps that set JSONCase: snake_case see a change. Clients written against the camelCase keys those routes actually sent read the snake_case keys the setting always promised; drop the setting to keep camelCase."
+    nodetect: "the setting is one AppConfig field whose meaning did not change; the keys change at runtime"
+  - change: "factory.New(app.Registry, ...) creates rows through the handler the app's routes serve, so the app's registered hooks and events run on factory rows and the returned map follows the app's JSONCase"
+    breaking: false
+    guidance: "Tests that relied on a factory skipping app hooks (to seed a row a BeforeCreate hook would refuse) pass factory.WithHandler(crud.NewCrudHandler(ent, db)) to keep the bare handler."
+    find:
+      uses:
+        - gofastr/framework/factory.New
+  - change: "/openapi.json types a Relation field by its target's key: integer for a target keyed by an AutoIncrement int, the key's own type and format otherwise; it was always a uuid string"
+    breaking: false
+    guidance: "Regenerate any client built from /openapi.json for an entity whose Relation points at an integer- or code-keyed entity; the server's wire format did not change, only the document now matches it."
+    nodetect: "the change is in the served document; nothing in an app's source spells it"
+  - change: "/openapi.json lists only List, Get and _events for an entity App.View mounts read-only; it documented the write and _batch operations, which answer 405"
+    breaking: false
+    guidance: "Regenerate any client built from /openapi.json that covers a view: its write calls never worked and are gone from the document."
+    nodetect: "the change is in the served document; nothing in an app's source spells it"

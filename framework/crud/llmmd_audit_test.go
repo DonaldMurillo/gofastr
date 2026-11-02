@@ -37,7 +37,8 @@ func TestLLMMD_LimitDocMustReflectEntityMaxListLimit(t *testing.T) {
 		Pagination: &entity.PaginationConfig{MaxListLimit: 3},
 	}.WithTimestamps(false))
 	doc := EntityLLMMD(ent)
-	const want = "Items per page (default 20, max 3)"
+	// The default is clamped too: a list sent no ?limit answers 3 rows.
+	const want = "Items per page (default 3, max 3)"
 	if !strings.Contains(doc, want) {
 		t.Errorf("llm.md limit row does not report the entity's cap; want %q in:\n%s", want, doc)
 	}
