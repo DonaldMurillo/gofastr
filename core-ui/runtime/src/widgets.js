@@ -182,7 +182,7 @@
           // no-store: the HTTP cache runs one request per URL at a time,
           // so a held fetch for this chrome would stall a second open of
           // it for up to 20s; the runtime's own cache above dedupes.
-          const r = await fetch(NS._lp?.(url) ?? url, { cache: 'no-store' });
+          const r = await NS.fetch(NS._lp?.(url) ?? url, { cache: 'no-store' });
           // A followed 3xx is another URL's markup, never this chrome.
           if (!r.ok || r.redirected) throw new Error('chrome fetch ' + r.status);
           return await r.text();
@@ -415,7 +415,7 @@
     // Initial state hydration, only when the widget declared signals.
     if (cfg.statePath) {
       if (!NS._originOK?.(cfg.statePath)) return;
-      fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+      NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         // A followed 3xx answered for another URL: no state to apply.
         .then((r) => (r.ok && !r.redirected ? r.json() : {}))
         .then((state) => {

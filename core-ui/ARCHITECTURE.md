@@ -1293,6 +1293,48 @@ server-side error (a `data-hui-field-error` node inside the
 `error` text when no field matched. It has no DOM marker and owns no
 attribute of its own; the happy path never loads it.
 
+### Host transport (`__gofastr_transport`)
+
+Every request the runtime makes goes through one function,
+`__gofastr.fetch` (`_fetch` inside the kernel). It calls
+`window.__gofastr_transport` when a host installed one and the global
+`fetch` otherwise. The slot is for a native host whose WebView cannot
+carry what fetch sends: a phone shell that serves the app through
+request interception gets no request body on Android and no Blob or
+File body on iOS, and neither platform can hand a redirect back to the
+page. Such a host installs a function with fetch's signature that
+carries the request over its own channel. There is no DOM marker and
+no `data-cui-*` attribute, the same shape as `__gofastr_desktop`.
+
+- The kernel reads the slot at **call time**, so a host may install it
+  at document start or from a rail script that runs after boot. A
+  request already in flight keeps the path it started on.
+- Fragments call `_fetch`; demand modules call `NS.fetch`. Battery
+  scripts that may run before the kernel (passkey, site search) read
+  `window.__gofastr.fetch` at call time and fall back to `fetch`.
+  `TestRuntimeSourcesFetchThroughHost` fails on a global `fetch(` in
+  any runtime source.
+- `frag/boot-embed.js` is the one exception. It runs in a third-party
+  frame that has no host, and its exchange, refresh and content fetches
+  carry embed grants and refuse redirects themselves.
+- The transport answers what a browser's fetch answers. A followed
+  redirect must report the final URL in `response.url` and set
+  `response.redirected`, or every "no answer" rule under **Server
+  redirects** below reads another URL's body as the request's own. A
+  network failure rejects with a `TypeError`, and an aborted signal
+  rejects with the signal's reason.
+- A cross-origin request is not the host's business: a transport passes
+  it to `fetch` unchanged.
+- A plain HTML form the runtime leaves alone (no `data-cui-rpc`, no
+  `data-cui-spa`) is a document navigation, not a fetch, so the slot
+  never sees it. A host that needs one carries it itself: a `submit`
+  listener on `window` runs after the runtime's own document-level
+  listener and skips an event whose default is already prevented.
+
+`TestHostTransportCarriesRequests` installs a recording transport after
+boot and checks that a client navigation and a `data-cui-rpc` form both
+go through it.
+
 ### Cross-replica presence (`gofastr.presence` fanout lane)
 
 Presence rosters aggregate across `serve` replicas over the existing

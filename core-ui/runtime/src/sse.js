@@ -67,7 +67,7 @@
   // Same-origin + credentials so the cookie round-trips. Best-effort.
   // A followed 3xx is another URL's JSON, never a minted id.
   function remintSession() {
-    return fetch('/__gofastr/session', { method: 'POST', credentials: 'same-origin' })
+    return NS.fetch('/__gofastr/session', { method: 'POST', credentials: 'same-origin' })
       .then((r) => (r.ok && !r.redirected ? r.json() : null))
       .then((j) => {
         if (!j || !j.sessionId) return;

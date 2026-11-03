@@ -13,6 +13,10 @@
   'use strict';
   const NAME = 'sitesearch';
   const NS = window.__gofastr = window.__gofastr || {};
+  // The runtime's host transport when a native host installed one
+  // (core-ui ARCHITECTURE.md "Host transport"); read at call time, since
+  // the kernel may replace the namespace after this script ran.
+  const hostFetch = (u, i) => ((window.__gofastr && window.__gofastr.fetch) || fetch)(u, i);
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
@@ -75,7 +79,7 @@
   }
 
   async function liveSearch(q, limit) {
-    const r = await fetch(ROOT + 'query?q=' + encodeURIComponent(q) + '&limit=' + limit, { credentials: 'same-origin' });
+    const r = await hostFetch(ROOT + 'query?q=' + encodeURIComponent(q) + '&limit=' + limit, { credentials: 'same-origin' });
     if (!r.ok) throw new Error('sitesearch: ' + r.status);
     return (await r.json()).results || [];
   }

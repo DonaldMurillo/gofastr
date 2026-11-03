@@ -39,6 +39,16 @@ few lines, and link the PR or the docs page for the rest.
   in-process listener for a mobile WebView, or one a supervisor holds.
   Isolation never remaps it, and every return closes it. See
   [Plugins](framework/docs/content/plugins.md#init-lifecycle).
+- **Host transport slot for native WebViews.** Every runtime request now
+  goes through `window.__gofastr.fetch`, which calls
+  `window.__gofastr_transport` when a host installed one. A phone shell
+  whose request interception drops request bodies or cannot return a
+  redirect carries the runtime's requests over its own channel instead.
+  The passkey and site-search scripts use the same path. The runtime no
+  longer sends the `session` field in a server action's body: it read
+  the HttpOnly session cookie, which script cannot see, so the field was
+  always empty. See
+  [Runtime contract](framework/docs/content/runtime-contract.md#host-transport-windowgofastr_transport).
 - **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
   reloads every role from the database every 5 minutes by default, so a
   replica that missed a refresh signal stops honouring a revoked
