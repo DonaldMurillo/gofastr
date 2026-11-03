@@ -494,8 +494,21 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.snapRes = make(chan snapOutcome, 1)
 	s.evalBlock = objc.NewBlock(ffi.NewCallback(s.onEvalCompletion))
 	s.snapBlock = objc.NewBlock(ffi.NewCallback(s.onSnapshotCompletion))
+	s.asyncRes = make(chan evalOutcome, 1)
+	s.asyncBlock = objc.NewBlock(ffi.NewCallback(s.onAsyncEvalCompletion))
 	s.running = true
 	s.mu.Unlock()
+	// A panic below (ready, the run loop) must not leave the shell
+	// marked running: stopLoop and OpenWindow would act on a loop that
+	// is gone. The normal path clears it after [NSApp run] returns.
+	defer func() {
+		if r := recover(); r != nil {
+			s.mu.Lock()
+			s.running = false
+			s.mu.Unlock()
+			panic(r)
+		}
+	}()
 	activeShell.Store(s)
 
 	s.buildMenuBar(plans)
@@ -539,11 +552,6 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	objc.Send(window, objc.Sel("setContentView:"), uintptr(webView))
 	objc.Send(window, objc.Sel("setDelegate:"), uintptr(bridge))
 	objc.Send(webView, objc.Sel("setNavigationDelegate:"), uintptr(bridge))
-	s.evalBlock = objc.NewBlock(ffi.NewCallback(s.onEvalCompletion))
-	s.snapBlock = objc.NewBlock(ffi.NewCallback(s.onSnapshotCompletion))
-	s.asyncRes = make(chan evalOutcome, 1)
-	s.asyncBlock = objc.NewBlock(ffi.NewCallback(s.onAsyncEvalCompletion))
-	s.running = true
 	applyWindowStyle(window, webView, cfg.Style, cfg.Height)
 	// The material goes in before the window fronts, so the first
 	// paint already has the effect under it.
