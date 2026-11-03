@@ -72,9 +72,9 @@ polling.
 ### Loopback only, unless you opt in
 
 The stream has no seat and no cap: it is meant for the developer at
-this machine. When `App.Start` binds an address other machines can
-reach (`0.0.0.0:8080`, `:8080`, a LAN IP, or a unix socket handed to
-`App.Serve`, which a proxy can front), it turns the stream off and
+this machine. When the app listens where other machines can reach it
+(`App.Start` on `0.0.0.0:8080`, `:8080` or a LAN IP, or `App.Serve` on
+a unix socket, which a proxy can front), it turns the stream off and
 logs a warning: `/__livereload` answers `404`, which an `EventSource`
 treats as final, so open pages stop asking. The script still loads.
 Set `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` (`dev.LiveReloadExposeEnv`) to keep

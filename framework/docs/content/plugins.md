@@ -76,7 +76,9 @@ framework gates their listing on the entity's `Access` permission.)
   listener whose `Addr().Network()` is `"memory"` or `"pipe"` counts as
   in-process and local-only, so `Shutdown` skips the production
   readiness drain the way a loopback bind does, and the dev MCP and
-  livereload stay on. Every other network that is not TCP, a unix
+  livereload stay on. A TCP listener is judged by its host, as
+  `Start`'s is: loopback is local, and a wildcard or routable address
+  keeps the drain and counts as exposed. Every other network, a unix
   socket included, keeps the drain and counts as exposed, even when its
   path reads like `127.0.0.1:8080`. For a listener that is not TCP the
   startup banner prints paths instead of URLs. A host that hands every request
