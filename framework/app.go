@@ -349,6 +349,10 @@ type App struct {
 	// once Start holds the port; servesLocalOnly reads it. Guarded by
 	// serverMu.
 	boundHost string
+	// boundInProcess is set when the listener is one nothing outside the
+	// process dials (inProcessNetwork); servesLocalOnly reads it.
+	// Guarded by serverMu.
+	boundInProcess bool
 	// shutdownDone is set by the first Shutdown and closed when its
 	// teardown returns; every later call waits on it instead of tearing
 	// down again. Guarded by shutdownMu.
@@ -3604,7 +3608,34 @@ func (a *App) Serve(ln net.Listener) error {
 	if ln == nil {
 		return errors.New("framework: Serve: nil listener")
 	}
-	return a.start("", ln)
+	return a.start("", &onceCloseListener{Listener: ln})
+}
+
+// onceCloseListener closes the caller's listener once however many
+// paths close it (an early abort, start's own defer, http.Server's
+// Shutdown): net.Listener does not promise an idempotent Close, and a
+// hand-written one that closes a channel panics on the second call.
+type onceCloseListener struct {
+	net.Listener
+	once sync.Once
+	err  error
+}
+
+func (l *onceCloseListener) Close() error {
+	l.once.Do(func() { l.err = l.Listener.Close() })
+	return l.err
+}
+
+// inProcessNetwork reports whether a listener's network is one nothing
+// outside the process dials: not TCP and not a unix socket (a proxy on
+// the machine can front either). An in-memory pipe for a mobile shell's
+// WebView is the case.
+func inProcessNetwork(network string) bool {
+	switch network {
+	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
+		return false
+	}
+	return true
 }
 
 // resolveListenAddr applies worktree isolation to a Start address.
@@ -4153,11 +4184,12 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// Serve closes the listener on Shutdown; this extra Close only matters
 	// on the Shutdown-raced path where Serve returns without adopting ln.
 	defer func() { _ = ln.Close() }()
+	a.serverMu.Lock()
 	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil {
-		a.serverMu.Lock()
 		a.boundHost = host
-		a.serverMu.Unlock()
 	}
+	a.boundInProcess = inProcessNetwork(ln.Addr().Network())
+	a.serverMu.Unlock()
 
 	// Graceful shutdown by default: docker stop and kubectl rollouts send
 	// SIGTERM, and without a handler the runtime kills the process

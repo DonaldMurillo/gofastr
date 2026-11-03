@@ -150,3 +150,85 @@ func TestServeNilListener(t *testing.T) {
 		t.Fatal("Serve(nil) = nil, want an error")
 	}
 }
+
+// countingListener counts Close calls on the listener it wraps.
+type countingListener struct {
+	*pipeListener
+	mu     sync.Mutex
+	closes int
+}
+
+func (l *countingListener) Close() error {
+	l.mu.Lock()
+	l.closes++
+	l.mu.Unlock()
+	return l.pipeListener.Close()
+}
+
+// Serve closes the caller's listener exactly once: a listener whose
+// Close is not idempotent (one that closes a channel) must not panic
+// on Shutdown, an early abort, or the two together.
+func TestServeClosesTheListenerOnce(t *testing.T) {
+	for name, abort := range map[string]bool{"shutdown": false, "early abort": true} {
+		t.Run(name, func(t *testing.T) {
+			app := quietServeApp()
+			if abort {
+				app.OnStart(func(context.Context) error { return errors.New("boom") })
+			}
+			ready := make(chan struct{})
+			app.OnReady(func(string) { close(ready) })
+			ln := &countingListener{pipeListener: newPipeListener()}
+			done := make(chan error, 1)
+			go func() { done <- app.Serve(ln) }()
+			if !abort {
+				select {
+				case <-ready:
+				case <-time.After(5 * time.Second):
+					t.Fatal("OnReady never fired")
+				}
+				if err := app.Shutdown(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Serve did not return")
+			}
+			ln.mu.Lock()
+			defer ln.mu.Unlock()
+			if ln.closes != 1 {
+				t.Fatalf("Close called %d times, want 1", ln.closes)
+			}
+		})
+	}
+}
+
+// An app served on an in-process listener is local-only: no balancer
+// can probe it, so Shutdown skips the production readiness drain (a
+// phone shell going to the background has seconds, not five of them
+// to spare). A unix socket is not: a proxy on the machine can front it.
+func TestServeInProcessSkipsReadinessDrain(t *testing.T) {
+	app := quietServeApp()
+	ready := make(chan struct{})
+	app.OnReady(func(string) { close(ready) })
+	ln := newPipeListener()
+	go func() { _ = app.Serve(ln) }()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnReady never fired")
+	}
+	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
+	if !app.servesLocalOnly() {
+		t.Fatal("an app on an in-process listener is not local-only")
+	}
+	if got := defaultReadinessDrain(false, false, app.servesLocalOnly()); got != 0 {
+		t.Fatalf("readiness drain = %v, want 0", got)
+	}
+	for network, want := range map[string]bool{"pipe": true, "memory": true, "tcp": false, "tcp6": false, "unix": false} {
+		if got := inProcessNetwork(network); got != want {
+			t.Errorf("inProcessNetwork(%q) = %v, want %v", network, got, want)
+		}
+	}
+}

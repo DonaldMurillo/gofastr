@@ -71,8 +71,11 @@ framework gates their listing on the entity's `Access` permission.)
   address. It is the seam for a host that owns the transport, such as
   an in-process listener feeding a mobile WebView, where no socket may
   be opened. Worktree isolation never remaps it, `OnReady` receives
-  `ln.Addr().String()`, and every return closes `ln`, including a
-  start phase that fails before the server exists. When the address
+  `ln.Addr().String()`, and every return closes `ln` exactly once,
+  including a start phase that fails before the server exists. A
+  listener whose network is neither TCP nor a unix socket counts as
+  local-only, so `Shutdown` skips the production readiness drain the
+  way a loopback bind does. When the address
   has no host:port (an in-process listener's `memory`), the startup
   banner prints paths instead of URLs. A host that hands every request
   its one user's identity calls `NoteAuthenticator`, so the banner

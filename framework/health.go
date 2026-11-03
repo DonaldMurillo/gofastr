@@ -104,15 +104,17 @@ func defaultReadinessDrain(underTest, devMode, local bool) time.Duration {
 }
 
 // servesLocalOnly reports whether nothing but this machine reaches the
-// app, so no load balancer probes /readyz: a battery/service run, or a
+// app, so no load balancer probes /readyz: a battery/service run, a
 // listener bound to a loopback address (the desktop battery refuses any
-// other bind). A wildcard or routable bind is not local. Before the
-// listener binds only the service mark counts.
+// other bind), or an in-process listener handed to Serve (a mobile
+// shell's). A wildcard or routable bind is not local, and neither is a
+// unix socket, which a proxy can front. Before the listener binds only
+// the service mark counts.
 func (a *App) servesLocalOnly() bool {
 	a.serverMu.Lock()
-	host := a.boundHost
+	host, inProcess := a.boundHost, a.boundInProcess
 	a.serverMu.Unlock()
-	return a.isLocalRun(host)
+	return inProcess || a.isLocalRun(host)
 }
 
 // capReadinessDrain bounds the grace to half of the time ctx has left,
