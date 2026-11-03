@@ -3635,6 +3635,12 @@ func inProcessNetwork(network string) bool {
 	return network == "memory" || network == "pipe"
 }
 
+// tcpNetwork reports whether a listener's network names a TCP address,
+// the only kind whose String() is a host:port.
+func tcpNetwork(network string) bool {
+	return network == "tcp" || network == "tcp4" || network == "tcp6"
+}
+
 // resolveListenAddr applies worktree isolation to a Start address.
 func (a *App) resolveListenAddr(addrp *string) error {
 	addr := *addrp
@@ -4182,10 +4188,13 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// on the Shutdown-raced path where Serve returns without adopting ln.
 	defer func() { _ = ln.Close() }()
 	a.serverMu.Lock()
-	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil {
+	// Only a TCP address is a host:port. A unix socket's address is its
+	// path, and a path like "127.0.0.1:8080" must not read as loopback.
+	network := ln.Addr().Network()
+	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil && tcpNetwork(network) {
 		a.boundHost = host
 	}
-	a.boundInProcess = inProcessNetwork(ln.Addr().Network())
+	a.boundInProcess = inProcessNetwork(network)
 	a.serverMu.Unlock()
 
 	// Graceful shutdown by default: docker stop and kubectl rollouts send

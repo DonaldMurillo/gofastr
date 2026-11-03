@@ -233,3 +233,31 @@ func TestServeInProcessSkipsReadinessDrain(t *testing.T) {
 		}
 	}
 }
+
+// unixListener is a pipeListener whose address is a unix socket path.
+type unixListener struct {
+	*pipeListener
+	path string
+}
+
+func (l *unixListener) Addr() net.Addr { return &net.UnixAddr{Name: l.path, Net: "unix"} }
+
+// A unix socket path is not a host:port, even one that reads like
+// "127.0.0.1:8080": it must not count as a loopback bind, or Shutdown
+// skips the readiness drain for a socket a proxy fronts.
+func TestServeUnixPathIsNotLoopback(t *testing.T) {
+	app := quietServeApp()
+	ready := make(chan struct{})
+	app.OnReady(func(string) { close(ready) })
+	ln := &unixListener{pipeListener: newPipeListener(), path: "127.0.0.1:8080"}
+	go func() { _ = app.Serve(ln) }()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnReady never fired")
+	}
+	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
+	if app.servesLocalOnly() {
+		t.Fatal("a unix socket at a host:port-shaped path counts as local-only")
+	}
+}
