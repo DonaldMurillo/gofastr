@@ -37,7 +37,7 @@ func TestBannerSkipsDisabledCRUDEntities(t *testing.T) {
 	var out bytes.Buffer
 	app.startupOutput = &out
 
-	app.printStartupBanner("127.0.0.1:8080", "test", false, false, "")
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "test", false, false, "")
 	got := out.String()
 
 	if !strings.Contains(got, "/posts") {
@@ -59,7 +59,7 @@ func TestBannerNoDBPrintsNoEntityURLs(t *testing.T) {
 	var out bytes.Buffer
 	app.startupOutput = &out
 
-	app.printStartupBanner("127.0.0.1:8080", "test", false, false, "")
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "test", false, false, "")
 	if strings.Contains(out.String(), "/posts") {
 		t.Errorf("no DB means no CRUD routes; URL advertised anyway:\n%s", out.String())
 	}
@@ -81,7 +81,7 @@ func TestBannerMarksAuthGatedRoutes(t *testing.T) {
 	var out bytes.Buffer
 	app.startupOutput = &out
 
-	app.printStartupBanner("127.0.0.1:8080", "test", true, true, "")
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "test", true, true, "")
 	got := out.String()
 
 	for line := range strings.SplitSeq(got, "\n") {
@@ -107,7 +107,7 @@ func TestBannerPublicOpenAPIUnmarked(t *testing.T) {
 	var out bytes.Buffer
 	app.startupOutput = &out
 
-	app.printStartupBanner("127.0.0.1:8080", "test", true, true, "")
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "test", true, true, "")
 
 	for line := range strings.SplitSeq(out.String(), "\n") {
 		if strings.Contains(line, "/openapi.json") || strings.Contains(line, "/api/docs/") || strings.Contains(line, "/api/llm.md") {
@@ -132,7 +132,7 @@ func TestStartupBannerVersionedEntityPathAndLabel(t *testing.T) {
 	var out bytes.Buffer
 	app.startupOutput = &out
 
-	app.printStartupBanner("127.0.0.1:8080", "test", false, false, "")
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "test", false, false, "")
 	got := out.String()
 
 	if !strings.Contains(got, "widgets (/v2)") {

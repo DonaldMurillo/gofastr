@@ -19,7 +19,7 @@ func TestBannerHintsWhenNoAuthIsMounted(t *testing.T) {
 	render := func(app *App) string {
 		var out bytes.Buffer
 		app.startupOutput = &out
-		app.printStartupBanner("127.0.0.1:8080", "test", false, false, "")
+		app.printStartupBanner("127.0.0.1:8080", "tcp", "test", false, false, "")
 		return out.String()
 	}
 
@@ -63,12 +63,31 @@ func TestBannerOnAnInProcessListener(t *testing.T) {
 	app.Entity("posts", EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	var out bytes.Buffer
 	app.startupOutput = &out
-	app.printStartupBanner("memory", "test", true, false, app.urlScheme()+"://memory/setup?token=t")
+	app.printStartupBanner("memory", "memory", "test", true, false, app.urlScheme()+"://memory/setup?token=t")
 	got := out.String()
 	if strings.Contains(got, "://memory") {
 		t.Errorf("banner advertises a URL for an in-process listener:\n%s", got)
 	}
 	for _, want := range []string{"Listening: memory (not a TCP address)", " /posts", " /openapi.json", "Setup: /setup?token=t"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("banner lacks %q:\n%s", want, got)
+		}
+	}
+}
+
+// A unix socket's address is its path. A path shaped like a host:port
+// is still not a URL: the banner names the listener and prints paths.
+func TestBannerOnAUnixSocketPath(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware(), WithDB(bannerTestDB(t)))
+	app.Entity("posts", EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
+	var out bytes.Buffer
+	app.startupOutput = &out
+	app.printStartupBanner("127.0.0.1:8080", "unix", "test", true, false, "")
+	got := out.String()
+	if strings.Contains(got, "://127.0.0.1:8080") {
+		t.Errorf("banner advertises a URL for a unix socket:\n%s", got)
+	}
+	for _, want := range []string{"Listening: 127.0.0.1:8080 (not a TCP address)", " /posts"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("banner lacks %q:\n%s", want, got)
 		}

@@ -73,7 +73,8 @@ polling.
 
 The stream has no seat and no cap: it is meant for the developer at
 this machine. When `App.Start` binds an address other machines can
-reach (`0.0.0.0:8080`, `:8080`, a LAN IP), it turns the stream off and
+reach (`0.0.0.0:8080`, `:8080`, a LAN IP, or a unix socket handed to
+`App.Serve`, which a proxy can front), it turns the stream off and
 logs a warning: `/__livereload` answers `404`, which an `EventSource`
 treats as final, so open pages stop asking. The script still loads.
 Set `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` (`dev.LiveReloadExposeEnv`) to keep

@@ -39,9 +39,10 @@ few lines, and link the PR or the docs page for the rest.
   in-process listener for a mobile WebView, or one a supervisor holds.
   Isolation never remaps it, and every return closes it once. An
   in-process listener (network `memory` or `pipe`) counts as
-  local-only, so `Shutdown` skips the production readiness drain. For a
-  listener with no host:port the startup banner prints paths, not
-  `http://memory/...` URLs. See
+  local-only, so `Shutdown` skips the production readiness drain. A
+  unix socket, or any other network that is not TCP, keeps the drain
+  and turns the dev MCP and livereload off. For a listener that is not TCP the startup banner prints
+  paths, not `http://memory/...` URLs. See
   [Plugins](framework/docs/content/plugins.md#init-lifecycle).
 - **`framework/localapp`.** `localapp.Open(dir)` opens a one-person app's
   data directory: its SQLite `app.db`, the session secret and the

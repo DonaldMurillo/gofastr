@@ -75,10 +75,11 @@ framework gates their listing on the entity's `Access` permission.)
   including a start phase that fails before the server exists. A
   listener whose `Addr().Network()` is `"memory"` or `"pipe"` counts as
   in-process and local-only, so `Shutdown` skips the production
-  readiness drain the way a loopback bind does. Every other network,
-  a unix socket included, keeps the drain. When the address
-  has no host:port (an in-process listener's `memory`), the startup
-  banner prints paths instead of URLs. A host that hands every request
+  readiness drain the way a loopback bind does, and the dev MCP and
+  livereload stay on. Every other network that is not TCP, a unix
+  socket included, keeps the drain and counts as exposed, even when its
+  path reads like `127.0.0.1:8080`. For a listener that is not TCP the
+  startup banner prints paths instead of URLs. A host that hands every request
   its one user's identity calls `NoteAuthenticator`, so the banner
   stops saying no auth is wired.
 - Tests can call `InitPlugins` manually before driving the router

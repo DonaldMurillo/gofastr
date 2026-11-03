@@ -3692,10 +3692,12 @@ func (a *App) start(addr string, ln net.Listener) error {
 		return err
 	}
 
+	network := "tcp"
 	if ln != nil {
 		// A caller-supplied listener is served as given: there is no
-		// address to remap, and the guards below read its own address.
-		addr = ln.Addr().String()
+		// address to remap, and the guards below read its own address
+		// and network.
+		addr, network = ln.Addr().String(), ln.Addr().Network()
 	} else if err := a.resolveListenAddr(&addr); err != nil {
 		return err
 	}
@@ -3709,8 +3711,8 @@ func (a *App) start(addr string, ln net.Listener) error {
 	a.ensureLifecycleContext()
 
 	a.warnUnresolvableRelations()
-	a.guardDevMCPBind(listenAddrFor(addr))
-	a.guardDevLiveReloadBind(listenAddrFor(addr))
+	a.guardDevMCPBind(listenAddrFor(addr), network)
+	a.guardDevLiveReloadBind(listenAddrFor(addr), network)
 
 	abort := func(err error) error {
 		// Read the shutdown state BEFORE draining: the drain below calls
@@ -4190,7 +4192,7 @@ func (a *App) start(addr string, ln net.Listener) error {
 	a.serverMu.Lock()
 	// Only a TCP address is a host:port. A unix socket's address is its
 	// path, and a path like "127.0.0.1:8080" must not read as loopback.
-	network := ln.Addr().Network()
+	network = ln.Addr().Network()
 	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil && tcpNetwork(network) {
 		a.boundHost = host
 	}
@@ -4239,7 +4241,7 @@ func (a *App) start(addr string, ln net.Listener) error {
 	if setupInteractive {
 		setupURL = a.setup.SetupURL(a.urlScheme(), ln.Addr().String())
 	}
-	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD, setupURL)
+	a.printStartupBanner(ln.Addr().String(), ln.Addr().Network(), name, hasAPI, hasLLMMD, setupURL)
 	for _, fn := range a.readyHooks {
 		if rerr := a.runReadyHookSafe(fn, ln.Addr().String()); rerr != nil {
 			return abort(rerr)
@@ -4276,14 +4278,15 @@ func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 // boundAddr is the resolved listener address, so Start("127.0.0.1:0") prints
 // the actual port and a bind failure prints nothing.
 //
-// A listener with no host:port (Serve on an in-process listener, the
-// mobile shell's shape) has no URL anyone can open, so the banner names
-// the listener and prints bare paths instead of advertising
-// http://memory/posts.
-func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, setupURL string) {
+// A listener that is not TCP (Serve on an in-process listener, the
+// mobile shell's shape, or on a unix socket) has no URL anyone can open,
+// so the banner names the listener and prints bare paths instead of
+// advertising http://memory/posts, or an http:// URL built from a socket
+// path shaped like 127.0.0.1:8080.
+func (a *App) printStartupBanner(boundAddr, network, name string, hasAPI, hasLLMMD bool, setupURL string) {
 	base := a.urlScheme() + "://" + boundAddr
 	listening := base
-	if _, _, err := net.SplitHostPort(boundAddr); err != nil {
+	if _, _, err := net.SplitHostPort(boundAddr); err != nil || !tcpNetwork(network) {
 		base, listening = "", boundAddr+" (not a TCP address)"
 		// The setup URL names the listener as its host unless a host
 		// name is configured; keep only the path then, like every

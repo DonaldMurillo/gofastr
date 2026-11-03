@@ -142,20 +142,20 @@ func TestGuardDevMCPBindWithdrawsOnlyDevImplied(t *testing.T) {
 	}
 
 	a := devApp()
-	a.guardDevMCPBind("0.0.0.0:8080")
+	a.guardDevMCPBind("0.0.0.0:8080", "tcp")
 	if a.mcpControl {
 		t.Error("SECURITY: [exposure] the dev-implied control tools survived a non-loopback bind")
 	}
 
 	a = devApp()
-	a.guardDevMCPBind("localhost:8080")
+	a.guardDevMCPBind("localhost:8080", "tcp")
 	if !a.mcpControl {
 		t.Error("a loopback bind must keep the dev loop's own control tools")
 	}
 
 	t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "1")
 	a = devApp()
-	a.guardDevMCPBind("0.0.0.0:8080")
+	a.guardDevMCPBind("0.0.0.0:8080", "tcp")
 	if !a.mcpControl {
 		t.Error("the documented escape hatch did not restore the control tools")
 	}
@@ -164,7 +164,7 @@ func TestGuardDevMCPBindWithdrawsOnlyDevImplied(t *testing.T) {
 	// Explicit opt-in: not dev-implied, so the bind check does not apply.
 	// Its own gate (TestControlToolsGatedInProduction) is what protects it.
 	explicit := NewApp(WithMCPControl())
-	explicit.guardDevMCPBind("0.0.0.0:8080")
+	explicit.guardDevMCPBind("0.0.0.0:8080", "tcp")
 	if !explicit.mcpControl {
 		t.Error("an explicit WithMCPControl was withdrawn by the dev bind check")
 	}
