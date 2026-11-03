@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
+
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -256,7 +258,7 @@ func TestAppOptionsCreatesDirDBAndSecretStable(t *testing.T) {
 	}
 	secretPath := filepath.Join(dir, "secret")
 	filepermtest.AssertOwnerOnly(t, secretPath, 0o600)
-	secret1, err := loadOrMintSecret(dir)
+	secret1, err := localapp.LoadOrMintSecret(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +276,7 @@ func TestAppOptionsCreatesDirDBAndSecretStable(t *testing.T) {
 		option(app2)
 	}
 	t.Cleanup(func() { app2.DB.Close() })
-	secret2, err := loadOrMintSecret(dir)
+	secret2, err := localapp.LoadOrMintSecret(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

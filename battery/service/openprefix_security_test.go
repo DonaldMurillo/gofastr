@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 )
 
 // newOpenGate is newTestGate with Config.OpenPrefixes = /api and a
@@ -16,14 +16,14 @@ func newOpenGate(t *testing.T) *gate {
 	t.Helper()
 	g := newTestGate(t, false)
 	g.open = []string{"/api"}
-	g.user = localuser.ForID("local-user")
+	g.user = localapp.ForID("local-user")
 	return g
 }
 
 // whoApp answers with the signed-in user's id, or "anonymous".
 var whoApp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	if u, ok := handler.GetUser(r.Context()); ok {
-		if lu, ok := u.(*localuser.User); ok {
+		if lu, ok := u.(*localapp.User); ok {
 			_, _ = w.Write([]byte(lu.GetID()))
 			return
 		}

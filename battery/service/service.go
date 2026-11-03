@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
 	// The SQLite driver Runtime.AppOptions opens app.db with.
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
@@ -210,7 +210,7 @@ func (b *Battery) Init(app *framework.App) error {
 	// A signed session is the OS user the service runs as. An app that
 	// links battery/auth keeps auth's identity end to end: the gate
 	// then only gates, and auth signs callers in.
-	if localuser.Install() {
+	if localapp.Install() {
 		b.gate.user = nil
 	} else {
 		app.NoteAuthenticator()

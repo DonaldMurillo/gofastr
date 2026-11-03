@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 )
 
 // serveOpen is the armed gate and the local-user middleware around an
@@ -19,10 +19,10 @@ func serveOpen(t *testing.T) (*Battery, *httptest.Server) {
 	shell := newFakeShell()
 	b := New(Config{ID: "test.example.app", Title: "Test", Shell: shell, Logger: testLogger(t), OpenPrefixes: []string{"/api"}})
 	b.grants = newMemGrantStore()
-	b.user = localuser.ForID("local-user")
+	b.user = localapp.ForID("local-user")
 	who := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := handler.GetUser(r.Context()); ok {
-			if lu, ok := u.(*localuser.User); ok {
+			if lu, ok := u.(*localapp.User); ok {
 				io.WriteString(w, lu.GetID())
 				return
 			}

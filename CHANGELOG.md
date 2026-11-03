@@ -39,6 +39,15 @@ few lines, and link the PR or the docs page for the rest.
   in-process listener for a mobile WebView, or one a supervisor holds.
   Isolation never remaps it, and every return closes it. See
   [Plugins](framework/docs/content/plugins.md#init-lifecycle).
+- **`framework/localapp`.** `localapp.Open(dir)` opens a one-person app's
+  data directory: its SQLite `app.db`, the session secret and the
+  installation's identity, created owner-only and minted on first run.
+  The local identity and its fallback owner extractor moved here from
+  `internal/localuser`, so a host outside this module (a mobile shell)
+  shares them with battery/desktop and battery/service instead of
+  copying them. A secret file that is empty or carries stray whitespace
+  is now refused instead of used. See
+  [Local apps](framework/docs/content/local-apps.md).
 - **Host transport slot for native WebViews.** Every runtime request now
   goes through `window.__gofastr.fetch`, which calls
   `window.__gofastr_transport` when a host installed one. A phone shell

@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
@@ -21,7 +21,7 @@ import (
 //
 // WHY (the deep finding, sec-auditor 2026-09-04; PROVEN by execution)
 //
-//	localuser.go says, in its own words:
+//	localapp.go says, in its own words:
 //
 //	  "Within desktop mode it is a FALLBACK: a user already in the
 //	   context (battery/auth's session middleware ahead of it ...) is
@@ -39,7 +39,7 @@ import (
 //	and handler.GetUser type-asserts, so a stored nil comes back
 //	ok=FALSE. Auth's explicit "nobody is signed in" is byte-identical to
 //	"no middleware ran". Desktop then installs its local identity -
-//	whose GetRoles() is ["admin"] (localuser.go:35).
+//	whose GetRoles() is ["admin"] (localapp.go:35).
 //
 //	Measured on this tree: a request auth marked anonymous reaches the
 //	handler with roles ["admin"]. In an app that mounts battery/auth (and
@@ -71,7 +71,7 @@ func TestAnonDecisionIsNotOverridden(t *testing.T) {
 	t.Cleanup(func() { owner.SetExtractor(prev) })
 
 	b, _ := newTestBattery(t)
-	b.user = localuser.ForID("0123456789abcdef0123456789abcdef")
+	b.user = localapp.ForID("0123456789abcdef0123456789abcdef")
 	b.installOwnerExtractor() // the seam Init runs; it already sees the foreign extractor
 	b.armGate()
 
@@ -106,7 +106,7 @@ func TestLocalIdentityStillFillsInAlone(t *testing.T) {
 	t.Cleanup(func() { owner.SetExtractor(prev) })
 
 	b, _ := newTestBattery(t)
-	b.user = localuser.ForID("0123456789abcdef0123456789abcdef")
+	b.user = localapp.ForID("0123456789abcdef0123456789abcdef")
 	b.installOwnerExtractor()
 	b.armGate()
 
@@ -130,7 +130,7 @@ func TestLocalIdentityStillFillsInAlone(t *testing.T) {
 // browser may become the local admin.
 func TestUnarmedGateInstallsNoIdentity(t *testing.T) {
 	b, _ := newTestBattery(t)
-	b.user = localuser.ForID("0123456789abcdef0123456789abcdef")
+	b.user = localapp.ForID("0123456789abcdef0123456789abcdef")
 
 	sawUser := false
 	h := b.localUserMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

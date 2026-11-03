@@ -24,9 +24,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
 // validateAppID enforces the reverse-DNS app id grammar.
@@ -228,7 +228,7 @@ type Battery struct {
 
 	// Menu (validated copy) and the local identity.
 	menu *Menu
-	user *localuser.User
+	user *localapp.User
 	// authOwnsIdentity is set by installOwnerExtractor (from Init) when
 	// another battery had already installed the framework/owner
 	// extractor, battery/auth does it from its package init. When it is
@@ -527,7 +527,7 @@ func (b *Battery) Init(app *framework.App) error {
 		dir = d
 	}
 	b.dataDir = dir
-	user, err := localuser.LoadOrMint(dir)
+	user, err := localapp.LoadOrMint(dir)
 	if err != nil {
 		return fmt.Errorf("desktop: %w", err)
 	}
@@ -1282,11 +1282,11 @@ func AppOptions(id string) ([]framework.AppOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := openAppDB(dir)
+	db, err := localapp.OpenDB(dir)
 	if err != nil {
 		return nil, err
 	}
-	secret, err := loadOrMintSecret(dir)
+	secret, err := localapp.LoadOrMintSecret(dir)
 	if err != nil {
 		db.Close()
 		return nil, err

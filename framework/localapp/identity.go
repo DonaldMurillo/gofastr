@@ -1,19 +1,24 @@
-// Package localuser is the one-person identity of an app that runs for
-// a single OS user without battery/auth: the desktop battery's window
-// and the service battery's signed-in browser. Owner-scoped CRUD still
-// needs an owner id, so the battery puts a stable per-installation
-// User into the request context and the owner extractor installed here
-// reads it back.
+// Package localapp is the local state of an app that runs for one OS user
+// on one device, with no server of its own to sign people in: a desktop
+// window (battery/desktop), a phone app serving itself in process
+// (gofastr-mobile), a signed-in service on the user's machine. [Open]
+// gives such an app its data directory's contents: the SQLite database,
+// the session secret that keeps sessions valid across restarts, and the
+// installation's identity.
+//
+// The identity exists because owner-scoped CRUD still needs an owner id.
+// The host puts a stable per-installation [User] into the request
+// context, and the owner extractor [Install] sets reads it back.
 //
 // The identity is a FALLBACK for an app with no auth battery, never an
 // override of one. battery/auth installs the framework/owner extractor
 // from its package init, so a foreign extractor already in place is a
-// reliable "auth owns identity" signal, and Install reports it. A
-// battery that sees it installs no identity at all: auth's "this
-// request is anonymous" is a decision, and handler.GetUser cannot tell
-// a stored nil from no decision (the 2026-09-04 desktop finding pinned
-// in battery/desktop/localuser_security_test.go).
-package localuser
+// reliable "auth owns identity" signal, and Install reports it. A host
+// that sees it installs no identity at all: auth's "this request is
+// anonymous" is a decision, and handler.GetUser cannot tell a stored nil
+// from no decision (the 2026-09-04 desktop finding pinned in
+// battery/desktop/localuser_security_test.go).
+package localapp
 
 import (
 	"context"
@@ -30,8 +35,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// FileName is the identity file inside the app's data directory.
-const FileName = "identity"
+// IdentityFile is the identity file inside the app's data directory.
+const IdentityFile = "identity"
 
 // idLen is a minted id's length: 16 crypto/rand bytes as hex.
 const idLen = 32
@@ -85,7 +90,7 @@ func errCorrupt(path string) error {
 // LoadOrMint returns the identity stored under dir, minting one (16
 // bytes of crypto/rand, hex) and persisting it 0600 on first run.
 func LoadOrMint(dir string) (*User, error) {
-	path := filepath.Join(dir, FileName)
+	path := filepath.Join(dir, IdentityFile)
 	if b, err := readIfExists(path); err != nil {
 		return nil, err
 	} else if len(b) > 0 {

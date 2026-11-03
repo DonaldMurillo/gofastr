@@ -35,7 +35,7 @@
 // the token never appears in argv, browser history, or a Referer.
 //
 // A signed session is the OS user the service runs as: the gate puts
-// a stable local user (internal/localuser, shared with battery/desktop)
+// a stable local user (framework/localapp, shared with battery/desktop)
 // on every request it lets through, so owner-scoped entities work
 // without battery/auth. An app that links battery/auth keeps auth's
 // identity, and the gate installs none.
