@@ -780,7 +780,7 @@ window.__gofastr_transport = async (input, init) => {
   const u = new URL(req.url);
   // Scheme and host, not .origin: a custom scheme (gofastr://app) has
   // the opaque origin "null", which every other opaque URL shares.
-  if (u.protocol !== location.protocol || u.host !== location.host) return fetch(input, init);
+  if (u.protocol !== location.protocol || u.host !== location.host) return fetch(req); // input's body moved into req
   return carryOverNativeChannel(req); // must resolve to a Response
 };
 ```
