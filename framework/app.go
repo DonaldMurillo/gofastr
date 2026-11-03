@@ -3627,15 +3627,12 @@ func (l *onceCloseListener) Close() error {
 }
 
 // inProcessNetwork reports whether a listener's network is one nothing
-// outside the process dials: not TCP and not a unix socket (a proxy on
-// the machine can front either). An in-memory pipe for a mobile shell's
-// WebView is the case.
+// outside the process dials: "memory" or "pipe" (net.Pipe's), the
+// in-memory listener a mobile shell feeds its WebView through. Every
+// other network, an unknown one included (vsock, a proxy-fronted unix
+// socket), may be reachable from outside and keeps the readiness drain.
 func inProcessNetwork(network string) bool {
-	switch network {
-	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
-		return false
-	}
-	return true
+	return network == "memory" || network == "pipe"
 }
 
 // resolveListenAddr applies worktree isolation to a Start address.

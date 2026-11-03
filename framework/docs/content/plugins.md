@@ -73,9 +73,10 @@ framework gates their listing on the entity's `Access` permission.)
   be opened. Worktree isolation never remaps it, `OnReady` receives
   `ln.Addr().String()`, and every return closes `ln` exactly once,
   including a start phase that fails before the server exists. A
-  listener whose network is neither TCP nor a unix socket counts as
-  local-only, so `Shutdown` skips the production readiness drain the
-  way a loopback bind does. When the address
+  listener whose `Addr().Network()` is `"memory"` or `"pipe"` counts as
+  in-process and local-only, so `Shutdown` skips the production
+  readiness drain the way a loopback bind does. Every other network,
+  a unix socket included, keeps the drain. When the address
   has no host:port (an in-process listener's `memory`), the startup
   banner prints paths instead of URLs. A host that hands every request
   its one user's identity calls `NoteAuthenticator`, so the banner

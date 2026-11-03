@@ -207,7 +207,8 @@ func TestServeClosesTheListenerOnce(t *testing.T) {
 // An app served on an in-process listener is local-only: no balancer
 // can probe it, so Shutdown skips the production readiness drain (a
 // phone shell going to the background has seconds, not five of them
-// to spare). A unix socket is not: a proxy on the machine can front it.
+// to spare). A unix socket is not (a proxy on the machine can front
+// it), and neither is a network the framework does not know (vsock).
 func TestServeInProcessSkipsReadinessDrain(t *testing.T) {
 	app := quietServeApp()
 	ready := make(chan struct{})
@@ -226,7 +227,7 @@ func TestServeInProcessSkipsReadinessDrain(t *testing.T) {
 	if got := defaultReadinessDrain(false, false, app.servesLocalOnly()); got != 0 {
 		t.Fatalf("readiness drain = %v, want 0", got)
 	}
-	for network, want := range map[string]bool{"pipe": true, "memory": true, "tcp": false, "tcp6": false, "unix": false} {
+	for network, want := range map[string]bool{"pipe": true, "memory": true, "tcp": false, "tcp6": false, "unix": false, "vsock": false, "": false} {
 		if got := inProcessNetwork(network); got != want {
 			t.Errorf("inProcessNetwork(%q) = %v, want %v", network, got, want)
 		}
