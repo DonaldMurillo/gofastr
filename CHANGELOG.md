@@ -53,8 +53,8 @@ few lines, and link the PR or the docs page for the rest.
   copying them. battery/service opens its `app.db` through it, so that
   file is now created owner-only too. A secret file that is not the
   32-byte base64url value it mints (empty, truncated, stray whitespace)
-  is now refused instead of used, and a secret other users can read is
-  tightened to 0600. First-boot files are published atomically, so a
+  is now refused instead of used, a secret other users can read is
+  tightened to 0600, and a symlinked one is refused. First-boot files are published atomically, so a
   process racing the first boot never reads an empty one. See
   [Local apps](framework/docs/content/local-apps.md).
 - **Host transport slot for native WebViews.** Every request the runtime

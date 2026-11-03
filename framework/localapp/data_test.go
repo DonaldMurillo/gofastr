@@ -188,3 +188,33 @@ func TestSecretTightensABroadFile(t *testing.T) {
 		t.Fatalf("secret file mode = %o after a read, want 600", perm)
 	}
 }
+
+// A secret that is a symlink is refused, and its target keeps its mode:
+// tightening through the link would rewrite a file outside the data
+// directory that this app does not own.
+func TestSecretRefusesASymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	dir, other := t.TempDir(), t.TempDir()
+	target := filepath.Join(other, "shared")
+	if err := os.WriteFile(target, []byte(strings.Repeat("A", 43)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(target, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, SecretFile)); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := LoadOrMintSecret(dir); err == nil {
+		t.Fatalf("LoadOrMintSecret through a symlink = %q, want a refusal", s)
+	}
+	st, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := st.Mode().Perm(); perm != 0o644 {
+		t.Fatalf("the link target's mode changed to %o", perm)
+	}
+}

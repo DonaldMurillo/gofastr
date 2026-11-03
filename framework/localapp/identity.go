@@ -137,16 +137,29 @@ func readIfExists(path string) ([]byte, error) {
 
 // readOwnerOnly is readIfExists for a secret: a file another user can
 // read (a restored backup, a copy made with a broad umask) is tightened
-// to owner-only through the open handle before it is read.
+// to owner-only through the open handle before it is read. A symlink is
+// refused, not followed: tightening through it would rewrite a file
+// outside the data directory. The open handle must be the file Lstat
+// saw, so a link swapped in between is refused too.
 func readOwnerOnly(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	lst, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
+	if !lst.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file (a symlink?); replace it with the file itself", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
 	defer f.Close()
+	if fst, err := f.Stat(); err != nil || !os.SameFile(lst, fst) {
+		return nil, fmt.Errorf("%s changed while it was opened", path)
+	}
 	if err := fileperm.TightenOpenFile(f); err != nil {
 		return nil, fmt.Errorf("restrict %s to its owner: %w", path, err)
 	}

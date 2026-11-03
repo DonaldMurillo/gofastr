@@ -47,7 +47,9 @@ one atomically: it writes an owner-only temporary file, then hard-links
 it into place, which fails if the file already exists. Two processes
 racing the first boot read the same values, and neither ever sees an
 empty file. A secret file other users can read (restored from a
-backup, say) is tightened to 0600 when Open reads it.
+backup, say) is tightened to 0600 when Open reads it. A secret that is
+a symlink is refused instead, because tightening through it would
+change a file outside the data directory.
 A damaged file is refused, never replaced. A new secret would sign
 every session out, and a new identity would hide every row the old
 one owns. To start over, delete the file.
