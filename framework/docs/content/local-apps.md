@@ -35,8 +35,8 @@ of an existing directory alone. It holds:
 
 | File | What it is |
 |---|---|
-| `app.db` | The SQLite database (`data.DB`), created 0600 before SQLite opens it. `localapp` registers the `sqlite3` driver itself. |
-| `secret` | The session secret (`data.Secret`), 32 bytes of `crypto/rand`, 0600. Sessions stay valid across restarts. |
+| `app.db` | The SQLite database (`data.DB`), created 0600 before SQLite opens it. `localapp` registers the `sqlite3` driver itself, and any directory name works (a `#`, `?` or `%` in it is escaped). |
+| `secret` | The session secret (`data.Secret`), 32 bytes of `crypto/rand` as unpadded base64url, 0600. Sessions stay valid across restarts. A file in any other shape is refused. |
 | `identity` | The installation's owner id (`data.User`), 16 bytes of `crypto/rand` as hex, 0600. |
 
 On first run Open mints the secret and the identity with an exclusive

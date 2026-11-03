@@ -48,7 +48,9 @@ few lines, and link the PR or the docs page for the rest.
   The local identity and its fallback owner extractor moved here from
   `internal/localuser`, so a host outside this module (a mobile shell)
   shares them with battery/desktop and battery/service instead of
-  copying them. A secret file that is empty or carries stray whitespace
+  copying them. battery/service opens its `app.db` through it, so that
+  file is now created owner-only too. A secret file that is not the
+  32-byte base64url value it mints (empty, truncated, stray whitespace)
   is now refused instead of used. See
   [Local apps](framework/docs/content/local-apps.md).
 - **Host transport slot for native WebViews.** Every runtime request now

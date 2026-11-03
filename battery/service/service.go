@@ -2,14 +2,12 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,8 +17,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
-	// The SQLite driver Runtime.AppOptions opens app.db with.
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // Config constructs a service Battery. ID and Port are required.
@@ -124,13 +120,9 @@ func (rt Runtime) MCPCommand() []string {
 // tokens survive a restart. An app with its own database skips this
 // and passes framework.WithSecret(rt.Secret) and its own WithDB.
 func (rt Runtime) AppOptions() ([]framework.AppOption, error) {
-	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(filepath.Join(rt.DataDir, "app.db")))
+	db, err := localapp.OpenDB(rt.DataDir)
 	if err != nil {
-		return nil, fmt.Errorf("service: open app database: %w", err)
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("service: app database unreachable: %w", err)
+		return nil, fmt.Errorf("service: %w", err)
 	}
 	return []framework.AppOption{framework.WithDB(db), framework.WithSecret(rt.Secret)}, nil
 }
