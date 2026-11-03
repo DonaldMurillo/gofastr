@@ -3976,7 +3976,10 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
     const t = rel && Object.hasOwn(targets, rel) ? targets[rel] : null;
     if (!t || sel.dataset.relLoaded) continue;
     try {
-      const res = await fetch(t.path + '?limit=100', { headers: { 'Accept': 'application/json' } });
+      // window.__gofastr.fetch goes through a native host's transport
+      // (runtime-contract.md, Host transport); a page with no runtime
+      // falls back to fetch.
+      const res = await ((window.__gofastr && window.__gofastr.fetch) || fetch)(t.path + '?limit=100', { headers: { 'Accept': 'application/json' } });
       if (!res.ok) continue;
       const payload = await res.json();
       const rows = Array.isArray(payload.data) ? payload.data : [];
