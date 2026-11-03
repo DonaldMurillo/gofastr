@@ -135,7 +135,10 @@ func LoadOrMintSecret(dir string) (string, error) {
 // here instead of panicking in framework.WithSecret.
 func checkSecret(path string, b []byte) (string, error) {
 	s := string(b)
-	if raw, err := base64.RawURLEncoding.DecodeString(s); err != nil || len(raw) != secretBytes {
+	// The re-encode check is load-bearing: DecodeString skips CR and LF,
+	// so a valid secret with a line ending decodes cleanly but would sign
+	// with a different key.
+	if raw, err := base64.RawURLEncoding.DecodeString(s); err != nil || len(raw) != secretBytes || base64.RawURLEncoding.EncodeToString(raw) != s {
 		return "", fmt.Errorf("localapp: secret file %s is empty or damaged; delete it to mint a new one (every session signs out)", path)
 	}
 	return s, nil

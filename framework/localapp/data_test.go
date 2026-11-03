@@ -57,6 +57,12 @@ func TestSecretRefusesADamagedFile(t *testing.T) {
 		"truncated":  "abc",
 		"short":      strings.Repeat("A", 40),
 		"not base64": strings.Repeat("*", 43),
+		// base64 decoding skips CR and LF, so a full-length secret with a
+		// line ending decodes to 32 bytes; signing with it would use a
+		// different key from the one minted.
+		"full plus newline": strings.Repeat("A", 43) + "\n",
+		"full plus CRLF":    strings.Repeat("A", 43) + "\r\n",
+		"inner newline":     strings.Repeat("A", 20) + "\n" + strings.Repeat("A", 23),
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
