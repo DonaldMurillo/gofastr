@@ -3,7 +3,10 @@
 Some apps run for one person on their own device and have no sign-in
 of their own: a desktop window (`battery/desktop`), a background
 service the user runs (`battery/service`), or a phone app that runs its
-GoFastr server inside the app process. Each one keeps the same three
+GoFastr server inside the app process and keeps its data on the device.
+A phone app whose users sign in to a central server is not one: its data
+lives on that server, and only the session secret stays local
+(`localapp.LoadOrMintSecret`). Each local app keeps the same three
 things in a private data directory. `framework/localapp` opens that
 directory, so every host gets the same file modes and the same
 first-run behaviour.
