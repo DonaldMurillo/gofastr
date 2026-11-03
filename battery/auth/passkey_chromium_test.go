@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,7 +55,8 @@ func TestPasskeyBrowserRoundTrip(t *testing.T) {
 		fmt.Fprintf(w, `<!doctype html><html><meta charset=utf-8><meta name="csrf-token" content="%s">
 <script>window.navs = []; window.toasts = [];
 window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate: function () {},
-  _toastOrFallback: function (c) { window.toasts.push(c.title); }};</script>
+  _toastOrFallback: function (c) { window.toasts.push(c.title); },
+  fetch: function (u, i) { i = Object.assign({}, i); var h = new Headers(i.headers); h.set('X-Via-Host', '1'); i.headers = h; return fetch(u, i); }};</script>
 <form><input data-passkey-name value="Laptop">
 <button id="add" data-passkey-register="/auth" hidden>Add a passkey</button></form>
 <button id="in" data-passkey-login="/auth" hidden>Sign in with a passkey</button>
@@ -63,7 +65,22 @@ window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate:
 	})
 	// CSRF is mounted the way WithBFFPosture mounts it, so every
 	// POST the module makes has to carry the page's token.
-	srv := &http.Server{Handler: CSRF()(mux)}
+	// Every request the module sends goes through the page's
+	// window.__gofastr.fetch (the host transport's entry point), which
+	// the stub marks with X-Via-Host.
+	var viaMu sync.Mutex
+	var posts []string
+	recordVia := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				viaMu.Lock()
+				posts = append(posts, r.URL.Path+" via="+r.Header.Get("X-Via-Host"))
+				viaMu.Unlock()
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	srv := &http.Server{Handler: recordVia(CSRF()(mux))}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 
@@ -142,5 +159,15 @@ window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate:
 	}
 	if creds, _ := f.pk.store.ListPasskeys(context.Background(), "u-alice"); len(creds) != 0 {
 		t.Errorf("after delete: %d passkeys, want 0", len(creds))
+	}
+	viaMu.Lock()
+	defer viaMu.Unlock()
+	if len(posts) < 5 {
+		t.Errorf("the server saw %d passkey POSTs, want register, login and delete: %v", len(posts), posts)
+	}
+	for _, p := range posts {
+		if !strings.HasSuffix(p, " via=1") {
+			t.Errorf("POST bypassed window.__gofastr.fetch: %s", p)
+		}
 	}
 }

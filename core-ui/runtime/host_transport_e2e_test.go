@@ -101,11 +101,48 @@ document.addEventListener('gofastr:formresult', (e) => window.__results.push(e.d
 	}
 }
 
-// globalFetch matches a use of the global fetch: a call, a member
-// read off window/globalThis/self, or the bare name handed on as a
-// value. _fetch, NS.fetch, prefetch and other identifiers ending in
-// "fetch" do not match.
-var globalFetch = regexp.MustCompile(`(^|[^\w.$])fetch\s*[(;,)]|\b(window|globalThis|self)\s*(\?\.|\.)\s*fetch\b`)
+// globalFetch matches a use of the global fetch: a call, the bare
+// name handed on as a value (assigned at the end of a line, an
+// argument, an object or array value, either arm of a ternary), or a
+// member or bracket read off window/globalThis/self. _fetch, NS.fetch,
+// prefetch, an object key named fetch and the word inside a string do
+// not match.
+var globalFetch = regexp.MustCompile(`(^|[^\w.$'"` + "`" + `])fetch\s*([(;,)}\]]|$)|\?\s*fetch\b|\b(window|globalThis|self)\s*(\?\.|\.)\s*fetch\b|\b(window|globalThis|self)\s*(\?\.)?\s*\[\s*["'` + "`" + `]fetch["'` + "`" + `]\s*\]`)
+
+// The guard's pattern, case by case: every shape that reaches the
+// global fetch matches, and the spellings that do not reach it stay quiet.
+func TestGlobalFetchPattern(t *testing.T) {
+	for line, want := range map[string]bool{
+		`fetch(url)`:                        true,
+		`await fetch(url, init);`:           true,
+		`const f = fetch`:                   true,
+		`const f = fetch;`:                  true,
+		`run(fetch)`:                        true,
+		`const o = { go: fetch }`:           true,
+		`const a = [fetch]`:                 true,
+		`const g = cond ? fetch : null`:     true,
+		`const g = cond ? null : fetch;`:    true,
+		`window.fetch(url)`:                 true,
+		`globalThis?.fetch`:                 true,
+		`self.fetch.bind(self)`:             true,
+		`globalThis["fetch"](url)`:          true,
+		`window['fetch'](url)`:              true,
+		"self[`fetch`]":                     true,
+		`_fetch(url)`:                       false,
+		`NS.fetch(url)`:                     false,
+		`window.__gofastr.fetch(url)`:       false,
+		`prefetch(url)`:                     false,
+		`$fetch(url)`:                       false,
+		`fetch: _fetch,`:                    false,
+		`console.warn('refused fetch:', u)`: false,
+		`const msg = "fetch";`:              false,
+		`fetchAll(url)`:                     false,
+	} {
+		if got := globalFetch.MatchString(line); got != want {
+			t.Errorf("globalFetch.MatchString(%q) = %v, want %v", line, got, want)
+		}
+	}
+}
 
 // fetchExempt holds the JavaScript that runs where no host transport
 // exists or that is built from checked sources: boot-embed.js runs in a
