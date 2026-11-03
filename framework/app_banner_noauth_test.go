@@ -63,12 +63,12 @@ func TestBannerOnAnInProcessListener(t *testing.T) {
 	app.Entity("posts", EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
 	var out bytes.Buffer
 	app.startupOutput = &out
-	app.printStartupBanner("memory", "test", true, false, "")
+	app.printStartupBanner("memory", "test", true, false, app.urlScheme()+"://memory/setup?token=t")
 	got := out.String()
 	if strings.Contains(got, "://memory") {
 		t.Errorf("banner advertises a URL for an in-process listener:\n%s", got)
 	}
-	for _, want := range []string{"Listening: memory (not a TCP address)", " /posts", " /openapi.json"} {
+	for _, want := range []string{"Listening: memory (not a TCP address)", " /posts", " /openapi.json", "Setup: /setup?token=t"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("banner lacks %q:\n%s", want, got)
 		}

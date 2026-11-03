@@ -4279,6 +4279,10 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	listening := base
 	if _, _, err := net.SplitHostPort(boundAddr); err != nil {
 		base, listening = "", boundAddr+" (not a TCP address)"
+		// The setup URL names the listener as its host unless a host
+		// name is configured; keep only the path then, like every
+		// other line.
+		setupURL = strings.TrimPrefix(setupURL, a.urlScheme()+"://"+boundAddr)
 	}
 	w := a.startupOutput
 	if w == nil {
