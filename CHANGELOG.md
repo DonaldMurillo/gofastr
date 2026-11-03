@@ -56,7 +56,9 @@ few lines, and link the PR or the docs page for the rest.
   `window.__gofastr_transport` when a host installed one. A phone shell
   whose request interception drops request bodies or cannot return a
   redirect carries the runtime's requests over its own channel instead.
-  The passkey and site-search scripts use the same path. The runtime no
+  The headless behaviours (sortable list, selection copy, the offline
+  banner's retry) and the passkey and site-search scripts use the same
+  path. The runtime no
   longer sends the `session` field in a server action's body: it read
   the HttpOnly session cookie, which script cannot see, so the field was
   always empty. See

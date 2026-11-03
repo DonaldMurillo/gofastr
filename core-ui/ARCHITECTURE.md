@@ -1309,11 +1309,13 @@ no `data-cui-*` attribute, the same shape as `__gofastr_desktop`.
 - The kernel reads the slot at **call time**, so a host may install it
   at document start or from a rail script that runs after boot. A
   request already in flight keeps the path it started on.
-- Fragments call `_fetch`; demand modules call `NS.fetch`. Battery
-  scripts that may run before the kernel (passkey, site search) read
-  `window.__gofastr.fetch` at call time and fall back to `fetch`.
-  `TestRuntimeSourcesFetchThroughHost` fails on a global `fetch(` in
-  any runtime source.
+- Fragments call `_fetch`; demand modules and headless behaviours call
+  `NS.fetch`. Battery scripts that may run before the kernel (passkey,
+  site search) read `window.__gofastr.fetch` at call time and fall back
+  to `fetch` through a `hostFetch` helper. `TestJSFetchesThroughHost`
+  walks every JavaScript file in the repo outside tooling trees and
+  fails on a global fetch: a call, a `window.fetch` /
+  `globalThis.fetch` / `self.fetch` read, or `fetch` passed as a value.
 - `frag/boot-embed.js` is the one exception. It runs in a third-party
   frame that has no host, and its exchange, refresh and content fetches
   carry embed grants and refuse redirects themselves.
@@ -1330,6 +1332,9 @@ no `data-cui-*` attribute, the same shape as `__gofastr_desktop`.
   never sees it. A host that needs one carries it itself: a `submit`
   listener on `window` runs after the runtime's own document-level
   listener and skips an event whose default is already prevented.
+- `EventSource` (the SSE bus) and `WebSocket` are not fetches either,
+  so they never reach the slot. A host serves them through its
+  request interception, which carries a GET with no body.
 
 `TestHostTransportCarriesRequests` installs a recording transport after
 boot and checks that a client navigation and a `data-cui-rpc` form both

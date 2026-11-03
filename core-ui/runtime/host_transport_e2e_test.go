@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -99,46 +101,82 @@ document.addEventListener('gofastr:formresult', (e) => window.__results.push(e.d
 	}
 }
 
-// bareFetch matches a call of the global fetch: not _fetch, NS.fetch,
-// prefetch or any other member or identifier ending in "fetch".
-var bareFetch = regexp.MustCompile(`(^|[^\w.$])fetch\(`)
+// globalFetch matches a use of the global fetch: a call, a member
+// read off window/globalThis/self, or the bare name handed on as a
+// value. _fetch, NS.fetch, prefetch and other identifiers ending in
+// "fetch" do not match.
+var globalFetch = regexp.MustCompile(`(^|[^\w.$])fetch\s*[(;,)]|\b(window|globalThis|self)\s*(\?\.|\.)\s*fetch\b`)
 
-// TestRuntimeSourcesFetchThroughHost: every runtime request goes
-// through the host transport, so a runtime source calling the global
-// fetch is a request a native host never sees. The kernel's own
-// fallback inside _fetch is the one call; boot-embed.js is exempt
-// because it runs inside a third-party frame with no host and carries
-// embed grants of its own.
-func TestRuntimeSourcesFetchThroughHost(t *testing.T) {
+// fetchExempt holds the JavaScript that runs where no host transport
+// exists or that is built from checked sources: boot-embed.js runs in a
+// third-party frame and carries embed grants of its own, and runtime.js
+// is the bundle of frag/ and src/.
+var fetchExempt = map[string]bool{
+	"core-ui/runtime/frag/boot-embed.js": true,
+	"core-ui/runtime/runtime.js":         true,
+}
+
+// TestJSFetchesThroughHost: every request page JavaScript makes goes
+// through the host transport, so a shipped script using the global
+// fetch is a request a native host never sees. The walk covers every
+// JavaScript file in the repo (runtime fragments and modules, headless
+// behaviours, battery scripts) except tooling trees. The fallbacks to
+// the global fetch are the kernel's _fetch and each battery script's
+// hostFetch helper.
+//
+//gofastr:test-reads *.js
+func TestJSFetchesThroughHost(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skipDir := map[string]bool{".git": true, "kiln": true, "examples": true, "testdata": true,
+		"node_modules": true, "dist": true, ".gofastr": true, "framework/experimental": true}
 	var bad []string
-	for root, fsys := range map[string]fs.FS{"frag": fragFS, "src": modulesFS} {
-		err := fs.WalkDir(fsys, root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".js") || path == "frag/boot-embed.js" {
-				return err
-			}
-			b, err := fs.ReadFile(fsys, path)
-			if err != nil {
-				return err
-			}
-			for i, line := range strings.Split(string(b), "\n") {
-				trim := strings.TrimSpace(line)
-				if strings.HasPrefix(trim, "//") || strings.HasPrefix(trim, "*") {
-					continue
-				}
-				if path == "frag/kernel.js" && strings.Contains(trim, "t(input, init) : fetch(input, init)") {
-					continue
-				}
-				if bareFetch.MatchString(line) {
-					bad = append(bad, fmt.Sprintf("%s:%d: %s", path, i+1, trim))
-				}
+	scanned := 0
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel := filepath.ToSlash(strings.TrimPrefix(path, root+string(filepath.Separator)))
+		if d.IsDir() {
+			if skipDir[rel] || skipDir[d.Name()] {
+				return filepath.SkipDir
 			}
 			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
 		}
+		if !strings.HasSuffix(rel, ".js") || fetchExempt[rel] {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		scanned++
+		for i, line := range strings.Split(string(b), "\n") {
+			trim := strings.TrimSpace(line)
+			if strings.HasPrefix(trim, "//") || strings.HasPrefix(trim, "*") {
+				continue
+			}
+			// The two fallbacks: the kernel's _fetch, and the hostFetch
+			// helper a battery script uses on a page with no runtime.
+			if rel == "core-ui/runtime/frag/kernel.js" && strings.Contains(trim, "t(input, init) : fetch(input, init)") ||
+				strings.HasPrefix(trim, "const hostFetch = ") && strings.Contains(trim, "window.__gofastr.fetch) || fetch)(u, i)") {
+				continue
+			}
+			if globalFetch.MatchString(line) {
+				bad = append(bad, fmt.Sprintf("%s:%d: %s", rel, i+1, trim))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned < 50 {
+		t.Fatalf("scanned %d JavaScript files from %s; the walk lost the tree", scanned, root)
 	}
 	if len(bad) > 0 {
-		t.Errorf("global fetch in runtime sources; call _fetch (fragments) or NS.fetch (modules):\n%s", strings.Join(bad, "\n"))
+		t.Errorf("global fetch in page JavaScript; call _fetch (kernel fragments), NS.fetch (modules, behaviours) or window.__gofastr.fetch (battery scripts):\n%s", strings.Join(bad, "\n"))
 	}
 }

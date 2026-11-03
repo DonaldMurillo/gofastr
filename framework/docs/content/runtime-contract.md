@@ -791,7 +791,9 @@ as no answer. A network failure rejects with a `TypeError`. A script
 of your own that should reach the app through the host calls
 `window.__gofastr.fetch` instead of `fetch`. The embed loader inside
 third-party frames is the one runtime path that keeps the global
-`fetch`.
+`fetch`. `EventSource` and `WebSocket` connections are not fetches and
+never reach the slot; a host serves them through its request
+interception, which carries a GET with no body.
 
 ## See also
 
