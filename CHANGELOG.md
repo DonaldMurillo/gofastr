@@ -34,6 +34,11 @@ few lines, and link the PR or the docs page for the rest.
   never drops or changes the running build's publisher, and the
   relaunched copy waits for the old process to exit. See `desktop.md`,
   "Windows code signing" and "Auto-update".
+- **`App.Serve(net.Listener)`**. Runs the same lifecycle as `Start` on a
+  listener the host supplies, instead of binding a TCP address: an
+  in-process listener for a mobile WebView, or one a supervisor holds.
+  Isolation never remaps it, and every return closes it. See
+  [Plugins](framework/docs/content/plugins.md#init-lifecycle).
 - **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
   reloads every role from the database every 5 minutes by default, so a
   replica that missed a refresh signal stops honouring a revoked
