@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
+  `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
+  with signtool, timestamped through `--timestamp-url`, and `--zip`
+  writes the `windows-amd64` update archive that `gofastr desktop feed`
+  now signs. The updater installs on Windows: it swaps the executable
+  and `WebView2Loader.dll` as a set, checks Authenticode so an update
+  never drops or changes the running build's publisher, and the
+  relaunched copy waits for the old process to exit. See `desktop.md`,
+  "Windows code signing" and "Auto-update".
 - **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
   reloads every role from the database every 5 minutes by default, so a
   replica that missed a refresh signal stops honouring a revoked

@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"unsafe"
+
+	"github.com/DonaldMurillo/gofastr/internal/winversion"
 )
 
 func TestWindowsVersionParts(t *testing.T) {
@@ -108,10 +110,20 @@ func TestWriteWindowsVersionResource(t *testing.T) {
 		`\StringFileInfo\040904B0\ProductVersion`:   info.Version,
 		`\StringFileInfo\040904B0\OriginalFilename`: info.Name + ".exe",
 		`\StringFileInfo\040904B0\Comments`:         "Application ID: " + info.ID,
+		`\StringFileInfo\040904B0\GoFastrAppID`:     info.ID,
 	} {
 		if got := readWindowsVersionString(t, target, query); got != want {
 			t.Errorf("version resource %s = %q, want %q", query, got, want)
 		}
+	}
+	// The updater's pure-Go reader must see what Windows sees, after the
+	// icon resources were added beside the version.
+	strs, err := winversion.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strs[winversion.KeyProductVersion] != info.Version || strs[winversion.KeyAppID] != info.ID {
+		t.Fatalf("winversion.ReadFile = %v", strs)
 	}
 }
 

@@ -58,6 +58,11 @@ func (b *Battery) SetUpdatePlatform(p any) {
 	u.platform = platformAdapter{inner: p.(TestPlatform)}
 }
 
+// SetUpdatePlatformKey makes the updater read the feed entry for key
+// instead of this host's GOOS-GOARCH, so a test publishing a macOS
+// bundle runs the same flow on every host.
+func (b *Battery) SetUpdatePlatformKey(key string) { b.updaterFor().platformKey = key }
+
 // ResetGrantsForTest clears every persisted permission decision.
 func (b *Battery) ResetGrantsForTest(ctx context.Context) error {
 	return b.grants.Reset(ctx)

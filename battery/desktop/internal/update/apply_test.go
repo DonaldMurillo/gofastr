@@ -77,6 +77,9 @@ func TestUnsupportedPlatformRefusesEverywhere(t *testing.T) {
 	if runtime.GOOS == "darwin" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64") {
 		t.Skip("the darwin platform is the default here; see apply_darwin_test.go")
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the windows platform is the default here; see apply_windows_test.go")
+	}
 	p := DefaultPlatform(nil, nil)
 	if p.Version() != "" {
 		t.Fatal("unsupported platform reports a version")

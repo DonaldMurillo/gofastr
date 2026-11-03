@@ -1499,6 +1499,71 @@ real identity is refused before any tool runs; and the zip round-trips
 through `archive/zip` with the executable bit intact. The first real
 submission is yours.
 
+## Windows code signing
+
+`gofastr desktop build --sign=<cert>` on Windows signs `<Name>.exe`
+with `signtool` after the version and icon resources are embedded, so
+the signature covers the finished file. `<cert>` is either the
+certificate's 40-character SHA-1 thumbprint (`signtool /sha1`) or a
+substring of its subject name (`signtool /n`). Either way the
+certificate must be in the current user's personal store with its
+private key:
+
+```powershell
+gofastr desktop build --id=dev.gofastr.notes --name=Notes --version=1.2.0 `
+  --sign=0123456789ABCDEF0123456789ABCDEF01234567 --zip
+```
+
+| Step | Command |
+|---|---|
+| Sign | `signtool sign /fd sha256 /sha1 <thumbprint> /tr <timestamp-url> /td sha256 <Name>.exe` |
+
+- The build finds `signtool.exe` on PATH, then in the newest
+  `Windows Kits\10\bin\10.*\<x64|arm64>` directory of the Windows SDK.
+  Without either, a `--sign` build fails and says to install the SDK
+  signing tools.
+- `--timestamp-url` names the RFC 3161 server (default
+  `http://timestamp.digicert.com`). A timestamped signature stays
+  valid after the certificate expires. `--timestamp-url=none` skips
+  the timestamp, which is only useful offline.
+- A signing failure fails the build with signtool's output. Without
+  `--sign` the build prints that the executable is unsigned and
+  succeeds. SmartScreen warns on the first run of an unsigned
+  download.
+- `WebView2Loader.dll` is not re-signed. It ships with Microsoft's
+  signature, and the updater checks that signature.
+- `--notarize` and `--entitlements` are macOS-only and refused here.
+
+`--zip` writes `<o>/<Name>-<version>-windows-amd64.zip`, the
+auto-update archive. It needs a semver `--version` (`1.2.0`, not `1.0`
+or `1.2.0.0`), the same rule the updater compares by. The archive is
+written beside its destination and renamed into place, so a failed
+build leaves an earlier archive alone. It holds one `<Name>/` directory with `<Name>.exe` and
+`WebView2Loader.dll`. Entries carry no timestamps, so two archives of
+the same build are byte-identical. Publish it with `gofastr desktop
+feed --platform windows-amd64` (see Auto-update).
+
+### What was tested and what was not
+
+Run on Windows 10 (2026-11-01) with a self-signed code-signing
+certificate in the current user's store: `--sign=<thumbprint>` signed
+the executable with a DigiCert timestamp, a subject that matched no
+certificate failed the build with signtool's error and left the output
+directory empty, and `--zip` produced an archive `gofastr desktop feed`
+signed for `windows-amd64`. An unsigned 1.0.0 build served that feed
+from 127.0.0.1 installed an unsigned 1.1.0, quit, and the 1.1.0
+process started with the predecessor's pid. The same 1.0.0 refused a
+1.1.0 signed by the self-signed certificate, because its root is not
+trusted, and kept running unchanged.
+
+Not run: a certificate from a public CA, so the trusted-to-trusted
+update and the renewal case are tested only through the policy table
+in `battery/desktop/internal/update/trust_test.go` and Authenticode
+reads of Microsoft-signed files already on the machine (the cached
+`WebView2Loader.dll` and `msedgewebview2.exe`). The native tests are
+opt-in: they run with `go test` on a Windows host, and CI does not
+run them.
+
 ## Auto-update
 
 Apps built with `gofastr desktop build` can update themselves from a
@@ -1506,12 +1571,16 @@ signed feed: no Sparkle, no external updater, pure Go on the client
 side. The updater lives in `battery/desktop` and its engine in
 `battery/desktop/internal/update` (feed verification, semver,
 capped downloads, zip extraction, and the OS apply step behind one
-interface, implemented for darwin and refusing everywhere else).
+interface, implemented for darwin and windows and refusing everywhere
+else).
 
-**EXPERIMENTAL**, like the rest of `battery/desktop`: darwin/arm64
-only, and the contracts below may change. An unbundled run (a
-development `go run`, `gofastr desktop run`) never updates: there is no
-bundle to swap.
+**EXPERIMENTAL**, like the rest of `battery/desktop`: darwin/arm64 and
+windows/amd64 only, and the contracts below may change. An unbundled
+run (a development `go run`, `gofastr desktop run`) never updates:
+there is no bundle to swap. On Windows, "bundled" means the running
+executable carries the version resource `gofastr desktop build` embeds
+(`ProductVersion` and `GoFastrAppID`) and `WebView2Loader.dll` sits
+beside it.
 
 ### The feed
 
@@ -1535,7 +1604,7 @@ manifest bytes, base64-encoded in the `.sig` file.
 ```
 
 - The platform key is `GOOS-GOARCH` of the target machine
-  (`darwin-arm64` today).
+  (`darwin-arm64` or `windows-amd64` today).
 - The version is semver (`major.minor.patch`, an optional
   `-prerelease`; build metadata is refused).
 - A feed may carry a `channels` object whose entries have the same
@@ -1637,6 +1706,46 @@ install is already running"), and once the swap has happened every
 later call is refused too ("the update is installed; the app is
 restarting"), so two runs never share `<Name>.app.new` or `.old`.
 
+#### On Windows
+
+Steps 1 to 3 are the same. The rest differ because Windows has no
+bundle directory, and it will not overwrite a running executable or a
+loaded DLL, though it will rename them:
+
+4. The archive must contain exactly one top-level `<Name>/` directory
+   holding exactly `<Name>.exe` and `WebView2Loader.dll`, both regular
+   files, where `<Name>` is the running executable's name. A third
+   file, a missing loader, or a renamed executable is refused.
+5. Read the new executable's version resource and refuse unless its
+   `ProductVersion` is exactly the feed's version and its
+   `GoFastrAppID` is the running app's.
+6. Check Authenticode (`WinVerifyTrust`, revocation off) on the
+   running executable and loader, and on the new ones:
+   - the new loader must carry a trusted signature, from the same
+     signer as the installed loader when that one is trusted. The
+     executable loads the DLL on every launch, so a loader from
+     another publisher would run code inside a signed app;
+   - a new executable whose signature does not verify (tampered,
+     self-signed, expired without a timestamp) is always refused;
+   - when the running executable is signed and trusted, the new one
+     must be too, by the same certificate subject. A renewed
+     certificate passes; a different publisher or a dropped
+     signature does not;
+   - when the running executable is unsigned, the new one may be
+     unsigned or signed. The log then warns that the install rests
+     on the feed's ed25519 signature alone.
+7. Swap the two files as a set. Each file is staged as `<file>.new`
+   beside the current one, the current one is renamed to
+   `<file>.old`, and `<file>.new` is renamed into place. A failure
+   on the loader after the executable already moved puts both back,
+   because a new executable beside an old loader is a build nobody
+   shipped. The new executable then starts with
+   `GOFASTR_DESKTOP_UPDATE_PREDECESSOR=<pid>` set, and the current
+   process quits. The new process waits up to 30 seconds for that
+   pid to exit before it opens its window, so an app with a deep-link
+   scheme finds its single-instance lock free. The next launch
+   removes the leftover `.old` files.
+
 From Go, the same two steps are `d.CheckForUpdates(ctx)` and
 `d.InstallUpdate(ctx)` (the latter is what a File menu
 "Check for updates…" handler calls after showing the result).
@@ -1663,11 +1772,16 @@ the `GOOS-GOARCH` grammar, a non-https archive URL, an archive
 that is not a zip with exactly one top-level `.app` directory, and an
 archive whose `Contents/Info.plist` does not declare `--version` as its
 `CFBundleShortVersionString` (build with the same `--version` you
-publish). It also extracts the archive into a temporary directory with
+publish). For a `windows-*` platform the directory is `<Name>/`
+instead. It must hold exactly `<Name>.exe` and `WebView2Loader.dll`,
+and the executable's `ProductVersion` must be `--version`. The version
+resource is read in pure Go, so the feed can be signed on any host.
+It also extracts the archive into a temporary directory with
 the updater's own extractor, so anything a client would refuse is
 refused at release time instead: a stray top-level file (`README.txt`,
 `.DS_Store`), a zip with no directory entry for the bundle root, a
-symlink. `gofastr desktop build` writes archives that pass. The
+symlink. `gofastr desktop build` writes archives that pass (on
+Windows, with `--zip`). The
 writer and the updater's verifier share one implementation
 (`desktop.SignUpdateFeed`), so the format cannot drift between them.
 
@@ -1680,7 +1794,7 @@ reason) and ship only the `.pub` contents in the app's
 `battery/desktop/update_harness_test.go` is the reference: an
 `httptest.Server` serves the signed feed on 127.0.0.1, the battery's
 update platform (the OS seam: running version and identifier, bundle
-location, codesign, relaunch) is replaced through a test seam before `Run`, and
+location, signature check, relaunch) is replaced through a test seam before `Run`, and
 the harness drives the page side (`updates.check`, the permission
 gate on `updates.install`) and observes the apply step without any
 native code.
@@ -2252,7 +2366,7 @@ WKWebView through `desktoptest.NativeMain`.
 | Verb | What it does |
 |---|---|
 | `build ...` on macOS | Cross-compiles for darwin/arm64 with `CGO_ENABLED=0` and writes `<o>/<Name>.app` (a `GOARCH` other than arm64 is refused; on an Intel Mac the build warns that the bundle will not launch there): Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG. Signing is ad-hoc by default when `codesign` is on PATH; `--sign` selects an identity, and `--no-sign` skips signing. `--notarize` submits and staples the bundle. `--scheme` writes the URL scheme to Info.plist. |
-| `build ...` on Windows/amd64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.exe` beside `WebView2Loader.dll`. The executable includes file and product version details, a multi-size icon from `--icon` (PNG; generated by default), and no console window. `--scheme` embeds the URL scheme; the app registers it for the current user at startup. The target machine needs the Evergreen WebView2 Runtime. |
+| `build ...` on Windows/amd64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.exe` beside `WebView2Loader.dll`. The executable includes file and product version details, a multi-size icon from `--icon` (PNG; generated by default), and no console window. `--scheme` embeds the URL scheme; the app registers it for the current user at startup. `--sign=<thumbprint\|subject>` signs the executable with signtool, timestamped through `--timestamp-url`; `--zip` writes the `<Name>-<version>-windows-amd64.zip` update archive. The target machine needs the Evergreen WebView2 Runtime. |
 | `build ...` on Linux/amd64 or Linux/arm64 | Writes a plain ELF executable by default. `--format=tar.gz` opts into a release archive with an icon, launcher, desktop-entry template, runtime README and checksum manifest. `--scheme` embeds command-line/session-bus activation, not an OS handler. It does not install the app or bundle system libraries. |
 | `install --bundle=<extracted-directory>` on Linux | Validates and installs a bundle for the current user, including a desktop entry and any embedded URL handler. No default-handler or autostart preference changes. |
 | `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
@@ -2679,7 +2793,8 @@ into the private persistent browser profile described above. The explicit Linux
 installer advertises a per-user OS handler but does not choose default handlers,
 install system-wide packages or provide signing/native updates. Windows currently
 supports amd64 and needs the Evergreen WebView2 Runtime. Windows builds
-do not include code signing or an installer. The updater is macOS-only.
+do not include an installer. The updater runs on macOS and Windows; Linux
+has none yet.
 macOS notifications need a signed `.app` bundle (ad-hoc is
 enough, see above), so they never fire from `go run`. Notarization and
 the update pipeline have not been run against Apple's service or a

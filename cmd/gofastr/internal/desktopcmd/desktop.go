@@ -289,10 +289,17 @@ type desktopBuildFlags struct {
 	pkg       string
 	version   string
 	out       string
-	// sign is a codesign identity ("" with noSign false means the
-	// default: ad-hoc when codesign exists).
+	// sign is a codesign identity on macOS ("" with noSign false means
+	// the default: ad-hoc when codesign exists), and on Windows a code
+	// signing certificate in the user's store: its SHA-1 thumbprint or a
+	// subject-name substring ("" means unsigned).
 	sign   string
 	noSign bool
+	// timestampURL is the RFC 3161 server a Windows signature is
+	// timestamped by ("" means the default, "none" skips it). zip
+	// writes the Windows update archive beside the build.
+	timestampURL string
+	zip          bool
 	// scheme is the build's custom URL scheme. macOS writes CFBundleURLTypes;
 	// Windows embeds it for per-user registration at startup. Linux embeds
 	// argv/session-bus handoff only, without installing an OS association.
@@ -322,7 +329,8 @@ func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {
 		"--sign": &f.sign, "--scheme": &f.scheme, "--notary-profile": &f.notaryProfile,
 		"--entitlements": &f.entitlements, "--pkg": &f.pkg, "--version": &f.version,
 		"-o": &f.out, "--output": &f.out, "--launch-args": &f.launchArgs, "--ldflags": &f.ldflags,
-	}, map[string]*bool{"--no-sign": &f.noSign, "--notarize": &f.notarize})
+		"--timestamp-url": &f.timestampURL,
+	}, map[string]*bool{"--no-sign": &f.noSign, "--notarize": &f.notarize, "--zip": &f.zip})
 	f.formatSet = seen["--format"]
 	return f, err
 }
@@ -457,11 +465,31 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		cli.OsExit(1)
 		return
 	}
+	if targetOS != "windows" && (f.timestampURL != "" || f.zip) {
+		cli.Fail("--timestamp-url and --zip are Windows build flags")
+		cli.OsExit(1)
+		return
+	}
 	if targetOS == "windows" {
-		if f.sign != "" || f.noSign || f.notarize {
-			cli.Fail("Windows desktop builds support --id, --name, --pkg, --version, --icon, --scheme, --launch-args, --ldflags, and -o. Signing and notarization are macOS-only.")
+		if f.notarize || f.entitlements != "" {
+			cli.Fail("Notarization is macOS-only. Windows desktop builds sign with --sign=<certificate thumbprint or subject> and --timestamp-url.")
 			cli.OsExit(1)
 			return
+		}
+		if f.timestampURL != "" && f.sign == "" {
+			cli.Fail("--timestamp-url needs --sign")
+			cli.OsExit(1)
+			return
+		}
+		// The --zip archive is an update download: the updater and
+		// `gofastr desktop feed` compare its ProductVersion as semver,
+		// so a "1.0" build would be refused at release time.
+		if f.zip {
+			if err := desktop.ValidateAppVersion(f.version); err != nil || len(f.version) > 64 {
+				cli.Fail("--version %q must be major.minor.patch with an optional -pre-release (no build metadata, no leading zeros), at most 64 characters, to build an update archive with --zip", f.version)
+				cli.OsExit(1)
+				return
+			}
 		}
 		if err := buildWindowsDesktop(f, name); err != nil {
 			cli.Fail("Windows desktop build failed: %v", err)

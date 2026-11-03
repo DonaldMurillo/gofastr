@@ -97,6 +97,16 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	if err := writeWindowsIconResource(exeTemp, icon); err != nil {
 		return fmt.Errorf("embed Windows application icon: %w", err)
 	}
+	if f.sign != "" {
+		timestamp := f.timestampURL
+		if timestamp == "" {
+			timestamp = defaultTimestampURL
+		}
+		cli.Info("Signing %s.exe with signtool (certificate %q)...", name, f.sign)
+		if err := signWindowsExecutable(exeTemp, f.sign, timestamp); err != nil {
+			return err
+		}
+	}
 
 	loaderPath := filepath.Join(outDir, "WebView2Loader.dll")
 	if err := replaceArtifact(loaderTemp, loaderPath); err != nil {
@@ -107,6 +117,18 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	}
 	cli.Success("Wrote %s with version information and an application icon, plus WebView2Loader.dll", exePath)
 	cli.Info("Icon source: %s.", iconSource)
+	if f.sign != "" {
+		cli.Success("Signed %s.exe; WebView2Loader.dll keeps Microsoft's signature.", name)
+	} else {
+		cli.Info("The executable is unsigned: pass --sign=<certificate thumbprint or subject> to sign it with signtool.")
+	}
+	if f.zip {
+		zipPath := filepath.Join(outDir, name+"-"+f.version+"-windows-amd64.zip")
+		if err := zipWindowsBundle(outDir, name, zipPath); err != nil {
+			return fmt.Errorf("write update archive: %w", err)
+		}
+		cli.Success("Wrote %s, the archive gofastr desktop feed signs for windows-amd64.", zipPath)
+	}
 	return nil
 }
 
