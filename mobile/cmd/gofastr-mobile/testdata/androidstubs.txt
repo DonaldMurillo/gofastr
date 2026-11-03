@@ -1,0 +1,85 @@
+Compile-only stand-ins for the Android SDK classes the generated
+MainActivity.java and gomobile's Java bindings use. Each signature copies
+the real android.jar's (API 24+): a stub that is looser than the SDK
+would let wrong code compile, so keep them exact. One file per class,
+separated by "--- <path>" lines.
+--- android/content/Context.java
+package android.content;
+public abstract class Context {
+    public abstract java.io.File getFilesDir();
+    public abstract void startActivity(Intent intent);
+}
+--- android/content/Intent.java
+package android.content;
+public class Intent {
+    public static final String ACTION_VIEW = "android.intent.action.VIEW";
+    public Intent(String action, android.net.Uri uri) {}
+}
+--- android/net/Uri.java
+package android.net;
+public abstract class Uri {
+    public abstract String getHost();
+    public abstract String getPath();
+}
+--- android/os/Bundle.java
+package android.os;
+public final class Bundle {}
+--- android/util/Log.java
+package android.util;
+public final class Log {
+    public static int e(String tag, String msg) { return 0; }
+    public static int e(String tag, String msg, Throwable tr) { return 0; }
+    public static int w(String tag, String msg, Throwable tr) { return 0; }
+}
+--- android/view/View.java
+package android.view;
+public class View {
+    public View(android.content.Context context) {}
+}
+--- android/app/Activity.java
+package android.app;
+public class Activity extends android.content.Context {
+    public java.io.File getFilesDir() { return null; }
+    public void startActivity(android.content.Intent intent) {}
+    protected void onCreate(android.os.Bundle savedInstanceState) {}
+    protected void onDestroy() {}
+    public void onBackPressed() {}
+    public void setContentView(android.view.View view) {}
+    public final void runOnUiThread(Runnable action) {}
+}
+--- android/webkit/WebSettings.java
+package android.webkit;
+public abstract class WebSettings {
+    public abstract void setJavaScriptEnabled(boolean flag);
+    public abstract void setDomStorageEnabled(boolean flag);
+}
+--- android/webkit/WebView.java
+package android.webkit;
+public class WebView extends android.view.View {
+    public WebView(android.content.Context context) { super(context); }
+    public WebSettings getSettings() { return null; }
+    public static void setWebContentsDebuggingEnabled(boolean enabled) {}
+    public void setWebViewClient(WebViewClient client) {}
+    public void loadUrl(String url) {}
+    public boolean canGoBack() { return false; }
+    public void goBack() {}
+}
+--- android/webkit/WebViewClient.java
+package android.webkit;
+public class WebViewClient {
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) { return null; }
+    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
+}
+--- android/webkit/WebResourceRequest.java
+package android.webkit;
+public interface WebResourceRequest {
+    android.net.Uri getUrl();
+    java.util.Map<String, String> getRequestHeaders();
+    String getMethod();
+}
+--- android/webkit/WebResourceResponse.java
+package android.webkit;
+public class WebResourceResponse {
+    public WebResourceResponse(String mimeType, String encoding, int statusCode, String reasonPhrase,
+            java.util.Map<String, String> responseHeaders, java.io.InputStream data) {}
+}

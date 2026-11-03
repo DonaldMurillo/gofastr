@@ -17,8 +17,8 @@ public API and nothing more.
 | `mobilehost/` | The host. `Options(dataDir)` opens the SQLite DB and secret. `New(app, cfg)` registers the `mobile` battery (single-user identity) and `Start` runs the app with `framework.App.Serve` on an in-memory `net.Pipe` listener. `Do` / `Open` serve one WebView request buffered or streamed. |
 | `examples/notes/notesapp/` | desktop-notes' entity and entityui screens with the desktop half removed. Zero CSS, adaptive theme. |
 | `examples/notes/notesmobile/` | The surface `gomobile bind` would export: `Start`, `Stop`, `Handle`, `Open`, with strings, bytes and ints only. A scaffold would generate this file. |
-| `shells/ios/NotesWebView.swift` | WKURLSchemeHandler shim (custom scheme `gofastr://app`). **Not compiled.** |
-| `shells/android/MainActivity.kt` | `shouldInterceptRequest` shim (origin `https://appassets.androidplatform.net`). **Not compiled.** |
+| `cmd/gofastr-mobile/` | The CLI that builds the phone app and runs it on the iOS simulator or an Android emulator. No Xcode project, no Gradle (see below). |
+| `cmd/gofastr-mobile/templates/` | The generated native hosts: `App.swift` + `Info.plist` (WKURLSchemeHandler, custom scheme `gofastr://app`) and `MainActivity.java` + `AndroidManifest.xml` (`shouldInterceptRequest`, origin `https://appassets.androidplatform.net`). |
 | `sim/` | A Chromium set up as a phone WebView (390x844 @3x, touch, iPhone UA) with every request intercepted through the DevTools Fetch domain and answered by `mobilehost` in-process. |
 
 ## Run it
@@ -33,6 +33,63 @@ cd mobile && SIM_SHOTS=/tmp/shots go test ./sim/ -run TestPhoneWebView -v
 
 `SIM_ANDROID_LIMITS=1` drops request bodies the way Android's
 `WebResourceRequest` does (see findings).
+
+## Run it on a phone simulator or emulator
+
+`gofastr-mobile` does for phones what `gofastr desktop build` does for the
+Mac: it generates a small native host, compiles it with the platform's
+command-line tools, assembles the `.app` / `.apk` itself, then installs and
+launches it. Xcode and the Android SDK must be **installed**; neither is ever
+opened, and there is no Xcode project or Gradle build to maintain.
+
+Check the toolchain first (read-only, prints the fix for anything missing):
+
+```bash
+cd mobile && go run ./cmd/gofastr-mobile doctor
+```
+
+iOS simulator (Mac with Xcode installed):
+
+```bash
+cd mobile && go run ./cmd/gofastr-mobile run --platform ios-sim --pkg ./examples/notes/notesmobile --id dev.gofastr.notes --name Notes --screenshot dist/ios.png
+```
+
+Android emulator (Android SDK with build-tools, a platform, the NDK, the
+emulator and one AVD; a JDK 17+):
+
+```bash
+cd mobile && go run ./cmd/gofastr-mobile run --platform android-emu --pkg ./examples/notes/notesmobile --id dev.gofastr.notes --name Notes --screenshot dist/android.png
+```
+
+`build` instead of `run` stops after the `.app` / `.apk`. `--dry-run` prints
+every step without running any; `--device` picks a simulator (name or UDID),
+an adb serial or an AVD. Output lands in `dist/mobile/<platform>/`.
+
+The steps, so a failure is easy to place:
+
+| iOS simulator | Android emulator |
+|---|---|
+| build the pinned `gomobile` + `gobind` (go.mod `tool` directive) | same |
+| `gomobile bind -target=iossimulator` -> `Notesmobile.xcframework` | `gomobile bind -target=android/arm64,android/amd64` -> `notesmobile.aar` |
+| render `App.swift`, `Info.plist` | render `MainActivity.java`, `AndroidManifest.xml` |
+| `xcrun swiftc` links the host to the framework | `javac` -> `d8` -> `aapt2 link`, then dex + `libgojni.so` added in Go |
+| `codesign -s -` (ad hoc; all the simulator needs) | `zipalign`, `apksigner` (debug key) |
+| `simctl boot/install/launch`, `simctl io screenshot` | `emulator -avd`, `adb install/am start`, `screencap` |
+
+Debugging: Safari > Develop > Simulator attaches the Web Inspector to the iOS
+WebView; `chrome://inspect` attaches DevTools to the Android one. The run
+prints the log command for each.
+
+**Expect on first run:** these builds have never run on real hardware (this
+repository was developed on Linux). What is checked here: the generated Swift
+calls the exact functions and method shapes `gobind` generates for the bind
+package, the generated Java compiles with `javac` against `gobind`'s real Java
+bindings and signature-exact Android stubs, the plist and manifest are
+well-formed, and the dry-run plans. Not checked: `swiftc`, `gomobile bind`
+with a real SDK, `d8`/`aapt2`/`apksigner`, and the apps themselves. On
+Android, saving a note fails until the body bridge exists (finding 6). A
+physical iPhone also needs a development team and provisioning profile,
+which is not wired yet.
 
 ## What was verified here
 
@@ -56,7 +113,8 @@ cd mobile && SIM_SHOTS=/tmp/shots go test ./sim/ -run TestPhoneWebView -v
 
 ## What was NOT verified (no Xcode, no Android SDK, no KVM)
 
-The Swift and Kotlin shims have never been compiled. The platform behaviours
+The native hosts have never been compiled by `swiftc` or run on a simulator,
+emulator or device (see "Expect on first run" above). The platform behaviours
 below come from the platforms' documented APIs and need a device to confirm.
 
 ## Findings
@@ -78,7 +136,8 @@ below come from the platforms' documented APIs and need a device to confirm.
 3. **Data-dir helpers are copied** (`mobilehost/datadir.go`): owner-only
    create, exclusive mint, DB open. Desktop uses `internal/fileperm` and
    `internal/atomicfile` for these.
-4. **Test helpers too.** `internal/chromedptest` (the launch-allowance
+4. **Test helpers and file writes too.** `internal/fileperm.WriteOwnerOnly`
+   is copied into the CLI (`writeOwnerOnly`). `internal/chromedptest` (the launch-allowance
    Chrome harness the repo's gate requires) is out of reach, so `sim/`
    spells the two start timeouts itself.
 5. **The desktop contract is not reusable as-is.** `desktop.Shell` assumes a
