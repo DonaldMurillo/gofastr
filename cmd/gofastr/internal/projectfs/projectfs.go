@@ -384,8 +384,8 @@ func UserPath(p string) (dir, name string, err error) {
 // the working directory, so a symlinked theme/ in the checkout cannot
 // carry the write out; so is an absolute path that lies under the
 // working directory ($PWD/theme/theme.go), which names the same file,
-// however the working directory is spelled: through a link to it, or
-// macOS's /var for /private/var. A path that climbs or is absolute
+// however the working directory is spelled: through a link to it or to
+// a directory inside it, or macOS's /var for /private/var. A path that climbs or is absolute
 // elsewhere (../x, /abs/x) names its own directory on purpose; only its
 // last element is confined.
 func Split(p string) (dir, name string) {
@@ -405,27 +405,56 @@ func Split(p string) (dir, name string) {
 	return filepath.Dir(p), filepath.Base(p)
 }
 
-// underDir reports p's path below dir when one of p's ancestors is dir
-// under another spelling. It compares files, not strings: the nearest
-// ancestor os.SameFile calls dir decides, and the remainder must be
-// local. A link below that ancestor (a theme/ linked out of the project)
-// stays in the remainder, where the os.Root confinement refuses it.
+// underDir reports p's path below dir when one of p's ancestors is dir,
+// or a directory inside it, under another spelling. It compares files,
+// not strings: the nearest ancestor that os.SameFile calls dir, or whose
+// resolved path lies under dir's, decides, and the remainder must be
+// local. A path through an alias of a project subdirectory is still a
+// project path. A link below that ancestor (a theme/ linked out of the
+// project) stays in the remainder, where the os.Root confinement
+// refuses it.
 func underDir(dir, p string) (string, bool) {
 	want, err := os.Stat(dir)
 	if err != nil {
 		return "", false
 	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", false
+	}
 	p = filepath.Clean(p)
 	for a := filepath.Dir(p); ; a = filepath.Dir(a) {
-		if fi, err := os.Stat(a); err == nil && os.SameFile(fi, want) {
-			rel, err := filepath.Rel(a, p)
-			if err != nil || !filepath.IsLocal(rel) {
+		if under, ok := ancestorUnder(a, want, realDir); ok {
+			rest, err := filepath.Rel(a, p)
+			if err != nil || !filepath.IsLocal(rest) {
 				return "", false
 			}
-			return filepath.ToSlash(rel), true
+			return filepath.ToSlash(filepath.Join(under, rest)), true
 		}
 		if parent := filepath.Dir(a); parent == a {
 			return "", false
 		}
 	}
+}
+
+// ancestorUnder reports a's path below the directory want (realDir
+// resolved): "." when a is that directory, the relative path when a
+// resolves to a directory inside it.
+func ancestorUnder(a string, want fs.FileInfo, realDir string) (string, bool) {
+	fi, err := os.Stat(a)
+	if err != nil || !fi.IsDir() {
+		return "", false
+	}
+	if os.SameFile(fi, want) {
+		return ".", true
+	}
+	real, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(realDir, real)
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", false
+	}
+	return rel, true
 }

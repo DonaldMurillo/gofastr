@@ -172,6 +172,45 @@ func TestSplitThroughALinkToTheWorkingDirectory(t *testing.T) {
 	}
 }
 
+// A path through an alias of a project subdirectory is a project path:
+// /shortcut -> proj/assets makes /shortcut/theme/theme.go
+// assets/theme/theme.go, so the theme/ link out of the project is in
+// the confined remainder and Check refuses it instead of the write
+// landing outside.
+func TestSplitThroughALinkToAProjectSubdirectory(t *testing.T) {
+	base := t.TempDir()
+	proj, outside := filepath.Join(base, "proj"), filepath.Join(base, "outside")
+	for _, d := range []string{filepath.Join(proj, "assets"), outside} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shortcut := filepath.Join(base, "shortcut")
+	if err := os.Symlink(filepath.Join(proj, "assets"), shortcut); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	mustSymlink(t, outside, filepath.Join(proj, "assets", "theme"))
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(proj); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, name := Split(filepath.Join(shortcut, "theme", "theme.go"))
+	if dir != wd || name != "assets/theme/theme.go" {
+		t.Fatalf("Split(<link to proj/assets>/theme/theme.go) = %q, %q; want %q, %q", dir, name, wd, "assets/theme/theme.go")
+	}
+	if err := Check(dir, name); err == nil {
+		t.Fatal("Check passed a write through theme/, which links out of the project")
+	}
+}
+
 // Check refuses a name a link carries out of the directory, dangling or
 // not, before anything is written; a missing name and a link that stays
 // in the directory pass.
