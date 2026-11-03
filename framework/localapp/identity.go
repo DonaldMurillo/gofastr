@@ -8,7 +8,8 @@
 //
 // The identity exists because owner-scoped CRUD still needs an owner id.
 // The host puts a stable per-installation [User] into the request
-// context, and the owner extractor [Install] sets reads it back.
+// context, and the owner extractor that [Install] sets up reads it
+// back.
 //
 // The identity is a FALLBACK for an app with no auth battery, never an
 // override of one. battery/auth installs the framework/owner extractor
@@ -25,6 +26,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -133,22 +135,37 @@ func readIfExists(path string) ([]byte, error) {
 	return b, nil
 }
 
-// writeExclusive creates path 0600 and writes b, refusing to touch an
-// existing file.
-func writeExclusive(path string, b []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+// readOwnerOnly is readIfExists for a secret: a file another user can
+// read (a restored backup, a copy made with a broad umask) is tightened
+// to owner-only through the open handle before it is read.
+func readOwnerOnly(path string) ([]byte, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := fileperm.RestrictOpenFile(f); err != nil {
-		f.Close()
-		return err
+	defer f.Close()
+	if err := fileperm.TightenOpenFile(f); err != nil {
+		return nil, fmt.Errorf("restrict %s to its owner: %w", path, err)
 	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
+	b, err := io.ReadAll(io.LimitReader(f, maxStateFile))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return f.Close()
+	return b, nil
+}
+
+// maxStateFile bounds a read of the secret: the minted value is 43
+// bytes, so anything near this is damaged, and checkSecret refuses it.
+const maxStateFile = 4 << 10
+
+// writeExclusive publishes b at path as an owner-only file, refusing
+// an existing one. The publish is atomic: a process racing the first
+// boot reads no file or the whole value, never an empty file.
+func writeExclusive(path string, b []byte) error {
+	return fileperm.PublishNewOwnerOnly(path, b)
 }
 
 // Install sets Extractor as the process-wide owner extractor when no

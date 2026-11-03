@@ -3,7 +3,9 @@ package localapp
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
@@ -113,5 +115,76 @@ func TestOpenDBInAnOddlyNamedDir(t *testing.T) {
 				t.Fatalf("app.db in %q lost its table: n=%d err=%v", name, n, err)
 			}
 		})
+	}
+}
+
+// Processes racing the first boot all get the one secret, and the one
+// identity, that was minted. The loser of the exclusive create used to read the file
+// between the winner's create and its write, find it empty, and refuse
+// it as damaged.
+func TestFirstBootRaceAgreesOnSecret(t *testing.T) {
+	for round := 0; round < 200; round++ {
+		dir := t.TempDir()
+		const n = 8
+		got := make([]string, 2*n)
+		errs := make([]error, 2*n)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := range n {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				<-start
+				got[i], errs[i] = LoadOrMintSecret(dir)
+			}()
+			go func() {
+				defer wg.Done()
+				<-start
+				u, err := LoadOrMint(dir)
+				if err == nil {
+					got[n+i] = u.GetID()
+				}
+				errs[n+i] = err
+			}()
+		}
+		close(start)
+		wg.Wait()
+		for i := range 2 * n {
+			if errs[i] != nil {
+				t.Fatalf("round %d: racer %d: %v", round, i, errs[i])
+			}
+			if first := i / n * n; got[i] != got[first] {
+				t.Fatalf("round %d: racers disagree: %q vs %q", round, got[i], got[first])
+			}
+		}
+	}
+}
+
+// A secret file another user can read (restored from a backup, copied
+// with a broad umask) is tightened to owner-only when it is read, and
+// its value is kept: a new secret would sign every session out.
+func TestSecretTightensABroadFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ignores mode bits; the DACL half is covered in fileperm")
+	}
+	dir := t.TempDir()
+	want := strings.Repeat("A", 43)
+	path := filepath.Join(dir, SecretFile)
+	if err := os.WriteFile(path, []byte(want), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadOrMintSecret(dir)
+	if err != nil || got != want {
+		t.Fatalf("LoadOrMintSecret = %q, %v; want the stored secret", got, err)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := st.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("secret file mode = %o after a read, want 600", perm)
 	}
 }

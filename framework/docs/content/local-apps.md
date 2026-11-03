@@ -42,8 +42,12 @@ of an existing directory alone. It holds:
 | `secret` | The session secret (`data.Secret`), 32 bytes of `crypto/rand` as unpadded base64url, 0600. Sessions stay valid across restarts. A file in any other shape is refused. |
 | `identity` | The installation's owner id (`data.User`), 16 bytes of `crypto/rand` as hex, 0600. |
 
-On first run Open mints the secret and the identity with an exclusive
-create, so two processes racing the first boot read the same values.
+On first run Open mints the secret and the identity and publishes each
+one atomically: it writes an owner-only temporary file, then hard-links
+it into place, which fails if the file already exists. Two processes
+racing the first boot read the same values, and neither ever sees an
+empty file. A secret file other users can read (restored from a
+backup, say) is tightened to 0600 when Open reads it.
 A damaged file is refused, never replaced. A new secret would sign
 every session out, and a new identity would hide every row the old
 one owns. To start over, delete the file.

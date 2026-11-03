@@ -108,7 +108,7 @@ const secretBytes = 32
 // file is created exclusively, and the loser reads the winner's.
 func LoadOrMintSecret(dir string) (string, error) {
 	path := filepath.Join(dir, SecretFile)
-	if b, err := readIfExists(path); err != nil {
+	if b, err := readOwnerOnly(path); err != nil {
 		return "", fmt.Errorf("localapp: %w", err)
 	} else if b != nil {
 		return checkSecret(path, b)
@@ -120,7 +120,7 @@ func LoadOrMintSecret(dir string) (string, error) {
 	secret := base64.RawURLEncoding.EncodeToString(raw[:])
 	if err := writeExclusive(path, []byte(secret)); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			if b, rerr := readIfExists(path); rerr == nil && b != nil {
+			if b, rerr := readOwnerOnly(path); rerr == nil && b != nil {
 				return checkSecret(path, b)
 			}
 		}
