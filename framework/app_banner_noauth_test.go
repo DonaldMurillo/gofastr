@@ -53,3 +53,24 @@ func TestBannerHintsWhenNoAuthIsMounted(t *testing.T) {
 		t.Errorf("only Public entities: nothing answers 401, the hint must not print:\n%s", got)
 	}
 }
+
+// A listener with no host:port (a mobile shell's in-process listener)
+// has no URL anyone can open. The banner said "Listening: http://memory"
+// and advertised http://memory/posts; it now names the listener and
+// prints paths.
+func TestBannerOnAnInProcessListener(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware(), WithDB(bannerTestDB(t)))
+	app.Entity("posts", EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}}.WithTimestamps(false))
+	var out bytes.Buffer
+	app.startupOutput = &out
+	app.printStartupBanner("memory", "test", true, false, "")
+	got := out.String()
+	if strings.Contains(got, "://memory") {
+		t.Errorf("banner advertises a URL for an in-process listener:\n%s", got)
+	}
+	for _, want := range []string{"Listening: memory (not a TCP address)", " /posts", " /openapi.json"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("banner lacks %q:\n%s", want, got)
+		}
+	}
+}

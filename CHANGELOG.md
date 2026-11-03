@@ -37,7 +37,9 @@ few lines, and link the PR or the docs page for the rest.
 - **`App.Serve(net.Listener)`**. Runs the same lifecycle as `Start` on a
   listener the host supplies, instead of binding a TCP address: an
   in-process listener for a mobile WebView, or one a supervisor holds.
-  Isolation never remaps it, and every return closes it. See
+  Isolation never remaps it, and every return closes it. For a listener
+  with no host:port the startup banner prints paths, not
+  `http://memory/...` URLs. See
   [Plugins](framework/docs/content/plugins.md#init-lifecycle).
 - **`framework/localapp`.** `localapp.Open(dir)` opens a one-person app's
   data directory: its SQLite `app.db`, the session secret and the

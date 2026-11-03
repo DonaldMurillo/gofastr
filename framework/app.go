@@ -4237,8 +4237,17 @@ func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 // printStartupBanner reports readiness only after the listener has bound.
 // boundAddr is the resolved listener address, so Start("127.0.0.1:0") prints
 // the actual port and a bind failure prints nothing.
+//
+// A listener with no host:port (Serve on an in-process listener, the
+// mobile shell's shape) has no URL anyone can open, so the banner names
+// the listener and prints bare paths instead of advertising
+// http://memory/posts.
 func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, setupURL string) {
 	base := a.urlScheme() + "://" + boundAddr
+	listening := base
+	if _, _, err := net.SplitHostPort(boundAddr); err != nil {
+		base, listening = "", boundAddr+" (not a TCP address)"
+	}
 	w := a.startupOutput
 	if w == nil {
 		w = os.Stdout
@@ -4254,7 +4263,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	}
 	fmt.Fprintf(w, "\n  %s %s server ready\n", bold("GoFastr"), name)
 	fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
-	fmt.Fprintf(w, "  %s Listening: %s\n", arrow(), base)
+	fmt.Fprintf(w, "  %s Listening: %s\n", arrow(), listening)
 	if setupURL != "" {
 		fmt.Fprintf(w, "  %s Setup: %s\n", arrow(), setupURL)
 	}
