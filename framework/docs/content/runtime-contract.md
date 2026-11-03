@@ -777,7 +777,10 @@ plain browser never sets it.
 // Installed by the host, at document start or from a rail script.
 window.__gofastr_transport = async (input, init) => {
   const req = new Request(input, init);
-  if (new URL(req.url).host !== location.host) return fetch(input, init);
+  const u = new URL(req.url);
+  // Scheme and host, not .origin: a custom scheme (gofastr://app) has
+  // the opaque origin "null", which every other opaque URL shares.
+  if (u.protocol !== location.protocol || u.host !== location.host) return fetch(input, init);
   return carryOverNativeChannel(req); // must resolve to a Response
 };
 ```
