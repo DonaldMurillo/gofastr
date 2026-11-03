@@ -57,17 +57,13 @@ few lines, and link the PR or the docs page for the rest.
   tightened to 0600. First-boot files are published atomically, so a
   process racing the first boot never reads an empty one. See
   [Local apps](framework/docs/content/local-apps.md).
-- **Host transport slot for native WebViews.** Every runtime request now
-  goes through `window.__gofastr.fetch`, which calls
-  `window.__gofastr_transport` when a host installed one. A phone shell
-  whose request interception drops request bodies or cannot return a
-  redirect carries the runtime's requests over its own channel instead.
-  The headless behaviours (sortable list, selection copy, the offline
-  banner's retry), a generated entity form's relation loader, and the
-  passkey and site-search scripts use the same path. The runtime no
-  longer sends the `session` field in a server action's body: it read
-  the HttpOnly session cookie, which script cannot see, so the field was
-  always empty. See
+- **Host transport slot for native WebViews.** Every request the runtime
+  and the kit's scripts make goes through `window.__gofastr.fetch`, which
+  calls `window.__gofastr_transport` when a host installed one, so a
+  phone shell whose interception drops bodies or redirects carries them
+  over its own channel. A script of your own that should reach the app
+  through the host calls `window.__gofastr.fetch`. Server action bodies
+  no longer carry the `session` field, which was always empty. See
   [Runtime contract](framework/docs/content/runtime-contract.md#host-transport-windowgofastr_transport).
 - **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
   reloads every role from the database every 5 minutes by default, so a

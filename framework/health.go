@@ -62,9 +62,10 @@ const productionReadinessDrain = 5 * time.Second
 // it). Zero skips the wait; a negative value is zero.
 //
 // The default is 5s in production and 0 where no balancer probes: a Go
-// test binary, `gofastr dev`, a battery/service run, and an app whose
+// test binary, `gofastr dev`, a battery/service run, an app whose
 // listener is bound to a loopback address only (the desktop battery
-// always is). An explicit WithReadinessDrain wins over every default.
+// always is), and an in-process listener handed to Serve (network
+// "memory" or "pipe"). An explicit WithReadinessDrain wins over every default.
 //
 // The grace counts against Shutdown's context. It takes at most half of
 // the time that context has left when the grace starts, so the HTTP

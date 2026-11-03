@@ -21,7 +21,7 @@ import (
 //
 // WHY (the deep finding, sec-auditor 2026-09-04; PROVEN by execution)
 //
-//	localapp.go says, in its own words:
+//	The local identity's doc comment said, before this fix:
 //
 //	  "Within desktop mode it is a FALLBACK: a user already in the
 //	   context (battery/auth's session middleware ahead of it ...) is
@@ -39,7 +39,8 @@ import (
 //	and handler.GetUser type-asserts, so a stored nil comes back
 //	ok=FALSE. Auth's explicit "nobody is signed in" is byte-identical to
 //	"no middleware ran". Desktop then installs its local identity -
-//	whose GetRoles() is ["admin"] (localapp.go:35).
+//	whose GetRoles() is ["admin"] (framework/localapp/identity.go,
+//	User.GetRoles).
 //
 //	Measured on this tree: a request auth marked anonymous reaches the
 //	handler with roles ["admin"]. In an app that mounts battery/auth (and

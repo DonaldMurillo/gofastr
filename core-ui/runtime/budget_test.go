@@ -1528,7 +1528,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// module's own-property _widgets reads share one helper (own).
 		// 3467 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
-		"widgets": 3467,
+		// Pinned at the measured size plus 2 clearance.
+		"widgets": 3469,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1581,7 +1582,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// pushed (R7-095, TestInterceptPageLinkDropsPaneEntries).
 		// 3569 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
-		"intercept": 3569,
+		// Pinned at the measured size plus 2 clearance.
+		"intercept": 3571,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1615,7 +1617,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// (2026-11-01 bug hunt R7-094, TestPartFailureRetriesThenErrors).
 		// 2388 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
-		"parts": 2388,
+		// Pinned at the measured size plus 2 clearance.
+		"parts": 2390,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion
