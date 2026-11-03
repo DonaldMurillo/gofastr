@@ -1234,7 +1234,9 @@ few lines, and link the PR or the docs page for the rest.
   named and `git init` reinitialised the repository a linked `.git`
   named. `theme init --out` and `theme edit --out` treat an absolute path
   under the working directory (`$PWD/theme/theme.go`) as a path inside
-  the project, and `theme edit` refuses a linked destination at startup.
+  the project, however the working directory is spelled (through a link
+  to it, or macOS's `/var` for `/private/var`), and `theme edit` refuses
+  a linked destination at startup.
 - **A slow module answer no longer kills the module.** A `moduleproto`
   peer remembered the last 1,024 calls it gave up on, answered or not,
   so 1,024 timed-out calls answered in time pushed out a slow call still

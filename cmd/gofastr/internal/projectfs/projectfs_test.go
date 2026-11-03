@@ -139,6 +139,39 @@ func TestSplitAbsoluteUnderTheWorkingDirectory(t *testing.T) {
 	}
 }
 
+// The working directory spelled another way is still the working
+// directory: an absolute path through a link to it (macOS's /var ->
+// /private/var under every t.TempDir, or a project reached through a
+// symlinked home) is confined like $PWD/theme/theme.go. Split compared
+// the two spellings lexically, read the path as aimed elsewhere, and
+// theme init wrote through a theme/ linked out of the project.
+func TestSplitThroughALinkToTheWorkingDirectory(t *testing.T) {
+	base := t.TempDir()
+	proj, alias := filepath.Join(base, "proj"), filepath.Join(base, "alias")
+	if err := os.Mkdir(proj, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(proj, alias); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(proj); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, name := Split(filepath.Join(alias, "theme", "theme.go"))
+	if dir != wd || name != "theme/theme.go" {
+		t.Errorf("Split(<link to wd>/theme/theme.go) = %q, %q; want %q, %q", dir, name, wd, "theme/theme.go")
+	}
+}
+
 // Check refuses a name a link carries out of the directory, dangling or
 // not, before anything is written; a missing name and a link that stays
 // in the directory pass.
