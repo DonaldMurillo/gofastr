@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -32,6 +33,34 @@ func checkGeneratedPivotDeclarations(ordered []*entity.Entity, all map[string]*e
 			if err := checkPivotColumns(spec, previous.Cols, dialect); err != nil {
 				return fmt.Errorf("entity %q relation %q: inconsistent shared declaration: %w", ent.GetName(), rel.Name, err)
 			}
+			for _, expected := range spec.fks {
+				if !slices.ContainsFunc(previous.fks, func(candidate declaredFK) bool {
+					return sameForeignKey(liveFK{cols: candidate.cols, refTable: candidate.refTable, refCols: candidate.refCols, onDelete: string(candidate.onDelete)}, expected)
+				}) {
+					return fmt.Errorf("entity %q relation %q: inconsistent referenced table or key for shared pivot table %q", ent.GetName(), rel.Name, spec.Safe)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func checkLivePivotConstraints(ctx context.Context, database queryer, spec pivotSpec, all map[string]*entity.Entity, dialect Dialect) error {
+	keys, err := readLiveKeysQ(ctx, database, []string{spec.Safe}, dialect)
+	if err != nil {
+		return err
+	}
+	if !sameColumnSet(keys[spec.Safe].cols, slices.Sorted(maps.Keys(spec.Cols))) {
+		return fmt.Errorf("pivot table %q: composite primary key drifted; migrate the pivot explicitly", spec.Safe)
+	}
+	foreignKeys, err := readLiveForeignKeysQ(ctx, database, []string{spec.Safe}, dialect)
+	if err != nil {
+		return err
+	}
+	canonicalRefTables(foreignKeys, all, dialect)
+	for _, expected := range spec.fks {
+		if !slices.ContainsFunc(foreignKeys[spec.Safe], func(actual liveFK) bool { return sameForeignKey(actual, expected) }) {
+			return fmt.Errorf("pivot table %q: cascading foreign key for %v drifted; migrate the pivot explicitly", spec.Safe, expected.cols)
 		}
 	}
 	return nil

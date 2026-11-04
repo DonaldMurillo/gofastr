@@ -154,6 +154,18 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		out = append(out, changes...)
 	}
 	out = append(out, env.deferred...)
+	for ent, relation := range generatedPivots(ordered, all) {
+		if len(lookupTableCols(liveByTable, relation.Through)) == 0 {
+			continue
+		}
+		spec, err := buildPivotSpec(ent, relation, all, dialect)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkLivePivotConstraints(ctx, db, spec, all, dialect); err != nil {
+			return nil, err
+		}
+	}
 
 	pivotChanges, err := diffPivotTables(ordered, all, dialect, liveByTable)
 	if err != nil {

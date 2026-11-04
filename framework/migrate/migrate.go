@@ -1628,6 +1628,9 @@ func migratePivotTables(ctx context.Context, exec execQueryer, ordered []*entity
 			if err := checkPivotColumns(spec, cols, dialect); err != nil {
 				return err
 			}
+			if err := checkLivePivotConstraints(ctx, exec, spec, all, dialect); err != nil {
+				return err
+			}
 		}
 		if _, err := exec.ExecContext(ctx, spec.DDL); err != nil {
 			return fmt.Errorf("create pivot table %s: %w", rel.Through, err)

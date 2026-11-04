@@ -56,6 +56,53 @@ func TestPivotDriftRefused(t *testing.T) {
 	}
 }
 
+func TestPivotConstraintDriftRefused(t *testing.T) {
+	plan := pivotDriftPlan("post_id", "tag_id", schema.String)
+	for name, constraints := range map[string]string{
+		"missing primary key":  `FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE, FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE`,
+		"missing foreign keys": `PRIMARY KEY (post_id, tag_id)`,
+		"missing cascade":      `PRIMARY KEY (post_id, tag_id), FOREIGN KEY (post_id) REFERENCES posts(id), FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE`,
+		"wrong endpoint":       `PRIMARY KEY (post_id, tag_id), FOREIGN KEY (post_id) REFERENCES tags(id) ON DELETE CASCADE, FOREIGN KEY (tag_id) REFERENCES posts(id) ON DELETE CASCADE`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			database := openMigrateSQLite(t)
+			if err := AutoMigrate(database, plan.Registry); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := database.Exec(`DROP TABLE post_tags; CREATE TABLE post_tags (post_id TEXT NOT NULL, tag_id TEXT NOT NULL, ` + constraints + `)`); err != nil {
+				t.Fatal(err)
+			}
+			if changes, err := DiffSchema(context.Background(), database, plan.Registry); err == nil || !strings.Contains(err.Error(), "post_tags") || len(changes) != 0 {
+				t.Errorf("DiffSchema = %v, %v; want explicit pivot constraint refusal", changes, err)
+			}
+			if err := AutoMigrate(database, plan.Registry); err == nil || !strings.Contains(err.Error(), "post_tags") {
+				t.Errorf("AutoMigrate = %v; want explicit pivot constraint refusal", err)
+			}
+		})
+	}
+}
+
+func TestSharedPivotEndpointDriftRefused(t *testing.T) {
+	plan := pivotDriftPlan("post_id", "tag_id", schema.String)
+	registry := plan.Registry.(secTypeReg)
+	registry["articles"] = entity.Define("articles", entity.EntityConfig{
+		Fields:    []schema.Field{{Name: "id", Type: schema.String}},
+		Relations: []entity.Relation{entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id")},
+	}.WithTimestamps(false))
+	for _, dialect := range []Dialect{DialectSQLite, DialectPostgres} {
+		if up, _, _, err := GeneratePlan(plan, SchemaSnapshot{}, dialect); err == nil || !strings.Contains(err.Error(), "post_tags") || up != "" {
+			t.Errorf("GeneratePlan(%s) = %q, %v; want shared endpoint refusal", dialect, up, err)
+		}
+	}
+	database := openMigrateSQLite(t)
+	if _, err := DiffSchema(context.Background(), database, registry); err == nil || !strings.Contains(err.Error(), "post_tags") {
+		t.Errorf("DiffSchema = %v; want shared endpoint refusal", err)
+	}
+	if err := AutoMigrate(database, registry); err == nil || !strings.Contains(err.Error(), "post_tags") {
+		t.Errorf("AutoMigrate = %v; want shared endpoint refusal", err)
+	}
+}
+
 func reciprocalPivotDriftPlan(local, foreign string) Plan {
 	return Plan{Registry: secTypeReg{
 		"posts": entity.Define("posts", entity.EntityConfig{
