@@ -187,7 +187,14 @@
   // single announce point and fires before teardown, so this covers
   // each dismissal without growing the widgets module.
   document.addEventListener('fui:widget-close', (e) => {
-    const st = NS._widgets && NS._widgets[(e.detail || {}).name];
+    const closedName = (e.detail || {}).name;
+    // Own-property read: fui:widget-close is a DOM CustomEvent, so
+    // e.detail is page-script data and a name like "constructor" would
+    // resolve through the prototype chain and pass the truthiness gate.
+    const st = NS._widgets
+      && Object.prototype.hasOwnProperty.call(NS._widgets, closedName)
+        ? NS._widgets[closedName]
+        : undefined;
     const at = st && st.anchorTrigger;
     if (!at) return;
     const w = st.root;
