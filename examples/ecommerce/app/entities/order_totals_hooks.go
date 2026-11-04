@@ -24,6 +24,7 @@ package entities
 import (
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -63,12 +64,18 @@ func registerOrderTotalsHooks(app *framework.App) {
 		if err != nil {
 			return err
 		}
+		if err := priceOrderItem(ctx, row); err != nil {
+			return err
+		}
 		return recomputeFromItemRow(ctx, row)
 	}
 	app.HookRegistry("order_items").RegisterHook(framework.AfterCreate, item)
 	app.HookRegistry("order_items").RegisterHook(framework.AfterUpdate, func(ctx context.Context, data any) error {
 		row, err := rowOf("order_items", data)
 		if err != nil {
+			return err
+		}
+		if err := priceOrderItem(ctx, row); err != nil {
 			return err
 		}
 		// An update may move the item to a different order: recompute
@@ -94,6 +101,42 @@ func registerOrderTotalsHooks(app *framework.App) {
 		}
 		return recomputeOrderTotals(ctx, orderID)
 	})
+}
+
+func priceOrderItem(ctx context.Context, row map[string]any) error {
+	exec, ok := framework.TxFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("order pricing: no transaction on context")
+	}
+	id := idFromRow(row)
+	if id == "" {
+		return fmt.Errorf("order pricing: missing line item id")
+	}
+	var price string
+	var quantity int64
+	err := exec.QueryRowContext(ctx, `SELECT CAST(products.price AS TEXT), order_items.quantity
+		FROM order_items JOIN products ON products.id = order_items.product_id
+		WHERE order_items.id = $1`, id).Scan(&price, &quantity)
+	if err != nil {
+		return fmt.Errorf("order pricing: load product price: %w", err)
+	}
+	unit, ok := new(big.Rat).SetString(price)
+	if !ok || unit.Sign() < 0 || quantity < 1 {
+		return fmt.Errorf("order pricing: invalid stored price or quantity")
+	}
+	total := new(big.Rat).Mul(unit, new(big.Rat).SetInt64(quantity))
+	unitPrice, totalPrice := unit.FloatString(4), total.FloatString(4)
+	if _, err := exec.ExecContext(ctx, `UPDATE order_items SET unit_price = $1, total_price = $2 WHERE id = $3`, unitPrice, totalPrice, id); err != nil {
+		return fmt.Errorf("order pricing: persist line prices: %w", err)
+	}
+	for key, value := range map[string]string{"unitPrice": unitPrice, "totalPrice": totalPrice} {
+		if _, exists := row[key]; exists {
+			row[key] = value
+		} else {
+			row[snakeTwin(key)] = value
+		}
+	}
+	return nil
 }
 
 // recomputeFromItemRow recomputes the parent order named by an item row.
