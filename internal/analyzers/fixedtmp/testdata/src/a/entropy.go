@@ -72,3 +72,21 @@ func unrelatedEntropyNamedReturn() (path string) {
 func createFixedNamedReturn() error {
 	return os.MkdirAll(unrelatedEntropyNamedReturn(), 0o700) // want `mkdir on a fixed path under the shared temp root`
 }
+
+func fillRandomSuffix(buffer []byte) string {
+	_, _ = rand.Read(buffer)
+	return hex.EncodeToString(buffer)
+}
+
+func createFilledRandomPath() error {
+	buffer := make([]byte, 16)
+	return os.MkdirAll(filepath.Join(os.TempDir(), fillRandomSuffix(buffer)), 0o700)
+}
+
+func fixedBufferSuffix(buffer []byte) string {
+	return hex.EncodeToString(buffer)
+}
+
+func createFixedBufferPath() error {
+	return os.MkdirAll(filepath.Join(os.TempDir(), fixedBufferSuffix(make([]byte, 16))), 0o700) // want `mkdir on a fixed path under the shared temp root`
+}
