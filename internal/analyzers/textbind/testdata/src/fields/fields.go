@@ -139,3 +139,8 @@ func handleHelperChecked(w http.ResponseWriter, r *http.Request) {
 func okText(s string) bool { // want okText:`textbind\(sink=0 return=0 check=1 source=false\)`
 	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
 }
+
+// Plain is filled with request text only by an importer.
+type Plain struct {
+	Key string
+}

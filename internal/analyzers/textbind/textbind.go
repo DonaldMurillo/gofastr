@@ -108,7 +108,10 @@
 // Residuals, stated so nobody assumes coverage: host callbacks (the d6167d1a principal), a method value or call
 // through an interface whose implementation lives in another package
 // (battery/admin's grant grid binds grantChange.role through
-// access.GrantStore, R8-AA-01), and strings.Builder output.
+// access.GrantStore, R8-AA-01), a constructor in another package that
+// stores its parameter in a field (other.New(r.FormValue("k")).Key: a
+// function's parameter-to-field writes are not exported), and
+// strings.Builder output.
 //
 // The fix spelling: refuse the value before it binds, with a 400 naming
 // the field (filter's storableText: utf8.ValidString(s) &&
@@ -205,10 +208,12 @@ type checker struct {
 	flows bool
 }
 
-// markField records that field holds request text.
+// markField records that field holds request text. A field another
+// package declares is marked too, for reads in this package; only the
+// declaring package exports the fact.
 func (c *checker) markField(field *types.Var) {
 	field = field.Origin()
-	if field.Pkg() != c.pass.Pkg || c.fields[field] {
+	if field.Pkg() == nil || c.fields[field] {
 		return
 	}
 	c.fields[field] = true
@@ -235,7 +240,7 @@ func (c *checker) addParamField(fn *types.Func, mask uint64, field *types.Var) {
 // package, or by a fact from the package that declares it.
 func (c *checker) fieldHolds(field *types.Var) bool {
 	field = field.Origin()
-	if field.Pkg() == c.pass.Pkg {
+	if c.fields[field] || field.Pkg() == c.pass.Pkg {
 		return c.fields[field]
 	}
 	if field.Pkg() == nil {
@@ -295,6 +300,11 @@ func run(pass *analysis.Pass) (any, error) {
 					merged.Sink |= s.Sink
 					merged.Return |= s.Return
 					merged.Source = merged.Source || s.Source
+					// A bind through a same-package helper is known
+					// only now: a check after it vets nothing, so it
+					// loses the credit phase 1 gave it. Check only
+					// shrinks here while Sink grows, so this ends.
+					merged.Check &^= merged.Sink
 				} else {
 					merged.Check |= s.Check
 				}
@@ -324,6 +334,9 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 		}
 		for field := range c.fields {
+			if field.Pkg() != pass.Pkg {
+				continue
+			}
 			pass.ExportObjectFact(field, &fieldFact{})
 		}
 	}
