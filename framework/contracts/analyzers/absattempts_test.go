@@ -102,9 +102,10 @@ func TestAbsoluteAttemptsFiresOnUnrelatedSites(t *testing.T) {
 		"dispatch.go": `package dispatch
 
 import "database/sql"
+import "fmt"
 
 func noteBounce(db *sql.DB, runID string, count int) error {
-	_, err := db.Exec("UPDATE dispatch SET retries = %d WHERE run_id = %s", count+1, runID)
+	_, err := db.Exec(fmt.Sprintf("UPDATE dispatch SET retries = %d WHERE run_id = %s", count+1, runID))
 	return err
 }
 `,
@@ -232,8 +233,10 @@ func q(table string, n, id int) string {
 	ds = fixture(t, map[string]string{
 		"settle.go": `package outbox
 
-func q() string {
-	return "UPDATE jobs SET attempts=%02d WHERE id=1"
+import "fmt"
+
+func q(attempts int) string {
+	return fmt.Sprintf("UPDATE jobs SET attempts=%02d WHERE id=1", attempts)
 }
 `,
 	})
