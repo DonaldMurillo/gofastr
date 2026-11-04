@@ -42,6 +42,9 @@ DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
 
+Widget state hydration refuses cross-origin endpoints without aborting
+mounting: local actions, lifecycle listeners and dismissal remain wired.
+
 An open native modal dialog owns Escape and Tab above an intercepted
 pane. The intercept keyboard handlers stand down until the dialog closes,
 then resume the pane's own dismissal and focus containment.

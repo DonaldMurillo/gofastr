@@ -413,8 +413,7 @@
     reg.dismiss = dismiss;
 
     // Initial state hydration, only when the widget declared signals.
-    if (cfg.statePath) {
-      if (!NS._originOK?.(cfg.statePath)) return;
+    if (cfg.statePath && NS._originOK?.(cfg.statePath)) {
       NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         // A followed 3xx answered for another URL: no state to apply.
         .then((r) => (r.ok && !r.redirected ? r.json() : {}))

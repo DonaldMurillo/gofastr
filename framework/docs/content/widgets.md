@@ -3,6 +3,9 @@
 Widgets are self-mounting overlay UIs that run on top of any page. They
 are distinct from components:
 
+A cross-origin state endpoint is not fetched. The widget still mounts its
+local actions and dismiss controls, so a refused state fetch cannot trap it open.
+
 | Component | Widget |
 |---|---|
 | Part of a server-rendered page tree | Floats above any page |
