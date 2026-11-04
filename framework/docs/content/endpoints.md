@@ -80,6 +80,8 @@ with the same tags `handler.Bind` reads:
 
 - `path:"id" json:"-"`: a `{id}` segment of the path. Every `{name}` in the
   path needs one. Never a pointer: a path value is always present.
+  Hand-registered endpoints may also use `:id` segments; OpenAPI normalizes
+  them to `{id}` and keeps matching input fields out of the JSON body.
 - `query:"q" json:"-"`: a query-string value. Only `GET` and `DELETE` take
   them, and they take nothing else besides path values. `query:"q,empty"`
   keeps an explicit `?q=` (see below); it is the only option a query tag

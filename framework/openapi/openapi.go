@@ -1267,7 +1267,7 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		// (GET/HEAD never do). Unset schemas fall back to the shapeless
 		// {type:object} response and no body.
 		pathParams := map[string]bool{}
-		for seg := range strings.SplitSeq(endpoint.Path, "/") {
+		for seg := range strings.SplitSeq(EntityEndpointPath(ent, endpoint.Path), "/") {
 			if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
 				pathParams[seg[1:len(seg)-1]] = true
 			}
