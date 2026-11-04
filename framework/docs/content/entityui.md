@@ -602,6 +602,10 @@ JSON API applies live in the builders themselves:
   related list draws its notice, never its rows. A refused stat prints
   the em dash: an aggregate never announces an entity it cannot read.
 
+Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
+target, including queued runs; a row hidden only from single-record reads
+cannot be changed through a bulk selection.
+
 A builder never draws a write the API would refuse the caller. New,
 Duplicate and the create screen need the entity's create access
 (`CanCreateScoped`); the edit form and the state moves need update

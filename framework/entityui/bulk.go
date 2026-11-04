@@ -504,6 +504,7 @@ func mayRun(ctx context.Context, m *meta, act bulkAction, id string) bool {
 }
 
 func (u *UI) runOne(ctx context.Context, m *meta, act bulkAction, id string) string {
+	ctx = crud.WithReadHooks(ctx)
 	var err error
 	switch act.kind {
 	case bulkDelete:
