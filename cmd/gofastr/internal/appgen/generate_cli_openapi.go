@@ -344,6 +344,11 @@ func oaParamJoined(pm map[string]any, name, in string, repeated bool) (bool, err
 // unset flag already sends nothing. A list naming two value types has
 // no flag.
 func oaGoType(schema map[string]any) (goType string, repeated, ok bool) {
+	for _, union := range []string{"oneOf", "anyOf"} {
+		if _, present := schema[union]; present {
+			return "", false, false
+		}
+	}
 	t, _ := schema["type"].(string)
 	if list, isList := schema["type"].([]any); isList {
 		var types []string
