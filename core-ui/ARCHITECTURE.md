@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+Tree Enter follows the row's own link on branches as well as leaves;
+Space toggles branches, and Enter toggles only branches without a link.
+
 Scripted comboboxes own Enter even without an active result, so an
 unhighlighted, empty or closed list never submits its no-script GET form.
 

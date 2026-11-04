@@ -398,7 +398,9 @@ when it arrives (`data-hui-counter-value`, bound by
 the first + on a counter showing 4 would show 1. `Seeded: true` leaves
 the seed to the page (`ui.Counter` sets it; its `store.Slice` seeds
 the signal). A `Tree` row's link is out of the tab order: the
-tree is one tab stop and Enter on the row follows the link.
+tree is one tab stop and Enter on the row follows the link, including a
+branch with its own `Href`. Space toggles a branch; Enter also toggles
+a branch without a link. Arrow-key expansion and lazy loading are unchanged.
 
 The parts the navigation members draw beyond the shared vocabulary:
 
