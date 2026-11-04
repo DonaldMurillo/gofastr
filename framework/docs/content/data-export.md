@@ -423,7 +423,9 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    a job only when the producer set `Job.UserID` — see
    [the queue reference](queue.md). A job whose payload is personal data but
    which names no user is not erasable, and its payload column is exported
-   verbatim. `NewDurableScheduler` also exports its schedules table under
+   verbatim. Job exports retain occurrence IDs, update timestamps, failure
+   text and claim tokens alongside payloads and queue state.
+   `NewDurableScheduler` also exports its schedules table under
    the configured queue name, including payloads, user attribution and
    scheduling watermarks. The other stores, each under its configured table name:
 
