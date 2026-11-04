@@ -72,5 +72,4 @@ Full reference: `gofastr docs contracts`.
 
 Discovery-only consumers may inspect an empty `NewPass`, but `Run` rejects
 zero readable source files. Root walk errors are fatal; file read failures
-appear in `Unparsed`. Permission-test and mutation guidance lives in
-[source-discovery notes](../../docs/source-discovery.md#maintenance-notes).
+appear in `Unparsed`.
