@@ -165,12 +165,15 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect, existingTables map[string]map[string]string) ([]SchemaChange, error) {
 	var out []SchemaChange
 	for ent, rel := range generatedPivots(ordered, all) {
-		if cols := lookupTableCols(existingTables, rel.Through); len(cols) > 0 {
-			continue
-		}
 		spec, err := buildPivotSpec(ent, rel, all, dialect)
 		if err != nil {
 			return nil, err
+		}
+		if cols := lookupTableCols(existingTables, rel.Through); len(cols) > 0 {
+			if err := checkPivotColumns(spec, cols, dialect); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		out = append(out, SchemaChange{
 			Summary: fmt.Sprintf("%s: create pivot table", rel.Through),
@@ -184,6 +187,16 @@ func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, di
 		})
 	}
 	return out, nil
+}
+
+func checkPivotColumns(spec pivotSpec, live map[string]string, dialect Dialect) error {
+	for _, column := range slices.Sorted(maps.Keys(spec.Cols)) {
+		actual := lookupStringCase(live, column)
+		if actual == "" || !typesEquivalent(spec.Cols[column], actual, dialect) {
+			return fmt.Errorf("pivot table %q column %q: declared %s, stored %q; migrate the pivot explicitly before changing its relation", spec.Safe, column, spec.Cols[column], actual)
+		}
+	}
+	return nil
 }
 
 // ApplyOptions tunes ApplySchemaDiffWithOptions.

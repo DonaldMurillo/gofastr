@@ -1617,6 +1617,15 @@ func migratePivotTables(ctx context.Context, exec execQueryer, ordered []*entity
 		if err != nil {
 			return err
 		}
+		cols, err := readLiveColumnsQ(ctx, exec, rel.Through, dialect)
+		if err != nil {
+			return fmt.Errorf("read pivot table %s: %w", rel.Through, err)
+		}
+		if len(cols) > 0 {
+			if err := checkPivotColumns(spec, cols, dialect); err != nil {
+				return err
+			}
+		}
 		if _, err := exec.ExecContext(ctx, spec.DDL); err != nil {
 			return fmt.Errorf("create pivot table %s: %w", rel.Through, err)
 		}

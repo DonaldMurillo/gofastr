@@ -1209,6 +1209,13 @@ table by hand. Use `migrate force` to reconcile state instead.
 
 ## Auto-migrate path
 
+Generated `many_to_many` pivot tables are checked on boot and during live
+or snapshot diffs. Changing a pivot's link-column names or endpoint key
+types is refused with the pivot and column named; generation does not
+advance the snapshot past that refusal. Write and apply an explicit
+migration that preserves the existing links before adopting the changed
+relation. An entity-owned join table follows its entity's normal diff.
+
 ```go
 app := framework.NewApp(framework.WithDB(db))
 app.Entity("posts", framework.EntityConfig{ … })
