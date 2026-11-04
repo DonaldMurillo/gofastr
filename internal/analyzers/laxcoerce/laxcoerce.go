@@ -725,7 +725,13 @@ func nilErrorValue(pass *analysis.Pass, expression ast.Expr) bool {
 		_, isNil := pass.TypesInfo.ObjectOf(identifier).(*types.Nil)
 		return isNil
 	}
+	// Nil survives only a conversion to an interface type. A conversion to a
+	// concrete type makes a typed nil, and wrapping that in an error gives a
+	// non-nil error: error((*E)(nil)) != nil.
 	if conversion, ok := expression.(*ast.CallExpr); ok && len(conversion.Args) == 1 && pass.TypesInfo.Types[conversion.Fun].IsType() {
+		if !types.IsInterface(pass.TypesInfo.TypeOf(conversion.Fun)) {
+			return false
+		}
 		return nilErrorValue(pass, conversion.Args[0])
 	}
 	return false
@@ -737,7 +743,9 @@ func zeroErrorVariable(pass *analysis.Pass, expression ast.Expr) bool {
 		return false
 	}
 	object, ok := pass.TypesInfo.ObjectOf(identifier).(*types.Var)
-	if !ok || object.Parent() == pass.Pkg.Scope() {
+	// Only an interface variable's zero value is a nil error; a nil
+	// pointer of a concrete error type is non-nil once returned as error.
+	if !ok || object.Parent() == pass.Pkg.Scope() || !types.IsInterface(object.Type()) {
 		return false
 	}
 	declared, assigned := false, false
