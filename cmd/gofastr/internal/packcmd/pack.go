@@ -2245,6 +2245,9 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	if b, ok := reverseEntityResource(call, helpers); ok {
 		return b, true
 	}
+	if control, ok := reverseControlBlock(call, helpers); ok {
+		return control, true
+	}
 	switch callSel(call) {
 	case "ui.Hero":
 		return reverseHero(call), true
@@ -2286,6 +2289,9 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.LinkButton":
 		c := cfgOf(call, 0)
 		return block("link_button", props2("label", appspec.AstString(c["Label"]), "href", appspec.AstString(c["Href"]), "variant", buttonVariant(c["Variant"]))), true
+	case "ui.Link":
+		config := cfgOf(call, 0)
+		return appspec.AppSpecBlock{Type: "link", Href: appspec.AstString(config["Href"]), Text: appspec.AstString(config["Text"]), Class: appspec.AstString(config["Class"])}, true
 	case "ui.Stack":
 		return reverseLayoutBlock("stack", call, helpers), true
 	case "ui.Cluster":

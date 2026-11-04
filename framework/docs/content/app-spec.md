@@ -737,6 +737,10 @@ each file's `screenRegistrar{order: …}` to recover authored order, with a
 legacy aggregated `screens.go` fallback for apps older generators emitted),
 reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
 `appUI.List("x")…` → `entity_list`, and so on). The result
+also preserves the control catalog: custom forms and their text, number,
+toggle, select and radio controls; action buttons; static table columns
+and cells; ordered/unordered item lists; and labeled navigation links.
+The result
 prints to stdout, or to a file with `-o`:
 
 ```sh
