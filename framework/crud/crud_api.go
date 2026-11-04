@@ -132,6 +132,7 @@ func inProcess(r *http.Request) bool {
 // remain context-stamped regardless. Hidden fields stay absent from the
 // returned map (visibleFields shapes the projection, not the write set).
 func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}
@@ -466,6 +467,7 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 // rolls back the whole batch, same semantics as the HTTP _batch endpoint.
 // Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}

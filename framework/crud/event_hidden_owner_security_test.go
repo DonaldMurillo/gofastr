@@ -49,7 +49,7 @@ func stampedOwners(t *testing.T, ch *CrudHandler) (bus chan string, ob *ownerOut
 	ob = &ownerOutbox{}
 	ch.Outbox = ob
 	bus = make(chan string, 8)
-	for _, typ := range []string{event.EntityUpdated, event.EntityDeleted} {
+	for _, typ := range []string{event.EntityCreated, event.EntityUpdated, event.EntityDeleted} {
 		t.Cleanup(b.Subscribe(typ, func(_ context.Context, e event.Event) error {
 			data, _ := e.Data.(map[string]any)
 			bus <- typ + ":" + fmt.Sprint(data[eventKeyOwnerID])
@@ -57,6 +57,33 @@ func stampedOwners(t *testing.T, ch *CrudHandler) (bus chan string, ob *ownerOut
 		}))
 	}
 	return bus, ob
+}
+
+func TestCreateStampsHiddenOwner(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, conn := hiddenOwnerLogs(t)
+	bus, outbox := stampedOwners(t, ch)
+	ctx := owner.AllowCrossOwner(context.Background())
+	if _, err := ch.CreateOne(ctx, map[string]any{"user_id": "bob", "notes": "single"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ch.BatchCreateMany(ctx, []map[string]any{
+		{"user_id": "carol", "notes": "batch one"},
+		{"user_id": "dave", "notes": "batch two"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM logs WHERE user_id IN ('bob', 'carol', 'dave')`).Scan(&count); err != nil || count != 3 {
+		t.Fatalf("persisted owners: count=%d err=%v", count, err)
+	}
+	want := []string{"entity.created:bob", "entity.created:carol", "entity.created:dave"}
+	if got := takeStamps(t, bus, 3); !slices.Equal(got, want) {
+		t.Errorf("bus stamps=%v, want %v", got, want)
+	}
+	if !slices.Equal(outbox.owners, []string{"bob", "carol", "dave"}) {
+		t.Errorf("outbox owners=%v", outbox.owners)
+	}
 }
 
 func takeStamps(t *testing.T, bus chan string, n int) []string {
