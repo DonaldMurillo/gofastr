@@ -33,6 +33,8 @@ var errSoftDeletedResurrection = errors.New("upsert: target row is soft-deleted;
 // ownership/tenant from the caller's context, a cross-principal takeover.
 var errUpsertForeignRow = errors.New("upsert: target row belongs to a different owner or tenant")
 
+var errUpsertBeforeUpdate = errors.New("upsert: entities with BeforeUpdate hooks require CreateOne or UpdateOne")
+
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's
 // primary key. If a row with the same PK already exists, every writable
 // field in body overwrites the existing row; otherwise a new row is
@@ -41,7 +43,9 @@ var errUpsertForeignRow = errors.New("upsert: target row belongs to a different 
 // Both Postgres and SQLite 3.24+ support this exact syntax via the
 // EXCLUDED pseudo-table. BeforeCreate prepares either arm; AfterCreate
 // fires for an insert and AfterUpdate for a conflict update, with its
-// pre-image available for audit. BeforeUpdate does not fire. A conflict
+// pre-image available for audit. Entities with BeforeUpdate hooks are
+// refused before hooks or SQL: the pre-read cannot predict conflicts
+// atomically. Use CreateOne or UpdateOne instead. A conflict
 // with no data to write runs no after hooks and emits no lifecycle event.
 // The event is entity.created for an insert and entity.updated for an update.
 // On conflict only the columns the body carries are written; a Default
@@ -49,6 +53,9 @@ var errUpsertForeignRow = errors.New("upsert: target row belongs to a different 
 // writes any column re-stamps an auto updated_at with the server time,
 // as Update does; created_at and the key keep their stored values.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
+	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.BeforeUpdate)) > 0 {
+		return nil, errUpsertBeforeUpdate
+	}
 	req := syntheticRequest(ctx, http.MethodPost, "/")
 
 	// Refuse anonymous upserts on owner-scoped entities. Without this

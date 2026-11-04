@@ -421,6 +421,31 @@ paths that skip hooks entirely; by design, not accident:
 | In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | every read hook, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user: the read then runs the chain the HTTP route runs. `BeforeList` scopes `ListAll`, `CountAll` and the typed query, `BeforeGet` scopes `GetOne`, and AfterList/AfterGet mask the result. A before hook that errors fails the read. |
 | `_batch` requests | none: per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
 
+**Upsert refuses entities with `BeforeUpdate` hooks.** `UpsertOne` returns
+`upsert: entities with BeforeUpdate hooks require CreateOne or UpdateOne`
+before running any hook, changing the body, or opening a transaction.
+This applies even when the key appears new, when no key is supplied, or
+when server writes are enabled. The existing-row SELECT is a separate
+statement: another writer may insert the key before `ON CONFLICT` runs,
+so choosing a Go before hook from that read would leave a TOCTOU window.
+Use `CreateOne` or `UpdateOne` to run the corresponding before hooks with
+their normal validation, mutation, transaction, and abort-on-error semantics.
+
+For entities **without** `BeforeUpdate` hooks, the upsert arms are:
+
+| Arm | Before hooks | After hooks |
+|---|---|---|
+| Insert | `BeforeCreate` prepares the body | `AfterCreate` |
+| Conflict update | `BeforeCreate` prepares the body | `AfterUpdate`; `BeforeUpdate` and `AfterCreate` do not run |
+| Conflict with no data to write | `BeforeCreate` prepares the body | None; no audit row or lifecycle event |
+| Any upsert with registered `BeforeUpdate` hooks | None; returns an error | None; no SQL, audit row, or lifecycle event |
+
+The after-hook and event arm follows the pre-read's classification; that
+read does not make an insert-versus-update decision atomic against other
+writers. In particular, a concurrent insert after an absent pre-read may
+still take the SQL conflict arm. The fail-closed rule does not depend on
+that classification.
+
 **Upsert and key-deriving hooks.** A `BeforeCreate` hook may derive or
 normalize the primary key that `UpsertOne` conflicts on (a slug from the
 title, a lowercased natural key). The upsert checks ownership, tenant and
