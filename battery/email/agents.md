@@ -21,7 +21,7 @@ _ = s.Send(ctx, email.Email{
 
 **Shape (prod, SMTP):**
 ```go
-s, err := email.NewSMTPSender(email.SMTPConfig{
+s := email.NewSMTPSender(email.SMTPConfig{
     Host: "smtp.example.com", Port: 587, // STARTTLS negotiated by default
     Username: u, Password: p,
     // UseTLS: true, // implicit TLS instead (e.g. port 465)
