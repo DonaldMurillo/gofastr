@@ -368,10 +368,11 @@ var clockPreserving = map[string]bool{
 }
 
 // mentionsBigRand reports whether e's assembly (through locals) reads
-// >=16 bytes of a crypto/rand buffer. A SLICE of the buffer counts
-// only its own span: hex.EncodeToString(b[:2]) beside the clock is 2
-// bytes of entropy and silences nothing, while b[:16] is the full
-// requirement. An index (b[0]) is one byte.
+// >=16 bytes of a crypto/rand buffer. A SLICE counts only its own
+// span, one level down or two: hex.EncodeToString(b[:2]) beside the
+// clock is 2 bytes of entropy and silences nothing, and neither does
+// hex.EncodeToString(b)[:4] — the slice of the encoded string — while
+// b[:16] is the full requirement. An index (b[0]) is one byte.
 func mentionsBigRand(pass *analysis.Pass, e ast.Expr, bigRand map[types.Object]int, depth int) bool {
 	if len(bigRand) == 0 || depth > maxDepth {
 		return false
@@ -387,20 +388,31 @@ func mentionsBigRand(pass *analysis.Pass, e ast.Expr, bigRand map[types.Object]i
 				found = true
 			}
 		case *ast.SliceExpr:
-			id, ok := v.X.(*ast.Ident)
-			if !ok {
+			if id, ok := v.X.(*ast.Ident); ok {
+				size := bigRand[pass.TypesInfo.ObjectOf(id)]
+				if size != 0 {
+					// This read touches only the sliced span; judge it
+					// here and do not also credit the base ident
+					// below it.
+					if sliceSpan(pass, v, size) >= 16 {
+						found = true
+					}
+					return false
+				}
 				return true
 			}
-			size := bigRand[pass.TypesInfo.ObjectOf(id)]
-			if size == 0 {
-				return true
+			// A slice of a COMPUTED encoding — hex.EncodeToString(b)
+			// [:4] — carries only the sliced span, never the whole
+			// buffer inside it. Judge the span when the base reads the
+			// buffer; a non-constant high bound has no size to read,
+			// and the silence this feeds must be earned.
+			if mentionsBigRand(pass, v.X, bigRand, depth+1) {
+				if lo, ok := constSliceSpan(pass, v); ok && lo >= 16 {
+					found = true
+				}
+				return false
 			}
-			// This read touches only the sliced span; judge it here
-			// and do not also credit the base ident below it.
-			if sliceSpan(pass, v, size) >= 16 {
-				found = true
-			}
-			return false
+			return true
 		case *ast.IndexExpr:
 			// One byte of the buffer, whatever the buffer's size.
 			return true
@@ -439,6 +451,37 @@ func sliceSpan(pass *analysis.Pass, se *ast.SliceExpr, size int) int {
 		return 0
 	}
 	return int(h - low)
+}
+
+// constSliceSpan is sliceSpan with no base size to fall back on: both
+// bounds constant, high minus low. A nil or non-constant high has no
+// readable size and returns false: the silence this feeds must be
+// earned, not assumed.
+func constSliceSpan(pass *analysis.Pass, se *ast.SliceExpr) (int, bool) {
+	var low int64
+	if se.Low != nil {
+		tv, ok := pass.TypesInfo.Types[se.Low]
+		if !ok || tv.Value == nil {
+			return 0, false
+		}
+		l, ok := constant.Int64Val(tv.Value)
+		if !ok {
+			return 0, false
+		}
+		low = l
+	}
+	if se.High == nil {
+		return 0, false
+	}
+	tv, ok := pass.TypesInfo.Types[se.High]
+	if !ok || tv.Value == nil {
+		return 0, false
+	}
+	h, ok := constant.Int64Val(tv.Value)
+	if !ok {
+		return 0, false
+	}
+	return int(h - low), true
 }
 
 // bigRandBuffers collects the buffers this function fills from

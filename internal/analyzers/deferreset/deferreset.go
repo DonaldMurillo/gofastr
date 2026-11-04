@@ -35,13 +35,13 @@
 //
 // Silent postures, deliberately:
 //   - the reset is deferred somewhere in the body: the same flag field,
-//     or (for a verb reset) the same receiver and callee (`q.unclaim`)
-//     — the deferred closure covers the panic path even when a
-//     normal-path reset also follows the call. A defer that would run
-//     only inside a literal the body passes to a callee does not count:
-//     it is armed only if that callee runs the closure, so a deferred
-//     reset verb for a different owner (`defer doneLog()`) does not
-//     cover this one;
+//     or (for a verb reset) the same receiver (`q`, so a deferred
+//     q.abort covers the inline q.finish) — the deferred closure covers
+//     the panic path even when a normal-path reset also follows the
+//     call. A defer that would run only inside a literal the body
+//     passes to a callee does not count: it is armed only if that
+//     callee runs the closure, so a deferred reset verb for a different
+//     owner (`defer doneLog()`) does not cover this one;
 //   - nothing that can panic between set and reset: plain package code
 //     between them is the function's own business (a panic there is a bug
 //     in this code, not a host's);
@@ -135,7 +135,7 @@ type event struct {
 	kind int    // evSet, evCall, evReset
 	key  string // the field for a flag, "" for a verb call
 	desc string
-	verb string // the full callee of a verb reset (`q.unclaim`), "" otherwise
+	verb string // the receiver a verb reset undoes (`q`), "" otherwise
 }
 
 const (
@@ -244,10 +244,16 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 	}
 }
 
-// verbKey names a verb call by receiver and callee (`q.unclaim`), the
+// verbKey names a verb call by its receiver (`q` for q.unclaim), the
 // way a flag is keyed by its field: a deferred reset verb for ANOTHER
-// owner does not cover this one.
+// owner does not cover this one, while a different reset word on the
+// same receiver does — the abort deferred over the panic path undoes
+// the begin the inline finish completes. A verb with no receiver (a
+// package function, doneLog) is keyed by its own name.
 func verbKey(call *ast.CallExpr) string {
+	if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok {
+		return types.ExprString(sel.X)
+	}
 	return types.ExprString(call.Fun)
 }
 

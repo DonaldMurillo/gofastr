@@ -399,11 +399,6 @@ func calleeObject(pass *analysis.Pass, fun ast.Expr) types.Object {
 	return nil
 }
 
-// bodyRebinders maps each package function whose body (literals
-// included) assigns an *http.Request's Body from a capping constructor:
-// the middleware spelling, r.Body = http.MaxBytesReader(w, r.Body, n).
-// A function with a LimitReader over some other reader caps nothing it
-// wraps.
 // rebindsRequestBody reports whether body (literals included) assigns
 // an *http.Request's Body from a capping constructor: the middleware
 // spelling, r.Body = http.MaxBytesReader(w, r.Body, n). A function

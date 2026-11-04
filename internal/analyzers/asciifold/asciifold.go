@@ -189,9 +189,13 @@ func pinnedIdent(pass *analysis.Pass, x ast.Expr, pinned map[types.Object][]pinF
 	if !ok {
 		return false
 	}
-	facts := pinned[pass.TypesInfo.ObjectOf(id)]
-	for _, fact := range facts {
-		if fact.end < id.Pos() {
+	for _, fact := range pinned[pass.TypesInfo.ObjectOf(id)] {
+		// After a diverging rejection, or inside the branch the
+		// condition's TRUE side established ASCII in.
+		if fact.end != 0 && fact.end < id.Pos() {
+			return true
+		}
+		if fact.thenPos != 0 && fact.thenPos <= id.Pos() && id.End() <= fact.thenEnd {
 			return true
 		}
 	}
@@ -602,18 +606,20 @@ func hasASCIIConstantArg(pass *analysis.Pass, args []ast.Expr) bool {
 // the value directly. A bare len(...) bound shares no view with the
 // value's bytes — "ſ" is two bytes long and passes it — so it pins
 // nothing, and neither do the other identifiers that merely share the
-// condition. The pin counts only while it dominates: recorded with
-// the if's end position, a lookup AFTER it is covered and one BEFORE
-// it is not, and only an if whose branch leaves (return, continue,
-// break, goto, panic) pins at all — a check that logs and falls
-// through rejects nothing.
+// condition. A pin covers a use in two regions: AFTER an if whose
+// branch leaves (return, continue, break, goto, panic) — a check that
+// logs and falls through rejects nothing — and, when the condition's
+// TRUE side is the ASCII side (isASCII(name), !ContainsFunc(name, bad),
+// name[i] < 0x80), the whole then-branch, diverging or not: a use
+// inside the branch where the value was just proven ASCII is covered.
 func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object][]pinFact {
 	pinned := map[types.Object][]pinFact{}
 	ast.Inspect(f, func(n ast.Node) bool {
 		st, ok := n.(*ast.IfStmt)
-		if !ok || st.Cond == nil || !ifLeaves(st) {
+		if !ok || st.Cond == nil {
 			return true
 		}
+		leaves := ifLeaves(st)
 		// Callback parameters of ContainsFunc/IndexFunc over a
 		// variable stand for that variable's runes.
 		cb := map[types.Object]types.Object{}
@@ -643,6 +649,8 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object][]pinFact {
 			}
 			return true
 		})
+		// The objects the condition pins at all.
+		matched := map[types.Object]bool{}
 		ast.Inspect(st.Cond, func(c ast.Node) bool {
 			switch e := c.(type) {
 			case *ast.BinaryExpr:
@@ -657,7 +665,7 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object][]pinFact {
 						continue
 					}
 					if obj := byteRuneView(pass, side.view, cb); obj != nil {
-						pinned[obj] = append(pinned[obj], pinFact{end: st.End()})
+						matched[obj] = true
 					}
 				}
 			case *ast.CallExpr:
@@ -665,7 +673,7 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object][]pinFact {
 					for _, a := range e.Args {
 						if id, ok := a.(*ast.Ident); ok {
 							if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-								pinned[obj] = append(pinned[obj], pinFact{end: st.End()})
+								matched[obj] = true
 							}
 						}
 					}
@@ -673,15 +681,143 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object][]pinFact {
 			}
 			return true
 		})
+		for obj := range matched {
+			var fact pinFact
+			if leaves {
+				fact.end = st.End()
+			}
+			if asciiPolarity(pass, st.Cond, obj, cb) == 1 {
+				fact.thenPos, fact.thenEnd = st.Body.Pos(), st.Body.End()
+			}
+			if fact.end == 0 && fact.thenPos == 0 {
+				continue
+			}
+			pinned[obj] = append(pinned[obj], fact)
+		}
 		return true
 	})
 	return pinned
 }
 
-// pinFact is one ASCII pinning if: where it ended. The dominance test
-// in pinnedIdent reads the position against it.
+// pinFact is one ASCII pinning if: end is where the if ended when a
+// branch rejected non-ASCII (0 when none did — only a use AFTER it is
+// covered), thenPos/thenEnd span the then-branch when the condition's
+// TRUE side establishes the value is ASCII (0 when it does not). The
+// dominance test in pinnedIdent reads the position against both.
 type pinFact struct {
-	end token.Pos
+	end              token.Pos
+	thenPos, thenEnd token.Pos
+}
+
+// asciiPolarity says what cond evaluating TRUE establishes about obj
+// holding only ASCII: 1 that it does, -1 that a non-ASCII byte or rune
+// is present, 0 nothing readable. `!` flips; a conjunction keeps the
+// stronger side (then implies both operands), a disjunction needs both.
+// The readable tests: an ascii-named check on the value (isASCII vs
+// hasNonASCII), a ContainsFunc/IndexFunc over it whose callback tests
+// at-or-above the boundary (true means a bad rune was found), and a
+// below-the-boundary comparison of a byte or rune view. ==/!= bounds
+// and below-the-boundary callbacks stay 0: they establish nothing in
+// either direction.
+func asciiPolarity(pass *analysis.Pass, cond ast.Expr, obj types.Object, cb map[types.Object]types.Object) int {
+	switch e := ast.Unparen(cond).(type) {
+	case *ast.UnaryExpr:
+		if e.Op != token.NOT {
+			return 0
+		}
+		switch asciiPolarity(pass, e.X, obj, cb) {
+		case 1:
+			return -1
+		case -1:
+			return 1
+		}
+		return 0
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case token.LAND:
+			return max(asciiPolarity(pass, e.X, obj, cb), asciiPolarity(pass, e.Y, obj, cb))
+		case token.LOR:
+			return min(asciiPolarity(pass, e.X, obj, cb), asciiPolarity(pass, e.Y, obj, cb))
+		case token.LSS, token.LEQ:
+			if viewAtBound(pass, e, obj, cb) {
+				return 1
+			}
+		case token.GTR, token.GEQ:
+			if viewAtBound(pass, e, obj, cb) {
+				return -1
+			}
+		}
+		return 0
+	case *ast.CallExpr:
+		return callPolarity(pass, e, obj, cb)
+	}
+	return 0
+}
+
+// callPolarity is asciiPolarity's call arm: an ascii-named check on the
+// value, or a ContainsFunc/IndexFunc composition over it.
+func callPolarity(pass *analysis.Pass, call *ast.CallExpr, obj types.Object, cb map[types.Object]types.Object) int {
+	if len(call.Args) == 2 {
+		switch astx.CalleeName(call.Fun) {
+		case "ContainsFunc", "IndexFunc":
+			if src, ok := call.Args[0].(*ast.Ident); ok && pass.TypesInfo.ObjectOf(src) == obj {
+				if lit, ok := call.Args[1].(*ast.FuncLit); ok && badTrueCallback(pass, lit, obj, cb) {
+					return -1 // true means a non-ASCII rune was found
+				}
+			}
+		}
+		return 0
+	}
+	name := strings.ToLower(astx.CalleeName(call.Fun))
+	if containsFoldASCII(name) {
+		for _, a := range call.Args {
+			if id, ok := a.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == obj {
+				if strings.Contains(name, "nonascii") || strings.Contains(name, "notascii") {
+					return -1
+				}
+				return 1
+			}
+		}
+	}
+	return 0
+}
+
+// badTrueCallback: the literal's return tests a view of obj at or above
+// the ASCII boundary — its TRUE means the rune is non-ASCII.
+func badTrueCallback(pass *analysis.Pass, lit *ast.FuncLit, obj types.Object, cb map[types.Object]types.Object) bool {
+	found := false
+	ast.Inspect(lit.Body, func(n ast.Node) bool {
+		ret, ok := n.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+		for _, r := range ret.Results {
+			b, ok := ast.Unparen(r).(*ast.BinaryExpr)
+			if !ok || (b.Op != token.GTR && b.Op != token.GEQ) {
+				continue
+			}
+			if viewAtBound(pass, b, obj, cb) {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// viewAtBound: e compares a byte or rune view of obj against the ASCII
+// boundary on its other side.
+func viewAtBound(pass *analysis.Pass, e *ast.BinaryExpr, obj types.Object, cb map[types.Object]types.Object) bool {
+	for _, side := range [2]struct{ view, lit ast.Expr }{{e.X, e.Y}, {e.Y, e.X}} {
+		lit, ok := side.lit.(*ast.BasicLit)
+		if !ok || !isASCIIBound(lit) {
+			continue
+		}
+		if byteRuneView(pass, side.view, cb) == obj {
+			return true
+		}
+	}
+	return false
 }
 
 // ifLeaves reports whether the if's branch leaves the function or

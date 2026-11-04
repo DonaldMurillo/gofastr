@@ -228,6 +228,27 @@ func (q *queue) drainFixed(next http.Handler, w http.ResponseWriter, r *http.Req
 	q.unclaim()
 }
 
+// A deferred reset verb with a DIFFERENT word on the same receiver
+// still covers the panic path: the abort undoes the begin the finish
+// completes.
+type journal struct{}
+
+func (j *journal) begin() error { return nil }
+func (j *journal) abort()       {}
+func (j *journal) finish()      {}
+
+type session struct {
+	w      *journal
+	OnSave func()
+}
+
+func (s *session) save() {
+	s.w.begin()
+	defer s.w.abort()
+	s.OnSave()
+	s.w.finish()
+}
+
 // ctx.Done is a channel getter, not the reset verb "done": neither the
 // deferred release for this owner nor anything else makes the receive
 // a reset, and the poll body stays quiet.

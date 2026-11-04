@@ -215,7 +215,17 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 				// returns instead of dropping it — a decoder bound to
 				// a literal still returns encoding/json's error
 				// (fromJSONLit), while a callback's error stays
-				// foreign only when the literal itself calls one.
+				// foreign only when the literal itself calls one. A
+				// literal that calls the var itself (re-bound in a
+				// retry loop, or two literals calling each other)
+				// re-enters here: the busy guard cuts the cycle —
+				// any origin reachable through the self call is
+				// reachable through the literal's other returns too.
+				if f.busy[ob] {
+					return 0
+				}
+				f.busy[ob] = true
+				defer delete(f.busy, ob)
 				var o origin
 				for _, d := range ds {
 					o |= f.litReturns(ast.Unparen(d.rhs).(*ast.FuncLit))

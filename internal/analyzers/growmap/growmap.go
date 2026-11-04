@@ -516,13 +516,22 @@ func timeDrivenAt(pass *analysis.Pass, parent map[ast.Node]ast.Node, node ast.No
 			if isTimeChan(pass.TypesInfo.TypeOf(a.X)) {
 				return true
 			}
+		case *ast.ForStmt:
+			// The ticker loop that empties its maps AFTER the
+			// select's tick case, not inside it: the delete's own
+			// guard may read no clock verb at all.
+			if receivesTimeChan(pass, a.Body) {
+				return true
+			}
 		}
 	}
 	return false
 }
 
 // timeCompares: cond mentions a time comparison verb (Since, Until, or
-// a time.Time's Before/After/Sub).
+// a time.Time's Before/After/Sub), a clock read (Now, the Unix*
+// stamps), or time.Time's Compare — the TTL spellings the guard can
+// spell with int64 seconds as well as time.Time.
 func timeCompares(pass *analysis.Pass, cond ast.Expr) bool {
 	found := false
 	ast.Inspect(cond, func(n ast.Node) bool {
@@ -539,7 +548,8 @@ func timeCompares(pass *analysis.Pass, cond ast.Expr) bool {
 			return true
 		}
 		switch fn.Name() {
-		case "Since", "Until", "Before", "After", "Sub":
+		case "Since", "Until", "Before", "After", "Sub",
+			"Now", "Unix", "UnixMicro", "UnixMilli", "UnixNano", "Compare":
 			found = true
 		}
 		return true
@@ -579,4 +589,28 @@ func isTimeChan(t types.Type) bool {
 	}
 	n, ok := ch.Elem().(*types.Named)
 	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "time" && n.Obj().Name() == "Time"
+}
+
+// receivesTimeChan: body's subtree holds a receive from a time.Time
+// channel — a select case on a Ticker's or Timer's C, or a bare
+// receive — so the code around it runs on the clock's schedule.
+func receivesTimeChan(pass *analysis.Pass, body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		var comm ast.Stmt
+		switch x := n.(type) {
+		case *ast.CommClause:
+			comm = x.Comm
+		case *ast.AssignStmt, *ast.ExprStmt:
+			comm = x.(ast.Stmt)
+		}
+		if comm != nil && timeChannelCase(pass, comm) {
+			found = true
+		}
+		return !found
+	})
+	return found
 }

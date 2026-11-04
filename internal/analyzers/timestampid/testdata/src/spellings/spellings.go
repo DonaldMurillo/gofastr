@@ -131,3 +131,19 @@ func slicedFullRandID() string {
 	_, _ = rand.Read(b)
 	return fmt.Sprintf("s_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b[:16]))
 }
+
+// sp3b: the slice one level up, of the ENCODED string. The id carries
+// only the sliced span — hex.EncodeToString(b)[:4] is four hex
+// characters, two bytes of entropy — and must not silence the mint,
+// while [:32] carries the full sixteen and stays silent.
+func slicedEncodedID() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("s_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b)[:4]) // want `slicedEncodedID minted from wall-clock time is enumerable`
+}
+
+func slicedEncodedFullID() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("s_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b)[:32])
+}

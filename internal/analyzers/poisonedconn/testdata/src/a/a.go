@@ -56,6 +56,20 @@ func (p *lease) scannedNotRetired(ctx context.Context, conn *sql.Conn) {
 	_ = conn.Close()
 }
 
+// gotoFail: the error branch jumps to a label in the tail, where the
+// retire lives. The failure path REACHES the tail, so the tail is not
+// success-only and the Raw retire counts: quiet.
+func gotoFail(ctx context.Context, conn *sql.Conn) error {
+	_, err := conn.ExecContext(ctx, "RESET ALL")
+	if err != nil {
+		goto fail
+	}
+	return nil
+fail:
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	return err
+}
+
 // A session reset whose error is only logged before Close: fires.
 func resetSession(ctx context.Context, conn *sql.Conn) {
 	if _, err := conn.ExecContext(ctx, "RESET ALL"); err != nil { // want `poisonedconn: "RESET ALL" on the pinned conn can fail`

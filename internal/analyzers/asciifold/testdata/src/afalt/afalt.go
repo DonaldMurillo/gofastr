@@ -84,6 +84,52 @@ func pinNotRejecting(name string, i int) *gadget {
 	return gadgets[strings.ToLower(name)] // want `registry lookup folds Unicode case`
 }
 
+// inBranchPin: the lookup sits INSIDE the then-branch of the pinning
+// check — the branch where the value is ASCII — and is covered, not
+// only the statements after a diverging branch.
+func inBranchPin(name string) *gadget {
+	if isASCII(name) {
+		return gadgets[strings.ToLower(name)]
+	}
+	return nil
+}
+
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// inBranchNegated: the negated ContainsFunc spelling — inside the
+// branch the value carries no non-ASCII rune.
+func inBranchNegated(name string) *gadget {
+	if !strings.ContainsFunc(name, func(r rune) bool { return r >= 0x80 }) {
+		return gadgets[strings.ToLower(name)]
+	}
+	return nil
+}
+
+// inBranchBelow: the bound comparison spelled below-the-boundary: the
+// then-branch holds the ASCII side.
+func inBranchBelow(name string, i int) *gadget {
+	if name[i] < 0x80 {
+		return gadgets[strings.ToLower(name)]
+	}
+	return nil
+}
+
+// inBranchBadSide: the then-branch of an at-or-above comparison is the
+// NON-ASCII side: the lookup there still reports.
+func inBranchBadSide(name string, i int) *gadget {
+	if name[i] >= 0x80 {
+		return gadgets[strings.ToLower(name)] // want `registry lookup folds Unicode case`
+	}
+	return nil
+}
+
 func discard(s string) {}
 
 // ---- deliberate silences ------------------------------------------------

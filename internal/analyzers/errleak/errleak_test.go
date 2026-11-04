@@ -17,8 +17,11 @@ import (
 //     types, sent to a client at any status.
 //   - rewrap: d01462e8a. A typed error rebuilt from its own text loses its
 //     code.
+//   - selfcall: the review's recursion crash. A func var re-bound to a
+//     literal that calls the var itself re-entered litReturns with no
+//     busy guard and stack-overflowed, taking go vet down with it.
 func TestErrLeak(t *testing.T) {
-	for _, pkg := range []string{"b", "variants", "decode", "rewrap"} {
+	for _, pkg := range []string{"b", "variants", "decode", "rewrap", "selfcall"} {
 		t.Run(pkg, func(t *testing.T) {
 			analysistest.Run(t, analysistest.TestData(), errleak.Analyzer, pkg)
 		})

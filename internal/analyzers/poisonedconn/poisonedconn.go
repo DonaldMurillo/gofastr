@@ -358,8 +358,9 @@ type span struct{ from, to token.Pos }
 // call cannot reach: the success side of an if that tests the reset's
 // own error (the else of `if err != nil`, the then of `if err == nil`)
 // and the tail of a block whose error-reaching side cannot fall
-// through. Only if statements are analyzed; a switch or select guard
-// stays conservative (no span).
+// through — where a goto into that tail counts as falling through: the
+// failure lands there. Only if statements are analyzed; a switch or
+// select guard stays conservative (no span).
 func successOnlySpans(pass *analysis.Pass, body *ast.BlockStmt, call *ast.CallExpr, errIDs map[types.Object]bool) []span {
 	if call == nil || len(errIDs) == 0 {
 		return nil
@@ -399,7 +400,8 @@ func successOnlySpans(pass *analysis.Pass, body *ast.BlockStmt, call *ast.CallEx
 						walk([]ast.Stmt{e}, applies)
 					}
 				}
-				if tailOnly(st, thenOnly, elseOnly) && i+1 < len(stmts) {
+				if i+1 < len(stmts) && tailOnly(st, thenOnly, elseOnly) &&
+					!gotoInto(pass, st, stmts[i+1].Pos(), stmts[len(stmts)-1].End()) {
 					out = append(out, span{stmts[i+1].Pos(), stmts[len(stmts)-1].End()})
 				}
 			case *ast.ForStmt:
@@ -518,7 +520,9 @@ func containsNode(root, target ast.Node) bool {
 }
 
 // diverges: control cannot fall through st (a return, a goto or a
-// panic; an if whose both sides diverge).
+// panic; an if whose both sides diverge). A goto that jumps into a
+// range divergence was granted for still reaches it — gotoInto is the
+// caller's correction for that.
 func diverges(pass *analysis.Pass, st ast.Stmt) bool {
 	switch st := st.(type) {
 	case *ast.IfStmt:
@@ -541,6 +545,25 @@ func diverges(pass *analysis.Pass, st ast.Stmt) bool {
 		}
 	}
 	return false
+}
+
+// gotoInto: st's subtree holds a goto whose target label lies within
+// [from, to]. A branch that only gotos away looks divergent, but when
+// it jumps INTO the range that divergence was granted for, the failure
+// path reaches it and the range is not success-only.
+func gotoInto(pass *analysis.Pass, st ast.Stmt, from, to token.Pos) bool {
+	found := false
+	ast.Inspect(st, func(n ast.Node) bool {
+		bs, ok := n.(*ast.BranchStmt)
+		if !ok || bs.Tok != token.GOTO || bs.Label == nil {
+			return true
+		}
+		if obj := pass.TypesInfo.Uses[bs.Label]; obj != nil && from <= obj.Pos() && obj.Pos() <= to {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // retireHelpers maps the package's functions that retire a *sql.Conn

@@ -60,9 +60,12 @@
 //     a design choice, not the refresh-under-cache-lock bug;
 //   - calls inside function literals that do not run in the region: a
 //     closure handed to `go` or deferred, to time/context.AfterFunc
-//     (which run it later on their own goroutine), or to sync.Once.Do
-//     (once.Do's own serialization is the point), and one merely stored
-//     or returned. A literal called in place or passed straight to any
+//     (which run it later on their own goroutine), to sync.Once.Do
+//     (once.Do's own serialization is the point), to a goroutine
+//     launcher (sync.WaitGroup.Go, errgroup.Group.Go) or a handler
+//     registration (net/http Handle/HandleFunc, which store it for a
+//     later request), appended to a slice, and one merely stored or
+//     returned. A literal called in place or passed straight to any
 //     other call IS the region — runNow(func(){ … }) runs under the
 //     lock — as is a package-level function literal checked on its own;
 //   - a mutex reached through an alias or a custom wrapper type: only
@@ -223,17 +226,32 @@ func collectLiterals(pass *analysis.Pass, stmt ast.Stmt, launched, runsHere map[
 
 // runsItLater: a call that does NOT run its function argument in this
 // region: time.AfterFunc and context.AfterFunc run it on their own
-// goroutine, sync.Once.Do serializes and runs it under its own lock.
+// goroutine, sync.Once.Do serializes and runs it under its own lock,
+// sync.WaitGroup.Go and errgroup.Group.Go launch a goroutine, the
+// net/http registration calls (ServeMux.Handle/HandleFunc and the
+// package-level twins) store the handler for a later request, and
+// append only stores the literal for whoever runs it. Everything else
+// that takes a literal runs it here, runNow(fn) included.
 func runsItLater(pass *analysis.Pass, call *ast.CallExpr) bool {
-	fn, ok := typeutil.Callee(pass.TypesInfo, call).(*types.Func)
-	if !ok || fn.Pkg() == nil {
-		return false
-	}
-	switch fn.Pkg().Path() {
-	case "time", "context":
-		return fn.Name() == "AfterFunc"
-	case "sync":
-		return fn.Name() == "Do" && recvName(fn) == "Once"
+	switch ob := typeutil.Callee(pass.TypesInfo, call).(type) {
+	case *types.Builtin:
+		return ob.Name() == "append"
+	case *types.Func:
+		if ob.Pkg() == nil {
+			return false
+		}
+		switch ob.Pkg().Path() {
+		case "time", "context":
+			return ob.Name() == "AfterFunc"
+		case "sync":
+			return (ob.Name() == "Do" && recvName(ob) == "Once") ||
+				(ob.Name() == "Go" && recvName(ob) == "WaitGroup")
+		case "golang.org/x/sync/errgroup":
+			return ob.Name() == "Go" && recvName(ob) == "Group"
+		case "net/http":
+			return (ob.Name() == "Handle" || ob.Name() == "HandleFunc") &&
+				(recvName(ob) == "ServeMux" || recvName(ob) == "")
+		}
 	}
 	return false
 }

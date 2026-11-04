@@ -237,6 +237,18 @@ func positionalFixed(sb *strings.Builder, h hook) {
 	fmt.Sprintf("func New%[1]sRepo(st *store) *%[1]sRepo {\n", handler)
 }
 
+// positionalSkewFixed: the explicit index resolves to the gated local
+// (arg 2), while the positional count would pair the verb with the raw
+// first argument. Dropping explicit-index handling turns this quiet
+// line into the report it must never become.
+func positionalSkewFixed(sb *strings.Builder, h hook, raw string) {
+	handler := strings.TrimSpace(h.Handler)
+	if !isGoIdentifier(handler) {
+		return
+	}
+	fmt.Sprintf("func New%[2]sRepo(st *store) *%[2]sRepo {\n", raw, handler)
+}
+
 // escapedVerb: %% is an escaped percent that renders a literal `%s`
 // into the OUTPUT (the nested Postgres format of foreign_key.go's DO
 // block); no Go argument ever lands there, and the scan must consume
@@ -250,6 +262,14 @@ func escapedVerbSkew(table string) string {
 	// Under the %%-misparse this slot mapped to the ungated second
 	// argument; with the pair consumed, no verb, no slot.
 	return fmt.Sprintf("%[1]s ALTER TABLE %%s DROP CONSTRAINT %%I", 3, table)
+}
+
+// escapedVerbArgSkew: with the %% pair consumed, the only slot pairs
+// with the first argument, the quoted table, and the line stays quiet.
+// Under the %%-misparse the second % became a verb, the real verb
+// shifted onto the raw second argument, and the quiet line reported.
+func escapedVerbArgSkew(table, name string) string {
+	return fmt.Sprintf("DELETE FROM %%s; DELETE FROM %s", QuoteIdent(table), name)
 }
 
 // queryParamVerb: a verb after '?' parameterizes the query string, not

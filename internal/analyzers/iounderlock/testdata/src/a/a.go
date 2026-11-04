@@ -334,3 +334,45 @@ var sweepPkg = func(ctx context.Context, s *MagicStore) {
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM t`) // want `iounderlock: ExecContext does I/O \(\(\*sql\.DB\)\.ExecContext\) while s\.sweepMu, which guards a throttle timestamp`
 	s.lastSweep = time.Now()
 }
+
+// ---- launchers, storage and registration run it LATER ----
+
+type dispatcher struct {
+	mu       sync.Mutex
+	wg       sync.WaitGroup
+	client   *http.Client
+	handlers []func()
+}
+
+// A closure handed to sync.WaitGroup.Go runs on its own goroutine: the
+// launch itself is not I/O under the lock.
+func (d *dispatcher) launch(u string) {
+	d.mu.Lock()
+	d.wg.Go(func() {
+		_, _ = d.client.Get(u)
+	})
+	d.mu.Unlock()
+}
+
+// A closure merely stored with append runs when the caller chooses:
+// not in this region.
+func (d *dispatcher) store(u string) {
+	d.mu.Lock()
+	d.handlers = append(d.handlers, func() { _, _ = d.client.Get(u) })
+	d.mu.Unlock()
+}
+
+// register only stores a handler on the mux: calling it under a lock
+// does no I/O, and it must not carry a doesIO fact that would fire on
+// every locked caller.
+func (d *dispatcher) register(mux *http.ServeMux) {
+	mux.HandleFunc("/x", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = d.client.Get("http://example.com")
+	})
+}
+
+func (d *dispatcher) boot(mux *http.ServeMux) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.register(mux)
+}

@@ -28,6 +28,8 @@ type Server struct {
 	resourceSubs   map[string]int
 	resourceSubsBy map[resourceSubKey]int
 	lastSeen       map[string]time.Time
+	stamps         map[string]int64
+	stale          map[string]bool
 	hits           map[string]int
 	sessions       map[string][]string
 	tenants        map[string]bool
@@ -86,6 +88,46 @@ func (s *Server) sweepLoop(stop <-chan struct{}) {
 			s.mu.Unlock()
 		}
 	}
+}
+
+// The sweep whose TTL tests read Unix seconds and time.Time.Compare,
+// with the deletes AFTER the select's tick case instead of inside it:
+// the loop that receives from the ticker drives both.
+func (s *Server) sweepUnix(stop <-chan struct{}) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+		}
+		s.mu.Lock()
+		now := time.Now()
+		for k := range s.stale {
+			delete(s.stale, k)
+		}
+		for k, v := range s.stamps {
+			if now.Unix()-v > 600 {
+				delete(s.stamps, k)
+			}
+		}
+		for k, v := range s.lastSeen {
+			if v.Compare(now.Add(-10*time.Minute)) < 0 {
+				delete(s.lastSeen, k)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+// stampUnix records the caller under the sweeps above: both maps are
+// bounded by the ticker loop, quiet.
+func (s *Server) stampUnix(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	s.stamps[r.RemoteAddr] = time.Now().Unix()
+	s.stale[r.RemoteAddr] = true
+	s.lastSeen[r.RemoteAddr] = time.Now()
 }
 
 // Near miss: a caller-driven delete (unsubscribe) bounds nothing; the

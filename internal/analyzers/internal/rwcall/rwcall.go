@@ -9,6 +9,8 @@
 //     WriteHeader(int));
 //   - http.Error, http.Redirect, http.NotFound, http.ServeContent,
 //     http.ServeFile or http.ServeFileFS with x as the writer argument;
+//   - fmt.Fprint/Fprintf/Fprintln, io.WriteString or io.Copy/CopyN
+//     into x;
 //   - json.NewEncoder(x).Encode(...);
 //   - a html/template or text/template Execute/ExecuteTemplate into x;
 //   - a call to a function that writes its own writer parameter (a
