@@ -270,19 +270,8 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: attrs,
 		})
 	case "link", "a":
-		text := propString(props, "text")
-		if text == "" && len(children) > 0 {
-			// Wrap children HTML, html.Link only accepts plain text;
-			// fall through to LinkHTML for HTML children.
-			return html.LinkHTML(html.LinkHTMLConfig{
-				Href:    propString(props, "href"),
-				Content: render.Join(children...),
-				ID:      propString(props, "id"), Class: propString(props, "class"),
-				ExtraAttrs: extraAttrs(props, "id", "class", "href", "text"),
-			})
-		}
-		return html.Link(html.LinkConfig{
-			Href: propString(props, "href"), Text: text,
+		return html.LinkHTML(html.LinkHTMLConfig{
+			Href: propString(props, "href"), Content: render.Join(withTextProp(props, children)...),
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			ExtraAttrs: extraAttrs(props, "id", "class", "href", "text"),
 		})
