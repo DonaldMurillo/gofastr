@@ -667,7 +667,7 @@ few lines, and link the PR or the docs page for the rest.
   stale enqueued snapshot.
 - **An upsert that updates on conflict fires the update hooks and
   audits as an update.** It fired `AfterCreate` every time, including
-  for a conflict that changed nothing, which now fires no hook or
+  for a conflict that changed nothing, which now fires no after hook or
   event.
 - **Replacing an image clears the old image's derived columns.**
   Variants, hashes and placeholders the new upload did not produce kept
