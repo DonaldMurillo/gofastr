@@ -195,6 +195,16 @@ func TestSelectSelectsEmptyValue(t *testing.T) {
 	}
 }
 
+func TestSelectPlaceholderOverridesEmptyFlag(t *testing.T) {
+	markup := string(Select(SelectConfig{Name: "status", Label: "Status", Placeholder: "Choose status", Options: []SelectOption{
+		{Value: "open", Text: "Open"},
+		{Value: "", Text: "All", Selected: true},
+	}}))
+	if !strings.Contains(optionTag(t, markup, "Choose status"), "selected") || strings.Contains(optionTag(t, markup, "All"), "selected") {
+		t.Errorf("placeholder did not win over the flagged empty option:\n%s", markup)
+	}
+}
+
 // With nothing flagged, the browser's default stands: the first
 // option, not a later one whose value happens to be empty.
 func TestSelectUnflaggedKeepsFirstOption(t *testing.T) {
