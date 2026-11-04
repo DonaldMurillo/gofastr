@@ -314,13 +314,14 @@ func (v *viaCallback) sweepCb(ctx context.Context) { // want sweepCb:`doesIO\(\(
 // A closure handed to `go` or defer still runs outside the region.
 func (v *viaCallback) sweepAsync(ctx context.Context) {
 	v.mu.Lock()
-	defer v.mu.Unlock()
 	if time.Since(v.lastSweep) < sweepInterval {
+		v.mu.Unlock()
 		return
 	}
+	v.lastSweep = time.Now()
+	v.mu.Unlock()
 	go func() { _, _ = v.db.ExecContext(ctx, `DELETE FROM t`) }()
 	defer func() { _, _ = v.db.Exec(`DELETE FROM t`) }()
-	v.lastSweep = time.Now()
 }
 
 // A package-level function literal is a handler-table entry: the same
