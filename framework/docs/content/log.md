@@ -346,10 +346,3 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
   headers.** The sink will POST your prod request log to whatever is
   on the other side. Always set `Headers["Authorization"]` (or the
   receiver's equivalent) before pointing the URL at a real endpoint.
-- **Expecting one access entry per request.** With default middleware
-  on, the framework emits a minimal `request` entry from
-  `middleware.LoggingFn(app.Logger)` and this plugin emits a richer
-  `http.access` entry from its own access middleware, and both flow
-  through the same sinks. Either pass `framework.WithoutDefaultMiddleware()`
-  and wire the rest of the chain manually, or filter on `msg` in the
-  consumer.
