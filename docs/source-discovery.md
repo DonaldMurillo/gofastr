@@ -38,6 +38,8 @@ discovered. Empty directories, config-only trees, excluded-only trees, and
 trees whose source files are all unreadable cannot produce a clean report.
 The verify command and build gate already treat this pipeline error as
 failure. See the [contracts reference](../framework/docs/content/contracts.md).
+For analyzer-specific regression and mutation guidance, see the
+[layer-1 static-tool maintenance notes](static-tool-review.md).
 
 ## Maintenance notes
 

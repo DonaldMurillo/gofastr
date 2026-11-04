@@ -2063,6 +2063,7 @@ var (
 
 var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(this\s*\.\s*)?(\w+)\s*\)`)
 var reClassBody = regexp.MustCompile(`\bclass\b[^{};]*\{`)
+var reClassCallable = regexp.MustCompile(`^(?:(static)\s+)?(?:async\s+)?(\w+)\s*(?:\([^)]*\)\s*\{|=\s*(?:async\s+)?(?:function(?:\s+\w+)?\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>|\w+\s*=>))`)
 
 // namedThenBodies appends the bodies of same-file functions passed to
 // .then( by bare reference inside the chain span: the fetched text is
@@ -2117,22 +2118,43 @@ func classThenBody(blank, name string, position int) string {
 	if classOpen < 0 {
 		return ""
 	}
-	method := regexp.MustCompile(`^(?:(static)\s+)?(?:async\s+)?` + name + `\s*\([^)]*\)\s*\{`)
+	targetBodies := map[bool]string{}
+	var callerStatic, callerKnown bool
 	for cursor := classOpen + 1; cursor < classClose; cursor++ {
-		if location := method.FindStringSubmatchIndex(blank[cursor:classClose]); location != nil && (cursor == classOpen+1 || !isJSIdentChar(blank[cursor-1])) {
-			if location[2] >= 0 {
-				return ""
-			}
+		if location := reClassCallable.FindStringSubmatchIndex(blank[cursor:classClose]); location != nil && (cursor == classOpen+1 || !isJSIdentChar(blank[cursor-1])) {
 			open := cursor + location[1] - 1
-			if close := matchDelimForward(blank, open); close >= 0 {
-				return blank[open : close+1]
+			if blank[open] != '{' {
+				open = skipSpace(blank, open+1)
 			}
+			if open >= classClose {
+				break
+			}
+			end := classClose
+			if blank[open] == '{' {
+				if close := matchDelimForward(blank, open); close >= 0 {
+					end = close + 1
+				}
+			} else {
+				end = min(statementEnd(blank, open), classClose)
+			}
+			static := location[2] >= 0
+			if open <= position && position < end {
+				callerStatic, callerKnown = static, true
+			}
+			if blank[cursor+location[4]:cursor+location[5]] == name {
+				targetBodies[static] = blank[open:end]
+			}
+			cursor = end - 1
+			continue
 		}
 		if strings.ContainsRune("({[", rune(blank[cursor])) {
 			if close := matchDelimForward(blank, cursor); close >= 0 {
 				cursor = close
 			}
 		}
+	}
+	if callerKnown {
+		return targetBodies[callerStatic]
 	}
 	return ""
 }
