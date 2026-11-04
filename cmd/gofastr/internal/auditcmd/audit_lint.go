@@ -2,6 +2,7 @@ package auditcmd
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -238,13 +239,21 @@ func stripGoComments(body []byte) []byte {
 	var scanner goscanner.Scanner
 	scanner.Init(file, body, nil, goscanner.ScanComments)
 	for {
-		position, kind, literal := scanner.Scan()
+		position, kind, _ := scanner.Scan()
 		if kind == token.EOF {
 			break
 		}
 		if kind == token.COMMENT {
 			start := file.Offset(position)
-			for offset := start; offset < start+len(literal); offset++ {
+			end := len(body)
+			if body[start+1] == '/' {
+				if offset := bytes.IndexByte(body[start:], '\n'); offset >= 0 {
+					end = start + offset
+				}
+			} else if offset := bytes.Index(body[start+2:], []byte("*/")); offset >= 0 {
+				end = start + 2 + offset + 2
+			}
+			for offset := start; offset < end; offset++ {
 				if masked[offset] != '\n' && masked[offset] != '\r' {
 					masked[offset] = ' '
 				}
