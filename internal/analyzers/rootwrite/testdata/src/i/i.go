@@ -34,12 +34,12 @@ func jobDirSafe(baseDir, id string) error {
 
 // stageViaRoot is the strongest fix: kernel containment.
 func stageViaRoot(baseDir, name string) (*os.File, error) {
-	root, err := os.OpenRoot(filepath.Join(baseDir, "stage", name))
+	root, err := os.OpenRoot(baseDir)
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
-	return root.Create("run-1")
+	return root.Create(filepath.Join("stage", name, "run-1"))
 }
 
 // mkdirOfLiteral creates a fixed subdirectory of a root: nothing
