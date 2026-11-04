@@ -37,6 +37,8 @@ one error envelope every route shares, crud's included:
 absent with no violations.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
+Its destination must be a non-nil pointer; an invalid destination returns
+an error rather than panicking.
 A present higher-priority value replaces an earlier value, including a JSON
 zero value; an omitted property preserves the value already bound.
 `header`, `query` and `path` tags on an untagged embedded struct bind as
