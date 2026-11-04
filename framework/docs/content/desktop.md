@@ -1867,8 +1867,11 @@ crash.
   Linux checks GDK work areas, including
   monitors with negative coordinates. These hosts also discard saved
   sizes outside 1–32767 points, avoiding native integer truncation.
-  Their centered fallback uses the configured window size, fits it to
-  the primary work area, and leaves the saved frame untouched. If no
+  Windows preserves a valid saved size when centering, using the configured
+  size only when the saved dimensions are invalid. Linux centers at the
+  configured size. Both fit the fallback to the primary work area. Native
+  frame callbacks can persist that fallback over the remembered frame;
+  the old off-screen position is not retained for a later relaunch. If no
   work area can be read, the shell uses its default placement.
 - The boot handshake's redirect goes to the main window's remembered
   path instead of `/`, validated against the navigate grammar both

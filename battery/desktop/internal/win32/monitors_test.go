@@ -44,7 +44,7 @@ func TestRestoreMonitorFrameFallback(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			frame := desktop.Frame{X: 30000, Y: 30000, Width: 600, Height: 400}
-			got := RestoreMonitorFrame(&frame, []MonitorWorkArea{{Bounds: test.pixels, DPI: test.monitorDPI}}, test.systemDPI, 600, 400)
+			got := RestoreMonitorFrame(&frame, []MonitorWorkArea{{Bounds: test.pixels, DPI: test.monitorDPI}}, test.systemDPI, 1024, 768)
 			if got == nil || *got != test.want {
 				t.Fatalf("restored frame = %+v, want %+v", got, test.want)
 			}

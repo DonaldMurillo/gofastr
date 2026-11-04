@@ -23,6 +23,7 @@ func RestoreMonitorFrame(frame *desktop.Frame, monitors []MonitorWorkArea, syste
 	}
 	systemDPI = effectiveMonitorDPI(systemDPI, 96)
 	if frame.Width > 0 && frame.Height > 0 && frame.Width <= 32767 && frame.Height <= 32767 {
+		defaultWidth, defaultHeight = frame.Width, frame.Height
 		left := math.Round(float64(frame.X) * float64(systemDPI) / 96)
 		top := math.Round(float64(frame.Y) * float64(systemDPI) / 96)
 		for _, monitor := range monitors {
