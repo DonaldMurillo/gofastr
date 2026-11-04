@@ -680,7 +680,7 @@ func setupServer() *framework.App {
 	widget.MountBuilder(fwApp.Router(), preset.Drawer("ui-sidebar-drawer").
 		Slot("body", app.NewStaticComponent(ui.SidebarBody(sidebarShowcaseConfig))).
 		Hidden().
-		Pages("/components/sidebar"))
+		Pages("/components/sidebar", "/components/sidebardrawertrigger"))
 
 	// Toast stack anchored top-right; auto-mount so every page can fire one.
 	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))
