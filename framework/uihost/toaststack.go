@@ -23,7 +23,11 @@ func (ds *UIHost) ensureToastStack() {
 	}
 	for _, d := range widget.AllForSSR() {
 		if preset.IsToastStack(d) {
-			return
+			for _, route := range ds.coreRouter.Routes() {
+				if route.Method == "GET" && route.Pattern == d.StyleURL() {
+					return
+				}
+			}
 		}
 	}
 	widget.MountBuilder(ds.coreRouter, preset.ToastStack(DefaultToastStack))

@@ -1,5 +1,10 @@
 # Widgets: `core-ui/widget`
 
+The UI host mounts a default toast stack at boot unless the same router
+already serves an app-defined toast stack. Its stylesheet is served at
+`/core-ui/widget/gofastr-toasts/style.css`. A second app in the same
+process gets its own routes even though the widget catalog is global.
+
 Widgets are self-mounting overlay UIs that run on top of any page. They
 are distinct from components:
 

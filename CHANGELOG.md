@@ -557,6 +557,9 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- Mount the default toast stylesheet on each UI host's router. A toast
+  registered by an earlier app in the process no longer leaves later
+  hosts linking a stylesheet that returns 404. See `widgets.md`.
 - **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
   (entity mode); regenerate the CLI to pick these up. Details in
   [app-cli.md](framework/docs/content/app-cli.md):

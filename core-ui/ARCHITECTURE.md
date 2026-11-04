@@ -2561,6 +2561,13 @@ serves from the widget's `StylePath` (default
 group `Mount` was given, the URL the widget catalog publishes; future
 work may collapse the two paths.
 
+The UI host's default toast stack is a per-router boot guarantee. The
+widget catalog is process-global, so a toast registered by another app
+does not prove that this router serves its stylesheet. Boot keeps an
+app's own stack only when its style route is mounted on that router;
+otherwise it mounts the default stack there too. This also applies to
+multiple in-process hosts, not just TCP servers.
+
 Both registries coexist safely: they share the
 `data-cui-style="<name>"` link dedup key on the client, so a widget
 and a registered styled component can never double-load CSS even

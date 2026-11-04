@@ -1,6 +1,9 @@
 package uihost
 
 import (
+	"io"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -8,6 +11,44 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
+
+func TestToastStylesAcrossHosts(t *testing.T) {
+	widget.IsolateForTest(t)
+	for _, name := range []string{"first", "second"} {
+		t.Run(name, func(t *testing.T) {
+			application := app.NewApp(name)
+			application.Register("/", &describedScreen{}, nil)
+			host := New(application, WithNoInlineFirstPaint())
+			routes := router.New()
+			host.Mount(routes)
+			host.ValidateBoot()
+			host.ValidateBoot()
+			server := httptest.NewServer(routes)
+			defer server.Close()
+			definition, ok := widget.Lookup(DefaultToastStack)
+			if !ok {
+				t.Fatal("missing default toast registration")
+			}
+			for _, path := range []string{"/", definition.StyleURL()} {
+				response, err := server.Client().Get(server.URL + path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+				response.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.StatusCode != 200 {
+					t.Fatalf("GET %s: %d", path, response.StatusCode)
+				}
+				if path != "/" && (!strings.Contains(response.Header.Get("Content-Type"), "text/css") || len(body) == 0) {
+					t.Fatal("toast stylesheet is not nonempty CSS")
+				}
+			}
+		})
+	}
+}
 
 func bootedHost(t *testing.T, beforeBoot func(r *router.Router)) {
 	t.Helper()
