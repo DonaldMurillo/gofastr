@@ -13,8 +13,9 @@
 //     are removed. Unreadable query strings are dropped in full.
 //     A URL url.Parse rejects (e.g. a
 //     password containing a bad % escape) is cut TEXTUALLY at the LAST
-//     '@' before the path — the password may itself contain '@', so a
-//     first-'@' cut leaves password material past the mask. Fails closed:
+//     '@' before removing query or fragment text. Raw delimiters inside
+//     malformed passwords cannot safely delimit the authority; ambiguous
+//     at signs across those delimiters discard the whole remainder. Fails closed:
 //     an unparsable URL that carries a userinfo section is treated as
 //     secret-bearing.
 //   - key=value form (libpq): password and sslpassword assignments are dropped
@@ -47,27 +48,21 @@ func Redact(dsn string) string {
 		return u.String()
 	}
 	if i := strings.Index(dsn, "://"); i >= 0 {
-		if query := strings.IndexByte(dsn, '?'); query >= 0 {
-			dsn = dsn[:query]
-		}
-		// URL-form DSN that url.Parse rejected (e.g. a bad % escape in
-		// the password): strip the userinfo textually. The password may
-		// itself contain '@', so cut at the last '@' before the path.
 		rest := dsn[i+3:]
-		end := len(rest)
-		for _, sep := range []byte{'/', '?', '#'} {
-			if j := strings.IndexByte(rest, sep); j >= 0 && j < end {
-				end = j
+		if at := strings.LastIndexByte(rest, '@'); at >= 0 {
+			if separator := strings.IndexAny(rest, "/?#"); separator >= 0 && strings.IndexByte(rest, '@') < separator && separator < at {
+				return dsn[:i+3]
 			}
-		}
-		if at := strings.LastIndex(rest[:end], "@"); at >= 0 {
 			user := rest[:at]
 			if colon := strings.IndexByte(user, ':'); colon >= 0 {
 				user = user[:colon]
 			}
-			return dsn[:i+3] + user + "@" + rest[at+1:]
+			rest = user + "@" + rest[at+1:]
 		}
-		return dsn
+		if query := strings.IndexAny(rest, "?#"); query >= 0 {
+			rest = rest[:query]
+		}
+		return dsn[:i+3] + rest
 	}
 	// key=value form: drop the password pair. Values may be libpq
 	// single-quoted and contain spaces (password='a b'), so split
@@ -93,7 +88,7 @@ func Redact(dsn string) string {
 // false: nothing to hide.
 //
 // Fails CLOSED on URL-form DSNs that url.Parse rejects: if there is a
-// userinfo section we cannot prove holds no credential, treat it as
+// userinfo section or query we cannot prove holds no credential, treat it as
 // secret-bearing rather than passing it through verbatim.
 //
 // Exported as the one credential-shape rule for DSNs (Redact routes
@@ -123,7 +118,7 @@ func HasSecret(dsn string) bool {
 				return true
 			}
 		}
-	} else if i := strings.Index(dsn, "://"); i >= 0 && strings.Contains(dsn[i+3:], "@") {
+	} else if i := strings.Index(dsn, "://"); i >= 0 && strings.ContainsAny(dsn[i+3:], "@?") {
 		return true
 	}
 	return false
