@@ -47,6 +47,29 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
+func TestWatcherPanicUsesStoreLogger(t *testing.T) {
+	var configured, fallback logBuffer
+	previous := slog.Default()
+	slog.SetDefault(fallback.logger())
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	store := Open(filepath.Join(t.TempDir(), "state.json"), configured.logger())
+	defer store.Flush()
+	stop := store.Watch(func(string) { panic("watcher failure\x1b[31m") })
+	defer stop()
+	if err := store.Set("page.counter", 1); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "watcher panic diagnostic", func() bool {
+		return strings.Contains(configured.String()+fallback.String(), "watcher panicked")
+	})
+	if output := configured.String(); !strings.Contains(output, "watcher panicked") || !strings.Contains(output, "page.counter") || !strings.Contains(output, "watcher failure") {
+		t.Fatalf("configured logger missed watcher failure: %q; fallback=%q", output, fallback.String())
+	}
+	if output := fallback.String(); output != "" {
+		t.Fatalf("watcher failure reached the unrelated default logger: %q", output)
+	}
+}
+
 type lockedWriter struct{ b *logBuffer }
 
 func (w *lockedWriter) Write(p []byte) (int, error) {
