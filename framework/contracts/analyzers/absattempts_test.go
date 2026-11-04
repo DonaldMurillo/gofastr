@@ -1,6 +1,7 @@
 package analyzers_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -76,9 +77,21 @@ func (q *DBQueue) claim(db *sql.DB, table string, now, token string) error {
 		WHERE id = (SELECT id FROM %s WHERE status='pending' LIMIT 1)` + "`" + `, table, now, token, table)
 	return err
 }
+
 `,
 	})
 	assertNot(t, ds, contracts.RuleAbsoluteAttempts, "attempts = attempts + 1 is the relative form the rule demands")
+}
+
+func TestCounterSQLLikeTextIsNotFormatVerb(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/counter-like.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := fixture(t, map[string]string{
+		"queue.go": string(source),
+	})
+	assertNot(t, diagnostics, contracts.RuleAbsoluteAttempts, "LIKE %active% is SQL text, not a fmt verb")
 }
 
 // Two positives with no counterpart in this repo: a retry counter on a
