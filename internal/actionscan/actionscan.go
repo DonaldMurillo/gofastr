@@ -86,7 +86,7 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 			i, prev, word = end, '`', ""
 		case c == '\'' || c == '"':
 			i, prev, word = skipString(src, i+1, c), c, ""
-		case c == '(' && regexAllowed(prev, word):
+		case c == '(' && (regexAllowed(prev, word) || prev == ')'):
 			if receiverEnd, ok := parenthesizedReceiverEnd(src, i); ok {
 				if after, called := serverActionEnd(src, receiverEnd); called {
 					return true, after
