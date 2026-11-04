@@ -602,7 +602,7 @@ JSON API applies live in the builders themselves:
 - A relation the caller may not read renders muted (an em dash), never
   the related record's name and never the raw foreign key. A refused
   relation facet draws no options, so the facet is absent. A refused
-  related list draws its notice, never its rows. A refused stat prints
+  related list is omitted without an access notice. A refused stat prints
   the em dash: an aggregate never announces an entity it cannot read.
 
 Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
