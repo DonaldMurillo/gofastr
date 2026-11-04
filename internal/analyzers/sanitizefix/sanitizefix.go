@@ -254,6 +254,20 @@ func regexpVars(pass *analysis.Pass) map[types.Object]string {
 			return true
 		})
 	}
+	for _, file := range pass.Files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			assignment, ok := node.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for _, left := range assignment.Lhs {
+				if identifier, ok := ast.Unparen(left).(*ast.Ident); ok && pass.TypesInfo.Defs[identifier] == nil {
+					delete(out, pass.TypesInfo.ObjectOf(identifier))
+				}
+			}
+			return true
+		})
+	}
 	return out
 }
 

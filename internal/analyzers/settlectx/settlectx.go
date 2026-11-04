@@ -230,18 +230,20 @@ func run(pass *analysis.Pass) (any, error) {
 				if !ok {
 					continue
 				}
-				for _, v := range vs.Values {
-					lit, ok := ast.Unparen(v).(*ast.FuncLit)
-					if !ok || lit.Body == nil {
-						continue
-					}
-					r := a.newResolver(lit.Body)
-					a.checkBody(r, lit.Body)
-					a.checkAudit(r, lit.Body)
-					ast.Inspect(lit.Body, func(n ast.Node) bool {
-						if inner, ok := n.(*ast.FuncLit); ok && inner != lit {
-							a.checkBody(r, inner.Body)
-							a.checkAudit(r, inner.Body)
+				for _, value := range vs.Values {
+					ast.Inspect(value, func(node ast.Node) bool {
+						if literal, ok := node.(*ast.FuncLit); ok && literal.Body != nil {
+							resolver := a.newResolver(literal.Body)
+							a.checkBody(resolver, literal.Body)
+							a.checkAudit(resolver, literal.Body)
+							ast.Inspect(literal.Body, func(node ast.Node) bool {
+								if inner, ok := node.(*ast.FuncLit); ok {
+									a.checkBody(resolver, inner.Body)
+									a.checkAudit(resolver, inner.Body)
+								}
+								return true
+							})
+							return false
 						}
 						return true
 					})

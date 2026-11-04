@@ -24,6 +24,25 @@ var goldenCases = []goldenCase{
 	{"nested.style.css", "nested", KindScoped},
 }
 
+func TestCompileCommentsDoNotSupplyMathWhitespace(t *testing.T) {
+	for _, expression := range []string{
+		"1px/*c*/+ 2px", "1px +/*c*/2px", "1px/*c*/- 2px", "1px -/*c*/2px",
+	} {
+		sheet, diagnostics := Parse(".a{width:calc(" + expression + ")}")
+		if len(diagnostics) != 0 {
+			t.Fatal(diagnostics)
+		}
+		output, err := Compile(sheet, "math", KindScoped, defaultTokens(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := strings.ReplaceAll(expression, "/*c*/", "/**/")
+		if !strings.Contains(output, "calc("+want+")") {
+			t.Errorf("invalid math %q lost its comment-only boundary: %s", expression, output)
+		}
+	}
+}
+
 // compileFile parses and compiles a testdata sheet against the default
 // theme's tokens.
 func compileFile(t *testing.T, tc goldenCase, tokens map[string]string) string {

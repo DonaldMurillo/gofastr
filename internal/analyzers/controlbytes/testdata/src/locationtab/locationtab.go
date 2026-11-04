@@ -98,7 +98,7 @@ func refuseNewlineCtl(s string) (string, error) {
 	}
 	var b strings.Builder
 	for i := range len(s) {
-		if c := s[i]; c >= 0x20 {
+		if c := s[i]; c >= 0x20 && c != 0x7f {
 			b.WriteByte(c)
 		}
 	}

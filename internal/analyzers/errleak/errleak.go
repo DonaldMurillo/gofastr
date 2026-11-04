@@ -75,7 +75,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -250,10 +250,10 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 				return true
 			}
 			s, ok := constString(pass, args[0])
-			if !ok || !textVerb.MatchString(s) {
+			if !ok {
 				return true
 			}
-			args = args[1:]
+			args = formattedTextArgs(s, args[1:])
 		default:
 			return true
 		}
@@ -274,6 +274,50 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 
 var errorInterface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 
-// textVerb matches a format verb that renders its operand as text,
-// with or without an explicit [n] argument index.
-var textVerb = regexp.MustCompile(`%(\[\d+\])?[-+# 0-9.*]*[vsq]`)
+func formattedTextArgs(format string, args []ast.Expr) []ast.Expr {
+	var text []ast.Expr
+	argument := 0
+	reordered := false
+	for offset := 0; offset < len(format); offset++ {
+		if format[offset] != '%' {
+			continue
+		}
+	directive:
+		for offset++; offset < len(format); offset++ {
+			character := format[offset]
+			switch {
+			case character == '[':
+				reordered = true
+				end := strings.IndexByte(format[offset:], ']')
+				if end < 0 {
+					return text
+				}
+				index, err := strconv.Atoi(format[offset+1 : offset+end])
+				if err != nil || index < 1 {
+					return text
+				}
+				argument = index - 1
+				offset += end
+			case character == '*':
+				if argument < len(args) {
+					argument++
+				}
+			case strings.ContainsRune("-+# .0123456789", rune(character)):
+			case character == '%':
+				break directive
+			default:
+				if strings.ContainsRune("vsq", rune(character)) && argument < len(args) {
+					text = append(text, args[argument])
+				}
+				if argument < len(args) {
+					argument++
+				}
+				break directive
+			}
+		}
+	}
+	if !reordered && argument < len(args) {
+		text = append(text, args[argument:]...)
+	}
+	return text
+}

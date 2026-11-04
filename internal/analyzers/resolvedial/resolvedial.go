@@ -372,7 +372,7 @@ func nilTransportInstall(pass *analysis.Pass, cond ast.Expr, body []ast.Stmt) bo
 			// Transport is the same install one variable up: the
 			// guarded transport rides a new client, and a
 			// caller-supplied one still escapes.
-			if id, ok := ast.Unparen(lhs).(*ast.Ident); ok && isClient(pass, id) &&
+			if isClient(pass, lhs) &&
 				i < len(as.Rhs) && clientLiteralWithTransport(pass, as.Rhs[i]) {
 				assigned = true
 				break

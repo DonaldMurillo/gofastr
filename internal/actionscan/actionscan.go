@@ -86,6 +86,13 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 			i, prev, word = end, '`', ""
 		case c == '\'' || c == '"':
 			i, prev, word = skipString(src, i+1, c), c, ""
+		case c == '(' && regexAllowed(prev, word):
+			if receiverEnd, ok := parenthesizedReceiverEnd(src, i); ok {
+				if after, called := serverActionEnd(src, receiverEnd); called {
+					return true, after
+				}
+			}
+			i, prev, word = i+1, c, ""
 		case inInterpolation && c == '{':
 			depth++
 			i, prev, word = i+1, c, ""
@@ -111,6 +118,25 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 		}
 	}
 	return false, i
+}
+
+func parenthesizedReceiverEnd(src string, start int) (int, bool) {
+	position, depth := start, 0
+	for position < len(src) && src[position] == '(' {
+		depth++
+		position = skipTrivia(src, position+1)
+	}
+	if position >= len(src) || src[position] != 'G' {
+		return 0, false
+	}
+	position = skipTrivia(src, position+1)
+	for range depth {
+		if position >= len(src) || src[position] != ')' {
+			return 0, false
+		}
+		position = skipTrivia(src, position+1)
+	}
+	return position, true
 }
 
 func serverActionEnd(src string, start int) (int, bool) {

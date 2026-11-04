@@ -259,18 +259,22 @@ func receiverType(pass *analysis.Pass, sel *ast.SelectorExpr) string {
 // refused at encode time with "unsupported key type", an error a
 // dropped Encode swallows.
 func encodableMapKey(t types.Type) bool {
-	for _, tt := range []types.Type{t, types.NewPointer(t)} {
-		if obj, _, _ := types.LookupFieldOrMethod(tt, true, nil, "MarshalText"); obj != nil {
-			if _, ok := obj.(*types.Func); ok {
-				return true
-			}
-		}
+	if types.Implements(t, textMarshaler) {
+		return true
 	}
 	if b, ok := t.Underlying().(*types.Basic); ok {
 		return b.Info()&(types.IsString|types.IsInteger) != 0
 	}
 	return false
 }
+
+var textMarshaler = types.NewInterfaceType([]*types.Func{
+	types.NewFunc(token.NoPos, nil, "MarshalText", types.NewSignatureType(nil, nil, nil, nil,
+		types.NewTuple(
+			types.NewVar(token.NoPos, nil, "", types.NewSlice(types.Typ[types.Byte])),
+			types.NewVar(token.NoPos, nil, "", types.Universe.Lookup("error").Type()),
+		), false)),
+}, nil).Complete()
 
 // isYAML reports whether an import path is one of the yaml packages
 // whose Unmarshal is in the family.

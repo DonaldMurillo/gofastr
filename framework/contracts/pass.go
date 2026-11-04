@@ -85,8 +85,8 @@ type Pass struct {
 // NewPass discovers every source file under root and returns a pass ready
 // for analyzers. Discovery and source reading are eager (one walk), while
 // AST parsing is lazy. Unreadable roots fail discovery; unreadable files
-// are recorded by [Pass.Unparsed]. An empty pass remains inspectable, but
-// [Run] refuses to analyze it.
+// are recorded by [Pass.Unparsed]. Empty and incomplete passes remain
+// inspectable, but [Run] refuses to analyze them.
 func NewPass(root string, cfg *Config) (*Pass, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -370,8 +370,8 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 }
 
 // Unparsed returns the files whose source could not be read or parsed,
-// keyed by path, with the read or parser error. A tree mid-edit is the
-// normal case for the dev loop, so this is reported rather than fatal.
+// keyed by path, with the read or parser error. NewPass remains inspectable;
+// Run refuses unreadable discovery and marks later parse failures incomplete.
 func (p *Pass) Unparsed() map[string]string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -380,6 +380,19 @@ func (p *Pass) Unparsed() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func (p *Pass) discoveryError() error {
+	unparsed := p.Unparsed()
+	if len(unparsed) == 0 {
+		return nil
+	}
+	failures := make([]string, 0, len(unparsed))
+	for path, reason := range unparsed {
+		failures = append(failures, fmt.Sprintf("%q: %q", path, reason))
+	}
+	sort.Strings(failures)
+	return fmt.Errorf("contracts: source discovery incomplete: %s", strings.Join(failures, "; "))
 }
 
 // Position resolves an AST position into the pass's line/column space.

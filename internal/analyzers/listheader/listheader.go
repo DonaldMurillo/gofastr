@@ -288,12 +288,13 @@ func isListGet(pass *analysis.Pass, call *ast.CallExpr) bool {
 // var declaration binds like an assignment.
 func boundLocal(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.Node]ast.Node) types.Object {
 	e := ast.Expr(call)
-	for hops := 0; hops < 3; hops++ {
+	for {
 		switch p := parents[e].(type) {
+		case *ast.ParenExpr:
+			e = p
+			continue
 		case *ast.CallExpr:
-			// The value rides inside a wrapper call whose result is
-			// what gets bound.
-			if p.Fun == e {
+			if len(p.Args) == 0 || p.Args[0] != e || !headerValueWrapper(pass, p) {
 				return nil
 			}
 			e = p
@@ -326,5 +327,13 @@ func boundLocal(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.Node]as
 		}
 		return nil
 	}
-	return nil
+}
+
+func headerValueWrapper(pass *analysis.Pass, call *ast.CallExpr) bool {
+	switch astx.PkgFuncName(pass, ast.Unparen(call.Fun)) {
+	case "strings.TrimSpace", "strings.Trim", "strings.TrimLeft", "strings.TrimRight",
+		"strings.TrimPrefix", "strings.TrimSuffix", "strings.ToLower", "strings.ToUpper", "strings.Clone":
+		return true
+	}
+	return false
 }

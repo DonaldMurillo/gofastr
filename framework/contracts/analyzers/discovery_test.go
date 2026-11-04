@@ -79,14 +79,8 @@ func TestRunReportsUnreadableSources(t *testing.T) {
 				}
 				return
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if report.Unparsed != 1 {
-				t.Fatalf("report.Unparsed = %d, want 1", report.Unparsed)
-			}
-			if text := contracts.FormatText(report, contracts.TextOptions{}); !strings.Contains(text, "1 file could not be read or parsed") {
-				t.Fatalf("report omits the source read failure:\n%s", text)
+			if report != nil || err == nil || !strings.Contains(err.Error(), "unreadable.go") {
+				t.Fatalf("Run = %v, %v; want an explicit source-discovery failure", report, err)
 			}
 		})
 	}

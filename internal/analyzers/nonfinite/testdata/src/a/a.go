@@ -188,15 +188,15 @@ func elementStore(env map[string]string, out map[string]float64) error {
 	return nil
 }
 
-// elementStoreGated: the same store, gated on the stored target.
+// elementStoreGated: validate the local before publishing the value.
 func elementStoreGated(env map[string]string, out map[string]float64) error {
-	var err error
-	out["rate"], err = strconv.ParseFloat(env["RATE"], 64)
+	value, err := strconv.ParseFloat(env["RATE"], 64)
 	if err != nil {
 		return err
 	}
-	if math.IsNaN(out["rate"]) || math.IsInf(out["rate"], 0) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return errNonFinite
 	}
+	out["rate"] = value
 	return nil
 }

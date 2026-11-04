@@ -648,10 +648,12 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			w := x.(*winWindow)
 			if byte(wparam) == waInactive {
 				if w.shell.onBlur != nil {
-					go w.shell.onBlur(w.id)
+					onBlur, id := w.shell.onBlur, w.id
+					deliverOnGoroutine(func() { onBlur(id) })
 				}
 			} else if w.shell.onFocus != nil {
-				go w.shell.onFocus(w.id)
+				onFocus, id := w.shell.onFocus, w.id
+				deliverOnGoroutine(func() { onFocus(id) })
 			}
 		}
 	}
@@ -699,7 +701,8 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 					w.controller = 0
 				}
 				if cb != nil {
-					go cb(w.id)
+					id := w.id
+					deliverOnGoroutine(func() { cb(id) })
 				}
 			}
 			if isMain {
@@ -1209,7 +1212,8 @@ func (w *winWindow) reportFrame() {
 	f := frameFromWindowRect(w.hwnd, l, t, r, b)
 	w.frame = f
 	if w.shell.onFrame != nil {
-		go w.shell.onFrame(w.id, f)
+		onFrame, id := w.shell.onFrame, w.id
+		deliverOnGoroutine(func() { onFrame(id, f) })
 	}
 }
 

@@ -420,7 +420,6 @@ func (c *checker) checkMediaWidths(r *Rule) {
 					Message:  c.rawWidthMessage(v.Text),
 				})
 			}
-			continue
 		}
 		// The feature's value: after ':' or a comparison operator.
 		j := i + 1

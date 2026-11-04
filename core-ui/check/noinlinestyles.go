@@ -91,6 +91,11 @@ func LintNoInlineStyles(dir string) (*Result, error) {
 		// it stale when it matches nothing — the same split the script
 		// lane made for GOFASTR1805.
 		allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1804")
+		for index, line := range strings.Split(string(raw), "\n") {
+			if allowed[index+1] && strings.TrimSpace(line) == "" {
+				allowed[index+2] = true
+			}
+		}
 		sub := &Result{}
 		scanInlineStyles(fset, file, filename, sub)
 		for _, v := range sub.Violations {

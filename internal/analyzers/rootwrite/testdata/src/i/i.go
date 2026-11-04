@@ -7,8 +7,10 @@
 package i
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // jobDir creates one caller-named directory under baseDir: a
@@ -24,22 +26,33 @@ func stageFile(baseDir, name string) (*os.File, error) {
 
 // jobDirSafe is the fix posture: resolve the chain before creating.
 func jobDirSafe(baseDir, id string) error {
-	p := filepath.Join(baseDir, "jobs", id)
-	real, err := filepath.EvalSymlinks(p)
+	root, err := filepath.EvalSymlinks(baseDir)
 	if err != nil {
 		return err
 	}
-	return os.Mkdir(real, 0o700)
+	p := filepath.Join(root, "jobs", id)
+	parent, err := filepath.EvalSymlinks(filepath.Dir(p))
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(root, parent)
+	if err != nil {
+		return err
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return errors.New("parent escapes base directory")
+	}
+	return os.Mkdir(filepath.Join(parent, filepath.Base(p)), 0o700)
 }
 
 // stageViaRoot is the strongest fix: kernel containment.
 func stageViaRoot(baseDir, name string) (*os.File, error) {
-	root, err := os.OpenRoot(filepath.Join(baseDir, "stage", name))
+	root, err := os.OpenRoot(baseDir)
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
-	return root.Create("run-1")
+	return root.Create(filepath.Join("stage", name, "run-1"))
 }
 
 // mkdirOfLiteral creates a fixed subdirectory of a root: nothing

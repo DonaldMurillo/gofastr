@@ -195,7 +195,7 @@ func (r *Report) noteSuppressed(ruleID, file string) {
 }
 
 func (r *Report) Passed() bool {
-	if len(r.Errors) > 0 {
+	if len(r.Errors) > 0 || r.Unparsed > 0 {
 		return false
 	}
 	// A failed vet stage is the same case: the analyzers ran against code

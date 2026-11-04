@@ -9,6 +9,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
+func TestSkipLanePhraseInCommentDoesNotHideDebt(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/debt_test.go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := testingRun(t, contracts.DefaultConfig(), map[string]string{
+		"debt_test.go": string(source),
+	})
+	if findings := countRule(t, diagnostics, contracts.RuleDisabledTest); len(findings) != 1 {
+		t.Fatalf("want one debt skip and one quiet lane skip; got %v", findings)
+	}
+}
+
 // testingRun is hookFixture generalised to a file map and an explicit
 // config: the disabled-test rule needs _test.go files and the coverage
 // floor needs a profile plus a configured minimum, neither of which the

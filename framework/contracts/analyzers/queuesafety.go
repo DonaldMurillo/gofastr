@@ -90,7 +90,7 @@ var (
 	// the sqlite ?) or a Sprintf verb, including the argument-index and
 	// width spellings this repo's own SQL uses (%[2]s, %02d): \d+
 	// consumes the whole number, so $12 needs no lookahead of its own.
-	reHostValue = regexp.MustCompile(`\$\d+|\?|%(?:\[\d+\])?[#0-9.]*[a-z]`)
+	reHostValue = regexp.MustCompile(`\$\d+|\?|%(?:\[\d+\])?[#0-9.]*[vTtbcdoOxXUeEfFgGspq]`)
 )
 
 // setValue returns one SET assignment's value expression: the text up

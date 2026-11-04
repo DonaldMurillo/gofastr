@@ -454,40 +454,36 @@ func mentionsErr(pass *analysis.Pass, cond ast.Expr, errIDs map[types.Object]boo
 // impliesNil: e true implies every errID in it is nil (`err == nil`,
 // `err == nil && released`).
 func impliesNil(pass *analysis.Pass, e ast.Expr, errIDs map[types.Object]bool) bool {
-	switch t := ast.Unparen(e).(type) {
-	case *ast.UnaryExpr:
-		if t.Op == token.NOT {
-			return forcedByErr(pass, t.X, errIDs)
-		}
-	case *ast.BinaryExpr:
-		switch t.Op {
-		case token.LAND:
-			return impliesNil(pass, t.X, errIDs) || impliesNil(pass, t.Y, errIDs)
-		case token.LOR:
-			return impliesNil(pass, t.X, errIDs) && impliesNil(pass, t.Y, errIDs)
-		case token.EQL:
-			return isErrID(pass, t.X, errIDs) && isNil(t.Y) || isNil(t.X) && isErrID(pass, t.Y, errIDs)
-		}
-	}
-	return false
+	return errForces(pass, e, errIDs, true)
 }
 
 // forcedByErr: a non-nil errID forces e true (`err != nil`, the
 // disjunction `err != nil || !released`): the else of e cannot hold
 // the failure.
 func forcedByErr(pass *analysis.Pass, e ast.Expr, errIDs map[types.Object]bool) bool {
+	return errForces(pass, e, errIDs, false)
+}
+
+// errForces is the shared walk: with nilSide, e true implies err == nil;
+// without it, err != nil forces e true. The two are duals, so a negation
+// swaps sides and the connectives and comparison trade places.
+func errForces(pass *analysis.Pass, e ast.Expr, errIDs map[types.Object]bool, nilSide bool) bool {
+	either, both, cmp := token.LAND, token.LOR, token.EQL
+	if !nilSide {
+		either, both, cmp = token.LOR, token.LAND, token.NEQ
+	}
 	switch t := ast.Unparen(e).(type) {
 	case *ast.UnaryExpr:
 		if t.Op == token.NOT {
-			return impliesNil(pass, t.X, errIDs)
+			return errForces(pass, t.X, errIDs, !nilSide)
 		}
 	case *ast.BinaryExpr:
 		switch t.Op {
-		case token.LOR:
-			return forcedByErr(pass, t.X, errIDs) || forcedByErr(pass, t.Y, errIDs)
-		case token.LAND:
-			return forcedByErr(pass, t.X, errIDs) && forcedByErr(pass, t.Y, errIDs)
-		case token.NEQ:
+		case either:
+			return errForces(pass, t.X, errIDs, nilSide) || errForces(pass, t.Y, errIDs, nilSide)
+		case both:
+			return errForces(pass, t.X, errIDs, nilSide) && errForces(pass, t.Y, errIDs, nilSide)
+		case cmp:
 			return isErrID(pass, t.X, errIDs) && isNil(t.Y) || isNil(t.X) && isErrID(pass, t.Y, errIDs)
 		}
 	}

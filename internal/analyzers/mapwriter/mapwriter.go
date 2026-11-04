@@ -647,14 +647,24 @@ func wireShaped(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 	return false
 }
 
-// mapLiteral reports whether the ranged map is a non-empty composite
+// mapLiteral reports whether the ranged map is a multi-entry composite
 // literal, or a local bound to one: a fixed key set the author wrote in an
 // order, which the range then randomizes (core/settings' required-field
 // loops).
 func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass) bool {
 	x = ast.Unparen(x)
-	if id, ok := x.(*ast.Ident); ok {
-		src, found := bound[pass.TypesInfo.ObjectOf(id)]
+	seen := map[types.Object]bool{}
+	for {
+		identifier, ok := x.(*ast.Ident)
+		if !ok {
+			break
+		}
+		object := pass.TypesInfo.ObjectOf(identifier)
+		if seen[object] {
+			return false
+		}
+		seen[object] = true
+		src, found := bound[object]
 		if !found {
 			return false
 		}
@@ -664,7 +674,7 @@ func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass
 	// configuration shape this arm leaves alone; only written keys are a
 	// fixed set.
 	lit, ok := x.(*ast.CompositeLit)
-	if !ok || len(lit.Elts) == 0 {
+	if !ok || len(lit.Elts) < 2 {
 		return false
 	}
 	_, isMap := pass.TypesInfo.TypeOf(lit).Underlying().(*types.Map)

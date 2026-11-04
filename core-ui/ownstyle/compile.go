@@ -756,8 +756,11 @@ func emitRun(toks []Token, mode emitMode) string {
 			hadComment = true
 			continue
 		}
-		if !first && sep(prev, t, hadWS || (mode == emitValue && hadComment), mode) {
+		mathBoundary := mode == emitValue && (isAddDelim(prev) || isAddDelim(t))
+		if !first && sep(prev, t, hadWS || (mode == emitValue && hadComment && !mathBoundary), mode) {
 			sb.WriteByte(' ')
+		} else if !first && mathBoundary && hadComment && !hadWS {
+			sb.WriteString("/**/")
 		} else if !first && mode == emitSelector && hadComment && !hadWS && selectorTokensMerge(prev, t) {
 			sb.WriteString("/**/")
 		}

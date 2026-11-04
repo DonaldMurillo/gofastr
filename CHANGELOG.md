@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`mcp.Server.SetSSEStreamLimit(n)`** bounds the SSE notification
+  streams a server holds across every caller (default 1024; a connect
+  past it gets `429`). The per-caller seat cap never bounded the total:
+  an anonymous caller is keyed by peer host, so a client with many IPv6
+  addresses got a cap for each one. `n < 0` lifts the limit. See
+  `mcp.md`.
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
   `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
   with signtool, timestamped through `--timestamp-url`, and `--zip`
@@ -713,6 +719,19 @@ few lines, and link the PR or the docs page for the rest.
   detached from the window.
 - **The ecommerce example prices order lines from the catalog.** The
   client sent the unit price, and the order total trusted it.
+- **A handler's 404 or 503 survives `Metrics` and `Tracing` when it
+  streams an empty or failing reader.** Their `ReadFrom` wrote a 200
+  before copying, so the handler's later status never reached the
+  client. They now record the 200 only once bytes are copied.
+- **A rate-limit key that starts with `sha256:` no longer shares a
+  bucket with a hashed key.** The limiter hashes an unstorable key to
+  `sha256:<hex>` and passed any other key through, so a caller could
+  send that spelling and spend another caller's budget. Keys with the
+  prefix are hashed too.
+- **`pluginhost.NewAssetServer` keeps disk-backed assets inside their
+  directory.** An `os.DirFS` follows a symlink at an asset's path, so
+  a link pointing outside the plugin's directory was served at the
+  asset route. Disk filesystems are now read through `os.Root`.
 - **An A2A artifact with no parts encodes `"parts": []`, not `null`.**
   Recording an artifact without parts, or appending to one stored
   without them, kept a nil slice, so a client that requires the array

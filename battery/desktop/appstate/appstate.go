@@ -337,16 +337,16 @@ func (s *Store) notify(key string) {
 	}
 	s.mu.Unlock()
 	for _, fn := range fns {
-		deliver(fn, key)
+		deliver(s.logger, fn, key)
 	}
 }
 
 // deliver runs one watcher on its own goroutine with a recover.
-func deliver(fn func(string), key string) {
+func deliver(logger *slog.Logger, fn func(string), key string) {
 	go func() {
 		defer func() {
 			if v := recover(); v != nil {
-				slog.Default().Error("appstate: watcher panicked", "key", key, "panic", textsafe.Recovered(v))
+				logger.Error("appstate: watcher panicked", "key", key, "panic", textsafe.Recovered(v))
 			}
 		}()
 		fn(key)

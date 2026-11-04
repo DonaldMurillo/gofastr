@@ -152,6 +152,9 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	if len(p.files) == 0 {
 		return nil, fmt.Errorf("contracts: no analysable source files discovered under %q", p.Root)
 	}
+	if err := p.discoveryError(); err != nil {
+		return nil, err
+	}
 	selected := make([]*Analyzer, 0)
 	for _, a := range Analyzers() {
 		if opts.wants(a) {

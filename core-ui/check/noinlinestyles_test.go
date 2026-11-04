@@ -17,6 +17,24 @@ func writeStyleFixture(t *testing.T, body string) string {
 	return dir
 }
 
+func TestInlineStyleAllowMarkerSkipsBlankLines(t *testing.T) {
+	source, err := os.ReadFile("testdata/review-inline-style.go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fixture.go"), source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Violations) != 1 || result.Violations[0].Line != 8 {
+		t.Fatalf("want only the unmarked line 8, got %v", result.Violations)
+	}
+}
+
 func TestLintNoInlineStyles_FlagsRawAttributeInString(t *testing.T) {
 	dir := writeStyleFixture(t, `
 var x = "<div style=\"color:red\">hi</div>"

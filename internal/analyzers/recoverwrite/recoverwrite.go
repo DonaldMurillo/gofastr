@@ -228,6 +228,8 @@ func markWritten(e ast.Expr, written map[*ast.Ident]bool) {
 			e = x.X
 		case *ast.IndexExpr:
 			e = x.X
+		case *ast.StarExpr:
+			e = x.X
 		default:
 			return
 		}
