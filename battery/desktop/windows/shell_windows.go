@@ -882,8 +882,8 @@ func (s *winShell) createNativeWindow(id, title string, width, height int, style
 		var screens []desktop.Frame
 		for _, area := range win32.MonitorWorkAreas() {
 			screens = append(screens, desktop.Frame{
-				X: pixelsToPoints(area.Left, screenDPI), Y: pixelsToPoints(area.Top, screenDPI),
-				Width: pixelsToPoints(area.Right-area.Left, screenDPI), Height: pixelsToPoints(area.Bottom-area.Top, screenDPI),
+				X: int(area.Left), Y: int(area.Top),
+				Width: int(area.Right - area.Left), Height: int(area.Bottom - area.Top),
 			})
 		}
 		frame = placement.Restore(frame, screens, width, height)
