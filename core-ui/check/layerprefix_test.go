@@ -7,6 +7,16 @@ import (
 	"testing"
 )
 
+func TestLayerPrefixAfterQuotedDivision(t *testing.T) {
+	result, err := LintLayerPrefixJS("testdata/review-division.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Violations) != 5 {
+		t.Errorf("got %d violations, want 5: %v", len(result.Violations), result)
+	}
+}
+
 // Reduced from the v0.86 kernel sources the rule exists for: the toast
 // builder (frag/kernel.js → headless/feedback.js), the form-errors
 // module and the copy module each named a kit class.
