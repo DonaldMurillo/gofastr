@@ -42,6 +42,9 @@ DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
 
+Navigation refreshes a supplied CSRF meta token from full documents and
+partial head carriers. Responses omitting the token retain the current one.
+
 Envelope and core navigation share percent-decoded segment normalization
 and typed-parameter matching, including deferred-region route addresses.
 

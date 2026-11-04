@@ -304,6 +304,9 @@ token from scripts that read the cookie. `ui.Form`'s hidden field and
 the auth battery's `CSRFToken` / `CSRFTokenFromCtx` already return masked
 tokens, so a `<meta name="csrf-token">` rendered from them (the tag the
 runtime forwards as `X-CSRF-Token`) is masked too.
+Client-side navigation refreshes this meta token when the fetched document
+or partial head carrier supplies it, including after a signing-key rotation.
+An omitted token does not clear the current one.
 `middleware.TokenFromContext` stays raw: never render it.
 
 ### Re-dispatched writes

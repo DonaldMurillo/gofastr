@@ -208,10 +208,20 @@
     }
     document.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]').forEach(node => node.remove());
     incoming.forEach(node => document.head.appendChild(node));
+    const csrf = source.querySelector('meta[name="csrf-token"]');
+    if (csrf) {
+      let token = document.head.querySelector('meta[name="csrf-token"]');
+      if (!token) {
+        token = document.createElement('meta');
+        token.name = 'csrf-token';
+        document.head.appendChild(token);
+      }
+      token.content = csrf.content;
+    }
   };
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
-    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')).map(node => node.outerHTML).join(''));
+    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta],meta[name="csrf-token"]')).map(node => node.outerHTML).join(''));
     for (const attr of ['lang', 'dir']) {
       const value = source.documentElement[attr];
       if (value) carrier.setAttribute('data-cui-' + attr, value);

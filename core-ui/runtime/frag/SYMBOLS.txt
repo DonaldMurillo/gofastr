@@ -234,8 +234,8 @@ nav	2	_persistScroll
 nav	2	_plainLoadPage
 nav	2	_pushPub
 nav	2	_pushURL
-nav	2	_routeSeg
 nav	2	_routeMatch
+nav	2	_routeSeg
 nav	2	_scrollStore
 nav	2	_scrollTimer
 nav	2	_segTest
@@ -288,6 +288,7 @@ nav	4	carrier
 nav	4	cat
 nav	4	changed
 nav	4	clean
+nav	4	csrf
 nav	4	cur
 nav	4	d
 nav	4	data
@@ -364,6 +365,7 @@ nav	6	rs
 nav	6	slot
 nav	6	swapKey
 nav	6	title
+nav	6	token
 nav	6	u
 nav	6	v
 nav	6	v
