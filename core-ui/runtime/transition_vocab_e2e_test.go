@@ -32,7 +32,7 @@ func TestTransitionPickUsesIncomingVocab(t *testing.T) {
 			`<head><title>vocab</title>` + routes + `</head><body>` +
 			`<div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a></nav>` +
-			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main" data-cui-vt="main">` + inner + `</main>` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main" data-cui-vt="main"><aside data-cui-outlet="l:site#aside"></aside>` + inner + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	mux := http.NewServeMux()
@@ -87,5 +87,17 @@ func TestTransitionPickUsesIncomingVocab(t *testing.T) {
 	}
 	if vt != "slide" {
 		t.Fatalf("the entry recorded vt %q, want slide (the Back edge mirrors it)", vt)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.navigate('/'); true`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	waitTextExact(t, ctx, `#main`, "HOME")
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.navigate('/a'); true`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	waitTextExact(t, ctx, `#main`, "A")
+	got = read()
+	if len(got) < 3 || strings.Join(got[len(got)-1], ",") != "forward,slide" {
+		t.Fatalf("cached transition types = %v, want forward,slide", got)
 	}
 }

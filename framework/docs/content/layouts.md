@@ -591,6 +591,10 @@ outlet's (or a deferred part).
 
 ## Transitions
 
+Cached navigations retain the page answer's keyed transition, including on
+pages with outlets; revisiting a cached page uses the same transition pick
+as its fetched answer.
+
 **Use a transition when** a swap should read as motion — the
 master-detail slide, a crossfade that avoids a flash of identical
 chrome. Typed values on the spec; the framework generates the CSS:

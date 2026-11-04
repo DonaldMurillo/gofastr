@@ -99,7 +99,7 @@
     return c.innerHTML;
   }
 
-  const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts, vt) => {
+  const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts, vt = NS._navHooks.transition?.pick()) => {
     if (screenCache.has(path)) screenCache.delete(path);
     if (screenCache.size >= MAX_CACHE_SIZE) {
       screenCache.delete(screenCache.keys().next().value);
