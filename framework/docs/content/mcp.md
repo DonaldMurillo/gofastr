@@ -519,6 +519,11 @@ default; `SetSSESeatOverflow(mcp.SeatOverflowEvictOldest)` instead
 closes that caller's oldest stream and seats the new one, the
 reconnect-friendly policy for hosts whose clients churn streams.
 
+The server also holds at most 1024 streams across all callers, since an
+anonymous caller with many addresses gets a seat cap per address. A
+connect past that limit is answered `429` whatever the seat policy.
+`SetSSEStreamLimit(n)` changes it; `n < 0` lifts it.
+
 Two transport limits, both inherited from the stream being per process:
 
 - The HTTP transport has no session id linking a POST to a GET stream,

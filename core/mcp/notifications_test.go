@@ -905,3 +905,24 @@ func TestGatedRegistrationWithholdsListChanged(t *testing.T) {
 	}
 	expectNoSSE(t, anonEvents, "prompts list_changed for a caller the prompt gate refuses")
 }
+
+func TestSSEStreamLimitIsConfigurable(t *testing.T) {
+	server := NewServer()
+	server.SetSSEStreamLimit(2)
+	for index := range 2 {
+		if _, ok := server.addSSESubscriber(context.Background(), fmt.Sprintf("host-%d", index)); !ok {
+			t.Fatalf("stream %d refused under a limit of 2", index)
+		}
+	}
+	if _, ok := server.addSSESubscriber(context.Background(), "host-2"); ok {
+		t.Fatal("a third caller was seated under a limit of 2")
+	}
+
+	lifted := NewServer()
+	lifted.SetSSEStreamLimit(-1)
+	for index := range 1025 {
+		if _, ok := lifted.addSSESubscriber(context.Background(), fmt.Sprintf("host-%d", index)); !ok {
+			t.Fatalf("stream %d refused with the limit lifted", index)
+		}
+	}
+}

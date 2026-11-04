@@ -232,6 +232,7 @@ type Server struct {
 	// policy pops and removeSSESubscriber splices; it shadows sseSubs
 	// and is guarded by the same sseMu.
 	sseSeatCap      int
+	sseStreamLimit  int
 	sseSeatOverflow SeatOverflowPolicy
 	sseSeatOrder    map[string][]*sseSubscriber
 	// sseKeepAlive overrides sseKeepAliveEvery, the interval at which an

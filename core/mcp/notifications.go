@@ -31,7 +31,11 @@ const maxResourceURIBytes = 2048
 // (expireResourceSubsIfIdleLocked) frees room.
 const maxResourceSubscriptions = 1024
 
-const maxSSESubscribers = 1024
+// defaultSSEStreamLimit bounds every caller's notification streams
+// together. The per-caller seat cap cannot: anonymous callers are keyed
+// by peer host, and one client can hold many IPv6 addresses.
+// SetSSEStreamLimit changes it.
+const defaultSSEStreamLimit = 1024
 
 // maxResourceSubscriptionPairs caps how many (caller, uri) subscriptions
 // the per-caller record (Server.resourceSubsBy) retains, across every
@@ -115,7 +119,7 @@ func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sse
 		close(oldest.ch)
 		s.expireResourceSubsIfIdleLocked()
 	}
-	if len(s.sseSubs) >= maxSSESubscribers {
+	if limit := s.streamLimitLocked(); limit >= 0 && len(s.sseSubs) >= limit {
 		return nil, false
 	}
 	sub = &sseSubscriber{
