@@ -255,6 +255,9 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 
 ### Status & banners
 
+The OptimizedImage gallery uses an in-memory PNG dashboard mockup with
+matching intrinsic dimensions. It needs no separate static image asset.
+
 The LanguageMenu gallery shows disabled language choices because the docs
 site does not register locale-prefixed pages. A live `ui.LanguageMenu` reads
 the host's real locale configuration from its request context.

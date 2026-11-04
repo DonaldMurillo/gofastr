@@ -1022,7 +1022,11 @@ const page = await api.posts.list({ limit: 25 });`},
 
 	// ---------- Media ----------
 	{"image", "OptimizedImage", "Media", "Image with width/height + lazy + srcset.", func() render.HTML {
-		return ui.OptimizedImage(ui.OptimizedImageConfig{Src: "/__gofastr/app.css", Width: 320, Height: 180, Alt: "placeholder"})
+		source, err := demoMockup(320, 180).PNG().DataURL()
+		if err != nil {
+			return note(render.Text("Demo image could not be encoded."))
+		}
+		return ui.OptimizedImage(ui.OptimizedImageConfig{Src: source, Width: 320, Height: 180, Alt: "Demo dashboard"})
 	}},
 	{"icon", "Icon", "Media", "Search Feather and Lucide icons by name or category. Click an icon to copy its name.", iconDemo},
 	{"gallery", "Gallery", "Media", "Image grid with lightbox.", func() render.HTML {
