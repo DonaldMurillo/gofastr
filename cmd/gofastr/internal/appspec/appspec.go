@@ -1745,6 +1745,10 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			}
 		}
 		cascadeWrite := boolValue(m["cascade_write"])
+		hidden, err := protectiveBool(m, "hidden", fmt.Sprintf("relations[%d]", i))
+		if err != nil {
+			return nil, err
+		}
 		// foreign_key is one column, or a list of one column per key
 		// column of a composite key it references.
 		var foreignKey []string
@@ -1766,7 +1770,7 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
 			OnDelete:         onDelete,
 			CascadeWrite:     cascadeWrite,
-			Hidden:           boolValue(m["hidden"]),
+			Hidden:           hidden,
 		})
 	}
 	return out, nil
