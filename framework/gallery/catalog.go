@@ -26,7 +26,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -121,12 +120,11 @@ var Catalog = []Entry{
 		)
 	}},
 	{"languagemenu", "LanguageMenu", "Buttons & links", "Links the current page in each of the app's languages, each named in itself.", func() render.HTML {
-		// The showcase routes by no locale, so the tile hands the menu a
-		// locale set of its own; in an app the request context carries it.
-		set := i18n.PathLocales{Default: "en", Prefixed: []string{"es", "pt-BR"}}
-		return row(
-			ui.LanguageMenu(ui.LanguageMenuConfig{Ctx: i18n.WithPathLocale(context.Background(), set, "en"), ID: "gallery-language"}),
-		)
+		return stack(ui.Menu(ui.MenuConfig{ID: "gallery-language", Label: "English", Items: []ui.MenuItem{
+			{Label: "English", Radio: "language", Checked: true, Disabled: true},
+			{Label: "Español", Radio: "language", Disabled: true},
+			{Label: "Português (Brasil)", Radio: "language", Disabled: true},
+		}}), note(render.Text("Static language preview: this site has no locale-prefixed routes. Register locale prefixes in your app to use LanguageMenu.")))
 	}},
 
 	// ---------- Tags & badges ----------

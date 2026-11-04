@@ -255,6 +255,10 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 
 ### Status & banners
 
+The LanguageMenu gallery shows disabled language choices because the docs
+site does not register locale-prefixed pages. A live `ui.LanguageMenu` reads
+the host's real locale configuration from its request context.
+
 The docs site mounts the sidebar drawer on both the Sidebar and
 SidebarDrawerTrigger showcase pages, including their mobile trigger previews.
 
