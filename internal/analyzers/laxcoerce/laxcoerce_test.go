@@ -11,3 +11,7 @@ import (
 func TestLaxCoerce(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), laxcoerce.Analyzer, "a", "b", "c", "d", "e", "nilfold")
 }
+
+func TestReviewSharedErrorLabels(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), laxcoerce.Analyzer, "review")
+}

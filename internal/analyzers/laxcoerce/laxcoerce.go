@@ -62,6 +62,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/cfg"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 )
@@ -189,7 +190,7 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 			asserted = pass.TypesInfo.ObjectOf(id)
 		}
 		for _, br := range notOKBranches(pass, body, assertOK[i]) {
-			if branchIsLax(pass, br, hasErrorResult, asserted) {
+			if branchIsLax(pass, br, hasErrorResult, asserted, body) {
 				pass.Reportf(st.Pos(),
 					"type assertion on %s treated as absence: a key present with the wrong type falls into the not-found branch and silently drops the caller's input; separate presence (v, present := m[k]) or return an error",
 					m)
@@ -528,7 +529,7 @@ func isFalse(e ast.Expr) bool {
 // only when that condition holds; or neither diverges nor records an
 // error but rebinds the asserted variable to its zero value and falls
 // through.
-func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, asserted types.Object) bool {
+func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, asserted types.Object, body *ast.BlockStmt) bool {
 	// An error surfaced or recorded anywhere in the branch — nested or
 	// not — precludes laxness.
 	surfaced := false
@@ -581,6 +582,9 @@ func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, as
 			return true
 		case *ast.BranchStmt:
 			diverges = true
+			if x.Tok == token.GOTO && gotoSurfacesError(pass, body, x) {
+				return false
+			}
 			if x.Tok == token.CONTINUE {
 				return true
 			}
@@ -603,6 +607,48 @@ func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, as
 	// wrong type already erased — the zero default reads as "not
 	// supplied" while the nil error says fine.
 	return !diverges && hasErrorResult && zeroesAsserted(pass, br, asserted)
+}
+
+func gotoSurfacesError(pass *analysis.Pass, body *ast.BlockStmt, branch *ast.BranchStmt) bool {
+	if branch.Label == nil {
+		return false
+	}
+	graph := cfg.New(body, func(*ast.CallExpr) bool { return true })
+	visiting := map[*cfg.Block]bool{}
+	var refuses func(*cfg.Block) bool
+	refuses = func(block *cfg.Block) bool {
+		if visiting[block] {
+			return false
+		}
+		visiting[block] = true
+		defer delete(visiting, block)
+		for _, node := range block.Nodes {
+			if statement, ok := node.(*ast.ReturnStmt); ok {
+				for _, result := range statement.Results {
+					if carriesError(pass, result) {
+						return true
+					}
+				}
+				return false
+			}
+		}
+		if len(block.Succs) == 0 {
+			return false
+		}
+		for _, successor := range block.Succs {
+			if !refuses(successor) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, block := range graph.Blocks {
+		label, ok := block.Stmt.(*ast.LabeledStmt)
+		if ok && block.Kind == cfg.KindLabel && pass.TypesInfo.ObjectOf(label.Label) == pass.TypesInfo.ObjectOf(branch.Label) {
+			return refuses(block)
+		}
+	}
+	return false
 }
 
 // zeroesAsserted reports whether the branch assigns the asserted
