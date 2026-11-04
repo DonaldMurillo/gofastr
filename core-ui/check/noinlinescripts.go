@@ -223,6 +223,7 @@ func LintNoInlineScriptsRecursive(root string) (*Result, error) {
 // of the three *Recursive linters, which were verbatim copies of this
 // walk differing only in the lint they ran.
 func lintRecursive(root string, lint func(string) (*Result, error), skip ...string) (*Result, error) {
+	root = filepath.Clean(root)
 	result := &Result{}
 	err := sourcewalk.Walk(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {

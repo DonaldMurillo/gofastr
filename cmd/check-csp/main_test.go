@@ -33,3 +33,30 @@ func TestCLIIgnoresDanglingNonSourceLinks(t *testing.T) {
 		t.Fatalf("check-csp: %v\n%s", err, output)
 	}
 }
+
+func TestCLINormalizesExplicitRootSpelling(t *testing.T) {
+	binary := buildCSPCommand(t)
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".app"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{root, filepath.Join(root, ".app")} {
+		if err := os.WriteFile(filepath.Join(directory, "page.go"), []byte("package app\nvar markup = `<div style=\"display:none\"></div><script>alert(1)</script>`\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var first string
+	for _, spelling := range []string{".", "./", ".app/"} {
+		command := exec.Command(binary, spelling)
+		command.Dir = root
+		output, err := command.CombinedOutput()
+		if err == nil || command.ProcessState.ExitCode() != 1 || !strings.Contains(string(output), "1 inline-script") || !strings.Contains(string(output), "1 inline-style") {
+			t.Errorf("root=%q code=%d err=%v\n%s", spelling, command.ProcessState.ExitCode(), err, output)
+		}
+		if spelling == "." {
+			first = string(output)
+		} else if spelling == "./" && string(output) != first {
+			t.Errorf(". and ./ differ:\n%s\n%s", first, output)
+		}
+	}
+}

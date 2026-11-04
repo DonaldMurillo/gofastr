@@ -4,6 +4,8 @@ Static gates share `internal/sourcewalk.Walk`. It follows symlinked source
 directories once, avoids cycles, and skips dependency caches, hidden and
 underscore subtrees, and standard build-output directories. An explicitly
 selected root is scanned even when its name normally denotes build output.
+Callers with additional root-specific exclusions clean the root once before
+walking and comparing it; `.` and `./` scan identically, and `.app/` is explicit.
 The excluded descendant names are `vendor`, `node_modules`, `dist`, `bin`,
 `build`, `tmp`, and names beginning with `.` or `_`; link names are excluded
 before their targets are inspected. Dangling and looping links are delivered
@@ -34,6 +36,14 @@ The verify command and build gate already treat this pipeline error as
 failure. See the [contracts reference](../framework/docs/content/contracts.md).
 
 ## Maintenance notes
+
+### 2026-11-04 - Normalize roots before caller exclusions
+- Scope: tooling/root-spelling
+- Trigger: `./` and `.app/` were mistaken for excluded descendant directories.
+- Approach: clean the caller root before both traversal and root comparisons.
+- Evidence: `TestCLINormalizesExplicitRootSpelling`, `TestRegisteredBehaviorSourcesNormalizesRoot`, `TestScanProvenanceNormalizesRoot`.
+- Next time: keep CLI, behavior discovery, and provenance spelling controls together.
+- Status: active
 
 ### 2026-11-04 - Keep symlink failures source-aware
 - Scope: tooling/source-discovery
