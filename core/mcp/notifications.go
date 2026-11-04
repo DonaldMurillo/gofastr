@@ -105,6 +105,13 @@ func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sse
 	if s.sseSeatOrder == nil {
 		s.sseSeatOrder = make(map[string][]*sseSubscriber)
 	}
+	if limit := s.streamLimitLocked(); limit >= 0 && len(s.sseSubs) >= limit {
+		max := s.seatCapLocked()
+		canReplace := max > 0 && len(s.sseSeatOrder[seatKey]) >= max && s.sseSeatOverflow == SeatOverflowEvictOldest
+		if len(s.sseSubs) > limit || !canReplace {
+			return nil, false
+		}
+	}
 	if max := s.seatCapLocked(); max > 0 && len(s.sseSeatOrder[seatKey]) >= max {
 		if s.sseSeatOverflow != SeatOverflowEvictOldest || len(s.sseSeatOrder[seatKey]) == 0 {
 			return nil, false
@@ -118,9 +125,6 @@ func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sse
 		// no-op on the registry.
 		close(oldest.ch)
 		s.expireResourceSubsIfIdleLocked()
-	}
-	if limit := s.streamLimitLocked(); limit >= 0 && len(s.sseSubs) >= limit {
-		return nil, false
 	}
 	sub = &sseSubscriber{
 		ch:      make(chan sseNotification, sseSubBufferSize),
