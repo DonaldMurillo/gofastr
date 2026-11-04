@@ -595,7 +595,7 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 //	</button>
 
 func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
-	for key := range action.attrs() {
+	for _, key := range slices.Sorted(maps.Keys(action.attrs())) {
 		if key != "data-cui-rpc" && key != "data-cui-rpc-method" {
 			panic(fmt.Sprintf("interactive: OptimisticUpdate cannot carry %s; use OnClick for configured RPC actions", key))
 		}

@@ -28,3 +28,21 @@ func TestOptimisticRejectsLostOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestOptimisticNamesFirstLostOption(t *testing.T) {
+	action := Delete("/api/invoices/42").WithConfirm("Sure?").WithBody(`{}`)
+	want := ""
+	for range 50 {
+		got := func() (msg string) {
+			defer func() { msg, _ = recover().(string) }()
+			OptimisticUpdate(action, render.Text("Delete"), render.Text("Deleted"))
+			return ""
+		}()
+		if want == "" {
+			want = got
+		}
+		if got != want {
+			t.Fatalf("panic names a different option per run: %q then %q", want, got)
+		}
+	}
+}
