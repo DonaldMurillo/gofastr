@@ -12,6 +12,7 @@ import (
 func Walk(root string, visit fs.WalkDirFunc) error {
 	root = filepath.Clean(root)
 	seen := map[string]bool{}
+	var links []func() error
 	visitError := func(path string, entry fs.DirEntry, err error) error {
 		err = visit(path, entry, err)
 		if err == fs.SkipDir && entry.IsDir() {
@@ -31,6 +32,10 @@ func Walk(root string, visit fs.WalkDirFunc) error {
 			}
 			if err == nil && info.IsDir() {
 				entry = fs.FileInfoToDirEntry(info)
+				if path != root {
+					links = append(links, func() error { return walk(path, entry) })
+					return nil
+				}
 			}
 		}
 		canonical := ""
@@ -76,6 +81,9 @@ func Walk(root string, visit fs.WalkDirFunc) error {
 		err = visit(root, nil, err)
 	} else {
 		err = walk(root, fs.FileInfoToDirEntry(info))
+	}
+	for index := 0; err == nil && index < len(links); index++ {
+		err = links[index]()
 	}
 	if err == fs.SkipDir || err == fs.SkipAll {
 		return nil

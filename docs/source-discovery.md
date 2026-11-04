@@ -6,6 +6,10 @@ underscore subtrees, and standard build-output directories. An explicitly
 selected root is scanned even when its name normally denotes build output.
 Callers with additional root-specific exclusions clean the root once before
 walking and comparing it; `.` and `./` scan identically, and `.app/` is explicit.
+Ordinary directories are visited before deferred directory links. A source
+reachable through both an in-root path and an alias keeps its real relative
+path, so changed-file report restriction cannot discard it under the alias.
+External linked packages are still discovered once under their logical link path.
 The excluded descendant names are `vendor`, `node_modules`, `dist`, `bin`,
 `build`, `tmp`, and names beginning with `.` or `_`; link names are excluded
 before their targets are inspected. Dangling and looping links are delivered
@@ -36,6 +40,14 @@ The verify command and build gate already treat this pipeline error as
 failure. See the [contracts reference](../framework/docs/content/contracts.md).
 
 ## Maintenance notes
+
+### 2026-11-04 - Prefer real paths before directory aliases
+- Scope: contracts/changed-path-identity
+- Trigger: an earlier alias consumed a tracked subtree and restriction dropped its findings.
+- Approach: finish ordinary traversal before following queued directory links.
+- Evidence: `TestPassPreservesChangedRealPathBeforeDirectoryAlias` covers sibling and nested aliases.
+- Next time: combine a tracked edit, discovery, and report restriction in alias regressions.
+- Status: active
 
 ### 2026-11-04 - Normalize roots before caller exclusions
 - Scope: tooling/root-spelling
