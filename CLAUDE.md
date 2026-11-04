@@ -426,8 +426,8 @@ expose them to agents connected to a live app.**
   compile-marked snippets in framework/docs, and the emitted-code
   gate runs the repo vettool over the --from-openapi CLI render and
   the app spec e2e_test.go template. The `//gofastr:allow` marker
-  and the check-csp ignore directive are anchored comment-initial
-  now: prose that merely mentions either no longer silences anything.
+  and the check-csp ignore directive are anchored at the start of real
+  comments: prose or string literals mentioning either silence nothing.
   The 2026-10 i18n round added `rawtext`: framework code under
   core/, framework/, battery/ and core-ui/, and the Meridian
   flagship (examples/meridian), sends every user-facing

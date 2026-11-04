@@ -282,6 +282,10 @@ switched off says so.
 Footer explanations and analyzer errors are sanitized for terminal
 control characters, just like diagnostic messages and source snippets.
 
+The recursive CSP lints recognize `// check-csp:ignore-file` only as an
+actual standalone Go line comment. Directive-shaped text in a raw string
+or inside a block comment never suppresses inline-style or script findings.
+
 ## Adopting it on an existing codebase
 
 Strict-by-default and adoption pull against each other. Switch `verify` on
