@@ -2,6 +2,10 @@
 
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
+The demand scanner schedules idle modules directly, without a batching
+queue, keeping those markers inside the existing level-6 byte budget.
+Its level-1 ceiling tightens to 18,465 bytes so the overflow fixture still
+proves the compression-cliff guard.
 
 Tree Enter follows the row's own link on branches as well as leaves;
 Space toggles branches, and Enter toggles only branches without a link.

@@ -598,7 +598,6 @@
   }
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    const idleQueue = [];
     for (const m of _moduleMarkers.concat(_registered)) {
       const { name, selector, idle } = m;
       // rpc-stub owns static-export clicks. The marker table is shared by all
@@ -612,24 +611,10 @@
       // lazily-mounted widget root appended to <body> carries root
       // markers (data-cui-drag-dismiss) on the node handed to us.
       if (!(scope.matches?.(selector) || scope.querySelector(selector))) continue;
-      if (idle) {
-        idleQueue.push(name);
-      } else {
-        loadModule(name).catch(() => {});
-      }
+      const load = () => loadModule(name).catch(() => {});
+      if (idle) (window.requestIdleCallback || setTimeout)(load);
+      else load();
     }
-    if (idleQueue.length) _scheduleIdleModules(idleQueue);
-  }
-  // Phase 5 idle fallback (ROADMAP §8). Modules tagged `idle: true` in
-  // `_moduleMarkers` ship after FCP via requestIdleCallback so they
-  // never compete with the user's first interaction. Safari < 16.2 and
-  // Firefox < 55 lack rIC, fall back to setTimeout(0) which still
-  // runs after the current task settles.
-  function _scheduleIdleModules(names) {
-    const rIC = window.requestIdleCallback || ((fn) => setTimeout(fn, 0));
-    rIC(() => {
-      for (const n of names) loadModule(n).catch(() => {});
-    });
   }
   // Re-scan after SPA-nav swaps content. Two phases:
   //

@@ -1146,7 +1146,7 @@ const (
 	// module (+59 in core before the carve), leaving only the mark the
 	// navigation pass must set. Two bytes of clearance, cliff fixture
 	// re-run.
-	coreCongestionWindowGZ = 18490
+	coreCongestionWindowGZ = 18465
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation

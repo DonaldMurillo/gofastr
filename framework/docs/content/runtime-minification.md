@@ -59,6 +59,12 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
+The core's gzip gates remain 15,918 bytes at level 6 and tighten to
+18,465 bytes at level 1. Ordinary-page form-helper discovery fits those
+gates by scheduling idle modules directly instead of building a batch
+queue. Browsers without `requestIdleCallback` still defer each idle load
+with `setTimeout`; helper-marked controls do not wait for a widget.
+
 ## Stylesheets
 
 Every stylesheet the framework composes for a browser goes through
