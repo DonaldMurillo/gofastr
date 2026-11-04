@@ -28,6 +28,7 @@ type provenanceEntry struct {
 // skipping the directories the go tool skips (vendor, testdata,
 // node_modules, build outputs, and names starting with "." or "_").
 func ScanProvenance(root string) ([]provenanceEntry, error) {
+	root = filepath.Clean(root)
 	var found []provenanceEntry
 	err := sourcewalk.Walk(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

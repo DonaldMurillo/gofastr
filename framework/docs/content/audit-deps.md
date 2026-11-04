@@ -77,8 +77,10 @@ audit output before each major upgrade) is the defence.
 ## What's NOT in the audit (yet)
 
 The scanner only follows aliased imports of the framework's tracked
-packages. It does not look inside `vendor/`, `node_modules/`, or
-`_test.go` files. It does not detect:
+packages. It skips descendant `vendor/`, `node_modules/`, `dist/`, `bin/`,
+`build/`, `tmp/`, and hidden/underscore directories, plus `_test.go` files.
+An explicitly selected root is scanned even if its name is normally excluded.
+It does not detect:
 
 - `unsafe`-backed jumps to the registries (vanishingly rare)
 - Indirect registrations via reflection / `init()` chains that don't
@@ -102,8 +104,9 @@ registrations, diff the output against a checked-in baseline.
   A CI gate that just runs the command passes forever; diff the output
   against a checked-in baseline instead.
 - **Assuming `vendor/` and test files are covered.** The walker skips
-  `vendor/`, `node_modules/`, `.git`, hidden directories, and every
-  `_test.go` file. A registration living in vendored code will not
+  descendant `vendor/`, `node_modules/`, `dist/`, `bin/`, `build/`, `tmp/`,
+  hidden/underscore directories, and every `_test.go` file.
+  A registration living in vendored code will not
   appear in the report.
 - **Treating an empty report as a vetted supply chain.** The scanner
   only follows aliased imports of the tracked framework registries.

@@ -2,6 +2,7 @@ package auditcmd
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -79,20 +80,29 @@ func auditLint(root string) ([]LintFinding, error) {
 }
 
 func lintFile(rel string, body []byte) []LintFinding {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, rel, body, 0)
+	if err != nil {
+		line := 1
+		if failures, ok := err.(goscanner.ErrorList); ok && len(failures) > 0 {
+			line = failures[0].Pos.Line
+		}
+		return []LintFinding{{File: rel, Line: line, Rule: "parse-error", Message: "Go source could not be checked: " + err.Error()}}
+	}
 	if strings.HasSuffix(rel, "_test.go") {
 		// Test fixtures intentionally contain unsafe-looking strings and
 		// best-effort cleanup. Only actual disabled-test calls are meaningful
 		// in this lane.
-		return ruleTestSkip(rel, body)
+		return ruleTestSkip(rel, body, fset, file)
 	}
 	var out []LintFinding
-	out = append(out, ruleIgnoredExec(rel, body)...)
+	out = append(out, ruleIgnoredExec(rel, body, fset, file)...)
 	out = append(out, ruleFormWithoutCSRF(rel, body)...)
 	out = append(out, ruleRenderHTMLConcat(rel, body)...)
 	out = append(out, ruleSQLConcatUserInput(rel, body)...)
 	// Go-declared entities are linted with the same unscoped-PII rule as
 	// the app spec path (CLAUDE.md hard rule #6), it's the same defect.
-	out = append(out, lintGoSourcePII(rel, body)...)
+	out = append(out, lintGoSourcePII(rel, fset, file)...)
 	return out
 }
 
@@ -102,10 +112,8 @@ func lintFile(rel string, body []byte) []LintFinding {
 
 var reIgnoredExec = regexp.MustCompile(`(?:^|[\s;{])_,\s*_\s*=\s*\S+\.Exec(?:Context)?\b`)
 
-func ruleIgnoredExec(rel string, body []byte) []LintFinding {
+func ruleIgnoredExec(rel string, body []byte, fset *token.FileSet, file *ast.File) []LintFinding {
 	bareLines := map[int]bool{}
-	fset := token.NewFileSet()
-	file, _ := parser.ParseFile(fset, rel, body, 0)
 	if file != nil {
 		ast.Inspect(file, func(node ast.Node) bool {
 			var call *ast.CallExpr
@@ -238,13 +246,21 @@ func stripGoComments(body []byte) []byte {
 	var scanner goscanner.Scanner
 	scanner.Init(file, body, nil, goscanner.ScanComments)
 	for {
-		position, kind, literal := scanner.Scan()
+		position, kind, _ := scanner.Scan()
 		if kind == token.EOF {
 			break
 		}
 		if kind == token.COMMENT {
 			start := file.Offset(position)
-			for offset := start; offset < start+len(literal); offset++ {
+			end := len(body)
+			if body[start+1] == '/' {
+				if offset := bytes.IndexByte(body[start:], '\n'); offset >= 0 {
+					end = start + offset
+				}
+			} else if offset := bytes.Index(body[start+2:], []byte("*/")); offset >= 0 {
+				end = start + 2 + offset + 2
+			}
+			for offset := start; offset < end; offset++ {
 				if masked[offset] != '\n' && masked[offset] != '\r' {
 					masked[offset] = ' '
 				}
@@ -360,17 +376,12 @@ func ruleSQLConcatUserInput(rel string, body []byte) []LintFinding {
 // Rule 5: t.Skip in test files without allow-skip annotation.
 // ----------------------------------------------------------------------------
 
-func ruleTestSkip(rel string, body []byte) []LintFinding {
+func ruleTestSkip(rel string, body []byte, fset *token.FileSet, file *ast.File) []LintFinding {
 	if !strings.HasSuffix(rel, "_test.go") {
 		return nil
 	}
 	var out []LintFinding
 	lines := strings.Split(string(body), "\n")
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, rel, body, 0)
-	if err != nil {
-		return []LintFinding{{File: rel, Line: 1, Rule: "parse-error", Message: "test source could not be checked: " + err.Error()}}
-	}
 	var skipLines []int
 	ast.Inspect(file, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)

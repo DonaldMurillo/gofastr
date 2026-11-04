@@ -528,8 +528,17 @@ func fieldInitialized(pass *analysis.Pass, body *ast.BlockStmt, field *ast.Selec
 	object := pass.TypesInfo.ObjectOf(receiver)
 	dominating := map[ast.Node]bool{}
 	ast.Inspect(body, func(node ast.Node) bool {
-		if block, ok := node.(*ast.BlockStmt); ok && block.Pos() <= pos && pos < block.End() {
-			for _, statement := range block.List {
+		if node != nil && node.Pos() <= pos && pos < node.End() {
+			var statements []ast.Stmt
+			switch block := node.(type) {
+			case *ast.BlockStmt:
+				statements = block.List
+			case *ast.CaseClause:
+				statements = block.Body
+			case *ast.CommClause:
+				statements = block.Body
+			}
+			for _, statement := range statements {
 				dominating[statement] = true
 				if declaration, ok := statement.(*ast.DeclStmt); ok {
 					if general, ok := declaration.Decl.(*ast.GenDecl); ok {
@@ -542,6 +551,14 @@ func fieldInitialized(pass *analysis.Pass, body *ast.BlockStmt, field *ast.Selec
 		}
 		return true
 	})
+	sameField := func(expression ast.Expr) bool {
+		selected, ok := ast.Unparen(expression).(*ast.SelectorExpr)
+		if !ok || pass.TypesInfo.ObjectOf(selected.Sel) != pass.TypesInfo.ObjectOf(field.Sel) {
+			return false
+		}
+		base, ok := ast.Unparen(selected.X).(*ast.Ident)
+		return ok && pass.TypesInfo.ObjectOf(base) == object
+	}
 	initialized := false
 	apply := func(node ast.Node, value ast.Expr, whole bool) {
 		if whole {
@@ -559,6 +576,18 @@ func fieldInitialized(pass *analysis.Pass, body *ast.BlockStmt, field *ast.Selec
 			return false
 		}
 		switch statement := node.(type) {
+		case *ast.IfStmt:
+			if dominating[statement] && statement.End() <= pos && statement.Else == nil {
+				if condition, ok := ast.Unparen(statement.Cond).(*ast.BinaryExpr); ok && condition.Op == token.EQL {
+					for _, operands := range [][2]ast.Expr{{condition.X, condition.Y}, {condition.Y, condition.X}} {
+						if value := pass.TypesInfo.Types[operands[1]]; value.IsNil() && sameField(operands[0]) &&
+							fieldInitialized(pass, statement.Body, field, statement.Body.End()-1, depth+1) {
+							initialized = true
+							return false
+						}
+					}
+				}
+			}
 		case *ast.ValueSpec:
 			for index, name := range statement.Names {
 				if pass.TypesInfo.ObjectOf(name) == object {
@@ -579,8 +608,7 @@ func fieldInitialized(pass *analysis.Pass, body *ast.BlockStmt, field *ast.Selec
 					}
 					whole = true
 				case *ast.SelectorExpr:
-					base, ok := ast.Unparen(target.X).(*ast.Ident)
-					if !ok || pass.TypesInfo.ObjectOf(base) != object || pass.TypesInfo.ObjectOf(target.Sel) != pass.TypesInfo.ObjectOf(field.Sel) {
+					if !sameField(target) {
 						continue
 					}
 				default:

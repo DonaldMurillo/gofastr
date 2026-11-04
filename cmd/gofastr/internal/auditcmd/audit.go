@@ -46,9 +46,9 @@ var trackedKinds = []struct {
 	{"github.com/DonaldMurillo/gofastr/core/render", "render", "RegisterFunc", "render.RegisterFunc"},
 }
 
-// auditDeps walks every .go file under root (skipping vendor, .git, and
-// hidden dirs) and returns one AuditFinding per call to a tracked
-// init-time registration API.
+// auditDeps walks non-test .go files under root, skipping vendor,
+// node_modules, dist, bin, build, tmp, and hidden/underscore descendants.
+// It returns one AuditFinding per tracked init-time registration call.
 //
 // The root must contain a go.mod so package import paths can be
 // computed; modules without go.mod fall back to relative paths.

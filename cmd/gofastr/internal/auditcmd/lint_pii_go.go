@@ -2,7 +2,6 @@ package auditcmd
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
@@ -35,12 +34,7 @@ import (
 // has no composite literal to read and is silently skipped; the generator
 // and conventional hand-written registrations inline the literal, which is
 // the shape this lint targets.
-func lintGoSourcePII(rel string, body []byte) []LintFinding {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, rel, body, 0)
-	if err != nil || file == nil {
-		return nil
-	}
+func lintGoSourcePII(rel string, fset *token.FileSet, file *ast.File) []LintFinding {
 	var out []LintFinding
 	for _, call := range goEntityCalls(file) {
 		decl, _ := appspec.PackEntityDeclFromCall(call)

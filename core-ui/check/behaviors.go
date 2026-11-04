@@ -38,6 +38,7 @@ import (
 // are errors rather than silences, because a module the lints cannot
 // read is a module they cannot hold.
 func RegisteredBehaviorSources(root string) ([]string, error) {
+	root = filepath.Clean(root)
 	var out []string
 	seen := map[string]bool{}
 	fset := token.NewFileSet()

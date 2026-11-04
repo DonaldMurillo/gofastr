@@ -133,6 +133,11 @@ func (p *Pass) discover() error {
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
+			if strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".css") || IsScriptPath(path) {
+				if rel, relErr := filepath.Rel(p.Root, path); relErr == nil {
+					p.unparsed[filepath.ToSlash(rel)] = err.Error()
+				}
+			}
 			return nil
 		}
 		if d.IsDir() {

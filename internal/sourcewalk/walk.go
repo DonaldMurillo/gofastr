@@ -1,15 +1,18 @@
 package sourcewalk
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 func Walk(root string, visit fs.WalkDirFunc) error {
 	root = filepath.Clean(root)
 	seen := map[string]bool{}
+	var links []func() error
 	visitError := func(path string, entry fs.DirEntry, err error) error {
 		err = visit(path, entry, err)
 		if err == fs.SkipDir && entry.IsDir() {
@@ -19,17 +22,21 @@ func Walk(root string, visit fs.WalkDirFunc) error {
 	}
 	var walk func(string, fs.DirEntry) error
 	walk = func(path string, entry fs.DirEntry) error {
+		if path != root && (entry.IsDir() || entry.Type()&os.ModeSymlink != 0) && excluded(filepath.Base(path)) {
+			return nil
+		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			info, err := os.Stat(path)
-			if err != nil {
+			if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ELOOP) {
 				return visitError(path, entry, err)
 			}
-			if info.IsDir() {
+			if err == nil && info.IsDir() {
 				entry = fs.FileInfoToDirEntry(info)
+				if path != root {
+					links = append(links, func() error { return walk(path, entry) })
+					return nil
+				}
 			}
-		}
-		if entry.IsDir() && path != root && excluded(filepath.Base(path)) {
-			return nil
 		}
 		canonical := ""
 		if entry.IsDir() {
@@ -74,6 +81,9 @@ func Walk(root string, visit fs.WalkDirFunc) error {
 		err = visit(root, nil, err)
 	} else {
 		err = walk(root, fs.FileInfoToDirEntry(info))
+	}
+	for index := 0; err == nil && index < len(links); index++ {
+		err = links[index]()
 	}
 	if err == fs.SkipDir || err == fs.SkipAll {
 		return nil

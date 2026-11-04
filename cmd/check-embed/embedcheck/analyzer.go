@@ -252,18 +252,30 @@ func analyze(pkg *types.Package, info *types.Info, files []*ast.File) ([]Finding
 
 func (r *resolver) bootVisibleComponents(root *types.Named, expression ast.Expr) map[*types.Named]bool {
 	visible := map[*types.Named]bool{root: true}
-	queue := append([]*types.Named{root}, r.componentsInExpr(expression)...)
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		visible[current] = true
-		r.walkComponentType(current, func(child *types.Named) {
-			if !visible[child] {
-				visible[child] = true
-				queue = append(queue, child)
+	ast.Inspect(expression, func(node ast.Node) bool {
+		var value ast.Expr
+		switch node := node.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.CompositeLit:
+			value = node
+		case *ast.CallExpr:
+			if identifier, ok := node.Fun.(*ast.Ident); ok {
+				if builtin, ok := r.info.Uses[identifier].(*types.Builtin); ok && builtin.Name() == "new" {
+					value = node
+				}
 			}
-		}, func(token.Pos, string) {})
-	}
+			if value == nil && !r.info.Types[node.Fun].IsType() {
+				return false
+			}
+		}
+		if value != nil {
+			if named := namedOf(r.info.TypeOf(value)); named != nil && hasRenderMethod(named) {
+				visible[named] = true
+			}
+		}
+		return true
+	})
 	return visible
 }
 

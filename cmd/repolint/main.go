@@ -547,7 +547,7 @@ func isBuildScript(rel string) bool {
 	return strings.HasPrefix(rel, "scripts/") && strings.HasSuffix(rel, ".sh")
 }
 
-var rawRPCAttribute = regexp.MustCompile(`\bdata-cui-rpc(?:["']|\s*=)`)
+var rawRPCAttribute = regexp.MustCompile("\\bdata-cui-rpc(?:[\"'`]|\\s*=)")
 
 // isUntypedFUIWiringScope reports whether rel is a non-test Go file under
 // the app generator or a battery, the code that EMITS island wiring
