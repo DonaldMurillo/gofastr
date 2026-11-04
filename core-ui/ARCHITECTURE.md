@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+`ui.SelectConfig.Selected` preserves stored values absent from its options;
+a nonempty value takes precedence over option-level selection flags.
+
 The CSP source linter accepts comment directives in LF and CRLF files.
 The directive must still occupy its whole comment line.
 Disk-backed UI host static files use operation-scoped `os.Root` handles.
