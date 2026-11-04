@@ -42,6 +42,10 @@ DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
 
+Action-script seeding observes SSR script errors and, after document load,
+only retains scripts whose component handlers registered. Failed boot
+scripts remain eligible for the next component scan.
+
 Navigation refreshes a supplied CSRF meta token from full documents and
 partial head carriers. Responses omitting the token retain the current one.
 
