@@ -34,6 +34,7 @@ its message, even when another switch has the same submitted name.
 
 Agent-ready bundles merge nonzero discovery fields into granular llms.txt
 and card settings, preserving omitted fields rather than replacing surfaces.
+Agent-card skills retain per-skill input/output MIME modes across A2A wiring.
 
 DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn

@@ -156,6 +156,11 @@ work), and a derived `mcp` skill points agents at it.
 | `DefaultInputModes`, `DefaultOutputModes` | MIME types; default `["text/plain"]`. |
 | `SigningKeys` | Sign the card (A2A §8.4) + serve `/.well-known/jwks.json`; requires a pinned `BaseURL` — see [Signed agent cards](#signed-agent-cards-a2a-v10-84). |
 
+Each `AgentSkill` may override the card's MIME defaults with `InputModes`
+and `OutputModes` (`inputModes`/`outputModes` in JSON, omitted when empty).
+`App.A2ASkills()` preserves these modes, including `application/json` for
+entity skills that require a JSON data part.
+
 ### Signed agent cards (A2A v1.0 §8.4)
 
 Set `AgentCardConfig.SigningKeys` and the card gains a `signatures`

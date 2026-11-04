@@ -455,6 +455,10 @@ not configured) for direct registration reads — but note skills the
 server runs are fixed at Start, from the same list
 `app.A2ASkills()` reports.
 
+Passing `app.A2ASkills()` into an agent card preserves each skill's input
+and output MIME modes. Entity skills advertise `application/json`, not
+the card's default `text/plain`; send their operation as a JSON data part.
+
 ## Common mistakes
 
 - **Sending prose and expecting the agent to figure it out.** Skills are

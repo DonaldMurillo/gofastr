@@ -192,6 +192,8 @@ type AgentSkill struct {
 	Description string   `json:"description,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	Examples    []string `json:"examples,omitempty"`
+	InputModes  []string `json:"inputModes,omitempty"`
+	OutputModes []string `json:"outputModes,omitempty"`
 }
 
 // AgentSecurityScheme is an OpenAPI-style security scheme emitted in the
