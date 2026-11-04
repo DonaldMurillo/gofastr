@@ -42,6 +42,10 @@ DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
 
+An open native modal dialog owns Escape and Tab above an intercepted
+pane. The intercept keyboard handlers stand down until the dialog closes,
+then resume the pane's own dismissal and focus containment.
+
 Owned-style checking and compilation reject custom media inside
 `@container`, including dark-nested blocks. Container size features and
 style queries remain native CSS; symbolic viewport media belong in `@media`.

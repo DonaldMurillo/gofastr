@@ -10,6 +10,10 @@ skipped, including controls made invisible by CSS. Recovery checks that a
 control actually received focus before stopping; when no row control can
 receive focus, focus returns to Add.
 
+Native modal dialogs, including confirmation prompts, retain Escape and
+Tab while open above an intercepted pane. Dismissing the dialog keeps
+the underlying pane open; its own Escape handling resumes afterwards.
+
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
 attributes and the hooks a runtime binds to, and nothing else: no
