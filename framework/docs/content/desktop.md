@@ -4,6 +4,10 @@
 including an output flag followed by another flag. Use `--out=<path>`
 when the intended path itself starts with a dash.
 
+A tray that enables `CloseHidesWindow` always has a Show menu action, even
+when no menu was supplied. An existing Show action, including a nested one,
+is preserved without adding a duplicate.
+
 `battery/desktop` runs a GoFastr app as a local-first desktop
 application inside the operating system's own WebView: WKWebView on
 macOS, WebView2 on Windows, and WebKitGTK on Linux. The shell builds with `CGO_ENABLED=0`.
