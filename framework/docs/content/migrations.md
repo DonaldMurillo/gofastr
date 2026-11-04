@@ -212,6 +212,9 @@ and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
   table (treat as pending) instead of marking it applied.
 - `--from=<yml>` (`generate`/`repair`): the app spec holding the entity
   declarations; `repair` needs it to know each table's owner column.
+  `generate` validates every entity before diffing or writing files. An
+  invalid field default or other registration error exits 1, names the
+  entity, and leaves migrations and the committed snapshot unchanged.
 - `--apply` (`repair` only): rebuild the reported tables instead of only
   reporting them. The rebuild keeps every row, column, default, index, and
   other constraint.
