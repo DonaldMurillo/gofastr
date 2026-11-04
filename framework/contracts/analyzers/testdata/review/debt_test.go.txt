@@ -10,5 +10,7 @@ func TestDebt(t *testing.T) {
 }
 
 func TestLane(t *testing.T) {
-	t.Skip("short mode: live service unavailable")
+	if testing.Short() {
+		t.Skip("short mode: live service unavailable")
+	}
 }
