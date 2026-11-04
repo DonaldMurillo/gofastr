@@ -566,6 +566,19 @@ func TestReportSurfacesUnparsedCount(t *testing.T) {
 	}
 }
 
+func TestTextFooterCannotForgeLines(t *testing.T) {
+	report := &Report{FailOn: SeverityWarn, Relaxations: []string{"exempt path real\nforged relaxation\rnext"}, Errors: []string{"broken: error\nforged error\rnext"}}
+	text := FormatText(report, TextOptions{})
+	if strings.Contains(text, "\nforged") || strings.Contains(text, "\rnext") {
+		t.Fatalf("footer text injected another physical line: %q", text)
+	}
+	for _, escaped := range []string{`real\nforged relaxation\rnext`, `error\nforged error\rnext`} {
+		if !strings.Contains(text, escaped) {
+			t.Errorf("footer does not preserve escaped evidence %q: %q", escaped, text)
+		}
+	}
+}
+
 // A stale suppression's documented fix is "delete the directive", which
 // is mechanical in both shapes it takes. Getting it wrong deletes code,
 // so both are pinned, as is the refusal to guess.
