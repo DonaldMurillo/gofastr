@@ -416,6 +416,7 @@
   // and DOM insertion.
   const _moduleMarkers = [
     { name: 'rpc', selector: '[data-cui-rpc],[data-kiln-tool]' },
+    { name: 'widgethelpers', selector: '[data-cui-fill-input],[data-cui-tick-elapsed],[data-cui-persist-storage],[data-cui-charcount-source],[data-cui-clear-on-esc],form[data-cui-submit-on-enter],form[data-cui-disable-when-invalid]' },
     // Computed: client-side derived signals (core-ui/store). The module
     // subscribes each [data-cui-computed] node to its dependency signals
     // and recomputes via the host-registered reducer on any change.

@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+The seven form-helper markers demand-load `widgethelpers` on ordinary
+pages, at boot and after insertion; widgets are not a loading prerequisite.
+
 Tree Enter follows the row's own link on branches as well as leaves;
 Space toggles branches, and Enter toggles only branches without a link.
 
