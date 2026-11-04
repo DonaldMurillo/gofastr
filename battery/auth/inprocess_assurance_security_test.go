@@ -18,10 +18,10 @@ import (
 func newInProcessAssuranceRig(t *testing.T) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
 	t.Helper()
 	users := newUserStoreWithPassword()
-	user, err := users.CreateUser(t.Context(), "local@example.com", "", []string{"user"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	user := &BasicUser{ID: "42", Email: "local@example.com", Roles: []string{"user"}}
+	entry := &storeEntry{user: user}
+	users.users[user.Email] = entry
+	users.byID[user.ID] = entry
 	sessions := NewMemorySessionStore()
 	manager := New(AuthConfig{
 		JWTSecret:           "inprocess-assurance-test",
@@ -45,11 +45,16 @@ func newInProcessAssuranceRig(t *testing.T) (*AuthManager, *TwoFAPlugin, *Memory
 
 func inProcessOuterContext(t *testing.T, manager *AuthManager, tokens ...string) context.Context {
 	t.Helper()
+	return inProcessOuterContextFrom(t, t.Context(), manager, tokens...)
+}
+
+func inProcessOuterContextFrom(t *testing.T, ctx context.Context, manager *AuthManager, tokens ...string) context.Context {
+	t.Helper()
 	var captured context.Context
 	outer := SessionMiddleware(manager)(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		captured = request.Context()
 	}))
-	request := httptest.NewRequest(http.MethodGet, "/outer", nil).WithContext(t.Context())
+	request := httptest.NewRequest(http.MethodGet, "/outer", nil).WithContext(ctx)
 	for _, token := range tokens {
 		request.AddCookie(&http.Cookie{Name: manager.Config().SessionCookie, Value: token})
 	}
@@ -194,6 +199,159 @@ func TestInProcessTwoFAAssurancePrincipalBinding(t *testing.T) {
 	}
 }
 
+func TestInProcessTwoFAAssuranceManagerBinding(t *testing.T) {
+	issuer, _, issuerSessions, issuerUser := newInProcessAssuranceRig(t)
+	receiver, twofa, receiverSessions, receiverUser := newInProcessAssuranceRig(t)
+	if issuerUser.GetID() != "42" || receiverUser.GetID() != issuerUser.GetID() {
+		t.Fatal("auth realms must contain the same user id")
+	}
+	if err := twofa.store.SetTwoFA(t.Context(), receiverUser.GetID(), &TwoFAState{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, manager := range []*AuthManager{issuer, receiver} {
+		sessions := issuerSessions
+		if manager == receiver {
+			sessions = receiverSessions
+		}
+		session, err := sessions.Create(t.Context(), "42", time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sessions.MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
+			t.Fatal(err)
+		}
+		ctx := handler.SetUser(inProcessOuterContext(t, manager, session.Token), receiverUser)
+		status := http.StatusUnauthorized
+		name := "OtherManager"
+		if manager == receiver {
+			status = http.StatusNoContent
+			name = "OwnManager"
+		}
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			inProcessAssuranceApp(receiver, twofa).InProcessHandler().ServeHTTP(recorder,
+				httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(ctx))
+			if recorder.Code != status || status == http.StatusUnauthorized && !strings.Contains(recorder.Body.String(), `"reason":"no_session"`) {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, status, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestInProcessTwoFAAssuranceTenantBinding(t *testing.T) {
+	manager, twofa, sessions, user := newInProcessAssuranceRig(t)
+	if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := sessions.Create(t.Context(), user.GetID(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessions.MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
+		t.Fatal(err)
+	}
+	ctx := inProcessOuterContextFrom(t, handler.SetTenantID(t.Context(), "tenant-a"), manager, session.Token)
+	for _, test := range []struct {
+		tenant string
+		status int
+	}{
+		{"tenant-a", http.StatusNoContent},
+		{"tenant-b", http.StatusUnauthorized},
+		{"", http.StatusUnauthorized},
+	} {
+		t.Run(test.tenant, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(handler.SetTenantID(ctx, test.tenant))
+			inProcessAssuranceApp(manager, twofa).InProcessHandler().ServeHTTP(recorder, request)
+			if recorder.Code != test.status {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.status, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestInProcessTwoFAAssuranceRecheckCandidates(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		change       string
+		secondUserID string
+		recheck      bool
+		status       int
+	}{
+		{"LaterVerified", "", "42", true, http.StatusNoContent},
+		{"FirstRevoked", "first-revoked", "42", true, http.StatusNoContent},
+		{"AllRevoked", "all-revoked", "42", false, 0},
+		{"LaterPending", "pending", "42", true, http.StatusForbidden},
+		{"LaterExpired", "expired", "42", true, http.StatusForbidden},
+		{"LaterRevoked", "second-revoked", "42", true, http.StatusForbidden},
+		{"OtherUser", "", "other-user", true, http.StatusForbidden},
+		{"CannotSwitchUser", "first-revoked", "other-user", false, 0},
+		{"CannotSwitchTenant", "tenant", "42", false, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, twofa, sessions, user := newInProcessAssuranceRig(t)
+			if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			first, err := sessions.Create(t.Context(), user.GetID(), time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := sessions.Create(t.Context(), test.secondUserID, time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := sessions.MarkTwoFactorVerified(t.Context(), second.Token); err != nil {
+				t.Fatal(err)
+			}
+			users := manager.UserStore().(*userStoreWithPassword)
+			users.byID["other-user"] = &storeEntry{user: &BasicUser{ID: "other-user"}}
+			ctx := inProcessOuterContextFrom(t, handler.SetTenantID(t.Context(), "tenant-a"), manager, first.Token, second.Token)
+			switch test.change {
+			case "all-revoked", "first-revoked":
+				if err := sessions.Delete(t.Context(), first.Token); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch test.change {
+			case "all-revoked", "second-revoked":
+				if err := sessions.Delete(t.Context(), second.Token); err != nil {
+					t.Fatal(err)
+				}
+			case "pending":
+				if err := sessions.MarkPendingTwoFactor(t.Context(), second.Token); err != nil {
+					t.Fatal(err)
+				}
+			case "expired":
+				sessions.mu.Lock()
+				sessions.sessions[second.Token].ExpiresAt = time.Now().Add(-time.Hour)
+				sessions.mu.Unlock()
+			case "tenant":
+				ctx = handler.SetTenantID(ctx, "tenant-b")
+			}
+			refreshed, ok := handler.RecheckPrincipal(ctx)
+			if ok != test.recheck {
+				t.Fatalf("RecheckPrincipal = %v, want %v", ok, test.recheck)
+			}
+			if !ok {
+				return
+			}
+			for attempt := 0; attempt < 2; attempt++ {
+				recorder := httptest.NewRecorder()
+				inProcessAssuranceApp(manager, twofa).InProcessHandler().ServeHTTP(recorder,
+					httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(refreshed))
+				if recorder.Code != test.status {
+					t.Fatalf("status = %d, want %d: %s", recorder.Code, test.status, recorder.Body.String())
+				}
+				refreshed, ok = handler.RecheckPrincipal(refreshed)
+				if !ok {
+					t.Fatal("refreshed principal lost its recheck")
+				}
+			}
+		})
+	}
+}
+
 func TestInProcessTwoFAAssuranceResolvesPrincipalOnce(t *testing.T) {
 	manager, twofa, sessions, user := newInProcessAssuranceRig(t)
 	if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
@@ -211,14 +369,15 @@ func TestInProcessTwoFAAssuranceResolvesPrincipalOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	lookups := 0
-	outerManager := newTestManagerWithStores(t, sessions, &fakeUserStore{findByID: func(ctx context.Context, userID string) (User, error) {
+	users := manager.UserStore()
+	manager.SetUserStore(&fakeUserStore{findByID: func(ctx context.Context, userID string) (User, error) {
 		lookups++
 		if lookups > 1 {
 			return nil, errors.New("a later user lookup failed")
 		}
-		return manager.UserStore().FindByID(ctx, userID)
+		return users.FindByID(ctx, userID)
 	}})
-	outerContext := inProcessOuterContext(t, outerManager, unverified.Token, verified.Token)
+	outerContext := inProcessOuterContext(t, manager, unverified.Token, verified.Token)
 	application := inProcessAssuranceApp(manager, twofa)
 	recorder := httptest.NewRecorder()
 	application.InProcessHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(outerContext))
@@ -237,7 +396,7 @@ func TestInProcessTwoFAAssuranceNetworkBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	outerContext := inProcessOuterContext(t, manager, session.Token)
-	outerContext = context.WithValue(outerContext, sessionAssuranceKey{}, sessionAssurance{userID: user.GetID(), verified: true})
+	outerContext = context.WithValue(outerContext, sessionAssuranceKey{}, sessionAssurance{manager: manager, userID: user.GetID(), verified: true})
 	application := inProcessAssuranceApp(manager, twofa)
 	recorder := httptest.NewRecorder()
 	application.Router().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/twofa-only", nil).WithContext(outerContext))

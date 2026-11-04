@@ -448,18 +448,24 @@ Missing, invalid, expired, or pending-2FA cookies clear any pre-existing
 context user, so an outer tenant's identity cannot leak into an anonymous
 inner session. They also clear any 2FA assurance recorded by an outer
 `SessionMiddleware`. On a successful resolution the middleware replaces
-that assurance with the resolved user's id and whether any of that user's
-live, non-pending session cookies on this request has completed 2FA. It
-considers every candidate cookie, so an older unverified session cannot
+that assurance with the issuing `AuthManager`, the tenant id under which
+the session was resolved, the resolved user's id, and whether any of that
+user's live, non-pending session cookies on this request has completed 2FA.
+It considers every candidate cookie, so an older unverified session cannot
 hide a later stepped-up session of the same user. The exceptions are a
 verified embed grant and a request admitted by `App.InProcessHandler()`:
 neither carries browser credentials,
 and each keeps the identity its trusted server-side context established.
 For a marked call, `SessionMiddleware` also preserves the outer request's
-recorded 2FA assurance; `RequireTwoFA` checks that it still belongs to the
-same context user. This is a fact captured on the outer request, not a
-credential, and does not re-check session expiry or revocation.
+recorded 2FA assurance; `RequireTwoFA` checks that it still belongs to its
+own manager, the same tenant, and the same context user. This is a fact
+captured on the outer request, not a credential, and does not re-check
+session expiry or revocation.
 Use that entry point, not `App.Router()`, for generated Local repositories.
+
+An explicit `handler.RecheckPrincipal` recomputes assurance from the
+original candidate cookies for that same principal and tenant. It fails
+when none of the principal's live, non-pending sessions remain.
 
 ```go
 app.Use(auth.SessionMiddleware(mgr))
@@ -1422,9 +1428,11 @@ and session evidence described here.
 
 For a call marked by `App.InProcessHandler()`, `RequireTwoFA` requires a
 non-nil server-set context user and the 2FA assurance `SessionMiddleware`
-recorded for that same user on the outer request. No assurance, a missing
-user, or a different user returns 401 with the no-session reason. It looks
-up current enrollment: an unenrolled user passes; an enrolled user needs
+recorded for that same user on the outer request. The assurance is bound
+to the issuing `AuthManager` and the tenant id under which the session
+was resolved. No assurance, a missing user, a different user, or a
+different manager or tenant returns 401 with the no-session reason. It
+looks up current enrollment: an unenrolled user passes; an enrolled user needs
 verified assurance or gets 403. The assurance records whether any of that
 user's live, non-pending cookie sessions on the outer request completed
 2FA. It contains no session token or session object. This snapshot does

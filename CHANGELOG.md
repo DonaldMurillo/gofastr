@@ -37,7 +37,11 @@ few lines, and link the PR or the docs page for the rest.
   the context for a marked call; every other request is checked as before.
   `SessionMiddleware` records the outer request's 2FA assurance for that
   same user across all their live, non-pending cookie sessions, and
-  `RequireTwoFA` accepts that snapshot only for a matching context user.
+  `RequireTwoFA` accepts that snapshot only for a matching context user,
+  the issuing auth manager, and the tenant under which the session was
+  resolved. An explicit principal recheck recomputes assurance across
+  the original candidate cookies for that same principal and tenant,
+  and fails when none of the principal's live, non-pending sessions remain.
   Clearing or replacing the principal also clears or replaces the assurance.
   `RequireSession` trusts a marked call's server-set user without reading
   a session. Local does not re-check session expiry or revocation.

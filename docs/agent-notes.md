@@ -3,11 +3,12 @@
 ## 2026-11-04 - Local 2FA assurance is not a session credential
 - Scope: battery/auth, generated Local SDK
 - Trigger: cookie-only `RequireTwoFA` refused Local CRUD, while inheriting a session token could outlive an inner tenant's principal clearing and authorize account mutations.
-- Approach: record only the resolved user id and any-live-non-pending-cookie verification fact; preserve it for marked calls, bind it to the context user, and clear or replace it with the principal. Resolve the user once, then judge later cookies by session state only, matching the network gate.
+- Approach: record the issuing manager, resolved tenant and user ids, and any-live-non-pending-cookie verification fact; preserve it for marked calls, require all three bindings at the receiving gate, and clear or replace it with the principal. Resolve the user once, then judge later cookies by session state only, matching the network gate.
+- Recheck: retain the original bounded candidate tokens in the principal-check closure, not the assurance fact. Recompute for the established user and tenant; a revoked first cookie can fall back to another of that user's sessions, never another user's session.
 - Boundary: every built-in auth route uses `browserAccountOnly`; the five session-account gates also call the shared refusal directly. Local account and credential operations return 403, never inherit browser credentials, and never re-check session revocation from the assurance snapshot.
 - Evidence: `go test ./battery/auth -run '^TestInProcess' -count=1` covers real outer cookies, the full Local middleware stack, both cookie orders, pending/expired/revoked/other-user candidates, nested clearing, store failures, forged network assurance, and all account routes/gates.
-- Mutation evidence: honoring assurance off-marker fails `NetworkBoundary`; skipping anonymous clearing fails `NestedAnonymous`; removing the principal-id match fails `PrincipalBinding/SwappedUser`; dropping the shared account guard fails `TestInProcessAccountOperations`. Verification, assurance presence, nil user, same-user cookie binding, pending exclusion, and both aggregation directions also fail their targeted cases when removed.
-- Next time: carry an assurance fact, not a credential; test a cleared principal restored later and register account-route guards in each plugin so direct `RegisterRoutes` use is covered.
+- Mutation evidence: dropping the manager or tenant comparison fails `ManagerBinding/OtherManager` or `TenantBinding/tenant-b`; selected-token-only rechecks fail `RecheckCandidates/LaterVerified`. Removing recheck tenant/user binding, revocation refusal, same-user aggregation, pending exclusion, or either aggregation direction fails its targeted case. Existing marker, principal, anonymous-clearing and account-route probes remain active.
+- Next time: carry a realm-bound assurance fact, not a credential; test equal user ids across managers and tenants, then recheck both cookie orders, revocation and attempted principal switches through the Local middleware stack.
 - Status: active
 
 ## 2026-11-04 - Local repository admission and middleware parity

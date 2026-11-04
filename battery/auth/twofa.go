@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -838,7 +839,8 @@ func (p *TwoFAPlugin) markSessionTwoFA(ctx context.Context, token string) error 
 // It relies on the SessionStore implementing SessionTwoFAMarker, otherwise
 // RequireTwoFA fails closed (always 403 for enrolled users).
 // Calls admitted by App.InProcessHandler instead use the outer request's
-// SessionMiddleware assurance, bound to the same non-nil context user.
+// SessionMiddleware assurance, bound to this manager, the resolved tenant
+// and the same non-nil context user.
 // This fact does not re-check the underlying session's expiry or revocation.
 func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -847,7 +849,7 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 			verified := false
 			if framework.IsInProcessRequest(r) {
 				assurance, ok := r.Context().Value(sessionAssuranceKey{}).(sessionAssurance)
-				if !ok || u == nil || assurance.userID != u.GetID() {
+				if !ok || u == nil || assurance.userID != u.GetID() || assurance.manager != p.mgr || assurance.tenantID != handler.GetTenantID(r.Context()) {
 					writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 					return
 				}

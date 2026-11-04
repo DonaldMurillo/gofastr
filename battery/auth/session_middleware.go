@@ -26,6 +26,8 @@ type sessionMiddlewareOpts struct {
 type sessionAssuranceKey struct{}
 
 type sessionAssurance struct {
+	manager  *AuthManager
+	tenantID string
 	userID   string
 	verified bool
 }
@@ -48,8 +50,9 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 //     in ctx via handler.SetUser. GetCurrentUser(ctx) then returns the
 //     User; CRUD owner-scoping picks it up automatically.
 //   - The resolved user's 2FA assurance records whether any of their live,
-//     non-pending cookie sessions on this request completed 2FA. Clearing
-//     or replacing the user also clears or replaces that assurance.
+//     non-pending cookie sessions on this request completed 2FA, bound to
+//     this manager and the tenant under which the session was resolved.
+//     Clearing or replacing the user also clears or replaces that assurance.
 //   - Verified embed grants and calls admitted by App.InProcessHandler
 //     preserve their trusted context user instead of clearing it.
 //     Marked calls also preserve the outer request's recorded assurance;
@@ -119,29 +122,12 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 			// path-specific first and r.Cookie returns only that one, so a
 			// dead cookie would shadow a live session and login would
 			// silently fail while a valid cookie sits one position later.
-			var user User
-			var assurance sessionAssurance
-			var recheck handler.PrincipalCheck
-			for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
-				if user != nil {
-					session, err := mgr.SessionStore().Get(ctx, token)
-					if err == nil && session != nil && session.UserID == assurance.userID && !session.PendingTwoFactor {
-						assurance.verified = assurance.verified || session.TwoFactorVerified
-					}
-					continue
-				}
-				candidate, candidateAssurance, ok := resolveSessionUser(ctx, mgr, token, log)
-				if !ok {
-					continue
-				}
-				user = candidate
-				assurance = candidateAssurance
-				recheck = sessionRecheck(mgr, token, log)
-			}
-			if user != nil {
+			tokens := sessionCookieCandidates(r, cfg.SessionCookie)
+			user, assurance, ok := resolveSessionCandidates(ctx, mgr, tokens, "", log)
+			if ok {
 				ctx = handler.SetUser(ctx, user)
 				ctx = context.WithValue(ctx, sessionAssuranceKey{}, assurance)
-				ctx = handler.WithPrincipalCheck(ctx, recheck)
+				ctx = handler.WithPrincipalCheck(ctx, sessionRecheck(mgr, tokens, assurance, log))
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -150,19 +136,43 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 	}
 }
 
-// sessionRecheck re-resolves the session token for a request that stays open
-// (an _events stream), so a deleted session, a pending-2FA downgrade or a
-// deleted user ends the stream the way it would refuse a fresh request. See
-// handler.WithPrincipalCheck.
-func sessionRecheck(mgr *AuthManager, token string, log *slog.Logger) handler.PrincipalCheck {
+// sessionRecheck re-resolves the original candidate session tokens for a
+// request that stays open (an _events stream). It keeps the established user
+// and tenant and recomputes assurance across their live, non-pending sessions;
+// no remaining session or a deleted user ends the stream. See handler.WithPrincipalCheck.
+func sessionRecheck(mgr *AuthManager, tokens []string, principal sessionAssurance, log *slog.Logger) handler.PrincipalCheck {
 	return func(ctx context.Context) (context.Context, bool) {
-		user, assurance, ok := resolveSessionUser(ctx, mgr, token, log)
+		if handler.GetTenantID(ctx) != principal.tenantID {
+			return ctx, false
+		}
+		user, assurance, ok := resolveSessionCandidates(ctx, mgr, tokens, principal.userID, log)
 		if !ok {
 			return ctx, false
 		}
 		ctx = handler.SetUser(ctx, user)
 		return context.WithValue(ctx, sessionAssuranceKey{}, assurance), true
 	}
+}
+
+func resolveSessionCandidates(ctx context.Context, mgr *AuthManager, tokens []string, userID string, log *slog.Logger) (User, sessionAssurance, bool) {
+	var user User
+	var assurance sessionAssurance
+	for _, token := range tokens {
+		if user != nil {
+			session, err := mgr.SessionStore().Get(ctx, token)
+			if err == nil && session != nil && session.UserID == assurance.userID && !session.PendingTwoFactor {
+				assurance.verified = assurance.verified || session.TwoFactorVerified
+			}
+			continue
+		}
+		candidate, candidateAssurance, ok := resolveSessionUser(ctx, mgr, token, log)
+		if !ok || userID != "" && candidateAssurance.userID != userID {
+			continue
+		}
+		user = candidate
+		assurance = candidateAssurance
+	}
+	return user, assurance, user != nil
 }
 
 // maxSessionCookieCandidates bounds the same-name session cookies one
@@ -257,7 +267,7 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 		}
 		return nil, sessionAssurance{}, false
 	}
-	return user, sessionAssurance{userID: sess.UserID, verified: sess.TwoFactorVerified}, true
+	return user, sessionAssurance{manager: mgr, tenantID: handler.GetTenantID(ctx), userID: sess.UserID, verified: sess.TwoFactorVerified}, true
 }
 
 // RequireSession returns middleware that rejects requests without a
