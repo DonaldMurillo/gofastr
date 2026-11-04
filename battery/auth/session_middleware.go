@@ -51,7 +51,8 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 //     User; CRUD owner-scoping picks it up automatically.
 //   - The resolved user's 2FA assurance records whether any of their live,
 //     non-pending cookie sessions on this request completed 2FA, bound to
-//     this manager and the tenant under which the session was resolved.
+//     this manager and user. TenantScopedSessions also binds it to the
+//     tenant under which the session was resolved.
 //     Clearing or replacing the user also clears or replaces that assurance.
 //   - Verified embed grants and calls admitted by App.InProcessHandler
 //     preserve their trusted context user instead of clearing it.
@@ -138,14 +139,16 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 
 // sessionRecheck re-resolves the original candidate session tokens for a
 // request that stays open (an _events stream). It keeps the established user
-// and tenant and recomputes assurance across their live, non-pending sessions;
-// no remaining session or a deleted user ends the stream. See handler.WithPrincipalCheck.
+// and partitioned lookup tenant; downstream checks derive the authorization
+// tenant. It recomputes assurance across live, non-pending sessions; no remaining
+// session or a deleted user ends the stream. See handler.WithPrincipalCheck.
 func sessionRecheck(mgr *AuthManager, tokens []string, principal sessionAssurance, log *slog.Logger) handler.PrincipalCheck {
 	return func(ctx context.Context) (context.Context, bool) {
-		if handler.GetTenantID(ctx) != principal.tenantID {
-			return ctx, false
+		lookupContext := ctx
+		if mgr.Config().TenantScopedSessions {
+			lookupContext = handler.SetTenantID(lookupContext, principal.tenantID)
 		}
-		user, assurance, ok := resolveSessionCandidates(ctx, mgr, tokens, principal.userID, log)
+		user, assurance, ok := resolveSessionCandidates(lookupContext, mgr, tokens, principal.userID, log)
 		if !ok {
 			return ctx, false
 		}
@@ -267,7 +270,11 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 		}
 		return nil, sessionAssurance{}, false
 	}
-	return user, sessionAssurance{manager: mgr, tenantID: handler.GetTenantID(ctx), userID: sess.UserID, verified: sess.TwoFactorVerified}, true
+	assurance := sessionAssurance{manager: mgr, userID: sess.UserID, verified: sess.TwoFactorVerified}
+	if mgr.Config().TenantScopedSessions {
+		assurance.tenantID = handler.GetTenantID(ctx)
+	}
+	return user, assurance, true
 }
 
 // RequireSession returns middleware that rejects requests without a

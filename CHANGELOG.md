@@ -37,11 +37,16 @@ few lines, and link the PR or the docs page for the rest.
   the context for a marked call; every other request is checked as before.
   `SessionMiddleware` records the outer request's 2FA assurance for that
   same user across all their live, non-pending cookie sessions, and
-  `RequireTwoFA` accepts that snapshot only for a matching context user,
-  the issuing auth manager, and the tenant under which the session was
-  resolved. An explicit principal recheck recomputes assurance across
-  the original candidate cookies for that same principal and tenant,
-  and fails when none of the principal's live, non-pending sessions remain.
+  `RequireTwoFA` accepts that snapshot only for a matching context user
+  and the issuing auth manager. When `AuthConfig.TenantScopedSessions`
+  declares tenant-partitioned session or user lookup, the assurance also
+  binds to the lookup tenant. The flag does not add store filtering.
+  Global stores carry no tenant binding, including when tenant resolution
+  follows authentication. An explicit principal recheck recomputes assurance
+  across the original candidate cookies for that same principal, retaining
+  the original lookup tenant for partitioned stores. Tenant derivation runs
+  afterward, so a downstream tenant change does not fail identity rechecking.
+  The recheck fails when none of the principal's live, non-pending sessions remain.
   Clearing or replacing the principal also clears or replaces the assurance.
   `RequireSession` trusts a marked call's server-set user without reading
   a session. Local does not re-check session expiry or revocation.

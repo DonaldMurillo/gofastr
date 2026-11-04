@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
@@ -33,12 +34,14 @@ func TestEventStreamClosesOnRevocation(t *testing.T) {
 		readPerm string
 		cred     string // "session", "token", "jwt"
 		revoke   string // "session", "role", "token", "user"
+		tenant   bool
 	}{
-		{"session-deleted", "", "session", "session"},
-		{"session-deleted-access", "docs:read", "session", "session"},
-		{"role-dropped", "docs:read", "session", "role"},
-		{"token-revoked", "", "token", "token"},
-		{"jwt-user-deleted", "", "jwt", "user"},
+		{"session-deleted", "", "session", "session", false},
+		{"session-deleted-access", "docs:read", "session", "session", false},
+		{"session-deleted-tenant", "docs:read", "session", "session", true},
+		{"role-dropped", "docs:read", "session", "role", false},
+		{"token-revoked", "", "token", "token", false},
+		{"jwt-user-deleted", "", "jwt", "user", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -54,6 +57,9 @@ func TestEventStreamClosesOnRevocation(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg := entity.EntityConfig{Fields: []schema.Field{{Name: "body", Type: schema.String}}}
+			if c.tenant {
+				cfg.Scope = &entity.ScopeConfig{MultiTenant: true}
+			}
 			if c.readPerm != "" {
 				cfg.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Read: c.readPerm}}
 			}
@@ -130,7 +136,18 @@ func TestEventStreamClosesOnRevocation(t *testing.T) {
 					mu.Unlock()
 				}
 			}
-			streamH := authn(access.Middleware(policy, rolesFn)(ch.EventStream()))
+			streamH := access.Middleware(policy, rolesFn)(ch.EventStream())
+			emitContext := context.Background()
+			if c.tenant {
+				streamH = tenant.ResolveMiddleware(func(ctx context.Context) string {
+					if GetCurrentUser(ctx) == nil {
+						return ""
+					}
+					return "tenant-a"
+				})(streamH)
+				emitContext = tenant.SetTenantID(emitContext, "tenant-a")
+			}
+			streamH = authn(streamH)
 
 			sctx, cancel := context.WithCancel(req.Context())
 			defer cancel()
@@ -138,7 +155,7 @@ func TestEventStreamClosesOnRevocation(t *testing.T) {
 				ResponseRecorder: httptest.NewRecorder(),
 				flushed:          make(chan struct{}, 4),
 				onSubscribe: func() {
-					ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "d-before", "body": "before-revoke"})
+					ch.EmitEvent(emitContext, event.EntityCreated, map[string]any{"id": "d-before", "body": "before-revoke"})
 				},
 			}
 			done := make(chan struct{})
@@ -156,7 +173,7 @@ func TestEventStreamClosesOnRevocation(t *testing.T) {
 				}
 			}
 			revoke()
-			ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "d-after", "body": "after-revoke-secret"})
+			ch.EmitEvent(emitContext, event.EntityCreated, map[string]any{"id": "d-after", "body": "after-revoke-secret"})
 
 			select {
 			case <-done:

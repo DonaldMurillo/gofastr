@@ -839,7 +839,7 @@ func (p *TwoFAPlugin) markSessionTwoFA(ctx context.Context, token string) error 
 // It relies on the SessionStore implementing SessionTwoFAMarker, otherwise
 // RequireTwoFA fails closed (always 403 for enrolled users).
 // Calls admitted by App.InProcessHandler instead use the outer request's
-// SessionMiddleware assurance, bound to this manager, the resolved tenant
+// SessionMiddleware assurance, bound to this manager, any partitioned lookup tenant
 // and the same non-nil context user.
 // This fact does not re-check the underlying session's expiry or revocation.
 func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
@@ -849,7 +849,7 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 			verified := false
 			if framework.IsInProcessRequest(r) {
 				assurance, ok := r.Context().Value(sessionAssuranceKey{}).(sessionAssurance)
-				if !ok || u == nil || assurance.userID != u.GetID() || assurance.manager != p.mgr || assurance.tenantID != handler.GetTenantID(r.Context()) {
+				if !ok || u == nil || assurance.userID != u.GetID() || assurance.manager != p.mgr || p.mgr.Config().TenantScopedSessions && assurance.tenantID != handler.GetTenantID(r.Context()) {
 					writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 					return
 				}

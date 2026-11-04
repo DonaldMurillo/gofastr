@@ -448,9 +448,17 @@ Missing, invalid, expired, or pending-2FA cookies clear any pre-existing
 context user, so an outer tenant's identity cannot leak into an anonymous
 inner session. They also clear any 2FA assurance recorded by an outer
 `SessionMiddleware`. On a successful resolution the middleware replaces
-that assurance with the issuing `AuthManager`, the tenant id under which
-the session was resolved, the resolved user's id, and whether any of that
-user's live, non-pending session cookies on this request has completed 2FA.
+that assurance with the issuing `AuthManager`, the resolved user's id,
+and whether any of that user's live, non-pending session cookies on this
+request has completed 2FA.
+Set `AuthConfig.TenantScopedSessions` when a custom session or user store
+partitions lookup by the context tenant, and resolve that tenant before
+`SessionMiddleware`. Only then does the assurance also bind to the lookup
+tenant, including an empty tenant id. This flag declares the store's lookup
+scope; it does not add tenant filtering. The built-in memory and entity
+stores are global. Their assurance has no tenant binding, even when a tenant
+is already on the context. With global users, mount `tenant.ResolveMiddleware`
+after authentication to derive the authorization tenant.
 It considers every candidate cookie, so an older unverified session cannot
 hide a later stepped-up session of the same user. The exceptions are a
 verified embed grant and a request admitted by `App.InProcessHandler()`:
@@ -458,14 +466,17 @@ neither carries browser credentials,
 and each keeps the identity its trusted server-side context established.
 For a marked call, `SessionMiddleware` also preserves the outer request's
 recorded 2FA assurance; `RequireTwoFA` checks that it still belongs to its
-own manager, the same tenant, and the same context user. This is a fact
+own manager and the same context user. For tenant-partitioned lookup it
+also requires the same lookup tenant. This is a fact
 captured on the outer request, not a credential, and does not re-check
 session expiry or revocation.
 Use that entry point, not `App.Router()`, for generated Local repositories.
 
 An explicit `handler.RecheckPrincipal` recomputes assurance from the
-original candidate cookies for that same principal and tenant. It fails
-when none of the principal's live, non-pending sessions remain.
+original candidate cookies for that same principal, using the original lookup
+tenant for tenant-partitioned stores. The identity recheck does not refuse a
+tenant set or changed downstream; the tenant derivation steps run afterward.
+It fails when none of the principal's live, non-pending sessions remain.
 
 ```go
 app.Use(auth.SessionMiddleware(mgr))
@@ -1429,9 +1440,11 @@ and session evidence described here.
 For a call marked by `App.InProcessHandler()`, `RequireTwoFA` requires a
 non-nil server-set context user and the 2FA assurance `SessionMiddleware`
 recorded for that same user on the outer request. The assurance is bound
-to the issuing `AuthManager` and the tenant id under which the session
-was resolved. No assurance, a missing user, a different user, or a
-different manager or tenant returns 401 with the no-session reason. It
+to the issuing `AuthManager` and the user. With
+`AuthConfig.TenantScopedSessions`, it also binds to the tenant under which
+the session was resolved; global lookup carries no tenant binding.
+No assurance, a missing user, a different user or manager, or a mismatched
+tenant for tenant-partitioned lookup returns 401 with the no-session reason. It
 looks up current enrollment: an unenrolled user passes; an enrolled user needs
 verified assurance or gets 403. The assurance records whether any of that
 user's live, non-pending cookie sessions on the outer request completed

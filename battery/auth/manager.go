@@ -68,6 +68,12 @@ type AuthConfig struct {
 	// If nil, an in-memory store is used (dev/test only).
 	SessionStore SessionStore
 
+	// TenantScopedSessions declares that session or user lookup is partitioned
+	// by the context tenant. Resolve that tenant before SessionMiddleware.
+	// It binds 2FA assurance to the lookup tenant; it does not add tenant
+	// filtering to stores. The built-in stores are global and leave this false.
+	TenantScopedSessions bool
+
 	// LoginRateLimit applies a per-IP rate limit to /auth/login. nil
 	// does NOT mean unlimited: New installs 30 attempts/min with a
 	// 5-minute block, in DevMode too. To loosen it, pass a config with a

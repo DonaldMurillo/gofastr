@@ -136,16 +136,24 @@ and enforce CSRF. `SessionMiddleware` also records the outer request's
 2FA assurance for that same user: whether any of their live, non-pending
 session cookies has completed 2FA. `TwoFAPlugin.RequireTwoFA()` accepts
 this fact on a marked call only while its user id matches the server-set
-context user, its issuing `AuthManager` matches the gate's manager, and
-the request's tenant matches the tenant under which the session was resolved.
+context user and its issuing `AuthManager` matches the gate's manager.
+When `AuthConfig.TenantScopedSessions` declares that the session or user
+store partitions lookup by the context tenant, the assurance also binds
+to the lookup tenant and the request must match it. Resolve that lookup
+tenant before authentication. The flag does not add store filtering.
+Global stores carry no tenant binding, even with a pre-existing tenant;
+`SessionMiddleware` followed by `tenant.ResolveMiddleware` therefore keeps
+the user's assurance valid for Local calls.
 It looks up current enrollment and requires verified assurance for an
-enrolled user. Missing assurance, a missing user, or a different user,
-manager, or tenant gets 401; an enrolled user without verified assurance gets
-403. The fact is a snapshot, not a session credential: Local does not
-re-check session expiry or revocation. Clearing or replacing the user in
+enrolled user. Missing assurance, a missing user, a different user or manager,
+or a tenant mismatch for partitioned lookup gets 401. An enrolled user without
+verified assurance gets 403. The fact is a snapshot, not a session credential:
+Local does not re-check session expiry or revocation. Clearing or replacing the user in
 an outer `SessionMiddleware` also clears or replaces the assurance.
 An explicit `handler.RecheckPrincipal` refreshes assurance across all
-the original candidate cookies for the same principal and tenant, and
+the original candidate cookies for the same principal. For partitioned stores,
+it uses the original lookup tenant, not a tenant derived downstream.
+Tenant derivation steps then refresh the authorization tenant. The recheck
 fails when none of that principal's live, non-pending sessions remain.
 `RequireSession()` trusts a marked call's non-nil server-set user without
 re-reading a session; it still refuses API-token-authenticated contexts.

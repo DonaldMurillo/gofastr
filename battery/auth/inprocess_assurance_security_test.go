@@ -11,11 +11,17 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 //gofastr:test-reads /gofastr.settings.yml
 
 func newInProcessAssuranceRig(t *testing.T) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
+	t.Helper()
+	return newInProcessAssuranceRigWithTenantScope(t, false)
+}
+
+func newInProcessAssuranceRigWithTenantScope(t *testing.T, tenantScoped bool) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
 	t.Helper()
 	users := newUserStoreWithPassword()
 	user := &BasicUser{ID: "42", Email: "local@example.com", Roles: []string{"user"}}
@@ -24,10 +30,11 @@ func newInProcessAssuranceRig(t *testing.T) (*AuthManager, *TwoFAPlugin, *Memory
 	users.byID[user.ID] = entry
 	sessions := NewMemorySessionStore()
 	manager := New(AuthConfig{
-		JWTSecret:           "inprocess-assurance-test",
-		UserStore:           users,
-		SessionStore:        sessions,
-		AllowInMemoryStores: true,
+		JWTSecret:            "inprocess-assurance-test",
+		UserStore:            users,
+		SessionStore:         sessions,
+		AllowInMemoryStores:  true,
+		TenantScopedSessions: tenantScoped,
 	})
 	twofa := NewTwoFAPlugin(TwoFAConfig{Store: NewMemoryTwoFAStore()})
 	manager.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
@@ -50,10 +57,19 @@ func inProcessOuterContext(t *testing.T, manager *AuthManager, tokens ...string)
 
 func inProcessOuterContextFrom(t *testing.T, ctx context.Context, manager *AuthManager, tokens ...string) context.Context {
 	t.Helper()
+	return inProcessOuterContextThrough(t, ctx, manager, nil, tokens...)
+}
+
+func inProcessOuterContextThrough(t *testing.T, ctx context.Context, manager *AuthManager, derive func(http.Handler) http.Handler, tokens ...string) context.Context {
+	t.Helper()
 	var captured context.Context
-	outer := SessionMiddleware(manager)(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	var next http.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		captured = request.Context()
-	}))
+	})
+	if derive != nil {
+		next = derive(next)
+	}
+	outer := SessionMiddleware(manager)(next)
 	request := httptest.NewRequest(http.MethodGet, "/outer", nil).WithContext(ctx)
 	for _, token := range tokens {
 		request.AddCookie(&http.Cookie{Name: manager.Config().SessionCookie, Value: token})
@@ -63,6 +79,83 @@ func inProcessOuterContextFrom(t *testing.T, ctx context.Context, manager *AuthM
 		t.Fatal("outer SessionMiddleware did not authenticate the cookie")
 	}
 	return captured
+}
+
+func TestSessionRecheckAfterTenantResolution(t *testing.T) {
+	manager, _, sessions, user := newInProcessAssuranceRig(t)
+	session, err := sessions.Create(t.Context(), user.GetID(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedTenant := "tenant-a"
+	resolve := tenant.ResolveMiddleware(func(ctx context.Context) string {
+		if GetCurrentUser(ctx) == nil {
+			t.Fatal("tenant resolution ran before session authentication")
+		}
+		return resolvedTenant
+	})
+	ctx := inProcessOuterContextThrough(t, t.Context(), manager, resolve, session.Token)
+	for _, tenantID := range []string{"tenant-a", "tenant-b", ""} {
+		resolvedTenant = tenantID
+		refreshed, ok := handler.RecheckPrincipal(ctx)
+		if !ok {
+			t.Fatalf("RecheckPrincipal refused live session with resolved tenant %q", tenantID)
+		}
+		if handler.GetTenantID(refreshed) != tenantID || GetCurrentUser(refreshed).GetID() != user.GetID() {
+			t.Fatal("recheck did not refresh the same user and downstream tenant")
+		}
+		ctx = refreshed
+	}
+	if _, err := sessions.DeleteByUser(t.Context(), user.GetID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := handler.RecheckPrincipal(ctx); ok {
+		t.Fatal("revoked session kept the held request authenticated")
+	}
+}
+
+func TestInProcessTwoFAAssuranceAfterTenantResolution(t *testing.T) {
+	for _, verified := range []bool{true, false} {
+		name := "Unverified"
+		if verified {
+			name = "Verified"
+		}
+		t.Run(name, func(t *testing.T) {
+			manager, twofa, sessions, user := newInProcessAssuranceRig(t)
+			if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			session, err := sessions.Create(t.Context(), user.GetID(), time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if verified {
+				if err := sessions.MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
+					t.Fatal(err)
+				}
+			}
+			resolve := tenant.ResolveMiddleware(func(ctx context.Context) string {
+				if GetCurrentUser(ctx) == nil {
+					t.Fatal("tenant resolution ran before session authentication")
+				}
+				return "tenant-a"
+			})
+			ctx := inProcessOuterContextThrough(t, t.Context(), manager, resolve, session.Token)
+			if handler.GetTenantID(ctx) != "tenant-a" {
+				t.Fatal("outer request did not resolve tenant-a")
+			}
+			recorder := httptest.NewRecorder()
+			inProcessAssuranceApp(manager, twofa).InProcessHandler().ServeHTTP(recorder,
+				httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(ctx))
+			status := http.StatusForbidden
+			if verified {
+				status = http.StatusNoContent
+			}
+			if recorder.Code != status {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, status, recorder.Body.String())
+			}
+		})
+	}
 }
 
 func inProcessAssuranceApp(manager *AuthManager, twofa *TwoFAPlugin) *framework.App {
@@ -239,7 +332,7 @@ func TestInProcessTwoFAAssuranceManagerBinding(t *testing.T) {
 }
 
 func TestInProcessTwoFAAssuranceTenantBinding(t *testing.T) {
-	manager, twofa, sessions, user := newInProcessAssuranceRig(t)
+	manager, twofa, sessions, user := newTenantScopedAssuranceRig(t, "tenant-a")
 	if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -270,6 +363,83 @@ func TestInProcessTwoFAAssuranceTenantBinding(t *testing.T) {
 	}
 }
 
+type tenantScopedAssuranceUsers struct {
+	UserStore
+	tenantID string
+}
+
+func (store tenantScopedAssuranceUsers) FindByID(ctx context.Context, userID string) (User, error) {
+	if handler.GetTenantID(ctx) != store.tenantID {
+		return nil, ErrUserNotFound
+	}
+	return store.UserStore.FindByID(ctx, userID)
+}
+
+type tenantScopedAssuranceSessions struct {
+	SessionStore
+	tenantID string
+}
+
+func (store tenantScopedAssuranceSessions) Get(ctx context.Context, token string) (*Session, error) {
+	if handler.GetTenantID(ctx) != store.tenantID {
+		return nil, ErrSessionNotFound
+	}
+	return store.SessionStore.Get(ctx, token)
+}
+
+func newTenantScopedAssuranceRig(t *testing.T, tenantID string) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
+	t.Helper()
+	manager, twofa, sessions, user := newInProcessAssuranceRigWithTenantScope(t, true)
+	manager.SetUserStore(tenantScopedAssuranceUsers{UserStore: manager.UserStore(), tenantID: tenantID})
+	manager.SetSessionStore(tenantScopedAssuranceSessions{SessionStore: sessions, tenantID: tenantID})
+	return manager, twofa, sessions, user
+}
+
+func TestSessionRecheckPreservesLookupTenant(t *testing.T) {
+	for _, lookupTenant := range []string{"tenant-a", ""} {
+		t.Run(lookupTenant, func(t *testing.T) {
+			manager, twofa, sessions, user := newTenantScopedAssuranceRig(t, lookupTenant)
+			if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			session, err := sessions.Create(t.Context(), user.GetID(), time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := sessions.MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
+				t.Fatal(err)
+			}
+			resolve := tenant.ResolveMiddleware(func(context.Context) string { return "tenant-b" })
+			ctx := inProcessOuterContextThrough(t, handler.SetTenantID(t.Context(), lookupTenant), manager, resolve, session.Token)
+			for range 2 {
+				refreshed, ok := handler.RecheckPrincipal(ctx)
+				if !ok || handler.GetTenantID(refreshed) != "tenant-b" {
+					t.Fatal("identity recheck lost the lookup tenant or overrode the authorization tenant")
+				}
+				ctx = refreshed
+			}
+			for _, targetTenant := range []string{lookupTenant, "tenant-b"} {
+				recorder := httptest.NewRecorder()
+				inProcessAssuranceApp(manager, twofa).InProcessHandler().ServeHTTP(recorder,
+					httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(handler.SetTenantID(ctx, targetTenant)))
+				status := http.StatusUnauthorized
+				if targetTenant == lookupTenant {
+					status = http.StatusNoContent
+				}
+				if recorder.Code != status {
+					t.Fatalf("tenant %q: status = %d, want %d: %s", targetTenant, recorder.Code, status, recorder.Body.String())
+				}
+			}
+			if _, err := sessions.DeleteByUser(t.Context(), user.GetID()); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := handler.RecheckPrincipal(ctx); ok {
+				t.Fatal("revoked partitioned session kept the held request authenticated")
+			}
+		})
+	}
+}
+
 func TestInProcessTwoFAAssuranceRecheckCandidates(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -286,7 +456,7 @@ func TestInProcessTwoFAAssuranceRecheckCandidates(t *testing.T) {
 		{"LaterRevoked", "second-revoked", "42", true, http.StatusForbidden},
 		{"OtherUser", "", "other-user", true, http.StatusForbidden},
 		{"CannotSwitchUser", "first-revoked", "other-user", false, 0},
-		{"CannotSwitchTenant", "tenant", "42", false, 0},
+		{"DownstreamTenantChange", "tenant", "42", true, http.StatusNoContent},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			manager, twofa, sessions, user := newInProcessAssuranceRig(t)
@@ -307,6 +477,9 @@ func TestInProcessTwoFAAssuranceRecheckCandidates(t *testing.T) {
 			users := manager.UserStore().(*userStoreWithPassword)
 			users.byID["other-user"] = &storeEntry{user: &BasicUser{ID: "other-user"}}
 			ctx := inProcessOuterContextFrom(t, handler.SetTenantID(t.Context(), "tenant-a"), manager, first.Token, second.Token)
+			if assurance, ok := ctx.Value(sessionAssuranceKey{}).(sessionAssurance); !ok || assurance.tenantID != "" {
+				t.Fatal("global lookup recorded a tenant binding from the pre-seeded context")
+			}
 			switch test.change {
 			case "all-revoked", "first-revoked":
 				if err := sessions.Delete(t.Context(), first.Token); err != nil {
