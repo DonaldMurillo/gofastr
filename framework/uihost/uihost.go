@@ -144,16 +144,17 @@ type UIHost struct {
 	pathLocales         *i18n.PathLocales                    // SetPathLocales: the app routes by locale prefix
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
-	pwaConfig           *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
-	pwaSWOnce           sync.Once                            // guards the memoized service-worker body below
-	pwaSW               string                               // deployment-constant service worker, computed on first request
-	pwaSWErr            error                                // paired with pwaSW
-	strict              bool                                 // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
-	coreRouter          *router.Router                       // the framework router Mount received; strict mode reads its route table for the internal-links check
-	strictConfig        StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
-	siteDescription     bool                                 // set by WithDescription; read by the strict site-surface check
-	embedHost           *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
-	embedThemes         embedThemeState                      // per-surface cap on distinct customer theme variants
+	mcpManifestPath     string
+	pwaConfig           *PWAConfig      // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
+	pwaSWOnce           sync.Once       // guards the memoized service-worker body below
+	pwaSW               string          // deployment-constant service worker, computed on first request
+	pwaSWErr            error           // paired with pwaSW
+	strict              bool            // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
+	coreRouter          *router.Router  // the framework router Mount received; strict mode reads its route table for the internal-links check
+	strictConfig        StrictConfig    // per-check levels + route exemptions; zero value enforces everything
+	siteDescription     bool            // set by WithDescription; read by the strict site-surface check
+	embedHost           *fembed.Host    // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
+	embedThemes         embedThemeState // per-surface cap on distinct customer theme variants
 
 	// Hot-path caches. The route table and the default-theme component catalog
 	// are static after wire time, so they are marshaled once and reused on every

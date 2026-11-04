@@ -746,6 +746,10 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 - **Forgetting `WithMCP` (or a manual `/mcp` mount).** The agent card can
   advertise `/mcp`, but if nothing serves it the endpoint 404s. The bundle
   does *not* mount MCP for you. Call `framework.WithMCP()` alongside it.
+  `/llms.txt` links the well-known MCP manifest only when `WithMCP` mounts
+  it. A manual `/mcp` mount still gets its endpoint link, not a nonexistent
+  manifest link. Manual hosts serving a manifest can declare its path with
+  `UIHost.SetMCPManifestPath` before serving requests.
 - **Advertising markdown negotiation without `WithPublicLLMMD`.**
   `WithMarkdownNegotiation` renders via the per-screen LLM doc, which only
   exists when markdown rendering is public. Without it, the negotiated

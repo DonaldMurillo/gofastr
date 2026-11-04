@@ -428,6 +428,13 @@ func WithAgentLinkHeaders() Option {
 
 // ─── Internal config ───────────────────────────────────────────────
 
+// SetMCPManifestPath declares the mounted MCP manifest for discovery links.
+// Framework wiring calls it at startup; manual hosts call it only when
+// they also serve that manifest. An empty path omits the manifest link.
+func (ds *UIHost) SetMCPManifestPath(path string) {
+	ds.mcpManifestPath = path
+}
+
 // agentReadyConfig is the resolved, internal form stored on *UIHost.
 type agentReadyConfig struct {
 	baseURL        string
@@ -582,9 +589,12 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 		}
 		if ds.agentReady.card != nil && ds.agentReady.card.MCPEndpoint != "" &&
 			!strings.Contains(b.String(), ds.agentReady.card.MCPEndpoint) {
-			fmt.Fprintf(&b, "## MCP\n\n- [MCP endpoint](%s): Streamable HTTP JSON-RPC tool surface\n"+
-				"- [MCP manifest](/.well-known/mcp.json): well-known discovery manifest\n\n",
+			fmt.Fprintf(&b, "## MCP\n\n- [MCP endpoint](%s): Streamable HTTP JSON-RPC tool surface\n",
 				ds.agentReady.card.MCPEndpoint)
+			if ds.mcpManifestPath != "" && !strings.Contains(b.String(), ds.mcpManifestPath) {
+				fmt.Fprintf(&b, "- [MCP manifest](%s): well-known discovery manifest\n", ds.mcpManifestPath)
+			}
+			b.WriteString("\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n") + "\n"

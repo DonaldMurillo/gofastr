@@ -3978,6 +3978,11 @@ func (a *App) start(addr string, ln net.Listener) error {
 	if a.mcpAutoMount {
 		a.router.Get("/.well-known/mcp/server-card.json", http.HandlerFunc(a.handleMCPServerCard))
 		a.router.Get("/.well-known/mcp.json", http.HandlerFunc(a.handleMCPManifest))
+		for _, mountable := range a.mountables {
+			if discovery, ok := mountable.(interface{ SetMCPManifestPath(string) }); ok {
+				discovery.SetMCPManifestPath("/.well-known/mcp.json")
+			}
+		}
 	}
 	a.router.Get("/.well-known/agent-skills/index.json", http.HandlerFunc(a.handleAgentSkillsIndex))
 	if a.oauthAuthServer != nil {
