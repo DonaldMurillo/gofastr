@@ -562,6 +562,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- Generated Local repositories now use `App.InProcessHandler()` to retain
+  trusted context identity under session auth and skip browser-only CSRF
+  checks, while refusing ambient credentials before routing. SDK prefixes
+  inherit the app spec only when settings and flags leave them unset;
+  cancellation during dispatch returns the context error. Integer and
+  composite keys have Local/Remote runtime conformance coverage. Regenerate
+  the SDK and switch Local constructors from `app.Router()` to
+  `app.InProcessHandler()`. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
 - Mount the default toast stylesheet on each UI host's router. A toast
   registered by an earlier app in the process no longer leaves later
   hosts linking a stylesheet that returns 404. See `widgets.md`.
@@ -9093,4 +9101,3 @@ registers, and a layout overlay under `gofastr dev`.
   mounted on a router built by hand got a 404 and never reloaded.
   `UIHost.Mount` now registers the dev script routes on the router it
   mounts on.
-

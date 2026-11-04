@@ -36,7 +36,13 @@ func TestSDKRepoParity(t *testing.T) {
 		Name: "memberships", PrimaryKey: []string{"repo", "http", "context"},
 		Fields: []framework.FieldDeclaration{{Name: "repo", Type: "string"}, {Name: "http", Type: "string"}, {Name: "context", Type: "string"}},
 	}}
-	spec, err := buildSDKSpec(declarations, &SdkOptions{module: "example.com/repo", apiPrefix: "api"})
+	projectDir := t.TempDir()
+	clitest.WriteTestFile(t, filepath.Join(projectDir, "gofastr.yml"), "app:\n  name: repo\n")
+	opts := SdkOptions{module: "example.com/repo"}
+	if err := applySDKAppDefaults(projectDir, &opts); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := buildSDKSpec(declarations, &opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +91,7 @@ func TestSDKRepoParity(t *testing.T) {
 		}
 		t.Logf("go %s:\n%s", strings.Join(arguments, " "), output)
 	}
-	command := exec.Command("go", "list", "-deps", ".")
+	command := exec.Command("go", "list", "-deps", "./...")
 	command.Dir = directory
 	command.Env = append(os.Environ(), "GOPROXY=off", "GOFLAGS=-mod=mod")
 	output, err := command.CombinedOutput()
@@ -93,7 +99,7 @@ func TestSDKRepoParity(t *testing.T) {
 		t.Fatalf("client dependencies: %v\n%s", err, output)
 	}
 	if strings.Contains(string(output), "github.com/DonaldMurillo/gofastr") {
-		t.Fatalf("client-only build links the framework:\n%s", output)
+		t.Fatalf("generated SDK build links the framework:\n%s", output)
 	}
 }
 

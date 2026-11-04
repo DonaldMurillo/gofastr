@@ -667,6 +667,8 @@ expose them to agents connected to a live app.**
 
 ## Where to look first
 
+- Durable regression approaches and pitfalls: [docs/agent-notes.md](docs/agent-notes.md).
+
 - New UI / any styling decision? It goes in the design system, full stop
   (Hard rules 7–8). Start in `framework/ui/` if it composes intent
   (PageHeader, FormField, DataTable, Hero, AuthCard). Use `core-ui/html`

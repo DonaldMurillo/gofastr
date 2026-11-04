@@ -488,6 +488,9 @@ entities:
 	if !strings.Contains(string(readme), "https://cfg.example.com") {
 		t.Error("config base_url ignored")
 	}
+	if !strings.Contains(string(readme), "https://cfg.example.com/api") {
+		t.Error("direct SDK command did not inherit the app prefix")
+	}
 	if !strings.Contains(string(readme), "configapp") {
 		t.Error("config name ignored")
 	}
@@ -511,6 +514,13 @@ entities:
 	GenerateProject([]string{"--config=gofastr.settings.yml"})
 	if _, err := os.Stat(filepath.Join(dir, "gen", "sdk", "js", "client.js")); err != nil {
 		t.Fatalf("registry path did not emit client.js: %v", err)
+	}
+	registryReadme, err := os.ReadFile(filepath.Join(dir, "gen", "sdk", "js", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(registryReadme), "https://cfg.example.com/api") {
+		t.Error("registered SDK generator did not inherit the app prefix")
 	}
 	if _, err := sdk.ReadManifest(os.DirFS(filepath.Join(dir, "gen", "sdk", "dist"))); err != nil {
 		t.Fatalf("registry path did not emit a valid manifest: %v", err)

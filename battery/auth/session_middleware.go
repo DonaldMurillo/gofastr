@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
@@ -39,6 +40,8 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 //   - Valid session → user is loaded from UserStore.FindByID and stashed
 //     in ctx via handler.SetUser. GetCurrentUser(ctx) then returns the
 //     User; CRUD owner-scoping picks it up automatically.
+//   - Verified embed grants and calls admitted by App.InProcessHandler
+//     preserve their trusted context user instead of clearing it.
 //
 // This is the missing counterpart to RequireAuth, which is JWT-only. Host
 // apps with HTML/form auth want SessionMiddleware mounted on the routes
@@ -84,7 +87,7 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 		// SessionMiddleware leaking one tenant's user into an inner one, does
 		// not apply to a credential this middleware never issued and cannot
 		// verify.
-		if _, embedded := embed.GrantFromContext(r.Context()); embedded {
+		if _, embedded := embed.GrantFromContext(r.Context()); embedded || framework.IsInProcessRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

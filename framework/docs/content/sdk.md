@@ -92,7 +92,7 @@ base URL, HTTP client, and bearer token. This package imports only the
 standard library; a client-only binary does not link the framework.
 
 The `local` subpackage declares `<Entity>Local` and
-`NewNotesLocal(handler http.Handler)`. Pass the app's complete router:
+`NewNotesLocal(handler http.Handler)`. Pass the app's in-process entry point:
 
 ```go
 import (
@@ -101,7 +101,7 @@ import (
 )
 
 func serverNotes(app *framework.App) client.NotesRepo {
-    return local.NewNotesLocal(app.Router())
+    return local.NewNotesLocal(app.InProcessHandler())
 }
 
 func remoteNotes(api *client.Client) client.NotesRepo {
@@ -116,17 +116,33 @@ owner and tenant scoping, validation, lifecycle hooks, and read hooks
 run exactly as they do for Remote. REST read handlers already apply
 the read-hook chain, including the `crud.WithReadHooks` context on
 related reads; Local does not introduce a second implementation of it.
-The generated API prefix is used for dispatch. Regenerate with the
-server's `--api-prefix` if it is not the default `/api`.
+The generated API prefix is used for dispatch. Explicit SDK settings
+(`api_prefix`) and `--api-prefix` flags win, including an explicit empty
+value. Otherwise the SDK reads `app.api_prefix` from `gofastr.yml` (or
+`gofastr.yaml`) when present; app specs default to `/api`. Without an app
+spec the SDK prefix defaults to empty. Regenerate with `--api-prefix` to
+match a server whose owned Go configuration differs from its old spec.
 
 Use an authenticated server-side context for Local calls. The context,
-including identity, tenant, and cancellation, reaches
-the handler unchanged; its middleware still runs. Never construct this
+including identity, tenant, roles, and cancellation, reaches
+the handler; its middleware still runs. Never construct this
 context from an unverified client-supplied user or tenant id. Local does
-not mint credentials, bypass middleware, or store tokens. Redirects are
+not mint credentials or store tokens. `App.InProcessHandler()` marks only
+admitted calls with a private context key: `auth.SessionMiddleware` keeps
+their context identity and `auth.CSRF` (including `WithBFFPosture`) skips
+browser-token checks. Ordinary network requests still clear stale users
+and enforce CSRF. The entry point refuses any Cookie, Authorization,
+Proxy-Authorization, or X-API-Key header (even empty), URL userinfo, or
+TLS peer certificate with 403 before routing. Do not mount it on a network
+listener. `framework.IsInProcessRequest(r)` is the read-only predicate for
+custom middleware; a custom `middleware.CSRF` can use it in `CSRFConfig.Skip`.
+Local requests have an empty `RemoteAddr`, so per-IP rate keys and
+allowlists see no client address; no synthetic peer is supplied.
+Redirects are
 returned as API errors rather than followed. The client sets a 30-second
 timeout or the caller's earlier deadline. Because dispatch is synchronous,
-the in-process handler must honor context cancellation. JSON is still
+the in-process handler must honor context cancellation; cancellation during
+dispatch is returned as a context error, not a JSON decode error. JSON is still
 encoded and decoded in-process so wire errors and typed values match
 Remote; this is not a direct database repository.
 

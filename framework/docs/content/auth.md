@@ -429,6 +429,13 @@ up the user, and stashes them in the request context via
 the live `User`, and any entity with `OwnerField` set automatically
 scopes per-user.
 
+Missing, invalid, expired, or pending-2FA cookies clear any pre-existing
+context user, so an outer tenant's identity cannot leak into an anonymous
+inner session. The exceptions are a verified embed grant and a request
+admitted by `App.InProcessHandler()`: neither carries browser credentials,
+and each keeps the identity its trusted server-side context established.
+Use that entry point, not `App.Router()`, for generated Local repositories.
+
 ```go
 app.Use(auth.SessionMiddleware(mgr))
 ```
@@ -1058,6 +1065,14 @@ skipped: they don't ride on cookies and aren't subject to CSRF. Any other
 `Authorization` scheme (Basic, Digest, Negotiate, NTLM) is checked: the
 browser attaches those by itself, to a cross-site form too, once a proxy
 or an intranet has challenged for them.
+
+Verified embed exchanges and calls admitted by `App.InProcessHandler()`
+are also exempt. In-process admission refuses credential headers, URL
+userinfo, and TLS peer credentials before marking the context; network
+headers cannot forge that marker. This exception also applies under
+`WithBFFPosture`, not to ordinary anonymous browser writes. Custom core
+CSRF middleware can compose `framework.IsInProcessRequest` into its Skip
+predicate. See [sdk.md](sdk.md#typed-repositories).
 
 `auth.CSRFToken(r)` reads the token the middleware put on the request,
 on a verified POST too (a form re-rendered after a validation error).

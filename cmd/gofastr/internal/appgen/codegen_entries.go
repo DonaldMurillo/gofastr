@@ -207,9 +207,11 @@ func decodeSDKEntry(index int, gen codegen.GeneratorConfig) (SdkOptions, error) 
 		*field.dst = v
 	}
 	var err error
-	if opts.apiPrefix, _, err = e.str("api_prefix", true); err != nil {
+	var prefixSet bool
+	if opts.apiPrefix, prefixSet, err = e.str("api_prefix", true); err != nil {
 		return opts, err
 	}
+	opts.set = map[string]bool{"api-prefix": prefixSet}
 	if opts.targets, err = e.list("targets"); err != nil {
 		return opts, err
 	}

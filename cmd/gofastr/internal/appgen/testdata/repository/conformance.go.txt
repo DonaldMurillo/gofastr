@@ -12,6 +12,7 @@ import (
 
 	client "example.com/repo"
 	"example.com/repo/local"
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -76,7 +77,10 @@ func TestRepositoryParity(t *testing.T) {
 		}
 		return ctx
 	}
-	application := framework.NewApp(framework.WithDB(database), framework.WithoutDefaultMiddleware(), framework.WithConfig(framework.AppConfig{APIPrefix: "api"}))
+	application := framework.NewApp(framework.WithDB(database), framework.WithConfig(framework.AppConfig{APIPrefix: "api"}))
+	manager := auth.New(auth.AuthConfig{DevMode: true, UserStore: auth.NewEntityUserStore(database, "users")})
+	application.Use(auth.SessionMiddleware(manager))
+	application.Use(auth.CSRF())
 	application.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			ctx := request.Context()
@@ -142,7 +146,7 @@ func TestRepositoryParity(t *testing.T) {
 		build func(string) (client.NotesRepo, context.Context)
 	}{
 		{"Local", func(token string) (client.NotesRepo, context.Context) {
-			return local.NewNotesLocal(application.Router()), authenticate(context.Background(), token)
+			return local.NewNotesLocal(application.InProcessHandler()), authenticate(context.Background(), token)
 		}},
 		{"Remote", func(token string) (client.NotesRepo, context.Context) {
 			api := client.NewClient(server.URL+"/api", server.Client())
@@ -271,6 +275,95 @@ func TestRepositoryParity(t *testing.T) {
 	}
 	if created != 10 || updated != 4 || deleted != 8 {
 		t.Fatalf("lifecycle counts: create=%d update=%d delete=%d", created, updated, deleted)
+	}
+	t.Run("LocalCookieRefused", func(t *testing.T) {
+		repository := local.NewNotesLocal(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			request.Header.Set("Cookie", "session=browser")
+			application.InProcessHandler().ServeHTTP(writer, request)
+		}))
+		_, err := repository.Create(authenticate(context.Background(), "alice"), client.NotesInput{Title: "credential"})
+		wantStatus(t, err, http.StatusForbidden)
+	})
+}
+
+func TestLocalCanceledDuringDispatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	repository := local.NewNotesLocal(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		cancel()
+		<-request.Context().Done()
+	}))
+	_, err := repository.List(ctx, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled during dispatch: %v", err)
+	}
+}
+
+func TestRepositoryKeyRoundTrips(t *testing.T) {
+	database, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	database.SetMaxOpenConns(1)
+	for _, statement := range []string{
+		`CREATE TABLE counters (id INTEGER PRIMARY KEY AUTOINCREMENT)`,
+		`CREATE TABLE memberships (repo TEXT, http TEXT, context TEXT, PRIMARY KEY (repo, http, context))`,
+	} {
+		if _, err := database.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	application := framework.NewApp(framework.WithDB(database), framework.WithAPIPrefix("api"))
+	application.Entity("counters", framework.EntityConfig{
+		Fields:   []schema.Field{{Name: "id", Type: schema.Int, AutoGenerate: schema.AutoIncrement}},
+		Exposure: &framework.ExposureConfig{CRUD: pointer(true), Public: true},
+	}.WithTimestamps(false))
+	application.Entity("memberships", framework.EntityConfig{
+		PrimaryKey: []string{"repo", "http", "context"},
+		Fields:     []schema.Field{{Name: "repo", Type: schema.String}, {Name: "http", Type: schema.String}, {Name: "context", Type: schema.String}},
+		Exposure:   &framework.ExposureConfig{CRUD: pointer(true), Public: true},
+	}.WithTimestamps(false))
+	server := httptest.NewServer(application.Router())
+	defer server.Close()
+	remote := client.NewClient(server.URL+"/api", server.Client())
+	for _, repositories := range []struct {
+		name        string
+		counters    client.CountersRepo
+		memberships client.MembershipsRepo
+	}{
+		{"Local", local.NewCountersLocal(application.InProcessHandler()), local.NewMembershipsLocal(application.InProcessHandler())},
+		{"Remote", client.NewCountersRemote(remote), client.NewMembershipsRemote(remote)},
+	} {
+		t.Run(repositories.name, func(t *testing.T) {
+			ctx := context.Background()
+			counter, err := repositories.counters.Create(ctx, client.CountersInput{})
+			if err != nil || counter.ID <= 0 {
+				t.Fatalf("create counter: %+v, %v", counter, err)
+			}
+			loaded, err := repositories.counters.Get(ctx, counter.ID)
+			if err != nil || loaded.ID != counter.ID {
+				t.Fatalf("get counter: %+v, %v", loaded, err)
+			}
+			if err := repositories.counters.Delete(ctx, counter.ID); err != nil {
+				t.Fatal(err)
+			}
+			_, err = repositories.counters.Get(ctx, counter.ID)
+			wantStatus(t, err, http.StatusNotFound)
+			membership, err := repositories.memberships.Create(ctx, client.MembershipsInput{Repo: pointer("repo one"), Http: pointer("https:"), Context: pointer("a+b")})
+			if err != nil || membership.Repo != "repo one" || membership.Http != "https:" || membership.Context != "a+b" {
+				t.Fatalf("create membership: %+v, %v", membership, err)
+			}
+			found, err := repositories.memberships.Get(ctx, membership.Repo, membership.Http, membership.Context)
+			if err != nil || found != membership {
+				t.Fatalf("get membership: %+v, %v", found, err)
+			}
+			if err := repositories.memberships.Delete(ctx, membership.Repo, membership.Http, membership.Context); err != nil {
+				t.Fatal(err)
+			}
+			_, err = repositories.memberships.Get(ctx, membership.Repo, membership.Http, membership.Context)
+			wantStatus(t, err, http.StatusNotFound)
+		})
 	}
 }
 

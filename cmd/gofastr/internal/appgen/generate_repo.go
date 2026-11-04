@@ -33,6 +33,9 @@ func (local transport) RoundTrip(request *http.Request) (*http.Response, error) 
 	incoming.RequestURI = incoming.URL.RequestURI()
 	recorder := httptest.NewRecorder()
 	local.handler.ServeHTTP(recorder, incoming)
+	if err := request.Context().Err(); err != nil {
+		return nil, err
+	}
 	response := recorder.Result()
 	response.Request = request
 	return response, nil
