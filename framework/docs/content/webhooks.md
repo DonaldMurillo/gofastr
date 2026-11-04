@@ -6,6 +6,10 @@ external mirror of `framework/event` (which is internal pub/sub). Use
 events for in-process listeners, webhooks for talking to other
 systems.
 
+`webhook_deliveries_total` and `webhook_failures_total` each count a
+delivery dead-lettered after exhausting its claim budget, even when no
+HTTP request is sent. Failed deliveries never exceed total deliveries.
+
 ## Wiring
 
 ```go
