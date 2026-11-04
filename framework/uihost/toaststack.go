@@ -1,6 +1,10 @@
 package uihost
 
 import (
+	"fmt"
+	"net/http"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 )
@@ -21,14 +25,27 @@ func (ds *UIHost) ensureToastStack() {
 	if ds.coreRouter == nil {
 		return
 	}
+	registered := false
 	for _, d := range widget.AllForSSR() {
 		if preset.IsToastStack(d) {
+			registered = true
+			mounted := false
 			for _, route := range ds.coreRouter.Routes() {
 				if route.Method == "GET" && route.Pattern == d.StyleURL() {
-					return
+					mounted = true
+					break
 				}
+			}
+			if !mounted {
+				ds.coreRouter.Get(strings.TrimPrefix(d.StyleURL(), ds.coreRouter.Prefix()), http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+					writer.Header().Set("Content-Type", "text/css; charset=utf-8")
+					writer.Header().Set("Cache-Control", "no-store")
+					fmt.Fprint(writer, widget.RenderCSS(d))
+				}))
 			}
 		}
 	}
-	widget.MountBuilder(ds.coreRouter, preset.ToastStack(DefaultToastStack))
+	if !registered {
+		widget.MountBuilder(ds.coreRouter, preset.ToastStack(DefaultToastStack))
+	}
 }

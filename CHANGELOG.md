@@ -570,9 +570,11 @@ few lines, and link the PR or the docs page for the rest.
   composite keys have Local/Remote runtime conformance coverage. Regenerate
   the SDK and switch Local constructors from `app.Router()` to
   `app.InProcessHandler()`. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
-- Mount the default toast stylesheet on each UI host's router. A toast
-  registered by an earlier app in the process no longer leaves later
-  hosts linking a stylesheet that returns 404. See `widgets.md`.
+- Reuse registered toast stacks across UI hosts and mount only their
+  missing stylesheet routes on each router. Booting another host no
+  longer registers a global default beside an app's custom stack, so
+  the first host keeps one toast region and both serve its assets.
+  The two-default-host regression remains covered. See `widgets.md`.
 - **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
   (entity mode); regenerate the CLI to pick these up. Details in
   [app-cli.md](framework/docs/content/app-cli.md):

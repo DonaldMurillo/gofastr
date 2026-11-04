@@ -2,7 +2,9 @@ package uihost
 
 import (
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -11,6 +13,67 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
+
+func TestCustomToastStylesAcrossHosts(t *testing.T) {
+	widget.IsolateForTest(t)
+	var routers []*router.Router
+	for _, name := range []string{"custom", "other"} {
+		application := app.NewApp(name)
+		application.Register("/", &describedScreen{}, nil)
+		host := New(application, WithNoInlineFirstPaint())
+		routes := router.New()
+		host.Mount(routes)
+		if name == "custom" {
+			widget.MountBuilder(routes.Group("/shared"), preset.ToastStack("mine"))
+		}
+		host.ValidateBoot()
+		host.ValidateBoot()
+		routers = append(routers, routes)
+	}
+	if _, exists := widget.Lookup(DefaultToastStack); exists {
+		t.Error("second host registered a default stack beside the custom stack")
+	}
+	linkPattern := regexp.MustCompile(`<link\b[^>]*>`)
+	hrefPattern := regexp.MustCompile(`href="([^"]+)"`)
+	for index, routes := range routers {
+		t.Run([]string{"custom", "other"}[index], func(t *testing.T) {
+			page := httptest.NewRecorder()
+			routes.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
+			markup := page.Body.String()
+			if page.Code != http.StatusOK || strings.Count(markup, `data-cui-toast-stack="`) != 1 || !strings.Contains(markup, `data-cui-toast-stack="mine"`) {
+				t.Errorf("expected exactly one custom toast stack: status=%d, count=%d", page.Code, strings.Count(markup, `data-cui-toast-stack="`))
+			}
+			styles := 0
+			for _, link := range linkPattern.FindAllString(markup, -1) {
+				if !strings.Contains(link, `rel="stylesheet"`) {
+					continue
+				}
+				match := hrefPattern.FindStringSubmatch(link)
+				if len(match) != 2 {
+					t.Fatalf("stylesheet without href: %s", link)
+				}
+				if strings.HasPrefix(match[1], "https://") {
+					continue
+				}
+				response := httptest.NewRecorder()
+				routes.ServeHTTP(response, httptest.NewRequest(http.MethodGet, match[1], nil))
+				if response.Code != http.StatusOK {
+					t.Errorf("stylesheet %s: %d", match[1], response.Code)
+				}
+				styles++
+			}
+			if styles == 0 {
+				t.Fatal("page linked no stylesheets")
+			}
+			definition, _ := widget.Lookup("mine")
+			response := httptest.NewRecorder()
+			routes.ServeHTTP(response, httptest.NewRequest(http.MethodGet, definition.StyleURL(), nil))
+			if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), "text/css") || response.Body.Len() == 0 {
+				t.Errorf("custom stack style: %d, %q", response.Code, response.Header().Get("Content-Type"))
+			}
+		})
+	}
+}
 
 func TestToastStylesAcrossHosts(t *testing.T) {
 	widget.IsolateForTest(t)
@@ -72,6 +135,15 @@ func TestBootMountsTheDefaultToastStack(t *testing.T) {
 	}
 	if !preset.IsToastStack(d) {
 		t.Fatalf("the default stack is not a preset toast stack: %+v", d)
+	}
+}
+
+func TestBootMountsToastBesideOtherWidgets(t *testing.T) {
+	bootedHost(t, func(routes *router.Router) {
+		widget.MountBuilder(routes, widget.New("not-a-toast"))
+	})
+	if _, ok := widget.Lookup(DefaultToastStack); !ok {
+		t.Fatal("an unrelated widget suppressed the default toast stack")
 	}
 }
 
