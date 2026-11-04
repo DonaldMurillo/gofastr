@@ -1,6 +1,7 @@
 package analyzers_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -48,6 +49,17 @@ func TestPhysicalSideAfterDirBlockOnSameLine(t *testing.T) {
 	found := countRule(t, ds, contracts.RulePhysicalSide)
 	if len(found) != 1 || !strings.Contains(found[0].Message, "border-inline-end") {
 		t.Fatalf("the .menu rule after the :dir() block is its own declaration; got %v", found)
+	}
+}
+
+func TestSameLineBackgroundMirrorIsQuiet(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/physicalside.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := designFixture(t, "framework/ui/x.go", string(source))
+	if found := countRule(t, diagnostics, contracts.RulePhysicalSide); len(found) != 0 {
+		t.Errorf("mirrored background reported: %v", found)
 	}
 }
 

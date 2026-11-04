@@ -165,8 +165,16 @@ func mirrorsBackground(scan []string) bool {
 		if flags == nil {
 			continue
 		}
-		if i := strings.Index(line, "background-position"); i >= 0 && i < len(flags) && flags[i] {
-			return true
+		for start := 0; start < len(line); {
+			offset := strings.Index(line[start:], "background-position")
+			if offset < 0 {
+				break
+			}
+			position := start + offset
+			if position < len(flags) && flags[position] {
+				return true
+			}
+			start = position + len("background-position")
 		}
 	}
 	return false
