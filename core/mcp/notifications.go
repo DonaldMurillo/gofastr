@@ -31,6 +31,8 @@ const maxResourceURIBytes = 2048
 // (expireResourceSubsIfIdleLocked) frees room.
 const maxResourceSubscriptions = 1024
 
+const maxSSESubscribers = 1024
+
 // maxResourceSubscriptionPairs caps how many (caller, uri) subscriptions
 // the per-caller record (Server.resourceSubsBy) retains, across every
 // caller. The record exists so an unsubscribe releases only its own
@@ -85,8 +87,9 @@ type sseSubscriber struct {
 // addSSESubscriber applies the seat policy and, when the stream may
 // register, records it for notification delivery. Called from
 // sseGetHandler after the origin/Host and server-gate checks. ok=false
-// means the caller's seat table is full and the policy is Refuse: the
-// handler must answer 429 and hold nothing. Under EvictOldest the
+// means the global registry is full, or the caller's seat table is full
+// and the policy is Refuse: the handler must answer 429 and hold nothing.
+// Under EvictOldest the
 // caller's oldest stream is deregistered and closed here so the new
 // stream fits.
 func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sseSubscriber, ok bool) {
@@ -112,12 +115,14 @@ func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sse
 		close(oldest.ch)
 		s.expireResourceSubsIfIdleLocked()
 	}
+	if len(s.sseSubs) >= maxSSESubscribers {
+		return nil, false
+	}
 	sub = &sseSubscriber{
 		ch:      make(chan sseNotification, sseSubBufferSize),
 		ctx:     ctx,
 		seatKey: seatKey,
 	}
-	//gofastr:allow(growmap) keyed by the subscriber pointer, one entry per live stream: sseGetHandler's defer removeSSESubscriber (transport.go) releases every entry on every exit path, so the set is bounded by concurrent connections holding capped seats, not by caller identities
 	s.sseSubs[sub] = struct{}{}
 	s.sseSeatOrder[seatKey] = append(s.sseSeatOrder[seatKey], sub)
 	return sub, true

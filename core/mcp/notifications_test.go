@@ -19,6 +19,42 @@ import (
 
 type revocableUser struct{}
 
+func TestSSEGlobalSubscriberBound(t *testing.T) {
+	for _, perCallerCap := range []int{0, -1} {
+		t.Run(fmt.Sprint(perCallerCap), func(t *testing.T) {
+			server := NewServer()
+			server.SetSSESeatCap(perCallerCap)
+			var first *sseSubscriber
+			for index := range 1024 {
+				subscriber, ok := server.addSSESubscriber(context.Background(), fmt.Sprintf("2001:db8::%x", index))
+				if !ok {
+					t.Fatalf("subscriber %d rejected before global limit", index)
+				}
+				if first == nil {
+					first = subscriber
+				}
+			}
+			request := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+			request.Header.Set("Accept", "text/event-stream")
+			request.RemoteAddr = "[2001:db8:1::1]:1234"
+			request = request.WithContext(context.Background())
+			recorder := httptest.NewRecorder()
+			if _, ok := server.addSSESubscriber(context.Background(), "one-more-host"); ok {
+				t.Error("distinct caller exceeded the global subscriber bound")
+				return
+			}
+			server.ServeSSE("/mcp").ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusTooManyRequests {
+				t.Fatalf("wire status=%d, want 429", recorder.Code)
+			}
+			server.removeSSESubscriber(first)
+			if _, ok := server.addSSESubscriber(context.Background(), "replacement-host"); !ok {
+				t.Fatal("released global capacity was not reusable")
+			}
+		})
+	}
+}
+
 func (revocableUser) GetID() string { return "u1" }
 
 // A stream whose session is revoked stops at its next delivery: the
