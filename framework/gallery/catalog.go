@@ -131,19 +131,7 @@ var Catalog = []Entry{
 
 	// ---------- Tags & badges ----------
 	{"tag", "Tag", "Tags & badges", "Compact status pill, optionally dismissable.", func() render.HTML {
-		return row(
-			ui.Tag(ui.TagConfig{Label: "neutral"}),
-			ui.Tag(ui.TagConfig{Label: "success", Variant: ui.StatusSuccess}),
-			ui.Tag(ui.TagConfig{Label: "warning", Variant: ui.StatusWarning}),
-			ui.Tag(ui.TagConfig{Label: "danger", Variant: ui.StatusDanger}),
-			ui.Tag(ui.TagConfig{Label: "info", Variant: ui.StatusInfo}),
-			// Dismissable variant: a dismissal is an in-page state
-			// change, so the Island renders this strip again and the
-			// same anchor is the no-script destination.
-			ui.Tag(ui.TagConfig{Label: "beta", Dismiss: "/components/tag?dismissed=beta",
-				DismissLabel: "Remove beta",
-				Island:       headless.Island{Endpoint: "/components/tag", Signal: "tag-demo"}}),
-		)
+		return TagDemo(false)
 	}},
 	{"statusbadge", "StatusBadge", "Tags & badges", "Inline dot + label status indicator.", func() render.HTML {
 		return row(

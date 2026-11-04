@@ -311,6 +311,11 @@ func setupServer() *framework.App {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	// ToggleAction demo, same deal: the toggle runtime keeps the
+	//gofastr:allow(GOFASTR1902) stateless gallery dismissal returns only demo HTML and changes no user data
+	fwApp.Router().Post("/components/tag", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(gallery.TagDemo(r.URL.Query().Get("dismissed") == "beta")))
+	}))
 	// committed (or reverted) state only on a real 2xx, so the demo
 	// buttons round-trip through this no-op.
 	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
