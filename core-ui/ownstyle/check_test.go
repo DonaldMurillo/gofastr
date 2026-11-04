@@ -14,6 +14,25 @@ func defaultTokens(t *testing.T) map[string]string {
 	return style.ThemeToTokens(style.DefaultTheme())
 }
 
+func TestChainedMediaRangeReportsBothBounds(t *testing.T) {
+	source, err := os.ReadFile("testdata/chained-range.style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range strings.Split(strings.TrimSpace(string(source)), "\n") {
+		diagnostics := Check("range.style.css", query, KindScoped, defaultTokens(t))
+		var widths []Diagnostic
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Rule == RuleRawMediaWidth {
+				widths = append(widths, diagnostic)
+			}
+		}
+		if len(widths) != 2 || widths[0].Col == widths[1].Col {
+			t.Errorf("query %q: got %v, want distinct lower and upper bound findings", query, widths)
+		}
+	}
+}
+
 // The bad inbox file from the design walkthrough. 1817 is a Go+CSS
 // rule (slice 5); it is not expected here.
 const inboxCSS = `:scope { padding: 16px; color: #52525B; }
