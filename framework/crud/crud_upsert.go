@@ -240,7 +240,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// below from the context-derived tenant id). Other ReadOnly/Hidden
 		// fields are persisted when the caller opted in via
 		// WithServerWrites(ctx).
-		clearedDerived, err := ch.resetImageDerived(ctx, req, ch.colKeyVals(body), body, func(field schema.Field) bool {
+		clearedDerived, imageSources, err := ch.resetImageDerived(ctx, req, ch.colKeyVals(body), body, func(field schema.Field) bool {
 			return !ch.isKeyCol(field.Name) && ch.upsertSets(ctx, field) && ch.upsertSetsGuarded(ctx, field.Name, true)
 		})
 		if err != nil {
@@ -389,7 +389,15 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			} else {
 				sb.WriteString("UPDATE SET ")
 				sb.WriteString(strings.Join(setParts, ", "))
-				if guard := ch.upsertConflictGuard(); guard != "" {
+				guard := ch.upsertConflictGuard()
+				for _, source := range imageSources {
+					vals = append(vals, source.value)
+					if guard != "" {
+						guard += " AND "
+					}
+					guard += fmt.Sprintf("%s.%s IS NOT DISTINCT FROM $%d", upsertTarget, query.QuoteKeyword(source.column), len(vals))
+				}
+				if guard != "" {
 					sb.WriteString(" WHERE ")
 					sb.WriteString(guard)
 				}

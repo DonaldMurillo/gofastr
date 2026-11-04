@@ -295,7 +295,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err := ch.checkBelongsToScope(ctx, r, w); err != nil {
 		return nil, err
 	}
-	clearedDerived, err := ch.resetImageDerived(ctx, r, idKey, body, func(field schema.Field) bool {
+	clearedDerived, imageSources, err := ch.resetImageDerived(ctx, r, idKey, body, func(field schema.Field) bool {
 		return ch.updateSets(ctx, field, true)
 	})
 	if err != nil {
@@ -354,6 +354,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 
 		kc, ka := ch.keyWhere(id)
 		ub.Where(kc, ka...)
+		for _, source := range imageSources {
+			ub.Where(query.QuoteKeyword(source.column)+" IS NOT DISTINCT FROM $1", source.value)
+		}
 		ch.ApplyTenantScopeUpdate(ub, r)
 		ch.ApplyOwnerScopeUpdate(ub, r)
 		// A soft-deleted row is logically gone: the read paths hide it

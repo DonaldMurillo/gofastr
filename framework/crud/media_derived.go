@@ -11,9 +11,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-func (ch *CrudHandler) resetImageDerived(ctx context.Context, req *http.Request, key []any, body map[string]any, sets func(schema.Field) bool) (map[string]bool, error) {
+type imageSource struct {
+	column string
+	value  any
+}
+
+func (ch *CrudHandler) resetImageDerived(ctx context.Context, req *http.Request, key []any, body map[string]any, sets func(schema.Field) bool) (map[string]bool, []imageSource, error) {
 	if len(key) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var columns []string
 	fields := make(map[string]schema.Field)
@@ -24,7 +29,7 @@ func (ch *CrudHandler) resetImageDerived(ctx context.Context, req *http.Request,
 		}
 	}
 	if len(columns) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	condition, args := ch.keyCond(key)
 	selectRow := query.Select(columns...).From(ch.Entity.GetTable()).Where(condition, args...)
@@ -41,12 +46,18 @@ func (ch *CrudHandler) resetImageDerived(ctx context.Context, req *http.Request,
 	}
 	if err := ch.conn(ctx).QueryRowContext(ctx, statement, args...).Scan(destinations...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("read image derivatives source: %w", err)
+		return nil, nil, fmt.Errorf("read image derivatives source: %w", err)
 	}
 	cleared := make(map[string]bool)
+	sources := make([]imageSource, 0, len(columns))
 	for index, column := range columns {
+		var value any
+		if previous[index].Valid {
+			value = previous[index].String
+		}
+		sources = append(sources, imageSource{column: column, value: value})
 		replacement, _ := body[column].(string)
 		if replacement == previous[index].String {
 			continue
@@ -64,5 +75,5 @@ func (ch *CrudHandler) resetImageDerived(ctx context.Context, req *http.Request,
 			cleared[name] = true
 		}
 	}
-	return cleared, nil
+	return cleared, sources, nil
 }

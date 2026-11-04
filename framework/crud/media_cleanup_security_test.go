@@ -76,6 +76,54 @@ func TestImageChangeClearsDerivedColumns(t *testing.T) {
 	}
 }
 
+type imageRaceExecutor struct {
+	DBExecutor
+	beforeWrite func()
+}
+
+func (executor *imageRaceExecutor) QueryRowContext(ctx context.Context, statement string, args ...any) *sql.Row {
+	if executor.beforeWrite != nil && (strings.HasPrefix(statement, "UPDATE cln SET") || strings.HasPrefix(statement, "INSERT INTO cln ")) {
+		callback := executor.beforeWrite
+		executor.beforeWrite = nil
+		callback()
+	}
+	return executor.DBExecutor.QueryRowContext(ctx, statement, args...)
+}
+
+func TestImageDerivedSourceRaceRefused(t *testing.T) {
+	for _, method := range []string{"update", "upsert"} {
+		for _, initial := range []any{clnKey, nil} {
+			t.Run(method+"/"+fmt.Sprint(initial), func(t *testing.T) {
+				ch, database := setupSecurityTestHandler(t, makeEntityConfig("cln", "cln", "", []schema.Field{
+					{Name: "id", Type: schema.String}, {Name: "photo", Type: schema.Image}, {Name: "photo_variants", Type: schema.JSON},
+				}), `CREATE TABLE cln (id TEXT PRIMARY KEY, photo TEXT, photo_variants TEXT)`)
+				seedRows(t, database, "cln", []map[string]any{{"id": "a", "photo": initial, "photo_variants": `[{"storage_ref":"old"}]`}})
+				ch.DB = &imageRaceExecutor{DBExecutor: database, beforeWrite: func() {
+					if _, err := database.Exec(`UPDATE cln SET photo = 'https://cdn.example.com/y.png', photo_variants = '[{"storage_ref":"y"}]' WHERE id = 'a'`); err != nil {
+						t.Fatal(err)
+					}
+				}}
+				var err error
+				if method == "update" {
+					_, err = ch.UpdateOne(context.Background(), "a", map[string]any{"photo": initial})
+				} else {
+					_, err = ch.UpsertOne(context.Background(), map[string]any{"id": "a", "photo": initial})
+				}
+				if err == nil {
+					t.Error("stale image update succeeded after its source changed")
+				}
+				var photo, variants string
+				if err := database.QueryRow(`SELECT photo, photo_variants FROM cln WHERE id = 'a'`).Scan(&photo, &variants); err != nil {
+					t.Fatal(err)
+				}
+				if photo != "https://cdn.example.com/y.png" || variants != `[{"storage_ref":"y"}]` {
+					t.Errorf("stale write mixed image and derivatives: %q %q", photo, variants)
+				}
+			})
+		}
+	}
+}
+
 func TestImageDerivativesKeepNewValues(t *testing.T) {
 	for _, method := range []string{"update", "upsert"} {
 		t.Run(method, func(t *testing.T) {

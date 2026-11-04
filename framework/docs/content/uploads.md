@@ -283,6 +283,11 @@ keeps its metadata. A multipart pipeline that produces only some artifacts
 therefore cannot retain the previous image's other artifacts. Stored renditions
 that the new row no longer references are released after commit.
 
+Image updates compare the source read for that decision in the write's SQL
+predicate, including SQL `NULL`. If another writer changes the source before
+the update or upsert conflict, the stale write is refused without changing
+the current image or its metadata. Reload the row before retrying.
+
 **Columns you do not declare are skipped.** Nothing errors, nothing is
 lost; you adopt a column by adding it to the entity. So an entity with a
 `cover` image field opts into the hash alone by declaring:
