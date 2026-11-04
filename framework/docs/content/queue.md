@@ -649,7 +649,7 @@ in UTC, the first run included; `time.Local` would resolve to a different
 zone on every replica.
 The in-memory `Scheduler` differs here: it has no persistence, so its cron
 specs evaluate against the process clock in the process's local zone.
-Moving a schedule from `Scheduler` to `DurableScheduler.Register()` on a
+Moving a schedule from `Scheduler` to `DurableScheduler` (`Every`/`Cron` … `.Register()`) on a
 non-UTC host shifts its fire time to the UTC wall clock; pass the
 intended zone via `RegisterAt` to keep local-time semantics.
 Re-registering a schedule with a different cadence keeps the stored

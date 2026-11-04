@@ -177,7 +177,7 @@ the runtime test suite. Every attribute is a public contract.
 State worth bookmarking / refreshing / back-buttoning lives in the URL.
 The flow:
 
-1. Initial load: `Screen.Load(ctx)` reads `?p=2` etc. and SSR's page 2.
+1. Initial load: `ScreenLoader.Load(ctx)` reads `?p=2` etc. and SSR's page 2.
 2. Click in-island button: RPC returns new HTML AND
    `X-Gofastr-Push-State: ?p=3` header → runtime applies pushState (no fetch).
 3. Browser back: popstate → runtime fetches screen partial for the
@@ -194,7 +194,7 @@ The flow:
 - [ ] No JS feature code; only the generic runtime.
 - [ ] Cross-page links are normal `<a>`; the runtime intercepts them
       transparently for the partial-fetch + cache flow.
-- [ ] `Screen.Load(ctx)` populates state from route params + query so
+- [ ] `ScreenLoader.Load(ctx)` populates state from route params + query so
       deep-links / refresh / SSG all work.
 
 ## Stop and re-read `core-ui/ARCHITECTURE.md` if

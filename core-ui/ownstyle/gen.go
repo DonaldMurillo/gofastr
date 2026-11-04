@@ -145,7 +145,7 @@ func (g *fileGen) declareIdentifiers() error {
 	// A class method may not shadow the embedded *ownstyle.Sheet's
 	// exported methods: Style.Scope, Style.Name and Style.Kind are the
 	// registration's public surface, OwnedSheet is the method
-	// app.StyleSheet requires, and an outer method of the same name
+	// app.OwnedStyle requires, and an outer method of the same name
 	// would silently replace them. The names come from the method set,
 	// so a method added to Sheet is reserved without a list to update.
 	sheetType := reflect.TypeFor[*Sheet]()

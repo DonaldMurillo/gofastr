@@ -78,10 +78,10 @@ from their SSR path with the visitor's current data, bypassing the
 catalog's `Demo()` closure. See `examples/site/components.go` for the
 pattern.
 
-`gallery.RegisterDemo(slug, fn)` is a seam for the rarer case where a host
-wants to override the closure itself (e.g. static export with different
-default data). It is consulted by `gallery.DemoFor(slug)`; the catalog
-slice is unchanged.
+`gallery.DemoFor(slug)` returns the catalog's own closure for a slug, or
+nil for an unknown one. A host that needs different data for a demo (a
+static export with other defaults, say) calls the render helpers itself,
+as above; the catalog has no override hook.
 
 ## Don't reinvent
 

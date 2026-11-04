@@ -173,7 +173,7 @@ persistence is orthogonal (the store is always written).
 
 ## Migration-group tie-in
 
-`Manifest.MigrationGroup` defaults to the module name and is an
+`ModuleManifest.MigrationGroup` defaults to the module name and is an
 informational pointer to the `-- +migrate Group <name>` directive from
 the migrations system. The framework does not enforce that it matches a
 registered migration group, but the convention keeps schema migrations

@@ -26,7 +26,7 @@
 //
 // Every sentence the module says arrived as a data-hui-sortable-s-*
 // attribute the component rendered from its Strings, so a translated
-// page announces in its own language; the {label}/{list}/{position}
+// page announces in its own language; the {{label}}/{{list}}/{{position}}
 // tokens are written in when the move has happened. No inline style
 // is ever written; the grabbed and dragging states are classes.
 (function () {
@@ -43,8 +43,8 @@
 
   const attr = (el, name) => el?.getAttribute?.(name) || '';
 
-  // fill substitutes the announcement's tokens: {label} the row's
-  // name, {list} the list's own name, {position} the 1-based place.
+  // fill substitutes the announcement's tokens: {{label}} the row's
+  // name, {{list}} the list's own name, {{position}} the 1-based place.
   function fill(tpl, map) {
     return tpl.replace(/\{\{(label|list|position)\}\}/g, (_, k) => String(map[k] ?? ''));
   }

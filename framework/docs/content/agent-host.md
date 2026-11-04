@@ -2,8 +2,8 @@
 
 The agent-host surface is what a chat host (Claude, ChatGPT) touches when
 it renders your app's widget: the `/mcp` endpoint it talks to, the
-`ui://` resources it reads, and the widget client script the widget
-fetches. This page is the contract for that surface — the decisions that
+`ui://` resources it reads, and the widget client the widget document
+carries inline. This page is the contract for that surface — the decisions that
 settle how far the framework reaches into it, what a widget author
 writes, and where the boundary deliberately sits.
 
