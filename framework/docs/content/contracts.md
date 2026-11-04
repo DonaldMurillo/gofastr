@@ -23,6 +23,16 @@ outputs (`dist`, `bin`, `build`, `tmp`), dependencies, and hidden/underscore
 subtrees are skipped; explicitly selecting a root with one of those names
 still scans that root.
 
+An unreadable analysis root is a fatal discovery error. An unreadable
+subdirectory is skipped without stopping discovery of its readable siblings.
+Source files that cannot be read are recorded alongside parse failures in
+the report's `unparsed` count and its text footer. A run with no readable
+Go, CSS, or JavaScript source files fails with a discovery error instead of
+reporting a clean pass; a directory containing only configuration or excluded
+build output is not a successful analysis. `contracts.NewPass` still permits
+an empty pass for inspection, but `contracts.Run` refuses to analyze it, so
+both `gofastr verify` and the `gofastr build` contract gate reject it.
+
 Rules are grouped into capabilities, and each capability is also a filter:
 `gofastr verify routing security` runs two of them.
 

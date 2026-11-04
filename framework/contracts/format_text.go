@@ -157,12 +157,12 @@ func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 			map[bool]string{true: "y is", false: "ies are"}[r.BaselineFixed == 1],
 			c.bold("gofastr verify --baseline-write"))
 	}
-	// A file the parser rejected produced no findings from any analyzer.
+	// A file reading or parsing rejected produced no findings from any analyzer.
 	// Saying so is the difference between "these files are clean" and
 	// "nobody could read these files", mid-edit that is expected, in CI
 	// it is the whole story.
 	if r.Unparsed > 0 {
-		fmt.Fprintf(b, "  %s %d file%s could not be parsed and %s not checked\n",
+		fmt.Fprintf(b, "  %s %d file%s could not be read or parsed and %s not checked\n",
 			c.yellow("·"), r.Unparsed, plural(r.Unparsed),
 			map[bool]string{true: "was", false: "were"}[r.Unparsed == 1])
 	}

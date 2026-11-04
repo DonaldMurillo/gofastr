@@ -546,7 +546,7 @@ func TestUnparsedFilesAreCountedAndReported(t *testing.T) {
 func TestReportSurfacesUnparsedCount(t *testing.T) {
 	r := &Report{FailOn: SeverityWarn, Unparsed: 2}
 	text := FormatText(r, TextOptions{})
-	if !strings.Contains(text, "could not be parsed") {
+	if !strings.Contains(text, "could not be read or parsed") {
 		t.Errorf("the text footer hides unparsed files:\n%s", text)
 	}
 	blob, err := FormatJSON(r)
