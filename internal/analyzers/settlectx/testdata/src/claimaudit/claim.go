@@ -122,3 +122,14 @@ func retry(ctx context.Context, q *Queue, job Job, h func(context.Context, Job) 
 		_ = q.requeue(ctx, job) // want `requeue records an outcome on the context the callback on line 121 ran under`
 	}
 }
+
+// litWorkerLoop is workerLoop spelled as a package-level function
+// literal: the claim still happens, the hand-back still rides the
+// claim's own context.
+var litWorkerLoop = func(ctx context.Context, q *Queue) {
+	job, err := q.dequeue(ctx, "")
+	if err != nil {
+		return
+	}
+	_ = q.release(ctx, job) // want `release hands back the claim taken on line 130 on the context the claim ran under`
+}

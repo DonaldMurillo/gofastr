@@ -53,7 +53,10 @@
 // tagged json:"jsonrpc") that can actually fail to encode: it
 // holds, at any depth through exported fields, slices, arrays, maps and
 // pointers, an interface (any, map[string]any), a json.RawMessage, a
-// float (NaN and ±Inf are refused), a chan, a func or a complex. Bug
+// float (NaN and ±Inf are refused), a chan, a func or a complex — and,
+// since the 2026-11-03 round, a map whose key is none of a string, an
+// integer and a TextMarshaler (map[float64]string is always refused,
+// "unsupported key type"). Bug
 // 3516c4d9b: core/mcp's transports encoded a dispatched Response (its
 // Result is `any`) with the error dropped, so a NaN in a content block's
 // _meta answered HTTP with an empty 200 body and stdio with no line at
@@ -242,7 +245,31 @@ func receiverType(pass *analysis.Pass, sel *ast.SelectorExpr) string {
 	if !ok {
 		return ""
 	}
+	// The universe error's Named has no package (err.Error() reaches
+	// here through familyCall): no path, no decoder family.
+	if named.Obj().Pkg() == nil {
+		return ""
+	}
 	return named.Obj().Pkg().Path() + "." + named.Obj().Name()
+}
+
+// encodableMapKey reports whether encoding/json accepts a key of type
+// t: a string or integer kind, or a MarshalText. Anything else — a
+// float, a bool, a struct without MarshalText, an interface — is
+// refused at encode time with "unsupported key type", an error a
+// dropped Encode swallows.
+func encodableMapKey(t types.Type) bool {
+	for _, tt := range []types.Type{t, types.NewPointer(t)} {
+		if obj, _, _ := types.LookupFieldOrMethod(tt, true, nil, "MarshalText"); obj != nil {
+			if _, ok := obj.(*types.Func); ok {
+				return true
+			}
+		}
+	}
+	if b, ok := t.Underlying().(*types.Basic); ok {
+		return b.Info()&(types.IsString|types.IsInteger) != 0
+	}
+	return false
 }
 
 // isYAML reports whether an import path is one of the yaml packages
@@ -347,7 +374,19 @@ func canFailExpr(pass *analysis.Pass, e ast.Expr) bool {
 		return canFailEncode(t)
 	}
 	switch u := t.Underlying().(type) {
-	case *types.Map, *types.Slice, *types.Array:
+	case *types.Map:
+		// An empty map encodes as {} whatever its key type; every
+		// entry present is judged by its key, which json may refuse.
+		for _, el := range lit.Elts {
+			kv, ok := el.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			if kt := pass.TypesInfo.TypeOf(kv.Key); kt == nil || !encodableMapKey(kt) {
+				return true
+			}
+		}
+	case *types.Slice, *types.Array:
 	case *types.Struct:
 		// Fields the literal leaves out are zero: a nil interface or
 		// RawMessage encodes as null and a zero float as 0, so only the
@@ -427,6 +466,11 @@ func failWalk(t types.Type, seen map[types.Type]bool) bool {
 	case *types.Array:
 		return failWalk(u.Elem(), seen)
 	case *types.Map:
+		// json.Marshal refuses a map whose key is neither a string,
+		// an integer, nor a TextMarshaler: the key itself can fail.
+		if !encodableMapKey(u.Key()) {
+			return true
+		}
 		return failWalk(u.Elem(), seen)
 	case *types.Struct:
 		for i := range u.NumFields() {

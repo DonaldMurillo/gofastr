@@ -121,6 +121,10 @@
 // battery/webhook/bridge.go:110) sit in different functions joined by
 // the event bus's EmitAsync, and B27 itself, whose saveDelivery has no
 // context and no callback in its body.
+//
+// Package-level function literals (var worker = func(ctx, …) {…})
+// get the same body check as declared functions; they export no facts
+// (no *types.Func exists for the variable to hang one on).
 package settlectx
 
 import (
@@ -208,6 +212,42 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 			return true
 		})
+	}
+	// Package-level function literals (var worker = func(...) {...}) get
+	// the same check; they export no facts — there is no *types.Func to
+	// hang one on.
+	for _, f := range pass.Files {
+		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+			continue
+		}
+		for _, d := range f.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, v := range vs.Values {
+					lit, ok := ast.Unparen(v).(*ast.FuncLit)
+					if !ok || lit.Body == nil {
+						continue
+					}
+					r := a.newResolver(lit.Body)
+					a.checkBody(r, lit.Body)
+					a.checkAudit(r, lit.Body)
+					ast.Inspect(lit.Body, func(n ast.Node) bool {
+						if inner, ok := n.(*ast.FuncLit); ok && inner != lit {
+							a.checkBody(r, inner.Body)
+							a.checkAudit(r, inner.Body)
+						}
+						return true
+					})
+				}
+			}
+		}
 	}
 	a.reportAuditHelpers()
 	return nil, nil

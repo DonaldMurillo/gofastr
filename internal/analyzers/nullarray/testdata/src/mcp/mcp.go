@@ -174,3 +174,57 @@ func extend(r *toolsCallResult, more []Content, msg *promptsGetResult, parts []P
 		msg.Messages = parts
 	}
 }
+
+// rebindThenLog: the rebind is not the guard's last statement — the log
+// after it changes nothing about the nil path.
+func rebindThenLog(h func() ([]PromptMessage, error), logf func(string, ...any)) (promptsGetResult, error) {
+	msgs, err := h()
+	if err != nil {
+		return promptsGetResult{}, err
+	}
+	if msgs == nil {
+		msgs = []PromptMessage{}
+		logf("empty prompt")
+	}
+	return promptsGetResult{Messages: msgs}, nil
+}
+
+// guardThenRebind: a guard is stale once the variable is reassigned
+// after it — maybeNil can hand back nil again.
+func maybeNil() []PromptMessage { return nil }
+
+func guardThenRebind(h func() ([]PromptMessage, error)) (promptsGetResult, error) {
+	msgs, err := h()
+	if err != nil {
+		return promptsGetResult{}, err
+	}
+	if msgs == nil {
+		msgs = []PromptMessage{}
+	}
+	msgs = maybeNil()
+	return promptsGetResult{Messages: msgs}, nil // want `Messages is a required JSON array`
+}
+
+// errorFlagged is bdb716482's own spelling: the literal omits Content
+// entirely, and "content": null goes out.
+func errorFlagged(isErr bool) toolsCallResult {
+	return toolsCallResult{IsError: isErr} // want `Content is a required JSON array, and this literal leaves it nil`
+}
+
+// errorFlaggedFilled: the omitted-field literal whose field is filled
+// on the same object right after — judged where it is filled.
+func errorFlaggedFilled(v []Content) toolsCallResult {
+	r := toolsCallResult{IsError: true}
+	r.Content = contentArray(v)
+	return r
+}
+
+// A package-level literal and a package-level function literal have no
+// FuncDecl; their stores are checked all the same.
+var startup = toolsCallResult{Content: maybeNilContent()} // want `Content is a required JSON array`
+
+func maybeNilContent() []Content { return nil }
+
+var makeResult = func(flag bool) toolsCallResult {
+	return toolsCallResult{IsError: flag} // want `Content is a required JSON array, and this literal leaves it nil`
+}

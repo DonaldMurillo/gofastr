@@ -119,3 +119,19 @@ func conjHeld(total, limit int, strict bool) int {
 	}
 	return 0
 }
+
+// capturedParamDivision: the closure divides by the ENCLOSING
+// function's limit-named parameter — limit == 0 panics inside f().
+func capturedParamDivision(rows []int, limit int) int {
+	f := func() int { return len(rows) / limit } // want `integer division by limit`
+	return f()
+}
+
+// capturedParamGuarded: the same closure, guarded where it is created.
+func capturedParamGuarded(rows []int, limit int) (int, bool) {
+	if limit <= 0 {
+		return 0, false
+	}
+	f := func() int { return len(rows) / limit }
+	return f(), true
+}

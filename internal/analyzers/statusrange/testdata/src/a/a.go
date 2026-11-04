@@ -2,6 +2,7 @@ package a
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -55,11 +56,47 @@ func Sinks(w http.ResponseWriter, r *http.Request, cfg Config) {
 	begin(cfg.StatusCode)                              // want `reaches a status sink \(begin\)`
 }
 
+// A status call in a closure that captures the helper's parameter: the
+// parameter is the helper's sink (its callers are checked), and the
+// call inside the closure is not reported.
+func writeDefer(w http.ResponseWriter, code int) { // want writeDefer:`status\(safe=\[\] sinks=\[1\] checks=\[\]\)`
+	defer func() { w.WriteHeader(code) }()
+}
+
+func writeDirect(w http.ResponseWriter, code int) { // want writeDirect:`status\(safe=\[\] sinks=\[1\] checks=\[\]\)`
+	w.WriteHeader(code)
+}
+
+func ClosureSinks(w http.ResponseWriter, r *http.Request) {
+	writeDefer(w, 200)              // quiet: a constant
+	writeDefer(w, len(r.URL.Path))  // want `statusrange: a status that is neither constant nor range-checked reaches a status sink \(writeDefer\)`
+	writeDirect(w, len(r.URL.Path)) // want `reaches a status sink \(writeDirect\)`
+}
+
 // A near miss for the range check: equality guards 0, not the class.
 func NotZero(w http.ResponseWriter, e *Error) {
 	if e.Code != 0 {
 		w.WriteHeader(e.Code) // want `reaches WriteHeader`
 	}
+}
+
+// A log-only lower bound is not a range check: code can still be 0
+// (a panic) or 50.
+func LogOnlyLower(w http.ResponseWriter, raw string) {
+	code, _ := strconv.Atoi(raw)
+	if code > 0 {
+		log.Printf("code %d", code)
+	}
+	w.WriteHeader(code) // want `statusrange: a status that is neither constant nor range-checked reaches WriteHeader`
+}
+
+// A log-only bound that proves no upper limit: code 1000 still panics.
+func LogOnlyUpper(w http.ResponseWriter, raw string) {
+	code, _ := strconv.Atoi(raw)
+	if code > 60000 {
+		log.Print("absurd")
+	}
+	w.WriteHeader(code) // want `reaches WriteHeader`
 }
 
 // A status field: unexported, read unchecked at a status call, so its
@@ -83,6 +120,28 @@ func Refusals(w http.ResponseWriter, raw string) {
 		w.WriteHeader(f.code)
 	}
 }
+
+// A positional literal sets the fields by index: code is element 0.
+func Positional(w http.ResponseWriter, raw string) {
+	n, _ := strconv.Atoi(raw)
+	bad := &refusal{n, "parsed"}                 // want `statusrange: a status that is neither constant nor range-checked is stored in code`
+	fine := &refusal{http.StatusConflict, "dup"} // quiet: a constant
+	_ = fine
+	_ = bad
+}
+
+// Package-level stores are checked like any other: a keyed unchecked
+// store, a positional one, and a literal that leaves code out.
+func parseCode(raw string) int {
+	n, _ := strconv.Atoi(raw)
+	return n
+}
+
+var startupRefusal = &refusal{code: parseCode("302"), reason: "boot"} // want `statusrange: a status that is neither constant nor range-checked is stored in code`
+
+var positionalRefusal = refusal{parseCode("418"), "teapot"} // want `statusrange: a status that is neither constant nor range-checked is stored in code`
+
+var constantRefusal = &refusal{code: http.StatusCreated, reason: "ok"} // quiet: a constant
 
 // ---- quiet ------------------------------------------------------------
 

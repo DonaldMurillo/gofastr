@@ -115,3 +115,29 @@ func WithPollInterval(d time.Duration) Option {
 func WithBatchSize(n int) Option {
 	return func(o *Outbox) { o.batchSize = n } // want `WithBatchSize stores n into batchSize with no check`
 }
+
+// --- package-level option literals -----------------------------------
+
+type pollQueue struct{ pollInterval time.Duration }
+
+func newPollQueue() *pollQueue { return &pollQueue{pollInterval: time.Second} }
+
+// WithPollInterval is the setter arm spelled as a package-level func
+// literal: no FuncDecl carries it.
+var WithPollEvery = func(q *pollQueue, d time.Duration) { q.pollInterval = d } // want `WithPollEvery stores d into pollInterval with no check`
+
+// WithPollIntervalFixed: the guard spelling on the same literal.
+var WithPollEveryFixed = func(q *pollQueue, d time.Duration) {
+	if d > 0 {
+		q.pollInterval = d
+	}
+}
+
+// eqLogOnly: the == comparison gates nothing (a log line only), and
+// the store sits outside its branch.
+func WithEqLogOnly(q *pollQueue, d time.Duration, logf func(string, ...any)) {
+	if d == 0 {
+		logf("using default poll interval")
+	}
+	q.pollInterval = d // want `WithEqLogOnly stores d into pollInterval with no check`
+}

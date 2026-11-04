@@ -185,3 +185,59 @@ func (q *queue) notError(ok func() bool) {
 		return
 	}
 }
+
+// pollWait waits through a helper that waits through a helper.
+func (q *queue) pollWait() { q.backoff() }
+
+// chainedHelperWait: backoff → time.After is one hop; pollWait →
+// backoff → time.After is two, and waits all the same.
+func (q *queue) chainedHelperWait(ctx context.Context) {
+	for {
+		if _, err := q.dequeue(ctx); err != nil { // want `err is waited out and retried`
+			q.pollWait()
+			continue
+		}
+		return
+	}
+}
+
+// varClosureWait: the closure is spelled `var wait = func()` — a
+// ValueSpec, not an assignment.
+func (q *queue) varClosureWait(ctx context.Context) {
+	var wait = func() { <-time.After(time.Second) }
+	for {
+		if _, err := q.dequeue(ctx); err != nil { // want `err is waited out and retried`
+			wait()
+			continue
+		}
+		return
+	}
+}
+
+// timerRecv: the backoff receives from a pre-created timer's channel.
+func (q *queue) timerRecv(ctx context.Context) {
+	t := time.NewTimer(time.Second)
+	defer t.Stop()
+	for {
+		t.Reset(time.Second)
+		if _, err := q.dequeue(ctx); err != nil { // want `err is waited out and retried`
+			<-t.C
+			continue
+		}
+		return
+	}
+}
+
+// chanRecv: a plain channel field named C is not a timer — an event
+// source, not a backoff.
+type feeder struct{ C chan int }
+
+func (q *queue) chanRecv(ctx context.Context, f *feeder) {
+	for {
+		if _, err := q.dequeue(ctx); err != nil {
+			<-f.C
+			continue
+		}
+		return
+	}
+}

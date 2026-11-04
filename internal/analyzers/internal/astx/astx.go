@@ -7,8 +7,9 @@
 //
 // Users today: asciifold, compositekey, controlbytes, discardmutator,
 // divlimit, emitident, hygiene, intwrap, laxenvelope, mapwriter,
-// nostore, recovercallback, recoverlog, reqparamlimit, secretcompare,
-// timestampid, unboundedbody, unboundedresp, unseated, worldreadable.
+// nonfinite, nostore, recovercallback, recoverlog, reqparamlimit,
+// secretcompare, timestampid, unboundedbody, unboundedresp, unseated,
+// worldreadable.
 // (Parenthesis stripping lives in the standard library's ast.Unparen
 // and is not duplicated here.)
 package astx

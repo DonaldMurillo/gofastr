@@ -21,9 +21,11 @@
 //     and the golang.org/x/sys/windows twins: the error is always
 //     non-nil (GetLastError), so dropping it hides no refusal; r1 is the
 //     result callers check;
-//   - assignments where no kept value is ever used: nothing marches on
-//     with the refusal hidden;
-//   - _test.go files.
+//   - assignments where no kept value is ever used: nothing marches
+//     on with the refusal hidden. A kept value is an identifier or a
+//     receiver/struct field (h.ch, h.cancel — read anywhere in the
+//     body), and a WRITE is not a use: ch = nil or a second
+//     ch, _ = m.fetch() overwrites rather than marches on;
 //
 // Narrowed 2026-09-02 after the whole-repo run measured 165 findings
 // for the broad shape: fire only when the discarded error is the LAST
@@ -136,31 +138,53 @@ func checkFunc(pass *analysis.Pass, body *ast.BlockStmt) {
 	})
 }
 
-// keepsUsedValue reports whether at least one non-blank left side is
-// used after the assignment — the posture where code marches on with
-// the refusal hidden.
+// keepsUsedValue reports whether at least one kept left side — an
+// identifier or a selector field (h.ch, h.cancel) — is used after the
+// assignment: the posture where code marches on with the refusal
+// hidden.
 func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt) bool {
 	var kept []types.Object
+	type fieldRef struct{ root, field types.Object }
+	var keptFields []fieldRef
 	for _, lhs := range st.Lhs {
 		if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
 			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
 				kept = append(kept, obj)
 			}
+			continue
+		}
+		if sel, ok := lhs.(*ast.SelectorExpr); ok {
+			root := selectorRoot(pass, sel)
+			field := pass.TypesInfo.ObjectOf(sel.Sel)
+			if root != nil && field != nil {
+				keptFields = append(keptFields, fieldRef{root, field})
+			}
 		}
 	}
-	if len(kept) == 0 {
+	if len(kept) == 0 && len(keptFields) == 0 {
 		return false
 	}
-	// `_ = v` is a discard, not a use: a value explicitly silenced is
-	// not "marching on" with the refusal hidden.
+	// `_ = v` is a discard, not a use; a value explicitly silenced is
+	// not "marching on" with the refusal hidden. A WRITE is not a use
+	// either (ch = nil, a second ch, _ = m.fetch()): a value that is
+	// only ever overwritten never marches on.
 	discarded := map[token.Pos]bool{}
+	written := map[token.Pos]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
-		if d, ok := n.(*ast.AssignStmt); ok && len(d.Lhs) == 1 && len(d.Rhs) == 1 {
-			if id, ok := d.Lhs[0].(*ast.Ident); ok && id.Name == "_" {
-				if v, ok := d.Rhs[0].(*ast.Ident); ok {
-					discarded[v.Pos()] = true
+		switch a := n.(type) {
+		case *ast.AssignStmt:
+			if len(a.Lhs) == 1 && len(a.Rhs) == 1 {
+				if id, ok := a.Lhs[0].(*ast.Ident); ok && id.Name == "_" {
+					if v, ok := a.Rhs[0].(*ast.Ident); ok {
+						discarded[v.Pos()] = true
+					}
 				}
 			}
+			for _, l := range a.Lhs {
+				markWrite(l, written)
+			}
+		case *ast.IncDecStmt:
+			markWrite(a.X, written)
 		}
 		return true
 	})
@@ -169,9 +193,23 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 		if used {
 			return false
 		}
-		if id, ok := n.(*ast.Ident); ok && !discarded[id.Pos()] {
+		switch x := n.(type) {
+		case *ast.Ident:
+			if discarded[x.Pos()] || written[x.Pos()] {
+				return true
+			}
 			for _, obj := range kept {
-				if pass.TypesInfo.ObjectOf(id) == obj && id.Pos() != obj.Pos() {
+				if pass.TypesInfo.ObjectOf(x) == obj && x.Pos() != obj.Pos() {
+					used = true
+					return false
+				}
+			}
+		case *ast.SelectorExpr:
+			if written[x.Pos()] {
+				return true
+			}
+			for _, kf := range keptFields {
+				if selectorRoot(pass, x) == kf.root && pass.TypesInfo.ObjectOf(x.Sel) == kf.field {
 					used = true
 					return false
 				}
@@ -180,6 +218,34 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 		return true
 	})
 	return used
+}
+
+// markWrite records the position of an assignment target: an
+// identifier, or the whole selector it writes through (h.ch = nil).
+func markWrite(e ast.Expr, written map[token.Pos]bool) {
+	switch x := ast.Unparen(e).(type) {
+	case *ast.Ident:
+		written[x.Pos()] = true
+	case *ast.SelectorExpr:
+		written[x.Pos()] = true
+	}
+}
+
+// selectorRoot resolves the base binding of a member chain (h of
+// h.ch), so two selectors over the same variable name the same field.
+func selectorRoot(pass *analysis.Pass, sel *ast.SelectorExpr) types.Object {
+	x := ast.Unparen(sel.X)
+	for {
+		s, ok := x.(*ast.SelectorExpr)
+		if !ok {
+			break
+		}
+		x = ast.Unparen(s.X)
+	}
+	if id, ok := x.(*ast.Ident); ok {
+		return pass.TypesInfo.ObjectOf(id)
+	}
+	return nil
 }
 
 // isError reports whether t is or implements error.
