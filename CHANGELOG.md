@@ -250,6 +250,13 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: `CrudHandler.UpsertOne` refuses an entity with
+  `BeforeUpdate` hooks.** It returned the stored row after running only
+  `BeforeCreate`, so a conflict update skipped the update validators
+  and field stamps. Choosing the hook from a pre-read races a
+  concurrent insert, so the call now fails before any hook or SQL. Use
+  `CreateOne` or `UpdateOne` for those entities. See
+  `hooks-and-transactions.md`.
 - **Docs and comments must name identifiers that exist; the runtime
   contract sync reads every attribute family (2026-11-03).**
   - `TestDocsNameRealIdentifiers`, `TestRepoDocsNameRealIdentifiers`
@@ -641,6 +648,71 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The entity screens read related data through the same gates as the
+  API.** Related lists, their count badges and read-only relation
+  fields checked record access but skipped CRUD exposure and token
+  scopes; they now use the related-read gate the editable pickers use.
+  A related list the caller may not read is left out of the Related
+  tab, and the tab is hidden when every list is refused. Bulk actions
+  run each row's write with read hooks on, for request and queued runs.
+- **An admin bulk job survives losing its worker lease.** Queue retries
+  could spend the whole retry budget before the bulk lease expired;
+  a contended delivery now waits one full lease, and resume adopts a
+  stale enqueued snapshot.
+- **An upsert that updates on conflict fires the update hooks and
+  audits as an update.** It fired `AfterCreate` every time, including
+  for a conflict that changed nothing, which now fires no hook or
+  event.
+- **Replacing an image clears the old image's derived columns.**
+  Variants, hashes and placeholders the new upload did not produce kept
+  the previous image's values, so cleanup never released the old
+  renditions.
+- **Migrations refuse a generated pivot table whose columns drifted.**
+  An existing pivot was skipped while the snapshot claimed its new
+  columns existed. `GeneratePlan`, `DiffSchema` and `AutoMigrate` now
+  compare the link columns and key types, and refuse two relations
+  that share a `Through` table but disagree on them.
+- **`gofastr migrate generate` stops on an entity that fails to
+  register.** It left the entity out of the plan, which could emit
+  `DROP TABLE` for it.
+- **App specs refuse a `required`, `unique` or `hidden` flag that is
+  not a boolean.** `required: "yes"` read as false and dropped the
+  validation and the database constraint. A relation's `hidden` flag
+  also survives generation and `gofastr pack`.
+- **DSN redaction removes every password.** A URL query `password=`,
+  libpq `sslpassword`, a `password = x` pair with spaces, and a
+  malformed URL whose `/`, `?` or `#` cut the userinfo short all
+  reached generated source and logs. A URL whose userinfo is
+  ambiguous is masked down to its scheme.
+- **A process module's wildcard revoke takes effect at once.** Revoking
+  used exact matching while granting used scope matching, so a
+  wildcard revoke left live grants in place. A revoke that would only
+  partly apply is refused without changing state.
+- **JPEG decode budgets hold across stray bytes between markers.** The
+  cost estimator stopped where the decoder skips ahead, so a crafted
+  file slipped past the memory cap in `framework/image` and
+  `framework/file`.
+- **`ui.Select` keeps a stored value no option lists.** Set
+  `SelectConfig.Selected`; a nonempty value wins over the options'
+  flags.
+- **`interactive.OptimisticUpdate` panics on an action option it would
+  drop** (a confirm, body, toast or success effect), instead of
+  rendering a destructive action without its confirmation.
+- **Enter in a combobox with no highlighted result stays in the page**
+  instead of submitting the no-script form. **Enter on a tree branch
+  follows its link**; Space still toggles it.
+- **The seven standalone form helpers work outside a widget.**
+  `data-cui-fill-input`, `tick-elapsed`, `persist-storage`,
+  `charcount-source`, `clear-on-esc`, `submit-on-enter` and
+  `disable-when-invalid` loaded only when a widget mounted, so on a
+  plain page they did nothing.
+- **A desktop window remembered on an unplugged monitor opens centered
+  on a visible one** (Windows and Linux). On Windows the check runs in
+  physical pixels per monitor, so mixed-DPI setups place it right.
+  On macOS, toggling Reduce Transparency no longer leaves the web view
+  detached from the window.
+- **The ecommerce example prices order lines from the catalog.** The
+  client sent the unit price, and the order total trusted it.
 - **An A2A artifact with no parts encodes `"parts": []`, not `null`.**
   Recording an artifact without parts, or appending to one stored
   without them, kept a nil slice, so a client that requires the array
