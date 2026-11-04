@@ -25,7 +25,9 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
@@ -126,6 +128,14 @@ func priceOrderItem(ctx context.Context, row map[string]any) error {
 	}
 	total := new(big.Rat).Mul(unit, new(big.Rat).SetInt64(quantity))
 	unitPrice, totalPrice := unit.FloatString(4), total.FloatString(4)
+	if !schema.DecimalExactOnSQLite("DECIMAL(19,4)", totalPrice) {
+		var version string
+		if err := exec.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil || !strings.Contains(strings.ToLower(version), "postgresql") {
+			return crud.NewValidationError(map[string][]schema.Violation{
+				"total_price": {{Reason: schema.ReasonDecimalSignificantDigits, Params: map[string]any{"max": schema.SQLiteDecimalDigits}}},
+			})
+		}
+	}
 	if _, err := exec.ExecContext(ctx, `UPDATE order_items SET unit_price = $1, total_price = $2 WHERE id = $3`, unitPrice, totalPrice, id); err != nil {
 		return fmt.Errorf("order pricing: persist line prices: %w", err)
 	}

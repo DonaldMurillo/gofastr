@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/http/cookiejar"
+	"os"
 	"testing"
 )
 
 func TestOrderPricesComeFromProducts(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and boots the storefront")
+	}
+	password := os.Getenv("ADMIN_SEED_PASSWORD")
+	if password == "" {
+		password = t.Name()
+		t.Setenv("ADMIN_SEED_PASSWORD", password)
 	}
 	base := bootSeededStorefront(t)
 	client := e2eAuthedClient(t, base)
@@ -70,5 +77,30 @@ func TestOrderPricesComeFromProducts(t *testing.T) {
 	check(item, second, 2)
 	readRow("DELETE", path, "", http.StatusNoContent)
 	item = readRow("POST", "/api/order_items", fmt.Sprintf(`{"orderId":%q,"productId":%q,"productName":%q,"quantity":1}`, orderID, first["id"], first["name"]), http.StatusCreated)
+	check(item, first, 1)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := *e2eClient
+	admin.Jar = jar
+	if code, body := e2eDo(t, &admin, "POST", base+"/auth/login", fmt.Sprintf(`{"email":"admin@shop.example","password":%q}`, password)); code != http.StatusOK {
+		t.Fatalf("admin login: %d %s", code, body)
+	}
+	if code, body := e2eDo(t, &admin, "PATCH", base+"/api/products/"+fmt.Sprint(first["id"]), `{"price":"12345678901.2345"}`); code != http.StatusOK {
+		t.Fatalf("catalog price update: %d %s", code, body)
+	}
+	for _, method := range []string{"POST", "PATCH"} {
+		path := "/api/order_items"
+		payload := fmt.Sprintf(`{"orderId":%q,"productId":%q,"productName":%q,"quantity":99}`, orderID, first["id"], first["name"])
+		if method == "PATCH" {
+			path += "/" + fmt.Sprint(item["id"])
+			payload = `{"quantity":99}`
+		}
+		code, response := e2eDo(t, client, method, base+path, payload)
+		if code != http.StatusBadRequest {
+			t.Errorf("%s derived line price: got %d %s, want 400", method, code, response)
+		}
+	}
 	check(item, first, 1)
 }

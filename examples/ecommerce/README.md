@@ -33,6 +33,8 @@ create/update, the owned lifecycle hook reads the stored product and quantity,
 copies the product's current price, multiplies it using exact decimal
 arithmetic at four decimal places, and then recomputes the parent order.
 Pricing and totals share the CRUD transaction, so failures roll back the write.
+On SQLite, a derived line price beyond the decimal exactness limit is refused
+before persistence, and the item write and its parent-total changes roll back.
 Clients can omit both price fields; supplied values cannot set a price.
 Quantity-only edits and product changes reprice against the current catalog.
 Keep the owned hook file when scaffolding; generated hook stubs are not its
@@ -42,6 +44,8 @@ Maintainer note: read-only fields are omitted from ordinary CRUD SQL even if
 a before-hook fills them. Their zero defaults only bridge the insert; the
 after-hook writes authoritative prices inside the same transaction, before
 totals, events, and responses. Do not move pricing into a before-hook alone.
+This demo has no upgrade/backfill migration: existing line items are repriced
+when written, not merely when a newer executable starts.
 
 ## Regenerate and run
 
