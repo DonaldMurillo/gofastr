@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+Scripted comboboxes own Enter even without an active result, so an
+unhighlighted, empty or closed list never submits its no-script GET form.
+
 `interactive.OptimisticUpdate` refuses Action options its headless action
 contract cannot carry, including confirmation, bodies, toasts and effects.
 
