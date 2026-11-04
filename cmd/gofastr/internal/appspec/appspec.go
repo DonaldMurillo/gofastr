@@ -2848,6 +2848,16 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, where an entity's CRUD API mounts: the app would refuse to boot or its API would answer instead of the screen; move the screen", screen.Name, screen.Route, mount))
 			continue
 		}
+		if bp.App.Auth.Enabled {
+			base := bp.App.Auth.BasePath
+			if base == "" {
+				base = "/auth"
+			}
+			if strings.TrimRight(screen.Route, "/") == base+"/me" {
+				errs.add(fmt.Errorf("app spec: screen %q route %q is the auth battery's GET %s/me route; move the screen", screen.Name, screen.Route, base))
+				continue
+			}
+		}
 		if routes[screen.Route] {
 			errs.add(fmt.Errorf("app spec: duplicate screen route %q", screen.Route))
 			continue

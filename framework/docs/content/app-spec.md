@@ -19,6 +19,10 @@ degrades incomplete nodes instead of panicking:
 an image is omitted, an empty-legend fieldset stays a fieldset, a label may
 remain unassociated, and a link without `href` becomes text content.
 
+With `app.auth` enabled, a screen cannot use `{base_path}/me` (including
+a trailing slash): that GET route belongs to the auth JSON API. The
+default auth base path is `/auth`; GET login pages remain available.
+
 A `gofastr.yml` app spec is an optional way to scaffold a GoFastr app:
 declare your entities, screens, nav, seed data, and endpoint/middleware
 stubs in one file, then generate owned Go from it. The app spec is not
