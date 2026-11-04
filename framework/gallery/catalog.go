@@ -1917,11 +1917,9 @@ var noteOnlySlugs = map[string]bool{
 
 // PkgForSlug returns the Go source package for a component, used to link
 // the showcase header at its API docs on pkg.go.dev. Most live in
-// framework/ui; a few are core-ui patterns or the image pipeline.
+// framework/ui; a few are core-ui patterns.
 func PkgForSlug(slug string) string {
 	switch slug {
-	case "image", "pipelineimage":
-		return "framework/image"
 	case "section-menu", "dropdown", "scroll-reveal", "signal-animate":
 		return "core-ui/interactive"
 	case "modal", "drawer", "bottomsheet", "toast":

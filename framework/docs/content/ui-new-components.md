@@ -255,6 +255,10 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 
 ### Status & banners
 
+The OptimizedImage and PipelineImage showcase API links target
+`framework/ui`, where the components live; their image processing helpers
+remain in the separate `framework/image` package.
+
 The OptimizedImage gallery uses an in-memory PNG dashboard mockup with
 matching intrinsic dimensions. It needs no separate static image asset.
 
