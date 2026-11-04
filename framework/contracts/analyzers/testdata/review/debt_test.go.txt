@@ -1,0 +1,14 @@
+package app
+
+import "testing"
+
+func TestDebt(t *testing.T) {
+	t.Skip(
+		// short mode is unrelated to this unconditional skip.
+		"TODO: restore this test",
+	)
+}
+
+func TestLane(t *testing.T) {
+	t.Skip("short mode: live service unavailable")
+}

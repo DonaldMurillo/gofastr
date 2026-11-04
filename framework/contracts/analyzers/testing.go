@@ -281,7 +281,7 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 		}
 		lines := p.Lines(f.Rel)
 		ast.Inspect(file, func(n ast.Node) bool {
-			recv, method, _, isCall := selectorCall(n)
+			recv, method, args, isCall := selectorCall(n)
 			if !isCall {
 				return true
 			}
@@ -298,7 +298,18 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 			// The reason phrase can sit on any line of the call: gofmt
 			// breaks a long Skipf message onto its own line, so judging
 			// only the call's first line missed exactly those.
-			line := strings.ToLower(callSpan(p, f.Rel, n))
+			var messages []string
+			for _, argument := range args.Args {
+				ast.Inspect(argument, func(node ast.Node) bool {
+					if literal, ok := node.(*ast.BasicLit); ok && literal.Kind == token.STRING {
+						if message, err := strconv.Unquote(literal.Value); err == nil {
+							messages = append(messages, message)
+						}
+					}
+					return true
+				})
+			}
+			line := strings.ToLower(strings.Join(messages, " "))
 			for _, phrase := range laneBoundaryPhrases {
 				if strings.Contains(line, phrase) {
 					return true
