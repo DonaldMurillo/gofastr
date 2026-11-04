@@ -42,6 +42,10 @@ DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
 
+Owned-style checking and compilation reject custom media inside
+`@container`, including dark-nested blocks. Container size features and
+style queries remain native CSS; symbolic viewport media belong in `@media`.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching

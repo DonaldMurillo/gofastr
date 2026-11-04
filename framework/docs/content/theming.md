@@ -1,5 +1,9 @@
 # Theming
 
+Owned-sheet custom media such as `(--above-md)` belong in `@media`.
+Using one in `@container` is refused by both checking and compilation;
+container queries still accept raw size features and style queries.
+
 Every visual decision in the framework goes through one typed theme:
 `core-ui/style.Theme`. Components never hardcode colors or spacing;
 they read CSS custom properties (`var(--color-primary)`,

@@ -187,6 +187,9 @@ type kfSeg struct {
 // inside its splits and lets the browser's nesting resolve selector
 // lists and &.
 func (c *compiler) build(r *Rule, conds []string, chain []*Rule) (nodes []*enode, darks []*darkSeg, kfs []*kfSeg, err error) {
+	if err := containerMediaError(r); err != nil {
+		return nil, nil, nil, err
+	}
 	switch {
 	case r.At && r.Name == "keyframes":
 		return nil, nil, []*kfSeg{{conds: conds, rule: c.registerKeyframes(r)}}, nil
@@ -312,6 +315,9 @@ func (c *compiler) chainNode(link *Rule, decls []*Decl, children []*enode) (*eno
 // whatever declarations fold out of its interior; @keyframes hoists.
 func (c *compiler) darkInterior(rules []*Rule, conds []string) (decls []*Decl, nodes []*enode, kfs []*kfSeg, err error) {
 	for _, r := range rules {
+		if err := containerMediaError(r); err != nil {
+			return nil, nil, nil, err
+		}
 		switch {
 		case r.At && r.Name == "keyframes":
 			kfs = append(kfs, &kfSeg{conds: conds, rule: c.registerKeyframes(r)})
@@ -445,6 +451,19 @@ func isCustomMedium(cond []Token) bool {
 		cond[0].Type == TokenOpenParen &&
 		cond[1].Type == TokenIdent && strings.HasPrefix(cond[1].Text, "--") &&
 		cond[2].Type == TokenCloseParen
+}
+
+func containerMediaError(rule *Rule) error {
+	if !rule.At || rule.Name != "container" {
+		return nil
+	}
+	prelude := significantTokens(rule.Prel)
+	for index := 0; index+3 <= len(prelude); index++ {
+		if isCustomMedium(prelude[index : index+3]) {
+			return fmt.Errorf("%d:%d: custom media %s are only supported in @media, not @container", rule.Pos.Line, rule.Pos.Col, prelude[index+1].Text)
+		}
+	}
+	return nil
 }
 
 // mediaQueryTokens strips a leading at-keyword ("@media") from a rule

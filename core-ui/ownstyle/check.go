@@ -365,6 +365,9 @@ func preludeNamesCustomMedia(prel []Token, name string) bool {
 // named --reduced-motion; inKF whether an enclosing @keyframes holds
 // the rule (keyframe selectors are not style-rule selectors).
 func (c *checker) walk(r *Rule, inRM, inKF bool) {
+	if err := containerMediaError(r); err != nil {
+		c.report(Diagnostic{Rule: RuleParseError, Severity: SeverityError, Line: r.Pos.Line, Col: r.Pos.Col, Message: err.Error()})
+	}
 	switch {
 	case r.At && r.Name == "media":
 		c.checkMediaWidths(r)
