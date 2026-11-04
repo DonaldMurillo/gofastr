@@ -132,7 +132,24 @@ admitted calls with a private context key: `auth.SessionMiddleware` keeps
 their context identity, `auth.RequireAuth` accepts it in place of a bearer
 token when it is a non-nil user, and `auth.CSRF` (including `WithBFFPosture`) skips
 browser-token checks. Ordinary network requests still clear stale users
-and enforce CSRF. The entry point refuses any Cookie, Authorization,
+and enforce CSRF. `SessionMiddleware` also records the outer request's
+2FA assurance for that same user: whether any of their live, non-pending
+session cookies has completed 2FA. `TwoFAPlugin.RequireTwoFA()` accepts
+this fact on a marked call only while its user id matches the server-set
+context user. It looks up current enrollment and requires verified
+assurance for an enrolled user. Missing assurance, a missing user, or a
+different user gets 401; an enrolled user without verified assurance gets
+403. The fact is a snapshot, not a session credential: Local does not
+re-check session expiry or revocation. Clearing or replacing the user in
+an outer `SessionMiddleware` also clears or replaces the assurance.
+`RequireSession()` trusts a marked call's non-nil server-set user without
+re-reading a session; it still refuses API-token-authenticated contexts.
+Built-in auth account routes return 403 for marked calls, including logout,
+`/auth/me`, 2FA self-service and challenge, passkeys, password changes,
+API-token management, OAuth linking, linked accounts, and email verification.
+Sign-in, registration, password reset, and magic-link flows also return
+403. Use the browser flows for these operations, not Local.
+The entry point refuses any Cookie, Authorization,
 Proxy-Authorization, or X-API-Key header (even empty), URL userinfo, or
 TLS peer certificate with 403 before routing. Do not mount it on a network
 listener. `framework.IsInProcessRequest(r)` is the read-only predicate for

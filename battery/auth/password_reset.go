@@ -160,6 +160,7 @@ func (p *PasswordResetPlugin) Init(mgr *AuthManager) error {
 }
 
 func (p *PasswordResetPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Post(basePath+"/forgot-password", http.HandlerFunc(p.forgotHandler))
 	r.Post(basePath+"/reset-password", http.HandlerFunc(p.resetHandler))
 }

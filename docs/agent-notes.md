@@ -1,5 +1,15 @@
 # Implementation regression notes
 
+## 2026-11-04 - Local 2FA assurance is not a session credential
+- Scope: battery/auth, generated Local SDK
+- Trigger: cookie-only `RequireTwoFA` refused Local CRUD, while inheriting a session token could outlive an inner tenant's principal clearing and authorize account mutations.
+- Approach: record only the resolved user id and any-live-non-pending-cookie verification fact; preserve it for marked calls, bind it to the context user, and clear or replace it with the principal. Resolve the user once, then judge later cookies by session state only, matching the network gate.
+- Boundary: every built-in auth route uses `browserAccountOnly`; the five session-account gates also call the shared refusal directly. Local account and credential operations return 403, never inherit browser credentials, and never re-check session revocation from the assurance snapshot.
+- Evidence: `go test ./battery/auth -run '^TestInProcess' -count=1` covers real outer cookies, the full Local middleware stack, both cookie orders, pending/expired/revoked/other-user candidates, nested clearing, store failures, forged network assurance, and all account routes/gates.
+- Mutation evidence: honoring assurance off-marker fails `NetworkBoundary`; skipping anonymous clearing fails `NestedAnonymous`; removing the principal-id match fails `PrincipalBinding/SwappedUser`; dropping the shared account guard fails `TestInProcessAccountOperations`. Verification, assurance presence, nil user, same-user cookie binding, pending exclusion, and both aggregation directions also fail their targeted cases when removed.
+- Next time: carry an assurance fact, not a credential; test a cleared principal restored later and register account-route guards in each plugin so direct `RegisterRoutes` use is covered.
+- Status: active
+
 ## 2026-11-04 - Local repository admission and middleware parity
 - Scope: framework, auth, generated SDK
 - Trigger: socket-free CRUD lost context identity and failed CSRF or used the wrong API prefix.

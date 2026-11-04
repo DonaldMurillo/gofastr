@@ -187,6 +187,18 @@ Each plugin's `RegisterRoutes` mounts under `AuthConfig.BasePath`
 (`framework.EmbedReserving`), so no embed surface can sit over or reach a
 relocated `BasePath` either.
 
+All built-in auth routes return 403 for calls marked by
+`App.InProcessHandler()`. This includes logout and the session-based
+`/auth/me`, 2FA enroll/verify/challenge/disable/backup-codes, passkey
+sign-in and management, password change, API-token create/list/revoke,
+OAuth sign-in/link/callback, linked-account listing/unlinking,
+email-verification send/redeem, login/registration, password reset, and
+magic-link send/confirmation/sign-in. These operations act on browser
+sessions or account credentials; neither a context user nor a 2FA
+assurance fact is a browser session. The 2FA step-up session gate also
+returns 403 for a marked call. `RequireTwoFA` remains available to gate
+ordinary application routes reached through Local.
+
 The three link-minting plugins (`MagicLinkPlugin`,
 `EmailVerificationPlugin`, `PasswordResetPlugin`) validate their
 `BaseURL` at `Init`: it must be an absolute `http`/`https` URL (or
@@ -434,9 +446,19 @@ scopes per-user.
 
 Missing, invalid, expired, or pending-2FA cookies clear any pre-existing
 context user, so an outer tenant's identity cannot leak into an anonymous
-inner session. The exceptions are a verified embed grant and a request
-admitted by `App.InProcessHandler()`: neither carries browser credentials,
+inner session. They also clear any 2FA assurance recorded by an outer
+`SessionMiddleware`. On a successful resolution the middleware replaces
+that assurance with the resolved user's id and whether any of that user's
+live, non-pending session cookies on this request has completed 2FA. It
+considers every candidate cookie, so an older unverified session cannot
+hide a later stepped-up session of the same user. The exceptions are a
+verified embed grant and a request admitted by `App.InProcessHandler()`:
+neither carries browser credentials,
 and each keeps the identity its trusted server-side context established.
+For a marked call, `SessionMiddleware` also preserves the outer request's
+recorded 2FA assurance; `RequireTwoFA` checks that it still belongs to the
+same context user. This is a fact captured on the outer request, not a
+credential, and does not re-check session expiry or revocation.
 Use that entry point, not `App.Router()`, for generated Local repositories.
 
 ```go
@@ -447,6 +469,11 @@ Pair with `auth.RequireSession()` (or
 `auth.RequireSession(auth.WithRedirectOnFail("/login"))` for browser
 flows) on any route that needs a logged-in user.
 
+On a marked call, `RequireSession()` accepts a non-nil server-set context
+user without re-reading a session or requiring 2FA assurance. It still
+rejects an API-token-authenticated context. It is not a replacement for
+`RequireTwoFA` when an application route requires step-up.
+
 These gates mean a **browser session**: `RequireSession`,
 `SessionPolicy`, and `RolePolicy` answer `401` to a caller
 authenticated only by an API token (the token middleware's
@@ -455,7 +482,8 @@ token is a leash for the JSON API, not a key to the SSR screens; a
 screen that should serve token callers says so with `RequireAuth` or
 a scope gate.
 
-`RequireAuth` is the JWT-Bearer-only equivalent.
+`RequireAuth` is the JWT-Bearer equivalent for network requests; it also
+accepts a non-nil trusted context user on a marked Local call.
 
 JWTs validate the signature and expiry, then **re-resolve the subject on
 every request** through the manager's `UserStore` (`JWTAuth.SetUserStore`,
@@ -1387,12 +1415,23 @@ state lookup itself errors, login **fails closed** with a 500 and the
 just-minted session is destroyed. A degraded 2FA backend never means
 "2FA is off".
 
-`TwoFAPlugin.RequireTwoFA()` returns a middleware you can install on
-any route that needs step-up authentication. The middleware is a
-no-op for users who haven't enrolled in 2FA; only enrolled users are
-gated.
+`TwoFAPlugin.RequireTwoFA()` returns middleware for application routes
+that require a session-backed principal. It enforces step-up when that
+user has enrolled in 2FA; an unenrolled user still needs the principal
+and session evidence described here.
 
-Install it behind `SessionMiddleware` or `RequireAuth`. It judges the
+For a call marked by `App.InProcessHandler()`, `RequireTwoFA` requires a
+non-nil server-set context user and the 2FA assurance `SessionMiddleware`
+recorded for that same user on the outer request. No assurance, a missing
+user, or a different user returns 401 with the no-session reason. It looks
+up current enrollment: an unenrolled user passes; an enrolled user needs
+verified assurance or gets 403. The assurance records whether any of that
+user's live, non-pending cookie sessions on the outer request completed
+2FA. It contains no session token or session object. This snapshot does
+not re-check expiry or revocation during Local dispatch.
+
+For an unmarked network request, install it behind `SessionMiddleware` or
+`RequireAuth`. It ignores context assurance and judges the
 request principal, the user `GetCurrentUser(ctx)` returns, and needs a
 live session cookie of that same user: 401 without a principal or
 without such a cookie, 403 when the user is enrolled and none of their

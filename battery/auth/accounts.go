@@ -139,11 +139,15 @@ func (p *AccountsPlugin) Init(mgr *AuthManager) error {
 }
 
 func (p *AccountsPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Get(basePath+"/accounts", http.HandlerFunc(p.listHandler))
 	r.Delete(basePath+"/unlink/{provider}", http.HandlerFunc(p.unlinkHandler))
 }
 
 func (p *AccountsPlugin) requireUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if rejectInProcessAccountOperation(w, r) {
+		return "", false
+	}
 	// Bound to the context principal when there is one: unlinking a
 	// provider from the account behind some other cookie on the request
 	// would act on a user the request is not running as.

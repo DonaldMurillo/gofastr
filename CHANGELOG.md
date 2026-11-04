@@ -35,6 +35,13 @@ few lines, and link the PR or the docs page for the rest.
   rest as in-process. `auth.SessionMiddleware`, `auth.RequireAuth` and
   `auth.CSRF` (including `WithBFFPosture`) keep the user the server put on
   the context for a marked call; every other request is checked as before.
+  `SessionMiddleware` records the outer request's 2FA assurance for that
+  same user across all their live, non-pending cookie sessions, and
+  `RequireTwoFA` accepts that snapshot only for a matching context user.
+  Clearing or replacing the principal also clears or replaces the assurance.
+  `RequireSession` trusts a marked call's server-set user without reading
+  a session. Local does not re-check session expiry or revocation.
+  Browser account and credential operations return 403 for marked calls.
   The SDK's API prefix comes from the app spec when settings and flags
   leave it unset. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).

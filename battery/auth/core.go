@@ -107,6 +107,7 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 // RegisterRoutes mounts the core auth routes: login, logout, me,
 // register, and password (a signed-in user's own password change).
 func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Post(basePath+"/login", c.loginHandler())
 	r.Post(basePath+"/logout", c.logoutHandler())
 	r.Get(basePath+"/me", c.meHandler())
