@@ -88,6 +88,9 @@ with the same tags `handler.Bind` reads:
   takes, and a path tag takes none.
 - `json:"amount"`: a JSON body key, for `POST`, `PUT` and `PATCH`.
 
+Hand-registered endpoint methods are case-insensitive in both routing and
+OpenAPI: `get` has the same no-body and SDK query-input behavior as `GET`.
+
 A pointer field is optional; any other field is required. The generated CLI
 refuses a call that leaves out a required flag before it sends anything.
 Path and query values are strings, numbers or bools. Body fields may also be
