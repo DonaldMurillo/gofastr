@@ -219,6 +219,50 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **Docs and comments must name identifiers that exist; the runtime
+  contract sync reads every attribute family (2026-11-03).**
+  - `TestDocsNameRealIdentifiers`, `TestRepoDocsNameRealIdentifiers`
+    and `TestGoCommentsNameRealIdentifiers` in `framework/docs` fail
+    when a docs page, a repo `.md` file or a Go comment names a
+    `pkg.Name` or `Type.Member` the code does not declare. The first
+    run found about 60 stale names, fixed here (`Screen.Load` is
+    `ScreenLoader.Load`, `i18nui.KeyAgo` is `i18nui.AgoNow`). A
+    sentence saying a name is gone or renamed stays quiet.
+  - The `core-ui/ARCHITECTURE.md` / `runtime-contract.md` sync gate
+    reads every `data-*` family, not only `data-cui-*`, matches whole
+    tokens (`data-cui-compute` passed on `data-cui-computed`) and
+    checks both directions. The two tables had drifted by 52 rows and
+    are synced. `TestAttrRowsSpellDoubleBraceFills` refuses a `{x}` or
+    `%s` fill token in an attribute row: the modules replace `{{x}}`.
+  - `mapwriter`'s return arm also fires on a range over a non-empty
+    map literal that returns an error built from the entry it reached:
+    which entry failed first changed from run to run. Ten tree sites
+    now range a slice of pairs.
+  - 90 documented false negatives fixed across 51 vet analyzers:
+    `rootwrite`, `rootread`, `fixedtmp`, `tightenshared`,
+    `worldreadable`, `layoutfunc`; `textbind`, `controlbytes`,
+    `errleak`, `recoverlog`, `unboundedbody`, `reqparamlimit`,
+    `authpresence`, `fanoutreq`, `listheader`, `sanitizefix`;
+    `intwrap`, `divlimit`, `negdur`, `optzero`, `nonfinite`, `keytrim`,
+    `nullarray`, `settlectx`, `silentskip`, `statusrange`,
+    `discardeddecode` (which also crashed on one input),
+    `discardederr`; `recovercallback`, `callbackunderlock`,
+    `deferreset`, `doublewrite`, `growmap`, `iounderlock`,
+    `nowaitdelay`, `poisonedconn`, `recoverwrite`, `unseated`,
+    `wrapwriter`; `secretcompare`, `laxenvelope`, `laxcoerce`,
+    `asciifold`, `compositekey`, `credfetch`, `emitident`, `nostore`,
+    `rawtext`, `resolvedial`, `timestampid`, `unboundedresp`. Each
+    analyzer's doc comment names the spelling it now reads.
+  - `textbind` follows request text through struct fields: a field
+    some literal or assignment fills with request text (directly, or
+    through a constructor's parameter) is request text wherever it is
+    read, in its own package and, through a fact, in every importer.
+    Check the value before you store it; a check on the read is not
+    credited. Its first tree run found the saved-view store below.
+  - An allow marker can list several analyzers separated by spaces or
+    tabs, `//gofastr:allow(rootwrite rootread) why`. `gofastr verify`
+    already read that list; `go vet -vettool` read commas only, so the
+    marker silenced nothing there.
 - **`gofastr init .` refuses a symlinked `.env` or settings file, even
   one inside the project.** The two files it writes a generated secret
   into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
@@ -526,6 +570,42 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A leading UTF-8 byte order mark no longer breaks a hand-written
+  text file.** Windows editors save one. It made line 1 of a `.env`
+  file an invalid key, hid a migration's first `-- +migrate`
+  directive, reached the database inside a routine `.sql` body, broke
+  a markdown frontmatter fence, and kept a line-anchored upgrade text
+  pattern off line 1. Every reader strips it through `internal/bom`,
+  and `TestReadersIgnoreBOM` holds them to one result.
+- **Saving or deleting a saved view with unstorable text answers 400
+  and 404, not 500.** A name or filter holding a NUL byte or invalid
+  UTF-8 reached the admin store's INSERT, and Postgres refused the
+  bind; the delete's `?id=` did the same. The entityui handler now
+  refuses that text before any store sees it.
+- **Settings endpoint and unmounted-settings validation name the first
+  missing field in declaration order.** A config with two unset
+  required fields named either one at random.
+- **A rate-limit key a SQL store cannot hold no longer reads as an
+  outage.** `ratelimit.Limiter` digests a key that is not valid UTF-8
+  or holds a NUL, as it already did a key past 256 bytes. An
+  `X-Api-Key` with a byte past 0x7F made Postgres refuse the bind, and
+  the limiter failed closed: a 429 for that client and a store-outage
+  warning in the log.
+- **A panicking host callback no longer ends a desktop app.** The
+  macOS shell's menu, settings, window-close, focus, blur, frame and
+  appearance callbacks, the Linux shell's menu and settings callbacks,
+  and `appstate` watchers each run behind a recover that logs the
+  panic and drops that one event.
+- **Panic values are scrubbed before they are logged** in the cron
+  scheduler and the webhook battery's delivery loop
+  (`textsafe.Recovered` strips control bytes and truncates).
+- **`middleware.Logging` keeps the sendfile path.** Its writer had no
+  `ReadFrom`, so every file served behind it was copied through a
+  buffer.
+- **A kiln graduation with a bad PWA `start_url` and `scope` names
+  `start_url` every time**, and `gofastr generate cli --from-openapi`
+  refuses a `$ref` that is not a string instead of treating the schema
+  as inline.
 - **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
   (entity mode); regenerate the CLI to pick these up. Details in
   [app-cli.md](framework/docs/content/app-cli.md):

@@ -571,8 +571,9 @@ expose them to agents connected to a live app.**
   text bound into a SQL value position with no storable-text check —
   Postgres answers invalid UTF-8 or NUL with 22021, a 500; refuse first
   with `utf8.ValidString && no NUL`, credited by body; flows through
-  helpers and same-package interface implementations by fact, not yet
-  through struct fields); `controlbytes` grew a Location arm (a scrub
+  helpers, same-package interface implementations and struct fields by
+  fact — a field filled with request text anywhere is request text at
+  every read, so check before storing); `controlbytes` grew a Location arm (a scrub
   that exempts tab clears nothing at a redirect) and a guard-then-strip
   arm (test the stripped value, not the raw one); `sanitizefix` (a
   one-pass multi-character removal in a scrub/strip/sanitize function:
@@ -636,6 +637,20 @@ expose them to agents connected to a live app.**
   where a new surface adds its case. Tried and dropped as unsharp: a catalog-name 63-byte-cut rule,
   keyguard's Escape/defaultPrevented arm (Escape ownership is a design
   decision), and silentskip's file-walk arm.
+  The 2026-11-03 round-8 analyzer pass added doc gates beside the
+  rules. `framework/docs` holds three identifier gates
+  (`TestDocsNameRealIdentifiers` over the embedded corpus,
+  `TestRepoDocsNameRealIdentifiers` over repo `.md` files,
+  `TestGoCommentsNameRealIdentifiers` over Go comments): each `pkg.Name`
+  or `Type.Member` it reads must resolve in the repo or stdlib index, a
+  sentence saying the name is gone stays quiet, and a deliberate
+  non-identifier goes in `identAllowed` with its reason. The runtime
+  contract sync (`doc_sync_test.go`) reads every `data-*` family in both
+  directions with whole-token matching, and
+  `TestAttrRowsSpellDoubleBraceFills` refuses `{x}`/`%s` fill tokens.
+  `mapwriter`'s return arm fires on a non-empty map literal too. Every
+  reader of a hand-written text file strips a leading byte order mark
+  through `internal/bom`; a new reader joins `TestReadersIgnoreBOM`.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE
