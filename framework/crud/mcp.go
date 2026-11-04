@@ -725,7 +725,7 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 	props := make(map[string]any)
 	var required []string
 	for _, field := range ent.GetFields() {
-		if field.AutoGenerate != schema.AutoNone || field.ReadOnly || field.Hidden {
+		if field.AutoGenerate != schema.AutoNone || field.ReadOnly || field.Hidden || serverStamped[field.Name] {
 			continue
 		}
 		key := mcpFieldKey(field)
