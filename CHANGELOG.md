@@ -25,6 +25,11 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- `gofastr generate sdk` now emits a typed repository interface per entity,
+  a Remote adapter over the Go client, and a Local adapter that dispatches
+  through the app's HTTP handler without a socket. Both use the REST
+  access rules, owner/tenant scoping, validation, and hooks. The SDK stays
+  stdlib-only. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
   `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
   with signtool, timestamped through `--timestamp-url`, and `--zip`

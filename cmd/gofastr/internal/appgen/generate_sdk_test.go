@@ -72,7 +72,7 @@ func renderedSDK(t *testing.T) map[string]string {
 func TestRenderSDKFiles_Layout(t *testing.T) {
 	got := renderedSDK(t)
 	for _, want := range []string{
-		"go/client.go", "go/go.mod", "go/README.md",
+		"go/client.go", "go/repositories.go", "go/local/repositories.go", "go/go.mod", "go/README.md",
 		"js/client.js", "js/client.d.ts", "js/README.md",
 		"dist/" + sdk.GoArtifact, "dist/" + sdk.JSArtifact,
 		"dist/" + sdk.JSTypesArtifact, "dist/" + sdk.ManifestFile,
@@ -292,7 +292,7 @@ func TestSDKZipDeterministic(t *testing.T) {
 	for _, f := range zr.File {
 		names = append(names, f.Name)
 	}
-	want := []string{"myapp-sdk/README.md", "myapp-sdk/client.go", "myapp-sdk/go.mod"}
+	want := []string{"myapp-sdk/README.md", "myapp-sdk/client.go", "myapp-sdk/go.mod", "myapp-sdk/local/repositories.go", "myapp-sdk/repositories.go"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("zip entries %v, want %v", names, want)
 	}

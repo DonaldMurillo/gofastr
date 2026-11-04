@@ -20,7 +20,8 @@ from the live schema, the fix is re-running the command.
 
 ```
 gen/sdk/
-  go/          client.go + go.mod + README.md   (standalone module)
+  go/          client.go + repositories.go + go.mod + README.md
+    local/     repositories.go                (in-process adapters)
   js/          client.js + client.d.ts + README.md
   dist/        sdk-go.zip  client.js  client.d.ts  manifest.json
 ```
@@ -61,6 +62,81 @@ curl -LO https://your-app.example.com/docs/api/sdk/go.zip
 unzip go.zip
 go mod edit -replace local/myapp-sdk=./myapp-sdk
 ```
+
+### Typed repositories
+
+The Go target also emits one `<Entity>Repo` interface per entity, using
+the same record, input, patch, and list-response structs as the client.
+For an entity named `notes` with a string id:
+
+```go
+type NotesRepo interface {
+    List(ctx context.Context, params url.Values) (NotesListResponse, error)
+    Get(ctx context.Context, id string) (Notes, error)
+    Create(ctx context.Context, body NotesInput) (Notes, error)
+    Update(ctx context.Context, id string, body NotesInput) (Notes, error)
+    Patch(ctx context.Context, id string, body NotesPatch) (Notes, error)
+    Delete(ctx context.Context, id string) error
+}
+```
+
+`List` forwards REST query parameters unchanged, including column filters,
+`sort`, `page`, `limit` (or `per_page`), and includes. It returns the SDK's
+existing paginated list envelope; cursor and streaming clients remain the
+separate SDK methods. Record methods use integer ids for incrementing
+integer keys, or one string argument per composite-key column, in key order.
+
+`repositories.go` declares the interfaces and `<Entity>Remote` adapters.
+`NewNotesRemote(api)` wraps the existing `*client.Client`, including its
+base URL, HTTP client, and bearer token. This package imports only the
+standard library; a client-only binary does not link the framework.
+
+The `local` subpackage declares `<Entity>Local` and
+`NewNotesLocal(handler http.Handler)`. Pass the app's complete router:
+
+```go
+import (
+    client "example.com/notes-sdk"
+    "example.com/notes-sdk/local"
+)
+
+func serverNotes(app *framework.App) client.NotesRepo {
+    return local.NewNotesLocal(app.Router())
+}
+
+func remoteNotes(api *client.Client) client.NotesRepo {
+    return client.NewNotesRemote(api)
+}
+```
+
+Local dispatches directly to that handler using an in-memory HTTP
+transport. It opens no socket and does not call SQL or unhooked CRUD
+readers. The REST handlers are the policy boundary, so access rules,
+owner and tenant scoping, validation, lifecycle hooks, and read hooks
+run exactly as they do for Remote. REST read handlers already apply
+the read-hook chain, including the `crud.WithReadHooks` context on
+related reads; Local does not introduce a second implementation of it.
+The generated API prefix is used for dispatch. Regenerate with the
+server's `--api-prefix` if it is not the default `/api`.
+
+Use an authenticated server-side context for Local calls. The context,
+including identity, tenant, and cancellation, reaches
+the handler unchanged; its middleware still runs. Never construct this
+context from an unverified client-supplied user or tenant id. Local does
+not mint credentials, bypass middleware, or store tokens. Redirects are
+returned as API errors rather than followed. The client sets a 30-second
+timeout or the caller's earlier deadline. Because dispatch is synchronous,
+the in-process handler must honor context cancellation. JSON is still
+encoded and decoded in-process so wire errors and typed values match
+Remote; this is not a direct database repository.
+
+The conformance fixture in
+`cmd/gofastr/internal/appgen/testdata/repository/conformance.go.txt`
+runs the same cases against Local and Remote on one app. When changing
+scoping, run `go test ./cmd/gofastr/internal/appgen -run '^TestSDKRepoParity$' -count=1`.
+To prove that the owner assertion remains live, temporarily clear the
+field inside `crud.applyOwnerScope`, watch both `OwnerScope` cases fail,
+restore it, and rerun.
 
 An entity with an Image or File field also gets `Create<Entity>WithFiles`,
 `Update<Entity>WithFiles` and `Patch<Entity>WithFiles`. Each takes the

@@ -679,7 +679,11 @@ func SdkSchemaHash(decls []framework.EntityDeclaration) (string, error) {
 // client.go is gofmt'd here so the zipped bytes match the written tree.
 func renderSDKGoFiles(spec sdkSpec) ([]GeneratedFile, error) {
 	clientSrc := "// " + spec.Header() + "\n// Regenerate: gofastr generate sdk\n\n" + renderClient(spec.Decls)
-	if err := refuseDuplicateDecls([]GeneratedFile{{Name: "client.go", Content: clientSrc}}); err != nil {
+	repositories, err := renderSDKRepositories(spec)
+	if err != nil {
+		return nil, err
+	}
+	if err := refuseDuplicateDecls([]GeneratedFile{{Name: "client.go", Content: clientSrc}, repositories[0]}); err != nil {
 		return nil, err
 	}
 	formatted, err := format.Source([]byte(clientSrc))
@@ -687,11 +691,11 @@ func renderSDKGoFiles(spec sdkSpec) ([]GeneratedFile, error) {
 		return nil, fmt.Errorf("generated client.go does not parse: %w", err)
 	}
 	goMod := fmt.Sprintf("module %s\n\ngo 1.21\n", spec.Module)
-	return []GeneratedFile{
+	return append([]GeneratedFile{
 		{Name: "client.go", Content: string(formatted)},
 		{Name: "go.mod", Content: goMod},
 		{Name: "README.md", Content: renderSDKGoReadme(spec)},
-	}, nil
+	}, repositories...), nil
 }
 
 func sdkExampleBaseURL(spec sdkSpec) string {
@@ -722,6 +726,9 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	fmt.Fprintf(&sb, "```go\nimport client %q\n\n", spec.Module)
 	fmt.Fprintf(&sb, "c := client.NewClient(%q, nil)\nc.Token = os.Getenv(\"API_TOKEN\") // Bearer token minted via POST /auth/tokens\n\n", sdkExampleBaseURL(spec))
 	fmt.Fprintf(&sb, "page, err := c.List%s(ctx, nil)\n```\n\n", first.Struct)
+	sb.WriteString("## Typed repositories\n\n`repositories.go` declares one `<Entity>Repo` interface and `<Entity>Remote` adapter per entity.\nThe `local` subpackage dispatches through the app's complete HTTP handler without a socket.\nBoth implementations use the same REST policies, validation, hooks, and typed SDK values.\n\n")
+	fmt.Fprintf(&sb, "```go\nvar remote client.%sRepo = client.New%sRemote(c)\n```\n\n", first.Struct, first.Struct)
+	fmt.Fprintf(&sb, "On the server, import %q and use `local.New%sLocal(app.Router())`.\nPass an authenticated server-side context; middleware still runs. Local uses the generated API prefix %q and refuses redirects. Its client sets a 30-second timeout or the caller's earlier deadline; the in-process handler must honor context cancellation.\n\n", spec.Module+"/local", first.Struct, spec.APIPrefix)
 	sb.WriteString("The base URL must include the API prefix when the server mounts one (e.g. `/api`).\n\n")
 	sb.WriteString("## Filtering, sorting, pagination\n\n")
 	sb.WriteString("List methods take `url.Values`. Query parameter names are the **snake_case**\ncolumn names (responses are camelCase: that asymmetry is the server's contract):\n\n")
