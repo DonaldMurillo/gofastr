@@ -601,9 +601,10 @@ func idToolSchema(args []string) map[string]any {
 }
 
 func listToolSchema(ent *entity.Entity) map[string]any {
+	_, maximum := ListLimits(ent.Config.Pagination.MaxListLimit)
 	props := map[string]any{
 		"page":  map[string]any{"type": "integer", "minimum": 1},
-		"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
+		"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maximum},
 		"sort":  map[string]any{"type": "string"},
 	}
 	if len(ent.Config.SearchFields) > 0 {

@@ -1,5 +1,8 @@
 # MCP server
 
+Entity list tools advertise the entity's effective `Pagination.MaxListLimit`,
+capped at 1000 and defaulting to 100, matching HTTP list pagination.
+
 `core/mcp` is the Model Context Protocol server behind `/mcp`: a JSON-RPC 2.0
 dispatcher with registries for tools, resources, resource templates, and
 prompts, per-caller gates over all of them, and stdio plus HTTP/SSE transports.
