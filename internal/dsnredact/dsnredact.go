@@ -38,7 +38,7 @@ func Redact(dsn string) string {
 	if ambiguousURLUserinfo(dsn) {
 		return dsn[:strings.Index(dsn, "://")+3]
 	}
-	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+	if u, err := url.Parse(dsn); err == nil && (u.Scheme != "" || u.User != nil) {
 		if u.User != nil {
 			u.User = url.User(u.User.Username())
 		}

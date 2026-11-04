@@ -95,6 +95,21 @@ func TestRedact(t *testing.T) {
 	}
 }
 
+func TestRedactNetworkPathUserinfo(t *testing.T) {
+	for _, dsn := range []string{"//user:secret@db", "//user:secret@db/app?password=querysecret&sslmode=require"} {
+		if !HasSecret(dsn) {
+			t.Fatalf("credentialed network path classified as public: %q", dsn)
+		}
+		got := Redact(dsn)
+		if strings.Contains(got, "secret") || !strings.HasPrefix(got, "//user@db") {
+			t.Errorf("Redact(%q) = %q, want credentials removed", dsn, got)
+		}
+		if Redact(got) != got {
+			t.Errorf("redaction is not idempotent: %q", got)
+		}
+	}
+}
+
 // TestRedactIdempotent: redacting an already-redacted DSN is a no-op (a
 // logged-then-redacted-again value must not keep shrinking).
 func TestRedactIdempotent(t *testing.T) {
