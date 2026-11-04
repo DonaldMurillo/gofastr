@@ -1624,10 +1624,14 @@ func decodeIndices(node *coreyaml.Node) ([]framework.Index, error) {
 		if err := rejectUnknownKeys(m, map[string]bool{"name": true, "columns": true, "unique": true}, fmt.Sprintf("indices[%d]", i)); err != nil {
 			return nil, err
 		}
+		unique, err := protectiveBool(m, "unique", fmt.Sprintf("indices[%d]", i))
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, framework.Index{
 			Name:    stringValue(m["name"]),
 			Columns: stringListValue(m["columns"]),
-			Unique:  boolValue(m["unique"]),
+			Unique:  unique,
 		})
 	}
 	return out, nil
@@ -1655,6 +1659,14 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		// to clients, to every API response, and to the filter surface
 		// respectively. See protectiveBool.
 		fieldCtx := fmt.Sprintf("fields[%d]", i)
+		required, err := protectiveBool(m, "required", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
+		unique, err := protectiveBool(m, "unique", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
 		readOnly, err := protectiveBool(m, "read_only", fieldCtx)
 		if err != nil {
 			return nil, err
@@ -1670,8 +1682,8 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		field := framework.FieldDeclaration{
 			Name:         stringValue(m["name"]),
 			Type:         stringValue(m["type"]),
-			Required:     boolValue(m["required"]),
-			Unique:       boolValue(m["unique"]),
+			Required:     required,
+			Unique:       unique,
 			Default:      scalarValue(m["default"]),
 			AutoGenerate: stringValue(m["auto_generate"]),
 			ReadOnly:     readOnly,

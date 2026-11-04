@@ -165,6 +165,11 @@ is required. Supported syntax:
 Plain (unquoted) scalars resolve by the YAML 1.2 core schema, so a file
 reads the same here as in any other YAML tool:
 
+Constraint flags (`fields[].required`, `fields[].unique`, and
+`indices[].unique`) accept only booleans or the quoted strings `"true"`
+and `"false"`. Values such as `yes`, `on`, `1`, null, or a list are errors,
+not silently disabled constraints. Omitted flags still default to false.
+
 - `true`, `True`, `TRUE` and the three `false` spellings are booleans;
   `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
   a string.
