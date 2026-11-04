@@ -39,6 +39,8 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 - Backpressure: each client has a bounded buffer. The default broker
   keeps emitters non-blocking by dropping the oldest queued event when a
   client cannot keep up, so the subscriber retains the latest events.
+  The entity stream's own 32-event delivery buffer uses the same
+  oldest-drop policy, including when publishers emit concurrently.
   This is intentional: SSE is for push notifications, not durable
   delivery. Use a real queue for that.
 - Clients that prefer delivery over emitter latency can opt in with

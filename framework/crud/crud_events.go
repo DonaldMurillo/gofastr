@@ -401,6 +401,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		defer reauth.Stop()
 
 		buf := make(chan event.Event, 32)
+		var bufferMu sync.Mutex
 
 		filter := func(_ context.Context, event event.Event) error {
 			data, ok := event.Data.(map[string]any)
@@ -419,10 +420,16 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			if !readScopeUnrestricted(liveCtx(), ch.Entity) && !ch.readScopeAllowsRecord(data[eventKeyRecord]) {
 				return nil
 			}
+			bufferMu.Lock()
+			defer bufferMu.Unlock()
 			select {
 			case buf <- event:
 			default:
-				// Slow client; drop rather than block emitters.
+				select {
+				case <-buf:
+				default:
+				}
+				buf <- event
 			}
 			return nil
 		}
