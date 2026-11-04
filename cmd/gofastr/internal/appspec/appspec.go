@@ -3445,7 +3445,10 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		if len(block.Fields) == 0 {
 			return fmt.Errorf("app spec: screen %q entity_list block fields are required", screenName)
 		}
-		validFields := map[string]bool{"id": true}
+		validFields := map[string]bool{}
+		if DeclKeyIsID(decl) {
+			validFields["id"] = true
+		}
 		for _, field := range decl.Fields {
 			validFields[field.Name] = true
 			validFields[ToCamelJSON(field.Name)] = true
