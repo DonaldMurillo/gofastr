@@ -806,6 +806,11 @@ spec seeds no admin. Pack says so before the check names `app.go` and
 `main.go`; add `seed_password` under `app.admin` before generating from
 it.
 
+Pack also reads `public_openapi`, the UI host's application description,
+and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
+override is not substituted for that authored fallback; the default
+`http://localhost:8080` fallback is omitted from the packed spec.
+
 The synthesized `/create` screen, and the `/login` screen added for an app spec with auth and no login form, are dropped (they weren't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for an app spec of those

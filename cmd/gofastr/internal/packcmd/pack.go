@@ -1519,6 +1519,19 @@ func packReadApp(dir string) (appspec.AppSpecApp, error) {
 				}
 			case *ast.CallExpr:
 				switch astSelLast(t.Fun) {
+				case "WithPublicOpenAPI":
+					app.PublicOpenAPI = true
+				case "WithDescription":
+					if len(t.Args) == 1 {
+						app.Description = appspec.AstString(t.Args[0])
+					}
+				case "getEnv":
+					if len(t.Args) == 2 && appspec.AstString(t.Args[0]) == "APP_BASE_URL" {
+						app.BaseURL = appspec.AstString(t.Args[1])
+						if app.BaseURL == "http://localhost:8080" {
+							app.BaseURL = ""
+						}
+					}
 				case "WithPublicLLMMD":
 					app.LLMMD = true
 				case "WithLocalePrefixes":
