@@ -357,14 +357,14 @@ func nilTransportInstall(pass *analysis.Pass, cond ast.Expr, body []ast.Stmt) bo
 			if call, ok := n.(*ast.CallExpr); ok {
 				// The install one frame down: a package-local helper
 				// that assigns a client's Transport.
-				if fn, ok := astx.CalleeFunc(pass, call.Fun); ok && fn.Pkg() == pass.Pkg && assignsTransport(pass, fn) {
+				if fn, ok := astx.CalleeFunc(pass, call.Fun); ok && fn.Pkg() == pass.Pkg && assignsTransport(pass, fn, call, sel.X) {
 					assigned = true
 				}
 			}
 			return !assigned
 		}
 		for i, lhs := range as.Lhs {
-			if l, ok := ast.Unparen(lhs).(*ast.SelectorExpr); ok && l.Sel.Name == "Transport" && isClient(pass, l.X) {
+			if l, ok := ast.Unparen(lhs).(*ast.SelectorExpr); ok && l.Sel.Name == "Transport" && sameClient(pass, l.X, sel.X) {
 				assigned = true
 				break
 			}
@@ -372,7 +372,7 @@ func nilTransportInstall(pass *analysis.Pass, cond ast.Expr, body []ast.Stmt) bo
 			// Transport is the same install one variable up: the
 			// guarded transport rides a new client, and a
 			// caller-supplied one still escapes.
-			if isClient(pass, lhs) &&
+			if isClient(pass, lhs) && sameClient(pass, lhs, sel.X) &&
 				i < len(as.Rhs) && clientLiteralWithTransport(pass, as.Rhs[i]) {
 				assigned = true
 				break
@@ -407,25 +407,65 @@ func clientLiteralWithTransport(pass *analysis.Pass, e ast.Expr) bool {
 
 // assignsTransport reports whether fn's body assigns a client's
 // Transport field.
-func assignsTransport(pass *analysis.Pass, fn *types.Func) bool {
+func assignsTransport(pass *analysis.Pass, fn *types.Func, call *ast.CallExpr, client ast.Expr) bool {
 	decl := fnDeclOf(pass, fn)
 	if decl == nil || decl.Body == nil {
 		return false
 	}
 	found := false
+	parameters := map[types.Object]bool{}
+	argument := 0
+	for _, field := range decl.Type.Params.List {
+		for _, parameter := range field.Names {
+			if argument < len(call.Args) && sameClient(pass, call.Args[argument], client) {
+				parameters[pass.TypesInfo.ObjectOf(parameter)] = true
+			}
+			argument++
+		}
+	}
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		if _, nested := n.(*ast.FuncLit); nested {
+			return false
+		}
 		as, ok := n.(*ast.AssignStmt)
 		if !ok {
 			return true
 		}
 		for _, lhs := range as.Lhs {
 			if l, ok := ast.Unparen(lhs).(*ast.SelectorExpr); ok && l.Sel.Name == "Transport" && isClient(pass, l.X) {
-				found = true
+				if identifier, ok := ast.Unparen(l.X).(*ast.Ident); ok && parameters[pass.TypesInfo.ObjectOf(identifier)] {
+					found = true
+				}
 			}
 		}
 		return !found
 	})
 	return found
+}
+
+func sameClient(pass *analysis.Pass, left, right ast.Expr) bool {
+	left, right = ast.Unparen(left), ast.Unparen(right)
+	if dereference, ok := left.(*ast.StarExpr); ok {
+		left = ast.Unparen(dereference.X)
+	}
+	if dereference, ok := right.(*ast.StarExpr); ok {
+		right = ast.Unparen(dereference.X)
+	}
+	if leftValue, rightValue := pass.TypesInfo.Types[left].Value, pass.TypesInfo.Types[right].Value; leftValue != nil && rightValue != nil {
+		return leftValue.ExactString() == rightValue.ExactString()
+	}
+	switch target := left.(type) {
+	case *ast.Ident:
+		other, ok := right.(*ast.Ident)
+		return ok && pass.TypesInfo.ObjectOf(target) != nil && pass.TypesInfo.ObjectOf(target) == pass.TypesInfo.ObjectOf(other)
+	case *ast.SelectorExpr:
+		other, ok := right.(*ast.SelectorExpr)
+		return ok && pass.TypesInfo.ObjectOf(target.Sel) == pass.TypesInfo.ObjectOf(other.Sel) && sameClient(pass, target.X, other.X)
+	case *ast.IndexExpr:
+		other, ok := right.(*ast.IndexExpr)
+		return ok && sameClient(pass, target.X, other.X) && sameClient(pass, target.Index, other.Index)
+	}
+	return false
 }
 
 // fnDeclOf finds fn's declaration among this package's files.

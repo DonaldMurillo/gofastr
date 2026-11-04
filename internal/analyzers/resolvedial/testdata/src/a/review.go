@@ -22,3 +22,31 @@ func fetchReplaceFieldClient(config *struct{ Client http.Client }, host string) 
 		config.Client = http.Client{Transport: guarded()}
 	}
 }
+
+func fetchReplaceDifferentClient(client *http.Client, clients []http.Client, host string) {
+	_ = checkHost(host)
+	if client.Transport == nil {
+		clients[0] = http.Client{Transport: guarded()}
+	}
+}
+
+func fetchReplaceDifferentIndex(clients []http.Client, host string) {
+	_ = checkHost(host)
+	if clients[0].Transport == nil {
+		clients[1] = http.Client{Transport: guarded()}
+	}
+}
+
+func fetchInstallDifferentField(config *struct{ First, Second http.Client }, host string) {
+	_ = checkHost(host)
+	if config.First.Transport == nil {
+		config.Second.Transport = guarded()
+	}
+}
+
+func fetchInstallDifferentHelper(client, other *http.Client, host string) {
+	_ = checkHost(host)
+	if client.Transport == nil {
+		installGuarded(other)
+	}
+}
