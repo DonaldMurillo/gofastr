@@ -942,18 +942,31 @@ func ResolvesSymlinks(pass *analysis.Pass, body *ast.BlockStmt, isGuard GuardFun
 func lstatInfoObjs(pass *analysis.Pass, body *ast.BlockStmt, keep func(*ast.CallExpr) bool) map[types.Object]bool {
 	objs := map[types.Object]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
-		st, ok := n.(*ast.AssignStmt)
-		if !ok || len(st.Rhs) != 1 || len(st.Lhs) < 1 {
+		var first ast.Expr
+		var values []ast.Expr
+		switch declaration := n.(type) {
+		case *ast.AssignStmt:
+			if len(declaration.Lhs) > 0 {
+				first = declaration.Lhs[0]
+			}
+			values = declaration.Rhs
+		case *ast.ValueSpec:
+			if len(declaration.Names) > 0 {
+				first = declaration.Names[0]
+			}
+			values = declaration.Values
+		}
+		if first == nil || len(values) != 1 {
 			return true
 		}
-		call, ok := st.Rhs[0].(*ast.CallExpr)
+		call, ok := values[0].(*ast.CallExpr)
 		if !ok || QualifiedFunc(pass, call.Fun) != "os.Lstat" {
 			return true
 		}
 		if keep != nil && !keep(call) {
 			return true
 		}
-		if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name != "_" {
+		if id, ok := first.(*ast.Ident); ok && id.Name != "_" {
 			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
 				objs[obj] = true
 			}

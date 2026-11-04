@@ -8,7 +8,10 @@
 package redirect308
 
 import (
+	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 func resolve(app *app, path string) (string, bool) {
@@ -178,4 +181,71 @@ func conditionalRawRebind(w http.ResponseWriter, r *http.Request) {
 		id = r.Header.Get("X-Alt-Id")
 	}
 	w.Header().Set("X-Request-Id", id) // want `request-derived`
+}
+
+func conditionalAliasedRebind(r *http.Request, replace bool) {
+	id := r.Header.Get("X-Request-ID")
+	unchecked := r.Header.Get("X-Other-ID")
+	if !validRequestID(id) {
+		return
+	}
+	if replace {
+		id = unchecked
+	}
+	slog.Info("request", "id", id) // want `request-derived`
+}
+
+func conditionalAliasedChainRebind(w http.ResponseWriter, r *http.Request, replace bool) {
+	id := r.Header.Get("X-Request-ID")
+	unchecked := r.Header.Get("X-Other-ID")
+	alias := unchecked
+	if !validRequestID(id) {
+		return
+	}
+	if replace {
+		id = alias
+	}
+	w.Header().Set("X-Request-ID", id) // want `request-derived`
+}
+
+func conditionalScrubbedAlias(w http.ResponseWriter, r *http.Request, replace bool) {
+	id := r.Header.Get("X-Request-ID")
+	checked := strconv.Quote(r.Header.Get("X-Other-ID"))
+	if !validRequestID(id) {
+		return
+	}
+	if replace {
+		id = checked
+	}
+	w.Header().Set("X-Request-ID", id)
+}
+
+func validRequestID(value string) bool {
+	return !strings.ContainsAny(value, "\r\n\x00\x1b")
+}
+
+// conditionalSelfRebind: a branch that rebinds the vetted value from
+// itself keeps the bytes the guard vetted.
+func conditionalSelfRebind(w http.ResponseWriter, r *http.Request, lower bool) {
+	id := r.Header.Get("X-Request-ID")
+	if !validRequestID(id) {
+		return
+	}
+	if lower {
+		id = strings.ToLower(id)
+	}
+	w.Header().Set("X-Request-ID", id)
+}
+
+// conditionalSelfPlusRaw: mixing the vetted value with fresh request
+// bytes is fresh request bytes.
+func conditionalSelfPlusRaw(w http.ResponseWriter, r *http.Request, join bool) {
+	id := r.Header.Get("X-Request-ID")
+	if !validRequestID(id) {
+		return
+	}
+	if join {
+		id = id + r.Header.Get("X-Suffix")
+	}
+	w.Header().Set("X-Request-ID", id) // want `request-derived`
 }

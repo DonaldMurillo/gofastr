@@ -609,8 +609,8 @@ func hasASCIIConstantArg(pass *analysis.Pass, args []ast.Expr) bool {
 // condition. A pin covers a use in two regions: AFTER an if whose
 // branch leaves (return, continue, break, goto, panic) — a check that
 // logs and falls through rejects nothing — and, when the condition's
-// TRUE side is the ASCII side (isASCII(name), !ContainsFunc(name, bad),
-// name[i] < 0x80), the whole then-branch, diverging or not: a use
+// TRUE side proves the whole value is ASCII (isASCII(name),
+// !ContainsFunc(name, bad)), the whole then-branch, diverging or not: a use
 // inside the branch where the value was just proven ASCII is covered.
 func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object][]pinFact {
 	pinned := map[types.Object][]pinFact{}
@@ -715,10 +715,9 @@ type pinFact struct {
 // stronger side (then implies both operands), a disjunction needs both.
 // The readable tests: an ascii-named check on the value (isASCII vs
 // hasNonASCII), a ContainsFunc/IndexFunc over it whose callback tests
-// at-or-above the boundary (true means a bad rune was found), and a
-// below-the-boundary comparison of a byte or rune view. ==/!= bounds
-// and below-the-boundary callbacks stay 0: they establish nothing in
-// either direction.
+// at-or-above the boundary (true means a bad rune was found). A single
+// indexed byte and below-the-boundary callbacks prove nothing about
+// the whole string and stay 0.
 func asciiPolarity(pass *analysis.Pass, cond ast.Expr, obj types.Object, cb map[types.Object]types.Object) int {
 	switch e := ast.Unparen(cond).(type) {
 	case *ast.UnaryExpr:
@@ -738,12 +737,19 @@ func asciiPolarity(pass *analysis.Pass, cond ast.Expr, obj types.Object, cb map[
 			return max(asciiPolarity(pass, e.X, obj, cb), asciiPolarity(pass, e.Y, obj, cb))
 		case token.LOR:
 			return min(asciiPolarity(pass, e.X, obj, cb), asciiPolarity(pass, e.Y, obj, cb))
-		case token.LSS, token.LEQ:
-			if viewAtBound(pass, e, obj, cb) {
-				return 1
-			}
-		case token.GTR, token.GEQ:
-			if viewAtBound(pass, e, obj, cb) {
+		case token.EQL, token.NEQ:
+			for _, side := range [2]struct{ call, bound ast.Expr }{{e.X, e.Y}, {e.Y, e.X}} {
+				call, ok := ast.Unparen(side.call).(*ast.CallExpr)
+				if !ok || astx.CalleeName(call.Fun) != "IndexFunc" || callPolarity(pass, call, obj, cb) != -1 {
+					continue
+				}
+				value := pass.TypesInfo.Types[side.bound].Value
+				if value == nil || value.Kind() != constant.Int || constant.Sign(value) != -1 || value.ExactString() != "-1" {
+					continue
+				}
+				if e.Op == token.EQL {
+					return 1
+				}
 				return -1
 			}
 		}

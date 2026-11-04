@@ -223,6 +223,18 @@ func overwriteChecked(spoolDir, id string, payload []byte) error {
 	return os.WriteFile(p, payload, 0o600)
 }
 
+func overwriteVarChecked(spoolDir, id string, payload []byte) error {
+	p := filepath.Join(spoolDir, id)
+	var info, err = os.Lstat(p)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if info != nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("symlink at target")
+	}
+	return os.WriteFile(p, payload, 0o600)
+}
+
 // lstatElsewhere: an Lstat (and a ModeSymlink consult) on an unrelated
 // path checks no leaf of this write.
 func lstatElsewhere(spoolDir, id string, payload []byte) error {

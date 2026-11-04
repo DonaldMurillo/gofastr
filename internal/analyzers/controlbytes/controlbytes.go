@@ -294,7 +294,7 @@ func run(pass *analysis.Pass) (any, error) {
 // so the walk below stops at literals.
 func checkBody(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carrying map[*types.Named]map[string]bool, body *ast.BlockStmt, parent *taint) {
 	t := newTaint(pass, decls, carrying, body, parent)
-	guards := testedValues(pass, body)
+	guards := testedValues(pass, body, t)
 	for _, stmt := range body.List {
 		walkStmt(pass, decls, carrying, t, guards, stmt)
 	}
@@ -384,7 +384,7 @@ func testedAt(gs []guard, pos token.Pos) bool {
 // A value the code has already vetted cannot smuggle control bytes
 // past that vetting; a dedup/seen lookup anywhere else proves nothing
 // about the bytes and does not vet.
-func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]guard {
+func testedValues(pass *analysis.Pass, body *ast.BlockStmt, provenance *taint) map[types.Object][]guard {
 	out := map[types.Object][]guard{}
 	dropped := droppedVerdicts(pass, body)
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -456,11 +456,11 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 			return false
 		}
 		a, ok := n.(*ast.AssignStmt)
-		if !ok || topLevel[a] || !readsRequest(pass, a.Rhs) {
+		if !ok || topLevel[a] {
 			return true
 		}
 		for _, lhs := range a.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" && readsRequest(provenance, a.Rhs, pass.TypesInfo.ObjectOf(id)) {
 				endAt(id)
 			}
 		}
@@ -496,26 +496,16 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 }
 
 // readsRequest reports whether any of exprs reads request bytes
-// through a request accessor or field (isRequestSourceCall,
-// isRequestSelector).
-func readsRequest(pass *analysis.Pass, exprs []ast.Expr) bool {
-	found := false
+// through the same local bindings and scrub rules used at sinks. The
+// rebound value itself does not count: `id = strings.ToLower(id)`
+// keeps the bytes the guard already vetted.
+func readsRequest(provenance *taint, exprs []ast.Expr, self types.Object) bool {
 	for _, e := range exprs {
-		ast.Inspect(e, func(n ast.Node) bool {
-			switch x := n.(type) {
-			case *ast.CallExpr:
-				if isRequestSourceCall(pass, x) || isRequestCookieCall(pass, x) {
-					found = true
-				}
-			case *ast.SelectorExpr:
-				if isRequestSelector(pass, x) {
-					found = true
-				}
-			}
-			return !found
-		})
+		if provenance.orig(e, map[types.Object]bool{self: true}, 0) {
+			return true
+		}
 	}
-	return found
+	return false
 }
 
 // droppedVerdicts returns the calls in body that return a result the

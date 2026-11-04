@@ -112,13 +112,42 @@ func inBranchNegated(name string) *gadget {
 	return nil
 }
 
-// inBranchBelow: the bound comparison spelled below-the-boundary: the
-// then-branch holds the ASCII side.
+// inBranchBelow: checking one byte does not certify the whole key.
 func inBranchBelow(name string, i int) *gadget {
 	if name[i] < 0x80 {
-		return gadgets[strings.ToLower(name)]
+		return gadgets[strings.ToLower(name)] // want `registry lookup folds Unicode case`
 	}
 	return nil
+}
+
+func inBranchFirstByte(name string) *gadget {
+	if len(name) > 0 && name[0] < 128 {
+		return gadgets[strings.ToUpper(name)] // want `registry lookup folds Unicode case`
+	}
+	return nil
+}
+
+func inBranchNegatedByte(name string) *gadget {
+	if len(name) > 0 && !(name[0] >= 128) {
+		return gadgets[strings.ToUpper(name)] // want `registry lookup folds Unicode case`
+	}
+	return nil
+}
+
+func inBranchNegatedIndexFunc(name string) *gadget {
+	if strings.IndexFunc(name, func(value rune) bool { return value >= 0x80 }) == -1 {
+		return gadgets[strings.ToUpper(name)]
+	}
+	return nil
+}
+
+func wholeStringByteLoop(name string) *gadget {
+	for index := range len(name) {
+		if name[index] >= 0x80 {
+			return nil
+		}
+	}
+	return gadgets[strings.ToUpper(name)]
 }
 
 // inBranchBadSide: the then-branch of an at-or-above comparison is the

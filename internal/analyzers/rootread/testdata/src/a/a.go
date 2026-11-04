@@ -221,6 +221,21 @@ func (w *warehouse) dropChecked(ref string) error {
 	return os.Remove(p)
 }
 
+func (w *warehouse) dropVarChecked(ref string) error {
+	p, err := w.resolve(ref)
+	if err != nil {
+		return err
+	}
+	var info, statErr = os.Lstat(p)
+	if statErr != nil {
+		return statErr
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("symlink at target")
+	}
+	return os.Remove(p)
+}
+
 // openNoFollow refuses the leaf symlink in the flags themselves.
 func openNoFollow(scratchDir, id string) (*os.File, error) {
 	return os.OpenFile(filepath.Join(scratchDir, id), os.O_RDONLY|syscall.O_NOFOLLOW, 0)

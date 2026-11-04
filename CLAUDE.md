@@ -200,7 +200,9 @@ expose them to agents connected to a live app.**
   site and stays quiet on the fix:
   `controlbytes` (request-derived strings pass a scrub before
   slog/otel/header/stdio sinks — name the helper scrub/sanitize/… or
-  byte-index the value), `callbackunderlock` (never invoke func-typed
+  byte-index the value; a conditional rebind from request bytes, directly
+  or through local aliases, ends the old value's validation),
+  `callbackunderlock` (never invoke func-typed
   fields or map callbacks between Lock and Unlock — snapshot under the
   lock, call outside), `recovercallback` (registry callbacks on
   goroutine/read-loop paths need a recover guard), `compositekey`
@@ -211,7 +213,8 @@ expose them to agents connected to a live app.**
   transforms but does not validate), `asciifold` (never key a registry
   lookup on `strings.ToLower`/`ToUpper`, nor compare two folds with
   `==` — Unicode folding maps homoglyphs onto ASCII, ſ → S, K → k;
-  fold with `internal/asciicase.Lower` or refuse non-ASCII first),
+  fold with `internal/asciicase.Lower` or refuse non-ASCII first; then-branch
+  credit requires a whole-string helper or callback proof, not one indexed byte),
   `laxcoerce` (a
   failed type assertion on a `map[string]any` entry is not absence —
   split presence from type, or return an error), `rootwrite` (writes
@@ -234,7 +237,9 @@ expose them to agents connected to a live app.**
   credential or an input read; use subtle.ConstantTimeCompare or
   hmac.Equal), `timestampid` (an id/token/session/key minted from
   time.Now() formatted into a string, rand-failure fallbacks included;
-  mint from crypto/rand), and `discardeddecode` (`_ = json.Unmarshal`,
+  mint from crypto/rand, retaining at least 16 random bytes: hex slices
+  count half their character span, base64 three quarters rounded down,
+  unknown computed encodings none), and `discardeddecode` (`_ = json.Unmarshal`,
   `_ = Decode`, `_ = ParseForm`: the zero value marches on as data).
   The same round widened `unboundedbody` (ParseForm/FormValue with no
   MaxBytesReader on the request), `controlbytes` (SMTP envelope and
@@ -256,7 +261,8 @@ expose them to agents connected to a live app.**
   stayed silent behind sanitizeKey) stripped the sanitizer shield from
   `rootwrite` too: in EITHER twin only resolution postures gate —
   EvalSymlinks on the chain or its Dir, symlink-named guards, an
-  O_NOFOLLOW flag, or an Lstat+ModeSymlink leaf check — and a
+  O_NOFOLLOW flag, or an Lstat+ModeSymlink leaf check (including a
+  var-declared first result) — and a
   sanitized join is never one (the upload probes escaped through
   exactly one). `os.Root` is the fix spelling of first resort on
   Go 1.27: os.OpenRoot plus root.Open/ReadFile/Stat/Create/OpenFile/

@@ -46,7 +46,10 @@
 //     collision-defeater) do not silence anything, and a SLICE of a
 //     big buffer counts only its own span — hex of b[:2] is 2 bytes
 //     (2026-11-03 round: the slice bounds were never read, so a
-//     b[:2] of a 32-byte buffer silenced the mint);
+//     b[:2] of a 32-byte buffer silenced the mint). A slice of the
+//     encoded text counts the random bytes it keeps: half a hex span,
+//     three quarters of a base64 span rounded down, and nothing for a
+//     computed encoding it does not recognize;
 //   - a clock passed as a parameter (now time.Time): the injectable
 //     clock of ulid.NewAt and the test seams; only time.Now() itself
 //     is wall-clock here;
@@ -403,16 +406,12 @@ func mentionsBigRand(pass *analysis.Pass, e ast.Expr, bigRand map[types.Object]i
 			}
 			// A slice of a COMPUTED encoding — hex.EncodeToString(b)
 			// [:4] — carries only the sliced span, never the whole
-			// buffer inside it. Judge the span when the base reads the
-			// buffer; a non-constant high bound has no size to read,
-			// and the silence this feeds must be earned.
-			if mentionsBigRand(pass, v.X, bigRand, depth+1) {
-				if lo, ok := constSliceSpan(pass, v); ok && lo >= 16 {
-					found = true
-				}
-				return false
+			// buffer inside it. Convert characters to source bytes for
+			// recognized encodings; unknown computed bases earn nothing.
+			if span, ok := constSliceSpan(pass, v); ok && encodedRandomBytes(pass, v.X, span) >= 16 && mentionsBigRand(pass, v.X, bigRand, depth+1) {
+				found = true
 			}
-			return true
+			return false
 		case *ast.IndexExpr:
 			// One byte of the buffer, whatever the buffer's size.
 			return true
@@ -420,6 +419,34 @@ func mentionsBigRand(pass *analysis.Pass, e ast.Expr, bigRand map[types.Object]i
 		return !found
 	})
 	return found
+}
+
+func encodedRandomBytes(pass *analysis.Pass, expression ast.Expr, span int) int {
+	call, ok := ast.Unparen(expression).(*ast.CallExpr)
+	if !ok || span <= 0 {
+		return 0
+	}
+	switch pathflow.QualifiedFunc(pass, call.Fun) {
+	case "encoding/hex.EncodeToString":
+		if len(call.Args) == 1 {
+			return span / 2
+		}
+	case "fmt.Sprintf":
+		if len(call.Args) == 2 {
+			if format, ok := astx.StringConstant(pass, call.Args[0]); ok && (format == "%x" || format == "%X") {
+				return span / 2
+			}
+		}
+	}
+	selector, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "EncodeToString" || len(call.Args) != 1 {
+		return 0
+	}
+	selection := pass.TypesInfo.Selections[selector]
+	if selection != nil && selection.Obj().Pkg() != nil && selection.Obj().Pkg().Path() == "encoding/base64" {
+		return span/4*3 + span%4*3/4
+	}
+	return 0
 }
 
 // sliceSpan returns the byte span a slice of a size-byte buffer
