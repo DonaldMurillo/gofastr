@@ -210,3 +210,17 @@ func TestGroupWrapNotFoundResolvesNextPerRequest(t *testing.T) {
 		t.Fatal("nested lazy WrapNotFound delegated in a loop")
 	}
 }
+
+func TestRootServesAbsolutePaths(t *testing.T) {
+	root := New()
+	group := root.Group("/a").Group("/b")
+	if group.Root() != root || root.Root() != root {
+		t.Fatal("Root did not return the top router")
+	}
+	group.Root().Get("/elsewhere", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	rec := httptest.NewRecorder()
+	root.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/elsewhere", nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("GET /elsewhere: %d", rec.Code)
+	}
+}

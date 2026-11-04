@@ -1,11 +1,15 @@
 # Widgets: `core-ui/widget`
 
 The UI host mounts a default toast stack at boot only when the global
-widget catalog contains no toast stack. The default stylesheet is served
-at `/core-ui/widget/gofastr-toasts/style.css`. When another host already
+widget catalog contains no toast stack. On a host mounted at the root,
+the default stylesheet is served at
+`/core-ui/widget/gofastr-toasts/style.css`; a host mounted on a router
+group serves it under that group's prefix. When another host already
 registered a stack (including an app-defined one), this host adds only
-its missing stylesheet routes at the catalog's published URLs, keeping
-the same stack names and mount prefixes. It does not register a second
+its missing stylesheet routes, on its root router at the catalog's
+published URLs, so a stack published under `/first` is served at
+`/first/...` even by a host mounted under `/second`. The stack keeps
+its names and mount prefixes. It does not register a second
 stack or replace the existing definitions, so booting another app cannot
 give the first app two toast regions. Repeated boot validation adds no
 duplicate routes. Stack behavior uses the host's shared runtime, not a

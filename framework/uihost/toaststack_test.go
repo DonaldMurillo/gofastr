@@ -158,3 +158,24 @@ func TestBootKeepsTheAppsOwnToastStack(t *testing.T) {
 		t.Fatal("the app's own stack is gone")
 	}
 }
+
+func TestToastStylesUnderOtherPrefix(t *testing.T) {
+	widget.IsolateForTest(t)
+	first := New(func() *app.App { a := app.NewApp("first"); a.Register("/", &describedScreen{}, nil); return a }(), WithNoInlineFirstPaint())
+	firstRoutes := router.New()
+	first.Mount(firstRoutes)
+	widget.MountBuilder(firstRoutes.Group("/first"), preset.ToastStack("mine"))
+	first.ValidateBoot()
+
+	second := New(func() *app.App { a := app.NewApp("second"); a.Register("/", &describedScreen{}, nil); return a }(), WithNoInlineFirstPaint())
+	secondRoutes := router.New()
+	second.Mount(secondRoutes.Group("/second"))
+	second.ValidateBoot()
+
+	definition, _ := widget.Lookup("mine")
+	response := httptest.NewRecorder()
+	secondRoutes.ServeHTTP(response, httptest.NewRequest(http.MethodGet, definition.StyleURL(), nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("GET %s on the second host: %d", definition.StyleURL(), response.Code)
+	}
+}

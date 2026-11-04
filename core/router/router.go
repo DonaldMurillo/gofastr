@@ -540,6 +540,12 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // use this, not the innermost segment.
 func (r *Router) Prefix() string { return r.prefix }
 
+// Root returns the router at the top of r's Group chain (r itself for a
+// router from New). A registrar that must serve an absolute URL another
+// router published, outside r's own prefix, registers it on Root; routes
+// added there skip r's Group middleware.
+func (r *Router) Root() *Router { return r.root }
+
 // NoTimeout, passed to SetTimeout or SetRouteTimeout, exempts the
 // route(s) from the request timeout entirely. A zero duration means the
 // same thing (net/http convention: zero disables the deadline; see

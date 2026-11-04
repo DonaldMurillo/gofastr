@@ -36,6 +36,9 @@ few lines, and link the PR or the docs page for the rest.
   unless `AuthConfig.GlobalSessionLookup` says lookup ignores the tenant.
   See [sdk.md](framework/docs/content/sdk.md#typed-repositories) and
   [auth.md](framework/docs/content/auth.md#session-middleware-cookie--ctx-user).
+- `router.Router.Root()` returns the router at the top of a Group chain,
+  for a registrar that must serve an absolute URL outside its group's
+  prefix. See [core-packages.md](framework/docs/content/core-packages.md#router).
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
   `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
   with signtool, timestamped through `--timestamp-url`, and `--zip`
@@ -573,7 +576,8 @@ few lines, and link the PR or the docs page for the rest.
   asset routes belong to each router, so the second host found the
   first host's toast stack and skipped its routes. Each host now mounts
   the stylesheet routes it is missing for the registered stack, and an
-  app's own stack is never joined by a second default. See `widgets.md`.
+  app's own stack is never joined by a second default. See
+  [widgets.md](framework/docs/content/widgets.md).
 - **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
   (entity mode); regenerate the CLI to pick these up. Details in
   [app-cli.md](framework/docs/content/app-cli.md):

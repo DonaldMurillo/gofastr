@@ -3,7 +3,6 @@ package uihost
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
@@ -37,7 +36,10 @@ func (ds *UIHost) ensureToastStack() {
 				}
 			}
 			if !mounted {
-				ds.coreRouter.Get(strings.TrimPrefix(d.StyleURL(), ds.coreRouter.Prefix()), http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				// The definition is process-wide, so its URL may sit under
+				// another host's prefix; register it where that absolute
+				// path resolves, which is this router's root.
+				ds.coreRouter.Root().Get(d.StyleURL(), http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 					writer.Header().Set("Content-Type", "text/css; charset=utf-8")
 					writer.Header().Set("Cache-Control", "no-store")
 					fmt.Fprint(writer, widget.RenderCSS(d))

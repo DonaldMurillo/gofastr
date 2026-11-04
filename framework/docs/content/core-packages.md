@@ -166,7 +166,11 @@ name its request inherited from a route that redispatched it. Entity
 routes use it so `auth.RequireAPIScopes` scopes `/_batch`, the other
 subroutes and the entity's Endpoints to its table. The
 framework owns the root `*Router` and hands it to batteries and authors
-to mount routes. Direct. Start at `core/router/router.go`: `Router`.
+to mount routes. `Prefix()` returns a group's full prefix and `Root()`
+the router at the top of its Group chain, for a registrar that must
+serve an absolute URL outside its own prefix (routes added there skip
+the group's middleware). Direct. Start at `core/router/router.go`:
+`Router`.
 
 ## Real-time
 
