@@ -831,9 +831,9 @@ neither lists nor requires them.
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
 registers an extractor wires this up: `battery/auth` does so in
 `init()`, pulling from `auth.GetCurrentUser(ctx).GetID()`. If no
-extractor is registered, `OwnerField` is inert (no scoping, no
-stamping), so adding the field to an entity config in an app that
-hasn't wired auth is harmless.
+extractor is registered, auto-CRUD routes refuse with
+401 until an owner extractor is registered. Owner scoping fails closed;
+declaring `OwnerField` never silently disables that protection.
 
 Pair with **session middleware** so cookie-authenticated requests
 appear as a User in context:
@@ -2548,8 +2548,8 @@ input schema. Both fields are optional: leave them `nil` to keep the historical
   a blog's comments), never as a quick way past a login wall during
   development.
 - **Setting `OwnerField` in an app that never wires an owner
-  extractor.** Without a registered extractor the field is inert: no
-  scoping, no stamping, no error. Importing `battery/auth` registers
+  extractor.** Auto-CRUD routes refuse with
+  401 until an owner extractor is registered. Importing `battery/auth` registers
   one in `init()`; pair it with `auth.SessionMiddleware` so
   cookie-authenticated requests carry a user.
 - **Setting `Access` and forgetting the policy middleware.** The CRUD
