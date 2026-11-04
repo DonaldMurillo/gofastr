@@ -196,6 +196,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		if err := checkIndexNames(ordered, all); err != nil {
 			return "", "", SchemaSnapshot{}, err
 		}
+		if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+			return "", "", SchemaSnapshot{}, err
+		}
 	}
 	prev = respellTables(prev, declaredTableNames(all), dialect)
 

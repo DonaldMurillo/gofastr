@@ -99,6 +99,9 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	if err := checkIndexNames(ordered, all); err != nil {
 		return nil, err
 	}
+	if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+		return nil, err
+	}
 
 	var out []SchemaChange
 	tables := make([]string, 0, len(ordered))

@@ -1218,6 +1218,11 @@ types is refused with the pivot and column named; generation does not
 advance the snapshot past that refusal. Write and apply an explicit
 migration that preserves the existing links before adopting the changed
 relation. An entity-owned join table follows its entity's normal diff.
+Every declaration sharing a generated Through table must agree on its link
+columns and endpoint SQL types, including reciprocal declarations. Snapshot
+generation, live diffing, and boot migration refuse inconsistent declarations
+before generating or applying schema changes, even on an empty database.
+Only table creation and DDL emission are deduplicated, never validation.
 
 ```go
 app := framework.NewApp(framework.WithDB(db))

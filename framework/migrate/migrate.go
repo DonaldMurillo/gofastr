@@ -275,6 +275,9 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+	if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+		return err
+	}
 	// Partition routines into "applies on this dialect" vs "skipped". The
 	// skip set is logged in ONE line per boot so a misconfigured dialect tag
 	// (e.g. a Postgres stored proc left in the plan against a SQLite dev DB)
