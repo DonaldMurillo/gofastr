@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1414,6 +1415,12 @@ func createNDJSON(path string) (*ndjsonFile, error) {
 }
 
 func (w *ndjsonFile) write(row map[string]any) error {
+	for _, column := range slices.Sorted(maps.Keys(row)) {
+		value, floating := row[column].(float64)
+		if floating && (math.IsNaN(value) || math.IsInf(value, 0)) {
+			return fmt.Errorf("row %d column %q: non-finite float %v cannot be exported as JSON", w.rows+1, column, value)
+		}
+	}
 	if err := w.enc.Encode(row); err != nil {
 		return err
 	}

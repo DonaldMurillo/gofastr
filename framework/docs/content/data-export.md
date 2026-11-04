@@ -1,5 +1,10 @@
 # Data export & import
 
+Non-finite floating-point cells (`NaN`, `+Inf`, `-Inf`) fail export with the
+table, one-based row number, and column in the error. Correct the source cell
+and export into a fresh directory; an interrupted directory without a manifest
+is not a complete archive. Non-finite values are never silently coerced.
+
 `App.ExportData` / `App.ImportData` dump every entity's rows (plus every
 registered battery table) to a portable archive and restore it with
 validation. This is a **data** export, anti-lock-in for the rows you own,
