@@ -286,6 +286,10 @@ The recursive CSP lints recognize `// check-csp:ignore-file` only as an
 actual standalone Go line comment. Directive-shaped text in a raw string
 or inside a block comment never suppresses inline-style or script findings.
 
+The response-mount lint follows `.then(this.render)` to the method in the
+enclosing JavaScript class. Same-named methods in unrelated classes never
+supply a mount or an OK gate for that chain.
+
 ## Adopting it on an existing codebase
 
 Strict-by-default and adoption pull against each other. Switch `verify` on
