@@ -269,8 +269,9 @@ few lines, and link the PR or the docs page for the rest.
     map literal that returns an error built from the entry it reached:
     which entry failed first changed from run to run. Ten tree sites
     now range a slice of pairs.
-  - 90 documented false negatives fixed across 51 vet analyzers:
-    `rootwrite`, `rootread`, `fixedtmp`, `tightenshared`,
+  - 97 documented false negatives fixed across 51 vet analyzers:
+    `rootwrite`, `rootread` (which crashed on a `filepath.Join()` with
+    no arguments), `fixedtmp`, `tightenshared`,
     `worldreadable`, `layoutfunc`; `textbind`, `controlbytes`,
     `errleak`, `recoverlog`, `unboundedbody`, `reqparamlimit`,
     `authpresence`, `fanoutreq`, `listheader`, `sanitizefix`;
@@ -287,13 +288,27 @@ few lines, and link the PR or the docs page for the rest.
   - `textbind` follows request text through struct fields: a field
     some literal or assignment fills with request text (directly, or
     through a constructor's parameter) is request text wherever it is
-    read, in its own package and, through a fact, in every importer.
-    Check the value before you store it; a check on the read is not
+    read, in its own package and, through a fact, in every importer;
+    a field another package declares is request text in the package
+    that fills it. Check the value before you store it; a check on the
+    read, or one after a helper already bound the value, is not
     credited. Its first tree run found the saved-view store below.
   - An allow marker can list several analyzers separated by spaces or
     tabs, `//gofastr:allow(rootwrite rootread) why`. `gofastr verify`
     already read that list; `go vet -vettool` read commas only, so the
-    marker silenced nothing there.
+    marker silenced nothing there. It also reads a marker inside a
+    multi-line block comment, as `gofastr verify` does, and
+    `TestEveryAnalyzerIsWiredOrExplained` finds an analyzer built by a
+    constructor, not only one declared as a literal.
+  - 22 false negatives fixed in the browser-runtime JS lints in
+    `core-ui/check` (`keyguard` and the `runtimeshapes` family): string
+    prose and regex literals no longer read as code, wrapped and
+    parenthesised builds are followed, a negated gate earns no credit,
+    and a lone backtick no longer crashes the template walk. The widened
+    lints found one site, `popover.js`'s event-detail registry read.
+  - 15 false negatives fixed in the `gofastr verify` contracts rules:
+    GOFASTR1105, 1401, 1408, 1417, 1802, 1804, 1806, 1812, 1814, 1815,
+    1816 and 1824, and the `check-csp` style lane's allow marker.
 - **`gofastr init .` refuses a symlinked `.env` or settings file, even
   one inside the project.** The two files it writes a generated secret
   into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
@@ -606,8 +621,8 @@ few lines, and link the PR or the docs page for the rest.
   file an invalid key, hid a migration's first `-- +migrate`
   directive, reached the database inside a routine `.sql` body, broke
   a markdown frontmatter fence, and kept a line-anchored upgrade text
-  pattern off line 1. Every reader strips it through `internal/bom`,
-  and `TestReadersIgnoreBOM` holds them to one result.
+  pattern off line 1. Every reader strips it, and
+  `TestReadersIgnoreBOM` holds them to one result.
 - **Saving or deleting a saved view with unstorable text answers 400
   and 404, not 500.** A name or filter holding a NUL byte or invalid
   UTF-8 reached the admin store's INSERT, and Postgres refused the
