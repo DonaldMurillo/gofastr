@@ -13,7 +13,12 @@ func TestLayerPrefixAfterQuotedDivision(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Violations) != 5 {
-		t.Errorf("got %d violations, want 5: %v", len(result.Violations), result)
+		t.Fatalf("got %d violations, want 5: %v", len(result.Violations), result)
+	}
+	for index, violation := range result.Violations {
+		if violation.Line != index+1 {
+			t.Errorf("finding %d is on line %d, want %d", index, violation.Line, index+1)
+		}
 	}
 }
 
