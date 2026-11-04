@@ -485,7 +485,7 @@ func implementsWriter(t types.Type) bool {
 func checkReturned(pass *analysis.Pass, f *ast.File, bound map[types.Object]ast.Expr, guarded []guardRange) {
 	ast.Inspect(f, func(n ast.Node) bool {
 		rng, ok := n.(*ast.RangeStmt)
-		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) && !mapLiteral(rng.X, bound, pass) {
+		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) && !mapLiteral(rng.X, bound, pass, f, rng.Pos()) {
 			return true
 		}
 		for _, g := range guarded {
@@ -651,7 +651,60 @@ func wireShaped(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 // literal, or a local bound to one: a fixed key set the author wrote in an
 // order, which the range then randomizes (core/settings' required-field
 // loops).
-func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass) bool {
+func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass, file *ast.File, at token.Pos) bool {
+	literal := resolveMapLiteral(x, bound, pass)
+	if literal == nil || len(literal.Elts) == 0 {
+		return false
+	}
+	if len(literal.Elts) > 1 {
+		return true
+	}
+	entry, ok := literal.Elts[0].(*ast.KeyValueExpr)
+	if !ok {
+		return true
+	}
+	key := pass.TypesInfo.Types[entry.Key].Value
+	changed := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil || changed || node.Pos() >= at {
+			return false
+		}
+		if node.End() <= literal.Pos() {
+			return false
+		}
+		switch operation := node.(type) {
+		case *ast.AssignStmt:
+			for _, left := range operation.Lhs {
+				indexed, ok := ast.Unparen(left).(*ast.IndexExpr)
+				if !ok || resolveMapLiteral(indexed.X, bound, pass) != literal {
+					continue
+				}
+				assignedKey := pass.TypesInfo.Types[indexed.Index].Value
+				if key == nil || assignedKey == nil || key.ExactString() != assignedKey.ExactString() {
+					changed = true
+				}
+			}
+		case *ast.CallExpr:
+			if identifier, ok := ast.Unparen(operation.Fun).(*ast.Ident); ok {
+				if _, builtin := pass.TypesInfo.ObjectOf(identifier).(*types.Builtin); builtin {
+					switch identifier.Name {
+					case "len", "delete", "clear":
+						return true
+					}
+				}
+			}
+			for _, argument := range operation.Args {
+				if resolveMapLiteral(argument, bound, pass) == literal {
+					changed = true
+				}
+			}
+		}
+		return !changed
+	})
+	return changed
+}
+
+func resolveMapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass) *ast.CompositeLit {
 	x = ast.Unparen(x)
 	seen := map[types.Object]bool{}
 	for {
@@ -661,12 +714,12 @@ func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass
 		}
 		object := pass.TypesInfo.ObjectOf(identifier)
 		if seen[object] {
-			return false
+			return nil
 		}
 		seen[object] = true
 		src, found := bound[object]
 		if !found {
-			return false
+			return nil
 		}
 		x = ast.Unparen(src)
 	}
@@ -674,11 +727,13 @@ func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass
 	// configuration shape this arm leaves alone; only written keys are a
 	// fixed set.
 	lit, ok := x.(*ast.CompositeLit)
-	if !ok || len(lit.Elts) < 2 {
-		return false
+	if !ok {
+		return nil
 	}
-	_, isMap := pass.TypesInfo.TypeOf(lit).Underlying().(*types.Map)
-	return isMap
+	if _, isMap := pass.TypesInfo.TypeOf(lit).Underlying().(*types.Map); isMap {
+		return lit
+	}
+	return nil
 }
 
 func wireValue(t types.Type) bool {
