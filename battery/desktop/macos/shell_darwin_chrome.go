@@ -293,7 +293,12 @@ func boolToIMP(b bool) uintptr {
 func (ch *windowChrome) setSidebarWidth(win objc.ID, points int) {
 	ch.sidebarW = points
 	if ch.zoneView == 0 {
-		return
+		if ch.resolved != desktop.MaterialSidebar || points <= 0 {
+			return
+		}
+		ch.zoneView = newEffectView(objc.Rect{W: float64(points), H: contentBounds(win).H}, effectMaterialSidebar, viewHeightSizable)
+		insertBelow(objc.ID(objc.Send(win, objc.Sel("contentView"))), ch.zoneView)
+		objc.Send(ch.zoneView, objc.Sel("setHidden:"), objc.Send(win, objc.Sel("isOpaque")))
 	}
 	objc.SendRect(ch.zoneView, objc.Sel("setFrame:"), objc.Rect{W: float64(points), H: contentBounds(win).H})
 }

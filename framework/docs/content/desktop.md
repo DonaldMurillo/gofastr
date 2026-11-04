@@ -874,7 +874,8 @@ d := native.New(desktop.Config{
   `NSAppKitVersionNumber` from the AppKit actually loaded.
 - `Config.SidebarWidth` (and `WindowSpec.SidebarWidth` for another
   window) is the initial sidebar zone in points, `0..MaxSidebarWidth`
-  (4096); 0 means no zone. The page reports later widths through
+  (4096); 0 means no zone. A later positive width creates the sidebar
+  zone when the window uses `MaterialSidebar`. The page reports widths through
   `__gofastr.desktop.window.setChrome({sidebarWidth})`, which applies
   to the calling window only; a ResizeObserver on the sidebar element
   is the intended caller. Go code calls `Window.SetSidebarWidth`.
