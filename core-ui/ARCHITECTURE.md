@@ -32,6 +32,10 @@ the value's lossy slug. Standalone radio, checkbox and switch configs
 carry `Ctx` too; a Switch allocates its control ID once and reuses it for
 its message, even when another switch has the same submitted name.
 
+DatePicker range announcements use the Gregorian calendar of the server's
+grid even when the page locale defaults to another calendar. An undrawn
+day without a page language keeps its ISO date instead of the host locale.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching
