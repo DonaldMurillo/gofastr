@@ -411,7 +411,7 @@ Each entry under `fields:` accepts:
 | `unique` | bool | Unique constraint on the column. |
 | `default` | scalar | Value written when the field is omitted on create. Checked against the field's own rules when the entity is registered; see "Defaults are validated at registration" below. |
 | `max` / `min` | number | Length (strings) or value (numbers) bounds. |
-| `values` | list | Allowed values for `type: enum`. |
+| `values` | list | Allowed values for `type: enum`; must be non-empty, including on optional enum fields. Empty enums are refused at registration. |
 | `pattern` | string | Regex the value must match (validated on write). |
 | `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `BIGSERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
