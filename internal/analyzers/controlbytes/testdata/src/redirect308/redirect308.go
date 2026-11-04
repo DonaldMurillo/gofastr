@@ -166,3 +166,16 @@ func conditionalRebind(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Request-Id", id)
 }
+
+// conditionalRawRebind replaces the vetted value on one branch with
+// fresh request bytes: on that path the sink sees bytes nobody vetted.
+func conditionalRawRebind(w http.ResponseWriter, r *http.Request) {
+	id := r.Header.Get("X-Request-Id")
+	if !isSafePartialRedirect(id) {
+		return
+	}
+	if r.URL.Query().Has("alt") {
+		id = r.Header.Get("X-Alt-Id")
+	}
+	w.Header().Set("X-Request-Id", id) // want `request-derived`
+}

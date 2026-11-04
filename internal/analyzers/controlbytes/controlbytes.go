@@ -431,9 +431,41 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 	// guard — one at the top of the function body. A rebind inside a
 	// branch (requestid's `if !validRequestID(id) { id = uuid… }`)
 	// replaces the value on that path only; on the other the vetted
-	// bytes are still what the sink sees. An assignment BEFORE the
-	// guard (a loop rebinding at the top of every iteration, or the :=
-	// that first bound it) ends nothing.
+	// bytes are still what the sink sees — unless the branch rebinds it
+	// to fresh request bytes, which reach the sink unvetted on that
+	// path. An assignment BEFORE the guard (a loop rebinding at the top
+	// of every iteration, or the := that first bound it) ends nothing.
+	endAt := func(id *ast.Ident) {
+		obj := pass.TypesInfo.ObjectOf(id)
+		if obj == nil {
+			return
+		}
+		gs := out[obj]
+		for i, g := range gs {
+			if id.Pos() > g.pos && (g.end == 0 || id.Pos() < g.end) {
+				gs[i].end = id.Pos()
+			}
+		}
+	}
+	topLevel := map[ast.Stmt]bool{}
+	for _, st := range body.List {
+		topLevel[st] = true
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false
+		}
+		a, ok := n.(*ast.AssignStmt)
+		if !ok || topLevel[a] || !readsRequest(pass, a.Rhs) {
+			return true
+		}
+		for _, lhs := range a.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+				endAt(id)
+			}
+		}
+		return true
+	})
 	for _, st := range body.List {
 		var idents []*ast.Ident
 		switch a := st.(type) {
@@ -457,19 +489,33 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 			continue
 		}
 		for _, id := range idents {
-			obj := pass.TypesInfo.ObjectOf(id)
-			if obj == nil {
-				continue
-			}
-			gs := out[obj]
-			for i, g := range gs {
-				if id.Pos() > g.pos && (g.end == 0 || id.Pos() < g.end) {
-					gs[i].end = id.Pos()
-				}
-			}
+			endAt(id)
 		}
 	}
 	return out
+}
+
+// readsRequest reports whether any of exprs reads request bytes
+// through a request accessor or field (isRequestSourceCall,
+// isRequestSelector).
+func readsRequest(pass *analysis.Pass, exprs []ast.Expr) bool {
+	found := false
+	for _, e := range exprs {
+		ast.Inspect(e, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.CallExpr:
+				if isRequestSourceCall(pass, x) || isRequestCookieCall(pass, x) {
+					found = true
+				}
+			case *ast.SelectorExpr:
+				if isRequestSelector(pass, x) {
+					found = true
+				}
+			}
+			return !found
+		})
+	}
+	return found
 }
 
 // droppedVerdicts returns the calls in body that return a result the
