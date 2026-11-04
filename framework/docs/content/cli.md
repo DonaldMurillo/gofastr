@@ -175,7 +175,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   `generate screen <name> --from-a11y=<file>` builds the screen from a
   Playwright aria snapshot ([app specs](app-spec.md)).
   `generate [--config=<settings file>]` runs the configurable codegen engine
-  ([codegen](codegen.md)); `generate --watch` re-runs on every change.
+  ([codegen](codegen.md)); `generate --watch` re-runs when an input changes.
+  A configured `styles` entry watches both `.style.css` and `.tokens.css`
+  files under its package patterns, including additions and removals;
+  generated Go siblings are outputs, not watch inputs.
 - `gofastr generate package [<name>]`: copy a canonical chrome package
   (`siteheader`, `sitefooter`, `docpage`) into the app as owned code.
   No name lists the packages with a one-line summary each. With a name,

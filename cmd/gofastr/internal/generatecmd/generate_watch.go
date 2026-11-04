@@ -125,6 +125,13 @@ func hashGenerateInputs(options appgen.GenerateOptions) string {
 	hashEntityDecls(h, filepath.Join(projectDir, "entities"))
 	if err == nil && discovery.Found {
 		hashFileInto(h, discovery.Path)
+		styleInputs, styleErr := appgen.GenerateStyleInputs(projectDir, discovery.Config.Codegen.Generators)
+		if styleErr != nil {
+			fmt.Fprintln(h, styleErr)
+		}
+		for _, path := range styleInputs {
+			hashFileInto(h, path)
+		}
 		for _, ext := range discovery.Config.Codegen.Extensions {
 			if len(ext.Command) > 0 && filepath.Base(ext.Command[0]) != ext.Command[0] {
 				hashFileInto(h, projectRelativePath(projectDir, ext.Command[0]))
