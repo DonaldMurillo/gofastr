@@ -23,11 +23,7 @@ import (
 )
 
 func main() {
-	pattern := "./..."
-	if len(os.Args) > 1 {
-		pattern = os.Args[1]
-	}
-	findings, unresolved, fset, err := embedcheck.CheckAll(pattern)
+	findings, unresolved, fset, err := embedcheck.CheckAll(os.Args[1:]...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(2)
@@ -55,7 +51,7 @@ func main() {
 		return
 	}
 	if len(findings) == 0 {
-		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified: neither this analyzer nor the boot walk can see a child built inside Render() whose type is in another package.\n", blocking)
+		fmt.Fprintf(os.Stderr, "check-embed: %d embed surface path(s) could not be verified: neither this analyzer nor the boot walk can verify a child built inside Render().\n", blocking)
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "check-embed: %d embed surface(s) register a server action:\n\n", len(findings))
