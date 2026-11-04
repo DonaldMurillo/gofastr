@@ -119,3 +119,44 @@ func TestPassRecordsUnreadableSources(t *testing.T) {
 		})
 	}
 }
+
+func TestPassRecordsUnreadableSourceLinks(t *testing.T) {
+	for _, failure := range []string{"dangling", "looping", "permission"} {
+		t.Run(failure, func(t *testing.T) {
+			root := t.TempDir()
+			writeTemp(t, root, "readable.go", "package app\n")
+			locked := filepath.Join(root, "_locked")
+			writeTemp(t, root, "_locked/source", "unreadable source\n")
+			for _, name := range []string{"source.go", "site.css", "app.js", "app.mjs", "app.cjs"} {
+				target := "missing"
+				if failure == "looping" {
+					target = name
+				} else if failure == "permission" {
+					target = filepath.Join(locked, "source")
+				}
+				if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
+				}
+			}
+			if failure == "permission" {
+				restrictPassFixture(t, locked, 0)
+			}
+			pass, err := NewPass(root, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			unparsed := pass.Unparsed()
+			if len(unparsed) != 5 {
+				t.Fatalf("Unparsed = %v, want all five unreadable source links", unparsed)
+			}
+			for _, name := range []string{"source.go", "site.css", "app.js", "app.mjs", "app.cjs"} {
+				if !strings.Contains(unparsed[name], name) {
+					t.Errorf("Unparsed[%q] = %q, want its read error", name, unparsed[name])
+				}
+			}
+			if files := pass.Files(); len(files) != 1 || files[0].Rel != "readable.go" {
+				t.Fatalf("discovered %v, want readable.go", files)
+			}
+		})
+	}
+}

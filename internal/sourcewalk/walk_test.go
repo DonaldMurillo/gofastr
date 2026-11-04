@@ -99,8 +99,11 @@ func TestWalkErrorControls(t *testing.T) {
 							restricted, mode = root, 0o400
 						}
 					case "symlink-stat":
-						wantCause = fs.ErrNotExist
-						if err := os.Symlink(filepath.Join(root, "missing"), filepath.Join(root, "a")); err != nil {
+						restricted = filepath.Join(root, "_locked")
+						if err := os.Mkdir(restricted, 0o700); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Symlink(filepath.Join(restricted, "missing"), filepath.Join(root, "a")); err != nil {
 							t.Skipf("symlinks unavailable: %v", err)
 						}
 						if control.response == fs.SkipDir {
@@ -157,5 +160,34 @@ func TestWalkErrorControls(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestWalkDanglingLoopingAndExcludedLinks(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package app\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"link", "loop", "vendor", "node_modules", "dist", "bin", "build", "tmp", ".cache", "_deps"} {
+		target := "missing"
+		if name == "loop" {
+			target = name
+		}
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	}
+	var files []string
+	err := Walk(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			files = append(files, filepath.Base(path))
+		}
+		return nil
+	})
+	if err != nil || len(files) != 3 || files[0] != "a.go" || files[1] != "link" || files[2] != "loop" {
+		t.Fatalf("Walk files = %v, error = %v; want a.go, link, loop and no error", files, err)
 	}
 }
