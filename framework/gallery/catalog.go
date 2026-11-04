@@ -709,18 +709,14 @@ var Catalog = []Entry{
 		})
 	}},
 	{"filterchipbar", "FilterChipBar", "Forms", "Active filter chip strip with per-chip dismiss RPC.", func() render.HTML {
-		// A chip dismissal is an in-page state change: the demo points
-		// the island at its own page, which is honest about there being
-		// no per-demo backend — the contract (link + island on the same
-		// control) is the thing on show.
-		return ui.FilterChipBar(ui.FilterChipBarConfig{
+		return stack(ui.FilterChipBar(ui.FilterChipBarConfig{
 			RPCSignal: "filter-chips",
 			Filters: []ui.FilterChip{
-				{Label: "Open", DismissPath: "/components/filterchipbar?dismissed=open", Variant: ui.StatusInfo},
-				{Label: "Mine", DismissPath: "/components/filterchipbar?dismissed=mine", Variant: ui.StatusNeutral},
+				{Label: "Open", DismissPath: "/__site/toggle/noop", Variant: ui.StatusInfo},
+				{Label: "Mine", DismissPath: "/__site/toggle/noop", Variant: ui.StatusNeutral},
 			},
-			ClearAllPath: "/components/filterchipbar?dismissed=all",
-		})
+			ClearAllPath: "/__site/toggle/noop",
+		}), note(render.Text("Static preview: dismiss and Clear all send a no-op POST; no filters are changed.")))
 	}},
 	{"inputgroup", "InputGroup", "Forms", "Input plus leading/trailing addon.", func() render.HTML {
 		input := render.Tag("input", map[string]string{

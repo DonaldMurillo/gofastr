@@ -255,6 +255,10 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 
 ### Status & banners
 
+The FilterChipBar gallery is a static preview: its dismiss and Clear all
+controls use the docs site's no-op POST endpoint rather than a GET-only page.
+Hosts supply their own state-changing endpoints and bound response region.
+
 The gallery's Tag dismissal is a live island on `/components/tag`.
 `gallery.TagDemo(dismissed)` renders its seed or dismissed state; the docs
 site serves that fragment on POST and reads `?dismissed=beta` for no-script GETs.
