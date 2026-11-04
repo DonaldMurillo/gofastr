@@ -6,6 +6,19 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
+func TestStoredComponentVariablesRemainBootVisible(t *testing.T) {
+	findings, notes := loadAll(t, "bootstored")
+	if len(findings) != 0 || len(notes) != 3 {
+		t.Fatalf("findings=%v notes=%+v; want three computed-action notes", findings, notes)
+	}
+	for _, note := range notes {
+		wantBlocking := note.Surface == "absent-local"
+		if note.Blocking != wantBlocking {
+			t.Errorf("surface=%s blocking=%v, want %v: %s", note.Surface, note.Blocking, wantBlocking, note.Reason)
+		}
+	}
+}
+
 func TestIndirectOptionsAreNotSilentlyClean(t *testing.T) {
 	analysistest.Run(t, testdataDir(t), Analyzer, "./src/optionindirection")
 }

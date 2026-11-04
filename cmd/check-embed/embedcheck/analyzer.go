@@ -252,30 +252,44 @@ func analyze(pkg *types.Package, info *types.Info, files []*ast.File) ([]Finding
 
 func (r *resolver) bootVisibleComponents(root *types.Named, expression ast.Expr) map[*types.Named]bool {
 	visible := map[*types.Named]bool{root: true}
-	ast.Inspect(expression, func(node ast.Node) bool {
-		var value ast.Expr
-		switch node := node.(type) {
-		case *ast.FuncLit:
-			return false
-		case *ast.CompositeLit:
-			value = node
-		case *ast.CallExpr:
-			if identifier, ok := node.Fun.(*ast.Ident); ok {
-				if builtin, ok := r.info.Uses[identifier].(*types.Builtin); ok && builtin.Name() == "new" {
-					value = node
+	seen := map[ast.Expr]bool{}
+	var inspect func(ast.Expr)
+	inspect = func(expression ast.Expr) {
+		if expression == nil || seen[expression] {
+			return
+		}
+		seen[expression] = true
+		ast.Inspect(expression, func(node ast.Node) bool {
+			var value ast.Expr
+			switch node := node.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.Ident:
+				if variable, ok := r.info.Uses[node].(*types.Var); ok && !variable.IsField() && variable.Pkg() == r.pkg {
+					inspect(r.varInitializer(variable))
+				}
+				return false
+			case *ast.CompositeLit:
+				value = node
+			case *ast.CallExpr:
+				if identifier, ok := node.Fun.(*ast.Ident); ok {
+					if builtin, ok := r.info.Uses[identifier].(*types.Builtin); ok && builtin.Name() == "new" {
+						value = node
+					}
+				}
+				if value == nil && !r.info.Types[node.Fun].IsType() {
+					return false
 				}
 			}
-			if value == nil && !r.info.Types[node.Fun].IsType() {
-				return false
+			if value != nil {
+				if named := namedOf(r.info.TypeOf(value)); named != nil && hasRenderMethod(named) {
+					visible[named] = true
+				}
 			}
-		}
-		if value != nil {
-			if named := namedOf(r.info.TypeOf(value)); named != nil && hasRenderMethod(named) {
-				visible[named] = true
-			}
-		}
-		return true
-	})
+			return true
+		})
+	}
+	inspect(expression)
 	return visible
 }
 
