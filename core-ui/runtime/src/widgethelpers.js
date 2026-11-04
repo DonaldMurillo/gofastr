@@ -137,12 +137,15 @@
   }
 
   function wireValidity(form) {
-    if (validityWired.has(form)) return;
-    validityWired.add(form);
     const sync = function () {
       const disabled = !form.checkValidity();
-      form.querySelectorAll('button[type="submit"],input[type="submit"]').forEach(function (btn) { btn.disabled = disabled; });
+      const buttons = Array.from(form.elements).filter(function (control) { return control.type === 'submit'; });
+      buttons.forEach(function (btn) {
+        if (form.hasAttribute('data-cui-disable-when-invalid') || btn.hasAttribute('data-cui-disable-when-invalid')) btn.disabled = disabled;
+      });
     };
+    if (validityWired.has(form)) { sync(); return; }
+    validityWired.add(form);
     form.addEventListener('input', sync);
     form.addEventListener('change', sync);
     form.addEventListener('reset', function () { requestAnimationFrame(sync); });
@@ -168,6 +171,9 @@
     within(scope, '[data-cui-clear-on-esc]').forEach(wireClear);
     within(scope, 'form[data-cui-submit-on-enter]').forEach(wireEnter);
     within(scope, 'form[data-cui-disable-when-invalid]').forEach(wireValidity);
+    within(scope, 'button[data-cui-disable-when-invalid],input[data-cui-disable-when-invalid]').forEach(function (button) {
+      if (button.form) wireValidity(button.form);
+    });
   }
 
   scan(document);
