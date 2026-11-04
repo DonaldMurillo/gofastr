@@ -8,6 +8,11 @@ A tray that enables `CloseHidesWindow` always has a Show menu action, even
 when no menu was supplied. An existing Show action, including a nested one,
 is preserved without adding a duplicate.
 
+A macOS build recreates the destination `.app` tree before writing the new
+bundle. Old signatures and resources do not survive `--no-sign` rebuilds.
+The previous bundle is removed before compilation; preserve a separate copy
+if it must remain available when a build fails.
+
 `battery/desktop` runs a GoFastr app as a local-first desktop
 application inside the operating system's own WebView: WKWebView on
 macOS, WebView2 on Windows, and WebKitGTK on Linux. The shell builds with `CGO_ENABLED=0`.

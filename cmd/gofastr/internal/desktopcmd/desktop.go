@@ -524,6 +524,11 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 	}
 
 	appDir := filepath.Join(f.out, name+".app")
+	if err := os.RemoveAll(appDir); err != nil {
+		cli.Fail("Remove previous bundle %s: %v", appDir, err)
+		cli.OsExit(1)
+		return
+	}
 	contents := filepath.Join(appDir, "Contents")
 	macOS := filepath.Join(contents, "MacOS")
 	resources := filepath.Join(contents, "Resources")
