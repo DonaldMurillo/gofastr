@@ -306,6 +306,14 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	if err != nil {
 		return nil, fmt.Errorf("stream: hijack failed: %w", err)
 	}
+	handshakeTimeout := cfg.WriteTimeout
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = defaultWriteTimeout
+	}
+	if err := hijackConn.SetWriteDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		hijackConn.Close()
+		return nil, fmt.Errorf("stream: set handshake deadline: %w", err)
+	}
 
 	var conn io.ReadWriteCloser = hijackConn
 	// Flush any buffered response data, then drain the request reader:
@@ -317,7 +325,10 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	// silently loses its auth frame and hangs. Serve them in front of the
 	// raw conn instead.
 	if bufrw != nil {
-		bufrw.Flush()
+		if err := bufrw.Flush(); err != nil {
+			hijackConn.Close()
+			return nil, fmt.Errorf("stream: flush hijacked writer: %w", err)
+		}
 		if n := bufrw.Reader.Buffered(); n > 0 {
 			prefix := make([]byte, n)
 			if _, err := io.ReadFull(bufrw.Reader, prefix); err != nil {
@@ -343,6 +354,10 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	if _, err := conn.Write([]byte(upgradeResp)); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("stream: write upgrade response: %w", err)
+	}
+	if err := hijackConn.SetWriteDeadline(time.Time{}); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("stream: clear handshake deadline: %w", err)
 	}
 
 	readLimit := cfg.ReadLimit

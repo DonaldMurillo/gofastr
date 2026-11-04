@@ -288,7 +288,11 @@ hijacks: a method other than GET, a request older than HTTP/1.1, no
 `Connection: Upgrade` token, a version other than 13, or a key that is
 not base64 of 16 bytes. `Connection` and `Sec-WebSocket-Protocol` are
 read across every line the client sent them on. A zero or negative
-`WSConfig.SendBuffer` means the default of 32. A
+`WSConfig.SendBuffer` means the default of 32. After hijacking, buffered
+response data and the 101 response share a write deadline: `WriteTimeout`
+when positive, otherwise 10 seconds even when frame deadlines are disabled.
+The deadline is cleared before the connection starts its frame pumps;
+deadline, flush, or response-write failures close the hijacked connection. A
 transport that hijacks the connection itself runs the same check,
 `stream.CheckUpgradeRequest(r, originOK)`, before writing its 101;
 `originOK` decides the Origin as `WSConfig.CheckOrigin` does.
