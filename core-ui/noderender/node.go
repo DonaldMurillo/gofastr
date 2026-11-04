@@ -589,7 +589,9 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 		if !attrAllowed(k) {
 			continue
 		}
-		out[k] = fmt.Sprint(v)
+		if value, keep := attributeValue(k, v); keep {
+			out[k] = value
+		}
 	}
 	if len(out) == 0 {
 		return nil
@@ -713,11 +715,23 @@ func attrsFromProps(p map[string]any, keys ...string) map[string]string {
 	out := map[string]string{}
 	for _, k := range keys {
 		if v, ok := p[k]; ok && v != nil {
-			out[k] = fmt.Sprint(v)
+			if value, keep := attributeValue(k, v); keep {
+				out[k] = value
+			}
 		}
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func attributeValue(key string, value any) (string, bool) {
+	if enabled, ok := value.(bool); ok {
+		switch strings.ToLower(key) {
+		case "hidden", "required", "disabled", "readonly", "checked", "selected", "multiple", "open", "download":
+			return "", enabled
+		}
+	}
+	return fmt.Sprint(value), true
 }

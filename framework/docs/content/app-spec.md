@@ -1,5 +1,9 @@
 # App specs
 
+HTML block props use HTML boolean semantics: `false` omits presence attributes
+such as `disabled`, `checked`, `required`, and `multiple`; `true` emits them.
+ARIA and data booleans remain string values.
+
 A `gofastr.yml` app spec is an optional way to scaffold a GoFastr app:
 declare your entities, screens, nav, seed data, and endpoint/middleware
 stubs in one file, then generate owned Go from it. The app spec is not
