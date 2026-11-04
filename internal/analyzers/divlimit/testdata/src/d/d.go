@@ -127,11 +127,11 @@ func capturedParamDivision(rows []int, limit int) int {
 	return f()
 }
 
-// capturedParamGuarded: an outer guard protects creation, not invocation.
+// capturedParamGuarded: the unchanged capture stays guarded at its call.
 func capturedParamGuarded(rows []int, limit int) (int, bool) {
 	if limit <= 0 {
 		return 0, false
 	}
-	f := func() int { return len(rows) / limit } // want `integer division by limit`
+	f := func() int { return len(rows) / limit }
 	return f(), true
 }
