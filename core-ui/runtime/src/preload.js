@@ -121,7 +121,7 @@
     // cache:'no-store': the prefetched page shares its URL with the
     // parts the later click fires; Chrome's HTTP-cache write lock
     // would serialize them (spike/layout-parts).
-    fetch(path, { headers: hdrs, credentials: 'same-origin', cache: 'no-store' })
+    NS.fetch(path, { headers: hdrs, credentials: 'same-origin', cache: 'no-store' })
       .then((r) => {
         // A redirect, signalled or followed, is the click's to take.
         if (!r.ok || r.redirected || r.headers.get('X-Gofastr-Location')) return null;

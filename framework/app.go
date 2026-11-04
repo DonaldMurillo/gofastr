@@ -349,6 +349,10 @@ type App struct {
 	// once Start holds the port; servesLocalOnly reads it. Guarded by
 	// serverMu.
 	boundHost string
+	// boundInProcess is set when the listener is one nothing outside the
+	// process dials (inProcessNetwork); servesLocalOnly reads it.
+	// Guarded by serverMu.
+	boundInProcess bool
 	// shutdownDone is set by the first Shutdown and closed when its
 	// teardown returns; every later call waits on it instead of tearing
 	// down again. Guarded by shutdownMu.
@@ -3590,19 +3594,56 @@ func (a *App) warnUnresolvableRelations() {
 }
 
 // Start starts the HTTP server on the given address.
-func (a *App) Start(addr string) error {
-	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
-	// drives the real binary over HTTP still records what it exercised.
-	// No-op in every other process.
-	a.enableSemanticCoverageFromEnv()
+func (a *App) Start(addr string) error { return a.start(addr, nil) }
 
-	if len(a.pendingEndpoints) > 0 {
-		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+// Serve runs the app exactly as Start does (migrate, seed, init plugins,
+// start hooks, the composed handler chain, OnReady, graceful Shutdown),
+// but accepts connections on ln instead of binding a TCP address. It is
+// the seam for a host that owns the transport: an in-process listener
+// for a mobile shell's WebView, where no socket may be opened, or a
+// listener a supervisor already holds. Worktree isolation does not
+// remap a caller-supplied listener. OnReady hooks receive
+// ln.Addr().String(). Serve closes ln when it returns.
+func (a *App) Serve(ln net.Listener) error {
+	if ln == nil {
+		return errors.New("framework: Serve: nil listener")
 	}
-	if err := a.checkRequestWriteTimeouts(); err != nil {
-		return err
-	}
+	return a.start("", &onceCloseListener{Listener: ln})
+}
 
+// onceCloseListener closes the caller's listener once however many
+// paths close it (an early abort, start's own defer, http.Server's
+// Shutdown): net.Listener does not promise an idempotent Close, and a
+// hand-written one that closes a channel panics on the second call.
+type onceCloseListener struct {
+	net.Listener
+	once sync.Once
+	err  error
+}
+
+func (l *onceCloseListener) Close() error {
+	l.once.Do(func() { l.err = l.Listener.Close() })
+	return l.err
+}
+
+// inProcessNetwork reports whether a listener's network is one nothing
+// outside the process dials: "memory" or "pipe" (net.Pipe's), the
+// in-memory listener a mobile shell feeds its WebView through. Every
+// other network, an unknown one included (vsock, a proxy-fronted unix
+// socket), may be reachable from outside and keeps the readiness drain.
+func inProcessNetwork(network string) bool {
+	return network == "memory" || network == "pipe"
+}
+
+// tcpNetwork reports whether a listener's network names a TCP address,
+// the only kind whose String() is a host:port.
+func tcpNetwork(network string) bool {
+	return network == "tcp" || network == "tcp4" || network == "tcp6"
+}
+
+// resolveListenAddr applies worktree isolation to a Start address.
+func (a *App) resolveListenAddr(addrp *string) error {
+	addr := *addrp
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		return fmt.Errorf("resolve isolation: %w", err)
@@ -3626,6 +3667,40 @@ func (a *App) Start(addr string) error {
 			"isolation", runtimeIsolation.ID(),
 			"disable", "GOFASTR_ISOLATION=off (or GOFASTR_ISOLATION_REWRITE=0 for explicit values only)")
 	}
+	*addrp = addr
+	return nil
+}
+
+// start is Start and Serve: ln nil binds addr, a non-nil ln is served
+// as given.
+func (a *App) start(addr string, ln net.Listener) error {
+	if ln != nil {
+		// Every return closes a caller-supplied listener, the early
+		// aborts included (Serve's contract); the bind path closes its
+		// own listener after binding.
+		defer func() { _ = ln.Close() }()
+	}
+	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
+	// drives the real binary over HTTP still records what it exercised.
+	// No-op in every other process.
+	a.enableSemanticCoverageFromEnv()
+
+	if len(a.pendingEndpoints) > 0 {
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	}
+	if err := a.checkRequestWriteTimeouts(); err != nil {
+		return err
+	}
+
+	network := "tcp"
+	if ln != nil {
+		// A caller-supplied listener is served as given: there is no
+		// address to remap, and the guards below read its own address
+		// and network.
+		addr, network = ln.Addr().String(), ln.Addr().Network()
+	} else if err := a.resolveListenAddr(&addr); err != nil {
+		return err
+	}
 
 	// Create the app's lifecycle context early so AutoMigrate, RunSeeds,
 	// InitPlugins, and runStartHooks all share a single cancellable
@@ -3636,8 +3711,8 @@ func (a *App) Start(addr string) error {
 	a.ensureLifecycleContext()
 
 	a.warnUnresolvableRelations()
-	a.guardDevMCPBind(listenAddrFor(addr))
-	a.guardDevLiveReloadBind(listenAddrFor(addr))
+	a.guardDevMCPBind(listenAddrFor(addr), network)
+	a.guardDevLiveReloadBind(listenAddrFor(addr), network)
 
 	abort := func(err error) error {
 		// Read the shutdown state BEFORE draining: the drain below calls
@@ -4101,21 +4176,28 @@ func (a *App) Start(addr string) error {
 	// Bind first, then Serve, split from ListenAndServe so OnReady hooks
 	// fire only after the port is actually held. http.ListenAndServe
 	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
-	ln, err := net.Listen("tcp", listenAddrFor(addr))
-	if err != nil {
-		// Bind failure (port in use is the common case), drain like every
-		// earlier start phase does, otherwise the batteries/cron/queue and
-		// OnStart workers spawned above leak past Start returning.
-		return abort(fmt.Errorf("listen and serve: %w", err))
+	if ln == nil {
+		bound, err := net.Listen("tcp", listenAddrFor(addr))
+		if err != nil {
+			// Bind failure (port in use is the common case), drain like every
+			// earlier start phase does, otherwise the batteries/cron/queue and
+			// OnStart workers spawned above leak past Start returning.
+			return abort(fmt.Errorf("listen and serve: %w", err))
+		}
+		ln = bound
 	}
 	// Serve closes the listener on Shutdown; this extra Close only matters
 	// on the Shutdown-raced path where Serve returns without adopting ln.
 	defer func() { _ = ln.Close() }()
-	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil {
-		a.serverMu.Lock()
+	a.serverMu.Lock()
+	// Only a TCP address is a host:port. A unix socket's address is its
+	// path, and a path like "127.0.0.1:8080" must not read as loopback.
+	network = ln.Addr().Network()
+	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil && tcpNetwork(network) {
 		a.boundHost = host
-		a.serverMu.Unlock()
 	}
+	a.boundInProcess = inProcessNetwork(network)
+	a.serverMu.Unlock()
 
 	// Graceful shutdown by default: docker stop and kubectl rollouts send
 	// SIGTERM, and without a handler the runtime kills the process
@@ -4159,7 +4241,7 @@ func (a *App) Start(addr string) error {
 	if setupInteractive {
 		setupURL = a.setup.SetupURL(a.urlScheme(), ln.Addr().String())
 	}
-	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD, setupURL)
+	a.printStartupBanner(ln.Addr().String(), ln.Addr().Network(), name, hasAPI, hasLLMMD, setupURL)
 	for _, fn := range a.readyHooks {
 		if rerr := a.runReadyHookSafe(fn, ln.Addr().String()); rerr != nil {
 			return abort(rerr)
@@ -4195,8 +4277,22 @@ func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 // printStartupBanner reports readiness only after the listener has bound.
 // boundAddr is the resolved listener address, so Start("127.0.0.1:0") prints
 // the actual port and a bind failure prints nothing.
-func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, setupURL string) {
+//
+// A listener that is not TCP (Serve on an in-process listener, the
+// mobile shell's shape, or on a unix socket) has no URL anyone can open,
+// so the banner names the listener and prints bare paths instead of
+// advertising http://memory/posts, or an http:// URL built from a socket
+// path shaped like 127.0.0.1:8080.
+func (a *App) printStartupBanner(boundAddr, network, name string, hasAPI, hasLLMMD bool, setupURL string) {
 	base := a.urlScheme() + "://" + boundAddr
+	listening := base
+	if _, _, err := net.SplitHostPort(boundAddr); err != nil || !tcpNetwork(network) {
+		base, listening = "", boundAddr+" (not a TCP address)"
+		// The setup URL names the listener as its host unless a host
+		// name is configured; keep only the path then, like every
+		// other line.
+		setupURL = strings.TrimPrefix(setupURL, a.urlScheme()+"://"+boundAddr)
+	}
 	w := a.startupOutput
 	if w == nil {
 		w = os.Stdout
@@ -4212,7 +4308,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	}
 	fmt.Fprintf(w, "\n  %s %s server ready\n", bold("GoFastr"), name)
 	fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
-	fmt.Fprintf(w, "  %s Listening: %s\n", arrow(), base)
+	fmt.Fprintf(w, "  %s Listening: %s\n", arrow(), listening)
 	if setupURL != "" {
 		fmt.Fprintf(w, "  %s Setup: %s\n", arrow(), setupURL)
 	}

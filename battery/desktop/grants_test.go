@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
+
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -13,7 +15,7 @@ import (
 // get its own empty in-memory database).
 
 func TestSQLGrantStoreRoundTrip(t *testing.T) {
-	db, err := openAppDB(t.TempDir())
+	db, err := localapp.OpenDB(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +60,7 @@ func TestSQLGrantStoreRoundTrip(t *testing.T) {
 // a fresh store on the same file sees the earlier grant.
 func TestSQLGrantStoreSurvivesReopen(t *testing.T) {
 	dir := t.TempDir()
-	db1, err := openAppDB(dir)
+	db1, err := localapp.OpenDB(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +73,7 @@ func TestSQLGrantStoreSurvivesReopen(t *testing.T) {
 	}
 	db1.Close()
 
-	db2, err := openAppDB(dir)
+	db2, err := localapp.OpenDB(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

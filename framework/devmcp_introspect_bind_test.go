@@ -28,13 +28,13 @@ func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 		a := NewApp()
 		a.mcpIntrospection, a.mcpIntrospectionDevImplied = true, true
 		if guardFirst {
-			a.guardDevMCPBind(addr)
+			a.guardDevMCPBind(addr, "tcp")
 		}
 		if err := a.InitPlugins(); err != nil {
 			t.Fatalf("InitPlugins: %v", err)
 		}
 		if !guardFirst {
-			a.guardDevMCPBind(addr)
+			a.guardDevMCPBind(addr, "tcp")
 		}
 		return a
 	}
@@ -58,7 +58,7 @@ func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 
 	// An explicit WithMCPIntrospection is a production choice, not dev's.
 	explicit := NewApp(WithMCPIntrospection())
-	explicit.guardDevMCPBind("0.0.0.0:8080")
+	explicit.guardDevMCPBind("0.0.0.0:8080", "tcp")
 	if err := explicit.InitPlugins(); err != nil {
 		t.Fatal(err)
 	}

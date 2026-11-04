@@ -45,7 +45,7 @@ state dir and port; `--addr <loopback>` is what `gofastr dev` passes.
   deletes nothing while it is still running.
 - Windows has no crash restart: a daemon that crashes stays down until
   the next logon or `service start`.
-- A signed session is the local user (`internal/localuser`), so
+- A signed session is the local user (`framework/localapp`), so
   owner-scoped entities work without battery/auth. If battery/auth is
   linked, auth owns identity and the gate installs none.
 - Agents reach the daemon's MCP tools with `<app> service mcp`

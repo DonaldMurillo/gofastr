@@ -68,9 +68,10 @@ runs: stop accepting, finish in-flight requests, stop batteries.
 The grace is 5 seconds by default. Set it with `WithReadinessDrain`;
 `0` skips the wait. The default is `0` wherever no balancer probes: in a
 Go test binary (and a process one starts), under `gofastr dev`, for a
-`battery/service` run, and for an app whose listener is bound to a
+`battery/service` run, for an app whose listener is bound to a
 loopback address only (`127.0.0.1`, `::1`; the desktop battery always
-is). An explicit `WithReadinessDrain` wins over all of these.
+is), and for an in-process listener handed to `App.Serve` (network
+`memory` or `pipe`, a mobile shell's). An explicit `WithReadinessDrain` wins over all of these.
 
 The grace counts against `Shutdown`'s context. It takes at most half of
 the time that context has left, so the HTTP drain, batteries and

@@ -4,12 +4,12 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 )
 
 // The local identity. A desktop app ships without battery/auth, but
 // owner-scoped CRUD still needs an owner id. The LocalUser middleware
-// sets a stable per-installation identity (internal/localuser, shared
+// sets a stable per-installation identity (framework/localapp, shared
 // with battery/service) into the request context, and the owner
 // extractor (installed only when nothing else installed one) reads it
 // back. An app that also imports battery/auth keeps auth's extractor
@@ -76,5 +76,5 @@ func (b *Battery) localUserMiddleware() func(next http.Handler) http.Handler {
 // its package init) already did. Never overwrite it, and never speak
 // for a request it has already decided about (see localUserMiddleware).
 func (b *Battery) installOwnerExtractor() {
-	b.authOwnsIdentity = localuser.Install()
+	b.authOwnsIdentity = localapp.Install()
 }

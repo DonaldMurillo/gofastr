@@ -70,8 +70,10 @@ func TestRelationSelectUsesTargetKey(t *testing.T) {
 		t.Errorf("the select still reads row.id or fetches by entity name:\n%s", js)
 	}
 	// A row without the key would become an option posting "undefined",
-	// and an attribute naming __proto__ would read Object.prototype.
-	for _, guard := range []string{"if (row[t.key] == null) continue;", "Object.hasOwn(targets, rel)"} {
+	// and an attribute naming __proto__ would read Object.prototype. The
+	// fetch goes through a native host's transport when one is installed.
+	for _, guard := range []string{"if (row[t.key] == null) continue;", "Object.hasOwn(targets, rel)",
+		"((window.__gofastr && window.__gofastr.fetch) || fetch)(t.path"} {
 		if !strings.Contains(js, guard) {
 			t.Errorf("the select lost its guard %q:\n%s", guard, js)
 		}

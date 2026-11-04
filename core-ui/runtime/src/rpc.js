@@ -85,7 +85,7 @@
     // same posture as loadModule's name gate in boot.js.
     const tool = el.getAttribute('data-kiln-tool') || '';
     if (!/^[A-Za-z0-9_-]+$/.test(tool)) return Promise.resolve();
-    return fetch('/kiln/tool/' + tool, {
+    return NS.fetch('/kiln/tool/' + tool, {
       method: 'POST',
       headers: _csrf({ 'Content-Type': 'application/json' }),
       body,
@@ -173,7 +173,7 @@
     _csrf(headers);
 
     try {
-      const resp = await fetch(NS._lp?.(action) ?? action, {
+      const resp = await NS.fetch(NS._lp?.(action) ?? action, {
         method,
         headers,
         body,
@@ -342,7 +342,7 @@
     let answered = false; // a later throw is no network failure
     try {
       if (!NS._originOK(resolvedPath)) return;
-      const r = await fetch(NS._lp?.(resolvedPath) ?? resolvedPath, {
+      const r = await NS.fetch(NS._lp?.(resolvedPath) ?? resolvedPath, {
         method,
         headers,
         body: body || undefined,

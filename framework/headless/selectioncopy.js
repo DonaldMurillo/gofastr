@@ -41,7 +41,7 @@
     for (const id of ids) url.searchParams.append('_id', id);
     const toast = (cfg) => { if (NS.toast) NS.toast(cfg); };
     const failed = () => toast({ title: btn.getAttribute('data-hui-selection-copy-failed') || '', variant: 'danger', ttl: 6000 });
-    const text = fetch(url.href, { credentials: 'same-origin' }).then((r) => {
+    const text = NS.fetch(url.href, { credentials: 'same-origin' }).then((r) => {
       // A followed 3xx is another URL's body (a sign-in page for an
       // expired session), never the rows' CSV: the copy failed.
       if (!r.ok || r.redirected) throw new Error(String(r.status));

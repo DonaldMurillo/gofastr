@@ -238,7 +238,7 @@
         // cache:'no-store': same-URL fetches serialize behind
         // Chrome's HTTP-cache write lock otherwise (see the page
         // fetch's comment).
-        resp = await fetch(st.path, {
+        resp = await NS.fetch(st.path, {
           headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Part': addr },
           priority: 'low',
           cache: 'no-store',

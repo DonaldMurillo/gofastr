@@ -16,8 +16,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
 // The loopback gate. Any local process and any page the user's browser
@@ -61,7 +61,7 @@ type gate struct {
 	now      func() time.Time
 	// user is the local identity put on every signed-in request; nil
 	// when battery/auth owns identity. Set before the listener opens.
-	user *localuser.User
+	user *localapp.User
 	// open is Config.OpenPrefixes: paths that pass without a session.
 	// Set before the listener opens and never written after.
 	open []string

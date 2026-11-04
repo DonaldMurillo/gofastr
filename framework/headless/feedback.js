@@ -329,7 +329,7 @@
     // banner (reportRecovery drives every mounted offline one). A
     // failed probe leaves it shown — the connection is still down
     // and hiding it would lie.
-    fetch(href, { credentials: 'same-origin' })
+    NS.fetch(href, { credentials: 'same-origin' })
       .then((r) => { if (r.ok) NS.networkStatus.reportRecovery(); }, () => {})
       .finally(() => { retry.removeAttribute('aria-busy'); banner.removeAttribute('data-state'); });
   });

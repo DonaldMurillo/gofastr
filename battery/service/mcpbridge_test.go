@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/framework/localrun"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
 // bridge runs `service mcp --dev` against d and returns a writer for
@@ -53,7 +53,7 @@ func readLine(t *testing.T, sc *bufio.Scanner) string {
 func TestMCPBridgeRunsAsLocalUser(t *testing.T) {
 	keepOwnerExtractor(t)
 	d := startDevRun(t)
-	stored, err := localuser.LoadOrMint(d.l.dir)
+	stored, err := localapp.LoadOrMint(d.l.dir)
 	if err != nil {
 		t.Fatal(err)
 	}

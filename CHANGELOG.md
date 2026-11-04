@@ -34,6 +34,37 @@ few lines, and link the PR or the docs page for the rest.
   never drops or changes the running build's publisher, and the
   relaunched copy waits for the old process to exit. See `desktop.md`,
   "Windows code signing" and "Auto-update".
+- **`App.Serve(net.Listener)`**. Runs the same lifecycle as `Start` on a
+  listener the host supplies, instead of binding a TCP address: an
+  in-process listener for a mobile WebView, or one a supervisor holds.
+  Isolation never remaps it, and every return closes it once. An
+  in-process listener (network `memory` or `pipe`) counts as
+  local-only, so `Shutdown` skips the production readiness drain. A
+  unix socket, or any other network that is not TCP, keeps the drain
+  and turns the dev MCP and livereload off. For a listener that is not TCP the startup banner prints
+  paths, not `http://memory/...` URLs. See
+  [Plugins](framework/docs/content/plugins.md#init-lifecycle).
+- **`framework/localapp`.** `localapp.Open(dir)` opens a one-person app's
+  data directory: its SQLite `app.db`, the session secret and the
+  installation's identity, created owner-only and minted on first run.
+  The local identity and its fallback owner extractor moved here from
+  `internal/localuser`, so a host outside this module (a mobile shell)
+  shares them with battery/desktop and battery/service instead of
+  copying them. battery/service opens its `app.db` through it, so that
+  file is now created owner-only too. A secret file that is not the
+  32-byte base64url value it mints (empty, truncated, stray whitespace)
+  is now refused instead of used, a secret other users can read is
+  tightened to 0600, and a symlinked one is refused. First-boot files are published atomically, so a
+  process racing the first boot never reads an empty one. See
+  [Local apps](framework/docs/content/local-apps.md).
+- **Host transport slot for native WebViews.** Every request the runtime
+  and the kit's scripts make goes through `window.__gofastr.fetch`, which
+  calls `window.__gofastr_transport` when a host installed one, so a
+  phone shell whose interception drops bodies or redirects carries them
+  over its own channel. A script of your own that should reach the app
+  through the host calls `window.__gofastr.fetch`. Server action bodies
+  no longer carry the `session` field, which was always empty. See
+  [Runtime contract](framework/docs/content/runtime-contract.md#host-transport-windowgofastr_transport).
 - **`access.WithReconcileInterval`.** A `GrantStore` with a fanout
   reloads every role from the database every 5 minutes by default, so a
   replica that missed a refresh signal stops honouring a revoked
@@ -1229,7 +1260,9 @@ few lines, and link the PR or the docs page for the rest.
   named and `git init` reinitialised the repository a linked `.git`
   named. `theme init --out` and `theme edit --out` treat an absolute path
   under the working directory (`$PWD/theme/theme.go`) as a path inside
-  the project, and `theme edit` refuses a linked destination at startup.
+  the project, however the working directory is spelled (through a link
+  to it, or macOS's `/var` for `/private/var`), and `theme edit` refuses
+  a linked destination at startup.
 - **A slow module answer no longer kills the module.** A `moduleproto`
   peer remembered the last 1,024 calls it gave up on, answered or not,
   so 1,024 timed-out calls answered in time pushed out a slow call still

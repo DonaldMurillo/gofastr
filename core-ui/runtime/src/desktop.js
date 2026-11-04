@@ -55,7 +55,7 @@
       if (!NAME.test(cap) || !NAME.test(method)) {
         return reject(mkErr('invalid_input', 'invalid capability or method name'));
       }
-      fetch('/__gofastr/desktop/call/' + cap + '/' + method, {
+      NS.fetch('/__gofastr/desktop/call/' + cap + '/' + method, {
         method: 'POST',
         headers: csrf({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(input ?? {}),

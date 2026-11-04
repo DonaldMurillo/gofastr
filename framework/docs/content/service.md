@@ -116,7 +116,7 @@ turns isolation off: its port is part of its contract.
 |------|----------|
 | `<UserConfigDir>/<ID>/` | Installed copy's state, 0700 (an owner-only DACL on Windows) |
 | `<UserConfigDir>/<ID>.dev/` | Dev run's state, same layout. Inside an isolated worktree it is `<ID>.dev-<isolation id>/`, so two worktrees' dev runs keep separate databases |
-| `.../app.db` | The SQLite database `Runtime.AppOptions` opens |
+| `.../app.db` | The SQLite database `Runtime.AppOptions` opens, created 0600 (`localapp.OpenDB`) |
 | `.../secret` | 32 random bytes, base64url, 0600. Signs sessions and is passed to `framework.WithSecret` |
 | `.../identity` | The local user id (see "Who the signed-in browser is") |
 | `.../control.sock` | The control channel |

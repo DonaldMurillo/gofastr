@@ -190,7 +190,7 @@
       'X-Gofastr-From': fromURL,
     };
     if (NS._markup) hdrs['X-Gofastr-Markup'] = NS._markup;
-    return fetch(path, { headers: hdrs, credentials: 'same-origin' }).then((r) => {
+    return NS.fetch(path, { headers: hdrs, credentials: 'same-origin' }).then((r) => {
       // An intercepted response can invalidate regular screens even
       // though the overlay itself is never cached.
       if (r.ok) NS._inval?.(r);

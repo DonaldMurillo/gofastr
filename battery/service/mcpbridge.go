@@ -12,14 +12,14 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 )
 
 // mcpSession serves one stdio MCP session against the App's MCP
 // server. The session runs as the local identity the gate gives a
 // signed-in browser: the control socket already proved the caller is
 // the OS user the daemon runs as.
-func mcpSession(srv *mcp.Server, user *localuser.User) func(context.Context, io.Reader, io.Writer) {
+func mcpSession(srv *mcp.Server, user *localapp.User) func(context.Context, io.Reader, io.Writer) {
 	return func(ctx context.Context, in io.Reader, out io.Writer) {
 		if user != nil {
 			ctx = handler.SetUser(ctx, user)

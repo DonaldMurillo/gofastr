@@ -1,25 +1,32 @@
-// Package localuser is the one-person identity of an app that runs for
-// a single OS user without battery/auth: the desktop battery's window
-// and the service battery's signed-in browser. Owner-scoped CRUD still
-// needs an owner id, so the battery puts a stable per-installation
-// User into the request context and the owner extractor installed here
-// reads it back.
+// Package localapp is the local state of an app that runs for one OS user
+// on one device, with no server of its own to sign people in: a desktop
+// window (battery/desktop), a phone app serving itself in process
+// (gofastr-mobile), a signed-in service on the user's machine. [Open]
+// gives such an app its data directory's contents: the SQLite database,
+// the session secret that keeps sessions valid across restarts, and the
+// installation's identity.
+//
+// The identity exists because owner-scoped CRUD still needs an owner id.
+// The host puts a stable per-installation [User] into the request
+// context, and the owner extractor that [Install] sets up reads it
+// back.
 //
 // The identity is a FALLBACK for an app with no auth battery, never an
 // override of one. battery/auth installs the framework/owner extractor
 // from its package init, so a foreign extractor already in place is a
-// reliable "auth owns identity" signal, and Install reports it. A
-// battery that sees it installs no identity at all: auth's "this
-// request is anonymous" is a decision, and handler.GetUser cannot tell
-// a stored nil from no decision (the 2026-09-04 desktop finding pinned
-// in battery/desktop/localuser_security_test.go).
-package localuser
+// reliable "auth owns identity" signal, and Install reports it. A host
+// that sees it installs no identity at all: auth's "this request is
+// anonymous" is a decision, and handler.GetUser cannot tell a stored nil
+// from no decision (the 2026-09-04 desktop finding pinned in
+// battery/desktop/localuser_security_test.go).
+package localapp
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,8 +37,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// FileName is the identity file inside the app's data directory.
-const FileName = "identity"
+// IdentityFile is the identity file inside the app's data directory.
+const IdentityFile = "identity"
 
 // idLen is a minted id's length: 16 crypto/rand bytes as hex.
 const idLen = 32
@@ -85,7 +92,7 @@ func errCorrupt(path string) error {
 // LoadOrMint returns the identity stored under dir, minting one (16
 // bytes of crypto/rand, hex) and persisting it 0600 on first run.
 func LoadOrMint(dir string) (*User, error) {
-	path := filepath.Join(dir, FileName)
+	path := filepath.Join(dir, IdentityFile)
 	if b, err := readIfExists(path); err != nil {
 		return nil, err
 	} else if len(b) > 0 {
@@ -128,22 +135,50 @@ func readIfExists(path string) ([]byte, error) {
 	return b, nil
 }
 
-// writeExclusive creates path 0600 and writes b, refusing to touch an
-// existing file.
-func writeExclusive(path string, b []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+// readOwnerOnly is readIfExists for a secret: a file another user can
+// read (a restored backup, a copy made with a broad umask) is tightened
+// to owner-only through the open handle before it is read. A symlink is
+// refused, not followed: tightening through it would rewrite a file
+// outside the data directory. The open handle must be the file Lstat
+// saw, so a link swapped in between is refused too.
+func readOwnerOnly(path string) ([]byte, error) {
+	lst, err := os.Lstat(path)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	if err := fileperm.RestrictOpenFile(f); err != nil {
-		f.Close()
-		return err
+	if !lst.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file (a symlink?); replace it with the file itself", path)
 	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return f.Close()
+	defer f.Close()
+	if fst, err := f.Stat(); err != nil || !os.SameFile(lst, fst) {
+		return nil, fmt.Errorf("%s changed while it was opened", path)
+	}
+	if err := fileperm.TightenOpenFile(f); err != nil {
+		return nil, fmt.Errorf("restrict %s to its owner: %w", path, err)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxStateFile))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return b, nil
+}
+
+// maxStateFile bounds a read of the secret: the minted value is 43
+// bytes, so anything near this is damaged, and checkSecret refuses it.
+const maxStateFile = 4 << 10
+
+// writeExclusive publishes b at path as an owner-only file, refusing
+// an existing one. The publish is atomic: a process racing the first
+// boot reads no file or the whole value, never an empty file.
+func writeExclusive(path string, b []byte) error {
+	return fileperm.PublishNewOwnerOnly(path, b)
 }
 
 // Install sets Extractor as the process-wide owner extractor when no

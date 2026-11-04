@@ -14,6 +14,19 @@ import (
 // on a non-loopback listener.
 const devMCPExposeEnv = "GOFASTR_DEV_MCP_EXPOSE"
 
+// bindIsLocal reports whether nothing but this process or this machine
+// reaches a listener on network at addr. An in-process listener (a
+// mobile shell's "memory" or "pipe") is local; a TCP one is judged by
+// its host; any other network is not, because its address is not a
+// host:port: a unix socket's is its path, which a proxy can front, and
+// a path like "127.0.0.1:8080" would otherwise read as loopback.
+func bindIsLocal(addr, network string) bool {
+	if inProcessNetwork(network) {
+		return true
+	}
+	return tcpNetwork(network) && bindIsLoopback(addr)
+}
+
 // bindIsLoopback reports whether a listen address will only accept
 // connections from this machine.
 //
@@ -94,8 +107,8 @@ func devMCPExposureWarning(addr string) string {
 // per-feature spelling is exactly how notes_create/_update/_delete and
 // log_set_level stayed live on an exposed bind while the control tools
 // were dropped.
-func (a *App) guardDevMCPBind(addr string) {
-	if bindIsLoopback(addr) || devMCPExposeAllowed() {
+func (a *App) guardDevMCPBind(addr, network string) {
+	if bindIsLocal(addr, network) || devMCPExposeAllowed() {
 		return
 	}
 	withdrew := false
@@ -137,8 +150,8 @@ func (a *App) guardDevMCPBind(addr string) {
 // that is fine for the one developer at the terminal, not for every peer
 // that can reach an exposed bind. Called from Start beside
 // guardDevMCPBind, with the same bind address.
-func (a *App) guardDevLiveReloadBind(addr string) {
-	if bindIsLoopback(addr) || config.EnvBool(dev.LiveReloadExposeEnv) {
+func (a *App) guardDevLiveReloadBind(addr, network string) {
+	if bindIsLocal(addr, network) || config.EnvBool(dev.LiveReloadExposeEnv) {
 		return
 	}
 	switch dev.WithdrawLiveReload(a.router) {

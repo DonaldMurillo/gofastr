@@ -2,17 +2,12 @@ package desktop
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
-
-	// AppOptions opens app.db under the "sqlite3" driver name; the blank
-	// import registers it so a main.go needs no import of its own.
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // dataDirEnv, when set, replaces os.UserConfigDir() as the base the
@@ -74,59 +69,6 @@ func appOptionsDataDir(override, id string) (string, error) {
 	return DataDir(id)
 }
 
-// secretFileName is the file under the data dir holding the app-wide
-// secret handed to framework.WithSecret, so sessions survive restarts.
-const secretFileName = "secret"
-
-// loadOrMintSecret returns the stored secret, minting (32 bytes of
-// crypto/rand, base64url) and persisting 0600 on first run. The
-// create-with-O_EXCL + re-read dance makes two processes racing the
-// first boot converge on ONE secret instead of each minting one.
-func loadOrMintSecret(dir string) (string, error) {
-	path := filepath.Join(dir, secretFileName)
-	if b, err := os.ReadFile(path); err == nil {
-		if s := string(b); s != "" {
-			return s, nil
-		}
-		return "", fmt.Errorf("desktop: secret file %s is empty", path)
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("desktop: read secret file: %w", err)
-	}
-	secret, err := randomToken()
-	if err != nil {
-		return "", fmt.Errorf("desktop: mint secret: %w", err)
-	}
-	if err := writeFileExclusive(path, []byte(secret)); err != nil {
-		if os.IsExist(err) {
-			// Lost the race: another process minted it first.
-			b, rerr := os.ReadFile(path)
-			if rerr == nil && len(b) > 0 {
-				return string(b), nil
-			}
-		}
-		return "", fmt.Errorf("desktop: write secret file: %w", err)
-	}
-	return secret, nil
-}
-
-// writeFileExclusive creates path (0600) and writes b, refusing to
-// touch an existing file.
-func writeFileExclusive(path string, b []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	if err := fileperm.RestrictOpenFile(f); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
-}
-
 // randomToken returns 32 bytes from crypto/rand, base64url-encoded.
 // Every credential this package mints (boot token, session value,
 // secret, script nonce) comes through here; a wedged CSPRNG is an
@@ -137,22 +79,4 @@ func randomToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b[:]), nil
-}
-
-// openAppDB opens (creating if needed) the SQLite database under dir
-// through the sqlite/stdlib driver this package imports.
-func openAppDB(dir string) (*sql.DB, error) {
-	path := filepath.ToSlash(filepath.Join(dir, "app.db"))
-	if err := fileperm.SeedOwnerOnly(path); err != nil {
-		return nil, fmt.Errorf("desktop: restrict app database: %w", err)
-	}
-	db, err := sql.Open("sqlite3", "file:"+path)
-	if err != nil {
-		return nil, fmt.Errorf("desktop: open app database: %w", err)
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("desktop: app database unreachable: %w", err)
-	}
-	return db, nil
 }

@@ -3715,11 +3715,16 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Action      string            `json:"action"`
-		Params      map[string]string `json:"params"`
-		Session     string            `json:"session"`
-		ComponentID string            `json:"componentId"`
-		Page        string            `json:"page"`
+		Action string            `json:"action"`
+		Params map[string]string `json:"params"`
+		// Session is read by nothing: the session is the HttpOnly cookie
+		// (requireValidSession), which script cannot see. The runtime
+		// stopped sending it; the field stays so a tab still holding an
+		// older runtime.js decodes under the strict decoder instead of
+		// failing every server action until it reloads.
+		Session     string `json:"session"`
+		ComponentID string `json:"componentId"`
+		Page        string `json:"page"`
 	}
 	if !decodeBounded(w, r, &body) {
 		return
