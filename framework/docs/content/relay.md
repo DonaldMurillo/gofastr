@@ -70,6 +70,8 @@ want at startup, not a runtime surprise.
 - **Methods are an allow-list.** Empty is invalid — be explicit.
   Anything undeclared gets `405` with an `Allow` header; tails under
   no declared prefix get `404`.
+  A permitted `HEAD` response forwards no body, so its representation's
+  `Content-Type` and positive `Content-Length` do not trigger body-type refusal.
 - **Bodies** are capped per route at `MaxBodyBytes` (default 8 MiB),
   covering both declared `Content-Length` and chunked bodies → `413`.
   The same budget bounds the upstream's response. Its status and headers
