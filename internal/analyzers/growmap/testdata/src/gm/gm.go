@@ -111,6 +111,35 @@ func (s *Server) record(caller string) {
 	s.hits[caller]++
 }
 
+// An emptiness check is no cap: len(pokes) == 0 only asks whether the
+// record is empty, not whether it is bounded.
+type poked struct {
+	pokes map[string]int
+}
+
+func (p *poked) poke(ctx context.Context) {
+	p.pokes[subscriptionCaller(ctx)]++ // want `pokes grows by a key derived from the caller`
+}
+
+func (p *poked) empty() bool { return len(p.pokes) == 0 }
+
+// Near miss for the sweep credit: a caller-driven unsubscribe that
+// stamps the clock. The delete is driven by the caller (the attacker
+// never sends it), so it sweeps nothing.
+type stamped struct {
+	subs      map[string]bool
+	lastLeave time.Time
+}
+
+func (s *stamped) join(ctx context.Context) {
+	s.subs[subscriptionCaller(ctx)] = true // want `subs grows by a key derived from the caller`
+}
+
+func (s *stamped) leave(ctx context.Context) {
+	delete(s.subs, subscriptionCaller(ctx))
+	s.lastLeave = time.Now()
+}
+
 // The marker for a map bounded by construction.
 func (s *Server) mark(ctx context.Context) {
 	//gofastr:allow(growmap) keys come from the closed tenant registry the server mints

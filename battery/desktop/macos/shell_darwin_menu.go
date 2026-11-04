@@ -349,7 +349,7 @@ func bridgeWindowShouldClose(a *ffi.Args) uintptr {
 	killPage(wv)
 	releaseSecondaryWindow(w)
 	if onClosed := s.onWindowClosedLocked(); onClosed != nil {
-		go onClosed(w.id)
+		deliverOnGoroutine(func() { onClosed(w.id) })
 	}
 	return 1
 }
@@ -484,7 +484,7 @@ func bridgeSettingsAction(a *ffi.Args) uintptr {
 			textCtx = context.Background()
 		}
 		if onSettings != nil {
-			go onSettings(textCtx)
+			deliverOnGoroutine(func() { onSettings(textCtx) })
 		}
 	}
 	return 0
@@ -520,7 +520,7 @@ func bridgeMenuAction(a *ffi.Args) uintptr {
 		return 0
 	}
 	id := ids[tag]
-	go onMenu(id)
+	deliverOnGoroutine(func() { onMenu(id) })
 	return 0
 }
 

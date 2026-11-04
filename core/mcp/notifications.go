@@ -117,6 +117,7 @@ func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sse
 		ctx:     ctx,
 		seatKey: seatKey,
 	}
+	//gofastr:allow(growmap) keyed by the subscriber pointer, one entry per live stream: sseGetHandler's defer removeSSESubscriber (transport.go) releases every entry on every exit path, so the set is bounded by concurrent connections holding capped seats, not by caller identities
 	s.sseSubs[sub] = struct{}{}
 	s.sseSeatOrder[seatKey] = append(s.sseSeatOrder[seatKey], sub)
 	return sub, true

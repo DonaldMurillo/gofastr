@@ -21,8 +21,10 @@
 // enumeration so the next surface cannot reopen quietly.
 //
 // Shape: a handler path that OPENS a long-lived stream — sets
-// Content-Type "text/event-stream" on the response writer, calls a
-// websocket Upgrade, or takes the connection with http.Hijacker.Hijack
+// Content-Type "text/event-stream" on the response writer (a Set/Add
+// call or a direct `w.Header()["Content-Type"] = …` write, the value a
+// literal or a named constant), calls a websocket Upgrade, or takes
+// the connection with http.Hijacker.Hijack
 // — and from which a PARK is reachable within the package: a for/select
 // loop blocking on a channel receive or ctx.Done(), a channel range, or
 // a conn.Read-style read loop. Both the open and the park are computed
@@ -483,6 +485,16 @@ func scanFamily(pass *analysis.Pass, fam *family) {
 				if seatCall(pass, e) {
 					fam.seats = true
 				}
+			case *ast.AssignStmt:
+				// `w.Header()["Content-Type"] = []string{"text/event-stream"}`:
+				// the header-map write, reported on its Header() call.
+				for _, lhs := range e.Lhs {
+					if idx, ok := lhs.(*ast.IndexExpr); ok && headerMapOpen(pass, idx, e) {
+						if call, ok := idx.X.(*ast.CallExpr); ok {
+							fam.opens = append(fam.opens, openSite{call: call})
+						}
+					}
+				}
 			case *ast.SelectorExpr:
 				if seatSelector(pass, e) {
 					fam.seats = true
@@ -534,7 +546,7 @@ func isOpenSite(pass *analysis.Pass, call *ast.CallExpr, familyName string) bool
 	}
 	switch sel.Sel.Name {
 	case "Set", "Add":
-		if len(call.Args) >= 2 && headerValueIs(call.Args[0], "content-type") && litContains(call.Args[1], "text/event-stream") {
+		if len(call.Args) >= 2 && headerValueIs(call.Args[0], "content-type") && litContains(pass, call.Args[1], "text/event-stream") {
 			return true
 		}
 	case "Upgrade":
@@ -556,12 +568,41 @@ func headerValueIs(e ast.Expr, want string) bool {
 	return strings.EqualFold(strings.Trim(lit.Value, "\"'`"), want)
 }
 
-func litContains(e ast.Expr, want string) bool {
-	lit, ok := e.(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
+// litContains: e's constant string value (a literal or a named
+// constant) contains want.
+func litContains(pass *analysis.Pass, e ast.Expr, want string) bool {
+	s, ok := astx.StringConstant(pass, e)
+	return ok && strings.Contains(s, want)
+}
+
+// headerMapOpen: `w.Header()["Content-Type"] = []string{"text/event-stream"}`
+// — the direct header-map write, not a Set call. The Header() call is
+// the reported site.
+func headerMapOpen(pass *analysis.Pass, idx *ast.IndexExpr, as *ast.AssignStmt) bool {
+	call, ok := idx.X.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
 		return false
 	}
-	return strings.Contains(strings.Trim(lit.Value, "\"'`"), want)
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Header" {
+		return false
+	}
+	if s, ok := astx.StringConstant(pass, idx.Index); !ok || !strings.EqualFold(s, "content-type") {
+		return false
+	}
+	if len(as.Rhs) != 1 {
+		return false
+	}
+	comp, ok := ast.Unparen(as.Rhs[0]).(*ast.CompositeLit)
+	if !ok {
+		return false
+	}
+	for _, el := range comp.Elts {
+		if litContains(pass, el, "text/event-stream") {
+			return true
+		}
+	}
+	return false
 }
 
 // seatCall: the callee name says seat (seatsFor, spliceSeatLocked,

@@ -10,5 +10,5 @@ import (
 
 func TestCallbackUnderLock(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), callbackunderlock.Analyzer,
-		"registry", "subhub", "pipeline", "golaunch", "wnparam", "logfield")
+		"registry", "subhub", "pipeline", "golaunch", "wnparam", "logfield", "twolocks")
 }

@@ -261,3 +261,76 @@ func (p *pool) grow(addr string) error { // want grow:`doesIO\(net\.Dial, net=tr
 	p.conns = append(p.conns, c)
 	return nil
 }
+
+// ---- R8-VA-04 / R8-VA-03 / R8-AZ8-05 ----
+
+type otherStore struct {
+	mu sync.Mutex
+	n  int
+}
+
+// A throttle mutex taken second used to hide behind an unrelated lock
+// taken first: every held mutex is judged, not just the first.
+type dual struct {
+	db        *sql.DB
+	sweepMu   sync.Mutex
+	lastSweep time.Time
+}
+
+func (d *dual) sweep(ctx context.Context, o *otherStore) { // want sweep:`doesIO\(\(\*sql\.DB\)\.ExecContext, net=false\)`
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	d.sweepMu.Lock()
+	defer d.sweepMu.Unlock()
+	if time.Since(d.lastSweep) < sweepInterval {
+		return
+	}
+	_, _ = d.db.ExecContext(ctx, `DELETE FROM t`) // want `iounderlock: ExecContext does I/O \(\(\*sql\.DB\)\.ExecContext\) while d\.sweepMu, which guards a throttle timestamp`
+	d.lastSweep = time.Now()
+}
+
+func runNow(fn func()) { fn() }
+
+// A closure passed straight to a call runs synchronously in the linear
+// region: its I/O is under the lock.
+type viaCallback struct {
+	db        *sql.DB
+	mu        sync.Mutex
+	lastSweep time.Time
+}
+
+func (v *viaCallback) sweepCb(ctx context.Context) { // want sweepCb:`doesIO\(\(\*sql\.DB\)\.ExecContext, net=false\)`
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if time.Since(v.lastSweep) < sweepInterval {
+		return
+	}
+	runNow(func() {
+		_, _ = v.db.ExecContext(ctx, `DELETE FROM t`) // want `iounderlock: ExecContext does I/O \(\(\*sql\.DB\)\.ExecContext\) while v\.mu, which guards a throttle timestamp`
+	})
+	v.lastSweep = time.Now()
+}
+
+// A closure handed to `go` or defer still runs outside the region.
+func (v *viaCallback) sweepAsync(ctx context.Context) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if time.Since(v.lastSweep) < sweepInterval {
+		return
+	}
+	go func() { _, _ = v.db.ExecContext(ctx, `DELETE FROM t`) }()
+	defer func() { _, _ = v.db.Exec(`DELETE FROM t`) }()
+	v.lastSweep = time.Now()
+}
+
+// A package-level function literal is a handler-table entry: the same
+// check applies outside any declaration.
+var sweepPkg = func(ctx context.Context, s *MagicStore) {
+	s.sweepMu.Lock()
+	defer s.sweepMu.Unlock()
+	if time.Since(s.lastSweep) < sweepInterval {
+		return
+	}
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM t`) // want `iounderlock: ExecContext does I/O \(\(\*sql\.DB\)\.ExecContext\) while s\.sweepMu, which guards a throttle timestamp`
+	s.lastSweep = time.Now()
+}

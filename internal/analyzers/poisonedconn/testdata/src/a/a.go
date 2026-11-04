@@ -119,3 +119,41 @@ func rawNoRetire(ctx context.Context, conn *sql.Conn) {
 		_ = conn.Raw(func(any) error { return nil })
 	}
 }
+
+// A package-level function literal is a handler-table entry: the same
+// reset outside any declaration.
+var resetPkg = func(ctx context.Context, conn *sql.Conn) {
+	_, _ = conn.ExecContext(ctx, "RESET ALL") // want `poisonedconn: "RESET ALL" on the pinned conn`
+}
+
+// badConn retires the connection Raw hands it to.
+func badConn(any) error { return driver.ErrBadConn }
+
+// A named function handed to Raw retires exactly like the inline
+// literal does: no report.
+func rawNamed(ctx context.Context, conn *sql.Conn) {
+	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		_ = conn.Raw(badConn)
+	}
+}
+
+// A retire on the success side of the reset's own error test never
+// sees the failure: the pool still gets the poisoned session.
+func retireOnSuccessOnly(ctx context.Context, conn *sql.Conn) {
+	if _, err := conn.ExecContext(ctx, "RESET ALL"); err != nil { // want `poisonedconn: "RESET ALL" on the pinned conn`
+		slog.Warn("reset failed")
+	} else {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	}
+	conn.Close()
+}
+
+// The same shape with the error branch returning: the retire after the
+// if runs only when the reset succeeded.
+func retireAfterDivergingErr(ctx context.Context, conn *sql.Conn) error {
+	if _, err := conn.ExecContext(ctx, "RESET ALL"); err != nil { // want `poisonedconn: "RESET ALL" on the pinned conn`
+		return err
+	}
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	return conn.Close()
+}

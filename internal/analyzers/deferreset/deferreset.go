@@ -15,8 +15,8 @@
 //     the flag set, so expire waited on it forever and the request
 //     goroutine hung. The fix clears it in a defer.
 //
-// Shape, within one function body (a declaration or a literal, each on
-// its own, nested literals not included):
+// Shape, within one function body (a declaration, a package-level
+// function literal, or a nested literal, each on its own):
 //   - the SET: a bool struct field assigned true (`tw.hijacking = true`),
 //     or a call whose camel-case first word is begin, claim, acquire or
 //     reserve (`cfg.Store.Begin(…)`, `q.claim(…)`);
@@ -34,9 +34,14 @@
 // finish(nil); panic(v) } }()`).
 //
 // Silent postures, deliberately:
-//   - the reset (any spelling of it) is deferred somewhere in the body:
-//     the deferred closure covers the panic path even when a normal-path
-//     reset also follows the call;
+//   - the reset is deferred somewhere in the body: the same flag field,
+//     or (for a verb reset) the same receiver and callee (`q.unclaim`)
+//     — the deferred closure covers the panic path even when a
+//     normal-path reset also follows the call. A defer that would run
+//     only inside a literal the body passes to a callee does not count:
+//     it is armed only if that callee runs the closure, so a deferred
+//     reset verb for a different owner (`defer doneLog()`) does not
+//     cover this one;
 //   - nothing that can panic between set and reset: plain package code
 //     between them is the function's own business (a panic there is a bug
 //     in this code, not a host's);
@@ -56,6 +61,7 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -75,28 +81,52 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		for _, d := range f.Decls {
-			fd, ok := d.(*ast.FuncDecl)
-			if !ok || fd.Body == nil {
-				continue
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Body != nil {
+					checkUnit(pass, d.Body, d.Type)
+				}
+			case *ast.GenDecl:
+				// A package-level function literal (var release =
+				// func(…) {…}) is a handler-table entry with the same
+				// shape as a declaration.
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, v := range vs.Values {
+						if lit, ok := ast.Unparen(v).(*ast.FuncLit); ok && lit.Body != nil {
+							checkUnit(pass, lit.Body, lit.Type)
+						}
+					}
+				}
 			}
-			params := map[types.Object]bool{}
-			addParams(pass, fd.Type, params)
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				if lit, ok := n.(*ast.FuncLit); ok {
-					addParams(pass, lit.Type, params)
-				}
-				return true
-			})
-			check(pass, fd.Body, params)
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				if lit, ok := n.(*ast.FuncLit); ok {
-					check(pass, lit.Body, params)
-				}
-				return true
-			})
 		}
 	}
 	return nil, nil
+}
+
+// checkUnit checks one top-level function unit — a declaration or a
+// package-level function literal — and each literal nested in it, with
+// the unit's parameters in scope for all of them (a closure sees its
+// enclosing parameters).
+func checkUnit(pass *analysis.Pass, body *ast.BlockStmt, ft *ast.FuncType) {
+	params := map[types.Object]bool{}
+	addParams(pass, ft, params)
+	ast.Inspect(body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.FuncLit); ok {
+			addParams(pass, lit.Type, params)
+		}
+		return true
+	})
+	check(pass, body, params)
+	ast.Inspect(body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.FuncLit); ok {
+			check(pass, lit.Body, params)
+		}
+		return true
+	})
 }
 
 // event is one step of the shape, in source order.
@@ -105,6 +135,7 @@ type event struct {
 	kind int    // evSet, evCall, evReset
 	key  string // the field for a flag, "" for a verb call
 	desc string
+	verb string // the full callee of a verb reset (`q.unclaim`), "" otherwise
 }
 
 const (
@@ -119,14 +150,20 @@ const (
 func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]bool) {
 	var events []event
 	deferredFlags := map[string]bool{}
-	deferredVerb := false
+	deferredVerbs := map[string]bool{}
 	inDefer := map[ast.Node]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		if d, ok := n.(*ast.DeferStmt); ok {
-			// Everything a defer runs, its literal's body included, is
-			// on the panic path.
+			// Everything the defer itself runs — its own literal's body
+			// included — is on the panic path. A literal it only PASSES
+			// to a callee is not: that defer is armed only if the
+			// callee runs the closure.
+			lit, _ := ast.Unparen(d.Call.Fun).(*ast.FuncLit)
 			ast.Inspect(d.Call, func(m ast.Node) bool {
 				inDefer[m] = true
+				if fl, ok := m.(*ast.FuncLit); ok && fl != lit {
+					return false
+				}
 				switch m := m.(type) {
 				case *ast.AssignStmt:
 					if key, val, ok := boolFieldAssign(pass, m); ok && !val {
@@ -134,11 +171,14 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 					}
 				case *ast.CallExpr:
 					if resetVerbs[firstWord(calleeName(m))] {
-						deferredVerb = true
+						deferredVerbs[verbKey(m)] = true
 					}
 				}
 				return true
 			})
+			return false
+		}
+		if _, ok := n.(*ast.FuncLit); ok {
 			return false
 		}
 		return true
@@ -159,6 +199,9 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 				events = append(events, event{pos: n.Pos(), kind: kind, key: key, desc: key})
 			}
 		case *ast.CallExpr:
+			if isContextDone(pass, n) {
+				return true
+			}
 			name := calleeName(n)
 			switch {
 			case canPanicInto(pass, n, params):
@@ -166,7 +209,7 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 			case setVerbs[firstWord(name)]:
 				events = append(events, event{pos: n.Pos(), kind: evSet, desc: name})
 			case resetVerbs[firstWord(name)]:
-				events = append(events, event{pos: n.Pos(), kind: evReset, desc: name})
+				events = append(events, event{pos: n.Pos(), kind: evReset, desc: name, verb: verbKey(n)})
 			}
 		}
 		return true
@@ -183,7 +226,7 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 			case e.kind == evCall && call == nil:
 				call = e
 			case e.kind == evReset && call != nil && matches(set, *e):
-				if set.key != "" && deferredFlags[set.key] || set.key == "" && deferredVerb {
+				if set.key != "" && deferredFlags[set.key] || set.key == "" && deferredVerbs[e.verb] {
 					break
 				}
 				id := set.desc + "@" + pass.Fset.Position(set.pos).String()
@@ -199,6 +242,20 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 			}
 		}
 	}
+}
+
+// verbKey names a verb call by receiver and callee (`q.unclaim`), the
+// way a flag is keyed by its field: a deferred reset verb for ANOTHER
+// owner does not cover this one.
+func verbKey(call *ast.CallExpr) string {
+	return types.ExprString(call.Fun)
+}
+
+// isContextDone: ctx.Done() — a channel getter whose camel-case word
+// collides with the reset verb "done"; it resets nothing.
+func isContextDone(pass *analysis.Pass, call *ast.CallExpr) bool {
+	fn, ok := typeutil.Callee(pass.TypesInfo, call).(*types.Func)
+	return ok && fn.Pkg() != nil && fn.Pkg().Path() == "context" && fn.Name() == "Done"
 }
 
 // matches pairs a reset with its set: the same flag field, or a verb
