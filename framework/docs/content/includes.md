@@ -5,6 +5,10 @@ single response, avoiding N+1 queries. The framework runs one
 follow-up query per relation per nesting level, never one per parent
 row.
 
+Repeated mentions of one relation merge their attached rows before read hooks
+run. Each relation's `AfterList` chain (and `AfterGet` for to-one relations)
+runs once over those rows, including when mentions have different filters.
+
 ## Quickstart
 
 ```bash
