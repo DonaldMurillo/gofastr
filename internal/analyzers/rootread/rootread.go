@@ -126,15 +126,19 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 // osReadSink recognizes the direct os.* read sinks. os.Remove is the
-// leaf sink the Lstat posture maps to.
-func osReadSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
+// leaf sink the Lstat posture maps to. The OpenFile flags resolve
+// through the body's bindings first: write bits (or O_NOFOLLOW) held
+// in a local are the same open as inline ones (the 2026-11-03 gap:
+// a write-flag local read as a plain read here, and vice versa in
+// rootwrite).
+func osReadSink(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) (ast.Expr, bool) {
 	switch pathflow.QualifiedFunc(pass, call.Fun) {
 	case "os.Open", "os.ReadFile", "os.ReadDir", "os.Stat":
 		return pathflow.ArgAt(call, 0), false
 	case "os.Remove":
 		return pathflow.ArgAt(call, 0), true
 	case "os.OpenFile":
-		flags := pathflow.ArgAt(call, 1)
+		flags := pathflow.Resolve(pass, pathflow.ArgAt(call, 1), bound, 0)
 		if !pathflow.HasWriteFlag(flags) && !pathflow.FlagMentions(flags, "O_NOFOLLOW") {
 			return pathflow.ArgAt(call, 0), false
 		}
@@ -145,8 +149,8 @@ func osReadSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
 // readSinksOf lists the path arguments call reads: a direct os.* sink,
 // or a same-package read helper's sink parameters (the write twin's
 // I4 hop, ported 2026-11).
-func readSinksOf(pass *analysis.Pass, call *ast.CallExpr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []pathflow.SinkArg {
-	if p, leaf := osReadSink(pass, call); p != nil {
+func readSinksOf(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []pathflow.SinkArg {
+	if p, leaf := osReadSink(pass, call, bound); p != nil {
 		return []pathflow.SinkArg{{Path: p, Leaf: leaf}}
 	}
 	return pathflow.HelperSinkArgs(pass, call, pkgFuncs, helpers)
@@ -192,7 +196,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 		// String-path reads: os.* on a disk path built under a root,
 		// direct or one same-package read helper deep. One report per
 		// call.
-		for _, s := range readSinksOf(pass, call, pkgFuncs, helpers) {
+		for _, s := range readSinksOf(pass, call, bound, pkgFuncs, helpers) {
 			if s.Path == nil || resolvedReadHere(pass, fn.Body, s, bound, evals, isGuard, call) ||
 				!pathflow.JoinsUnderRooty(pass, s.Path, bound, params, pkgFuncs, isGuard) {
 				continue

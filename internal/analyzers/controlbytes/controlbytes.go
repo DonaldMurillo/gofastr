@@ -43,8 +43,10 @@
 // (Clean, Base, Dir, Join) never clear taint at all.
 //
 // A tested value is clean for that variable when a validator-named
-// call (validRequestID(id)) vetted it anywhere earlier in the
-// function and the code kept its verdict (a call statement or an
+// call (validRequestID(id)) vetted it earlier in the function and the
+// code kept its verdict — the vetting lasts until the variable's next
+// assignment (2026-11-03: `validRequestID(id); id = r.Header.Get("X")`
+// used to stay vetted forever). A call statement or an
 // assignment to _ throws the answer away and vets nothing, ledger I9 of
 // the 2026-10-27 bug bash; a call with no result still counts, since it
 // can only refuse by panicking), or when a map membership (allowed[origin]) appears in the
@@ -155,10 +157,13 @@
 // deletes tab, CR and LF from a Location before it parses it: a
 // RedirectPattern target of "/\t/evil.example" was //evil.example in
 // the browser. At the http.Redirect sink and at Header.Set/Add of
-// "Location", a same-package scrub whose body (or one callee hop) holds
-// a != comparison against a literal in 0x01..0x1f lets that byte
-// through and clears nothing. The same scrub still clears a log value or
-// any other header. Fix spelling: encode every C0 byte and DEL.
+// "Location", a same-package scrub whose body (or one callee hop)
+// holds a != comparison against a literal in 0x01..0x1f — or the
+// keep-side spelling of the same carve-out, an == against a C0
+// literal beside a printable-boundary comparison in one boolean chain
+// (`c >= 0x20 || c == '\t'`) — lets that byte through and clears
+// nothing. The same scrub still clears a log value or any other
+// header. Fix spelling: encode every C0 byte and DEL.
 //
 // Guard, then scrub (df472714): `if s.nextID != "" {
 // b.WriteString(stripSSEControlChars(s.nextID)) }` tested the raw value
@@ -372,7 +377,7 @@ func testedAt(gs []guard, pos token.Pos) bool {
 // testedValues records where each variable was TESTED before use: an
 // argument of a validator-named call (validRequestID(id),
 // isSafePartialRedirect(u)) whose result the code keeps vets the
-// variable for the rest of the function; a membership lookup (allowed[origin]) vets it only when
+// variable until its next assignment; a membership lookup (allowed[origin]) vets it only when
 // the lookup keys a value the code gates on — the index appears in the
 // condition of an if statement or switch case that lexically encloses
 // the sink, so the sink runs only for members of the configured set.
@@ -419,6 +424,51 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 		}
 		return true
 	})
+	// A vetting covers the variable only until its next assignment:
+	// after `validRequestID(id); id = r.Header.Get("X")` the new bytes
+	// were never vetted (2026-11-03, R8-AZ17-03). Only an assignment
+	// that CERTAINLY runs between the vetting and the sink ends the
+	// guard — one at the top of the function body. A rebind inside a
+	// branch (requestid's `if !validRequestID(id) { id = uuid… }`)
+	// replaces the value on that path only; on the other the vetted
+	// bytes are still what the sink sees. An assignment BEFORE the
+	// guard (a loop rebinding at the top of every iteration, or the :=
+	// that first bound it) ends nothing.
+	for _, st := range body.List {
+		var idents []*ast.Ident
+		switch a := st.(type) {
+		case *ast.AssignStmt:
+			for _, lhs := range a.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+					idents = append(idents, id)
+				}
+			}
+		case *ast.DeclStmt:
+			gd, ok := a.Decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				if vs, ok := spec.(*ast.ValueSpec); ok {
+					idents = append(idents, vs.Names...)
+				}
+			}
+		default:
+			continue
+		}
+		for _, id := range idents {
+			obj := pass.TypesInfo.ObjectOf(id)
+			if obj == nil {
+				continue
+			}
+			gs := out[obj]
+			for i, g := range gs {
+				if id.Pos() > g.pos && (g.end == 0 || id.Pos() < g.end) {
+					gs[i].end = id.Pos()
+				}
+			}
+		}
+	}
 	return out
 }
 
@@ -1312,37 +1362,109 @@ func locationHeaderSet(pass *analysis.Pass, s sink, call *ast.CallExpr) bool {
 }
 
 // exemptsC0 reports whether a scrub body lets a C0 byte through: a !=
-// comparison against a literal in 0x01..0x1f (`c != '\t'`), in the body
-// or one same-package callee hop. A scrub with such an exemption still
-// clears a log or header value (HTAB is a legal header byte) but not a
+// comparison against a literal in 0x01..0x1f (`c != '\t'`), or the
+// keep-side spelling of the same carve-out — an == against a C0
+// literal inside a boolean chain that also holds a printable-boundary
+// comparison (`c >= 0x20 || c == '\t'` keeps the byte; 2026-11-03,
+// R8-AZ17-02) — in the body or one same-package callee hop. A lone ==
+// against a C0 literal is a refusal of that byte, not an exemption of
+// it, and exempts nothing. A scrub with such an exemption still clears
+// a log or header value (HTAB is a legal header byte) but not a
 // Location.
 func exemptsC0(body ast.Node, pass *analysis.Pass, depth int) bool {
+	if c0ExemptionIn(body) {
+		return true
+	}
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if found {
 			return false
 		}
-		switch n := n.(type) {
-		case *ast.BinaryExpr:
-			if n.Op != token.NEQ {
-				return true
-			}
-			for _, e := range []ast.Expr{n.X, n.Y} {
-				if v, ok := litValue(e); ok && v >= 0x01 && v < 0x20 {
-					found = true
-				}
-			}
-		case *ast.CallExpr:
-			if depth >= 1 {
-				return true
-			}
-			if fd := sameDecl(pass, n.Fun); fd != nil && exemptsC0(fd.Body, pass, depth+1) {
+		if call, ok := n.(*ast.CallExpr); ok && depth < 1 {
+			if fd := sameDecl(pass, call.Fun); fd != nil && exemptsC0(fd.Body, pass, depth+1) {
 				found = true
 			}
 		}
 		return !found
 	})
 	return found
+}
+
+// c0ExemptionIn: a != against a C0 literal, or a keep-side == beside a
+// printable boundary in the same boolean chain.
+func c0ExemptionIn(body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		be, ok := n.(*ast.BinaryExpr)
+		if !ok {
+			return true
+		}
+		switch be.Op {
+		case token.NEQ:
+			for _, e := range []ast.Expr{be.X, be.Y} {
+				if v, ok := litValue(e); ok && v >= 0x01 && v < 0x20 {
+					found = true
+				}
+			}
+		case token.LAND, token.LOR:
+			var eqC0, boundary bool
+			for _, o := range boolOperands(be, nil) {
+				c, ok := o.(*ast.BinaryExpr)
+				if !ok {
+					continue
+				}
+				if c.Op == token.EQL && (c0Literal(c.X) || c0Literal(c.Y)) {
+					eqC0 = true
+				}
+				if boundaryComparison(c) {
+					boundary = true
+				}
+			}
+			if eqC0 && boundary {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// boolOperands flattens a boolean AND/OR chain to its non-chain
+// operands.
+func boolOperands(be *ast.BinaryExpr, out []ast.Expr) []ast.Expr {
+	for _, e := range []ast.Expr{be.X, be.Y} {
+		if b, ok := e.(*ast.BinaryExpr); ok && (b.Op == token.LAND || b.Op == token.LOR) {
+			out = boolOperands(b, out)
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// c0Literal: a literal in 0x01..0x1f.
+func c0Literal(e ast.Expr) bool {
+	v, ok := litValue(e)
+	return ok && v >= 0x01 && v < 0x20
+}
+
+// boundaryComparison: an ordering against the printable boundary
+// (0x1f/0x20) on either side.
+func boundaryComparison(c *ast.BinaryExpr) bool {
+	switch c.Op {
+	case token.LSS, token.LEQ, token.GTR, token.GEQ:
+	default:
+		return false
+	}
+	for _, e := range []ast.Expr{c.X, c.Y} {
+		if v, ok := litValue(e); ok && (v == 0x1f || v == 0x20) {
+			return true
+		}
+	}
+	return false
 }
 
 // sameDecl resolves a callee to its same-package declaration.

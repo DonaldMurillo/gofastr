@@ -164,8 +164,11 @@ type sinkArg = pathflow.SinkArg
 // anywhere. leaf marks the sinks that clobber a path an Lstat can see;
 // MkdirAll/Mkdir/CreateTemp create their leaf, so the leaf postures do
 // not map to them. CreateTemp's sink is its first argument: the
-// caller-named directory the temp file lands in.
-func osSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
+// caller-named directory the temp file lands in. The OpenFile flags
+// resolve through the body's bindings first, so write bits held in a
+// local (`flags := os.O_WRONLY|os.O_CREATE`) are the same write-open
+// as inline ones — the 2026-11-03 gap.
+func osSink(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) (ast.Expr, bool) {
 	switch pathflow.QualifiedFunc(pass, call.Fun) {
 	case "os.WriteFile", "os.Create", "os.Remove":
 		return pathflow.ArgAt(call, 0), true
@@ -174,7 +177,7 @@ func osSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
 	case "os.Rename", "os.Link", "os.Symlink":
 		return pathflow.ArgAt(call, 1), true
 	case "os.OpenFile":
-		flags := pathflow.ArgAt(call, 1)
+		flags := pathflow.Resolve(pass, pathflow.ArgAt(call, 1), bound, 0)
 		if pathflow.HasWriteFlag(flags) && !pathflow.FlagMentions(flags, "O_NOFOLLOW") {
 			return pathflow.ArgAt(call, 0), true
 		}
@@ -184,8 +187,8 @@ func osSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
 
 // sinksOf lists the path arguments call writes: a direct os.* sink, or
 // a same-package write helper's sink parameters (I4).
-func sinksOf(pass *analysis.Pass, call *ast.CallExpr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []pathflow.SinkArg {
-	if p, leaf := osSink(pass, call); p != nil {
+func sinksOf(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []pathflow.SinkArg {
+	if p, leaf := osSink(pass, call, bound); p != nil {
 		return []pathflow.SinkArg{{Path: p, Leaf: leaf}}
 	}
 	return pathflow.HelperSinkArgs(pass, call, pkgFuncs, helpers)
@@ -252,7 +255,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 		}
 		// Filesystem writes under a lexically-contained root, direct or
 		// one or more same-package helpers deep. One report per call.
-		for _, s := range sinksOf(pass, call, pkgFuncs, helpers) {
+		for _, s := range sinksOf(pass, call, bound, pkgFuncs, helpers) {
 			if s.Path == nil || resolvedHere(pass, fn.Body, s, bound, evals, isGuard, call) ||
 				!pathflow.JoinsUnderRooty(pass, s.Path, bound, params, pkgFuncs, isGuard) {
 				continue

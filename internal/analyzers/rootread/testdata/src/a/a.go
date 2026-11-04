@@ -226,6 +226,22 @@ func openNoFollow(scratchDir, id string) (*os.File, error) {
 	return os.OpenFile(filepath.Join(scratchDir, id), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 }
 
+// localWriteFlags carries the write bits in a local: inline (rewrite
+// above) this open belongs to rootwrite; through a local binding it
+// must not become rootread's business either — the flag expression
+// has to resolve through the binding before it is read.
+func localWriteFlags(scratchDir, id string) (*os.File, error) {
+	flags := os.O_RDWR | os.O_CREATE
+	return os.OpenFile(filepath.Join(scratchDir, id), flags, 0o600)
+}
+
+// localNoFollow is a read open through a local: O_NOFOLLOW keeps the
+// leaf posture quiet through a binding too.
+func localNoFollow(scratchDir, id string) (*os.File, error) {
+	flags := os.O_RDONLY | syscall.O_NOFOLLOW
+	return os.OpenFile(filepath.Join(scratchDir, id), flags, 0)
+}
+
 // openReadOnlyInsideWriter is not a read of this family's concern when
 // the open carries write flags: rootwrite owns it.
 func (w *warehouse) rewrite(ref string) (*os.File, error) {

@@ -42,7 +42,15 @@ import (
 // disables nothing. Until 2026-09-07 the pattern was unanchored, and a
 // mid-prose mention above a trigger line suppressed the diagnostic
 // (the round-5 red test in prose_security_test.go pinned it).
-var marker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow\(([A-Za-z0-9_,\s]+)\)(.*)$`)
+//
+// The rest is captured without a line anchor and without crossing a
+// newline (`[^\n]*`, suppress.go's capture): a block comment may open
+// the marker on one line and carry its reason on the next
+// (`/*\ngofastr:allow(x) why\n*/`); a `(.*)$` capture matched nothing
+// there, because `.` stops at the newline while `$` without (?m) only
+// matches at the end of the whole token (2026-11-03 finding
+// R8-AZ10-02).
+var marker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow\(([A-Za-z0-9_,\s]+)\)([^\n]*)`)
 
 // Guard rewrites a's Run so diagnostics on an allowed line are dropped.
 // It mutates a in place and returns it, so a registration list can be

@@ -95,3 +95,24 @@ func spaceSeparatedOthers(b []byte) {
 	//gofastr:allow(mapwriter keytrim) best-effort render of bytes already validated by the caller
 	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
 }
+
+// A block marker whose reason sits on its own line inside the comment
+// — the contracts parser reads the whole comment token; the vettool's
+// line-anchored capture used to stop at the newline before the reason
+// and match nothing at all.
+func multilineBlock(b []byte) {
+	var x v
+	/*
+		gofastr:allow(discardeddecode) best-effort render of validated bytes
+	*/
+	_ = json.Unmarshal(b, &x)
+}
+
+// The one-line block form still carries its reason after the code.
+func multilineBlockBare(b []byte) {
+	var x v
+	/*
+		gofastr:allow(discardeddecode)
+	*/
+	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
+}

@@ -114,14 +114,19 @@
 // Ticker's or Timer's C, time.After) whose body reaches it, a loop body
 // that reaches it beside a select holding such a case, or a range over
 // a time channel (the revocationWatch goroutine) — each select-parked
-// delivery loop that does reach it is reported. A ticker whose case only
-// writes a heartbeat is not one.
+// delivery loop that does reach it is reported. The select is found
+// wherever in the loop body it sits (an `if live { select … }` guard
+// parks no less), and a ticker whose case only writes a heartbeat is
+// not a re-check.
 // When the identity IS re-checked, the arm then reads the connect-time
 // DECISIONS the stream's own families make outside their loops — an
 // authorize-named call, or a tenant accessor (GetTenantID/GetTenant)
-// applied to a context — and reports each one whose callee is never
-// called again on any park loop's path: RecheckPrincipal re-runs the
-// identity middleware, not the topic authorizer or the tenant capture.
+// applied to a context — in EVERY family of the stream's flood,
+// including a helper the opener calls that neither opens nor parks
+// (2026-11-03: a decision one callee away was invisible), and reports
+// each one whose callee is never called again on any park loop's path:
+// RecheckPrincipal re-runs the identity middleware, not the topic
+// authorizer or the tenant capture.
 //
 // Fix spelling: call handler.RecheckPrincipal before each delivery and
 // on an idle ticker, close on refusal (framework/crud's EventStream,

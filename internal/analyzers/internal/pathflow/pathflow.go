@@ -366,8 +366,13 @@ func helperJoinsParam(pass *analysis.Pass, decl *ast.FuncDecl, param string) boo
 		if !ok || QualifiedFunc(pass, call.Fun) != "path/filepath.Join" {
 			return true
 		}
-		if id, ok := call.Args[0].(*ast.Ident); ok && id.Name == param && len(call.Args) >= 2 {
-			found = true
+		// The count runs first: a zero-argument Join is legal Go ("")
+		// and indexing Args[0] before the length check panicked the
+		// walk (R8-AZ7-01).
+		if len(call.Args) >= 2 {
+			if id, ok := call.Args[0].(*ast.Ident); ok && id.Name == param {
+				found = true
+			}
 		}
 		return true
 	})
@@ -559,22 +564,40 @@ func Resolve(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, d
 	return e
 }
 
-// Bindings maps each local defined by an assignment to the expression it
-// was last bound to. Multi-value assignments map each left side to the
-// single call on the right, which is what lets `dir, err :=
-// os.MkdirTemp(...)` register for the temp-root silence and `dst, err :=
-// s.fullPath(key)` register for the helper hop.
+// Bindings maps each local defined by an assignment or a var-spec
+// initializer (`var p = expr`, the 2026-11-03 gap: only `:=`/`=`
+// resolved before) to the expression it was last bound to.
+// Multi-value assignments map each left side to the single call on
+// the right, which is what lets `dir, err := os.MkdirTemp(...)`
+// register for the temp-root silence and `dst, err := s.fullPath(key)`
+// register for the helper hop.
 func Bindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]ast.Expr {
 	bound := map[types.Object]ast.Expr{}
 	ast.Inspect(body, func(n ast.Node) bool {
-		st, ok := n.(*ast.AssignStmt)
-		if !ok || len(st.Rhs) != 1 {
-			return true
-		}
-		for _, lhs := range st.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-					bound[obj] = st.Rhs[0]
+		switch st := n.(type) {
+		case *ast.AssignStmt:
+			if len(st.Rhs) != 1 {
+				return true
+			}
+			for _, lhs := range st.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+						bound[obj] = st.Rhs[0]
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			// `var p = expr` is the same binding as `p := expr`; a
+			// zero-value spec binds nothing. Multi-value specs map
+			// every name to the single call, like the assignment arm.
+			if len(st.Values) != 1 {
+				return true
+			}
+			for _, name := range st.Names {
+				if name.Name != "_" {
+					if obj := pass.TypesInfo.ObjectOf(name); obj != nil {
+						bound[obj] = st.Values[0]
+					}
 				}
 			}
 		}
@@ -651,7 +674,9 @@ type SinkArg struct {
 // or its filepath.Dir (writeFile(dst, data): MkdirAll(Dir(dst)) +
 // os.WriteFile(dst)) — to a fixpoint: sinkOf lists the path arguments
 // a call touches (a direct os.* sink, or another helper's sink
-// parameters one or more hops deep), and resolvedHere says whether the
+// parameters one or more hops deep; it receives the enclosing body's
+// Bindings so an os.OpenFile flag argument held in a local resolves,
+// the 2026-11-03 gap), and resolvedHere says whether the
 // enclosing body resolves a sink's path before it happens (the helper
 // is then the fix posture and makes no sink parameter). The bool per
 // parameter says every sink it reaches is a leaf sink. rootwrite owns
@@ -660,7 +685,7 @@ type SinkArg struct {
 func HelperSinkParams(
 	pass *analysis.Pass,
 	pkgFuncs map[string][]*ast.FuncDecl,
-	sinkOf func(*analysis.Pass, *ast.CallExpr, map[string][]*ast.FuncDecl, map[*ast.FuncDecl]map[int]bool) []SinkArg,
+	sinkOf func(*analysis.Pass, *ast.CallExpr, map[types.Object]ast.Expr, map[string][]*ast.FuncDecl, map[*ast.FuncDecl]map[int]bool) []SinkArg,
 	resolvedHere func(*analysis.Pass, *ast.BlockStmt, SinkArg, map[types.Object]ast.Expr, []*ast.CallExpr, GuardFunc, ast.Node) bool,
 	isGuard GuardFunc,
 ) map[*ast.FuncDecl]map[int]bool {
@@ -680,7 +705,7 @@ func HelperSinkParams(
 				if !ok {
 					return true
 				}
-				for _, s := range sinkOf(pass, call, pkgFuncs, helpers) {
+				for _, s := range sinkOf(pass, call, bound, pkgFuncs, helpers) {
 					i, ok := SinkParam(pass, s.Path, bound, idx)
 					if !ok || resolvedHere(pass, decl.Body, s, bound, evals, isGuard, call) {
 						continue
@@ -875,12 +900,16 @@ func SymlinkGuards(pass *analysis.Pass, newFact func() analysis.Fact) GuardFunc 
 
 // ResolvesSymlinks reports whether body performs a real resolution
 // posture: filepath.EvalSymlinks, an O_NOFOLLOW flag, an os.Lstat
-// consulted with ModeSymlink, or a call to a verified guard. It judges
-// a guard's body; whether the guard touched the right path is
-// GuardsPath's question. (os.Root needs no guard: its methods are no
-// os.* sink, so a write or read through one is quiet by construction.)
+// whose FileInfo result a ModeSymlink test READS, or a call to a
+// verified guard. It judges a guard's body; whether the guard touched
+// the right path is GuardsPath's question. (os.Root needs no guard:
+// its methods are no os.* sink, so a write or read through one is
+// quiet by construction.) Until the 2026-11 round the Lstat arm read
+// co-presence — any Lstat plus any ModeSymlink selector in the body —
+// which credited a body that Lstat'd and threw the FileInfo away
+// (consultsModeSymlink carries the tie).
 func ResolvesSymlinks(pass *analysis.Pass, body *ast.BlockStmt, isGuard GuardFunc) bool {
-	lstat, modeSymlink, found := false, false, false
+	lstat, found := false, false
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.CallExpr:
@@ -894,16 +923,124 @@ func ResolvesSymlinks(pass *analysis.Pass, body *ast.BlockStmt, isGuard GuardFun
 				found = true
 			}
 		case *ast.SelectorExpr:
-			switch v.Sel.Name {
-			case "ModeSymlink":
-				modeSymlink = true
-			case "O_NOFOLLOW":
+			if v.Sel.Name == "O_NOFOLLOW" {
 				found = true
 			}
 		}
 		return !found
 	})
-	return found || (lstat && modeSymlink)
+	if found || !lstat {
+		return found
+	}
+	return consultsModeSymlink(pass, body, Bindings(pass, body), lstatInfoObjs(pass, body, nil))
+}
+
+// lstatInfoObjs returns the variables bound to the FIRST result (the
+// fs.FileInfo) of each os.Lstat call in body that keep accepts (nil
+// accepts every Lstat). An Lstat whose FileInfo is discarded —
+// `_, err := os.Lstat(p)` or the call as a statement — binds nothing.
+func lstatInfoObjs(pass *analysis.Pass, body *ast.BlockStmt, keep func(*ast.CallExpr) bool) map[types.Object]bool {
+	objs := map[types.Object]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || len(st.Rhs) != 1 || len(st.Lhs) < 1 {
+			return true
+		}
+		call, ok := st.Rhs[0].(*ast.CallExpr)
+		if !ok || QualifiedFunc(pass, call.Fun) != "os.Lstat" {
+			return true
+		}
+		if keep != nil && !keep(call) {
+			return true
+		}
+		if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name != "_" {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				objs[obj] = true
+			}
+		}
+		return true
+	})
+	return objs
+}
+
+// consultsModeSymlink reports whether the body's ModeSymlink test
+// READS the FileInfo result of one of the Lstat calls whose first
+// result landed in infos: the innermost statement enclosing a
+// ModeSymlink selector also mentions one of those variables (or a
+// local bound to one, `mode := fi.Mode()`). A selector that reads no
+// Lstat result consults nothing, whatever else the body holds.
+func consultsModeSymlink(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, infos map[types.Object]bool) bool {
+	if len(infos) == 0 {
+		return false
+	}
+	var stmts []ast.Stmt
+	ast.Inspect(body, func(n ast.Node) bool {
+		if s, ok := n.(ast.Stmt); ok {
+			stmts = append(stmts, s)
+		}
+		return true
+	})
+	consulted := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if consulted {
+			return false
+		}
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "ModeSymlink" {
+			return true
+		}
+		if st := innermostStmt(stmts, sel); st != nil && mentionsObj(pass, st, bound, infos, 0) {
+			consulted = true
+			return false
+		}
+		return true
+	})
+	return consulted
+}
+
+// innermostStmt returns the smallest statement fully containing n.
+func innermostStmt(stmts []ast.Stmt, n ast.Node) ast.Stmt {
+	var best ast.Stmt
+	for _, s := range stmts {
+		if n.Pos() >= s.Pos() && n.End() <= s.End() {
+			if best == nil || s.End()-s.Pos() < best.End()-best.Pos() {
+				best = s
+			}
+		}
+	}
+	return best
+}
+
+// mentionsObj reports whether e's tree uses a variable in objs, or an
+// ident whose binding does (one hop per binding, depth-capped).
+func mentionsObj(pass *analysis.Pass, e ast.Node, bound map[types.Object]ast.Expr, objs map[types.Object]bool, depth int) bool {
+	if depth > 2 {
+		return false
+	}
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		id, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		obj := pass.TypesInfo.ObjectOf(id)
+		if obj == nil {
+			return true
+		}
+		if objs[obj] {
+			found = true
+			return false
+		}
+		if b, ok := bound[obj]; ok && mentionsObj(pass, b, bound, objs, depth+1) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // inGOROOT reports whether f is a standard-library source file.
@@ -969,17 +1106,22 @@ func staticCallee(pass *analysis.Pass, fun ast.Expr) *types.Func {
 }
 
 // LstatLeafCheck reports whether the body Lstats the sink's own target
-// and consults ModeSymlink, BEFORE the sink — the leaf posture that
-// makes an unlink or an overwrite refuse to travel through a
-// symlinked leaf. The directory components above the leaf stay
-// unresolved; both root analyzers accept it as the documented partial
-// fix (rootread for os.Remove, rootwrite for the leaf-clobbering
-// write sinks). An Lstat after the sink audits a clobber that already
-// happened; sink may be nil for callers without a position.
+// and consults ModeSymlink on THAT Lstat's FileInfo, BEFORE the sink —
+// the leaf posture that makes an unlink or an overwrite refuse to
+// travel through a symlinked leaf. The directory components above the
+// leaf stay unresolved; both root analyzers accept it as the
+// documented partial fix (rootread for os.Remove, rootwrite for the
+// leaf-clobbering write sinks). An Lstat after the sink audits a
+// clobber that already happened, and a ModeSymlink test that reads no
+// Lstat result consults nothing; sink may be nil for callers without
+// a position.
 func LstatLeafCheck(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, bound map[types.Object]ast.Expr, sink ast.Node) bool {
 	r := Resolve(pass, pathArg, bound, 0)
-	touched := false
+	var touching *ast.CallExpr
 	ast.Inspect(body, func(n ast.Node) bool {
+		if touching != nil {
+			return false
+		}
 		call, ok := n.(*ast.CallExpr)
 		if !ok || QualifiedFunc(pass, call.Fun) != "os.Lstat" {
 			return true
@@ -989,23 +1131,18 @@ func LstatLeafCheck(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, 
 		}
 		for _, a := range call.Args {
 			if ArgTouchesPath(pass, a, bound, r) {
-				touched = true
+				touching = call
 				return false
 			}
 		}
 		return true
 	})
-	if !touched {
+	if touching == nil {
 		return false
 	}
-	modeCheck := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "ModeSymlink" {
-			modeCheck = true
-		}
-		return !modeCheck
-	})
-	return modeCheck
+	return consultsModeSymlink(pass, body, bound, lstatInfoObjs(pass, body, func(c *ast.CallExpr) bool {
+		return c == touching
+	}))
 }
 
 // dominates is the ordering half of every resolution posture: the

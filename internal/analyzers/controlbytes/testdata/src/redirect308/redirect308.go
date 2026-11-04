@@ -116,3 +116,53 @@ func isSafePartialRedirect(p string) bool {
 func hasPrefix(s, pre string) bool {
 	return len(s) >= len(pre) && s[:len(pre)] == pre
 }
+
+// reassignAfterVerdict: the validator vetted the ORIGINAL value; the
+// reassignment replaces it with bytes nobody vetted. Until 2026-11-03
+// a guard covered the variable for the rest of the function, so the
+// re-read slipped through. Fires.
+func reassignAfterVerdict(w http.ResponseWriter, r *http.Request) {
+	target := "/fixed"
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	target = r.URL.Path
+	http.Redirect(w, r, target, http.StatusSeeOther) // want `controlbytes: request-derived value reaches http.Redirect Location unscrubbed`
+}
+
+// reVettedAfterReassign re-vets after the reassignment: quiet.
+func reVettedAfterReassign(w http.ResponseWriter, r *http.Request) {
+	target := "/fixed"
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	target = r.URL.Path
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// reassignAfterSink reassigns only after the vetted value was used:
+// the sink ran on the vetted bytes. Quiet.
+func reassignAfterSink(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Path
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+	target = "/fixed"
+	_ = target
+}
+
+// conditionalRebind replaces the value only on the invalid branch —
+// and with literal bytes; on the other the vetted value reaches the
+// sink. A rebind inside a branch does not end the vetting. Quiet
+// (core/middleware requestid's spelling).
+func conditionalRebind(w http.ResponseWriter, r *http.Request) {
+	id := r.Header.Get("X-Request-Id")
+	if !isSafePartialRedirect(id) {
+		id = "/fresh"
+	}
+	w.Header().Set("X-Request-Id", id)
+}
