@@ -353,6 +353,21 @@ func deliverDeepLink(rawURL string, deliver func(string)) {
 	deliver(rawURL)
 }
 
+// deliverOnGoroutine runs a host callback on its own goroutine behind a
+// recover, so a panicking menu, focus, frame or close handler drops that
+// one event instead of the desktop process (the darwin and linux shells'
+// spelling).
+func deliverOnGoroutine(fn func()) {
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				slog.Default().Error("desktop/windows: callback panicked", "panic", textsafe.Recovered(v))
+			}
+		}()
+		fn()
+	}()
+}
+
 // activateExistingWindow brings the main window forward for a second
 // launch or a forwarded deep link, whichever of the app's windows the
 // message reached. Only a minimized window is restored:
