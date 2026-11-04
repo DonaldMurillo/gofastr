@@ -870,14 +870,16 @@ and so does an entity with no REST write routes.
   summary row counts every outcome the store holds (`BulkStore.Tally`),
   so a resumed run reports the whole job, and a queued run writes that
   row once, when it finishes.
-- **Queued runs are leased.** `RunBulkJob` claims the job for five
-  minutes before each chunk, and every outcome and the finish write are
+- **Queued runs are leased.** `RunBulkJob` claims the job for `BulkJobLease` (five
+  minutes) before each chunk, and every outcome and the finish write are
   fenced on that claim: a second worker handed the same job runs nothing
   while the lease is live (`ErrBulkJobBusy` asks its queue to retry), and
   a worker whose lease lapsed cannot write (`ErrBulkLeaseLost`). A worker
   that dies holding the lease blocks the job until it expires. A run
   can resume at the exact expiry timestamp; a released lease does not
-  require another wall-clock tick before a retry.
+  require another wall-clock tick before a retry. Queue runners delay busy
+  and lost-lease deliveries by at least `BulkJobLease`, without consuming
+  execution attempts just for contention (`admin.NewBulkJobs` does this).
   Delivery is at least once, so an app `Actions` callback reads
   `ActionContext.Run`, the job id, to make its own side effects
   idempotent.
@@ -888,7 +890,11 @@ and so does an entity with no REST write routes.
   the runner (the process died in between, or `Enqueue` failed) is
   handed over again at `App.Start` once it is a minute old
   (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
-  instead. Finished jobs older than `entityui.BulkRetention` (30 days)
+  instead. Resume also adopts already-enqueued jobs whose non-null bulk
+  lease expired before the grace cutoff, preserving settled outcomes.
+  An enqueued job with no lease, a live lease, or a recently expired lease
+  is not adopted. Custom `BulkStore.Unenqueued` implementations must honor
+  this recovery rule too. Finished jobs older than `entityui.BulkRetention` (30 days)
   are deleted then too (`UI.PruneBulkJobs`). An app that runs for weeks
   schedules both, with cron or its queue.
 - **Export** is `GET <api>/<entity>/_export.csv` with the list's

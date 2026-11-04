@@ -862,10 +862,13 @@ func runKey(job BulkJob, ids []string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// bulkLease is how long one RunBulkJob call holds a job between chunks.
+// BulkJobLease is how long one RunBulkJob call holds a job between chunks.
 // Each chunk renews it, so it only runs out when the runner has died or
-// one chunk outlasts it; then another runner takes the job over.
-const bulkLease = 5 * time.Minute
+// one chunk outlasts it; then another runner takes the job over. Queue
+// runners delay lease-contention retries by at least this duration.
+const BulkJobLease = 5 * time.Minute
+
+const bulkLease = BulkJobLease
 
 // RunBulkJob runs the queued bulk job id, the JobRunner worker's call. It
 // takes the job's lease, then walks the snapshot's unsettled ids in
@@ -995,9 +998,9 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 // bulkSettleTimeout bounds the write that saves a chunk's outcomes.
 const bulkSettleTimeout = 10 * time.Second
 
-// ResumeBulkJobs hands the JobRunner every queued job whose Enqueue is not
-// known to have happened (the process died between writing the snapshot
-// and enqueuing it), created before grace ago, and reports how many.
+// ResumeBulkJobs hands the JobRunner every queued job created before
+// grace ago whose Enqueue is not known to have happened, or whose bulk
+// lease expired before grace ago, and reports how many.
 // App.EntityUI runs it at start; a host that runs for long calls it on a
 // schedule. Enqueuing a job twice is safe.
 func (u *UI) ResumeBulkJobs(ctx context.Context, grace time.Duration) (int, error) {
