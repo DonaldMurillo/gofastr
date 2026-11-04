@@ -58,13 +58,17 @@ func TestFeedRefusesVersionMismatch(t *testing.T) {
 }
 
 func TestFeedRefusesMalformedManifest(t *testing.T) {
-	dir := t.TempDir()
-	keyPath, _, _, _ := writeKeyFile(t, dir)
-	archive := writeArchive(t, dir)
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte("{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip"); err == nil {
-		t.Fatal("accepted a malformed existing manifest")
+	for _, manifest := range []string{"{", "{}", "null", `{"version":null}`} {
+		t.Run(manifest, func(t *testing.T) {
+			dir := t.TempDir()
+			keyPath, _, _, _ := writeKeyFile(t, dir)
+			archive := writeArchive(t, dir)
+			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip"); err == nil {
+				t.Fatal("accepted a malformed existing manifest")
+			}
+		})
 	}
 }

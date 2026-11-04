@@ -169,6 +169,7 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 		Notes:   notes,
 	}
 	if existing, err := os.ReadFile(filepath.Join(outDir, "manifest.json")); err == nil {
+		feed = Feed{}
 		if err := json.Unmarshal(existing, &feed); err != nil {
 			return fmt.Errorf("existing manifest: %w", err)
 		}
