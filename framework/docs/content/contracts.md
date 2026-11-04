@@ -264,9 +264,17 @@ Path globs are slash-separated (`cmd/**`, `**/testdata/**`); a backslash
 is accepted as a separator too, so a path typed on Windows works rather
 than silently matching nothing.
 
+A leading `/` anchors a glob at the analyzed root: `/gen/**` exempts
+the root's generated subtree, not a nested `pkg/gen/` subtree. Coverage
+minimums must be finite percentages between 0 and 100; NaN and infinity
+are rejected, including quoted spellings.
+
 The app spec (`gofastr.yml`) is not read for this. Every relaxation is
 printed in the report footer: a run that passes because half of it was
 switched off says so.
+
+Footer explanations and analyzer errors are sanitized for terminal
+control characters, just like diagnostic messages and source snippets.
 
 ## Adopting it on an existing codebase
 
@@ -369,6 +377,9 @@ its tip. Otherwise a long-lived branch would report every finding in
 everyone else's commits as something it changed. Untracked files count as
 changed; a brand-new file full of findings is exactly what a pre-commit
 check should catch, and `git diff` alone never lists it.
+
+This includes untracked files with `--changed=<ref>`. Paths retain their
+exact spelling, including Unicode, whitespace, tabs, and newlines.
 
 A narrowed run says what it withheld:
 

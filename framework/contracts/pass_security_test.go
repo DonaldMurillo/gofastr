@@ -53,14 +53,14 @@ func TestGeneratedSourceNeedsFullHeader(t *testing.T) {
 	}
 }
 
-// Property: traversal-shaped and absolute glob patterns are inert —
+// Property: traversal-shaped glob patterns are inert —
 // they can never match a discovered (pass-relative) path, so no
 // exemption written in a config can waive findings via an out-of-tree
 // pattern. Pin it so a change in path normalisation (Rel producing
-// `..` segments, absolute patterns matching) fails loudly instead of
+// `..` segments) fails loudly instead of
 // quietly broadening exemptions.
 func TestGlobTraversalPatternsInert(t *testing.T) {
-	inert := []string{"..", "../**", "../a.go", "/a.go", `..\..\a.go`, "a/../../b.go", ""}
+	inert := []string{"..", "../**", "../a.go", `..\..\a.go`, "a/../../b.go", ""}
 	// Every path discovery can actually produce: pass-relative, slash-
 	// separated, no `..` or leading `/`.
 	paths := []string{"a.go", "a/b.go", "core/handler.go", "dist/x.go", "a/b/c/d.go"}

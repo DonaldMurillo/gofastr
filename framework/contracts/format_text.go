@@ -174,7 +174,7 @@ func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 	if len(r.Relaxations) > 0 {
 		fmt.Fprintf(b, "  %s config relaxations in effect:\n", c.yellow("·"))
 		for _, rel := range r.Relaxations {
-			fmt.Fprintf(b, "      %s\n", c.dim(rel))
+			fmt.Fprintf(b, "      %s\n", c.dim(sanitizeText(rel)))
 		}
 	}
 	if len(r.Capabilities) > 0 {
@@ -189,7 +189,7 @@ func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 		fmt.Fprintf(b, "\n  %s %d analyzer(s) failed to run: this report is incomplete:\n",
 			c.red("✗"), len(r.Errors))
 		for _, e := range r.Errors {
-			fmt.Fprintf(b, "      %s\n", e)
+			fmt.Fprintf(b, "      %s\n", sanitizeText(e))
 		}
 	}
 }
