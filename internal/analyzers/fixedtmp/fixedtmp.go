@@ -27,8 +27,11 @@
 //     os.MkdirTemp / os.CreateTemp / t.TempDir result: unique by
 //     construction (kiln/db EphemeralSQLite);
 //   - the tail components' assembly provably involves crypto/rand,
-//     directly or through locals, same-package helper bodies, or the
-//     package-wide provenance of the struct fields feeding the path
+//     directly or through locals, same-package helper or method
+//     bodies (2026-11: the hop indexed plain functions only, so a
+//     fixed /tmp name returned by a method was invisible and entropy
+//     minted inside one did not quiet), or the package-wide
+//     provenance of the struct fields feeding the path
 //     (processmodule's scratch dir derives from the InstanceID nonce
 //     mintInstanceID mints with crypto/rand);
 //   - paths not rooted at the shared temp root: os.TempDir() or a
@@ -71,13 +74,13 @@ type prov struct {
 }
 
 type pkgCtx struct {
-	funcs     map[string]*ast.FuncDecl // package-level functions
-	fieldProv map[string][]prov        // field name -> literal assignments
+	funcs     map[string][]*ast.FuncDecl // package-level functions and methods, by name
+	fieldProv map[string][]prov          // field name -> literal assignments
 }
 
 func run(pass *analysis.Pass) (any, error) {
 	ctx := &pkgCtx{
-		funcs:     map[string]*ast.FuncDecl{},
+		funcs:     map[string][]*ast.FuncDecl{},
 		fieldProv: map[string][]prov{},
 	}
 	var files []*ast.File
@@ -88,8 +91,13 @@ func run(pass *analysis.Pass) (any, error) {
 		files = append(files, f)
 		for _, d := range f.Decls {
 			fn, ok := d.(*ast.FuncDecl)
-			if ok && fn.Body != nil && fn.Recv == nil {
-				ctx.funcs[fn.Name.Name] = fn
+			// Methods share the namespace with functions (2026-11,
+			// AZ16-03): a fixed /tmp path returned by a method was
+			// invisible at its call sites, and entropy minted inside a
+			// method did not quiet a real report. CalleeDecl picks
+			// between same-named decls by receiver.
+			if ok && fn.Body != nil {
+				ctx.funcs[fn.Name.Name] = append(ctx.funcs[fn.Name.Name], fn)
 			}
 		}
 	}
@@ -257,27 +265,32 @@ func tainted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, h
 			}
 		}
 	}
-	// One same-package helper hop: devServerBinaryPath(rt).
+	// One same-package helper hop — plain function or method
+	// (devServerBinaryPath(rt), s.binaryPath()).
 	if call, ok := e.(*ast.CallExpr); ok {
-		if id, ok := call.Fun.(*ast.Ident); ok {
-			if decl, ok := ctx.funcs[id.Name]; ok && decl.Body != nil {
-				hBound := pathflow.Bindings(pass, decl.Body)
-				hHist := bindingHistory(pass, decl.Body)
-				found := false
-				ast.Inspect(decl.Body, func(n ast.Node) bool {
-					if ret, ok := n.(*ast.ReturnStmt); ok {
-						for _, r := range ret.Results {
-							if tempRootedPredictableWith(pass, r, hBound, hHist, decl, ctx, 0) {
-								found = true
-								return false
-							}
+		if decl := pathflow.CalleeDecl(pass, call.Fun, ctx.funcs); decl != nil && decl.Body != nil {
+			// A helper whose body mints randomness returns an
+			// unpredictable path even when the tail's text does not
+			// show it (rand.Read into a local the join then uses).
+			if bodyHasEntropy(pass, decl.Body, ctx, 0) {
+				return false
+			}
+			hBound := pathflow.Bindings(pass, decl.Body)
+			hHist := bindingHistory(pass, decl.Body)
+			found := false
+			ast.Inspect(decl.Body, func(n ast.Node) bool {
+				if ret, ok := n.(*ast.ReturnStmt); ok {
+					for _, r := range ret.Results {
+						if tempRootedPredictableWith(pass, r, hBound, hHist, decl, ctx, 0) {
+							found = true
+							return false
 						}
 					}
-					return !found
-				})
-				if found {
-					return true
 				}
+				return !found
+			})
+			if found {
+				return true
 			}
 		}
 	}
@@ -442,13 +455,12 @@ func hasEntropy(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr
 				found = true // t.TempDir()
 				return
 			}
-			// Same-package helper: entropy inside its body counts.
-			if id, ok := n.Fun.(*ast.Ident); ok {
-				if decl, ok := ctx.funcs[id.Name]; ok && decl.Body != nil {
-					if bodyHasEntropy(pass, decl.Body, ctx, depth+1) {
-						found = true
-						return
-					}
+			// Same-package helper, function or method: entropy inside
+			// its body counts.
+			if decl := pathflow.CalleeDecl(pass, n.Fun, ctx.funcs); decl != nil && decl.Body != nil {
+				if bodyHasEntropy(pass, decl.Body, ctx, depth+1) {
+					found = true
+					return
 				}
 			}
 			for _, a := range n.Args {

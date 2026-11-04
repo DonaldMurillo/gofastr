@@ -1,12 +1,16 @@
 // Package rootread catches reads whose containment under a root is
 // resolved lexically only — the read twin of rootwrite. os.Open /
-// os.ReadFile / os.Stat / os.Remove / read-only os.OpenFile on a path
-// built under a root (filepath.Join or flat concatenation) with no
-// filepath.EvalSymlinks on the path's chain and no O_NOFOLLOW or
+// os.ReadFile / os.ReadDir / os.Stat / os.Remove / read-only
+// os.OpenFile on a path built under a root (filepath.Join or flat
+// concatenation) — directly or one same-package read helper deep
+// (readPage(src): os.ReadFile(src), the I4 hop ported 2026-11) — with
+// no filepath.EvalSymlinks on the path's chain and no O_NOFOLLOW or
 // Lstat+ModeSymlink leaf check — plus the fs.FS-mediated spelling:
 // `.Open(name)` / `fs.ReadFile(fsys, name)` / `fs.Stat(fsys, name)`
-// where the fs value is a CALLER-SUPPLIED io/fs.FS (parameter or
-// field), the name is caller-controlled, and the function serves HTTP.
+// / `fs.ReadDir(fsys, name)` where the fs value is a CALLER-SUPPLIED
+// io/fs.FS (parameter or field), the name is caller-controlled, and
+// the scope serves HTTP (the declaration or any closure around the
+// read).
 //
 // The bug class: a lexical check (Join + Clean + HasPrefix, or
 // fs.ValidPath) cannot see a symlinked directory component, so a read
@@ -66,15 +70,19 @@
 //   - roots that are not parameters or root/base/dir-named fields
 //     (constants name no caller-controlled boundary), literal-only
 //     non-root components, and temp roots (os.MkdirTemp / t.TempDir);
-//   - a same-package helper whose body resolves symlinks is the fix
-//     posture at the helper hop; one called with literal-only
-//     non-root arguments appends nothing caller-controlled;
+//   - a same-package helper that resolves the RETURNED path's own
+//     chain (an EvalSymlinks or a verified guard tied to what it
+//     hands back, before the return) is the fix posture at the helper
+//     hop — a resolution on any other value in its body gates
+//     nothing; one called with literal-only non-root arguments
+//     appends nothing caller-controlled;
 //   - fs.FS values that are NOT caller-supplied here: concrete
 //     embed.FS / fstest.MapFS values (an embed cannot hold symlinks),
 //     and package-level fs variables whose construction this function
 //     never sees;
-//   - fs.FS reads in functions with no HTTP parameter (library
-//     helpers, walkers, loaders) and with literal-only names;
+//   - fs.FS reads in scopes with no HTTP parameter on the enclosing
+//     chain — the declaration's or any function literal's (library
+//     helpers, walkers, loaders) — and with literal-only names;
 //   - write-flag OpenFile calls (rootwrite owns those);
 //   - _test.go files.
 package rootread
@@ -86,6 +94,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
@@ -109,17 +118,63 @@ const readMsg = "read under a root with lexical containment only: a symlinked di
 func run(pass *analysis.Pass) (any, error) {
 	pkgFuncs := pathflow.CollectFuncs(pass)
 	isGuard := pathflow.SymlinkGuards(pass, func() analysis.Fact { return new(symlinkGuard) })
+	helpers := readHelpers(pass, pkgFuncs, isGuard)
 	for _, fn := range pathflow.FuncsWithBodies(pass) {
-		checkFunc(pass, fn, pkgFuncs, isGuard)
+		checkFunc(pass, fn, pkgFuncs, isGuard, helpers)
 	}
 	return nil, nil
 }
 
-func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc) {
+// osReadSink recognizes the direct os.* read sinks. os.Remove is the
+// leaf sink the Lstat posture maps to.
+func osReadSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
+	switch pathflow.QualifiedFunc(pass, call.Fun) {
+	case "os.Open", "os.ReadFile", "os.ReadDir", "os.Stat":
+		return pathflow.ArgAt(call, 0), false
+	case "os.Remove":
+		return pathflow.ArgAt(call, 0), true
+	case "os.OpenFile":
+		flags := pathflow.ArgAt(call, 1)
+		if !pathflow.HasWriteFlag(flags) && !pathflow.FlagMentions(flags, "O_NOFOLLOW") {
+			return pathflow.ArgAt(call, 0), false
+		}
+	}
+	return nil, false
+}
+
+// readSinksOf lists the path arguments call reads: a direct os.* sink,
+// or a same-package read helper's sink parameters (the write twin's
+// I4 hop, ported 2026-11).
+func readSinksOf(pass *analysis.Pass, call *ast.CallExpr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []pathflow.SinkArg {
+	if p, leaf := osReadSink(pass, call); p != nil {
+		return []pathflow.SinkArg{{Path: p, Leaf: leaf}}
+	}
+	return pathflow.HelperSinkArgs(pass, call, pkgFuncs, helpers)
+}
+
+// readHelpers summarizes which parameters of every same-package
+// function reach an unresolved READ sink inside it (the fixpoint and
+// its semantics live in pathflow.HelperSinkParams). Ported from
+// rootwrite's write spelling (bug bash 2026-10-27 I4) in the 2026-11
+// round: a root-joined path handed to readPage used to be invisible on
+// the read side.
+func readHelpers(pass *analysis.Pass, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc) map[*ast.FuncDecl]map[int]bool {
+	return pathflow.HelperSinkParams(pass, pkgFuncs, readSinksOf, resolvedReadHere, isGuard)
+}
+
+// resolvedReadHere reports whether body resolves the sink's path
+// before reading it: a verified guard on it, EvalSymlinks on its
+// chain, or — for the Remove leaf — an Lstat+ModeSymlink check.
+func resolvedReadHere(pass *analysis.Pass, body *ast.BlockStmt, s pathflow.SinkArg, bound map[types.Object]ast.Expr, evals []*ast.CallExpr, isGuard pathflow.GuardFunc, sink ast.Node) bool {
+	return pathflow.GuardsPath(pass, body, s.Path, bound, isGuard, sink) ||
+		pathflow.SymlinkResolved(pass, s.Path, bound, evals, body, sink) ||
+		(s.Leaf && pathflow.LstatLeafCheck(pass, body, s.Path, bound, sink))
+}
+
+func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc, helpers map[*ast.FuncDecl]map[int]bool) {
 	bound := pathflow.Bindings(pass, fn.Body)
-	params := pathflow.ParamObjects(pass, fn)
 	evals := pathflow.EvalSymlinkCalls(pass, fn.Body)
-	httpServing := hasHTTPParam(pass, fn)
+	parents := dominance.Parents(fn.Body)
 
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -127,35 +182,35 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 			return true
 		}
 
-		// String-path reads: os.* on a disk path built under a root.
-		var pathArg ast.Expr
-		switch pathflow.QualifiedFunc(pass, call.Fun) {
-		case "os.Open", "os.ReadFile", "os.Stat":
-			pathArg = pathflow.ArgAt(call, 0)
-		case "os.Remove":
-			pathArg = pathflow.ArgAt(call, 0)
-			if pathArg != nil && pathflow.LstatLeafCheck(pass, fn.Body, pathArg, bound) {
-				pathArg = nil
+		// Each call is judged in its own scope: the parameters and
+		// HTTP-serving gate of every function literal enclosing it,
+		// plus the declaration's own. A handler factory's closure
+		// (func h(assets fs.FS) http.HandlerFunc) sees the factory's
+		// fs and its own request alike.
+		params, httpServing := scopeOf(pass, call, parents, fn)
+
+		// String-path reads: os.* on a disk path built under a root,
+		// direct or one same-package read helper deep. One report per
+		// call.
+		for _, s := range readSinksOf(pass, call, pkgFuncs, helpers) {
+			if s.Path == nil || resolvedReadHere(pass, fn.Body, s, bound, evals, isGuard, call) ||
+				!pathflow.JoinsUnderRooty(pass, s.Path, bound, params, pkgFuncs, isGuard) {
+				continue
 			}
-		case "os.OpenFile":
-			flags := pathflow.ArgAt(call, 1)
-			if !pathflow.HasWriteFlag(flags) && !pathflow.FlagMentions(flags, "O_NOFOLLOW") {
-				pathArg = pathflow.ArgAt(call, 0)
+			if s.Helper != "" {
+				pass.Reportf(call.Pos(), "%s (the read happens in %s)", readMsg, s.Helper)
+			} else {
+				pass.Reportf(call.Pos(), "%s", readMsg)
 			}
-		}
-		if pathArg != nil &&
-			!pathflow.GuardsPath(pass, fn.Body, pathArg, bound, isGuard) &&
-			!pathflow.SymlinkResolved(pass, pathArg, bound, evals) &&
-			pathflow.JoinsUnderRooty(pass, pathArg, bound, params, pkgFuncs, isGuard) {
-			pass.Reportf(call.Pos(), "%s", readMsg)
+			break
 		}
 
 		// fs.FS-mediated reads: the fs value is the root. Only in
-		// HTTP-serving functions, only on caller-supplied fs values,
+		// HTTP-serving scopes, only on caller-supplied fs values,
 		// only with a caller-controlled name.
 		if recv, name := fsReadSink(pass, call); recv != nil && httpServing &&
 			callerSuppliedFS(pass, recv, bound, params) &&
-			!pathflow.GuardsPath(pass, fn.Body, name, bound, isGuard) &&
+			!pathflow.GuardsPath(pass, fn.Body, name, bound, isGuard, call) &&
 			pathflow.MentionsParam(pass, name, bound, params, 0) {
 			pass.Reportf(call.Pos(), "%s", readMsg)
 		}
@@ -163,11 +218,70 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 	})
 }
 
+// scopeOf returns the caller-data parameters and the HTTP-serving
+// verdict for a call inside fn: every function literal enclosing it,
+// innermost out, plus the declaration itself — the 2026-11 closure
+// fix; until then the fs.FS arm saw only the declaring function's own
+// parameters, and a handler factory returning a closure was invisible.
+func scopeOf(pass *analysis.Pass, call ast.Node, parents map[ast.Node]ast.Node, fn *ast.FuncDecl) (map[types.Object]bool, bool) {
+	params := map[types.Object]bool{}
+	serving := false
+	for cur := ast.Node(call); cur != nil; {
+		p, ok := parents[cur]
+		if !ok || p == nil {
+			break
+		}
+		if lit, ok := p.(*ast.FuncLit); ok && lit.Type != nil && lit.Type.Params != nil {
+			serving = serving || fieldListServesHTTP(pass, lit.Type.Params)
+			collectParams(pass, lit.Type.Params, params)
+		}
+		if p == fn.Body {
+			break
+		}
+		cur = p
+	}
+	collectParams(pass, fn.Type.Params, params)
+	if hasHTTPParam(pass, fn) {
+		serving = true
+	}
+	return params, serving
+}
+
+// collectParams adds the parameter objects of one field list.
+func collectParams(pass *analysis.Pass, list *ast.FieldList, out map[types.Object]bool) {
+	if list == nil {
+		return
+	}
+	for _, f := range list.List {
+		for _, name := range f.Names {
+			if obj := pass.TypesInfo.ObjectOf(name); obj != nil {
+				out[obj] = true
+			}
+		}
+	}
+}
+
+// fieldListServesHTTP reports whether a parameter list carries a
+// net/http.Request or ResponseWriter.
+func fieldListServesHTTP(pass *analysis.Pass, list *ast.FieldList) bool {
+	for _, f := range list.List {
+		for _, name := range f.Names {
+			obj, ok := pass.TypesInfo.ObjectOf(name).(*types.Var)
+			if ok && isHTTPType(obj.Type()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // fsReadSink recognizes the fs.FS read spellings — a method .Open on
-// an io/fs.FS or http.Dir value, and the fs.ReadFile / fs.Stat
-// package forms — returning the fs value and the name argument.
+// an io/fs.FS or http.Dir value, and the fs.ReadFile / fs.Stat /
+// fs.ReadDir package forms — returning the fs value and the name
+// argument.
 func fsReadSink(pass *analysis.Pass, call *ast.CallExpr) (recv, name ast.Expr) {
-	if q := pathflow.QualifiedFunc(pass, call.Fun); q == "io/fs.ReadFile" || q == "io/fs.Stat" {
+	switch pathflow.QualifiedFunc(pass, call.Fun) {
+	case "io/fs.ReadFile", "io/fs.Stat", "io/fs.ReadDir":
 		if len(call.Args) >= 2 {
 			return call.Args[0], call.Args[1]
 		}

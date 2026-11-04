@@ -285,7 +285,7 @@ func joinPath(prefix, name string) string {
 func (s *AssetServer) serveFS(spec AssetSpec) http.HandlerFunc {
 	contentType := resolveContentType(spec.Name, spec.ContentType)
 	return func(w http.ResponseWriter, r *http.Request) {
-		b, err := fs.ReadFile(s.fsys, spec.Name)
+		b, err := fs.ReadFile(s.fsys, spec.Name) //gofastr:allow(rootread) the fs and the name both come from the host's plugin registration (developer configuration); the request only selects which registered route runs and cannot type the name
 		if err != nil {
 			http.NotFound(w, r)
 			return

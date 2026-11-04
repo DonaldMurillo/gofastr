@@ -6,7 +6,12 @@
 // separates the fix posture from a resolution on an unrelated path,
 // plus the verified symlink guards (SymlinkGuards, GuardsPath): a
 // function counts as a guard by what its body does, never by its name,
-// and a guard call gates only the path it was handed.
+// and a guard call gates only the path it was handed. Every resolution
+// posture is ORDERED since the 2026-11 round: an EvalSymlinks, a
+// guard, or an Lstat leaf check counts only when it dominates the
+// sink (dominates, on dominance.Prefix/Spine) — a check that runs
+// after the sink, or in a branch the sink never shares, resolved
+// nothing for it.
 //
 // Nothing here decides anything: the analyzers pick their sinks and
 // their silent postures; this package only answers "is this expression
@@ -22,8 +27,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 )
 
 // CollectFuncs indexes every function and method declaration with a
@@ -136,8 +143,8 @@ func JoinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast
 	} else {
 		return false
 	}
-	if CallsQualified(decl.Body, pass, "path/filepath.EvalSymlinks") || CallsGuard(pass, decl.Body, isGuard) {
-		return false // the helper resolves symlinks: the fix posture
+	if helperResolvesReturn(pass, decl, isGuard) {
+		return false // the helper resolves the returned path's own chain
 	}
 	for i, a := range call.Args {
 		if i == rootIdx {
@@ -164,6 +171,40 @@ func helperJoinsRootyRoot(pass *analysis.Pass, decl *ast.FuncDecl) bool {
 		}
 		if RootyParamOrField(pass, call.Args[0], nil, helperParams) != nil {
 			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// helperResolvesReturn reports whether decl — a helper that joins a
+// rooty parameter or receiver field and hands the joined path back —
+// resolves THAT path's chain before returning it: an EvalSymlinks or a
+// verified guard tied to a returned expression (the path itself, a
+// local bound to it, or its Dir), ordered before the return. Until the
+// 2026-11 round any EvalSymlinks or guard call ANYWHERE in the helper
+// body made every caller quiet, even one that resolved a different
+// value — rootwrite's per-path rule, applied at the hop.
+func helperResolvesReturn(pass *analysis.Pass, decl *ast.FuncDecl, isGuard GuardFunc) bool {
+	helperBound := Bindings(pass, decl.Body)
+	evals := EvalSymlinkCalls(pass, decl.Body)
+	found := false
+	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		ret, ok := n.(*ast.ReturnStmt)
+		if !ok || found {
+			return !found
+		}
+		// Only the first result is the path slot; the error result of
+		// an EvalSymlinks call is not a resolved path.
+		if len(ret.Results) == 0 {
+			return true
+		}
+		res := ret.Results[0]
+		sr := SymlinkResolved(pass, res, helperBound, evals, decl.Body, ret)
+		gp := GuardsPath(pass, decl.Body, res, helperBound, isGuard, ret)
+		if sr || gp {
+			found = true
+			return false
 		}
 		return true
 	})
@@ -557,17 +598,127 @@ func ParamObjects(pass *analysis.Pass, fn *ast.FuncDecl) map[types.Object]bool {
 	return params
 }
 
-// CallsQualified reports whether body contains a call to the
-// import-resolved pkg.Func.
-func CallsQualified(body *ast.BlockStmt, pass *analysis.Pass, want string) bool {
-	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok && QualifiedFunc(pass, call.Fun) == want {
-			found = true
+// SinkParam reports which of decl's parameters a helper's sink path
+// IS: the bare parameter (through locals) or its filepath.Dir. The
+// helper-hop machinery rootwrite and rootread share (I4 and its 2026-11
+// read-side port).
+func SinkParam(pass *analysis.Pass, p ast.Expr, bound map[types.Object]ast.Expr, idx map[types.Object]int) (int, bool) {
+	r := Resolve(pass, p, bound, 0)
+	if call, ok := r.(*ast.CallExpr); ok && QualifiedFunc(pass, call.Fun) == "path/filepath.Dir" && len(call.Args) == 1 {
+		r = Resolve(pass, call.Args[0], bound, 0)
+	}
+	id, ok := r.(*ast.Ident)
+	if !ok {
+		return 0, false
+	}
+	i, ok := idx[pass.TypesInfo.ObjectOf(id)]
+	return i, ok
+}
+
+// ParamIndexes maps decl's parameter objects to their positions.
+func ParamIndexes(pass *analysis.Pass, decl *ast.FuncDecl) map[types.Object]int {
+	out := map[types.Object]int{}
+	if decl.Type.Params == nil {
+		return out
+	}
+	i := 0
+	for _, f := range decl.Type.Params.List {
+		if len(f.Names) == 0 {
+			i++
+			continue
 		}
-		return !found
-	})
-	return found
+		for _, name := range f.Names {
+			if obj := pass.TypesInfo.ObjectOf(name); obj != nil {
+				out[obj] = i
+			}
+			i++
+		}
+	}
+	return out
+}
+
+// SinkArg is one path argument a call touches: its expression, whether
+// the leaf posture maps to it, and the helper the sink happens in (""
+// for a direct os.* call).
+type SinkArg struct {
+	Path   ast.Expr
+	Leaf   bool
+	Helper string
+}
+
+// HelperSinkParams summarizes, for every same-package function, which
+// parameters reach an unresolved sink inside it — the bare parameter
+// or its filepath.Dir (writeFile(dst, data): MkdirAll(Dir(dst)) +
+// os.WriteFile(dst)) — to a fixpoint: sinkOf lists the path arguments
+// a call touches (a direct os.* sink, or another helper's sink
+// parameters one or more hops deep), and resolvedHere says whether the
+// enclosing body resolves a sink's path before it happens (the helper
+// is then the fix posture and makes no sink parameter). The bool per
+// parameter says every sink it reaches is a leaf sink. rootwrite owns
+// the write spelling (bug bash 2026-10-27 I4) and rootread the 2026-11
+// read-side port; the fixpoint driver is shared.
+func HelperSinkParams(
+	pass *analysis.Pass,
+	pkgFuncs map[string][]*ast.FuncDecl,
+	sinkOf func(*analysis.Pass, *ast.CallExpr, map[string][]*ast.FuncDecl, map[*ast.FuncDecl]map[int]bool) []SinkArg,
+	resolvedHere func(*analysis.Pass, *ast.BlockStmt, SinkArg, map[types.Object]ast.Expr, []*ast.CallExpr, GuardFunc, ast.Node) bool,
+	isGuard GuardFunc,
+) map[*ast.FuncDecl]map[int]bool {
+	helpers := map[*ast.FuncDecl]map[int]bool{}
+	decls := FuncsWithBodies(pass)
+	for changed := true; changed; {
+		changed = false
+		for _, decl := range decls {
+			idx := ParamIndexes(pass, decl)
+			if len(idx) == 0 {
+				continue
+			}
+			bound := Bindings(pass, decl.Body)
+			evals := EvalSymlinkCalls(pass, decl.Body)
+			ast.Inspect(decl.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				for _, s := range sinkOf(pass, call, pkgFuncs, helpers) {
+					i, ok := SinkParam(pass, s.Path, bound, idx)
+					if !ok || resolvedHere(pass, decl.Body, s, bound, evals, isGuard, call) {
+						continue
+					}
+					m := helpers[decl]
+					if m == nil {
+						m = map[int]bool{}
+						helpers[decl] = m
+					}
+					prev, seen := m[i]
+					next := s.Leaf && (!seen || prev)
+					if !seen || prev != next {
+						m[i] = next
+						changed = true
+					}
+				}
+				return true
+			})
+		}
+	}
+	return helpers
+}
+
+// HelperSinkArgs lists the sink parameters a call passes to a
+// same-package helper: one SinkArg per argument position the helper's
+// body sinks, carrying the call-site argument.
+func HelperSinkArgs(pass *analysis.Pass, call *ast.CallExpr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []SinkArg {
+	decl := CalleeDecl(pass, call.Fun, pkgFuncs)
+	if decl == nil || len(helpers[decl]) == 0 {
+		return nil
+	}
+	var out []SinkArg
+	for i := range call.Args {
+		if leaf, ok := helpers[decl][i]; ok {
+			out = append(out, SinkArg{Path: call.Args[i], Leaf: leaf, Helper: decl.Name.Name})
+		}
+	}
+	return out
 }
 
 // EvalSymlinkCalls collects the filepath.EvalSymlinks calls in body.
@@ -584,12 +735,16 @@ func EvalSymlinkCalls(pass *analysis.Pass, body *ast.BlockStmt) []*ast.CallExpr 
 }
 
 // SymlinkResolved reports whether the path is resolved against
-// symlinks ON THE CHAIN: the path itself is an EvalSymlinks result, a
-// resolved local feeds it, or an EvalSymlinks ran on this path
-// expression — directly, through a local, or on its Dir, which
-// resolves the directory chain above the leaf (the core/upload Save
-// posture). An EvalSymlinks on an unrelated path resolves nothing.
-func SymlinkResolved(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr, evals []*ast.CallExpr) bool {
+// symlinks ON THE CHAIN, by a resolution that DOMINATES the sink: the
+// path itself is an EvalSymlinks result, a resolved local feeds it, or
+// an EvalSymlinks ran on this path expression before the sink —
+// directly, through a local, or on its Dir, which resolves the
+// directory chain above the leaf (the core/upload Save posture). An
+// EvalSymlinks on an unrelated path resolves nothing, and one that
+// runs after the sink (a verification read-back) resolves nothing for
+// it either; sink may be nil for callers without a position, which
+// keeps the unordered posture.
+func SymlinkResolved(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr, evals []*ast.CallExpr, body *ast.BlockStmt, sink ast.Node) bool {
 	isEval := func(c *ast.CallExpr) bool {
 		return QualifiedFunc(pass, c.Fun) == "path/filepath.EvalSymlinks"
 	}
@@ -601,6 +756,9 @@ func SymlinkResolved(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Obje
 		return true
 	}
 	for _, ev := range evals {
+		if !dominates(ev, sink, body) {
+			continue
+		}
 		for _, a := range ev.Args {
 			if ArgTouchesPath(pass, a, bound, r) {
 				return true
@@ -617,6 +775,11 @@ func ArgTouchesPath(pass *analysis.Pass, arg ast.Expr, bound map[types.Object]as
 	// EvalSymlinks(Dir(p)): resolving the parent chain covers every
 	// symlinked component above the leaf the sink is about to touch.
 	ra := Resolve(pass, arg, bound, 0)
+	// The same expression written inline, not through a local:
+	// EvalSymlinks(Join(root, k)) touching the sink's Join(root, k).
+	if ra == r || types.ExprString(ra) == types.ExprString(r) {
+		return true
+	}
 	if call, ok := ra.(*ast.CallExpr); ok && QualifiedFunc(pass, call.Fun) == "path/filepath.Dir" && len(call.Args) == 1 {
 		inner := Resolve(pass, call.Args[0], bound, 0)
 		if inner == r || types.ExprString(inner) == types.ExprString(r) {
@@ -754,10 +917,12 @@ func inGOROOT(pass *analysis.Pass, f *ast.File) bool {
 }
 
 // GuardsPath reports whether body calls a verified guard with the
-// sink's own path: the path expression itself, its Dir, or a local
-// bound to either (ArgTouchesPath). A guard on the root alone, or on
-// an unrelated path, leaves the sink's components unchecked.
-func GuardsPath(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, bound map[types.Object]ast.Expr, isGuard GuardFunc) bool {
+// sink's own path — the path expression itself, its Dir, or a local
+// bound to either (ArgTouchesPath) — BEFORE the sink: a guard after
+// it (a post-hoc audit) protected nothing. A guard on the root alone,
+// or on an unrelated path, leaves the sink's components unchecked.
+// sink may be nil for callers without a position.
+func GuardsPath(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, bound map[types.Object]ast.Expr, isGuard GuardFunc, sink ast.Node) bool {
 	if isGuard == nil || pathArg == nil {
 		return false
 	}
@@ -772,6 +937,9 @@ func GuardsPath(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, boun
 		if !isGuard(staticCallee(pass, call.Fun)) {
 			return true
 		}
+		if !dominates(call, sink, body) {
+			return true
+		}
 		for _, a := range call.Args {
 			ra := Resolve(pass, a, bound, 0)
 			if ra == r || types.ExprString(ra) == rs || ArgTouchesPath(pass, a, bound, r) {
@@ -780,23 +948,6 @@ func GuardsPath(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, boun
 			}
 		}
 		return true
-	})
-	return found
-}
-
-// CallsGuard reports whether body calls any verified guard: the helper
-// hop's posture, where the helper that RETURNS a root-joined path
-// refuses symlinks on it before returning.
-func CallsGuard(pass *analysis.Pass, body *ast.BlockStmt, isGuard GuardFunc) bool {
-	if isGuard == nil {
-		return false
-	}
-	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok && isGuard(staticCallee(pass, call.Fun)) {
-			found = true
-		}
-		return !found
 	})
 	return found
 }
@@ -818,17 +969,22 @@ func staticCallee(pass *analysis.Pass, fun ast.Expr) *types.Func {
 }
 
 // LstatLeafCheck reports whether the body Lstats the sink's own target
-// and consults ModeSymlink — the leaf posture that makes an unlink or
-// an overwrite refuse to travel through a symlinked leaf. The
-// directory components above the leaf stay unresolved; both root
-// analyzers accept it as the documented partial fix (rootread for
-// os.Remove, rootwrite for the leaf-clobbering write sinks).
-func LstatLeafCheck(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, bound map[types.Object]ast.Expr) bool {
+// and consults ModeSymlink, BEFORE the sink — the leaf posture that
+// makes an unlink or an overwrite refuse to travel through a
+// symlinked leaf. The directory components above the leaf stay
+// unresolved; both root analyzers accept it as the documented partial
+// fix (rootread for os.Remove, rootwrite for the leaf-clobbering
+// write sinks). An Lstat after the sink audits a clobber that already
+// happened; sink may be nil for callers without a position.
+func LstatLeafCheck(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, bound map[types.Object]ast.Expr, sink ast.Node) bool {
 	r := Resolve(pass, pathArg, bound, 0)
 	touched := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok || QualifiedFunc(pass, call.Fun) != "os.Lstat" {
+			return true
+		}
+		if !dominates(call, sink, body) {
 			return true
 		}
 		for _, a := range call.Args {
@@ -850,6 +1006,59 @@ func LstatLeafCheck(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, 
 		return !modeCheck
 	})
 	return modeCheck
+}
+
+// dominates is the ordering half of every resolution posture: the
+// check has to run before the sink it claims to gate. A nil sink (a
+// caller with no position) keeps the unordered posture; a nil body
+// does too. The lexical dominance walk: the check sits in a statement
+// of one of sink's dominating statement lists (dominance.Prefix), or
+// in the always-run parts — the Spine — of an enclosing statement on
+// the path down to sink (an if's Init and Cond ran before either of
+// its branches; a loop's controlling clause runs before each
+// iteration's body). A check inside a branch the sink never shares,
+// or after the sink, dominates nothing.
+func dominates(check, sink ast.Node, body *ast.BlockStmt) bool {
+	if sink == nil || body == nil {
+		return true
+	}
+	if check == nil || check.Pos() > sink.Pos() {
+		return false
+	}
+	parents := dominance.Parents(body)
+	for _, list := range dominance.Prefix(sink, parents, body) {
+		for _, st := range list {
+			if spineHolds(st, check) {
+				return true
+			}
+		}
+	}
+	cur := sink
+	for {
+		p, ok := parents[cur]
+		if !ok || p == nil || p == body {
+			return false
+		}
+		if st, ok := p.(ast.Stmt); ok && spineHolds(st, check) {
+			return true
+		}
+		cur = p
+	}
+}
+
+// spineHolds reports whether check sits inside one of n's always-run
+// parts (dominance.Spine). Only the EXPRESSION parts count as
+// containers: Spine also lists statement and block nodes themselves
+// (an if, a block), whose source range covers the very branch bodies
+// the spine excludes, so a positional containment test on those would
+// credit a check buried in a skipped branch.
+func spineHolds(n ast.Node, check ast.Node) bool {
+	for _, part := range dominance.Spine(n) {
+		if e, ok := part.(ast.Expr); ok && e.Pos() <= check.Pos() && check.End() <= e.End() {
+			return true
+		}
+	}
+	return false
 }
 
 // FlagMentions reports whether e's flag expression mentions any of the

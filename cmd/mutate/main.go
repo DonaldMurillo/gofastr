@@ -282,7 +282,7 @@ func writeVerified(path string, original, mutated []byte) error {
 	if string(mutated) == string(original) {
 		return errors.New("mutation produced identical source; it would read as an uncaught guard")
 	}
-	if err := os.WriteFile(path, mutated, 0o644); err != nil {
+	if err := os.WriteFile(path, mutated, 0o644); err != nil { //gofastr:allow(worldreadable) path is the module's own source file, read by the driver before the mutant is written (main.go runLoop); 0644 is the checkout's own mode and the file exists, so the mode never applies at create
 		return fmt.Errorf("write mutant: %w", err)
 	}
 	back, err := os.ReadFile(path)

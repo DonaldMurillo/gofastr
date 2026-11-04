@@ -94,6 +94,66 @@ func (w *warehouse) loadViaHelper(ref string) (*os.File, error) {
 	return os.Open(p) // want `read under a root with lexical containment only`
 }
 
+// resolveAuditsOther resolves another ref's chain inside the helper:
+// the returned path's own chain is unchecked, and a body-level
+// EvalSymlinks used to shield it (2026-11 tie fix).
+func (w *warehouse) resolveAuditsOther(ref, other string) (string, error) {
+	if _, err := filepath.EvalSymlinks(filepath.Join(w.shelfRoot, other)); err != nil {
+		return "", err
+	}
+	return filepath.Join(w.shelfRoot, ref), nil
+}
+
+// loadViaAuditingHelper reads through it: must fire.
+func (w *warehouse) loadViaAuditingHelper(ref, other string) ([]byte, error) {
+	p, err := w.resolveAuditsOther(ref, other)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(p) // want `read under a root with lexical containment only`
+}
+
+// fetchPage is a read helper: its parameter reaches os.ReadFile
+// unresolved — until the 2026-11 hop port, a root-joined path handed
+// to it was invisible (rootwrite already had this hop for writes).
+func fetchPage(src string) ([]byte, error) {
+	return os.ReadFile(src)
+}
+
+// loadViaReadHelper hands a root-joined path to it: must fire.
+func (w *warehouse) loadViaReadHelper(ref string) ([]byte, error) {
+	return fetchPage(filepath.Join(w.shelfRoot, ref)) // want `read under a root with lexical containment only`
+}
+
+// dropFile is the Remove spelling one helper deep.
+func dropFile(target string) error {
+	return os.Remove(target)
+}
+
+func (w *warehouse) dropViaHelper(ref string) error {
+	return dropFile(filepath.Join(w.shelfRoot, ref)) // want `read under a root with lexical containment only`
+}
+
+// fetchPageResolved resolves inside the helper: the fix posture, its
+// callers stay quiet.
+func fetchPageResolved(src string) ([]byte, error) {
+	real, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(real)
+}
+
+func (w *warehouse) loadViaResolvedReadHelper(ref string) ([]byte, error) {
+	return fetchPageResolved(filepath.Join(w.shelfRoot, ref))
+}
+
+// manifestViaHelper: a helper called with nothing caller-controlled
+// stays quiet.
+func (w *warehouse) manifestViaHelper() ([]byte, error) {
+	return fetchPage(filepath.Join(w.shelfRoot, "manifest.json"))
+}
+
 // loadFixed resolves the directory chain before opening — the fix
 // posture, sanitizer and all.
 func (w *warehouse) loadFixed(ref string) (*os.File, error) {

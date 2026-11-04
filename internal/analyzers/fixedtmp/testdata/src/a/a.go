@@ -184,3 +184,47 @@ func runList() error {
 	// sink.
 	return exec.Command("ls", "/tmp").Run()
 }
+
+// ---------- method helpers (AZ16-03, 2026-11) ----------
+
+// devServer is the method spelling of devServerBinaryPath: the
+// one-hop resolution indexed plain functions only, so a fixed /tmp
+// name returned by a method was invisible in both directions.
+type devServer struct{ workRoot string }
+
+func (s *devServer) binaryPath() string {
+	return filepath.Join(os.TempDir(), "gofastr-dev-server")
+}
+
+func buildViaMethod(s *devServer, ctx context.Context, pkg string) error {
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", s.binaryPath(), pkg) // want `exec/build reaches a fixed path under the shared temp root`
+	return cmd.Run()
+}
+
+// scratchDirFor mints real randomness inside a method: a path built
+// from it is quiet.
+func (s *devServer) scratchDirFor() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return filepath.Join(os.TempDir(), "scratch-"+hex.EncodeToString(b))
+}
+
+func mkdirViaMethodEntropy(s *devServer) error {
+	return os.MkdirAll(s.scratchDirFor(), 0o755)
+}
+
+// randomSuffixMethod: entropy one method hop deep quiets the report.
+func (s *devServer) suffix() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func openViaMethodEntropy(s *devServer) error {
+	p := filepath.Join(os.TempDir(), "probe-"+s.suffix())
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}

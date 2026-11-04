@@ -164,9 +164,12 @@ func standsAlone(src []byte, pos, end token.Position) bool {
 	return strings.TrimSpace(string(src[end.Offset:stop])) == ""
 }
 
-// listNames reports whether the comma-separated marker list names name.
+// listNames reports whether the marker's rule list names name. The
+// list separates rules with commas, spaces or tabs — names.SplitRuleList,
+// the same grammar framework/contracts/suppress.go reads (2026-11:
+// commas alone left a space-separated list silencing nothing here).
 func listNames(list, name string) bool {
-	for n := range strings.SplitSeq(list, ",") {
+	for _, n := range names.SplitRuleList(list) {
 		if strings.TrimSpace(n) == name {
 			return true
 		}

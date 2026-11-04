@@ -1,11 +1,11 @@
 // Package rootwrite catches writes whose containment under a root is
-// resolved lexically only: os.WriteFile / os.Create / os.OpenFile(write
-// flag) / os.MkdirAll / os.Remove on a path built under a root —
-// filepath.Join, or a flat `root + "/" + x` concatenation — where the
-// root is a caller-supplied parameter or field — with no
-// filepath.EvalSymlinks on that path's chain — plus the archive twin:
-// zip.Writer entry names assembled from a parameter with no path.Clean
-// on the entry-name chain.
+// resolved lexically only: os.WriteFile / os.Create / os.CreateTemp /
+// os.OpenFile(write flag) / os.Mkdir / os.MkdirAll / os.Remove on a
+// path built under a root — filepath.Join, or a flat `root + "/" + x`
+// concatenation — where the root is a caller-supplied parameter or
+// field — with no filepath.EvalSymlinks on that path's chain — plus
+// the archive twin: zip.Writer entry names assembled from a parameter
+// with no path.Clean on the entry-name chain.
 //
 // The bug class: lexical prefix checks cannot see symlinks. Probes
 // TestApplyRefusesSymlinkEscape (framework/contracts report.go
@@ -157,21 +157,19 @@ func run(pass *analysis.Pass) (any, error) {
 // sinkArg is one path argument a call writes: its expression, whether
 // the write only clobbers the leaf (so the Lstat leaf posture maps to
 // it), and the helper the write happens in ("" for a direct os.* call).
-type sinkArg struct {
-	path   ast.Expr
-	leaf   bool
-	helper string
-}
+type sinkArg = pathflow.SinkArg
 
 // osSink recognizes the direct os.* write sinks. The destination of
 // Rename/Link/Symlink is the write; the source of a Rename may live
 // anywhere. leaf marks the sinks that clobber a path an Lstat can see;
-// MkdirAll creates its leaf, so the leaf postures do not map to it.
+// MkdirAll/Mkdir/CreateTemp create their leaf, so the leaf postures do
+// not map to them. CreateTemp's sink is its first argument: the
+// caller-named directory the temp file lands in.
 func osSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
 	switch pathflow.QualifiedFunc(pass, call.Fun) {
 	case "os.WriteFile", "os.Create", "os.Remove":
 		return pathflow.ArgAt(call, 0), true
-	case "os.MkdirAll":
+	case "os.Mkdir", "os.MkdirAll", "os.CreateTemp":
 		return pathflow.ArgAt(call, 0), false
 	case "os.Rename", "os.Link", "os.Symlink":
 		return pathflow.ArgAt(call, 1), true
@@ -186,121 +184,33 @@ func osSink(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
 
 // sinksOf lists the path arguments call writes: a direct os.* sink, or
 // a same-package write helper's sink parameters (I4).
-func sinksOf(pass *analysis.Pass, call *ast.CallExpr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []sinkArg {
+func sinksOf(pass *analysis.Pass, call *ast.CallExpr, pkgFuncs map[string][]*ast.FuncDecl, helpers map[*ast.FuncDecl]map[int]bool) []pathflow.SinkArg {
 	if p, leaf := osSink(pass, call); p != nil {
-		return []sinkArg{{path: p, leaf: leaf}}
+		return []pathflow.SinkArg{{Path: p, Leaf: leaf}}
 	}
-	decl := pathflow.CalleeDecl(pass, call.Fun, pkgFuncs)
-	if decl == nil || len(helpers[decl]) == 0 {
-		return nil
-	}
-	var out []sinkArg
-	for i := 0; i < len(call.Args); i++ {
-		if leaf, ok := helpers[decl][i]; ok {
-			out = append(out, sinkArg{path: call.Args[i], leaf: leaf, helper: decl.Name.Name})
-		}
-	}
-	return out
+	return pathflow.HelperSinkArgs(pass, call, pkgFuncs, helpers)
 }
 
-// writeHelpers summarizes, for every same-package function, which
-// parameters reach a write sink inside it unresolved — the bare
-// parameter, or its filepath.Dir, as a sink's path (writeFile(dst,
-// data): MkdirAll(Dir(dst)) + os.WriteFile(dst)), directly or through
-// another such helper. The bool says every sink the parameter reaches
-// is a leaf sink. A parameter the helper itself resolves (EvalSymlinks
-// on its chain, a verified guard on it, a leaf check before a leaf
-// sink) is not a sink parameter: the helper is the fix posture.
-//
-// Bug bash 2026-10-27 I4: framework/static/builder.go:180-184 joins
-// b.OutDir with a route path and writes it through writeFile
-// (:1782-1786); pathflow stopped at writeFile's plain parameter, so
-// the sink one helper deep was invisible.
+// writeHelpers summarizes which parameters of every same-package
+// function reach a write sink inside it unresolved (the fixpoint and
+// its semantics live in pathflow.HelperSinkParams). Bug bash
+// 2026-10-27 I4: framework/static/builder.go:180-184 joins b.OutDir
+// with a route path and writes it through writeFile (:1782-1786);
+// pathflow stopped at writeFile's plain parameter, so the sink one
+// helper deep was invisible.
 func writeHelpers(pass *analysis.Pass, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc) map[*ast.FuncDecl]map[int]bool {
-	helpers := map[*ast.FuncDecl]map[int]bool{}
-	decls := pathflow.FuncsWithBodies(pass)
-	for changed := true; changed; {
-		changed = false
-		for _, decl := range decls {
-			idx := paramIndexes(pass, decl)
-			if len(idx) == 0 {
-				continue
-			}
-			bound := pathflow.Bindings(pass, decl.Body)
-			evals := pathflow.EvalSymlinkCalls(pass, decl.Body)
-			ast.Inspect(decl.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				for _, s := range sinksOf(pass, call, pkgFuncs, helpers) {
-					i, ok := sinkParam(pass, s.path, bound, idx)
-					if !ok || resolvedHere(pass, decl.Body, s, bound, evals, isGuard) {
-						continue
-					}
-					m := helpers[decl]
-					if m == nil {
-						m = map[int]bool{}
-						helpers[decl] = m
-					}
-					prev, seen := m[i]
-					next := s.leaf && (!seen || prev)
-					if !seen || prev != next {
-						m[i] = next
-						changed = true
-					}
-				}
-				return true
-			})
-		}
-	}
-	return helpers
-}
-
-// sinkParam reports which parameter a helper's sink path IS: the bare
-// parameter (through locals) or its filepath.Dir.
-func sinkParam(pass *analysis.Pass, p ast.Expr, bound map[types.Object]ast.Expr, idx map[types.Object]int) (int, bool) {
-	r := pathflow.Resolve(pass, p, bound, 0)
-	if call, ok := r.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "path/filepath.Dir" && len(call.Args) == 1 {
-		r = pathflow.Resolve(pass, call.Args[0], bound, 0)
-	}
-	id, ok := r.(*ast.Ident)
-	if !ok {
-		return 0, false
-	}
-	i, ok := idx[pass.TypesInfo.ObjectOf(id)]
-	return i, ok
-}
-
-// paramIndexes maps decl's parameter objects to their positions.
-func paramIndexes(pass *analysis.Pass, decl *ast.FuncDecl) map[types.Object]int {
-	out := map[types.Object]int{}
-	if decl.Type.Params == nil {
-		return out
-	}
-	i := 0
-	for _, f := range decl.Type.Params.List {
-		if len(f.Names) == 0 {
-			i++
-			continue
-		}
-		for _, name := range f.Names {
-			if obj := pass.TypesInfo.ObjectOf(name); obj != nil {
-				out[obj] = i
-			}
-			i++
-		}
-	}
-	return out
+	return pathflow.HelperSinkParams(pass, pkgFuncs, sinksOf, resolvedHere, isGuard)
 }
 
 // resolvedHere reports whether body resolves the sink's path before
 // writing it: EvalSymlinks on its chain, a verified guard on it, or —
-// for a leaf sink — an Lstat+ModeSymlink check of it.
-func resolvedHere(pass *analysis.Pass, body *ast.BlockStmt, s sinkArg, bound map[types.Object]ast.Expr, evals []*ast.CallExpr, isGuard pathflow.GuardFunc) bool {
-	return pathflow.GuardsPath(pass, body, s.path, bound, isGuard) ||
-		pathflow.SymlinkResolved(pass, s.path, bound, evals) ||
-		(s.leaf && pathflow.LstatLeafCheck(pass, body, s.path, bound))
+// for a leaf sink — an Lstat+ModeSymlink check of it. Each must
+// DOMINATE the write (pathflow): a posture after the sink gates
+// nothing.
+func resolvedHere(pass *analysis.Pass, body *ast.BlockStmt, s pathflow.SinkArg, bound map[types.Object]ast.Expr, evals []*ast.CallExpr, isGuard pathflow.GuardFunc, sink ast.Node) bool {
+	return pathflow.GuardsPath(pass, body, s.Path, bound, isGuard, sink) ||
+		pathflow.SymlinkResolved(pass, s.Path, bound, evals, body, sink) ||
+		(s.Leaf && pathflow.LstatLeafCheck(pass, body, s.Path, bound, sink))
 }
 
 // callerParams is fn's parameters plus those of every function literal
@@ -343,12 +253,12 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 		// Filesystem writes under a lexically-contained root, direct or
 		// one or more same-package helpers deep. One report per call.
 		for _, s := range sinksOf(pass, call, pkgFuncs, helpers) {
-			if s.path == nil || resolvedHere(pass, fn.Body, s, bound, evals, isGuard) ||
-				!pathflow.JoinsUnderRooty(pass, s.path, bound, params, pkgFuncs, isGuard) {
+			if s.Path == nil || resolvedHere(pass, fn.Body, s, bound, evals, isGuard, call) ||
+				!pathflow.JoinsUnderRooty(pass, s.Path, bound, params, pkgFuncs, isGuard) {
 				continue
 			}
-			if s.helper != "" {
-				pass.Reportf(call.Pos(), "%s (the write happens in %s)", writeMsg, s.helper)
+			if s.Helper != "" {
+				pass.Reportf(call.Pos(), "%s (the write happens in %s)", writeMsg, s.Helper)
 			} else {
 				pass.Reportf(call.Pos(), "%s", writeMsg)
 			}
