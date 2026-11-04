@@ -2397,7 +2397,7 @@ build or launch fails, as well as on ordinary shutdown.
 | `build ...` on Linux/amd64 or Linux/arm64 | Writes a plain ELF executable by default. `--format=tar.gz` opts into a release archive with an icon, launcher, desktop-entry template, runtime README and checksum manifest. `--scheme` embeds command-line/session-bus activation, not an OS handler. It does not install the app or bundle system libraries. |
 | `install --bundle=<extracted-directory>` on Linux | Validates and installs a bundle for the current user, including a desktop entry and any embedded URL handler. No default-handler or autostart preference changes. |
 | `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
-| `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
+| `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. Its staging directory is removed on success and on build, run, decode, or output-write failure. |
 | `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. Refuses when either path already exists, a symlink included, and leaves no half pair behind. |
 | `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies; refuses a `--version` that differs from the bundle's `CFBundleShortVersionString`. |
 
