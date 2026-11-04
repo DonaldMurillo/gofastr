@@ -63,6 +63,18 @@ func TestSameLineBackgroundMirrorIsQuiet(t *testing.T) {
 	}
 }
 
+func TestLTRBackgroundOverrideDoesNotMirrorRTL(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/physicalside-ltr.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := designFixture(t, "framework/ui/x.go", string(source))
+	findings := countRule(t, diagnostics, contracts.RulePhysicalSide)
+	if len(findings) != 1 || findings[0].Line != 3 {
+		t.Fatalf("want the unmirrored background at line 3: %+v", findings)
+	}
+}
+
 func TestPhysicalSideInSetPairIsReported(t *testing.T) {
 	ds := designFixture(t, "core-ui/widget/page.go",
 		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"left\", \"{spacing.lg}\", \"text-align\", \"right\").End()\n}\n")

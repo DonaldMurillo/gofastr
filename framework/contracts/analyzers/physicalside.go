@@ -159,7 +159,7 @@ func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored bo
 // mirrorsBackground reports whether the comment-stripped lines hold a
 // `:dir(rtl)` block that sets a background position.
 func mirrorsBackground(scan []string) bool {
-	var dir dirBlock
+	dir := dirBlock{rtlOnly: true}
 	for _, line := range scan {
 		flags := dir.line(line)
 		if flags == nil {
@@ -184,6 +184,7 @@ func mirrorsBackground(scan []string) bool {
 type dirBlock struct {
 	depth   int
 	pending bool // a :dir() selector seen, its '{' not yet
+	rtlOnly bool
 }
 
 // line advances through s and reports, for each byte offset, whether it
@@ -197,6 +198,15 @@ func (d *dirBlock) line(s string) []bool {
 	}
 	in := make([]bool, len(s))
 	sel := reDirOverride.FindAllStringIndex(s, -1)
+	if d.rtlOnly {
+		filtered := sel[:0]
+		for _, match := range sel {
+			if s[match[0]:match[1]] == ":dir(rtl)" {
+				filtered = append(filtered, match)
+			}
+		}
+		sel = filtered
+	}
 	open := d.depth > 0 || d.pending
 	for i := range len(s) {
 		if len(sel) > 0 && i == sel[0][0] {
