@@ -259,15 +259,15 @@
       if (!pending) repOp = null;
       return;
     }
+    let ctl;
     if (repOp.action === 'remove' && repOp.index >= 0) {
       const rows = rep.querySelectorAll('[data-hui-repeater-index]');
       const target = rows[repOp.index] || rows[rows.length - 1];
-      const ctl = target && target.querySelector('input,select,textarea');
-      if (ctl) ctl.focus({ preventScroll: true });
-    } else {
-      const add = rep.querySelector('[data-hui-repeater-action="add"]');
-      if (add) add.focus({ preventScroll: true });
+      ctl = target && Array.from(target.querySelectorAll('input:not([type="hidden"]),select,textarea,button'))
+        .find(el => !el.matches(':disabled') && !el.closest('[hidden],[inert]') && el.getClientRects().length);
     }
+    if (!ctl) ctl = rep.querySelector('[data-hui-repeater-action="add"]');
+    if (ctl) ctl.focus({ preventScroll: true });
     const status = rep.querySelector('[data-hui-repeater-status]');
     if (status && status.textContent) say(status, status.textContent);
     repOp = null;

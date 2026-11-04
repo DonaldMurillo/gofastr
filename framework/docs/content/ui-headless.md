@@ -4,6 +4,10 @@ Repeater submit controls default to `Name+"_add"` with value `"1"` and
 `Name+"_remove"` with the zero-based row index. Explicit `AddName`,
 `AddValue`, and `RemoveName` override these no-script operation markers.
 
+After removing a repeater row, focus returns to the next row's first visible,
+enabled input, select, textarea, or button. Hidden and inert controls are
+skipped; when no row control is available, focus returns to Add.
+
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
 attributes and the hooks a runtime binds to, and nothing else: no
