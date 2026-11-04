@@ -1,5 +1,8 @@
 # Core packages
 
+WebSocket keepalive with a negative `WSConfig.PongTimeout` disables pong expiry
+and checks activity every quarter of `ReadIdleTimeout`, with a 10ms floor.
+
 This is a map of the exported `core/*` packages that have no dedicated
 reference page. Each entry names what the package does, whether you reach
 for it directly or through the framework, and one code anchor to start

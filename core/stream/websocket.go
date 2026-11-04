@@ -171,7 +171,8 @@ type WSConfig struct {
 
 	// PongTimeout bounds how long after a Ping we wait for the matching
 	// Pong. If exceeded, the connection is closed. 0 means default 10s.
-	// Set negative to disable the pong timeout check.
+	// Set negative to disable the pong timeout check; keepalive then checks
+	// activity every quarter of ReadIdleTimeout (at least 10ms).
 	PongTimeout time.Duration
 
 	// MaxControlFramesPerSecond caps the Ping and Pong frames a client
@@ -862,7 +863,11 @@ func (c *WebSocketConn) keepalive() {
 		pongTimeout = 10 * time.Second
 	}
 	// Check at a granularity finer than the smaller of the two thresholds.
-	tick := max(min(pongTimeout/4, idle/4), 10*time.Millisecond)
+	tick := idle / 4
+	if pongTimeout > 0 {
+		tick = min(tick, pongTimeout/4)
+	}
+	tick = max(tick, 10*time.Millisecond)
 	t := time.NewTicker(tick)
 	defer t.Stop()
 
