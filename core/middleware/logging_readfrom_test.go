@@ -161,3 +161,45 @@ func TestLoggingReadFromLazyCommitWire(t *testing.T) {
 		})
 	}
 }
+
+func TestLoggingReadFromMiddlewareChainWire(t *testing.T) {
+	for _, layer := range []struct {
+		name string
+		wrap Middleware
+	}{
+		{"metrics", MetricsMiddleware(NewMetrics())},
+		{"tracing", Tracing()},
+	} {
+		for _, test := range []struct {
+			name   string
+			source func() io.Reader
+			status int
+		}{
+			{"empty", func() io.Reader { return fileLike("") }, http.StatusNotFound},
+			{"failure", func() io.Reader { return firstReadFailure{} }, http.StatusServiceUnavailable},
+			{"body", func() io.Reader { return fileLike("body") }, http.StatusOK},
+		} {
+			t.Run(layer.name+"/"+test.name, func(t *testing.T) {
+				var log bytes.Buffer
+				server := httptest.NewServer(Chain(layer.wrap, LoggingWithWriter(&log))(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+					if _, err := io.Copy(writer, test.source()); err != nil {
+						http.Error(writer, "unavailable", http.StatusServiceUnavailable)
+						return
+					}
+					writer.WriteHeader(http.StatusNotFound)
+				})))
+				defer server.Close()
+				response, err := server.Client().Get(server.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, _ = io.Copy(io.Discard, response.Body)
+				_ = response.Body.Close()
+				server.Close()
+				if response.StatusCode != test.status || !strings.Contains(log.String(), fmt.Sprintf(`"status":%d`, test.status)) {
+					t.Fatalf("wire=%d log=%s; want %d", response.StatusCode, log.String(), test.status)
+				}
+			})
+		}
+	}
+}
