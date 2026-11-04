@@ -38,5 +38,9 @@
   {"js": "(other).serverAction('save')", "want": false, "why": "a different parenthesized receiver"},
   {"js": "(G + other).serverAction('save')", "want": false, "why": "an expression is not the G receiver"},
   {"js": "'(G).serverAction(\"save\")'", "want": false, "why": "parenthesized receiver text is not code"},
-  {"js": "(G).serverAction", "want": false, "why": "a parenthesized receiver reference is not a call"}
+  {"js": "(G).serverAction", "want": false, "why": "a parenthesized receiver reference is not a call"},
+  {"js": "if (ok) (G).serverAction('save')", "want": true, "why": "a receiver after a condition is not governed by regex disambiguation"},
+  {"js": "while (ok) ((G))?.serverAction?.('save')", "want": true, "why": "a loop body may begin with a parenthesized receiver"},
+  {"js": "if (ok) '(G).serverAction(\"save\")'", "want": false, "why": "a quoted loop or condition body is still text"},
+  {"js": "factory(G).serverAction('save')", "want": false, "why": "a function argument is not a parenthesized receiver"}
 ]

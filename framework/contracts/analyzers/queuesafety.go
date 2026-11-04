@@ -66,7 +66,7 @@ func ruleAbsoluteAttempts(p *contracts.Pass, rel string, file *ast.File) []contr
 			}
 			col := stmt.set[lo:hi]
 			rhs := setValue(stmt.set[m[1]:])
-			if !reHostValue.MatchString(rhs) || selfReference(rhs, col) {
+			if (!reHostValue.MatchString(rhs) && !(stmt.formatted && formattedHostValue(rhs))) || selfReference(rhs, col) {
 				continue
 			}
 			d := diag(p, contracts.RuleAbsoluteAttempts, rel,
@@ -86,12 +86,20 @@ var (
 	// $1::int are judged by what they compute, not by their first
 	// token.
 	reCounterAssign = regexp.MustCompile(`(?i)(?:"(attempts|retries|tries|failures)"|\b(attempts|retries|tries|failures)\b)\s*=`)
-	// reHostValue matches a host value: a positional placeholder ($n,
-	// the sqlite ?) or a Sprintf verb, including the argument-index and
-	// width spellings this repo's own SQL uses (%[2]s, %02d): \d+
-	// consumes the whole number, so $12 needs no lookahead of its own.
-	reHostValue = regexp.MustCompile(`\$\d+|\?|%(?:\[\d+\])?[#0-9.]*[vTtbcdoOxXUeEfFgGspq]`)
+	// reHostValue matches positional SQL placeholders. Formatting verbs
+	// count only in a format argument; %% escapes a literal percent sign.
+	reHostValue   = regexp.MustCompile(`\$\d+|\?`)
+	reFormatValue = regexp.MustCompile(`%%|%(?:\[\d+\])?[#0-9.]*[vTtbcdoOxXUeEfFgGspq]`)
 )
+
+func formattedHostValue(value string) bool {
+	for _, verb := range reFormatValue.FindAllString(value, -1) {
+		if verb != "%%" {
+			return true
+		}
+	}
+	return false
+}
 
 // setValue returns one SET assignment's value expression: the text up
 // to the next comma outside parentheses, or the end of the clause.
@@ -269,16 +277,17 @@ var (
 // literal, with its clause slices and the geometry needed to place a
 // finding on the right source line.
 type sqlStmt struct {
-	verb    string // "update" / "delete", lowercased
-	verbOff int    // offset of the verb within text
-	text    string // the statement, from the unquoted literal value
-	set     string // the SET clause ("" when absent)
-	setOff  int    // offset of the SET clause within text
-	where   string // the WHERE clause ("" when absent)
-	upsert  bool   // the UPDATE is an INSERT's ON CONFLICT … DO UPDATE arm
-	valOff  int    // offset of text within the literal's value
-	lit     *ast.BasicLit
-	raw     bool // backtick literal: value bytes are source bytes
+	verb      string // "update" / "delete", lowercased
+	verbOff   int    // offset of the verb within text
+	text      string // the statement, from the unquoted literal value
+	set       string // the SET clause ("" when absent)
+	setOff    int    // offset of the SET clause within text
+	where     string // the WHERE clause ("" when absent)
+	upsert    bool   // the UPDATE is an INSERT's ON CONFLICT … DO UPDATE arm
+	valOff    int    // offset of text within the literal's value
+	lit       *ast.BasicLit
+	raw       bool // backtick literal: value bytes are source bytes
+	formatted bool
 }
 
 // at converts an offset within the statement text back to a token.Pos.
@@ -311,6 +320,72 @@ var (
 // chunks of which at most one matches a verb.
 func sqlStatements(file *ast.File) []sqlStmt {
 	var out []sqlStmt
+	formatted := map[*ast.BasicLit]bool{}
+	aliases := importAliases(file)
+	// A format may sit in a constant or variable that Sprintf names
+	// (fmt.Sprintf(query, n)). The pass is syntax-only, so a name maps to
+	// every string literal any declaration of that name in the file holds;
+	// a shadowed name over-marks, which can only add findings.
+	bound := map[string][]ast.Expr{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch decl := node.(type) {
+		case *ast.GenDecl:
+			// A const spec with no values repeats the previous spec's
+			// expressions (const ( a = "…%d"; b )), so carry them down.
+			var last []ast.Expr
+			for _, spec := range decl.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				values := value.Values
+				if decl.Tok == token.CONST && len(values) == 0 && value.Type == nil {
+					values = last
+				}
+				last = values
+				for i, name := range value.Names {
+					if i < len(values) {
+						bound[name.Name] = append(bound[name.Name], values[i])
+					}
+				}
+			}
+		case *ast.AssignStmt:
+			if len(decl.Lhs) == len(decl.Rhs) {
+				for i, left := range decl.Lhs {
+					if name, ok := left.(*ast.Ident); ok {
+						bound[name.Name] = append(bound[name.Name], decl.Rhs[i])
+					}
+				}
+			}
+		}
+		return true
+	})
+	var markFormat func(ast.Expr, map[string]bool)
+	markFormat = func(expr ast.Expr, seen map[string]bool) {
+		ast.Inspect(expr, func(node ast.Node) bool {
+			switch node := node.(type) {
+			case *ast.BasicLit:
+				if node.Kind == token.STRING {
+					formatted[node] = true
+				}
+			case *ast.Ident:
+				if !seen[node.Name] {
+					seen[node.Name] = true
+					for _, value := range bound[node.Name] {
+						markFormat(value, seen)
+					}
+				}
+			}
+			return true
+		})
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := qualifiedCall(node, aliases, "fmt", "Sprintf")
+		if ok && len(call.Args) > 0 {
+			markFormat(call.Args[0], map[string]bool{})
+		}
+		return true
+	})
 	ast.Inspect(file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.BasicLit)
 		if !ok || lit.Kind != token.STRING {
@@ -332,12 +407,13 @@ func sqlStatements(file *ast.File) []sqlStmt {
 				continue
 			}
 			stmt := sqlStmt{
-				verb:    strings.ToLower(chunk[m[2]:m[3]]),
-				verbOff: m[2],
-				text:    chunk,
-				valOff:  valOff,
-				lit:     lit,
-				raw:     raw,
+				verb:      strings.ToLower(chunk[m[2]:m[3]]),
+				verbOff:   m[2],
+				text:      chunk,
+				valOff:    valOff,
+				lit:       lit,
+				raw:       raw,
+				formatted: formatted[lit],
 			}
 			stmt.upsert = stmt.verb == "update" && reUpsertArm.MatchString(chunk[:m[2]])
 			stmt.set, stmt.setOff = clause(chunk, reSQLSet, reSQLWhre)

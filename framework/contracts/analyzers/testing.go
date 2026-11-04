@@ -301,9 +301,10 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 			var messages []string
 			for _, argument := range args.Args {
 				ast.Inspect(argument, func(node ast.Node) bool {
-					if literal, ok := node.(*ast.BasicLit); ok && literal.Kind == token.STRING {
-						if message, err := strconv.Unquote(literal.Value); err == nil {
+					if expression, ok := node.(ast.Expr); ok {
+						if message, ok := stringLit(expression); ok {
 							messages = append(messages, message)
+							return false
 						}
 					}
 					return true

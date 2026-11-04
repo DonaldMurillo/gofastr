@@ -1,6 +1,7 @@
 package embedcheck
 
 import (
+	"errors"
 	"fmt"
 	"go/token"
 
@@ -43,15 +44,11 @@ func CheckAll(patterns ...string) ([]Finding, []Unresolved, *token.FileSet, erro
 	for _, pattern := range patterns {
 		loaded, err := packages.Load(cfg, pattern)
 		if err != nil {
-			if loadErr == nil {
-				loadErr = err
-			}
+			loadErr = errors.Join(loadErr, err)
 			continue
 		}
 		if len(loaded) == 0 {
-			if loadErr == nil {
-				loadErr = fmt.Errorf("check-embed: pattern %q matched no packages", pattern)
-			}
+			loadErr = errors.Join(loadErr, fmt.Errorf("check-embed: pattern %q matched no packages", pattern))
 			continue
 		}
 		for _, pkg := range loaded {
@@ -63,7 +60,7 @@ func CheckAll(patterns ...string) ([]Finding, []Unresolved, *token.FileSet, erro
 	}
 	findings, notes, err := checkLoaded(pkgs)
 	if len(findings) == 0 && loadErr != nil {
-		err = loadErr
+		err = errors.Join(err, loadErr)
 	}
 	return findings, notes, fset, err
 }

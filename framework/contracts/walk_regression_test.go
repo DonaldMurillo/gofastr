@@ -40,6 +40,33 @@ func TestRunRejectsUnreadableClientSource(t *testing.T) {
 			}
 		})
 	}
+	t.Run("unreadable-directory", func(t *testing.T) {
+		root := t.TempDir()
+		writeTemp(t, root, "source.go", "package app\n")
+		writeTemp(t, root, "private/hidden.go", "package private\n")
+		restrictPassFixture(t, filepath.Join(root, "private"), 0)
+		pass, err := NewPass(root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report, err := Run(pass, RunOptions{Analyzers: []string{name}}); err == nil || !strings.Contains(err.Error(), "private") {
+			t.Fatalf("unreadable subtree reported clean: report=%+v error=%v", report, err)
+		}
+	})
+	t.Run("preparsed-source", func(t *testing.T) {
+		root := t.TempDir()
+		writeTemp(t, root, "broken.go", "package app\nfunc broken(\n")
+		pass, err := NewPass(root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := pass.AST("broken.go"); ok {
+			t.Fatal("malformed source parsed successfully")
+		}
+		if _, err := Run(pass, RunOptions{Analyzers: []string{name}}); err == nil || !strings.Contains(err.Error(), "source inspection incomplete") {
+			t.Fatalf("parser failure mislabeled: %v", err)
+		}
+	})
 }
 
 func TestPassFollowsSymlinkRoot(t *testing.T) {

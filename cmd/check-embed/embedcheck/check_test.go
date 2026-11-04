@@ -23,6 +23,16 @@ func TestCheckAllFindingsPrecedeUnmatchedPatterns(t *testing.T) {
 	}
 }
 
+func TestCheckAllPreservesPackageAndPatternErrors(t *testing.T) {
+	t.Chdir(testdataDir(t))
+	for _, patterns := range [][]string{{"./src/loaderror", "./empty/..."}, {"./empty/...", "./src/loaderror"}} {
+		_, _, _, err := CheckAll(patterns...)
+		if err == nil || !strings.Contains(err.Error(), "doesNotExist") || !strings.Contains(err.Error(), "matched no packages") {
+			t.Errorf("patterns=%v: missing package or pattern failure: %v", patterns, err)
+		}
+	}
+}
+
 // checkFixture applies Check's analysis and error precedence (checkLoaded) to
 // one fixture from the shared load.
 func checkFixture(t *testing.T, pkgName string) ([]Finding, error) {

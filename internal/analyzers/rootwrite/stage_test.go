@@ -1,9 +1,11 @@
-package i
+package rootwrite_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	fixture "github.com/DonaldMurillo/gofastr/internal/analyzers/rootwrite/testdata/src/i"
 )
 
 func TestStageViaRootConfinesToBase(t *testing.T) {
@@ -11,7 +13,7 @@ func TestStageViaRootConfinesToBase(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(base, "stage", "user"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	file, err := stageViaRoot(base, "user")
+	file, err := fixture.StageViaRoot(base, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +26,7 @@ func TestStageViaRootConfinesToBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"escape", traversal} {
-		file, err := stageViaRoot(base, name)
+		file, err := fixture.StageViaRoot(base, name)
 		if err == nil {
 			file.Close()
 			t.Errorf("accepted outside stage %q", name)

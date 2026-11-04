@@ -926,3 +926,43 @@ func TestSSEStreamLimitIsConfigurable(t *testing.T) {
 		}
 	}
 }
+
+func TestLoweredSSELimitDoesNotEvictRefusedReplacement(t *testing.T) {
+	server := NewServer()
+	server.SetSSESeatCap(1)
+	server.SetSSESeatOverflow(SeatOverflowEvictOldest)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handler := server.ServeSSE("/sse")
+	original := startStream(t, handler, ctx)
+	waitForSubscribers(t, server, 1)
+	other, ok := server.addSSESubscriber(ctx, "other-caller")
+	if !ok {
+		t.Fatal("second caller refused")
+	}
+	defer server.removeSSESubscriber(other)
+	server.SetSSEStreamLimit(1)
+	replacement := startStream(t, handler, ctx)
+	select {
+	case <-replacement.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("replacement was not refused")
+	}
+	if replacement.rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("replacement status=%d, want 429", replacement.rec.Code)
+	}
+	if count := sseRegistryCount(server); count != 2 {
+		t.Errorf("refused replacement changed occupancy to %d, want 2", count)
+	}
+	select {
+	case <-original.done:
+		t.Error("refused replacement evicted the original stream")
+	default:
+	}
+	cancel()
+	select {
+	case <-original.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("original stream did not stop")
+	}
+}

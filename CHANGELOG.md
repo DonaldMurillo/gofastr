@@ -727,7 +727,8 @@ few lines, and link the PR or the docs page for the rest.
   bucket with a hashed key.** The limiter hashes an unstorable key to
   `sha256:<hex>` and passed any other key through, so a caller could
   send that spelling and spend another caller's budget. Keys with the
-  prefix are hashed too.
+  prefix are hashed too, so after the upgrade such a key starts a fresh
+  budget, and a block it held under the old spelling no longer applies.
 - **`pluginhost.NewAssetServer` keeps disk-backed assets inside their
   directory.** An `os.DirFS` follows a symlink at an asset's path, so
   a link pointing outside the plugin's directory was served at the

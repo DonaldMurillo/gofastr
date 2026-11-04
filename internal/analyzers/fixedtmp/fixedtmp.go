@@ -461,7 +461,8 @@ func hasEntropy(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr
 				for _, field := range decl.Type.Params.List {
 					for _, parameter := range field.Names {
 						if argument < len(n.Args) {
-							helperHistory[pass.TypesInfo.ObjectOf(parameter)] = []ast.Expr{n.Args[argument]}
+							object := pass.TypesInfo.ObjectOf(parameter)
+							helperHistory[object] = append(helperHistory[object], n.Args[argument])
 						}
 						argument++
 					}

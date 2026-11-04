@@ -1,11 +1,15 @@
-package a
+package iounderlock_test
 
 import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"sync"
 	"testing"
+	"time"
+
+	fixture "github.com/DonaldMurillo/gofastr/internal/analyzers/iounderlock/testdata/src/deferred"
 )
 
 type asyncContextKey struct{}
@@ -42,22 +46,28 @@ func (connection lockProbeConnection) ExecContext(ctx context.Context, _ string,
 }
 
 func TestSweepDeferredIOAfterUnlock(t *testing.T) {
-	var store viaCallback
+	var mutex *sync.Mutex
 	locked := make(chan bool, 1)
-	store.db = sql.OpenDB(lockProbeConnector{inspect: func(ctx context.Context) {
+	database := sql.OpenDB(lockProbeConnector{inspect: func(ctx context.Context) {
 		if ctx.Value(asyncContextKey{}) != nil {
 			return
 		}
-		if store.mu.TryLock() {
-			store.mu.Unlock()
+		if mutex.TryLock() {
+			mutex.Unlock()
 			locked <- false
 		} else {
 			locked <- true
 		}
 	}})
-	defer store.db.Close()
-	store.sweepAsync(context.WithValue(context.Background(), asyncContextKey{}, true))
-	if <-locked {
-		t.Fatal("deferred database I/O ran while the throttle mutex was held")
+	defer database.Close()
+	sweep, mutex := fixture.NewDeferredIOFixture(database)
+	sweep(context.WithValue(context.Background(), asyncContextKey{}, true))
+	select {
+	case held := <-locked:
+		if held {
+			t.Fatal("deferred database I/O ran while the throttle mutex was held")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("deferred database I/O never ran")
 	}
 }

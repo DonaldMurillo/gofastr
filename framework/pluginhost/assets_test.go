@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -64,6 +65,61 @@ func TestAssetServerConfinesDiskSymlinks(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAssetServerPreservesRootFS(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "assets")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "main.js"), []byte("rooted asset"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { root.Close() })
+	if err := os.Rename(directory, directory+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	routes := router.New()
+	NewAssetServer(root.FS(), "/assets", []AssetSpec{{Name: "main.js"}}).Register(routes)
+	recorder := httptest.NewRecorder()
+	routes.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/assets/main.js", nil))
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "rooted asset" {
+		t.Fatalf("rooted asset: status = %d, body = %q", recorder.Code, recorder.Body.String())
+	}
+}
+
+type filteredAssetFS struct{ fs.FS }
+
+func (filtered filteredAssetFS) Open(name string) (fs.File, error) {
+	if strings.HasSuffix(name, "secret.js") {
+		return nil, fs.ErrPermission
+	}
+	return filtered.FS.Open(name)
+}
+
+func TestAssetServerPreservesFilesystemFilters(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "secret.js"), []byte("filtered secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	filtered := filteredAssetFS{os.DirFS(directory)}
+	subdirectory, err := fs.Sub(filteredAssetFS{os.DirFS(filepath.Dir(directory))}, filepath.Base(directory))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fsys := range []fs.FS{filtered, subdirectory} {
+		routes := router.New()
+		NewAssetServer(fsys, "/assets", []AssetSpec{{Name: "secret.js"}}).Register(routes)
+		recorder := httptest.NewRecorder()
+		routes.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/assets/secret.js", nil))
+		if recorder.Code != http.StatusNotFound || strings.Contains(recorder.Body.String(), "filtered secret") {
+			t.Errorf("%T: status = %d, body = %q", fsys, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 
@@ -521,5 +577,22 @@ func TestNilAssetFSWithoutSpecsServes(t *testing.T) {
 	}
 	if got := resp.Header.Get("Content-Type"); got != "text/javascript; charset=utf-8" {
 		t.Errorf("Content-Type=%q", got)
+	}
+}
+
+func TestPlainDiskAssetFSRejectsOddValues(t *testing.T) {
+	type subFS struct{ other int }
+	for name, v := range map[string]any{
+		"nil":            nil,
+		"nil pointer":    (*subFS)(nil),
+		"lookalike type": &subFS{},
+		"map fs":         fstest.MapFS{},
+	} {
+		if plainDiskAssetFS(reflect.ValueOf(v)) {
+			t.Errorf("%s: treated as a plain disk filesystem", name)
+		}
+	}
+	if !plainDiskAssetFS(reflect.ValueOf(os.DirFS(t.TempDir()))) {
+		t.Error("os.DirFS not recognized")
 	}
 }

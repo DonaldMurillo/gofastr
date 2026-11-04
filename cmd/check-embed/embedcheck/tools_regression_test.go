@@ -11,11 +11,38 @@ func TestStoredComponentVariablesRemainBootVisible(t *testing.T) {
 	if len(findings) != 0 || len(notes) != 3 {
 		t.Fatalf("findings=%v notes=%+v; want three computed-action notes", findings, notes)
 	}
+	expected := map[string]bool{"local-child": false, "stored-holder": false, "absent-local": true}
 	for _, note := range notes {
-		wantBlocking := note.Surface == "absent-local"
+		wantBlocking, known := expected[note.Surface]
+		if !known {
+			t.Errorf("unknown or duplicate surface %q", note.Surface)
+			continue
+		}
+		delete(expected, note.Surface)
 		if note.Blocking != wantBlocking {
 			t.Errorf("surface=%s blocking=%v, want %v: %s", note.Surface, note.Blocking, wantBlocking, note.Reason)
 		}
+	}
+	if len(expected) != 0 {
+		t.Errorf("missing surfaces: %v", expected)
+	}
+}
+
+func TestReassignedComponentVariablesDoNotProveBootVisibility(t *testing.T) {
+	findings, notes := loadAll(t, "bootreassigned")
+	expected := map[string]bool{"cleared-before": true, "cleared-after": false, "shadowed": false, "ranged": true}
+	if len(findings) != 0 || len(notes) != len(expected) {
+		t.Fatalf("findings=%v notes=%+v", findings, notes)
+	}
+	for _, note := range notes {
+		blocking, known := expected[note.Surface]
+		if !known || note.Blocking != blocking {
+			t.Errorf("unexpected note: %+v", note)
+		}
+		delete(expected, note.Surface)
+	}
+	if len(expected) != 0 {
+		t.Errorf("missing surfaces: %v", expected)
 	}
 }
 

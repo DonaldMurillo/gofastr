@@ -128,9 +128,12 @@ func (p *Pass) discover() error {
 			if path == p.Root {
 				return fmt.Errorf("read root %q: %w", p.Root, err)
 			}
-			// An unreadable subtree is not a reason to abandon the whole
-			// analysis. Skip it and keep going.
+			// Keep readable siblings inspectable, but record skipped subtrees
+			// so Run cannot certify an incomplete source tree.
 			if d != nil && d.IsDir() {
+				if rel, relErr := filepath.Rel(p.Root, path); relErr == nil {
+					p.unparsed[filepath.ToSlash(rel)] = err.Error()
+				}
 				return fs.SkipDir
 			}
 			if strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".css") || IsScriptPath(path) {
@@ -392,7 +395,7 @@ func (p *Pass) discoveryError() error {
 		failures = append(failures, fmt.Sprintf("%q: %q", path, reason))
 	}
 	sort.Strings(failures)
-	return fmt.Errorf("contracts: source discovery incomplete: %s", strings.Join(failures, "; "))
+	return fmt.Errorf("contracts: source inspection incomplete: %s", strings.Join(failures, "; "))
 }
 
 // Position resolves an AST position into the pass's line/column space.

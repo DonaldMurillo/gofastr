@@ -276,6 +276,13 @@ func runnableLiterals(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.
 		case *ast.ParenExpr:
 			return canRun(target, busy)
 		case *ast.AssignStmt:
+			// A store into the callback's holder (callbacks[0] = nil,
+			// holder.parse = nil) writes over it; it never runs it.
+			for _, left := range target.Lhs {
+				if left == expression {
+					return false
+				}
+			}
 			if len(target.Lhs) != len(target.Rhs) {
 				return false
 			}
@@ -290,7 +297,25 @@ func runnableLiterals(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.
 					bindings = append(bindings, target.Names[index])
 				}
 			}
-		case *ast.CallExpr, *ast.ReturnStmt, *ast.SendStmt, *ast.KeyValueExpr, *ast.CompositeLit:
+		case *ast.RangeStmt:
+			// Ranging over a holder hands each element to the value
+			// variable; the callback runs if that variable does.
+			if target.X != expression || target.Value == nil {
+				return false
+			}
+			bindings = append(bindings, target.Value)
+		case *ast.KeyValueExpr:
+			container, ok := parents[target].(ast.Expr)
+			return ok && canRun(container, busy)
+		case *ast.CompositeLit:
+			return canRun(target, busy)
+		case *ast.UnaryExpr:
+			return canRun(target, busy)
+		case *ast.SelectorExpr:
+			return canRun(target, busy)
+		case *ast.IndexExpr:
+			return canRun(target, busy)
+		case *ast.CallExpr, *ast.ReturnStmt, *ast.SendStmt:
 		default:
 			return false
 		}
@@ -332,6 +357,21 @@ func classify(pass *analysis.Pass, ref ast.Expr, parents map[ast.Node]ast.Node, 
 			cur = x
 			continue
 		case *ast.CallExpr:
+			if astx.QualifiedCallee(pass, ast.Unparen(x.Fun)) == "strings.Cut" {
+				if _, discarded := parents[x].(*ast.ExprStmt); discarded {
+					return
+				}
+				if assignment, ok := parents[x].(*ast.AssignStmt); ok {
+					allBlank := true
+					for _, left := range assignment.Lhs {
+						identifier, ok := ast.Unparen(left).(*ast.Ident)
+						allBlank = allBlank && ok && identifier.Name == "_"
+					}
+					if allBlank {
+						return
+					}
+				}
+			}
 			if isTrim(pass, x) {
 				cur = x
 				continue

@@ -77,3 +77,34 @@ func separateInvocations(gate func() error) *RPCError {
 	err := identity(errors.New("safe"))
 	return &RPCError{Code: -32602, Message: err.Error()}
 }
+
+func malformedFormat(output http.ResponseWriter, err error) {
+	http.Error(output, fmt.Sprintf("%[0]v %v", err), 500)   // want `internal error`
+	http.Error(output, fmt.Sprintf("%[bad]s %s", err), 500) // want `internal error`
+	http.Error(output, fmt.Sprintf("%[bad %q", err), 500)   // want `internal error`
+}
+
+func variadicCallback(gate func() error) *RPCError {
+	identity := func(errs ...error) error { return errors.Join(errs...) }
+	err := identity(errors.New("safe"), gate())
+	return &RPCError{Code: -32602, Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func indexedVariadicCallback(gate func() error) *RPCError {
+	identity := func(errs ...error) error { return errs[1] }
+	err := identity(errors.New("safe"), gate())
+	return &RPCError{Code: -32602, Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func spreadVariadicCallback(gate func() error) *RPCError {
+	identity := func(errs ...error) error { return errors.Join(errs...) }
+	err := identity([]error{errors.New("safe"), gate()}...)
+	return &RPCError{Code: -32602, Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func safeVariadicCallback(gate func() error) *RPCError {
+	identity := func(errs ...error) error { return errors.Join(errs...) }
+	_ = identity(gate())
+	err := identity(errors.New("safe"), errors.New("also safe"))
+	return &RPCError{Code: -32602, Message: err.Error()}
+}

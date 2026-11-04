@@ -330,7 +330,7 @@ func boundLocal(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.Node]as
 }
 
 func headerValueWrapper(pass *analysis.Pass, call *ast.CallExpr) bool {
-	switch astx.PkgFuncName(pass, ast.Unparen(call.Fun)) {
+	switch astx.QualifiedCallee(pass, ast.Unparen(call.Fun)) {
 	case "strings.TrimSpace", "strings.Trim", "strings.TrimLeft", "strings.TrimRight",
 		"strings.TrimPrefix", "strings.TrimSuffix", "strings.ToLower", "strings.ToUpper", "strings.Clone":
 		return true

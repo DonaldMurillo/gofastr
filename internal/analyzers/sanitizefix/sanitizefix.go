@@ -118,7 +118,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 // recombines reports whether call is a removal whose match can be more
 // than one character.
-func recombines(pass *analysis.Pass, call *ast.CallExpr, patterns map[types.Object]string) bool {
+func recombines(pass *analysis.Pass, call *ast.CallExpr, patterns *regexpBindings) bool {
 	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok {
 		return false
@@ -205,15 +205,21 @@ func constString(pass *analysis.Pass, e ast.Expr) (string, bool) {
 // (const) / regexp.Compile — package-level and function-local alike —
 // to its pattern, so a removal through a locally compiled regexp is
 // judged by its pattern, not assumed multi-character.
-func regexpVars(pass *analysis.Pass) map[types.Object]string {
-	out := map[types.Object]string{}
+type regexpBindings struct {
+	initial map[types.Object]string
+	writes  map[types.Object][]ast.Node
+	parents map[ast.Node]ast.Node
+}
+
+func regexpVars(pass *analysis.Pass) *regexpBindings {
+	out := &regexpBindings{initial: map[types.Object]string{}, writes: map[types.Object][]ast.Node{}, parents: map[ast.Node]ast.Node{}}
 	bind := func(id *ast.Ident, rhs ast.Expr) {
 		obj := pass.TypesInfo.Defs[id]
 		if obj == nil || !isRegexp(obj.Type()) {
 			return
 		}
 		if pat, ok := compiledPattern(pass, rhs); ok {
-			out[obj] = pat
+			out.initial[obj] = pat
 		}
 	}
 	for _, f := range pass.Files {
@@ -255,14 +261,23 @@ func regexpVars(pass *analysis.Pass) map[types.Object]string {
 		})
 	}
 	for _, file := range pass.Files {
+		for node, parent := range dominance.Parents(file) {
+			out.parents[node] = parent
+		}
 		ast.Inspect(file, func(node ast.Node) bool {
-			assignment, ok := node.(*ast.AssignStmt)
-			if !ok {
-				return true
+			var targets []ast.Expr
+			switch assignment := node.(type) {
+			case *ast.AssignStmt:
+				targets = assignment.Lhs
+			case *ast.RangeStmt:
+				if assignment.Tok == token.ASSIGN {
+					targets = []ast.Expr{assignment.Key, assignment.Value}
+				}
 			}
-			for _, left := range assignment.Lhs {
+			for _, left := range targets {
 				if identifier, ok := ast.Unparen(left).(*ast.Ident); ok && pass.TypesInfo.Defs[identifier] == nil {
-					delete(out, pass.TypesInfo.ObjectOf(identifier))
+					object := pass.TypesInfo.ObjectOf(identifier)
+					out.writes[object] = append(out.writes[object], node)
 				}
 			}
 			return true
@@ -300,12 +315,26 @@ func compiledPattern(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	return constString(pass, call.Args[0])
 }
 
-func patternOf(pass *analysis.Pass, x ast.Expr, patterns map[types.Object]string) (string, bool) {
+func patternOf(pass *analysis.Pass, x ast.Expr, patterns *regexpBindings) (string, bool) {
 	if pat, ok := compiledPattern(pass, x); ok {
 		return pat, true
 	}
 	if id, ok := ast.Unparen(x).(*ast.Ident); ok {
-		pat, ok := patterns[pass.TypesInfo.Uses[id]]
+		object := pass.TypesInfo.Uses[id]
+		for _, write := range patterns.writes[object] {
+			if write.Pos() < x.Pos() || object.Parent() == pass.Pkg.Scope() {
+				return "", false
+			}
+			for parent := patterns.parents[x]; parent != nil; parent = patterns.parents[parent] {
+				switch parent.(type) {
+				case *ast.ForStmt, *ast.RangeStmt, *ast.FuncLit:
+					if write.Pos() >= parent.Pos() && write.End() <= parent.End() {
+						return "", false
+					}
+				}
+			}
+		}
+		pat, ok := patterns.initial[object]
 		return pat, ok
 	}
 	return "", false

@@ -38,7 +38,7 @@ func deferredAlias(request *http.Request) {
 	}()
 }
 
-func invokedParser(request *http.Request) bool { // want invokedParser:`parsesAuth`
+func invokedParser(request *http.Request) bool {
 	auth := request.Header.Get("Authorization")
 	parse := func() {
 		header := auth
@@ -46,7 +46,7 @@ func invokedParser(request *http.Request) bool { // want invokedParser:`parsesAu
 	}
 	alias := parse
 	alias()
-	return auth != ""
+	return auth != "" // want `authpresence: an Authorization`
 }
 
 func discardedNested(request *http.Request) bool {
@@ -57,8 +57,77 @@ func discardedNested(request *http.Request) bool {
 	return auth != "" // want `authpresence: an Authorization`
 }
 
-func immediateParser(request *http.Request) bool { // want immediateParser:`parsesAuth`
+func immediateParser(request *http.Request) bool {
 	auth := request.Header.Get("Authorization")
 	func() { strings.Cut(auth, " ") }()
+	return auth != "" // want `authpresence: an Authorization`
+}
+
+func usedParsedScheme(request *http.Request) bool { // want usedParsedScheme:`parsesAuth`
+	auth := request.Header.Get("Authorization")
+	parse := func() bool {
+		scheme, _, ok := strings.Cut(auth, " ")
+		return ok && strings.EqualFold(scheme, "bearer")
+	}
+	return auth != "" && parse()
+}
+
+func deadComposite(request *http.Request) bool {
+	auth := request.Header.Get("Authorization")
+	holder := struct{ parse func() bool }{
+		parse: func() bool { return strings.HasPrefix(auth, "Bearer ") },
+	}
+	_ = holder
+	return auth != "" // want `authpresence: an Authorization`
+}
+
+func deadSliceAlias(request *http.Request) bool {
+	auth := request.Header.Get("Authorization")
+	callbacks := []func() bool{func() bool { return strings.HasPrefix(auth, "Bearer ") }}
+	alias := callbacks
+	_ = alias
+	return auth != "" // want `authpresence: an Authorization`
+}
+
+func invokedComposite(request *http.Request) bool { // want invokedComposite:`parsesAuth`
+	auth := request.Header.Get("Authorization")
+	holder := &struct{ parse func() bool }{
+		parse: func() bool { return strings.HasPrefix(auth, "Bearer ") },
+	}
+	return auth != "" && holder.parse()
+}
+
+func returnedComposite(request *http.Request) any { // want returnedComposite:`parsesAuth`
+	auth := request.Header.Get("Authorization")
+	holder := struct{ parse func() bool }{
+		parse: func() bool { return strings.HasPrefix(auth, "Bearer ") },
+	}
+	return holder
+}
+
+func clearedSliceCallback(request *http.Request) bool {
+	auth := request.Header.Get("Authorization")
+	callbacks := []func() bool{func() bool { return strings.HasPrefix(auth, "Bearer ") }}
+	callbacks[0] = nil
+	return auth != "" // want `authpresence: an Authorization`
+}
+
+func clearedFieldCallback(request *http.Request) bool {
+	auth := request.Header.Get("Authorization")
+	holder := &struct{ parse func() bool }{
+		parse: func() bool { return strings.HasPrefix(auth, "Bearer ") },
+	}
+	holder.parse = nil
+	return auth != "" // want `authpresence: an Authorization`
+}
+
+func rangedCallbacks(request *http.Request) bool { // want rangedCallbacks:`parsesAuth`
+	auth := request.Header.Get("Authorization")
+	callbacks := []func() bool{func() bool { return strings.HasPrefix(auth, "Bearer ") }}
+	for _, check := range callbacks {
+		if !check() {
+			return false
+		}
+	}
 	return auth != ""
 }

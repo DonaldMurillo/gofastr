@@ -175,6 +175,17 @@ func (f *fnOrigins) of(e ast.Expr, pos token.Pos) origin {
 		return f.of(best.rhs, best.pos)
 	case *ast.CallExpr:
 		return f.callOrigin(x, pos)
+	case *ast.IndexExpr:
+		return f.of(x.X, pos)
+	case *ast.CompositeLit:
+		var combined origin
+		for _, element := range x.Elts {
+			if entry, ok := element.(*ast.KeyValueExpr); ok {
+				element = entry.Value
+			}
+			combined |= f.of(element, pos)
+		}
+		return combined
 	}
 	return 0
 }
@@ -303,9 +314,19 @@ func (f *fnOrigins) litReturns(lit *ast.FuncLit, args []ast.Expr, pos token.Pos)
 	argument := 0
 	if lit.Type.Params != nil {
 		for _, field := range lit.Type.Params.List {
+			if len(field.Names) == 0 {
+				argument++
+				continue
+			}
 			for _, name := range field.Names {
 				if argument < len(args) {
-					invocation.args[f.pass.TypesInfo.ObjectOf(name)] = f.of(args[argument], pos)
+					boundOrigin := f.of(args[argument], pos)
+					if _, variadic := field.Type.(*ast.Ellipsis); variadic {
+						for _, actual := range args[argument+1:] {
+							boundOrigin |= f.of(actual, pos)
+						}
+					}
+					invocation.args[f.pass.TypesInfo.ObjectOf(name)] = boundOrigin
 				}
 				argument++
 			}

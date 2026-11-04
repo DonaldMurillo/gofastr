@@ -290,11 +290,12 @@ func formattedTextArgs(format string, args []ast.Expr) []ast.Expr {
 				reordered = true
 				end := strings.IndexByte(format[offset:], ']')
 				if end < 0 {
-					return text
+					break directive
 				}
 				index, err := strconv.Atoi(format[offset+1 : offset+end])
 				if err != nil || index < 1 {
-					return text
+					offset += end
+					break directive
 				}
 				argument = index - 1
 				offset += end
