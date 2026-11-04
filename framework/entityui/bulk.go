@@ -483,6 +483,7 @@ func (t *bulkTally) add(outcomes map[string]string) {
 // id's outcome. Every record is asked its own write gate first; a refusal
 // is skipped, not failed.
 func (u *UI) runBulk(ctx context.Context, m *meta, act bulkAction, ids []string, run string) map[string]string {
+	ctx = crud.WithReadHooks(ctx)
 	out := make(map[string]string, len(ids))
 	if act.kind == bulkRun {
 		u.runAppAction(ctx, m, act, ids, run, out)

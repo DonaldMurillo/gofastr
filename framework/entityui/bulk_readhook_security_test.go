@@ -58,3 +58,41 @@ func TestBulkHonorsBeforeGet(t *testing.T) {
 		})
 	}
 }
+
+func TestBulkAppActionCrudHonorsBeforeGet(t *testing.T) {
+	ran := false
+	ext := Extensions{Entities: map[string]Extension{"invoices": {Actions: []Action{{
+		Key: "check", Bulk: true,
+		Run: func(ctx context.Context, action ActionContext) error {
+			ran = true
+			_, err := action.Crud.UpdateOne(ctx, "inv-1", map[string]any{"number": "changed"})
+			if !crud.IsNotFound(err) {
+				t.Errorf("callback write to hidden row = %v, want not found", err)
+			}
+			return nil
+		},
+	}}}}}
+	rows := invoiceRows()
+	rows["invoices"] = append(rows["invoices"], map[string]any{"id": "inv-2", "number": "INV-2", "status": "draft"})
+	x := newTestUIExt(t, invoiceEntities(), rows, ext, withAPI(map[string]string{"invoices": "/api/invoices"}))
+	ch, err := x.host.Crud(mustEntity(t, x, "invoices"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.BeforeGet, func(_ context.Context, data any) error {
+		data.(*hook.GetPayload).AddWhere("id <> $1", "inv-1")
+		return nil
+	})
+	code, output := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "run:check", "scope": "selected", "ids": []string{"inv-2"}})
+	if code != http.StatusOK || !ran {
+		t.Fatalf("bulk callback = %d %v, ran=%v", code, output, ran)
+	}
+	var number string
+	if err := x.db.QueryRow(`SELECT number FROM invoices WHERE id = 'inv-1'`).Scan(&number); err != nil {
+		t.Fatal(err)
+	}
+	if number != "INV-1" {
+		t.Errorf("hidden row number = %q, want INV-1", number)
+	}
+}

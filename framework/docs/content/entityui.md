@@ -608,6 +608,8 @@ JSON API applies live in the builders themselves:
 Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
 target, including queued runs; a row hidden only from single-record reads
 cannot be changed through a bulk selection.
+App-action callbacks receive the same read-hook-enabled context, including
+when they write through their action context's CRUD handler.
 
 A builder never draws a write the API would refuse the caller. New,
 Duplicate and the create screen need the entity's create access
