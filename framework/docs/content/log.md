@@ -326,6 +326,12 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
 
 ## Common mistakes
 
+The access entry's `forwarded_for` includes every `X-Forwarded-For`
+field line, joined with commas, scrubbed and capped at 2 KiB. With
+`TrustForwardedFor`, client address selection reads that entire chain,
+including when the first field line is empty; the rightmost valid proxy
+hop wins, rather than the caller-controlled leftmost address.
+
 - **Pointing a sink at a high-volume webhook synchronously.** The
   webhook sink is already async and bounded. Never wrap it in your own
   blocking adapter, and don't set `QueueSize` so high that a downstream
