@@ -594,6 +594,9 @@ JSON API applies live in the builders themselves:
   screen shows no author names when the users entity has CRUD off, as
   `auth.UserEntityConfig()` declares. A related row a resource-aware
   Decider refuses by id is left out of labels, facets and the picker.
+  A refused Related list is omitted without an error callout; when every
+  related section is refused, the Related tab is omitted too. Unresolvable
+  entities, relations, or metadata still render the failed-slot callout.
 - Locked and key-column relation fields use the same related-read gate
   as editable pickers, including CRUD exposure and token scopes.
 - A relation the caller may not read renders muted (an em dash), never

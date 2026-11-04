@@ -549,7 +549,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		return b.editTab(ctx, m, raw, row, masked, base), nil
 	}}
 	tabs := []tab{editTab}
-	if len(b.related) > 0 {
+	if b.hasRelatedTab(ctx, m, base) {
 		tabs = append(tabs, tab{key: "related", label: i18nui.EntityTabRelated.Text(ctx), count: b.relatedCount(ctx, m, base), build: func() (render.HTML, error) {
 			return b.relatedTab(ctx, m, base), nil
 		}})

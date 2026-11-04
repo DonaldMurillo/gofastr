@@ -16,7 +16,7 @@ import (
 // built by calling the list builder's public API: List(other).
 // Key(other).Where(fk, id).Base(otherBase). Each list passes that
 // entity's own read gate, so a related entity the caller may not read
-// draws its refusal, never its rows.
+// is omitted entirely, never drawn as a failed slot.
 //
 // The list's own New pre-fills the foreign key: a list carries each
 // Where pin into the create screen's ?prefill_<field>= convention, so
@@ -29,8 +29,11 @@ import (
 func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) render.HTML {
 	var lists []render.HTML
 	for _, rl := range b.related {
-		list, om, ok := b.relatedListFor(ctx, m, rl, base)
-		if !ok {
+		list, om, status := b.relatedListFor(ctx, m, rl, base)
+		if status == relatedListRefused {
+			continue
+		}
+		if status == relatedListFailed {
 			lists = append(lists, slotFailed(ctx))
 			continue
 		}
@@ -44,27 +47,47 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL}, lists...)
 }
 
+type relatedListStatus uint8
+
+const (
+	relatedListFailed relatedListStatus = iota
+	relatedListRefused
+	relatedListReady
+)
+
+func (b *RecordBuilder) hasRelatedTab(ctx context.Context, m *meta, base string) bool {
+	for _, related := range b.related {
+		if _, _, status := b.relatedListFor(ctx, m, related, base); status != relatedListRefused {
+			return true
+		}
+	}
+	return false
+}
+
 // relatedListFor builds the list the Related tab draws for rl: the other
 // entity's rows pinned to this record, keyed by its name, with its
-// section heading. ok is false when the entity, its relation or its
-// meta cannot be resolved.
-func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedList, base string) (*ListBuilder, *meta, bool) {
+// section heading. Its status distinguishes a refused read from a failed
+// entity, relation or metadata resolution.
+func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedList, base string) (*ListBuilder, *meta, relatedListStatus) {
 	other, err := b.ui.entityFor(rl.name)
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, relatedListFailed
 	}
 	_, fks := relationTo(other, m.name)
 	pins, ok := relatedPins(fks, b.id)
-	if !ok {
-		return nil, nil, false
+	if !ok || len(fks) == 0 {
+		return nil, nil, relatedListFailed
 	}
 	otherBase := rl.base
 	if !rl.fixed {
 		otherBase = relatedBase(ctx, base, other.GetName())
 	}
 	om, err := b.ui.meta(other.GetName())
-	if err != nil || !canReadRelated(ctx, om.ch) {
-		return nil, nil, false
+	if err != nil {
+		return nil, nil, relatedListFailed
+	}
+	if !canReadRelated(ctx, om.ch) {
+		return nil, nil, relatedListRefused
 	}
 	// The list's own header names the section, one level below the
 	// record's title.
@@ -81,7 +104,7 @@ func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedL
 	} else {
 		list = list.Base(otherBase)
 	}
-	return list, om, true
+	return list, om, relatedListReady
 }
 
 // relatedCount is the Related tab's count: the rows its lists draw,
@@ -94,8 +117,8 @@ func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedL
 func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta, base string) string {
 	total, any := 0, false
 	for _, rl := range b.related {
-		list, om, ok := b.relatedListFor(ctx, m, rl, base)
-		if !ok {
+		list, om, status := b.relatedListFor(ctx, m, rl, base)
+		if status != relatedListReady {
 			continue
 		}
 		_, read, err := list.state(ctx, om)
