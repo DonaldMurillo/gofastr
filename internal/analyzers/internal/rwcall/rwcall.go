@@ -71,14 +71,17 @@ var writerFirst = map[string]bool{
 	"io.CopyN":              true,
 }
 
-// isTemplate: t is a *template.Template of html/template or
+// isTemplate: t is a template.Template or *template.Template of html/template or
 // text/template.
 func isTemplate(t types.Type) bool {
-	p, ok := t.Underlying().(*types.Pointer)
-	if !ok {
+	if t == nil {
 		return false
 	}
-	n, ok := p.Elem().(*types.Named)
+	t = types.Unalias(t)
+	if pointer, ok := t.Underlying().(*types.Pointer); ok {
+		t = types.Unalias(pointer.Elem())
+	}
+	n, ok := t.(*types.Named)
 	if !ok || n.Obj().Pkg() == nil || n.Obj().Name() != "Template" {
 		return false
 	}
