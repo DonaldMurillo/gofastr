@@ -2365,6 +2365,12 @@ path.
   refuses an empty `EntityTwoFAStoreConfig.EncryptionKey` and seals
   every TOTP secret it writes with AES-GCM under it. Rows written as
   plaintext before the key existed still verify until they are
-  rewritten. Keep the key in a secret manager, not beside the
+  rewritten only when they use **unpadded uppercase base32**.
+  Lowercase-base32 seeds and other legacy encodings fail closed.
+  For an offline migration, decode each seed using its original
+  encoding, encode the same bytes as unpadded uppercase base32,
+  then rewrite it through the configured store so it is sealed.
+  If the original encoding is unknown, require re-enrollment rather
+  than guessing. Keep the key in a secret manager, not beside the
   database: a DB leak plus the key is a full second-factor bypass.
   Rotate through `PreviousEncryptionKeys`.
