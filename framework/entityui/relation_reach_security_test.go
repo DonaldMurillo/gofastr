@@ -39,6 +39,41 @@ func invoicesOnlyToken(x *testUI) context.Context {
 	return access.WithHeldScopes(ctx, []string{"invoices:read", "invoices:write"})
 }
 
+func TestRelatedRefusesUnreachable(t *testing.T) {
+	for _, mode := range []string{"crud_off", "token", "allowed"} {
+		t.Run(mode, func(t *testing.T) {
+			ents := invoiceEntities()
+			if mode == "crud_off" {
+				payments := ents["payments"]
+				off := false
+				payments.Exposure = &entity.ExposureConfig{CRUD: &off}
+				ents["payments"] = payments
+			}
+			rows := invoiceRows()
+			rows["payments"] = []map[string]any{{"id": "pay-secret", "invoice_id": "inv-1", "amount": "913.27"}}
+			x := newTestUI(t, ents, rows)
+			ctx := x.userCtx("/rec/invoices/inv-1", "?tab=related", "u1")
+			if mode == "token" {
+				ctx = access.WithHeldScopes(ctx, []string{"invoices:read"})
+			}
+			record := x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Related("payments")
+			body := string(record.RenderCtx(ctx))
+			invoice, err := x.ui.meta("invoices")
+			if err != nil {
+				t.Fatal(err)
+			}
+			count := record.relatedCount(ctx, invoice, "/rec/invoices")
+			if mode == "allowed" {
+				if !strings.Contains(body, "913.27") || count != "1" {
+					t.Fatalf("allowed child missing: count=%q", count)
+				}
+			} else if strings.Contains(body, "913.27") || count != "" {
+				t.Errorf("unreachable child disclosed: rows=%v count=%q", strings.Contains(body, "913.27"), count)
+			}
+		})
+	}
+}
+
 // SECURITY (2026-10-27 A20): the picker never lists a related entity
 // whose CRUD routes are off.
 func TestPickerRefusesCRUDOffTarget(t *testing.T) {

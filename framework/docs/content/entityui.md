@@ -587,7 +587,8 @@ JSON API applies live in the builders themselves:
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes
   that entity's own gate first. A label, facet or picker also needs what
-  `?include=` needs (`CanReadRelatedScoped`): the related entity's CRUD
+  `?include=` needs (`CanReadRelatedScoped`), as do Related lists and
+  their count badges: the related entity's CRUD
   routes on (`Exposure.CRUD` not false), and a scope-restricted request
   (an API token or embed grant) holding `<table>:read`. So a posts
   screen shows no author names when the users entity has CRUD off, as

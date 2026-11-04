@@ -63,7 +63,7 @@ func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedL
 		otherBase = relatedBase(ctx, base, other.GetName())
 	}
 	om, err := b.ui.meta(other.GetName())
-	if err != nil {
+	if err != nil || !canReadRelated(ctx, om.ch) {
 		return nil, nil, false
 	}
 	// The list's own header names the section, one level below the
@@ -95,7 +95,7 @@ func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta, base string) 
 	total, any := 0, false
 	for _, rl := range b.related {
 		list, om, ok := b.relatedListFor(ctx, m, rl, base)
-		if !ok || !canRead(ctx, om.ch) {
+		if !ok {
 			continue
 		}
 		_, read, err := list.state(ctx, om)
