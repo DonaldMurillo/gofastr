@@ -190,6 +190,9 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 		if used {
 			return false
 		}
+		if n != nil && n.End() <= st.End() {
+			return false
+		}
 		switch x := n.(type) {
 		case *ast.Ident:
 			if discarded[x.Pos()] || written[x] {
@@ -206,7 +209,7 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 				return true
 			}
 			for _, kf := range keptFields {
-				if sameStorage(pass, x, kf) {
+				if sameStorage(pass, x, kf, body) {
 					used = true
 					return false
 				}
@@ -217,7 +220,7 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 	return used
 }
 
-func sameStorage(pass *analysis.Pass, left, right ast.Expr) bool {
+func sameStorage(pass *analysis.Pass, left, right ast.Expr, body *ast.BlockStmt) bool {
 	left, right = ast.Unparen(left), ast.Unparen(right)
 	switch target := left.(type) {
 	case *ast.Ident:
@@ -225,18 +228,101 @@ func sameStorage(pass *analysis.Pass, left, right ast.Expr) bool {
 		return ok && pass.TypesInfo.ObjectOf(target) != nil && pass.TypesInfo.ObjectOf(target) == pass.TypesInfo.ObjectOf(other)
 	case *ast.SelectorExpr:
 		other, ok := right.(*ast.SelectorExpr)
-		return ok && pass.TypesInfo.ObjectOf(target.Sel) == pass.TypesInfo.ObjectOf(other.Sel) && sameStorage(pass, target.X, other.X)
+		if !ok {
+			return false
+		}
+		leftRoot, leftPath := selectedStorage(pass, target)
+		rightRoot, rightPath := selectedStorage(pass, other)
+		if len(leftPath) == 0 || len(leftPath) != len(rightPath) {
+			return false
+		}
+		for index, field := range leftPath {
+			if field != rightPath[index] {
+				return false
+			}
+		}
+		return sameStorage(pass, leftRoot, rightRoot, body)
 	case *ast.IndexExpr:
 		other, ok := right.(*ast.IndexExpr)
-		return ok && sameStorage(pass, target.X, other.X) && sameStorage(pass, target.Index, other.Index)
+		return ok && sameStorage(pass, target.X, other.X, body) && sameStorage(pass, target.Index, other.Index, body) && stableIndex(pass, target.Index, other.Index, body)
 	case *ast.StarExpr:
 		other, ok := right.(*ast.StarExpr)
-		return ok && sameStorage(pass, target.X, other.X)
+		return ok && sameStorage(pass, target.X, other.X, body)
 	case *ast.BasicLit:
 		other, ok := right.(*ast.BasicLit)
 		return ok && target.Kind == other.Kind && target.Value == other.Value
 	}
 	return false
+}
+
+func selectedStorage(pass *analysis.Pass, expression ast.Expr) (ast.Expr, []types.Object) {
+	selector, ok := ast.Unparen(expression).(*ast.SelectorExpr)
+	if !ok {
+		return expression, nil
+	}
+	selection := pass.TypesInfo.Selections[selector]
+	if selection == nil || selection.Kind() != types.FieldVal {
+		return expression, nil
+	}
+	root, path := selectedStorage(pass, selector.X)
+	receiver := selection.Recv()
+	for _, index := range selection.Index() {
+		if pointer, ok := receiver.(*types.Pointer); ok {
+			receiver = pointer.Elem()
+		}
+		structure, ok := receiver.Underlying().(*types.Struct)
+		if !ok || index >= structure.NumFields() {
+			return expression, nil
+		}
+		field := structure.Field(index)
+		path = append(path, field)
+		receiver = field.Type()
+	}
+	return root, path
+}
+
+func stableIndex(pass *analysis.Pass, left, right ast.Expr, body *ast.BlockStmt) bool {
+	from, through := left.Pos(), right.Pos()
+	if through < from {
+		from, through = through, from
+	}
+	dependencies := map[types.Object]bool{}
+	ast.Inspect(left, func(node ast.Node) bool {
+		if identifier, ok := node.(*ast.Ident); ok {
+			if variable, ok := pass.TypesInfo.ObjectOf(identifier).(*types.Var); ok {
+				dependencies[variable] = true
+			}
+		}
+		return true
+	})
+	stable := true
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node == nil || !stable || node.Pos() >= through || node.End() <= from {
+			return false
+		}
+		var targets []ast.Expr
+		switch statement := node.(type) {
+		case *ast.AssignStmt:
+			targets = statement.Lhs
+		case *ast.IncDecStmt:
+			targets = []ast.Expr{statement.X}
+		case *ast.RangeStmt:
+			if statement.Tok == token.ASSIGN {
+				targets = []ast.Expr{statement.Key, statement.Value}
+			}
+		case *ast.UnaryExpr:
+			if statement.Op == token.AND {
+				targets = []ast.Expr{statement.X}
+			}
+		}
+		for _, target := range targets {
+			if identifier, ok := ast.Unparen(target).(*ast.Ident); ok && target.Pos() > from && dependencies[pass.TypesInfo.ObjectOf(identifier)] {
+				stable = false
+			}
+		}
+		return stable
+	})
+	return stable
 }
 
 // isError reports whether t is or implements error.

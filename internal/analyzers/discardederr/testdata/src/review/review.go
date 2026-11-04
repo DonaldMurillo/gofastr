@@ -59,3 +59,43 @@ func overwritten(source *pool, target *node) {
 	target.value, _, _ = source.next()
 	target.value = 1
 }
+
+func advancedIndex(source *pool, items []node, index int) int {
+	items[index].value, _, _ = source.next()
+	index++
+	return items[index].value
+}
+
+func reassignedIndex(source *pool, items []node, index, next int) int {
+	items[index].value, _, _ = source.next()
+	index = next
+	return items[index].value
+}
+
+func indexedCompoundRead(source *pool, items []node, index int) {
+	items[index].value, _, _ = source.next() // want `assignment discards the error from next`
+	items[index].value += 1
+}
+
+type inner struct{ value int }
+type promoted struct{ inner }
+
+func promotedRead(source *pool, target *promoted) int {
+	target.value, _, _ = source.next() // want `assignment discards the error from next`
+	return target.inner.value
+}
+
+func explicitPromotedRead(source *pool, target *promoted) int {
+	target.inner.value, _, _ = source.next() // want `assignment discards the error from next`
+	return target.value
+}
+
+type shadowed struct {
+	inner
+	value int
+}
+
+func shadowedFieldRead(source *pool, target *shadowed) int {
+	target.value, _, _ = source.next()
+	return target.inner.value
+}
