@@ -745,23 +745,32 @@ func emitRun(toks []Token, mode emitMode) string {
 	var sb strings.Builder
 	prev := Token{}
 	hadWS := false
+	hadComment := false
 	first := true
 	for _, t := range toks {
-		// A comment is whitespace to the browser: it separates the
-		// tokens either side of it, so dropping it without marking the
-		// gap merges them (`margin:0/*c*/auto` → `margin:0auto`,
-		// `.fui/*c*/-card` → the kit root `.fui-card`).
-		if isTrivia(t) {
+		if t.Type == TokenWhitespace {
 			hadWS = true
 			continue
 		}
-		if !first && sep(prev, t, hadWS, mode) {
+		if t.Type == TokenComment {
+			hadComment = true
+			continue
+		}
+		if !first && sep(prev, t, hadWS || (mode == emitValue && hadComment), mode) {
 			sb.WriteByte(' ')
+		} else if !first && mode == emitSelector && hadComment && !hadWS && selectorTokensMerge(prev, t) {
+			sb.WriteString("/**/")
 		}
 		sb.WriteString(t.Text)
-		prev, hadWS, first = t, false, false
+		prev, hadWS, hadComment, first = t, false, false, false
 	}
 	return sb.String()
+}
+
+func selectorTokensMerge(prev, next Token) bool {
+	tokens := Tokenize(prev.Text + next.Text)
+	return len(tokens) != 2 || tokens[0].Type != prev.Type || tokens[0].Text != prev.Text ||
+		tokens[1].Type != next.Type || tokens[1].Text != next.Text
 }
 
 // sep decides whether a space between two significant tokens must

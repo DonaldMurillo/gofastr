@@ -491,16 +491,16 @@ func TestCompileDarkChainKeepsSelectorLists(t *testing.T) {
 	}
 }
 
-// A comment is whitespace to the browser: two tokens separated only
-// by a comment must not merge into one when minified. `margin:0/*c*/auto`
+// Two tokens separated only by a comment must not merge into one
+// when minified. `margin:0/*c*/auto`
 // used to compile to `margin:0auto`, which the browser drops, and a
 // selector like `.fui/*c*/-card` used to style the kit root `.fui-card`.
 func TestCompileCommentKeepsTokensApart(t *testing.T) {
 	tokens := style.ThemeToTokens(style.DefaultTheme())
 	rows := []struct{ src, want, not string }{
 		{".a{margin:0/*c*/auto}", "margin:0 auto", "0auto"},
-		{".fui/*c*/-card{color:red}", ".fui -card", ".fui-card"},
-		{"[data-cui/*c*/-rpc]{color:red}", "[data-cui -rpc]", "[data-cui-rpc]"},
+		{".fui/*c*/-card{color:red}", ".fui/**/-card", ".fui-card"},
+		{"[data-cui/*c*/-rpc]{color:red}", "[data-cui/**/-rpc]", "[data-cui-rpc]"},
 	}
 	for _, tc := range rows {
 		sheet, diags := Parse(tc.src)

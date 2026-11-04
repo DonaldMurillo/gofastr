@@ -46,11 +46,9 @@ func TestModelSkipsEveryKitPrefix(t *testing.T) {
 	}
 }
 
-// A comment between two compounds is a descendant combinator to the
-// browser, the same as whitespace: the model must split there too, or
-// `.card/*c*/.row` turns .row into a variant flag of .card while the
-// compiled sheet selects two separate compounds.
-func TestCommentSplitsCompoundsLikeSpace(t *testing.T) {
+// A bare comment does not split compounds: .row remains a variant
+// flag of .card, matching the compiled selector.
+func TestCommentKeepsCompoundTogether(t *testing.T) {
 	sheet, _ := Parse(".card/*c*/.row { gap: 0; }\n")
 	m, diags := Model(sheet)
 	if len(diags) != 0 {
@@ -60,11 +58,11 @@ func TestCommentSplitsCompoundsLikeSpace(t *testing.T) {
 	if card == nil {
 		t.Fatalf("card missing from %v", classNames(m))
 	}
-	if len(card.Flags) != 0 {
-		t.Errorf(".row folded into .card as a flag: %+v", card.Flags)
+	if len(card.Flags) != 1 {
+		t.Errorf(".row not folded into .card as a flag: %+v", card.Flags)
 	}
-	if m.class("row") == nil {
-		t.Fatalf(".row missing from %v", classNames(m))
+	if m.class("row") != nil {
+		t.Fatalf(".row became a separate class in %v", classNames(m))
 	}
 }
 

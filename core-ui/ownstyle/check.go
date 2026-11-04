@@ -524,7 +524,12 @@ func (c *checker) rawWidthMessage(raw string) string {
 // checkSelector runs GOFASTR1810 (kit class / runtime attribute) and,
 // for the app sheet, GOFASTR1819 (class-only subjects).
 func (c *checker) checkSelector(r *Rule) {
-	prel := r.Prel
+	var prel []Token
+	for _, tok := range r.Prel {
+		if tok.Type != TokenComment {
+			prel = append(prel, tok)
+		}
+	}
 	for i := 0; i < len(prel); i++ {
 		t := prel[i]
 		switch {
@@ -617,8 +622,8 @@ func splitSelectors(prel []Token) [][]Token {
 }
 
 // splitCompounds splits one selector into compound selectors at
-// descendant whitespace (a comment is whitespace to the browser and
-// splits the same way) and the > + ~ combinators.
+// descendant whitespace and the > + ~ combinators. A comment alone
+// separates tokens without separating compounds.
 func splitCompounds(sel []Token) [][]Token {
 	var out [][]Token
 	var cur []Token
@@ -635,9 +640,7 @@ func splitCompounds(sel []Token) [][]Token {
 			depth++
 		case TokenCloseParen, TokenCloseSquare:
 			depth--
-		case TokenWhitespace, TokenComment:
-			// A comment is a descendant combinator to the browser,
-			// exactly like whitespace; compounds split at it too.
+		case TokenWhitespace:
 			if depth == 0 {
 				flush()
 				continue
