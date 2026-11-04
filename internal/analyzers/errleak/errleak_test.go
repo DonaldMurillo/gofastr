@@ -27,3 +27,7 @@ func TestErrLeak(t *testing.T) {
 		})
 	}
 }
+
+func TestReviewErrorOriginsAndFormats(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), errleak.Analyzer, "review")
+}

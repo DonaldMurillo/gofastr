@@ -84,6 +84,7 @@ type fnOrigins struct {
 	params map[types.Object]bool
 	defs   map[types.Object][]errDef
 	busy   map[types.Object]bool
+	args   map[types.Object]origin
 }
 
 type errDef struct {
@@ -145,7 +146,7 @@ func (f *fnOrigins) of(e ast.Expr, pos token.Pos) origin {
 	info := f.pass.TypesInfo
 	switch x := ast.Unparen(e).(type) {
 	case *ast.Ident:
-		obj := info.Uses[x]
+		obj := info.ObjectOf(x)
 		if obj == nil || f.busy[obj] {
 			return 0
 		}
@@ -158,6 +159,9 @@ func (f *fnOrigins) of(e ast.Expr, pos token.Pos) origin {
 			}
 		}
 		if best == nil {
+			if argument, ok := f.args[obj]; ok {
+				return argument
+			}
 			if f.params[obj] {
 				return fromParam
 			}
@@ -189,6 +193,8 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 		} else if id, ok := fun.X.(*ast.Ident); ok {
 			obj = info.Uses[id]
 		}
+	case *ast.FuncLit:
+		return f.litReturns(fun, call.Args, pos)
 	default:
 		return 0
 	}
@@ -228,7 +234,7 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 				defer delete(f.busy, ob)
 				var o origin
 				for _, d := range ds {
-					o |= f.litReturns(ast.Unparen(d.rhs).(*ast.FuncLit))
+					o |= f.litReturns(ast.Unparen(d.rhs).(*ast.FuncLit), call.Args, pos)
 				}
 				return o
 			}
@@ -285,9 +291,25 @@ func (f *fnOrigins) importFact(fn *types.Func, fact analysis.Fact) bool {
 
 // litReturns is the union of the origins a func literal's error
 // results carry.
-func (f *fnOrigins) litReturns(lit *ast.FuncLit) origin {
+func (f *fnOrigins) litReturns(lit *ast.FuncLit, args []ast.Expr, pos token.Pos) origin {
 	if lit == nil || lit.Body == nil {
 		return 0
+	}
+	invocation := *f
+	invocation.args = make(map[types.Object]origin, len(f.args)+len(args))
+	for obj, argument := range f.args {
+		invocation.args[obj] = argument
+	}
+	argument := 0
+	if lit.Type.Params != nil {
+		for _, field := range lit.Type.Params.List {
+			for _, name := range field.Names {
+				if argument < len(args) {
+					invocation.args[f.pass.TypesInfo.ObjectOf(name)] = f.of(args[argument], pos)
+				}
+				argument++
+			}
+		}
 	}
 	var o origin
 	ast.Inspect(lit.Body, func(n ast.Node) bool {
@@ -295,9 +317,18 @@ func (f *fnOrigins) litReturns(lit *ast.FuncLit) origin {
 		case *ast.FuncLit:
 			return false
 		case *ast.ReturnStmt:
+			if len(x.Results) == 0 && lit.Type.Results != nil {
+				for _, field := range lit.Type.Results.List {
+					for _, name := range field.Names {
+						if isErrorType(f.pass.TypesInfo.TypeOf(name)) {
+							o |= invocation.of(name, x.Pos())
+						}
+					}
+				}
+			}
 			for _, r := range x.Results {
 				if isErrorType(f.pass.TypesInfo.TypeOf(r)) {
-					o |= f.of(r, x.Pos())
+					o |= invocation.of(r, x.Pos())
 				}
 			}
 		}
@@ -419,10 +450,10 @@ func errorTexts(pass *analysis.Pass, e ast.Node) []ast.Expr {
 						return true
 					}
 					s, ok := constString(pass, args[0])
-					if !ok || !textVerb.MatchString(s) {
+					if !ok {
 						return true
 					}
-					args = args[1:]
+					args = formattedTextArgs(s, args[1:])
 				default:
 					return true
 				}
