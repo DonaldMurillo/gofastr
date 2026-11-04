@@ -228,9 +228,6 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			id := recordIDOf(ctx, ent.GetName(), row, key)
 			redacted := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
-			// crud.UpsertOne fires AfterCreate for both arms; an override
-			// upsert onto an existing row carries a keyed "state_override"
-			// on ctx, the same seam AfterUpdate reads.
 			op := auditOpCreate
 			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
 				op = auditOp(sanitizeAuditField(o))

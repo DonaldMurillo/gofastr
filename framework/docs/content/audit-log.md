@@ -142,6 +142,8 @@ transaction, so:
 
 - `AfterCreate` → `op = 'create'`, `diff = {"new": <record>}`
 - `AfterUpdate` → `op = 'update'`, `diff = {"old": <record>, "new": <record>}`
+- `UpsertOne` uses `create` for an insert and `update` with both images
+  for a conflict update. A conflict with no data to write adds no audit row.
 - `AfterDelete` → `op = 'delete'`, `diff = {"old": <record>}`
 - a state move (`RunTransition`) → `op = 'transition:<key>'`, both images
   in `diff`, inside the move's transaction
