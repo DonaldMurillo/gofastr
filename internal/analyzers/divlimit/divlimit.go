@@ -88,10 +88,14 @@ func run(pass *analysis.Pass) (any, error) {
 					if !ok {
 						continue
 					}
-					for _, v := range vs.Values {
-						if lit, ok := ast.Unparen(v).(*ast.FuncLit); ok && lit.Body != nil {
-							checkTree(pass, lit.Type, lit.Body, nil, lit.Body, dominance.Parents(lit.Body))
-						}
+					for _, value := range vs.Values {
+						ast.Inspect(value, func(node ast.Node) bool {
+							if literal, ok := node.(*ast.FuncLit); ok && literal.Body != nil {
+								checkTree(pass, literal.Type, literal.Body, nil, literal.Body, dominance.Parents(literal.Body))
+								return false
+							}
+							return true
+						})
 					}
 				}
 			}
