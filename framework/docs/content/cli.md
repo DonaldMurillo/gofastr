@@ -609,7 +609,11 @@ does not cover: a runtime browser scan, and the dependency report.
   `gofastr verify accessibility`.
 - `gofastr audit lint`: the original AI-mistake scanner. Superseded by
   `gofastr verify security data`, which covers the same rules with a
-  reason and a fix attached to each.
+  reason and a fix attached to each. The legacy scanner still reports
+  malformed test files, unannotated skips, and discarded Exec results
+  (including bare, deferred, and goroutine calls). Explicit test-lane
+  boundaries remain accepted. A `// safe-sql: <why>` comment suppresses
+  that line's SQL heuristic, and comments preserve diagnostic line numbers.
 - `gofastr audit deps`: list dependencies that perform init-time
   global registrations, then the [unmounted](unmount.md) packages.
 
