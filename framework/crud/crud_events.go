@@ -721,6 +721,12 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 	pk := ch.keyCols()
 	bus := ch.Events
 	match := ch.comparableColumns(record)
+	softDelete := ch.Entity.Config.Scope.SoftDelete
+	if recordMap, ok := record.(map[string]any); ok {
+		if recordID, ok := ch.rowID(recordMap); ok {
+			softDelete = softDelete && AuditOperationFor(ctx, ch.Entity.GetName(), recordID) != "purge"
+		}
+	}
 
 	go func() {
 		// One detached context carries the limit for both statements:
@@ -734,7 +740,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 			return
 		}
 
-		committed, err := landed(pctx, base, eventType, table, pk, id, match)
+		committed, err := landed(pctx, base, eventType, table, pk, id, match, softDelete)
 		if err != nil {
 			logf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
 				eventType, table, fmt.Sprint(id...), err)
@@ -784,10 +790,11 @@ func waitTxDone(ctx context.Context, tx *sql.Tx) bool {
 }
 
 // landed reports whether the write the event describes is visible on the
-// base connection. A delete landed when the row is gone; a create when it is
+// base connection. A delete landed when the row is gone or its soft-delete
+// marker is set; a purge requires absence. A create landed when the row is
 // there; an update when it is there AND carries the announced values (match),
 // since the row survives a rollback either way.
-func landed(ctx context.Context, base *sql.DB, eventType, table string, pk []string, id []any, match map[string]any) (bool, error) {
+func landed(ctx context.Context, base *sql.DB, eventType, table string, pk []string, id []any, match map[string]any, softDelete bool) (bool, error) {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
 		return false, err
@@ -824,12 +831,15 @@ func landed(ctx context.Context, base *sql.DB, eventType, table string, pk []str
 		}
 	}
 	var n int
+	if eventType == event.EntityDeleted && softDelete {
+		where = append(where, "deleted_at IS NOT NULL")
+	}
 	stmt := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s",
 		query.QuoteFolded(safeTable), strings.Join(where, " AND "))
 	if err := base.QueryRowContext(ctx, stmt, args...).Scan(&n); err != nil {
 		return false, err
 	}
-	if eventType == event.EntityDeleted {
+	if eventType == event.EntityDeleted && !softDelete {
 		return n == 0, nil
 	}
 	return n > 0, nil

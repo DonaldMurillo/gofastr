@@ -319,7 +319,10 @@ owner drains the held emissions right after a successful commit (a
 If you open a transaction YOURSELF and wrap it with bare `db.WithTx`,
 the framework cannot see your commit, so it learns the outcome by
 polling the live `*sql.Tx` (a `SELECT 1` every few milliseconds until it
-reports done) and then re-checking the row. That poll shares the
+reports done) and then re-checking the row. A committed soft
+delete is confirmed by `deleted_at IS NOT NULL`; a hard delete or purge
+requires the row to be absent. A rollback publishes neither kind of delete.
+That poll shares the
 transaction's single connection with your own statements. The wait is
 capped at two minutes, counted from the write, a statement of yours that
 holds the connection included; past that the event is dropped and
