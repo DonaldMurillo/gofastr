@@ -511,6 +511,14 @@ entry cannot strand a partially settled run. Live leases and enqueued jobs
 that have never started are not adopted. Long-running hosts should call
 resume periodically; initialization alone recovers only at startup.
 
+Erasure must run with bulk producers and active deliveries quiesced. The
+queue's erasure sweep and a lease-contention successor enqueue do not share
+an atomic transaction across queue backends: a delivery that observed a busy
+lease before erasure can enqueue a successor carrying the creator's user id
+after that sweep. Deleting the bulk snapshot stops its later execution but
+does not prevent that new queue metadata. Stop/drain deliveries before erasure
+when the export must contain no newly recreated user metadata.
+
 `PrincipalFunc` (the second argument) rebuilds the confirming user's
 request context before every chunk: the user and their current roles,
 read fresh, and the run's tenant. The tenant is the one the selection
