@@ -698,7 +698,7 @@ few lines, and link the PR or the docs page for the rest.
   cost estimator stopped where the decoder skips ahead, so a crafted
   file slipped past the memory cap in `framework/image` and
   `framework/file`.
-- **`ui.Select` keeps a stored value no option lists.** Set
+- **`ui.Select` keeps a stored value absent from the options list.** Set
   `SelectConfig.Selected`; a nonempty value wins over the options'
   flags.
 - **`interactive.OptimisticUpdate` panics on an action option it would
