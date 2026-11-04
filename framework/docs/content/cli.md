@@ -626,6 +626,11 @@ root or another I/O failure still fails the check.
 
 ## Extras
 
+The repository's `cmd/repolint` wiring gate catches a raw `data-cui-rpc`
+attribute both as an attribute-name string and inside emitted markup,
+including escaped Go strings. Sibling attributes such as `data-cui-rpc-body`
+are distinct and do not match that gate.
+
 - `gofastr semantic index|watch|query|stats|clear`: the local semantic
   index ([semantic search](semantic-search.md)).
 - `gofastr harness`: the experimental agent harness (`harness mcp`
