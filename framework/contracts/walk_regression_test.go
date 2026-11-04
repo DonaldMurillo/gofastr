@@ -10,6 +10,38 @@ import (
 	"testing"
 )
 
+func TestUnparsedReportCannotPass(t *testing.T) {
+	report := &Report{FailOn: SeverityWarn, Unparsed: 1}
+	if report.Passed() || report.ExitCode() == 0 {
+		t.Fatal("unreadable or unparsable source reported a successful verification")
+	}
+}
+
+func TestRunRejectsUnreadableClientSource(t *testing.T) {
+	name := "test-unreadable-client-source"
+	Register(&Analyzer{Name: name, Doc: "discovery regression", Rules: []string{RuleUntestedRoute}, Run: func(*Pass) ([]Diagnostic, error) { return nil, nil }})
+	t.Cleanup(func() {
+		analyzerMu.Lock()
+		delete(analyzers, name)
+		analyzerMu.Unlock()
+	})
+	for _, source := range []string{"site.css", "app.js", "app.mjs", "app.cjs"} {
+		t.Run(source, func(t *testing.T) {
+			root := t.TempDir()
+			writeTemp(t, root, "source.go", "package app\n")
+			path := writeTemp(t, root, source, "client source")
+			restrictPassFixture(t, path, 0)
+			pass, err := NewPass(root, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report, err := Run(pass, RunOptions{Analyzers: []string{name}}); err == nil || !strings.Contains(err.Error(), source) {
+				t.Fatalf("incomplete discovery was not surfaced as an error: report=%+v error=%v", report, err)
+			}
+		})
+	}
+}
+
 func TestPassFollowsSymlinkRoot(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "actual")
