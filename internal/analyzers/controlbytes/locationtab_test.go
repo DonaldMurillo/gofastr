@@ -1,10 +1,12 @@
-package locationtab
+package controlbytes_test
 
 import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	fixture "github.com/DonaldMurillo/gofastr/internal/analyzers/controlbytes/testdata/src/locationtab"
 )
 
 func TestRefuseNewlineRedirectStripsControls(t *testing.T) {
@@ -18,7 +20,7 @@ func TestRefuseNewlineRedirectStripsControls(t *testing.T) {
 	request := httptest.NewRequest("GET", "http://example.test/", nil)
 	request.URL = &url.URL{Path: "/safe" + controls.String() + "/path"}
 	response := httptest.NewRecorder()
-	refuseNewlineRedirect(response, request)
+	fixture.RefuseNewlineRedirect(response, request)
 	if target := response.Header().Get("Location"); target != "/safe/path" {
 		t.Fatalf("Location retains controls: %q", target)
 	}
