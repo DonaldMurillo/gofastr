@@ -94,6 +94,34 @@ func TestCounterSQLLikeTextIsNotFormatVerb(t *testing.T) {
 	assertNot(t, diagnostics, contracts.RuleAbsoluteAttempts, "LIKE %active% is SQL text, not a fmt verb")
 }
 
+// A format held in a constant or local is still a format: Sprintf's
+// first argument names it instead of spelling the literal inline.
+func TestNamedSprintfFormatCountsVerbs(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"named.go": `package dispatch
+
+import "database/sql"
+import "fmt"
+
+const bounceSQL = "UPDATE dispatch SET retries = %d WHERE run_id = 1"
+
+func noteBounce(db *sql.DB, count int) error {
+	_, err := db.Exec(fmt.Sprintf(bounceSQL, count+1))
+	return err
+}
+
+func noteCrawl(db *sql.DB, count int) error {
+	query := "UPDATE pages SET tries = %d WHERE page_id = 1"
+	_, err := db.Exec(fmt.Sprintf(query, count))
+	return err
+}
+`,
+	})
+	if got := len(countRule(t, ds, contracts.RuleAbsoluteAttempts)); got != 2 {
+		t.Fatalf("want 2 findings for named formats, got %v", countRule(t, ds, contracts.RuleAbsoluteAttempts))
+	}
+}
+
 // Two positives with no counterpart in this repo: a retry counter on a
 // dispatch table spelled "retries" with a Sprintf %d, and a "tries"
 // counter on a crawl table with the sqlite placeholder.

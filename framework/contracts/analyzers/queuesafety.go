@@ -322,15 +322,53 @@ func sqlStatements(file *ast.File) []sqlStmt {
 	var out []sqlStmt
 	formatted := map[*ast.BasicLit]bool{}
 	aliases := importAliases(file)
+	// A format may sit in a constant or variable that Sprintf names
+	// (fmt.Sprintf(query, n)). The pass is syntax-only, so a name maps to
+	// every string literal any declaration of that name in the file holds;
+	// a shadowed name over-marks, which can only add findings.
+	bound := map[string][]ast.Expr{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch decl := node.(type) {
+		case *ast.ValueSpec:
+			for i, name := range decl.Names {
+				if i < len(decl.Values) {
+					bound[name.Name] = append(bound[name.Name], decl.Values[i])
+				}
+			}
+		case *ast.AssignStmt:
+			if len(decl.Lhs) == len(decl.Rhs) {
+				for i, left := range decl.Lhs {
+					if name, ok := left.(*ast.Ident); ok {
+						bound[name.Name] = append(bound[name.Name], decl.Rhs[i])
+					}
+				}
+			}
+		}
+		return true
+	})
+	var markFormat func(ast.Expr, map[string]bool)
+	markFormat = func(expr ast.Expr, seen map[string]bool) {
+		ast.Inspect(expr, func(node ast.Node) bool {
+			switch node := node.(type) {
+			case *ast.BasicLit:
+				if node.Kind == token.STRING {
+					formatted[node] = true
+				}
+			case *ast.Ident:
+				if !seen[node.Name] {
+					seen[node.Name] = true
+					for _, value := range bound[node.Name] {
+						markFormat(value, seen)
+					}
+				}
+			}
+			return true
+		})
+	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		call, ok := qualifiedCall(node, aliases, "fmt", "Sprintf")
 		if ok && len(call.Args) > 0 {
-			ast.Inspect(call.Args[0], func(node ast.Node) bool {
-				if literal, ok := node.(*ast.BasicLit); ok && literal.Kind == token.STRING {
-					formatted[literal] = true
-				}
-				return true
-			})
+			markFormat(call.Args[0], map[string]bool{})
 		}
 		return true
 	})
