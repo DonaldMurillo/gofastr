@@ -42,6 +42,10 @@ DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
 
+RTC reconnect snapshots retain connected/connecting peer connections only
+with stable signaling. A pending offer rebuilds with tracks and channels,
+so perfect negotiation can accept the remote peer's replacement offer.
+
 Action-script seeding observes SSR script errors and, after document load,
 only retains scripts whose component handlers registered. Failed boot
 scripts remain eligible for the next component scan.
