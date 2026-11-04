@@ -104,3 +104,30 @@ func returnedComposite(request *http.Request) any { // want returnedComposite:`p
 	}
 	return holder
 }
+
+func clearedSliceCallback(request *http.Request) bool {
+	auth := request.Header.Get("Authorization")
+	callbacks := []func() bool{func() bool { return strings.HasPrefix(auth, "Bearer ") }}
+	callbacks[0] = nil
+	return auth != "" // want `authpresence: an Authorization`
+}
+
+func clearedFieldCallback(request *http.Request) bool {
+	auth := request.Header.Get("Authorization")
+	holder := &struct{ parse func() bool }{
+		parse: func() bool { return strings.HasPrefix(auth, "Bearer ") },
+	}
+	holder.parse = nil
+	return auth != "" // want `authpresence: an Authorization`
+}
+
+func rangedCallbacks(request *http.Request) bool { // want rangedCallbacks:`parsesAuth`
+	auth := request.Header.Get("Authorization")
+	callbacks := []func() bool{func() bool { return strings.HasPrefix(auth, "Bearer ") }}
+	for _, check := range callbacks {
+		if !check() {
+			return false
+		}
+	}
+	return auth != ""
+}

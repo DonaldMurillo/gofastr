@@ -276,6 +276,13 @@ func runnableLiterals(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.
 		case *ast.ParenExpr:
 			return canRun(target, busy)
 		case *ast.AssignStmt:
+			// A store into the callback's holder (callbacks[0] = nil,
+			// holder.parse = nil) writes over it; it never runs it.
+			for _, left := range target.Lhs {
+				if left == expression {
+					return false
+				}
+			}
 			if len(target.Lhs) != len(target.Rhs) {
 				return false
 			}
@@ -290,6 +297,13 @@ func runnableLiterals(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.
 					bindings = append(bindings, target.Names[index])
 				}
 			}
+		case *ast.RangeStmt:
+			// Ranging over a holder hands each element to the value
+			// variable; the callback runs if that variable does.
+			if target.X != expression || target.Value == nil {
+				return false
+			}
+			bindings = append(bindings, target.Value)
 		case *ast.KeyValueExpr:
 			container, ok := parents[target].(ast.Expr)
 			return ok && canRun(container, busy)
