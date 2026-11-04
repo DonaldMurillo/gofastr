@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"maps"
 	"reflect"
@@ -67,7 +66,7 @@ func ToolAdapter[I, O any](h Handler[I, O]) func(ctx context.Context, params map
 func bindToolParams(params map[string]any, dst any) error {
 	whole, err := json.Marshal(params)
 	if err != nil {
-		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
+		return Fail(400, ReasonInvalidParams, map[string]any{"detail": JSONErrorDetail(err)})
 	}
 	if err := CheckObjectKeys(whole, FoldJSONKey); err != nil {
 		return err
@@ -143,6 +142,14 @@ func toolParamString(v any) (string, error) {
 	case json.Number:
 		return v.String(), nil
 	default:
-		return "", fmt.Errorf("must be a string, number or boolean, not %T", v)
+		got := jsonTypeNull
+		if v != nil {
+			kind, ok := jsonTypeOf(reflect.TypeOf(v))
+			if !ok {
+				return "", i18n.NewError(jsonInvalid)
+			}
+			got = kind
+		}
+		return "", i18n.NewError(jsonUnexpectedTypeRoot, map[string]any{"got": i18n.NewError(got)})
 	}
 }
