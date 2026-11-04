@@ -293,7 +293,9 @@ never elevated.
 ### Command palette
 
 The toolbar's search field opens the palette. It lists the pages, each
-entity's list and create screen, and your `Commands`. Typing searches the
+entity's list and permitted create screen, and your `Commands`. Create
+entries use the same scoped CRUD create gate as entity screens, including
+a resource Decider's refusal. Typing searches the
 exposed entities' `SearchFields` through `entityui.SearchRecords`, in the
 caller's scope, and lists the matching records. The palette posts to
 `POST <PathPrefix>/_palette`; the body is capped at 4 KiB and the query
