@@ -1384,6 +1384,11 @@ generated app commits no credentials:
 - `ADMIN_SEED_PASSWORD` → the bootstrap admin's password (no env var →
   no admin is seeded)
 
+DSN redaction removes userinfo passwords, URL query `password` and
+`sslpassword` parameters (including percent-encoded parameter names), and
+libpq `password`/`sslpassword` pairs. Non-secret host/database settings are
+retained; an unreadable URL query is removed entirely rather than leaked.
+
 When the app spec holds any of these values, the generator also emits a
 `.env` carrying them (so the app runs without extra setup). The
 `.gitignore` it always emits excludes `.env` and `.env.local`, `.gofastr/`,

@@ -9,14 +9,15 @@
 //
 //   - A DSN that carries no detectable secret is returned unchanged:
 //     SQLite file DSNs and passwordless URLs round-trip verbatim.
-//   - URL form: url.Parse first; a userinfo password is dropped by
-//     rebuilding the URL without it. A URL url.Parse rejects (e.g. a
+//   - URL form: userinfo passwords and password/sslpassword query parameters
+//     are removed. Unreadable query strings are dropped in full.
+//     A URL url.Parse rejects (e.g. a
 //     password containing a bad % escape) is cut TEXTUALLY at the LAST
 //     '@' before the path — the password may itself contain '@', so a
 //     first-'@' cut leaves password material past the mask. Fails closed:
 //     an unparsable URL that carries a userinfo section is treated as
 //     secret-bearing.
-//   - key=value form (libpq): the password pair is dropped whole. Values
+//   - key=value form (libpq): password and sslpassword pairs are dropped whole. Values
 //     may be single-quoted and contain spaces (password='a b'), so fields
 //     split quote-aware; a bare strings.Fields would leak the quoted tail.
 package dsnredact
@@ -31,13 +32,24 @@ func Redact(dsn string) string {
 	if !HasSecret(dsn) {
 		return dsn
 	}
-	if u, err := url.Parse(dsn); err == nil && u.User != nil {
-		if _, has := u.User.Password(); has {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		if u.User != nil {
 			u.User = url.User(u.User.Username())
-			return u.String()
 		}
+		query, err := url.ParseQuery(u.RawQuery)
+		if err != nil {
+			u.RawQuery = ""
+		} else if query.Has("password") || query.Has("sslpassword") {
+			query.Del("password")
+			query.Del("sslpassword")
+			u.RawQuery = query.Encode()
+		}
+		return u.String()
 	}
 	if i := strings.Index(dsn, "://"); i >= 0 {
+		if query := strings.IndexByte(dsn, '?'); query >= 0 {
+			dsn = dsn[:query]
+		}
 		// URL-form DSN that url.Parse rejected (e.g. a bad % escape in
 		// the password): strip the userinfo textually. The password may
 		// itself contain '@', so cut at the last '@' before the path.
@@ -63,7 +75,8 @@ func Redact(dsn string) string {
 	fields := splitFields(dsn)
 	kept := fields[:0]
 	for _, f := range fields {
-		if strings.HasPrefix(f, "password=") {
+		key, _, _ := strings.Cut(f, "=")
+		if key == "password" || key == "sslpassword" {
 			continue
 		}
 		kept = append(kept, f)
@@ -92,6 +105,12 @@ func HasSecret(dsn string) bool {
 		return true
 	}
 	if u, err := url.Parse(dsn); err == nil {
+		if u.Scheme != "" {
+			query, err := url.ParseQuery(u.RawQuery)
+			if err != nil || query.Has("password") || query.Has("sslpassword") {
+				return true
+			}
+		}
 		if u.User != nil {
 			if _, has := u.User.Password(); has {
 				return true
