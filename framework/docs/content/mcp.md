@@ -162,7 +162,11 @@ A `ToolHandler` returns `any`, normalized by type:
 | anything else | JSON-marshaled into one text block |
 
 A non-nil error becomes a JSON-RPC error, but only a deliberate
-`*RPCError` keeps its message verbatim — a plain error is logged
+`*RPCError` keeps its message verbatim. A typed `*handler.Error` with a
+4xx status (including a wrapped refusal from `handler.ToolAdapter`)
+becomes `-32602` with its translated public message and HTTP `code`,
+stable `reason`, and any `fields` / `field_reasons` in `data`. Its
+wrapped internal cause is never included. A plain error or typed 5xx is logged
 server-side and answered with the generic "internal tool error", so
 handler text (filesystem paths, driver messages) never crosses the
 transport. For a failure the caller should see as tool output rather
