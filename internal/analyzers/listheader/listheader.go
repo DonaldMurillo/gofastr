@@ -22,13 +22,16 @@
 // resp.Header, a local) whose constant name is one of the list-valued
 // headers this rule knows (Connection, Upgrade, Sec-WebSocket-Protocol,
 // Sec-WebSocket-Extensions, Accept-Encoding, TE, Cache-Control, Vary;
-// any case), whose result, directly or through a local it is assigned
-// to, is SPLIT or TOKEN-COMPARED: an argument to strings.Split/SplitN/
-// SplitSeq/Fields/FieldsSeq/FieldsFunc/Cut/Contains/ContainsAny/
-// EqualFold/HasPrefix/HasSuffix/Index, an operand of == or != against a
-// non-empty constant, or an argument to a same-package function that
-// does one of those to its own string parameter (acceptsGzip,
-// varyHasStar, the old headerHasToken). Reported at the Get.
+// any case), whose result, directly or through a local it is bound to
+// (an assignment or a var declaration, a wrapper call like
+// strings.TrimSpace in between), is SPLIT or TOKEN-COMPARED: an
+// argument to strings.Split/SplitN/SplitSeq/Fields/FieldsSeq/
+// FieldsFunc/Cut/Contains/ContainsAny/EqualFold/HasPrefix/HasSuffix/
+// Index, an operand of == or != against a non-empty constant, the tag
+// of a switch whose cases are constants, or an argument to a
+// same-package function that does one of those to its own string
+// parameter (acceptsGzip, varyHasStar, the old headerHasToken).
+// Reported at the Get.
 //
 // Silent postures, deliberately:
 //   - a presence test (h.Get(name) != "" or == ""): the first line
@@ -191,6 +194,10 @@ func tokenUse(pass *analysis.Pass, e ast.Expr, parents map[ast.Node]ast.Node, sp
 				}
 			}
 		}
+	case *ast.SwitchStmt:
+		// A switch on the value whose cases are constants is a token
+		// compare against each of them.
+		return p.Tag == e && constCase(pass, p)
 	case *ast.BinaryExpr:
 		if p.Op != token.EQL && p.Op != token.NEQ {
 			return false
@@ -201,6 +208,26 @@ func tokenUse(pass *analysis.Pass, e ast.Expr, parents map[ast.Node]ast.Node, sp
 		}
 		if s, ok := astx.StringConstant(pass, other); ok && s != "" {
 			return true
+		}
+	}
+	return false
+}
+
+// constCase reports whether sw has at least one non-empty constant
+// string case, the token a switch on a header value compares against.
+func constCase(pass *analysis.Pass, sw *ast.SwitchStmt) bool {
+	if sw.Body == nil {
+		return false
+	}
+	for _, cc := range sw.Body.List {
+		cl, ok := cc.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+		for _, e := range cl.List {
+			if s, ok := astx.StringConstant(pass, e); ok && s != "" {
+				return true
+			}
 		}
 	}
 	return false
@@ -255,20 +282,49 @@ func isListGet(pass *analysis.Pass, call *ast.CallExpr) bool {
 	return ok && listHeaders[http.CanonicalHeaderKey(name)]
 }
 
-// boundLocal: the local variable call's value is assigned to, nil when
-// it is not a single-value assignment to an identifier.
+// boundLocal: the local variable call's value is bound to, directly or
+// through wrapper calls that carry it onward (strings.TrimSpace of a
+// Get), nil when it is not a single-value binding to an identifier. A
+// var declaration binds like an assignment.
 func boundLocal(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.Node]ast.Node) types.Object {
-	as, ok := parents[call].(*ast.AssignStmt)
-	if !ok || len(as.Lhs) != len(as.Rhs) {
-		return nil
-	}
-	for i, rhs := range as.Rhs {
-		if rhs != call {
+	e := ast.Expr(call)
+	for hops := 0; hops < 3; hops++ {
+		switch p := parents[e].(type) {
+		case *ast.CallExpr:
+			// The value rides inside a wrapper call whose result is
+			// what gets bound.
+			if p.Fun == e {
+				return nil
+			}
+			e = p
 			continue
+		case *ast.AssignStmt:
+			if len(p.Lhs) != len(p.Rhs) {
+				return nil
+			}
+			for i, rhs := range p.Rhs {
+				if rhs != e {
+					continue
+				}
+				if id, ok := p.Lhs[i].(*ast.Ident); ok {
+					return pass.TypesInfo.ObjectOf(id)
+				}
+				return nil
+			}
+			return nil
+		case *ast.ValueSpec:
+			for i, v := range p.Values {
+				if v != e {
+					continue
+				}
+				if i < len(p.Names) {
+					return pass.TypesInfo.ObjectOf(p.Names[i])
+				}
+				return nil
+			}
+			return nil
 		}
-		if id, ok := as.Lhs[i].(*ast.Ident); ok {
-			return pass.TypesInfo.ObjectOf(id)
-		}
+		return nil
 	}
 	return nil
 }

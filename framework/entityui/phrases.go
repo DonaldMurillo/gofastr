@@ -28,6 +28,7 @@ var (
 	reasonBulkStale        = i18n.Define("entityui.bulk_stale", "The list changed since it was shown. Reload it and try again.")
 	reasonSavedBadFilter   = i18n.Define("entityui.saved_bad_filter", "The filter does not apply to this list.")
 	reasonSavedBadCols     = i18n.Define("entityui.saved_bad_cols", "The columns do not apply to this list.")
+	reasonSavedBadText     = i18n.Define("entityui.saved_bad_text", "The name or filter holds characters that cannot be stored.")
 	reasonOverrideFailed   = i18n.Define("entityui.override_failed", "Could not override the status.")
 	reasonOverrideBlank    = i18n.Define("entityui.override_blank", "A reason is required.")
 	reasonOverrideLong     = i18n.Define("entityui.override_long", "The reason is longer than 500 characters.")

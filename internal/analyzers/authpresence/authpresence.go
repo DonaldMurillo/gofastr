@@ -22,13 +22,15 @@
 //     lists the prefixed name first.
 //
 // Arm (a) fires on a presence test of the Authorization header — a
-// Header.Get("Authorization") value (or a local bound to one,
-// TrimSpace included) compared with "" or measured with len — in a
-// function that never otherwise uses the value: passes it to a call,
-// slices or indexes it, or compares it with anything but "". A
-// function that calls one that parses the header (a fact, so a helper
-// in another package counts) is quiet too: `if h == "" { anonymous }`
-// followed by parseBearer(r) is a presence check guarding a parse.
+// Header.Get("Authorization") value (or a local bound to one, by
+// assignment or var declaration, TrimSpace included, and a reference
+// inside a nested closure counts: the closure runs in this function)
+// compared with "" or measured with len — in a function that never
+// otherwise uses the value: passes it to a call, slices or indexes it,
+// or compares it with anything but "". A function that calls one that
+// parses the header (a fact, so a helper in another package counts) is
+// quiet too: `if h == "" { anonymous }` followed by parseBearer(r) is a
+// presence check guarding a parse.
 //
 // Arm (b) fires on a []string literal that lists a cookie name before
 // "__Host-"+name or "__Secure-"+name (the same expression, or two
@@ -165,22 +167,32 @@ func scanAuth(pass *analysis.Pass, body *ast.BlockStmt, fi *funcInfo) {
 		return
 	}
 	parents := dominance.Parents(body)
-	// Locals bound to an Authorization read (or TrimSpace of one).
+	// Locals bound to an Authorization read (or TrimSpace of one), by
+	// assignment or var declaration.
 	locals := map[types.Object]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		if _, ok := n.(*ast.FuncLit); ok {
 			return false
 		}
-		as, ok := n.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != len(as.Rhs) {
-			return true
+		var lhs []ast.Expr
+		var rhs []ast.Expr
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			lhs, rhs = x.Lhs, x.Rhs
+		case *ast.ValueSpec:
+			for _, id := range x.Names {
+				lhs = append(lhs, id)
+			}
+			rhs = x.Values
 		}
-		for i, rhs := range as.Rhs {
-			if isAuthValue(pass, rhs, locals) {
-				if id, ok := as.Lhs[i].(*ast.Ident); ok && id.Name != "_" {
-					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-						locals[obj] = true
-					}
+		for i, l := range lhs {
+			id, ok := l.(*ast.Ident)
+			if !ok || i >= len(rhs) || !isAuthValue(pass, rhs[i], locals) {
+				continue
+			}
+			if id.Name != "_" {
+				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+					locals[obj] = true
 				}
 			}
 		}
@@ -189,6 +201,11 @@ func scanAuth(pass *analysis.Pass, body *ast.BlockStmt, fi *funcInfo) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.FuncLit:
+			// A nested literal is its own funcInfo for its reads and
+			// callees, but a reference there to THIS function's bound
+			// local is still this function's use: the closure runs in
+			// it (a deferred or goroutine literal guarding on auth).
+			litUses(pass, x.Body, parents, locals, fi)
 			return false
 		case *ast.CallExpr:
 			if fn, ok := astx.CalleeFunc(pass, ast.Unparen(x.Fun)); ok {
@@ -197,6 +214,27 @@ func scanAuth(pass *analysis.Pass, body *ast.BlockStmt, fi *funcInfo) {
 			if isAuthRead(pass, x) {
 				classify(pass, x, parents, locals, fi)
 			}
+		case *ast.Ident:
+			if obj := pass.TypesInfo.Uses[x]; obj != nil && locals[obj] {
+				classify(pass, x, parents, locals, fi)
+			}
+		}
+		return true
+	})
+}
+
+// litUses classifies this function's Authorization locals inside a
+// nested literal's body, recursively; the literal's own reads and
+// callees belong to its own funcInfo.
+func litUses(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.Node]ast.Node, locals map[types.Object]bool, fi *funcInfo) {
+	if body == nil {
+		return
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			litUses(pass, x.Body, parents, locals, fi)
+			return false
 		case *ast.Ident:
 			if obj := pass.TypesInfo.Uses[x]; obj != nil && locals[obj] {
 				classify(pass, x, parents, locals, fi)
@@ -246,6 +284,16 @@ func classify(pass *analysis.Pass, ref ast.Expr, parents map[ast.Node]ast.Node, 
 			// own references.
 			for _, l := range x.Lhs {
 				if id, ok := l.(*ast.Ident); ok && locals[pass.TypesInfo.ObjectOf(id)] {
+					return
+				}
+			}
+			fi.uses = true
+			return
+		case *ast.ValueSpec:
+			// A var declaration binding to a local: classified at that
+			// local's own references.
+			for _, n := range x.Names {
+				if locals[pass.TypesInfo.ObjectOf(n)] {
 					return
 				}
 			}

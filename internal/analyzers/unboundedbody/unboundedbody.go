@@ -61,9 +61,11 @@
 //
 //   - r.Body is reassigned from http.MaxBytesReader / io.LimitReader in
 //     the same function (the battery/auth spelling);
-//   - a same-package helper that establishes the cap (its own body wraps
-//     a request) is called first with this request (the crud spelling:
-//     limitRequestBody then readRequestBody);
+//   - a same-package helper that establishes the cap (its own body
+//     rebinds the request's Body from a capping constructor) is called
+//     first with this request (the crud spelling: limitRequestBody
+//     then readRequestBody; a helper whose LimitReader wraps some
+//     other reader caps nothing it is handed);
 //   - every same-package caller of this function has already capped the
 //     request it passes in, by either spelling above, before the call
 //     (the parse-helper credit: framework/crud parseMultipartBody is
@@ -402,6 +404,33 @@ func calleeObject(pass *analysis.Pass, fun ast.Expr) types.Object {
 // the middleware spelling, r.Body = http.MaxBytesReader(w, r.Body, n).
 // A function with a LimitReader over some other reader caps nothing it
 // wraps.
+// rebindsRequestBody reports whether body (literals included) assigns
+// an *http.Request's Body from a capping constructor: the middleware
+// spelling, r.Body = http.MaxBytesReader(w, r.Body, n). A function
+// with a LimitReader over some other reader caps nothing it wraps.
+func rebindsRequestBody(pass *analysis.Pass, body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || found {
+			return !found
+		}
+		for i, lhs := range assign.Lhs {
+			sel, ok := ast.Unparen(lhs).(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Body" || i >= len(assign.Rhs) {
+				continue
+			}
+			if isInboundRequest(pass, sel.X) && hasCapCall(assign.Rhs[i]) {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// bodyRebinders maps each package function whose body rebinds a
+// request's Body from a capping constructor.
 func bodyRebinders(pass *analysis.Pass) map[types.Object]bool {
 	out := map[types.Object]bool{}
 	for _, f := range pass.Files {
@@ -413,24 +442,7 @@ func bodyRebinders(pass *analysis.Pass) map[types.Object]bool {
 			if !ok || decl.Body == nil {
 				continue
 			}
-			found := false
-			ast.Inspect(decl.Body, func(n ast.Node) bool {
-				assign, ok := n.(*ast.AssignStmt)
-				if !ok || found {
-					return !found
-				}
-				for i, lhs := range assign.Lhs {
-					sel, ok := ast.Unparen(lhs).(*ast.SelectorExpr)
-					if !ok || sel.Sel.Name != "Body" || i >= len(assign.Rhs) {
-						continue
-					}
-					if isInboundRequest(pass, sel.X) && hasCapCall(assign.Rhs[i]) {
-						found = true
-					}
-				}
-				return !found
-			})
-			if found {
+			if rebindsRequestBody(pass, decl.Body) {
 				if obj := pass.TypesInfo.Defs[decl.Name]; obj != nil {
 					out[obj] = true
 				}
@@ -592,18 +604,23 @@ func helperCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.
 	return found
 }
 
-// cappingObjects maps every package-level function or method whose body
-// establishes a body cap to its object, for the helper-called-first
-// credit. Methods included: crud's limitRequestBody shape is a plain
-// function but nothing about the credit should depend on that.
+// cappingObjects maps every package-level function or method whose
+// body rebinds an inbound request's Body from a capping constructor to
+// its object, for the helper-called-first credit. Methods included:
+// crud's limitRequestBody shape is a plain function but nothing about
+// the credit should depend on that. The rebind is the test
+// bodyRebinders applies: a helper whose LimitReader wraps some other
+// reader caps nothing of the request it is handed, so it earns no
+// credit (peek, the 2026-11-03 gap round: the mere presence of a cap
+// constructor silenced a sibling's uncapped read).
 func cappingObjects(pass *analysis.Pass) map[types.Object]bool {
 	out := map[types.Object]bool{}
 	for _, fn := range allFuncsAll(pass, false) {
 		decl, ok := fn.(*ast.FuncDecl)
-		if !ok {
+		if !ok || decl.Body == nil {
 			continue
 		}
-		if hasCapCall(decl.Body) {
+		if rebindsRequestBody(pass, decl.Body) {
 			if obj := pass.TypesInfo.Defs[decl.Name]; obj != nil {
 				out[obj] = true
 			}

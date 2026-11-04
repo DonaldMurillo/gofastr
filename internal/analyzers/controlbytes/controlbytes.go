@@ -69,7 +69,9 @@
 //     that panicked on request data hands request bytes to recover(),
 //     and the reporter seam cannot tell which panic did, so a struct
 //     whose field some in-package literal filled from recover() (or
-//     from any request-derived value) is CARRYING, and exactly its
+//     from any request-derived value — rendered straight, through a
+//     wrapper call, or through a method on it like rec.(error).Error())
+//     is CARRYING, and exactly its
 //     carrying fields are sources wherever a parameter of that type
 //     reaches a sink (battery/log's ErrorReport, read by
 //     SlogErrorReporter.Report — probe TestErrorReporterRedScrubsAttrs).
@@ -118,8 +120,9 @@
 // BODY is not a sink — it is the response; span NAMES (tracer.Start,
 // span.SetName) and log keys are left alone, only messages and VALUES
 // are checked; fmt.Sprint* without a writer, and Fprint* to any writer
-// other than os.Stdout/os.Stderr (an http.ResponseWriter or a
-// bytes.Buffer has its own framing); Header.Set/Add on a map whose
+// other than os.Stdout/os.Stderr themselves or a local every binding
+// of which is one (an http.ResponseWriter or a bytes.Buffer has its
+// own framing); Header.Set/Add on a map whose
 // provenance is an OUTBOUND *http.Request — an
 // http.NewRequest/NewRequestWithContext result, or any request-typed
 // value that is not the inbound handler parameter — because the client
@@ -130,10 +133,11 @@
 // the byte-indexing form above is the whole interprocedural
 // concession; and structured values like a whole *http.Request or an
 // ErrorReport struct are not sources, only the string-bearing request
-// selectors are (Method/Host/RemoteAddr/RequestURI/URL.Path/
-// URL.RawQuery, the Header.Get/FormValue/PathValue/PostFormValue/
-// Referer/UserAgent/BasicAuth accessors, url.Values.Get, and the
-// Value field of a cookie bound from r.Cookie);
+// selectors are (Method/Host/RemoteAddr/RequestURI/Header itself/
+// URL.Path/URL.RawQuery, the Header.Get/Header.Values/FormValue/
+// PathValue/PostFormValue/Referer/UserAgent/BasicAuth accessors,
+// url.Values.Get, an index into r.Header, and the Value field of a
+// cookie bound from r.Cookie or an element of r.Cookies());
 //   - a whole same-package struct handed to a helper is a payload, not
 //     a derivation: flash.put(&formFlash{...}) returns a random token
 //     whatever the record's fields carried, so the call's result stays
@@ -198,10 +202,12 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // scrubName matches the callee names the repo treats as a control-byte
-// scrub. Deliberately generous: any escape/quote re-encodes by
-// construction, and recognizing scrubbing by body shape across package
-// boundaries is beyond a one-pass analyzer.
-var scrubName = regexp.MustCompile(`(?i)scrub|sanitiz|clean|escape|quote|redact`)
+// scrub. Deliberately generous: any escape/quote/encode re-encodes by
+// construction (url.Values.Encode percent-encodes every unsafe byte,
+// the receiver-walk round of 2026-11-03 made that load-bearing), and
+// recognizing scrubbing by body shape across package boundaries is
+// beyond a one-pass analyzer.
+var scrubName = regexp.MustCompile(`(?i)scrub|sanitiz|clean|escape|quote|redact|encode`)
 
 // strongScrubName matches the unambiguous re-encoders; cleanOnlyName
 // matches names whose ONLY scrub evidence is the substring "clean".
@@ -209,7 +215,7 @@ var scrubName = regexp.MustCompile(`(?i)scrub|sanitiz|clean|escape|quote|redact`
 // control byte through, so a clean-named callee must show byte-level
 // body evidence instead of clearing on the name.
 var (
-	strongScrubName = regexp.MustCompile(`(?i)scrub|sanitiz|escape|quote|redact`)
+	strongScrubName = regexp.MustCompile(`(?i)scrub|sanitiz|escape|quote|redact|encode`)
 	cleanOnlyName   = regexp.MustCompile(`(?i)clean`)
 )
 
@@ -863,16 +869,19 @@ var sinks = []sink{
 				return false
 			}
 			// os.Stdout is itself a selector on the os package; a
-			// local variable or parameter that merely shares the name
-			// is not the terminal sink this rule means.
-			wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr)
-			if !ok {
-				return false
+			// local bound to it (every binding) is the same stream,
+			// while a parameter that merely shares the name is not
+			// the terminal sink this rule means.
+			if wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr); ok {
+				if wsel.Sel.Name != "Stdout" && wsel.Sel.Name != "Stderr" {
+					return false
+				}
+				return pkgPathOf(t.pass, wsel) == "os"
 			}
-			if wsel.Sel.Name != "Stdout" && wsel.Sel.Name != "Stderr" {
-				return false
+			if id, ok := ast.Unparen(call.Args[0]).(*ast.Ident); ok {
+				return stdStreamLocals(t.pass)[t.pass.TypesInfo.ObjectOf(id)]
 			}
-			return pkgPathOf(t.pass, wsel) == "os"
+			return false
 		},
 		// The F forms carry the writer at offset 0; the bare Print
 		// forms check every argument, format string included.
@@ -1010,10 +1019,12 @@ func newTaint(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carryin
 					continue
 				}
 				obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var)
-				if !ok || !carriesStrings(obj.Type()) && !t.samePackageStruct(obj.Type()) {
+				if !ok || !carriesStrings(obj.Type()) && !t.samePackageStruct(obj.Type()) && !isCookieType(obj.Type()) {
 					// A same-package struct element (for _, att := range
 					// email.Attachments) carries the seam onward: its
-					// fields are the input struct's fields.
+					// fields are the input struct's fields. A cookie
+					// element (for _, c := range r.Cookies()) carries
+					// the request's bytes in its Value field.
 					continue
 				}
 				t.bind[obj] = append(t.bind[obj], n.X)
@@ -1148,6 +1159,16 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		if t.callCleared(e, seen, depth) {
 			return false
 		}
+		// A method's result derives from its receiver the way a
+		// function's does from its arguments: rec.(error).Error()
+		// renders the recover() value. A package-qualified call has
+		// no receiver, and a same-package struct receiver is a
+		// payload, like an argument.
+		if sel, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok && pkgPathOf(t.pass, sel) == "" {
+			if !t.structPayload(sel.X) && t.orig(sel.X, seen, depth+1) {
+				return true
+			}
+		}
 		for _, arg := range e.Args {
 			if t.structPayload(arg) {
 				// A whole same-package struct handed to a helper is a
@@ -1168,9 +1189,10 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		if isRequestSelector(t.pass, e) {
 			return true
 		}
-		if e.Sel.Name == "Value" && t.boundToCookie(e.X) {
-			// c.Value where c was assigned from r.Cookie(...): the
-			// cookie's Value is request bytes.
+		if e.Sel.Name == "Value" && t.cookieValue(e.X) {
+			// c.Value where c is a cookie the request supplied —
+			// r.Cookie(name)'s pair, or an element of r.Cookies():
+			// the cookie's Value is request bytes.
 			return true
 		}
 		if t.seamField(e) {
@@ -1194,6 +1216,9 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 	case *ast.KeyValueExpr:
 		return t.orig(e.Value, seen, depth+1)
 	case *ast.IndexExpr:
+		return t.orig(e.X, seen, depth+1)
+	case *ast.TypeAssertExpr:
+		// v.(error) and friends carry v's bytes through the assert.
 		return t.orig(e.X, seen, depth+1)
 	case *ast.UnaryExpr:
 		// &x (chiefly &SomeStruct{...}): what x carries, the pointer
@@ -1576,11 +1601,12 @@ func declsOf(pass *analysis.Pass) map[types.Object]*ast.FuncDecl {
 // ---- source expressions ------------------------------------------------
 
 // isRequestSelector: r.Method, r.Host, r.RemoteAddr, r.RequestURI,
-// r.URL.Path, r.URL.RawQuery on an *http.Request (or an http.Request
-// value).
+// r.Header (whose values are the request's field lines, read whole,
+// indexed or through Values), r.URL.Path, r.URL.RawQuery on an
+// *http.Request (or an http.Request value).
 func isRequestSelector(pass *analysis.Pass, e *ast.SelectorExpr) bool {
 	switch e.Sel.Name {
-	case "Method", "Host", "RemoteAddr", "RequestURI":
+	case "Method", "Host", "RemoteAddr", "RequestURI", "Header":
 		return isRequestTyped(pass, e.X)
 	case "Path", "RawQuery":
 		inner, ok := e.X.(*ast.SelectorExpr)
@@ -1612,7 +1638,7 @@ func isRequestSourceCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	switch sel.Sel.Name {
 	case "FormValue", "PathValue", "PostFormValue", "Referer", "UserAgent", "BasicAuth":
 		return isRequestTyped(pass, sel.X)
-	case "Get":
+	case "Get", "Values":
 		tv, ok := pass.TypesInfo.Types[sel.X]
 		if !ok {
 			return false
@@ -1704,6 +1730,121 @@ func isRecoverCallExpr(pass *analysis.Pass, e ast.Expr) bool {
 // isRecoverCall: the builtin recover().
 func (t *taint) isRecoverCall(call *ast.CallExpr) bool {
 	return isRecoverCallExpr(t.pass, call)
+}
+
+// isRequestCookiesCall: r.Cookies() — every *http.Cookie it returns
+// carries request bytes in its Value field.
+func isRequestCookiesCall(pass *analysis.Pass, call *ast.CallExpr) bool {
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "Cookies" && isRequestTyped(pass, sel.X)
+}
+
+// cookieValue reports whether e names a cookie whose Value field holds
+// request bytes: a local bound from r.Cookie(name) or from a range over
+// r.Cookies(), or an index into r.Cookies() directly. The cookie struct
+// is not a string carrier, so its bytes enter only through .Value.
+func (t *taint) cookieValue(e ast.Expr) bool {
+	x := ast.Unparen(e)
+	for {
+		ix, ok := x.(*ast.IndexExpr)
+		if !ok {
+			break
+		}
+		x = ast.Unparen(ix.X)
+	}
+	if call, ok := x.(*ast.CallExpr); ok {
+		return isRequestCookiesCall(t.pass, call)
+	}
+	id, ok := x.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	obj, ok := t.pass.TypesInfo.ObjectOf(id).(*types.Var)
+	if !ok {
+		return false
+	}
+	for _, b := range t.bind[obj] {
+		call, ok := ast.Unparen(b).(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		if isRequestCookieCall(t.pass, call) || isRequestCookiesCall(t.pass, call) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCookieType: *http.Cookie (or an http.Cookie value).
+func isCookieType(t types.Type) bool {
+	return astx.IsNamed(astx.Deref(t), "net/http", "Cookie")
+}
+
+// stdLocalsMemo caches stdStreamLocals per pass.
+var stdLocalsMemo = struct {
+	sync.Mutex
+	byPass map[*analysis.Pass]map[types.Object]bool
+}{byPass: map[*analysis.Pass]map[types.Object]bool{}}
+
+// stdStreamLocals maps each local EVERY binding of which is os.Stdout
+// or os.Stderr: fmt.Fprintf(w, …) through such a local is the terminal
+// sink. A local re-bound to some other writer is not, and a parameter
+// that merely shares the name never was.
+func stdStreamLocals(pass *analysis.Pass) map[types.Object]bool {
+	stdLocalsMemo.Lock()
+	defer stdLocalsMemo.Unlock()
+	if m, ok := stdLocalsMemo.byPass[pass]; ok {
+		return m
+	}
+	out := map[types.Object]bool{}
+	nonStd := map[types.Object]bool{}
+	isStdStream := func(e ast.Expr) bool {
+		sel, ok := ast.Unparen(e).(*ast.SelectorExpr)
+		if !ok || (sel.Sel.Name != "Stdout" && sel.Sel.Name != "Stderr") {
+			return false
+		}
+		return pkgPathOf(pass, sel) == "os"
+	}
+	bind := func(id *ast.Ident, rhs ast.Expr) {
+		obj := pass.TypesInfo.ObjectOf(id)
+		if obj == nil {
+			return
+		}
+		if isStdStream(rhs) {
+			out[obj] = true
+		} else {
+			nonStd[obj] = true
+		}
+	}
+	for _, f := range pass.Files {
+		if pathflow.IsTestFile(pass, f) {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.FuncLit:
+				return true
+			case *ast.AssignStmt:
+				for i, l := range x.Lhs {
+					if id, ok := l.(*ast.Ident); ok && i < len(x.Rhs) {
+						bind(id, x.Rhs[i])
+					}
+				}
+			case *ast.ValueSpec:
+				for i, name := range x.Names {
+					if i < len(x.Values) {
+						bind(name, x.Values[i])
+					}
+				}
+			}
+			return true
+		})
+	}
+	for obj := range nonStd {
+		delete(out, obj)
+	}
+	stdLocalsMemo.byPass[pass] = out
+	return out
 }
 
 // structPayload: e is a value of a same-package struct type (a record

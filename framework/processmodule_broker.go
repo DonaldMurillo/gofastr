@@ -659,6 +659,7 @@ func credentialSnapshot(r *http.Request) http.Header {
 			if v == "" {
 				continue
 			}
+			//gofastr:allow(controlbytes) the snapshot re-presents the caller's own credential headers on the internal re-dispatch request (snapshotRequest); the client transport validates and rejects control bytes at write time, the outbound posture this rule already grants a request-typed map
 			h.Add(name, v)
 		}
 	}

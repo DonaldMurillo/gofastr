@@ -17,14 +17,19 @@
 //     and answered 503 "store down"; the middleware now refuses a key
 //     outside printable ASCII (printableASCII);
 //   - 1de1c216, 155cafcd: a nested ?rel.f_like= value and a CoerceValue
-//     argument, and d6167d1a: an idempotency principal. These three
+//     argument, and d6167d1a: an idempotency principal. The first two
 //     flowed through struct fields (nestedFilter.Value, ParsedFilter
-//     .Value) or a host callback (IdempotencyConfig.Principal), which
-//     this rule does not follow; see the residuals below.
+//     .Value), which the field arm below now follows; the third through
+//     a host callback (IdempotencyConfig.Principal), which it does not.
+//   - R8-TX-04: a saved view's name and filter reached the admin
+//     store's INSERT through entityui.SavedView's fields, found by the
+//     field arm on its first tree run.
 //
-// Sources: (*http.Request).FormValue/PostFormValue/PathValue,
-// r.URL.Query(), r.Form and r.PostForm, r.Header (Get, Values, index),
-// and anything read out of them: url.Values Get and index, slices,
+// Sources: (*http.Request).FormValue/PostFormValue/PathValue/Referer/
+// UserAgent/Cookie/Cookies, r.URL.Query() (on the literal r.URL or a
+// local bound to it), r.Form and r.PostForm, r.Header (Get, Values,
+// index), the Value field of a cookie the request supplied, and
+// anything read out of them: url.Values Get and index, slices,
 // concatenations, conversions, and the string results of calls handed
 // them.
 //
@@ -36,6 +41,18 @@
 // value and InsertBuilder.Values; and the Args field of a struct literal
 // that carries a SQL string beside it (filter.Condition, hook
 // .WhereClause).
+//
+// Struct fields carry request text too. A write fills a field when a
+// struct literal (keyed or positional) or an assignment `v.f = x` stores
+// request text in it, directly or through a parameter its callers hand
+// request text (a constructor newEntry(r.PathValue("k"))). A read of a
+// filled field is request text, in this package and, through an
+// exported fact, in every package that imports it. The arm is
+// field-wide, not per object: one unchecked write taints every read of
+// the field. A check on the read is not credited — check before the
+// value is stored, so the field never holds unvetted bytes. Field
+// writes count only after the checks have converged, so a write vetted
+// by a helper declared later in the file stays quiet.
 //
 // Flow crosses functions through per-function summaries, computed to a
 // fixed point inside the package and exported as facts so callers in
@@ -58,8 +75,12 @@
 //     or a call that hands the parameter to such a function (filter
 //     .CoerceValue delegates to storableText). The check dominates when
 //     it sits in an enclosing if's condition or in a statement before
-//     the use whose result is kept (a diverging `if !ok { return }`, an
-//     `err` that is checked);
+//     the use whose verdict is kept AND gated — a diverging
+//     `if err != nil { return }`, an enclosing if on the verdict; a
+//     verdict only logged or passed on vets nothing. A function's Check
+//     fact (the credit its callers see) holds only when no bind of the
+//     parameter escapes its check: a body that binds first and
+//     validates afterwards is a Sink, not a Check.
 //   - a value compared against an allow-list first: an enclosing if
 //     that tests it == a constant or asserts its membership in a map or
 //     a slices.Contains list; a diverging if that tests it != a constant
@@ -75,8 +96,7 @@
 //   - an encoder whose output is ASCII (encoding/hex, base64, base32,
 //     strconv.Quote*/Itoa/Format*, url.QueryEscape/PathEscape) and a
 //     hash of the value;
-//   - the SQL string itself (a column or table name is not a bind), and
-//     struct fields read back (field flow is a residual);
+//   - the SQL string itself (a column or table name is not a bind);
 //   - _test.go files.
 //
 // The first whole-tree run found the shape in five handlers, each a
@@ -85,10 +105,10 @@
 // queue replay and battery/semantic's DELETE /doc. Each now refuses the
 // value before any query.
 //
-// Residuals, stated so nobody assumes coverage: struct-field flow (a
-// request value stored in a struct and bound later through the field,
-// the 1de1c216 and 155cafcd shapes), host callbacks (the d6167d1a
-// principal), and strings.Builder output.
+// Residuals, stated so nobody assumes coverage: host callbacks (the d6167d1a principal), a method value or call
+// through an interface whose implementation lives in another package
+// (battery/admin's grant grid binds grantChange.role through
+// access.GrantStore, R8-AA-01), and strings.Builder output.
 //
 // The fix spelling: refuse the value before it binds, with a 400 naming
 // the field (filter's storableText: utf8.ValidString(s) &&
@@ -116,7 +136,21 @@ var Analyzer = &analysis.Analyzer{
 	Name:      "textbind",
 	Doc:       "report request text bound into a SQL parameter with no utf8/NUL check: Postgres refuses it with 22021 (a 500) where SQLite answers 200",
 	Run:       run,
-	FactTypes: []analysis.Fact{(*summary)(nil)},
+	FactTypes: []analysis.Fact{(*summary)(nil), (*fieldFact)(nil)},
+}
+
+// fieldFact marks a struct field some write fills with request text, so
+// a read of it in an importing package is request text too.
+type fieldFact struct{}
+
+func (*fieldFact) AFact()         {}
+func (*fieldFact) String() string { return "request text" }
+
+// paramField is a write of a function's parameters (mask) into a field:
+// a call handing request text in one of those positions fills it.
+type paramField struct {
+	mask  uint64
+	field *types.Var
 }
 
 // summary is what a caller needs to know about a function: which
@@ -157,6 +191,57 @@ type checker struct {
 	decls   map[*types.Func]*ast.FuncDecl
 	allowed func(token.Pos) bool
 	ifaces  map[*types.Func][]*types.Func // interface method -> same-package implementations
+
+	// fields holds the package's struct fields some write fills with
+	// request text; paramFields the writes of a function's parameters
+	// into a field, resolved at its call sites. Both only grow, and a
+	// new entry runs another round of the flow fixed point.
+	fields      map[*types.Var]bool
+	paramFields map[*types.Func][]paramField
+	grew        bool
+	// flows is set once the checks have converged. Field writes count
+	// only then: a write judged before its check's callee was summarised
+	// would mark the field for good.
+	flows bool
+}
+
+// markField records that field holds request text.
+func (c *checker) markField(field *types.Var) {
+	field = field.Origin()
+	if field.Pkg() != c.pass.Pkg || c.fields[field] {
+		return
+	}
+	c.fields[field] = true
+	c.grew = true
+}
+
+// addParamField records that fn writes the parameters in mask into field.
+func (c *checker) addParamField(fn *types.Func, mask uint64, field *types.Var) {
+	field = field.Origin()
+	for i, pf := range c.paramFields[fn] {
+		if pf.field == field {
+			if pf.mask|mask != pf.mask {
+				c.paramFields[fn][i].mask |= mask
+				c.grew = true
+			}
+			return
+		}
+	}
+	c.paramFields[fn] = append(c.paramFields[fn], paramField{mask, field})
+	c.grew = true
+}
+
+// fieldHolds reports whether field carries request text: marked in this
+// package, or by a fact from the package that declares it.
+func (c *checker) fieldHolds(field *types.Var) bool {
+	field = field.Origin()
+	if field.Pkg() == c.pass.Pkg {
+		return c.fields[field]
+	}
+	if field.Pkg() == nil {
+		return false
+	}
+	return c.pass.ImportObjectFact(field, new(fieldFact))
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -166,6 +251,9 @@ func run(pass *analysis.Pass) (any, error) {
 		decls:   map[*types.Func]*ast.FuncDecl{},
 		allowed: allow.Allowed(pass, "textbind"),
 		ifaces:  map[*types.Func][]*types.Func{},
+
+		fields:      map[*types.Var]bool{},
+		paramFields: map[*types.Func][]paramField{},
 	}
 	var order []*types.Func
 	for _, f := range pass.Files {
@@ -195,7 +283,9 @@ func run(pass *analysis.Pass) (any, error) {
 	// field only grows within its phase and holds 64 bits, so both
 	// terminate; the cap is a guard against a bug.
 	for _, flows := range []bool{false, true} {
+		c.flows = flows
 		for round := 0; round < 32; round++ {
+			c.grew = false
 			changed := false
 			for _, fn := range order {
 				s := c.summarize(fn, c.decls[fn], nil)
@@ -213,7 +303,7 @@ func run(pass *analysis.Pass) (any, error) {
 					changed = true
 				}
 			}
-			if !changed {
+			if !changed && !c.grew {
 				break
 			}
 		}
@@ -232,6 +322,9 @@ func run(pass *analysis.Pass) (any, error) {
 				cp := *s
 				pass.ExportObjectFact(fn, &cp)
 			}
+		}
+		for field := range c.fields {
+			pass.ExportObjectFact(field, &fieldFact{})
 		}
 	}
 	return nil, nil
@@ -256,6 +349,7 @@ func isStdlib(pass *analysis.Pass) bool {
 // fnState is one function body under evaluation.
 type fnState struct {
 	c       *checker
+	fn      *types.Func
 	fd      *ast.FuncDecl
 	params  map[*types.Var]int
 	results map[*types.Var]bool
@@ -298,19 +392,17 @@ func (c *checker) summarize(fn *types.Func, fd *ast.FuncDecl, report func(token.
 	}
 	st.collectDefs()
 
-	// Storable checks the body performs on its own parameters.
-	for v, i := range st.params {
-		if stringish(v.Type()) && st.bodyChecks(v) {
-			st.out.Check |= bit(i)
-		}
-	}
-
+	st.fn = fn
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
 			st.callSinks(x)
+			st.callFields(x)
 		case *ast.CompositeLit:
 			st.literalSink(x)
+			st.literalFields(x)
+		case *ast.AssignStmt:
+			st.assignFields(x)
 		case *ast.ReturnStmt:
 			if st.enclosingLit(x) {
 				return true
@@ -319,6 +411,16 @@ func (c *checker) summarize(fn *types.Func, fd *ast.FuncDecl, report func(token.
 		}
 		return true
 	})
+
+	// Storable checks the body performs on its own parameters — after
+	// the walk, so a parameter whose bytes already reached a bind
+	// unchecked (the Sink bit) is not credited: a check that runs only
+	// after the parameter bound vets nothing.
+	for v, i := range st.params {
+		if stringish(v.Type()) && st.bodyChecks(v) && !has(st.out.Sink, i) {
+			st.out.Check |= bit(i)
+		}
+	}
 	return st.out
 }
 
@@ -673,12 +775,23 @@ func (st *fnState) exprTaint1(e ast.Expr) taint {
 		}
 		return st.identTaint(v, x)
 	case *ast.SelectorExpr:
+		// A field some write filled with request text.
+		if sel, ok := pass.TypesInfo.Selections[x]; ok && sel.Kind() == types.FieldVal {
+			if fv, ok := sel.Obj().(*types.Var); ok && st.c.fieldHolds(fv) {
+				return taint{src: true}
+			}
+		}
 		// r.Form, r.PostForm, r.Header on the inbound request.
 		if isRequest(typeOf(pass, x.X)) {
 			switch x.Sel.Name {
 			case "Form", "PostForm", "Header":
 				return taint{src: true}
 			}
+		}
+		// c.Value where c is a cookie the inbound request supplied
+		// (r.Cookie's pair, an element of r.Cookies()).
+		if x.Sel.Name == "Value" && isCookie(typeOf(pass, x.X)) && st.cookieFromRequest(x.X) {
+			return taint{src: true}
 		}
 		return taint{}
 	case *ast.IndexExpr:
@@ -920,7 +1033,7 @@ func (st *fnState) sourceCall(sel *ast.SelectorExpr) (taint, bool) {
 	switch {
 	case isRequest(recv):
 		switch sel.Sel.Name {
-		case "FormValue", "PostFormValue", "PathValue":
+		case "FormValue", "PostFormValue", "PathValue", "Referer", "UserAgent", "Cookie", "Cookies":
 			return taint{src: true}, true
 		}
 	case isNamed(recv, "net/url", "URL") || isPtrNamed(recv, "net/url", "URL"):
@@ -928,10 +1041,74 @@ func (st *fnState) sourceCall(sel *ast.SelectorExpr) (taint, bool) {
 			if inner, ok := ast.Unparen(sel.X).(*ast.SelectorExpr); ok && isRequest(typeOf(pass, inner.X)) {
 				return taint{src: true}, true
 			}
+			// u := r.URL: the local carries the request's URL, so
+			// u.Query() reads the request's query.
+			if id, ok := ast.Unparen(sel.X).(*ast.Ident); ok {
+				if v, ok := objOf(pass.TypesInfo, id).(*types.Var); ok {
+					for _, d := range st.defs[v] {
+						if inner, ok := ast.Unparen(d.rhs).(*ast.SelectorExpr); ok && inner.Sel.Name == "URL" && isRequest(typeOf(pass, inner.X)) {
+							return taint{src: true}, true
+						}
+					}
+				}
+			}
 			return taint{}, true
 		}
 	}
 	return taint{}, false
+}
+
+// cookieFromRequest reports whether e names a cookie the inbound
+// request supplied: an index into r.Cookies(), or a local bound to
+// r.Cookie(...) / r.Cookies() (a range element included).
+func (st *fnState) cookieFromRequest(e ast.Expr) bool {
+	x := ast.Unparen(e)
+	for {
+		ix, ok := x.(*ast.IndexExpr)
+		if !ok {
+			break
+		}
+		x = ast.Unparen(ix.X)
+	}
+	if call, ok := x.(*ast.CallExpr); ok {
+		sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		_, isSrc := st.sourceCall(sel)
+		return isSrc
+	}
+	id, ok := x.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	v, ok := objOf(st.c.pass.TypesInfo, id).(*types.Var)
+	if !ok {
+		return false
+	}
+	for _, d := range st.defs[v] {
+		rhs := d.rhs
+		if d.rangeOf != nil {
+			rhs = d.rangeOf
+		}
+		call, ok := ast.Unparen(rhs).(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		if _, isSrc := st.sourceCall(sel); isSrc {
+			return true
+		}
+	}
+	return false
+}
+
+// isCookie: *http.Cookie (or an http.Cookie value).
+func isCookie(t types.Type) bool {
+	return isPtrNamed(t, "net/http", "Cookie") || isNamed(t, "net/http", "Cookie")
 }
 
 // vetted reports whether a storable check or an allow-list test of v
@@ -960,7 +1137,8 @@ func (st *fnState) vetted(v *types.Var, use ast.Node, after token.Pos) bool {
 			return true
 		}
 	}
-	for _, stmts := range dominance.Prefix(use, st.parents, body) {
+	prefix := dominance.Prefix(use, st.parents, body)
+	for _, stmts := range prefix {
 		var okVars []types.Object // comma-ok lookups of v in a map
 		for _, s := range stmts {
 			if s.Pos() < after {
@@ -979,7 +1157,7 @@ func (st *fnState) vetted(v *types.Var, use ast.Node, after token.Pos) bool {
 					return true
 				}
 			}
-			if st.keptCheckIn(s, v) {
+			if verdicts := st.keptCheckIn(s, v); len(verdicts) > 0 && st.verdictGates(verdicts, s, prefix, use) {
 				return true
 			}
 		}
@@ -1056,26 +1234,55 @@ func (st *fnState) checksIn(e ast.Node, v *types.Var) bool {
 	return utf8Check(st.c.pass, e, v) && nulCheck(st.c.pass, e, v)
 }
 
-// keptCheckIn reports whether statement s calls a storable check on v
-// and keeps the verdict: `_, err := CoerceValue(…, v)` followed by an
-// err test, or `ok := storableText(v)`. A call statement or an
-// assignment to _ throws it away.
-func (st *fnState) keptCheckIn(s ast.Stmt, v *types.Var) bool {
+// keptCheckIn returns the verdict variables a statement s keeps from a
+// storable check on v: `_, err := CoerceValue(…, v)` and `ok :=
+// storableText(v)` keep theirs; a call statement or an assignment to _
+// throws the verdict away. A kept verdict vets v only where it gates
+// the path to the use (verdictGates).
+func (st *fnState) keptCheckIn(s ast.Stmt, v *types.Var) []types.Object {
 	switch x := s.(type) {
 	case *ast.AssignStmt:
 		for _, l := range x.Lhs {
 			if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
 				for _, r := range x.Rhs {
 					if call, ok := ast.Unparen(r).(*ast.CallExpr); ok && st.checkCall(call, v) {
-						return true
+						return []types.Object{objOf(st.c.pass.TypesInfo, id)}
 					}
 				}
 			}
 		}
 	case *ast.IfStmt:
 		// if _, err := CoerceValue(…, v); err != nil { return err }
-		if as, ok := x.Init.(*ast.AssignStmt); ok && dominance.Diverges(x.Body) {
+		if as, ok := x.Init.(*ast.AssignStmt); ok {
 			return st.keptCheckIn(as, v)
+		}
+	}
+	return nil
+}
+
+// verdictGates reports whether one of verdicts gates the path from the
+// kept check (statement s) to the use: an enclosing if at the use
+// tests a verdict, or a diverging statement between the two tests one
+// (`if err != nil { return }`). The prefix lists hold only statements
+// that dominate the use, so a divergence found there gates it.
+func (st *fnState) verdictGates(verdicts []types.Object, s ast.Stmt, stmts [][]ast.Stmt, use ast.Node) bool {
+	for _, cond := range dominance.EnclosingIfConds(use, st.parents, st.fd.Body) {
+		if mentionsAny(st.c.pass, cond, verdicts) {
+			return true
+		}
+	}
+	for _, list := range stmts {
+		for _, t := range list {
+			if t.Pos() < s.Pos() {
+				continue
+			}
+			iff := dominance.IfStmtOf(t)
+			if iff == nil || iff.Cond == nil || !dominance.Diverges(iff.Body) {
+				continue
+			}
+			if mentionsAny(st.c.pass, iff.Cond, verdicts) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1439,4 +1646,91 @@ func namedOf(t types.Type) *types.Named {
 	}
 	n, _ := types.Unalias(t).(*types.Named)
 	return n
+}
+
+// fieldWrite records a write of rhs into field: request text marks the
+// field, a parameter of this function records a write the call sites
+// resolve.
+func (st *fnState) fieldWrite(field *types.Var, rhs ast.Expr) {
+	if !st.c.flows || field == nil || !stringish(field.Type()) {
+		return
+	}
+	t := st.exprTaint(rhs)
+	if t.src {
+		st.c.markField(field)
+	}
+	if t.params != 0 {
+		st.c.addParamField(st.fn, t.params, field)
+	}
+}
+
+// literalFields records the field writes of a struct literal, keyed or
+// positional.
+func (st *fnState) literalFields(lit *ast.CompositeLit) {
+	info := st.c.pass.TypesInfo
+	strct, ok := typeOf(st.c.pass, lit).Underlying().(*types.Struct)
+	if !ok {
+		return
+	}
+	for i, el := range lit.Elts {
+		if kv, ok := el.(*ast.KeyValueExpr); ok {
+			if id, ok := kv.Key.(*ast.Ident); ok {
+				if fv, ok := info.Uses[id].(*types.Var); ok && fv.IsField() {
+					st.fieldWrite(fv, kv.Value)
+				}
+			}
+			continue
+		}
+		if i < strct.NumFields() {
+			st.fieldWrite(strct.Field(i), el)
+		}
+	}
+}
+
+// assignFields records v.f = rhs.
+func (st *fnState) assignFields(as *ast.AssignStmt) {
+	if len(as.Lhs) != len(as.Rhs) {
+		return
+	}
+	info := st.c.pass.TypesInfo
+	for i, l := range as.Lhs {
+		sx, ok := ast.Unparen(l).(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		sel, ok := info.Selections[sx]
+		if !ok || sel.Kind() != types.FieldVal {
+			continue
+		}
+		fv, _ := sel.Obj().(*types.Var)
+		rhs := as.Rhs[i]
+		if as.Tok != token.ASSIGN {
+			rhs = &ast.BinaryExpr{X: l, Op: token.ADD, Y: rhs, OpPos: as.TokPos}
+		}
+		st.fieldWrite(fv, rhs)
+	}
+}
+
+// callFields resolves a callee's parameter-to-field writes at this call:
+// request text in one of those positions fills the field, and a
+// parameter of this function there is a write this function makes too.
+func (st *fnState) callFields(call *ast.CallExpr) {
+	for _, callee := range st.c.callees(call) {
+		pfs := st.c.paramFields[callee]
+		if len(pfs) == 0 {
+			continue
+		}
+		csig := callee.Type().(*types.Signature)
+		for _, pf := range pfs {
+			for i, a := range call.Args {
+				pi := i
+				if csig.Variadic() && pi >= csig.Params().Len()-1 {
+					pi = csig.Params().Len() - 1
+				}
+				if has(pf.mask, pi) {
+					st.fieldWrite(pf.field, a)
+				}
+			}
+		}
+	}
 }

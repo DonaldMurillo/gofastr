@@ -201,30 +201,73 @@ func constString(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	return constant.StringVal(tv.Value), true
 }
 
-// regexpVars maps package-level variables initialised with
-// regexp.MustCompile(const) / regexp.Compile to their pattern.
+// regexpVars maps every variable initialised with regexp.MustCompile
+// (const) / regexp.Compile — package-level and function-local alike —
+// to its pattern, so a removal through a locally compiled regexp is
+// judged by its pattern, not assumed multi-character.
 func regexpVars(pass *analysis.Pass) map[types.Object]string {
 	out := map[types.Object]string{}
+	bind := func(id *ast.Ident, rhs ast.Expr) {
+		obj := pass.TypesInfo.Defs[id]
+		if obj == nil || !isRegexp(obj.Type()) {
+			return
+		}
+		if pat, ok := compiledPattern(pass, rhs); ok {
+			out[obj] = pat
+		}
+	}
 	for _, f := range pass.Files {
-		for _, d := range f.Decls {
-			gd, ok := d.(*ast.GenDecl)
-			if !ok || gd.Tok != token.VAR {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				vs := spec.(*ast.ValueSpec)
-				for i, name := range vs.Names {
-					if i >= len(vs.Values) {
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.GenDecl: // package-level and local var specs
+				if x.Tok != token.VAR {
+					return true
+				}
+				for _, spec := range x.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
 						continue
 					}
-					if pat, ok := compiledPattern(pass, vs.Values[i]); ok {
-						out[pass.TypesInfo.Defs[name]] = pat
+					for i, name := range vs.Names {
+						if i < len(vs.Values) {
+							bind(name, vs.Values[i])
+						}
+					}
+				}
+			case *ast.AssignStmt: // re := regexp.MustCompile(...)
+				for i, l := range x.Lhs {
+					id, ok := l.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					var rhs ast.Expr
+					if len(x.Rhs) == len(x.Lhs) {
+						rhs = x.Rhs[i]
+					} else if len(x.Rhs) == 1 {
+						rhs = x.Rhs[0]
+					}
+					if rhs != nil {
+						bind(id, rhs)
 					}
 				}
 			}
-		}
+			return true
+		})
 	}
 	return out
+}
+
+// isRegexp: *regexp.Regexp (or a regexp.Regexp value).
+func isRegexp(t types.Type) bool {
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj != nil && obj.Name() == "Regexp" && obj.Pkg() != nil && obj.Pkg().Path() == "regexp"
 }
 
 func compiledPattern(pass *analysis.Pass, e ast.Expr) (string, bool) {

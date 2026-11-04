@@ -197,7 +197,9 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 		// A call through a func value: a host callback, whose error can
 		// be any type the host chose. A local bound only to func
 		// literals in this body is the function's own code (json
-		// detail's pick helper), not a callback.
+		// detail's pick helper), not a callback: the origin is the
+		// union of the literals' own returns, so a decoder bound to a
+		// literal still carries encoding/json's error.
 		if _, ok := ob.Type().Underlying().(*types.Signature); !ok {
 			return 0
 		}
@@ -209,7 +211,16 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 				}
 			}
 			if own {
-				return 0
+				// The literal's own code: take the origin of its
+				// returns instead of dropping it — a decoder bound to
+				// a literal still returns encoding/json's error
+				// (fromJSONLit), while a callback's error stays
+				// foreign only when the literal itself calls one.
+				var o origin
+				for _, d := range ds {
+					o |= f.litReturns(ast.Unparen(d.rhs).(*ast.FuncLit))
+				}
+				return o
 			}
 		}
 		return fromForeign
@@ -260,6 +271,29 @@ func (f *fnOrigins) importFact(fn *types.Func, fact analysis.Fact) bool {
 		return false
 	}
 	return f.pass.ImportObjectFact(fn, fact)
+}
+
+// litReturns is the union of the origins a func literal's error
+// results carry.
+func (f *fnOrigins) litReturns(lit *ast.FuncLit) origin {
+	if lit == nil || lit.Body == nil {
+		return 0
+	}
+	var o origin
+	ast.Inspect(lit.Body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			for _, r := range x.Results {
+				if isErrorType(f.pass.TypesInfo.TypeOf(r)) {
+					o |= f.of(r, x.Pos())
+				}
+			}
+		}
+		return true
+	})
+	return o
 }
 
 // returnsOrigin is the union of the origins a declaration's error

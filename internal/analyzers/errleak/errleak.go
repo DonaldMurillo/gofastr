@@ -42,11 +42,14 @@
 //
 // Both arms read the error's text in every spelling that builds the
 // body string in place: err.Error(), "prefix: "+err.Error(),
-// fmt.Sprint(err), and fmt.Sprintf with a text verb (%v %s %q) and the
-// error among its operands — fmt.Sprintf("query failed: %v", err) is a
-// built string, not a format handed to a helper. Until the 2026-11-02
-// guard bash the HTTP arm read only .Error(), and the JSON-RPC arm only
-// the bare "%v"/"%s" format.
+// fmt.Sprint(err), and fmt.Sprintf with a text verb (%v %s %q, with
+// any flags or an explicit [n] argument index) and the error among its
+// operands — fmt.Sprintf("query failed: %v", err) is a built string,
+// not a format handed to a helper; the format may be a named constant
+// (constString resolves it). Until the 2026-11-02 guard bash the HTTP
+// arm read only .Error(), and the JSON-RPC arm only the bare
+// "%v"/"%s" format; until the 2026-11-03 gap round an [n] index or a
+// constant format slipped both.
 //
 // Two arms from the 2026-11 bug bashes ask where the error came from;
 // their contract, sinks and silences are in origin.go. Decode
@@ -73,7 +76,6 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -247,12 +249,8 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 			if len(args) < 2 {
 				return true
 			}
-			lit, ok := args[0].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
-			}
-			s, e := strconv.Unquote(lit.Value)
-			if e != nil || !textVerb.MatchString(s) {
+			s, ok := constString(pass, args[0])
+			if !ok || !textVerb.MatchString(s) {
 				return true
 			}
 			args = args[1:]
@@ -276,5 +274,6 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 
 var errorInterface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 
-// textVerb matches a format verb that renders its operand as text.
-var textVerb = regexp.MustCompile(`%[-+# 0-9.*]*[vsq]`)
+// textVerb matches a format verb that renders its operand as text,
+// with or without an explicit [n] argument index.
+var textVerb = regexp.MustCompile(`%(\[\d+\])?[-+# 0-9.*]*[vsq]`)
