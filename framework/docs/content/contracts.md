@@ -290,6 +290,11 @@ The response-mount lint follows `.then(this.render)` to the method in the
 enclosing JavaScript class. Same-named methods in unrelated classes never
 supply a mount or an OK gate for that chain.
 
+The required-JSON-array analyzer credits `append(value.Field, more...)`
+only when the base field is proven non-nil before the append. Merely
+marking the field `//gofastr:required-array` does not initialize it; a
+conditional initializer or a later possibly-nil write is not a proof.
+
 ## Adopting it on an existing codebase
 
 Strict-by-default and adoption pull against each other. Switch `verify` on

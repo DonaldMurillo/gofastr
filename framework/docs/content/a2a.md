@@ -153,6 +153,9 @@ Authorization: Bearer gfsk_…
 }}}
 ```
 
+Artifact updates normalize nil `Parts` to an empty JSON array, including
+empty append deltas and stored artifacts whose earlier parts were nil.
+
 The tool result becomes one artifact named `<entity>.<operation>` with a
 data part. Failure mapping:
 

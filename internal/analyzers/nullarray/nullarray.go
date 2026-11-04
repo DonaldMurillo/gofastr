@@ -40,8 +40,8 @@
 //     variable sits between the guard and the sink (msgs = maybeNil()
 //     after the rebind leaves the value nil again), or one read inside
 //     `if len(x) > 0` / `if x != nil`;
-//   - X.F = append(X.F, …): the field's earlier value was checked where
-//     it was set;
+//   - X.F = append(X.F, …) when that field has a dominating non-nil
+//     initialization, with no later possibly-nil write;
 //   - a call to a function whose every return is proven (contentArray:
 //     its `return c` sits behind `if c == nil { return []Content{} }`),
 //     exported as a fact so a helper in another package counts; or one
@@ -474,13 +474,6 @@ func proven(pass *analysis.Pass, body *ast.BlockStmt, e ast.Expr, pos token.Pos,
 					if len(x.Args) >= 2 && !x.Ellipsis.IsValid() {
 						return true
 					}
-					// X.F = append(X.F, more...): the field's earlier
-					// value was itself checked where it was set.
-					if sel, ok := ast.Unparen(x.Args[0]).(*ast.SelectorExpr); ok {
-						if obj := pass.TypesInfo.ObjectOf(sel.Sel); obj != nil && isRequired(pass, obj) {
-							return true
-						}
-					}
 					if len(x.Args) >= 3 {
 						return true
 					}
@@ -512,6 +505,8 @@ func proven(pass *analysis.Pass, body *ast.BlockStmt, e ast.Expr, pos token.Pos,
 			}
 		}
 		return false
+	case *ast.SelectorExpr:
+		return fieldInitialized(pass, body, x, pos, depth)
 	case *ast.Ident:
 		obj, ok := pass.TypesInfo.Uses[x].(*types.Var)
 		if !ok || obj.IsField() || obj.Parent() == pass.Pkg.Scope() {
@@ -523,6 +518,112 @@ func proven(pass *analysis.Pass, body *ast.BlockStmt, e ast.Expr, pos token.Pos,
 		return allAssignsProven(pass, body, obj, pos, depth)
 	}
 	return false
+}
+
+func fieldInitialized(pass *analysis.Pass, body *ast.BlockStmt, field *ast.SelectorExpr, pos token.Pos, depth int) bool {
+	receiver, ok := ast.Unparen(field.X).(*ast.Ident)
+	if !ok {
+		return false
+	}
+	object := pass.TypesInfo.ObjectOf(receiver)
+	dominating := map[ast.Node]bool{}
+	ast.Inspect(body, func(node ast.Node) bool {
+		if block, ok := node.(*ast.BlockStmt); ok && block.Pos() <= pos && pos < block.End() {
+			for _, statement := range block.List {
+				dominating[statement] = true
+				if declaration, ok := statement.(*ast.DeclStmt); ok {
+					if general, ok := declaration.Decl.(*ast.GenDecl); ok {
+						for _, specification := range general.Specs {
+							dominating[specification] = true
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+	initialized := false
+	apply := func(node ast.Node, value ast.Expr, whole bool) {
+		if whole {
+			value = initializedField(pass, value, field.Sel.Name)
+		}
+		safe := value != nil && proven(pass, body, value, node.Pos(), depth+1)
+		if !safe {
+			initialized = false
+		} else if dominating[node] {
+			initialized = true
+		}
+	}
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node == nil || node.Pos() >= pos {
+			return false
+		}
+		switch statement := node.(type) {
+		case *ast.ValueSpec:
+			for index, name := range statement.Names {
+				if pass.TypesInfo.ObjectOf(name) == object {
+					var value ast.Expr
+					if index < len(statement.Values) {
+						value = statement.Values[index]
+					}
+					apply(statement, value, true)
+				}
+			}
+		case *ast.AssignStmt:
+			for index, target := range statement.Lhs {
+				whole := false
+				switch target := target.(type) {
+				case *ast.Ident:
+					if pass.TypesInfo.ObjectOf(target) != object {
+						continue
+					}
+					whole = true
+				case *ast.SelectorExpr:
+					base, ok := ast.Unparen(target.X).(*ast.Ident)
+					if !ok || pass.TypesInfo.ObjectOf(base) != object || pass.TypesInfo.ObjectOf(target.Sel) != pass.TypesInfo.ObjectOf(field.Sel) {
+						continue
+					}
+				default:
+					continue
+				}
+				var value ast.Expr
+				if len(statement.Lhs) == len(statement.Rhs) {
+					value = statement.Rhs[index]
+				}
+				apply(statement, value, whole)
+			}
+		}
+		return true
+	})
+	return initialized
+}
+
+func initializedField(pass *analysis.Pass, expression ast.Expr, name string) ast.Expr {
+	if expression == nil {
+		return nil
+	}
+	expression = ast.Unparen(expression)
+	if pointer, ok := expression.(*ast.UnaryExpr); ok && pointer.Op == token.AND {
+		expression = ast.Unparen(pointer.X)
+	}
+	literal, ok := expression.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	structure, ok := pass.TypesInfo.TypeOf(literal).Underlying().(*types.Struct)
+	if !ok {
+		return nil
+	}
+	for index, element := range literal.Elts {
+		if keyed, ok := element.(*ast.KeyValueExpr); ok {
+			if key, ok := keyed.Key.(*ast.Ident); ok && key.Name == name {
+				return keyed.Value
+			}
+		} else if index < structure.NumFields() && structure.Field(index).Name() == name {
+			return element
+		}
+	}
+	return nil
 }
 
 // guarded reports whether an `if x == nil` (or len(x) == 0) before pos

@@ -169,10 +169,38 @@ func listGiven(given []Content) toolsListResult {
 
 // Appending onto the field itself, and a sink inside a non-empty guard.
 func extend(r *toolsCallResult, more []Content, msg *promptsGetResult, parts []PromptMessage) {
-	r.Content = append(r.Content, more...)
+	r.Content = append(r.Content, more...) // want `Content is a required JSON array`
 	if len(parts) > 0 {
 		msg.Messages = parts
 	}
+}
+
+func appendUninitializedField(more []Content) toolsCallResult {
+	var result toolsCallResult
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+	return result
+}
+
+func appendInitializedField(more []Content) toolsCallResult {
+	result := toolsCallResult{Content: []Content{}}
+	result.Content = append(result.Content, more...)
+	return result
+}
+
+func appendConditionallyInitializedField(more []Content, initialize bool) toolsCallResult {
+	var result toolsCallResult
+	if initialize {
+		result.Content = []Content{}
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+	return result
+}
+
+func appendResetField(more []Content) toolsCallResult {
+	result := toolsCallResult{Content: []Content{}}
+	result = toolsCallResult{}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+	return result
 }
 
 // rebindThenLog: the rebind is not the guard's last statement — the log
