@@ -181,8 +181,7 @@ func boundLateArgs(ctx context.Context, prog string) error {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	prepare(ctx, cmd)
-	_, err := cmd.Output()
-	return err
+	return cmd.Run()
 }
 
 func prepare(ctx context.Context, cmd *exec.Cmd) {
