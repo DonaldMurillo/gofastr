@@ -172,7 +172,8 @@ table is the entity's `table:` or, without one, its name in snake_case.
 GoFastr ships its own small YAML parser in `core/yaml`; no external YAML parser
 is required. Supported syntax:
 
-- indentation-based maps and lists
+- indentation-based maps and lists, including a mapping value whose list
+  dashes align with its key (`items:\n- a\n- b`)
 - strings, quoted strings, booleans, numbers, and `null`. A
   double-quoted string takes the YAML 1.2 escapes (`\n`, `\t`, `\"`,
   `\\`, `\/`, `\e`, `\xE9`, `é`, `\U0001F600` and the rest of the
