@@ -2387,6 +2387,9 @@ WKWebView through `desktoptest.NativeMain`.
 
 ## The `gofastr desktop` verbs
 
+`gofastr desktop run` removes its private build directory when its first
+build or launch fails, as well as on ordinary shutdown.
+
 | Verb | What it does |
 |---|---|
 | `build ...` on macOS | Cross-compiles for darwin/arm64 with `CGO_ENABLED=0` and writes `<o>/<Name>.app` (a `GOARCH` other than arm64 is refused; on an Intel Mac the build warns that the bundle will not launch there): Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG. Signing is ad-hoc by default when `codesign` is on PATH; `--sign` selects an identity, and `--no-sign` skips signing. `--notarize` submits and staples the bundle. `--scheme` writes the URL scheme to Info.plist. |

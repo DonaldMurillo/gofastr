@@ -199,6 +199,9 @@ func runDesktopRun(args []string) {
 			return
 		default:
 		}
+		if dir := devcmd.DevServerBinDir(); dir != "" {
+			_ = os.RemoveAll(dir)
+		}
 		cli.OsExit(1)
 		return
 	}
