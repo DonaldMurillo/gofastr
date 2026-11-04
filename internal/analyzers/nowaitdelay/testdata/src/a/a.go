@@ -173,21 +173,6 @@ func wrapperBounds(ctx context.Context, script string) error {
 	return cmd.Run()
 }
 
-// boundLateArgs: the helper posture with leading parameters — the Cmd
-// is not argument 0, and the caller reads positions across ALL
-// arguments. prepare bounds the child; the start is quiet.
-func boundLateArgs(ctx context.Context, prog string) error {
-	cmd := exec.CommandContext(ctx, prog)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	prepare(ctx, cmd)
-	return cmd.Run()
-}
-
-func prepare(ctx context.Context, cmd *exec.Cmd) {
-	cmd.WaitDelay = time.Second
-}
-
 // wrapperReplaces: a call that does not take the tracked Cmd starts a
 // new provenance the rule does not follow (not a CommandContext result).
 func wrapperReplaces(ctx context.Context, script string) error {
