@@ -28,7 +28,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"io"
 	"strings"
 )
@@ -84,7 +83,7 @@ func parse(r io.Reader, shadow map[string]string, envFn func(string) (string, bo
 		lineNum++
 		raw := scanner.Text()
 		if lineNum == 1 {
-			raw = bom.Trim(raw)
+			raw = strings.TrimPrefix(raw, "\ufeff")
 		}
 		if strings.ContainsRune(raw, '\x00') {
 			return nil, fmt.Errorf("dotenv: line %d: NUL bytes cannot be stored in the process environment", lineNum)

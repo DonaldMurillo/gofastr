@@ -7,8 +7,10 @@
 // directive is not a directive, and a frontmatter fence is not a fence.
 //
 // Every reader of a hand-written text file strips it through this
-// package, and internal/bom's parity test feeds each one the same input
-// with and without the mark. Round 8 found four readers that differed
+// package, except core/dotenv, core/markdown and core/yaml: `gofastr
+// unmount` copies those out of the module, where an internal import
+// would not build, so they spell the trim inline. internal/bom's parity
+// test feeds each reader the same input with and without the mark. Round 8 found four readers that differed
 // (R8-MK-01 dotenv, R8-NC-RF-05 migrate routines, R8-NC-SF-01 the
 // upgrade text matcher, and core/yaml, which already stripped it).
 package bom

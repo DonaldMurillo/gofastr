@@ -2,7 +2,6 @@ package yaml
 
 import (
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"maps"
 	"slices"
 	"strconv"
@@ -35,7 +34,7 @@ type line struct {
 
 func Parse(input string) (*Node, error) {
 	// A leading byte order mark is not content (YAML 1.2 section 5.2).
-	input = bom.Trim(input)
+	input = strings.TrimPrefix(input, "\ufeff")
 	lines, err := lexLines(input)
 	if err != nil {
 		return nil, err

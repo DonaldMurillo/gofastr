@@ -650,7 +650,9 @@ expose them to agents connected to a live app.**
   `TestAttrRowsSpellDoubleBraceFills` refuses `{x}`/`%s` fill tokens.
   `mapwriter`'s return arm fires on a non-empty map literal too. Every
   reader of a hand-written text file strips a leading byte order mark
-  through `internal/bom`; a new reader joins `TestReadersIgnoreBOM`.
+  through `internal/bom` (core/dotenv, core/markdown and core/yaml inline
+  the trim so `gofastr unmount` can copy them); a new reader joins
+  `TestReadersIgnoreBOM`.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE
