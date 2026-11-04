@@ -277,7 +277,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (Alt+Shift+L outlines the page's layout and flags overflow), contract findings
   for what you changed (after the reload, never blocking it), and the dev
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
-  `--dir` sets the watch root, `--pkg` the main package under it,
+  `--dir` sets the watch root (a symlinked root is resolved; linked source
+  files use their target's modification time), `--pkg` the main package under it,
   `--addr`/`-p` the port (not both); `--no-a11y` skips the accessibility
   lint on each rebuild. Each takes its value as `--addr=x` or `--addr x`;
   an unknown flag, or a flag whose value is missing, is an error, and so

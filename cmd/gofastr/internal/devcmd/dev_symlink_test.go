@@ -1,0 +1,65 @@
+package devcmd
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestWatchFollowsRootSymlink(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "project")
+	writeDevFile(t, filepath.Join(root, "main.go"), "package main")
+	writeDevFile(t, filepath.Join(root, "dist", "output.go"), "package main")
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	before := ScanModTimes(link)
+	if len(before) != 1 {
+		t.Fatalf("source snapshot = %v; want main.go only", before)
+	}
+	stamp := time.Now().Add(time.Hour)
+	if err := os.Chtimes(filepath.Join(root, "main.go"), stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if !Changed(before, ScanModTimes(link)) {
+		t.Fatal("target edit did not trigger a rebuild")
+	}
+}
+
+func TestWatchFollowsFileSymlink(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "project")
+	target := filepath.Join(dir, "source.go")
+	writeDevFile(t, target, "package main")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "main.go")); err != nil {
+		t.Fatal(err)
+	}
+	before := ScanModTimes(root)
+	stamp := time.Now().Add(time.Hour)
+	if err := os.Chtimes(target, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if !Changed(before, ScanModTimes(root)) {
+		t.Fatal("linked source edit did not trigger a rebuild")
+	}
+}
+
+func TestWatchFollowsOnlySourceFiles(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "project")
+	writeDevFile(t, filepath.Join(root, "main.go"), "package main")
+	for name, target := range map[string]string{"missing.go": filepath.Join(dir, "missing"), "folder.go": dir} {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := ScanModTimes(root); len(got) != 1 {
+		t.Fatalf("snapshot = %v; want the regular source only", got)
+	}
+}
