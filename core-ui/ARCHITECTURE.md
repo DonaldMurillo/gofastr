@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+`interactive.OptimisticUpdate` refuses Action options its headless action
+contract cannot carry, including confirmation, bodies, toasts and effects.
+
 `ui.SelectConfig.Selected` preserves stored values absent from its options;
 a nonempty value takes precedence over option-level selection flags.
 
