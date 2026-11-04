@@ -42,6 +42,9 @@ DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
 
+Envelope and core navigation share percent-decoded segment normalization
+and typed-parameter matching, including deferred-region route addresses.
+
 Widget state hydration refuses cross-origin endpoints without aborting
 mounting: local actions, lifecycle listeners and dismissal remain wired.
 

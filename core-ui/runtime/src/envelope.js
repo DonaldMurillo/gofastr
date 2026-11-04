@@ -603,7 +603,7 @@
   const routeInfo = (path) => {
     // Routes register unprefixed: /es/pricing resolves as /pricing.
     const bare = path.split('?')[0].split('#')[0];
-    const clean = NS._unlocalize?.(bare) ?? bare;
+    const clean = (NS._unlocalize?.(bare) ?? bare).split('/').map(NS._routeSeg).join('/');
     const list = window.__gofastr_routes || [];
     for (const e of list) {
       const pattern = (e && (e.path || e.Path)) || '';
@@ -615,7 +615,7 @@
       const parts = clean.split('/').filter(Boolean);
       const pp = pattern.split('/').filter(Boolean);
       if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
-      if (!pp.every((seg, i) => seg.startsWith(':') || seg === parts[i])) continue;
+      if (!pp.every((seg, i) => NS._routeMatch(seg, parts[i]))) continue;
       const params = {};
       const catchAll = pp.length && pp[pp.length - 1].endsWith('*');
       const upto = catchAll ? pp.length - 1 : pp.length;
@@ -1281,8 +1281,8 @@
     target: findFillTarget,
     // The client's share of param-keyed layer keys and deferred
     // addresses (spike/layout-resolve): resolve the path against the
-    // manifest's patterns and substitute. Never matches constraints:
-    // the server stays the matcher.
+    // manifest's patterns and substitute, sharing core's normalization
+    // and constraint matching so both navigators select the same route.
     subst: (tmpl, path) => substTmpl(tmpl, routeParams(path)),
     // The RAW manifest entry for a path (plus its captured params): the
     // loading and parts modules read their per-route fields off it.

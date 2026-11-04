@@ -1118,6 +1118,9 @@
   // decoded "%" or "/" kept escaped so it stays one segment; a segment
   // that does not decode (%E0%A4) is taken literally, never thrown.
   const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (c) => encodeURIComponent(c)); };
+  const _routeMatch = (seg, part) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(part) : seg === part;
+  window.__gofastr._routeSeg = _routeSeg;
+  window.__gofastr._routeMatch = _routeMatch;
   const routeEntry = (path) => {
     // Routes register unprefixed: /es/pricing looks up /pricing.
     const clean = _unlocalize(path.split('?')[0].split('#')[0]).split('/').map(_routeSeg).join('/');
@@ -1137,7 +1140,7 @@
       // Each literal segment must align; a dynamic segment (":name",
       // incl. the catch-all ":name*") matches any value its constraint
       // (":id:int", ":id:uuid", ":id:alpha", ":id:alnum") accepts.
-      if (pp.every((seg, i) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(parts[i]) : seg === parts[i])) return entry;
+      if (pp.every((seg, i) => _routeMatch(seg, parts[i]))) return entry;
     }
     return null;
   };
