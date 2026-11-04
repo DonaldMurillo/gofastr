@@ -35,3 +35,22 @@ func TestStoreKeyUnstorableIsDigested(t *testing.T) {
 		t.Errorf("a storable key changed: %q", seen[4])
 	}
 }
+
+func TestDigestNamespaceDoesNotAliasCallerKeys(t *testing.T) {
+	for _, key := range []string{"key-\xff", "key-\x00", strings.Repeat("long", maxKeyLen)} {
+		digest := foldKey(key)
+		if digest == foldKey(digest) {
+			t.Errorf("caller key %q aliases digest identity %q", key, digest)
+		}
+		limiter := NewLimiter(Config{MaxAttempts: 1, Window: time.Hour, BlockDuration: time.Hour})
+		if allowed, _ := limiter.Allow(key); !allowed {
+			t.Fatal("first attempt denied")
+		}
+		if allowed, _ := limiter.Allow(digest); !allowed {
+			t.Error("a distinct caller's literal digest key shared the exhausted bucket")
+		}
+		if allowed, _ := limiter.Allow(key); allowed {
+			t.Error("original caller's budget was not retained")
+		}
+	}
+}
