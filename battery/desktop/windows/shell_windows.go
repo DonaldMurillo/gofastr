@@ -20,6 +20,7 @@ import (
 	"unsafe"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/placement"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/win32"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -870,17 +871,28 @@ func (s *winShell) createNativeWindow(id, title string, width, height int, style
 	const useDefault int32 = -2147483648
 	screenDPI := win32.SystemDPI()
 	x, y := useDefault, useDefault
-	if frame != nil {
-		x, y = pointsToPixels(frame.X, screenDPI), pointsToPixels(frame.Y, screenDPI)
-		width, height = frame.Width, frame.Height
-	} else if style.X != nil && style.Y != nil {
-		x, y = pointsToPixels(*style.X, screenDPI), pointsToPixels(*style.Y, screenDPI)
-	}
+	hadFrame := frame != nil
 	if width <= 0 {
 		width = 1024
 	}
 	if height <= 0 {
 		height = 768
+	}
+	if frame != nil {
+		var screens []desktop.Frame
+		for _, area := range win32.MonitorWorkAreas() {
+			screens = append(screens, desktop.Frame{
+				X: pixelsToPoints(area.Left, screenDPI), Y: pixelsToPoints(area.Top, screenDPI),
+				Width: pixelsToPoints(area.Right-area.Left, screenDPI), Height: pixelsToPoints(area.Bottom-area.Top, screenDPI),
+			})
+		}
+		frame = placement.Restore(frame, screens, width, height)
+	}
+	if frame != nil {
+		x, y = pointsToPixels(frame.X, screenDPI), pointsToPixels(frame.Y, screenDPI)
+		width, height = frame.Width, frame.Height
+	} else if !hadFrame && style.X != nil && style.Y != nil {
+		x, y = pointsToPixels(*style.X, screenDPI), pointsToPixels(*style.Y, screenDPI)
 	}
 	widthPixels, heightPixels := pointsToPixels(width, screenDPI), pointsToPixels(height, screenDPI)
 	exStyle := uint32(0)

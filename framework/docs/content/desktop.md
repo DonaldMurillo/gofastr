@@ -1857,7 +1857,13 @@ crash.
   on the spec wins over the store.
 - A remembered frame that no longer overlaps any screen's visible area
   by at least 100x50 points (the monitor was unplugged, the resolution
-  changed) is dropped and the window centers.
+  changed) is dropped and the window centers. Windows checks native
+  monitor work areas; Linux checks GDK monitor work areas, including
+  monitors with negative coordinates. These hosts also discard saved
+  sizes outside 1–32767 points, avoiding native integer truncation.
+  Their centered fallback uses the configured window size, fits it to
+  the primary work area, and leaves the saved frame untouched. If no
+  work area can be read, the shell uses its default placement.
 - The boot handshake's redirect goes to the main window's remembered
   path instead of `/`, validated against the navigate grammar both
   when the page reports it and when the redirect uses it. Any doubt
