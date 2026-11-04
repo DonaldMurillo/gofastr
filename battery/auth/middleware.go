@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
@@ -52,8 +53,12 @@ func RequireAuth(jwt *JWTAuth) middleware.Middleware {
 				// subject is nobody, and passing that through would hand every
 				// handler behind RequireAuth a request with no user while
 				// implying one was verified.
+				// A call admitted by App.InProcessHandler is the same case:
+				// admission refused every credential header, so the only
+				// identity it can carry is the one server code put on the
+				// context, and it cannot carry a bearer token to show here.
 				if u, ok := handler.GetUser(r.Context()); ok && u != nil {
-					if _, embedded := embed.GrantFromContext(r.Context()); embedded {
+					if _, embedded := embed.GrantFromContext(r.Context()); embedded || framework.IsInProcessRequest(r) {
 						next.ServeHTTP(w, r)
 						return
 					}

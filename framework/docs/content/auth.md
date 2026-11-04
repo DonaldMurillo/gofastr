@@ -267,6 +267,9 @@ start from `EntityUserStore` you get the full feature matrix.
 `mgr.JWT()` is ready as soon as `auth.New` returns (when `JWTSecret` is
 set, or DevMode minted one), so `RequireAuth(mgr.JWT())` can be wired
 before `App.Start` runs `Init`. `RequireAuth(nil)` panics at wiring time.
+A request with no bearer token passes only when a verified embed grant or
+`App.InProcessHandler()` admitted it and the context already holds a
+non-nil user; every other one gets 401.
 A zero `AuthConfig.JWTExpiry` means one hour; `Init` refuses a negative
 one.
 

@@ -27,9 +27,16 @@ few lines, and link the PR or the docs page for the rest.
 ### Added
 - `gofastr generate sdk` now emits a typed repository interface per entity,
   a Remote adapter over the Go client, and a Local adapter that dispatches
-  through the app's HTTP handler without a socket. Both use the REST
-  access rules, owner/tenant scoping, validation, and hooks. The SDK stays
-  stdlib-only. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
+  through the app without a socket. Both use the REST access rules,
+  owner/tenant scoping, validation, and hooks. The SDK stays stdlib-only.
+  Local takes `app.InProcessHandler()`, a new entry point that refuses any
+  request carrying a cookie, an Authorization, Proxy-Authorization or
+  X-API-Key header, URL userinfo or a TLS peer certificate, and marks the
+  rest as in-process. `auth.SessionMiddleware`, `auth.RequireAuth` and
+  `auth.CSRF` (including `WithBFFPosture`) keep the user the server put on
+  the context for a marked call; every other request is checked as before.
+  The SDK's API prefix comes from the app spec when settings and flags
+  leave it unset. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
   `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
   with signtool, timestamped through `--timestamp-url`, and `--zip`
@@ -562,19 +569,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
-- Generated Local repositories now use `App.InProcessHandler()` to retain
-  trusted context identity under session auth and skip browser-only CSRF
-  checks, while refusing ambient credentials before routing. SDK prefixes
-  inherit the app spec only when settings and flags leave them unset;
-  cancellation during dispatch returns the context error. Integer and
-  composite keys have Local/Remote runtime conformance coverage. Regenerate
-  the SDK and switch Local constructors from `app.Router()` to
-  `app.InProcessHandler()`. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
-- Reuse registered toast stacks across UI hosts and mount only their
-  missing stylesheet routes on each router. Booting another host no
-  longer registers a global default beside an app's custom stack, so
-  the first host keeps one toast region and both serve its assets.
-  The two-default-host regression remains covered. See `widgets.md`.
+- A second UI host in the same process served a 404 for the toast
+  stylesheet its pages link. The widget registry is process-wide while
+  asset routes belong to each router, so the second host found the
+  first host's toast stack and skipped its routes. Each host now mounts
+  the stylesheet routes it is missing for the registered stack, and an
+  app's own stack is never joined by a second default. See `widgets.md`.
 - **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
   (entity mode); regenerate the CLI to pick these up. Details in
   [app-cli.md](framework/docs/content/app-cli.md):

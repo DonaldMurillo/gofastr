@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -14,17 +15,25 @@ func TestInProcessSessionAndCSRF(t *testing.T) {
 	application := framework.NewApp()
 	application.Use(SessionMiddleware(manager))
 	application.Use(CSRF())
-	testInProcessAuthPosture(t, application)
+	testInProcessAuthPosture(t, application, http.StatusForbidden)
 }
 
 func TestInProcessBFFPosture(t *testing.T) {
 	application := framework.NewApp(WithBFFPosture(newMultiTenantTestMgr(t), BFFPostureConfig{
 		AllowedOrigins: []string{"https://app.example.com"},
 	}))
-	testInProcessAuthPosture(t, application)
+	testInProcessAuthPosture(t, application, http.StatusForbidden)
 }
 
-func testInProcessAuthPosture(t *testing.T, application *framework.App) {
+func TestInProcessRequireAuth(t *testing.T) {
+	application := framework.NewApp()
+	application.Use(RequireAuth(NewJWTAuth("inprocess-requireauth", time.Hour)))
+	testInProcessAuthPosture(t, application, http.StatusUnauthorized)
+}
+
+// refused is the status a network request with a context user (and no
+// credential) gets: CSRF answers 403, RequireAuth 401.
+func testInProcessAuthPosture(t *testing.T, application *framework.App, refused int) {
 	t.Helper()
 	application.Router().Post("/check", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		user, _ := handler.GetUser(request.Context())
@@ -42,7 +51,7 @@ func testInProcessAuthPosture(t *testing.T, application *framework.App) {
 	}{
 		{"Local", application.InProcessHandler(), true, http.StatusNoContent},
 		{"AnonymousLocal", application.InProcessHandler(), false, http.StatusUnauthorized},
-		{"Network", application.Router(), true, http.StatusForbidden},
+		{"Network", application.Router(), true, refused},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/check", nil)

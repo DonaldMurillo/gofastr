@@ -129,7 +129,8 @@ the handler; its middleware still runs. Never construct this
 context from an unverified client-supplied user or tenant id. Local does
 not mint credentials or store tokens. `App.InProcessHandler()` marks only
 admitted calls with a private context key: `auth.SessionMiddleware` keeps
-their context identity and `auth.CSRF` (including `WithBFFPosture`) skips
+their context identity, `auth.RequireAuth` accepts it in place of a bearer
+token when it is a non-nil user, and `auth.CSRF` (including `WithBFFPosture`) skips
 browser-token checks. Ordinary network requests still clear stale users
 and enforce CSRF. The entry point refuses any Cookie, Authorization,
 Proxy-Authorization, or X-API-Key header (even empty), URL userinfo, or
