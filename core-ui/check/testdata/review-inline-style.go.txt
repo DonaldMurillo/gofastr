@@ -1,0 +1,8 @@
+package fixture
+
+//gofastr:allow(GOFASTR1804) this fixture intentionally styles a CSP test element
+
+
+var allowed = `<div style="color:red"></div>`
+
+var unmarked = `<div style="color:red"></div>`
