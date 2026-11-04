@@ -11,6 +11,10 @@
   'use strict';
   const NAME = 'sitesearch-static';
   const NS = window.__gofastr = window.__gofastr || {};
+  // The runtime's host transport when a native host installed one
+  // (core-ui ARCHITECTURE.md "Host transport"); read at call time, since
+  // the kernel may replace the namespace after this script ran.
+  const hostFetch = function (u, i) { return ((window.__gofastr && window.__gofastr.fetch) || fetch)(u, i); };
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
   const api = NS._sitesearch;
   if (!api) return;
@@ -119,7 +123,7 @@
   const cache = new Map();
   function fetchJSON(url) {
     if (!cache.has(url)) {
-      cache.set(url, fetch(url, { credentials: 'same-origin' }).then(function (r) {
+      cache.set(url, hostFetch(url, { credentials: 'same-origin' }).then(function (r) {
         if (!r.ok) throw new Error(url + ': ' + r.status);
         return r.json();
       }).catch(function (e) { cache.delete(url); throw e; }));

@@ -14,6 +14,10 @@
   'use strict';
   const NAME = 'sitesearch-page';
   const NS = window.__gofastr = window.__gofastr || {};
+  // The runtime's host transport when a native host installed one
+  // (core-ui ARCHITECTURE.md "Host transport"); read at call time, since
+  // the kernel may replace the namespace after this script ran.
+  const hostFetch = (u, i) => ((window.__gofastr && window.__gofastr.fetch) || fetch)(u, i);
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
@@ -60,7 +64,7 @@
   // cookie already moved), and a policy redirect goes to the router.
   async function live(sec, q, n) {
     const url = location.pathname + (q ? '?q=' + encodeURIComponent(q) : '');
-    const r = await fetch(url, {
+    const r = await hostFetch(url, {
       credentials: 'same-origin',
       headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': NS._markup || '2', 'X-Gofastr-From': location.pathname },
     });

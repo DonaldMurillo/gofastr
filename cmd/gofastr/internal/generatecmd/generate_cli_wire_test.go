@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -118,10 +119,15 @@ func TestCLIRefusesSchemelessServerURL(t *testing.T) {
 // file first and refused the same way, and so did logout.
 func TestCLILoginReplacesCorruptConfig(t *testing.T) {
 	bin, env := buildFixtureCLI(t, cliWireFixtureYAML)
+	// Where os.UserConfigDir puts it for the CLI's env: macOS ignores
+	// XDG_CONFIG_HOME and uses $HOME/Library/Application Support.
 	var cfgDir string
 	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, "XDG_CONFIG_HOME="); ok {
+		if v, ok := strings.CutPrefix(kv, "XDG_CONFIG_HOME="); ok && runtime.GOOS != "darwin" {
 			cfgDir = filepath.Join(v, "myapp")
+		}
+		if v, ok := strings.CutPrefix(kv, "HOME="); ok && runtime.GOOS == "darwin" {
+			cfgDir = filepath.Join(v, "Library", "Application Support", "myapp")
 		}
 	}
 	cfgPath := filepath.Join(cfgDir, "config.json")

@@ -10,7 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -33,21 +33,21 @@ func restoreExtractor(t *testing.T) {
 
 func TestIdentityFileMinted0600AndStable(t *testing.T) {
 	dir := t.TempDir()
-	u1, err := localuser.LoadOrMint(dir)
+	u1, err := localapp.LoadOrMint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if u1.GetID() == "" {
 		t.Fatal("minted identity is empty")
 	}
-	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, localuser.FileName), 0o600)
+	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, localapp.IdentityFile), 0o600)
 	// A second load (fresh battery) sees the same id.
 	dirMode, err := os.Stat(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = dirMode
-	u2, err := localuser.LoadOrMint(dir)
+	u2, err := localapp.LoadOrMint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestDataDirCreated0700(t *testing.T) {
 
 func TestLocalUserMiddlewareSetsContextUser(t *testing.T) {
 	b, _ := newTestBattery(t)
-	b.user = localuser.ForID("id123")
+	b.user = localapp.ForID("id123")
 	b.armGate() // desktop mode: Run arms the gate before the listener opens
 	var got any
 	var ok bool
@@ -111,7 +111,7 @@ func TestLocalUserMiddlewareSetsContextUser(t *testing.T) {
 	if !ok {
 		t.Fatal("handler.GetUser not set")
 	}
-	u, isLocal := got.(*localuser.User)
+	u, isLocal := got.(*localapp.User)
 	if !isLocal || u.GetID() != "id123" {
 		t.Fatalf("context user = %#v", got)
 	}
@@ -121,7 +121,7 @@ func TestOwnerExtractorInstalledWhenAbsent(t *testing.T) {
 	restoreExtractor(t)
 	owner.SetExtractor(nil)
 	b, _ := newTestBattery(t)
-	b.user = localuser.ForID("own-id")
+	b.user = localapp.ForID("own-id")
 	b.installOwnerExtractor()
 	if owner.GetExtractor() == nil {
 		t.Fatal("extractor not installed")
@@ -137,7 +137,7 @@ func TestOwnerExtractorNotReplacedWhenPresent(t *testing.T) {
 	sentinel := func(ctx context.Context) (any, bool) { return "sentinel", true }
 	owner.SetExtractor(sentinel)
 	b, _ := newTestBattery(t)
-	b.user = localuser.ForID("should-not-win")
+	b.user = localapp.ForID("should-not-win")
 	b.installOwnerExtractor()
 	id, ok := owner.Get(nil2Ctx())
 	if !ok || id != "sentinel" {
@@ -151,7 +151,7 @@ func TestOwnerExtractorNotReplacedWhenPresent(t *testing.T) {
 // every anonymous visitor would be the local admin.
 func TestLocalUserNotInjectedWhenGateUnarmed(t *testing.T) {
 	b, _ := newTestBattery(t)
-	b.user = localuser.ForID("id123")
+	b.user = localapp.ForID("id123")
 	var ok bool
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, ok = handler.GetUser(r.Context())

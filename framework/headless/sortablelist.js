@@ -79,7 +79,7 @@
     if (v) body += '&version=' + encodeURIComponent(v);
     if (moved) body += '&moved=' + encodeURIComponent(attr(moved, 'data-hui-sort-key'));
     if (c || moved) body += '&container=' + encodeURIComponent(c);
-    return fetch(rpc, { method: 'POST', credentials: 'same-origin', headers: csrfHeaders(), body: body });
+    return NS.fetch(rpc, { method: 'POST', credentials: 'same-origin', headers: csrfHeaders(), body: body });
   }
 
   // ── aria-live announcements ────────────────────────────────────────
@@ -200,7 +200,7 @@
         if (msg) { announce(dest, '', 0, msg); fireToast(msg); }
         const reverted = msg ? '' : 'data-hui-sortable-s-conflict-reverted';
         if (!crpc || !NS._originOK?.(crpc)) return fail(reverted);
-        fetch(crpc, { credentials: 'same-origin' })
+        NS.fetch(crpc, { credentials: 'same-origin' })
           .then((r) => {
             // Same convention as poll.js/rpc.js: an HTTP error must
             // reach the rejection, never the innerHTML mount — an error

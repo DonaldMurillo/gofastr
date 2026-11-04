@@ -19,6 +19,10 @@
   'use strict';
   const NAME = 'passkey';
   const NS = window.__gofastr = window.__gofastr || {};
+  // The runtime's host transport when a native host installed one
+  // (core-ui ARCHITECTURE.md "Host transport"); read at call time, since
+  // the kernel may replace the namespace after this script ran.
+  const hostFetch = (u, i) => ((window.__gofastr && window.__gofastr.fetch) || fetch)(u, i);
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
@@ -58,7 +62,7 @@
     const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     if (token) headers['X-CSRF-Token'] = token;
-    const r = await fetch(url, {
+    const r = await hostFetch(url, {
       method: 'POST',
       credentials: 'same-origin',
       headers,

@@ -485,7 +485,9 @@ The same applies to the `app_*` introspection tools and `contracts_verify`
 when dev turned them on; an explicit `WithMCPIntrospection()` keeps them.
 The check reads the address the server actually binds: `Start("")`,
 `":8080"` and a bare `"8080"` all listen on every interface (`Start("")`
-binds `:http`, port 80), so each counts as exposed.
+binds `:http`, port 80), so each counts as exposed. A listener handed to
+`App.Serve` is judged by its network: an in-process one (`memory`,
+`pipe`) is local, and a unix socket is exposed whatever its path.
 The transport's loopback `Host` pin is a browser control (it stops DNS
 rebinding); it does nothing against a direct TCP client, which sets
 `Host` freely. That is why the bind matters too.

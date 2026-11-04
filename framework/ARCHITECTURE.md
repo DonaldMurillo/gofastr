@@ -276,6 +276,10 @@ framework/
 ├── internal/jsonexact/ JSON decode that keeps numbers under `any` exact,
 │                    shared by typed hooks (framework) and typed reads (crud/)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases
+├── localapp/        A one-person app's local state: Open(dir) returns its
+│                    SQLite app.db, session secret and per-installation
+│                    identity, minted owner-only on first run, plus the
+│                    fallback owner extractor (desktop, service, mobile)
 ├── localentity/     Records kept in the visitor's browser: Define over a
 │                    core-ui/localdb store, Form/List/Count helpers that
 │                    wrap ui components, and the `localentity` (lists)
@@ -404,7 +408,7 @@ L3  hook, event, file, cron, access, db,    (leaf packages, no framework-
     docs, dev, routegroup, headless, localrun
     dsl, tenant, softdelete, migrate, sdk    (each imports entity)
     slowquery, outbox, embed, imagefield,    (intra-L3 edges, listed
-    contracts                                 below)
+    contracts, localapp                       below)
 L4  crud                                     (uses entity, hook, event, db,
                                               file, filter, pagination,
                                               tenant, owner, access, embed,
@@ -428,7 +432,8 @@ never higher, and intra-layer edges should stay rare and deliberate.
 Today's intra-L3 edges: `slowquery → db`, `softdelete → db`, `outbox → event + db`,
 `event → db` (EmitAsync masks the emitter's transaction with `db.WithoutTx`),
 `embed → db + migrate + tenant`, `imagefield → file + image`,
-`contracts → agentsinv`, `headless → agentsinv`, `contracts/analyzers → access` (the one
+`contracts → agentsinv`, `headless → agentsinv`, `localapp → owner` (the
+fallback extractor it installs), `contracts/analyzers → access` (the one
 Levenshtein, `access.EditDistance`, behind both the capability
 suggester and the rendering rule), `dsl → filter` (the LIKE-escape helpers:
 one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package

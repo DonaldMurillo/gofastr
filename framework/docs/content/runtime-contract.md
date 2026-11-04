@@ -774,6 +774,41 @@ hooks with the markers `[data-hui-reveal]`, `[data-hui-color]`,
 `headless-when` sibling (`framework/headless/when_behavior.go`) binds
 `[data-hui-when]`.
 
+## Host transport (`window.__gofastr_transport`)
+
+Every request the runtime makes goes through `window.__gofastr.fetch`.
+It calls `window.__gofastr_transport` when a host installed one, and
+the global `fetch` otherwise. The slot exists for native hosts whose
+WebView cannot carry what fetch sends, such as a phone shell serving the
+app through request interception (Android drops every request body, iOS
+drops Blob and File bodies, and neither can return a redirect). A
+plain browser never sets it.
+
+```js
+// Installed by the host, at document start or from a rail script.
+window.__gofastr_transport = async (input, init) => {
+  const req = new Request(input, init);
+  const u = new URL(req.url);
+  // Scheme and host, not .origin: a custom scheme (gofastr://app) has
+  // the opaque origin "null", which every other opaque URL shares.
+  if (u.protocol !== location.protocol || u.host !== location.host) return fetch(req); // input's body moved into req
+  return carryOverNativeChannel(req); // must resolve to a Response
+};
+```
+
+The runtime reads the slot each time it sends a request, so a
+transport installed after boot covers every later request. The
+transport must answer the way fetch does. After following a redirect,
+it reports the final address in `response.url` and sets
+`response.redirected`, because the runtime treats a redirected answer
+as no answer. A network failure rejects with a `TypeError`. A script
+of your own that should reach the app through the host calls
+`window.__gofastr.fetch` instead of `fetch`. The embed loader inside
+third-party frames is the one runtime path that keeps the global
+`fetch`. `EventSource` and `WebSocket` connections are not fetches and
+never reach the slot; a host serves them through its request
+interception, which carries a GET with no body.
+
 ## See also
 
 - [UI capability map](ui-capability-map.md) maps product architectures to this runtime boundary and its scaling semantics.

@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Deep links: the OS hands the app a URL on its custom scheme

@@ -44,6 +44,17 @@ func RestrictOpenFile(f *os.File) error {
 	if err := f.Chmod(0o600); err != nil {
 		return err
 	}
+	return restrictOpenDACL(f)
+}
+
+// TightenOpenFile gives an open file the owner-only DACL. Windows ignores
+// mode bits, so this is RestrictOpenFile without the chmod, which needs
+// a handle opened for writing; the DACL half reopens the handle for
+// WRITE_DAC itself, so a file opened only to read it is tightened too.
+func TightenOpenFile(f *os.File) error { return restrictOpenDACL(f) }
+
+// restrictOpenDACL replaces an open file's DACL with the owner-only one.
+func restrictOpenDACL(f *os.File) error {
 	defer runtime.KeepAlive(f)
 	// Go's file handle need not have WRITE_DAC. ReOpenFile obtains that
 	// access to the same object, even if its name changes after the open.

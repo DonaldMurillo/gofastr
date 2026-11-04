@@ -2,6 +2,7 @@ package fileperm
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
@@ -32,6 +33,50 @@ func WriteOwnerOnly(path string, data []byte) error {
 // written through. A failed write removes the file it created.
 func WriteNewOwnerOnly(path string, data []byte) error {
 	return createExclusive(path, data, fillOwnerOnly)
+}
+
+// PublishNewOwnerOnly is WriteNewOwnerOnly for a file another process
+// may read the moment it exists (a secret two processes racing a first
+// boot both mint): data is written, synced and closed in an owner-only
+// temporary file beside path, then hard-linked to path. The link is
+// exclusive the way O_EXCL is (an existing file, a live symlink and a
+// dangling one are refused with an fs.ErrExist error) and atomic: a
+// reader finds no file or the whole of it, never the empty file an
+// O_EXCL create shows between the create and the write. The temporary
+// file is removed either way.
+func PublishNewOwnerOnly(path string, data []byte) error {
+	return publishExclusive(path, data, fillSynced)
+}
+
+// publishExclusive is PublishNewOwnerOnly with the fill step passed in,
+// so a test reaches the failed-fill cleanup without fault injection.
+func publishExclusive(path string, data []byte, fill func(*os.File, []byte) error) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if err := fill(tmp, data); err != nil {
+		return err
+	}
+	return os.Link(tmp.Name(), path)
+}
+
+// fillSynced tightens the open handle to owner-only, writes data, syncs
+// it and closes the handle, returning the first error; the handle is
+// closed either way.
+func fillSynced(f *os.File, data []byte) error {
+	err := RestrictOpenFile(f)
+	if err == nil {
+		_, err = f.Write(data)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // createExclusive is WriteNewOwnerOnly with the fill step passed in, so a

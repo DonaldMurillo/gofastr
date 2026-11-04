@@ -1,4 +1,4 @@
-package localuser
+package localapp
 
 import (
 	"context"
@@ -64,13 +64,13 @@ func TestLoadOrMintStableOwnerOnly(t *testing.T) {
 	if a.GetID() != b.GetID() || !Valid(a.GetID()) {
 		t.Fatalf("minted %q then read %q", a.GetID(), b.GetID())
 	}
-	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, FileName), 0o600)
+	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, IdentityFile), 0o600)
 }
 
 func TestLoadOrMintRefusesCorruptFile(t *testing.T) {
 	for _, content := range []string{"short", "0123456789abcdef0123456789ABCDEF", "0123456789abcdef0123456789abcdef00"} {
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, FileName), []byte(content), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, IdentityFile), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if u, err := LoadOrMint(dir); err == nil {

@@ -704,7 +704,7 @@
       // a chain" it re-entered the partial branch for a layout-less
       // destination and the same missing boundary looped the fetch.
       if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
-        const fr = await fetch(path);
+        const fr = await _fetch(path);
       if (!_navLive(myEpoch)) return;
         window.__gofastr._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
@@ -754,7 +754,7 @@
       const hdrs = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2' };
       const fromPath = (prevPath || '').split('?')[0];
       if (fromPath && routeEntry(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
-      const resp = await fetch(path, { headers: hdrs });
+      const resp = await _fetch(path, { headers: hdrs });
       if (!_navLive(myEpoch)) return;
       // Apply a session rollover BEFORE the ok-check: the server re-mints
       // (and names the fresh stream id) on 404 / policy-block partials

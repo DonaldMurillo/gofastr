@@ -237,6 +237,23 @@
   };
 
   // -----------------------------------------------------------------------
+  // Host transport (window.__gofastr_transport)
+  //
+  // Every runtime request goes through _fetch. A native host whose WebView
+  // cannot carry what fetch sends (a phone shell's request interception
+  // drops request bodies and cannot hand back a redirect) installs a
+  // fetch-compatible function as window.__gofastr_transport, and _fetch
+  // reads it at CALL time, so a host can set it at document start or from
+  // a deferred rail script. Absent, it is plain fetch. The contract
+  // (Request in, Response out with url and redirected as a browser's
+  // fetch reports them) is core-ui/ARCHITECTURE.md "Host transport".
+  // -----------------------------------------------------------------------
+  const _fetch = (input, init) => {
+    const t = window.__gofastr_transport;
+    return typeof t === 'function' ? t(input, init) : fetch(input, init);
+  };
+
+  // -----------------------------------------------------------------------
   // Public API: kernel members only. Core fragments and demand modules add
   // their namespace members via Object.assign. Optional code therefore leaves
   // no dangling references inside this literal.
@@ -252,6 +269,11 @@
         module loaded into an older kernel sends none; nav.js spells the
         same value as a literal. */
     _markup: '2',
+
+    /** fetch through the host transport when a host installed one.
+        Same-origin requests from modules, batteries and app scripts go
+        through here so a native host carries them too. */
+    fetch: _fetch,
 
     /** Global document state module. See the DOC_MANIFEST block at the
         top of this file. Split modules (widgets, toasts, backtotop)
@@ -407,7 +429,7 @@
         followed 3xx is another URL's page: nothing injected, ''. */
     async fetchPage(url, selector) {
       if (!this._originOK(url)) return '';
-      const r = await fetch(url, { headers: { 'X-Gofastr-Partial': '1' } });
+      const r = await _fetch(url, { headers: { 'X-Gofastr-Partial': '1' } });
       if (r.redirected) return '';
       const html = await r.text();
       if (selector) {
@@ -449,13 +471,11 @@
 
     /** Call a server action for a specific component */
     async _serverActionFor(componentId, action, params = {}) {
-      const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
-      const session = sessionCookie ? sessionCookie[1] : '';
-      const r = await fetch(_lp('/__gofastr/action'), {
+      const r = await _fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // page: the owning screen's Policy reads this page's route params.
-        body: JSON.stringify({ action, params, session, componentId, page: _unlocalize(location.pathname) }),
+        body: JSON.stringify({ action, params, componentId, page: _unlocalize(location.pathname) }),
       });
       // A followed 3xx is another URL's answer: the action failed.
       if (r.ok && !r.redirected) {

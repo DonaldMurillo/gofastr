@@ -18,8 +18,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
 // devRun is one foreground dev run of a small App, served in-process.
@@ -339,7 +339,7 @@ func TestSignedInRequestIsLocalUser(t *testing.T) {
 	keepOwnerExtractor(t)
 	owner.SetExtractor(nil)
 	d := startDevRun(t)
-	stored, err := localuser.LoadOrMint(d.l.dir)
+	stored, err := localapp.LoadOrMint(d.l.dir)
 	if err != nil {
 		t.Fatal(err)
 	}

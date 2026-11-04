@@ -147,6 +147,7 @@ kernel	10	n
 kernel	10	shown
 kernel	2	M
 kernel	2	_dc
+kernel	2	_fetch
 kernel	2	_json
 kernel	2	_locBase
 kernel	2	_localeOf
@@ -179,6 +180,7 @@ kernel	4	r
 kernel	4	s
 kernel	4	sg
 kernel	4	t
+kernel	4	t
 kernel	4	ua
 kernel	6	a
 kernel	6	app
@@ -201,8 +203,6 @@ kernel	6	r
 kernel	6	r
 kernel	6	rIC
 kernel	6	self
-kernel	6	session
-kernel	6	sessionCookie
 kernel	6	t
 kernel	6	text
 kernel	6	trimmed

@@ -2,14 +2,12 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,10 +15,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
-	// The SQLite driver Runtime.AppOptions opens app.db with.
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // Config constructs a service Battery. ID and Port are required.
@@ -124,13 +120,9 @@ func (rt Runtime) MCPCommand() []string {
 // tokens survive a restart. An app with its own database skips this
 // and passes framework.WithSecret(rt.Secret) and its own WithDB.
 func (rt Runtime) AppOptions() ([]framework.AppOption, error) {
-	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(filepath.Join(rt.DataDir, "app.db")))
+	db, err := localapp.OpenDB(rt.DataDir)
 	if err != nil {
-		return nil, fmt.Errorf("service: open app database: %w", err)
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("service: app database unreachable: %w", err)
+		return nil, fmt.Errorf("service: %w", err)
 	}
 	return []framework.AppOption{framework.WithDB(db), framework.WithSecret(rt.Secret)}, nil
 }
@@ -210,7 +202,7 @@ func (b *Battery) Init(app *framework.App) error {
 	// A signed session is the OS user the service runs as. An app that
 	// links battery/auth keeps auth's identity end to end: the gate
 	// then only gates, and auth signs callers in.
-	if localuser.Install() {
+	if localapp.Install() {
 		b.gate.user = nil
 	} else {
 		app.NoteAuthenticator()

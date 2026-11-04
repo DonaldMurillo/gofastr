@@ -933,7 +933,7 @@
       // so their regions restore rather than fight the shell swap.
       if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         if (P && parts) P.kill(parts);
-        const fr = await fetch(path);
+        const fr = await NS.fetch(path);
         if (!NS._navLive(myEpoch)) return;
         NS._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
@@ -1000,7 +1000,7 @@
         hdrs['X-Gofastr-Defer'] = '1';
         P.launch(parts, parts.addrs);
       }
-      const resp = await fetch(path, Object.assign({ headers: hdrs }, parts && parts.fetchOpts));
+      const resp = await NS.fetch(path, Object.assign({ headers: hdrs }, parts && parts.fetchOpts));
       if (!NS._navLive(myEpoch)) return;
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
       if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));

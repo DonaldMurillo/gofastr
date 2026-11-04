@@ -35,20 +35,20 @@ func TestLiveReloadOffOnExposedBind(t *testing.T) {
 	t.Setenv(dev.LiveReloadExposeEnv, "")
 
 	loop := NewApp(WithoutDefaultMiddleware())
-	loop.guardDevLiveReloadBind("localhost:8080")
+	loop.guardDevLiveReloadBind("localhost:8080", "tcp")
 	if code, body := liveReloadStatus(t, loop); code != http.StatusOK || !strings.Contains(body, "ready") {
 		t.Fatalf("a loopback bind must keep livereload: %d %q", code, body)
 	}
 
 	exposed := NewApp(WithoutDefaultMiddleware())
-	exposed.guardDevLiveReloadBind("0.0.0.0:8080")
+	exposed.guardDevLiveReloadBind("0.0.0.0:8080", "tcp")
 	if code, _ := liveReloadStatus(t, exposed); code != http.StatusNotFound {
 		t.Fatalf("livereload on an exposed bind answered %d, want 404", code)
 	}
 
 	t.Setenv(dev.LiveReloadExposeEnv, "1")
 	optIn := NewApp(WithoutDefaultMiddleware())
-	optIn.guardDevLiveReloadBind("0.0.0.0:8080")
+	optIn.guardDevLiveReloadBind("0.0.0.0:8080", "tcp")
 	if code, _ := liveReloadStatus(t, optIn); code != http.StatusOK {
 		t.Fatalf("the opt-in did not keep livereload: %d", code)
 	}
@@ -66,12 +66,48 @@ func TestExposedBindWarnsHostStream(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 	dev.RegisterLiveReload(a.router)
-	a.guardDevLiveReloadBind("0.0.0.0:8080")
+	a.guardDevLiveReloadBind("0.0.0.0:8080", "tcp")
 	if code, _ := liveReloadStatus(t, a); code != http.StatusTeapot {
 		t.Fatalf("host stream answered %d, want it left serving", code)
 	}
 	out := logs.String()
 	if strings.Contains(out, "livereload is off") || !strings.Contains(out, "stays on") {
 		t.Fatalf("exposed bind with a host stream logged:\n%s", out)
+	}
+}
+
+// The dev guards judge a caller-supplied listener by its network: an
+// in-process listener is local (only this process reaches it), a TCP one
+// by its host, and a unix socket is exposed even when its path reads
+// like a loopback host:port.
+func TestDevGuardsJudgeTheNetwork(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_ENV", "")
+	t.Setenv("GOFASTR_DEV_LIVERELOAD", "")
+	t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "")
+	t.Setenv(dev.LiveReloadExposeEnv, "")
+	for _, c := range []struct {
+		addr, network string
+		local         bool
+	}{
+		{"memory", "memory", true},
+		{"pipe", "pipe", true},
+		{"127.0.0.1:8080", "tcp", true},
+		{"0.0.0.0:8080", "tcp", false},
+		{"127.0.0.1:8080", "unix", false},
+		{"/run/app.sock", "unix", false},
+	} {
+		mcp := NewApp()
+		mcp.mcpControl, mcp.mcpControlDevImplied = true, true
+		mcp.guardDevMCPBind(c.addr, c.network)
+		if mcp.mcpControl != c.local {
+			t.Errorf("%s %s: dev MCP kept = %v, want %v", c.network, c.addr, mcp.mcpControl, c.local)
+		}
+		lr := NewApp(WithoutDefaultMiddleware())
+		lr.guardDevLiveReloadBind(c.addr, c.network)
+		code, _ := liveReloadStatus(t, lr)
+		if kept := code == http.StatusOK; kept != c.local {
+			t.Errorf("%s %s: livereload kept = %v (status %d), want %v", c.network, c.addr, kept, code, c.local)
+		}
 	}
 }

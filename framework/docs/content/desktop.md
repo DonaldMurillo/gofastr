@@ -110,6 +110,9 @@ macOS), created 0700. Four files live there:
 | `identity` | The per-installation local user id (see below). |
 | `state.json` | The app state store (see "App state"), 0600. |
 
+The first three are [`framework/localapp`](local-apps.md)'s, the same
+set every one-person host opens.
+
 `GOFASTR_DESKTOP_DATA_DIR` overrides the base directory (absolute
 paths only); tests and CI use it to avoid touching a real profile.
 `Config.DataDir` overrides the whole path per battery.

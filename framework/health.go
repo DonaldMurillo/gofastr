@@ -62,9 +62,10 @@ const productionReadinessDrain = 5 * time.Second
 // it). Zero skips the wait; a negative value is zero.
 //
 // The default is 5s in production and 0 where no balancer probes: a Go
-// test binary, `gofastr dev`, a battery/service run, and an app whose
+// test binary, `gofastr dev`, a battery/service run, an app whose
 // listener is bound to a loopback address only (the desktop battery
-// always is). An explicit WithReadinessDrain wins over every default.
+// always is), and an in-process listener handed to Serve (network
+// "memory" or "pipe"). An explicit WithReadinessDrain wins over every default.
 //
 // The grace counts against Shutdown's context. It takes at most half of
 // the time that context has left when the grace starts, so the HTTP
@@ -104,15 +105,18 @@ func defaultReadinessDrain(underTest, devMode, local bool) time.Duration {
 }
 
 // servesLocalOnly reports whether nothing but this machine reaches the
-// app, so no load balancer probes /readyz: a battery/service run, or a
+// app, so no load balancer probes /readyz: a battery/service run, a
 // listener bound to a loopback address (the desktop battery refuses any
-// other bind). A wildcard or routable bind is not local. Before the
-// listener binds only the service mark counts.
+// other bind), or an in-process listener handed to Serve (a mobile
+// shell's, network "memory" or "pipe"). A wildcard or routable bind is
+// not local, and neither is a unix socket, which a proxy can front, or
+// any other network. Before the listener binds only
+// the service mark counts.
 func (a *App) servesLocalOnly() bool {
 	a.serverMu.Lock()
-	host := a.boundHost
+	host, inProcess := a.boundHost, a.boundInProcess
 	a.serverMu.Unlock()
-	return a.isLocalRun(host)
+	return inProcess || a.isLocalRun(host)
 }
 
 // capReadinessDrain bounds the grace to half of the time ctx has left,

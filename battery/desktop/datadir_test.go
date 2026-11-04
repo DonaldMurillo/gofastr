@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
+
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
@@ -56,7 +58,7 @@ func TestDataDirEnvMustBeAbsolute(t *testing.T) {
 
 func TestOpenAppDBCreatesFile(t *testing.T) {
 	dir := t.TempDir()
-	db, err := openAppDB(dir)
+	db, err := localapp.OpenDB(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

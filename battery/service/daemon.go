@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/internal/localuser"
+	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
@@ -93,7 +93,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	// The signed-in browser is the OS user the service runs as: the
 	// gate puts that local identity on every request it lets through
 	// (unless battery/auth owns identity; see Init).
-	if g.user, err = localuser.LoadOrMint(l.dir); err != nil {
+	if g.user, err = localapp.LoadOrMint(l.dir); err != nil {
 		return fmt.Errorf("service: %w", err)
 	}
 	b.mu.Lock()

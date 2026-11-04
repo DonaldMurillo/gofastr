@@ -75,7 +75,7 @@ func TestBannerSaysAPIDocsNotSwagger(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	var out bytes.Buffer
 	app.startupOutput = &out
-	app.printStartupBanner("127.0.0.1:8080", "test", true, true, "")
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "test", true, true, "")
 	banner := out.String()
 	if strings.Contains(banner, "Swagger") {
 		t.Fatalf("banner still says Swagger:\n%s", banner)
