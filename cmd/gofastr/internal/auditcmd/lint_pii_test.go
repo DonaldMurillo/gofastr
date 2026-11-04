@@ -123,7 +123,7 @@ func registerCustomers(app *framework.App) {
 	})
 }
 `
-	findings := lintGoSourcePII("entities/customers.go", []byte(src))
+	findings := lintFile("entities/customers.go", []byte(src))
 	found := false
 	for _, f := range findings {
 		if f.Rule == "unscoped-pii" {
