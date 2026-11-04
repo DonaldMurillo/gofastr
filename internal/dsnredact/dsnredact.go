@@ -17,9 +17,9 @@
 //     first-'@' cut leaves password material past the mask. Fails closed:
 //     an unparsable URL that carries a userinfo section is treated as
 //     secret-bearing.
-//   - key=value form (libpq): password and sslpassword pairs are dropped whole. Values
-//     may be single-quoted and contain spaces (password='a b'), so fields
-//     split quote-aware; a bare strings.Fields would leak the quoted tail.
+//   - key=value form (libpq): password and sslpassword assignments are dropped
+//     whole, allowing whitespace around '=' and quoted or escaped values.
+//     Splitting on whitespace alone would leak the password's tail.
 package dsnredact
 
 import (
@@ -76,6 +76,7 @@ func Redact(dsn string) string {
 	kept := fields[:0]
 	for _, f := range fields {
 		key, _, _ := strings.Cut(f, "=")
+		key = strings.TrimSpace(key)
 		if key == "password" || key == "sslpassword" {
 			continue
 		}
@@ -86,7 +87,9 @@ func Redact(dsn string) string {
 
 // HasSecret reports whether dsn carries a detectable credential: a
 // url.Parse-able userinfo password, a textual userinfo section on a URL
-// url.Parse rejects, or a `password=` pair. SQLite file DSNs return
+// url.Parse rejects, a password/sslpassword URL query parameter, or a libpq
+// password/sslpassword assignment with optional whitespace around '='.
+// SQLite file DSNs without credentials return
 // false: nothing to hide.
 //
 // Fails CLOSED on URL-form DSNs that url.Parse rejects: if there is a
@@ -101,8 +104,12 @@ func HasSecret(dsn string) bool {
 	if dsn == "" {
 		return false
 	}
-	if strings.Contains(dsn, "password=") {
-		return true
+	for _, field := range splitFields(dsn) {
+		key, _, found := strings.Cut(field, "=")
+		key = strings.TrimSpace(key)
+		if found && (key == "password" || key == "sslpassword") {
+			return true
+		}
 	}
 	if u, err := url.Parse(dsn); err == nil {
 		if u.Scheme != "" {
@@ -122,37 +129,56 @@ func HasSecret(dsn string) bool {
 	return false
 }
 
-// splitFields splits a libpq key/value DSN on whitespace, keeping
-// single-quoted values (with \' escapes) intact so a quoted password is
-// dropped whole rather than leaking its tail.
+// splitFields reads whole libpq assignments, including whitespace around '=',
+// single-quoted values and backslash escapes inside or outside quotes.
 func splitFields(dsn string) []string {
 	var fields []string
-	var cur strings.Builder
-	inQuote := false
-	escaped := false
-	for i := range len(dsn) {
-		c := dsn[i]
-		switch {
-		case escaped:
-			escaped = false
-			cur.WriteByte(c)
-		case c == '\\' && inQuote:
-			escaped = true
-			cur.WriteByte(c)
-		case c == '\'':
-			inQuote = !inQuote
-			cur.WriteByte(c)
-		case (c == ' ' || c == '\t') && !inQuote:
-			if cur.Len() > 0 {
-				fields = append(fields, cur.String())
-				cur.Reset()
-			}
-		default:
-			cur.WriteByte(c)
+	for offset := 0; offset < len(dsn); {
+		for offset < len(dsn) && dsnSpace(dsn[offset]) {
+			offset++
 		}
-	}
-	if cur.Len() > 0 {
-		fields = append(fields, cur.String())
+		start := offset
+		for offset < len(dsn) && !dsnSpace(dsn[offset]) && dsn[offset] != '=' {
+			offset++
+		}
+		keyEnd := offset
+		for offset < len(dsn) && dsnSpace(dsn[offset]) {
+			offset++
+		}
+		if offset >= len(dsn) || dsn[offset] != '=' {
+			if keyEnd > start {
+				fields = append(fields, dsn[start:keyEnd])
+			}
+			continue
+		}
+		offset++
+		for offset < len(dsn) && dsnSpace(dsn[offset]) {
+			offset++
+		}
+		inQuote := offset < len(dsn) && dsn[offset] == '\''
+		if inQuote {
+			offset++
+		}
+		for offset < len(dsn) {
+			char := dsn[offset]
+			if char == '\\' && offset+1 < len(dsn) {
+				offset += 2
+				continue
+			}
+			if inQuote && char == '\'' {
+				offset++
+				break
+			}
+			if dsnSpace(char) && !inQuote {
+				break
+			}
+			offset++
+		}
+		fields = append(fields, dsn[start:offset])
 	}
 	return fields
+}
+
+func dsnSpace(char byte) bool {
+	return char == ' ' || char == '\t' || char == '\n' || char == '\r' || char == '\v' || char == '\f'
 }

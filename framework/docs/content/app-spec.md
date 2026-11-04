@@ -1388,6 +1388,9 @@ DSN redaction removes userinfo passwords, URL query `password` and
 `sslpassword` parameters (including percent-encoded parameter names), and
 libpq `password`/`sslpassword` pairs. Non-secret host/database settings are
 retained; an unreadable URL query is removed entirely rather than leaked.
+Libpq assignments may have whitespace around `=` and single-quoted or
+backslash-escaped values. Detection and redaction parse those assignments
+together, so a spaced or quoted credential cannot become a source fallback.
 
 When the app spec holds any of these values, the generator also emits a
 `.env` carrying them (so the app runs without extra setup). The
