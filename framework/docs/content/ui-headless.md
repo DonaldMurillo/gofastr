@@ -1,5 +1,9 @@
 # Headless components
 
+Repeater submit controls default to `Name+"_add"` with value `"1"` and
+`Name+"_remove"` with the zero-based row index. Explicit `AddName`,
+`AddValue`, and `RemoveName` override these no-script operation markers.
+
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
 attributes and the hooks a runtime binds to, and nothing else: no
