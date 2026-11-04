@@ -889,7 +889,10 @@ WebKit has no CSS signal for window activity and implements no
 - `reduce_transparency {"on": bool}` goes to every window on each
   change of the system setting. When it is on, the shell hides the
   effect views and restores an opaque window background, the same
-  window `MaterialNone` gives. `Shell.Appearance()` answers the
+  window `MaterialNone` gives. Turning it off restores the material
+  around the same live web view, including `MaterialGlass`; repeated
+  toggles preserve the page rather than replacing or reloading it.
+  `Shell.Appearance()` answers the
   current state at any time, including before `Run`.
 - `desktop.BootstrapJS(windowID, reduceTransparency)` carries the
   state at load, so the first paint is right.

@@ -27,6 +27,9 @@ import (
 
 // TestMain runs the suite, then the main-thread Apple-event check.
 func TestMain(m *testing.M) {
+	if os.Getenv("GOFASTR_TEST_GLASS_CONTENT") == "1" {
+		os.Exit(glassContentCheck())
+	}
 	code := m.Run()
 	if !deepLinkIMPCheck() {
 		code = 1
