@@ -144,8 +144,7 @@ func checkFunc(pass *analysis.Pass, body *ast.BlockStmt) {
 // hidden.
 func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt) bool {
 	var kept []types.Object
-	type fieldRef struct{ root, field types.Object }
-	var keptFields []fieldRef
+	var keptFields []*ast.SelectorExpr
 	for _, lhs := range st.Lhs {
 		if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
 			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
@@ -154,10 +153,8 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 			continue
 		}
 		if sel, ok := lhs.(*ast.SelectorExpr); ok {
-			root := selectorRoot(pass, sel)
-			field := pass.TypesInfo.ObjectOf(sel.Sel)
-			if root != nil && field != nil {
-				keptFields = append(keptFields, fieldRef{root, field})
+			if pass.TypesInfo.ObjectOf(sel.Sel) != nil {
+				keptFields = append(keptFields, sel)
 			}
 		}
 	}
@@ -169,7 +166,7 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 	// either (ch = nil, a second ch, _ = m.fetch()): a value that is
 	// only ever overwritten never marches on.
 	discarded := map[token.Pos]bool{}
-	written := map[token.Pos]bool{}
+	written := map[ast.Expr]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch a := n.(type) {
 		case *ast.AssignStmt:
@@ -180,11 +177,11 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 					}
 				}
 			}
-			for _, l := range a.Lhs {
-				markWrite(l, written)
+			if a.Tok == token.ASSIGN || a.Tok == token.DEFINE {
+				for _, lhs := range a.Lhs {
+					written[ast.Unparen(lhs)] = true
+				}
 			}
-		case *ast.IncDecStmt:
-			markWrite(a.X, written)
 		}
 		return true
 	})
@@ -195,7 +192,7 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 		}
 		switch x := n.(type) {
 		case *ast.Ident:
-			if discarded[x.Pos()] || written[x.Pos()] {
+			if discarded[x.Pos()] || written[x] {
 				return true
 			}
 			for _, obj := range kept {
@@ -205,11 +202,11 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 				}
 			}
 		case *ast.SelectorExpr:
-			if written[x.Pos()] {
+			if written[x] {
 				return true
 			}
 			for _, kf := range keptFields {
-				if selectorRoot(pass, x) == kf.root && pass.TypesInfo.ObjectOf(x.Sel) == kf.field {
+				if sameStorage(pass, x, kf) {
 					used = true
 					return false
 				}
@@ -220,32 +217,26 @@ func keepsUsedValue(pass *analysis.Pass, body *ast.BlockStmt, st *ast.AssignStmt
 	return used
 }
 
-// markWrite records the position of an assignment target: an
-// identifier, or the whole selector it writes through (h.ch = nil).
-func markWrite(e ast.Expr, written map[token.Pos]bool) {
-	switch x := ast.Unparen(e).(type) {
+func sameStorage(pass *analysis.Pass, left, right ast.Expr) bool {
+	left, right = ast.Unparen(left), ast.Unparen(right)
+	switch target := left.(type) {
 	case *ast.Ident:
-		written[x.Pos()] = true
+		other, ok := right.(*ast.Ident)
+		return ok && pass.TypesInfo.ObjectOf(target) != nil && pass.TypesInfo.ObjectOf(target) == pass.TypesInfo.ObjectOf(other)
 	case *ast.SelectorExpr:
-		written[x.Pos()] = true
+		other, ok := right.(*ast.SelectorExpr)
+		return ok && pass.TypesInfo.ObjectOf(target.Sel) == pass.TypesInfo.ObjectOf(other.Sel) && sameStorage(pass, target.X, other.X)
+	case *ast.IndexExpr:
+		other, ok := right.(*ast.IndexExpr)
+		return ok && sameStorage(pass, target.X, other.X) && sameStorage(pass, target.Index, other.Index)
+	case *ast.StarExpr:
+		other, ok := right.(*ast.StarExpr)
+		return ok && sameStorage(pass, target.X, other.X)
+	case *ast.BasicLit:
+		other, ok := right.(*ast.BasicLit)
+		return ok && target.Kind == other.Kind && target.Value == other.Value
 	}
-}
-
-// selectorRoot resolves the base binding of a member chain (h of
-// h.ch), so two selectors over the same variable name the same field.
-func selectorRoot(pass *analysis.Pass, sel *ast.SelectorExpr) types.Object {
-	x := ast.Unparen(sel.X)
-	for {
-		s, ok := x.(*ast.SelectorExpr)
-		if !ok {
-			break
-		}
-		x = ast.Unparen(s.X)
-	}
-	if id, ok := x.(*ast.Ident); ok {
-		return pass.TypesInfo.ObjectOf(id)
-	}
-	return nil
+	return false
 }
 
 // isError reports whether t is or implements error.
