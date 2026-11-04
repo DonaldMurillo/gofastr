@@ -1,6 +1,7 @@
 package interactive
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -34,7 +35,14 @@ func TestOptimisticNamesFirstLostOption(t *testing.T) {
 	want := ""
 	for range 50 {
 		got := func() (msg string) {
-			defer func() { msg, _ = recover().(string) }()
+			defer func() {
+				value := recover()
+				var ok bool
+				msg, ok = value.(string)
+				if !ok || !strings.Contains(msg, "data-cui-confirm") {
+					t.Fatalf("panic = %#v, want string naming data-cui-confirm", value)
+				}
+			}()
 			OptimisticUpdate(action, render.Text("Delete"), render.Text("Deleted"))
 			return ""
 		}()
