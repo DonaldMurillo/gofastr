@@ -200,3 +200,52 @@ func q() []string {
 	assertNot(t, ds, contracts.RuleAbsoluteAttempts,
 		"a counter expression that reads its own column is relative, and max_attempts is not the counter")
 }
+
+// A Sprintf verb with an argument index or a width is the same host
+// snapshot: this repo's own SQL spells table and limit slots %[2]s and
+// %[6]d (entityui), so the counter spelled the same way counts.
+func TestAbsoluteAttemptsIndexedVerbIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"settle.go": `package outbox
+
+import "fmt"
+
+func q(table string, n, id int) string {
+	return fmt.Sprintf("UPDATE %[1]s SET status=%[3]v, attempts=%[2]d WHERE id=%[4]d", table, n, "dead", id)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleAbsoluteAttempts)
+	ds = fixture(t, map[string]string{
+		"settle.go": `package outbox
+
+func q() string {
+	return "UPDATE jobs SET attempts=%02d WHERE id=1"
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleAbsoluteAttempts)
+}
+
+// A marker above a call whose multi-line SQL literal holds the finding:
+// the comment cannot sit inside the raw string, so the waiver has to
+// cover the whole literal that follows it. Without that, the 1408
+// finding stays AND the marker is reported stale (GOFASTR0002).
+func TestAbsoluteAttemptsMarkerCoversLiteral(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"settle.go": `package outbox
+
+import "database/sql"
+
+func markDead(db *sql.DB, table string, n int, rowID string) error {
+	//gofastr:allow(GOFASTR1408) the settle path owns the row exclusively; the count is per-runner by design
+	_, err := db.Exec(` + "`" + `UPDATE %s
+		SET status='dead', attempts=$1, claimed_until=NULL
+		WHERE row_id=$2` + "`" + `, table, n, rowID)
+	return err
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleAbsoluteAttempts, "the marker above the call waives the finding inside its literal")
+	assertNot(t, ds, contracts.RuleSuppressionStale, "the marker matched the finding inside the literal, so it is not stale")
+}

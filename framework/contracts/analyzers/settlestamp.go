@@ -256,13 +256,15 @@ var (
 var reNextStatement = regexp.MustCompile(`(?i)\b(?:UPDATE|INSERT|DELETE|SELECT|CREATE|ALTER)\s`)
 
 // ssStatement cuts the text after SET at the statement's end: a
-// semicolon, a quote that closes a literal quoted inside the string (SQL
-// held in Go source text), or the next statement's verb outside
-// parentheses. A WHERE read past it would borrow the next statement's
-// predicates.
+// semicolon or the next statement's verb outside parentheses. A WHERE
+// read past it would borrow the next statement's predicates. Quoted
+// identifiers never end a statement — the text here is the unquoted
+// literal CONTENT, so a `"` or backtick inside it is SQL's identifier
+// quoting (`"updated_at"=now()`), not the Go literal closing; cutting
+// at one read a Set list short and hid every quoted column.
 func ssStatement(rest string) string {
 	end := len(rest)
-	if i := strings.IndexAny(rest, ";`\""); i >= 0 {
+	if i := strings.IndexByte(rest, ';'); i >= 0 {
 		end = i
 	}
 	depth := 0

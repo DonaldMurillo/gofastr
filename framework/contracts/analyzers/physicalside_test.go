@@ -40,6 +40,17 @@ func TestPhysicalSidesAreReported(t *testing.T) {
 	}
 }
 
+// A :dir() override and an ordinary rule can share one line of kit
+// CSS; the override's exemption ends at its own closing brace, and the
+// rule after it is judged on its own bytes.
+func TestPhysicalSideAfterDirBlockOnSameLine(t *testing.T) {
+	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `:dir(rtl) .chev { transform: scaleX(-1) } .menu { border-right: 1px solid var(--color-border); }`\n")
+	found := countRule(t, ds, contracts.RulePhysicalSide)
+	if len(found) != 1 || !strings.Contains(found[0].Message, "border-inline-end") {
+		t.Fatalf("the .menu rule after the :dir() block is its own declaration; got %v", found)
+	}
+}
+
 func TestPhysicalSideInSetPairIsReported(t *testing.T) {
 	ds := designFixture(t, "core-ui/widget/page.go",
 		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"left\", \"{spacing.lg}\", \"text-align\", \"right\").End()\n}\n")

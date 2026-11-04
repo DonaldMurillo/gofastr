@@ -404,6 +404,24 @@ func (c *checker) checkMediaWidths(r *Rule) {
 		default:
 			continue
 		}
+		// Reversed range syntax: 768px <= min-width. The value stands
+		// before the feature name, across the comparison operator run.
+		k := i - 1
+		for k >= 0 && isComparisonDelim(prel[k]) {
+			k--
+		}
+		if k < i-1 && k >= 0 {
+			if v := prel[k]; v.Type == TokenDimension || v.Type == TokenNumber || v.Type == TokenPercentage {
+				c.report(Diagnostic{
+					Rule:     RuleRawMediaWidth,
+					Severity: SeverityError,
+					Line:     v.Line,
+					Col:      v.Col,
+					Message:  c.rawWidthMessage(v.Text),
+				})
+			}
+			continue
+		}
 		// The feature's value: after ':' or a comparison operator.
 		j := i + 1
 		if j < len(prel) && prel[j].Type == TokenColon {
@@ -599,7 +617,8 @@ func splitSelectors(prel []Token) [][]Token {
 }
 
 // splitCompounds splits one selector into compound selectors at
-// descendant whitespace and the > + ~ combinators.
+// descendant whitespace (a comment is whitespace to the browser and
+// splits the same way) and the > + ~ combinators.
 func splitCompounds(sel []Token) [][]Token {
 	var out [][]Token
 	var cur []Token
@@ -616,7 +635,9 @@ func splitCompounds(sel []Token) [][]Token {
 			depth++
 		case TokenCloseParen, TokenCloseSquare:
 			depth--
-		case TokenWhitespace:
+		case TokenWhitespace, TokenComment:
+			// A comment is a descendant combinator to the browser,
+			// exactly like whitespace; compounds split at it too.
 			if depth == 0 {
 				flush()
 				continue
@@ -742,8 +763,8 @@ func (c *checker) checkVarRefs(d *Decl) {
 		// one other way out is a gofastr:allow(GOFASTR1806) marker with
 		// its reason.
 		if !c.declaredProps[name] &&
-			//gofastr:allow(layerprefix) the owned-style checker names the kit class prefix to tell a kit sheet from an app sheet
-			!strings.HasPrefix(name, "ui-") && !strings.HasPrefix(name, "fui-") {
+			//gofastr:allow(layerprefix) the owned-style checker names the layer prefixes to exempt runtime-owned properties
+			!runtimeOwnedVarPrefix(name) {
 			if _, known := slices.BinarySearch(c.known, name); !known {
 				msg := fmt.Sprintf("--%s is not a theme token", name)
 				if fix, ok := closestToken(name, c.known); ok {
@@ -764,6 +785,16 @@ func (c *checker) checkVarRefs(d *Decl) {
 			c.checkFallbackDrift(d, t, name, fallback[0].Text)
 		}
 	}
+}
+
+// runtimeOwnedVarPrefix reports whether a custom-property name belongs
+// to a layer that writes it at runtime (the ui kit's fui-* knobs, the
+// kernel's cui-*, headless's hui-*): the theming doc exempts all four
+// prefixes beside the theme's own tokens.
+func runtimeOwnedVarPrefix(name string) bool {
+	//gofastr:allow(layerprefix) the owned-style checker names the layer prefixes to exempt them
+	return strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") ||
+		strings.HasPrefix(name, "cui-") || strings.HasPrefix(name, "hui-")
 }
 
 // checkFallbackDrift is GOFASTR1808.

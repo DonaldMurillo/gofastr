@@ -42,7 +42,11 @@ import (
 //
 // Files that legitimately need to embed a style string (the linter
 // itself, the CSP-test fixtures, the style-builder package emitting
-// stylesheets) opt out with the `//check-csp:ignore-file` directive.
+// stylesheets) opt out with the `//check-csp:ignore-file` directive,
+// which exempts the whole file. A single deliberate inline style
+// instead carries the marker `gofastr verify` honours for the same
+// finding, `//gofastr:allow(GOFASTR1804) <reason>` on its line, so the
+// two gates agree instead of forcing a file-wide exemption.
 // _test.go files are skipped automatically since they often build
 // fixtures that intentionally contain known-bad strings for
 // assertion.
@@ -79,9 +83,36 @@ var (
 // attrs to render.Tag / html.Attrs literals. Returns one violation
 // per offending source location.
 func LintNoInlineStyles(dir string) (*Result, error) {
-	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, _ []byte, result *Result) {
-		scanInlineStyles(fset, file, filename, result)
+	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
+		// One deliberate inline style carries the marker gofastr verify
+		// already honours for this rule, GOFASTR1804, rather than opting
+		// the whole file out with ignore-file. ScanInlineStylesIn leaves
+		// the marker alone: the contracts pass applies it, and reports
+		// it stale when it matches nothing — the same split the script
+		// lane made for GOFASTR1805.
+		allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1804")
+		sub := &Result{}
+		scanInlineStyles(fset, file, filename, sub)
+		for _, v := range sub.Violations {
+			if !allowed[v.Line] {
+				result.Violations = append(result.Violations, v)
+			}
+		}
 	})
+}
+
+// ScanInlineStylesIn is the single-file entry point a contracts pass
+// calls with its own cached AST: one detector behind both the build
+// gate and GOFASTR1804, so the two cannot drift apart again. Files
+// carrying the ignore-file directive report nil. The gofastr:allow
+// marker is NOT applied here; the caller that owns suppression does.
+func ScanInlineStylesIn(fset *token.FileSet, file *ast.File, filename string, raw []byte) *Result {
+	if fset == nil || file == nil || hasCSPIgnoreDirective(raw) {
+		return nil
+	}
+	result := &Result{}
+	scanInlineStyles(fset, file, filename, result)
+	return result
 }
 
 // LintNoInlineStylesRecursive walks dir and every subdirectory.

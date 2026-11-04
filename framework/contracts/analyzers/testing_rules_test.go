@@ -139,6 +139,22 @@ func TestCoverageAtFloorIsClean(t *testing.T) {
 // GOFASTR1105: disabled tests
 // ----------------------------------------------------------------------
 
+func TestDebtSkipMessageOnNextLineReported(t *testing.T) {
+	ds := testingRun(t, contracts.DefaultConfig(), map[string]string{
+		"checkout_test.go": `package main
+
+import "testing"
+
+func TestCheckout(t *testing.T) {
+	t.Skipf(
+		"not yet implemented",
+	)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleDisabledTest)
+}
+
 func TestDebtSkipIsReported(t *testing.T) {
 	ds := testingRun(t, contracts.DefaultConfig(), map[string]string{
 		"checkout_test.go": `package main

@@ -88,6 +88,29 @@ func TestDuplicateStyleNameWithinProgram(t *testing.T) {
 	}
 }
 
+// GOFASTR1816 sits on line 1 of the sheet, where only a comment can
+// stand: a standalone marker must cover its own line, or the waiver is
+// unusable and reports itself stale on top.
+func TestDuplicateStyleLineOneMarkerCovers(t *testing.T) {
+	css := "/* gofastr:allow(GOFASTR1816) one template stamped per tenant program, see #77 */\n.a { order: 1; }\n"
+	ds := fixture(t, merge(
+		map[string]string{
+			"cmd/app/main.go": mainImporting("example.com/app/one", "example.com/app/two"),
+		},
+		ownedPair(t, "one", "one", "card", css),
+		ownedPair(t, "two", "two", "card", ".b { order: 1; }\n"),
+	))
+	for _, d := range ds {
+		if d.File == "one/card.style.css" &&
+			(d.RuleID == contracts.RuleDuplicateStyleName || d.RuleID == contracts.RuleSuppressionStale) {
+			t.Errorf("the line-1 marker must cover the line-1 finding: %s %s:%d", d.RuleID, d.File, d.Line)
+		}
+	}
+	if got := countRule(t, ds, contracts.RuleDuplicateStyleName); len(got) != 1 {
+		t.Fatalf("the unmarked sibling still reports; got %v", got)
+	}
+}
+
 func TestRepeatedLiteralWithinProgram(t *testing.T) {
 	ds := fixture(t, merge(
 		map[string]string{

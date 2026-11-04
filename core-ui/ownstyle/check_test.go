@@ -281,8 +281,11 @@ func TestCheckRawMediaWidths(t *testing.T) {
 		{"@container (min-width: 26rem) { .a { color: red; } }", ""},
 		{"@media (hover: hover) { .a { color: red; } }", ""},
 		{"@media (aspect-ratio: 16/9) { .a { color: red; } }", ""},
-		// Range syntax counts too.
+		// Range syntax counts too, in both orders: the value after
+		// the feature name, or before it (the reversed form).
 		{"@media (width >= 900px) { .a { color: red; } }", "1:18"},
+		{"@media (900px >= width) { .a { color: red; } }", "1:9 error GOFASTR1812"},
+		{"@media (768px <= min-width) { .a { color: red; } }", "1:9 error GOFASTR1812 768px is the md breakpoint"},
 	}
 	for _, tc := range cases {
 		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))

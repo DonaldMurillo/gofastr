@@ -44,6 +44,43 @@ func TestLintNoInlineStyles_FlagsBackticksLiteral(t *testing.T) {
 	}
 }
 
+// A deliberate, marked inline style: gofastr verify waives
+// GOFASTR1804 on the marker, so the build gate must honour the same
+// marker rather than forcing a whole-file ignore-file exemption.
+func TestLintNoInlineStyles_HonorsAllowMarker(t *testing.T) {
+	dir := writeStyleFixture(t, `
+func f() string {
+	//gofastr:allow(GOFASTR1804) the email preview mirrors per-message inline styles, see #212
+	return "<div style=\"display: none\">x</div>"
+}
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Fatalf("marked inline style still reported: %s", res.Error())
+	}
+}
+
+// The marker is rule-scoped: it waives the style rule, not whatever
+// else the line carries.
+func TestLintNoInlineStyles_AllowMarkerOtherRule(t *testing.T) {
+	dir := writeStyleFixture(t, `
+func f() string {
+	//gofastr:allow(GOFASTR9999) a different rule's marker
+	return "<div style=\"display: none\">x</div>"
+}
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HasErrors() {
+		t.Fatal("a marker naming another rule must not waive the style finding")
+	}
+}
+
 func TestLintNoInlineStyles_FlagsAttrsMapKey(t *testing.T) {
 	dir := writeStyleFixture(t, `
 import _ "fmt"

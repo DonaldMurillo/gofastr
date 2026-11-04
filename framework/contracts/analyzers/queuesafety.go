@@ -87,9 +87,10 @@ var (
 	// token.
 	reCounterAssign = regexp.MustCompile(`(?i)(?:"(attempts|retries|tries|failures)"|\b(attempts|retries|tries|failures)\b)\s*=`)
 	// reHostValue matches a host value: a positional placeholder ($n,
-	// the sqlite ?) or a Sprintf verb. \d+ consumes the whole number,
-	// so $12 needs no lookahead of its own.
-	reHostValue = regexp.MustCompile(`\$\d+|\?|%[sdv]`)
+	// the sqlite ?) or a Sprintf verb, including the argument-index and
+	// width spellings this repo's own SQL uses (%[2]s, %02d): \d+
+	// consumes the whole number, so $12 needs no lookahead of its own.
+	reHostValue = regexp.MustCompile(`\$\d+|\?|%(?:\[\d+\])?[#0-9.]*[a-z]`)
 )
 
 // setValue returns one SET assignment's value expression: the text up

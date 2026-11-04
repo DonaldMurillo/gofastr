@@ -43,6 +43,30 @@ func TestHrefFromVariableIsReported(t *testing.T) {
 	assertHas(t, ds, contracts.RuleHardNavigation)
 }
 
+// A compound assignment is the same full load: `location.href +=
+// "?page=2"` reassigns the URL and the document refetches.
+func TestCompoundAssignNavIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go":       "package main\n",
+		"static/app.js": "location.href += '?page=2';\nlocation.search += '&x=1';\nwindow.location.pathname += 'seg';\n",
+	})
+	if got := countRule(t, ds, contracts.RuleHardNavigation); len(got) != 3 {
+		t.Fatalf("want 3 findings (href, search, pathname), got %d: %v", len(got), got)
+	}
+}
+
+// A frame walk reaches the same document load: parent.location and
+// window.top.location chains qualify location the way window. does.
+func TestParentLocationChainIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go":       "package main\n",
+		"static/app.js": "parent.location.href = '/account';\nwindow.top.location = url;\n",
+	})
+	if got := countRule(t, ds, contracts.RuleHardNavigation); len(got) != 2 {
+		t.Fatalf("want 2 findings (parent.href, window.top), got %d: %v", len(got), got)
+	}
+}
+
 func TestScriptNavLookalikesAreClean(t *testing.T) {
 	ds := fixture(t, map[string]string{
 		"main.go": "package main\n\nvar location string\n\nfunc f() { location = city() }\n\nfunc city() string { return location }\n",

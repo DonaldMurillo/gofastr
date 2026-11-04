@@ -747,10 +747,12 @@ func emitRun(toks []Token, mode emitMode) string {
 	hadWS := false
 	first := true
 	for _, t := range toks {
+		// A comment is whitespace to the browser: it separates the
+		// tokens either side of it, so dropping it without marking the
+		// gap merges them (`margin:0/*c*/auto` → `margin:0auto`,
+		// `.fui/*c*/-card` → the kit root `.fui-card`).
 		if isTrivia(t) {
-			if t.Type == TokenWhitespace {
-				hadWS = true
-			}
+			hadWS = true
 			continue
 		}
 		if !first && sep(prev, t, hadWS, mode) {

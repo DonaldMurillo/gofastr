@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
@@ -130,31 +131,27 @@ var (
 	reCSSAtRule    = regexp.MustCompile(`(?i)@(?:font-face|media|keyframes|supports|layer)\b`)
 	// A `<style>` block opened inside a string.
 	reStyleTag = regexp.MustCompile(`(?i)<style[\s>]`)
-	// A style attribute with a real declaration in it.
-	//
-	// The preceding-context group is OPTIONAL. notPropChar exists to stop
-	// `width` matching inside `max-width`, but it needs a character to
-	// consume, and the first declaration in an attribute has none, since
-	// the opening quote is already matched. Requiring it made
-	// `style="margin-top: 12px"`, by far the most common shape, invisible
-	// while `style="color: red; margin-top: 12px"` was caught.
-	inlineStyleLead   = `(?:[^"']*` + notPropChar + `)?`
-	reInlineStyleAttr = regexp.MustCompile(`(?i)style\s*=\s*\\?["']\s*(?:` +
-		inlineStyleLead + `(?:` + cssHyphenProps + `)\s*:|` +
-		inlineStyleLead + `(?:` + cssPlainProps + `)\s*:\s*[^"']*` + cssValueShape + `)`)
 	// Hard navigation: assigning location, or reloading. Assigning
 	// href, search or pathname, or window.location itself, loads a new
 	// document whatever the right-hand side is, so a variable counts as
-	// much as a literal. `[^.\w$]` keeps `init.location = e.location` (a
-	// property that happens to be named location) out, and `(?:[^=]|$)`
-	// keeps comparisons out. A bare `location =` needs a quoted string
-	// in a Go file, where `location` is as likely a Go variable; a script
-	// adds reHardNavBare.
-	reHardNav = regexp.MustCompile(navLead + `(?:(?:window|document|self|top)\.)?location\.(?:href|search|pathname)\s*=(?:[^=]|$)` +
-		`|` + navLead + `(?:window|document|self|top)\.location\s*=(?:[^=]|$)` +
+	// much as a literal — and `+=` as much as `=`, since
+	// location.href += "?page=2" reassigns the URL the same way.
+	// `[+]?=` plus the `(?:[^=]|$)` guard keeps comparisons (`==`,
+	// `===`) out while stepping over the `+` of a compound assignment.
+	// `[^.\w$]` keeps `init.location = e.location` (a property that
+	// happens to be named location) out. A bare `location =` needs a
+	// quoted string in a Go file, where `location` is as likely a Go
+	// variable; a script adds reHardNavBare.
+	//
+	// The qualifiers are the window aliases, repeatable, because a
+	// frame walk spells parent.location and window.top.location: one
+	// optional qualifier saw only the first hop.
+	reHardNav = regexp.MustCompile(navLead + navQualChain + `?location\.(?:href|search|pathname)\s*[+]?=(?:[^=]|$)` +
+		`|` + navLead + navQualChain + `+location\s*[+]?=(?:[^=]|$)` +
 		`|\blocation\s*=\s*["'\x60]|\blocation\.(?:reload|assign|replace)\s*\(`)
-	// In a script, `location` is the global: any assignment navigates.
-	reHardNavBare = regexp.MustCompile(navLead + `location\s*=(?:[^=]|$)`)
+	// In a script, `location` is the global: any assignment navigates,
+	// compound assignments included.
+	reHardNavBare = regexp.MustCompile(navLead + `location\s*[+]?=(?:[^=]|$)`)
 	// A bespoke server-sent-event stream.
 	reEventSource = regexp.MustCompile(`\bnew\s+EventSource\s*\(`)
 )
@@ -218,6 +215,11 @@ var navOwnerScriptPrefixes = []string{"core-ui/runtime/", "framework/headless/"}
 // anything that cannot end a property access or an identifier.
 const navLead = `(?:^|[^.\w$])`
 
+// navQualChain is one window-alias qualifier of a location reference.
+// It repeats: parent.location and window.top.location reach the same
+// document load a bare location does.
+const navQualChain = `(?:(?:window|document|self|top|parent|frames)\.)`
+
 func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	var out []contracts.Diagnostic
 	for _, f := range p.AppFiles() {
@@ -242,7 +244,10 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 
 		for i, line := range scan {
 			lineNo := i + 1
-			inDir := ownsStyling && dir.line(line)
+			var inDir []bool
+			if ownsStyling {
+				inDir = dir.line(line)
+			}
 
 			// GOFASTR1807 runs on the styling trees, which the byte
 			// pre-filter below would mostly skip: a Set("gap", "8px")
@@ -312,15 +317,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 						Snippet: strings.TrimSpace(lines[i]),
 					})
 				}
-				if reInlineStyleAttr.MatchString(line) {
-					out = append(out, contracts.Diagnostic{
-						RuleID: contracts.RuleInlineStyle, File: f.Rel, Line: lineNo,
-						Message: "inline style attribute: it outranks every stylesheet rule and is blocked under a strict CSP",
-						Snippet: strings.TrimSpace(lines[i]),
-					})
-				}
 			}
-
 			if !devSurface && reHardNav.MatchString(line) {
 				out = append(out, contracts.Diagnostic{
 					RuleID: contracts.RuleHardNavigation, File: f.Rel, Line: lineNo,
@@ -404,6 +401,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	out = append(out, checkStyleGenFreshness(p)...)
 	out = append(out, checkOwnedStyles(p)...)
 	out = append(out, checkInlineScripts(p)...)
+	out = append(out, checkInlineStyles(p)...)
 	out = append(out, checkStyleTokens(p)...)
 	return out, nil
 }
@@ -451,8 +449,11 @@ func checkStyleGenFreshness(p *contracts.Pass) []contracts.Diagnostic {
 			continue
 		}
 		// A provenance marker on the sheet is not part of what the Go
-		// embeds: gen styles hashes the sheet without it.
-		if got, hasHash := generatedSourceHash(gen); !hasHash || got != ownstyle.SourceHash(codegen.StripMarker(f.Rel, string(css))) {
+		// embeds: gen styles hashes the sheet without it. Neither is a
+		// leading UTF-8 BOM: GenerateFile strips one before hashing, so
+		// the verifier hashes the same BOM-less, marker-less bytes.
+		cssBody := bom.Trim(codegen.StripMarker(f.Rel, string(css)))
+		if got, hasHash := generatedSourceHash(gen); !hasHash || got != ownstyle.SourceHash(cssBody) {
 			out = append(out, contracts.Diagnostic{
 				RuleID: contracts.RuleStaleStyleSource,
 				File:   f.Rel,
@@ -546,9 +547,10 @@ func stylesheetOnlyCustomProperties(clean string) bool {
 //     stylesheet: the set is built across all of them, because a base
 //
 // sheet declaring what another sheet uses is normal;
-//   - it starts with `ui-` or `fui-`: per-component override knobs and
-//     runtime-owned properties, not theme tokens (see the theming doc's
-//     `--ui-*` section);
+//   - it starts with one of the four layer prefixes (`ui-`, `fui-`,
+//     `cui-`, `hui-`): per-component override knobs and runtime-owned
+//     properties, not theme tokens (see the theming doc's `--ui-*`
+//     section, which exempts all four);
 //   - it is one of the names style.TokenNames() says the theme emits.
 func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
 	files := p.StyleFiles()
@@ -584,7 +586,7 @@ func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
 			name := clean[loc[2]:loc[3]]
 			if varRefHasFallback(clean, loc[3]) ||
 				declared[name] ||
-				strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") ||
+				runtimeOwnedPrefix(name) ||
 				known[name] {
 				continue
 			}
@@ -602,6 +604,17 @@ func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
 		}
 	}
 	return out
+}
+
+// runtimeOwnedPrefix reports whether a custom-property name belongs to
+// a layer that writes it at runtime (the ui kit's fui-* knobs, the
+// kernel's cui-*, headless's hui-*), not to the theme: the theming doc
+// exempts all four prefixes, and an app sheet may read any of them
+// without declaring a token.
+func runtimeOwnedPrefix(name string) bool {
+	//gofastr:allow(layerprefix) the token checker names the layer prefixes to exempt them
+	return strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") ||
+		strings.HasPrefix(name, "cui-") || strings.HasPrefix(name, "hui-")
 }
 
 // reCSSCustomProp matches a custom-property declaration, `--name:`; the
@@ -1016,6 +1029,45 @@ func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 				// exempted from itself is one more thing to explain.
 				Message: "script element with an inline body: a strict CSP refuses to execute it, so the page ships and the script silently never runs",
 				Snippet: p.Line(f.Rel, v.Line),
+			})
+		}
+	}
+	return out
+}
+
+// checkInlineStyles reports inline style attributes, reusing the
+// linter `cmd/check-csp` runs. GOFASTR1804 kept a second, line-shaped
+// detector here long after the build gate grew AST arms, and the two
+// drifted: every declaration whose value was a keyword or a unitless
+// number (`display: none`, `flex: 1`) passed verify while `make
+// build` failed, and the computed spellings (an attrs map's "style"
+// key, an index assignment onto one) were verify-invisible. One
+// detector, both gates. Suppression stays here: the scanner leaves
+// markers alone, and the pass applies (and stales) them.
+func checkInlineStyles(p *contracts.Pass) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	for _, f := range p.AppFiles() {
+		if !strings.HasSuffix(f.Rel, ".go") {
+			continue
+		}
+		file, ok := p.AST(f.Rel)
+		if !ok {
+			continue
+		}
+		raw, ok := p.Source(f.Rel)
+		if !ok {
+			continue
+		}
+		res := check.ScanInlineStylesIn(p.FileSet(), file, f.Abs, raw)
+		if res == nil {
+			continue // file opted out with //check-csp:ignore-file
+		}
+		for _, v := range res.Violations {
+			out = append(out, contracts.Diagnostic{
+				RuleID:  contracts.RuleInlineStyle,
+				File:    f.Rel,
+				Line:    v.Line,
+				Message: "inline style attribute: it outranks every stylesheet rule and is blocked under a strict CSP",
 			})
 		}
 	}

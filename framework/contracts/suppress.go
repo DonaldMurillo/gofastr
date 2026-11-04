@@ -2,22 +2,27 @@ package contracts
 
 import (
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/framework/contracts/internal/codetext"
-	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
+	"go/ast"
+	"go/token"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/contracts/internal/codetext"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 )
 
 // Suppression directives. Both forms demand a written reason, because the
 // value of an escape hatch is entirely in the sentence that justifies it:
 //
-//	//gofastr:allow(GOFASTR1003) exercised by the chromedp suite in examples/site
-//	//gofastr:allow-file(rendering/inline-style) vendored third-party widget
-//
-// `allow` covers the line it sits on, or, when it is the only thing on
-// its line, the next non-blank line. `allow-file` covers the whole file
-// and is the heavier hammer, deliberately more visible in review.
+// `allow` covers the line it sits on. When it is the only thing on its
+// line it also covers the next non-blank line — and, when that line
+// opens a multi-line string literal (a raw SQL statement), the whole
+// literal, because a comment cannot sit inside one. Its own line is
+// covered either way: whole-file findings sit at line 1
+// (GOFASTR1814/1815/1816), and a comment is the only thing that can
+// stand there. `allow-file` covers the whole file and is the heavier
+// hammer, deliberately more visible in review.
 //
 // A directive naming several rules separates them with commas or spaces.
 // The bare word `all` is NOT accepted: a suppression that covers rules
@@ -39,18 +44,19 @@ var (
 
 // suppression is one parsed directive.
 type suppression struct {
-	File   string
-	Line   int  // the directive's own line, 1-indexed
-	Scope  int  // the line it covers; 0 for file scope
-	IsFile bool //
-	Rules  []string
-	Reason string
-	used   bool
+	File     string
+	Line     int // the directive's own line, 1-indexed
+	Scope    int // the first line it covers; 0 for file scope
+	ScopeEnd int // the last line it covers: the scope line, or the end of the multi-line literal it opens
+	IsFile   bool
+	Rules    []string
+	Reason   string
+	used     bool
 }
 
 // covers reports whether s suppresses a diagnostic for ruleID at line.
 func (s *suppression) covers(rule Rule, line int) bool {
-	if !s.IsFile && s.Scope != line {
+	if !s.IsFile && (line < s.Scope || line > s.ScopeEnd) {
 		return false
 	}
 	for _, want := range s.Rules {
@@ -93,13 +99,15 @@ func collectSuppressions(p *Pass) *suppressionSet {
 		lines := strings.Split(string(body), "\n")
 		for _, c := range commentRanges(p, f.Rel, lines) {
 			for _, m := range reAllowFile.FindAllStringSubmatch(c.text, -1) {
-				set.add(p, f.Rel, c.line, 0, true, m[1], m[2])
+				set.add(p, f.Rel, c.line, 0, 0, true, m[1], m[2])
 			}
 			for _, m := range reAllowLine.FindAllStringSubmatch(c.text, -1) {
 				// `allow-file(` cannot also match `allow(`, the regex
 				// requires the paren immediately after "allow", so a line
 				// carrying both forms is counted once each, not twice.
-				set.add(p, f.Rel, c.line, scopeLineFor(lines, c.line-1), false, m[1], m[2])
+				scopeStart, scopeEnd := scopeLineFor(lines, c.line-1)
+				scopeEnd = scopeEndFor(p, f.Rel, scopeEnd)
+				set.add(p, f.Rel, c.line, scopeStart, scopeEnd, false, m[1], m[2])
 			}
 		}
 	}
@@ -153,11 +161,15 @@ func commentRanges(p *Pass, rel string, lines []string) []commentText {
 	return out
 }
 
-// scopeLineFor decides which line a bare `allow` directive covers. A
-// trailing comment covers its own line; a comment occupying the whole line
-// covers the next line with code on it, so the directive can sit above a
-// long call rather than trailing off the end of it.
-func scopeLineFor(lines []string, idx int) int {
+// scopeLineFor decides the line range a bare `allow` directive covers.
+// A trailing comment covers its own line; a comment occupying the whole
+// line covers itself AND the next line with code on it, so the
+// directive can sit above a long call rather than trailing off the end
+// of it. Covering its own line is what makes a whole-file finding at
+// line 1 waivable at all: GOFASTR1814/1815/1816 sit there, and a
+// comment is the only thing that can stand on that line of a
+// stylesheet.
+func scopeLineFor(lines []string, idx int) (int, int) {
 	trimmed := strings.TrimSpace(lines[idx])
 	standalone := strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#")
 	if !standalone && strings.HasPrefix(trimmed, "/*") {
@@ -171,24 +183,53 @@ func scopeLineFor(lines []string, idx int) int {
 		}
 	}
 	if !standalone {
-		return idx + 1
+		return idx + 1, idx + 1
 	}
 	for j := idx + 1; j < len(lines); j++ {
 		if strings.TrimSpace(lines[j]) == "" {
 			continue
 		}
-		return j + 1
+		return idx + 1, j + 1
 	}
-	return idx + 1
+	return idx + 1, idx + 1
 }
 
-func (s *suppressionSet) add(p *Pass, file string, line, scope int, isFile bool, ruleList, rest string) {
+// scopeEndFor extends a marker's scope over a multi-line string literal
+// that opens on the scoped line. The SQL rules place their findings on
+// the line INSIDE the literal where the counter or claim sits, and a
+// comment cannot sit inside a raw string, so a marker above the call is
+// the only spelling that waiver can take. Without the extension the
+// finding stays and the marker is itself reported stale. Literal spans
+// come from a parsed AST, so a backtick in prose or an unparsable file
+// never widens a scope.
+func scopeEndFor(p *Pass, rel string, scope int) int {
+	file, ok := p.AST(rel)
+	if !ok {
+		return scope
+	}
+	end := scope
+	ast.Inspect(file, func(n ast.Node) bool {
+		lit, isLit := n.(*ast.BasicLit)
+		if !isLit || lit.Kind != token.STRING {
+			return true
+		}
+		if p.Position(lit.Pos()).Line == scope {
+			if e := p.Position(lit.End()).Line; e > end {
+				end = e
+			}
+		}
+		return true
+	})
+	return end
+}
+
+func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, isFile bool, ruleList, rest string) {
 	reason := strings.TrimSpace(rest)
 	reason = strings.TrimSuffix(reason, "*/")
 	reason = strings.TrimSpace(strings.TrimLeft(reason, "-—:"))
 
 	var rules []string
-	for _, part := range strings.FieldsFunc(ruleList, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+	for _, part := range names.SplitRuleList(ruleList) {
 		if part = strings.TrimSpace(part); part != "" {
 			rules = append(rules, part)
 		}
@@ -259,7 +300,7 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope int, isFile bool,
 		return
 	}
 	s.byFile[file] = append(s.byFile[file], &suppression{
-		File: file, Line: line, Scope: scope, IsFile: isFile,
+		File: file, Line: line, Scope: scope, ScopeEnd: scopeEnd, IsFile: isFile,
 		Rules: known, Reason: reason,
 	})
 }
