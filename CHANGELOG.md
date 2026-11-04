@@ -309,6 +309,31 @@ few lines, and link the PR or the docs page for the rest.
   - 15 false negatives fixed in the `gofastr verify` contracts rules:
     GOFASTR1105, 1401, 1408, 1417, 1802, 1804, 1806, 1812, 1814, 1815,
     1816 and 1824, and the `check-csp` style lane's allow marker.
+  - The other static tools no longer pass a tree they never read.
+    `gofastr verify` follows a symlinked root, fails on a root it cannot
+    read, counts an unreadable or dangling source file as not checked,
+    and refuses a tree with no source files. An exempt glob that starts
+    with `/` matches from the root, `--changed` against a ref includes
+    untracked files, a git path with spaces or quotes keeps its name, a
+    NaN coverage minimum is refused, and a repo vettool that fails to
+    build prints the compiler's output. `check-embed` checks every
+    package pattern it is given, fails on one that matches nothing, and
+    blocks on an action it cannot read: options built in a variable, or
+    a child built inside `Render()` that has no value at boot.
+    `check-csp` honours its ignore directive only in a real comment,
+    skips build output, and scans the same files for `./` as for `.`.
+    `gofastr audit lint` reports a `.go` file that does not parse, keeps
+    line numbers through CRLF comments, checks a bare, deferred or `go`
+    `Exec`, and flags every `t.Skip` with no annotation. `gofastr audit
+    deps` follows symlinked package directories, and the a11y and
+    sandbox audits scan a root named `build` or `dist`. repolint catches
+    an emitted `data-cui-rpc` attribute and a raw-string key,
+    `nullarray` wants proof a field was set before
+    `x.F = append(x.F, …)`, and the response-mount lint follows
+    `.then(this.render)` to a method, a field arrow or a static. These
+    walks now share one directory walker. It follows a symlinked
+    directory once, walks real paths before their aliases, skips a
+    dangling link, and keeps going past a directory it cannot read.
 - **`gofastr init .` refuses a symlinked `.env` or settings file, even
   one inside the project.** The two files it writes a generated secret
   into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
@@ -616,6 +641,10 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An A2A artifact with no parts encodes `"parts": []`, not `null`.**
+  Recording an artifact without parts, or appending to one stored
+  without them, kept a nil slice, so a client that requires the array
+  read `null`. The widened `nullarray` analyzer found it.
 - **A leading UTF-8 byte order mark no longer breaks a hand-written
   text file.** Windows editors save one. It made line 1 of a `.env`
   file an invalid key, hid a migration's first `-- +migrate`
