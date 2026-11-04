@@ -2709,3 +2709,299 @@ func TestLintStorageKeyRaw_RepoIsClean(t *testing.T) {
 		t.Errorf("runtime JS builds a storage key from a raw value:\n%s", res.Error())
 	}
 }
+
+// ── review-8 findings (WP9): string-literal assignment prose, regex
+// quotes, guard keys, composite separators, expression arrows,
+// display-only gates, truncated templates, negated containment gates,
+// alternation anchors, whole-operand encodes, join/concat builds ────
+
+// TestSafeIdentsIgnoreStringProse: assignment-shaped text inside a
+// string literal is prose, not an event (R8-CK-01). 'Rebuilt sel =
+// "fallback"; retry' used to parse as a clean string-literal RHS on
+// the code view and launder the attribute-borne sel past lint 5, and
+// prose like 'sel = x failed' revoked a real escape result the other
+// way. The prose rides a bare call so no member assignment swallows
+// it first.
+func TestSafeIdentsIgnoreStringProse(t *testing.T) {
+	dir := writeRuntimeFixture(t, "proseassign.js", `(function () {
+  function log(msg) { return msg; }
+  function copyFrom(btn) { // FIRES: sel is attribute-borne
+    const sel = btn.getAttribute('data-cui-copy-text-from');
+    log('Rebuilt sel = "fallback"; retry');
+    return document.querySelector(sel);
+  }
+  function laundersProse(el, id) { // quiet: the prose revokes nothing
+    const sel = CSS.escape(id);
+    log('sel = x failed; see logs');
+    return document.querySelector('[data-x="' + sel + '"]');
+  }
+  window.__probe = { copyFrom: copyFrom, laundersProse: laundersProse };
+})();`)
+	bare, err := LintSelectorBareArgGuarded(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bare.Violations) != 1 {
+		t.Fatalf("expected 1 bare-arg finding (copyFrom's sel), got %d:\n%s", len(bare.Violations), bare.Error())
+	}
+	sel, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sel.HasErrors() {
+		t.Errorf("laundersProse's escaped sel must stay quiet:\n%s", sel.Error())
+	}
+}
+
+// TestRegistryGuardKeyMustMatch: an own-property guard on one key does
+// not guard a read of another (R8-CK2-01) — own(REG, first) must not
+// silence REG[second], in the call idiom and the compute-once boolean
+// alike.
+func TestRegistryGuardKeyMustMatch(t *testing.T) {
+	dir := writeRuntimeFixture(t, "guardkey.js", `const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const catalog = {};
+function pick(first, second) { // FIRES: the guard named first
+  if (own(catalog, first)) return catalog[second];
+}
+function pickInline(first, second) { // FIRES: same shape, inline idiom
+  if (Object.prototype.hasOwnProperty.call(catalog, first)) {
+    return catalog[second];
+  }
+}
+function pickBool(first, second) { // FIRES: compute-once boolean on first
+  const known = Object.prototype.hasOwnProperty.call(catalog, first);
+  if (!known) return null;
+  return catalog[second];
+}
+function pickFixed(name) { // quiet: guard and read share the key
+  if (own(catalog, name)) return catalog[name];
+}
+`)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected 3 findings (pick, pickInline, pickBool), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestCompositeIndexNeedsSeparator: lint 2's composite-key silence
+// held for any '+' on the blank view, so `name + ”` (equal to the
+// bare value) and `a + b` (two caller values) were silent although
+// both can be "constructor" (R8-CK2-02). A non-empty literal separator
+// ('\0') is what makes a composite key unable to equal a prototype
+// property name.
+func TestCompositeIndexNeedsSeparator(t *testing.T) {
+	dir := writeRuntimeFixture(t, "composite.js", `const zoneMap = {};
+function emptyJoin(name) { // FIRES: name + '' equals the bare value
+  const k = name + '';
+  return zoneMap[k];
+}
+function pairJoin(a, b) { // FIRES: two caller values still spell "constructor"
+  const k2 = a + b;
+  return zoneMap[k2];
+}
+function sepJoin(name, ctx) { // quiet: the \0 separator holds
+  const k3 = name + '\0' + (ctx || '');
+  return zoneMap[k3];
+}
+`)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 findings (emptyJoin, pairJoin), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestThenExpressionArrowBody: a continuation passed by bare reference
+// to an expression-bodied arrow (const render = t => el.innerHTML = t)
+// mounted unseen (R8-CK2-03) — only brace-bodied declarations
+// resolved.
+func TestThenExpressionArrowBody(t *testing.T) {
+	dir := writeRuntimeFixture(t, "exprarrow.js", `function loadPanel(el, src) { // FIRES: render mounts
+  fetch(src).then(r => r.text()).then(render);
+  const render = t => el.innerHTML = t;
+}
+function loadPair(el, src) { // FIRES: parenthesised parameters, expression body
+  fetch(src).then(r => r.text()).then(show);
+  const show = (t) => (el.innerHTML = t);
+}
+function loadQuiet(el, src) { // quiet: the arrow never mounts
+  fetch(src).then(r => r.text()).then(logLine);
+  const logLine = t => console.log(t);
+}
+`)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 findings (loadPanel, loadPair), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestDisplayOnlyOKIsNotAGate: a .ok read that only paints a badge
+// gates nothing (R8-CK2-04) — the gate must dominate the body read or
+// the mount, the model lint 4's gates already use.
+func TestDisplayOnlyOKIsNotAGate(t *testing.T) {
+	dir := writeRuntimeFixture(t, "displayok.js", `function load(el, src, badge) { // FIRES: .ok displayed only
+  fetch(src).then(function (r) {
+    badge.textContent = r.ok ? 'OK' : 'ERR';
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+function loadGated(el, src) { // quiet: the read sits in the gated arm
+  fetch(src).then(r => r.ok ? r.text() : Promise.reject(new Error('x')))
+    .then(t => { el.innerHTML = t; });
+}
+`)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (load), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestTruncatedTemplateNoPanic: a template literal truncated by the
+// end of the file (a lone backtick closing a src RHS) made
+// templateOperands slice tpl[1:0] and crash the whole lint run
+// (R8-CK2-05). Malformed JS must degrade to no finding, not a panic.
+func TestTruncatedTemplateNoPanic(t *testing.T) {
+	dir := writeRuntimeFixture(t, "trunc.js", "function load(el) {\n  const s = document.createElement('script');\n  s.src = `")
+	attr, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attr.HasErrors() {
+		t.Errorf("expected silence on a truncated template:\n%s", attr.Error())
+	}
+	mod, err := LintModuleURLShape(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.HasErrors() {
+		t.Errorf("expected silence on a truncated template:\n%s", mod.Error())
+	}
+}
+
+// TestNegatedGateInBranchFires: lint 4's containment arm credited a
+// gate anywhere in the if condition, negated included, so a URL built
+// only when the check FAILED was quiet (R8-CK3-01). Negated gates stay
+// valid through the reject arm only.
+func TestNegatedGateInBranchFires(t *testing.T) {
+	dir := writeRuntimeFixture(t, "neggate.js", `const loaded = new Set();
+function loadIfMissing(el) { // FIRES: the build runs when the check failed
+  const id = el.getAttribute('data-widget-id');
+  if (!loaded.has(id)) {
+    const s = document.createElement('script');
+    s.src = '/w/' + id + '.js';
+  }
+}
+function loadIfKnown(el) { // quiet: positive containment
+  const id = el.getAttribute('data-widget-id');
+  if (loaded.has(id)) {
+    const s = document.createElement('script');
+    s.src = '/w/' + id + '.js';
+  }
+}
+function loadReject(el) { // quiet: the reject arm keeps negated gates
+  const id = el.getAttribute('data-widget-id');
+  if (!loaded.has(id)) return;
+  const s = document.createElement('script');
+  s.src = '/w/' + id + '.js';
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (loadIfMissing), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestAlternationGateNotAnchored: /^a|b$/ means (^a)|(b$), so it
+// accepts "a/../../admin" — a top-level alternation is not an anchored
+// gate (R8-CK3-02). Inside a group it is.
+func TestAlternationGateNotAnchored(t *testing.T) {
+	dir := writeRuntimeFixture(t, "alternation.js", `function loadAlt(el) { // FIRES: alternation splits the anchors
+  const tool = el.getAttribute('data-tool');
+  if (/^[a-z]+|basic$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+function loadGrouped(el) { // quiet: the alternation sits in the group
+  const tool = el.getAttribute('data-tool');
+  if (/^([a-z]+|basic)$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (loadAlt), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestEncodeWrapsWholeOperand: a value holding encodeURIComponent(
+// anywhere in it was silently credited as encoded, though a ternary
+// arm can carry the raw attribute read (R8-CK3-03) — the twin of lint
+// 1's whole-operand CSS.escape rule.
+func TestEncodeWrapsWholeOperand(t *testing.T) {
+	dir := writeRuntimeFixture(t, "encwhole.js", `function loadMaybe(el, small) { // FIRES: dataset.b goes in raw
+  fetch('/m/' + (small ? encodeURIComponent(el.dataset.a) : el.dataset.b));
+}
+function loadFixed(el) { // quiet: whole-operand encode
+  fetch('/m/' + encodeURIComponent(el.dataset.a));
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (loadMaybe), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestSelectorJoinConcatBuilds: ['.a', v].join(”), ('.a' + v) and
+// `.a`.concat(v) build a selector exactly like '+' does (R8-CK3-04);
+// lint 1 judged only top-level '+' and templates.
+func TestSelectorJoinConcatBuilds(t *testing.T) {
+	body := strings.ReplaceAll(`(function () {
+  function headFor(el) { // FIRES: .join() builds the selector
+    return document.querySelector(['#head-', el.dataset.id].join(''));
+  }
+  function wrappedFor(el) { // FIRES: parenthesised concatenation
+    return document.querySelector(('.tag-' + el.dataset.id));
+  }
+  function concatFor(el) { // FIRES: template .concat
+    return document.querySelector(~.tag~.concat(el.dataset.id));
+  }
+  function headFixed(el) { // quiet: the element is escaped
+    return document.querySelector(['#head-', CSS.escape(el.dataset.id)].join(''));
+  }
+  window.__probe = { headFor: headFor, wrappedFor: wrappedFor, concatFor: concatFor, headFixed: headFixed };
+})();`, "~", "\x60")
+	dir := writeRuntimeFixture(t, "joinbuild.js", body)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected 3 findings (join, paren, concat), got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, op := range []string{`"el.dataset.id"`} {
+		if !strings.Contains(res.Error(), op) {
+			t.Errorf("expected a finding on %s (full result:\n%s)", op, res.Error())
+		}
+	}
+}

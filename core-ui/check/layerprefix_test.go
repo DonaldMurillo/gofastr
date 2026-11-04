@@ -134,3 +134,24 @@ func TestLintLayerPrefix_RepoIsClean(t *testing.T) {
 		t.Errorf("kernel or headless Go names the kit's vocabulary:\n%s", gores.Error())
 	}
 }
+
+// TestLayerPrefixSkipsRegexQuotes: a quote inside a regex literal
+// (/['"]/) opened a bogus string literal in jsStringLiterals, shifting
+// every later literal on the scan so the kit class after it was never
+// seen (R8-CK-02). A regex literal is not a string.
+func TestLayerPrefixSkipsRegexQuotes(t *testing.T) {
+	dir := writeRuntimeFixture(t, "regexquote.js", `(function () {
+  'use strict';
+  const v = btn.getAttribute('data-cui-x');
+  if (/['"]/.test(v)) item.className = 'fui-toast-stack';
+  const tpl = 'plain';
+})();
+`)
+	res, err := LintLayerPrefixJS(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 || res.Violations[0].Line != 4 {
+		t.Fatalf("expected 1 finding on line 4 (the fui- class), got:\n%s", res.Error())
+	}
+}

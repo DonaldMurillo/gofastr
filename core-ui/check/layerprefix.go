@@ -62,14 +62,27 @@ type jsLiteral struct {
 }
 
 // jsStringLiterals scans the comment-blanked code view for single-,
-// double- and backtick-quoted literals. A template's ${…} body is kept
-// as content: a kit class spelled inside an interpolation is still a
-// kit class the module names.
+// double- and backtick-quoted literals. Regex literals are skipped
+// first (regexLiteralStartsAt): a quote inside a character class
+// (/['"]/) must not open a literal and shift every later one (review
+// 8). A template's ${…} body is kept as content: a kit class spelled
+// inside an interpolation is still a kit class the module names.
 func jsStringLiterals(code string) []jsLiteral {
-	var out []jsLiteral
+	var lits []jsLiteral
+	// seen mirrors the bytes consumed so far, the view
+	// regexLiteralStartsAt judges a '/' against (the same byte stream
+	// stripJSCommentsKeepStrings emits).
+	var seen []byte
 	for i := 0; i < len(code); i++ {
 		q := code[i]
 		if q != '\'' && q != '"' && q != '`' {
+			if q == '/' && regexLiteralStartsAt(seen) {
+				end := regexLiteralEnd(code, i)
+				seen = append(seen, code[i:end+1]...)
+				i = end
+				continue
+			}
+			seen = append(seen, q)
 			continue
 		}
 		j := i + 1
@@ -87,10 +100,34 @@ func jsStringLiterals(code string) []jsLiteral {
 		if j > len(code) {
 			j = len(code)
 		}
-		out = append(out, jsLiteral{pos: i, text: code[i+1 : j]})
+		lits = append(lits, jsLiteral{pos: i, text: code[i+1 : j]})
+		seen = append(seen, code[i:min(j+1, len(code))]...)
 		i = j
 	}
-	return out
+	return lits
+}
+
+// regexLiteralEnd returns the index of the closing '/' of the regex
+// literal opening at s[i], or the index of its last byte when the
+// literal is unterminated (a newline or the end of the input).
+func regexLiteralEnd(s string, i int) int {
+	j := i + 1
+	inClass := false
+	for j < len(s) && s[j] != '\n' {
+		if s[j] == '\\' && j+1 < len(s) {
+			j += 2
+			continue
+		}
+		if s[j] == '[' {
+			inClass = true
+		} else if s[j] == ']' {
+			inClass = false
+		} else if s[j] == '/' && !inClass {
+			return j
+		}
+		j++
+	}
+	return min(j, len(s)-1)
 }
 
 // LintLayerPrefixJS lints the JavaScript under roots (a runtime package
