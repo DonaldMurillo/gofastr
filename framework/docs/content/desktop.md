@@ -1,5 +1,9 @@
 # Desktop host (experimental)
 
+`desktop keygen` and `desktop feed` reject valued flags without a value,
+including an output flag followed by another flag. Use `--out=<path>`
+when the intended path itself starts with a dash.
+
 `battery/desktop` runs a GoFastr app as a local-first desktop
 application inside the operating system's own WebView: WKWebView on
 macOS, WebView2 on Windows, and WebKitGTK on Linux. The shell builds with `CGO_ENABLED=0`.

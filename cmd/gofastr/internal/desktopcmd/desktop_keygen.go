@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -19,23 +18,17 @@ type desktopKeygenFlags struct {
 // parseDesktopKeygenFlags parses the keygen flag list.
 func parseDesktopKeygenFlags(args []string) desktopKeygenFlags {
 	var f desktopKeygenFlags
-	for i := 0; i < len(args); i++ {
-		name, value, hasValue := devcmd.SplitFlagEqual(args[i])
-		switch name {
-		case "-o", "--o", "-out", "--out":
-			if hasValue {
-				f.out = value
-			} else if i+1 < len(args) {
-				f.out = args[i+1]
-				i++
-			}
-		case "--help", "-h":
-			printDesktopUsage()
-			cli.OsExit(0)
-		default:
-			cli.Fail("Unknown keygen flag: %s", args[i])
-			cli.OsExit(1)
-		}
+	var help bool
+	if _, err := cli.ParseFlags(args, map[string]*string{
+		"-o": &f.out, "--o": &f.out, "-out": &f.out, "--out": &f.out,
+	}, map[string]*bool{"--help": &help, "-h": &help}); err != nil {
+		cli.Fail("keygen: %v", err)
+		cli.OsExit(1)
+		return f
+	}
+	if help {
+		printDesktopUsage()
+		cli.OsExit(0)
 	}
 	return f
 }
