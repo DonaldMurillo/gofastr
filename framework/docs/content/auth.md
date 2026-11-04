@@ -1120,6 +1120,12 @@ receive credentialed CORS headers only for an exact allowed origin. Bearer JWTs
 are rejected on that API surface; `gfsk_` API tokens remain available for
 explicit non-browser automation.
 
+For branded API credentials set `BFFPostureConfig.TokenPrefix` to the same
+prefix as `TokensPlugin.WithPrefix` and `TokenMiddleware(WithTokenPrefix(...))`.
+The default is `gfsk_`. A prefix must start with a lowercase letter, contain
+only lowercase letters/digits, and end with `_`; invalid prefixes panic at
+configuration time. Other bearer credentials remain refused by the BFF guard.
+
 `AllowedOrigins` requires exact `http://` or `https://` origins and rejects
 wildcards. The protected prefix comes from `framework.AppConfig.APIPrefix`
 (default `/api`), so `WithAPIPrefix` and `WithBFFPosture` may appear in either
