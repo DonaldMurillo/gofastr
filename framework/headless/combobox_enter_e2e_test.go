@@ -37,7 +37,7 @@ func TestComboboxEnterNeverSubmits(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			var submits int
 			if err := chromedp.Run(ctx,
-				chromedp.Evaluate(`(() => { const input = document.getElementById('search'); input.removeAttribute('aria-activedescendant'); if ('`+state+`' === 'closed') input.setAttribute('aria-expanded', 'false'); if ('`+state+`' === 'empty') { document.getElementById('search-listbox').replaceChildren(); input.setAttribute('aria-expanded', 'true'); } })()`, nil),
+				chromedp.Evaluate(`(() => { const input = document.getElementById('search'); input.removeAttribute('aria-activedescendant'); input.setAttribute('aria-expanded', '`+state+`' === 'closed' ? 'false' : 'true'); if ('`+state+`' === 'empty') document.getElementById('search-listbox').replaceChildren(); })()`, nil),
 				chromedp.ActionFunc(func(ctx context.Context) error {
 					return input.DispatchKeyEvent(input.KeyDown).WithKey("Enter").WithCode("Enter").WithWindowsVirtualKeyCode(13).WithText("\r").Do(ctx)
 				}),
