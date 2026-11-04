@@ -565,11 +565,11 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 	}
 	skip := make(map[string]struct{}, len(known))
 	for _, k := range known {
-		skip[k] = struct{}{}
+		skip[strings.ToLower(k)] = struct{}{}
 	}
 	out := html.Attrs{}
 	for k, v := range props {
-		if _, ok := skip[k]; ok {
+		if _, ok := skip[strings.ToLower(k)]; ok {
 			continue
 		}
 		if v == nil {
