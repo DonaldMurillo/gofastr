@@ -238,6 +238,29 @@ func j6(sb *strings.Builder, wire string) {
 	fmt.Fprintf(sb, "  %s%s: string;\n", wire, "?") // want `identifier slot "%s:"`
 }
 
+// j7: positional verbs — `%[n]s` is the same identifier slot, and the
+// explicit index picks its own argument (arg 2 here, with a numeric in
+// slot 1). The generator's own spelling, generate_typed.go's
+// `func New%[1]sRepo(…) *%[1]sRepo`, ungated.
+func j7(sb *strings.Builder, s shelf) {
+	fmt.Fprintf(sb, "func New%[1]sRepo(st *store) *%[1]sRepo {\n", s.Slab) // want `identifier slot "func New%\[1\]s"`
+	fmt.Fprintf(sb, "type %[2]sPatch struct{ Base string }\n", 3, s.Slab)  // want `identifier slot "type %\[2\]s"`
+}
+
+// j8: a format that ends right after `extends`: the evidence scan must
+// stop at the string's end instead of reading past it (the 2026-11-03
+// panic probe). No declaration evidence, so this stays quiet.
+func j8(sb *strings.Builder, s shelf) {
+	fmt.Fprintf(sb, "class %s extends", s.Slab)
+}
+
+// g9: the const declaration keyword, format-initial with = evidence —
+// the := arm does not cover `const X = …`.
+func g9(sb *strings.Builder, name string) {
+	fmt.Fprintf(sb, "const %s = %q\n", name, "x")         // want `identifier slot "const %s"`
+	fmt.Fprintf(sb, "const %s Version = \"1.0\"\n", name) // want `identifier slot "const %s"`
+}
+
 // ---- CSS identifier slots (classname probe, 2026-09-06) --------------
 
 // c1: the unquoted class selector. The class name IS the selector:

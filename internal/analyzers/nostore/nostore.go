@@ -1331,7 +1331,7 @@ func litStatusInt(n int64) int {
 }
 
 // isWriterValue: e is one of the family's ResponseWriter params or an
-// alias local bound directly to one.
+// alias local bound directly to one (w2 := w).
 func isWriterValue(pass *analysis.Pass, fam *family, e ast.Expr) bool {
 	id, ok := e.(*ast.Ident)
 	if !ok {
@@ -1344,9 +1344,13 @@ func isWriterValue(pass *analysis.Pass, fam *family, e ast.Expr) bool {
 	if fam.writers[obj] {
 		return true
 	}
-	// One-hop alias: w2 := w.
-	if def, ok := obj.(*types.Var); ok && def.Parent() == nil {
-		return false
+	// One-hop alias: w2 := w, resolved through the family's bindings.
+	if bound, ok := fam.bindings[obj]; ok {
+		if bid, ok := bound.(*ast.Ident); ok {
+			if bobj := pass.TypesInfo.Uses[bid]; bobj != nil {
+				return fam.writers[bobj]
+			}
+		}
 	}
 	return false
 }

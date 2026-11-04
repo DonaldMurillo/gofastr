@@ -91,6 +91,15 @@ func (m *MemoryStore) Touch(owner, id string) bool {
 	return ok
 }
 
+// DeleteTask is Touch's write-side twin: delete(m, k) is a keyed sink
+// the same way m[k] is, and an owner named "alice\x00t1" deletes
+// alice's task t1.
+func (m *MemoryStore) DeleteTask(owner, id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.tasks, owner+"\x00"+id) // want `this concatenation joins parts with the "\\x00" separator into a key`
+}
+
 // LookupTable is the composite-literal spelling: a join in key position
 // of a map literal.
 func LookupTable(owner, id string) map[string]int {

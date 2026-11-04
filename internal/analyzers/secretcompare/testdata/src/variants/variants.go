@@ -3,6 +3,7 @@ package variants
 import (
 	"bytes"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -38,6 +39,21 @@ func cmp(token string, s *store) bool {
 
 func bytesCmp(sig []byte, s *store) bool {
 	return 0 != bytes.Compare(sig, s.sig) // want `sig compared with bytes.Compare`
+}
+func slicesEq(receivedSig, computedSig []byte) bool {
+	return slices.Equal(receivedSig, computedSig) // want `compared with slices.Equal`
+}
+
+func valuesGet(q url.Values, storedToken string) bool {
+	return q.Get("token") == storedToken // want `compared`
+}
+
+func switchCmp(sig []byte, s *store) bool {
+	switch bytes.Compare(sig, s.sig) {
+	case 0: // want `sig compared with bytes.Compare`
+		return true
+	}
+	return false
 }
 
 func hdr(r *http.Request, s *store) bool {
@@ -88,4 +104,13 @@ func sortNonces(all []nonceEntry) {
 
 func lessToken(a, b nonceEntry) bool {
 	return strings.Compare(a.token, b.token) < 0
+}
+
+// A switch Compare whose cases ORDER (-1/1) decides no match either.
+func switchOrder(a, b nonceEntry) bool {
+	switch strings.Compare(a.token, b.token) {
+	case -1:
+		return true
+	}
+	return false
 }

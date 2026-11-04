@@ -65,6 +65,27 @@ func pinnedFirst(name string) *gadget {
 	return gadgets[strings.ToLower(name)]
 }
 
+// pinAfter checks the bytes only after the fold already ran: the
+// lookup resolved through the fold before anything was pinned.
+func pinAfter(name string) *gadget {
+	r := gadgets[strings.ToUpper(name)] // want `registry lookup folds Unicode case`
+	if name[0] >= 0x80 {
+		discard(name)
+	}
+	return r
+}
+
+// pinNotRejecting compares a byte view but its branch only logs: no
+// branch leaves, so the lookup still resolves look-alikes.
+func pinNotRejecting(name string, i int) *gadget {
+	if name[i] >= 0x80 {
+		discard(name)
+	}
+	return gadgets[strings.ToLower(name)] // want `registry lookup folds Unicode case`
+}
+
+func discard(s string) {}
+
 // ---- deliberate silences ------------------------------------------------
 
 // plainValues: string-valued map, an alias table — no entry to

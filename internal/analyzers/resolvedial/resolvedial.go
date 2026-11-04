@@ -46,9 +46,12 @@
 //     `if <client>.Transport == nil { ... }` with no else (or a
 //     switch case on the same test, tagless or `case nil` on a
 //     `switch <client>.Transport`, with no default) assigns
-//     the client's Transport, so a non-nil, caller-supplied transport
-//     keeps its own dialer behind a check that already happened.
-//     Reported at the if or the case (H12).
+//     the client's Transport — directly, by replacing the whole
+//     client with a literal that sets Transport, or through a
+//     package-local helper that assigns it (2026-11-03 round) — so a
+//     non-nil, caller-supplied transport keeps its own dialer behind
+//     a check that already happened. Reported at the if or the case
+//     (H12).
 //
 // Silent postures, deliberately:
 //   - a RoundTrip call that comes before the lookup in source order:
@@ -351,16 +354,94 @@ func nilTransportInstall(pass *analysis.Pass, cond ast.Expr, body []ast.Stmt) bo
 	ast.Inspect(&ast.BlockStmt{List: body}, func(n ast.Node) bool {
 		as, ok := n.(*ast.AssignStmt)
 		if !ok {
+			if call, ok := n.(*ast.CallExpr); ok {
+				// The install one frame down: a package-local helper
+				// that assigns a client's Transport.
+				if fn, ok := astx.CalleeFunc(pass, call.Fun); ok && fn.Pkg() == pass.Pkg && assignsTransport(pass, fn) {
+					assigned = true
+				}
+			}
+			return !assigned
+		}
+		for i, lhs := range as.Lhs {
+			if l, ok := ast.Unparen(lhs).(*ast.SelectorExpr); ok && l.Sel.Name == "Transport" && isClient(pass, l.X) {
+				assigned = true
+				break
+			}
+			// Replacing the whole client with a literal that sets
+			// Transport is the same install one variable up: the
+			// guarded transport rides a new client, and a
+			// caller-supplied one still escapes.
+			if id, ok := ast.Unparen(lhs).(*ast.Ident); ok && isClient(pass, id) &&
+				i < len(as.Rhs) && clientLiteralWithTransport(pass, as.Rhs[i]) {
+				assigned = true
+				break
+			}
+		}
+		return !assigned
+	})
+	return assigned
+}
+
+// clientLiteralWithTransport reports whether e is an http.Client
+// composite literal (addressed or not) that sets its Transport field.
+func clientLiteralWithTransport(pass *analysis.Pass, e ast.Expr) bool {
+	if un, ok := e.(*ast.UnaryExpr); ok && un.Op == token.AND {
+		e = un.X
+	}
+	lit, ok := ast.Unparen(e).(*ast.CompositeLit)
+	if !ok || !isClient(pass, lit) {
+		return false
+	}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Transport" {
+			return true
+		}
+	}
+	return false
+}
+
+// assignsTransport reports whether fn's body assigns a client's
+// Transport field.
+func assignsTransport(pass *analysis.Pass, fn *types.Func) bool {
+	decl := fnDeclOf(pass, fn)
+	if decl == nil || decl.Body == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok {
 			return true
 		}
 		for _, lhs := range as.Lhs {
 			if l, ok := ast.Unparen(lhs).(*ast.SelectorExpr); ok && l.Sel.Name == "Transport" && isClient(pass, l.X) {
-				assigned = true
+				found = true
 			}
 		}
-		return true
+		return !found
 	})
-	return assigned
+	return found
+}
+
+// fnDeclOf finds fn's declaration among this package's files.
+func fnDeclOf(pass *analysis.Pass, fn *types.Func) *ast.FuncDecl {
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if obj, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func); ok && obj == fn {
+				return fd
+			}
+		}
+	}
+	return nil
 }
 
 func isNil(pass *analysis.Pass, e ast.Expr) bool {

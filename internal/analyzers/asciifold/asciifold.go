@@ -52,7 +52,10 @@
 //     parameter — against 127/128/0x7f/0x80, or an *ascii*-named
 //     check taking the value. A len(...) bound shares no view with
 //     the bytes ("ſ" is two bytes long and passes it) and pins
-//     nothing.
+//     nothing. The if must DOMINATE the lookup (a pin after the fold
+//     ran covers nothing) and its branch must leave — return,
+//     continue, break, goto, panic (2026-11-03 round: a logged
+//     non-ASCII check that falls through rejected nobody).
 //   - user-facing text comparison: EqualFold on human strings is
 //     correct; only EqualFold guarding a registry lookup is reported.
 package asciifold
@@ -181,9 +184,18 @@ func run(pass *analysis.Pass) (any, error) {
 
 // pinnedIdent reports whether a fold's argument is a variable an earlier
 // check pinned ASCII.
-func pinnedIdent(pass *analysis.Pass, x ast.Expr, pinned map[types.Object]bool) bool {
+func pinnedIdent(pass *analysis.Pass, x ast.Expr, pinned map[types.Object][]pinFact) bool {
 	id, ok := x.(*ast.Ident)
-	return ok && pinned[pass.TypesInfo.ObjectOf(id)]
+	if !ok {
+		return false
+	}
+	facts := pinned[pass.TypesInfo.ObjectOf(id)]
+	for _, fact := range facts {
+		if fact.end < id.Pos() {
+			return true
+		}
+	}
+	return false
 }
 
 // mapObj is the object behind a map expression when it has one: the
@@ -590,12 +602,16 @@ func hasASCIIConstantArg(pass *analysis.Pass, args []ast.Expr) bool {
 // the value directly. A bare len(...) bound shares no view with the
 // value's bytes — "ſ" is two bytes long and passes it — so it pins
 // nothing, and neither do the other identifiers that merely share the
-// condition.
-func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object]bool {
-	pinned := map[types.Object]bool{}
+// condition. The pin counts only while it dominates: recorded with
+// the if's end position, a lookup AFTER it is covered and one BEFORE
+// it is not, and only an if whose branch leaves (return, continue,
+// break, goto, panic) pins at all — a check that logs and falls
+// through rejects nothing.
+func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object][]pinFact {
+	pinned := map[types.Object][]pinFact{}
 	ast.Inspect(f, func(n ast.Node) bool {
 		st, ok := n.(*ast.IfStmt)
-		if !ok || st.Cond == nil {
+		if !ok || st.Cond == nil || !ifLeaves(st) {
 			return true
 		}
 		// Callback parameters of ContainsFunc/IndexFunc over a
@@ -641,7 +657,7 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object]bool {
 						continue
 					}
 					if obj := byteRuneView(pass, side.view, cb); obj != nil {
-						pinned[obj] = true
+						pinned[obj] = append(pinned[obj], pinFact{end: st.End()})
 					}
 				}
 			case *ast.CallExpr:
@@ -649,7 +665,7 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object]bool {
 					for _, a := range e.Args {
 						if id, ok := a.(*ast.Ident); ok {
 							if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-								pinned[obj] = true
+								pinned[obj] = append(pinned[obj], pinFact{end: st.End()})
 							}
 						}
 					}
@@ -660,6 +676,47 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object]bool {
 		return true
 	})
 	return pinned
+}
+
+// pinFact is one ASCII pinning if: where it ended. The dominance test
+// in pinnedIdent reads the position against it.
+type pinFact struct {
+	end token.Pos
+}
+
+// ifLeaves reports whether the if's branch leaves the function or
+// loop: a return, a continue/break/goto, or a panic. A branch that
+// only logs falls through and pins nothing.
+func ifLeaves(st *ast.IfStmt) bool {
+	for _, body := range []*ast.BlockStmt{st.Body, elseBlock(st.Else)} {
+		if body == nil {
+			continue
+		}
+		found := false
+		ast.Inspect(body, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.ReturnStmt, *ast.BranchStmt:
+				found = true
+			case *ast.CallExpr:
+				if id, ok := v.Fun.(*ast.Ident); ok && id.Name == "panic" {
+					found = true
+				}
+			}
+			return !found
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
+// elseBlock returns st's else branch as a block, if it is one.
+func elseBlock(els ast.Stmt) *ast.BlockStmt {
+	if b, ok := els.(*ast.BlockStmt); ok {
+		return b
+	}
+	return nil
 }
 
 // byteRuneView resolves an expression that exposes the bytes or runes

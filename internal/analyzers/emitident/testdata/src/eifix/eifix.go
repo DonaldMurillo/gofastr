@@ -226,6 +226,32 @@ func renderHookStubSuccessArm(sb *strings.Builder, h hook) {
 	}
 }
 
+// positionalFixed: a `%[n]s` identifier slot whose argument is
+// identifier-checked at the boundary stays quiet — the explicit index
+// must resolve to the gated local, not to the verb's count position.
+func positionalFixed(sb *strings.Builder, h hook) {
+	handler := strings.TrimSpace(h.Handler)
+	if !isGoIdentifier(handler) {
+		return
+	}
+	fmt.Sprintf("func New%[1]sRepo(st *store) *%[1]sRepo {\n", handler)
+}
+
+// escapedVerb: %% is an escaped percent that renders a literal `%s`
+// into the OUTPUT (the nested Postgres format of foreign_key.go's DO
+// block); no Go argument ever lands there, and the scan must consume
+// the pair instead of reading the second % as a verb whose positional
+// map reaches past the gated argument.
+func escapedVerb(table string) string {
+	return fmt.Sprintf(`EXECUTE format('ALTER TABLE %%s DROP CONSTRAINT %%I', r.child); -- %[1]s`, QuoteIdent(table))
+}
+
+func escapedVerbSkew(table string) string {
+	// Under the %%-misparse this slot mapped to the ungated second
+	// argument; with the pair consumed, no verb, no slot.
+	return fmt.Sprintf("%[1]s ALTER TABLE %%s DROP CONSTRAINT %%I", 3, table)
+}
+
 // queryParamVerb: a verb after '?' parameterizes the query string, not
 // the path — a different grammar (QueryEscape), not scanned.
 func queryParamVerb(names string) string {

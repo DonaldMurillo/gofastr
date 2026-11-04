@@ -218,9 +218,13 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		}
 	}()
 	for node != nil {
-		ref, ok := node["$ref"].(string)
-		if !ok {
+		raw, has := node["$ref"]
+		if !has {
 			break
+		}
+		ref, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("$ref: want a string, got %T", raw)
 		}
 		if active[ref] {
 			return nil, fmt.Errorf("$ref cycle through %q", ref)

@@ -1,7 +1,8 @@
 // Package laxcoerce catches a wrong type masquerading as absence: a
 // comma-ok type assertion on a map[string]any entry whose failure path
-// returns zero values with a nil error — or continues — as though the
-// key had never been sent.
+// returns zero values with a nil error — or continues, or breaks/gotos
+// out of the loop with the nil error intact (2026-11-03 round) — as
+// though the key had never been sent.
 //
 // The bug class: MCP tool args / JSON payloads arrive as
 // map[string]any, and `v, ok := m[k].(T)` collapses two distinct states —
@@ -520,12 +521,13 @@ func isFalse(e ast.Expr) bool {
 }
 
 // branchIsLax reports whether the !ok branch silently swallows the wrong
-// type: it continues, or (in a function with an error result to speak
-// through) returns without any operand carrying an error — counting
-// only statements at the branch's own top level, since a lax statement
-// nested under another condition executes only when that condition
-// holds; or neither diverges nor records an error but rebinds the
-// asserted variable to its zero value and falls through.
+// type: it continues, or breaks/gotos out of the loop when the function
+// has an error result to speak through, or returns without any operand
+// carrying an error — counting only statements at the branch's own top
+// level, since a lax statement nested under another condition executes
+// only when that condition holds; or neither diverges nor records an
+// error but rebinds the asserted variable to its zero value and falls
+// through.
 func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, asserted types.Object) bool {
 	// An error surfaced or recorded anywhere in the branch — nested or
 	// not — precludes laxness.
@@ -580,6 +582,12 @@ func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, as
 		case *ast.BranchStmt:
 			diverges = true
 			if x.Tok == token.CONTINUE {
+				return true
+			}
+			// A break or goto that leaves the loop early is the
+			// continue's twin: the list truncates and the nil error
+			// still says fine (2026-11-03 round).
+			if hasErrorResult && (x.Tok == token.BREAK || x.Tok == token.GOTO) {
 				return true
 			}
 		case *ast.ExprStmt:
