@@ -1918,6 +1918,11 @@ the app-generator boundary.
 
 ### Generated `e2e_test.go` is driver- and OS-portable
 
+The synthetic CRUD lifecycle chooses an entity whose required and key
+fields it can fill. It skips required relations and entities with required
+or key fields constrained by `min`, `max` or `pattern`, rather than sending
+invalid sample values. Screen rendering checks still cover those screens.
+
 Every generated app ships an `e2e_test.go` (gated by `-short`) that builds the
 binary, boots it as a child process, and drives the real HTTP endpoints. Two
 portability rules are built into that template:

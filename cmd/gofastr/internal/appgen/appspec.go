@@ -760,7 +760,7 @@ func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	for _, e := range names {
 		decl, ok := entityMap[e]
-		if !ok || appSpecUnfillableRelation(decl) {
+		if !ok || appSpecUnfillableRelation(decl) || appSpecUnfillableConstraints(decl) {
 			continue
 		}
 		createJSON, updateJSON, probe := appSpecE2ECreateBody(decl)
@@ -796,6 +796,18 @@ func appSpecUnfillableRelation(decl framework.EntityDeclaration) bool {
 	keyCols := appspec.AppSpecKeyColNames(decl)
 	for _, f := range decl.Fields {
 		if (f.Required || slices.Contains(keyCols, f.Name)) && strings.EqualFold(strings.TrimSpace(f.Type), "relation") {
+			return true
+		}
+	}
+	return false
+}
+
+func appSpecUnfillableConstraints(decl framework.EntityDeclaration) bool {
+	keyColumns := appspec.AppSpecKeyColNames(decl)
+	for _, field := range decl.Fields {
+		if (field.Required || slices.Contains(keyColumns, field.Name)) &&
+			!appspec.AppSpecFieldSystem(field.Name) && !field.Hidden &&
+			(field.Min != nil || field.Max != nil || field.Pattern != "") {
 			return true
 		}
 	}
