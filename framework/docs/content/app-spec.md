@@ -1388,6 +1388,11 @@ DSN redaction removes userinfo passwords, URL query `password` and
 `sslpassword` parameters (including percent-encoded parameter names), and
 libpq `password`/`sslpassword` pairs. Non-secret host/database settings are
 retained; an unreadable URL query is removed entirely rather than leaked.
+An at sign after a raw `/`, `?`, or `#` authority delimiter can indicate
+accidentally unescaped userinfo, even when a numeric password prefix parses
+as a port. Such DSNs are treated as secret-bearing and redaction keeps only
+the scheme prefix. Passwordless URLs with an at-sign-free query, such as
+`?sslmode=disable`, remain unchanged.
 Libpq assignments may have whitespace around `=` and single-quoted or
 backslash-escaped values. Detection and redaction parse those assignments
 together, so a spaced or quoted credential cannot become a source fallback.

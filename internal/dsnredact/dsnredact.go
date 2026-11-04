@@ -11,6 +11,8 @@
 //     SQLite file DSNs and passwordless URLs round-trip verbatim.
 //   - URL form: userinfo passwords and password/sslpassword query parameters
 //     are removed. Unreadable query strings are dropped in full.
+//     An '@' after a raw authority delimiter is ambiguous userinfo even when
+//     parsing succeeds; only the scheme prefix is retained.
 //     A URL url.Parse rejects (e.g. a
 //     password containing a bad % escape) is cut TEXTUALLY at the LAST
 //     '@' before removing query or fragment text. Raw delimiters inside
@@ -32,6 +34,9 @@ import (
 func Redact(dsn string) string {
 	if !HasSecret(dsn) {
 		return dsn
+	}
+	if ambiguousURLUserinfo(dsn) {
+		return dsn[:strings.Index(dsn, "://")+3]
 	}
 	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
 		if u.User != nil {
@@ -84,6 +89,8 @@ func Redact(dsn string) string {
 // url.Parse-able userinfo password, a textual userinfo section on a URL
 // url.Parse rejects, a password/sslpassword URL query parameter, or a libpq
 // password/sslpassword assignment with optional whitespace around '='.
+// An '@' beyond a raw authority delimiter also counts as a secret, even if
+// url.Parse accepts a numeric password prefix as a port.
 // SQLite file DSNs without credentials return
 // false: nothing to hide.
 //
@@ -98,6 +105,9 @@ func Redact(dsn string) string {
 func HasSecret(dsn string) bool {
 	if dsn == "" {
 		return false
+	}
+	if ambiguousURLUserinfo(dsn) {
+		return true
 	}
 	for _, field := range splitFields(dsn) {
 		key, _, found := strings.Cut(field, "=")
@@ -122,6 +132,16 @@ func HasSecret(dsn string) bool {
 		return true
 	}
 	return false
+}
+
+func ambiguousURLUserinfo(dsn string) bool {
+	scheme := strings.Index(dsn, "://")
+	if scheme < 0 {
+		return false
+	}
+	remainder := dsn[scheme+3:]
+	separator := strings.IndexAny(remainder, "/?#")
+	return separator >= 0 && strings.LastIndexByte(remainder, '@') > separator
 }
 
 // splitFields reads whole libpq assignments, including whitespace around '=',

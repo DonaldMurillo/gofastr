@@ -61,3 +61,27 @@ func TestRedactMalformedURLAmbiguousAtSigns(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactParseSuccessAmbiguousUserinfo(t *testing.T) {
+	for _, prefix := range []string{"123", "00080"} {
+		for _, delimiter := range []string{"/", "?", "#"} {
+			t.Run(prefix+delimiter, func(t *testing.T) {
+				dsn := "postgres://u:" + prefix + delimiter + "credentialtail@host/db"
+				if _, err := url.Parse(dsn); err != nil {
+					t.Fatalf("fixture must parse successfully: %v", err)
+				}
+				if !HasSecret(dsn) {
+					t.Error("ambiguous userinfo was classified as public")
+				}
+				if got := Redact(dsn); got != "postgres://" {
+					t.Errorf("Redact() = %q, want ambiguous remainder removed", got)
+				}
+			})
+		}
+	}
+	for _, dsn := range []string{"postgres://host:5432/db?sslmode=disable", "postgres://u@host/db?sslmode=disable"} {
+		if HasSecret(dsn) || Redact(dsn) != dsn {
+			t.Errorf("ordinary passwordless DSN changed: %q", dsn)
+		}
+	}
+}
