@@ -176,12 +176,7 @@ func (w *tracingResponseWriter) Write(b []byte) (int, error) {
 // embedding http.ResponseWriter does not promote it. It latches the
 // implicit 200 the way Write does.
 func (w *tracingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
-	copied, err := io.Copy(w.ResponseWriter, src)
-	if copied > 0 && !w.wroteHeader {
-		w.status = http.StatusOK
-		w.wroteHeader = true
-	}
-	return copied, err
+	return copyResponse(w, w.ResponseWriter, src)
 }
 
 func (w *tracingResponseWriter) Flush() {
