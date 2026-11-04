@@ -203,6 +203,73 @@ func appendResetField(more []Content) toolsCallResult {
 	return result
 }
 
+func appendNilNormalizedField(result *toolsCallResult, more []Content) {
+	if result.Content == nil {
+		result.Content = []Content{}
+	}
+	result.Content = append(result.Content, more...)
+}
+
+func appendInitializedFieldInCase(kind int, more []Content) {
+	switch kind {
+	case 1:
+		result := toolsCallResult{Content: []Content{}}
+		result.Content = append(result.Content, more...)
+	case 2:
+		var result toolsCallResult
+		if nil == result.Content {
+			result.Content = []Content{}
+		}
+		result.Content = append(result.Content, more...)
+	}
+}
+
+func appendInitializedFieldInComm(ready <-chan bool, more []Content) {
+	select {
+	case <-ready:
+		result := toolsCallResult{Content: []Content{}}
+		result.Content = append(result.Content, more...)
+	default:
+		var result toolsCallResult
+		if result.Content == nil {
+			result.Content = []Content{}
+		}
+		result.Content = append(result.Content, more...)
+	}
+}
+
+func appendConditionallyNormalizedField(result *toolsCallResult, more []Content, normalize bool) {
+	if normalize {
+		if result.Content == nil {
+			result.Content = []Content{}
+		}
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
+func appendInvalidatedNormalizedField(result *toolsCallResult, more []Content) {
+	if result.Content == nil {
+		result.Content = []Content{}
+	}
+	result.Content = nil                             // want `Content is a required JSON array`
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
+func appendInvalidatingNormalizationBody(result *toolsCallResult, more []Content) {
+	if result.Content == nil {
+		result.Content = []Content{}
+		result.Content = nil // want `Content is a required JSON array`
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
+func appendNonNilFieldGuard(result *toolsCallResult, more []Content) {
+	if result.Content != nil {
+		result.Content = []Content{}
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
 // rebindThenLog: the rebind is not the guard's last statement — the log
 // after it changes nothing about the nil path.
 func rebindThenLog(h func() ([]PromptMessage, error), logf func(string, ...any)) (promptsGetResult, error) {
