@@ -255,6 +255,10 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 
 ### Status & banners
 
+The Form, FormRepeater and Repeater gallery previews submit to the docs site's
+no-op POST endpoint. They demonstrate native form submission, not sign-in or
+persistent row mutations; use example values rather than real credentials.
+
 The FilterChipBar gallery is a static preview: its dismiss and Clear all
 controls use the docs site's no-op POST endpoint rather than a GET-only page.
 Hosts supply their own state-changing endpoints and bound response region.

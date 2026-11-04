@@ -528,7 +528,7 @@ var Catalog = []Entry{
 
 	// ---------- Forms ----------
 	{"form", "Form", "Forms", "Form container with submit + validation.", func() render.HTML {
-		return ui.Form(ui.FormConfig{Action: "?", Method: "POST", SubmitLabel: "Sign in"},
+		return ui.Form(ui.FormConfig{Action: "/__site/toggle/noop", Method: "POST", SubmitLabel: "Sign in"},
 			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
@@ -778,7 +778,7 @@ var Catalog = []Entry{
 		// The rows and their controls live in the caller's form: the
 		// add/remove controls are named submit buttons, so a plain
 		// POST walks the same path the island does.
-		return render.Tag("form", map[string]string{"method": "post", "action": "/components/formrepeater"},
+		return render.Tag("form", map[string]string{"method": "post", "action": "/__site/toggle/noop"},
 			ui.FormRepeater(ui.FormRepeaterConfig{
 				Name:  "links",
 				Items: [][]render.HTML{{row(0)}, {row(1)}},
@@ -792,7 +792,7 @@ var Catalog = []Entry{
 				Label: fmt.Sprintf("Guest %d", i+1),
 			})
 		}
-		return render.Tag("form", map[string]string{"method": "post", "action": "/components/repeater"},
+		return render.Tag("form", map[string]string{"method": "post", "action": "/__site/toggle/noop"},
 			ui.Repeater(ui.RepeaterConfig{
 				Name:     "guests",
 				Label:    "Guests",
