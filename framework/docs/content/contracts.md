@@ -680,6 +680,9 @@ must never read as "it was fine".
 
 ### The vet stage runs GoFastr's analyzers too
 
+A framework-tree vettool build failure includes the compiler/linker output
+in the failed vet stage, rather than only reporting that the build failed.
+
 The vet stage is two passes. Plain `go vet` runs first, then the
 type-aware analyzers the framework's own CI runs over its code: an
 unbounded request or response body read, a credential compared with
