@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -103,7 +104,9 @@ var rePlatformKey = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // end in .app and its Contents/Info.plist must declare version as its
 // CFBundleShortVersionString. A windows-* archive's directory must hold
 // exactly <dir>.exe and WebView2Loader.dll, and the executable's
-// ProductVersion must be version.
+// ProductVersion must be version. An existing manifest in outDir must
+// have the same version; its other platforms and channels are retained
+// and the merged manifest is signed again.
 func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
 	if _, err := ParseVersion(version); err != nil {
 		return fmt.Errorf("version %q: %w", version, err)
@@ -164,13 +167,25 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	feed := Feed{
 		Version: version,
 		Notes:   notes,
-		Platforms: map[string]PlatformEntry{
-			platform: {
-				URL:    archiveURL,
-				SHA256: hex.EncodeToString(sum[:]),
-				Size:   int64(len(data)),
-			},
-		},
+	}
+	if existing, err := os.ReadFile(filepath.Join(outDir, "manifest.json")); err == nil {
+		if err := json.Unmarshal(existing, &feed); err != nil {
+			return fmt.Errorf("existing manifest: %w", err)
+		}
+		if feed.Version != version {
+			return fmt.Errorf("existing manifest version %q differs from --version %q; use a new output directory", feed.Version, version)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("existing manifest: %w", err)
+	}
+	feed.Notes = notes
+	if feed.Platforms == nil {
+		feed.Platforms = make(map[string]PlatformEntry)
+	}
+	feed.Platforms[platform] = PlatformEntry{
+		URL:    archiveURL,
+		SHA256: hex.EncodeToString(sum[:]),
+		Size:   int64(len(data)),
 	}
 	manifest, sigFile, err := SignFeed(feed, priv)
 	if err != nil {

@@ -1769,7 +1769,10 @@ gofastr desktop keygen -o path
 gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     --platform darwin-arm64 --archive Notes.zip \
     --url https://example.com/notes/Notes-1.2.0.zip [-o dir]
-    writes manifest.json and manifest.json.sig into dir (-o defaults
+    merges this platform into an existing same-version manifest.json,
+    preserving other platforms and channels, then re-signs it. A different
+    existing version is refused; use a fresh directory for a new release.
+    Writes manifest.json and manifest.json.sig into dir (-o defaults
     to .), computing sha256 and size from the archive file
 ```
 
