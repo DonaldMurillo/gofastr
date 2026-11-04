@@ -1858,12 +1858,13 @@ crash.
 - A remembered frame that no longer overlaps any screen's visible area
   by at least 100x50 points (the monitor was unplugged, the resolution
   changed) is dropped and the window centers. Windows checks native
-  monitor work areas, scaling each monitor's usable width and height with
-  its own effective DPI (`GetDpiForMonitor` from `shcore.dll`, falling back
-  to the system DPI if unavailable or unsuccessful). Virtual-desktop
-  origins keep the shared system-DPI scale used by saved Windows frames;
-  applying a secondary monitor's scale to its absolute origin would move
-  that screen relative to the saved window. Linux checks GDK work areas, including
+  monitor work areas in physical pixels, retaining each monitor's effective
+  DPI (`GetDpiForMonitor` from `shcore.dll`, falling back to system DPI).
+  Saved origins convert to pixels with system DPI; saved dimensions and
+  the overlap threshold convert with each candidate monitor's DPI. The
+  centered physical placement converts back only at the saved-frame boundary:
+  system-DPI origins and monitor-DPI dimensions are not one geometric scale.
+  Linux checks GDK work areas, including
   monitors with negative coordinates. These hosts also discard saved
   sizes outside 1–32767 points, avoiding native integer truncation.
   Their centered fallback uses the configured window size, fits it to

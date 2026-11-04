@@ -19,10 +19,10 @@ var monitorWorkAreaCallback = syscall.NewCallback(func(monitor, device uintptr, 
 	}
 	info.Size = uint32(unsafe.Sizeof(info))
 	if result, _, _ := call(user32, "GetMonitorInfoW", monitor, uintptr(unsafe.Pointer(&info))); result != 0 {
-		areas := (*[]WorkArea)(state)
-		area := monitorWorkAreaPoints(info.Work, monitorDPI(monitor), SystemDPI())
+		areas := (*[]MonitorWorkArea)(state)
+		area := MonitorWorkArea{Bounds: info.Work, DPI: monitorDPI(monitor)}
 		if info.Flags&1 != 0 {
-			*areas = append([]WorkArea{area}, (*areas)...)
+			*areas = append([]MonitorWorkArea{area}, (*areas)...)
 		} else {
 			*areas = append(*areas, area)
 		}
@@ -41,9 +41,9 @@ func monitorDPI(monitor uintptr) uint32 {
 	return horizontal
 }
 
-// MonitorWorkAreas enumerates usable rectangles in screen points, primary first.
-func MonitorWorkAreas() []WorkArea {
-	var areas []WorkArea
+// MonitorWorkAreas enumerates physical work rectangles and DPIs, primary first.
+func MonitorWorkAreas() []MonitorWorkArea {
+	var areas []MonitorWorkArea
 	var pin runtime.Pinner
 	pin.Pin(&areas)
 	defer pin.Unpin()

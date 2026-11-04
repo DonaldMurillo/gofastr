@@ -20,7 +20,6 @@ import (
 	"unsafe"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
-	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/placement"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/win32"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -879,14 +878,7 @@ func (s *winShell) createNativeWindow(id, title string, width, height int, style
 		height = 768
 	}
 	if frame != nil {
-		var screens []desktop.Frame
-		for _, area := range win32.MonitorWorkAreas() {
-			screens = append(screens, desktop.Frame{
-				X: int(area.Left), Y: int(area.Top),
-				Width: int(area.Right - area.Left), Height: int(area.Bottom - area.Top),
-			})
-		}
-		frame = placement.Restore(frame, screens, width, height)
+		frame = win32.RestoreMonitorFrame(frame, win32.MonitorWorkAreas(), screenDPI, width, height)
 	}
 	if frame != nil {
 		x, y = pointsToPixels(frame.X, screenDPI), pointsToPixels(frame.Y, screenDPI)
