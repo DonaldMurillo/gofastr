@@ -96,7 +96,11 @@ func validateGraduation(w *world.World) error {
 		default:
 			return fmt.Errorf("freeze: unsupported PWA display %q", w.App.PWA.Display)
 		}
-		for label, value := range map[string]string{"start_url": w.App.PWA.StartURL, "scope": w.App.PWA.Scope} {
+		for _, entry := range []struct{ label, value string }{
+			{"start_url", w.App.PWA.StartURL},
+			{"scope", w.App.PWA.Scope},
+		} {
+			label, value := entry.label, entry.value
 			if value != "" && !strings.HasPrefix(value, "/") {
 				return fmt.Errorf("freeze: app.pwa.%s must start with /", label)
 			}

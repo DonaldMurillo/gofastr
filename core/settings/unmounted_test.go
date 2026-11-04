@@ -201,3 +201,18 @@ func TestSetUnmountedCommentBetweenEntries(t *testing.T) {
 		t.Errorf("rewrite:\n%s", data)
 	}
 }
+
+// A missing field reads "is required", like an endpoint's, and an entry
+// missing several names the first in field order every time.
+func TestUnmountedNamesFirstMissingField(t *testing.T) {
+	f, err := Parse("s.yml", []byte("unmounted:\n  - version: \"dev\"\n    date: \"2026-10-19\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 32 {
+		_, err := f.Unmounted()
+		if err == nil || !strings.Contains(err.Error(), "source is required") {
+			t.Fatalf("err = %v, want source named first", err)
+		}
+	}
+}

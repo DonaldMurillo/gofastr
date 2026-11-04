@@ -31,7 +31,14 @@
 // parseMultipartBody refused whichever duplicate form key came first).
 // The fix is the same: range slices.Sorted(maps.Keys(m)).
 //
-// The arm reads only maps shaped like decoded wire input: values of the
+// The arm reads maps shaped like decoded wire input, and map literals.
+// Round 8 added the literal (R8-RTS-01): core/settings' DecodeEndpoints
+// and Unmounted checked required fields by ranging
+// map[string]*string{"name": &e.Name, ...}, so an entry missing two
+// fields named a different one per `gofastr generate`. A literal is a
+// fixed key set its author wrote in order; range a slice of the keys.
+//
+// The wire shapes are: values of the
 // empty interface (a JSON object), []string (url.Values, http.Header, a
 // multipart form's Value), json.RawMessage, or []*multipart.FileHeader.
 // Measured over ./... on 2026-11-02, every map shape found 48 sites,
@@ -478,7 +485,7 @@ func implementsWriter(t types.Type) bool {
 func checkReturned(pass *analysis.Pass, f *ast.File, bound map[types.Object]ast.Expr, guarded []guardRange) {
 	ast.Inspect(f, func(n ast.Node) bool {
 		rng, ok := n.(*ast.RangeStmt)
-		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) {
+		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) && !mapLiteral(rng.X, bound, pass) {
 			return true
 		}
 		for _, g := range guarded {
@@ -638,6 +645,30 @@ func wireShaped(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 		}
 	}
 	return false
+}
+
+// mapLiteral reports whether the ranged map is a non-empty composite
+// literal, or a local bound to one: a fixed key set the author wrote in an
+// order, which the range then randomizes (core/settings' required-field
+// loops).
+func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass) bool {
+	x = ast.Unparen(x)
+	if id, ok := x.(*ast.Ident); ok {
+		src, found := bound[pass.TypesInfo.ObjectOf(id)]
+		if !found {
+			return false
+		}
+		x = ast.Unparen(src)
+	}
+	// An empty literal filled at run time is a built map, the typed
+	// configuration shape this arm leaves alone; only written keys are a
+	// fixed set.
+	lit, ok := x.(*ast.CompositeLit)
+	if !ok || len(lit.Elts) == 0 {
+		return false
+	}
+	_, isMap := pass.TypesInfo.TypeOf(lit).Underlying().(*types.Map)
+	return isMap
 }
 
 func wireValue(t types.Type) bool {
