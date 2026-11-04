@@ -181,7 +181,7 @@ func (fb *formBuilder) relationReadable(ctx context.Context, f schema.Field, id 
 		return false
 	}
 	om, err := fb.b.ui.meta(other.GetName())
-	return err == nil && canReadRecord(ctx, om.ch, id)
+	return err == nil && canReadRelated(ctx, om.ch) && canReadRecord(ctx, om.ch, id)
 }
 
 // relationDisplay names a foreign key by its record's title: one read
