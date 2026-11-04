@@ -315,6 +315,8 @@ keys.
 The operations pages draw through the UI host like every other admin
 page: an app that mounts the admin only for its queue or audit log still
 builds with `framework.NewUIHostApp`, or `Init` fails.
+Jobs status-filter counts use the request locale's number formatting,
+including localized digits and grouping, just like the page's other counts.
 
 <!-- gofastr:compile
 import "database/sql"
