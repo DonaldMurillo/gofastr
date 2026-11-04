@@ -210,8 +210,10 @@
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
     carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')).map(node => node.outerHTML).join(''));
-    const lang = source.documentElement.getAttribute('lang');
-    if (lang) carrier.setAttribute('data-cui-lang', lang);
+    for (const attr of ['lang', 'dir']) {
+      const value = source.documentElement.getAttribute(attr);
+      if (value) carrier.setAttribute('data-cui-' + attr, value);
+    }
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
     // The live document's head block is the first page's: after a soft
