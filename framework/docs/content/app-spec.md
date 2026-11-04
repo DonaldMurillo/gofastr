@@ -810,6 +810,8 @@ Pack also reads `public_openapi`, the UI host's application description,
 and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
 override is not substituted for that authored fallback; the default
 `http://localhost:8080` fallback is omitted from the packed spec.
+Admin paths and roles equal to the defaults (`/admin` and `admin`) are
+also omitted; customized admin values are retained.
 
 The synthesized `/create` screen, and the `/login` screen added for an app spec with auth and no login form, are dropped (they weren't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant

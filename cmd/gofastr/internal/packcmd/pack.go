@@ -1504,6 +1504,12 @@ func packReadApp(dir string) (appspec.AppSpecApp, error) {
 					app.Admin.Enabled = true
 					app.Admin.Path = appspec.AstString(cv["PathPrefix"])
 					app.Admin.Role = appspec.AstString(cv["AdminRole"])
+					if app.Admin.Path == "/admin" {
+						app.Admin.Path = ""
+					}
+					if app.Admin.Role == "admin" {
+						app.Admin.Role = ""
+					}
 					app.Admin.LoginPath = appspec.AstString(cv["LoginPath"])
 				case "PWAConfig":
 					cv := appspec.FieldVals(t)
