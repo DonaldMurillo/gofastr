@@ -24,6 +24,7 @@
 package ownstyle
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"strings"
 	"unicode/utf8"
 )
@@ -680,5 +681,5 @@ func tokenRunText(toks []Token) string {
 // first selector (matching nothing) and put it into the emitted Go,
 // which gofmt refuses.
 func stripBOM(src string) string {
-	return strings.TrimPrefix(src, "\xEF\xBB\xBF")
+	return bom.Trim(src)
 }

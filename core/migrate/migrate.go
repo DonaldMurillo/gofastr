@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"io"
 	"regexp"
 	"sort"
@@ -271,8 +272,12 @@ func parseMigration(r io.Reader) (*Migration, error) {
 	upOpened := false
 	orphanedSQL := false // a real SQL line arrived while no section was open, so it is being discarded
 
+	first := true
 	for scanner.Scan() {
 		line := scanner.Text()
+		if first {
+			line, first = bom.Trim(line), false
+		}
 		trimmed := strings.TrimSpace(line)
 
 		if after, ok := strings.CutPrefix(trimmed, "-- +migrate"); ok {
