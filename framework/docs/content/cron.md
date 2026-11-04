@@ -258,7 +258,7 @@ bounded by the app's shutdown drain deadline, so a hung job cannot stall
 ## Error handling
 
 A job's returned error is forwarded to `Scheduler.OnError` if set,
-otherwise dropped. Errors do not crash the process. Set `OnError` to
+otherwise logged to `slog.Default()`. Errors do not crash the process. Set `OnError` to
 plumb cron failures into your existing logger/metrics.
 
 ## Registering at app startup
