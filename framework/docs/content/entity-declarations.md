@@ -92,7 +92,8 @@ with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
 batch and Create/Update-column sections — those routes answer 404/405 —
 and the `limit` row reports the same cap the List route clamps `?limit`
 with (`Pagination.MaxListLimit`, never above 1000, 100 when unset), and
-the default page size, 20 or the cap when that is smaller.
+the default page size, 20 or the cap when that is smaller. Offset and
+cursor requests use the same default, including an empty `?cursor=`.
 `/openapi.json` states the same two numbers on its `limit` parameter
 (`crud.ListLimits` returns them), and lists the 409 a write answers (a
 unique value or key already in use, a relation naming no record, or on a

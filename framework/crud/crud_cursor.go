@@ -60,18 +60,12 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	// rows through the keyset arm, and this handler is also reachable via
 	// decodeCursorAny paths that bypass List's stamp.
 	w.Header().Set("Cache-Control", "no-store")
-	cursor, limit, direction := pagination.ParseCursorPagination(r)
+	cursor, _, direction := pagination.ParseCursorPagination(r)
+	_, limit := parsePagination(r, ch.Entity.Config.Pagination.MaxListLimit)
 	if direction != "forward" && direction != "backward" {
 		writeJSONError(w, r, http.StatusBadRequest, reasonBadDirection)
 		return
 	}
-	// ParseCursorPagination clamps only to the global MaxPageSize; the
-	// per-entity cap must hold on this path too or ?cursor= becomes a
-	// MaxListLimit bypass.
-	if limitCap := listLimitCap(ch.Entity.Config.Pagination.MaxListLimit); limit > limitCap {
-		limit = limitCap
-	}
-
 	fields := ch.cursorFields()
 	// The cursor carries the last row's sort values and key when they fit
 	// the decoder's 16 KiB cap, and the key alone when they do not: a sort
