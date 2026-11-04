@@ -270,6 +270,9 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: attrs,
 		})
 	case "link", "a":
+		if propString(props, "href") == "" {
+			return html.Span(textConfig(props), withTextProp(props, children)...)
+		}
 		return html.LinkHTML(html.LinkHTMLConfig{
 			Href: propString(props, "href"), Content: render.Join(withTextProp(props, children)...),
 			ID: propString(props, "id"), Class: propString(props, "class"),
@@ -295,7 +298,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	case "label":
 		text := propString(props, "text")
 		body := children
-		if text != "" && len(children) == 0 {
+		if text != "" && len(children) == 0 && propString(props, "for") != "" {
 			return html.Label(html.LabelConfig{
 				For: propString(props, "for"), Text: text,
 				ID: propString(props, "id"), Class: propString(props, "class"),
@@ -374,6 +377,9 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: extraAttrs(props, "id", "class", "name", "value"),
 		})
 	case "fieldset":
+		if propString(props, "legend") == "" {
+			return render.Tag("fieldset", attrsFromProps(props, "id", "class"), children...)
+		}
 		return html.FieldSet(html.FieldSetConfig{
 			Legend: propString(props, "legend"),
 			ID:     propString(props, "id"), Class: propString(props, "class"),
@@ -382,6 +388,9 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 
 	// --- media ----------------------------------------------------
 	case "image", "img":
+		if propString(props, "src") == "" {
+			return ""
+		}
 		// Width/height pass through via Attrs since ImageConfig keeps
 		// only Src/Alt as first-class fields.
 		return html.Image(html.ImageConfig{

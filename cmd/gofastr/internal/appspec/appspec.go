@@ -3384,6 +3384,23 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 	if block.Bulk && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
 		return fmt.Errorf("app spec: screen %q bulk applies only to an entity_list block, not %q", screenName, kind)
 	}
+	requiredProp := ""
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "label":
+		if len(block.Children) == 0 {
+			requiredProp = "for"
+		}
+	case "fieldset":
+		requiredProp = "legend"
+	case "image", "img":
+		requiredProp = "src"
+	}
+	if requiredProp != "" {
+		value, _ := block.Props[requiredProp].(string)
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("app spec: screen %q %s block %s is required", screenName, kind, requiredProp)
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", "text", "p", "paragraph", "section", "div", "article", "main", "header", "footer", "nav", "aside", "span", "strong", "em", "code", "pre", "small", "blockquote", "button", "input", "label", "form", "select", "option", "textarea", "fieldset", "image", "img", "list", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "raw":
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
@@ -3395,6 +3412,13 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			return fmt.Errorf("app spec: screen %q heading level must be 1-6", screenName)
 		}
 	case "link", "a":
+		text := block.Text
+		if text == "" {
+			text, _ = block.Props["text"].(string)
+		}
+		if strings.TrimSpace(text) == "" && len(block.Children) == 0 {
+			return fmt.Errorf("app spec: screen %q link block text or children are required", screenName)
+		}
 		href := block.Href
 		if href == "" {
 			href, _ = block.Props["href"].(string)
