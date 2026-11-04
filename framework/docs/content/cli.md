@@ -609,11 +609,27 @@ does not cover: a runtime browser scan, and the dependency report.
   `gofastr verify accessibility`.
 - `gofastr audit lint`: the original AI-mistake scanner. Superseded by
   `gofastr verify security data`, which covers the same rules with a
-  reason and a fix attached to each.
+  reason and a fix attached to each. The legacy scanner still reports
+  malformed test files, unannotated skips, and discarded Exec results
+  (including bare, deferred, and goroutine calls). Explicit test-lane
+  boundaries remain accepted. A `// safe-sql: <why>` comment suppresses
+  that line's SQL heuristic, and comments preserve diagnostic line numbers.
 - `gofastr audit deps`: list dependencies that perform init-time
   global registrations, then the [unmounted](unmount.md) packages.
 
+Static audit, sandbox, recursive CSP, behavior discovery, and provenance
+walkers skip build-output descendants (`dist`, `bin`, `build`, `tmp`) but
+scan an explicitly selected root with one of those names. Linked package
+directories are followed with cycle detection. Accessibility and sandbox
+checks tolerate source files disappearing during an editor save; a missing
+root or another I/O failure still fails the check.
+
 ## Extras
+
+The repository's `cmd/repolint` wiring gate catches a raw `data-cui-rpc`
+attribute both as an attribute-name string and inside emitted markup,
+including escaped Go strings. Sibling attributes such as `data-cui-rpc-body`
+are distinct and do not match that gate.
 
 - `gofastr semantic index|watch|query|stats|clear`: the local semantic
   index ([semantic search](semantic-search.md)).

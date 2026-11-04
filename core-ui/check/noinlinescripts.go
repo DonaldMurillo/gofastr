@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // hasCSPIgnoreDirective reports whether a source file opts out of the
@@ -31,7 +34,30 @@ import (
 var reCSPIgnoreDirective = regexp.MustCompile(`(?m)^[ \t]*//[ \t]*check-csp:ignore-file[ \t]*\r?$`)
 
 func hasCSPIgnoreDirective(raw []byte) bool {
-	return reCSPIgnoreDirective.Match(raw)
+	if !reCSPIgnoreDirective.Match(raw) {
+		return false
+	}
+	file := token.NewFileSet().AddFile("source.go", -1, len(raw))
+	var lexer scanner.Scanner
+	lexer.Init(file, raw, nil, scanner.ScanComments)
+	for {
+		position, kind, literal := lexer.Scan()
+		if kind == token.EOF {
+			return false
+		}
+		if kind != token.COMMENT || !strings.HasPrefix(literal, "//") {
+			continue
+		}
+		offset := file.Offset(position)
+		start := strings.LastIndexByte(string(raw[:offset]), '\n') + 1
+		end := offset
+		for end < len(raw) && raw[end] != '\n' {
+			end++
+		}
+		if reCSPIgnoreDirective.Match(raw[start:end]) {
+			return true
+		}
+	}
 }
 
 // Inline-script ban, compile-rule enforcement of the framework's
@@ -198,7 +224,7 @@ func LintNoInlineScriptsRecursive(root string) (*Result, error) {
 // walk differing only in the lint they ran.
 func lintRecursive(root string, lint func(string) (*Result, error), skip ...string) (*Result, error) {
 	result := &Result{}
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

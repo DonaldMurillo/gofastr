@@ -31,7 +31,7 @@ func ChangedFiles(root, ref string) (map[string]bool, error) {
 	if !insideGitRepo(root) {
 		return nil, nil
 	}
-	args := []string{"diff", "--name-only", "--diff-filter=ACMR"}
+	args := []string{"diff", "--name-only", "-z", "--diff-filter=ACMR"}
 	if ref == "" {
 		// Working tree plus index against HEAD: what is uncommitted.
 		args = append(args, "HEAD")
@@ -61,7 +61,7 @@ func ChangedFiles(root, ref string) (map[string]bool, error) {
 	}
 	changed := map[string]bool{}
 	add := func(line, prefix string) {
-		p := filepath.ToSlash(strings.TrimSpace(line))
+		p := filepath.ToSlash(line)
 		if p == "" {
 			return
 		}
@@ -76,21 +76,18 @@ func ChangedFiles(root, ref string) (map[string]bool, error) {
 			changed[p] = true
 		}
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(out, "\x00") {
 		add(line, rel)
 	}
 	// Untracked files are part of "what I changed" too: a brand new file
 	// full of findings is exactly what a pre-commit check should catch,
 	// and `git diff` never lists it.
-	if ref == "" {
-		untracked, err := gitOutput(root, "ls-files", "--others", "--exclude-standard")
-		if err == nil {
-			// `ls-files` runs with cwd set to root, so its output is
-			// already root-relative, no prefix to strip.
-			for _, line := range strings.Split(untracked, "\n") {
-				add(line, "")
-			}
-		}
+	untracked, err := gitOutput(root, "ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range strings.Split(untracked, "\x00") {
+		add(line, "")
 	}
 	return changed, nil
 }

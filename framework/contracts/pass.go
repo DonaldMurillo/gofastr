@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/buildoutput"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 
 	"golang.org/x/mod/modfile"
 )
@@ -75,16 +76,17 @@ type Pass struct {
 	fset    *token.FileSet
 	sources map[string][]byte
 	asts    map[string]*ast.File
-	// unparsed records files the parser rejected, so the report can say
+	// unparsed records files reading or parsing rejected, so the report can say
 	// what it could not read instead of implying those files were clean.
 	unparsed map[string]string
 	memo     map[string]any
 }
 
 // NewPass discovers every source file under root and returns a pass ready
-// for analyzers. Discovery is eager (one walk) but reading and parsing are
-// lazy, so an analyzer that only cares about .yml files pays nothing for
-// the Go tree.
+// for analyzers. Discovery and source reading are eager (one walk), while
+// AST parsing is lazy. Unreadable roots fail discovery; unreadable files
+// are recorded by [Pass.Unparsed]. An empty pass remains inspectable, but
+// [Run] refuses to analyze it.
 func NewPass(root string, cfg *Config) (*Pass, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -97,6 +99,10 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("root %q is not a directory", root)
 	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root %q: %w", root, err)
+	}
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
@@ -107,6 +113,7 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 		fset:       token.NewFileSet(),
 		sources:    map[string][]byte{},
 		asts:       map[string]*ast.File{},
+		unparsed:   map[string]string{},
 		memo:       map[string]any{},
 	}
 	if err := p.discover(); err != nil {
@@ -116,8 +123,11 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 }
 
 func (p *Pass) discover() error {
-	err := filepath.WalkDir(p.Root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(p.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if path == p.Root {
+				return fmt.Errorf("read root %q: %w", p.Root, err)
+			}
 			// An unreadable subtree is not a reason to abandon the whole
 			// analysis. Skip it and keep going.
 			if d != nil && d.IsDir() {
@@ -159,6 +169,7 @@ func (p *Pass) discover() error {
 		rel = filepath.ToSlash(rel)
 		body, readErr := os.ReadFile(path)
 		if readErr != nil {
+			p.unparsed[rel] = readErr.Error()
 			return nil
 		}
 		p.sources[rel] = body
@@ -353,10 +364,9 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 	return f, true
 }
 
-// Unparsed returns the files whose source could not be parsed, keyed by
-// path, with the parser's message. A tree mid-edit is the normal case for
-// the dev loop, so this is reported rather than fatal, but it is
-// reported.
+// Unparsed returns the files whose source could not be read or parsed,
+// keyed by path, with the read or parser error. A tree mid-edit is the
+// normal case for the dev loop, so this is reported rather than fatal.
 func (p *Pass) Unparsed() map[string]string {
 	p.mu.Lock()
 	defer p.mu.Unlock()

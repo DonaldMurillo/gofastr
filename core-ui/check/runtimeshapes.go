@@ -1997,8 +1997,9 @@ func skipSpaceBack(s string, i int) int {
 //   - chains that never read the body or never mount. A continuation
 //     passed by bare reference (.then(bind)) contributes the named
 //     function's same-file body to the mount and gate scans — braced
-//     and expression-bodied arrows both resolve (review 8); a name
-//     not declared in the file stays silent as today.
+//     and expression-bodied arrows both resolve (review 8). A
+//     this.method reference resolves in its enclosing class; other
+//     unresolved names contribute no body.
 func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -2019,10 +2020,10 @@ func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 			if !reBodyRead.MatchString(span) {
 				continue
 			}
-			// A bare-reference continuation puts the mount in the
+			// A named continuation puts the mount in the
 			// named function's body, one declaration away: include it
 			// in the mount and gate scans.
-			scan := span + namedThenBodies(f.Blank, span)
+			scan := span + namedThenBodies(f.Blank, span, loc[0])
 			if responseGateIn(scan) {
 				continue
 			}
@@ -2060,7 +2061,8 @@ var (
 		`|\bswapShell\s*\(`)
 )
 
-var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(\w+)\s*\)`)
+var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(this\s*\.\s*)?(\w+)\s*\)`)
+var reClassBody = regexp.MustCompile(`\bclass\b[^{};]*\{`)
 
 // namedThenBodies appends the bodies of same-file functions passed to
 // .then( by bare reference inside the chain span: the fetched text is
@@ -2068,13 +2070,16 @@ var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(\w+)\s*\)`)
 // mount and gate surface. Function declarations and const-arrow forms
 // both resolve — braced bodies by brace matching, expression-bodied
 // arrows (`const render = t => el.innerHTML = t`) to their statement
-// end (review 8). A dotted reference (.then(this.render)) names a
-// method this line-local pass cannot bind and contributes nothing,
-// like an unresolved name (imported, or not a function).
-func namedThenBodies(blank, span string) string {
+// end (review 8). A this.method reference resolves only against the
+// innermost enclosing class, never a same-named method in another class.
+func namedThenBodies(blank, span string, position int) string {
 	var b strings.Builder
 	for _, m := range reThenIdent.FindAllStringSubmatch(span, -1) {
-		name := regexp.QuoteMeta(m[1])
+		name := regexp.QuoteMeta(m[2])
+		if m[1] != "" {
+			b.WriteString(classThenBody(blank, name, position))
+			continue
+		}
 		braced := regexp.MustCompile(`(?:function\s+` + name + `\s*\([^)]*\)\s*\{` +
 			`|(?:const|let|var)\s+` + name + `\s*=\s*(?:async\s+)?(?:function\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>\s*\{|\w+\s*=>\s*\{))`)
 		if loc := braced.FindStringIndex(blank); loc != nil {
@@ -2096,6 +2101,40 @@ func namedThenBodies(blank, span string) string {
 		}
 	}
 	return b.String()
+}
+
+func classThenBody(blank, name string, position int) string {
+	classOpen, classClose := -1, -1
+	for _, location := range reClassBody.FindAllStringIndex(blank, -1) {
+		open := location[1] - 1
+		if open >= position {
+			break
+		}
+		if close := matchDelimForward(blank, open); close > position {
+			classOpen, classClose = open, close
+		}
+	}
+	if classOpen < 0 {
+		return ""
+	}
+	method := regexp.MustCompile(`^(?:(static)\s+)?(?:async\s+)?` + name + `\s*\([^)]*\)\s*\{`)
+	for cursor := classOpen + 1; cursor < classClose; cursor++ {
+		if location := method.FindStringSubmatchIndex(blank[cursor:classClose]); location != nil && (cursor == classOpen+1 || !isJSIdentChar(blank[cursor-1])) {
+			if location[2] >= 0 {
+				return ""
+			}
+			open := cursor + location[1] - 1
+			if close := matchDelimForward(blank, open); close >= 0 {
+				return blank[open : close+1]
+			}
+		}
+		if strings.ContainsRune("({[", rune(blank[cursor])) {
+			if close := matchDelimForward(blank, cursor); close >= 0 {
+				cursor = close
+			}
+		}
+	}
+	return ""
 }
 
 // reResponseToken matches a .ok / .status member read as a whole token:

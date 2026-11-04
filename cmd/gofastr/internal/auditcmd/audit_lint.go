@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	goscanner "go/scanner"
 	"go/token"
 	"io/fs"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // LintFinding is one violation reported by `gofastr audit lint`.
@@ -29,23 +31,11 @@ type LintFinding struct {
 // Tests can call this directly without going through runAudit.
 func auditLint(root string) ([]LintFinding, error) {
 	var all []LintFinding
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			name := d.Name()
-			// Skip the usual non-source trees + every build-output
-			// directory the project uses. Generated code lives under
-			// dist/bin/build/tmp and its findings drown out the real
-			// signal from app code.
-			switch name {
-			case "vendor", ".git", "node_modules", "dist", "bin", "build", "tmp":
-				return fs.SkipDir
-			}
-			if strings.HasPrefix(name, ".") && name != "." {
-				return fs.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") {
@@ -113,6 +103,28 @@ func lintFile(rel string, body []byte) []LintFinding {
 var reIgnoredExec = regexp.MustCompile(`(?:^|[\s;{])_,\s*_\s*=\s*\S+\.Exec(?:Context)?\b`)
 
 func ruleIgnoredExec(rel string, body []byte) []LintFinding {
+	bareLines := map[int]bool{}
+	fset := token.NewFileSet()
+	file, _ := parser.ParseFile(fset, rel, body, 0)
+	if file != nil {
+		ast.Inspect(file, func(node ast.Node) bool {
+			var call *ast.CallExpr
+			switch statement := node.(type) {
+			case *ast.ExprStmt:
+				call, _ = statement.X.(*ast.CallExpr)
+			case *ast.DeferStmt:
+				call = statement.Call
+			case *ast.GoStmt:
+				call = statement.Call
+			}
+			if call != nil {
+				if selector, ok := call.Fun.(*ast.SelectorExpr); ok && (selector.Sel.Name == "Exec" || selector.Sel.Name == "ExecContext") {
+					bareLines[fset.Position(call.Pos()).Line] = true
+				}
+			}
+			return true
+		})
+	}
 	scanner := bufio.NewScanner(strings.NewReader(string(body)))
 	scanner.Buffer(make([]byte, 1<<20), 1<<22)
 	var out []LintFinding
@@ -121,7 +133,7 @@ func ruleIgnoredExec(rel string, body []byte) []LintFinding {
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		if !reIgnoredExec.MatchString(line) {
+		if !reIgnoredExec.MatchString(line) && !bareLines[lineNum] {
 			if strings.TrimSpace(line) != "" {
 				recent = append(recent, line)
 				if len(recent) > 4 {
@@ -219,18 +231,27 @@ func ruleFormWithoutCSRF(rel string, body []byte) []LintFinding {
 
 // stripGoComments removes // line comments and /* … */ block comments
 // so CSRF / lint annotations inside prose don't fool downstream regexes.
-// Doesn't honor string literals, close enough for the kinds of files
-// the lint pass cares about.
-var (
-	reLineComment  = regexp.MustCompile(`//[^\n]*`)
-	reBlockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
-)
-
+// String literals and source offsets are preserved by the Go lexer.
 func stripGoComments(body []byte) []byte {
-	//gofastr:allow(sanitizefix) one pass on purpose: a splice of real Go source ("/" + "/*a*/" + "/x") is code, not a comment, and a second pass would delete it
-	b := reBlockComment.ReplaceAll(body, []byte(""))
-	//gofastr:allow(sanitizefix) the lint's own heuristic comment removal over the app's source, not a security boundary; looping would eat code the first pass spliced
-	return reLineComment.ReplaceAll(b, []byte(""))
+	masked := append([]byte(nil), body...)
+	file := token.NewFileSet().AddFile("source.go", -1, len(body))
+	var scanner goscanner.Scanner
+	scanner.Init(file, body, nil, goscanner.ScanComments)
+	for {
+		position, kind, literal := scanner.Scan()
+		if kind == token.EOF {
+			break
+		}
+		if kind == token.COMMENT {
+			start := file.Offset(position)
+			for offset := start; offset < start+len(literal); offset++ {
+				if masked[offset] != '\n' && masked[offset] != '\r' {
+					masked[offset] = ' '
+				}
+			}
+		}
+	}
+	return masked
 }
 
 // ----------------------------------------------------------------------------
@@ -292,8 +313,11 @@ var (
 
 func ruleSQLConcatUserInput(rel string, body []byte) []LintFinding {
 	var out []LintFinding
-	for i, line := range strings.Split(string(stripGoComments(body)), "\n") {
-		if strings.Contains(line, "// safe-sql:") {
+	cleaned := stripGoComments(body)
+	originalLines := strings.Split(string(body), "\n")
+	for i, line := range strings.Split(string(cleaned), "\n") {
+		annotation := strings.Index(originalLines[i], "// safe-sql:")
+		if annotation >= 0 && annotation < len(line) && line[annotation] == ' ' && strings.TrimSpace(originalLines[i][annotation+len("// safe-sql:"):]) != "" {
 			continue
 		}
 		hit := reSQLConcatLiteral.MatchString(line) ||
@@ -345,7 +369,7 @@ func ruleTestSkip(rel string, body []byte) []LintFinding {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, rel, body, 0)
 	if err != nil {
-		return nil
+		return []LintFinding{{File: rel, Line: 1, Rule: "parse-error", Message: "test source could not be checked: " + err.Error()}}
 	}
 	var skipLines []int
 	ast.Inspect(file, func(node ast.Node) bool {
@@ -420,19 +444,6 @@ func ruleTestSkip(rel string, body []byte) []LintFinding {
 			}
 		}
 		if environmentSkip {
-			continue
-		}
-		debtSkip := false
-		for _, phrase := range []string{
-			"not yet", "todo", "temporarily disabled", "restore this test",
-			"restore once", "being reimplemented", "no session cookie",
-		} {
-			if strings.Contains(reason, phrase) {
-				debtSkip = true
-				break
-			}
-		}
-		if !debtSkip {
 			continue
 		}
 		out = append(out, LintFinding{

@@ -1,6 +1,7 @@
 package gates
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // BuildA11yGateTo is buildA11yGate writing to the given streams, so
@@ -44,19 +46,14 @@ type A11yFinding struct {
 // element configs (check.LintA11yFile). Tests call this directly.
 func AuditA11y(root string) ([]A11yFinding, error) {
 	var all []A11yFinding
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if path != filepath.Clean(root) && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		if d.IsDir() {
-			name := d.Name()
-			switch name {
-			case "vendor", ".git", "node_modules", "dist", "bin", "build", "tmp":
-				return fs.SkipDir
-			}
-			if strings.HasPrefix(name, ".") && name != "." {
-				return fs.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -64,6 +61,9 @@ func AuditA11y(root string) ([]A11yFinding, error) {
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		// Generated files are the generator's responsibility, not the

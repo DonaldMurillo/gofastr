@@ -149,6 +149,9 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	if len(Analyzers()) == 0 {
 		return nil, fmt.Errorf(`contracts: no analyzers registered: import _ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers" in the binary that calls Run`)
 	}
+	if len(p.files) == 0 {
+		return nil, fmt.Errorf("contracts: no analysable source files discovered under %q", p.Root)
+	}
 	selected := make([]*Analyzer, 0)
 	for _, a := range Analyzers() {
 		if opts.wants(a) {

@@ -28,6 +28,8 @@ func matchGlob(pattern, path string) bool {
 	// applied and does nothing.
 	pattern = strings.ReplaceAll(pattern, `\`, "/")
 	pattern = strings.TrimPrefix(strings.TrimSpace(pattern), "./")
+	anchored := strings.HasPrefix(pattern, "/")
+	pattern = strings.TrimPrefix(pattern, "/")
 	path = strings.TrimPrefix(strings.TrimSpace(path), "./")
 	if pattern == "" || path == "" {
 		return false
@@ -35,7 +37,7 @@ func matchGlob(pattern, path string) bool {
 	if strings.HasSuffix(pattern, "/") {
 		pattern += "**"
 	}
-	if !strings.ContainsAny(pattern, "*?/") {
+	if !anchored && !strings.ContainsAny(pattern, "*?/") {
 		for _, seg := range strings.Split(path, "/") {
 			if seg == pattern {
 				return true
