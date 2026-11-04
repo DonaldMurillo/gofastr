@@ -295,6 +295,12 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err := ch.checkBelongsToScope(ctx, r, w); err != nil {
 		return nil, err
 	}
+	clearedDerived, err := ch.resetImageDerived(ctx, r, idKey, body, func(field schema.Field) bool {
+		return ch.updateSets(ctx, field, true)
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	if err := ch.stampRow(ctx, id); err != nil {
 		return nil, err
@@ -309,7 +315,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
 	for _, f := range ch.Entity.GetFields() {
-		if !ch.updateSets(ctx, f, true) {
+		if !ch.updateSets(ctx, f, true) && !clearedDerived[f.Name] {
 			continue
 		}
 		val, ok := body[f.Name]

@@ -3,7 +3,9 @@ package crud
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -13,6 +15,97 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
+
+func TestImageChangeClearsDerivedColumns(t *testing.T) {
+	for _, method := range []string{"update", "upsert", "update-readonly", "upsert-readonly", "update-no-storage", "upsert-no-storage"} {
+		for _, replacement := range []any{"https://cdn.example.com/new.png", nil, clnKey} {
+			t.Run(method+"/"+fmt.Sprint(replacement), func(t *testing.T) {
+				ch, db := setupSecurityTestHandler(t, makeEntityConfig("cln", "cln", "", []schema.Field{
+					{Name: "id", Type: schema.String},
+					{Name: "photo", Type: schema.Image},
+					{Name: "photo_variants", Type: schema.JSON, ReadOnly: strings.HasSuffix(method, "readonly")},
+					{Name: "photo_blurhash", Type: schema.String, ReadOnly: strings.HasSuffix(method, "readonly")},
+					{Name: "photo_placeholder", Type: schema.String, Hidden: strings.HasSuffix(method, "readonly")},
+				}), `CREATE TABLE cln (id TEXT PRIMARY KEY, photo TEXT, photo_variants TEXT, photo_blurhash TEXT, photo_placeholder TEXT)`)
+				ch.Storage = teststorage.New(t, t.TempDir())
+				for _, key := range []string{clnKey, clnVariant} {
+					if err := ch.Storage.Save(context.Background(), key, strings.NewReader("x")); err != nil {
+						t.Fatal(err)
+					}
+				}
+				seedRows(t, db, "cln", []map[string]any{{"id": "a", "photo": clnKey,
+					"photo_variants": `[{"storage_ref":"` + clnVariant + `"}]`, "photo_blurhash": "old-hash", "photo_placeholder": "old-placeholder"}})
+				body := map[string]any{"photo": replacement}
+				if strings.HasSuffix(method, "no-storage") {
+					ch.Storage = nil
+				}
+				var err error
+				if strings.HasPrefix(method, "update") {
+					_, err = ch.UpdateOne(context.Background(), "a", body)
+				} else {
+					body["id"] = "a"
+					_, err = ch.UpsertOne(context.Background(), body)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				var variants, blurhash, placeholder sql.NullString
+				if err := db.QueryRow(`SELECT photo_variants, photo_blurhash, photo_placeholder FROM cln WHERE id = 'a'`).Scan(&variants, &blurhash, &placeholder); err != nil {
+					t.Fatal(err)
+				}
+				unchanged := replacement == clnKey
+				if unchanged {
+					var decoded []any
+					if json.Unmarshal([]byte(variants.String), &decoded) != nil || len(decoded) != 1 || blurhash.String != "old-hash" || placeholder.String != "old-placeholder" {
+						t.Errorf("unchanged image lost derivatives: %v %v %v", variants, blurhash, placeholder)
+					}
+				} else if variants.Valid || blurhash.Valid || placeholder.Valid {
+					t.Errorf("changed image kept derivatives: %v %v %v", variants, blurhash, placeholder)
+				}
+				if ch.Storage != nil {
+					for _, key := range []string{clnKey, clnVariant} {
+						if exists := clnExists(t, ch, key); exists != unchanged {
+							t.Errorf("stored object %s exists=%v, want %v", key, exists, unchanged)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestImageDerivativesKeepNewValues(t *testing.T) {
+	for _, method := range []string{"update", "upsert"} {
+		t.Run(method, func(t *testing.T) {
+			ch, database := setupSecurityTestHandler(t, makeEntityConfig("photos", "photos", "", []schema.Field{
+				{Name: "id", Type: schema.String},
+				{Name: "photo", Type: schema.Image},
+				{Name: "photo_variants", Type: schema.JSON},
+				{Name: "photo_blurhash", Type: schema.String},
+				{Name: "photo_placeholder", Type: schema.String},
+			}), `CREATE TABLE photos (id TEXT PRIMARY KEY, photo TEXT, photo_variants TEXT, photo_blurhash TEXT, photo_placeholder TEXT)`)
+			seedRows(t, database, "photos", []map[string]any{{"id": "a", "photo": "https://cdn.example.com/old.png", "photo_placeholder": "old"}})
+			body := map[string]any{"photo": "https://cdn.example.com/new.png", "photo_variants": `[]`, "photo_blurhash": "new-hash"}
+			var err error
+			if method == "update" {
+				_, err = ch.UpdateOne(context.Background(), "a", body)
+			} else {
+				body["id"] = "a"
+				_, err = ch.UpsertOne(context.Background(), body)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var variants, blurhash, placeholder sql.NullString
+			if err := database.QueryRow(`SELECT photo_variants, photo_blurhash, photo_placeholder FROM photos WHERE id = 'a'`).Scan(&variants, &blurhash, &placeholder); err != nil {
+				t.Fatal(err)
+			}
+			if variants.String != "[]" || blurhash.String != "new-hash" || placeholder.Valid {
+				t.Fatalf("replacement metadata: %v %v %v", variants, blurhash, placeholder)
+			}
+		})
+	}
+}
 
 // Deleting or purging a record, or replacing its file, left the stored
 // object in place and still served at /uploads/<key> to anyone holding

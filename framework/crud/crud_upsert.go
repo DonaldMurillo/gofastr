@@ -233,6 +233,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// below from the context-derived tenant id). Other ReadOnly/Hidden
 		// fields are persisted when the caller opted in via
 		// WithServerWrites(ctx).
+		clearedDerived, err := ch.resetImageDerived(ctx, req, ch.colKeyVals(body), body, func(field schema.Field) bool {
+			return !ch.isKeyCol(field.Name) && ch.upsertSets(ctx, field) && ch.upsertSetsGuarded(ctx, field.Name, true)
+		})
+		if err != nil {
+			return err
+		}
 		var cols []string
 		var vals []any
 		// sent holds the columns the body carried, before a Default fills
@@ -266,7 +272,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				vals = append(vals, ch.bindJSONValue(f.Name, body[f.Name]))
 				continue
 			}
-			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) {
+			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) && !clearedDerived[f.Name] {
 				// The insert arm only: sent stays false, so the conflict
 				// arm keeps the stored state.
 				if ch.writesStateDefault(f) {
