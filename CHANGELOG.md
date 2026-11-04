@@ -26,38 +26,16 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Added
 - `gofastr generate sdk` now emits a typed repository interface per entity,
-  a Remote adapter over the Go client, and a Local adapter that dispatches
-  through the app without a socket. Both use the REST access rules,
-  owner/tenant scoping, validation, and hooks. The SDK stays stdlib-only.
-  Local takes `app.InProcessHandler()`, a new entry point that refuses any
-  request carrying a cookie, an Authorization, Proxy-Authorization or
-  X-API-Key header, URL userinfo or a TLS peer certificate, and marks the
-  rest as in-process. `auth.SessionMiddleware`, `auth.RequireAuth` and
-  `auth.CSRF` (including `WithBFFPosture`) keep the user the server put on
-  the context for a marked call; every other request is checked as before.
-  `SessionMiddleware` records the outer request's 2FA assurance for that
-  same user across all their live, non-pending cookie sessions, and
-  `RequireTwoFA` accepts that snapshot only for a matching context user
-  and the issuing auth manager. Custom session or user stores bind assurance
-  to the lookup tenant by default, including an empty tenant id. Only an
-  `EntityUserStore` paired with a `MemorySessionStore` or `EntitySessionStore`
-  is automatically recognized by concrete type as global lookup. Wrappers
-  keep the enforcing default. A host can explicitly opt out with
-  `AuthConfig.GlobalSessionLookup` when both session and user lookup ignore
-  the tenant; assurance is then about the user alone. The knob does not add
-  store filtering. Global lookup carries no tenant binding, so the built-in
-  stores keep Local assurance and `_events` rechecks working when tenant
-  resolution follows authentication. An explicit principal recheck recomputes
-  assurance across the original candidate cookies for that same principal, retaining
-  the original lookup tenant for partitioned stores. Tenant derivation runs
-  afterward, so a downstream tenant change does not fail identity rechecking.
-  The recheck fails when none of the principal's live, non-pending sessions remain.
-  Clearing or replacing the principal also clears or replaces the assurance.
-  `RequireSession` trusts a marked call's server-set user without reading
-  a session. Local does not re-check session expiry or revocation.
-  Browser account and credential operations return 403 for marked calls.
-  The SDK's API prefix comes from the app spec when settings and flags
-  leave it unset. See [sdk.md](framework/docs/content/sdk.md#typed-repositories).
+  a Remote adapter over the Go client, and a Local adapter that calls the
+  app in-process through the new `app.InProcessHandler()`. Both go through
+  the REST access rules, scoping, validation and hooks; the SDK stays
+  stdlib-only. `InProcessHandler` refuses requests carrying cookies,
+  credentials or a TLS peer certificate, and battery/auth keeps the
+  server-set user (and its 2FA assurance) for the calls it admits. A
+  custom session or user store binds that assurance to the lookup tenant
+  unless `AuthConfig.GlobalSessionLookup` says lookup ignores the tenant.
+  See [sdk.md](framework/docs/content/sdk.md#typed-repositories) and
+  [auth.md](framework/docs/content/auth.md#session-middleware-cookie--ctx-user).
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
   `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
   with signtool, timestamped through `--timestamp-url`, and `--zip`
