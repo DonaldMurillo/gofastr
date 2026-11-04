@@ -55,8 +55,10 @@ func TestImageChangeClearsDerivedColumns(t *testing.T) {
 				}
 				unchanged := replacement == clnKey
 				if unchanged {
-					var decoded []any
-					if json.Unmarshal([]byte(variants.String), &decoded) != nil || len(decoded) != 1 || blurhash.String != "old-hash" || placeholder.String != "old-placeholder" {
+					var decoded []struct {
+						StorageRef string `json:"storage_ref"`
+					}
+					if json.Unmarshal([]byte(variants.String), &decoded) != nil || len(decoded) != 1 || decoded[0].StorageRef != clnVariant || blurhash.String != "old-hash" || placeholder.String != "old-placeholder" {
 						t.Errorf("unchanged image lost derivatives: %v %v %v", variants, blurhash, placeholder)
 					}
 				} else if variants.Valid || blurhash.Valid || placeholder.Valid {
