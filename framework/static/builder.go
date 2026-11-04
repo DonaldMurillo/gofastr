@@ -127,6 +127,7 @@ type Result struct {
 // Build renders every reachable route to HTML and copies runtime/actions/static
 // assets into b.OutDir. Returns a Result that lists what was produced.
 func (b *Builder) Build(ctx context.Context) (Result, error) {
+	ctx = uihost.WithStaticBasePath(ctx, b.BasePath)
 	if b.Host == nil {
 		return Result{}, fmt.Errorf("static: Host is required")
 	}
