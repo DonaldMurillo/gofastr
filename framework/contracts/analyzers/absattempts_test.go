@@ -110,6 +110,16 @@ func noteBounce(db *sql.DB, count int) error {
 	return err
 }
 
+const (
+	firstSQL = "UPDATE dispatch SET failures = %d WHERE run_id = 2"
+	repeatedSQL
+)
+
+func noteRepeat(db *sql.DB, count int) error {
+	_, err := db.Exec(fmt.Sprintf(repeatedSQL, count))
+	return err
+}
+
 func noteCrawl(db *sql.DB, count int) error {
 	query := "UPDATE pages SET tries = %d WHERE page_id = 1"
 	_, err := db.Exec(fmt.Sprintf(query, count))
@@ -117,8 +127,8 @@ func noteCrawl(db *sql.DB, count int) error {
 }
 `,
 	})
-	if got := len(countRule(t, ds, contracts.RuleAbsoluteAttempts)); got != 2 {
-		t.Fatalf("want 2 findings for named formats, got %v", countRule(t, ds, contracts.RuleAbsoluteAttempts))
+	if got := len(countRule(t, ds, contracts.RuleAbsoluteAttempts)); got != 3 {
+		t.Fatalf("want 3 findings for named formats, got %v", countRule(t, ds, contracts.RuleAbsoluteAttempts))
 	}
 }
 

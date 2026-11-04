@@ -329,10 +329,24 @@ func sqlStatements(file *ast.File) []sqlStmt {
 	bound := map[string][]ast.Expr{}
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch decl := node.(type) {
-		case *ast.ValueSpec:
-			for i, name := range decl.Names {
-				if i < len(decl.Values) {
-					bound[name.Name] = append(bound[name.Name], decl.Values[i])
+		case *ast.GenDecl:
+			// A const spec with no values repeats the previous spec's
+			// expressions (const ( a = "…%d"; b )), so carry them down.
+			var last []ast.Expr
+			for _, spec := range decl.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				values := value.Values
+				if decl.Tok == token.CONST && len(values) == 0 && value.Type == nil {
+					values = last
+				}
+				last = values
+				for i, name := range value.Names {
+					if i < len(values) {
+						bound[name.Name] = append(bound[name.Name], values[i])
+					}
 				}
 			}
 		case *ast.AssignStmt:
