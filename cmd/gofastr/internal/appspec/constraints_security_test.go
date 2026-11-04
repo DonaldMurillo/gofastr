@@ -22,6 +22,9 @@ func TestConstraintFlagsRejectNonBools(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), key) {
 					t.Fatalf("%s: %s: want error naming %s, got %v", target, value, key, err)
 				}
+				if strings.Contains(err.Error(), "gates access or exposure") {
+					t.Fatalf("constraint flag diagnosed as an access flag: %v", err)
+				}
 			})
 		}
 	}

@@ -4691,7 +4691,7 @@ func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, err
 	}
 	v, err := strictBoolValue(node)
 	if err != nil {
-		return false, fmt.Errorf("%s.%s %w: this flag gates access or exposure, so it is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
+		return false, fmt.Errorf("%s.%s %w: this flag is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
 	}
 	return v, nil
 }
