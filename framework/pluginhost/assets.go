@@ -336,14 +336,31 @@ func confinedAssetFS(fsys fs.FS) (fs.FS, error) {
 	return root.FS(), nil
 }
 
+// plainDiskAssetFS reports whether value is os.DirFS, directly or under
+// fs.Sub. Only those are rebound to os.Root: any other filesystem whose
+// Open returns an *os.File (an os.Root FS, a filtering wrapper) already
+// decides what it serves. The fs.Sub step reads io/fs's unexported field;
+// if a Go release renames it, this returns false instead of panicking, and
+// TestAssetServerConfinesDiskSymlinks's fs.Sub case fails.
 func plainDiskAssetFS(value reflect.Value) bool {
+	if !value.IsValid() {
+		return false
+	}
 	if value.Type() == reflect.TypeOf(os.DirFS(".")) {
 		return true
 	}
-	if value.Kind() == reflect.Pointer && value.Type().Elem().PkgPath() == "io/fs" && value.Type().Elem().Name() == "subFS" {
-		return plainDiskAssetFS(value.Elem().FieldByName("fsys").Elem())
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return false
 	}
-	return false
+	elem := value.Type().Elem()
+	if elem.PkgPath() != "io/fs" || elem.Name() != "subFS" || elem.Kind() != reflect.Struct {
+		return false
+	}
+	inner := value.Elem().FieldByName("fsys")
+	if !inner.IsValid() || inner.Kind() != reflect.Interface || inner.IsNil() {
+		return false
+	}
+	return plainDiskAssetFS(inner.Elem())
 }
 
 // resolveContentType returns the header to send for name, preferring the

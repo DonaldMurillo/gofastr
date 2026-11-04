@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -576,5 +577,22 @@ func TestNilAssetFSWithoutSpecsServes(t *testing.T) {
 	}
 	if got := resp.Header.Get("Content-Type"); got != "text/javascript; charset=utf-8" {
 		t.Errorf("Content-Type=%q", got)
+	}
+}
+
+func TestPlainDiskAssetFSRejectsOddValues(t *testing.T) {
+	type subFS struct{ other int }
+	for name, v := range map[string]any{
+		"nil":            nil,
+		"nil pointer":    (*subFS)(nil),
+		"lookalike type": &subFS{},
+		"map fs":         fstest.MapFS{},
+	} {
+		if plainDiskAssetFS(reflect.ValueOf(v)) {
+			t.Errorf("%s: treated as a plain disk filesystem", name)
+		}
+	}
+	if !plainDiskAssetFS(reflect.ValueOf(os.DirFS(t.TempDir()))) {
+		t.Error("os.DirFS not recognized")
 	}
 }
