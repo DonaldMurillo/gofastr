@@ -451,14 +451,18 @@ inner session. They also clear any 2FA assurance recorded by an outer
 that assurance with the issuing `AuthManager`, the resolved user's id,
 and whether any of that user's live, non-pending session cookies on this
 request has completed 2FA.
-Set `AuthConfig.TenantScopedSessions` when a custom session or user store
-partitions lookup by the context tenant, and resolve that tenant before
-`SessionMiddleware`. Only then does the assurance also bind to the lookup
-tenant, including an empty tenant id. This flag declares the store's lookup
-scope; it does not add tenant filtering. The built-in memory and entity
-stores are global. Their assurance has no tenant binding, even when a tenant
-is already on the context. With global users, mount `tenant.ResolveMiddleware`
-after authentication to derive the authorization tenant.
+By default, assurance also binds to the lookup tenant, including an empty
+tenant id. Resolve that tenant before `SessionMiddleware` when a custom
+session or user store partitions lookup by tenant. Only known global lookup
+is exempt: an `EntityUserStore` paired with a `MemorySessionStore` or
+`EntitySessionStore` is recognized by its concrete types. Wrappers and other
+custom stores keep the enforcing default. A host may explicitly set
+`AuthConfig.GlobalSessionLookup` when both session and user lookup ignore
+the tenant; assurance is then about the user alone. This opt-out does not
+add tenant filtering. Global lookup carries no tenant binding, even when a
+tenant is already on the context. With these built-in stores, mount
+`tenant.ResolveMiddleware` after authentication to derive the authorization
+tenant without invalidating assurance or the `_events` identity recheck.
 It considers every candidate cookie, so an older unverified session cannot
 hide a later stepped-up session of the same user. The exceptions are a
 verified embed grant and a request admitted by `App.InProcessHandler()`:
@@ -1440,9 +1444,10 @@ and session evidence described here.
 For a call marked by `App.InProcessHandler()`, `RequireTwoFA` requires a
 non-nil server-set context user and the 2FA assurance `SessionMiddleware`
 recorded for that same user on the outer request. The assurance is bound
-to the issuing `AuthManager` and the user. With
-`AuthConfig.TenantScopedSessions`, it also binds to the tenant under which
-the session was resolved; global lookup carries no tenant binding.
+to the issuing `AuthManager` and the user. With custom stores, it also
+binds to the tenant under which the session was
+resolved by default. Only concrete built-in global stores or the explicit
+`AuthConfig.GlobalSessionLookup` opt-out omit this tenant binding.
 No assurance, a missing user, a different user or manager, or a mismatched
 tenant for tenant-partitioned lookup returns 401 with the no-session reason. It
 looks up current enrollment: an unenrolled user passes; an enrolled user needs

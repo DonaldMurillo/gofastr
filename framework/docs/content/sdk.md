@@ -137,13 +137,20 @@ and enforce CSRF. `SessionMiddleware` also records the outer request's
 session cookies has completed 2FA. `TwoFAPlugin.RequireTwoFA()` accepts
 this fact on a marked call only while its user id matches the server-set
 context user and its issuing `AuthManager` matches the gate's manager.
-When `AuthConfig.TenantScopedSessions` declares that the session or user
-store partitions lookup by the context tenant, the assurance also binds
-to the lookup tenant and the request must match it. Resolve that lookup
-tenant before authentication. The flag does not add store filtering.
-Global stores carry no tenant binding, even with a pre-existing tenant;
+Custom session or user stores bind assurance to the lookup tenant by
+default, and a Local request must match it, including an empty tenant id.
+Resolve the lookup tenant before authentication for tenant-partitioned
+stores. An `EntityUserStore` paired with a `MemorySessionStore` or
+`EntitySessionStore` is recognized by its concrete types as global lookup;
+wrappers and other custom stores are not automatically exempt. Set
+`AuthConfig.GlobalSessionLookup` only when both custom session and user
+lookup ignore the tenant: assurance is then about the user alone. This
+explicit opt-out does not add store filtering. Global lookup carries no
+tenant binding, even with a pre-existing tenant. With the built-in stores,
 `SessionMiddleware` followed by `tenant.ResolveMiddleware` therefore keeps
-the user's assurance valid for Local calls.
+the user's assurance valid for Local calls and `_events` rechecks. Rechecks
+of custom partitioned stores retain the original lookup tenant while
+downstream middleware derives the authorization tenant.
 It looks up current enrollment and requires verified assurance for an
 enrolled user. Missing assurance, a missing user, a different user or manager,
 or a tenant mismatch for partitioned lookup gets 401. An enrolled user without

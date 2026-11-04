@@ -26,10 +26,11 @@ type sessionMiddlewareOpts struct {
 type sessionAssuranceKey struct{}
 
 type sessionAssurance struct {
-	manager  *AuthManager
-	tenantID string
-	userID   string
-	verified bool
+	manager     *AuthManager
+	tenantID    string
+	tenantBound bool
+	userID      string
+	verified    bool
 }
 
 // WithSessionLogger overrides the logger SessionMiddleware uses for
@@ -51,8 +52,8 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 //     User; CRUD owner-scoping picks it up automatically.
 //   - The resolved user's 2FA assurance records whether any of their live,
 //     non-pending cookie sessions on this request completed 2FA, bound to
-//     this manager and user. TenantScopedSessions also binds it to the
-//     tenant under which the session was resolved.
+//     this manager, user and lookup tenant. Only built-in global stores or
+//     GlobalSessionLookup omit the tenant binding.
 //     Clearing or replacing the user also clears or replaces that assurance.
 //   - Verified embed grants and calls admitted by App.InProcessHandler
 //     preserve their trusted context user instead of clearing it.
@@ -145,7 +146,7 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 func sessionRecheck(mgr *AuthManager, tokens []string, principal sessionAssurance, log *slog.Logger) handler.PrincipalCheck {
 	return func(ctx context.Context) (context.Context, bool) {
 		lookupContext := ctx
-		if mgr.Config().TenantScopedSessions {
+		if principal.tenantBound {
 			lookupContext = handler.SetTenantID(lookupContext, principal.tenantID)
 		}
 		user, assurance, ok := resolveSessionCandidates(lookupContext, mgr, tokens, principal.userID, log)
@@ -270,8 +271,8 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 		}
 		return nil, sessionAssurance{}, false
 	}
-	assurance := sessionAssurance{manager: mgr, userID: sess.UserID, verified: sess.TwoFactorVerified}
-	if mgr.Config().TenantScopedSessions {
+	assurance := sessionAssurance{manager: mgr, userID: sess.UserID, verified: sess.TwoFactorVerified, tenantBound: !mgr.globalSessionLookup()}
+	if assurance.tenantBound {
 		assurance.tenantID = handler.GetTenantID(ctx)
 	}
 	return user, assurance, true

@@ -849,7 +849,7 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 			verified := false
 			if framework.IsInProcessRequest(r) {
 				assurance, ok := r.Context().Value(sessionAssuranceKey{}).(sessionAssurance)
-				if !ok || u == nil || assurance.userID != u.GetID() || assurance.manager != p.mgr || p.mgr.Config().TenantScopedSessions && assurance.tenantID != handler.GetTenantID(r.Context()) {
+				if !ok || u == nil || assurance.userID != u.GetID() || assurance.manager != p.mgr || assurance.tenantBound && assurance.tenantID != handler.GetTenantID(r.Context()) {
 					writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 					return
 				}

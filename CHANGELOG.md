@@ -38,12 +38,17 @@ few lines, and link the PR or the docs page for the rest.
   `SessionMiddleware` records the outer request's 2FA assurance for that
   same user across all their live, non-pending cookie sessions, and
   `RequireTwoFA` accepts that snapshot only for a matching context user
-  and the issuing auth manager. When `AuthConfig.TenantScopedSessions`
-  declares tenant-partitioned session or user lookup, the assurance also
-  binds to the lookup tenant. The flag does not add store filtering.
-  Global stores carry no tenant binding, including when tenant resolution
-  follows authentication. An explicit principal recheck recomputes assurance
-  across the original candidate cookies for that same principal, retaining
+  and the issuing auth manager. Custom session or user stores bind assurance
+  to the lookup tenant by default, including an empty tenant id. Only an
+  `EntityUserStore` paired with a `MemorySessionStore` or `EntitySessionStore`
+  is automatically recognized by concrete type as global lookup. Wrappers
+  keep the enforcing default. A host can explicitly opt out with
+  `AuthConfig.GlobalSessionLookup` when both session and user lookup ignore
+  the tenant; assurance is then about the user alone. The knob does not add
+  store filtering. Global lookup carries no tenant binding, so the built-in
+  stores keep Local assurance and `_events` rechecks working when tenant
+  resolution follows authentication. An explicit principal recheck recomputes
+  assurance across the original candidate cookies for that same principal, retaining
   the original lookup tenant for partitioned stores. Tenant derivation runs
   afterward, so a downstream tenant change does not fail identity rechecking.
   The recheck fails when none of the principal's live, non-pending sessions remain.

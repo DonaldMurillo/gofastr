@@ -68,11 +68,11 @@ type AuthConfig struct {
 	// If nil, an in-memory store is used (dev/test only).
 	SessionStore SessionStore
 
-	// TenantScopedSessions declares that session or user lookup is partitioned
-	// by the context tenant. Resolve that tenant before SessionMiddleware.
-	// It binds 2FA assurance to the lookup tenant; it does not add tenant
-	// filtering to stores. The built-in stores are global and leave this false.
-	TenantScopedSessions bool
+	// GlobalSessionLookup declares that both session and user lookup ignore
+	// the context tenant: 2FA assurance is about the user alone. Custom stores
+	// bind assurance to the lookup tenant by default. The built-in stores are
+	// recognized as global without this opt-out. This does not add filtering.
+	GlobalSessionLookup bool
 
 	// LoginRateLimit applies a per-IP rate limit to /auth/login. nil
 	// does NOT mean unlimited: New installs 30 attempts/min with a
@@ -501,6 +501,21 @@ func (m *AuthManager) DefaultRoles() []string {
 // SessionStore returns the session storage backend.
 func (m *AuthManager) SessionStore() SessionStore {
 	return m.sessionStore
+}
+
+func (m *AuthManager) globalSessionLookup() bool {
+	if m.config.GlobalSessionLookup {
+		return true
+	}
+	if _, builtIn := m.UserStore().(*EntityUserStore); !builtIn {
+		return false
+	}
+	switch m.SessionStore().(type) {
+	case *MemorySessionStore, *EntitySessionStore:
+		return true
+	default:
+		return false
+	}
 }
 
 // UserStore returns the user storage backend.

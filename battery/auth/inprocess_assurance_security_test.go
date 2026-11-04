@@ -18,10 +18,10 @@ import (
 
 func newInProcessAssuranceRig(t *testing.T) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
 	t.Helper()
-	return newInProcessAssuranceRigWithTenantScope(t, false)
+	return newInProcessAssuranceRigWithConfig(t, AuthConfig{GlobalSessionLookup: true})
 }
 
-func newInProcessAssuranceRigWithTenantScope(t *testing.T, tenantScoped bool) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
+func newInProcessAssuranceRigWithConfig(t *testing.T, config AuthConfig) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
 	t.Helper()
 	users := newUserStoreWithPassword()
 	user := &BasicUser{ID: "42", Email: "local@example.com", Roles: []string{"user"}}
@@ -29,13 +29,11 @@ func newInProcessAssuranceRigWithTenantScope(t *testing.T, tenantScoped bool) (*
 	users.users[user.Email] = entry
 	users.byID[user.ID] = entry
 	sessions := NewMemorySessionStore()
-	manager := New(AuthConfig{
-		JWTSecret:            "inprocess-assurance-test",
-		UserStore:            users,
-		SessionStore:         sessions,
-		AllowInMemoryStores:  true,
-		TenantScopedSessions: tenantScoped,
-	})
+	config.JWTSecret = "inprocess-assurance-test"
+	config.UserStore = users
+	config.SessionStore = sessions
+	config.AllowInMemoryStores = true
+	manager := New(config)
 	twofa := NewTwoFAPlugin(TwoFAConfig{Store: NewMemoryTwoFAStore()})
 	manager.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	manager.Use(twofa)
@@ -48,6 +46,36 @@ func newInProcessAssuranceRigWithTenantScope(t *testing.T, tenantScoped bool) (*
 		}
 	})
 	return manager, twofa, sessions, user
+}
+
+func newBuiltInAssuranceRig(t *testing.T) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
+	t.Helper()
+	return newBuiltInAssuranceRigWithConfig(t, AuthConfig{})
+}
+
+func newBuiltInAssuranceRigWithConfig(t *testing.T, config AuthConfig) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
+	t.Helper()
+	manager, twofa, sessions, user := newInProcessAssuranceRigWithConfig(t, config)
+	database := setupTestDB(t)
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := database.ExecContext(t.Context(), `INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)`, user.GetID(), user.GetEmail(), "unused"); err != nil {
+		t.Fatal(err)
+	}
+	manager.SetUserStore(NewEntityUserStore(database, "users"))
+	return manager, twofa, sessions, user
+}
+
+func newBuiltInSessionAssuranceRig(t *testing.T, storeKind string) (*AuthManager, *TwoFAPlugin, SessionStore, User) {
+	t.Helper()
+	manager, twofa, _, user := newBuiltInAssuranceRig(t)
+	if storeKind == "entity" {
+		manager.SetSessionStore(NewEntitySessionStore(manager.UserStore().(*EntityUserStore).db, "sessions"))
+	}
+	return manager, twofa, manager.SessionStore(), user
 }
 
 func inProcessOuterContext(t *testing.T, manager *AuthManager, tokens ...string) context.Context {
@@ -82,9 +110,24 @@ func inProcessOuterContextThrough(t *testing.T, ctx context.Context, manager *Au
 }
 
 func TestSessionRecheckAfterTenantResolution(t *testing.T) {
-	manager, _, sessions, user := newInProcessAssuranceRig(t)
+	for _, storeKind := range []string{"memory", "entity"} {
+		t.Run(storeKind, func(t *testing.T) {
+			testSessionRecheckAfterTenantResolution(t, storeKind)
+		})
+	}
+}
+
+func testSessionRecheckAfterTenantResolution(t *testing.T, storeKind string) {
+	t.Helper()
+	manager, twofa, sessions, user := newBuiltInSessionAssuranceRig(t, storeKind)
+	if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
 	session, err := sessions.Create(t.Context(), user.GetID(), time.Hour)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessions.(SessionTwoFAMarker).MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
 		t.Fatal(err)
 	}
 	resolvedTenant := "tenant-a"
@@ -104,9 +147,15 @@ func TestSessionRecheckAfterTenantResolution(t *testing.T) {
 		if handler.GetTenantID(refreshed) != tenantID || GetCurrentUser(refreshed).GetID() != user.GetID() {
 			t.Fatal("recheck did not refresh the same user and downstream tenant")
 		}
+		recorder := httptest.NewRecorder()
+		inProcessAssuranceApp(manager, twofa).InProcessHandler().ServeHTTP(recorder,
+			httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(refreshed))
+		if recorder.Code != http.StatusNoContent {
+			t.Fatalf("rechecked assurance refused tenant %q: status = %d: %s", tenantID, recorder.Code, recorder.Body.String())
+		}
 		ctx = refreshed
 	}
-	if _, err := sessions.DeleteByUser(t.Context(), user.GetID()); err != nil {
+	if _, err := sessions.(SessionUserPurger).DeleteByUser(t.Context(), user.GetID()); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := handler.RecheckPrincipal(ctx); ok {
@@ -115,13 +164,18 @@ func TestSessionRecheckAfterTenantResolution(t *testing.T) {
 }
 
 func TestInProcessTwoFAAssuranceAfterTenantResolution(t *testing.T) {
-	for _, verified := range []bool{true, false} {
-		name := "Unverified"
-		if verified {
-			name = "Verified"
-		}
-		t.Run(name, func(t *testing.T) {
-			manager, twofa, sessions, user := newInProcessAssuranceRig(t)
+	for _, test := range []struct {
+		name      string
+		storeKind string
+		verified  bool
+	}{
+		{"memory/Verified", "memory", true},
+		{"memory/Unverified", "memory", false},
+		{"entity/Verified", "entity", true},
+		{"entity/Unverified", "entity", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, twofa, sessions, user := newBuiltInSessionAssuranceRig(t, test.storeKind)
 			if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
 				t.Fatal(err)
 			}
@@ -129,8 +183,8 @@ func TestInProcessTwoFAAssuranceAfterTenantResolution(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if verified {
-				if err := sessions.MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
+			if test.verified {
+				if err := sessions.(SessionTwoFAMarker).MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -148,7 +202,7 @@ func TestInProcessTwoFAAssuranceAfterTenantResolution(t *testing.T) {
 			inProcessAssuranceApp(manager, twofa).InProcessHandler().ServeHTTP(recorder,
 				httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(ctx))
 			status := http.StatusForbidden
-			if verified {
+			if test.verified {
 				status = http.StatusNoContent
 			}
 			if recorder.Code != status {
@@ -363,6 +417,55 @@ func TestInProcessTwoFAAssuranceTenantBinding(t *testing.T) {
 	}
 }
 
+func TestInProcessTwoFAAssuranceCustomStoreDefaultTenantBinding(t *testing.T) {
+	testInProcessTwoFAAssuranceCustomStoreTenantBinding(t, AuthConfig{})
+}
+
+func TestInProcessTwoFAAssuranceCustomStoreGlobalSessionLookup(t *testing.T) {
+	testInProcessTwoFAAssuranceCustomStoreTenantBinding(t, AuthConfig{GlobalSessionLookup: true})
+}
+
+func testInProcessTwoFAAssuranceCustomStoreTenantBinding(t *testing.T, config AuthConfig) {
+	t.Helper()
+	for _, storeKind := range []string{"users", "sessions", "both"} {
+		t.Run(storeKind, func(t *testing.T) {
+			manager, twofa, sessions, user := newBuiltInAssuranceRigWithConfig(t, config)
+			if storeKind != "sessions" {
+				manager.SetUserStore(tenantScopedAssuranceUsers{UserStore: manager.UserStore(), tenantID: "tenant-a"})
+			}
+			if storeKind != "users" {
+				manager.SetSessionStore(tenantScopedAssuranceSessions{SessionStore: sessions, tenantID: "tenant-a"})
+			}
+			if err := twofa.store.SetTwoFA(t.Context(), user.GetID(), &TwoFAState{Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			session, err := sessions.Create(t.Context(), user.GetID(), time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := sessions.MarkTwoFactorVerified(t.Context(), session.Token); err != nil {
+				t.Fatal(err)
+			}
+			ctx := inProcessOuterContextFrom(t, handler.SetTenantID(t.Context(), "tenant-a"), manager, session.Token)
+			for _, targetTenant := range []string{"tenant-a", "tenant-b", ""} {
+				t.Run(targetTenant, func(t *testing.T) {
+					application := inProcessAssuranceApp(manager, twofa)
+					application.Use(tenant.ResolveMiddleware(func(context.Context) string { return targetTenant }))
+					recorder := httptest.NewRecorder()
+					application.InProcessHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/protected", nil).WithContext(ctx))
+					status := http.StatusUnauthorized
+					if targetTenant == "tenant-a" || config.GlobalSessionLookup {
+						status = http.StatusNoContent
+					}
+					if recorder.Code != status {
+						t.Fatalf("tenant %q: status = %d, want %d: %s", targetTenant, recorder.Code, status, recorder.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
 type tenantScopedAssuranceUsers struct {
 	UserStore
 	tenantID string
@@ -389,7 +492,7 @@ func (store tenantScopedAssuranceSessions) Get(ctx context.Context, token string
 
 func newTenantScopedAssuranceRig(t *testing.T, tenantID string) (*AuthManager, *TwoFAPlugin, *MemorySessionStore, User) {
 	t.Helper()
-	manager, twofa, sessions, user := newInProcessAssuranceRigWithTenantScope(t, true)
+	manager, twofa, sessions, user := newInProcessAssuranceRigWithConfig(t, AuthConfig{})
 	manager.SetUserStore(tenantScopedAssuranceUsers{UserStore: manager.UserStore(), tenantID: tenantID})
 	manager.SetSessionStore(tenantScopedAssuranceSessions{SessionStore: sessions, tenantID: tenantID})
 	return manager, twofa, sessions, user
