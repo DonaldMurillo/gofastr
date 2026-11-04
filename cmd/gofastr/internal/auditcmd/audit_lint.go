@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // LintFinding is one violation reported by `gofastr audit lint`.
@@ -30,23 +31,11 @@ type LintFinding struct {
 // Tests can call this directly without going through runAudit.
 func auditLint(root string) ([]LintFinding, error) {
 	var all []LintFinding
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			name := d.Name()
-			// Skip the usual non-source trees + every build-output
-			// directory the project uses. Generated code lives under
-			// dist/bin/build/tmp and its findings drown out the real
-			// signal from app code.
-			switch name {
-			case "vendor", ".git", "node_modules", "dist", "bin", "build", "tmp":
-				return fs.SkipDir
-			}
-			if strings.HasPrefix(name, ".") && name != "." {
-				return fs.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") {

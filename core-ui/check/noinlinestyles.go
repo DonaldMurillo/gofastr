@@ -116,7 +116,7 @@ func ScanInlineStylesIn(fset *token.FileSet, file *ast.File, filename string, ra
 }
 
 // LintNoInlineStylesRecursive walks dir and every subdirectory.
-// Skips vendor/, node_modules/, hidden dirs, and testdata/,
+// Skips dependency, build-output, hidden, underscore, and testdata trees,
 // matching the script linter's recursion contract.
 func LintNoInlineStylesRecursive(root string) (*Result, error) {
 	return lintRecursive(root, LintNoInlineStyles)

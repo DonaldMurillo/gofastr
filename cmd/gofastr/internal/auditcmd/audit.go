@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // AuditFinding is one call site of a tracked init-time registration
@@ -55,15 +56,11 @@ func auditDeps(root string) ([]AuditFinding, error) {
 	modulePath := contracts.ReadModulePath(root)
 	var findings []AuditFinding
 
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			name := d.Name()
-			if name == "vendor" || name == "node_modules" || name == ".git" || strings.HasPrefix(name, ".") && path != root {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

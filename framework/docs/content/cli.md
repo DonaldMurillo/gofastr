@@ -617,6 +617,13 @@ does not cover: a runtime browser scan, and the dependency report.
 - `gofastr audit deps`: list dependencies that perform init-time
   global registrations, then the [unmounted](unmount.md) packages.
 
+Static audit, sandbox, recursive CSP, behavior discovery, and provenance
+walkers skip build-output descendants (`dist`, `bin`, `build`, `tmp`) but
+scan an explicitly selected root with one of those names. Linked package
+directories are followed with cycle detection. Accessibility and sandbox
+checks tolerate source files disappearing during an editor save; a missing
+root or another I/O failure still fails the check.
+
 ## Extras
 
 - `gofastr semantic index|watch|query|stats|clear`: the local semantic

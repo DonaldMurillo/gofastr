@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // hasCSPIgnoreDirective reports whether a source file opts out of the
@@ -198,7 +200,7 @@ func LintNoInlineScriptsRecursive(root string) (*Result, error) {
 // walk differing only in the lint they ran.
 func lintRecursive(root string, lint func(string) (*Result, error), skip ...string) (*Result, error) {
 	result := &Result{}
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

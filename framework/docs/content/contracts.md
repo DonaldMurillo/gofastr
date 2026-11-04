@@ -17,6 +17,12 @@ gofastr verify
 
 ## What it checks
 
+Source discovery follows a symlinked analysis root and linked package
+directories, visiting each resolved directory once to stop cycles. Build
+outputs (`dist`, `bin`, `build`, `tmp`), dependencies, and hidden/underscore
+subtrees are skipped; explicitly selecting a root with one of those names
+still scans that root.
+
 Rules are grouped into capabilities, and each capability is also a filter:
 `gofastr verify routing security` runs two of them.
 

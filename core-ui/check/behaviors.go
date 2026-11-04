@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // Registered behaviours are runtime modules too. A package that calls
@@ -24,7 +26,7 @@ import (
 
 // RegisteredBehaviorSources returns the JavaScript file behind every
 // registry.RegisterBehavior call in the tree: for each call in a Go
-// file under root (tests, vendor, node_modules, testdata and hidden
+// file under root (tests, dependencies, build outputs, testdata and hidden
 // directories skipped), the source argument is followed to the
 // package-level variable it names, and that variable's `//go:embed`
 // directive names the file, resolved beside the Go file. Only what a
@@ -39,7 +41,7 @@ func RegisteredBehaviorSources(root string) ([]string, error) {
 	var out []string
 	seen := map[string]bool{}
 	fset := token.NewFileSet()
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

@@ -4,6 +4,12 @@
 whose `init()` mutates framework-wide state. The output is a flat list
 of every call site, grouped by Go import path, sorted alphabetically.
 
+The scan follows linked package directories and symlinked roots while
+visiting each resolved directory once, so cycles cannot repeat findings.
+Findings retain the linked package's path under the selected root. Build
+outputs, dependencies, and hidden/underscore descendants are excluded;
+an explicitly selected root is scanned regardless of its directory name.
+
 ## Why this exists
 
 A malicious dependency that lands in your `go.mod` can run arbitrary Go

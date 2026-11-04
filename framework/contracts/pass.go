@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/buildoutput"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 
 	"golang.org/x/mod/modfile"
 )
@@ -97,6 +98,10 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("root %q is not a directory", root)
 	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root %q: %w", root, err)
+	}
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
@@ -116,7 +121,7 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 }
 
 func (p *Pass) discover() error {
-	err := filepath.WalkDir(p.Root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(p.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// An unreadable subtree is not a reason to abandon the whole
 			// analysis. Skip it and keep going.
