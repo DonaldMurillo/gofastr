@@ -408,6 +408,7 @@
   // when the record's route does not open over that page, the link is
   // a plain navigation to the list.
   let panel = null;
+  NS._cancelPanel = () => { panel = null; };
   function claimPanel(anchor, path, hash) {
     const rec = !layers.length && anchor?.getAttribute('data-cui-intercept-panel');
     if (!rec) return false;

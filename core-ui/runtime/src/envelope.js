@@ -1147,6 +1147,7 @@
       }, resp, body);
     } catch (err) {
       if (!NS._navLive(myEpoch)) return;
+      NS._cancelPanel?.();
       // Hard rule 4, no location.href fallback. Surface a toast and
       // stay on the current page; the URL has already been pushState'd
       // by the click handler so revert it, to the page the DOM still

@@ -838,6 +838,7 @@
       }, resp, body, title);
     } catch (err) {
       if (!_navLive(myEpoch)) return;
+      window.__gofastr._cancelPanel?.();
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it, to the page the

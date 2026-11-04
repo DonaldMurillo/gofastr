@@ -201,7 +201,9 @@ keeps the UI unchanged; without a callback the default stays
   a link to the list at `Base` marked `data-cui-intercept-panel`, which
   loads the list in the page's place and opens the record over it as a
   drawer, so Back from the drawer lands on the list. A failed drawer
-  fetch opens the record as its own page instead. Turn it on only
+  fetch opens the record as its own page instead. A failed list navigation
+  cancels the pending drawer; a later ordinary list visit never reopens
+  that old request. Turn it on only
   where the record's route opens as a drawer over `Base`
   (`app.InterceptFrom`); elsewhere the link is a plain move to the list. Delete asks first, and on an entity
   with `Scope.SoftDelete` the confirm says the record can be restored.
