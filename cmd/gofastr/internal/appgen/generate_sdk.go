@@ -353,7 +353,7 @@ func applySDKAppDefaults(dir string, opts *SdkOptions) error {
 	if opts.apiPrefix != "" || opts.set["api-prefix"] {
 		return nil
 	}
-	for _, name := range []string{"gofastr.yml", "gofastr.yaml"} {
+	for _, name := range appspec.RootFileNames {
 		path := filepath.Join(dir, name)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			continue

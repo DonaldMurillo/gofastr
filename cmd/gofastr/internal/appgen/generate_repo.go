@@ -30,6 +30,12 @@ func (local transport) RoundTrip(request *http.Request) (*http.Response, error) 
 		return nil, err
 	}
 	incoming := request.Clone(request.Context())
+	if incoming.Host == "" {
+		incoming.Host = incoming.URL.Host
+	}
+	// A server sees the path form: Host on the request, no scheme or
+	// host in URL. Middleware that reads r.URL must see the same here.
+	incoming.URL.Scheme, incoming.URL.Host = "", ""
 	incoming.RequestURI = incoming.URL.RequestURI()
 	recorder := httptest.NewRecorder()
 	local.handler.ServeHTTP(recorder, incoming)

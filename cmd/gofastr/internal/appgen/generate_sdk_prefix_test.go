@@ -96,3 +96,15 @@ func TestSDKAppPrefixMalformedSpec(t *testing.T) {
 		t.Fatal("malformed spec silently became an unprefixed SDK")
 	}
 }
+
+func TestSDKAppPrefixFromJSONSpec(t *testing.T) {
+	directory := t.TempDir()
+	clitest.WriteTestFile(t, filepath.Join(directory, "gofastr.json"), `{"app": {"name": "repo"}}`)
+	opts := SdkOptions{}
+	if err := applySDKAppDefaults(directory, &opts); err != nil {
+		t.Fatal(err)
+	}
+	if opts.apiPrefix != "api" {
+		t.Fatalf("gofastr.json prefix = %q, want %q", opts.apiPrefix, "api")
+	}
+}

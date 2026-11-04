@@ -10,7 +10,7 @@ import (
 // by `gofastr audit lint` at the audited root. Arbitrary *.yml files are
 // NOT decoded; a project root full of CI configs must not break the lint
 // walk or masquerade as an app spec.
-var appSpecRootCandidates = []string{"gofastr.yml", "gofastr.yaml", "gofastr.json"}
+var appSpecRootCandidates = appspec.RootFileNames
 
 // lintAppSpecPIIRoot adapts lintUnscopedPII to the audit-lint surface:
 // it decodes the conventional app spec file(s) at root (silently skipping

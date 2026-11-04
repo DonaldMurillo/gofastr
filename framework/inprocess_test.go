@@ -26,7 +26,7 @@ func TestInProcessHandlerRefusesCredentials(t *testing.T) {
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	}))
-	for _, credential := range []string{"Cookie", "Authorization", "Proxy-Authorization", "X-API-Key", "cookie", "EmptyCookie", "URLUser", "TLS"} {
+	for _, credential := range []string{"Cookie", "Authorization", "Proxy-Authorization", "X-API-Key", "X-Gofastr-Embed", "x-gofastr-embed", "cookie", "EmptyCookie", "URLUser", "TLS"} {
 		t.Run(credential, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/check", nil)
 			request = request.WithContext(handler.SetUser(context.Background(), "trusted"))

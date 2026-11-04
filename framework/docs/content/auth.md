@@ -1465,7 +1465,10 @@ session cookies on the request has cleared the challenge. A session of
 any other user proves nothing, so two cookies, or a JWT next to someone
 else's cookie, cannot borrow another session's step-up. A JWT or API
 token carries no step-up state of its own and passes only next to a
-stepped-up session cookie of the same user.
+stepped-up session cookie of the same user. The challenge records its
+result through `SessionTwoFAMarker`, which both built-in session stores
+implement. A custom session store without it cannot mark a session
+verified, so `RequireTwoFA` refuses an enrolled user on every request.
 
 The 2FA endpoints apply the same binding: when an outer middleware put
 a principal in the context, `verify`, `challenge`, `disable` and

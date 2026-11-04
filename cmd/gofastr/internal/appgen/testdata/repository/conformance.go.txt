@@ -299,6 +299,18 @@ func TestLocalCanceledDuringDispatch(t *testing.T) {
 	}
 }
 
+func TestLocalServerFormRequest(t *testing.T) {
+	var scheme, urlHost, host, requestURI string
+	repository := local.NewNotesLocal(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		scheme, urlHost, host, requestURI = request.URL.Scheme, request.URL.Host, request.Host, request.RequestURI
+		writer.WriteHeader(http.StatusNotFound)
+	}))
+	_, _ = repository.List(context.Background(), nil)
+	if scheme != "" || urlHost != "" || host != "gofastr.local" || !strings.HasPrefix(requestURI, "/") {
+		t.Fatalf("not a server-form request: scheme=%q url.host=%q host=%q uri=%q", scheme, urlHost, host, requestURI)
+	}
+}
+
 func TestRepositoryKeyRoundTrips(t *testing.T) {
 	database, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {

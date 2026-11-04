@@ -96,6 +96,8 @@ The `local` subpackage declares `<Entity>Local` and
 
 ```go
 import (
+    "github.com/DonaldMurillo/gofastr/framework"
+
     client "example.com/notes-sdk"
     "example.com/notes-sdk/local"
 )
@@ -118,9 +120,9 @@ the read-hook chain, including the `crud.WithReadHooks` context on
 related reads; Local does not introduce a second implementation of it.
 The generated API prefix is used for dispatch. Explicit SDK settings
 (`api_prefix`) and `--api-prefix` flags win, including an explicit empty
-value. Otherwise the SDK reads `app.api_prefix` from `gofastr.yml` (or
-`gofastr.yaml`) when present; app specs default to `/api`. Without an app
-spec the SDK prefix defaults to empty. Regenerate with `--api-prefix` to
+value. Otherwise the SDK reads `app.api_prefix` from `gofastr.yml`,
+`gofastr.yaml` or `gofastr.json` when present; app specs default to
+`/api`. Without an app spec the SDK prefix defaults to empty. Regenerate with `--api-prefix` to
 match a server whose owned Go configuration differs from its old spec.
 
 Use an authenticated server-side context for Local calls. The context,
@@ -170,7 +172,8 @@ API-token management, OAuth linking, linked accounts, and email verification.
 Sign-in, registration, password reset, and magic-link flows also return
 403. Use the browser flows for these operations, not Local.
 The entry point refuses any Cookie, Authorization,
-Proxy-Authorization, or X-API-Key header (even empty), URL userinfo, or
+Proxy-Authorization, X-API-Key, or X-Gofastr-Embed header (even empty),
+URL userinfo, or
 TLS peer certificate with 403 before routing. Do not mount it on a network
 listener. `framework.IsInProcessRequest(r)` is the read-only predicate for
 custom middleware; a custom `middleware.CSRF` can use it in `CSRFConfig.Skip`.
