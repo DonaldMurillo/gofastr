@@ -443,8 +443,14 @@ For entities **without** `BeforeUpdate` hooks, the upsert arms are:
 The after-hook and event arm follows the pre-read's classification; that
 read does not make an insert-versus-update decision atomic against other
 writers. In particular, a concurrent insert after an absent pre-read may
-still take the SQL conflict arm. The fail-closed rule does not depend on
-that classification.
+still take the SQL update or no-op conflict arm while running `AfterCreate`.
+A concurrent delete after an existing pre-read can instead insert while
+running `AfterUpdate` with the old row's stale pre-image. This window is
+observable with read-committed Postgres or a non-transactional executor;
+SQLite transactions normally refuse the intervening writer or stale write.
+Serialize conflicting-key writers externally or use explicit create/update
+operations when exact hook/event classification is required. The fail-closed
+`BeforeUpdate` refusal does not depend on that classification.
 
 **Upsert and key-deriving hooks.** A `BeforeCreate` hook may derive or
 normalize the primary key that `UpsertOne` conflicts on (a slug from the

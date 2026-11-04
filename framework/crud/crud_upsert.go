@@ -41,13 +41,16 @@ var errUpsertBeforeUpdate = errors.New("upsert: entities with BeforeUpdate hooks
 // inserted. Returns the resulting row (post-insert or post-update).
 //
 // Both Postgres and SQLite 3.24+ support this exact syntax via the
-// EXCLUDED pseudo-table. BeforeCreate prepares either arm; AfterCreate
-// fires for an insert and AfterUpdate for a conflict update, with its
-// pre-image available for audit. Entities with BeforeUpdate hooks are
+// EXCLUDED pseudo-table. BeforeCreate prepares either arm. After hooks
+// and lifecycle events follow a pre-read, not an atomic SQL-arm report:
+// an absent key selects AfterCreate/entity.created; a present key selects
+// AfterUpdate/entity.updated with its pre-image, or neither when there is
+// no data to write. A competing insert or delete after that read can change
+// the SQL arm at read-committed isolation or on a non-transactional executor.
+// Serialize conflicting-key writers or use CreateOne/UpdateOne when exact
+// lifecycle classification is required. Entities with BeforeUpdate hooks are
 // refused before hooks or SQL: the pre-read cannot predict conflicts
-// atomically. Use CreateOne or UpdateOne instead. A conflict
-// with no data to write runs no after hooks and emits no lifecycle event.
-// The event is entity.created for an insert and entity.updated for an update.
+// atomically. Use CreateOne or UpdateOne instead.
 // On conflict only the columns the body carries are written; a Default
 // fills an omitted column on the insert arm alone. A conflict that
 // writes any column re-stamps an auto updated_at with the server time,
