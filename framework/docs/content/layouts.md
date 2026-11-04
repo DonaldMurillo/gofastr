@@ -516,6 +516,9 @@ ships its loading content in place; the fill arrives as its own request
 (one per deferred outlet, visible in DevTools with its own body and
 timing) and lands when ready. First loads and static export ignore
 deferral and render the fill inline — nothing depends on JavaScript.
+If the envelope runtime chunk cannot load at boot, that inline content
+remains usable; the parts handoff consumes the failed load rather than
+raising an unhandled promise rejection.
 A deferred loader must be a read: the part request starts before the
 page answer says whether the page redirects. When the two disagree
 (session expired, a guard redirected), the part answers 409 and the

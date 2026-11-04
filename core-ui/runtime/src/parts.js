@@ -338,7 +338,7 @@
       if (_live && !_live.dead) killParts(_live); // supersede the older navigation first
       const E = NS._navHooks.envelope;
       const m = E && E.manifest(path);
-      const addrs = ((m && m.entry && m.entry.deferred) || []).map((a) => a.includes('{') ? E.subst(a, path) : a);
+      const addrs = (m?.entry?.deferred || []).map((a) => a.includes('{') ? E.subst(a, path) : a);
       if (!addrs.length) return null;
       const ctl = new AbortController();
       const st = newPartsState(path, addrs, epoch, ctl);
@@ -408,13 +408,13 @@
   // selector-hostile, and a built selector from manifest strings is a
   // shape this runtime does not ship).
   if (Array.isArray(window.__gofastr_routes) &&
-      window.__gofastr_routes.some((r) => (r.deferred || []).some((a) => {
+      window.__gofastr_routes.some((r) => r.deferred?.some((a) => {
         for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
           if ((el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area')) === a) return true;
         }
         return false;
       }))) {
-    NS.loadModule('envelope');
+    NS.loadModule('envelope').catch(() => {});
   }
 
   (NS.loadedModules ||= {}).parts = true;

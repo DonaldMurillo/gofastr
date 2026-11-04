@@ -1,5 +1,9 @@
 # GoFastr UI architecture
 
+The deferred-parts boot handoff consumes envelope-module load failures.
+A missing chunk leaves inline server-rendered content usable without an
+unhandled promise rejection.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching
