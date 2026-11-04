@@ -17,6 +17,7 @@ package uihost
 // with an existing WithRobots config regardless of option order.
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -211,7 +212,7 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 	// one of the scanner-oriented content sections (WhenToUse, CLI) is
 	// configured — those only render inside llms.txt, so setting one is
 	// itself the opt-in.
-	if cfg.Title != "" || len(cfg.Sections) > 0 || cfg.WhenToUse != "" || cfg.CLI != nil {
+	if cfg.Title != "" || cfg.Summary != "" || cfg.Sections != nil || cfg.WhenToUse != "" || cfg.CLI != nil {
 		ar.llms = &llmsCfg{
 			title:     cfg.Title,
 			summary:   cfg.Summary,
@@ -227,7 +228,7 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 	case cfg.AgentCard != nil:
 		ar.card = cfg.AgentCard
 	case cfg.Title != "":
-		ar.card = &AgentCardConfig{Name: cfg.Title, Description: cfg.Summary, Version: "1.0.0"}
+		ar.card = &AgentCardConfig{Name: cfg.Title, Description: cfg.Summary}
 	}
 
 	// AI-bot robots block.
@@ -281,10 +282,10 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 			cur.baseURL = ar.baseURL
 		}
 		if ar.llms != nil {
-			cur.llms = ar.llms
+			cur.llms = mergeLLMsCfg(cur.llms, ar.llms)
 		}
 		if ar.card != nil {
-			cur.card = ar.card
+			cur.card = mergeAgentCardCfg(cur.card, ar.card)
 		}
 		if ar.allowAIBots != nil {
 			cur.allowAIBots = ar.allowAIBots
@@ -314,6 +315,52 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		}
 		ds.agentReady = cur
 	}
+}
+
+func mergeLLMsCfg(previous, next *llmsCfg) *llmsCfg {
+	merged := *next
+	if previous != nil {
+		merged.title = cmp.Or(merged.title, previous.title)
+		merged.summary = cmp.Or(merged.summary, previous.summary)
+		merged.whenToUse = cmp.Or(merged.whenToUse, previous.whenToUse)
+		if merged.sections == nil {
+			merged.sections = previous.sections
+		}
+		if merged.cli == nil {
+			merged.cli = previous.cli
+		}
+	}
+	return &merged
+}
+
+func mergeAgentCardCfg(previous, next *AgentCardConfig) *AgentCardConfig {
+	merged := *next
+	if previous != nil {
+		merged.Name = cmp.Or(merged.Name, previous.Name)
+		merged.Description = cmp.Or(merged.Description, previous.Description)
+		merged.Version = cmp.Or(merged.Version, previous.Version)
+		merged.URL = cmp.Or(merged.URL, previous.URL)
+		merged.MCPEndpoint = cmp.Or(merged.MCPEndpoint, previous.MCPEndpoint)
+		merged.A2AEndpoint = cmp.Or(merged.A2AEndpoint, previous.A2AEndpoint)
+		merged.Streaming = merged.Streaming || previous.Streaming
+		merged.PushNotifications = merged.PushNotifications || previous.PushNotifications
+		if merged.Skills == nil {
+			merged.Skills = previous.Skills
+		}
+		if merged.SecuritySchemes == nil {
+			merged.SecuritySchemes = previous.SecuritySchemes
+		}
+		if merged.DefaultInputModes == nil {
+			merged.DefaultInputModes = previous.DefaultInputModes
+		}
+		if merged.DefaultOutputModes == nil {
+			merged.DefaultOutputModes = previous.DefaultOutputModes
+		}
+		if merged.SigningKeys == nil {
+			merged.SigningKeys = previous.SigningKeys
+		}
+	}
+	return &merged
 }
 
 // WithLLMsTxt serves /llms.txt from the given title, summary, and

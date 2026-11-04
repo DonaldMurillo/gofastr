@@ -753,11 +753,16 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 - **Serving `/llms-full.txt` without linking it from `/llms.txt`.** Agents
   start at the index; a full-corpus file nothing points to won't be found.
   Add a `Sections` entry with URL `/llms-full.txt`.
-- **Mixing `WithAgentReady` with granular agent-ready options** is safe in any
-  order. `WithAgentReady` *merges* into whatever a granular option
+- **Mixing `WithAgentReady` with granular agent-ready options** is safe.
+  `WithAgentReady` *merges* into whatever a granular option
   (`WithMarkdownNegotiation`, `WithLLMsTxt`, `WithAgentCard`,
   `WithAgentLinkHeaders`) already installed: the bundle wins for every field
   it explicitly sets, and a field it leaves unset preserves the granular value.
+  Empty strings, nil slices/maps/pointers, and false card capability flags
+  are unset; non-nil empty slices/maps can explicitly clear collections.
+  A title-derived card preserves a granular version and MCP/A2A endpoints.
+  Apply granular baselines before the bundle; a later granular surface option
+  replaces that surface's configuration.
   So `WithMarkdownNegotiation()` before `WithAgentReady{Title: …}` keeps content
   negotiation on; you can equally enable it via the bundle's `ContentNegotiation`
   field. (Both still require `WithPublicLLMMD`, per the note above.)

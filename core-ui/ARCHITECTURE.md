@@ -32,6 +32,9 @@ the value's lossy slug. Standalone radio, checkbox and switch configs
 carry `Ctx` too; a Switch allocates its control ID once and reuses it for
 its message, even when another switch has the same submitted name.
 
+Agent-ready bundles merge nonzero discovery fields into granular llms.txt
+and card settings, preserving omitted fields rather than replacing surfaces.
+
 DatePicker range announcements use the Gregorian calendar of the server's
 grid even when the page locale defaults to another calendar. An undrawn
 day without a page language keeps its ISO date instead of the host locale.
