@@ -265,7 +265,7 @@ func (r *resolver) bootVisibleComponents(root *types.Named, expression ast.Expr)
 			case *ast.FuncLit:
 				return false
 			case *ast.Ident:
-				if variable, ok := r.info.Uses[node].(*types.Var); ok && !variable.IsField() && variable.Pkg() == r.pkg {
+				if variable, ok := r.info.Uses[node].(*types.Var); ok && !variable.IsField() && variable.Pkg() == r.pkg && !r.variableWrittenBefore(variable, node.Pos()) {
 					inspect(r.varInitializer(variable))
 				}
 				return false
@@ -291,6 +291,35 @@ func (r *resolver) bootVisibleComponents(root *types.Named, expression ast.Expr)
 	}
 	inspect(expression)
 	return visible
+}
+
+func (r *resolver) variableWrittenBefore(variable *types.Var, before token.Pos) bool {
+	written := false
+	check := func(expression ast.Expr) {
+		if identifier, ok := ast.Unparen(expression).(*ast.Ident); ok && r.info.Uses[identifier] == variable {
+			written = true
+		}
+	}
+	for _, file := range r.files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			if node == nil || node.Pos() >= before || written {
+				return false
+			}
+			switch node := node.(type) {
+			case *ast.AssignStmt:
+				for _, target := range node.Lhs {
+					check(target)
+				}
+			case *ast.RangeStmt:
+				if node.Tok == token.ASSIGN {
+					check(node.Key)
+					check(node.Value)
+				}
+			}
+			return !written
+		})
+	}
+	return written
 }
 
 // maxReachDepth bounds the type walk. Component trees are shallow; the cap stops
