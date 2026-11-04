@@ -1,5 +1,8 @@
 # Cursor pagination
 
+Cursor responses contain `data`, `cursor`, and `hasMore`, not `total`.
+The registry `/api/llm.md` index and per-entity reference describe this same shape.
+
 Cursor (keyset) pagination is the default for high-volume entities and
 the only way to page consistently when rows are being inserted while
 the user pages.

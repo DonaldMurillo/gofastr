@@ -544,7 +544,7 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 	b.WriteString("Use `?sort=field` (ascending) or `?sort=-field` (descending).\n\n")
 	b.WriteString("### Pagination\n")
 	b.WriteString("- **Offset:** `?page=1&limit=20`: returns `{data, total, page, perPage, totalPages}`\n")
-	b.WriteString("- **Cursor:** `?cursor=xxx&limit=20`: returns `{data, cursor, hasMore, total}`\n\n")
+	b.WriteString("- **Cursor:** `?cursor=xxx&limit=20`: returns `{data, cursor, hasMore}`\n\n")
 	b.WriteString("### Includes\n")
 	b.WriteString("Eager-load relations: `?include=author,comments`\n")
 	b.WriteString("Nested includes: `?include=author.profile`\n")
