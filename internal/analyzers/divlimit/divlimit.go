@@ -40,8 +40,7 @@
 // package-level function literals (the handler-table spelling) and
 // inside closures that capture an enclosing function's limit-named
 // parameter — a captured limit is as caller-supplied as a passed one,
-// and a guard that dominates the closure's creation guards the
-// division inside it.
+// and guards inside the closure itself protect its eventual invocation.
 package divlimit
 
 import (
@@ -105,8 +104,8 @@ func run(pass *analysis.Pass) (any, error) {
 // seeding each literal with the parameters of the functions that
 // enclose it: a closure dividing by an enclosing limit-named parameter
 // divides by a caller-supplied value all the same (limit == 0 panics
-// inside f()). Guards are read from the ROOT body, so a guard that
-// dominates the closure's creation credits the division inside it.
+// inside f()). Guards are read from each function's own body: a captured
+// value can change between closure creation and invocation.
 func checkTree(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt, outer map[types.Object]bool, root *ast.BlockStmt, rootParents map[ast.Node]ast.Node) {
 	params := map[types.Object]bool{}
 	if outer != nil {
@@ -124,7 +123,7 @@ func checkTree(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt, o
 	checkFunc(pass, body, params, root, rootParents)
 	ast.Inspect(body, func(n ast.Node) bool {
 		if lit, ok := n.(*ast.FuncLit); ok && lit.Body != nil {
-			checkTree(pass, lit.Type, lit.Body, params, root, rootParents)
+			checkTree(pass, lit.Type, lit.Body, params, lit.Body, dominance.Parents(lit.Body))
 			return false
 		}
 		return true
