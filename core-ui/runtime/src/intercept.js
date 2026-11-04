@@ -564,7 +564,7 @@
         if (res) mountLayer(res, p.rec, '', p.under, null);
         else fallbackNav(p.rec, '');
       })
-      .catch(() => {});
+      .catch(() => { if (e === epoch) fallbackNav(p.rec, ''); });
   });
 
   document.addEventListener('keydown', (e) => {
