@@ -470,7 +470,11 @@ func prefixValidationErrors(prefix string, fields map[string][]schema.Violation)
 	return out
 }
 
-func (ch *CrudHandler) findCascadeValue(body map[string]any, relName string) (any, bool) {
+func (ch *CrudHandler) findCascadeValue(body map[string]any, relation entity.Relation) (any, bool) {
+	if !relation.CascadeWrite {
+		return nil, false
+	}
+	relName := relation.Name
 	if val, ok := body[relName]; ok && val != nil {
 		return val, true
 	}
@@ -497,10 +501,7 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 		return false
 	}
 	for _, rel := range ch.Entity.Config.Relations {
-		if !rel.CascadeWrite {
-			continue
-		}
-		if _, ok := ch.findCascadeValue(body, rel.Name); ok {
+		if _, ok := ch.findCascadeValue(body, rel); ok {
 			return true
 		}
 	}
@@ -513,10 +514,7 @@ func (ch *CrudHandler) refuseUpsertCascades(body map[string]any) error {
 	}
 	fields := make(map[string][]schema.Violation)
 	for _, relation := range ch.Entity.Config.Relations {
-		if !relation.CascadeWrite {
-			continue
-		}
-		if _, present := ch.findCascadeValue(body, relation.Name); present {
+		if _, present := ch.findCascadeValue(body, relation); present {
 			fields[relation.Name] = []schema.Violation{{Reason: reasonCascadeUpsert}}
 		}
 	}
@@ -563,10 +561,10 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 	}
 	attached := make(map[string]any)
 	for _, rel := range ch.Entity.Config.Relations {
-		if !rel.CascadeWrite || rel.Type != entity.RelManyToOne {
+		if rel.Type != entity.RelManyToOne {
 			continue
 		}
-		rawVal, ok := ch.findCascadeValue(body, rel.Name)
+		rawVal, ok := ch.findCascadeValue(body, rel)
 		if !ok {
 			continue
 		}
@@ -689,10 +687,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 		// Belongs-to cascades ran before the parent was written and
 		// need only the target's key; the parent's own key, which the
 		// dependent arms read below, may span several columns.
-		if !rel.CascadeWrite || rel.Type == entity.RelManyToOne {
+		if rel.Type == entity.RelManyToOne {
 			continue
 		}
-		rawVal, ok := ch.findCascadeValue(body, rel.Name)
+		rawVal, ok := ch.findCascadeValue(body, rel)
 		if !ok || rawVal == nil {
 			continue
 		}
