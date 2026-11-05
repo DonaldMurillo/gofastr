@@ -70,10 +70,6 @@ mounting: local actions, lifecycle listeners and dismissal remain wired.
 An open native modal dialog owns Escape and Tab above an intercepted
 pane. The intercept keyboard handlers stand down until the dialog closes,
 then resume the pane's own dismissal and focus containment.
-Widget modals belong to the intercept layer their opener occupied, including
-modals opened from another owned modal. Removing or replacing that layer
-closes its modals and backdrops, not unrelated widgets. Chrome still loading
-for a removed layer cannot mount after the layer is gone.
 When return or Back refetches a pane, focus is restored after replacement:
 prefer the opener's replacement by ID (or the current control on a same-pane
 refresh), otherwise focus the first control in the refreshed pane.
@@ -973,6 +969,14 @@ form in a layer carrying `data-hui-leave-guard` asks before any of
 these moves discard its edits, and only then: opening a related record
 over a changed one discards nothing and does not ask; a declined Back
 is repaired with a re-push that restores the URL and history.length.
+
+Widget modals belong to the intercept layer their opener occupied, including
+modals opened from another owned modal. Removing a layer or replacing its
+content closes its modals and backdrops, not unrelated widgets. Each content
+swap advances the layer's generation; an open captures that generation before
+loading chrome and checks it again before mounting or applying deep-link
+parameters, including after the deep-link module loads. Connectedness alone
+does not make an opener current: a refresh keeps the layer element in place.
 
 URL-only writes through the shared `_pushURL` helper (pagination and
 deep-linked widgets included) belong to the top intercept pane's history

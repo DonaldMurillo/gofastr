@@ -127,6 +127,7 @@
   // other swap path does.
   function swap(t, res) {
     NS._closeInterceptWidgets?.(t.el);
+    t.el._cuiGen = (t.el._cuiGen || 0) + 1;
     t.el.innerHTML = res.html;
     // The pane's page signals, as an in-page navigation seeds them.
     NS._mergeSeed?.(t.el);
