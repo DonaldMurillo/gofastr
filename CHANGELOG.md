@@ -675,15 +675,21 @@ few lines, and link the PR or the docs page for the rest.
 - **Combobox keyboard and pointer fixes.** ArrowUp with no active
   option starts at the last option. Clearing the query keeps the list
   closed. Escape during IME composition, Safari's keyCode 229 included,
-  leaves the list open. Ctrl-, Cmd-, Shift- and middle-clicks on an
-  option get the browser's own behaviour. `ComboboxRows` refuses
+  leaves the list open and no longer closes the disclosure, dropdown,
+  widget or intercepted drawer around the combobox; every Escape
+  handler in the kit ignores composition, and the `keyguard` lint flags
+  one that does not. A combobox option with an `Href`, and each
+  site-search result, is now a real link kept out of the Tab order:
+  Ctrl-, Cmd-, Shift- and middle-clicks open it the browser's way, and a
+  plain click or keyboard pick still navigates in-page. `ComboboxRows` refuses
   duplicate option IDs, as `Combobox` does. The site-search palette
   closes when the query has no searchable terms left.
 - **Leave-guard Discard closes the pane that asked.** A declined close
   or return drops pane fetches still in flight, and Discard closes the
   layer whose guard declined, not whichever layer is on top by then.
 - **Intercepted panes clean up after themselves.** Closing or replacing
-  a pane closes the widget modals opened inside it. When Return or Back
+  a pane closes the widget modals opened inside it, and a modal still
+  loading for the old content does not open afterwards. When Return or Back
   refetches a pane, focus moves to the opener's replacement or the
   pane's first control instead of falling to `<body>`. A popover whose
   trigger is re-rendered away closes instead of jumping to the
