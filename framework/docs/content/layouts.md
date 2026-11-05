@@ -595,6 +595,11 @@ Cached navigations retain the page answer's keyed transition, including on
 pages with outlets; revisiting a cached page uses the same transition pick
 as its fetched answer.
 
+If a navigation's DOM update throws inside a view transition, the runtime
+uses the normal navigation failure path: it shows a failure toast, restores
+the URL of the page still displayed, and clears loading state. Skipping an
+animation alone remains silent; it does not report a failed navigation.
+
 **Use a transition when** a swap should read as motion — the
 master-detail slide, a crossfade that avoids a flash of identical
 chrome. Typed values on the spec; the framework generates the CSS:

@@ -74,8 +74,6 @@
   let clicked = null;
   window.addEventListener('click', (e) => { clicked = e.target.closest?.('a') || null; }, true);
 
-  const routes = () => (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []);
-
   // Match a resolved path against the manifest's route patterns. Static
   // segments must match exactly; ':param' and '{param}' match one
   // segment; a trailing catch-all matches the remainder.
@@ -94,7 +92,7 @@
   // Routes register unprefixed: /es/pricing matches /pricing.
   const routeFor = (path) => {
     const p = NS._unlocalize?.(path) ?? path;
-    return routes().find((r) => r.path && matchRoute(r.path, p));
+    return (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []).find((r) => r.path && matchRoute(r.path, p));
   };
   const pathOf = (u) => u.split(/[?#]/)[0];
   const top = () => layers.at(-1);

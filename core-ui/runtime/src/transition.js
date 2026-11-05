@@ -62,7 +62,7 @@
   // none passed: exec reads it as the string "undefined") falls back to
   // the document's.
   const _vtKinds = (m) => new Set((/data-cui-vt-kinds="([^"]*)"/.exec(m) ||
-    [0, document.documentElement.getAttribute('data-cui-vt-kinds') || ''])[1].split(/\s+/).filter(Boolean));
+    [0, document.documentElement.getAttribute('data-cui-vt-kinds') || ''])[1].split(/\s+/));
   const _withPick = (pick, m) => {
     _navPick = (pick && _vtKinds(m).has(pick)) ? pick : '';
   };
@@ -98,7 +98,7 @@
   // entry it lands with.
   const _pickFor = (pickSrc, pickDecided, markup) => {
     if (!pickDecided) {
-      _withPick(pickSrc ? (pickSrc.headers ? pickSrc.headers.get('X-Gofastr-Transition') : (pickSrc.vt || '')) : '', markup);
+      _withPick(pickSrc?.headers ? pickSrc.headers.get('X-Gofastr-Transition') : pickSrc?.vt, markup);
     }
     _recordVT();
     return _navPick;
@@ -186,6 +186,7 @@
       // click during it) rejects ready: the skip is ours, not an error.
       vt.ready.catch(() => {});
       vt.finished.catch(() => {}).finally(() => { if (_activeVT === vt) _activeVT = null; });
+      return vt.updateCallbackDone;
     },
   };
 
