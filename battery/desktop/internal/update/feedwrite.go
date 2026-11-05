@@ -9,11 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -164,6 +167,20 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 		}
 	}
 	sum := sha256.Sum256(data)
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(filepath.Join(outDir, ".manifest.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("feed output lock: %w", err)
+	}
+	defer lock.Close()
+	if err := fileperm.RestrictOpenFile(lock); err != nil {
+		return fmt.Errorf("feed output lock permissions: %w", err)
+	}
+	if err := filelock.Lock(lock); err != nil {
+		return fmt.Errorf("feed output lock: %w", err)
+	}
 	feed := Feed{
 		Version: version,
 		Notes:   notes,
@@ -179,6 +196,11 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("existing manifest: %w", err)
 	}
+	for _, name := range slices.Sorted(maps.Keys(feed.Channels)) {
+		if _, err := ParseVersion(feed.Channels[name].Version); err != nil {
+			return fmt.Errorf("existing manifest: channel %q version: %w", name, err)
+		}
+	}
 	feed.Notes = notes
 	if feed.Platforms == nil {
 		feed.Platforms = make(map[string]PlatformEntry)
@@ -192,12 +214,6 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(outDir, 0o700); err != nil {
-		return err
-	}
-	// The .sig verifies over the exact manifest bytes, so both files
-	// are written atomically-enough for a release step: manifest first,
-	// signature second, neither truncated by a later step.
 	if err := fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json"), manifest); err != nil {
 		return err
 	}
