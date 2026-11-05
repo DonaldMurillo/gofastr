@@ -672,6 +672,35 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **View event streams work.** `App.View` handlers now carry the app's
+  event bus, so a view's stream route serves events instead of always
+  answering 503. Writes to the underlying tables do not publish view
+  events by themselves.
+- **EntityUI route conflicts fail before anything is published.** An
+  entity whose `_bulk`, `_export.csv` or `_pick` route collides with an
+  existing route is refused at registration, and `EntityUI` panics up
+  front, so a refused registration leaves nothing half-mounted.
+- **A refused bulk job stays stopped after the request is cancelled.**
+  The stop is written on a context detached from the request, so a
+  client disconnect no longer leaves the job for startup resume to run.
+- **A sandbox backend that panics during conformance probing fails
+  closed,** the same way a panic on the spawn path already did.
+- **`ComponentSheet` leaves keyframe steps unscoped inside media and
+  container queries,** and a `StyleSheet` rule left open across a
+  `Keyframes` call keeps taking properties.
+- **Headless carousel and menu fixes.** Carousel announcements format
+  the total in the page locale, not only the position. Space on a menu
+  link activates it without scrolling the page, except while it extends
+  a type-ahead search.
+- **Desktop native blocks register safely from several goroutines.**
+  Concurrent `NewBlock` calls no longer drop a block the native side
+  still holds.
+- **process-modules.md names the macOS sandbox's read gaps.** The
+  built-in profile can read temporary directories and `/etc`, so its
+  P2 and P5 probes report breaches.
+- **More example fixes.** desktop-notes exports every note past the
+  first thousand, and the tracker's "Done this week" counts the Done
+  issues in the seven days ending at the newest Done update.
 - **`SumAll` over a SQLite Decimal column is exact.** The total adds the
   stored decimal values instead of summing floats, so `0.1 + 0.235`
   reads `0.335`, not `0.33499999999999996`. Postgres keeps its NUMERIC
