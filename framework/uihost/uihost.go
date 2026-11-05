@@ -2456,7 +2456,8 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	if bundle {
 		// Per-screen action scripts: only the compiled registries whose
 		// component ids actually appear on THIS page, each content-
-		// addressed and served immutable. The whole-app actions.js concat
+		// addressed and served private, no-cache so every use revalidates
+		// through the session gate. The whole-app actions.js concat
 		// re-shipped every screen's actions on every page uncached.
 		// Navigation to a screen whose actions aren't loaded yet is
 		// covered by the actionloader module reading __gofastr_actions.
@@ -3865,7 +3866,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 // module fetches the rest on navigation; lazy hydration keeps using it
 // too. Session-gated like the old whole-app concat was (this per-id
 // endpoint used to be LESS gated than the bundle it replaces), and
-// served private+immutable under its content hash.
+// served private, no-cache with its content hash as the revalidation ETag.
 func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 	if !ds.requireSessionOrEmbedGrant(w, r) {
 		return

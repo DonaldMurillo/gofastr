@@ -265,11 +265,11 @@
   // the backdrop): guard, drop the DOM, restore focus to the control
   // that opened it, then consume the layer's history entries in one
   // move. The popstate that follows finds the stack already settled.
-  function closeTopDirect() {
-    const t = top();
-    if (!t || !guardOK(t.el, closeTopDirect)) return;
+  function closeTopDirect(t = top()) {
+    if (!t || !layers.includes(t)) return;
     epoch++;
-    layers.pop();
+    if (!guardOK(t.el, () => closeTopDirect(t))) return;
+    layers.splice(layers.indexOf(t), 1);
     t.el.remove();
     settleAfterDrop(t.restoreFocus);
     history.go(-(t.cur + 1)); // the entries this layer owns
@@ -439,8 +439,8 @@
     let i = layers.length - 1;
     while (i >= 0 && pathOf(layers[i].url) !== p) i--;
     if (i < 0 && pathOf(underPath) !== p) return false;
-    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node))) return true;
     const e = ++epoch;
+    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node))) return true;
     let focus = null;
     while (layers.length > i + 1) {
       const shut = layers.pop();

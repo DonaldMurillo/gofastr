@@ -168,8 +168,11 @@ a `WithStateOverride` that has its reason and audit log, so an omitted
 state field keeps the stored state and the insert arm's `Default` never
 lands on conflict), and the in-process `CreateOne` and `UpdateOne`.
 
-A refusal names the stored state and the open moves only to a caller whose
-read scope admits the record. A record the `BeforeGet` chain
+A refusal names the stored state and the open moves only when the state
+field is not `Hidden` and the caller's read scope admits the record. A
+Hidden state field stays absent from 409 and 422 bodies, including their
+error and field messages; those refusals leave `current` and `moves` empty even
+when the caller can read the rest of the record. A record the `BeforeGet` chain
 `GET /<entity>/{id}` runs hides (in process only under
 `crud.WithReadHooks`, as `GetOne` applies it) is never written at all:
 the update, the move or the override answers the 404 a missing id gets,

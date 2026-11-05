@@ -285,6 +285,8 @@ site.Register("/docs/{path...}", &DocScreen{}, nil)
 ```
 
 A catch-all must be the final segment; anything else panics at registration.
+A root catch-all such as `/{path...}` does not match `/`: its remainder
+must also be nonempty. Redirect patterns follow the same rule.
 Among dynamic routes, registration order decides which one wins (first match
 wins); there is no specificity ranking, so register the more specific
 pattern first.
@@ -345,8 +347,13 @@ open-redirect guard), and every parameter referenced in `to` must be
 declared in `from`. The `from` pattern obeys the same grammar as a route
 (constraints, trailing catch-all). A one-segment parameter holding `/`
 or `%` is written back as `%2F` or `%25`, so it stays one segment of
-the target. Substituted parameters arrive percent-decoded, so a
-resolved target holding a C0 control byte or DEL (tab, CR and LF
+the target. A catch-all passthrough preserves the source's segment
+boundaries too: `/docs/red%2Foak/leaves` redirected through
+`/docs/{rest...}` to `/help/{rest...}` becomes
+`/help/red%2Foak/leaves`, not `/help/red/oak/leaves`. Literal percent
+signs remain encoded exactly once. Matching still decodes segments for
+literal and constraint checks, so a resolved target holding a C0 control
+byte or DEL (tab, CR and LF
 included) is no redirect: the request falls through to the router, which
 answers 404 when no screen matches. A browser deletes tab, CR and LF from
 a `Location` before parsing it, so `/old/%09/evil.example` substituted
