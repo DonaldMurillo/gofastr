@@ -41,7 +41,7 @@ type SchemaSnapshot struct {
 	// snapshots written by an older gofastr fall back to recreateTableSQL.
 	TableDDL map[string]string   `json:"table_ddl,omitempty"`
 	Indices  map[string][]string `json:"indices,omitempty"`
-	// PrimaryKeys holds each entity table's key columns in key order, so a
+	// PrimaryKeys holds each entity and generated pivot table's key columns in key order, so a
 	// later generation can see a key change. A snapshot written before it
 	// existed has none, and the first generation after records them.
 	PrimaryKeys map[string][]string `json:"primary_keys,omitempty"`
@@ -136,6 +136,10 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 				continue
 			}
 			snap.Tables[spec.Safe] = spec.Cols
+			if snap.PrimaryKeys == nil {
+				snap.PrimaryKeys = map[string][]string{}
+			}
+			snap.PrimaryKeys[spec.Safe] = []string{rel.LocalKey, rel.ForeignKeyTarget}
 			if snap.TableDDL == nil {
 				snap.TableDDL = map[string]string{}
 			}

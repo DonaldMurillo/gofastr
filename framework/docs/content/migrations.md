@@ -449,6 +449,11 @@ identifiers at validate time. Renames run, and their errors are reported, in
 order of the old name, so the same declaration gives the same migration and
 the same error text on every run.
 
+Generated snapshots record composite primary keys for automatically created
+many-to-many pivot tables as well as entity tables. If a join entity later
+owns a pivot's table, migration generation compares its declared key with
+the pivot's existing key instead of silently keeping the old constraint.
+
 Type-change detection catches the type *class* (e.g. TEXT→INTEGER) and
 compares character widths on Postgres: `VARCHAR(50)→VARCHAR(100)` generates
 an `ALTER COLUMN … TYPE` change. Decimal precision and scale changes such as
