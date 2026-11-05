@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"io/fs"
+	"path"
 	"sort"
 	"strings"
 )
@@ -106,7 +107,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 				name, dsuffix, dialectPostgres, dialectSQLite)
 		}
 
-		body, err := fs.ReadFile(fsys, dir+"/"+name)
+		body, err := fs.ReadFile(fsys, path.Join(dir, name))
 		if err != nil {
 			return nil, fmt.Errorf("migrate.RoutinesFS: read %q: %w", name, err)
 		}

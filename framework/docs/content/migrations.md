@@ -893,6 +893,9 @@ files, missing directories, and Down-without-Up files are likewise errors
 misconfigured entity). Dotfiles, sub-directories, and non-`.sql` files are
 ignored, so a `README.md` next to the routines is fine.
 
+Pass `"."` as the directory to load SQL files at the filesystem root,
+including an `os.DirFS` rooted at the routines directory or root-level embeds.
+
 A dialect-tagged Down must match its Up's dialect; a tagged Down cannot
 pair with an untagged Up. An untagged Down may pair with any Up. Mismatches
 fail at registration before any SQL runs.
