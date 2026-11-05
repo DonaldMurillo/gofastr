@@ -19,6 +19,12 @@ type desktopKeygenFlags struct {
 func parseDesktopKeygenFlags(args []string) desktopKeygenFlags {
 	var f desktopKeygenFlags
 	var help bool
+	for index, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			args = args[:index+1]
+			break
+		}
+	}
 	if _, err := cli.ParseFlags(args, map[string]*string{
 		"-o": &f.out, "--o": &f.out, "-out": &f.out, "--out": &f.out,
 	}, map[string]*bool{"--help": &help, "-h": &help}); err != nil {
