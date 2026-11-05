@@ -52,7 +52,7 @@
     failRetried: new Set(), // addrs that used their one failure retry
     failed: new Set(),   // addrs that failed twice before the commit
     sessRetry: new Set(), // addrs waiting for the commit to re-request (session reset)
-    committed: false, pending: false, dead: false, reset: false, resetPending: false, launched: false,
+    committed: false, pending: false, dead: false, reset: false, resetPending: false, launched: null,
     enqueue: null,       // set by launchParts: re-queue one addr on this nav's pump
   });
 
@@ -67,7 +67,7 @@
     try { st.ctl.abort(); } catch (_) { /* already gone */ }
     const L = NS._navHooks.loading;
     for (const e of st.entries.values()) {
-      if (L) { if (st.committed) L.settle(e); else L.restore(e); }
+      L?.[st.committed ? 'settle' : 'restore'](e);
     }
   };
 
@@ -82,17 +82,21 @@
     const E = NS._navHooks.envelope;
     const L = NS._navHooks.loading;
     for (const addr of st.addrs) {
-      const el = E && E.target(addr);
+      const prev = st.entries.get(addr);
+      if (!st.launched?.includes(addr)) {
+        if (prev) L?.restore(prev);
+        continue;
+      }
+      const el = E?.target(addr);
       if (!el) continue;
       if (st.failed.has(addr)) { partError(st, addr); continue; }
-      const prev = st.entries.get(addr);
-      if (prev && prev.shown) continue;
-      if (prev && L) L.claim(prev);
+      if (prev?.shown) continue;
+      if (prev) L?.claim(prev);
       const tpl = findLoadingTpl(addr);
       st.entries.set(addr, {
         el, tpl,
         after: 0,
-        min: tpl ? (+tpl.getAttribute('data-cui-min') || 0) : 0,
+        min: +tpl?.getAttribute('data-cui-min') || 0,
         epoch: st.epoch, timer: 0, shown: true, park: null,
         shownAt: performance.now(),
       });
@@ -134,12 +138,12 @@
   const applyPartNow = (st, addr, p) => {
     const E = NS._navHooks.envelope;
     const L = NS._navHooks.loading;
-    const target = E && E.target(addr);
+    const target = E?.target(addr);
     if (!target) return;
     if (L) L.claim(st.entries.get(addr));
     if (p.seed && E) E.applySeed(p.seed);
     target.innerHTML = p.html;
-    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(target);
+    NS.scanAndLoadCSS?.(target);
     st.parts.set(addr, p.html);
     window.dispatchEvent(new CustomEvent('gofastr:fill', {
       detail: { addr, path: st.path, t: performance.now() },
@@ -218,7 +222,7 @@
   // PARTS_MAX_INFLIGHT in flight, the rest queued behind completions.
   const launchParts = (st, addrs) => {
     if (st.dead || st.launched) return;
-    st.launched = true;
+    st.launched = addrs;
     const queue = addrs.slice();
     let inFlight = 0;
     // enqueue re-queues one address on this navigation's pump: the
@@ -229,7 +233,7 @@
     const restore = (addr) => {
       const e = st.entries.get(addr);
       const L = NS._navHooks.loading;
-      if (e && L) { if (st.committed) L.settle(e); else L.restore(e); }
+      if (e) L?.[st.committed ? 'settle' : 'restore'](e);
     };
     const runPart = async (addr) => {
       inFlight++;
@@ -335,9 +339,9 @@
     // lock — without this the high-priority page waits for every
     // low-priority part), and the abort signal.
     begin(path, epoch) {
-      if (_live && !_live.dead) killParts(_live); // supersede the older navigation first
+      killParts(_live); // supersede the older navigation first
       const E = NS._navHooks.envelope;
-      const m = E && E.manifest(path);
+      const m = E?.manifest(path);
       const addrs = (m?.entry?.deferred || []).map((a) => a.includes('{') ? E.subst(a, path) : a);
       if (!addrs.length) return null;
       const ctl = new AbortController();

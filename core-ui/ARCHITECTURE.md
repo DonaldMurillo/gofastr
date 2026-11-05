@@ -11,6 +11,11 @@ The deferred-parts boot handoff consumes envelope-module load failures.
 A missing chunk leaves inline server-rendered content usable without an
 unhandled promise rejection.
 
+A deferred-route cache replay marks loading regions only for part
+addresses it actually requests. Inline boot and leave snapshots with no
+part record retain their rendered outlets; already-armed loading entries
+for unrequested addresses are restored and their timers cancelled.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching
