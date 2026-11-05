@@ -178,6 +178,11 @@
     within(scope, 'button[data-cui-disable-when-invalid],input[data-cui-disable-when-invalid]').forEach(function (button) {
       if (button.form) wireValidity(button.form);
     });
+    // An unmarked field or submitter inserted into a wired form changes
+    // its validity or its set of submitters: resync that form now.
+    new Set(within(scope, 'button,input,select,textarea').map(function (el) { return el.form; })).forEach(function (form) {
+      if (form && validityWired.has(form)) wireValidity(form);
+    });
   }
 
   scan(document);

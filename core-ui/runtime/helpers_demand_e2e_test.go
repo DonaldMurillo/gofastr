@@ -89,3 +89,29 @@ func TestHelpersLoadWithoutWidgets(t *testing.T) {
 		}
 	}
 }
+
+// An unmarked control inserted into a form the helper already wired
+// takes part at once: a submitter starts disabled under an invalid
+// form, and a required field disables a valid form's submitters,
+// without waiting for the next input event.
+func TestValidityTracksInsertedControls(t *testing.T) {
+	cases := map[string]struct{ body, insert, want string }{
+		"submitter":          {`<form id="vf" data-cui-disable-when-invalid><input required><button>Save</button></form>`, `document.getElementById('vf').insertAdjacentHTML('beforeend', '<button id="late">Again</button>')`, `document.getElementById('late').disabled`},
+		"external-submitter": {`<form id="vf" data-cui-disable-when-invalid><input required><button>Save</button></form>`, `document.querySelector('main').insertAdjacentHTML('beforeend', '<input id="late" type="image" form="vf" alt="Again">')`, `document.getElementById('late').disabled`},
+		"field":              {`<form id="vf" data-cui-disable-when-invalid><input value="ok"><button id="late">Save</button></form>`, `document.getElementById('vf').insertAdjacentHTML('afterbegin', '<p><input required></p>')`, `document.getElementById('late').disabled`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctx := chromedptest.Context(t)
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(widgetHelpersServer(t, tc.body)),
+				chromedp.Poll(`!!window.__gofastr?.loadedModules?.widgethelpers`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+				chromedp.Sleep(100*time.Millisecond),
+				chromedp.Evaluate(tc.insert, nil),
+				chromedp.Poll(tc.want, nil, chromedp.WithPollingTimeout(2*time.Second)),
+			); err != nil {
+				t.Fatalf("inserted control did not follow form validity: %v", err)
+			}
+		})
+	}
+}
