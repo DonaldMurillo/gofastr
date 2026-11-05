@@ -507,6 +507,25 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 	return false
 }
 
+func (ch *CrudHandler) refuseUpsertCascades(body map[string]any) error {
+	if ch.Entity == nil {
+		return nil
+	}
+	fields := make(map[string][]schema.Violation)
+	for _, relation := range ch.Entity.Config.Relations {
+		if !relation.CascadeWrite {
+			continue
+		}
+		if _, present := ch.findCascadeValue(body, relation.Name); present {
+			fields[relation.Name] = []schema.Violation{{Reason: reasonCascadeUpsert}}
+		}
+	}
+	if len(fields) != 0 {
+		return &ValidationError{fields: fields}
+	}
+	return nil
+}
+
 // childColumns names a cascade child's keys the way its parent's body was
 // named. An in-process write runs bodyColumns, which also reads the key
 // MarshalEntity derives (line2 for line_2); the HTTP rule left that key
