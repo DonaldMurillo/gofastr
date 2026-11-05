@@ -92,6 +92,9 @@ func init() {
 
 An empty `PrimaryKey` means the table has no key and is read in one pass; a
 comma-joined value (`"provider,provider_id"`) is a composite key.
+Registration appends any missing primary-key columns to `Columns`, in key
+order, without changing the caller's slice. Both the manifest and exported
+rows include those columns, so an archive can be imported into the same app.
 `battery/auth` (users, sessions, 2FA enrolments, OAuth links, passkeys) and
 `battery/queue` (queue_jobs) register themselves this way; importing the battery == including its tables.
 A store whose table name is configurable registers from its constructor
