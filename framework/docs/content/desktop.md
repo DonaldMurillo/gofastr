@@ -2922,6 +2922,11 @@ web view, and every native step goes through the shell's `NativeDriver`
 (`ClickMenu`, `ClickTray`, `OpenSettings`, `Answer`, `ClickPrompt`,
 `OpenURL`, `CloseWindow`, `WindowState`, `Notifications`).
 
+A clean shell exit before page readiness fails the binary instead of
+silently skipping native tests. Readiness has a 60-second deadline;
+exceeding it logs a diagnostic, quits the app, and fails the run. An
+unsupported native shell still skips native tests without failing.
+
 ```go
 func TestMain(m *testing.M) {
     os.Exit(desktoptest.NativeMain(m, buildApp)) // buildApp(nil): the real shell

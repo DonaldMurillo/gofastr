@@ -65,8 +65,8 @@ var nativeHarness *NativeHarness
 // watchdog that quits after GOFASTR_NATIVE_TIMEOUT (default 10 min),
 // and waits for readiness: the main window exists and the page reports
 // its desktop manifest. It returns the exit code (non-zero when Run
-// failed). On a host with no native shell it runs m.Run with no app,
-// and Native skips.
+// failed or exited before readiness). On a host with no native shell
+// it runs m.Run with no app, and Native skips.
 func NativeMain(m *testing.M, build func() (*framework.App, *desktop.Battery, error)) int {
 	bootEnv()
 	app, d, err := build()
@@ -87,13 +87,25 @@ func NativeMain(m *testing.M, build func() (*framework.App, *desktop.Battery, er
 			testCode <- m.Run()
 			h.quitSafely() // no-op when a test already quit the app
 		case <-h.runDone:
-			// No app this run (unsupported host or a boot that failed):
-			// the tests run and Native skips.
+			select {
+			case <-h.ready:
+				nativeHarness = h
+			default:
+			}
 			testCode <- m.Run()
 		}
 	}()
 	runErr := h.block()
 	code := <-testCode
+	h.watchdog.Stop()
+	if runErr == nil {
+		select {
+		case <-h.ready:
+		default:
+			fmt.Fprintln(os.Stderr, "desktoptest.NativeMain: Battery.Run exited before page readiness")
+			code = 1
+		}
+	}
 	if runFailed(runErr) || h.timedOut.Load() {
 		if runFailed(runErr) {
 			fmt.Fprintf(os.Stderr, "desktoptest.NativeMain: Battery.Run returned %v\n", runErr)
@@ -241,6 +253,9 @@ func (h *NativeHarness) watchReady() {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	h.timedOut.Store(true)
+	fmt.Fprintf(os.Stderr, "desktoptest: page readiness exceeded %s; quitting\n", nativeReadyWait)
+	h.quitSafely()
 }
 
 // pageReady is one readiness probe.
