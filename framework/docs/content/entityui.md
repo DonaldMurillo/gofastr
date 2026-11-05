@@ -910,7 +910,9 @@ and so does an entity with no REST write routes.
   the runner (the process died in between, or `Enqueue` failed) is
   handed over again at `App.Start` once it is a minute old
   (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
-  instead. Resume also adopts already-enqueued jobs whose non-null bulk
+  instead, even if the confirming client disconnects. That settlement
+  preserves request values without its cancellation and has a bounded
+  timeout. Resume also adopts already-enqueued jobs whose non-null bulk
   lease expired before the grace cutoff, preserving settled outcomes.
   An enqueued job with no lease, a live lease, or a recently expired lease
   is not adopted. Custom `BulkStore.Unenqueued` implementations must honor
