@@ -431,7 +431,7 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == f.Value})
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
-		Select(SelectConfig{Name: f.Name, Label: f.Label, Options: opts}))
+		Select(SelectConfig{Ctx: ctx, Name: f.Name, Label: f.Label, Options: opts}))
 }
 
 // facetOptions is the facet's options plus its active value when no
@@ -468,7 +468,7 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__sort",
 		ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
-		Select(SelectConfig{Name: name, Label: sortLabel, Options: opts}))
+		Select(SelectConfig{Ctx: ctx, Name: name, Label: sortLabel, Options: opts}))
 }
 
 // renderSearchFacet composes ui.SearchInput (no nested <form>).

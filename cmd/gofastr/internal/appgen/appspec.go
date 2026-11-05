@@ -3866,12 +3866,12 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 				fmt.Fprintf(&opts, "{Value: %q, Text: i18nui.FieldValueLabel(ctx, nil, %q, %q, %q)},", v, entity, field.Name, v)
 			}
 			opts.WriteString("}")
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
 				field.Name, label, fieldID, opts.String(), req)
 		case "relation":
 			// The relation select keeps data-rel-entity: the generated
 			// mount hook populates it from the related entity's API.
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
 				field.Name, label, fieldID, req, field.To)
 		case "text":
 			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
@@ -3899,7 +3899,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: \"number\", Name: %q, Step: %q}) }})",
 				label, fieldID, req, field.Name, step)
 		case "date":
-			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		default:
 			// datetime-local, file, email and anything else the typed

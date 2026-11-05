@@ -68,6 +68,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		f.raw("Ctx", "ctx") // the Shortcut keycaps are said through it
 		return "ui.Button(ui.ButtonConfig{" + f.String() + "})", true
 	case "text_field", "number_field":
+		f.raw("Ctx", "ctx")
 		f.str("Name", appspec.AppSpecProp(block, "name"))
 		f.text(bp, "Label", appspec.AppSpecProp(block, "label"))
 		f.text(bp, "Placeholder", appspec.AppSpecProp(block, "placeholder"))
@@ -89,6 +90,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		}
 		return fn + "(ui.ToggleConfig{" + f.String() + "})", true
 	case "select_field":
+		f.raw("Ctx", "ctx")
 		choices, _ := appspec.AppSpecChoices(block)
 		opts := make([]string, len(choices))
 		for i, c := range choices {

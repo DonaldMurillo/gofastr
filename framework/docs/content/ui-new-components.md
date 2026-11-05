@@ -114,6 +114,13 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Selection & input composition
 
+Pass the page or island render context as `Ctx` to `TextField`,
+`NumberField`, `DateField`, `DateTimeField`, `Select`, and `FormRepeater`.
+Their derived IDs then share the render ID scope, so same-named controls
+keep distinct labels and hint/error targets. Explicit `ID` values remain
+caller-owned and reserve their dependent IDs; callers must keep explicit
+IDs unique. Without an ID scope, the original name-derived spelling stays.
+
 - **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
 - **inline edit**: `framework/ui.InlineEdit`, a value edited where it is shown (a table cell): the value is the trigger of a dismissable `<details>` editor laid over it: the caller's `Control` (give it a hidden label, `LabelHidden`, since the cell names it) and Save on one line of a `ui.Form`. Saving sends it to `Action` over the runtime's form RPC (`PUT`, or `PATCH` with `Method`), toasts Saved and navigates to `Return`, so the server redraws the page with the stored value; Escape or a press outside closes it unsaved. `Label` is the trigger's accessible name. The value tints on hover and shows a focus ring.
 - **segmented links**: `framework/ui.SegmentedLinks`, a strip of links drawn as a segmented control, one `Current` (`aria-current="true"`) inside a labelled `role="group"`: a list's Table / Cards switch. Every segment is a plain link, so the choice lives in the URL; `IconOnly` keeps each segment's text as its accessible name and title. `Count` draws a muted figure after a segment's text (the Jobs page's "Failed 3"). The strip keeps its own width in a flex column and scrolls inside itself when wider than its box.

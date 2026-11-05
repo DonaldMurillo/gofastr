@@ -626,13 +626,13 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 	help = state + " · " + i18nui.EntityKeepValue.Text(ctx)
 	switch f.Type {
 	case schema.Enum:
-		return ui.Select(ui.SelectConfig{
+		return ui.Select(ui.SelectConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Help: help,
 			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options:     enumOptions(ctx, fb.m, f, ""),
 		})
 	case schema.Bool:
-		return ui.Select(ui.SelectConfig{
+		return ui.Select(ui.SelectConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Help: help,
 			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options: []ui.SelectOption{
@@ -704,7 +704,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	required := f.Required
 	switch f.Type {
 	case schema.String:
-		return ui.TextField(ui.TextFieldConfig{
+		return ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
 			Help: help, Required: required, LabelHidden: fb.compact,
 			ExtraAttrs: patternAttr(f.Pattern),
@@ -726,7 +726,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		// blank takes the plain number field.
 		if fb.compact || !required {
 			step := 1.0
-			return ui.NumberField(ui.NumberFieldConfig{
+			return ui.NumberField(ui.NumberFieldConfig{Ctx: ctx,
 				Name: f.Name, Label: label, ID: id, Value: val, LabelHidden: fb.compact,
 				Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 			})
@@ -742,7 +742,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		if f.Type == schema.Float {
 			step = 1e-9
 		}
-		return ui.NumberField(ui.NumberFieldConfig{
+		return ui.NumberField(ui.NumberFieldConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph, LabelHidden: fb.compact,
 			Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 		})
@@ -753,7 +753,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			// draws a select whose selected empty choice submits blank,
 			// which keeps the column NULL on update; yes or no sets it,
 			// and the switch returns on the next edit.
-			return ui.Select(ui.SelectConfig{
+			return ui.Select(ui.SelectConfig{Ctx: ctx,
 				Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
 				Options: []ui.SelectOption{
 					{Value: "", Text: i18nui.EntityNotSet.Text(ctx), Selected: true},
@@ -796,18 +796,18 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 				Value: "", Text: i18nui.EntitySelect.Text(ctx), Selected: val == "",
 			}}, opts...)
 		}
-		return ui.Select(ui.SelectConfig{
+		return ui.Select(ui.SelectConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
 			Placeholder: ph, Options: opts, Required: required,
 		})
 	case schema.Date:
-		return ui.DateField(ui.DateFieldConfig{
+		return ui.DateField(ui.DateFieldConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Value: dateInputValue(val),
 			Help: help, Required: required, LabelHidden: fb.compact,
 		})
 	case schema.Timestamp:
 		v := timestampInputValue(val)
-		return ui.DateTimeField(ui.DateTimeFieldConfig{
+		return ui.DateTimeField(ui.DateTimeFieldConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Value: v, Step: timestampStep(v),
 			Help: help, Required: required,
 		})
@@ -819,7 +819,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		}
 		// Without storage the stored URL stays editable; a preview sits
 		// above it.
-		field := ui.TextField(ui.TextFieldConfig{
+		field := ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
 			Help: help, Required: required,
 		})
@@ -829,7 +829,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		return field
 	case schema.UUID:
 		if fb.create {
-			return ui.TextField(ui.TextFieldConfig{
+			return ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 				Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph, Help: help,
 			})
 		}

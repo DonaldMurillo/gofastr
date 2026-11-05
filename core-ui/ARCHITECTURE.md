@@ -16,6 +16,12 @@ addresses it actually requests. Inline boot and leave snapshots with no
 part record retain their rendered outlets; already-armed loading entries
 for unrequested addresses are restored and their timers cancelled.
 
+Typed text/number/date/datetime fields, native Select, and FormRepeater
+take the render context through `Ctx`. Name-derived IDs claim a scoped
+family (hint/error or repeater items), while explicit IDs reserve that
+family unchanged. Sibling controls with the same field name therefore
+keep their own labels and descriptions when rendered with a page scope.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching
