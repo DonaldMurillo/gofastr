@@ -56,6 +56,9 @@ var blockTags = map[atom.Atom]bool{
 	atom.Article: true, atom.Figure: true, atom.Figcaption: true, atom.Br: true,
 	atom.Hr: true, atom.H1: true, atom.H2: true, atom.H3: true, atom.H4: true,
 	atom.H5: true, atom.H6: true, atom.Summary: true, atom.Details: true,
+	atom.Address: true, atom.Fieldset: true, atom.Form: true, atom.Legend: true,
+	atom.Caption: true, atom.Hgroup: true, atom.Main: true, atom.Header: true,
+	atom.Menu: true, atom.Thead: true, atom.Tbody: true, atom.Tfoot: true,
 }
 
 // IgnoreAttr marks an element whose text stays out of the index, the

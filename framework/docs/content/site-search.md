@@ -175,6 +175,11 @@ first whole-word hit, and hits are wrapped in `<mark>`. With `SearchPage`
 set, the rows end with "See all results for “…”" (`ui.searchResults.all`),
 which opens the search page for the query.
 
+Block elements separate indexed words even when the rendered HTML has no
+whitespace between them. This includes adjacent addresses, forms,
+fieldsets, legends, captions, and page grouping elements. Inline elements
+preserve words split across emphasis or other inline markup.
+
 ## Search page
 
 `sitesearch.Screen(b)` is a page of every result, 20 at a time. Mount it
