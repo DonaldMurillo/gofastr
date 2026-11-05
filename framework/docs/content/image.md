@@ -369,7 +369,10 @@ encoding, note that cost scales with `width × height × components`;
 `BlurHash` auto-downscales to 64 px internally so you do not have to
 resize first.
 
-A malformed hash returns an error rather than pixels. Treat a
+A malformed hash returns an error rather than pixels. Hashes longer than
+166 characters (the 9×9 component limit) are rejected before decoding
+their digits, so invalid stored values cannot grow the decoder's buffers.
+Treat a
 placeholder as optional when rendering user data. The UI components
 already drop an unusable `Placeholder` and render the image without one,
 so a bad legacy row degrades instead of failing the page.

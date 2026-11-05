@@ -3,6 +3,7 @@
 package objc
 
 import (
+	"runtime"
 	"unsafe"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
@@ -91,7 +92,9 @@ func SendRectRet(self ID, sel uintptr, ints ...uintptr) Rect {
 	full := make([]uintptr, 0, 2+len(ints))
 	full = append(full, uintptr(self), sel)
 	full = append(full, ints...)
-	var r Rect
-	ffi.CallRetStruct(cptr(symMsgSendStret), unsafe.Pointer(&r), full, nil)
-	return r
+	result := new(Rect)
+	escapeSink.Store((*byte)(unsafe.Pointer(result)))
+	ffi.CallRetStruct(cptr(symMsgSendStret), unsafe.Pointer(result), full, nil)
+	runtime.KeepAlive(result)
+	return *result
 }
