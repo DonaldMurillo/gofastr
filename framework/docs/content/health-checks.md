@@ -7,9 +7,10 @@ Every `framework.App` exposes two probes wired during `Start`:
 | `/healthz` | Liveness | "Is the process up?" Always returns 200 |
 | `/readyz`  | Readiness | "Should it receive traffic?" 200 / 503 |
 
-Both endpoints set `Cache-Control: no-store`. They sit ahead of the
-default middleware chain, so a hung downstream check or a recovered
-panic won't make the process look healthy to its orchestrator.
+Both endpoints set `Cache-Control: no-store`. They run through the
+root middleware chain, including the default middleware and every
+`app.Use` middleware, regardless of registration order. Timeouts, recovery,
+and authentication middleware can therefore affect a probe's response.
 
 ## Liveness
 
@@ -188,9 +189,10 @@ app := framework.NewApp(
 - **Don't make `/healthz` conditional.** Liveness should fail only
   when the process itself is wedged. File `/readyz` failures
   there and orchestrators will restart pods unnecessarily.
-- **Don't gate `/readyz` behind auth.** Probes from k8s, Fly, ELB
-  are anonymous. If you've installed broad auth middleware, mount
-  these endpoints before it.
+- **Don't gate `/healthz` or `/readyz` behind auth.** Probes from k8s,
+  Fly, ELB are anonymous. Scope authentication to route groups, or
+  explicitly exempt both probe paths in root authentication middleware.
+  Registering middleware later does not bypass it for existing routes.
 - **Don't enable `WithVerboseReadiness` on a public listener.** The
   default redacted form is the right choice when probes can be
   reached from outside the cluster.
