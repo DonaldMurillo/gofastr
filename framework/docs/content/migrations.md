@@ -893,6 +893,11 @@ files, missing directories, and Down-without-Up files are likewise errors
 misconfigured entity). Dotfiles, sub-directories, and non-`.sql` files are
 ignored, so a `README.md` next to the routines is fine.
 
+A plain routine name cannot contain dots. In `audit.log_fn.sql` the loader
+reads `.log_fn` as a dialect suffix and refuses it as unknown, the same check
+that catches a typo like `refresh.mysql.sql`. A dotted name loads with a
+dialect tag: `audit.log_fn.pg.sql` is the Postgres routine `audit.log_fn`.
+
 Pass `"."` as the directory to load SQL files at the filesystem root,
 including an `os.DirFS` rooted at the routines directory or root-level embeds.
 

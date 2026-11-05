@@ -48,6 +48,11 @@ const (
 // directories are errors: the framework screams rather than silently
 // no-op'ing, the same posture as a misconfigured entity.
 //
+// A plain name (no dialect tag) cannot contain dots: "audit.log_fn.sql"
+// reads ".log_fn" as an unknown dialect suffix and is refused, which is
+// what catches a typo like "foo.mysql.sql". A dotted name loads with a
+// dialect tag ("audit.log_fn.pg.sql").
+//
 // Only top-level files in dir are considered. Sub-directories, dotfiles,
 // and non-`.sql` files are ignored (README.md, etc.). Routines come back in
 // deterministic name-sorted order so the boot plan and generated migrations
@@ -88,11 +93,11 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		base := strings.TrimSuffix(name, sqlExt) // "foo" | "foo.down" | "foo.pg" | "foo.pg.down" | "foo.sqlite.down"
 
 		// Split dialect + down markers off the base. The grammar is
-		// [<dialect>][.down] trailing the routine name, but the routine name
-		// itself may legally contain dots (e.g. "audit.log_fn"). We resolve
-		// right-to-left: if the last segment is "down", it's a Down file; if
-		// the segment before that (or the last one, when not Down) is a known
-		// dialect suffix, it scopes the Up.
+		// [<dialect>][.down] trailing the routine name, resolved right to
+		// left: if the last segment is "down", it's a Down file; if the
+		// segment before that (or the last one, when not Down) is a known
+		// dialect suffix, it scopes the routine. Any other trailing segment
+		// is refused below, so only a dialect-tagged name may contain dots.
 		isDown := false
 		if strings.HasSuffix(base, downPart) {
 			isDown = true
@@ -187,10 +192,10 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 // base ends in a dot-segment that isn't a known dialect, suffixMatched is the
 // trailing segment (so the caller can decide whether to reject).
 //
-// The routine name is everything before the dialect suffix. A name may itself
-// contain dots ("audit.log_fn"). We only strip a known suffix, so
-// "audit.log_fn.pg" → ("audit.log_fn", DialectPostgres, ".pg") and
-// "audit.log_fn.else" → ("audit.log_fn.else", "", ".else") (rejected upstream).
+// The routine name is everything before the dialect suffix. Only a known
+// suffix is stripped, so "audit.log_fn.pg" → ("audit.log_fn",
+// DialectPostgres, ".pg"), while "audit.log_fn" → ("audit.log_fn", "",
+// ".log_fn"), which RoutinesFS refuses as an unknown dialect suffix.
 func splitDialectSuffix(base string) (name string, dialect Dialect, suffix string) {
 	switch {
 	case strings.HasSuffix(base, dialectPostgres):
