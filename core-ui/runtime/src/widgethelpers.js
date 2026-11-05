@@ -106,7 +106,7 @@
     if (clearWired.has(el)) return;
     clearWired.add(el);
     el.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape' || e.isComposing || !el.value) return;
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || !el.value) return;
       e.preventDefault();
       e.stopPropagation();
       el.value = '';

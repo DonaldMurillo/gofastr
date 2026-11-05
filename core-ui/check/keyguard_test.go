@@ -5,6 +5,36 @@ import (
 	"testing"
 )
 
+func TestLintKeyGuardEscape(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+		want         int
+	}{
+		{"unguarded", `document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });`, 1},
+		{"composing only", `window.addEventListener('keydown', e => { if (e.key !== 'Escape' || e.isComposing) return; close(); });`, 1},
+		{"229 only", `el.onkeydown = e => { if (e.key !== 'Escape' || e.keyCode === 229) return; clear(); };`, 1},
+		{"numeric", `el.onkeydown = e => { if (e.keyCode === 27) close(); };`, 1},
+		{"switch", `el.addEventListener('keydown', e => { switch (e.key) { case 'Escape': close(); } });`, 1},
+		{"guarded", `el.onkeydown = e => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Escape') close(); };`, 0},
+		{"helper guard", `function composing(e) { return e.isComposing || e.keyCode === 229; } el.onkeydown = e => { if (composing(e)) return; if (e.key === 'Escape') close(); };`, 0},
+		{"helper key", `function escape(e) { return e.key === 'Escape'; } el.onkeydown = e => { if (escape(e)) close(); };`, 1},
+		{"named", `function key(e) { if (e.key === 'Escape') close(); } el.addEventListener('keydown', key);`, 1},
+		{"keyup", `el.addEventListener('keyup', e => { if (e.key === 'Escape') close(); });`, 0},
+		{"hint", `el.onkeydown = e => { say('Escape to close'); };`, 0},
+		{"allow", "//gofastr:allow(keyguard) native numeric control\nel.onkeydown = e => { if (e.key === 'Escape') close(); };", 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			res, err := LintKeyGuard(writeRuntimeFixture(t, "escape.js", test.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Violations) != test.want {
+				t.Fatalf("Escape guard lint found %d violations, want %d: %s", len(res.Violations), test.want, res.Error())
+			}
+		})
+	}
+}
+
 // keyGuardIMEFixture: the e2988bd2 pre-fix combobox listener (Enter
 // behind isComposing alone), the widgethelpers submit-on-Enter shape
 // (Enter in a helper, isComposing in the listener), the fixed guard in
@@ -47,7 +77,7 @@ const keyGuardIMEFixture = `(() => {
     if (e.key === 'Enter') commit();
   });
   field.addEventListener('keydown', function (e) {
-    if (e.isComposing) return;
+    if (e.isComposing || e.keyCode === 229) return;
     say('k.hint', 'Enter a name');
     if (e.key === 'Escape') clear();
   });
@@ -179,7 +209,7 @@ func TestLintKeyGuard_RTLArrowInHelper(t *testing.T) {
 	assertLines(t, res, []int{8})
 }
 
-// TestLintKeyGuard_Repo holds the shipped JavaScript to both arms.
+// TestLintKeyGuard_Repo holds the shipped JavaScript to all three arms.
 //
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js

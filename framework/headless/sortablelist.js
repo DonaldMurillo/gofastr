@@ -342,6 +342,7 @@
   });
 
   document.addEventListener('keydown', (ev) => {
+    if (ev.isComposing || ev.keyCode === 229) return;
     const t = ev.target;
     if (!t?.matches?.('[data-hui-sortable-item]')) return;
 

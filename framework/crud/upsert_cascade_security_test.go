@@ -20,10 +20,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
-func upsertCascadeFixture(t *testing.T, arm string, jsonCase JSONCase) (*CrudHandler, *sql.DB) {
+func upsertCascadeFixture(t *testing.T, arm string, jsonCase JSONCase, extraFields ...schema.Field) (*CrudHandler, *sql.DB) {
 	t.Helper()
 	database := setupDB(t,
-		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, note_id TEXT)`,
+		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, note_id TEXT, child_rows TEXT, profile_row TEXT, tag_label TEXT)`,
 		`CREATE TABLE notes (id TEXT PRIMARY KEY, post_id TEXT, body_text TEXT)`,
 		`CREATE TABLE post_notes (post_id TEXT, note_id TEXT, PRIMARY KEY (post_id, note_id))`,
 	)
@@ -31,7 +31,7 @@ func upsertCascadeFixture(t *testing.T, arm string, jsonCase JSONCase) (*CrudHan
 		Fields: []schema.Field{{Name: "id", Type: schema.String}, {Name: "post_id", Type: schema.String}, {Name: "body_text", Type: schema.String}},
 	}.WithTimestamps(false))
 	posts := entity.Define("posts", entity.EntityConfig{
-		Fields: []schema.Field{{Name: "id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "note_id", Type: schema.String}},
+		Fields: append([]schema.Field{{Name: "id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "note_id", Type: schema.String}}, extraFields...),
 		Relations: []entity.Relation{
 			entity.HasMany("child_rows", "notes", "post_id").WithCascadeWrite(true),
 			entity.HasOne("profile_row", "notes", "post_id").WithCascadeWrite(true),
@@ -226,6 +226,152 @@ func TestUpsertAllowsNonCascadeKeys(t *testing.T) {
 				t.Errorf("non-cascade upsert = %v, %v; want parent write", result, err)
 			}
 			checkUpsertCascadeRows(t, database, arm, false)
+		})
+	}
+}
+
+func checkUpsertCreateParity(test *testing.T, jsonCase JSONCase, fields []schema.Field, body map[string]any) {
+	test.Helper()
+	creator, createDB := upsertCascadeFixture(test, "insert", jsonCase, fields...)
+	if err := creator.Entity.Validate(); err != nil {
+		test.Fatal(err)
+	}
+	created, err := creator.CreateOne(context.Background(), maps.Clone(body))
+	if err != nil {
+		test.Fatalf("create control: %v", err)
+	}
+	var cascades []string
+	for _, relation := range creator.Entity.Config.Relations {
+		switch created[creator.convertKey(relation.Name)].(type) {
+		case map[string]any, []map[string]any:
+			cascades = append(cascades, relation.Name)
+		}
+	}
+	var children int
+	if err := createDB.QueryRow(`SELECT COUNT(*) FROM notes WHERE id = 'new-child'`).Scan(&children); err != nil {
+		test.Fatal(err)
+	}
+	if children != 0 && len(cascades) == 0 {
+		test.Fatal("create wrote a child without returning its cascade")
+	}
+	for _, arm := range []string{"insert", "conflict"} {
+		for _, withHooks := range []bool{false, true} {
+			test.Run(fmt.Sprintf("%s/hooks=%t", arm, withHooks), func(test *testing.T) {
+				handler, database := upsertCascadeFixture(test, arm, jsonCase, fields...)
+				calls := 0
+				if withHooks {
+					handler.Hooks = hook.NewHookRegistry()
+					for _, phase := range []hook.HookType{hook.BeforeCreate, hook.AfterCreate, hook.AfterUpdate} {
+						handler.Hooks.RegisterHook(phase, func(context.Context, any) error { calls++; return nil })
+					}
+				}
+				input := maps.Clone(body)
+				result, err := handler.UpsertOne(context.Background(), input)
+				refused := len(cascades) != 0
+				if refused {
+					checkUpsertCascadeError(test, err, cascades...)
+					if result != nil || calls != 0 || !reflect.DeepEqual(input, body) {
+						test.Errorf("refused upsert changed state: result=%v hooks=%d body=%v", result, calls, input)
+					}
+				} else {
+					if err != nil {
+						test.Fatalf("create accepted a scalar body, upsert refused it: %v", err)
+					}
+					if !reflect.DeepEqual(result, created) {
+						test.Errorf("upsert = %v, want create's scalar result %v", result, created)
+					}
+					if withHooks && calls != 2 {
+						test.Errorf("scalar upsert ran %d hooks, want 2", calls)
+					}
+					if arm == "conflict" {
+						updater, _ := upsertCascadeFixture(test, arm, jsonCase, fields...)
+						updated, updateErr := updater.UpdateOne(context.Background(), "parent", maps.Clone(body))
+						if updateErr != nil || !reflect.DeepEqual(updated, result) {
+							test.Errorf("update control = %v, %v; want %v", updated, updateErr, result)
+						}
+					}
+				}
+				checkUpsertCascadeRows(test, database, arm, refused)
+			})
+		}
+	}
+}
+
+func TestUpsertNormalizesCascadeKeys(test *testing.T) {
+	for _, relation := range []string{"child_rows", "profile_row"} {
+		test.Run(relation, func(test *testing.T) {
+			var nested any = map[string]any{"id": "new-child", "body_text": "nested child"}
+			if relation == "child_rows" {
+				nested = []any{nested}
+			}
+			checkUpsertCreateParity(test, CaseSnake, []schema.Field{{Name: relation, Type: schema.JSON, Hidden: true}}, map[string]any{
+				"id": "parent", "title": "after", casing.ToCamel(relation): nested,
+			})
+		})
+	}
+}
+
+func TestUpsertKeepsScalarAliases(test *testing.T) {
+	for _, alias := range []string{"tags", "Tags"} {
+		for _, key := range []string{alias, "tag_label"} {
+			test.Run(alias+"/"+key, func(test *testing.T) {
+				checkUpsertCreateParity(test, CaseCamel, []schema.Field{{Name: "tag_label", WireName: alias, Type: schema.String}}, map[string]any{
+					"id": "parent", "title": "after", key: "plain scalar",
+				})
+			})
+		}
+	}
+}
+
+func TestUpsertCreateCascadeParity(test *testing.T) {
+	for _, jsonCase := range []JSONCase{CaseSnake, CaseCamel} {
+		fixture, _ := upsertCascadeFixture(test, "insert", jsonCase)
+		for _, relation := range fixture.Entity.Config.Relations {
+			keys := []string{relation.Name, fixture.convertKey(relation.Name), casing.ToSnake(fixture.convertKey(relation.Name))}
+			for keyIndex, key := range keys {
+				if slices.Contains(keys[:keyIndex], key) {
+					continue
+				}
+				var nested any = map[string]any{"id": "new-child", "body_text": "nested child"}
+				values := []any{nil, nested}
+				if relation.Type == entity.RelHasMany || relation.Type == entity.RelManyToMany {
+					values = []any{nil, []any{nested}, []any{}}
+				}
+				if relation.Type == entity.RelManyToMany {
+					values = []any{nil, []any{"child"}, []any{}}
+				}
+				for valueIndex, value := range values {
+					test.Run(fmt.Sprintf("%s/%s/%d", jsonCase, key, valueIndex), func(test *testing.T) {
+						checkUpsertCreateParity(test, jsonCase, nil, map[string]any{"id": "parent", "title": "after", key: value})
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestUpsertRefusesGeneratedCascades(test *testing.T) {
+	field := schema.Field{Name: "profile_row", Type: schema.UUID, AutoGenerate: schema.AutoUUID, Hidden: true}
+	creator, createDB := upsertCascadeFixture(test, "insert", CaseCamel, field)
+	if err := creator.Entity.Validate(); err != nil {
+		test.Fatal(err)
+	}
+	_, err := creator.CreateOne(context.Background(), map[string]any{"id": "parent", "title": "after"})
+	var validation *ValidationError
+	if !errors.As(err, &validation) {
+		test.Fatalf("create control = %v, want a cascade validation error", err)
+	}
+	violations := validation.Fields()["profile_row"]
+	if len(violations) != 1 || violations[0].Reason.Key() != "validation.not_object" {
+		test.Fatalf("create control violations = %v, want not_object on profile_row", validation.Fields())
+	}
+	checkUpsertCascadeRows(test, createDB, "insert", true)
+	for _, arm := range []string{"insert", "conflict"} {
+		test.Run(arm, func(test *testing.T) {
+			handler, database := upsertCascadeFixture(test, arm, CaseCamel, field)
+			_, err := handler.UpsertOne(context.Background(), map[string]any{"id": "parent", "title": "after"})
+			checkUpsertCascadeError(test, err, "profile_row")
+			checkUpsertCascadeRows(test, database, arm, true)
 		})
 	}
 }

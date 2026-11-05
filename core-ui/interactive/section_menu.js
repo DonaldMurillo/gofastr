@@ -154,7 +154,7 @@
       // Escape clears a non-empty filter and stops there, so the sheet
       // stays open; the next Escape closes it.
       input.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape' || !input.value) return;
+        if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || !input.value) return;
         e.preventDefault();
         e.stopPropagation();
         input.value = '';

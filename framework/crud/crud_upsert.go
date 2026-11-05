@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"slices"
@@ -58,7 +59,11 @@ var errUpsertBeforeUpdate = errors.New("upsert: entities with BeforeUpdate hooks
 // A non-null cascade relation value returns a ValidationError without
 // writing; use CreateOne or UpdateOne for nested writes.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
-	if err := ch.refuseUpsertCascades(body); err != nil {
+	columns := maps.Clone(body)
+	if err := ch.bodyColumns(columns); err != nil {
+		return nil, err
+	}
+	if err := ch.refuseUpsertCascades(columns); err != nil {
 		return nil, err
 	}
 	ctx = withEventStamps(ctx)
@@ -85,6 +90,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	// Keys resolve to columns first, so an ownerId spelling is the owner
 	// column the strip below removes.
 	if err := ch.bodyColumns(body); err != nil {
+		return nil, err
+	}
+	if err := ch.refuseUpsertCascades(body); err != nil {
 		return nil, err
 	}
 	// Strip caller-supplied owner_id / tenant_id from the body BEFORE
@@ -154,6 +162,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		}
 		blanked = append(blanked, dropEmptyFormValues(s, body, false)...)
 		if err := ch.coerceNumberColumnValues(body); err != nil {
+			return err
+		}
+		if err := ch.refuseUpsertCascades(body); err != nil {
 			return err
 		}
 		vr := schema.ValidateAll(ch.entitySchema(), body)

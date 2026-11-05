@@ -333,6 +333,7 @@
     return all.length === 1 ? all[0] : null;
   }
   document.addEventListener('keydown', function (e) {
+    if (e.isComposing || e.keyCode === 229) return;
     const host = keyHost();
     if (!host) return;
     if (e.key === 'Escape') {

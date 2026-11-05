@@ -447,7 +447,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-cui-open` to make the floating surface dismissible. |
 | `data-cui-style="<name>"` | The dedup key for a component's stylesheet `<link>`. `loadComponentCSS` appends a link only when no `link[data-cui-style="<name>"]` exists, so every per-component link carries it, whether the runtime injected it or the host SSR-emitted it (a single-component page, and every page of a static export, where the bundle is not used). The host's link also carries `id="cui-css-<name>"`, the id the runtime would have given it. An SSR link without the marker is invisible to the dedup and gets loaded a second time, after `app.css`, which reverses the cascade against the host's overrides. |
 | `data-cui-submit-on-enter` | On a `<form>`, Enter inside any child textarea submits the form. |
-| `data-cui-clear-on-esc` | On an `<input>`/`<textarea>`, Escape clears the value. |
+| `data-cui-clear-on-esc` | On an `<input>`/`<textarea>`, Escape clears the value unless `isComposing` is true or keyCode is 229; composition Escape belongs to the IME. |
 | `data-cui-autogrow` | On a `<textarea>`, height auto-grows with content on input, reset and focus. Hidden controls keep their height until measurable; a shared ResizeObserver fits them on reveal and width changes. Detached targets are unobserved on navigation or DOM removal and re-observed if inserted again; the weak wiring map prevents duplicate listeners. |
 | `data-cui-charcount-source="<id>"` | An element that displays the live character count of the referenced input. |
 | `data-cui-os` *(on `<html>`)* | Set by the runtime at boot to `"mac"` or `"other"` based on best-effort platform detection. Used by `framework/ui.ShortcutHint` to display platform-correct mod-key glyphs purely in CSS (no per-component JS). Functional shortcut matching does not depend on this attribute. |
@@ -2587,6 +2587,14 @@ Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
 Menu link rows activate on Space and prevent page scrolling, except while
 Space extends an active type-ahead prefix.
+Navigable combobox options are anchors with `role="option"` and
+`tabindex="-1"`, inside presentational list items. Their IDs and classes
+stay on the anchors: keyboard picks and plain clicks use the SPA
+navigator, while modified clicks follow the native `href`.
+Escape keydown consumers ignore both `isComposing` and keyCode 229,
+including enclosing disclosures, widgets and intercept panes: an IME
+key left alone by a nested control must not dismiss its parent or clear
+its input. The `keyguard-escape` source lint enforces both indicators.
 
 A second way to author a component separates what this section joins:
 structure in one function, classes in a Classes value, behaviour bound by a

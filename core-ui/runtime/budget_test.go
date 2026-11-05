@@ -1643,7 +1643,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// size plus 2 clearance.
 		// 3777 measured: TestPaneCloseDismissesOwnedModals pins the
 		// content generation advanced by every pane swap.
-		"intercept": 3779,
+		// 3778 measured: TestComboboxIMEKeepsSurfaces pins the IME
+		// Escape guard on an intercepted drawer, including keyCode 229.
+		// 3796 measured with both. Pinned at the measured size plus 2.
+		"intercept": 3798,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

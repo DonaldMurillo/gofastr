@@ -95,7 +95,7 @@
 
   // Escape → close all.
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
     // Defer to modal stack if one is active.
     if (NS._modalStack && NS._modalStack.length > 0) return;
     // Defer to native disclosure handler for details-based disclosures.
