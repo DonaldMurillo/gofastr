@@ -320,7 +320,7 @@ var application *app.App
 ```go
 docs := app.NewScreenGroup("/docs", docsNav)
 docs.Screen(app.NewScreen("/docs/intro", &IntroScreen{}), nil)
-guides := docs.SubGroup("/docs/guides", guidesNav)
+guides := docs.SubGroup("guides", guidesNav)
 guides.Screen(app.NewScreen("/docs/guides/deploy", &DeployScreen{}), nil)
 application.Router.ScreenGroup(docs)
 ```
@@ -328,6 +328,11 @@ application.Router.ScreenGroup(docs)
 `/docs/guides/deploy` renders inside three layers: the app default
 (outermost, owns the single `<main>`), the docs layer, the guides
 layer. Rules that shape the chain:
+
+- A relative screen path is appended to the group's prefix. An absolute
+  path must be the group root or begin with its prefix at a segment
+  boundary; registration panics otherwise. Brace and colon parameter
+  spellings compare identically. Subgroup prefixes are relative to the parent.
 
 - A group's screens inherit the group layout; `group.Screen(s, other)`
   replaces it for that one screen. The group boundary is kept, but its

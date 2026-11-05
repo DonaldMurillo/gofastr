@@ -1926,6 +1926,11 @@ triggers a screen-partial fetch.*
 
 ### Guarding a dynamic screen (route match + `RenderScreen`)
 
+A screen registered in a group must stay at or below that group's URL
+prefix. Absolute paths outside it panic at registration, including sibling
+prefixes such as `/settings-old` beside `/settings`. Brace and colon route
+parameters compare in the same normalized form.
+
 Catch-all screen and redirect patterns require a nonempty remainder,
 including a catch-all registered at the root: `/` never binds an empty key.
 
