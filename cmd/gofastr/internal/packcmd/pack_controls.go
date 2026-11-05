@@ -37,6 +37,12 @@ func reverseControlBlock(call *ast.CallExpr, helpers map[string]ast.Expr) (appsp
 	switch kind {
 	case "action_button":
 		putStr(props, "variant", buttonVariant(config["Variant"]))
+		if props["variant"] == "primary" {
+			delete(props, "variant")
+		}
+		if props["type"] == "button" {
+			delete(props, "type")
+		}
 	case "custom_form":
 		result.Children = reverseControlChildren(call, helpers)
 	case "select_field", "radio_group":
@@ -56,6 +62,9 @@ func reverseControlBlock(call *ast.CallExpr, helpers map[string]ast.Expr) (appsp
 		if len(call.Args) == 2 {
 			if cluster, ok := call.Args[1].(*ast.CallExpr); ok && callSel(cluster) == "ui.Cluster" {
 				putStr(props, "gap", reverseGap(appspec.AstSelName(cfgOf(cluster, 0)["Gap"])))
+				if props["gap"] == "md" {
+					delete(props, "gap")
+				}
 				result.Children = reverseControlChildren(cluster, helpers)
 			}
 		}

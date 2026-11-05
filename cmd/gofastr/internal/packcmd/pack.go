@@ -2976,6 +2976,11 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Entities, err = appgen.PackReadEntities(dir); err != nil {
 		return bp, err
 	}
+	withoutDescription := bp
+	withoutDescription.App.Description = ""
+	if bp.App.Description == appgen.AppSpecSiteDescription(withoutDescription) {
+		bp.App.Description = ""
+	}
 	if bp.Screens, err = packReadScreens(dir); err != nil {
 		return bp, err
 	}

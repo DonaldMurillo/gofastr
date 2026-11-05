@@ -217,6 +217,32 @@ func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error 
 	return nil
 }
 
+func normalizeControlProps(kind string, props map[string]any) map[string]any {
+	defaults := map[string]string{}
+	switch kind {
+	case "action_button":
+		defaults = map[string]string{"variant": "primary", "type": "button"}
+	case "nav_links":
+		defaults = map[string]string{"gap": "md"}
+	default:
+		return props
+	}
+	for key, fallback := range defaults {
+		if value, ok := props[key].(string); ok {
+			value = strings.ToLower(value)
+			if value == "" || value == fallback {
+				delete(props, key)
+			} else {
+				props[key] = value
+			}
+		}
+	}
+	if len(props) == 0 {
+		return nil
+	}
+	return props
+}
+
 // appSpecBlocksHaveCustomForm reports whether a custom_form sits anywhere
 // in blocks: its emitted ui.Form reads the request ctx.
 func appSpecBlocksHaveCustomForm(blocks []AppSpecBlock) bool {

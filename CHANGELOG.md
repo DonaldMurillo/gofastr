@@ -672,6 +672,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **App spec packing keeps metadata and controls canonical.** Generated
+  descriptions are no longer recovered as authored values. Base URL
+  trailing slashes and case-insensitive button values normalize during
+  parsing, and buttons/navigation links no longer gain generated defaults.
+  See `app-spec.md`.
 - **The ConditionalField gallery preview submits successfully.** Its
   form now uses the docs site's no-op POST endpoint instead of posting
   to a GET-only component screen.
