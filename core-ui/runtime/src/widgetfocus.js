@@ -46,7 +46,7 @@
         : undefined;
       if (!root || foreign(root)) return;
       const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(function (el) {
-        return el.offsetParent !== null || el === document.activeElement;
+        return el.tabIndex >= 0 && (el.offsetParent !== null || el === document.activeElement);
       });
       if (!nodes.length) return;
       const first = nodes[0], last = nodes[nodes.length - 1];

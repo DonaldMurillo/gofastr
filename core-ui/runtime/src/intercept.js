@@ -167,7 +167,7 @@
 
   function focusFirst(el) {
     const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])';
-    const first = el.querySelector(sel);
+    const first = Array.from(el.querySelectorAll(sel)).find(el => el.tabIndex >= 0);
     const target = first || el.firstElementChild;
     if (!target) return;
     if (!first) target.setAttribute('tabindex', '-1');
@@ -604,7 +604,7 @@
   // its own trap, so defer to it.
   document.addEventListener('keydown', (e) => {
     if (!layers.length || e.key !== 'Tab' || modalOwnsKeys()) return;
-    const items = [...top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')].filter((el) => el.offsetParent !== null || el === document.activeElement);
+    const items = [...top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')].filter((el) => el.tabIndex >= 0 && (el.offsetParent !== null || el === document.activeElement));
     if (!items.length) { e.preventDefault(); return; }
     const first = items[0], last = items.at(-1);
     if (document.activeElement === (e.shiftKey ? first : last)) {

@@ -45,11 +45,13 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// walk's line before the 2026-11-05 IME Escape fix: an Escape or
 		// key handler ignores a composition event (`isComposing` or
 		// keyCode 229, Safari's), so the key that ends composition never
-		// closes a disclosure or moves a sortable row. disclosure 3083
-		// and sortablelist 3089 measured (2 clearance), pinned by
-		// TestIMEKeepsEscapeConsumers. Each is one module loaded only on
-		// a page carrying that pattern.
-		"framework/headless/disclosure.js":   3085,
+		// closes a disclosure or moves a sortable row. sortablelist 3089
+		// measured (2 clearance), pinned by TestIMEKeepsEscapeConsumers.
+		// The disclosure trap also skips negative-tabindex controls
+		// (TestTrapSkipsNegativeControls): 3094 measured with both, plus
+		// 2. Each is one module loaded only on a page carrying that
+		// pattern.
+		"framework/headless/disclosure.js":   3096,
 		"framework/headless/sortablelist.js": 3091,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
