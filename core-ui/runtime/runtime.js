@@ -1214,35 +1214,25 @@
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
   const syncPageHead = (root) => {
-    const carrier = root && (root.matches && root.matches('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
+    const carrier = root && (root.matches?.('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
     const source = carrier ? new DOMParser().parseFromString(carrier.getAttribute('data-cui-page-head') || '', 'text/html') : (root && root.nodeType === 9 ? root : null);
     if (!source) return;
-    const incoming = [];
-    for (const node of source.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')) {
-      if (node.tagName === 'META' && (!node.hasAttribute('name') && !node.hasAttribute('property') || node.hasAttribute('http-equiv'))) continue;
+    const nodes = source.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]');
+    document.head.querySelectorAll(':is(meta,link)[data-cui-page-meta]').forEach(node => node.remove());
+    for (const node of nodes) {
+      if (node.matches('meta:not([name]):not([property]),meta[http-equiv]')) continue;
       if (node.tagName === 'LINK') {
         try { if (!/^https?:$/.test(new URL(node.getAttribute('href'), location.href).protocol)) continue; } catch (_) { continue; }
       }
-      const copy = node.cloneNode(false);
-      for (const attr of Array.from(copy.attributes)) if (/^on/i.test(attr.name)) copy.removeAttribute(attr.name);
-      incoming.push(copy);
-    }
-    document.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]').forEach(node => node.remove());
-    incoming.forEach(node => document.head.appendChild(node));
-    const csrf = source.querySelector('meta[name="csrf-token"]');
-    if (csrf) {
-      let token = document.head.querySelector('meta[name="csrf-token"]');
-      if (!token) {
-        token = document.createElement('meta');
-        token.name = 'csrf-token';
-        document.head.appendChild(token);
-      }
-      token.content = csrf.content;
+      const copy = node.cloneNode();
+      for (const attr of copy.getAttributeNames()) if (/^on/i.test(attr)) copy.removeAttribute(attr);
+      if (copy.name === 'csrf-token') document.head.querySelector('meta[name="csrf-token"]')?.remove();
+      document.head.append(copy);
     }
   };
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
-    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta],meta[name="csrf-token"]')).map(node => node.outerHTML).join(''));
+    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]'), node => node.outerHTML).join(''));
     for (const attr of ['lang', 'dir']) {
       const value = source.documentElement[attr];
       if (value) carrier.setAttribute('data-cui-' + attr, value);

@@ -288,7 +288,6 @@ nav	4	carrier
 nav	4	cat
 nav	4	changed
 nav	4	clean
-nav	4	csrf
 nav	4	cur
 nav	4	d
 nav	4	data
@@ -306,7 +305,6 @@ nav	4	href
 nav	4	id
 nav	4	id
 nav	4	ids
-nav	4	incoming
 nav	4	keys
 nav	4	lang
 nav	4	link
@@ -315,6 +313,7 @@ nav	4	m
 nav	4	myEpoch
 nav	4	names
 nav	4	navHash
+nav	4	nodes
 nav	4	origin
 nav	4	out
 nav	4	p
@@ -363,7 +362,6 @@ nav	6	rs
 nav	6	slot
 nav	6	swapKey
 nav	6	title
-nav	6	token
 nav	6	u
 nav	6	v
 nav	6	v
