@@ -1602,7 +1602,8 @@ the rest of this document:
 - **The service worker never interferes with the runtime's rails.**
   Its fetch handler has a baked deny list (`/__gofastr/sse`,
   `/__gofastr/session`, `/__gofastr/action`,
-  `/__gofastr/widgets`, `/api/*`, `/auth/*`, plus `PWAConfig.DenyPaths`
+  `/__gofastr/widgets`, `/core-ui/widget/*` (widget state and chrome),
+  `/api/*`, `/auth/*`, plus `PWAConfig.DenyPaths`
   for custom mounts) and ignores non-GET, so island RPCs, SSE streams,
   sessions, and auth always hit the network untouched. Documents are
   network-first and never cached (SSR HTML can be personalized); only

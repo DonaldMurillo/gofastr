@@ -101,7 +101,8 @@ The generated worker is deliberately conservative:
   precached.** `/__gofastr/sse`, `/__gofastr/session`,
   `/__gofastr/action`, `/__gofastr/widgets`, `/__gofastr/widget/`
   (per-screen action scripts are session-gated),
-  `/api/*`, and `/auth/*` are on a deny list baked into the worker;
+  `/core-ui/widget/*` (per-user widget state and chrome), `/api/*`, and
+  `/auth/*` are on a deny list baked into the worker;
   `Precache` entries that point at them (or at another origin) are
   dropped. Apps that mount their API or auth elsewhere extend the list
   with `DenyPaths` (generated apps do this automatically for
