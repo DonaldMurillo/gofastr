@@ -263,6 +263,13 @@ few lines, and link the PR or the docs page for the rest.
   concurrent insert, so the call now fails before any hook or SQL. Use
   `CreateOne` or `UpdateOne` for those entities. See
   `hooks-and-transactions.md`.
+- **BREAKING: `headless.Repeater` names its add and remove buttons.**
+  With `AddName` and `RemoveName` empty the buttons were unnamed, so a
+  page without JavaScript submitted the form with no operation and the
+  server could not tell add from remove. They now default to
+  `Name+"_add"` (value `"1"`) and `Name+"_remove"` (the row index), the
+  names `ui.FormRepeater` already used. A handler that reads every form
+  field sees the two new keys; set explicit names to choose others.
 - **BREAKING: CRUD field errors are keyed by the wire key.** Validation,
   state and batch refusals keyed `fields` and `field_reasons` by column
   name while the body used the wire key (camelCase by default, or a
@@ -758,10 +765,8 @@ few lines, and link the PR or the docs page for the rest.
 - **Field ids stay unique on repeated controls.** Same-named native
   controls and repeaters get scoped ids with matching label and ARIA
   targets. Choices whose values slug the same, repeated toggles, and
-  segmented-control labels each point at their own input. A repeater
-  derives its add and remove submit names from `Name`, so it works
-  without JavaScript, and removing a row moves focus to a usable
-  control or the Add button.
+  segmented-control labels each point at their own input. Removing a
+  repeater row moves focus to a usable control or the Add button.
 - **App-spec nodes render what they declare.** A presence boolean set
   to false (`disabled`, `checked`) no longer renders the attribute. A
   link keeps both its text and its children. A prop that differs from a
@@ -782,8 +787,9 @@ few lines, and link the PR or the docs page for the rest.
   BFF origin guard accepts API tokens with a configured prefix.
 - **Streams and realtime.** A WebSocket upgrade bounds its handshake
   write, so a peer that never reads cannot hold the hijacked
-  connection. With pong checking off, keepalive ticks at the idle
-  timeout instead of every 10ms. An RTC peer evicted by the socket cap
+  connection. With pong checking off, keepalive ticks at one quarter of
+  `ReadIdleTimeout` (10ms minimum) instead of unconditionally every 10ms.
+  An RTC peer evicted by the socket cap
   no longer announces a leave while a remote replica still seats it.
 - **Desktop.** `gofastr desktop feed` merges a release's platforms into
   an existing manifest of the same version and re-signs it. It refuses

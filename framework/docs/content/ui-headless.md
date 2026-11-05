@@ -4,11 +4,12 @@ Repeater submit controls default to `Name+"_add"` with value `"1"` and
 `Name+"_remove"` with the zero-based row index. Explicit `AddName`,
 `AddValue`, and `RemoveName` override these no-script operation markers.
 
-After removing a repeater row, focus returns to the next row's first visible,
-enabled input, select, textarea, or button. Hidden and inert controls are
-skipped, including controls made invisible by CSS. Recovery checks that a
-control actually received focus before stopping; when no row control can
-receive focus, focus returns to Add.
+After an Island swap removes a repeater row, focus returns to the next row's
+first enabled input, select, textarea, or button that can receive focus, or to
+the preceding row when the last row was removed. Hidden, inert, and unrendered
+controls are skipped. Recovery checks that a control actually received focus
+before stopping; CSS transparency (`opacity: 0`) does not itself prevent focus.
+When no row control can receive focus, focus returns to Add.
 
 Native modal dialogs, including confirmation prompts, retain Escape and
 Tab while open above an intercepted pane. Dismissing the dialog keeps

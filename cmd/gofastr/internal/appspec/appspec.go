@@ -3426,8 +3426,10 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		if text == "" {
 			text, _ = block.Props["text"].(string)
 		}
-		if AppSpecBlockUsesNodeRenderer(block) && strings.TrimSpace(text) == "" && len(block.Children) == 0 {
-			return fmt.Errorf("app spec: screen %q link block text or children are required", screenName)
+		label, _ := block.Props["aria-label"].(string)
+		labelledBy, _ := block.Props["aria-labelledby"].(string)
+		if AppSpecBlockUsesNodeRenderer(block) && strings.TrimSpace(text) == "" && len(block.Children) == 0 && strings.TrimSpace(label) == "" && strings.TrimSpace(labelledBy) == "" {
+			return fmt.Errorf("app spec: screen %q link block text or children are required unless aria-label or aria-labelledby supplies an accessible name", screenName)
 		}
 		href := block.Href
 		if href == "" {

@@ -156,21 +156,22 @@
     // older navigation's DOM change is never lost — only its
     // animation drops.
     commit(epoch, from, to, apply, pickSrc, markup) {
+      if (!NS._navLive(epoch)) return;
       const run = () => {
         if (!NS._navLive(epoch)) return;
         const r = apply();
         _vtNames();
         return r;
       };
-      const sVT = document.startViewTransition;
-      if (!sVT || _vtReduced()) { run(); return; }
       // The direction and the pick-edge rule come from the record the
       // navigation's ENTRY bound to this epoch; a navigation the entry
       // never armed (the module loaded mid-flight) takes the forward
       // default.
       const r0 = _rec && _rec.epoch === epoch ? _rec : null;
-      const t = (r0 ? r0.types : ['forward']).slice();
       const pick = _pickFor(pickSrc, !!(r0 && r0.decided), markup);
+      const sVT = document.startViewTransition;
+      if (!sVT || _vtReduced()) { run(); return; }
+      const t = (r0 ? r0.types : ['forward']).slice();
       if (pick) t.push(pick);
       if (!document.dispatchEvent(new CustomEvent('gofastr:transition', {
         cancelable: true,

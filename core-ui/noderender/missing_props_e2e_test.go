@@ -22,7 +22,7 @@ func TestMissingPropsDegrade(t *testing.T) {
 			}()
 			ctx := nodeBrowser(t, tree)
 			var safe bool
-			if err := chromedp.Run(ctx, chromedp.Evaluate(`!document.querySelector('img:not([src]),a:not([href])')`, &safe)); err != nil {
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`!document.querySelector('img:not([src]),img[src=""],a:not([href]),a[href=""]')`, &safe)); err != nil {
 				t.Fatal(err)
 			}
 			if !safe {

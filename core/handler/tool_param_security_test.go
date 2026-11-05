@@ -14,6 +14,11 @@ func TestToolParamErrorsUseJSONTypes(t *testing.T) {
 		{[]any{"x"}, "an array is not accepted here"},
 		{map[string]any{"x": true}, "an object is not accepted here"},
 		{nil, "null is not accepted here"},
+		{(*string)(nil), "null is not accepted here"},
+		{(*int)(nil), "null is not accepted here"},
+		{[]string(nil), "null is not accepted here"},
+		{[]byte(nil), "null is not accepted here"},
+		{map[string]any(nil), "null is not accepted here"},
 	} {
 		var input struct {
 			Query string `query:"q"`

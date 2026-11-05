@@ -749,8 +749,8 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		// and DSN text, internal hostnames) and must not cross the
 		// transport — the same posture invokeHandler's panic path
 		// takes. Log it server-side and answer the generic message.
-		// The caller-visible failure channel a handler owns is
-		// mcp.ToolResult{IsError: true} or a deliberate *RPCError.
+		// Caller-visible failures use mcp.ToolResult{IsError: true},
+		// a deliberate *RPCError, or a typed 4xx *handler.Error.
 		slog.Error("mcp: tool handler failed",
 			slog.String("tool", name),
 			slog.String("err", err.Error()))

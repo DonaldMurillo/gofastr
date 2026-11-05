@@ -6,8 +6,9 @@ follow-up query per relation per nesting level, never one per parent
 row.
 
 Repeated mentions of one relation merge their attached rows before read hooks
-run. Each relation's `AfterList` chain (and `AfterGet` for to-one relations)
-runs once over those rows, including when mentions have different filters.
+run. Each relation's `AfterList` chain runs once over the combined rows,
+including when mentions have different filters. For to-one relations, the
+`AfterGet` chain runs once per distinct attached row.
 
 ## Quickstart
 
@@ -48,6 +49,12 @@ such a property is `anyOf` the key, the related record's schema, or
 null, and a relation with no field of its own is an optional property
 (an array of records for has-many and many-to-many). Request bodies
 still take the key.
+
+Cascade-write validation errors use dotted wire paths in `fields` and
+`field_reasons`. Each relation and field uses its owning entity's wire names,
+including explicit `WireName` overrides, and to-many items retain their numeric
+index: a child's `display_name` field with `WireName: "display"` is reported as
+`author.display` or `authors.0.display`, not `author.displayName`.
 
 A relation behind a Hidden field (a Hidden relation field, or a
 `belongs_to` whose foreign key is Hidden) is not includable: its record

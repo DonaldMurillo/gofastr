@@ -442,6 +442,9 @@ A declined link also invalidates pending navigation work, so an earlier
 overlay response cannot mount behind the confirmation dialog. Cancel
 keeps the dirty pane in place; Discard retries the original scoped move
 without an intervening pane changing which edits it discards.
+If a page navigation is already in flight, the decline also restores its
+prior URL and router path and clears its navigation busy markers. Its late
+response cannot replace the guarded form.
 
 **Active-link highlighting.** After every navigation (and at module
 load) the idle-loaded `activelink` module walks every `nav a`, plus any

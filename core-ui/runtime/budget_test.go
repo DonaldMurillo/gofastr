@@ -1604,10 +1604,14 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// (TestFailedPanelDoesNotReopen), and an apply failure reaches the
 		// navigation catch (TestTransitionFailureRestoresURL).
 		// Pinned at the measured size plus 2 clearance.
-		// 3618 measured (2026-11-04) after pane keyboard handling survives a
+		// 3646 measured (2026-11-04) after pane keyboard handling survives a
 		// browser that rejects the :modal selector and native modal
-		// dialogs own Tab and Escape (TestInterceptGuardsUnsupportedModal).
-		"intercept": 3620,
+		// dialogs own Tab and Escape (TestInterceptGuardsUnsupportedModal),
+		// and ordinary links declined by an open pane keep the captured
+		// history and transition wrapper
+		// (TestPaneDeclinedLinkKeepsForwardTransition).
+		"intercept": 3648,
+
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

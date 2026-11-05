@@ -81,3 +81,20 @@ func TestPaneURLWritesCloseToBase(t *testing.T) {
 		})
 	}
 }
+
+func TestPaneURLWriteOutsideRouteNavigatesPage(t *testing.T) {
+	site := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t)
+	if err := chromedp.Run(ctx, chromedp.Navigate(site.srv.URL+"/list"), chromedp.WaitVisible("#ready", chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	stackStep(t, ctx, 0)
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible("#a-sort", chromedp.ByID),
+		chromedp.Evaluate(`window.__gofastr._pushURL(location.origin+'/plain?p=2')`, nil),
+		chromedp.Click("#a-sort", chromedp.ByID),
+		chromedp.Poll(`document.getElementById('plain-screen')?.textContent==='plain /rec/a?sort=name' && !document.getElementById('cui-intercept')`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+}

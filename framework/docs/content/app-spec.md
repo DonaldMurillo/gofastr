@@ -11,10 +11,11 @@ Prop names for renderer-owned attributes are case-sensitive. Case-variant
 extras such as `ID` or `Class` cannot override the canonical `id` or `class`.
 
 Generation rejects image blocks without `src`, fieldsets without `legend`,
-text-only labels without `for`, and node-rendered links without text or
-children. A plain `{type: link, href: /docs}` block uses its href as the
-label; adding `kind`, props, actions, an island, or a widget selects the
-node renderer and requires text or children. The low-level node renderer
+text-only labels without `for`, and node-rendered links without text,
+children, or a nonblank `aria-label` or `aria-labelledby` prop. A plain
+`{type: link, href: /docs}` block uses its href as the label; adding `kind`,
+props, actions, an island, or a widget selects the node renderer and requires
+content or one of those accessible-name props. The low-level node renderer
 degrades incomplete nodes instead of panicking:
 an image is omitted, an empty-legend fieldset stays a fieldset, a label may
 remain unassociated, and a link without `href` becomes text content.

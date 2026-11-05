@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
@@ -41,14 +40,23 @@ func TestPartsHandlesEnvelopeLoadFailure(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!doctype html><head><script>window.__errors=[];addEventListener('unhandledrejection',event=>__errors.push(String(event.reason)));</script><script type="application/json" id="gofastr-routes">[{"path":"/","deferred":["l:site#aside"]}]</script></head><body><main>Ready</main><aside data-cui-outlet="l:site#aside">Inline content</aside><script src="/runtime.js"></script></body>`)
+		fmt.Fprint(w, `<!doctype html><head><script>
+window.__errors=[];
+addEventListener('unhandledrejection',event=>__errors.push(String(event.reason)));
+addEventListener('error',event=>{
+  if(event.target instanceof HTMLScriptElement && event.target.src.includes('/runtime/envelope.js')) {
+    window.__failedEnvelope=true;
+    setTimeout(()=>setTimeout(()=>window.__failureSettled=true,0),0);
+  }
+},true);
+</script><script type="application/json" id="gofastr-routes">[{"path":"/","deferred":["l:site#aside"]}]</script></head><body><main>Ready</main><aside data-cui-outlet="l:site#aside">Inline content</aside><script src="/runtime.js"></script></body>`)
 	}))
 	defer server.Close()
 	ctx := chromedptest.Context(t)
 	var failures []string
 	if err := chromedp.Run(ctx, chromedp.Navigate(server.URL),
 		chromedp.Poll(`!!window.__gofastr?.loadedModules?.parts`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Poll(`!!window.__failedEnvelope && !!window.__failureSettled`, nil),
 		chromedp.Evaluate(`window.__errors`, &failures)); err != nil {
 		t.Fatal(err)
 	}

@@ -1797,6 +1797,13 @@ gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     to .), computing sha256 and size from the archive file
 ```
 
+Retained channels must also have valid semantic versions; an invalid channel
+refuses the merge without changing the existing manifest or signature.
+On macOS, Linux, and Windows, feed writers sharing an output directory serialize
+the entire read/merge/sign/write operation with an OS file lock. Publish the
+completed pair after all jobs finish; live readers can still observe the interval
+between the manifest write and its signature write.
+
 `feed` refuses a version that is not semver, a platform key outside
 the `GOOS-GOARCH` grammar, a non-https archive URL, an archive
 that is not a zip with exactly one top-level `.app` directory, and an
