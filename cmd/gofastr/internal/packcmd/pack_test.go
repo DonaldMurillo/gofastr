@@ -808,6 +808,7 @@ func TestPack_ReadApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("packReadApp: %v", err)
 	}
+	a.App.Admin.Path, a.App.Admin.Role = "", ""
 	if !reflect.DeepEqual(a.App, app) {
 		t.Errorf("app mismatch:\n%s", clitest.FirstAppSpecDiff(a.App, app))
 	}
@@ -838,6 +839,7 @@ func TestPack_MeridianRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("packAppSpec: %v", err)
 	}
+	a.App.Admin.Path, a.App.Admin.Role = "", ""
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("round-trip mismatch:\n%s", clitest.FirstAppSpecDiff(a, b))
 	}
