@@ -36,8 +36,18 @@
   NS._toastSeq = NS._toastSeq || 0;
 
   let returnFocus = document.activeElement;
+  let focusedToast = null;
+  const focusObserver = new MutationObserver(() => {
+    if (!focusedToast || focusedToast.isConnected) return;
+    focusedToast = null;
+    focusObserver.disconnect();
+    if (document.activeElement === document.body) focusToastTarget(returnFocus);
+  });
   document.addEventListener('focusin', (event) => {
-    if (!event.target.closest('[data-hui-toast-id], [data-hui-toast]')) returnFocus = event.target;
+    focusObserver.disconnect();
+    focusedToast = event.target.closest('[data-hui-toast-id], [data-hui-toast]');
+    if (focusedToast) focusObserver.observe(document.body, { childList: true, subtree: true });
+    else returnFocus = event.target;
   });
 
   function focusToastTarget(target) {

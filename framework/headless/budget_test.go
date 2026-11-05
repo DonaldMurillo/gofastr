@@ -72,7 +72,8 @@ func TestBehaviorModuleSizeBudgets(t *testing.T) {
 		// TestIMEKeepsEscapeConsumers pins both IME indicators: 3089 measured + 2.
 		{SortableListBehaviorName, "sortablelist.js", 3091},
 		{MultiSelectBehaviorName, "multiselect.js", 1024},
-		{FeedbackBehaviorName, "feedback.js", 3072},
+		// TestIslandToastReturnsFocus: removal recovery measures 3144 + 2.
+		{FeedbackBehaviorName, "feedback.js", 3146},
 		{CopyBehaviorName, "copy.js", 1024},
 		{DatePickerBehaviorName, "datepicker.js", 2944},
 	} {

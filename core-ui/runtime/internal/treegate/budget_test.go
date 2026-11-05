@@ -41,6 +41,9 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 	// outside core qualifies: it ships in a binary only when its
 	// package is imported, and on a page only when asked for.
 	behaviorOverrides := map[string]int{
+		// TestIslandToastReturnsFocus: focused-row detach observation and
+		// origin recovery share the toast lifecycle, 3144 measured + 2.
+		"framework/headless/feedback.js": 3146,
 		// framework/headless's disclosure and sortable list, each at the
 		// walk's line before the 2026-11-05 IME Escape fix: an Escape or
 		// key handler ignores a composition event (`isComposing` or

@@ -691,6 +691,10 @@ families:
   `tabindex="-1"` origin). Capacity eviction uses
   the same recovery. Background expiry never moves external focus,
   and the exit timer does not reclaim focus moved elsewhere.
+  Server-rendered rows keep their Island dismissal link: when its response
+  removes the focused row, focus returns to the last connected external
+  control. A reader who moved focus elsewhere while the request was pending
+  keeps that focus, and an unsuccessful dismissal leaves the row alone.
 - **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
