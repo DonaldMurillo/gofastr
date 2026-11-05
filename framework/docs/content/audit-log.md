@@ -246,7 +246,6 @@ deployments.
 | `password.reset_completed` | Password successfully reset. |
 | `oauth.linked` | A NEW `(provider, providerID)` binding was persisted. |
 | `oauth.login` | An already-linked OAuth identity logged in. |
-
 | `oauth.refused` | OAuth callback refused on email collision (`reason=link_conflict`), the account-takeover defence. |
 | `magiclink.requested` | A magic link was sent. |
 | `magiclink.consumed` | A magic link token was redeemed for a session. |
