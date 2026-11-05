@@ -3006,25 +3006,24 @@ func (a *App) RegisterBattery(b Battery, deps ...string) *App {
 // later call returns nil without re-running plugin Inits. This lets tests
 // call InitPlugins() manually pre-Start without colliding with the
 // implicit call inside Start.
-func (a *App) InitPlugins() error {
+func (a *App) InitPlugins() (err error) {
 	if !a.initialized.CompareAndSwap(false, true) {
 		return nil
 	}
+	defer func() {
+		if err != nil {
+			a.initialized.Store(false)
+		}
+	}()
 	if err := a.Plugins.InitAll(a); err != nil {
-		// Rollback the latch so the caller can retry after fixing
-		// whatever caused the failure (otherwise a transient init
-		// error would permanently brick the app).
-		a.initialized.Store(false)
 		return err
 	}
 	if err := a.Batteries.InitAll(a); err != nil {
-		a.initialized.Store(false)
 		return err
 	}
 	// Load module enable/disable state from the store into the in-memory
 	// cache. Modules absent from the store default to enabled.
 	if err := a.modules.loadFromStore(context.Background()); err != nil {
-		a.initialized.Store(false)
 		return err
 	}
 	// Now that every plugin and battery has run Init and settled its own
