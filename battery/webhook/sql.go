@@ -486,7 +486,7 @@ func (s *SQLStore) ResetDelivery(ctx context.Context, id string) error {
 func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
 		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
-		WHERE status = %s AND next_attempt_at <= %s
+		WHERE status = %s AND (next_attempt_at IS NULL OR next_attempt_at <= %s)
 		ORDER BY next_attempt_at ASC`,
 		s.delTable, s.placeholder(1), s.placeholder(2))
 	if limit > 0 {
@@ -587,7 +587,7 @@ func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, 
 	q := fmt.Sprintf(`UPDATE %s SET next_attempt_at = $1, updated_at = $1, attempts = attempts + 1
 		WHERE id IN (
 			SELECT id FROM %s
-			WHERE status = $2 AND next_attempt_at <= $3
+			WHERE status = $2 AND (next_attempt_at IS NULL OR next_attempt_at <= $3)
 			ORDER BY next_attempt_at ASC
 			LIMIT %d
 			FOR UPDATE SKIP LOCKED
@@ -640,7 +640,7 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 
 	selQ := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
 		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
-		WHERE status = ? AND next_attempt_at <= ?
+		WHERE status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
 		ORDER BY next_attempt_at ASC LIMIT %d`, s.delTable, limit)
 	rows, err := conn.QueryContext(ctx, selQ, string(StatusPending), now)
 	if err != nil {

@@ -108,6 +108,11 @@ go out without it.
 `Publish` returns the number of subscribers the event was queued for.
 The actual HTTP POST happens on the manager's worker goroutine.
 
+A pending delivery with a zero `NextAttemptAt` is immediately due in both
+`MemoryStore` and `SQLStore`, whether added or updated through `Store`.
+SQL `NULL` schedules follow that same rule, including existing rows.
+Future schedules remain delayed; dead and successful rows are not due.
+
 When the payload carries one user's data, publish with `PublishFor`:
 
 ```go
