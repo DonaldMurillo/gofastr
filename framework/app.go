@@ -296,7 +296,7 @@ type App struct {
 	auditCfg *AuditConfig
 	// entityUI is the UI EntityUI built; a second call is refused.
 	entityUI *entityui.UI
-	// pendingEndpoints holds EntityEndpoints calls until App.Entity
+	// pendingEndpoints holds EntityEndpoints calls until entity registration
 	// registers the entity they name.
 	pendingEndpoints map[string][]entity.Endpoint
 	// crudMounts records where each entity's write routes mounted: the
@@ -1674,6 +1674,9 @@ func (a *App) Group(prefix string, opts ...routegroup.GroupOption) *routegroup.R
 //
 // This is the group-scoped equivalent of App.Entity.
 func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.EntityConfig) *App {
+	if queued := a.pendingEndpoints[name]; len(queued) > 0 {
+		config.Endpoints = append(slices.Clip(config.Endpoints), queued...)
+	}
 	e := entity.Define(name, config)
 	// The registry keys on (name, version) so the same entity name can be
 	// registered into multiple groups. The version is the group's full
@@ -1758,6 +1761,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		}
 	}
 
+	delete(a.pendingEndpoints, name)
 	return a
 }
 
@@ -2234,8 +2238,8 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
-// EntityEndpoints queues endpoints for the entity that a later App.Entity
-// or TryEntity call registers under name. That call merges them into its
+// EntityEndpoints queues endpoints for the entity that a later App.Entity,
+// TryEntity, or GroupEntity call registers under name. That call merges them into its
 // config's Endpoints, so they pass the same route and MCP checks as
 // endpoints written in the config. It is how a generated
 // entities/endpoints.gen.go attaches endpoints to entity files it does not
@@ -2243,7 +2247,7 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 // while endpoints are still queued for a name nothing registered.
 func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
 	if _, err := a.Registry.Get(name); err == nil {
-		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity", name))
+		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity, TryEntity, or GroupEntity", name))
 	}
 	if a.pendingEndpoints == nil {
 		a.pendingEndpoints = map[string][]entity.Endpoint{}
@@ -3685,7 +3689,7 @@ func (a *App) start(addr string, ln net.Listener) error {
 	a.enableSemanticCoverageFromEnv()
 
 	if len(a.pendingEndpoints) > 0 {
-		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity, TryEntity, or GroupEntity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
 	}
 	if err := a.checkRequestWriteTimeouts(); err != nil {
 		return err

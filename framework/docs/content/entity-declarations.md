@@ -2483,7 +2483,9 @@ See [plugins](plugins.md) → MCP tool gating.
 ### Endpoints from another file
 
 `App.EntityEndpoints` queues endpoints for an entity that a later
-`App.Entity` or `TryEntity` call registers. That call merges them into the
+`App.Entity`, `TryEntity`, or `GroupEntity` call registers. The first successful
+registration consumes the queue; a refused registration leaves it available for
+retry. That call merges them into the
 config's `Endpoints`, so they pass the same route and MCP checks as
 endpoints written in the config. The generated
 `entities/endpoints.gen.go` uses it to attach the
@@ -2497,8 +2499,8 @@ app.Entity("posts", postsConfig)
 ```
 
 Calling it after the entity registered panics, and `Start` returns an
-error while endpoints are still queued for a name no `App.Entity` call
-registered, such as a misspelled table.
+error while endpoints are still queued for a name no `App.Entity`, `TryEntity`,
+or `GroupEntity` call registered, such as a misspelled table.
 
 ### Typed input/output schemas
 

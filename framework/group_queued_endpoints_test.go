@@ -1,0 +1,54 @@
+package framework
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+)
+
+func TestGroupClaimsQueuedEndpoints(t *testing.T) {
+	app := NewApp()
+	group := app.Group("/v1")
+	queued := entity.Endpoint{Method: "POST", Path: "{id}/revoke", Public: true, Handler: http.HandlerFunc(noContent)}
+	app.EntityEndpoints("licenses", queued)
+	config := entity.EntityConfig{
+		Fields:    []schema.Field{{Name: "name", Type: schema.String}},
+		Endpoints: []entity.Endpoint{{Method: "POST", Path: "{id}/renew", Public: true, Handler: http.HandlerFunc(noContent)}},
+	}
+	app.GroupEntity(group, "licenses", config)
+	for _, action := range []string{"revoke", "renew"} {
+		recorder := httptest.NewRecorder()
+		app.Router().ServeHTTP(recorder, httptest.NewRequest("POST", "/v1/licenses/abc/"+action, nil))
+		if recorder.Code != http.StatusNoContent {
+			t.Errorf("%s status = %d, want 204", action, recorder.Code)
+		}
+	}
+	if len(app.pendingEndpoints) != 0 || len(config.Endpoints) != 1 {
+		t.Fatal("group must consume its queue without modifying the caller's config")
+	}
+}
+
+func TestGroupRefusalKeepsEndpointQueue(t *testing.T) {
+	app := NewApp()
+	group := app.Group("/v1")
+	endpoint := entity.Endpoint{Method: "POST", Path: "{id}/revoke", Public: true, Handler: http.HandlerFunc(noContent)}
+	app.EntityEndpoints("licenses", endpoint)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("duplicate endpoint was accepted")
+			}
+		}()
+		app.GroupEntity(group, "licenses", entity.EntityConfig{Endpoints: []entity.Endpoint{endpoint}})
+	}()
+	if len(app.pendingEndpoints["licenses"]) != 1 || len(app.Registry.All()) != 0 {
+		t.Fatal("failed grouped registration consumed the queue or registered the entity")
+	}
+	app.GroupEntity(group, "licenses", entity.EntityConfig{})
+	if len(app.pendingEndpoints) != 0 {
+		t.Fatal("successful retry did not consume queued endpoints")
+	}
+}
