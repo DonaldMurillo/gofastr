@@ -1122,6 +1122,10 @@ front of the prefix); the kernel reads it once into
 `window.__gofastr_locales`. The id is reserved: `registry.RegisterDataBlock`
 refuses it.
 
+Screen markdown renders context-aware components with the same locale
+context as the page, including pattern-level fallback docs. Localized
+content and localized links therefore describe the same language.
+
 Three kernel helpers, exported on `__gofastr` for modules, carry the
 rules:
 
