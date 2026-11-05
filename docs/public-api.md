@@ -47,3 +47,10 @@ Promoting a package (Provisional → Stable) or demoting one is an edit to the
 manifest in `stability/stability.go`, recorded in the commit message and
 `CHANGELOG.md`. Promotion to Stable is a freeze: do it only when the package's
 exported surface is one you are willing to carry across a major version.
+
+## Proposed extension seams
+
+[Presentation-host extension seams](proposals/presentation-host-seams.md)
+proposes supported asynchronous web-navigation guards and listener-free
+application activation for external presentation packages. It is a design
+proposal, not an implemented API or a change to the support tiers above.
