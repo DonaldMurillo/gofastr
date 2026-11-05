@@ -240,7 +240,8 @@ func discoverOwnedFilesAt(base string, patterns []string, suffix string) ([]styl
 }
 
 // GenerateStyleInputs returns the owned sheets read by configured styles
-// generators, relative to projectDir, using the generator's discovery rules.
+// generators as filesystem paths based at projectDir, using the generator's
+// discovery rules. An absolute projectDir produces absolute paths.
 func GenerateStyleInputs(projectDir string, generators []codegen.GeneratorConfig) ([]string, error) {
 	_, runs, err := splitStylesEntries(generators)
 	if err != nil {
