@@ -676,7 +676,11 @@ families:
   page it returns `null` and the kernel's fallback region takes the
   toast) and the offline banner's retry link. With `headless-copy` it
   replaced the retired `copy`, `toasts` and `networkretrybanner`
-  runtime modules.
+  runtime modules. Dismissing a focused runtime row moves focus to the
+  next available row control, then a previous row, then the last
+  connected control focused outside the stack. Capacity eviction uses
+  the same recovery. Background expiry never moves external focus,
+  and the exit timer does not reclaim focus moved elsewhere.
 - **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
