@@ -52,6 +52,8 @@ scripts remain eligible for the next component scan.
 
 Navigation refreshes a supplied CSRF meta token from full documents and
 partial head carriers. Responses omitting the token retain the current one.
+CSRF tokens are live security state, never page-owned metadata: marked tokens
+survive page-head cleanup, and cache replay never restores an earlier token.
 
 Envelope and core navigation share percent-decoded segment normalization
 and typed-parameter matching, including deferred-region route addresses.

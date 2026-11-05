@@ -661,7 +661,10 @@ const (
 	// the actionloader module fires inserted markup's mounts without
 	// repeating a navigation's, adds 8 (the firing itself is the
 	// module's).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8
+	// TestNavigationRefreshesCSRFToken: live-token cleanup and replay guards
+	// measure 15951 bytes. They run in core navigation, so cannot demand-load;
+	// the level-6 line is that measured size plus two bytes.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1146,7 +1149,9 @@ const (
 	// module (+59 in core before the carve), leaving only the mark the
 	// navigation pass must set. Two bytes of clearance, cliff fixture
 	// re-run.
-	coreCongestionWindowGZ = 18465
+	// TestNavigationRefreshesCSRFToken measures 18484 at level 1;
+	// retain two bytes of clearance and re-prove the padded cliff fixture.
+	coreCongestionWindowGZ = 18486
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1259,6 +1264,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// Firing inserted markup's mounts in boot measured +59; the firing
 		// moved to the actionloader module and only this mark stayed.
 		"boot's mount pass marks the elements it fired (_cuiM)": 8, // (l1: 9)
+		// TestNavigationRefreshesCSRFToken measures 15951; line 15953.
+		"CSRF security state survives metadata cleanup and cached replay": 35,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

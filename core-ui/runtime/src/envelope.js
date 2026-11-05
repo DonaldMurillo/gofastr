@@ -239,7 +239,7 @@
     });
   };
   const finishNav = (path, prevPath, cached, root, ps) => {
-    NS._applyDocShell(root);
+    NS._applyDocShell(root, cached);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {

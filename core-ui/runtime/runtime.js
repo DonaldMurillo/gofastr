@@ -1212,12 +1212,12 @@
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
-  const syncPageHead = (root) => {
+  const syncPageHead = (root, cached) => {
     const carrier = root && (root.matches?.('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
     const source = carrier ? new DOMParser().parseFromString(carrier.getAttribute('data-cui-page-head') || '', 'text/html') : (root && root.nodeType === 9 ? root : null);
     if (!source) return;
     const nodes = source.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]');
-    document.head.querySelectorAll(':is(meta,link)[data-cui-page-meta]').forEach(node => node.remove());
+    document.head.querySelectorAll(':is(meta,link)[data-cui-page-meta]').forEach(node => { if (node.name !== 'csrf-token') node.remove(); });
     for (const node of nodes) {
       if (node.matches('meta:not([name]):not([property]),meta[http-equiv]')) continue;
       if (node.tagName === 'LINK') {
@@ -1225,7 +1225,10 @@
       }
       const copy = node.cloneNode();
       for (const attr of copy.getAttributeNames()) if (/^on/i.test(attr)) copy.removeAttribute(attr);
-      if (copy.name === 'csrf-token') document.head.querySelector('meta[name="csrf-token"]')?.remove();
+      if (copy.name === 'csrf-token') {
+        if (cached) continue;
+        document.head.querySelector('meta[name="csrf-token"]')?.remove();
+      }
       document.head.append(copy);
     }
   };
@@ -1526,8 +1529,8 @@
   // (doc.setHtmlAttr, manifest-governed) and the skip link's text.
   // root is the swapped element (the new shell, or the slot that received
   // the payload); a payload with no markers changes nothing.
-  const applyDocShell = (root) => {
-    syncPageHead(root);
+  const applyDocShell = (root, cached) => {
+    syncPageHead(root, cached);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
     // The destination's runtime words; none means English.
     if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
@@ -1554,7 +1557,7 @@
   // finishNav.
   const finishNav = (path, prevPath, cached, root, ps) => {
     window.__gofastr._navShown = true;
-    applyDocShell(root);
+    applyDocShell(root, cached);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {

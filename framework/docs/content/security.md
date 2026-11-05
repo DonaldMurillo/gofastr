@@ -293,6 +293,10 @@ planned rotation without bouncing in-flight forms, list the previous
 secret(s) in `AdditionalKeys`; drain once the old tokens have
 expired.
 
+Client-side navigation refreshes the live CSRF meta token only when a network
+response supplies one. Page-owned metadata cleanup and cached back/forward
+navigation retain that live token, including after signing-key rotation.
+
 ### Masked tokens
 
 Render `middleware.MaskCSRFToken(token)` into a page, never the raw
