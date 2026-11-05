@@ -672,6 +672,96 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Combobox keyboard and pointer fixes.** ArrowUp with no active
+  option starts at the last option. Clearing the query keeps the list
+  closed. Escape during IME composition, Safari's keyCode 229 included,
+  leaves the list open. Ctrl-, Cmd-, Shift- and middle-clicks on an
+  option get the browser's own behaviour. `ComboboxRows` refuses
+  duplicate option IDs, as `Combobox` does. The site-search palette
+  closes when the query has no searchable terms left.
+- **Leave-guard Discard closes the pane that asked.** A declined close
+  or return drops pane fetches still in flight, and Discard closes the
+  layer whose guard declined, not whichever layer is on top by then.
+- **Intercepted panes clean up after themselves.** Closing or replacing
+  a pane closes the widget modals opened inside it. When Return or Back
+  refetches a pane, focus moves to the opener's replacement or the
+  pane's first control instead of falling to `<body>`. A popover whose
+  trigger is re-rendered away closes instead of jumping to the
+  viewport's top-left corner.
+- **Hidden state fields stay hidden in refusals.** The 409 and 422
+  transition refusals withhold the stored state and open moves when the
+  state field is `Hidden`, as list and get responses already did.
+- **Catch-all routes.** A root catch-all `/{path...}` no longer matches
+  `/` with an empty key. A catch-all redirect keeps an encoded slash
+  encoded: `/docs/a%2Fb` redirects to `/help/a%2Fb`, not `/help/a/b`.
+- **MCP state-move tools check the move's own permission.** A caller
+  with the entity's update permission but not the move's `Permission`
+  no longer sees the move's tool in `tools/list`.
+- **Component actions come out in a fixed order.**
+  `ActionRegistry.All` sorts by event name, so action scripts, their
+  content hashes and ETags match across renders and replicas, and a
+  revalidation behind a load balancer answers 304 again.
+- **Widgets pass the request context on.** `component.Widget.RenderCtx`
+  hands its context to the child, and `Widget.Render`,
+  `RenderComponent` and `ComponentList` prefer `RenderCtx`, so a
+  `component.ContextOnly` component renders through them.
+- **`Define` copies relation slices.** Two entity configs sharing one
+  `Relations` backing array no longer overwrite each other's derived
+  `belongs_to` relations.
+- **A `belongs_to` cascade needs a declared foreign key.** A cascade
+  whose key is not a declared field is refused before any child is
+  written. Before, the child was written and reported attached with no
+  link stored.
+- **Typed reads survive self-embedding structs.** An entity struct that
+  embeds a pointer to itself, or two that embed each other, no longer
+  overflows the stack on every typed read.
+- **Migration generation.** Changed views are dropped before removed
+  views, so a view can stop reading one removed in the same migration.
+  A unique field's index name joins the collision check against other
+  index names. SQLite table rebuilds keep NOT NULL deferred for a
+  required column added with no default. Postgres rollback retypes
+  restore the column's old default, renamed columns included.
+- **Generated migration files are written whole.**
+  `GenerateMigrationFile` writes a temporary file, syncs it, and links
+  it into place without replacing an existing file, so a crash
+  mid-write no longer leaves a torn file that makes the next run mint a
+  duplicate migration. The migrations directory needs hard-link
+  support.
+- **`gofastr upgrade` scans more of the app.** Unreadable files and
+  directories, and stylesheet, text and settings files over 8 MiB, are
+  listed as Unscanned instead of skipped. A build constraint naming
+  more than 8 tags is reported as such, not as unsatisfiable. Retired
+  HTML attributes match ASCII-case-insensitively in Go strings and
+  attribute maps. CSS class matches include `[class=…]` and
+  `[class~=…]` selectors and escaped identifiers. A `go.mod` with no
+  `go` directive is checked as Go 1.16, the go command's default,
+  instead of skipping every minimum-version note.
+- **Site search page.** A stale answer no longer rolls the event stream
+  back to an older session, and a session rollover flushes the router's
+  cache. A failed search clears the previous results and says the index
+  is unavailable, in the page's language. Adjacent block elements
+  (`<header>`, `<main>`, table sections, form parts and more) index as
+  separate words.
+- **A2A task stores.** `MemoryStore` refuses a task that cannot be
+  JSON-encoded, as `SQLStore` does, and keeps the scope set at
+  creation. A repeated `Working()` that changes nothing skips the store
+  write instead of bumping the version.
+- **Webhook auth and scheduling.** A bearer or API-key
+  `Subscriber.Auth` that also sets `Username` or `Password` is refused.
+  A pending delivery with a zero `NextAttemptAt` is due at once in
+  `SQLStore`, as it already was in `MemoryStore`.
+- **`DecodeBlurHash` refuses hashes over 166 characters** before
+  decoding them, so an over-long stored value no longer allocates
+  8 bytes per character on every render.
+- **Desktop FFI.** On Linux, `ffi.Call` panics on more integer or float
+  arguments than it can pass, as darwin already did, instead of
+  dropping them. On darwin/amd64, rect-returning Objective-C sends
+  return through heap memory.
+- **Repo tools.** `cmd/affected` reads git's file lists NUL-separated,
+  so a changed file whose name has a non-ASCII byte, a quote or a
+  backslash selects its package; a name with a line break widens the
+  run to everything. The upgrade registry gates fail when a release
+  has no matcher they can check, and skip package-main files.
 - **The SDK reference omits writes for read-only mounts.** Pass the new
   `sdkdocs.Config.ReadOnlyMounted` (`App.EntityReadOnlyMounted`) and an
   `App.View` page lists only its reads and event feed, with no create,
