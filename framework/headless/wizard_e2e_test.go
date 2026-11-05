@@ -31,7 +31,7 @@ func wizardIslandPage(t *testing.T, current int, errors string) string {
 
 // A successful step change: focus lands on the new step's heading and
 // the step-of sentence is re-said through the live region.
-func TestE2E_WizardIslandSwapFocusesTheNewHeadingAndAnnounces(t *testing.T) {
+func TestWizardSwapAnnouncesStep(t *testing.T) {
 	answer := wizardIslandPage(t, 1, "")
 	extra := func(mux *http.ServeMux) {
 		mux.HandleFunc("/__hui/setup", func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +47,14 @@ func TestE2E_WizardIslandSwapFocusesTheNewHeadingAndAnnounces(t *testing.T) {
 	if !pollTrue(ctx, controlsLoadedExpr("rpc")) {
 		t.Fatal("the rpc kernel module never loaded for the island form")
 	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.wizardStatusChanges = [];
+		new MutationObserver(records => records.forEach(record => {
+			if (record.target.matches?.('[data-hui-step-wizard-status]')) {
+				window.wizardStatusChanges.push(record.target.textContent);
+			}
+		})).observe(document, {childList: true, subtree: true});`, nil)); err != nil {
+		t.Fatal(err)
+	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(
 		`document.querySelector('[data-hui-step-wizard-action="next"]').click()`, nil)); err != nil {
 		t.Fatal(err)
@@ -54,6 +62,10 @@ func TestE2E_WizardIslandSwapFocusesTheNewHeadingAndAnnounces(t *testing.T) {
 	if !pollTrue(ctx, `document.activeElement && document.activeElement.tagName === 'H2' &&
 		document.activeElement.textContent === 'Build'`) {
 		t.Fatal("focus did not land on the new step's heading after the swap")
+	}
+	if !pollTrue(ctx, `window.wizardStatusChanges.includes('') &&
+		window.wizardStatusChanges.includes('Step 2 of 2')`) {
+		t.Fatal("the new step was not re-announced through the live region")
 	}
 }
 
