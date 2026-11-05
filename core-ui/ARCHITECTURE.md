@@ -1,18 +1,5 @@
 # GoFastr UI architecture
 
-Declined pane closes and post-save returns invalidate pending pane replies
-before asking the leave guard. A close retry retains its original layer
-and does nothing if that layer has left the stack; a late answer cannot
-replace the guarded form or make Discard close an unrelated replacement.
-
-Catch-all screen and redirect patterns require a nonempty remainder,
-including a catch-all registered at the root: `/` never binds an empty key.
-
-Redirect substitution retains routing-form captures until the target is
-expanded, so an encoded slash inside a catch-all segment never becomes a
-separator. Screen parameters remain decoded; redirect literal and constraint
-checks use the same decoded segment comparisons as screens.
-
 After a repeater row removal, focus recovery tries remaining row controls
 in order and verifies that each focus attempt succeeded. Invisible controls
 must not strand focus on the document body; Add is the final fallback.
@@ -994,6 +981,11 @@ epoch immediately. An older overlay response cannot mount behind the
 confirmation dialog and change what the guarded retry would discard.
 Cancel retains the dirty pane; Discard replays against the same stack.
 
+Declined pane closes and post-save returns invalidate pending pane replies
+before asking the leave guard. A close retry retains its original layer
+and does nothing if that layer has left the stack; a late answer cannot
+replace the guarded form or make Discard close an unrelated replacement.
+
 **More than one origin.** `Intercept.AlsoFrom` names more patterns the
 overlay opens over, beside `From`: a create screen opens over its list
 and over each related record whose Related tab adds to it. The manifest
@@ -1918,6 +1910,14 @@ triggers a screen-partial fetch.*
 ---
 
 ### Guarding a dynamic screen (route match + `RenderScreen`)
+
+Catch-all screen and redirect patterns require a nonempty remainder,
+including a catch-all registered at the root: `/` never binds an empty key.
+
+Redirect substitution retains routing-form captures until the target is
+expanded, so an encoded slash inside a catch-all segment never becomes a
+separator. Screen parameters remain decoded; redirect literal and constraint
+checks use the same decoded segment comparisons as screens.
 
 Middleware that guards `/session/:sessionId` must not re-parse the
 path: `host.RouteMatchMiddleware()` resolves every request against the
