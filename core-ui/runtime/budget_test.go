@@ -1308,21 +1308,16 @@ func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RuntimeJS: %v", err)
 	}
-	filler, ok := Module("rtc")
+	filler, ok := Module("envelope")
 	if !ok {
-		t.Fatal("rtc module not embedded")
+		t.Fatal("envelope module not embedded")
 	}
 
-	grown := core
-	// Fill the level-6 headroom as finely as it takes. A fixed 64-byte
-	// step loses the last chunk once the real core sits close enough
-	// to the goal (the sidebar scanner widening in #298 consumed
-	// exactly that margin): the fixture then stops short of the window
-	// and this self-test fails for no budget reason. Halving the step
-	// keeps the fixture sitting ON the goal; if even 4-byte chunks
-	// cannot push it past the window, the core has genuinely outgrown
-	// the line and the bracket comment on coreCongestionWindowGZ is
-	// the thing to revisit.
+	const replacedTailBytes = 8192
+	grown := core[:len(core)-replacedTailBytes]
+	// Replacing a tail gives the fixture enough level-6 headroom to
+	// build a level-1 cliff even when the real core sits two bytes
+	// below its goal. Both size assertions below remain mandatory.
 	const step = 64
 	chunk := step
 	for i := 0; i+chunk <= len(filler); {
