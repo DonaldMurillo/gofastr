@@ -271,11 +271,13 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: attrs,
 		})
 	case "link", "a":
-		if propString(props, "href") == "" {
+		content := render.Join(withTextProp(props, children)...)
+		if propString(props, "href") == "" || (strings.TrimSpace(string(content)) == "" &&
+			strings.TrimSpace(propString(props, "aria-label")) == "" && strings.TrimSpace(propString(props, "aria-labelledby")) == "") {
 			return html.Span(textConfig(props), withTextProp(props, children)...)
 		}
 		return html.LinkHTML(html.LinkHTMLConfig{
-			Href: propString(props, "href"), Content: render.Join(withTextProp(props, children)...),
+			Href: propString(props, "href"), Content: content,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			ExtraAttrs: extraAttrs(props, "id", "class", "href", "text"),
 		})

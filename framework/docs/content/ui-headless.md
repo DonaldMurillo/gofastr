@@ -1,14 +1,18 @@
 # Headless components
 
-Repeater submit controls default to `Name+"_add"` with value `"1"` and
-`Name+"_remove"` with the zero-based row index. Explicit `AddName`,
-`AddValue`, and `RemoveName` override these no-script operation markers.
+`RepeaterProps.AddName` and `RemoveName` opt the add and remove controls
+into form submission; an empty name leaves that control unnamed. A named
+add control uses `AddValue` (default `"1"`); a named remove control uses the
+zero-based row index. `ui.FormRepeater` supplies `Name+"_add"` and
+`Name+"_remove"` as its no-script operation markers; `headless.Repeater`
+does not derive submit names from the group's `Name`.
 
-After removing a repeater row, focus returns to the next row's first visible,
-enabled input, select, textarea, or button. Hidden and inert controls are
-skipped, including controls made invisible by CSS. Recovery checks that a
-control actually received focus before stopping; when no row control can
-receive focus, focus returns to Add.
+After an Island swap removes a repeater row, focus returns to the next row's
+first enabled input, select, textarea, or button that can receive focus, or to
+the preceding row when the last row was removed. Hidden, inert, and unrendered
+controls are skipped. Recovery checks that a control actually received focus
+before stopping; CSS transparency (`opacity: 0`) does not itself prevent focus.
+When no row control can receive focus, focus returns to Add.
 
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
@@ -272,8 +276,8 @@ its Island rules are the same rule: a `TagInput` owns its chips
 client-side and needs no Island; a `Repeater` whose add/remove
 re-renders the region needs `Action` plus a complete `Island` (the
 operations post to `Action`, the answer lands in the Island's
-`Signal`), and the same buttons stay named submit controls so the
-surrounding form is the no-script path. Implicit submission (Enter in
+`Signal`). Set `AddName` and `RemoveName` to make those buttons named
+submit controls so the surrounding form is the no-script path. Implicit submission (Enter in
 a field) clicks a form's first submit control, so `Repeater` and
 `StepWizard` each render a hidden default button (part
 `default-action`, `hidden` and out of the tab order; a class map must
