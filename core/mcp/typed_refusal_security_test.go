@@ -107,3 +107,27 @@ func TestCallToolAdapterAcceptsNativeNumbers(t *testing.T) {
 		})
 	}
 }
+
+func TestToolCallsKeepUnphrasedClientRefusals(t *testing.T) {
+	server := NewServer()
+	if err := server.RegisterTool("unphrased", "Unphrased refusal", map[string]any{"type": "object"},
+		func(context.Context, map[string]any) (any, error) {
+			return nil, fmt.Errorf("private wrapper: %w", handler.Errorf(422, "public caller message"))
+		}); err != nil {
+		t.Fatal(err)
+	}
+	response := server.HandleRequest(context.Background(), Request{
+		JSONRPC: "2.0", ID: 1, Method: "tools/call",
+		Params: json.RawMessage(`{"name":"unphrased","arguments":{}}`),
+	})
+	if response.Error == nil || response.Error.Code != ErrInvalidParams || response.Error.Message != "public caller message" {
+		t.Fatalf("unphrased refusal = %+v; want invalid-params with the public message verbatim", response.Error)
+	}
+	data, ok := response.Error.Data.(map[string]any)
+	if !ok || data["code"] != 422 {
+		t.Fatalf("unphrased refusal data = %#v; want HTTP code 422", response.Error.Data)
+	}
+	if _, present := data["reason"]; present {
+		t.Fatalf("unphrased refusal includes a reason: %#v", data)
+	}
+}
