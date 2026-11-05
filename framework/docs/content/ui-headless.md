@@ -460,6 +460,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   without reopening the list or retaining an active option.
   IME composition owns its Escape key, including Safari's keyCode 229
   event after `isComposing` becomes false; the popup remains open.
+  Pointer picks consume only unmodified primary clicks. Modified and
+  non-primary clicks are left alone, retaining native link behavior
+  when the option contains an anchor rather than forcing a same-tab pick.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),
   `datepicker-calendar` (the island region), `datepicker-month` (one

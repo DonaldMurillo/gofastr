@@ -251,6 +251,7 @@
 
   // Click-to-pick, delegated so island-swapped options are covered.
   document.addEventListener('click', function (e) {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const opt = e.target && e.target.closest && e.target.closest('[role="option"]');
     if (!opt || opt.getAttribute('aria-disabled') === 'true') return;
     const lb = opt.closest('[data-hui-combobox-listbox]');
