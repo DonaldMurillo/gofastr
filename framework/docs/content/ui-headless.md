@@ -419,6 +419,9 @@ a branch without a link. Arrow-key expansion and lazy loading are unchanged.
 
 The parts the navigation members draw beyond the shared vocabulary:
 
+- **Menu keyboard**: Space activates an enabled link row without scrolling
+  the page. During an active type-ahead run, Space remains part of the
+  search prefix, so multiword labels can be matched without activation.
 - **Carousel**: `carousel-stage` (the overflow scroller the slides sit
   in), `carousel-track`, `carousel-slide`, `carousel-dot`,
   `carousel-prev`, `carousel-next`, and a `visually-hidden` live

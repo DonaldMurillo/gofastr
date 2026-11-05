@@ -2510,6 +2510,8 @@ The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
+Menu link rows activate on Space and prevent page scrolling, except while
+Space extends an active type-ahead prefix.
 
 A second way to author a component separates what this section joins:
 structure in one function, classes in a Classes value, behaviour bound by a
