@@ -216,8 +216,9 @@ and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
   invalid field default or other registration error exits 1, names the
   entity, and leaves migrations and the committed snapshot unchanged.
 - `--apply` (`repair` only): rebuild the reported tables instead of only
-  reporting them. The rebuild keeps every row, column, default, index, and
-  other constraint.
+  reporting them. The rebuild keeps every row, column, default, index,
+  trigger, and other constraint, including triggers that spell the table
+  name with different ASCII letter casing.
 - `--group=<name>`: scope `up`/`down`/`status` to one or more groups
   (repeat the flag); a single `--group` on `force` targets that group's
   version. `--group=default` addresses the default (ungrouped) set.
