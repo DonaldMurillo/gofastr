@@ -64,6 +64,12 @@ func TestNavigationRefreshesCSRFToken(t *testing.T) {
 					first := middleware.CSRF(middleware.CSRFConfig{SecretKey: []byte("first-test-key")})(page)
 					second := middleware.CSRF(middleware.CSRFConfig{SecretKey: []byte("second-test-key")})(page)
 					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						switch r.URL.Path {
+						case "/", "/next", "/without", "/submit":
+						default:
+							w.WriteHeader(http.StatusNotFound)
+							return
+						}
 						if rotated.Load() {
 							second.ServeHTTP(w, r)
 						} else {
@@ -73,10 +79,26 @@ func TestNavigationRefreshesCSRFToken(t *testing.T) {
 				})
 			ctx := chromedptest.Context(t)
 			if err := chromedp.Run(ctx, chromedp.Navigate(base), chromedp.WaitVisible(`#go`),
-				chromedp.Evaluate(`window.stamp=1;window.naved='';window.addEventListener('gofastr:navigate',event=>{window.naved=location.pathname;window.wasCached=event.detail.cached});document.addEventListener('gofastr:formresult',e=>window.writeOK=e.detail.ok)`, nil)); err != nil {
+				chromedp.Evaluate(`window.stamp=1;window.naved='';
+window.addEventListener('gofastr:navigate',event=>{
+  window.naved=location.pathname;
+  window.wasCached=event.detail.cached;
+  document.querySelector('#f').requestSubmit();
+});
+document.addEventListener('gofastr:formresult',event=>window.writeOK=event.detail.ok)`, nil)); err != nil {
 				t.Fatal(err)
 			}
 			rotated.Store(true)
+			var backgroundIsolated bool
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`window.backgroundCheck=null;
+const before=document.cookie;
+Promise.all(['/favicon.ico','/__gofastr/widgets'].map(path=>fetch(path).then(response=>response.status)))
+  .then(statuses=>{window.backgroundCheck=statuses.every(status=>status===404)&&document.cookie===before})`, nil),
+				chromedp.Poll(`window.backgroundCheck!==null`, nil),
+				chromedp.Evaluate(`window.backgroundCheck`, &backgroundIsolated)); err != nil || !backgroundIsolated {
+				t.Fatalf("background requests changed CSRF state: isolated=%v, err=%v", backgroundIsolated, err)
+			}
 			steps := []string{"#next", "#without"}
 			if options.cached {
 				steps = []string{"#next", "back", "forward", "#without"}
@@ -91,8 +113,8 @@ func TestNavigationRefreshesCSRFToken(t *testing.T) {
 						path = "/next"
 					}
 				}
-				if err := chromedp.Run(ctx, navigate, chromedp.Poll(`window.naved===`+fmt.Sprintf("%q", path), nil),
-					chromedp.Evaluate(`window.writeOK=null`, nil), chromedp.Click(`#go`),
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`window.writeOK=null`, nil), navigate,
+					chromedp.Poll(`window.naved===`+fmt.Sprintf("%q", path), nil),
 					chromedp.Poll(`window.writeOK===true && window.stamp===1`, nil, chromedp.WithPollingTimeout(3*time.Second))); err != nil {
 					var state string
 					chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({nav:window.naved,ok:window.writeOK,stamp:window.stamp})`, &state))
