@@ -60,6 +60,13 @@ func TestBulkHonorsBeforeGet(t *testing.T) {
 }
 
 func TestBulkAppActionCrudHonorsBeforeGet(t *testing.T) {
+	for _, scope := range []string{"selected", "record"} {
+		t.Run(scope, func(t *testing.T) { checkActionReadHooks(t, scope) })
+	}
+}
+
+func checkActionReadHooks(t *testing.T, scope string) {
+	t.Helper()
 	ran := false
 	ext := Extensions{Entities: map[string]Extension{"invoices": {Actions: []Action{{
 		Key: "check", Bulk: true,
@@ -84,7 +91,7 @@ func TestBulkAppActionCrudHonorsBeforeGet(t *testing.T) {
 		data.(*hook.GetPayload).AddWhere("id <> $1", "inv-1")
 		return nil
 	})
-	code, output := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "run:check", "scope": "selected", "ids": []string{"inv-2"}})
+	code, output := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "run:check", "scope": scope, "ids": []string{"inv-2"}})
 	if code != http.StatusOK || !ran {
 		t.Fatalf("bulk callback = %d %v, ran=%v", code, output, ran)
 	}
@@ -94,5 +101,34 @@ func TestBulkAppActionCrudHonorsBeforeGet(t *testing.T) {
 	}
 	if number != "INV-1" {
 		t.Errorf("hidden row number = %q, want INV-1", number)
+	}
+}
+
+func TestQueuedWritesHonorBeforeGet(t *testing.T) {
+	fixture, jobs, _ := guardedInvoices(t, entity.AccessControl{}, 150, Extensions{}, nil)
+	crudHandler, err := fixture.host.Crud(mustEntity(t, fixture, "invoices"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	crudHandler.Hooks = hook.NewHookRegistry()
+	crudHandler.Hooks.RegisterHook(hook.BeforeGet, func(_ context.Context, data any) error {
+		data.(*hook.GetPayload).AddWhere("id <> $1", "inv-1")
+		return nil
+	})
+	jobs.principal = func(BulkJob) (context.Context, error) { return bulkCtx("u1", nil), nil }
+	code, output := postBulk(t, fixture, bulkCtx("u1", nil), map[string]any{
+		"action": "move:send", "scope": "every", "match": matchDigest(invoiceIDs(t, fixture)),
+	})
+	if code != http.StatusAccepted || len(jobs.queued) != 1 {
+		t.Fatalf("queue = %d %v, jobs=%d", code, output, len(jobs.queued))
+	}
+	if err := fixture.ui.RunBulkJob(context.Background(), jobs.queued[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := invoiceStatus(t, fixture, "inv-1"); got != "draft" {
+		t.Errorf("hidden invoice changed to %q", got)
+	}
+	if got := invoiceStatus(t, fixture, "q000"); got != "open" {
+		t.Errorf("visible invoice stayed %q", got)
 	}
 }
