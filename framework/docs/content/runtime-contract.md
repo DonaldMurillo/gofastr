@@ -413,6 +413,19 @@ the browser's numeric `tabIndex`, so values such as `-7` and ` -12 ` are
 excluded too. Explicit `autofocus` and programmatic focus targets remain
 separate from the sequential Tab order.
 
+**Same-destination navigation.** `__gofastr.navigate(path)` compares the
+resolved same-origin URL, including its query and fragment, with the current
+URL before writing history. An identical destination is a no-op, including
+an equivalent absolute URL. Changing or removing a fragment is a distinct
+navigation. `{force: true}` still fetches again and replaces the current
+entry when the complete destination is unchanged.
+
+Combobox link options commit their input value and close their list even
+when the link router has already claimed the click. They do not start a
+second navigation or bypass a cancelled `gofastr:beforenavigate` event.
+Keyboard picks, and clicks the router has not claimed, navigate once
+through the picker instead.
+
 **Cancelling a navigation (`gofastr:beforenavigate`).** The router
 dispatches this cancelable event on the anchor element (`bubbles`,
 `cancelable`, so a `document`-level listener sees it and `target` is the

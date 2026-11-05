@@ -472,8 +472,11 @@ The parts the navigation members draw beyond the shared vocabulary:
   drawer, trap disclosure or responsive pane. Tab and Shift+Tab wrap
   between tabbable controls, never through option links; closing the
   list cannot strand focus on a hidden option. Middle-click and modified clicks retain
-  native link behavior; a plain primary click or keyboard pick uses the
-  SPA navigator. Disabled or unsafe destinations have no native link.
+  native link behavior. A plain primary click fills the input and closes
+  the list while letting the link router own navigation exactly once;
+  an already-claimed or cancelled click is not retried by the picker.
+  A keyboard pick uses the SPA navigator once. Disabled or unsafe
+  destinations have no native link.
   `ComboboxRows` and the site-search palette use the same link contract.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),

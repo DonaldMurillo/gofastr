@@ -54,6 +54,9 @@ func comboboxLinkSite(t *testing.T, rows, surface string, negative render.HTML) 
 			ID: "link-surface", Primary: render.Text("Primary"), Secondary: content, SecondaryOpen: true,
 		}, nil)
 	}
+	if surface == "" {
+		page = render.Join(page, render.Tag("a", map[string]string{"id": "plain-link", "href": "/birch?view=tree#leaves"}, render.Text("Birch leaves")))
+	}
 	site := app.NewApp("Combobox links")
 	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
 	site.RegisterScreen(app.NewScreen("/birch", app.NewStaticComponent(`<h1 id="leaves">Birch leaves</h1>`)), nil)

@@ -2552,8 +2552,13 @@ Menu link rows activate on Space and prevent page scrolling, except while
 Space extends an active type-ahead prefix.
 Navigable combobox options are anchors with `role="option"` and
 `tabindex="-1"`, inside presentational list items. Their IDs and classes
-stay on the anchors: keyboard picks and plain clicks use the SPA
-navigator, while modified clicks follow the native `href`.
+stay on the anchors: keyboard picks use the SPA navigator, while plain
+clicks commit the value and close the list without repeating navigation
+already claimed by the link router (including a cancelled navigation).
+Modified clicks follow the native `href`. The programmatic navigator's
+same-destination guard compares the resolved complete URL, including query
+and fragment; changing or removing a fragment is a navigation, while
+forcing an identical destination re-fetches with a replacement entry.
 Escape keydown consumers ignore both `isComposing` and keyCode 229,
 including enclosing disclosures, widgets and intercept panes: an IME
 key left alone by a nested control must not dismiss its parent or clear

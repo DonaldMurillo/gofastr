@@ -668,7 +668,7 @@ const (
 	// core navigator threads a separate CSRF replay guard without changing
 	// the navigate event's cached flag. This is core's own swap path and
 	// cannot demand-load. Retain two bytes of clearance.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 22
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1159,7 +1159,10 @@ const (
 	// TestPrefetchReplayKeepsRotatedCSRFToken's separate replay guard
 	// cannot carve out of core navigation.
 	// Retain two bytes of clearance and re-prove the padded cliff fixture.
-	coreCongestionWindowGZ = 18524
+	// TestNavigateComparesFullDestination and TestComboboxPickWritesHistoryOnce
+	// measure 18542 at level 1 with resolved query/fragment identity in
+	// the core navigator. Two bytes of clearance; cliff fixture re-run.
+	coreCongestionWindowGZ = 18544
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1280,6 +1283,10 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"page direction travels with the page head": 7,
 		// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979; line 15981.
 		"prefetch replay preserves live CSRF without changing cached events": 21,
+		// TestNavigateComparesFullDestination and TestComboboxPickWritesHistoryOnce
+		// measure 16001; line 16003. Destination identity belongs in the
+		// core navigator shared by links and programmatic picks.
+		"navigation deduplicates the resolved URL including query and fragment": 22,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
