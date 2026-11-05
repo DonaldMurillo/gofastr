@@ -56,6 +56,7 @@ var errUpsertBeforeUpdate = errors.New("upsert: entities with BeforeUpdate hooks
 // writes any column re-stamps an auto updated_at with the server time,
 // as Update does; created_at and the key keep their stored values.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.BeforeUpdate)) > 0 {
 		return nil, errUpsertBeforeUpdate
 	}
@@ -459,6 +460,13 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			return fmt.Errorf("upsert: %w", err)
 		}
 		result = res
+		if wrote {
+			if id, ok := ch.rowID(result); ok {
+				if err := ch.stampRow(ctx, id); err != nil {
+					return err
+				}
+			}
+		}
 		if err := ch.releaseObjects(ctx, req, "", ch.colKeyVals(body), objs, false); err != nil {
 			return fmt.Errorf("upsert: %w", err)
 		}

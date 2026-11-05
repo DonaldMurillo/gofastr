@@ -30,9 +30,10 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 ```
 
 - The connection stays open until the client disconnects.
-- In-process creates, including batches run with `owner.AllowCrossOwner`,
-  route their events and outbox entries by the persisted row's owner even
-  when that column is hidden from the returned record.
+- HTTP and in-process creates, including batches, cascaded children and
+  the insert arm of `UpsertOne`, route their events and outbox entries by
+  the persisted row's owner even when that column is hidden from the
+  returned record or a trusted `BeforeCreate` hook assigns another owner.
 - The initial `: subscribed <entity>` comment is flushed after the
   entity's event listeners are installed. A write published after that
   acknowledgement can enter the stream's bounded delivery buffer.

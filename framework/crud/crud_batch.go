@@ -193,6 +193,7 @@ type batchCreateRequest struct {
 // input order.
 func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller rows, as on the single-row routes: never stored by a
 		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")

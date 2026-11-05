@@ -1025,6 +1025,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 // through the handler's Storage backend and persisted as a URL string.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller data (owner/tenant/read-scope rows, or the row a write
 		// just accepted) must never be stored by a shared cache or the
 		// bfcache: RFC 9111's storage restriction covers Authorization
