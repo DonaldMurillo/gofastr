@@ -672,6 +672,10 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **OpenAPI CLI nullable unions generate scalar flags.** A query, path,
+  header or body property with one non-null scalar `oneOf`/`anyOf`
+  branch now maps like `type: [T, "null"]`. Multi-type body unions keep
+  `--json`; parameter errors name the unsupported union. See `app-cli.md`.
 - **The entity screens read related data through the same gates as the
   API.** Related lists, their count badges and read-only relation
   fields checked record access but skipped CRUD exposure and token
@@ -9458,4 +9462,3 @@ registers, and a layout overlay under `gofastr dev`.
   mounted on a router built by hand got a 404 and never reloaded.
   `UIHost.Mount` now registers the dev script routes on the router it
   mounts on.
-
