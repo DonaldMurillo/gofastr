@@ -203,7 +203,8 @@ The server also drops another tier's task from a declaring store's page,
 so a store that declares it wrongly hands out no task, though its
 `totalSize` is then its own. The SQL store adds
 the `scope` column to an older table on open, and its rows read as a
-session's.
+session's. Both built-in stores keep the creation-time scope unchanged
+when updating a task, so its visibility and retention tier cannot move.
 
 A task also records the tenant the creating request acted in. With a
 tenant hook, a caller reads, lists, resumes, cancels and configures only
