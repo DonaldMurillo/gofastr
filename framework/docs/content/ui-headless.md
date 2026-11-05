@@ -293,7 +293,9 @@ dismiss is a GET that writes its href to the URL unless
 sends `DismissBody` as its JSON body and writes no URL; a
 `StepWizard`'s Island is optional and, when set, the form keeps its
 plain POST shape and the module focuses the new step's heading or
-the error summary after the swap. A `ToastStack` is mounted once by
+the error summary after the swap. That focus/announcement record belongs
+to the island answer: a soft navigation clears it, so a pending or failed
+submit cannot focus a wizard on another page. A `ToastStack` is mounted once by
 the layout: it carries the framework's `data-cui-toast-stack` name
 beside its own `data-hui-toast-stack` (the kernel's response-header
 toast path resolves the first, the component module the second), the
