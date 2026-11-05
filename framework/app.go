@@ -2760,7 +2760,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	// registry entry and CRUD routes are already published. Recovering
 	// that panic into an error cannot un-publish them, so the collision
 	// has to be caught here.
-	if len(endpoints) > 0 {
+	if len(endpoints) > 0 || (a.entityUI != nil && crudMount != "" && a.entityUIWouldOwn(ent)) {
 		// Values name what owns the route, so the error can tell a user
 		// who collided with an unrelated page from one who shadowed their
 		// own generated CRUD route. Different fixes.
@@ -2785,6 +2785,14 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
 				held.add(pattern, "this entity's own generated CRUD route")
+			}
+		}
+		if crudMount != "" && a.entityUI != nil && a.entityUIWouldOwn(ent) {
+			for _, pattern := range entityUIRoutePatterns(crudMount) {
+				if conflict, refused := held.add(pattern, "this entity's EntityUI route"); refused {
+					return fmt.Errorf("EntityUI route %s overlaps %s, %s", pattern, conflict.pattern, conflict.owner)
+				}
+				taken[normalizeRoutePattern(pattern)] = "this entity's EntityUI route"
 			}
 		}
 		for _, endpoint := range endpoints {

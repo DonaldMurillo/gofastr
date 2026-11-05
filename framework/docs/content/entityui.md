@@ -1,5 +1,10 @@
 # Entity screens (entityui)
 
+EntityUI reserves `POST _bulk`, `GET _export.csv` and `POST _pick` beneath
+each entity it owns. Custom endpoints at those method/path pairs are
+refused before publishing registry entries or routes, in either registration
+order. A corrected entity declaration can be retried after refusal.
+
 `framework/entityui` draws an entity's list, record and create screens from
 its schema, its `Display` config and its `States`. Generated apps draw
 through it, the admin battery composes it, and a hand-written app page can
