@@ -144,8 +144,15 @@ entities:
     crud: true
     mcp: true
     # A listing's address is the public product, not personal PII; reads
-    # stay open so the catalog screens work for everyone, but writes are
-    # RBAC-gated so anonymous callers can't create or mutate listings.
+    # expose active listings only. Staff holding properties:write can
+    # also read private statuses; signing in alone never lifts the scope.
+    # Writes stay RBAC-gated so visitors cannot mutate listings.
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: active
+      unrestricted: properties:write
     access:
       create: properties:write
       update: properties:write

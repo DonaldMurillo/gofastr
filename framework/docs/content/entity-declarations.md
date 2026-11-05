@@ -1067,6 +1067,11 @@ values" with `in`, not with multiple declarations.
   editor role. If drafts should be limited to editors, give the entity an
   `Unrestricted` permission and grant it to the editor role.
 
+The real-estate example uses this permission-gated posture: only `active`
+properties are public, while `properties:write` permits staff to read
+draft, pending, sold, rented and withdrawn listings. A session alone does
+not disclose those statuses.
+
 The filter applies to every read of the entity's own table: List, Get,
 count, cursor and stream variants, the in-process API (`GetOne`,
 `ListAll`, `CountAll`), typed queries, and, when the entity is the
