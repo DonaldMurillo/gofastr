@@ -657,6 +657,12 @@ When `Resource` has a path (`https://api.example.com/mcp`), the document is
 also served at `/.well-known/oauth-protected-resource/mcp`, the URL RFC 9728
 §3.1 has a client build for it.
 
+`Resource` is required and must be an absolute HTTPS URL with a hostname,
+no userinfo, and no fragment. A query is allowed but discouraged. Each
+`AuthorizationServers` entry must be an absolute HTTPS issuer URL with a
+hostname and no userinfo, query, or fragment; an issuer path is allowed.
+`Start` and `Serve` reject invalid metadata configuration before booting.
+
 The framework serves the document; emitting the companion
 `WWW-Authenticate: … resource_metadata=…` header on 401s (RFC 9728 §5) is left
 to the host's auth middleware so it can be scoped to the exact token-protected

@@ -3687,6 +3687,11 @@ func (a *App) start(addr string, ln net.Listener) error {
 		// own listener after binding.
 		defer func() { _ = ln.Close() }()
 	}
+	if a.oauthResource != nil {
+		if err := a.oauthResource.validate(); err != nil {
+			return err
+		}
+	}
 	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
 	// drives the real binary over HTTP still records what it exercised.
 	// No-op in every other process.
