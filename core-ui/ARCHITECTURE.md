@@ -99,6 +99,9 @@ before hydration or in a static export.
 Signal display bindings (`BindHTML`, `BindText`, `BindAttr`) and
 `AnimateOnSignal` refuse `__proto__`, `constructor` and `prototype` before
 emitting a binding, just as signal mutation helpers do.
+SectionMenu formats both filtered and total counts through the kernel's
+`formatNumber`, retaining the page language's digits after filtering and
+clearing. The number-fill lint also rejects raw slash-separated count ratios.
 
 `ui.SelectConfig.Selected` preserves stored values absent from its options;
 a nonempty value takes precedence over option-level selection flags.

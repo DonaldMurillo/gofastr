@@ -64,7 +64,7 @@
       const hit = shown > 0;
       g.hidden = !hit;
       const count = g.querySelector('.cui-section-menu__count');
-      if (count) count.textContent = q ? shown + '/' + total : String(total);
+      if (count) count.textContent = q ? NS.formatNumber(shown) + '/' + NS.formatNumber(total) : NS.formatNumber(total);
       if (q) {
         if (!opened.has(g)) opened.set(g, g.open);
         if (hit) g.open = true;
