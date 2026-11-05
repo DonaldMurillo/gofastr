@@ -672,6 +672,22 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`SumAll` over a SQLite Decimal column is exact.** The total adds the
+  stored decimal values instead of summing floats, so `0.1 + 0.235`
+  reads `0.335`, not `0.33499999999999996`. Postgres keeps its NUMERIC
+  sum.
+- **`testkit` carved Postgres databases ignore `dbname` overrides.** A
+  `dbname=` or `database=` query option in the admin DSN no longer
+  points the carved connection back at the maintenance database.
+- **`semcov` recording survives a concurrent `Reset`.** A record call
+  racing a reset no longer writes into a cleared manifest.
+- **Example fixes.** Real-estate serves only active listings to the
+  public (staff with `properties:write` see every status) and sends
+  anonymous visitors on its staff screens to sign-in. The API tour
+  migrates before it seeds and its README describes the private
+  temporary upload directory. Acme's help docs keep a filled contents
+  rail beside an empty outlet, and the tracker orders recent activity
+  by date.
 - **Every version group mounts its queued `EntityEndpoints`.**
   `GroupEntity` now serves endpoints queued under the entity's name, so
   v1 and v2 of one entity both get them. A refused registration keeps
