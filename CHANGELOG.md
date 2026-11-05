@@ -677,7 +677,9 @@ few lines, and link the PR or the docs page for the rest.
   An existing pivot was skipped while the snapshot claimed its new
   columns existed. `GeneratePlan`, `DiffSchema` and `AutoMigrate` now
   compare the link columns and key types, and refuse two relations
-  that share a `Through` table but disagree on them.
+  that share a `Through` table but disagree on them. `DiffSchema` still
+  supports Postgres primary-key changes that detach and re-add the
+  pivot's foreign keys.
 - **`gofastr migrate generate` stops on an entity that fails to
   register.** It left the entity out of the plan, which could emit
   `DROP TABLE` for it.

@@ -6,8 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 func pivotDriftPlan(local, foreign string, keyType schema.FieldType) Plan {
@@ -20,6 +23,66 @@ func pivotDriftPlan(local, foreign string, keyType schema.FieldType) Plan {
 			Fields: []schema.Field{{Name: "id", Type: keyType}},
 		}.WithTimestamps(false)),
 	}}
+}
+
+func pivotKeyChangePlan(key string) Plan {
+	plan := pivotDriftPlan("post_id", "tag_id", schema.String)
+	posts := plan.Registry.All()["posts"]
+	posts.Config.Fields = append(posts.Config.Fields, schema.Field{Name: "slug", Type: schema.String, Required: true})
+	posts.Config.PrimaryKey = []string{key}
+	return plan
+}
+
+func TestDiffSchemaPostgresPivotKeyChange(t *testing.T) {
+	database, catalog := mock(t)
+	catalog.ExpectQuery("SELECT version").WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow("PostgreSQL 16"))
+	catalog.ExpectQuery("information_schema.columns").WillReturnRows(sqlmock.NewRows([]string{"table", "column", "type"}).
+		AddRow(0, "id", "text").AddRow(0, "slug", "text").AddRow(1, "id", "text").
+		AddRow(2, "post_id", "text").AddRow(2, "tag_id", "text"))
+	catalog.ExpectQuery("con.contype = 'p'").WillReturnRows(sqlmock.NewRows([]string{"table", "constraint", "column"}).
+		AddRow(0, "posts_pkey", "id").AddRow(1, "tags_pkey", "id"))
+	catalog.ExpectQuery("con.contype = 'f'").WillReturnRows(sqlmock.NewRows([]string{"table", "constraint", "schema", "current", "reference", "column", "key", "action"}))
+	catalog.ExpectQuery("con.contype = 'p'").WillReturnRows(sqlmock.NewRows([]string{"table", "constraint", "column"}).
+		AddRow(0, "post_tags_pkey", "post_id").AddRow(0, "post_tags_pkey", "tag_id"))
+	catalog.ExpectQuery("con.contype = 'f'").WillReturnRows(sqlmock.NewRows([]string{"table", "constraint", "schema", "current", "reference", "column", "key", "action"}).
+		AddRow(0, "post_tags_post_id_fkey", "public", true, "posts", "post_id", "id", "c").
+		AddRow(0, "post_tags_tag_id_fkey", "public", true, "tags", "tag_id", "id", "c"))
+	changes, err := DiffSchema(context.Background(), database, pivotKeyChangePlan("slug").Registry)
+	if err != nil {
+		t.Fatalf("supported primary-key change with generated pivot: %v", err)
+	}
+	var statements []string
+	for _, change := range changes {
+		statements = append(statements, change.SQL)
+	}
+	statement := strings.Join(statements, "\n")
+	for _, want := range []string{"DROP CONSTRAINT", "ADD PRIMARY KEY (slug)", "ALTER TABLE post_tags ADD FOREIGN KEY (post_id) REFERENCES posts(slug) ON DELETE CASCADE"} {
+		if !strings.Contains(statement, want) {
+			t.Errorf("key change omits %q: %s", want, statement)
+		}
+	}
+	if err := catalog.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiffSchemaPostgresPivotKeyChangeLive(t *testing.T) {
+	database := pgtest.DB(t)
+	ctx := context.Background()
+	if err := AutoMigrate(database, pivotKeyChangePlan("id").Registry); err != nil {
+		t.Fatal(err)
+	}
+	changed := pivotKeyChangePlan("slug")
+	changes, err := DiffSchema(ctx, database, changed.Registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplySchemaDiffWithOptions(ctx, database, changes, ApplyOptions{AllowDestructive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if changes, err := DiffSchema(ctx, database, changed.Registry); err != nil || len(changes) != 0 {
+		t.Fatalf("post-plan pivot constraints have not converged: changes=%v, err=%v", changes, err)
+	}
 }
 
 func TestPivotDriftRefused(t *testing.T) {
