@@ -43,6 +43,22 @@ An app that vendors its dependencies (`vendor/modules.txt`) gets a
 command refuses the stale `vendor/`. A release candidate target
 (`--to v0.96.0-rc.1`) shows the notes of the release it precedes.
 
+The scan lists unreadable source, stylesheet, text and settings files as
+**Unscanned**, including symlinks that escape the project root. Review
+these entries before treating a report with no matches as a clean scan.
+A missing optional `gofastr.yml` is not an unreadable-file warning.
+Stylesheet, text and settings reads are capped at 8 MiB per file;
+larger files appear as **Unscanned** instead of being read in full.
+Retired HTML attributes in Go string values and attribute maps match
+ASCII-case-insensitively, including names ending in `-` that identify
+an attribute family. Unicode lookalikes remain distinct.
+A module without a `go` directive is checked as Go 1.16, the Go tool's
+default, rather than bypassing minimum-version notes. An invalid
+`go.mod` either prevents scan startup or appears as **Unscanned** when
+the directive matcher encounters it after loading.
+Module directives are inspected before package loading can add or
+upgrade them, including nested modules.
+
 ## The manual workflow
 
 1. **List the available releases:**

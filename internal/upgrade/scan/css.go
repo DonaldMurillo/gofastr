@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // cssFile runs the CSS matchers over one stylesheet through the CSS
@@ -97,13 +98,29 @@ func cutImportant(v string) string {
 // prelude; a ";" or "}" proves it sat inside a declaration value
 // (content: ".x", grid-template-areas: . a b) and drops it.
 func (e *engine) cssClasses(rel string, toks []ownstyle.Token) {
-	var pending []int // indices of ident tokens following a "." delim
+	type classReference struct {
+		index      int
+		value      string
+		ignoreCase bool
+	}
+	var pending []classReference
+	add := func(index int, value string, ignoreCase bool) {
+		if ignoreCase {
+			value = asciicase.Lower(value)
+		}
+		pending = append(pending, classReference{index, value, ignoreCase})
+	}
 	flush := func() {
-		for _, i := range pending {
+		for _, reference := range pending {
 			for _, n := range e.cssNotes {
 				for _, name := range n.Find.CSS.Classes {
-					if cssClassMatches(cssUnescape(toks[i].Text), name) {
-						e.add(n, Hit{File: rel, Line: toks[i].Line, Col: toks[i].Col, Why: "css ." + name})
+					wanted := name
+					if reference.ignoreCase {
+						wanted = asciicase.Lower(wanted)
+					}
+					if cssClassMatches(reference.value, wanted) {
+						token := toks[reference.index]
+						e.add(n, Hit{File: rel, Line: token.Line, Col: token.Col, Why: "css ." + name})
 					}
 				}
 			}
@@ -119,15 +136,62 @@ func (e *engine) cssClasses(rel string, toks []ownstyle.Token) {
 			flush()
 		case ownstyle.TokenSemicolon, ownstyle.TokenCloseCurly:
 			pending = nil
+		case ownstyle.TokenOpenSquare:
+			if index := classAttrValue(toks, i); index >= 0 {
+				value := toks[index].Text
+				if toks[index].Type == ownstyle.TokenString {
+					value = value[1 : len(value)-1]
+				}
+				flag := nextSignificant(toks, index)
+				ignoreCase := flag >= 0 && attrNameEqual(cssUnescape(toks[flag].Text), "i")
+				for _, name := range strings.FieldsFunc(cssUnescape(value), func(char rune) bool {
+					return char == ' ' || char == '\t' || char == '\n' || char == '\r' || char == '\f'
+				}) {
+					add(index, name, ignoreCase)
+				}
+			}
 		case ownstyle.TokenDelim:
 			if t.Text != "." {
 				continue
 			}
 			if j := nextSignificant(toks, i); j >= 0 && toks[j].Type == ownstyle.TokenIdent {
-				pending = append(pending, j)
+				add(j, cssUnescape(toks[j].Text), false)
 			}
 		}
 	}
+}
+
+func classAttrValue(tokens []ownstyle.Token, start int) int {
+	name := nextSignificant(tokens, start)
+	if name < 0 || tokens[name].Type != ownstyle.TokenIdent || !attrNameEqual(cssUnescape(tokens[name].Text), "class") {
+		return -1
+	}
+	operator := nextSignificant(tokens, name)
+	if operator >= 0 && tokens[operator].Type == ownstyle.TokenDelim && tokens[operator].Text == "~" {
+		operator = nextSignificant(tokens, operator)
+	}
+	if operator < 0 || tokens[operator].Type != ownstyle.TokenDelim || tokens[operator].Text != "=" {
+		return -1
+	}
+	value := nextSignificant(tokens, operator)
+	if value < 0 || (tokens[value].Type != ownstyle.TokenIdent && tokens[value].Type != ownstyle.TokenString) {
+		return -1
+	}
+	if tokens[value].Type == ownstyle.TokenString {
+		text := tokens[value].Text
+		if len(text) < 2 || text[len(text)-1] != text[0] {
+			return -1
+		}
+	}
+	end := nextSignificant(tokens, value)
+	if end >= 0 && tokens[end].Type == ownstyle.TokenIdent &&
+		(attrNameEqual(cssUnescape(tokens[end].Text), "i") || attrNameEqual(cssUnescape(tokens[end].Text), "s")) {
+		end = nextSignificant(tokens, end)
+	}
+	if end < 0 || tokens[end].Type != ownstyle.TokenCloseSquare {
+		return -1
+	}
+	return value
 }
 
 // cssUnescape decodes the escapes in a raw ident token the way the CSS
