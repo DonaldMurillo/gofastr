@@ -896,7 +896,9 @@ its links scroll under it, the current page carries an accent dot, and
 the group holding it takes the accent. `Filter: true` adds a filter box
 above the list: typing hides the links that don't match, marks the
 match, shows "matches/total" in each group header, and Escape clears
-it. `FilterPlaceholder` and `FilterEmpty` set its text.
+it. Composition Escape (`isComposing` or keyCode 229) leaves the filter
+and its enclosing sheet alone. `FilterPlaceholder` and `FilterEmpty`
+set its text.
 Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for a
 pill at 900px by default, while the row stacks at 48rem
 (`interactive.SwapMD`) or, with `Breakpoint: ui.StackBelowLG`,

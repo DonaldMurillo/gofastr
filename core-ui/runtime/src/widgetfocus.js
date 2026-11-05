@@ -16,7 +16,7 @@
   if (!document.__fuiModalEsc) {
     document.__fuiModalEsc = true;
     document.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
       // The newest layer owns Escape: the top popover when it opened
       // above the top modal (one opened before sits under the scrim),
       // else the top modal. A layer that refuses Escape still owns it,

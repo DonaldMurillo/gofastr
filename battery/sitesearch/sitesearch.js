@@ -112,7 +112,9 @@
   }
 
   function row(lb, n, label, meta, segs, dest, section) {
-    const li = document.createElement('li');
+    const li = document.createElement('a');
+    li.href = dest;
+    li.tabIndex = -1;
     li.setAttribute('role', 'option');
     li.id = lb.id + '-search-' + n;
     li.className = 'fui-cmd-palette__option fui-cmd-palette__option--result' + (section ? ' fui-cmd-palette__option--section' : '');
@@ -122,11 +124,14 @@
     li.appendChild(span('fui-cmd-palette__option-label', label));
     if (meta) li.appendChild(span('fui-cmd-palette__option-meta', meta));
     if (segs && segs.length) li.appendChild(excerptEl(segs));
+    const wrapper = document.createElement('li');
+    wrapper.setAttribute('role', 'none');
+    wrapper.appendChild(li);
     return li;
   }
 
   function clearRows(lb) {
-    for (const el of lb.querySelectorAll('[data-search-result]')) el.remove();
+    for (const el of lb.querySelectorAll('[data-search-result]')) el.closest('li').remove();
   }
 
   function openList(lb, input) {
@@ -180,8 +185,8 @@
       was.setAttribute('data-value', now.getAttribute('data-value'));
       was.replaceChildren(...now.childNodes);
     }
-    for (let j = i; j < old.length; j++) old[j].remove();
-    lb.append(...fresh.slice(i));
+    for (let j = i; j < old.length; j++) old[j].closest('li').remove();
+    lb.append(...fresh.slice(i).map(option => option.parentElement));
     const visible = lb.querySelectorAll('[role="option"]:not([hidden]):not([aria-disabled="true"])');
     if (!visible.length) statusRow(lb, input, 'data-search-empty');
     if (visible.length) {

@@ -334,7 +334,7 @@
   // already answered (a combobox closing its listbox, a pane closing,
   // a modal widget) is not answered twice: one Escape, one level.
   window.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+    if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
     // An open modal widget's own CloseOnEscape handler runs; one
     // Escape must not close both.
     if (NS._modalStack && NS._modalStack.length > 0) return;

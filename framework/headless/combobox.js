@@ -249,6 +249,11 @@
     }
   });
 
+  document.addEventListener('mousedown', function (e) {
+    const opt = e.target && e.target.closest && e.target.closest('[role="option"]');
+    if (opt && opt.closest('[data-hui-combobox-listbox]')) e.preventDefault();
+  });
+
   // Click-to-pick, delegated so island-swapped options are covered.
   document.addEventListener('click', function (e) {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
