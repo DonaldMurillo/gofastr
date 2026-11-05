@@ -511,7 +511,9 @@ Each matcher reads the code the way its language means it:
   attribute name (a trailing `-` is a prefix); `properties` a `--x`
   custom property; `match` a regex, the last resort.
 - `css`: `.css` files through the CSS tokenizer. `classes` matches a
-  class selector, `properties` a custom property, and `selectors` a
+  class selector, including `[class=…]` and `[class~=…]` with escaped,
+  quoted or unquoted values and the `i`/`s` case flags;
+  `properties` a custom property, and `selectors` a
   whole compound selector such as `.cui-pos-center > .cui-slot`
   (whitespace around combinators does not matter). `declarations`
   lists `properties` (standard names, never a `--x`) with a `value`
