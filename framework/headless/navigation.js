@@ -76,10 +76,6 @@
     link.dataset.huiBttArmed = '1';
     links.add(link);
     ensureSentinel();
-    const threshold = parseInt(link.getAttribute('data-hui-back-to-top-threshold') || '0', 10);
-    if (threshold > sentinel.offsetHeight) {
-      sentinel.style.height = threshold + 'px';
-    }
   }
 
   document.addEventListener('click', function (e) {
@@ -370,6 +366,12 @@
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const link of within(scope, '[data-hui-back-to-top]')) armLink(link);
+    let threshold = 0;
+    for (const link of links) {
+      if (!link.isConnected) { links.delete(link); continue; }
+      threshold = Math.max(threshold, parseInt(link.getAttribute('data-hui-back-to-top-threshold'), 10) || 0);
+    }
+    if (sentinel) sentinel.style.height = threshold + 'px';
     // A ShortcutHint with a BindTarget names its target's selector:
     // nothing to arm (the chord itself rides -focus/-click on the
     // target or its wrapper), but reading it here keeps the marker an

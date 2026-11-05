@@ -1091,7 +1091,8 @@ active and inactive:
   sidebar width (`SidebarWidthOf(id)`), fires the appearance callback
   from `SetReduceTransparency`, and fires the focus callbacks from
   `FocusWindow` and `BlurWindow` on a goroutine, the way the native
-  delegates do.
+  delegates do. `Window.Focus` also emits focus (and reveals a hidden
+  window); closing the main window to the tray emits blur.
 - `desktop.WindowState` reads the applied chrome back off the live
   window: `Material`, `TitlebarTransparent`, `TitleVisibility`,
   `ToolbarStyle`, `SidebarWidth`, the style mask, and `CGWindowID`
@@ -2915,6 +2916,11 @@ func TestExport(t *testing.T) {
 `ClickMenu` and `ClickTray` match an item by its title phrase's
 English, so the same test passes on a machine set to any language.
 
+Closing and reopening a window ID creates a fresh fake window, just as
+the native shells do. Its title, navigation and evaluation records do not
+carry over. `Closed` and `IsClosed` both report the old instance's closed
+state; delayed close callbacks cannot remove its live replacement.
+
 `h.Stranger()` is a client with no session, for asserting that another
 local process on the port is refused. The harness quits the app in
 `t.Cleanup`; `h.Quit()` returns `Run`'s error when a test ends the app
@@ -2928,6 +2934,11 @@ stands in for the browser; every page-side step runs in the actual
 web view, and every native step goes through the shell's `NativeDriver`
 (`ClickMenu`, `ClickTray`, `OpenSettings`, `Answer`, `ClickPrompt`,
 `OpenURL`, `CloseWindow`, `WindowState`, `Notifications`).
+
+A clean shell exit before page readiness fails the binary instead of
+silently skipping native tests. Readiness has a 60-second deadline;
+exceeding it logs a diagnostic, quits the app, and fails the run. An
+unsupported native shell still skips native tests without failing.
 
 ```go
 func TestMain(m *testing.M) {

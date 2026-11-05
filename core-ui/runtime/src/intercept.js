@@ -210,7 +210,13 @@
     return NS.fetch(path, { headers: hdrs, credentials: 'same-origin' }).then((r) => {
       // An intercepted response can invalidate regular screens even
       // though the overlay itself is never cached.
-      if (r.ok) NS._inval?.(r);
+      if (r.ok) {
+        const session = r.headers.get('X-Gofastr-Session');
+        const meta = session && document.querySelector('meta#gofastr-sse');
+        if (meta) meta.setAttribute('content', meta.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, prefix) => prefix + session));
+        if (session) NS.invalidate('*');
+        NS._inval?.(r);
+      }
       // A record that is gone (404/410) is gone as a page too: drop any
       // cached copy so the fallback navigation fetches the 404 page
       // instead of replaying the record from before it went. The bare

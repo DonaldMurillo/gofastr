@@ -35,6 +35,44 @@
   NS._toastTimers = NS._toastTimers || new Map();
   NS._toastSeq = NS._toastSeq || 0;
 
+  let returnFocus = document.activeElement;
+  document.addEventListener('focusin', (event) => {
+    if (!event.target.closest('[data-hui-toast-id], [data-hui-toast]')) returnFocus = event.target;
+  });
+
+  function focusToastTarget(target) {
+    if (!target || !target.isConnected || target.matches(':disabled') ||
+        target.closest('[hidden], [inert]') || !target.getClientRects().length) return false;
+    target.focus({ preventScroll: true });
+    return document.activeElement === target;
+  }
+
+  function restoreToastFocus(item) {
+    if (item.contains(document.activeElement)) {
+      const rows = Array.from(item.parentElement?.children || []);
+      const index = rows.indexOf(item);
+      const neighbors = rows.slice(index + 1).concat(rows.slice(0, index).reverse());
+      let focused = false;
+      for (const row of neighbors) {
+        if (!row.matches('[data-hui-toast-id], [data-hui-toast]') || row.hasAttribute('data-hui-toast-leaving')) continue;
+        for (const target of row.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')) {
+          if (focusToastTarget(target)) { focused = true; break; }
+        }
+        if (focused) break;
+      }
+      if (!focused) focusToastTarget(returnFocus);
+    }
+  }
+
+  function removeToast(item) {
+    item.setAttribute('data-hui-toast-leaving', '');
+    const id = item.getAttribute('data-hui-toast-id');
+    clearTimeout(NS._toastTimers.get(id)?.timer);
+    NS._toastTimers.delete(id);
+    restoreToastFocus(item);
+    item.remove();
+  }
+
   NS._initToasts = (root) => {
     // A timer goes with its row: one whose row left the document is
     // dropped, and every other one runs on. root may be only a swapped
@@ -68,7 +106,7 @@
         // dismissed the row early).
         let over = 0;
         const arm = () => {
-          if (rec.timer || over || item.contains(document.activeElement)) return;
+          if (rec.timer || over || !item.isConnected || item.hasAttribute('data-hui-toast-leaving') || item.contains(document.activeElement)) return;
           rec.startedAt = Date.now();
           rec.timer = setTimeout(() => NS._dismissToast(item, id), rec.remaining);
         };
@@ -110,8 +148,9 @@
     item.setAttribute('data-hui-toast-leaving', '');
     clearTimeout(NS._toastTimers.get(id)?.timer);
     NS._toastTimers.delete(id);
+    restoreToastFocus(item);
     const ms = parseFloat(getComputedStyle(item).animationDuration) * 1000 || 200;
-    setTimeout(() => item.remove(), ms);
+    setTimeout(() => removeToast(item), ms);
   };
 
   // ─── toast rows ─────────────────────────────────────────────────
@@ -270,7 +309,6 @@
     }
     variantCls.split(/\s+/).forEach((c) => { if (c) root.classList.add(c); });
     root.setAttribute('role', assertive ? 'alert' : 'status');
-    root.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
 
     const toneWord = tone ? readWord(container, tpl, TONE_ATTR[tone]) : '';
     fill(root, 'data-hui-toast-tone', toneWord ? toneWord + ': ' : '');
@@ -295,7 +333,7 @@
     const max = parseInt(container.getAttribute('data-hui-toast-max') || '0', 10);
     if (max > 0) {
       const rows = container.querySelectorAll('[data-hui-toast-id]');
-      for (let i = 0; i < rows.length - max; i++) container.removeChild(rows[i]);
+      for (let i = 0; i < rows.length - max; i++) removeToast(rows[i]);
     }
 
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(item);

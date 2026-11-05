@@ -1646,7 +1646,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3778 measured: TestComboboxIMEKeepsSurfaces pins the IME
 		// Escape guard on an intercepted drawer, including keyCode 229.
 		// 3796 measured with both. Pinned at the measured size plus 2.
-		"intercept": 3798,
+		// 3862 measured alone: TestOverlayRollsSessionAndCache pins session
+		// rollover and identity-cache eviction.
+		// 3896 measured with all three. Pinned at the measured size plus 2.
+		"intercept": 3898,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
@@ -1659,7 +1662,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// on a region the winning apply did not replace (2026-10-27 bug
 		// bash R2, TestSupersededNavKeepsPark,
 		// TestSweepRestoresUnfilledRegion).
-		"loading": 1384,
+		// 1386 measured: TestLoadingExitSurvivesSupersede keeps exit caps
+		// independent of the entry's pending-show timer, plus 2 clearance.
+		"loading": 1388,
 		// parts 1997 measured after the session-reset retry
 		// (2026-09-27, spike/layout-showcase): a `session` 409 waits
 		// for the page commit (whose Set-Cookie stores the re-minted

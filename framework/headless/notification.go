@@ -13,11 +13,11 @@ import (
 )
 
 // The notification family: one toast, the stack it lives in, and the
-// bell that announces an unread count. The stack is the live region —
-// a toast announces by arriving in it, which is why the stack is
-// mounted once per layout and the toasts carry no live attribute of
-// their own — and the SSR toast is visible in it with no script at
-// all. The module that binds the data-hui-toast* hooks
+// bell that announces an unread count. Each toast carries its own
+// live role so server and runtime arrivals announce alike; the stack
+// is a named, non-live region mounted once per layout. The SSR toast
+// is visible in it with no script at all. The module that binds the
+// data-hui-toast* hooks
 // (headless-feedback) owns the runtime path: toasts the response
 // header injects, the TTL, the pause while focused, and the focus
 // return after a dismissal.
@@ -129,9 +129,7 @@ func Toast(p ToastProps, s Classes) render.HTML {
 		// to whatever class the component sets here.
 		own["class"] = cls
 	}
-	// The toast's own live posture: the stack is the polite default,
-	// and an assertive toast says so itself so the one row that must
-	// interrupt can, inside a politely-announcing stack.
+	own["role"] = "status"
 	if p.Live == LiveAssertive {
 		own["role"] = "alert"
 	}
@@ -369,7 +367,7 @@ type NotificationBellProps struct {
 	// same-origin. Required — a bell that rings to nowhere is a dead
 	// link on the no-script page, and "#" is not a destination.
 	Href string
-	// Label is the trigger's visible name. Required.
+	// Label is the trigger's accessible name, followed by its unread count. Required.
 	Label string
 	// UnreadCount is the count the badge shows and the accessible
 	// name says. Negative is refused; zero hides the badge (nothing
@@ -433,11 +431,12 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 	b := p.Parts.Box(s, PartText)
 	own := Merge(Safe(p.ExtraAttrs, "href", "aria-label"), Attrs(map[string]string{
 		"href":       urlsafe.CleanAnchor(p.Href),
-		"aria-label": w.fill(w.NotificationCount, "n", p.UnreadCount),
+		"aria-label": p.Label + ": " + w.fill(w.NotificationCount, "n", p.UnreadCount),
 		"id":         p.ID,
 		// The sentence shape travels so the module can re-say the
 		// count when the signal changes it.
 		"data-hui-notification-count-fmt": w.NotificationCount,
+		"data-hui-notification-label":     p.Label,
 	}))
 	Mark(own, "data-hui-notification-bell")
 	if p.Opens != "" {
@@ -568,7 +567,7 @@ func init() {
 	Register(Spec{
 		Name:    "NotificationBell",
 		Anatomy: []Part{PartRoot, PartIcon, PartMarker, PartText},
-		Hooks:   []string{"data-hui-notification-bell", "data-hui-notification-count", "data-hui-notification-count-fmt"},
+		Hooks:   []string{"data-hui-notification-bell", "data-hui-notification-count", "data-hui-notification-count-fmt", "data-hui-notification-label"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return NotificationBell(NotificationBellProps{Href: "/notifications", Label: "Notifications", Parts: parts}, s)
 		},

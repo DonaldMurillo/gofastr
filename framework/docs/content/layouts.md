@@ -602,7 +602,9 @@ region, so the browser holds the bytes before the fetch starts. Past
 template in; a response faster than `After` paints nothing extra, and a
 failed navigation puts the parked nodes back as they were. So does a
 navigation a second click replaced: the newer one keeps the parked
-nodes, and a region its answer does not fill gets them back. Loading
+nodes, and a region its answer does not fill gets them back. Superseding
+an exit animation still completes the older navigation's cleanup within
+the exit timeout, even when its region no longer animates. Loading
 content is presentational: no `Load`, no DI, no params. A slow screen
 `Load` is the swap slot's loading case; a slow outlet fill is the
 outlet's (or a deferred part).

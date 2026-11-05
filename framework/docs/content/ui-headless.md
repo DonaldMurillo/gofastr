@@ -293,12 +293,16 @@ dismiss is a GET that writes its href to the URL unless
 sends `DismissBody` as its JSON body and writes no URL; a
 `StepWizard`'s Island is optional and, when set, the form keeps its
 plain POST shape and the module focuses the new step's heading or
-the error summary after the swap. A `ToastStack` is mounted once by
+the error summary after the swap. That focus/announcement record belongs
+to the island answer: a soft navigation clears it, so a pending or failed
+submit cannot focus a wizard on another page. A `ToastStack` is mounted once by
 the layout: it carries the framework's `data-cui-toast-stack` name
 beside its own `data-hui-toast-stack` (the kernel's response-header
 toast path resolves the first, the component module the second), the
-SSR rows inside it are visible with no script, and it is the live
-region toasts announce by arriving in. The rows the module builds at
+SSR rows inside it are visible with no script. Each server row carries
+`role="status"` by default (or for `LivePolite`), or `role="alert"` for
+`LiveAssertive`; the stack stays a non-live named region so arrivals
+are not announced twice. The rows the module builds at
 runtime wear no class of this package's: `ToastTemplate` renders an
 inert `<template>` the kit dresses with its own class map and
 registers under `preset.ToastTemplate` (`registry.RegisterTemplate`,
@@ -671,7 +675,9 @@ families:
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
   and `[data-cui-toast-stack]`, `[data-hui-network-retry]`; the copy
   wrapper is a marker so a copy that toasts finds the module loaded):
-  the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
+  runtime rows announce through `role="status"` (info/success) or
+  `role="alert"` (warning/danger), without redundant `aria-live`.
+  The toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
   this module now; a row is cloned from the stack's `ToastTemplate` and
@@ -679,11 +685,19 @@ families:
   page it returns `null` and the kernel's fallback region takes the
   toast) and the offline banner's retry link. With `headless-copy` it
   replaced the retired `copy`, `toasts` and `networkretrybanner`
-  runtime modules.
+  runtime modules. Dismissing a focused runtime row moves focus to the
+  next available row control, then a previous row, then the last
+  connected control focused outside the stack (including a programmatic
+  `tabindex="-1"` origin). Capacity eviction uses
+  the same recovery. Background expiry never moves external focus,
+  and the exit timer does not reclaim focus moved elsewhere.
 - **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
-  the anchor's `aria-label` from it).
+  the anchor's `aria-label` from it). The required `Label` remains the
+  name's prefix on the server and after every update, followed by the
+  localized count sentence. `data-hui-notification-label` carries that
+  label separately so a literal `{{n}}` in it is never substituted.
 - **headless-selection-copy** (`[data-hui-selection-copy]`): a
   selection's Copy control fetches its same-origin URL with one `_id`
   per checked row and writes the CSV answer to the clipboard, then
@@ -695,6 +709,10 @@ families:
   group (persisted through the same storage key the bootstrap reads,
   so the scheme never flashes). It replaced the retired `backtotop`
   and `themeswitch` runtime modules.
+
+  The sentinel follows the largest threshold among currently connected
+  links. Soft navigation or an island replacement can lower that threshold;
+  links removed from the document no longer contribute.
 
 The navigation-behaviour families ship as their own modules, each
 registered the same way:
