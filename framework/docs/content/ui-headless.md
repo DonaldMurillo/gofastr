@@ -664,7 +664,9 @@ families:
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
   and `[data-cui-toast-stack]`, `[data-hui-network-retry]`; the copy
   wrapper is a marker so a copy that toasts finds the module loaded):
-  the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
+  runtime rows announce through `role="status"` (info/success) or
+  `role="alert"` (warning/danger), without redundant `aria-live`.
+  The toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
   this module now; a row is cloned from the stack's `ToastTemplate` and

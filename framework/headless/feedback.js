@@ -270,7 +270,6 @@
     }
     variantCls.split(/\s+/).forEach((c) => { if (c) root.classList.add(c); });
     root.setAttribute('role', assertive ? 'alert' : 'status');
-    root.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
 
     const toneWord = tone ? readWord(container, tpl, TONE_ATTR[tone]) : '';
     fill(root, 'data-hui-toast-tone', toneWord ? toneWord + ': ' : '');

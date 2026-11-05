@@ -92,7 +92,6 @@
       live = document.createElement('div');
       live.id = 'hui-sortable-live';
       live.setAttribute('role', 'status');
-      live.setAttribute('aria-live', 'polite');
       live.setAttribute('data-hui-sortable-live', '');
       document.body.appendChild(live);
     }
