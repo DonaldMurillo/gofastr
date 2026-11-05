@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -25,9 +26,9 @@ type GroupCount struct {
 }
 
 // SumAll returns SUM(field) over the rows ListAll(ctx, opts) would read,
-// computed by the database: every match, not a page. The total is the
-// database's own decimal text ("0" when no row matches), so a Decimal
-// column sums without float rounding where the database keeps it exact.
+// over every match, not a page. The total is decimal text ("0" when no
+// row matches). Decimal columns use the database's exact NUMERIC sum on
+// Postgres and exact addition of stored decimal values on SQLite.
 // field names a visible Int, Float or Decimal column. opts takes the
 // filters and Search; Fields, Sorts, Limit, Offset and Includes are
 // refused, since an aggregate reads every match.
@@ -44,6 +45,9 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 		return "", err
 	}
 	inner, args := qb.Build()
+	if f.Type == schema.Decimal && !isPostgres(ctx, ch.conn(ctx)) {
+		return ch.sumDecimalRows(ctx, inner, args)
+	}
 	var total any
 	stmt := "SELECT SUM(" + query.QuoteFolded(col) + ") FROM (" + inner + ") AS agg_src"
 	if err := ch.conn(ctx).QueryRowContext(ctx, stmt, args...).Scan(&total); err != nil {
@@ -63,6 +67,41 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 	default:
 		return "", fmt.Errorf("SumAll: unexpected %T from the database", total)
 	}
+}
+
+func (ch *CrudHandler) sumDecimalRows(ctx context.Context, statement string, args []any) (string, error) {
+	rows, err := ch.conn(ctx).QueryContext(ctx, statement, args...)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	total := new(big.Rat)
+	for rows.Next() {
+		var stored any
+		if err := rows.Scan(&stored); err != nil {
+			return "", err
+		}
+		if stored == nil {
+			continue
+		}
+		text, ok := decimalText(stored).(string)
+		if !ok || !schema.DecimalExponentFits(text) {
+			return "", fmt.Errorf("SumAll: invalid stored decimal %v", stored)
+		}
+		value, ok := new(big.Rat).SetString(text)
+		if !ok {
+			return "", fmt.Errorf("SumAll: invalid stored decimal %q", text)
+		}
+		total.Add(total, value)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	precision, exact := total.FloatPrec()
+	if !exact {
+		return "", fmt.Errorf("SumAll: stored values do not sum to a finite decimal")
+	}
+	return total.FloatString(precision), nil
 }
 
 // GroupCountAll counts the rows ListAll(ctx, opts) would read per stored

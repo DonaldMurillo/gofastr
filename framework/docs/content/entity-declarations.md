@@ -1551,8 +1551,11 @@ total, err := invoices.SumAll(ctx, "amount", crud.ListOptions{Where: open})
 groups, err := invoices.GroupCountAll(ctx, "status", crud.ListOptions{}, 50)
 ```
 
-`SumAll` returns the database's own decimal text ("0" over no rows), so
-a `decimal` column sums as `NUMERIC` on Postgres, exactly; it takes a
+`SumAll` returns decimal text ("0" over no rows). A `decimal` column sums
+as exact `NUMERIC` on Postgres; SQLite streams the scoped stored values
+and adds their decimal text exactly, avoiding binary-float accumulation.
+This uses constant working memory but reads every matching decimal row.
+Trailing zeroes may differ between dialects. It takes a
 visible int, float or decimal field. `GroupCountAll` returns each stored
 value with its count, ordered by value, a bool as `true`/`false`; a
 positive limit caps the groups, so ask for one more than you draw to
