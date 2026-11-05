@@ -65,9 +65,13 @@ func (w *Window) ID() string {
 // shells.
 func (w *Window) Focus() error {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.focuses++
 	w.hidden = false
+	shell, id := w.shell, w.id
+	w.mu.Unlock()
+	if shell != nil {
+		shell.FocusWindow(id)
+	}
 	return nil
 }
 
@@ -250,6 +254,10 @@ func (w *Window) Hidden() bool {
 // window's close button when the tray keeps the app alive.
 func (w *Window) hide() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.hidden = true
+	shell, id := w.shell, w.id
+	w.mu.Unlock()
+	if shell != nil {
+		shell.BlurWindow(id)
+	}
 }

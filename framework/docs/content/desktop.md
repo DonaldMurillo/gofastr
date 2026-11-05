@@ -1080,7 +1080,8 @@ active and inactive:
   sidebar width (`SidebarWidthOf(id)`), fires the appearance callback
   from `SetReduceTransparency`, and fires the focus callbacks from
   `FocusWindow` and `BlurWindow` on a goroutine, the way the native
-  delegates do.
+  delegates do. `Window.Focus` also emits focus (and reveals a hidden
+  window); closing the main window to the tray emits blur.
 - `desktop.WindowState` reads the applied chrome back off the live
   window: `Material`, `TitlebarTransparent`, `TitleVisibility`,
   `ToolbarStyle`, `SidebarWidth`, the style mask, and `CGWindowID`
