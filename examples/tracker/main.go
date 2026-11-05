@@ -5,6 +5,9 @@
 // (examples/layoutlab) keeps the test fixtures; this is what the
 // features look like worn in.
 //
+// Recent activity follows calendar order within the fixture's single year,
+// not the lexical order of its day-first labels; undated events come last.
+//
 // Run with:
 //
 //	go run ./examples/tracker        # :8096, or $PORT
