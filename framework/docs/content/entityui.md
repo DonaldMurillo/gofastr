@@ -293,8 +293,9 @@ meaning and every screen honours them first.
 
 A form input carries the field's own validators, so the browser refuses a
 bad value before the round trip: `Required` sets `required`; a string's
-`Min` and `Max` set `minlength` and `maxlength` (a fractional minimum
-rounds up) and a number's set `min` and `max`; `Pattern` sets
+`Min` and `Max` remain server-side rune-count checks, not native
+`minlength` / `maxlength` attributes (which count UTF-16 units and can
+truncate valid emoji text). A number's bounds set `min` and `max`; `Pattern` sets
 `pattern`, wrapped as `[\s\S]*(?:<pattern>)[\s\S]*` because the
 server's check is an unanchored match and the browser anchors the
 attribute. A pattern using Go-only syntax (inline flags such as `(?i)`)

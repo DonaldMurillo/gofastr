@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+Entity-form string bounds stay server-side, where length counts Unicode
+code points; native UTF-16 length attributes must not truncate valid text.
+
 Live navigation snapshots scrub transient RPC state from both primary
 content and every kept-layer outlet or area; fetched fill bytes remain
 untouched, and outlet captures never carry document metadata.
