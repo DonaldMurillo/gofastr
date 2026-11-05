@@ -149,7 +149,11 @@ caret where the reader left it.
 
 `framework/ui.TextArea` accepts `Autogrow: true`. The runtime module
 (`textarea.js`) listens for input and resizes the textarea to fit its
-content. Triggered by the `data-cui-autogrow` attribute.
+content, and refits after reset or focus. A textarea wired in a hidden
+panel keeps its height until it can be measured. ResizeObserver fits it
+when the panel opens and when its width changes; focus provides a fallback
+where ResizeObserver is unavailable. Detached controls release their
+observer targets. Triggered by the `data-cui-autogrow` attribute.
 
 ### Toast notifications
 
