@@ -448,9 +448,11 @@ identifiers at validate time. Renames run, and their errors are reported, in
 order of the old name, so the same declaration gives the same migration and
 the same error text on every run.
 
-Type-change detection catches the type *class* (e.g. TEXT→INTEGER) but NOT
-size/precision changes: `VARCHAR(50)→VARCHAR(100)` and `DECIMAL(10,2)→(19,4)`
-are normalized away, so express those as a hand-written migration. Columns
+Type-change detection catches the type *class* (e.g. TEXT→INTEGER) and
+compares character widths on Postgres: `VARCHAR(50)→VARCHAR(100)` generates
+an `ALTER COLUMN … TYPE` change. Decimal precision and scale changes such as
+`DECIMAL(10,2)→DECIMAL(19,4)` are normalized away; express those as a
+hand-written migration. Columns
 declared with `RawType` (Postgres domains, arrays, custom types) are skipped:
 the live DB reports the underlying type, which never matches the raw type, so
 they would otherwise false-positive every diff. And an existing Postgres table
