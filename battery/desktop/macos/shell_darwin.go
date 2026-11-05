@@ -814,11 +814,6 @@ func (s *darwinShell) sendSnap(out snapOutcome) {
 // channel exists for the Debug log and the e2e seam.
 const bridgeMessageHandlerName = "gofastr"
 
-// errWindowClosed is the fixed refusal for desktop.Window methods before Run.
-func errWindowClosed() *desktop.Error {
-	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "window is not open"}
-}
-
 // desktop.MainWindowID lives in shell.go: the test double and the portable
 // code need it on every GOOS/GOARCH, not only darwin/arm64.
 

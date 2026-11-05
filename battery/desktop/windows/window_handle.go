@@ -10,5 +10,5 @@ func withWindowHandle(hwnd uintptr, closed bool, apply func(uintptr) error) erro
 }
 
 func errWindowClosed() error {
-	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "window is not open"}
+	return desktop.ErrWindowClosed
 }

@@ -379,6 +379,12 @@ before the operation reached the UI thread. On Windows, a destroyed window's
 nonzero native handle is not evidence that the window is still open. `Title()`
 retains its cached fallback when the native window is no longer available.
 
+All three native shells return `desktop.ErrWindowClosed` (`not_found`,
+`"window is closed"`) for operations on a closed window. `Window.Close()` is
+idempotent: an already-closed window, including one closed while the close was
+queued for the UI thread, returns nil. Unrelated UI-dispatch failures still
+return their own error.
+
 The macOS, Linux and Windows shells check a dialog's input the same way
 (`desktop.CheckFileDialog`) and answer `invalid_input` instead of
 opening a dialog it was not asked for: a filter extension (`png` or
