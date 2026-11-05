@@ -81,7 +81,13 @@ default**: `Exposure.CRUD` is a `*bool`, and nil means generate. Omitting the
 block is not "declare no surface"; it is "take the default surface".
 
 `/posts/llm.md` describes the routes the entity's mount serves, not the
-declaration's full shape. `App.View` entities and any registration built
+declaration's full shape. Field references, write bodies, batch keys and
+state stamps use the mount's JSON wire keys (camelCase by default, or a
+field's explicit `WireName`). Standalone `crud.EntityLLMMD` /
+`crud.LLMMDHandler` callers can set `LLMMDOptions.JSONCase`; the
+scope-aware `LLMMDHandlerFor` takes the handler's configured case.
+Filter and sort examples continue to name database columns.
+`App.View` entities and any registration built
 with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
 batch and Create/Update-column sections — those routes answer 404/405 —
 and the `limit` row reports the same cap the List route clamps `?limit`
