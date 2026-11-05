@@ -697,8 +697,11 @@ few lines, and link the PR or the docs page for the rest.
 - **`gofastr init` checks agent onboarding paths before it writes.** A
   hand-written agent detail file or an unreadable host skill stops init
   before any scaffold file or secret is replaced.
-- **Singular names keep their final e.** houses, causes, blouses,
-  movies and ties singularize to house, cause, blouse, movie and tie.
+- **Singular names keep their final e.** houses, causes and blouses
+  singularize to house, cause and blouse, and common -ie nouns (cookies,
+  brownies, calories, movies, ties) to cookie, brownie, calorie, movie
+  and tie, also as the last word of `fortune_cookies` or `UserTies`.
+  series and species stay as they are.
 - **`gofastr desktop --version` accepts semver prerelease and build
   suffixes.** The Windows file version comes from the numeric core
   (`1.2.3-rc.1` gives 1.2.3.0) and ProductVersion keeps the full text.
