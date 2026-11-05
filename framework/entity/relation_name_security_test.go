@@ -8,7 +8,15 @@ import (
 )
 
 func TestRelationNamesDoNotShadowScalars(t *testing.T) {
-	for _, fieldType := range []schema.FieldType{schema.String, schema.Text, schema.Int, schema.JSON} {
+	for _, field := range []schema.Field{
+		{Type: schema.String},
+		{Type: schema.Text},
+		{Type: schema.Int},
+		{Type: schema.JSON},
+		{Type: schema.JSON, Hidden: true},
+		{Type: schema.UUID, AutoGenerate: schema.AutoUUID, Hidden: true},
+	} {
+		field.Name = "profile"
 		for _, relation := range []Relation{
 			BelongsTo("profile", "profiles", "profile_id").Cascade(),
 			HasOne("profile", "profiles", "record_id"),
@@ -17,13 +25,13 @@ func TestRelationNamesDoNotShadowScalars(t *testing.T) {
 		} {
 			config := EntityConfig{
 				Fields: []schema.Field{
-					{Name: "profile", Type: fieldType},
+					field,
 					{Name: "profile_id", Type: schema.String},
 				},
 				Relations: []Relation{relation},
 			}
 			if err := Define("records", config).Validate(); err == nil || !strings.Contains(err.Error(), "profile") {
-				t.Errorf("scalar type %v relation type %v: collision accepted, err=%v", fieldType, relation.Type, err)
+				t.Errorf("scalar field %v relation type %v: collision accepted, err=%v", field, relation.Type, err)
 			}
 		}
 	}
