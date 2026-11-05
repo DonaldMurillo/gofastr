@@ -303,13 +303,15 @@ func prevSignificant(toks []ownstyle.Token, i int) int {
 // joined, one space where whitespace stood, none around a combinator
 // or a comma. starts maps each token's offset in text to its position.
 type selectorRun struct {
-	text   strings.Builder
-	starts []selectorTok
-	space  bool
+	text       strings.Builder
+	starts     []selectorTok
+	space      bool
+	combinator bool
 }
 
 type selectorTok struct {
-	off, line, col int
+	off, end, line, col int
+	kind                ownstyle.TokenType
 }
 
 func isCombinator(t ownstyle.Token) bool {
@@ -322,27 +324,29 @@ func (s *selectorRun) add(t ownstyle.Token) {
 		s.space = s.text.Len() > 0
 		return
 	}
-	cur := s.text.String()
-	if s.space && !isCombinator(t) && !strings.HasSuffix(cur, ">") && !strings.HasSuffix(cur, "+") &&
-		!strings.HasSuffix(cur, "~") && !strings.HasSuffix(cur, ",") {
+	if s.space && !isCombinator(t) && !s.combinator {
 		s.text.WriteByte(' ')
 	}
 	s.space = false
-	s.starts = append(s.starts, selectorTok{off: s.text.Len(), line: t.Line, col: t.Col})
-	if t.Type == ownstyle.TokenIdent {
+	s.combinator = isCombinator(t)
+	position := selectorTok{off: s.text.Len(), line: t.Line, col: t.Col, kind: t.Type}
+	switch t.Type {
+	case ownstyle.TokenIdent, ownstyle.TokenHash, ownstyle.TokenFunction, ownstyle.TokenAtKeyword:
 		t.Text = cssUnescape(t.Text)
 	}
 	s.text.WriteString(t.Text)
+	position.end = s.text.Len()
+	s.starts = append(s.starts, position)
 }
 
 // normalizeSelector reads a registry selector the way cssSelectors reads
 // a prelude, so both sides compare in one spelling.
-func normalizeSelector(sel string) string {
+func normalizeSelector(sel string) *selectorRun {
 	var run selectorRun
 	for _, t := range ownstyle.Tokenize(sel) {
 		run.add(t)
 	}
-	return run.text.String()
+	return &run
 }
 
 // cssSelectors matches a selector entry (".a > .b") inside a rule
@@ -369,41 +373,21 @@ func (e *engine) matchSelectors(rel string, run *selectorRun) {
 	text := run.text.String()
 	for _, n := range e.cssNotes {
 		for _, sel := range n.Find.CSS.Selectors {
-			want := normalizeSelector(sel)
-			for from := 0; want != "" && from <= len(text); {
-				i := strings.Index(text[from:], want)
-				if i < 0 {
-					break
-				}
-				at := from + i
-				from = at + 1
-				if !selectorBounded(text, at, len(want)) {
+			wanted := normalizeSelector(sel)
+			want := wanted.text.String()
+			for start, position := range run.starts {
+				end := start + len(wanted.starts)
+				if want == "" || end > len(run.starts) || position.off+len(want) != run.starts[end-1].end ||
+					!strings.HasPrefix(text[position.off:], want) {
 					continue
 				}
-				pos := run.starts[0]
-				for _, s := range run.starts {
-					if s.off > at {
-						break
-					}
-					pos = s
+				if !slices.EqualFunc(run.starts[start:end], wanted.starts, func(actual, expected selectorTok) bool {
+					return actual.kind == expected.kind && actual.off-position.off == expected.off && actual.end-position.off == expected.end
+				}) {
+					continue
 				}
-				e.add(n, Hit{File: rel, Line: pos.line, Col: pos.col, Why: "css " + sel})
+				e.add(n, Hit{File: rel, Line: position.line, Col: position.col, Why: "css " + sel})
 			}
 		}
 	}
-}
-
-// selectorBounded: the match neither starts inside a name nor runs on
-// into one.
-func selectorBounded(text string, at, n int) bool {
-	isName := func(c byte) bool {
-		return c == '-' || c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-	}
-	if end := at + n; end < len(text) && isName(text[end]) && isName(text[end-1]) {
-		return false
-	}
-	if at > 0 && isName(text[at]) && isName(text[at-1]) {
-		return false
-	}
-	return true
 }
