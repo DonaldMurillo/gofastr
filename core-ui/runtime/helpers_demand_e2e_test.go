@@ -14,15 +14,19 @@ import (
 
 func TestHelpersLoadWithoutWidgets(t *testing.T) {
 	cases := map[string]string{
-		"fill":             `<input id="target"><button data-cui-fill-input="#target">Fill</button>`,
-		"elapsed":          `<span data-cui-tick-elapsed="1"></span>`,
-		"persist":          `<textarea data-cui-persist-storage="probe"></textarea>`,
-		"count":            `<input id="source"><span data-cui-charcount-source="#source"></span>`,
-		"clear":            `<textarea data-cui-clear-on-esc></textarea>`,
-		"enter":            `<form data-cui-submit-on-enter><textarea></textarea></form>`,
-		"invalid":          `<form data-cui-disable-when-invalid><input required><button>Save</button></form>`,
-		"invalid-button":   `<form><input required><button data-cui-disable-when-invalid>Save</button><button type="submit">Other</button></form>`,
-		"invalid-external": `<form id="save"><input required></form><button form="save" data-cui-disable-when-invalid>Save</button>`,
+		"fill":                   `<input id="target"><button data-cui-fill-input="#target">Fill</button>`,
+		"elapsed":                `<span data-cui-tick-elapsed="1"></span>`,
+		"persist":                `<textarea data-cui-persist-storage="probe"></textarea>`,
+		"count":                  `<input id="source"><span data-cui-charcount-source="#source"></span>`,
+		"clear":                  `<textarea data-cui-clear-on-esc></textarea>`,
+		"enter":                  `<form data-cui-submit-on-enter><textarea></textarea></form>`,
+		"invalid":                `<form data-cui-disable-when-invalid><input required><button>Save</button></form>`,
+		"invalid-button":         `<form><input required><button data-cui-disable-when-invalid>Save</button><button type="submit">Other</button></form>`,
+		"invalid-external":       `<form id="save"><input required></form><button form="save" data-cui-disable-when-invalid>Save</button>`,
+		"invalid-image":          `<form data-cui-disable-when-invalid><input required><input type="image" alt="Save"></form>`,
+		"invalid-image-marker":   `<form><input required><input type="image" data-cui-disable-when-invalid alt="Save"></form>`,
+		"invalid-external-image": `<form id="save" data-cui-disable-when-invalid><input required></form><input type="image" form="save" alt="Save">`,
+		"invalid-external-field": `<form id="save" data-cui-disable-when-invalid><button>Save</button></form><input form="save" required>`,
 	}
 	for name, markup := range cases {
 		for _, inserted := range []bool{false, true} {
@@ -68,9 +72,15 @@ func TestHelpersLoadWithoutWidgets(t *testing.T) {
 						}
 					}
 					if err := chromedp.Run(ctx,
-						chromedp.Poll(`document.querySelector('button').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
-						chromedp.Evaluate(`(() => { const field = document.querySelector('input'); field.value = 'valid'; field.dispatchEvent(new Event('input', {bubbles:true})); })()`, nil),
-						chromedp.Poll(`!document.querySelector('button').disabled`, nil),
+						chromedp.Poll(`document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`(() => { const field = document.querySelector('input:not([type="image"])'); field.value = 'valid'; field.dispatchEvent(new Event('input', {bubbles:true})); })()`, nil),
+						chromedp.Poll(`!document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`(() => { const field = document.querySelector('input:not([type="image"])'); field.value = ''; field.dispatchEvent(new Event('change', {bubbles:true})); })()`, nil),
+						chromedp.Poll(`document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`(() => { const field = document.querySelector('input:not([type="image"])'); field.value = 'valid'; field.dispatchEvent(new Event('change', {bubbles:true})); })()`, nil),
+						chromedp.Poll(`!document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`document.querySelector('form').reset()`, nil),
+						chromedp.Poll(`document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
 					); err != nil {
 						t.Fatalf("invalid-state helper did not follow form validity: %v", err)
 					}

@@ -713,7 +713,9 @@ few lines, and link the PR or the docs page for the rest.
   `data-cui-fill-input`, `tick-elapsed`, `persist-storage`,
   `charcount-source`, `clear-on-esc`, `submit-on-enter` and
   `disable-when-invalid` loaded only when a widget mounted, so on a
-  plain page they did nothing.
+  plain page they did nothing. Invalid-form disabling includes image
+  submitters and follows input, change and reset for externally
+  associated fields and submitters too.
 - **A desktop window remembered on an unplugged monitor opens centered
   on a visible one** (Windows and Linux). On Windows the check runs in
   physical pixels per monitor, so mixed-DPI setups place it right.
