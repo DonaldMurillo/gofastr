@@ -285,6 +285,8 @@ site.Register("/docs/{path...}", &DocScreen{}, nil)
 ```
 
 A catch-all must be the final segment; anything else panics at registration.
+A root catch-all such as `/{path...}` does not match `/`: its remainder
+must also be nonempty. Redirect patterns follow the same rule.
 Among dynamic routes, registration order decides which one wins (first match
 wins); there is no specificity ranking, so register the more specific
 pattern first.

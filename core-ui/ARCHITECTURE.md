@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+Catch-all screen and redirect patterns require a nonempty remainder,
+including a catch-all registered at the root: `/` never binds an empty key.
+
 After a repeater row removal, focus recovery tries remaining row controls
 in order and verifies that each focus attempt succeeded. Invisible controls
 must not strand focus on the document body; Add is the final fallback.

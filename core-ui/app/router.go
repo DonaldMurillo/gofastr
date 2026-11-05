@@ -240,7 +240,11 @@ func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 			return nil, false
 		}
 	}
-	params[segParamName(segments[lastIdx])] = strings.Join(pathParts[lastIdx:], "/")
+	remainder := strings.Join(pathParts[lastIdx:], "/")
+	if remainder == "" {
+		return nil, false
+	}
+	params[segParamName(segments[lastIdx])] = remainder
 	return params, true
 }
 
