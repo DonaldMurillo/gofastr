@@ -1623,7 +1623,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// and ordinary links declined by an open pane keep the captured
 		// history and transition wrapper
 		// (TestPaneDeclinedLinkKeepsForwardTransition).
-		"intercept": 3648,
+		// 3669 measured after declined closes and returns invalidate pending
+		// replies and close retries retain their captured layer
+		// (TestPaneDeclineDropsPendingReply, TestPaneRetryKeepsNewLayer).
+		// Pinned at the measured size plus 2 clearance.
+		"intercept": 3671,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

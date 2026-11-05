@@ -1,5 +1,10 @@
 # GoFastr UI architecture
 
+Declined pane closes and post-save returns invalidate pending pane replies
+before asking the leave guard. A close retry retains its original layer
+and does nothing if that layer has left the stack; a late answer cannot
+replace the guarded form or make Discard close an unrelated replacement.
+
 Catch-all screen and redirect patterns require a nonempty remainder,
 including a catch-all registered at the root: `/` never binds an empty key.
 

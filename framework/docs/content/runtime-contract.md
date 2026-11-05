@@ -441,7 +441,10 @@ ask.
 A declined link also invalidates pending navigation work, so an earlier
 overlay response cannot mount behind the confirmation dialog. Cancel
 keeps the dirty pane in place; Discard retries the original scoped move
-without an intervening pane changing which edits it discards.
+without an intervening pane changing which edits it discards. A declined
+close or post-save return also invalidates pending pane opens and query
+replies before asking. Discard closes the captured pane, not a new top
+layer, and a cancelled dialog preserves its original form and edits.
 If a page navigation is already in flight, the decline also restores its
 prior URL and router path and clears its navigation busy markers. Its late
 response cannot replace the guarded form.
