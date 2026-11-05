@@ -23,7 +23,7 @@ import (
 func upsertCascadeFixture(t *testing.T, arm string, jsonCase JSONCase, extraFields ...schema.Field) (*CrudHandler, *sql.DB) {
 	t.Helper()
 	database := setupDB(t,
-		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, note_id TEXT, child_rows TEXT, profile_row TEXT, tag_label TEXT)`,
+		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, note_id TEXT, child_rows TEXT, profile_row TEXT, profileRow TEXT, tag_label TEXT)`,
 		`CREATE TABLE notes (id TEXT PRIMARY KEY, post_id TEXT, body_text TEXT)`,
 		`CREATE TABLE post_notes (post_id TEXT, note_id TEXT, PRIMARY KEY (post_id, note_id))`,
 	)
@@ -230,7 +230,7 @@ func TestUpsertAllowsNonCascadeKeys(t *testing.T) {
 	}
 }
 
-func checkUpsertCreateParity(test *testing.T, jsonCase JSONCase, fields []schema.Field, body map[string]any) {
+func checkUpsertCreateParity(test *testing.T, jsonCase JSONCase, fields []schema.Field, body map[string]any, wantCascades ...string) {
 	test.Helper()
 	creator, createDB := upsertCascadeFixture(test, "insert", jsonCase, fields...)
 	if err := creator.Entity.Validate(); err != nil {
@@ -246,6 +246,9 @@ func checkUpsertCreateParity(test *testing.T, jsonCase JSONCase, fields []schema
 		case map[string]any, []map[string]any:
 			cascades = append(cascades, relation.Name)
 		}
+	}
+	if !slices.Equal(cascades, wantCascades) {
+		test.Fatalf("create cascades = %v, want %v", cascades, wantCascades)
 	}
 	var children int
 	if err := createDB.QueryRow(`SELECT COUNT(*) FROM notes WHERE id = 'new-child'`).Scan(&children); err != nil {
@@ -304,11 +307,16 @@ func TestUpsertNormalizesCascadeKeys(test *testing.T) {
 			if relation == "child_rows" {
 				nested = []any{nested}
 			}
-			checkUpsertCreateParity(test, CaseSnake, []schema.Field{{Name: relation, Type: schema.JSON, Hidden: true}}, map[string]any{
-				"id": "parent", "title": "after", casing.ToCamel(relation): nested,
-			})
+			checkUpsertCreateParity(test, CaseCamel, []schema.Field{{Name: casing.ToCamel(relation), WireName: "nestedValue", Type: schema.JSON, Hidden: true}}, map[string]any{
+				"id": "parent", "title": "after", "nestedValue": nested,
+			}, relation)
 		})
 	}
+	test.Run("relation_wire_name", func(test *testing.T) {
+		checkUpsertCreateParity(test, CaseCamel, []schema.Field{{Name: "tag_label", WireName: "_tags", Type: schema.JSON, Hidden: true}}, map[string]any{
+			"id": "parent", "title": "after", "_tags": []any{"child"},
+		}, "_tags")
+	})
 }
 
 func TestUpsertKeepsScalarAliases(test *testing.T) {
@@ -342,7 +350,11 @@ func TestUpsertCreateCascadeParity(test *testing.T) {
 				}
 				for valueIndex, value := range values {
 					test.Run(fmt.Sprintf("%s/%s/%d", jsonCase, key, valueIndex), func(test *testing.T) {
-						checkUpsertCreateParity(test, jsonCase, nil, map[string]any{"id": "parent", "title": "after", key: value})
+						var wantCascades []string
+						if value != nil {
+							wantCascades = []string{relation.Name}
+						}
+						checkUpsertCreateParity(test, jsonCase, nil, map[string]any{"id": "parent", "title": "after", key: value}, wantCascades...)
 					})
 				}
 			}
@@ -351,7 +363,7 @@ func TestUpsertCreateCascadeParity(test *testing.T) {
 }
 
 func TestUpsertRefusesGeneratedCascades(test *testing.T) {
-	field := schema.Field{Name: "profile_row", Type: schema.UUID, AutoGenerate: schema.AutoUUID, Hidden: true}
+	field := schema.Field{Name: "profileRow", Type: schema.UUID, AutoGenerate: schema.AutoUUID, Hidden: true}
 	creator, createDB := upsertCascadeFixture(test, "insert", CaseCamel, field)
 	if err := creator.Entity.Validate(); err != nil {
 		test.Fatal(err)
