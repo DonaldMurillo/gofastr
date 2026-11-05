@@ -642,6 +642,10 @@ belong on the polling rung (`data-cui-poll`), not on cache eviction.
 The embed composition ships no nav fragment, hence no cache, so the
 header is a no-op there by construction.
 
+Visible-route preloading disconnects its link observer before each navigation
+rescan, then observes only links in the current document. Detached links and
+their old page subtrees never remain in the observer's target list.
+
 **Cache entry layering and whole-document navigation answers.** A cache
 entry records the layer key its HTML renders below, and a replay swaps
 exactly that content cell. Entries keyed shallower than a later
