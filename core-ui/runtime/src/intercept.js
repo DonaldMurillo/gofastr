@@ -134,6 +134,13 @@
     NS.scanAndLoadCSS?.(t.el);
   }
 
+  function refresh(t, res, focus) {
+    const id = (focus || document.activeElement)?.id;
+    swap(t, res);
+    refocus(id && t.el.querySelector('#' + CSS.escape(id)));
+    if (!t.el.contains(document.activeElement)) focusFirst(t.el);
+  }
+
   function overlayHost() {
     let el = document.getElementById(OVERLAY_ID);
     if (el) return el;
@@ -470,7 +477,7 @@
       .then((res) => {
         if (e !== epoch) return;
         if (!res) { fallbackNav(lay.url, ''); return; }
-        swap(lay, res);
+        refresh(lay, res, focus);
       })
       .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
     return true;
@@ -524,7 +531,7 @@
           .then((res) => {
             if (e !== epoch) return;
             if (!res) { fallbackNav(u, ''); return; }
-            swap(lay, res);
+            refresh(lay, res, focus);
           })
           .catch(() => { if (e === epoch) fallbackNav(u, ''); });
       }

@@ -74,6 +74,9 @@ Widget modals belong to the intercept layer their opener occupied, including
 modals opened from another owned modal. Removing or replacing that layer
 closes its modals and backdrops, not unrelated widgets. Chrome still loading
 for a removed layer cannot mount after the layer is gone.
+When return or Back refetches a pane, focus is restored after replacement:
+prefer the opener's replacement by ID (or the current control on a same-pane
+refresh), otherwise focus the first control in the refreshed pane.
 The native-modal lookup is guarded: browsers rejecting `:modal` still receive
 the pane's Escape dismissal and forward/reverse Tab containment.
 

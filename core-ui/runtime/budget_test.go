@@ -1627,7 +1627,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// (TestPaneDeclinedLinkKeepsForwardTransition).
 		// 3677 measured: TestPaneCloseDismissesOwnedModals pins teardown
 		// on direct close, Back, return and replacement.
-		"intercept": 3679,
+		// 3737 measured: TestReturnRefocusesFreshPane and
+		// TestHistoryRefocusesFreshPane pin post-refresh focus handoff.
+		"intercept": 3739,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
