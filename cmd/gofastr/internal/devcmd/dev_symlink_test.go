@@ -19,9 +19,7 @@ func TestWatchDetectsRootSymlinkRetarget(t *testing.T) {
 		}
 	}
 	link := filepath.Join(dir, "project")
-	if err := os.Symlink(first, link); err != nil {
-		t.Fatal(err)
-	}
+	makeDevSymlink(t, first, link)
 	before := ScanModTimes(link)
 	if len(before) != 1 {
 		t.Fatalf("initial snapshot = %v; want one source", before)
@@ -29,9 +27,7 @@ func TestWatchDetectsRootSymlinkRetarget(t *testing.T) {
 	if err := os.Remove(link); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(second, link); err != nil {
-		t.Fatal(err)
-	}
+	makeDevSymlink(t, second, link)
 	after := ScanModTimes(link)
 	if len(after) != 1 || !Changed(before, after) {
 		t.Fatalf("root retarget with matching names and mtimes was missed: before=%v after=%v", before, after)
@@ -47,9 +43,7 @@ func TestWatchFollowsRootSymlink(t *testing.T) {
 	writeDevFile(t, filepath.Join(root, "main.go"), "package main")
 	writeDevFile(t, filepath.Join(root, "dist", "output.go"), "package main")
 	link := filepath.Join(dir, "link")
-	if err := os.Symlink(root, link); err != nil {
-		t.Fatal(err)
-	}
+	makeDevSymlink(t, root, link)
 	before := ScanModTimes(link)
 	if len(before) != 1 {
 		t.Fatalf("source snapshot = %v; want main.go only", before)
@@ -71,9 +65,7 @@ func TestWatchFollowsFileSymlink(t *testing.T) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(root, "main.go")); err != nil {
-		t.Fatal(err)
-	}
+	makeDevSymlink(t, target, filepath.Join(root, "main.go"))
 	before := ScanModTimes(root)
 	stamp := time.Now().Add(time.Hour)
 	if err := os.Chtimes(target, stamp, stamp); err != nil {
@@ -89,9 +81,7 @@ func TestWatchFollowsOnlySourceFiles(t *testing.T) {
 	root := filepath.Join(dir, "project")
 	writeDevFile(t, filepath.Join(root, "main.go"), "package main")
 	for name, target := range map[string]string{"missing.go": filepath.Join(dir, "missing"), "folder.go": dir} {
-		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
-			t.Fatal(err)
-		}
+		makeDevSymlink(t, target, filepath.Join(root, name))
 	}
 	if got := ScanModTimes(root); len(got) != 1 {
 		t.Fatalf("snapshot = %v; want the regular source only", got)
