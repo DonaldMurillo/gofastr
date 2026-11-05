@@ -902,6 +902,11 @@ pane closed, then opens and fills it after hydration.
 
 ### Intercepting routes (`app.InterceptFrom`)
 
+Origin patterns normalize brace parameters to the router's colon form,
+including typed parameters and catch-alls. At mount the UI host validates
+every origin against the registered screen patterns; a misspelling panics
+with the target and missing origin instead of silently disabling the overlay.
+
 One detail screen, two presentations. `/products/42` is an ordinary
 page registration and stays the canonical render: hard load, refresh,
 external link, and any soft navigation from elsewhere all render it in

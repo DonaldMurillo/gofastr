@@ -439,6 +439,11 @@ site.Register("/invoices/create", &CreateInvoice{}, nil,
     app.InterceptFrom("/invoices", app.ScreenDrawer, "/customers/{id}"))
 ```
 
+Origin patterns accept brace or colon parameters and are normalized like
+screen paths. Every origin must name a registered screen; the UI host
+refuses unknown origins at mount, after all screens are registered.
+Standalone hosts call `Router.ValidateIntercepts` before serving requests.
+
 Inside an overlay render, `app.OverlayOriginFromContext(ctx)` returns
 the path of the page the drawer opened over ("" on the full page). Make
 it the form's success navigation and the save returns there: the drawer
