@@ -1851,6 +1851,10 @@ completeness test: when it can't, you found the gap.
    an **island** (see below).
 4. Register on the app router.
 
+Register injected services before their first use. The DI container refuses
+replacing a type while its constructor is running or after its singleton
+is cached; an accepted registration never loses to an in-flight build.
+
 ### How to build an island
 
 1. Define a `widget.Definition` via the builder:
