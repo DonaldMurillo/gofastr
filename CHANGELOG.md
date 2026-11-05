@@ -681,8 +681,11 @@ few lines, and link the PR or the docs page for the rest.
   one that does not. A combobox option with an `Href`, and each
   site-search result, is now a real link kept out of the Tab order:
   Ctrl-, Cmd-, Shift- and middle-clicks open it the browser's way, and a
-  plain click or keyboard pick still navigates in-page. `ComboboxRows` refuses
-  duplicate option IDs, as `Combobox` does. The site-search palette
+  plain click or keyboard pick navigates in-page once, so one Back
+  returns to where it started, fragment links included. Focus traps in
+  modals, drawers, disclosures and panes skip elements with a negative
+  `tabindex`, so Tab and Shift+Tab stay inside them. `ComboboxRows`
+  refuses duplicate option IDs, as `Combobox` does. The site-search palette
   closes when the query has no searchable terms left.
 - **Leave-guard Discard closes the pane that asked.** A declined close
   or return drops pane fetches still in flight, and Discard closes the
