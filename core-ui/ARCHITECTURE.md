@@ -917,6 +917,9 @@ deep-linked widgets included) belong to the top intercept pane's history
 span. Replace rewrites its current entry; push extends the span. Closing
 consumes the whole span without changing the router's underlying path.
 A refused history write changes neither the pane's URL nor its span.
+Successful writes retain the browser-resolved path, query and fragment,
+so query-only, hash-only and same-origin absolute URLs keep subsequent
+query links inside the pane.
 
 When the leave guard declines a link, it invalidates the shared navigation
 epoch immediately. An older overlay response cannot mount behind the

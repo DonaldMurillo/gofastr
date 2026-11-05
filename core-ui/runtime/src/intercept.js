@@ -108,7 +108,7 @@
   // in a pane's history) and knows how far the move went.
   function rawPush(t, replace, url = t.url, cur = t.cur) {
     history[replace ? 'replaceState' : 'pushState']({ cui: { s: stackId, k: t.key, i: cur } }, '', url);
-    t.cur = cur; t.url = url;
+    t.cur = cur; t.url = location.pathname + location.search + location.hash;
   }
 
   const pushURL = NS._pushURL;

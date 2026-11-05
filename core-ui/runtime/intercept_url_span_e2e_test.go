@@ -1,11 +1,54 @@
 package runtime
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
+
+func TestPaneURLWritesKeepQueryInPane(t *testing.T) {
+	for _, write := range []struct {
+		name string
+		url  string
+	}{
+		{name: "query", url: `'?p=2'`},
+		{name: "hash", url: `'#details'`},
+		{name: "absolute", url: `location.origin+'/rec/a?p=2#details'`},
+	} {
+		for _, replace := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/replace=%t", write.name, replace), func(t *testing.T) {
+				site := startInterceptStackServer(t)
+				ctx := chromedptest.Context(t)
+				if err := chromedp.Run(ctx, chromedp.Navigate(site.srv.URL+"/list"), chromedp.WaitVisible(`#ready`, chromedp.ByID)); err != nil {
+					t.Fatal(err)
+				}
+				stackStep(t, ctx, 0)
+				if !interceptWait(ctx, `!!document.getElementById('a-sort')`) {
+					t.Fatal("record pane did not open")
+				}
+				if err := chromedp.Run(ctx,
+					chromedp.Evaluate(fmt.Sprintf(`window.__gofastr._pushURL(%s,{replace:%t})`, write.url, replace), nil),
+					chromedp.Click("#a-sort", chromedp.ByID),
+					chromedp.Poll(`location.search==='?sort=name'`, nil),
+				); err != nil {
+					t.Fatal(err)
+				}
+				snapshot := readStack(ctx)
+				if len(snapshot.Layers) != 1 || snapshot.Main != "list-main" || !idListHas(snapshot.Layers[0].IDs, "rec-a-sorted") {
+					t.Fatalf("resolved pane URL lost its query navigation: %+v", snapshot)
+				}
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`, nil)); err != nil {
+					t.Fatal(err)
+				}
+				if !interceptWait(ctx, `location.pathname==='/list' && !document.getElementById('cui-intercept')`) {
+					t.Fatalf("closing the pane did not consume its URL writes: %+v", readStack(ctx))
+				}
+			})
+		}
+	}
+}
 
 func TestPaneURLWritesCloseToBase(t *testing.T) {
 	for _, nested := range []bool{false, true} {
