@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -30,5 +31,31 @@ func TestLLMMDUsesMountedWireKeys(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestLLMMDPostExampleEscapesWireKeys(t *testing.T) {
+	for _, wire := range []string{`quoted"key`, `back\slash`, "line\nbreak", "tab\tkey", "control\x01key"} {
+		t.Run(wire, func(t *testing.T) {
+			ent := entity.Define("articles", entity.EntityConfig{
+				Fields: []schema.Field{{Name: "body_text", WireName: wire, Type: schema.String}},
+			}.WithTimestamps(false))
+			document := EntityLLMMD(ent)
+			_, example, found := strings.Cut(document, "**Request body:** JSON object with writable fields.\n```json\n")
+			if !found {
+				t.Fatal("POST request example missing")
+			}
+			example, _, found = strings.Cut(example, "\n```")
+			if !found {
+				t.Fatal("POST request example has no closing fence")
+			}
+			var body map[string]string
+			if err := json.Unmarshal([]byte(example), &body); err != nil {
+				t.Fatalf("invalid POST JSON %q: %v", example, err)
+			}
+			if len(body) != 1 || body[wire] != "<value>" {
+				t.Fatalf("POST body = %#v; want original wire key %q", body, wire)
+			}
+		})
 	}
 }
