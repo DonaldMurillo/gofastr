@@ -66,6 +66,11 @@ explicitly approves after reviewing the verbatim `resource:verb` list**,
 not a signature/PKI (no signing authority, key distribution, or revocation
 is defined yet).
 
+Artifact SHA-256 pins accept uppercase or lowercase hexadecimal. Case-only
+differences identify the same artifact during spawning, installation,
+supervisor reconciliation, and migration approval; they do not trigger an
+upgrade or clear an existing migration approval.
+
 Process modules default to **disabled** at install, and a never-enabled
 module's routes answer 404. The operator enables one via
 `app.ProcessModules().Enable(ctx, "billing")`; `app.Modules().Enable`, the
