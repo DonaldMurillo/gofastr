@@ -63,7 +63,7 @@ type ThemeConfig struct {
 // by a human, a static analyzer, and the boot-time server-action walk,
 // instead of a string resolved against a route table.
 type Screen interface {
-	// RoutePath is the app route the screen is mounted at, e.g. "/reports".
+	// RoutePath is the static app route the screen is mounted at, e.g. "/reports".
 	RoutePath() string
 }
 
@@ -302,6 +302,9 @@ func New(cfg Config) (*Host, error) {
 		route := s.Screen.RoutePath()
 		if !strings.HasPrefix(route, "/") {
 			return nil, fmt.Errorf("embed: surface %q screen route must be an absolute app route, got %q", s.Name, route)
+		}
+		if strings.ContainsAny(route, ":{") {
+			return nil, fmt.Errorf("embed: surface %q screen route %q is dynamic: use a static app route", s.Name, route)
 		}
 		// The screen's route gets the SAME validation as Reach, and for a
 		// stronger reason.

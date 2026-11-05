@@ -319,6 +319,10 @@ issued by one replica verifies on every other replica that shares the secret.
   idle re-mint only runs while the stream is open (the stream itself is on
   demand — it exists only while the page holds a push target); a page without
   one recovers on its next navigation, whose answer carries the fresh id.
+  Ordinary and intercepted navigation apply that `X-Gofastr-Session` rollover
+  before checking response success, including 404s and policy refusals: the SSE
+  meta moves to the new token and all cached screens from the old identity are
+  discarded. No application-side retry or cache reset is needed.
 - **Multi-replica.** Set a shared secret so every replica verifies the same
   tokens. Two ways to set it:
   - `framework.WithSecret(secret)` in code, or

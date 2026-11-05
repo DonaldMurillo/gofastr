@@ -14,6 +14,15 @@ import (
 )
 
 func TestOverlayRollsSessionAndCache(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			testOverlaySession(t, status)
+		})
+	}
+}
+
+func testOverlaySession(t *testing.T, status int) {
+	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +44,7 @@ func TestOverlayRollsSessionAndCache(t *testing.T) {
 		if request.Header.Get("X-Gofastr-Intercept") == "1" {
 			writer.Header().Set("X-Gofastr-Overlay", "drawer")
 			writer.Header().Set("X-Gofastr-Session", "new-token")
+			writer.WriteHeader(status)
 			fmt.Fprint(writer, `<button id="pane">Pane</button>`)
 			return
 		}
@@ -49,6 +59,10 @@ func TestOverlayRollsSessionAndCache(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	ctx := chromedptest.Context(t)
+	settled := `document.getElementById('pane') !== null`
+	if status != http.StatusOK {
+		settled = `document.getElementById('path').textContent === '/rec/a'`
+	}
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(server.URL+"/list"),
 		chromedp.Poll(`!!window.__gofastr?.loadedModules?.intercept`, nil),
@@ -62,7 +76,7 @@ func TestOverlayRollsSessionAndCache(t *testing.T) {
 			document.head.appendChild(meta);
 		})()`, nil),
 		chromedp.Click(`#open`, chromedp.ByID),
-		chromedp.Poll(`document.getElementById('pane') !== null`, nil),
+		chromedp.Poll(settled, nil),
 	); err != nil {
 		t.Fatal(err)
 	}
