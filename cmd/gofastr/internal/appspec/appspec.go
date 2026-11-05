@@ -3416,7 +3416,7 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		if text == "" {
 			text, _ = block.Props["text"].(string)
 		}
-		if strings.TrimSpace(text) == "" && len(block.Children) == 0 {
+		if AppSpecBlockUsesNodeRenderer(block) && strings.TrimSpace(text) == "" && len(block.Children) == 0 {
 			return fmt.Errorf("app spec: screen %q link block text or children are required", screenName)
 		}
 		href := block.Href

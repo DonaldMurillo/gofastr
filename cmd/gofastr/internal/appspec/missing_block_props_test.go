@@ -1,6 +1,38 @@
 package appspec
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestLinkContentMatchesRenderer(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		block AppSpecBlock
+		valid bool
+	}{
+		{"href label", AppSpecBlock{Type: "link", Href: "/docs"}, true},
+		{"styled href label", AppSpecBlock{Type: "link", Href: "/docs", Class: "docs"}, true},
+		{"kind", AppSpecBlock{Kind: "link", Href: "/docs"}, false},
+		{"anchor", AppSpecBlock{Kind: "a", Href: "/docs"}, false},
+		{"props", AppSpecBlock{Type: "link", Props: map[string]any{"href": "/docs"}}, false},
+		{"actions", AppSpecBlock{Type: "link", Href: "/docs", Actions: []AppSpecAction{{Name: "docs"}}}, false},
+		{"island", AppSpecBlock{Type: "link", Href: "/docs", Island: "docs"}, false},
+		{"widget", AppSpecBlock{Type: "link", Href: "/docs", Widget: "docs"}, false},
+		{"node text", AppSpecBlock{Kind: "link", Href: "/docs", Text: "Docs"}, true},
+		{"node children", AppSpecBlock{Kind: "a", Href: "/docs", Children: []AppSpecBlock{{Kind: "span", Text: "Docs"}}}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateAppSpecBlock("home", nil, test.block)
+			if test.valid && err != nil {
+				t.Fatalf("valid link rejected: %v", err)
+			}
+			if !test.valid && (err == nil || !strings.Contains(err.Error(), "text or children are required")) {
+				t.Fatalf("empty node link error = %v", err)
+			}
+		})
+	}
+}
 
 func TestBlocksNeedRequiredProps(t *testing.T) {
 	for _, block := range []AppSpecBlock{
