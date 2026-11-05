@@ -445,10 +445,14 @@ which the host maps to the real runtime RPC URLs.
 
 The closed validator lives in [`core-ui/uinodev1`](../../../core-ui/uinodev1)
 (`uinodev1.Validate`): it enforces the whole-tree caps (depth ≈ 32, nodes ≈
-500, per-prop strings ≈ 4 KiB), the closed component enum, typed scalar
+500, per-prop strings ≈ 4 KiB, and each props array at 128 items by default),
+the closed component enum, typed scalar
 props (no `id`/`class`/`style`/`data-*` passthrough: `data-cui-*` and `on*`
 are *unrepresentable*, not merely denied), host-relative-only URL schemes,
 and action_ref shape. A forged tree is whole-tree rejected.
+`Limits.MaxPropItems` bounds table rows, columns and cells per row, plus
+detail-list and key-value items, even when their text is empty. Hosts can
+override that cap; zero selects the default. Overflow rejects the whole tree.
 
 The proxy renders a validated tree through
 [`framework/uihost/uinoderender`](../../uihost/uinoderender): each component

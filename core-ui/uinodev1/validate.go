@@ -9,6 +9,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
+func checkPropItems(lim Limits, field string, count int) error {
+	if count > lim.MaxPropItems {
+		return errCapExceeded(field+" items", count, lim.MaxPropItems)
+	}
+	return nil
+}
+
 // Validate decodes, type-checks, and bounds-checks a ui.node.v1 JSON tree.
 // It returns the typed [Tree] on success, or a descriptive error describing
 // the first failure encountered. On any failure the whole tree is rejected,

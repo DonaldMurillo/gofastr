@@ -1551,6 +1551,11 @@ resolve host-side through an injected resolver (actionRef → installed route
 id → namespaced URL); an unknown ref fails the whole render closed rather
 than emitting a guessed URL.
 
+Prop arrays are independently bounded by `Limits.MaxPropItems` (default
+128): table rows, columns and row cells, plus detail-list and key-value
+items. Empty cell text cannot bypass the array cap. An oversized array
+rejects the whole tree; hosts may explicitly adjust the cap.
+
 This is deliberately NOT `core-ui/noderender` (a *denylist* for first-party
 IR, through which a third party could forge the trusted `data-cui-*`
 attributes `runtime.js` acts on via its `extraAttrs` passthrough). The
