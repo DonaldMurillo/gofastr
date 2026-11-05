@@ -405,6 +405,14 @@ tab actually navigates; surfaces that must stay fresh across tabs
 belong on the polling rung (`data-cui-poll`), not on cache eviction.
 Iframe embeds have no screen cache, so the header is a no-op there.
 
+**Keyboard containment.** Widgets, intercepted drawers, trap disclosures
+and responsive pane overlays use tabbable controls for their initial-focus
+handoff and Tab-cycle boundaries. A negative `tabindex` excludes every
+element type, including native links and form controls; normalization uses
+the browser's numeric `tabIndex`, so values such as `-7` and ` -12 ` are
+excluded too. Explicit `autofocus` and programmatic focus targets remain
+separate from the sequential Tab order.
+
 **Cancelling a navigation (`gofastr:beforenavigate`).** The router
 dispatches this cancelable event on the anchor element (`bubbles`,
 `cancelable`, so a `document`-level listener sees it and `target` is the

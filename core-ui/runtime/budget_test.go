@@ -1560,7 +1560,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// ownership, nested modals and delayed chrome cancellation.
 		// 3656 measured: TestPaneCloseDismissesOwnedModals pins pending
 		// chrome and deep-link cancellation across a layer content refresh.
-		"widgets": 3658,
+		// TestTrapSkipsNegativeControls: 3670 measured + 2 for tabbable initial focus.
+		"widgets": 3672,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1641,7 +1642,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3778 measured: TestComboboxIMEKeepsSurfaces pins the IME
 		// Escape guard on an intercepted drawer, including keyCode 229.
 		// 3796 measured with both. Pinned at the measured size plus 2.
-		"intercept": 3798,
+		// TestComboboxLinksStayOutOfTrap and TestTrapSkipsNegativeControls: 3821 + 2.
+		"intercept": 3823,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

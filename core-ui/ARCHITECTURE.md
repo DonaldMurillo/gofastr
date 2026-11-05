@@ -1034,7 +1034,7 @@ AND a pane is open, the registered `headless-panehost` module sets
 `data-hui-pane-mode="overlay"` on the host. CSS repositions the open
 pane as a fixed right-edge drawer with a backdrop scrim (`::before`);
 the module applies a focus trap (Tab cycles within the pane, reusing
-`NS._focusSel`), a refcounted scroll lock (`doc.lockScroll('panehost:<id>')`),
+`NS._focusSel` candidates filtered by `tabIndex >= 0`), a refcounted scroll lock (`doc.lockScroll('panehost:<id>')`),
 and ESC / backdrop-click-to-close. Widening the viewport or closing the
 pane clears overlay mode and releases the lock. The 768px breakpoint
 literal MUST stay in sync between this module and the `ui-pane-host`
@@ -2770,6 +2770,15 @@ every other), and group members that leave the document are pruned on
 that navigated away.
 
 ### What about widgets?
+
+Initial-focus handoff and Tab-trap boundaries use tabbable controls, not
+every focusable candidate. Every consumer of the kernel's `_focusSel`
+checks the browser-normalized `tabIndex >= 0`: negative values exclude
+links, buttons, inputs and arbitrary elements alike, including values
+other than `-1` and whitespace-padded negative integers. This applies to
+widget initial focus, modal traps, intercept handoff and traps, disclosures
+and responsive pane hosts. Explicit `autofocus` may still select a
+programmatic focus target outside the sequential Tab order.
 
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path

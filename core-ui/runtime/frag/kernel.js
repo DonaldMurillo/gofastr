@@ -636,8 +636,8 @@
         first call wins, all callers await the same fetch. */
     loadModule,
 
-    /** Selector for focusable elements inside a modal, used by the
-        initial-focus pass and the Tab focus trap. */
+    /** Focus candidates for initial focus and Tab containment. Consumers
+        require tabIndex >= 0 before using a candidate as a Tab stop. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
 
     /** The layout demand modules' seam table (src/envelope.js,

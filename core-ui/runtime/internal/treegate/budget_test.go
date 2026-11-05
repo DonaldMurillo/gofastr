@@ -41,6 +41,8 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 	// outside core qualifies: it ships in a binary only when its
 	// package is imported, and on a page only when asked for.
 	behaviorOverrides := map[string]int{
+		// TestTrapSkipsNegativeControls: the disclosure trap excludes negative tabIndex; 3094 + 2.
+		"framework/headless/disclosure.js": 3096,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
 		// the late-body rejection in tx, closing a connection a failed
