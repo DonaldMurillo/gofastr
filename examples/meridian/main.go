@@ -125,12 +125,14 @@ func main() {
 	// IncludeGated is deliberate: meridian's entities are owner-scoped, and
 	// documenting their shape for SDK consumers is the point of the site.
 	if err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
-		Registry:     fwApp.Registry,
-		Artifacts:    sdkDistFS(),
-		BaseURL:      siteOrigin,
-		APIPrefix:    apiPrefix,
-		HasAPITokens: true,
-		IncludeGated: true,
+		Registry:        fwApp.Registry,
+		CRUDMounted:     fwApp.EntityCRUDMounted,
+		ReadOnlyMounted: fwApp.EntityReadOnlyMounted,
+		Artifacts:       sdkDistFS(),
+		BaseURL:         siteOrigin,
+		APIPrefix:       apiPrefix,
+		HasAPITokens:    true,
+		IncludeGated:    true,
 	}); err != nil {
 		log.Fatal(err)
 	}

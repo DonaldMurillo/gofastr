@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	uiruntime "github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
@@ -22,9 +23,14 @@ func menuPage(t *testing.T, body string, js bool) string {
 	css := kitCSS(sectionMenuStyle)
 	script := ""
 	if js {
-		script = "<script>" + sectionMenuJS + "</script>"
+		script = `<script src="/__menu-runtime.js"></script><script>` + sectionMenuJS + "</script>"
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__menu-runtime.js" {
+			w.Header().Set("Content-Type", "application/javascript")
+			fmt.Fprint(w, uiruntime.MustRuntimeJS())
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8>
 <style>body{margin:0;font-family:sans-serif}</style>

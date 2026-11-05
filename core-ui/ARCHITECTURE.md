@@ -94,6 +94,14 @@ unhighlighted, empty or closed list never submits its no-script GET form.
 
 `interactive.OptimisticUpdate` refuses Action options its headless action
 contract cannot carry, including confirmation, bodies, toasts and effects.
+Its native button uses `type="button"`, so an enclosing form never submits
+before hydration or in a static export.
+Signal display bindings (`BindHTML`, `BindText`, `BindAttr`) and
+`AnimateOnSignal` refuse `__proto__`, `constructor` and `prototype` before
+emitting a binding, just as signal mutation helpers do.
+SectionMenu formats both filtered and total counts through the kernel's
+`formatNumber`, retaining the page language's digits after filtering and
+clearing. The number-fill lint also rejects raw slash-separated count ratios.
 
 `ui.SelectConfig.Selected` preserves stored values absent from its options;
 a nonempty value takes precedence over option-level selection flags.
@@ -1543,6 +1551,11 @@ resolve host-side through an injected resolver (actionRef → installed route
 id → namespaced URL); an unknown ref fails the whole render closed rather
 than emitting a guessed URL.
 
+Prop arrays are independently bounded by `Limits.MaxPropItems` (default
+128): table rows, columns and row cells, plus detail-list and key-value
+items. Empty cell text cannot bypass the array cap. An oversized array
+rejects the whole tree; hosts may explicitly adjust the cap.
+
 This is deliberately NOT `core-ui/noderender` (a *denylist* for first-party
 IR, through which a third party could forge the trusted `data-cui-*`
 attributes `runtime.js` acts on via its `extraAttrs` passthrough). The
@@ -2725,6 +2738,10 @@ every other), and group members that leave the document are pruned on
 that navigated away.
 
 ### What about widgets?
+
+The live widget catalog decodes its escaped `page` path once before
+page-scoped matching, matching SSR's decoded request path. Malformed path
+escapes return 400 rather than selecting a different widget set.
 
 The `core-ui/widget` registry continues to drive widgets (their
 position chrome, slot composition, RPC endpoints). Widgets that

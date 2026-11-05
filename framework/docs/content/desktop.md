@@ -1813,6 +1813,11 @@ publish). For a `windows-*` platform the directory is `<Name>/`
 instead. It must hold exactly `<Name>.exe` and `WebView2Loader.dll`,
 and the executable's `ProductVersion` must be `--version`. The version
 resource is read in pure Go, so the feed can be signed on any host.
+The numeric Windows file version uses only core version numbers: for
+`1.2.3-rc.1.2` it is `1.2.3.0`, while `ProductVersion` keeps the full
+pre-release string. A non-update Windows build may also retain semver
+build metadata in `ProductVersion`; metadata never contributes numeric
+file-version components.
 It also extracts the archive into a temporary directory with
 the updater's own extractor, so anything a client would refuse is
 refused at release time instead: a stray top-level file (`README.txt`,

@@ -8,19 +8,19 @@
 //
 //	api := app.Group("/api")
 //	api.Use(authMiddleware)
-//	api.Entity("orders", entityConfig)  // mounts at /api/orders
+//	app.GroupEntity(api, "orders", entityConfig) // mounts at /api/orders
 //
 // Nested groups:
 //
 //	v1 := app.Group("/api/v1")
-//	v1.Entity("users", ...)
+//	app.GroupEntity(v1, "users", entityConfig)
 //	v2 := app.Group("/api/v2")
-//	v2.Entity("users", ...)
+//	app.GroupEntity(v2, "users", entityConfig)
 //
 // Access policy:
 //
 //	admin := app.Group("/admin", routegroup.WithAccess(access.RequirePermission("admin:access")))
-//	admin.Entity("settings", ...)
+//	app.GroupEntity(admin, "settings", entityConfig)
 package routegroup
 
 import (

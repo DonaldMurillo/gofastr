@@ -303,11 +303,11 @@ fmt.Println(page.Total)`, origin, structName)
 	tsCode := fmt.Sprintf(`import { Client } from "./client.js";
 
 const api = new Client({ baseURL: %q, token: process.env.API_TOKEN });
-const page = await api.%s.list({ limit: 25, sort: "-created_at" });
+const page = await api.%s.list({ limit: 25 });
 console.log(page.total);`, origin, prop)
 
 	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \
-  "%s/%s?limit=25&sort=-created_at"`, origin, e.Config.Table)
+  "%s/%s?limit=25"`, origin, e.Config.Table)
 
 	return ui.CodeTabs(ui.CodeTabsConfig{Name: "sdk-quickstart", Label: "Quickstart"},
 		ui.CodeSample{Label: "Go", Language: "go", Code: goCode},
@@ -597,23 +597,30 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 	ops := []op{
 		{"GET", base, "List (offset or cursor pagination)"},
 		{"GET", record, "Get one record"},
-		{"POST", base, "Create"},
-		{"PUT", record, "Full update"},
-		{"PATCH", record, "Partial update: only keys present in the body change"},
-		{"DELETE", record, "Delete"},
-		{"POST", base + "/_batch", "Atomic batch create ({\"items\": […]})"},
-		{"PATCH", base + "/_batch", "Atomic batch update (items carry " + strings.Join(keys, " and ") + ")"},
-		{"DELETE", base + "/_batch", "Atomic batch delete ({\"ids\": […]})"},
-		{"GET", base + "/_events", "Live SSE feed: entity.created / updated / deleted"},
 	}
+	readOnly := sc.site.readOnly(e)
+	if !readOnly {
+		ops = append(ops,
+			op{"POST", base, "Create"},
+			op{"PUT", record, "Full update"},
+			op{"PATCH", record, "Partial update: only keys present in the body change"},
+			op{"DELETE", record, "Delete"},
+			op{"POST", base + "/_batch", "Atomic batch create ({\"items\": […]})"},
+			op{"PATCH", base + "/_batch", "Atomic batch update (items carry " + strings.Join(keys, " and ") + ")"},
+			op{"DELETE", base + "/_batch", "Atomic batch delete ({\"ids\": […]})"},
+		)
+	}
+	ops = append(ops, op{"GET", base + "/_events", "Live SSE feed: entity.created / updated / deleted"})
 	// One route per non-system move, the same set the transition route
 	// and the SDKs' generated methods serve. System moves have no route.
-	for _, t := range crud.RoutableTransitions(cfg.States) {
-		desc := "State move " + t.Key + ": " + cfg.States.Field + " " + strings.Join(t.From, "|") + " → " + t.To
-		if t.Stamp != "" {
-			desc += ", stamps " + t.Stamp
+	if !readOnly {
+		for _, t := range crud.RoutableTransitions(cfg.States) {
+			desc := "State move " + t.Key + ": " + cfg.States.Field + " " + strings.Join(t.From, "|") + " → " + t.To
+			if t.Stamp != "" {
+				desc += ", stamps " + t.Stamp
+			}
+			ops = append(ops, op{"POST", record + "/transitions/" + t.Key, desc})
 		}
-		ops = append(ops, op{"POST", record + "/transitions/" + t.Key, desc})
 	}
 	for _, ep := range cfg.Endpoints {
 		path := ep.Path
@@ -669,7 +676,7 @@ func methodVariant(method string) ui.StatusVariant {
 func (sc *entityScreen) listParamsNotes(cfg entity.EntityConfig) render.HTML {
 	items := []render.HTML{
 		para(code("?page=2&limit=25"), text(": offset pagination; "), code("?cursor=&limit=25"), text(": keyset pagination (pass the returned cursor to continue).")),
-		para(code("?sort=-created_at"), text(": leading "), code("-"), text(" for descending; snake_case column names.")),
+		para(code("?sort=-<column>"), text(": replace "), code("<column>"), text(" with a filterable/sortable column shown in the fields table; leading "), code("-"), text(" means descending. Use snake_case column names.")),
 		para(code("?<column>=x"), text(": equality filter; suffix operators: "), code("_ne _gt _gte _lt _lte _like _in"), text(".")),
 		para(code("?include=relation"), text(": eager-load declared relations; "), code("?fields=col1,col2"), text(": project columns.")),
 	}
@@ -709,25 +716,28 @@ func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 		tabsName += "-" + strings.ReplaceAll(strings.Trim(e.Version, "/"), "/", "-")
 	}
 
+	goCreate, tsCreate := "", ""
+	if !s.readOnly(e) {
+		goCreate = fmt.Sprintf("created, err := c.Create%s(ctx, client.%sInput{ /* … */ })\n", structName, structName)
+		tsCreate = fmt.Sprintf("const created = await api.%s.create({ /* … */ });\n", prop)
+	}
 	goCode := fmt.Sprintf(`params := url.Values{}
 params.Set(%q, "10")
 params.Set("sort", "-%s")
 page, err := c.List%s(ctx, params)
 
-created, err := c.Create%s(ctx, client.%sInput{ /* … */ })
-_ = c.Watch%s(ctx, func(event string, data []byte) error {
+%s_ = c.Watch%s(ctx, func(event string, data []byte) error {
 	fmt.Println(event)
 	return nil
-})`, filterKey, filterField, structName, structName, structName, structName)
+})`, filterKey, filterField, structName, goCreate, structName)
 
 	tsCode := fmt.Sprintf(`const page = await api.%s.list({
   sort: "-%s",
   filters: { %q: 10 },
 });
 
-const created = await api.%s.create({ /* … */ });
-await api.%s.watch((event) => console.log(event), { signal });`,
-		prop, filterField, filterKey, prop, prop)
+%sawait api.%s.watch((event) => console.log(event), { signal });`,
+		prop, filterField, filterKey, tsCreate, prop)
 
 	// Escaped: curl reads a literal [..] in a URL as a glob range.
 	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \

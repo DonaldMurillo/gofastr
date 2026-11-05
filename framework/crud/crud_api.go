@@ -123,8 +123,8 @@ func inProcess(r *http.Request) bool {
 
 // CreateOne runs the full Create pipeline (BeforeCreate hooks → INSERT →
 // AfterCreate hooks) inside a single transaction and emits entity.created on
-// commit. Returns the created row as a snake_cased map; convert to a typed
-// struct in your caller.
+// commit. Returns the created row keyed by wire key (camelCase by default);
+// convert to a typed struct in your caller.
 //
 // By default ReadOnly and Hidden fields in body are silently skipped
 // (matching the HTTP Create path). To persist them from trusted server

@@ -306,6 +306,9 @@ download buttons, an auth guide (minting `gfsk_` tokens), an errors
 reference, and one live reference page per entity: fields, endpoints,
 query params, and examples rendered **from the live registry on every
 request**, so the reference cannot drift from the running API.
+The quickstart lists records without an assumed sort column, so entities
+without timestamps work too. To sort, use a filterable/sortable column from
+that entity's fields table; hidden and `NoQuery` columns cannot be sorted.
 
 ```go
 site := app.NewApp("My App")
@@ -313,6 +316,7 @@ site := app.NewApp("My App")
 err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
     Registry:     fwApp.Registry,
     CRUDMounted:  fwApp.EntityCRUDMounted,
+    ReadOnlyMounted: fwApp.EntityReadOnlyMounted,
     Artifacts:    os.DirFS("gen/sdk/dist"), // or an embed.FS for single-binary deploys
     BaseURL:      "https://your-app.example.com",
     APIPrefix:    "api",
@@ -326,9 +330,12 @@ alone cannot answer that: an app with no DB mounts no CRUD at all while
 every entity still reads `nil` ("auto"). Without the predicate the site
 publishes a reference page, and an SDK download, for paths that answer
 404. A columned view registered with `App.View` counts as mounted — it
-serves read routes, and read routes are what the site documents. Leaving
-the field nil keeps the older `Exposure`-only behaviour for callers that
-document a registry without an App.
+serves read routes. Also pass `ReadOnlyMounted: fwApp.EntityReadOnlyMounted`
+to omit create, update, delete, batch and state-move routes and create
+examples for those views. Explicit custom endpoints remain documented.
+Leaving `CRUDMounted` nil keeps the older `Exposure`-only behaviour for
+callers that document a registry without an App; leaving `ReadOnlyMounted`
+nil assumes writable routes.
 
 It is deliberately not a `uihost` option: the screens compose
 `framework/ui`, which uihost must never import (its always-on styles

@@ -159,17 +159,16 @@ func recomputeFromItemRow(ctx context.Context, row map[string]any) error {
 }
 
 // recomputeOrderTotals rewrites subtotal and total from the order's
-// current line items, inside the caller's transaction. Both dialects in
-// play (sqlite, postgres) evaluate the scalar subquery the same way;
-// the decimal columns keep their stored precision.
+// current line items, inside the caller's transaction, rounded to the
+// columns' four-place scale even when SQLite evaluates sums as floats.
 func recomputeOrderTotals(ctx context.Context, orderID string) error {
 	exec, ok := framework.TxFromContext(ctx)
 	if !ok {
 		return fmt.Errorf("order totals: no transaction on context for order %s", orderID)
 	}
 	const q = `UPDATE orders SET
-		subtotal = COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0),
-		total = COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0) + COALESCE(tax, 0) + COALESCE(shipping_cost, 0)
+		subtotal = ROUND(COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0), 4),
+		total = ROUND(COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0) + COALESCE(tax, 0) + COALESCE(shipping_cost, 0), 4)
 		WHERE id = $1`
 	if _, err := exec.ExecContext(ctx, q, orderID); err != nil {
 		return fmt.Errorf("order totals: recompute order %s: %w", orderID, err)

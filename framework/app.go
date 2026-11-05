@@ -825,6 +825,13 @@ func (a *App) EntityCRUDMounted(e *entity.Entity) bool {
 	return a.entityCrudMount(e).Mounted
 }
 
+// EntityReadOnlyMounted reports whether an entity's mounted auto-CRUD routes
+// are read-only, as with a columned App.View. Pass it to sdkdocs.Config alongside
+// EntityCRUDMounted so the reference omits unmounted write operations.
+func (a *App) EntityReadOnlyMounted(e *entity.Entity) bool {
+	return a.entityCrudMount(e).ReadOnly
+}
+
 // entityCrudMount is THE predicate for the llm.md index (#358): like
 // entityCRUDEnabled, but it also reports read-only mounts. App.View
 // registers its entities with CrudRouteOptions{ReadOnly: true}, a fact no
