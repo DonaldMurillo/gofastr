@@ -194,11 +194,12 @@ func classAttrValue(tokens []ownstyle.Token, start int) int {
 	return value
 }
 
-// cssUnescape decodes the escapes in a raw ident token the way the CSS
+// cssUnescape decodes escapes in a raw ident token or string content the way the CSS
 // syntax spec consumes them: a backslash and one to six hex digits (plus
 // the one whitespace after them) is that code point, U+FFFD for zero, a
 // surrogate or anything past U+10FFFF; a backslash and any other
-// character is that character. .ui\2d button names the class ui-button.
+// character is that character. Escaped string line breaks contribute nothing.
+// .ui\2d button names the class ui-button.
 func cssUnescape(raw string) string {
 	if !strings.Contains(raw, `\`) {
 		return raw
@@ -211,6 +212,13 @@ func cssUnescape(raw string) string {
 			continue
 		}
 		i++ // the backslash
+		if raw[i] == '\n' || raw[i] == '\r' || raw[i] == '\f' {
+			if raw[i] == '\r' && i+1 < len(raw) && raw[i+1] == '\n' {
+				i++
+			}
+			i++
+			continue
+		}
 		j := i
 		for j < len(raw) && j-i < 6 && isHexByte(raw[j]) {
 			j++
