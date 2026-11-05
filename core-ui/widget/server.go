@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -298,7 +299,8 @@ func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w
 // runtime needs to insert the widget. Same pattern as styles +
 // state: minimal index, fetch on demand.
 //
-// The runtime appends `?page=<pathname>` when fetching the catalog
+// The runtime appends `?page=<escaped pathname>` when fetching the catalog.
+// Decode that path once to match the server request URL.Path used for SSR,
 // so widgets scoped via .Pages / .PagesPrefix / .PagesMatch are
 // filtered out of pages they don't belong to. A request with no
 // page parameter returns the unfiltered registry, backwards-compat
@@ -307,7 +309,11 @@ func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w
 // statePath is only emitted when the widget declared signals, the
 // runtime skips the /state hydrate fetch when this field is absent.
 func serveWidgetList(w http.ResponseWriter, r *http.Request) {
-	page := r.URL.Query().Get("page")
+	page, err := url.PathUnescape(r.URL.Query().Get("page"))
+	if err != nil {
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidPage)
+		return
+	}
 	var defs []*Definition
 	if page != "" {
 		defs = AvailableOn(page)

@@ -2723,6 +2723,10 @@ that navigated away.
 
 ### What about widgets?
 
+The live widget catalog decodes its escaped `page` path once before
+page-scoped matching, matching SSR's decoded request path. Malformed path
+escapes return 400 rather than selecting a different widget set.
+
 The `core-ui/widget` registry continues to drive widgets (their
 position chrome, slot composition, RPC endpoints). Widgets that
 host styled components benefit from the same on-demand loader: the
