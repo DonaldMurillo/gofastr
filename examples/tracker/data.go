@@ -7,9 +7,9 @@ package main
 // hand-written).
 
 import (
+	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
@@ -512,27 +512,40 @@ func countByStatus(status string) int {
 	return n
 }
 
-// countDoneThisWeek counts issues updated to Done recently. The model's
-// dates are display strings, so recency is the two most recent updated
-// stamps among Done issues — stable, honest for a fixture, and derived
-// rather than hard-written.
-func countDoneThisWeek() int {
-	done := 0
-	for _, iss := range allIssues() {
-		if iss.Status == statusDone {
-			done++
+// countDoneThisWeek counts the Done issues updated in the seven days
+// ending at the newest Done update. The fixture has no clock, so its
+// week is anchored to its own data rather than to today.
+func countDoneThisWeek() int { return doneInNewestWeek(allIssues()) }
+
+func doneInNewestWeek(issues []Issue) int {
+	var stamps []time.Time
+	for _, iss := range issues {
+		if iss.Status != statusDone {
+			continue
+		}
+		if at, ok := stampDate(iss.Updated); ok {
+			stamps = append(stamps, at)
 		}
 	}
-	return min(done, 2)
+	if len(stamps) == 0 {
+		return 0
+	}
+	newest := slices.MaxFunc(stamps, time.Time.Compare)
+	start := newest.AddDate(0, 0, -6)
+	n := 0
+	for _, at := range stamps {
+		if !at.Before(start) {
+			n++
+		}
+	}
+	return n
 }
 
-// monthOf extracts the month token from a "19 Sep" stamp.
-func monthOf(stamp string) string {
-	parts := strings.Fields(stamp)
-	if len(parts) < 2 {
-		return stamp
-	}
-	return parts[1]
+// stampDate reads a fixture "19 Sep" stamp as a date. The fixture spans
+// one year, so every stamp is placed in the same leap year.
+func stampDate(stamp string) (time.Time, bool) {
+	at, err := time.Parse("2006 02 Jan", "2000 "+stamp)
+	return at, err == nil
 }
 
 // openCount counts a project's unresolved issues.
@@ -588,8 +601,8 @@ func recentEvents(limit int) []FeedEvent {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		left, _ := time.Parse("2006 02 Jan", "2000 "+out[i].On)
-		right, _ := time.Parse("2006 02 Jan", "2000 "+out[j].On)
+		left, _ := stampDate(out[i].On)
+		right, _ := stampDate(out[j].On)
 		return left.After(right)
 	})
 	if len(out) > limit {
