@@ -1,6 +1,7 @@
 package examplescan
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -39,8 +40,10 @@ func TestExamplesStaySilent(t *testing.T) {
 		if at < 0 {
 			t.Fatalf("no %s release in the registry", r.version)
 		}
-		for _, n := range reg.Releases[at].Notes {
-			r.notes = append(r.notes, scantest.Only(n, "strings", "css", "config", "text"))
+		var err error
+		r.notes, err = exampleNotes(reg.Releases[at].Notes)
+		if err != nil {
+			t.Fatalf("%s: %v", r.version, err)
 		}
 		all = append(all, r.notes...)
 	}
@@ -56,5 +59,43 @@ func TestExamplesStaySilent(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func exampleNotes(notes []*upgrade.Note) ([]*upgrade.Note, error) {
+	var kept []*upgrade.Note
+	for _, note := range notes {
+		narrowed := scantest.Only(note, "strings", "css", "config", "text")
+		if !narrowed.Find.Empty() {
+			kept = append(kept, narrowed)
+		}
+	}
+	if len(kept) == 0 {
+		return nil, errors.New("release has no strings, CSS, config or text matchers after narrowing")
+	}
+	return kept, nil
+}
+
+func TestExamplesNeedEffectiveMatchers(t *testing.T) {
+	apiOnly := &upgrade.Note{Find: upgrade.Find{Uses: []upgrade.Symbol{{Pkg: "example.test/lib", Name: "Old"}}}}
+	for _, notes := range [][]*upgrade.Note{nil, {apiOnly}, {{Nodetect: "No source spelling changes"}}} {
+		if _, err := exampleNotes(notes); err == nil {
+			t.Errorf("notes %+v passed without an effective matcher", notes)
+		}
+	}
+	for _, find := range []upgrade.Find{
+		{Strings: upgrade.StringMatch{Classes: []string{"old"}}},
+		{CSS: upgrade.CSSMatch{Classes: []string{"old"}}},
+		{Config: []upgrade.ConfigMatch{{Key: "old"}}},
+		{Text: []upgrade.TextMatch{{Glob: "*.js"}}},
+	} {
+		note := &upgrade.Note{Find: find}
+		kept, err := exampleNotes([]*upgrade.Note{apiOnly, note})
+		if err != nil || len(kept) != 1 || kept[0].Find.Empty() {
+			t.Errorf("effective matcher %+v was lost: kept=%+v err=%v", find, kept, err)
+		}
+		if note.Find.Empty() || apiOnly.Find.Empty() {
+			t.Error("narrowing changed the source notes")
+		}
 	}
 }
