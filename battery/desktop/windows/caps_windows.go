@@ -56,9 +56,10 @@ var (
 )
 
 type trayState struct {
-	data    notifyIconData
-	menu    uintptr
-	actions map[string]menuAction
+	presence trayRegistration
+	data     notifyIconData
+	menu     uintptr
+	actions  map[string]menuAction
 }
 
 // Layout follows NOTIFYICONDATAW for Windows 7 and later (976 bytes on amd64).
@@ -135,7 +136,10 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 		tip = "gofastr"
 	}
 	setWideBuffer(tray.data.Tip[:], tip)
-	_, _, _ = callWindows(capShell, "Shell_NotifyIconW", nimAdd, uintptr(unsafe.Pointer(&tray.data)))
+	message, _ := syscall.UTF16PtrFromString("TaskbarCreated")
+	registered, _, _ := callWindows(capUser32, "RegisterWindowMessageW", uintptr(unsafe.Pointer(message)))
+	s.taskbarCreated = uint32(registered)
+	tray.register()
 	if cfg.Menu != nil {
 		ids := append([]string(nil), s.actionIDs...)
 		rows := desktop.PlanTrayMenu(s.text(), cfg, s.title, &ids)
@@ -155,6 +159,27 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 	s.mu.Lock()
 	s.tray = tray
 	s.mu.Unlock()
+}
+
+func (tray *trayState) register() {
+	tray.data.Flags = nifMessage | nifIcon | nifTip
+	tray.presence.register(func() bool {
+		added, _, _ := callWindows(capShell, "Shell_NotifyIconW", nimAdd, uintptr(unsafe.Pointer(&tray.data)))
+		return added != 0
+	})
+}
+
+func (s *winShell) restoreTrayIcon() {
+	s.mu.RLock()
+	tray, hwnd, closeHides := s.tray, s.hwnd, s.closeHides
+	s.mu.RUnlock()
+	if tray == nil {
+		return
+	}
+	tray.register()
+	if !tray.presence.live && closeHides && !win32.IsWindowVisible(hwnd) {
+		s.activateExistingWindow(hwnd)
+	}
 }
 
 func (s *winShell) removeTrayIcon() {

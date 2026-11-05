@@ -112,10 +112,11 @@ type winShell struct {
 	closeHides      bool
 	// textCtx carries the locale the shell's own words speak (menus,
 	// accelerator names, the About box), resolved once in Run.
-	textCtx    context.Context
-	trayTitle  string
-	tray       *trayState
-	appearance desktop.Appearance
+	textCtx        context.Context
+	trayTitle      string
+	tray           *trayState
+	taskbarCreated uint32
+	appearance     desktop.Appearance
 
 	windowsByID map[string]*winWindow
 	windowsHWND map[uintptr]*winWindow
@@ -516,6 +517,13 @@ func (s *winShell) cancelModal(id uintptr) {
 }
 
 func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
+	if value, ok := activeShells.Load(hwnd); ok {
+		shell := value.(*winShell)
+		if msg != 0 && msg == shell.taskbarCreated && hwnd == shell.hwnd {
+			shell.restoreTrayIcon()
+			return 0
+		}
+	}
 	if msg == wmRunOnMain {
 		if x, ok := activeShells.Load(hwnd); ok {
 			x.(*winShell).dispatch(wparam)
@@ -668,8 +676,9 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			w := x.(*winWindow)
 			w.shell.mu.RLock()
 			runErr := w.shell.runErr
+			tray := w.shell.tray
 			w.shell.mu.RUnlock()
-			if w.id == desktop.MainWindowID && w.shell.closeHides && runErr == nil {
+			if w.id == desktop.MainWindowID && w.shell.closeHides && runErr == nil && tray != nil && tray.presence.live {
 				showWindow(hwnd, 0)
 				return 0
 			}

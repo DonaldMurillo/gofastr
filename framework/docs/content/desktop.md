@@ -624,6 +624,11 @@ the menu bar after the main window closes; `HideDock` runs the app as
 an accessory (no Dock icon, menu bar only). `d.SetTrayTitle` and
 `__gofastr.desktop.tray.setTitle` change the bar title at runtime.
 
+Windows hides the main window on close only while its notification-area icon
+has registered successfully. If registration fails, close behaves normally.
+After Explorer restarts, the app re-registers the icon; if that fails while
+the main window is hidden, the app restores the window instead.
+
 Linux uses an app-owned local session-bus connection and the
 StatusNotifierItem/DBusMenu protocols. It requires a compatible status host
 (for example, a desktop panel with SNI support); it does not install a host,
