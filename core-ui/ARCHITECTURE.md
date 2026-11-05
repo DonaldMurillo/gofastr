@@ -1,5 +1,9 @@
 # GoFastr UI architecture
 
+After a repeater row removal, focus recovery tries remaining row controls
+in order and verifies that each focus attempt succeeded. Invisible controls
+must not strand focus on the document body; Add is the final fallback.
+
 Entity-form string bounds stay server-side, where length counts Unicode
 code points; native UTF-16 length attributes must not truncate valid text.
 

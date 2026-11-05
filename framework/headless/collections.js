@@ -264,10 +264,16 @@
       const rows = rep.querySelectorAll('[data-hui-repeater-index]');
       const target = rows[repOp.index] || rows[rows.length - 1];
       ctl = target && Array.from(target.querySelectorAll('input:not([type="hidden"]),select,textarea,button'))
-        .find(el => !el.matches(':disabled') && !el.closest('[hidden],[inert]') && el.getClientRects().length);
+        .find(el => {
+          if (el.matches(':disabled') || el.closest('[hidden],[inert]') || !el.getClientRects().length) return false;
+          el.focus({ preventScroll: true });
+          return document.activeElement === el;
+        });
     }
-    if (!ctl) ctl = rep.querySelector('[data-hui-repeater-action="add"]');
-    if (ctl) ctl.focus({ preventScroll: true });
+    if (!ctl) {
+      ctl = rep.querySelector('[data-hui-repeater-action="add"]');
+      if (ctl) ctl.focus({ preventScroll: true });
+    }
     const status = rep.querySelector('[data-hui-repeater-status]');
     if (status && status.textContent) say(status, status.textContent);
     repOp = null;

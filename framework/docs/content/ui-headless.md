@@ -6,7 +6,9 @@ Repeater submit controls default to `Name+"_add"` with value `"1"` and
 
 After removing a repeater row, focus returns to the next row's first visible,
 enabled input, select, textarea, or button. Hidden and inert controls are
-skipped; when no row control is available, focus returns to Add.
+skipped, including controls made invisible by CSS. Recovery checks that a
+control actually received focus before stopping; when no row control can
+receive focus, focus returns to Add.
 
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
