@@ -166,6 +166,11 @@ A `ToolHandler` returns `any`, normalized by type:
 | `string` | One text block |
 | anything else | JSON-marshaled into one text block |
 
+For a typed `handler.ToolAdapter`, query- and path-tagged parameters accept
+strings, booleans, and numbers, including native Go numeric values passed to
+`CallTool`. Nulls (including typed-nil values), arrays, and objects are refused
+with their JSON type named in the parameter error.
+
 A non-nil error becomes a JSON-RPC error, but only a deliberate
 `*RPCError` keeps its message verbatim. A typed `*handler.Error` with a
 4xx status (including a wrapped refusal from `handler.ToolAdapter`)

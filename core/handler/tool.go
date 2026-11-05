@@ -142,9 +142,22 @@ func toolParamString(v any) (string, error) {
 	case json.Number:
 		return v.String(), nil
 	default:
+		value := reflect.ValueOf(v)
+		switch value.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return strconv.FormatInt(value.Int(), 10), nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return strconv.FormatUint(value.Uint(), 10), nil
+		case reflect.Float32, reflect.Float64:
+			return strconv.FormatFloat(value.Float(), 'f', -1, value.Type().Bits()), nil
+		case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Interface:
+			if value.IsNil() {
+				value = reflect.Value{}
+			}
+		}
 		got := jsonTypeNull
-		if v != nil {
-			kind, ok := jsonTypeOf(reflect.TypeOf(v))
+		if value.IsValid() {
+			kind, ok := jsonTypeOf(value.Type())
 			if !ok {
 				return "", i18n.NewError(jsonInvalid)
 			}

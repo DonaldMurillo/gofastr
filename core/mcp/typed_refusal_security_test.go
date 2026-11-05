@@ -57,3 +57,53 @@ func TestToolCallsKeepTypedClientRefusals(t *testing.T) {
 		})
 	}
 }
+
+func TestCallToolAdapterAcceptsNativeNumbers(t *testing.T) {
+	type input struct {
+		Page string `query:"page" json:"-"`
+		ID   string `path:"id" json:"-"`
+	}
+	server := NewServer()
+	adapter := handler.ToolAdapter(handler.Handler[input, input](func(_ context.Context, value input) (input, error) {
+		return value, nil
+	}))
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"page": map[string]any{"type": "number"},
+			"id":   map[string]any{"type": "number"},
+		},
+	}
+	if err := server.RegisterTool("native_numbers", "Native numbers", schema, adapter); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"int", int(10), "10"},
+		{"int8", int8(-10), "-10"},
+		{"int16", int16(-1000), "-1000"},
+		{"int32", int32(-100000), "-100000"},
+		{"int64", int64(-9007199254740993), "-9007199254740993"},
+		{"uint", uint(10), "10"},
+		{"uint8", uint8(10), "10"},
+		{"uint16", uint16(1000), "1000"},
+		{"uint32", uint32(100000), "100000"},
+		{"uint64", uint64(18446744073709551615), "18446744073709551615"},
+		{"float32", float32(0.1), "0.1"},
+		{"float64", float64(10.25), "10.25"},
+		{"json_number", json.Number("9007199254740993"), "9007199254740993"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := server.CallTool(context.Background(), "native_numbers", map[string]any{"page": test.value, "id": test.value})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, ok := result.(input); !ok || got.Page != test.want || got.ID != test.want {
+				t.Fatalf("result = %#v; want both tagged values %q", result, test.want)
+			}
+		})
+	}
+}
