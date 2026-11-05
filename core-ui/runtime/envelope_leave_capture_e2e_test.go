@@ -18,18 +18,24 @@ import (
 // navigation between them swaps the l:site slot and the envelope
 // navigator captures the LEAVING slot's markup for Back. "/" holds an
 // rpc button whose request takes two seconds.
-func leaveCaptureServer(t *testing.T) *httptest.Server {
+func leaveCaptureServer(t *testing.T, outlet ...bool) *httptest.Server {
 	t.Helper()
 	coreJS, err := runtime.RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
+	}
+	button := `<button id="rb" type="button" data-cui-rpc="/slow">Save</button>`
+	side := "SIDE"
+	home := button
+	if len(outlet) > 0 && outlet[0] {
+		side, home = button, `<p id="screen-home">HOME</p>`
 	}
 	page := func(inner string) string {
 		return `<!doctype html><html lang="en"><head><title>leave</title>` +
 			`<script type="application/json" id="gofastr-routes">[{"path":"/","layouts":["l:site"]},{"path":"/a","layouts":["l:site"]}]</script>` +
 			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a></nav>` +
-			`<div data-cui-outlet="l:site#side" id="side">SIDE</div>` +
+			`<div data-cui-outlet="l:site#side" id="side">` + side + `</div>` +
 			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
@@ -52,7 +58,6 @@ func leaveCaptureServer(t *testing.T) *httptest.Server {
 		time.Sleep(2 * time.Second)
 		w.WriteHeader(http.StatusNoContent)
 	})
-	home := `<button id="rb" type="button" data-cui-rpc="/slow">Save</button>`
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if req.Header.Get("X-Gofastr-Navigate") == "1" {
@@ -61,6 +66,9 @@ func leaveCaptureServer(t *testing.T) *httptest.Server {
 			w.Header().Set("X-Gofastr-Envelope", "2")
 			if req.URL.Path == "/a" {
 				fmt.Fprint(w, `<template data-cui-fill="l:site"><p id="screen-a">A-CONTENT</p></template>`)
+				if len(outlet) > 0 && outlet[0] {
+					fmt.Fprint(w, `<template data-cui-fill="l:site#side">A-SIDE</template>`)
+				}
 			} else {
 				fmt.Fprint(w, `<template data-cui-fill="l:site">`+home+`</template>`)
 			}
@@ -75,6 +83,29 @@ func leaveCaptureServer(t *testing.T) *httptest.Server {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func TestLeaveCaptureScrubsOutletRPC(t *testing.T) {
+	server := leaveCaptureServer(t, true)
+	ctx := chromedptest.Context(t)
+	var state string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(server.URL),
+		chromedp.WaitVisible(`#rb`, chromedp.ByID),
+		chromedp.Click(`#rb`, chromedp.ByID),
+		chromedp.Poll(`document.getElementById('rb').classList.contains('cui-loading')`, nil),
+		chromedp.Click(`#goA`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Evaluate(`history.back(); true`, nil),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Sleep(2100*time.Millisecond),
+		chromedp.Evaluate(`(() => {const button=document.getElementById('rb');return JSON.stringify({disabled:button.disabled,busy:button.getAttribute('aria-busy'),loading:button.classList.contains('cui-loading')});})()`, &state),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if state != `{"disabled":false,"busy":null,"loading":false}` {
+		t.Fatalf("replayed outlet RPC: %s", state)
+	}
 }
 
 // TestLeaveCaptureDropsInFlightState: leaving a page while an rpc is

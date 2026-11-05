@@ -1,5 +1,9 @@
 # GoFastr UI architecture
 
+Live navigation snapshots scrub transient RPC state from both primary
+content and every kept-layer outlet or area; fetched fill bytes remain
+untouched, and outlet captures never carry document metadata.
+
 The deferred-parts boot handoff consumes envelope-module load failures.
 A missing chunk leaves inline server-rendered content usable without an
 unhandled promise rejection.

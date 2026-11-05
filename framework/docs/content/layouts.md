@@ -126,6 +126,10 @@ package with `Key.From`) reads `app.QueryFromContext` or
 
 ## Outlets and fills
 
+Back-cache snapshots of live outlets and areas remove transient RPC
+loading, disabled and busy marks, just like primary content. An RPC that
+settles after navigation cannot leave its replayed control disabled.
+
 **Use an outlet when** a region of the shell belongs to the route, not
 the shell — the page's own action buttons, a per-page context panel,
 the docs article's table of contents. One URL can fill several outlets;

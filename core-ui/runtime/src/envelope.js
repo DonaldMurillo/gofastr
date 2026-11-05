@@ -96,7 +96,7 @@
       n.removeAttribute('aria-busy');
     }
     c.querySelectorAll('template[data-cui-page-head]').forEach(node => node.remove());
-    return NS._docCarrier(document) + c.innerHTML;
+    return c.innerHTML;
   }
 
   const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts, vt) => {
@@ -106,7 +106,7 @@
     }
     screenCache.set(path, {
       html, title, layer: layer || '',
-      fills: (fills && fills.length) ? fills : null,
+      fills: fills?.length ? fills : null,
       seed: seed || null,
       partAddrs: partAddrs || null,
       parts: parts || new Map(),
@@ -147,7 +147,7 @@
     }
     for (const [k, v] of changed) G.setSignal(k, v);
     if (!part) _pageSeedP = n ? { p: own } : null;
-    else if (n) _pageSeedP = { p: Object.assign({}, _pageSeedP && _pageSeedP.p, own) };
+    else if (n) _pageSeedP = { p: Object.assign({}, _pageSeedP?.p, own) };
     const glob = data.g || {};
     for (const k in glob) {
       if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
@@ -219,7 +219,7 @@
     // data-cui-scope, and the scan reads descendants only.
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el.parentNode);
     const m = el.matches('main, [role="main"]') ? el : (el.querySelector('[role="main"]') || el.querySelector('main'));
-    if (m && m.focus) _focusSwapTarget(m);
+    if (m?.focus) _focusSwapTarget(m);
     return el;
   };
   const _settleScroll = (fn) => NS._settleScroll(fn);
@@ -270,7 +270,7 @@
   // no _cssReady and commits without the sheet wait.
   const cssWait = async (epoch, src, fills, parts, load) => {
     await Promise.all([src, ...(fills || []).map((f) => f.html), ...(parts || [])]
-      .map((h) => NS._cssReady && NS._cssReady(h)));
+      .map((h) => NS._cssReady?.(h)));
     if (load && NS._navLive(epoch)) await load.wait();
     return NS._navLive(epoch);
   };
@@ -356,10 +356,9 @@
   const captureLiveFills = (slot, d) => {
     const fills = [];
     for (const el of (d || document).querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
-      if (slot && slot.contains(el)) continue;
+      if (slot?.contains(el)) continue;
       const addr = el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area');
-      if (!addr) continue;
-      fills.push({ addr, html: el.innerHTML });
+      if (addr) fills.push({ addr, html: d ? el.innerHTML : captureHTML(el) });
     }
     return fills;
   };
@@ -629,7 +628,7 @@
   };
   const routeParams = (path) => {
     const m = routeInfo(path);
-    return m && m.params;
+    return m?.params;
   };
   const substTmpl = (tmpl, params) => (params && tmpl.includes('{'))
   ? tmpl.replace(/\{(\w+)\}/g, (m, n) => (Object.prototype.hasOwnProperty.call(params, n) ? params[n] : m))
@@ -801,7 +800,7 @@
             const prevEntry = getCachedScreen(prevPath);
             const lsnap = captureEnvelopeSnapshot(busySlot);
             const ps0 = P && P.leaveSnap(prevEntry);
-            cacheScreen(prevPath, captureHTML(busySlot), document.title, keys[busyDepth - 1],
+            cacheScreen(prevPath, NS._docCarrier(document) + captureHTML(busySlot), document.title, keys[busyDepth - 1],
               lsnap.fills, seedOf(prevEntry) || lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
           }
           // The loading module starts loading at evaluation; the first
@@ -1327,7 +1326,7 @@
     const m = document.querySelector('[role="main"]') ?? document.querySelector('main');
     if (m && _liveDomPath) {
       const snap = captureEnvelopeSnapshot(m);
-      cacheScreen(_liveDomPath, captureHTML(m), document.title,
+      cacheScreen(_liveDomPath, NS._docCarrier(document) + captureHTML(m), document.title,
         m.getAttribute('data-cui-layout-slot') || '', snap.fills, pageSeedIsland() || snap.seed);
     }
     recordScroll(_liveDomPath);
