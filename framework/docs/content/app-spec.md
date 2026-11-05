@@ -896,6 +896,10 @@ partial and keeps the shell).
   select stays empty; a number input steps by 1 for `int`, 0.0001 for
   `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
+  Submitted control names use the default camelCase API wire keys
+  (`address_line_1` becomes `addressLine1`) so field refusals land on the
+  matching input. Control IDs, label lookups and relationship targets keep
+  their declaration names.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs

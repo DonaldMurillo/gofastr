@@ -86,7 +86,7 @@
     const fields = d && d.fields && typeof d.fields === 'object' ? d.fields : {};
     let placed = 0;
     for (const name of Object.keys(fields)) {
-      let el = form.elements.namedItem(name) || form.elements.namedItem(name.replace(/[A-Z]/g, c => '_' + c.toLowerCase()));
+      let el = form.elements.namedItem(name);
       // A repeated name (the hidden+checkbox pair) answers a list; the
       // last control is the visible one.
       if (el && !el.tagName && el.length) el = el[el.length - 1];

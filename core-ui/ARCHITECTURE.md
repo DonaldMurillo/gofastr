@@ -1403,12 +1403,12 @@ server-side error (a `data-hui-field-error` node inside the
 attribute of its own; the happy path never loads it.
 
 CRUD refusal `fields` and `field_reasons` use the response wire keys,
-including explicit `WireName` overrides. To place those errors on forms
-whose controls use database-column names, formerrors first tries the
-exact key, then its camelCase-to-snake_case spelling. Explicit wire-name
-overrides should be used as control names when they differ from both;
-entityui does this automatically for all generated controls and conditional
-dependencies, while keeping schema lookups and control IDs column-based.
+including explicit `WireName` overrides. Formerrors matches each key to
+the control's exact submitted name; it never guesses a database column
+by reversing the lossy casing transform. Entityui uses the mounted CRUD
+handler's wire keys for every generated control and conditional dependency,
+and app-spec forms use the default camelCase wire keys. Schema lookups,
+relationship parameters, labels and control IDs remain column-based.
 
 ### Host transport (`__gofastr_transport`)
 

@@ -238,6 +238,12 @@ error `fields` and `field_reasons` keys use the response wire keys
 (camelCase by default, or an explicit `WireName`).** The generated READMEs
 repeat this so consumers stop guessing.
 
+Custom RPC forms must name their controls by the same wire keys as their
+handler's `fields` map. Inline errors match control names exactly; the runtime
+does not infer column names from camelCase. Entityui does this using the
+mounted handler's casing and overrides, and app-spec forms use the default
+camelCase wire keys (`address_line_1` becomes `addressLine1`).
+
 ## Flags and project configuration
 
 ```

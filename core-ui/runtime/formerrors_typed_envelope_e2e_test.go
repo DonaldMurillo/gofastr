@@ -56,18 +56,26 @@ func typedRefusalServer(t *testing.T, body string, names ...string) string {
 	return srv.URL + "/"
 }
 
-func TestWireErrorsReachColumnControls(t *testing.T) {
-	url := typedRefusalServer(t, `<form data-cui-rpc="/rpc/fields" data-cui-rpc-method="POST"><div data-hui-field><label for="author">Author</label><input id="author" name="author_name"></div><button id="save" type="submit">Save</button></form>`, "authorName")
-	ctx := chromedptest.Context(t)
-	var invalid string
-	if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Click(`#save`, chromedp.ByID),
-		chromedp.Poll(`!!window.__gofastr.loadedModules.formerrors && (!!document.getElementById('author').getAttribute('aria-invalid') || window.__toasts.length>0)`, nil),
-		chromedp.Evaluate(`document.getElementById('author').getAttribute('aria-invalid') || ''`, &invalid),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if invalid != "true" {
-		t.Fatal("wire-key refusal did not reach its snake_case control")
+func TestWireErrorsMatchNamesExactly(t *testing.T) {
+	for _, name := range []string{"addressLine1", "address_line1"} {
+		t.Run(name, func(t *testing.T) {
+			body := fmt.Sprintf(`<form data-cui-rpc="/rpc/fields" data-cui-rpc-method="POST"><div data-hui-field><label for="author">Author</label><input id="author" name="%s"></div><button id="save" type="submit">Save</button></form>`, name)
+			url := typedRefusalServer(t, body, "addressLine1")
+			ctx := chromedptest.Context(t)
+			var invalid string
+			var toasts int
+			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Click(`#save`, chromedp.ByID),
+				chromedp.Poll(`!!window.__gofastr.loadedModules.formerrors && (!!document.getElementById('author').getAttribute('aria-invalid') || window.__toasts.length>0)`, nil),
+				chromedp.Evaluate(`document.getElementById('author').getAttribute('aria-invalid') || ''`, &invalid),
+				chromedp.Evaluate(`window.__toasts.length`, &toasts),
+			); err != nil {
+				t.Fatal(err)
+			}
+			matched := name == "addressLine1"
+			if (invalid == "true") != matched || (toasts == 0) != matched {
+				t.Fatalf("field name %q: aria-invalid=%q toasts=%d; want an inline error only for an exact wire-key match", name, invalid, toasts)
+			}
+		})
 	}
 }
 

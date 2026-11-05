@@ -35,9 +35,12 @@ panics there, and so does a view with no `Where`, since
 Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
 
-Generated form controls use a field's explicit `WireName` as their submitted
-name, or its database column name when no override is set. This keeps CRUD's
-wire-keyed validation and constraint refusals attached to the right control.
+Generated form controls use the mounted CRUD handler's response wire key as
+their submitted name: an explicit `WireName`, or the column in the handler's
+configured JSON casing (camelCase by default). For example, `address_line_1`
+is named `addressLine1` under the default casing, not `address_line_1` or
+`address_line1`. This keeps CRUD's wire-keyed validation and constraint
+refusals attached to the right control without trying to reverse the casing.
 Conditional fields follow the same input names; schema names, IDs, display
 configuration, and relation-picker field parameters remain column-based.
 Multipart forms accept the same aliases, including file and checkbox inputs,
