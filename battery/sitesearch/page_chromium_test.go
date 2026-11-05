@@ -122,7 +122,7 @@ func TestPageDropsStaleAnswer(t *testing.T) {
 
 // staticPage serves an exported search page: the markup Screen renders
 // with no query, the client and page modules, and the index files.
-func staticPage(t *testing.T, path string, perPage int) *httptest.Server {
+func staticPage(t *testing.T, path string, perPage int, wrappers ...func(http.Handler) http.Handler) *httptest.Server {
 	t.Helper()
 	files, err := Build(parityCorpus()).Files()
 	if err != nil {
@@ -133,11 +133,12 @@ func staticPage(t *testing.T, path string, perPage int) *httptest.Server {
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><html data-cui-static><meta charset=utf-8>%s
-<script>window.__gofastr = {loadModule: function (n) {
-  return new Promise(function (ok) {
+<script>window.__gofastr = {_pushURL: function (url) { history.replaceState(null, '', url); }, loadModule: function (n) {
+  return new Promise(function (ok, fail) {
     const s = document.createElement('script');
     s.src = '/' + n + '.js';
     s.onload = ok;
+    s.onerror = fail;
     document.head.append(s);
   });
 }};</script>
@@ -158,7 +159,11 @@ func staticPage(t *testing.T, path string, perPage int) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(b)
 	})
-	srv := httptest.NewServer(mux)
+	var handler http.Handler = mux
+	for _, wrap := range wrappers {
+		handler = wrap(handler)
+	}
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	return srv
 }

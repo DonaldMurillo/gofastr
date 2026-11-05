@@ -4,6 +4,7 @@ import (
 	_ "embed"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 )
 
 // SearchAttr marks the listbox the browser client fills with results:
@@ -18,6 +19,8 @@ var staticJS string
 
 //go:embed sitesearch-page.js
 var pageJS string
+
+func init() { runtime.RegisterStrings(reasonIndexUnavailable) }
 
 // The browser client loads when a marked listbox appears (the palette's
 // chrome arrives when it first opens). The static ranker is a module of

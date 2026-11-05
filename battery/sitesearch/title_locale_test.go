@@ -2,8 +2,10 @@ package sitesearch
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -21,5 +23,19 @@ func TestSearchTitleSpeaksLocale(t *testing.T) {
 	}
 	if got := s.ScreenTitle(context.Background()); got != "Search" {
 		t.Errorf("bare-ctx title = %q, want Search", got)
+	}
+}
+
+func TestSearchFailureRegistersLocale(t *testing.T) {
+	catalog := i18n.NewMapCatalog()
+	catalog.Set("fr", reasonIndexUnavailable.Key(), i18n.Message{Text: "Index indisponible"})
+	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
+	ctx = i18n.WithTranslator(ctx, i18n.NewTranslator(catalog, "en"))
+	var phrases map[string]string
+	if err := json.Unmarshal(runtime.StringsJSON(ctx), &phrases); err != nil {
+		t.Fatal(err)
+	}
+	if phrases[reasonIndexUnavailable.Key()] != "Index indisponible" {
+		t.Fatalf("runtime failure phrase = %q, want French", phrases[reasonIndexUnavailable.Key()])
 	}
 }

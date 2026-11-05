@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -27,7 +28,7 @@ func TestMainFileBesideLibraryKeepsDir(t *testing.T) {
 	}
 	write("go.mod", "module example.test/m\n\ngo 1.27\n")
 	write("lib/lib.go", "package lib\n\n// Exported is the API.\nfunc Exported() {}\n")
-	write("lib/gen.go", "//go:build ignore\n\npackage main\n\nfunc main() {}\n")
+	write("lib/gen.go", "//go:build ignore\n\npackage main\n\nfunc main() {}\nfunc GeneratorOnly() {}\n")
 	write("tool/main.go", "package main\n\nfunc main() {}\n")
 	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}} {
 		cmd := exec.Command("git", args...)
@@ -49,5 +50,24 @@ func TestMainFileBesideLibraryKeepsDir(t *testing.T) {
 	}
 	if _, ok := api["tool"]; ok {
 		t.Error("tool indexed: a directory of package main files is not an importable package")
+	}
+	tree, err := gitOut(repo, "write-tree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &symbolSource{repo: repo, cache: map[refDir]*pkgSymbols{}}
+	indexed, err := source.indexAt(strings.TrimSpace(tree), "lib")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if indexed == nil || !indexed.decls["Exported"] || indexed.decls["GeneratorOnly"] {
+		t.Errorf("symbol gate counted generator declarations: %+v", indexed)
+	}
+	tool, err := source.indexAt(strings.TrimSpace(tree), "tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tool != nil {
+		t.Errorf("symbol gate indexed a main-only directory: %+v", tool)
 	}
 }

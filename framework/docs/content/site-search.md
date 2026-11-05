@@ -175,6 +175,11 @@ first whole-word hit, and hits are wrapped in `<mark>`. With `SearchPage`
 set, the rows end with "See all results for “…”" (`ui.searchResults.all`),
 which opens the search page for the query.
 
+Block elements separate indexed words even when the rendered HTML has no
+whitespace between them. This includes adjacent addresses, forms,
+fieldsets, legends, captions, and page grouping elements. Inline elements
+preserve words split across emphasis or other inline markup.
+
 ## Search page
 
 `sitesearch.Screen(b)` is a page of every result, 20 at a time. Mount it
@@ -207,6 +212,9 @@ renders) updates the page in place as the reader types:
   way the client router fetches a partial, and swaps in the status line,
   the list and the pager. The input is never replaced, so focus and caret
   stay put. Pager links are ordinary links the router follows.
+  Only the current query's response may update the stream session; a
+  session rollover also clears the router's page caches so pages from a
+  previous identity cannot replay. Late responses are ignored.
 - In a static export there is no server to render the page, so the module
   ranks with `sitesearch-static` and draws the same markup itself. A query
   in the address (`/search?q=table`) runs on load. Instead of page links it
@@ -215,6 +223,13 @@ renders) updates the page in place as the reader types:
 Either way the address follows the query (`?q=`) with `replaceState`, so
 typing adds no history entries and a reload or a shared link shows the same
 results. Submitting the form runs the query at once instead of reloading.
+
+If a live request fails, or an export cannot load its search module,
+manifest, shard, or result page, the current query clears the previous
+results and pager and announces `sitesearch.unavailable` ("search index
+unavailable") in the reader's language. This includes a failed "More
+results" request. A late failure from an older query leaves the current
+results intact; typing or submitting again retries the search.
 
 ## Static export
 
