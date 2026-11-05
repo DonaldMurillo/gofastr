@@ -323,6 +323,10 @@ this; for a snapshot written before it, the diff reads them from the
 value they hold: a float in its shortest exact form (`1e-07`, not
 `0.000000`), and a scalar on a JSON field JSON-encoded (`'true'`).
 
+Changed views and their dependents are dropped before removed views, so a
+view can stop reading a view removed in the same migration. Rollback
+recreates the removed source before restoring its old dependents.
+
 `required` or `default` changed on a column that already exists is
 compared against the `CREATE TABLE` the snapshot recorded. On Postgres
 the file sets or drops `NOT NULL` (setting it fails while a row holds
