@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,6 +29,9 @@ func TestFailedRunRemovesBuildDir(t *testing.T) {
 	output, err := child.CombinedOutput()
 	if err == nil {
 		t.Fatalf("broken build succeeded: %s", output)
+	}
+	if !strings.Contains(string(output), "Build failed:") {
+		t.Fatalf("child did not reach the build failure cleanup path: %s", output)
 	}
 	leftovers, err := filepath.Glob(filepath.Join(dir, "gofastr-dev-server-*"))
 	if err != nil {
