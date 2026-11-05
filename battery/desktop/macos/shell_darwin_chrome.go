@@ -452,6 +452,9 @@ func (w *darwinWindow) SetSidebarWidth(points int) error {
 	if points < 0 || points > desktop.MaxSidebarWidth {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "sidebarWidth must be between 0 and 4096"}
 	}
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
+	}
 	closed := false
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()

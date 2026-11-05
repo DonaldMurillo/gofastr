@@ -378,6 +378,11 @@ Native window focus, title writes and frame writes refuse a window that closed
 before the operation reached the UI thread. On Windows, a destroyed window's
 nonzero native handle is not evidence that the window is still open. `Title()`
 retains its cached fallback when the native window is no longer available.
+Sidebar-width writes use the same closed-window refusal; they never change
+the cached width after close. `Native()` returns zero for a closed window.
+On macOS, closed-window calls return before scheduling native work, so a
+stopped UI loop cannot turn the refusal into an internal dispatch error.
+Title writes update their cached fallback only after reaching a live window.
 
 All three native shells return `desktop.ErrWindowClosed` (`not_found`,
 `"window is closed"`) for operations on a closed window. `Window.Close()` is
