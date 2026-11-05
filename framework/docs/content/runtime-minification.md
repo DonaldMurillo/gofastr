@@ -59,7 +59,7 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
-The core's gzip gates are 15,953 bytes at level 6 and
+The core's gzip gates are 15,960 bytes at level 6 and
 18,486 bytes at level 1, including live CSRF token protection across cached
 navigation and page-head cleanup. Ordinary-page form-helper discovery fits those
 gates by scheduling idle modules directly instead of building a batch
