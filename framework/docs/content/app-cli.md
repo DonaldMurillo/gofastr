@@ -286,7 +286,8 @@ Supported subset, by design: local `#/components/...` `$ref`s (`allOf`
 of objects shallow-merges, and an `allOf` whose members name one scalar
 type reads as that scalar, the way FastAPI wraps an enum parameter that
 has a default; `oneOf`/`anyOf` bodies and body properties fall back to
-`--json`), JSON or YAML documents of OpenAPI 3.x (a Swagger 2.0 document fails:
+`--json`, including union keywords alongside `$ref` and through `allOf`
+wrappers), JSON or YAML documents of OpenAPI 3.x (a Swagger 2.0 document fails:
 convert it first). YAML reads through `core/yaml`, the app spec's
 subset (see [app-spec](app-spec.md), "YAML subset"): block scalars
 (`description: |`), flow mappings (`schema: {}`) and anchors fail with a

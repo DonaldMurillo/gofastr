@@ -211,17 +211,8 @@ func oaResolve(root, node map[string]any) (map[string]any, error) {
 // unbounded recursion. A ref leaves the set once its subtree is merged:
 // two allOf members sharing a base (a diamond) are not a cycle.
 func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]any, error) {
-	var entered []string
-	defer func() {
-		for _, ref := range entered {
-			delete(active, ref)
-		}
-	}()
-	for node != nil {
-		raw, has := node["$ref"]
-		if !has {
-			break
-		}
+	unions := map[string]any{}
+	if raw, has := node["$ref"]; has {
 		ref, ok := raw.(string)
 		if !ok {
 			return nil, fmt.Errorf("$ref: want a string, got %T", raw)
@@ -229,8 +220,6 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		if active[ref] {
 			return nil, fmt.Errorf("$ref cycle through %q", ref)
 		}
-		active[ref] = true
-		entered = append(entered, ref)
 		if !strings.HasPrefix(ref, "#/") {
 			return nil, fmt.Errorf("external $ref %q is not supported (local #/... refs only)", ref)
 		}
@@ -246,9 +235,27 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 				return nil, fmt.Errorf("$ref %q: segment %q not found", ref, seg)
 			}
 		}
-		node, ok = cur.(map[string]any)
+		target, ok := cur.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("$ref %q does not resolve to an object", ref)
+		}
+		active[ref] = true
+		resolved, err := oaResolveIn(root, target, active)
+		delete(active, ref)
+		if err != nil {
+			return nil, err
+		}
+		siblings := node
+		node = maps.Clone(resolved)
+		for key, value := range siblings {
+			if key != "$ref" {
+				node[key] = value
+			}
+		}
+	}
+	for _, union := range []string{"oneOf", "anyOf"} {
+		if value, present := node[union]; present {
+			unions[union] = value
 		}
 	}
 	if raw, has := node["allOf"]; has {
@@ -281,6 +288,11 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if err != nil {
 				return nil, err
 			}
+			for _, union := range []string{"oneOf", "anyOf"} {
+				if value, present := pm[union]; present {
+					unions[union] = value
+				}
+			}
 			if _, has := pm["type"]; has {
 				typed = append(typed, pm)
 			}
@@ -295,13 +307,18 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		}
 		if len(props) == 0 && len(typed) > 0 && typed[0]["type"] != "object" &&
 			!slices.ContainsFunc(typed, func(m map[string]any) bool { return fmt.Sprint(m["type"]) != fmt.Sprint(typed[0]["type"]) }) {
-			return typed[0], nil
+			node = typed[0]
+		} else {
+			merged["properties"] = props
+			if len(required) > 0 {
+				merged["required"] = required
+			}
+			node = merged
 		}
-		merged["properties"] = props
-		if len(required) > 0 {
-			merged["required"] = required
-		}
-		return merged, nil
+	}
+	if len(unions) > 0 {
+		node = maps.Clone(node)
+		maps.Copy(node, unions)
 	}
 	return node, nil
 }
