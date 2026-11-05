@@ -619,9 +619,9 @@
       const catchAll = pp.length && pp[pp.length - 1].endsWith('*');
       const upto = catchAll ? pp.length - 1 : pp.length;
       for (let i = 0; i < upto; i++) {
-        if (pp[i].startsWith(':')) params[_segName(pp[i])] = parts[i];
+        if (pp[i].startsWith(':')) params[_segName(pp[i])] = decodeURIComponent(parts[i]);
       }
-      if (catchAll) params[_segName(pp[pp.length - 1])] = parts.slice(pp.length - 1).join('/');
+      if (catchAll) params[_segName(pp[pp.length - 1])] = parts.slice(pp.length - 1).map(decodeURIComponent).join('/');
       return { entry: e, params };
     }
     return null;

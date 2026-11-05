@@ -14,7 +14,7 @@ func TestEnvelopeRouteMatchesNav(t *testing.T) {
 {"path":"/letters/:id:alpha"},{"path":"/letters/:slug"},
 {"path":"/keys/:id:uuid"},{"path":"/keys/:slug"},
 {"path":"/codes/:id:alnum"},{"path":"/codes/:slug"},
-{"path":"/café"},{"path":"/files/:name"}]</script>`)
+{"path":"/café"},{"path":"/files/:name"},{"path":"/tree/:rest*"}]</script>`)
 	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base),
@@ -31,8 +31,11 @@ func TestEnvelopeRouteMatchesNav(t *testing.T) {
 		{"/keys/no", "/keys/:slug", "no"},
 		{"/codes/a-b", "/codes/:slug", "a-b"},
 		{"/caf%C3%A9", "/café", ""},
-		{"/files/%2F", "/files/:name", "%2F"},
-		{"/files/%E0%A4", "/files/:name", "%25E0%25A4"},
+		{"/files/%2F", "/files/:name", "/"},
+		{"/files/%25", "/files/:name", "%"},
+		{"/files/%252F", "/files/:name", "%2F"},
+		{"/files/%E0%A4", "/files/:name", "%E0%A4"},
+		{"/tree/a%2Fb/%25", "/tree/:rest*", "a/b/%"},
 	} {
 		t.Run(example.path, func(t *testing.T) {
 			var result struct {

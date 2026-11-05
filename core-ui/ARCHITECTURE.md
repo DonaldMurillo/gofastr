@@ -57,6 +57,8 @@ survive page-head cleanup, and cache replay never restores an earlier token.
 
 Envelope and core navigation share percent-decoded segment normalization
 and typed-parameter matching, including deferred-region route addresses.
+Layout keys and deferred addresses substitute decoded captured values, including
+literal slashes and percent signs, exactly as the server's layout resolver does.
 
 Widget state hydration refuses cross-origin endpoints without aborting
 mounting: local actions, lifecycle listeners and dismissal remain wired.

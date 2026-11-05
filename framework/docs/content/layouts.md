@@ -350,6 +350,11 @@ value — `g:/projects/billing/:project` — so navigating between one
 project's pages keeps the layer (the issue list, its filter state) and
 switching projects re-renders it:
 
+The key uses the captured parameter value, not its URL encoding. A URL segment
+`a%2Fb` contributes `a/b` to the layer key, `%25` contributes `%`, and an encoded
+literal such as `a%252Fb` contributes `a%2Fb`. Deferred outlet addresses use the
+same resolved layer key followed by `#<outlet-name>` on both client and server.
+
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core-ui/app"
 import "github.com/DonaldMurillo/gofastr/core/render"

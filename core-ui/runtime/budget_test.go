@@ -1468,13 +1468,15 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// route.* keys, and a deferred part's seed adds to it (#614,
 		// TestInvalidatedPageKeepsSeed, TestPartSeedKeepsPageSeed). The
 		// dead routeFold seam went.
-		// 8132 measured (8130 + 2) after a leave capture scrubs a live
-		// outlet's RPC snapshot (TestLeaveCaptureScrubsOutletRPC), a cache
-		// replay keeps its transition pick (transition_vocab_e2e_test.go),
-		// a failed list navigation cancels its pending panel
-		// (TestFailedPanelDoesNotReopen), and an apply failure reaches the
-		// navigation catch (TestTransitionFailureRestoresURL).
-		"envelope": 8132,
+		// MEASURED+2 after a leave capture scrubs a live outlet's RPC
+		// snapshot (TestLeaveCaptureScrubsOutletRPC), a cache replay keeps
+		// its transition pick (transition_vocab_e2e_test.go), a failed list
+		// navigation cancels its pending panel (TestFailedPanelDoesNotReopen),
+		// an apply failure reaches the navigation catch
+		// (TestTransitionFailureRestoresURL), and decoded captured parameters
+		// match server layout and part addresses
+		// (TestDeferredParamUsesServerAddress).
+		"envelope": 8138,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
