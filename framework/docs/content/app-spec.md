@@ -747,6 +747,9 @@ prints to stdout, or to a file with `-o`:
 gofastr pack examples/meridian -o recovered.yml
 ```
 
+`-o`/`--out` requires a filename, not another flag. To deliberately write
+a dash-prefixed filename, use an explicit relative path such as `./-out.yml`.
+
 Every string in the output comes from the app's source, and none reaches
 the terminal raw if it could drive it: a value holding a control or
 invisible character (an ESC, a C1 control, a bidi override, a zero-width

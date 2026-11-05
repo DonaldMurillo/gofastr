@@ -3047,7 +3047,7 @@ func RunPack(args []string) {
 		case "-o", "--out":
 			// A missing value or an unknown flag would print the YAML to
 			// stdout and exit 0 while the caller expected a file.
-			if i+1 >= len(args) {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				packFail(true, "pack: %s needs a file name", args[i])
 				return
 			}
