@@ -1461,7 +1461,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// route.* keys, and a deferred part's seed adds to it (#614,
 		// TestInvalidatedPageKeepsSeed, TestPartSeedKeepsPageSeed). The
 		// dead routeFold seam went.
-		"envelope": 8129,
+		// 8132 measured (8130 + 2) after a leave capture scrubs a live
+		// outlet's RPC snapshot (TestLeaveCaptureScrubsOutletRPC), a cache
+		// replay keeps its transition pick (transition_vocab_e2e_test.go),
+		// a failed list navigation cancels its pending panel
+		// (TestFailedPanelDoesNotReopen), and an apply failure reaches the
+		// navigation catch (TestTransitionFailureRestoresURL).
+		"envelope": 8132,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1577,8 +1583,15 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// pushed (R7-095, TestInterceptPageLinkDropsPaneEntries).
 		// 3569 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
+		// 3579 measured (2026-11-04) after URL writes inside a pane span
+		// count toward the walk back to the base entry
+		// (TestPaneURLWritesCloseToBase), a failed panel fetch opens the
+		// record page (TestPanelFetchFailureOpensPage), a failed list
+		// navigation cancels its pending panel
+		// (TestFailedPanelDoesNotReopen), and an apply failure reaches the
+		// navigation catch (TestTransitionFailureRestoresURL).
 		// Pinned at the measured size plus 2 clearance.
-		"intercept": 3571,
+		"intercept": 3581,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
