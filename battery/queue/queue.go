@@ -94,8 +94,9 @@ type JobStats map[string]int
 
 // Browsable is the optional read-only inspection interface, implemented
 // by DBQueue, MemoryQueue and RedisQueue so admin tooling can list and
-// aggregate jobs without guessing at the underlying schema. RedisQueue
-// lists dead-letter jobs only; admin code should type-assert the capability.
+// aggregate jobs without guessing at the underlying schema.
+// MemoryQueue and RedisQueue list dead-letter jobs only; admin code should
+// type-assert the capability.
 type Browsable interface {
 	// ListJobs returns up to limit jobs in the given status, skipping
 	// the newest offset of them; pass an empty status to return all jobs

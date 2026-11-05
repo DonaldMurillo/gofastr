@@ -17,7 +17,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 | Auto-reclaim crashed workers | — | Yes (lease expiry in SQL) | Yes (visibility timeout + `Start`) |
 | Dead-letter capture | Yes (bounded, 1 000 jobs) | Yes (status `failed`) | Yes (Redis list) |
 | Unique jobs (`UniqueKey`) | Yes | Yes (partial unique index) | No (`ErrUniqueUnsupported`) |
-| `Browsable` | Yes | Yes | Yes (dead-letter only) |
+| `Browsable` | Yes (dead-letter only) | Yes | Yes (dead-letter only) |
 | `Replayable` | Yes | Yes | Yes |
 | Scheduler integration | Yes | Yes | Yes |
 
