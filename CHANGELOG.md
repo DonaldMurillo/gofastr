@@ -672,6 +672,9 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The ConditionalField gallery preview submits successfully.** Its
+  form now uses the docs site's no-op POST endpoint instead of posting
+  to a GET-only component screen.
 - **OpenAPI CLI nullable unions generate scalar flags.** A query, path,
   header or body property with one non-null scalar `oneOf`/`anyOf`
   branch now maps like `type: [T, "null"]`. Multi-type body unions keep
