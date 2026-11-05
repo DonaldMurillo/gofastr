@@ -112,9 +112,12 @@
   }
 
   const pushURL = NS._pushURL;
+  let pagePush = false;
   NS._pushURL = (url, opts = {}) => {
     const t = top();
-    if (!t) return pushURL(url, opts);
+    const page = pagePush;
+    pagePush = false;
+    if (!t || page) return pushURL(url, opts);
     try { rawPush(t, opts.replace, url, t.cur + !opts.replace); } catch (_) {}
   };
 
@@ -362,7 +365,7 @@
     clicked = null;
     if (claimPanel(anchor, path, hash)) return true;
     const d = decide(path, anchor);
-    if (!d) return false;
+    if (!d) { pagePush = true; return false; }
     if (d.kind === 'query') {
       claimQuery(path, hash);
       return true;
