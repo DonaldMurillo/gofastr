@@ -93,6 +93,11 @@ other header, so a receiver that answers 3xx would otherwise hand the
 key to whatever host it names. The 3xx is recorded as a failed
 attempt.
 
+Bearer and API-key credentials refuse `Username` and `Password`, even
+when only one is set; those fields apply to Basic authentication only.
+Misconfigured credentials fail at `Subscribe`, rather than losing fields
+when the delivery is sent.
+
 The `SQLStore` seals `Auth` with the same codec as `Secret` (see
 [Secret encryption at rest](#secret-encryption-at-rest)). `Subscribe`
 replaces the whole subscriber, so re-subscribing an ID with a zero

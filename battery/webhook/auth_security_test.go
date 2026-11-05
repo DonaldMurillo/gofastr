@@ -157,28 +157,34 @@ func TestDeliveryRecordsResponse(t *testing.T) {
 }
 
 func TestSubscribeRefusesMalformedAuth(t *testing.T) {
-	mgr := New(NewMemoryStore(), Options{AllowPrivateNetworks: true})
+	mgr := New(NewMemoryStore(), Options{AllowPrivateNetworks: true, AllowPlaintextAuth: true})
 	bad := map[string]Auth{
-		"unknown kind":        {Kind: "digest", Token: "x"},
-		"credential, no kind": {Token: "x"},
-		"bearer no token":     {Kind: AuthBearer},
-		"bearer with header":  {Kind: AuthBearer, Token: "x", Header: "X-Key"},
-		"api key no token":    {Kind: AuthAPIKey},
-		"crlf in token":       {Kind: AuthBearer, Token: "x\r\nX-Evil: 1"}, // not-a-secret: test fixture credential
-		"bad header name":     {Kind: AuthAPIKey, Token: "x", Header: "X Key"},
-		"host header":         {Kind: AuthAPIKey, Token: "x", Header: "Host"},
-		"content-type":        {Kind: AuthAPIKey, Token: "x", Header: "content-type"},
-		"gofastr header":      {Kind: AuthAPIKey, Token: "x", Header: "X-GoFastr-Event"},
-		"signature header":    {Kind: AuthAPIKey, Token: "x", Header: SignatureHeader},
-		"basic no user":       {Kind: AuthBasic, Password: "p"},
-		"basic colon user":    {Kind: AuthBasic, Username: "a:b", Password: "p"},
-		"basic with token":    {Kind: AuthBasic, Username: "a", Password: "p", Token: "x"},
-		"basic with header":   {Kind: AuthBasic, Username: "a", Password: "p", Header: "X-Key"},
-		"no kind, header":     {Header: "X-Key"},
-		"no kind, username":   {Username: "a"},
-		"no kind, password":   {Password: "p"},
-		"crlf in username":    {Kind: AuthBasic, Username: "a\r\nX-Evil", Password: "p"},
-		"crlf in password":    {Kind: AuthBasic, Username: "a", Password: "p\r\nX-Evil: 1"}, // not-a-secret: test fixture credential
+		"unknown kind":          {Kind: "digest", Token: "x"},
+		"credential, no kind":   {Token: "x"},
+		"bearer no token":       {Kind: AuthBearer},
+		"bearer with header":    {Kind: AuthBearer, Token: "x", Header: "X-Key"},
+		"bearer with username":  {Kind: AuthBearer, Token: "x", Username: "u"},
+		"bearer with password":  {Kind: AuthBearer, Token: "x", Password: "p"},
+		"bearer with basic":     {Kind: AuthBearer, Token: "x", Username: "u", Password: "p"},
+		"api key with username": {Kind: AuthAPIKey, Token: "x", Username: "u"},
+		"api key with password": {Kind: AuthAPIKey, Token: "x", Password: "p"},
+		"api key with basic":    {Kind: AuthAPIKey, Token: "x", Username: "u", Password: "p"},
+		"api key no token":      {Kind: AuthAPIKey},
+		"crlf in token":         {Kind: AuthBearer, Token: "x\r\nX-Evil: 1"}, // not-a-secret: test fixture credential
+		"bad header name":       {Kind: AuthAPIKey, Token: "x", Header: "X Key"},
+		"host header":           {Kind: AuthAPIKey, Token: "x", Header: "Host"},
+		"content-type":          {Kind: AuthAPIKey, Token: "x", Header: "content-type"},
+		"gofastr header":        {Kind: AuthAPIKey, Token: "x", Header: "X-GoFastr-Event"},
+		"signature header":      {Kind: AuthAPIKey, Token: "x", Header: SignatureHeader},
+		"basic no user":         {Kind: AuthBasic, Password: "p"},
+		"basic colon user":      {Kind: AuthBasic, Username: "a:b", Password: "p"},
+		"basic with token":      {Kind: AuthBasic, Username: "a", Password: "p", Token: "x"},
+		"basic with header":     {Kind: AuthBasic, Username: "a", Password: "p", Header: "X-Key"},
+		"no kind, header":       {Header: "X-Key"},
+		"no kind, username":     {Username: "a"},
+		"no kind, password":     {Password: "p"},
+		"crlf in username":      {Kind: AuthBasic, Username: "a\r\nX-Evil", Password: "p"},
+		"crlf in password":      {Kind: AuthBasic, Username: "a", Password: "p\r\nX-Evil: 1"}, // not-a-secret: test fixture credential
 	}
 	for name, a := range bad {
 		_, err := mgr.Subscribe(context.Background(), Subscriber{URL: "http://127.0.0.1:1/", Secret: "s", Auth: a})

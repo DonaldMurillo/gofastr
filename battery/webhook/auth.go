@@ -113,6 +113,9 @@ var reservedAuthHeaders = map[string]bool{
 // validate refuses a credential the delivery cannot send as written.
 // It never echoes a credential value into the error.
 func (a Auth) validate() error {
+	if (a.Kind == AuthBearer || a.Kind == AuthAPIKey) && (a.Username != "" || a.Password != "") {
+		return errors.New("webhook: Subscriber.Auth Username and Password apply to basic only")
+	}
 	switch a.Kind {
 	case AuthNone:
 		if a.Token != "" || a.Header != "" || a.Username != "" || a.Password != "" {
