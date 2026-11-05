@@ -593,7 +593,9 @@ outlet's (or a deferred part).
 
 Cached navigations retain the page answer's keyed transition, including on
 pages with outlets; revisiting a cached page uses the same transition pick
-as its fetched answer.
+as its fetched answer. Picks are recorded even when reduced motion is
+enabled or the browser cannot animate view transitions, so a later cache
+replay still has the destination's pick if animation becomes available.
 
 If a navigation's DOM update throws inside a view transition, the runtime
 uses the normal navigation failure path: it shows a failure toast, restores

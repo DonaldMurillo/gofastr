@@ -29,13 +29,17 @@ type resolveSite struct {
 	pickOf map[string]string // path → X-Gofastr-Transition value
 }
 
-func newResolveSite(t *testing.T) *resolveSite {
+func newResolveSite(t *testing.T, withOutlet ...bool) *resolveSite {
 	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := &resolveSite{pickOf: map[string]string{}}
+	outlet := ""
+	if len(withOutlet) > 0 && withOutlet[0] {
+		outlet = `<aside data-cui-outlet="l:site#aside">Inline aside</aside>`
+	}
 	routes := `<script type="application/json" id="gofastr-routes">[` +
 		`{"path":"/"},{"path":"/a","layouts":["l:site"]},{"path":"/b","layouts":["l:site"]}` +
 		`]</script>`
@@ -44,7 +48,7 @@ func newResolveSite(t *testing.T) *resolveSite {
 			`<head><title>resolve</title>` + routes + `</head><body>` +
 			`<div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a> <a id="goB" href="/b">B</a></nav>` +
-			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main>` +
+			outlet + `<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	mux := http.NewServeMux()
@@ -62,6 +66,11 @@ func newResolveSite(t *testing.T) *resolveSite {
 				w.Header().Set("X-Gofastr-Swap", "l:site")
 				if pick := s.pickOf[path]; pick != "" {
 					w.Header().Set("X-Gofastr-Transition", pick)
+				}
+				if outlet != "" {
+					w.Header().Set("X-Gofastr-Envelope", "2")
+					fmt.Fprintf(w, `<template data-cui-fill="l:site">%s</template><template data-cui-fill="l:site#aside">Inline aside</template>`, inner)
+					return
 				}
 				fmt.Fprint(w, inner)
 				return
