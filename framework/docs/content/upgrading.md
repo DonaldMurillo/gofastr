@@ -52,6 +52,12 @@ larger files appear as **Unscanned** instead of being read in full.
 Retired HTML attributes in Go string values and attribute maps match
 ASCII-case-insensitively, including names ending in `-` that identify
 an attribute family. Unicode lookalikes remain distinct.
+A module without a `go` directive is checked as Go 1.16, the Go tool's
+default, rather than bypassing minimum-version notes. An invalid
+`go.mod` either prevents scan startup or appears as **Unscanned** when
+the directive matcher encounters it after loading.
+Module directives are inspected before package loading can add or
+upgrade them, including nested modules.
 
 ## The manual workflow
 

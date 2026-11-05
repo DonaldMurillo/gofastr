@@ -33,10 +33,6 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 	if err != nil {
 		return nil, err
 	}
-	pkgs, err := loadPackages(abs, moduleRoot)
-	if err != nil {
-		return nil, fmt.Errorf("scan: load %s: %w", abs, err)
-	}
 	appRoot, err := os.OpenRoot(abs)
 	if err != nil {
 		return nil, fmt.Errorf("scan: open root: %w", err)
@@ -61,7 +57,12 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 		objDefs:       map[types.Object]objRef{},
 	}
 	e.buildIndexes()
-	// Load everything before matching anything: the main module, every
+	e.gomodFiles()
+	pkgs, err := loadPackages(abs, moduleRoot)
+	if err != nil {
+		return nil, fmt.Errorf("scan: load %s: %w", abs, err)
+	}
+	// Load all Go before matching Go: the main module, every
 	// nested module below root, then one load per build configuration
 	// the collected files owe. All of it flows through the same
 	// collect+index pass, so the cross-package matchers — sink
@@ -83,9 +84,6 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 	}
 	e.fileMatchers()
 	e.configMatchers()
-	for _, dir := range e.moduleDirs {
-		e.gomodMatchers(dir)
-	}
 	return e.result(), nil
 }
 
