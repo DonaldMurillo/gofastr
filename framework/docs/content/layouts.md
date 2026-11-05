@@ -320,10 +320,14 @@ var application *app.App
 ```go
 docs := app.NewScreenGroup("/docs", docsNav)
 docs.Screen(app.NewScreen("/docs/intro", &IntroScreen{}), nil)
-guides := docs.SubGroup("/docs/guides", guidesNav)
+guides := docs.SubGroup("guides", guidesNav)
 guides.Screen(app.NewScreen("/docs/guides/deploy", &DeployScreen{}), nil)
 application.Router.ScreenGroup(docs)
 ```
+
+Subgroup prefixes are relative to their parent, including prefixes with a
+leading slash. Repeated or trailing slashes are normalized, and an empty
+subgroup prefix reuses the parent's prefix.
 
 `/docs/guides/deploy` renders inside three layers: the app default
 (outermost, owns the single `<main>`), the docs layer, the guides

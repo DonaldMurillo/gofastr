@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"path"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -176,7 +177,9 @@ func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
 }
 
 // SubGroup creates a nested screen group. The child group's prefix is
-// resolved relative to this group's prefix. The child inherits this
+// resolved relative to this group's prefix, even with a leading slash.
+// Empty prefixes reuse the parent prefix; repeated slashes are normalized.
+// The child inherits this
 // group's layout unless it declares its own.
 //
 // Optional policies are appended to the parent's policy chain at
@@ -184,12 +187,7 @@ func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
 // screens are gated by parent.policies + child.policies + screen.Policies
 // in that order.
 func (g *ScreenGroup) SubGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGroup {
-	// Always resolve relative to parent, strip leading slash
-	for len(prefix) > 0 && prefix[0] == '/' {
-		prefix = prefix[1:]
-	}
-	// Parent prefix already ends with /, so just concatenate
-	childPrefix := g.prefix + prefix + "/"
+	childPrefix := normalizeGroupPrefix(path.Join(g.prefix, prefix))
 	child := &ScreenGroup{
 		prefix:   childPrefix,
 		layout:   layout,

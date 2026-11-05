@@ -900,6 +900,12 @@ parameter with `ui.PaneDeepLink` and set `SecondaryOpen`/`TertiaryOpen`
 plus the pane's content from it; skip that and a shared link paints the
 pane closed, then opens and fills it after hydration.
 
+### Screen groups
+
+Screen-group prefixes compose parent-relative, even when a subgroup prefix
+starts with `/`. Empty subgroup prefixes retain the parent prefix; joining
+normalizes repeated and trailing slashes before relative screens are registered.
+
 ### Intercepting routes (`app.InterceptFrom`)
 
 One detail screen, two presentations. `/products/42` is an ordinary
