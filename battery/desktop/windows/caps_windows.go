@@ -140,7 +140,7 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 	registered, _, _ := callWindows(capUser32, "RegisterWindowMessageW", uintptr(unsafe.Pointer(message)))
 	s.taskbarCreated = uint32(registered)
 	tray.register()
-	if cfg.Menu != nil {
+	if shouldPlanTrayMenu(cfg) {
 		ids := append([]string(nil), s.actionIDs...)
 		rows := desktop.PlanTrayMenu(s.text(), cfg, s.title, &ids)
 		s.actionIDs = ids
