@@ -739,6 +739,11 @@ explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
+`Define` copies the supplied relation slice and each relation's foreign-key
+columns before deriving entries. Multiple entity configs may reuse a relation
+slice, including one with spare capacity, without one entity's derived entries
+or later caller edits changing another entity's registered relations.
+
 A relation column is `TEXT`, except when the target's key is an `int`
 field: then it takes the key's integer type, `BIGINT` on Postgres and
 `INTEGER` on SQLite. Postgres refuses a `TEXT` foreign key to an integer

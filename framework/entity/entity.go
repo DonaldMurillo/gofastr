@@ -963,6 +963,10 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 	c.Display = copyDisplayConfig(c.Display)
 	c.States = copyStatesConfig(c.States)
 	c.Fields = c.States.withStateDefault(c.Fields)
+	c.Relations = slices.Clone(c.Relations)
+	for index := range c.Relations {
+		c.Relations[index].ForeignKey = slices.Clone(c.Relations[index].ForeignKey)
+	}
 	return c
 }
 
