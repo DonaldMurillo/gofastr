@@ -90,6 +90,19 @@ func TestOrderPricesComeFromProducts(t *testing.T) {
 	if code, body := e2eDo(t, &admin, "PATCH", base+"/api/products/"+fmt.Sprint(first["id"]), `{"price":"12345678901.2345"}`); code != http.StatusOK {
 		t.Fatalf("catalog price update: %d %s", code, body)
 	}
+	itemCount := func() int {
+		t.Helper()
+		order := readRow("GET", "/api/orders/"+orderID+"?include=items", "", http.StatusOK)
+		items, ok := order["items"].([]any)
+		if !ok {
+			t.Fatalf("order items missing from response: %v", order)
+		}
+		return len(items)
+	}
+	beforeCount := itemCount()
+	if beforeCount != 1 {
+		t.Fatalf("rollback fixture has %d items, want 1", beforeCount)
+	}
 	for _, method := range []string{"POST", "PATCH"} {
 		path := "/api/order_items"
 		payload := fmt.Sprintf(`{"orderId":%q,"productId":%q,"productName":%q,"quantity":99}`, orderID, first["id"], first["name"])
@@ -100,6 +113,9 @@ func TestOrderPricesComeFromProducts(t *testing.T) {
 		code, response := e2eDo(t, client, method, base+path, payload)
 		if code != http.StatusBadRequest {
 			t.Errorf("%s derived line price: got %d %s, want 400", method, code, response)
+		}
+		if afterCount := itemCount(); afterCount != beforeCount {
+			t.Errorf("%s rejected line price changed item count: got %d, want %d", method, afterCount, beforeCount)
 		}
 	}
 	check(item, first, 1)
