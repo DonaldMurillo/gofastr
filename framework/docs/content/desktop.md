@@ -1937,7 +1937,8 @@ Window.SetFrame(Frame) error
 ```
 
 `OnWindowFrame` fires on a goroutine whenever the user moves or
-resizes a window, unthrottled; the battery debounces. On macOS the
+resizes the main window or a secondary window, including one opened
+after the shell starts, unthrottled; the battery debounces. On macOS the
 window delegate's `windowDidMove:` and `windowDidEndLiveResize:` (the
 resize reports once, at the end of the drag) feed it, and a
 programmatic `SetFrame` reports through the same path. The top-left to

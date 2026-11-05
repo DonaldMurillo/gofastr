@@ -297,8 +297,8 @@ type WindowConfig struct {
 	// default (centered).
 	Frame *Frame
 	// OnWindowFrame is called by the shell (on a goroutine) whenever
-	// the user moves or resizes a window, unthrottled: the host
-	// debounces. It never fires for windows created after Run.
+	// the user moves or resizes the main or a secondary window,
+	// unthrottled: the host debounces.
 	OnWindowFrame func(id string, f Frame)
 	// SidebarWidth is the main window's initial sidebar zone in screen
 	// points (0 means no zone); the battery fills it from
