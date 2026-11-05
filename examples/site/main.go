@@ -318,6 +318,9 @@ func setupServer() *framework.App {
 	}))
 	// committed (or reverted) state only on a real 2xx, so the demo
 	// buttons round-trip through this no-op.
+	fwApp.Router().Get("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

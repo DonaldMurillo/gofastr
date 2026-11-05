@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,20 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
+
+func TestFilterChipNoScriptNoopSupportsGETAndPOST(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			response := serve(t, method, "/__site/toggle/noop")
+			if response.Code != http.StatusNoContent {
+				t.Fatalf("%s noop status = %d, want 204", method, response.Code)
+			}
+			if response.Body.Len() != 0 || response.Header().Get("Location") != "" {
+				t.Fatalf("%s noop must not replace or redirect the current page: body=%q, location=%q", method, response.Body.String(), response.Header().Get("Location"))
+			}
+		})
+	}
+}
 
 func TestTagDemoDismisses(t *testing.T) {
 	base := startE2EServer(t)
