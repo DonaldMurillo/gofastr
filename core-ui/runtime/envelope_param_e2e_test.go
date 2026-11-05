@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
@@ -45,6 +46,7 @@ func TestDeferredParamUsesServerAddress(t *testing.T) {
 	host := uihost.New(application)
 	type partResult struct {
 		address string
+		markup  string
 		status  int
 		body    string
 	}
@@ -62,7 +64,7 @@ func TestDeferredParamUsesServerAddress(t *testing.T) {
 		}
 		writer.WriteHeader(response.Code)
 		_, _ = writer.Write(response.Body.Bytes())
-		parts <- partResult{address, response.Code, response.Body.String()}
+		parts <- partResult{address, request.Header.Get("X-Gofastr-Markup"), response.Code, response.Body.String()}
 	}))
 	t.Cleanup(server.Close)
 	for _, example := range []struct{ path, value string }{
@@ -84,6 +86,9 @@ func TestDeferredParamUsesServerAddress(t *testing.T) {
 			want := "g:/projects/" + example.value + "/:project"
 			select {
 			case result := <-parts:
+				if result.markup != runtime.MarkupVersion {
+					t.Errorf("part markup = %q, want %q", result.markup, runtime.MarkupVersion)
+				}
 				if result.address != want+"#aside" || result.status != http.StatusOK {
 					t.Fatalf("part address=%q status=%d body=%s, want %q status=200", result.address, result.status, result.body, want+"#aside")
 				}

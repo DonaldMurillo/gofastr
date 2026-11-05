@@ -1670,7 +1670,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 2388 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
 		// Pinned at the measured size plus 2 clearance.
-		"parts": 2390,
+		// 2414 measured: TestDeferredParamUsesServerAddress pins the live
+		// markup generation on each deferred part request.
+		"parts": 2416,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion

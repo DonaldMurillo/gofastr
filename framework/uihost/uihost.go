@@ -3054,6 +3054,10 @@ func (ds *UIHost) serveErrorPartial(w http.ResponseWriter, r *http.Request, path
 // re-requests the part once before ever reloading.
 func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path, addr string) {
 	w.Header().Set("Cache-Control", "no-store")
+	if staleMarkupClient(r) {
+		ds.writePartReset(w, partResetAny)
+		return
+	}
 	// A dead session between the page request and its parts is the
 	// spec's reset case: the fill would render under a different
 	// identity than the page beside it. The reset names the reason
