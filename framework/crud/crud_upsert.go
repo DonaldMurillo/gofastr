@@ -55,7 +55,12 @@ var errUpsertBeforeUpdate = errors.New("upsert: entities with BeforeUpdate hooks
 // fills an omitted column on the insert arm alone. A conflict that
 // writes any column re-stamps an auto updated_at with the server time,
 // as Update does; created_at and the key keep their stored values.
+// A non-null cascade relation value returns a ValidationError without
+// writing; use CreateOne or UpdateOne for nested writes.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
+	if err := ch.refuseUpsertCascades(body); err != nil {
+		return nil, err
+	}
 	ctx = withEventStamps(ctx)
 	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.BeforeUpdate)) > 0 {
 		return nil, errUpsertBeforeUpdate
@@ -138,6 +143,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			blanked = ch.coerceBeforeHooks(s, body, false)
 			if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 				return &beforeHookError{err: err}
+			}
+			if err := ch.refuseUpsertCascades(body); err != nil {
+				return err
 			}
 			blanked = slices.DeleteFunc(blanked, func(name string) bool {
 				_, set := body[name]
