@@ -50,7 +50,10 @@ scrubbed the same way.
   overwrites them, each through a temporary file renamed over the old
   one, so a crash or a full disk leaves the old file whole and a
   replaced file keeps its mode. An existing `.gitignore` is kept and gains the entries
-  it lacks. Every file `init` writes, and every file it reads to merge
+  it lacks. A hand-written `.agents/` detail file or an unsafe host-skill
+  path is refused before replacing any scaffold, settings, `.env` or signing
+  secret, including when `--force` is set.
+  Every file `init` writes, and every file it reads to merge
   into (`.gitignore`, `go.mod`), stays in the project: a symlink there,
   whether the file itself, a dangling one, or a directory on the way
   (`static/`, `migrations/`, `entities/`), is followed only while it
