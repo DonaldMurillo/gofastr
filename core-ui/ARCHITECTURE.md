@@ -1284,6 +1284,10 @@ navigation apply (cached replays included, through the per-module
 scanner hook), when a deferred part lands (`gofastr:fill`), and on DOM
 insertion; a reopen re-reads the meta, so the session parameter is the
 current one (the navigator's `X-Gofastr-Session` rollover rewrites it).
+Both navigators clear page caches when a full document's stream metadata
+names a different session, before replacing the live metadata, just as
+they do for a partial's session header. Other stream URL changes with the
+same session do not invalidate pages.
 
 The module mirrors its transport state onto ONE live object, mutated
 in place so every reference (the NetworkRetryBanner, app code) sees

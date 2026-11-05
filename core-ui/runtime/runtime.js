@@ -1752,7 +1752,10 @@
         // the SSE reconnect loop recovers here too, not only on the
         // partial branch's X-Gofastr-Session path.
         const fm = sseMeta(pdoc), lm = sseMeta();
-        if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
+        if (fm && lm) {
+          if (new URL(fm.content, location.href).searchParams.get('session') !== new URL(lm.content, location.href).searchParams.get('session')) G.invalidate('*');
+          lm.setAttribute('content', fm.getAttribute('content'));
+        }
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
           const sourceRoot = shellEl(pdoc) || nm;
