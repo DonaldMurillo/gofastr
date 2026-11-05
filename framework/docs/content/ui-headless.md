@@ -687,6 +687,10 @@ families:
   so the scheme never flashes). It replaced the retired `backtotop`
   and `themeswitch` runtime modules.
 
+  The sentinel follows the largest threshold among currently connected
+  links. Soft navigation or an island replacement can lower that threshold;
+  links removed from the document no longer contribute.
+
 The navigation-behaviour families ship as their own modules, each
 registered the same way:
 
