@@ -164,6 +164,8 @@ TLS-terminating proxy that sets `X-Forwarded-Proto: https` (the app
 sees plain HTTP there). Plain-HTTP local dev never receives it. Set
 `HSTSMaxAge: -1` to disable, a positive value to change the age, or
 `HSTSIncludeSub` / `HSTSPreload` to extend it.
+`Secure: true` forces HSTS even on plain HTTP. Its default, false, keeps
+TLS and proxy auto-detection; it is not an off switch.
 
 The CSP default works with the built-in UI runtime because its CSS and
 scripts are served from `/__gofastr/*`, with one exception the host
