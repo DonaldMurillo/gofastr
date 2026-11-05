@@ -64,6 +64,9 @@ func main() {
 	}
 
 	app := buildApp(db, uploadDir)
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		log.Fatal(err)
+	}
 
 	// Demo seed: a couple of users + one post + comments. Idempotent, only
 	// inserts if the table is empty.

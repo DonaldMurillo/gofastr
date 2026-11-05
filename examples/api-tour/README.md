@@ -11,7 +11,7 @@ cd examples/api-tour && gofastr dev   # or: go run .
 # banner prints the address to open
 ```
 
-The first run creates `./api-tour.db` (SQLite) and seeds two users + two
+Boot creates and migrates `./api-tour.db` (SQLite) before seeding two users + two
 posts + two comments + one profile. Re-runs are idempotent.
 
 ## Things to try
