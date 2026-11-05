@@ -267,10 +267,13 @@ few lines, and link the PR or the docs page for the rest.
   state and batch refusals keyed `fields` and `field_reasons` by column
   name while the body used the wire key (camelCase by default, or a
   field's `WireName`). Every refusal now uses the wire key, the same
-  key the client sent. The runtime and entity forms match a wire key to
-  its control, multipart inputs resolve aliases before the duplicate-key
-  check, and `llm.md`, the SDK docs and generated READMEs match. A
-  client that read `fields["author_name"]` reads `fields["authorName"]`.
+  key the client sent. Entity and app-spec forms name each control by
+  its wire key, and the runtime marks only the control whose name is that
+  exact key, so a custom form names its controls by wire key too. Ids and
+  relation lookups keep the column name. Multipart inputs resolve aliases
+  before the duplicate-key check, and `llm.md`, the SDK docs and
+  generated READMEs match. A client that read `fields["author_name"]`
+  reads `fields["authorName"]`.
 - **Docs and comments must name identifiers that exist; the runtime
   contract sync reads every attribute family (2026-11-03).**
   - `TestDocsNameRealIdentifiers`, `TestRepoDocsNameRealIdentifiers`
@@ -738,11 +741,13 @@ few lines, and link the PR or the docs page for the rest.
   locale.
 - **Pane history and replays stay consistent.** URL writes inside an
   intercepted pane count toward the walk back, so closing nested panes
-  lands on the right base entry. A leave guard's discard dialog cancels
-  pending pane navigations. A kept outlet snapshot drops its in-flight
-  RPC marks before replay. A cached deferred region with no part coming
-  stays out of the loading state, and a deferred-parts module that fails
-  to load no longer leaves an unhandled rejection.
+  lands on the right base entry. Each write records the URL the browser
+  resolved, so after a query-only, fragment-only or absolute write the
+  pane's next query link stays in the pane. A leave guard's discard
+  dialog cancels pending pane navigations. A kept outlet snapshot drops
+  its in-flight RPC marks before replay. A cached deferred region with
+  no part coming stays out of the loading state, and a deferred-parts
+  module that fails to load no longer leaves an unhandled rejection.
 - **Field ids stay unique on repeated controls.** Same-named native
   controls and repeaters get scoped ids with matching label and ARIA
   targets. Choices whose values slug the same, repeated toggles, and
