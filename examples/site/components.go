@@ -33,6 +33,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
@@ -205,7 +206,7 @@ func (s *ComponentShowcaseScreen) Render() render.HTML {
 func (s *ComponentShowcaseScreen) renderDemo(ctx context.Context) render.HTML {
 	switch s.Entry.Slug {
 	case "tag":
-		return gallery.TagDemo(app.QueryFromContext(ctx).Get("dismissed") == "beta")
+		return interactive.BindHTML(ui.Box(ui.BoxConfig{}, gallery.TagDemo(app.QueryFromContext(ctx).Get("dismissed") == "beta")), "tag-demo")
 	case "icon":
 		query := app.QueryFromContext(ctx)
 		return gallery.RenderIconCatalog(gallery.IconCatalogConfig{

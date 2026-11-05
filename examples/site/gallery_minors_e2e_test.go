@@ -16,7 +16,7 @@ func TestTagDemoDismisses(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/tag"), pageReady(),
 		chromedp.Click(`a[aria-label="Remove beta"]`),
-		chromedp.Poll(`!document.querySelector('a[aria-label="Remove beta"]') && document.querySelectorAll('main').length===1`, nil, chromedp.WithPollingTimeout(3*time.Second)),
+		chromedp.Poll(`!document.querySelector('a[aria-label="Remove beta"]') && document.querySelectorAll('main').length===1 && document.querySelectorAll('[data-cui-signal="tag-demo"]').length===1`, nil, chromedp.WithPollingTimeout(3*time.Second)),
 	); err != nil {
 		t.Fatal(err)
 	}

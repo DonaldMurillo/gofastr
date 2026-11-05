@@ -280,6 +280,8 @@ Hosts supply their own state-changing endpoints and bound response region.
 The gallery's Tag dismissal is a live island on `/components/tag`.
 `gallery.TagDemo(dismissed)` renders its seed or dismissed state; the docs
 site serves that fragment on POST and reads `?dismissed=beta` for no-script GETs.
+Bind the initial region once with `interactive.BindHTML`; replacement
+fragments do not repeat the response-signal binding inside that region.
 
 - **themetoggle**: `framework/ui.ThemeToggle`, dark/light/auto toggle that persists color-scheme mode; fresh scaffolds mount the adaptive `framework/ui/theme.Default()` palette, while app-owned themes must keep `DarkColors` complete; `Fill` stretches the pill across its container, the options sharing the width
 - **themepicker**: `framework/ui.ThemePicker`, switches the whole page between the app theme and registered overrides (`style.RegisterThemeOverride`) by putting the override class on `<html>`; the choice persists per browser (see theming → "Page themes"); `Fill` stretches its pill as `ThemeToggle`'s does

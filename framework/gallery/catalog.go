@@ -129,7 +129,7 @@ var Catalog = []Entry{
 
 	// ---------- Tags & badges ----------
 	{"tag", "Tag", "Tags & badges", "Compact status pill, optionally dismissable.", func() render.HTML {
-		return TagDemo(false)
+		return interactive.BindHTML(ui.Box(ui.BoxConfig{}, TagDemo(false)), "tag-demo")
 	}},
 	{"statusbadge", "StatusBadge", "Tags & badges", "Inline dot + label status indicator.", func() render.HTML {
 		return row(

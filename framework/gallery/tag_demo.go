@@ -1,7 +1,6 @@
 package gallery
 
 import (
-	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -21,5 +20,5 @@ func TagDemo(dismissed bool) render.HTML {
 			DismissLabel: "Remove beta", DismissMethod: "POST",
 			Island: headless.Island{Endpoint: "/components/tag", Signal: "tag-demo"}}))
 	}
-	return interactive.BindHTML(row(tags...), "tag-demo")
+	return row(tags...)
 }
