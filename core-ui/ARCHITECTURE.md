@@ -2152,6 +2152,11 @@ spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
 
 ## Component CSS
 
+ComponentSheet preserves keyframe step selectors inside every enclosing
+media or container query; only ordinary component selectors are scoped.
+StyleSheet keeps an open rule active across Keyframes calls, so subsequent
+properties, pseudo selectors, children and query blocks stay on that rule.
+
 Every component-owned stylesheet is registered, served and versioned
 by the host, loaded lazily per-component, dedup'd globally, and
 **always scoped** to `[data-cui-comp="<name>"]`. A first-load page
@@ -2503,6 +2508,11 @@ This is strict-CSP-clean (no inline JS, no separate script src).
 The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### The headless layer (`framework/headless`)
+
+Carousel status announcements format both the active index and total in
+the page locale, including updates after the server's first render.
+Menu link rows activate on Space and prevent page scrolling, except while
+Space extends an active type-ahead prefix.
 
 A second way to author a component separates what this section joins:
 structure in one function, classes in a Classes value, behaviour bound by a

@@ -151,7 +151,7 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 	// host-side code on the spawn path, and its panic must surface as a
 	// fail-closed spawn error (module quarantined/restarted) rather than
 	// escaping the spawn goroutine.
-	if err := r.wrapSafely(prep.Cmd, opts); err != nil {
+	if err := wrapSandboxSafely(r.backend, prep.Cmd, opts); err != nil {
 		releasePrepFDs(prep)
 		prep.removeOwnedScratch()
 		return nil, fmt.Errorf("processmodule: sandbox %s wrap: %w", r.backend.Name(), err)
@@ -159,16 +159,16 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 	return startPreparedChild(ctx, prep, r.NewCodec)
 }
 
-// wrapSafely applies the backend's OS-enforced denials under a recover
+// wrapSandboxSafely applies the backend's OS-enforced denials under a recover
 // guard, converting a panicking backend into the same fail-closed error
 // a returned one gets: the child is never exec'd unconfined.
-func (r *SandboxRunner) wrapSafely(cmd *exec.Cmd, opts SandboxOpts) (err error) {
+func wrapSandboxSafely(backend SandboxBackend, cmd *exec.Cmd, opts SandboxOpts) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("panic: %v\n%s", textsafe.Recovered(p), debug.Stack())
 		}
 	}()
-	return r.backend.Wrap(cmd, opts)
+	return backend.Wrap(cmd, opts)
 }
 
 // Conforms reports whether the backend passed every probe P1–P7 at

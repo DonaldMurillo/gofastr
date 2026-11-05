@@ -145,6 +145,12 @@
     const panel = item.closest('[role="menu"]');
     if (!panel) return;
 
+    if (e.key === ' ' && item.tagName === 'A' && (!typeBuf || Date.now() - typeAt > 800)) {
+      e.preventDefault();
+      if (item.getAttribute('aria-disabled') !== 'true') item.click();
+      return;
+    }
+
     // Submenu open: ArrowRight in LTR, ArrowLeft in RTL. The open
     // itself runs through the native <details> toggle so the
     // disclosure module's mirror and this module's focus-on-open fire

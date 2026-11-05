@@ -419,6 +419,9 @@ a branch without a link. Arrow-key expansion and lazy loading are unchanged.
 
 The parts the navigation members draw beyond the shared vocabulary:
 
+- **Menu keyboard**: Space activates an enabled link row without scrolling
+  the page. During an active type-ahead run, Space remains part of the
+  search prefix, so multiword labels can be matched without activation.
 - **Carousel**: `carousel-stage` (the overflow scroller the slides sit
   in), `carousel-track`, `carousel-slide`, `carousel-dot`,
   `carousel-prev`, `carousel-next`, and a `visually-hidden` live
@@ -427,6 +430,8 @@ The parts the navigation members draw beyond the shared vocabulary:
   carousel with `AutoRotateMS` rotates on its own (the APG carousel
   pattern), turned polite again whenever the rotation is paused. Its
   roledescriptions are `Strings.CarouselRole` / `CarouselSlideRole`.
+  Both the current slide and total use the page locale's digits, on
+  first render and after keyboard, button or automatic steps.
 - **Combobox**: `combobox-form` (the no-script GET form),
   `combobox-input`, `combobox-listbox`, `combobox-option`,
   `combobox-meta` (an option's `Meta` line, its own part so the

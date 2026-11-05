@@ -177,7 +177,7 @@
         const bar = pack.indexOf('|');
         if (bar > 0) {
           const fmt = pack.slice(0, bar);
-          const total = pack.slice(bar + 1);
+          const total = NS.formatNumber(parseInt(pack.slice(bar + 1), 10));
           const sentence = fmt.replace(/\{\{n\}\}/g, () => NS.formatNumber(idx + 1)).replace(/\{\{total\}\}/g, () => total);
           track.setAttribute('data-hui-carousel-status', sentence);
           // The live region says it. Quiet while the carousel rotates

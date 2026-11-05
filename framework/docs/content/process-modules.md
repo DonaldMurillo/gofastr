@@ -224,7 +224,12 @@ platform where an untrusted module runs**: the bwrap backend passes every
 probe on a host with bubblewrap, util-linux `prlimit` and unprivileged user
 namespaces. Some probe properties are **structurally unreachable on a
 stock host** elsewhere: distinct-uid and resource caps on macOS,
-network-egress denial on Windows. So: **an untrusted module is unrunnable
+network-egress denial on Windows. The built-in macOS profile also permits
+reads across the user's temporary directories and `/etc`, so its probes
+report P2 (host secrets in temporary directories) and
+P5 (host files such as `/etc/passwd`) as breaches, not passes. It is not
+a filesystem confidentiality boundary for those locations.
+So: **an untrusted module is unrunnable
 on stock macOS/Windows until the operator installs a conforming backend.**
 Fail-closed refusal is the correct, honest enforcement, not a gap to paper
 over.
@@ -295,7 +300,9 @@ message carries the conformance report. A trusted-only app never probes.
   machine without a conforming sandbox calls it first and registers the
   untrusted module only when it returns nil. The error is a
   `*SandboxConformanceError` whose `Report` holds the per-probe results;
-  it unwraps to `ErrSandboxUnavailable`.
+  it unwraps to `ErrSandboxUnavailable`. A backend's `Wrap` panic during
+  conformance becomes an unreachable probe and this same refusal; it
+  does not crash the host or start an unconfined child.
 
 ```go
 app := framework.NewApp(framework.WithDB(db))

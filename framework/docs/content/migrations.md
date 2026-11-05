@@ -1096,6 +1096,9 @@ app.View(migrate.View{
   Create/Update columns), and the `/api/llm.md` index counts the same
   three, labelled `read-only`. The query layer is not one of them: it is
   a Go surface, not an HTTP route, so it never appears in either count.
+  The event stream uses the app event bus and the view's own resource
+  name. It does not infer view changes from writes to underlying tables;
+  without events published for the view it remains open and quiet.
   Without `Columns`, the view is migration-only. Query it with raw SQL.
   The key columns follow an entity's rule: `App.View` panics on a float,
   decimal, bool, date, timestamp or JSON key, or one with a `RawType`
