@@ -138,8 +138,13 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 	setWideBuffer(tray.data.Tip[:], tip)
 	message, _ := syscall.UTF16PtrFromString("TaskbarCreated")
 	registered, _, _ := callWindows(capUser32, "RegisterWindowMessageW", uintptr(unsafe.Pointer(message)))
-	s.taskbarCreated = uint32(registered)
-	tray.register()
+	tray.presence = trayRegistration{
+		closeHides: cfg.CloseHidesWindow, taskbarCreated: uint32(registered),
+		add:     tray.register,
+		visible: func() bool { return win32.IsWindowVisible(s.hwnd) },
+		show:    func() { s.activateExistingWindow(s.hwnd) },
+	}
+	tray.presence.register()
 	if shouldPlanTrayMenu(cfg) {
 		ids := append([]string(nil), s.actionIDs...)
 		rows := desktop.PlanTrayMenu(s.text(), cfg, s.title, &ids)
@@ -161,25 +166,17 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 	s.mu.Unlock()
 }
 
-func (tray *trayState) register() {
+func (tray *trayState) register() bool {
 	tray.data.Flags = nifMessage | nifIcon | nifTip
-	tray.presence.register(func() bool {
-		added, _, _ := callWindows(capShell, "Shell_NotifyIconW", nimAdd, uintptr(unsafe.Pointer(&tray.data)))
-		return added != 0
-	})
+	added, _, _ := callWindows(capShell, "Shell_NotifyIconW", nimAdd, uintptr(unsafe.Pointer(&tray.data)))
+	return added != 0
 }
 
-func (s *winShell) restoreTrayIcon() {
+func (s *winShell) onTrayBroadcast(message uint32, mainWindow bool) bool {
 	s.mu.RLock()
-	tray, hwnd, closeHides := s.tray, s.hwnd, s.closeHides
+	tray := s.tray
 	s.mu.RUnlock()
-	if tray == nil {
-		return
-	}
-	tray.register()
-	if !tray.presence.live && closeHides && !win32.IsWindowVisible(hwnd) {
-		s.activateExistingWindow(hwnd)
-	}
+	return tray != nil && tray.presence.handleMessage(message, mainWindow)
 }
 
 func (s *winShell) removeTrayIcon() {

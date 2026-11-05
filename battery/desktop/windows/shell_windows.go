@@ -109,14 +109,12 @@ type winShell struct {
 	started         bool
 	running         bool
 	quitBeforeRun   atomic.Bool
-	closeHides      bool
 	// textCtx carries the locale the shell's own words speak (menus,
 	// accelerator names, the About box), resolved once in Run.
-	textCtx        context.Context
-	trayTitle      string
-	tray           *trayState
-	taskbarCreated uint32
-	appearance     desktop.Appearance
+	textCtx    context.Context
+	trayTitle  string
+	tray       *trayState
+	appearance desktop.Appearance
 
 	windowsByID map[string]*winWindow
 	windowsHWND map[uintptr]*winWindow
@@ -211,7 +209,6 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.started = true
 	s.running = true
 	s.title = cfg.Title
-	s.closeHides = cfg.Tray != nil && cfg.Tray.CloseHidesWindow
 	s.ready = ready
 	s.onMenu = cfg.OnMenu
 	s.onSettings = cfg.OnSettings
@@ -519,8 +516,7 @@ func (s *winShell) cancelModal(id uintptr) {
 func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 	if value, ok := activeShells.Load(hwnd); ok {
 		shell := value.(*winShell)
-		if msg != 0 && msg == shell.taskbarCreated && hwnd == shell.hwnd {
-			shell.restoreTrayIcon()
+		if shell.onTrayBroadcast(msg, hwnd == shell.hwnd) {
 			return 0
 		}
 	}
@@ -678,7 +674,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			runErr := w.shell.runErr
 			tray := w.shell.tray
 			w.shell.mu.RUnlock()
-			if w.id == desktop.MainWindowID && w.shell.closeHides && runErr == nil && tray != nil && tray.presence.live {
+			if tray != nil && tray.presence.hideOnClose(w.id == desktop.MainWindowID, runErr) {
 				showWindow(hwnd, 0)
 				return 0
 			}
