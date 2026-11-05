@@ -16,6 +16,8 @@ type imageSource struct {
 	value  any
 }
 
+var errImageSourceChanged = errors.New("upsert: image source changed during the write; reload before retrying")
+
 func (ch *CrudHandler) resetImageDerived(ctx context.Context, req *http.Request, key []any, body map[string]any, sets func(schema.Field) bool) (map[string]bool, []imageSource, error) {
 	if len(key) == 0 {
 		return nil, nil, nil

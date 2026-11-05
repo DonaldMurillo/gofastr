@@ -1345,9 +1345,9 @@ func crudRefusal(ctx context.Context, err error, wireKeys ...func(string) string
 		}
 		return column
 	}
-	// Ahead of the hook arm: a hook that hands back a reentrant move's
-	// refusal fails its write with the conflict, not a 400.
-	if errors.Is(err, ErrReentrantMove) {
+	// Ahead of the hook arm: a hook that hands back a reentrant move or
+	// stale image-source refusal fails its write with a conflict, not a 400.
+	if errors.Is(err, ErrReentrantMove) || errors.Is(err, errImageSourceChanged) {
 		return phraseRefusal(ctx, http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
 	}
 	if isHookPanic(err) {

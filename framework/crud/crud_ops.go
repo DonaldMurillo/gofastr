@@ -355,7 +355,12 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		kc, ka := ch.keyWhere(id)
 		ub.Where(kc, ka...)
 		for _, source := range imageSources {
-			ub.Where(query.QuoteKeyword(source.column)+" IS NOT DISTINCT FROM $1", source.value)
+			column := query.QuoteKeyword(source.column)
+			if source.value == nil {
+				ub.Where(column + " IS NULL")
+			} else {
+				ub.Where(column+" = $1", source.value)
+			}
 		}
 		ch.ApplyTenantScopeUpdate(ub, r)
 		ch.ApplyOwnerScopeUpdate(ub, r)

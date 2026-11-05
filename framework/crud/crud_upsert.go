@@ -394,11 +394,16 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				sb.WriteString(strings.Join(setParts, ", "))
 				guard := ch.upsertConflictGuard()
 				for _, source := range imageSources {
-					vals = append(vals, source.value)
 					if guard != "" {
 						guard += " AND "
 					}
-					guard += fmt.Sprintf("%s.%s IS NOT DISTINCT FROM $%d", upsertTarget, query.QuoteKeyword(source.column), len(vals))
+					column := upsertTarget + "." + query.QuoteKeyword(source.column)
+					if source.value == nil {
+						guard += column + " IS NULL"
+					} else {
+						vals = append(vals, source.value)
+						guard += fmt.Sprintf("%s = $%d", column, len(vals))
+					}
 				}
 				if guard != "" {
 					sb.WriteString(" WHERE ")
@@ -412,13 +417,15 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		row := ch.conn(ctx).QueryRowContext(ctx, sb.String(), vals...)
 		res, err := ch.scanOne(row, visFields)
 		if errors.Is(err, sql.ErrNoRows) && len(setParts) > 0 {
-			// The conflict row failed the DO UPDATE scope guard: it
-			// belongs to another owner or tenant, or is soft-deleted, and
-			// was left untouched. Re-run the preflight to report which;
-			// it can only come back clean if the row changed again in
-			// between, and that is still a refusal.
+			// The conflict row failed a DO UPDATE scope or image-source
+			// guard and was left untouched. Re-run the preflight so an
+			// ownership, tenant or soft-delete refusal takes precedence
+			// over a stale image source.
 			if perr := ch.upsertPreflight(ctx, body); perr != nil {
 				return perr
+			}
+			if len(imageSources) > 0 {
+				return errImageSourceChanged
 			}
 			return errUpsertForeignRow
 		}

@@ -683,12 +683,17 @@ few lines, and link the PR or the docs page for the rest.
 - **Replacing an image clears the old image's derived columns.**
   Variants, hashes and placeholders the new upload did not produce kept
   the previous image's values, so cleanup never released the old
-  renditions.
+  renditions. A concurrent source change refuses the write without
+  clearing the winner's derivatives; an otherwise authorized upsert
+  reports 409 Conflict. Source guards handle `NULL` without requiring
+  SQLite 3.39 syntax.
 - **Migrations refuse a generated pivot table whose columns drifted.**
   An existing pivot was skipped while the snapshot claimed its new
   columns existed. `GeneratePlan`, `DiffSchema` and `AutoMigrate` now
   compare the link columns and key types, and refuse two relations
-  that share a `Through` table but disagree on them.
+  that share a `Through` table but disagree on them. `DiffSchema` still
+  supports Postgres primary-key changes that detach and re-add the
+  pivot's foreign keys.
 - **`gofastr migrate generate` stops on an entity that fails to
   register.** It left the entity out of the plan, which could emit
   `DROP TABLE` for it.
@@ -722,7 +727,9 @@ few lines, and link the PR or the docs page for the rest.
   `data-cui-fill-input`, `tick-elapsed`, `persist-storage`,
   `charcount-source`, `clear-on-esc`, `submit-on-enter` and
   `disable-when-invalid` loaded only when a widget mounted, so on a
-  plain page they did nothing.
+  plain page they did nothing. Invalid-form disabling includes image
+  submitters and follows input, change and reset for externally
+  associated fields and submitters too.
 - **A desktop window remembered on an unplugged monitor opens centered
   on a visible one** (Windows and Linux). On Windows the check runs in
   physical pixels per monitor, so mixed-DPI setups place it right.

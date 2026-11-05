@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -79,38 +80,110 @@ func TestImageChangeClearsDerivedColumns(t *testing.T) {
 type imageRaceExecutor struct {
 	DBExecutor
 	beforeWrite func()
+	writes      []string
 }
 
 func (executor *imageRaceExecutor) QueryRowContext(ctx context.Context, statement string, args ...any) *sql.Row {
-	if executor.beforeWrite != nil && (strings.HasPrefix(statement, "UPDATE cln SET") || strings.HasPrefix(statement, "INSERT INTO cln ")) {
-		callback := executor.beforeWrite
-		executor.beforeWrite = nil
-		callback()
+	if strings.HasPrefix(statement, "UPDATE cln SET") || strings.HasPrefix(statement, "INSERT INTO cln ") {
+		executor.writes = append(executor.writes, statement)
+		if executor.beforeWrite != nil {
+			callback := executor.beforeWrite
+			executor.beforeWrite = nil
+			callback()
+		}
 	}
 	return executor.DBExecutor.QueryRowContext(ctx, statement, args...)
 }
 
-func TestImageDerivedSourceRaceRefused(t *testing.T) {
+func TestImageSourceGuardsUsePortableSQL(t *testing.T) {
 	for _, method := range []string{"update", "upsert"} {
-		for _, initial := range []any{clnKey, nil} {
+		for _, initial := range []any{nil, "https://cdn.example.com/old.png"} {
 			t.Run(method+"/"+fmt.Sprint(initial), func(t *testing.T) {
 				ch, database := setupSecurityTestHandler(t, makeEntityConfig("cln", "cln", "", []schema.Field{
-					{Name: "id", Type: schema.String}, {Name: "photo", Type: schema.Image}, {Name: "photo_variants", Type: schema.JSON},
-				}), `CREATE TABLE cln (id TEXT PRIMARY KEY, photo TEXT, photo_variants TEXT)`)
-				seedRows(t, database, "cln", []map[string]any{{"id": "a", "photo": initial, "photo_variants": `[{"storage_ref":"old"}]`}})
+					{Name: "id", Type: schema.String}, {Name: "photo", Type: schema.Image}, {Name: "banner", Type: schema.Image},
+					{Name: "photo_variants", Type: schema.JSON}, {Name: "banner_variants", Type: schema.JSON},
+				}), `CREATE TABLE cln (id TEXT PRIMARY KEY, photo TEXT, banner TEXT, photo_variants TEXT, banner_variants TEXT)`)
+				banner := any("https://cdn.example.com/old-banner.png")
+				if initial != nil {
+					banner = nil
+				}
+				seedRows(t, database, "cln", []map[string]any{{"id": "a", "photo": initial, "banner": banner,
+					"photo_variants": `[{"storage_ref":"old-photo"}]`, "banner_variants": `[{"storage_ref":"old-banner"}]`}})
+				executor := &imageRaceExecutor{DBExecutor: database}
+				ch.DB = executor
+				body := map[string]any{"photo": "https://cdn.example.com/new-photo.png", "banner": "https://cdn.example.com/new-banner.png"}
+				var row map[string]any
+				var err error
+				if method == "update" {
+					row, err = ch.UpdateOne(context.Background(), "a", body)
+				} else {
+					body["id"] = "a"
+					row, err = ch.UpsertOne(context.Background(), body)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if row["photo"] != body["photo"] || row["banner"] != body["banner"] || row["photo_variants"] != nil || row["banner_variants"] != nil {
+					t.Errorf("image guards did not preserve separate bind values or clear derivatives: %v", row)
+				}
+				if len(executor.writes) != 1 {
+					t.Fatalf("captured %d writes, want 1", len(executor.writes))
+				}
+				if statement := executor.writes[0]; strings.Contains(statement, "IS NOT DISTINCT FROM") || !strings.Contains(statement, " IS NULL") {
+					t.Errorf("source guard requires SQLite 3.39 instead of portable null-safe equality: %s", statement)
+				}
+			})
+		}
+	}
+}
+
+func TestImageDerivedSourceRaceRefused(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	ctx := upsertSecurityContext("alice", "")
+	for _, method := range []string{"update", "upsert", "upsert-foreign", "upsert-deleted"} {
+		for _, initial := range []any{clnKey, nil} {
+			t.Run(method+"/"+fmt.Sprint(initial), func(t *testing.T) {
+				ch, database := setupSecurityTestHandler(t, makeEntityConfig("cln", "cln", "owner_id", []schema.Field{
+					{Name: "id", Type: schema.String}, {Name: "owner_id", Type: schema.String}, {Name: "photo", Type: schema.Image}, {Name: "photo_variants", Type: schema.JSON},
+				}, func(config *entity.EntityConfig) { config.Scope.SoftDelete = true }), `CREATE TABLE cln (id TEXT PRIMARY KEY, owner_id TEXT, photo TEXT, photo_variants TEXT, deleted_at TEXT)`)
+				seedRows(t, database, "cln", []map[string]any{{"id": "a", "owner_id": "alice", "photo": initial, "photo_variants": `[{"storage_ref":"old"}]`}})
 				ch.DB = &imageRaceExecutor{DBExecutor: database, beforeWrite: func() {
 					if _, err := database.Exec(`UPDATE cln SET photo = 'https://cdn.example.com/y.png', photo_variants = '[{"storage_ref":"y"}]' WHERE id = 'a'`); err != nil {
 						t.Fatal(err)
 					}
+					if method == "upsert-foreign" {
+						if _, err := database.Exec(`UPDATE cln SET owner_id = 'bob' WHERE id = 'a'`); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if method == "upsert-deleted" {
+						if _, err := database.Exec(`UPDATE cln SET deleted_at = '2026-11-04' WHERE id = 'a'`); err != nil {
+							t.Fatal(err)
+						}
+					}
 				}}
 				var err error
 				if method == "update" {
-					_, err = ch.UpdateOne(context.Background(), "a", map[string]any{"photo": initial})
+					_, err = ch.UpdateOne(ctx, "a", map[string]any{"photo": initial})
 				} else {
-					_, err = ch.UpsertOne(context.Background(), map[string]any{"id": "a", "photo": initial})
+					_, err = ch.UpsertOne(ctx, map[string]any{"id": "a", "photo": initial})
 				}
 				if err == nil {
 					t.Error("stale image update succeeded after its source changed")
+				}
+				switch method {
+				case "upsert":
+					if refusal := crudRefusal(ctx, err); refusal.code != http.StatusConflict || errors.Is(err, errUpsertForeignRow) {
+						t.Errorf("owned stale-source refusal = %v (HTTP %d), want a conflict, not a foreign-row error", err, refusal.code)
+					}
+				case "upsert-foreign":
+					if !errors.Is(err, errUpsertForeignRow) {
+						t.Errorf("ownership race = %v, want foreign-row refusal", err)
+					}
+				case "upsert-deleted":
+					if !errors.Is(err, errSoftDeletedResurrection) {
+						t.Errorf("deletion race = %v, want soft-delete refusal", err)
+					}
 				}
 				var photo, variants string
 				if err := database.QueryRow(`SELECT photo, photo_variants FROM cln WHERE id = 'a'`).Scan(&photo, &variants); err != nil {

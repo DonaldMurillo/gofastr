@@ -162,6 +162,13 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		if err != nil {
 			return nil, err
 		}
+		// A planned Postgres key change detaches and re-adds this pivot's
+		// foreign key, so the live one still names the old key columns.
+		for index, foreignKey := range spec.fks {
+			if liveCols, rewritten := env.keyChanged[strings.ToLower(foreignKey.refTable)]; rewritten {
+				spec.fks[index].refCols = liveCols
+			}
+		}
 		if err := checkLivePivotConstraints(ctx, db, spec, all, dialect); err != nil {
 			return nil, err
 		}

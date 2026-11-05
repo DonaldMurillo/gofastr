@@ -139,18 +139,22 @@
   function wireValidity(form) {
     const sync = function () {
       const disabled = !form.checkValidity();
-      const buttons = Array.from(form.elements).filter(function (control) { return control.type === 'submit'; });
-      buttons.forEach(function (btn) {
-        if (form.hasAttribute('data-cui-disable-when-invalid') || btn.hasAttribute('data-cui-disable-when-invalid')) btn.disabled = disabled;
+      document.querySelectorAll('button,input').forEach(function (btn) {
+        if (btn.form === form && (btn.type === 'submit' || btn.type === 'image') && (form.hasAttribute('data-cui-disable-when-invalid') || btn.hasAttribute('data-cui-disable-when-invalid'))) btn.disabled = disabled;
       });
     };
     if (validityWired.has(form)) { sync(); return; }
     validityWired.add(form);
-    form.addEventListener('input', sync);
-    form.addEventListener('change', sync);
     form.addEventListener('reset', function () { requestAnimationFrame(sync); });
     Promise.resolve().then(sync);
   }
+
+  function syncValidity(event) {
+    const form = event.target.form;
+    if (form && validityWired.has(form)) wireValidity(form);
+  }
+  document.addEventListener('input', syncValidity);
+  document.addEventListener('change', syncValidity);
 
   // within: the scope itself when it matches, then its descendants. The
   // kernel hands the scanner each inserted node, and a node that IS the
@@ -173,6 +177,11 @@
     within(scope, 'form[data-cui-disable-when-invalid]').forEach(wireValidity);
     within(scope, 'button[data-cui-disable-when-invalid],input[data-cui-disable-when-invalid]').forEach(function (button) {
       if (button.form) wireValidity(button.form);
+    });
+    // An unmarked field or submitter inserted into a wired form changes
+    // its validity or its set of submitters: resync that form now.
+    new Set(within(scope, 'button,input,select,textarea').map(function (el) { return el.form; })).forEach(function (form) {
+      if (form && validityWired.has(form)) wireValidity(form);
     });
   }
 

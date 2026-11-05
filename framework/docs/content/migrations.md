@@ -565,7 +565,10 @@ compares the declared key with the live one (or the snapshot's
   another table's foreign key depends on, so when entities or generated
   `many_to_many` pivots declare foreign keys onto the table, the change
   first drops the foreign keys those tables hold onto the old key and
-  re-adds each declared one after `ADD PRIMARY KEY`. A key whose columns
+  re-adds each declared one after `ADD PRIMARY KEY`. `DiffSchema` validates
+  a generated pivot against the live key before that planned rewrite;
+  its primary key, cascading delete actions and unaffected references
+  must still match. A key whose columns
   the child table gains only in its own changes (a column renamed or added
   in the same change) is re-added after every table's changes. A foreign
   key onto a separately unique column of the table does not depend on the
