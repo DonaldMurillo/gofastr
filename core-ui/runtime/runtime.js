@@ -1117,16 +1117,15 @@
   // decoded, so /orders/%31 is the :id:int route there and here, with a
   // decoded "%" or "/" kept escaped so it stays one segment; a segment
   // that does not decode (%E0%A4) is taken literally, never thrown.
-  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, encodeURIComponent); };
+  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (part) => encodeURIComponent(part)); };
   const _routeMatch = (seg, part) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(part) : seg === part;
   const routeEntry = (path) => {
     // Routes register unprefixed: /es/pricing looks up /pricing.
     const clean = _unlocalize(path.split('?')[0].split('#')[0]).split('/').map(_routeSeg).join('/');
-    let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
     // SPA router must accept both forms.
-    if (!r && clean !== '/') r = routes.get(clean.endsWith('/') ? clean.slice(0, -1) : clean + '/');
+    const r = routes.get(clean) || clean !== '/' && routes.get(clean.endsWith('/') ? clean.slice(0, -1) : clean + '/');
     if (r) return r;
     const parts = clean.split('/').filter(Boolean);
     for (const [pattern, entry] of routes) {
