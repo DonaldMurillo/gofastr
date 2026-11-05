@@ -26,14 +26,34 @@ func pivotDriftPlan(local, foreign string, keyType schema.FieldType) Plan {
 }
 
 func pivotKeyChangePlan(key string) Plan {
+	return pivotKeyChangePlanFor("posts", key)
+}
+
+// pivotKeyChangePlanFor names the owning table, so a case-kept table
+// ("Posts") proves the rewritten-key lookup folds the name the way the
+// Postgres catalog does.
+func pivotKeyChangePlanFor(table, key string) Plan {
 	plan := pivotDriftPlan("post_id", "tag_id", schema.String)
-	posts := plan.Registry.All()["posts"]
+	registry := plan.Registry.(secTypeReg)
+	posts := registry["posts"]
+	if table != "posts" {
+		config := posts.Config
+		config.Table = table
+		registry["posts"] = entity.Define("posts", config)
+		posts = registry["posts"]
+	}
 	posts.Config.Fields = append(posts.Config.Fields, schema.Field{Name: "slug", Type: schema.String, Required: true})
 	posts.Config.PrimaryKey = []string{key}
 	return plan
 }
 
 func TestDiffSchemaPostgresPivotKeyChange(t *testing.T) {
+	for _, table := range []string{"posts", "Posts"} {
+		t.Run(table, func(t *testing.T) { diffPivotKeyChange(t, table) })
+	}
+}
+
+func diffPivotKeyChange(t *testing.T, table string) {
 	database, catalog := mock(t)
 	catalog.ExpectQuery("SELECT version").WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow("PostgreSQL 16"))
 	catalog.ExpectQuery("information_schema.columns").WillReturnRows(sqlmock.NewRows([]string{"table", "column", "type"}).
@@ -47,7 +67,7 @@ func TestDiffSchemaPostgresPivotKeyChange(t *testing.T) {
 	catalog.ExpectQuery("con.contype = 'f'").WillReturnRows(sqlmock.NewRows([]string{"table", "constraint", "schema", "current", "reference", "column", "key", "action"}).
 		AddRow(0, "post_tags_post_id_fkey", "public", true, "posts", "post_id", "id", "c").
 		AddRow(0, "post_tags_tag_id_fkey", "public", true, "tags", "tag_id", "id", "c"))
-	changes, err := DiffSchema(context.Background(), database, pivotKeyChangePlan("slug").Registry)
+	changes, err := DiffSchema(context.Background(), database, pivotKeyChangePlanFor(table, "slug").Registry)
 	if err != nil {
 		t.Fatalf("supported primary-key change with generated pivot: %v", err)
 	}
@@ -56,7 +76,7 @@ func TestDiffSchemaPostgresPivotKeyChange(t *testing.T) {
 		statements = append(statements, change.SQL)
 	}
 	statement := strings.Join(statements, "\n")
-	for _, want := range []string{"DROP CONSTRAINT", "ADD PRIMARY KEY (slug)", "ALTER TABLE post_tags ADD FOREIGN KEY (post_id) REFERENCES posts(slug) ON DELETE CASCADE"} {
+	for _, want := range []string{"DROP CONSTRAINT", "ADD PRIMARY KEY (slug)", "ALTER TABLE post_tags ADD FOREIGN KEY (post_id) REFERENCES " + table + "(slug) ON DELETE CASCADE"} {
 		if !strings.Contains(statement, want) {
 			t.Errorf("key change omits %q: %s", want, statement)
 		}
