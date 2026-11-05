@@ -523,6 +523,16 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		return
 	}
 
+	archWarn, err := macDesktopArch(os.Getenv("GOARCH"), runtime.GOARCH)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	if archWarn != "" {
+		cli.Warn("%s", archWarn)
+	}
+
 	appDir := filepath.Join(f.out, name+".app")
 	if err := os.RemoveAll(appDir); err != nil {
 		cli.Fail("Remove previous bundle %s: %v", appDir, err)
@@ -539,16 +549,6 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 			cli.OsExit(1)
 			return
 		}
-	}
-
-	archWarn, err := macDesktopArch(os.Getenv("GOARCH"), runtime.GOARCH)
-	if err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return
-	}
-	if archWarn != "" {
-		cli.Warn("%s", archWarn)
 	}
 
 	exe := filepath.Join(macOS, name)
