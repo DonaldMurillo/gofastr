@@ -7,8 +7,9 @@ zero-based row index. `ui.FormRepeater` supplies `Name+"_add"` and
 `Name+"_remove"` as its no-script operation markers; `headless.Repeater`
 does not derive submit names from the group's `Name`.
 
-After removing a repeater row, focus returns to the next row's first visible,
-enabled input, select, textarea, or button. Hidden and inert controls are
+After an Island swap removes a repeater row, focus returns to the next row's
+first visible, enabled input, select, textarea, or button, or to the preceding
+row when the last row was removed. Hidden and inert controls are
 skipped, including controls made invisible by CSS. Recovery checks that a
 control actually received focus before stopping; when no row control can
 receive focus, focus returns to Add.
