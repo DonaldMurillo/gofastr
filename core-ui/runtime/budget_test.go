@@ -1153,10 +1153,11 @@ const (
 	// module (+59 in core before the carve), leaving only the mark the
 	// navigation pass must set. Two bytes of clearance, cliff fixture
 	// re-run.
-	// TestNavigationRefreshesCSRFToken measures 18484 at level 1;
-	// retain two bytes of clearance and re-prove the padded cliff fixture.
-	// TestPrefetchReplayKeepsRotatedCSRFToken measures 18522 at level 1;
-	// the separate replay guard cannot carve out of core navigation.
+	// After the page-direction merge, cached-navigation CSRF protection
+	// measured 18479 at level 1, not the earlier 18484. Re-measured at the
+	// final prefetch-replay tip (2026-11-05): 18522 at level 1.
+	// TestPrefetchReplayKeepsRotatedCSRFToken's separate replay guard
+	// cannot carve out of core navigation.
 	// Retain two bytes of clearance and re-prove the padded cliff fixture.
 	coreCongestionWindowGZ = 18524
 )
@@ -1553,8 +1554,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// module's own-property _widgets reads share one helper (own).
 		// 3467 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
+		// Re-measured 3466 at the final prefetch-replay tip (2026-11-05).
 		// Pinned at the measured size plus 2 clearance.
-		"widgets": 3469,
+		"widgets": 3468,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
