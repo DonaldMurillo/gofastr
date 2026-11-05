@@ -2531,6 +2531,7 @@ func (a *App) View(v migrate.View) *App {
 		ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing()) // republishes the wire keys; see wireCrudHandler
 		ch.Registry = a.Registry
 		ch.ChildHooks = a.lookupHookRegistry
+		ch.Events = a.Events()
 		// Views mount under the API prefix like entities do, so BasePath must
 		// match or anything deriving a URL from the handler addresses the
 		// wrong path. mcpBase() is BasePath + "/" + table, so an empty value
