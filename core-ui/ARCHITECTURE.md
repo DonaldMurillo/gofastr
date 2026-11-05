@@ -908,6 +908,11 @@ span. Replace rewrites its current entry; push extends the span. Closing
 consumes the whole span without changing the router's underlying path.
 A refused history write changes neither the pane's URL nor its span.
 
+When the leave guard declines a link, it invalidates the shared navigation
+epoch immediately. An older overlay response cannot mount behind the
+confirmation dialog and change what the guarded retry would discard.
+Cancel retains the dirty pane; Discard replays against the same stack.
+
 **More than one origin.** `Intercept.AlsoFrom` names more patterns the
 overlay opens over, beside `From`: a create screen opens over its list
 and over each related record whose Related tab adds to it. The manifest

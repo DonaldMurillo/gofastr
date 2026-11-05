@@ -185,7 +185,10 @@
       if (d.anchor && d.anchor.isConnected) d.anchor.click();
       else if (typeof NS.navigate === 'function' && d.path) NS.navigate(d.path);
     };
-    if (!ask(scope, again)) e.preventDefault();
+    if (!ask(scope, again)) {
+      ++NS._navEpoch;
+      e.preventDefault();
+    }
   });
 
   // Back and Forward. Back cannot be cancelled, and a popstate listener
