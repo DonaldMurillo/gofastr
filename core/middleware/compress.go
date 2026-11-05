@@ -291,9 +291,13 @@ func (w *compressWriter) ReadFrom(source io.Reader) (int64, error) {
 		return 0, http.ErrHijacked
 	}
 	var copied int64
-	if !w.decided && w.needsSniff() {
+	if !w.decided {
+		firstChunk := int64(1)
+		if w.needsSniff() {
+			firstChunk = int64(sniffLen - w.buf.Len())
+		}
 		var err error
-		copied, err = io.CopyN(struct{ io.Writer }{w}, source, int64(sniffLen-w.buf.Len()))
+		copied, err = io.CopyN(struct{ io.Writer }{w}, source, firstChunk)
 		if err != nil {
 			if err == io.EOF {
 				err = nil
