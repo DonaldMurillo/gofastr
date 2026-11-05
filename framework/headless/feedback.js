@@ -42,7 +42,7 @@
 
   function focusToastTarget(target) {
     if (!target || !target.isConnected || target.matches(':disabled') ||
-        target.tabIndex < 0 || target.closest('[hidden], [inert]') || !target.getClientRects().length) return false;
+        target.closest('[hidden], [inert]') || !target.getClientRects().length) return false;
     target.focus({ preventScroll: true });
     return document.activeElement === target;
   }

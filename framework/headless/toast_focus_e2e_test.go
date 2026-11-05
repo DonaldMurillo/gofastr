@@ -10,13 +10,13 @@ import (
 
 func TestToastDismissRestoresFocus(t *testing.T) {
 	for _, control := range []string{"dismiss", "action"} {
-		for _, neighbor := range []bool{false, true} {
-			name := control + "/external"
-			if neighbor {
-				name = control + "/next"
-			}
-			t.Run(name, func(t *testing.T) {
-				ctx := behaviorPage(t, startBehaviorServer(t, `<button id="origin">Origin</button>`+toastStackWithTemplate(), func(mux *http.ServeMux) {
+		for _, testCase := range []struct {
+			name     string
+			neighbor bool
+			tabIndex string
+		}{{"external", false, "0"}, {"next", true, "0"}, {"programmatic", false, "-1"}} {
+			t.Run(control+"/"+testCase.name, func(t *testing.T) {
+				ctx := behaviorPage(t, startBehaviorServer(t, `<button id="origin" tabindex="`+testCase.tabIndex+`">Origin</button>`+toastStackWithTemplate(), func(mux *http.ServeMux) {
 					mux.HandleFunc("/undo", func(w http.ResponseWriter, request *http.Request) {
 						w.WriteHeader(http.StatusNoContent)
 					})
@@ -33,7 +33,7 @@ func TestToastDismissRestoresFocus(t *testing.T) {
 					window.__firstTimer = window.__gofastr._toastTimers.get(window.__firstToast);`, nil)); err != nil {
 					t.Fatal(err)
 				}
-				if neighbor {
+				if testCase.neighbor {
 					if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__nextToast = window.__gofastr.toast({title:'Next'});`, nil)); err != nil {
 						t.Fatal(err)
 					}
@@ -48,7 +48,7 @@ func TestToastDismissRestoresFocus(t *testing.T) {
 					t.Fatal("toast did not leave after keyboard activation")
 				}
 				expected := `document.activeElement === document.getElementById('origin')`
-				if neighbor {
+				if testCase.neighbor {
 					expected = `document.activeElement === document.querySelector('[data-hui-toast-id="' + window.__nextToast + '"] [data-hui-toast-dismiss]')`
 				}
 				if !pollTrue(ctx, expected) {
