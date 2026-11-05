@@ -672,7 +672,10 @@ few lines, and link the PR or the docs page for the rest.
 - **Replacing an image clears the old image's derived columns.**
   Variants, hashes and placeholders the new upload did not produce kept
   the previous image's values, so cleanup never released the old
-  renditions.
+  renditions. A concurrent source change refuses the write without
+  clearing the winner's derivatives; an otherwise authorized upsert
+  reports 409 Conflict. Source guards handle `NULL` without requiring
+  SQLite 3.39 syntax.
 - **Migrations refuse a generated pivot table whose columns drifted.**
   An existing pivot was skipped while the snapshot claimed its new
   columns existed. `GeneratePlan`, `DiffSchema` and `AutoMigrate` now

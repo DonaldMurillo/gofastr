@@ -464,6 +464,13 @@ tenant`, or the soft-delete one) and leaves the row untouched. `UpsertOne`
 also applies the belongs_to write check `CreateOne` and `UpdateOne` apply:
 an FK naming a parent the caller cannot read fails as not found.
 
+When an upsert replaces an image, its write also checks that the stored
+image source still matches the pre-read (including a `NULL` source).
+If another writer changes that source first, the row and its derived
+columns stay untouched and the HTTP handler returns **409 Conflict**.
+Reload the row before retrying. Ownership, tenant and soft-delete
+refusals still take precedence over this stale-source conflict.
+
 **Redaction implication.** A hook that masks a column protects every HTTP
 path that returns the row: List, Get, keyset pages, `?include=` children,
 `_events` deliveries, and create/update response bodies. Register it on
