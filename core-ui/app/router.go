@@ -59,6 +59,9 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 	}
 
 	screen.Path = normalizeRoutePath(screen.Path)
+	if screen.Intercept != nil {
+		screen.Intercept = normalizeIntercept(screen.Intercept)
+	}
 	RefuseRetiredScreenMethods("screen "+screen.Path, screen.Component)
 
 	if !strings.Contains(screen.Path, ":") {
