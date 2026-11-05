@@ -88,10 +88,8 @@
   // decoded, so /orders/%31 is the :id:int route there and here, with a
   // decoded "%" or "/" kept escaped so it stays one segment; a segment
   // that does not decode (%E0%A4) is taken literally, never thrown.
-  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (c) => encodeURIComponent(c)); };
+  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, encodeURIComponent); };
   const _routeMatch = (seg, part) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(part) : seg === part;
-  window.__gofastr._routeSeg = _routeSeg;
-  window.__gofastr._routeMatch = _routeMatch;
   const routeEntry = (path) => {
     // Routes register unprefixed: /es/pricing looks up /pricing.
     const clean = _unlocalize(path.split('?')[0].split('#')[0]).split('/').map(_routeSeg).join('/');
@@ -99,8 +97,7 @@
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
     // SPA router must accept both forms.
-    if (!r && clean !== '/' && !clean.endsWith('/')) r = routes.get(clean + '/');
-    if (!r && clean !== '/' && clean.endsWith('/')) r = routes.get(clean.slice(0, -1));
+    if (!r && clean !== '/') r = routes.get(clean.endsWith('/') ? clean.slice(0, -1) : clean + '/');
     if (r) return r;
     const parts = clean.split('/').filter(Boolean);
     for (const [pattern, entry] of routes) {
@@ -115,10 +112,7 @@
     }
     return null;
   };
-  const routeLayouts = (path) => {
-    const r = routeEntry(path);
-    return (r && r.layouts) || [];
-  };
+  const routeLayouts = (path) => routeEntry(path)?.layouts || [];
   // Count of outermost layers the live DOM shares with the target chain.
   // An empty key never matches (unnamed layers have no stable identity).
   const sharedDepth = (layouts) => {
@@ -150,15 +144,13 @@
     // Another locale is another document: its lang, its strings table
     // and every server-rendered word differ, not just the screen.
     if (_localeOf(destPath) !== _localeOf(location.pathname)) return true;
-    const de = routeEntry(destPath);
-    const dest = (de && de.docScripts) || [];
+    const dest = routeEntry(destPath)?.docScripts || [];
     const srcs = [];
     for (const s of document.querySelectorAll('script[data-cui-doc]')) {
       const v = s.getAttribute('src');
       if (v) srcs.push(v);
     }
-    srcs.sort();
-    return srcs.join('\n') !== dest.join('\n');
+    return srcs.sort().join('\n') !== dest.join('\n');
   };
   // A server redirect (X-Gofastr-Location) into another document loads
   // it in place of the requested URL. Both navigators ask before they
@@ -1146,6 +1138,8 @@
   // SPA navigation (scheme guard -> pushState -> loadPage). _originOK is read
   // via `this`, so it resolves at call time regardless of composition order.
   Object.assign(window.__gofastr, {
+    _routeSeg,
+    _routeMatch,
     _settleScroll,
     // --- Router API ---
 

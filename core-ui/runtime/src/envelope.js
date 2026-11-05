@@ -602,17 +602,16 @@
   const _segName = (seg) => seg.slice(1).split(':')[0].replace(/\*$/, '');
   const routeInfo = (path) => {
     // Routes register unprefixed: /es/pricing resolves as /pricing.
-    const bare = path.split('?')[0].split('#')[0];
-    const clean = (NS._unlocalize?.(bare) ?? bare).split('/').map(NS._routeSeg).join('/');
+    const clean = NS._unlocalize(path.split(/[?#]/)[0]).split('/').map(NS._routeSeg).join('/');
     const list = window.__gofastr_routes || [];
     for (const e of list) {
       const pattern = (e && (e.path || e.Path)) || '';
       if (pattern === clean) return { entry: e, params: null };
     }
+    const parts = clean.split('/').filter(Boolean);
     for (const e of list) {
       const pattern = (e && (e.path || e.Path)) || '';
       if (!pattern.includes(':')) continue;
-      const parts = clean.split('/').filter(Boolean);
       const pp = pattern.split('/').filter(Boolean);
       if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
       if (!pp.every((seg, i) => NS._routeMatch(seg, parts[i]))) continue;

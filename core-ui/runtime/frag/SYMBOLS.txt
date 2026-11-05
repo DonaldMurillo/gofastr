@@ -292,7 +292,6 @@ nav	4	csrf
 nav	4	cur
 nav	4	d
 nav	4	data
-nav	4	de
 nav	4	dest
 nav	4	doc
 nav	4	dom
@@ -325,7 +324,6 @@ nav	4	parts
 nav	4	path
 nav	4	prevPath
 nav	4	ps
-nav	4	r
 nav	4	r
 nav	4	r
 nav	4	set
