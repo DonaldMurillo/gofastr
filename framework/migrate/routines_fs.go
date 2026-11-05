@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"io/fs"
+	"path"
 	"sort"
 	"strings"
 )
@@ -61,12 +62,12 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		return nil, fmt.Errorf("migrate.RoutinesFS: read %q: %w", dir, err)
 	}
 
-	type upFile struct {
+	type routineFile struct {
 		body    string
 		dialect Dialect
 	}
-	ups := make(map[string]upFile, len(entries))
-	downs := make(map[string]string, len(entries))
+	ups := make(map[string]routineFile, len(entries))
+	downs := make(map[string]routineFile, len(entries))
 
 	// Single source-of-truth: classify each .sql file at the top level of dir.
 	for _, e := range entries {
@@ -99,6 +100,9 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		}
 
 		routineName, dialect, dsuffix := splitDialectSuffix(base)
+		if strings.HasSuffix(routineName, downPart) {
+			return nil, fmt.Errorf("migrate.RoutinesFS: %q: .down must follow the dialect suffix, immediately before .sql", name)
+		}
 		if dsuffix != "" && dialect == "" {
 			// Unknown dialect suffix: reject loud rather than silently
 			// treating "foo.mysql.sql" as a name called "foo.mysql".
@@ -106,7 +110,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 				name, dsuffix, dialectPostgres, dialectSQLite)
 		}
 
-		body, err := fs.ReadFile(fsys, dir+"/"+name)
+		body, err := fs.ReadFile(fsys, path.Join(dir, name))
 		if err != nil {
 			return nil, fmt.Errorf("migrate.RoutinesFS: read %q: %w", name, err)
 		}
@@ -120,7 +124,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 			if _, exists := downs[routineName]; exists {
 				return nil, fmt.Errorf("migrate.RoutinesFS: routine %q has more than one down file", routineName)
 			}
-			downs[routineName] = trimmed
+			downs[routineName] = routineFile{body: trimmed, dialect: dialect}
 			continue
 		}
 
@@ -139,7 +143,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 				routineName, dialectPostgres, sqlExt, dialectSQLite, sqlExt)
 		}
 		_ = existing
-		ups[routineName] = upFile{body: trimmed, dialect: dialect}
+		ups[routineName] = routineFile{body: trimmed, dialect: dialect}
 	}
 
 	if len(ups) == 0 {
@@ -168,7 +172,10 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		u := ups[n]
 		r := Routine{Name: n, Up: u.body, Dialect: u.dialect}
 		if d, ok := downs[n]; ok {
-			r.Down = d
+			if d.dialect != "" && d.dialect != u.dialect {
+				return nil, fmt.Errorf("migrate.RoutinesFS: routine %q: down dialect %q does not match up dialect %q", n, d.dialect, u.dialect)
+			}
+			r.Down = d.body
 		}
 		out = append(out, r)
 	}

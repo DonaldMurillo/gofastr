@@ -1080,6 +1080,13 @@ func (e *Entity) Validate() error {
 		if f.Type == schema.Relation && f.To == "" {
 			return fmt.Errorf("entity %q: relation field %q must specify To", e.Config.Name, f.Name)
 		}
+		if f.Type != schema.Relation {
+			for _, relation := range e.Config.Relations {
+				if relation.Name == f.Name {
+					return fmt.Errorf("entity %q: relation %q conflicts with scalar field %q", e.Config.Name, relation.Name, f.Name)
+				}
+			}
+		}
 		if f.Type == schema.Enum && len(f.Values) == 0 {
 			return fmt.Errorf("entity %q: enum field %q must specify non-empty Values", e.Config.Name, f.Name)
 		}

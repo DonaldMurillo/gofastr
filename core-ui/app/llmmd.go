@@ -76,7 +76,13 @@ func ScreenLLMMD(ctx context.Context, screen *Screen) string {
 					b.WriteString("_(error rendering content: see server logs)_\n")
 				}
 			}()
-			htmlContent := string(localizeLinks(ctx, screen.Component.Render()))
+			content, err := component.SafeRenderCtx(ctx, screen.Component)
+			if err != nil {
+				log.Printf("llm.md: render error for %s: %s", textsafe.ScrubControlBytes(screen.Path), textsafe.Recovered(err))
+				b.WriteString("_(error rendering content: see server logs)_\n")
+				return
+			}
+			htmlContent := string(localizeLinks(ctx, content))
 			md := htmlToMarkdown(htmlContent)
 			if md != "" {
 				b.WriteString(md)

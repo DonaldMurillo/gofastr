@@ -742,6 +742,11 @@ explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
+A declared relation cannot reuse a scalar field's name: `Entity.Validate`
+refuses the collision before writes or includes can interpret one key as
+both values. A `relation`-typed field may share its name with its derived
+or explicitly declared relation.
+
 `Define` copies the supplied relation slice and each relation's foreign-key
 columns before deriving entries. Multiple entity configs may reuse a relation
 slice, including one with spare capacity, without one entity's derived entries

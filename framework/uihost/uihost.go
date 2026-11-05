@@ -3926,6 +3926,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// group and the screen. Screens registered after Mount are caught
 	// at render (the render paths re-check, like fills).
 	ds.App.Router.ValidateRequires()
+	ds.App.Router.ValidateIntercepts()
 	// Refuse a server action on an embeddable surface at boot, before any
 	// route is served: G.serverAction is dead inside a frame, and finding out
 	// in a customer's page is the failure this exists to prevent. See

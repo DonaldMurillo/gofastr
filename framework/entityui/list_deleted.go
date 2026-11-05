@@ -132,7 +132,7 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			writeBulkError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 			return
 		}
-		ctx := r.Context()
+		ctx := crud.WithReadHooks(r.Context())
 		m, err := u.meta(entityName)
 		if err != nil || !m.hasAPI || !m.e.Config.Scope.SoftDelete {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
