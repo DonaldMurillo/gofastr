@@ -295,7 +295,9 @@ message carries the conformance report. A trusted-only app never probes.
   machine without a conforming sandbox calls it first and registers the
   untrusted module only when it returns nil. The error is a
   `*SandboxConformanceError` whose `Report` holds the per-probe results;
-  it unwraps to `ErrSandboxUnavailable`.
+  it unwraps to `ErrSandboxUnavailable`. A backend's `Wrap` panic during
+  conformance becomes an unreachable probe and this same refusal; it
+  does not crash the host or start an unconfined child.
 
 ```go
 app := framework.NewApp(framework.WithDB(db))

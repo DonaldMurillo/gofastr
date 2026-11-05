@@ -482,7 +482,7 @@ func runOneProbe(ctx context.Context, b SandboxBackend, p ProbeID, scratch strin
 	setChildProcessGroup(cmd)
 
 	// The OS-enforced denials on top of baseline hygiene:
-	if err := b.Wrap(cmd, SandboxOpts{
+	if err := wrapSandboxSafely(b, cmd, SandboxOpts{
 		ScratchDir:       probeScratch,
 		PackageDir:       filepath.Dir(exe),
 		PidLimit:         defaultProbePidLimit,
