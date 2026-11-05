@@ -454,6 +454,8 @@ The parts the navigation members draw beyond the shared vocabulary:
   GET form. The GET fallback remains available without JavaScript.
   ArrowUp in an open list with no active option selects the last
   enabled, visible option, just as it does when opening a closed list.
+  A second Escape clears a nonempty query and notifies input listeners
+  without reopening the list or retaining an active option.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),
   `datepicker-calendar` (the island region), `datepicker-month` (one

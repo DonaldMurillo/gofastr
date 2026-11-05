@@ -238,6 +238,7 @@
           e.preventDefault();
           input.value = '';
           input.dispatchEvent(new Event('input', { bubbles: true }));
+          closeListbox(input, lb);
         }
         return;
       }
