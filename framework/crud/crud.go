@@ -555,7 +555,7 @@ func (ch *CrudHandler) entitySchema() schema.Schema {
 // Hook chain: BeforeList → SELECT → AfterList. The BeforeList hook can
 // append WHERE predicates via the *hook.ListPayload.AddWhere helper;
 // appended clauses apply to both the data query and the count query.
-// AfterList receives the fetched results and may mutate them in place.
+// AfterList may transform fetched rows but must preserve their count.
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Per-caller data (owner/tenant/read-scope rows, or the row a write
@@ -833,10 +833,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// AfterList hook, host can redact / transform / drop rows.
+		// AfterList may redact or transform rows; visibility belongs in BeforeList.
 		if ch.Hooks != nil {
 			listPayload.Results = results
-			if err := runHooks(ch.Hooks, ctx, hook.AfterList, listPayload); err != nil {
+			if err := ch.applyAfterList(ctx, listPayload); err != nil {
 				logf("crud: after-list hook failed: %v", err)
 				writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return

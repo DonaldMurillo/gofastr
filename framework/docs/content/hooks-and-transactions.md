@@ -136,7 +136,9 @@ hides it from: gate that caller with `Access` permissions instead, or
 stop hiding the row.
 
 `AfterList` and `AfterGet` see the fetched rows on the payload and
-may mutate them in place; handy for redaction. The rows are keyed by
+may mutate them in place; handy for redaction. `AfterList` must preserve the row
+count; filter visibility in `BeforeList`, not by adding or removing results.
+The rows are keyed by
 the response's wire names, the handler's `JSONCase` (camelCase by
 default) or a field's `WireName`, not by column names: the
 `password_hash` column is `"passwordHash"` here, and deleting
@@ -485,6 +487,16 @@ in-process Go API still returns stored values unless the caller passes
 lookups and aggregates correct, and generated screens opt in.
 The same opt-in applies a `BeforeList`/`BeforeGet` scope, so a row the
 HTTP route hides is hidden from a rendered screen too.
+`AfterList` must preserve the number of fetched rows. Dropping or adding rows
+fails the HTTP list (offset or cursor) with 500 and logs the `after-list` hook
+phase and row-count mismatch; it never returns a partial success. In-process
+`ListAll` and `TypedQuery.Find` with `crud.WithReadHooks` return an error and no
+rows, and entityui/admin hooked readers refuse the result too. Redacting fields,
+replacing rows with projections and reordering are still allowed when the count
+stays unchanged. Put visibility filters in `BeforeList`, so the list, its total,
+`CountAll` and `TypedQuery.Count` use the same database predicate. Counts do not
+run `AfterList`; an unhooked in-process read still returns stored values.
+
 `TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
 (battery/admin) list every surface that serves a row; a new surface adds
 a case there. Generated screens read through entityui's hooked readers
