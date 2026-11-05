@@ -58,6 +58,7 @@ func TestPaneCloseDismissesOwnedModals(t *testing.T) {
 				if err := chromedp.Run(ctx,
 					chromedp.Poll(`!!window.__gofastr._widgets.owned`, nil),
 					chromedp.Evaluate(`window.__gofastr.openWidget('nested', {btn: document.getElementById('owned-action')})`, nil, chromedp.EvalAsValue),
+					chromedp.Poll(`!!window.__gofastr._widgets.nested`, nil),
 				); err != nil {
 					t.Fatal(err)
 				}
