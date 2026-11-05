@@ -2546,6 +2546,10 @@ Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
 Menu link rows activate on Space and prevent page scrolling, except while
 Space extends an active type-ahead prefix.
+Navigable combobox options are anchors with `role="option"` and
+`tabindex="-1"`, inside presentational list items. Their IDs and classes
+stay on the anchors: keyboard picks and plain clicks use the SPA
+navigator, while modified clicks follow the native `href`.
 
 A second way to author a component separates what this section joins:
 structure in one function, classes in a Classes value, behaviour bound by a

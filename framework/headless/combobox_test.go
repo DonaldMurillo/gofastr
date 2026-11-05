@@ -31,7 +31,7 @@ func TestComboboxRendersTheARIAContract(t *testing.T) {
 		`<input aria-autocomplete="list" aria-controls="q-listbox" aria-expanded="false" autocomplete="off" data-hui-combobox-input="" id="q" name="q" role="combobox"`,
 		`<ul aria-label="Search results" data-cui-internal="" data-hui-combobox-count="{{n}} results" data-hui-combobox-listbox="" data-hui-combobox-static="" hidden="" id="q-listbox" role="listbox">`,
 		`<li data-value="Docs" id="q-listbox-opt-0" role="option"><span>Docs</span><span>/docs</span></li>`,
-		`<li data-cui-push-state="/examples" data-value="Examples"`,
+		`<a data-cui-push-state="/examples" data-value="Examples" href="/examples" id="q-listbox-opt-1" role="option" tabindex="-1">`,
 		`<li data-value="ex" id="q-listbox-opt-2" role="option">`,
 		`<span data-cui-internal="" data-hui-combobox-no-results="No matches" data-hui-combobox-status="" role="status">`,
 		`<label data-cui-internal="" for="q">Search</label>`,
