@@ -49,6 +49,12 @@ null, and a relation with no field of its own is an optional property
 (an array of records for has-many and many-to-many). Request bodies
 still take the key.
 
+Cascade-write validation errors use dotted wire paths in `fields` and
+`field_reasons`. Each relation and field uses its owning entity's wire names,
+including explicit `WireName` overrides, and to-many items retain their numeric
+index: a child's `display_name` field with `WireName: "display"` is reported as
+`author.display` or `authors.0.display`, not `author.displayName`.
+
 A relation behind a Hidden field (a Hidden relation field, or a
 `belongs_to` whose foreign key is Hidden) is not includable: its record
 would carry the hidden key out. `?include=` on it, at any depth and in
