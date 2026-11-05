@@ -310,14 +310,16 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/kiln/reject", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	// ToggleAction demo, same deal: the toggle runtime keeps the
+	// Tag demo: the dismiss button posts here and swaps in the re-rendered demo.
 	//gofastr:allow(GOFASTR1902) stateless gallery dismissal returns only demo HTML and changes no user data
 	fwApp.Router().Post("/components/tag", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(gallery.TagDemo(r.URL.Query().Get("dismissed") == "beta")))
 	}))
+	// ToggleAction demo, same deal: the toggle runtime keeps the
 	// committed (or reverted) state only on a real 2xx, so the demo
-	// buttons round-trip through this no-op.
+	// buttons round-trip through this no-op. The GET twin answers the
+	// FilterChipBar's no-script dismiss links: 204 leaves the page in place.
 	fwApp.Router().Get("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
