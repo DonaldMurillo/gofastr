@@ -414,7 +414,7 @@ func markupClassTokens(v string) (tokens []string, ok bool) {
 // or prefixed when the name ends in "-".
 func attrKeyMatch(key string, names []string) (string, bool) {
 	for _, name := range names {
-		if key == name || (strings.HasSuffix(name, "-") && strings.HasPrefix(key, name)) {
+		if attrNameEqual(key, name) || (strings.HasSuffix(name, "-") && len(key) >= len(name) && attrNameEqual(key[:len(name)], name)) {
 			return name, true
 		}
 	}
@@ -429,7 +429,7 @@ func attrInValue(v string, names []string) (string, bool) {
 	for _, name := range names {
 		prefix := strings.HasSuffix(name, "-")
 		for i := 0; i+len(name) <= len(v); i++ {
-			if v[i:i+len(name)] != name {
+			if !attrNameEqual(v[i:i+len(name)], name) {
 				continue
 			}
 			if i > 0 && !attrBoundary(v[i-1], false) {

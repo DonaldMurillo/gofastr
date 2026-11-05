@@ -49,6 +49,9 @@ these entries before treating a report with no matches as a clean scan.
 A missing optional `gofastr.yml` is not an unreadable-file warning.
 Stylesheet, text and settings reads are capped at 8 MiB per file;
 larger files appear as **Unscanned** instead of being read in full.
+Retired HTML attributes in Go string values and attribute maps match
+ASCII-case-insensitively, including names ending in `-` that identify
+an attribute family. Unicode lookalikes remain distinct.
 
 ## The manual workflow
 
