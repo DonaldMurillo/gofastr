@@ -70,6 +70,10 @@ mounting: local actions, lifecycle listeners and dismissal remain wired.
 An open native modal dialog owns Escape and Tab above an intercepted
 pane. The intercept keyboard handlers stand down until the dialog closes,
 then resume the pane's own dismissal and focus containment.
+Widget modals belong to the intercept layer their opener occupied, including
+modals opened from another owned modal. Removing or replacing that layer
+closes its modals and backdrops, not unrelated widgets. Chrome still loading
+for a removed layer cannot mount after the layer is gone.
 The native-modal lookup is guarded: browsers rejecting `:modal` still receive
 the pane's Escape dismissal and forward/reverse Tab containment.
 

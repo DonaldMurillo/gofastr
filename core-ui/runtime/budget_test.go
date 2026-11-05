@@ -1556,7 +1556,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// the host transport slot (TestHostTransportCarriesRequests).
 		// Re-measured 3466 at the final prefetch-replay tip (2026-11-05).
 		// Pinned at the measured size plus 2 clearance.
-		"widgets": 3468,
+		// 3603 measured: TestPaneCloseDismissesOwnedModals pins layer
+		// ownership, nested modals and delayed chrome cancellation.
+		"widgets": 3605,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1623,7 +1625,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// and ordinary links declined by an open pane keep the captured
 		// history and transition wrapper
 		// (TestPaneDeclinedLinkKeepsForwardTransition).
-		"intercept": 3648,
+		// 3677 measured: TestPaneCloseDismissesOwnedModals pins teardown
+		// on direct close, Back, return and replacement.
+		"intercept": 3679,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

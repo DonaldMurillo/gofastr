@@ -126,6 +126,7 @@
   // pane loads the stylesheet of each component it brings, as every
   // other swap path does.
   function swap(t, res) {
+    NS._closeInterceptWidgets?.(t.el);
     t.el.innerHTML = res.html;
     // The pane's page signals, as an in-page navigation seeds them.
     NS._mergeSeed?.(t.el);
@@ -270,7 +271,7 @@
     if (!t || !guardOK(t.el, closeTopDirect)) return;
     epoch++;
     layers.pop();
-    t.el.remove();
+    drop(t);
     settleAfterDrop(t.restoreFocus);
     history.go(-(t.cur + 1)); // the entries this layer owns
   }
@@ -280,8 +281,14 @@
   function closeAllNow() {
     epoch++;
     if (!layers.length) return;
+    for (const layer of layers) drop(layer);
     layers.length = 0;
     settleAfterDrop();
+  }
+
+  function drop(layer) {
+    NS._closeInterceptWidgets?.(layer.el);
+    layer.el.remove();
   }
 
   // After dropping layer(s): expose the new top (or nothing), restore
@@ -445,7 +452,7 @@
     while (layers.length > i + 1) {
       const shut = layers.pop();
       focus = shut.restoreFocus;
-      shut.el.remove();
+      drop(shut);
     }
     const lay = top();
     const back = t.p0 + t.cur - (lay ? lay.p0 + lay.cur : 0);
@@ -506,7 +513,7 @@
       while (layers.length > i + 1) {
         const shut = layers.pop();
         focus = shut.restoreFocus;
-        shut.el.remove();
+        drop(shut);
       }
       if (refetch) {
         const u = location.pathname + location.search + location.hash;
