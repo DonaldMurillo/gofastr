@@ -1074,7 +1074,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// a caller who can repeat the failure). A successful
 			// write keeps every key.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, r, ch.withConstraintFields(err, sent))
+			writeCRUDError(w, r, ch.withConstraintFields(err, sent), ch.convertKey)
 			return
 		}
 
@@ -1165,7 +1165,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			// missing id strands the files unless they are deleted
 			// here.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, r, ch.withConstraintFields(err, sent))
+			writeCRUDError(w, r, ch.withConstraintFields(err, sent), ch.convertKey)
 			return
 		}
 
@@ -1224,7 +1224,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			return ch.doDelete(ctx, r, id)
 		})
 		if err != nil {
-			writeCRUDError(w, r, err)
+			writeCRUDError(w, r, err, ch.convertKey)
 			return
 		}
 
@@ -1330,15 +1330,21 @@ func fieldsRefusal(ctx context.Context, code int, head schema.Violation, fields 
 
 // writeCRUDError maps a CRUD-flow error to the appropriate HTTP response
 // (crudRefusal).
-func writeCRUDError(w http.ResponseWriter, r *http.Request, err error) {
-	f := crudRefusal(r.Context(), err)
+func writeCRUDError(w http.ResponseWriter, r *http.Request, err error, wireKeys ...func(string) string) {
+	f := crudRefusal(r.Context(), err, wireKeys...)
 	writeErrorBody(w, f.code, f.body())
 }
 
 // crudRefusal maps a CRUD-flow error to its refusal. Sentinel and typed
 // errors are translated to specific status codes; anything else becomes
 // a 500.
-func crudRefusal(ctx context.Context, err error) refusal {
+func crudRefusal(ctx context.Context, err error, wireKeys ...func(string) string) refusal {
+	fieldKey := func(column string) string {
+		if len(wireKeys) > 0 {
+			return wireKeys[0](column)
+		}
+		return column
+	}
 	// Ahead of the hook arm: a hook that hands back a reentrant move's
 	// refusal fails its write with the conflict, not a 400.
 	if errors.Is(err, ErrReentrantMove) {
@@ -1355,7 +1361,11 @@ func crudRefusal(ctx context.Context, err error) refusal {
 		return errRefusal(ctx, http.StatusBadRequest, bhe, i18n.Phrase{})
 	}
 	if ve, ok := errors.AsType[*ValidationError](err); ok {
-		return fieldsRefusal(ctx, http.StatusBadRequest, validationFailed, ve.Fields(), nil)
+		fields := make(map[string][]schema.Violation)
+		for column, violations := range ve.Fields() {
+			fields[fieldKey(column)] = violations
+		}
+		return fieldsRefusal(ctx, http.StatusBadRequest, validationFailed, fields, nil)
 	}
 	if se, ok := errors.AsType[*StateError](err); ok {
 		// 422: the body is well-formed, but the state field changes only
@@ -1364,7 +1374,7 @@ func crudRefusal(ctx context.Context, err error) refusal {
 		p, params := se.Phrased()
 		v := schema.Violation{Reason: p, Params: params}
 		return fieldsRefusal(ctx, http.StatusUnprocessableEntity, v,
-			map[string][]schema.Violation{se.Field: {v}},
+			map[string][]schema.Violation{fieldKey(se.Field): {v}},
 			map[string]any{"moves": nonNil(se.Moves)})
 	}
 	if tce, ok := errors.AsType[*TransitionConflictError](err); ok {

@@ -230,8 +230,9 @@ like every integer field (see below).
 ## The casing contract both SDKs encode
 
 Responses are camelCase (the server default). Request bodies accept snake
-or camel. **Filter/sort query parameters and validation-error `fields`
-keys are always the snake_case column names.** The generated READMEs
+or camel. **Filter/sort query parameters use snake_case column names;
+error `fields` and `field_reasons` keys use the response wire keys
+(camelCase by default, or an explicit `WireName`).** The generated READMEs
 repeat this so consumers stop guessing.
 
 ## Flags and project configuration
@@ -394,8 +395,8 @@ Files the export already produced (or the user static dir) always win.
   only API calls live under `APIPrefix` (`/api/posts`). The SDK
   `baseURL` must include the prefix; the download URLs must not.
 - **Filtering with camelCase names.** `?statusId_gte=` matches nothing:
-  filter/sort query params and validation-error `fields` keys are the
-  snake_case column names. The JS SDK exports `<entity>Fields`
+  filter/sort query params use snake_case column names, while error
+  `fields` keys use response wire keys. The JS SDK exports `<entity>Fields`
   constants; the Go README shows the same rule.
 - **Sending a bare key that reads two ways.** With fields `stage` and
   `stage_in`, `?stage_in=` is a 400: it could be `stage_in`'s equality
