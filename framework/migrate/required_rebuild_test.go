@@ -50,8 +50,10 @@ func TestRebuildDefersNewRequiredFields(t *testing.T) {
 			if err := db.QueryRow("SELECT count(*) FROM qty WHERE id = 'kept' AND required_code IS NULL AND required_count IS NULL AND fallback = 17").Scan(&count); err != nil || count != 1 {
 				t.Fatalf("rows retained = %d, err=%v", count, err)
 			}
-			if !next.Config.Fields[len(next.Config.Fields)-1].Required {
-				t.Fatal("generation mutated the entity declaration")
+			for _, declaredField := range next.Config.Fields {
+				if !declaredField.Required {
+					t.Fatalf("generation mutated Required on %s", declaredField.Name)
+				}
 			}
 			for _, column := range []struct {
 				name    string
