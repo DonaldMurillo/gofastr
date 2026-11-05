@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/node"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // RenderNode walks a node.Node tree and emits HTML by dispatching to
@@ -574,11 +575,11 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 	}
 	skip := make(map[string]struct{}, len(known))
 	for _, k := range known {
-		skip[strings.ToLower(k)] = struct{}{}
+		skip[asciicase.Lower(k)] = struct{}{}
 	}
 	out := html.Attrs{}
 	for k, v := range props {
-		if _, ok := skip[strings.ToLower(k)]; ok {
+		if _, ok := skip[asciicase.Lower(k)]; ok {
 			continue
 		}
 		if v == nil {
