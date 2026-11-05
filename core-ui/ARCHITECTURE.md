@@ -55,10 +55,7 @@ partial head carriers. Responses omitting the token retain the current one.
 CSRF tokens are live security state, never page-owned metadata: marked tokens
 survive page-head cleanup, and cache replay never restores an earlier token.
 Head synchronization finishes before `gofastr:navigate`, so its listeners can
-submit with the supplied token immediately. CSRF-rotation browser fixtures
-must keep unrelated favicon and widget-catalog requests outside their rotating
-page middleware: concurrent safe requests with the old cookie can each mint
-a different replacement, and the last response overwrites the browser cookie.
+submit with the supplied token immediately.
 
 Envelope and core navigation share percent-decoded segment normalization
 and typed-parameter matching, including deferred-region route addresses.

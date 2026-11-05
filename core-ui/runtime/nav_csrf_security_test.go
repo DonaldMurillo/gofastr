@@ -64,6 +64,10 @@ func TestNavigationRefreshesCSRFToken(t *testing.T) {
 					first := middleware.CSRF(middleware.CSRFConfig{SecretKey: []byte("first-test-key")})(page)
 					second := middleware.CSRF(middleware.CSRFConfig{SecretKey: []byte("second-test-key")})(page)
 					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						// Only the fixture's own routes pass the rotating CSRF
+						// middleware. A favicon or widget-catalog GET carrying the
+						// old cookie mints its own replacement under the new key,
+						// and whichever response lands last owns the cookie.
 						switch r.URL.Path {
 						case "/", "/next", "/without", "/submit":
 						default:
