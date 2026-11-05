@@ -102,10 +102,9 @@ type BackToTopConfig struct {
 	// Label overrides the aria-label. Defaults to "Back to top".
 	Label string
 
-	// ScrollTarget overrides the scroll-to selector.
-	// Defaults to scrolling to y=0. Set to a CSS selector
-	// (e.g. "#main-content") to scroll a specific element
-	// into view instead.
+	// ScrollTarget is the element id to scroll into view, for example
+	// "main-content". A leading "#" is accepted for convenience, but
+	// CSS selectors are not supported. Empty scrolls to y=0.
 	ScrollTarget string
 
 	// ID is an optional id for the root element.
