@@ -233,7 +233,8 @@ type RepeaterItem struct {
 
 // RepeaterProps configures a repeated field group.
 type RepeaterProps struct {
-	// Name is the group's name and default ID. Required.
+	// Name is the group's name. Required; the submit controls' names
+	// derive from it when the caller does not give their own.
 	Name string
 	// Label names the group for assistive technology and names the
 	// items region. Optional: a repeater beside its own heading may
@@ -255,7 +256,7 @@ type RepeaterProps struct {
 	// AddName and AddValue name the add control as a submit control
 	// (a FormRepeater's "<Name>_add=1"); RemoveName names the remove
 	// controls, whose value is the row's 0-based index. Empty names
-	// leave those controls unnamed; AddValue defaults to "1" when named.
+	// default to Name+"_add" and Name+"_remove"; AddValue defaults to "1".
 	AddName    string
 	AddValue   string
 	RemoveName string
@@ -286,8 +287,8 @@ type RepeaterProps struct {
 
 // Repeater renders the repeated rows with their add and remove controls.
 //
-// The rows are ordinary form fields and the controls can be named submit
-// buttons through AddName and RemoveName, so add and
+// The rows are ordinary form fields and the controls are named submit
+// buttons, so the no-script page is not a degraded page: add and
 // remove submit the surrounding form with the operation in the
 // request, and the server re-renders. With an Island the same buttons
 // carry the framework's RPC contract beside their submit semantics,
@@ -295,8 +296,11 @@ type RepeaterProps struct {
 // row's first control (a removal) or the add control (an addition).
 func Repeater(p RepeaterProps, s Classes) render.HTML {
 	if p.Name == "" {
-		panic("headless: Repeater requires Name — the group's identity derives from it")
+		panic("headless: Repeater requires Name — the group's identity and its controls' names derive from it")
 	}
+	p.AddName = orDefault(p.AddName, p.Name+"_add")
+	p.RemoveName = orDefault(p.RemoveName, p.Name+"_remove")
+	p.AddValue = orDefault(p.AddValue, "1")
 	if p.MinItems < 0 {
 		panic("headless: Repeater MinItems " + strconv.Itoa(p.MinItems) + " is negative — a floor below zero is no floor")
 	}
@@ -506,11 +510,9 @@ func init() {
 				Name: "an island repeater",
 				Why:  "the same buttons carry the framework's RPC contract beside their submit semantics — the href-shaped operation in the endpoint's query — so the region swaps in place and the module restores focus to the row or the add control",
 				HTML: Repeater(RepeaterProps{Name: "guests", Label: "Guests",
-					Items:      []RepeaterItem{{Fields: fields()}},
-					AddName:    "guests_add",
-					RemoveName: "guests_remove",
-					Action:     "/island/guests",
-					Island:     Island{Endpoint: "/island/guests", Signal: "guests"}}, s),
+					Items:  []RepeaterItem{{Fields: fields()}},
+					Action: "/island/guests",
+					Island: Island{Endpoint: "/island/guests", Signal: "guests"}}, s),
 			}, {
 				Name: "at the floor",
 				Why:  "a min of one disables the single row's remove control rather than hiding it — the row is real, and the control says it cannot go",
