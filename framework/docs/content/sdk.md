@@ -306,6 +306,9 @@ download buttons, an auth guide (minting `gfsk_` tokens), an errors
 reference, and one live reference page per entity: fields, endpoints,
 query params, and examples rendered **from the live registry on every
 request**, so the reference cannot drift from the running API.
+The quickstart lists records without an assumed sort column, so entities
+without timestamps work too. To sort, use a filterable/sortable column from
+that entity's fields table; hidden and `NoQuery` columns cannot be sorted.
 
 ```go
 site := app.NewApp("My App")
