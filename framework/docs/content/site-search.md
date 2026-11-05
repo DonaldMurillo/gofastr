@@ -224,6 +224,13 @@ Either way the address follows the query (`?q=`) with `replaceState`, so
 typing adds no history entries and a reload or a shared link shows the same
 results. Submitting the form runs the query at once instead of reloading.
 
+If a live request fails, or an export cannot load its search module,
+manifest, shard, or result page, the current query clears the previous
+results and pager and announces `sitesearch.unavailable` ("search index
+unavailable") in the reader's language. This includes a failed "More
+results" request. A late failure from an older query leaves the current
+results intact; typing or submitting again retries the search.
+
 ## Static export
 
 `gofastr export` (or `App.ExportStatic`) writes the index next to the pages:

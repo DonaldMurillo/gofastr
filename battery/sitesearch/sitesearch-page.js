@@ -18,6 +18,7 @@
   // (core-ui ARCHITECTURE.md "Host transport"); read at call time, since
   // the kernel may replace the namespace after this script ran.
   const hostFetch = (u, i) => ((window.__gofastr && window.__gofastr.fetch) || fetch)(u, i);
+  const say = function (key, english) { return typeof NS.say === 'function' ? NS.say(key, english) : english; };
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
@@ -77,7 +78,8 @@
     if (!r.ok) throw new Error('sitesearch-page: ' + r.status);
     const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
     const fresh = doc.querySelector('[data-search-page]');
-    if (!fresh || !current(sec, n)) return;
+    if (!current(sec, n)) return;
+    if (!fresh) throw new Error('sitesearch-page: missing results');
     part(sec, 'status').textContent = part(fresh, 'status').textContent;
     part(sec, 'list').replaceChildren(...Array.from(part(fresh, 'list').childNodes, function (c) { return document.adoptNode(c); }));
     const pager = part(sec, 'pager'), next = part(fresh, 'pager');
@@ -147,7 +149,7 @@
       more.addEventListener('click', function () {
         const m = (seq.get(sec) || 0) + 1;
         seq.set(sec, m);
-        statics(sec, q, m, found.results.length).catch(warn);
+        statics(sec, q, m, found.results.length).catch(function (err) { failed(sec, q, m, err); });
       });
       wrap.append(more);
       sec.append(wrap);
@@ -161,6 +163,14 @@
 
   function warn(err) { if (window.console) console.warn('sitesearch-page:', err); }
 
+  function failed(sec, query, sequence, err) {
+    warn(err);
+    if (!current(sec, sequence)) return;
+    clear(sec);
+    part(sec, 'status').textContent = say('sitesearch.unavailable', 'search index unavailable');
+    sec.setAttribute('data-search-page-query', query);
+  }
+
   // current: n is still the latest query and the page is still on
   // screen. A navigation away detaches the section, and its pending
   // work must not write the new page's address or list.
@@ -172,7 +182,7 @@
     const n = (seq.get(sec) || 0) + 1;
     seq.set(sec, n);
     moveURL(q);
-    (STATIC ? (q ? statics(sec, q, n, 0) : Promise.resolve(clear(sec))) : live(sec, q, n)).catch(warn);
+    (STATIC ? (q ? statics(sec, q, n, 0) : Promise.resolve(clear(sec))) : live(sec, q, n)).catch(function (err) { failed(sec, q, n, err); });
   }
 
   function clear(sec) {

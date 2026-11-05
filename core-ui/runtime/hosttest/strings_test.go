@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	_ "github.com/DonaldMurillo/gofastr/battery/auth"
+	_ "github.com/DonaldMurillo/gofastr/battery/sitesearch"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	_ "github.com/DonaldMurillo/gofastr/framework/localentity"
