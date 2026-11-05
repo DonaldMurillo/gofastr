@@ -535,7 +535,7 @@ func dropdownCSS(_ style.Theme) string {
 // is truthy and loses it when falsy. Used for CSS transition-driven
 // animations like slide-down, fade, etc.
 //
-// Panics if signalName or cssClass is empty.
+// Panics if signalName or cssClass is empty, or signalName is reserved.
 func AnimateOnSignal(html render.HTML, signalName, cssClass string) render.HTML {
 	if signalName == "" {
 		panic("interactive: AnimateOnSignal signalName must not be empty")
@@ -543,6 +543,7 @@ func AnimateOnSignal(html render.HTML, signalName, cssClass string) render.HTML 
 	if cssClass == "" {
 		panic("interactive: AnimateOnSignal cssClass must not be empty")
 	}
+	refuseReservedSignalName(signalName)
 	html = injectAttr(html, "data-cui-animate-signal", signalName)
 	html = injectAttr(html, "data-cui-animate-class", cssClass)
 	return html
@@ -904,6 +905,7 @@ func PaneKey(html render.HTML, key string) render.HTML {
 // signal value (the trusted-HTML path). Injects data-cui-signal and
 // data-cui-signal-mode="html". Use for an island slot an RPC re-renders
 // server-side and returns as a fragment.
+// Panics if signal is a reserved signal name.
 func BindHTML(html render.HTML, signal string) render.HTML {
 	return bindSignal(html, signal, "html", "")
 }
@@ -912,6 +914,7 @@ func BindHTML(html render.HTML, signal string) render.HTML {
 // (HTML-escaped). Injects data-cui-signal and data-cui-signal-mode="text".
 // This is the default mode, a bare data-cui-signal with no mode behaves
 // identically, but emitting the mode explicitly documents intent.
+// Panics if signal is a reserved signal name.
 func BindText(html render.HTML, signal string) render.HTML {
 	return bindSignal(html, signal, "text", "")
 }
@@ -925,6 +928,7 @@ func BindText(html render.HTML, signal string) render.HTML {
 // written as "false", and the runtime writes the live checked, selected
 // and value properties, so a field the reader already edited still
 // follows.
+// Panics if an allowed attribute binds a reserved signal name.
 func BindAttr(html render.HTML, signal, attr string) render.HTML {
 	// An attribute outside the allow-list executes regardless of the
 	// value bound to it (srcdoc, style, data-behavior, on*, the
@@ -941,6 +945,7 @@ func BindAttr(html render.HTML, signal, attr string) render.HTML {
 // then data-cui-signal-mode. Appending in that order keeps the output
 // byte-identical to a sorted render.Tag attrs map.
 func bindSignal(html render.HTML, signal, mode, attr string) render.HTML {
+	refuseReservedSignalName(signal)
 	out := injectAttr(html, "data-cui-signal", signal)
 	if attr != "" {
 		out = injectAttr(out, "data-cui-signal-attr", attr)

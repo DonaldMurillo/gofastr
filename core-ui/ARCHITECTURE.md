@@ -96,6 +96,9 @@ unhighlighted, empty or closed list never submits its no-script GET form.
 contract cannot carry, including confirmation, bodies, toasts and effects.
 Its native button uses `type="button"`, so an enclosing form never submits
 before hydration or in a static export.
+Signal display bindings (`BindHTML`, `BindText`, `BindAttr`) and
+`AnimateOnSignal` refuse `__proto__`, `constructor` and `prototype` before
+emitting a binding, just as signal mutation helpers do.
 
 `ui.SelectConfig.Selected` preserves stored values absent from its options;
 a nonempty value takes precedence over option-level selection flags.
