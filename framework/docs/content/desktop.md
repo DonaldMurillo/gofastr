@@ -2903,6 +2903,11 @@ func TestExport(t *testing.T) {
 `ClickMenu` and `ClickTray` match an item by its title phrase's
 English, so the same test passes on a machine set to any language.
 
+Closing and reopening a window ID creates a fresh fake window, just as
+the native shells do. Its title, navigation and evaluation records do not
+carry over. `Closed` and `IsClosed` both report the old instance's closed
+state; delayed close callbacks cannot remove its live replacement.
+
 `h.Stranger()` is a client with no session, for asserting that another
 local process on the port is refused. The harness quits the app in
 `t.Cleanup`; `h.Quit()` returns `Run`'s error when a test ends the app

@@ -228,6 +228,11 @@ func (w *Window) Titles() []string {
 
 // Closed reports whether Close ran.
 func (w *Window) Closed() bool {
+	return w.IsClosed()
+}
+
+// IsClosed reports whether Close ran, including to the battery's stale-callback guard.
+func (w *Window) IsClosed() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.closed
