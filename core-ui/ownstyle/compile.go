@@ -458,8 +458,23 @@ func containerMediaError(rule *Rule) error {
 		return nil
 	}
 	prelude := significantTokens(rule.Prel)
-	for index := 0; index+3 <= len(prelude); index++ {
-		if isCustomMedium(prelude[index : index+3]) {
+	depth, styleDepth := 0, 0
+	for index, token := range prelude {
+		switch token.Type {
+		case TokenFunction:
+			depth++
+			if styleDepth == 0 && strings.EqualFold(token.Text, "style(") {
+				styleDepth = depth
+			}
+		case TokenOpenParen:
+			depth++
+		case TokenCloseParen:
+			if depth == styleDepth {
+				styleDepth = 0
+			}
+			depth--
+		}
+		if styleDepth == 0 && index+3 <= len(prelude) && isCustomMedium(prelude[index:index+3]) {
 			return fmt.Errorf("%d:%d: custom media %s are only supported in @media, not @container", rule.Pos.Line, rule.Pos.Col, prelude[index+1].Text)
 		}
 	}

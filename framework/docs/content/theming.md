@@ -3,6 +3,9 @@
 Owned-sheet custom media such as `(--above-md)` belong in `@media`.
 Using one in `@container` is refused by both checking and compilation;
 container queries still accept raw size features and style queries.
+Nested and boolean style queries such as `style((--active) and (--ready))`
+remain native CSS. Custom properties inside `style()` are not custom media;
+placing `(--above-md)` outside it is still refused, including in mixed queries.
 
 Every visual decision in the framework goes through one typed theme:
 `core-ui/style.Theme`. Components never hardcode colors or spacing;
