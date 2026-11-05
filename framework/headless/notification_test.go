@@ -53,7 +53,7 @@ func TestToastStackCarriesBothContracts(t *testing.T) {
 	// An SSR row is visible inside it with no script.
 	withRow := ToastStack(ToastStackProps{Label: "Notifications",
 		Toasts: []render.HTML{Toast(ToastProps{Tone: "success", Title: "Saved"}, nil)}}, nil)
-	has(t, withRow, `data-hui-toast="">`, "the SSR toast row is not inside the stack")
+	has(t, withRow, `data-hui-toast="" role="status">`, "the SSR toast row is not a live status inside the stack")
 }
 
 func TestToastStackRefusesAnUnnamedOrNegativeStack(t *testing.T) {

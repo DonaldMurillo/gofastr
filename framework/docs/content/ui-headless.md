@@ -299,8 +299,10 @@ submit cannot focus a wizard on another page. A `ToastStack` is mounted once by
 the layout: it carries the framework's `data-cui-toast-stack` name
 beside its own `data-hui-toast-stack` (the kernel's response-header
 toast path resolves the first, the component module the second), the
-SSR rows inside it are visible with no script, and it is the live
-region toasts announce by arriving in. The rows the module builds at
+SSR rows inside it are visible with no script. Each server row carries
+`role="status"` by default (or for `LivePolite`), or `role="alert"` for
+`LiveAssertive`; the stack stays a non-live named region so arrivals
+are not announced twice. The rows the module builds at
 runtime wear no class of this package's: `ToastTemplate` renders an
 inert `<template>` the kit dresses with its own class map and
 registers under `preset.ToastTemplate` (`registry.RegisterTemplate`,

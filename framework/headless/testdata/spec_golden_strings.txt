@@ -828,7 +828,7 @@ an activity feed marks each event with what kind it was, a pencil or a plus, ins
 
 === Toast / a success, visible with no script ===
 the toast row is on the first paint — a notification the server rendered is news already delivered, and no module is needed to read it
-<div data-hui-toast=""><span data-cui-internal="">&lt;ToneSuccess&gt;: </span><span aria-hidden="true">✓</span><span data-cui-internal="">Deploy finished</span><span data-cui-internal="">api is serving build 482</span></div>
+<div data-hui-toast="" role="status"><span data-cui-internal="">&lt;ToneSuccess&gt;: </span><span aria-hidden="true">✓</span><span data-cui-internal="">Deploy finished</span><span data-cui-internal="">api is serving build 482</span></div>
 
 === Toast / assertive, with a dismiss that keeps its href ===
 the failure a reader must hear carries role=alert on its own row inside the politely-announcing stack, and the dismiss link needs its Island at render because dropping a notification is an in-page state change, never a route
@@ -836,7 +836,7 @@ the failure a reader must hear carries role=alert on its own row inside the poli
 
 === ToastStack / the stack with its rows ===
 one region a layout mounts once: the runtime's header path inserts into it, the server's rows are already in it, and its name is what a reader jumps by
-<div aria-label="Notifications" data-cui-toast-stack="Notifications" data-hui-toast-dismiss-label="&lt;DismissTitled {{title}}&gt;" data-hui-toast-max="4" data-hui-toast-stack="" data-hui-toast-tone-danger="&lt;ToneDanger&gt;" data-hui-toast-tone-info="&lt;ToneInfo&gt;" data-hui-toast-tone-success="&lt;ToneSuccess&gt;" data-hui-toast-tone-warning="&lt;ToneWarning&gt;" role="region"><div data-hui-toast=""><span data-cui-internal="">&lt;ToneSuccess&gt;: </span><span data-cui-internal="">Saved</span></div></div>
+<div aria-label="Notifications" data-cui-toast-stack="Notifications" data-hui-toast-dismiss-label="&lt;DismissTitled {{title}}&gt;" data-hui-toast-max="4" data-hui-toast-stack="" data-hui-toast-tone-danger="&lt;ToneDanger&gt;" data-hui-toast-tone-info="&lt;ToneInfo&gt;" data-hui-toast-tone-success="&lt;ToneSuccess&gt;" data-hui-toast-tone-warning="&lt;ToneWarning&gt;" role="region"><div data-hui-toast="" role="status"><span data-cui-internal="">&lt;ToneSuccess&gt;: </span><span data-cui-internal="">Saved</span></div></div>
 
 === ToastStack / empty, the wiring still there ===
 an empty stack still renders, because the module that injects runtime toasts needs the region to exist — a stack that vanishes when empty is a stack the first toast has to rebuild
