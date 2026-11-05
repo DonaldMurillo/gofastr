@@ -1212,7 +1212,7 @@
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
-  const syncPageHead = (root, cached) => {
+  const syncPageHead = (root, skipCSRF) => {
     const carrier = root && (root.matches?.('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
     const source = carrier ? new DOMParser().parseFromString(carrier.getAttribute('data-cui-page-head') || '', 'text/html') : (root && root.nodeType === 9 ? root : null);
     if (!source) return;
@@ -1226,7 +1226,7 @@
       const copy = node.cloneNode();
       for (const attr of copy.getAttributeNames()) if (/^on/i.test(attr)) copy.removeAttribute(attr);
       if (copy.name === 'csrf-token') {
-        if (cached) continue;
+        if (skipCSRF) continue;
         document.head.querySelector('meta[name="csrf-token"]')?.remove();
       }
       document.head.append(copy);
@@ -1529,8 +1529,8 @@
   // (doc.setHtmlAttr, manifest-governed) and the skip link's text.
   // root is the swapped element (the new shell, or the slot that received
   // the payload); a payload with no markers changes nothing.
-  const applyDocShell = (root, cached) => {
-    syncPageHead(root, cached);
+  const applyDocShell = (root, skipCSRF) => {
+    syncPageHead(root, skipCSRF);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
     // The destination's runtime words; none means English.
     if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
@@ -1555,9 +1555,9 @@
   // consumes the popstate's pending value at entry, so a superseded
   // back/forward can never leak its position into a later click's
   // finishNav.
-  const finishNav = (path, prevPath, cached, root, ps) => {
+  const finishNav = (path, prevPath, cached, root, ps, skipCSRF) => {
     window.__gofastr._navShown = true;
-    applyDocShell(root, cached);
+    applyDocShell(root, cached || skipCSRF);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -1714,7 +1714,7 @@
             _pendingNav.delete(path);
             await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
-              finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
+              finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps, true);
             }, null, pf.html, pf.title);
             return;
           }

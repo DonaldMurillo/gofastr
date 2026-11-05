@@ -53,7 +53,9 @@ scripts remain eligible for the next component scan.
 Navigation refreshes a supplied CSRF meta token from full documents and
 partial head carriers. Responses omitting the token retain the current one.
 CSRF tokens are live security state, never page-owned metadata: marked tokens
-survive page-head cleanup, and cache replay never restores an earlier token.
+survive page-head cleanup, and cache or prefetch replay never restores an
+earlier token. Prefetch replay still reports `cached: false` to navigation
+listeners; its separate head-sync flag skips only CSRF token installation.
 Head synchronization finishes before `gofastr:navigate`, so its listeners can
 submit with the supplied token immediately.
 

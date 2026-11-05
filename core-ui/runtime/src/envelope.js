@@ -238,8 +238,8 @@
       window.scrollTo(0, 0);
     });
   };
-  const finishNav = (path, prevPath, cached, root, ps) => {
-    NS._applyDocShell(root, cached);
+  const finishNav = (path, prevPath, cached, root, ps, skipCSRF) => {
+    NS._applyDocShell(root, cached || skipCSRF);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -674,9 +674,9 @@
     } catch (_) { /* ancient browsers: location is the best guess */ }
     return location.pathname + location.search;
   })();
-  const _done = (path, prevPath, cached, root, ps, notOk) => {
+  const _done = (path, prevPath, cached, root, ps, notOk, skipCSRF) => {
     if (!notOk) _liveDomPath = path;
-    finishNav(path, prevPath, cached, root, ps);
+    finishNav(path, prevPath, cached, root, ps, skipCSRF);
   };
   const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
   // core's rule (nav.js): an HTML answer applies, any status; any other
@@ -917,7 +917,7 @@
               _applied(slot, pfResolved);
               if (load) load.sweep();
               if (parts && P && P.commit(parts, true)) P.flush(parts);
-              _done(path, prevPath, false, slot, ps);
+              _done(path, prevPath, false, slot, ps, false, true);
             }, null);
             return;
           }

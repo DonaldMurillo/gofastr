@@ -59,9 +59,12 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
-The core's gzip gates are 15,960 bytes at level 6 and
-18,486 bytes at level 1, including live CSRF token protection across cached
-navigation and page-head cleanup. Ordinary-page form-helper discovery fits those
+The core's gzip gates are 15,981 bytes at level 6 and
+18,524 bytes at level 1, including live CSRF token protection across cached
+navigation, prefetch replay, and page-head cleanup. Prefetched pages retain the
+live CSRF token even after a session rotation, while `gofastr:navigate` still
+reports `cached: false` and other page metadata updates normally.
+Ordinary-page form-helper discovery fits those
 gates by scheduling idle modules directly instead of building a batch
 queue. Browsers without `requestIdleCallback` still defer each idle load
 with `setTimeout`; helper-marked controls do not wait for a widget.

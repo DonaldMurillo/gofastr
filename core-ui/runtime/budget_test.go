@@ -664,7 +664,11 @@ const (
 	// TestNavigationRefreshesCSRFToken: live-token cleanup and replay guards
 	// measure 15951 bytes. They run in core navigation, so cannot demand-load;
 	// the level-6 line is that measured size plus two bytes.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7
+	// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979 bytes: the
+	// core navigator threads a separate CSRF replay guard without changing
+	// the navigate event's cached flag. This is core's own swap path and
+	// cannot demand-load. Retain two bytes of clearance.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1151,7 +1155,10 @@ const (
 	// re-run.
 	// TestNavigationRefreshesCSRFToken measures 18484 at level 1;
 	// retain two bytes of clearance and re-prove the padded cliff fixture.
-	coreCongestionWindowGZ = 18486
+	// TestPrefetchReplayKeepsRotatedCSRFToken measures 18522 at level 1;
+	// the separate replay guard cannot carve out of core navigation.
+	// Retain two bytes of clearance and re-prove the padded cliff fixture.
+	coreCongestionWindowGZ = 18524
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1270,6 +1277,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// token in the page-head template (TestStaticEnvelopeLoadsDirection,
 		// TestNavigationRefreshesCSRFToken); line 15960.
 		"page direction travels with the page head": 7,
+		// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979; line 15981.
+		"prefetch replay preserves live CSRF without changing cached events": 21,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1480,7 +1489,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// (TestTransitionFailureRestoresURL), and decoded captured parameters
 		// match server layout and part addresses
 		// (TestDeferredParamUsesServerAddress).
-		"envelope": 8145,
+		// 8161 measured plus 2 clearance after prefetch replay threads a
+		// separate CSRF guard (TestPrefetchReplayKeepsRotatedCSRFToken).
+		"envelope": 8163,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

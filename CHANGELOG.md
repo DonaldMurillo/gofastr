@@ -672,6 +672,9 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Prefetched navigation preserves the live CSRF token.** Following a link
+  prefetched before a session token rotation no longer restores the older
+  token; navigation listeners still receive `cached: false`.
 - **The entity screens read related data through the same gates as the
   API.** Related lists, their count badges and read-only relation
   fields checked record access but skipped CRUD exposure and token
