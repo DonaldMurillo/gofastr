@@ -43,6 +43,11 @@ An app that vendors its dependencies (`vendor/modules.txt`) gets a
 command refuses the stale `vendor/`. A release candidate target
 (`--to v0.96.0-rc.1`) shows the notes of the release it precedes.
 
+The scan lists unreadable source, stylesheet, text and settings files as
+**Unscanned**, including symlinks that escape the project root. Review
+these entries before treating a report with no matches as a clean scan.
+A missing optional `gofastr.yml` is not an unreadable-file warning.
+
 ## The manual workflow
 
 1. **List the available releases:**

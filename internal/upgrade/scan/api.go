@@ -42,7 +42,7 @@ type Result struct {
 	Broken []string
 	// Unexplained holds compile errors no note matched; Why is the error.
 	Unexplained []Hit
-	// Unscanned lists files the load could not reach, root-relative
+	// Unscanned lists files the scan could not read or load, root-relative
 	// and sorted, each with its reason: "x.go (no satisfiable build
 	// configuration)" for a constraint no GOOS/GOARCH/tag combination
 	// satisfies, "x.go (not compiled under GOOS=… GOARCH=…)" when the

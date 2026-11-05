@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -23,6 +24,7 @@ func (e *engine) configMatchers() {
 	}
 	entries, err := fs.ReadDir(e.appFS, ".")
 	if err != nil {
+		e.noteUnscanned(".", "unreadable: "+err.Error())
 		return
 	}
 	names := []string{"gofastr.yml"}
@@ -35,6 +37,9 @@ func (e *engine) configMatchers() {
 	for _, name := range names {
 		data, err := e.appRoot.ReadFile(name)
 		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) || name != "gofastr.yml" {
+				e.noteUnscanned(name, "unreadable: "+err.Error())
+			}
 			continue
 		}
 		doc, err := coreyaml.Parse(string(data))

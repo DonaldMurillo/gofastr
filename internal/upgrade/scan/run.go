@@ -454,6 +454,7 @@ func (e *engine) walkApp(visit func(rel string, read func() ([]byte, bool))) {
 func (e *engine) walkAppSkip(visit func(rel string, read func() ([]byte, bool)), skip func(string) bool) {
 	fs.WalkDir(e.appFS, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			e.noteUnscanned(path.Clean(p), "unreadable: "+err.Error())
 			return nil
 		}
 		if d.IsDir() {
@@ -465,6 +466,9 @@ func (e *engine) walkAppSkip(visit func(rel string, read func() ([]byte, bool)),
 		rel := path.Clean(p)
 		visit(rel, func() ([]byte, bool) {
 			b, err := e.appRoot.ReadFile(rel)
+			if err != nil {
+				e.noteUnscanned(rel, "unreadable: "+err.Error())
+			}
 			return b, err == nil
 		})
 		return nil
