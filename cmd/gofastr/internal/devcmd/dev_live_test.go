@@ -50,6 +50,10 @@ func TestScanModTimesPicksUpAllAssetTypes(t *testing.T) {
 	if len(result) != 4 {
 		t.Fatalf("scanModTimes found %d files, want 4 (.go+.js+.css+.html): %+v", len(result), result)
 	}
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	expected := map[string]bool{
 		filepath.Join(dir, "main.go"):    true,

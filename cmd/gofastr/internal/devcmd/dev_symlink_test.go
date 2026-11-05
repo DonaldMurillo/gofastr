@@ -7,6 +7,40 @@ import (
 	"time"
 )
 
+func TestWatchDetectsRootSymlinkRetarget(t *testing.T) {
+	dir := t.TempDir()
+	stamp := time.Unix(1700000000, 0)
+	first, second := filepath.Join(dir, "first"), filepath.Join(dir, "second")
+	for _, root := range []string{first, second} {
+		path := filepath.Join(root, "main.go")
+		writeDevFile(t, path, "package main")
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, "project")
+	if err := os.Symlink(first, link); err != nil {
+		t.Fatal(err)
+	}
+	before := ScanModTimes(link)
+	if len(before) != 1 {
+		t.Fatalf("initial snapshot = %v; want one source", before)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(second, link); err != nil {
+		t.Fatal(err)
+	}
+	after := ScanModTimes(link)
+	if len(after) != 1 || !Changed(before, after) {
+		t.Fatalf("root retarget with matching names and mtimes was missed: before=%v after=%v", before, after)
+	}
+	if Changed(after, ScanModTimes(link)) {
+		t.Fatal("unchanged resolved root triggered another rebuild")
+	}
+}
+
 func TestWatchFollowsRootSymlink(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "project")
