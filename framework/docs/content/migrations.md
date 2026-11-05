@@ -722,6 +722,15 @@ snapshot. It is the same loop the app spec CLI runs, byte-for-byte (same
 `schema.snapshot.json`), because both paths share `GeneratePlan` +
 `RenderMigrationFile` + `SaveSnapshot`.
 
+Migration generation writes and syncs a temporary file in the migration
+directory before atomically publishing the numbered `.sql` entry. Publication
+uses a hard link, not an overwriting rename: an existing file or symlink at
+the selected name is refused. The filesystem must support same-directory hard
+links. A failed write leaves no numbered migration; abandoned `.tmp` files
+after a process crash do not consume migration versions. On non-Windows hosts
+the directory is synced before advancing the snapshot; Windows uses the
+platform's existing directory-sync policy.
+
 The call is safe to re-run after a crash (or a failed snapshot write) between
 the migration file landing and the snapshot updating: the re-run compares the
 generated delta against the last committed migration's Up/Down sections by

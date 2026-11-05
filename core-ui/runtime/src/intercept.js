@@ -126,11 +126,19 @@
   // pane loads the stylesheet of each component it brings, as every
   // other swap path does.
   function swap(t, res) {
+    NS._closeInterceptWidgets?.(t.el);
     t.el.innerHTML = res.html;
     // The pane's page signals, as an in-page navigation seeds them.
     NS._mergeSeed?.(t.el);
     t.el.setAttribute('data-cui-intercept-as', res.as);
     NS.scanAndLoadCSS?.(t.el);
+  }
+
+  function refresh(t, res, focus) {
+    const id = (focus || document.activeElement)?.id;
+    swap(t, res);
+    refocus(id && t.el.querySelector('#' + CSS.escape(id)));
+    if (!t.el.contains(document.activeElement)) focusFirst(t.el);
   }
 
   function overlayHost() {
@@ -270,7 +278,7 @@
     epoch++;
     if (!guardOK(t.el, () => closeTopDirect(t))) return;
     layers.splice(layers.indexOf(t), 1);
-    t.el.remove();
+    drop(t);
     settleAfterDrop(t.restoreFocus);
     history.go(-(t.cur + 1)); // the entries this layer owns
   }
@@ -280,8 +288,14 @@
   function closeAllNow() {
     epoch++;
     if (!layers.length) return;
+    for (const layer of layers) drop(layer);
     layers.length = 0;
     settleAfterDrop();
+  }
+
+  function drop(layer) {
+    NS._closeInterceptWidgets?.(layer.el);
+    layer.el.remove();
   }
 
   // After dropping layer(s): expose the new top (or nothing), restore
@@ -445,7 +459,7 @@
     while (layers.length > i + 1) {
       const shut = layers.pop();
       focus = shut.restoreFocus;
-      shut.el.remove();
+      drop(shut);
     }
     const lay = top();
     const back = t.p0 + t.cur - (lay ? lay.p0 + lay.cur : 0);
@@ -463,7 +477,7 @@
       .then((res) => {
         if (e !== epoch) return;
         if (!res) { fallbackNav(lay.url, ''); return; }
-        swap(lay, res);
+        refresh(lay, res, focus);
       })
       .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
     return true;
@@ -506,7 +520,7 @@
       while (layers.length > i + 1) {
         const shut = layers.pop();
         focus = shut.restoreFocus;
-        shut.el.remove();
+        drop(shut);
       }
       if (refetch) {
         const u = location.pathname + location.search + location.hash;
@@ -517,7 +531,7 @@
           .then((res) => {
             if (e !== epoch) return;
             if (!res) { fallbackNav(u, ''); return; }
-            swap(lay, res);
+            refresh(lay, res, focus);
           })
           .catch(() => { if (e === epoch) fallbackNav(u, ''); });
       }

@@ -527,7 +527,7 @@ field) declare how entities associate with one another:
 ### Cascade Writes & Atomic Nested Mutations
 When `cascade_write: true` (or `.WithCascadeWrite(true)`) is enabled, nested child maps or slices can be sent directly inside parent `POST` and `PUT`/`PATCH` payloads.
 All writes execute inside the parent's database transaction (`inTx`). If any child validation or constraint check fails, the transaction is completely rolled back, leaving zero orphaned rows.
-- **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key. A foreign key this write cannot set (`ReadOnly`, `Hidden`, or the owner column on an update) refuses the nested write with 400 `validation.cascade_key_not_writable` before any child is written, since the parent could not point at the child.
+- **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key. An undeclared foreign key, or one this write cannot set (`ReadOnly`, `Hidden`, or the owner column on an update), refuses the nested write with 400 `validation.cascade_key_not_writable` before any child is written, since the parent could not point at the child.
 - **`has_one`**: The child is created or updated after the parent. If an ID is provided or an existing child is found, it is updated in-place (with ownership verification); otherwise it is created.
 - **`has_many`**: An array of child objects is processed. Items carrying an ID belonging to the parent are updated; items without an ID are inserted.
 - **The child's link column**: A `has_one` or `has_many` child that is created points at the parent through its own foreign key, so the child must declare that field and its create must write it. A foreign key that is `ReadOnly`, `Hidden`, the child's tenant column, or not declared refuses the nested create with 400 `validation.cascade_key_not_writable` and rolls the parent back, instead of storing a child with no parent.
@@ -719,7 +719,9 @@ it rounds to the float `1`. A `bool` field takes a number the same way,
 only when its text is exactly 0 or 1: `1.0` and `10e-1` pass,
 `1.0000000000000001` and `1e-400` are refused. A `date` field reads back as `YYYY-MM-DD` on
 every read path and in hooks; a typed read into a `time.Time` field
-still decodes it as midnight UTC. An in-process write (`CreateOne`,
+still decodes it as midnight UTC, including promoted fields in embedded
+structs with self-referential or mutually recursive pointer types.
+An in-process write (`CreateOne`,
 `UpdateOne`, `UpsertOne`, batch, the typed repository) also takes a
 `date` as a Go `time.Time` or RFC 3339 text at exact midnight, and
 stores it as `YYYY-MM-DD`, so a row read back and saved again keeps its

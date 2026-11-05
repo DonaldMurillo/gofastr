@@ -164,7 +164,8 @@ type Delivery struct {
 	unclaimedAttempt bool
 }
 
-// Store is the persistence interface.
+// Store is the persistence interface. A pending delivery with a zero
+// NextAttemptAt is immediately due, including after UpdateDelivery.
 type Store interface {
 	AddSubscriber(ctx context.Context, s Subscriber) error
 	GetSubscriber(ctx context.Context, id string) (*Subscriber, error)

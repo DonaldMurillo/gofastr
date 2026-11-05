@@ -569,7 +569,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		// tenant column) would leave the parent on its old reference while
 		// the child is written and handed back as attached, so the
 		// cascade is refused before any child is written.
-		if fk := oneFK(rel); ch.declaresField(fk) && !ch.parentSetsKey(ctx, ch.fieldByName(fk), isUpdate) {
+		if fk := oneFK(rel); !ch.declaresField(fk) || !ch.parentSetsKey(ctx, ch.fieldByName(fk), isUpdate) {
 			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{
 				Reason: reasonCascadeKeyFixed, Params: map[string]any{"column": fk},
 			}}}}

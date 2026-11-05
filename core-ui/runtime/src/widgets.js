@@ -78,7 +78,11 @@
   // A registry read as an own property: an attribute-borne name like
   // "constructor" must not resolve to an Object.prototype member.
   const own = n => Object.prototype.hasOwnProperty.call(NS._widgets, n) ? NS._widgets[n] : null;
-  const stamp = (name, e) => { const r = own(name); if (r) r.ep = e; };
+  const stamp = (name, e, layer) => { const r = own(name); if (r) { r.ep = e; r.layer = layer; } };
+
+  NS._closeInterceptWidgets = (layer) => {
+    for (const name of [...NS._modalStack].reverse()) if (own(name)?.layer === layer) NS.closeWidget(name);
+  };
 
   const catalogEntry = name => NS._widgetCatalog && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name) ? NS._widgetCatalog[name] : null;
 
@@ -95,6 +99,8 @@
       return;
     }
     const o = opts || {};
+    const origin = o.btn || document.activeElement;
+    const layer = origin?.closest('[data-cui-intercept-as]') || Object.values(NS._widgets).find((w) => w.root?.contains(origin))?.layer;
     // #321: the open trigger may carry context (data-cui-ctx). It is
     // opaque to the runtime: forwarded on the chrome fetch and keyed in
     // the client cache, never parsed. The chrome render authorises it
@@ -110,7 +116,8 @@
     const epoch = NS._navEpoch;
     const m = here();
     pend.set(name, m);
-    await NS._mountByName(name, ctx);
+    await NS._mountByName(name, ctx, layer);
+    if (layer && !layer.isConnected) return;
     if (!left(epoch) && ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue)) {
       if (!NS._deepLinkOpen) await NS.loadModule('widgetlinks');
       // The module load is a second wait the reader can navigate during.
@@ -121,7 +128,8 @@
     if (pend.get(name) === m) pend.delete(name);
   };
 
-  NS._mountByName = async function (name, ctx) {
+  NS._mountByName = async function (name, ctx, layer) {
+    if (layer && !layer.isConnected) return;
     const entry = catalogEntry(name);
     if (!entry) return;
     const m = own(name);
@@ -152,7 +160,7 @@
       // click on a catalog-gated widget. So whatever is still in the DOM
       // here is un-mounted chrome nobody is looking at.
       if (ctx) existing.remove();
-      else { NS.mountWidget(cfg, null, existing); stamp(name, epoch); return; }
+      else { NS.mountWidget(cfg, null, existing); stamp(name, epoch, layer); return; }
     }
     const path = cfg.chromePath || ('/core-ui/widget/' + name + '/chrome');
     // #321: key by (name, ctx) so triggers carrying different contexts
@@ -224,7 +232,7 @@
     // it on. The cached branch awaits a promise too, so both are
     // covered.
     try { html = await NS._chromeCache[key]; } catch (_) {}
-    if (html && !left(epoch) && entry.tok === tok) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch); }
+    if (html && !left(epoch) && entry.tok === tok && (!layer || layer.isConnected)) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch, layer); }
   };
 
   NS.closeWidget = function (name) {

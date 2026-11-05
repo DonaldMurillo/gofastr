@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 // MigrationFileOptions configures GenerateMigrationFile.
@@ -93,6 +95,9 @@ func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (s
 	if lastUp, lastDown, ok := lastCommittedSections(opts.MigrationsDir); ok &&
 		strings.TrimSpace(lastUp) == strings.TrimSpace(up) &&
 		strings.TrimSpace(lastDown) == strings.TrimSpace(down) {
+		if err := atomicfile.SyncDir(opts.MigrationsDir); err != nil {
+			return "", fmt.Errorf("sync migrations before snapshot repair: %w", err)
+		}
 		if err := SaveSnapshot(snapPath, next); err != nil {
 			return "", fmt.Errorf("snapshot repair failed (migration already committed): %w", err)
 		}
@@ -121,28 +126,36 @@ func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (s
 		}
 		content = stamped
 	}
-	// Kernel-contained create: the file is written through an *os.Root
-	// over MigrationsDir with O_EXCL, so a symlink planted at the chosen
-	// filename after the version scan is refused by the kernel instead
-	// of followed outside the directory — and a pre-existing entry at
-	// the name is refused rather than clobbered. The numbering makes a
-	// collision impossible for honest writers (the scan counts every
-	// NNNN_*.sql entry), so O_EXCL only ever fires on a plant or a race.
 	root, oerr := os.OpenRoot(opts.MigrationsDir)
 	if oerr != nil {
 		return "", fmt.Errorf("open %s: %w", opts.MigrationsDir, oerr)
 	}
 	defer root.Close()
-	w, werr := root.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	temporary := ".gofastr-migration-" + rand.Text() + ".tmp"
+	w, werr := root.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if werr != nil {
 		return "", fmt.Errorf("write %s: %w", path, werr)
 	}
+	defer root.Remove(temporary)
 	if _, werr = w.Write([]byte(content)); werr != nil {
 		w.Close()
 		return "", fmt.Errorf("write %s: %w", path, werr)
 	}
+	if werr = w.Sync(); werr != nil {
+		w.Close()
+		return "", fmt.Errorf("sync %s: %w", path, werr)
+	}
 	if werr = w.Close(); werr != nil {
 		return "", fmt.Errorf("write %s: %w", path, werr)
+	}
+	if err := root.Link(temporary, filename); err != nil {
+		return "", fmt.Errorf("publish %s: %w", path, err)
+	}
+	if err := root.Remove(temporary); err != nil {
+		return "", fmt.Errorf("remove migration temporary file: %w", err)
+	}
+	if err := atomicfile.SyncDir(opts.MigrationsDir); err != nil {
+		return "", fmt.Errorf("sync migrations before snapshot update: %w", err)
 	}
 	if err := SaveSnapshot(snapPath, next); err != nil {
 		return "", fmt.Errorf("snapshot update failed (migration written): %w", err)
