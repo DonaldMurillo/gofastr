@@ -543,7 +543,9 @@ derived (table `a_b` on `c` and table `a` on `b_c` are both
 and `migrate generate` refuse the pair and name both tables, as they do
 one table declaring two different indexes under one name. Names are
 compared folded and cut at 63 bytes, the way Postgres stores them, on
-both dialects. Give one of the indexes its own `Name`.
+both dialects. Field-level `Unique` names participate in the same check,
+including collisions with explicitly named indexes. Give a declared index
+its own `Name`, or rename a table or field when two field-level names collide.
 
 A `Unique` field's `<table>_<column>_key` is the name Postgres gives
 the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
