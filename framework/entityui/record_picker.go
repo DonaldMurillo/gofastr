@@ -45,7 +45,10 @@ func (fb *formBuilder) relationPicker(ctx context.Context, f schema.Field, label
 	if !fb.m.hasAPI {
 		return fb.readOnly(ctx, f, label)
 	}
-	opts, more, refused := fb.b.ui.pickerOptions(ctx, f, "")
+	opts, more, refused, err := fb.b.ui.pickerOptions(ctx, f, "")
+	if err != nil {
+		return slotFailed(ctx)
+	}
 	valueLabel := ""
 	if cur != "" {
 		valueLabel = "—"
@@ -115,14 +118,17 @@ func (fb *formBuilder) relationNew(ctx context.Context, f schema.Field) render.H
 // gate, and a row its Decider refuses is left out. more is the cut-off
 // note when there are further rows; refused reports that the related
 // entity is unknown or refuses the caller.
-func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts []ui.PickerOption, more string, refused bool) {
+func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts []ui.PickerOption, more string, refused bool, err error) {
 	other, err := u.entityFor(f.To)
 	if err != nil {
-		return nil, "", true
+		return nil, "", true, nil
 	}
 	om, err := u.meta(other.GetName())
-	if err != nil || !canReadRelated(ctx, om.ch) {
-		return nil, "", true
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !canReadRelated(ctx, om.ch) {
+		return nil, "", true, nil
 	}
 	q = strings.TrimSpace(q)
 	if r := []rune(q); len(r) > maxPickerQuery {
@@ -143,7 +149,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 	}
 	rows, err := om.listRows(ctx, list)
 	if err != nil {
-		return nil, "", false
+		return nil, "", false, err
 	}
 	titles := u.rowTitles(ctx, om, rows, 0)
 	needle := strings.ToLower(q)
@@ -168,7 +174,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 		}
 		opts = append(opts, ui.PickerOption{Value: oid, Label: label})
 	}
-	return opts, more, false
+	return opts, more, false, nil
 }
 
 // pickerBody is a picker search: the query its input holds.
@@ -182,7 +188,8 @@ type pickerBody struct {
 // not read the entity or the related one, 404 for a field that is not
 // an editable relation, 415 to a body that is not JSON, 413 past
 // pickerBodyLimit and 400 to a malformed body. The answer is never
-// stored: it is per caller.
+// stored: it is per caller. A failed related-record read answers a
+// structured 500 rather than an empty successful option list.
 func (u *UI) PickerHandler(entityName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -227,7 +234,11 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
-		opts, more, refused := u.pickerOptions(ctx, f, body.Q)
+		opts, more, refused, err := u.pickerOptions(ctx, f, body.Q)
+		if err != nil {
+			writeBulkError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+			return
+		}
 		if refused {
 			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return

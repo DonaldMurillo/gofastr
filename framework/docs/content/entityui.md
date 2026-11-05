@@ -230,7 +230,10 @@ keeps the UI unchanged; without a callback the default stays
   `PickerHandler` serves the search: POST only, JSON only, 4 KB body,
   no-store, refused cross-site, and gated by the host entity's read and
   the related entity's read and per-row Decider. `App.EntityUI` and the
-  admin mount it beside `_bulk`.
+  admin mount it beside `_bulk`. A failed related-record read answers a
+  structured 500 without exposing store or hook details, not a successful
+  empty list. The initial form displays the field's unavailable state when
+  its picker read fails.
   A `JSON` field is a mono text area checked as JSON in the browser as
   it is typed (`ui.TextAreaConfig.JSON`): an invalid value stops the
   save before it is sent; the server still validates. The area, the
