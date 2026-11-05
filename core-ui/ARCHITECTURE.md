@@ -66,6 +66,8 @@ mounting: local actions, lifecycle listeners and dismissal remain wired.
 An open native modal dialog owns Escape and Tab above an intercepted
 pane. The intercept keyboard handlers stand down until the dialog closes,
 then resume the pane's own dismissal and focus containment.
+The native-modal lookup is guarded: browsers rejecting `:modal` still receive
+the pane's Escape dismissal and forward/reverse Tab containment.
 
 Owned-style checking and compilation reject custom media inside
 `@container`, including dark-nested blocks. Container size features and

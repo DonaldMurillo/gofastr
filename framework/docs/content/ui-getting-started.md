@@ -388,6 +388,10 @@ the list, which stays mounted underneath. Back, Escape, and the backdrop all
 close it through one history entry, so returning to the list costs no
 refetch and keeps its scroll position.
 
+An open native modal dialog takes Escape and Tab before its surrounding drawer.
+When the browser does not support the `:modal` selector, the drawer still
+handles Escape and traps both forward and reverse Tab instead of throwing.
+
 One `RenderCtx` serves both presentations; the overlay is the same render
 with drawer scaffolding around it, so there is no second code path to keep in
 sync. Put `data-cui-intercept-close` on a button inside the screen and it

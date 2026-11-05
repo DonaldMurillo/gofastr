@@ -566,11 +566,15 @@
       .catch(() => { if (e === epoch) fallbackNav(p.rec, ''); });
   });
 
+  const modalOwnsKeys = () => {
+    try { return NS._modalStack?.length || document.querySelector(':modal'); } catch (_) { return false; }
+  };
+
   document.addEventListener('keydown', (e) => {
     if (!layers.length || e.key !== 'Escape') return;
     // Surfaces inside the layer that own Escape themselves consume it:
     // a modal widget, an open dropdown, an overlay-mode pane host.
-    if (NS._modalStack?.length || document.querySelector(':modal,[data-cui-dropdown-open],[data-hui-pane-mode="overlay"]')) return;
+    if (modalOwnsKeys() || document.querySelector('[data-cui-dropdown-open],[data-hui-pane-mode="overlay"]')) return;
     e.preventDefault();
     closeTopDirect();
   });
@@ -581,7 +585,7 @@
   // focus module's trap; a modal widget opened inside the layer keeps
   // its own trap, so defer to it.
   document.addEventListener('keydown', (e) => {
-    if (!layers.length || e.key !== 'Tab' || NS._modalStack?.length || document.querySelector(':modal')) return;
+    if (!layers.length || e.key !== 'Tab' || modalOwnsKeys()) return;
     const items = [...top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')].filter((el) => el.offsetParent !== null || el === document.activeElement);
     if (!items.length) { e.preventDefault(); return; }
     const first = items[0], last = items.at(-1);
