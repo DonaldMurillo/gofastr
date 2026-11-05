@@ -8,11 +8,11 @@ zero-based row index. `ui.FormRepeater` supplies `Name+"_add"` and
 does not derive submit names from the group's `Name`.
 
 After an Island swap removes a repeater row, focus returns to the next row's
-first visible, enabled input, select, textarea, or button, or to the preceding
-row when the last row was removed. Hidden and inert controls are
-skipped, including controls made invisible by CSS. Recovery checks that a
-control actually received focus before stopping; when no row control can
-receive focus, focus returns to Add.
+first enabled input, select, textarea, or button that can receive focus, or to
+the preceding row when the last row was removed. Hidden, inert, and unrendered
+controls are skipped. Recovery checks that a control actually received focus
+before stopping; CSS transparency (`opacity: 0`) does not itself prevent focus.
+When no row control can receive focus, focus returns to Add.
 
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state

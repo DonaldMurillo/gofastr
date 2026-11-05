@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"testing"
@@ -31,7 +32,18 @@ func TestRepeaterLastRemovalFocusesPreviousRow(t *testing.T) {
 	testRepeaterFocus(t, "", false, true)
 }
 
-func testRepeaterFocus(t *testing.T, blocked render.HTML, fallback, removeLast bool) {
+func TestRepeaterCanFocusTransparentControl(t *testing.T) {
+	ctx := testRepeaterFocus(t, render.Tag("input", map[string]string{"data-focus-opacity": "", "data-focus-target": ""}), false, false)
+	var transparent bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.activeElement.hasAttribute('data-focus-opacity') && getComputedStyle(document.activeElement).opacity === '0'`, &transparent)); err != nil {
+		t.Fatal(err)
+	}
+	if !transparent {
+		t.Fatal("focus recovery skipped the focusable transparent input")
+	}
+}
+
+func testRepeaterFocus(t *testing.T, blocked render.HTML, fallback, removeLast bool) context.Context {
 	t.Helper()
 	initial, remaining := 2, 1
 	if removeLast {
@@ -54,7 +66,7 @@ func testRepeaterFocus(t *testing.T, blocked render.HTML, fallback, removeLast b
 			Island: Island{Endpoint: "/__hui/links", Signal: "links"},
 		}, nil)) + `</div>`
 	}
-	server := startBehaviorServer(t, `<style>[data-focus-hidden]{visibility:hidden}[data-focus-collapsed]{visibility:collapse}</style>`+renderRows(initial), func(mux *http.ServeMux) {
+	server := startBehaviorServer(t, `<style>[data-focus-hidden]{visibility:hidden}[data-focus-collapsed]{visibility:collapse}[data-focus-opacity]{opacity:0}</style>`+renderRows(initial), func(mux *http.ServeMux) {
 		mux.HandleFunc("/__hui/links", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
 			w.Write([]byte(renderRows(remaining)))
@@ -81,4 +93,5 @@ func testRepeaterFocus(t *testing.T, blocked render.HTML, fallback, removeLast b
 	if !pollTrue(ctx, `document.querySelectorAll('[data-hui-repeater-item]').length === `+strconv.Itoa(remaining)+` && `+target) {
 		t.Fatal("removal did not focus a usable field or the add control")
 	}
+	return ctx
 }
