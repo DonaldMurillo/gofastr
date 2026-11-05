@@ -155,6 +155,9 @@ Authorization: Bearer gfsk_…
 
 Artifact updates normalize nil `Parts` to an empty JSON array, including
 empty append deltas and stored artifacts whose earlier parts were nil.
+Both built-in task stores refuse tasks whose parts or metadata cannot be
+JSON-encoded, without changing the stored task or its version. Handler
+data must not contain non-finite numbers, functions, channels, or cycles.
 
 The tool result becomes one artifact named `<entity>.<operation>` with a
 data part. Failure mapping:
