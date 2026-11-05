@@ -2,7 +2,9 @@ package a2a
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -42,6 +44,9 @@ func (m *MemoryStore) CreateTask(_ context.Context, rec *TaskRecord) error {
 	if rec == nil {
 		return errors.New("a2a: nil task record")
 	}
+	if _, err := json.Marshal(rec.Task); err != nil {
+		return fmt.Errorf("a2a: marshal task: %w", err)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := taskKey{rec.Owner, rec.Task.ID}
@@ -73,6 +78,9 @@ func (m *MemoryStore) GetTask(_ context.Context, owner, id string) (*TaskRecord,
 func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	if rec == nil {
 		return errors.New("a2a: nil task record")
+	}
+	if _, err := json.Marshal(rec.Task); err != nil {
+		return fmt.Errorf("a2a: marshal task: %w", err)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

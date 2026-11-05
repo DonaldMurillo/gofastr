@@ -232,8 +232,8 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		return "", "", SchemaSnapshot{}, err
 	}
 
-	changes := append(routineDrops, viewDrops...)
-	changes = append(changes, viewRedrops...)
+	changes := append(routineDrops, viewRedrops...)
+	changes = append(changes, viewDrops...)
 	// The snapshot's column sets let a Postgres key change detach the
 	// foreign keys onto its table; it records no constraint names, so
 	// foreign keys themselves are not compared (fks stays nil). The keys a
