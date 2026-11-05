@@ -444,6 +444,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 
 	// ADD COLUMN for declared-but-missing fields.
 	added := map[string]string{} // column → type, for the rebuild below
+	deferredRequired := map[string]bool{}
 	for _, f := range ent.GetFields() {
 		if _, ok := liveLower[strings.ToLower(f.Name)]; ok {
 			continue
@@ -469,6 +470,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 				nullable = " NOT NULL"
 			} else {
 				summary += " (NOT NULL deferred: no default for existing rows)"
+				deferredRequired[f.Name] = true
 			}
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
@@ -736,7 +738,15 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		// the table.
 		rebuildLive := maps.Clone(live)
 		maps.Copy(rebuildLive, added)
-		rebuild, err := sqliteRebuildChange(ent, all, dialect, rebuildLive, renameOldByNew, summary, false)
+		rebuildEntity := *ent
+		rebuildEntity.Config.Fields = slices.Clone(ent.Config.Fields)
+		for index := range rebuildEntity.Config.Fields {
+			field := &rebuildEntity.Config.Fields[index]
+			if deferredRequired[field.Name] {
+				field.Required = false
+			}
+		}
+		rebuild, err := sqliteRebuildChange(&rebuildEntity, all, dialect, rebuildLive, renameOldByNew, summary, false)
 		if err != nil {
 			return nil, err
 		}
