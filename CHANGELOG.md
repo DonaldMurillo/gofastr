@@ -672,6 +672,9 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The admin Failed jobs figure uses localized numbers.** Dashboard
+  and polled counts now use the request locale's digits and grouping,
+  matching the Jobs page and other figures.
 - **App spec packing keeps metadata and controls canonical.** Generated
   descriptions are no longer recovered as authored values. Base URL
   trailing slashes and case-insensitive button values normalize during
