@@ -256,6 +256,13 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: a top-level `AfterList` hook may not change the row
+  count.** A hook that adds or drops rows now fails the list with a 500
+  and a logged reason, on HTTP offset and cursor lists, `ListAll`, typed
+  queries and the entityui and admin screens. Before, the dropped rows
+  still counted in `Total`, `CountAll` and `Count`, so the total said how
+  many rows the hook hid. Filter visibility in `BeforeList`; `AfterList`
+  may still redact, project or reorder.
 - **BREAKING: `CrudHandler.UpsertOne` refuses an entity with
   `BeforeUpdate` hooks.** It returned the stored row after running only
   `BeforeCreate`, so a conflict update skipped the update validators
@@ -733,6 +740,10 @@ few lines, and link the PR or the docs page for the rest.
   window with the shared `not_found` error, Linux `Window.Close` is
   idempotent, and Windows refuses focus, title and frame calls on a
   destroyed handle instead of acting on one the OS may have reused.
+- **`embed.New` refuses a dynamic screen route** (`/reports/:id`) at
+  boot, naming the surface and route. Before, it rendered the pattern
+  as a request path, so the parameter bound to the literal `:id` or a
+  sibling screen answered. Register a static screen for the embed.
 - **Docs corrections.** `SecurityHeadersConfig.Secure` and HSTS
   auto-detection; BackToTop's `ScrollTarget`, an element id with an
   optional `#` rather than a selector; and `OnWindowFrame`, which
