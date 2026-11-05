@@ -2152,6 +2152,9 @@ spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
 
 ## Component CSS
 
+ComponentSheet preserves keyframe step selectors inside every enclosing
+media or container query; only ordinary component selectors are scoped.
+
 Every component-owned stylesheet is registered, served and versioned
 by the host, loaded lazily per-component, dedup'd globally, and
 **always scoped** to `[data-cui-comp="<name>"]`. A first-load page
