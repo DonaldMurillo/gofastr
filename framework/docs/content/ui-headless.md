@@ -427,6 +427,8 @@ The parts the navigation members draw beyond the shared vocabulary:
   carousel with `AutoRotateMS` rotates on its own (the APG carousel
   pattern), turned polite again whenever the rotation is paused. Its
   roledescriptions are `Strings.CarouselRole` / `CarouselSlideRole`.
+  Both the current slide and total use the page locale's digits, on
+  first render and after keyboard, button or automatic steps.
 - **Combobox**: `combobox-form` (the no-script GET form),
   `combobox-input`, `combobox-listbox`, `combobox-option`,
   `combobox-meta` (an option's `Meta` line, its own part so the

@@ -2508,6 +2508,9 @@ The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### The headless layer (`framework/headless`)
 
+Carousel status announcements format both the active index and total in
+the page locale, including updates after the server's first render.
+
 A second way to author a component separates what this section joins:
 structure in one function, classes in a Classes value, behaviour bound by a
 `data-hui-*` hook rather than a class. A headless component renders the
