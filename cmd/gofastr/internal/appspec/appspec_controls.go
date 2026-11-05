@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // The control catalog: app spec block kinds for plain form controls,
@@ -144,7 +145,7 @@ func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error 
 			return nil
 		}
 		for _, ok := range values {
-			if strings.EqualFold(v, ok) {
+			if asciicase.Lower(v) == ok {
 				return nil
 			}
 		}
@@ -229,7 +230,7 @@ func normalizeControlProps(kind string, props map[string]any) map[string]any {
 	}
 	for key, fallback := range defaults {
 		if value, ok := props[key].(string); ok {
-			value = strings.ToLower(value)
+			value = asciicase.Lower(value)
 			if value == "" || value == fallback {
 				delete(props, key)
 			} else {
