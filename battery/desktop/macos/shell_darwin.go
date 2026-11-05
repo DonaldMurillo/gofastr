@@ -124,6 +124,10 @@ func frameOrigin(style desktop.WindowStyle, height int, screenHeight float64) (x
 	return float64(*style.X), screenHeight - float64(*style.Y) - float64(height), true
 }
 
+func styleFrameOrigin(style desktop.WindowStyle, height int, screens []screenInfo) (x, y float64, ok bool) {
+	return frameOrigin(style, height, screenFlipBase(screens))
+}
+
 // applyWindowStyle runs every post-creation style setter. Call on the
 // main thread; the mask half of the style was applied at window
 // creation (windowStyleMask) and the panel class at alloc time.
@@ -166,22 +170,10 @@ func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height in
 	if style.AllSpaces {
 		objc.Send(win, objc.Sel("setCollectionBehavior:"), behaviorCanJoinAllSpaces)
 	}
-	if x, y, ok := frameOrigin(style, height, mainScreenHeight()); ok {
+	if x, y, ok := styleFrameOrigin(style, height, readScreens()); ok {
 		// setFrameOrigin: takes an NSPoint, two doubles.
 		objc.SendF(win, objc.Sel("setFrameOrigin:"), nil, []float64{x, y})
 	}
-}
-
-// mainScreenHeight reads the main screen's frame height, the base the
-// top-left Y flips against. 0 when there is no screen (headless); the
-// caller's frameOrigin answer is then still computed, which parks the
-// window below the visible area rather than crashing.
-func mainScreenHeight() float64 {
-	screen := objc.Send(objc.Class("NSScreen"), objc.Sel("mainScreen"))
-	if screen == 0 {
-		return 0
-	}
-	return objc.SendRectRet(objc.ID(screen), objc.Sel("frame")).H
 }
 
 // ─── desktop.Window frames ───────────────────────────────────────────────────

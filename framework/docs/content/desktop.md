@@ -708,7 +708,9 @@ type WindowStyle struct {
   needs something to be that surface; an unpainted transparent window
   shows the desktop.
 - `X` and `Y` position the window's top-left corner in screen points
-  on the primary screen, measured from its top-left. Set both or
+  on the primary screen, measured from its top-left. On macOS this uses
+  the same origin as remembered frames, even when a different-height
+  secondary screen holds the key window. Set both or
   neither: one alone is a configuration error (the bridge answers
   `invalid_input`; the Go side ignores it and centers).
 
