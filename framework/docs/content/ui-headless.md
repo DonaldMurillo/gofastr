@@ -712,7 +712,9 @@ families:
 
   The sentinel follows the largest threshold among currently connected
   links. Soft navigation or an island replacement can lower that threshold;
-  links removed from the document no longer contribute.
+  links removed from the document no longer contribute, even when a signal
+  empties its HTML region without inserting any replacement nodes. Removing
+  the final link resets the sentinel to zero.
 
 The navigation-behaviour families ship as their own modules, each
 registered the same way:

@@ -40,6 +40,15 @@
   let observer = null;
   const links = new Set();
 
+  function updateThreshold() {
+    let threshold = 0;
+    for (const link of links) {
+      if (!link.isConnected) { links.delete(link); continue; }
+      threshold = Math.max(threshold, parseInt(link.getAttribute('data-hui-back-to-top-threshold'), 10) || 0);
+    }
+    if (sentinel) sentinel.style.height = threshold + 'px';
+  }
+
   function applyVisible(visible) {
     for (const link of Array.from(links)) {
       if (!link.isConnected) { links.delete(link); continue; }
@@ -64,6 +73,7 @@
       s.style.cssText = 'position:absolute;top:0;left:0;width:1px;pointer-events:none;';
       return s;
     });
+    if (!observer) new MutationObserver(updateThreshold).observe(document.body, { childList: true, subtree: true });
     if (observer) observer.disconnect();
     observer = new IntersectionObserver(function (entries) {
       applyVisible(!entries[0].isIntersecting);
@@ -366,12 +376,7 @@
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const link of within(scope, '[data-hui-back-to-top]')) armLink(link);
-    let threshold = 0;
-    for (const link of links) {
-      if (!link.isConnected) { links.delete(link); continue; }
-      threshold = Math.max(threshold, parseInt(link.getAttribute('data-hui-back-to-top-threshold'), 10) || 0);
-    }
-    if (sentinel) sentinel.style.height = threshold + 'px';
+    updateThreshold();
     // A ShortcutHint with a BindTarget names its target's selector:
     // nothing to arm (the chord itself rides -focus/-click on the
     // target or its wrapper), but reading it here keeps the marker an
