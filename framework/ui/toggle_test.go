@@ -209,7 +209,7 @@ func TestRadioGroupStructure(t *testing.T) {
 	for _, want := range []string{
 		"<fieldset", "</fieldset>", "<legend", "Notification frequency",
 		`class="fui-choice-group"`, `id="freq-group"`,
-		`type="radio"`, `name="freq"`, `id="freq-group-all"`, `id="freq-group-none"`,
+		`type="radio"`, `name="freq"`, `id="freq-group-0"`, `id="freq-group-1"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in:\n%s", want, h)

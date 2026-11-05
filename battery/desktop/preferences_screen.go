@@ -144,7 +144,7 @@ func boolField(ctx context.Context, d Preference, v bool) render.HTML {
 	// core-ui/runtime/src/rpc.js).
 	return render.Join(
 		html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
-		ui.Checkbox(ui.ToggleConfig{Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: "true", Checked: v, Help: helpText(ctx, d)}),
+		ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: "true", Checked: v, Help: helpText(ctx, d)}),
 	)
 }
 

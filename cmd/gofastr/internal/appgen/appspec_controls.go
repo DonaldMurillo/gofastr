@@ -80,6 +80,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		}
 		return "ui.TextField(ui.TextFieldConfig{" + f.String() + "})", true
 	case "checkbox", "switch":
+		f.raw("Ctx", "ctx")
 		f.str("Name", appspec.AppSpecProp(block, "name"))
 		f.text(bp, "Label", appspec.AppSpecProp(block, "label"))
 		f.flag("Checked", appspec.AppSpecBoolProp(block, "checked"))
@@ -107,6 +108,7 @@ func renderAppSpecControlBlock(bp appspec.AppSpec, block appspec.AppSpecBlock, c
 		f.flag("Disabled", appspec.AppSpecBoolProp(block, "disabled"))
 		return "ui.Select(ui.SelectConfig{" + f.String() + "})", true
 	case "radio_group":
+		f.raw("Ctx", "ctx")
 		choices, _ := appspec.AppSpecChoices(block)
 		opts := make([]string, len(choices))
 		for i, c := range choices {

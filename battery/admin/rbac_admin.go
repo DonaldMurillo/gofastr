@@ -77,7 +77,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 		}
 		cells := map[string]render.HTML{"permission": ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, name...)}
 		for i, role := range roles {
-			cell := ui.ToggleConfig{
+			cell := ui.ToggleConfig{Ctx: ctx,
 				Name:        "grant",
 				ID:          "admin-grant-" + strconv.Itoa(i) + "-" + strconv.Itoa(j),
 				LabelHidden: true,

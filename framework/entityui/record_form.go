@@ -768,7 +768,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		// scalar, so false round-trips.
 		return render.Join(
 			html.Input(html.InputConfig{Type: "hidden", Name: f.Name, Value: "false"}),
-			ui.Switch(ui.ToggleConfig{Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
+			ui.Switch(ui.ToggleConfig{Ctx: ctx, Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
 		)
 	case schema.Enum:
 		stale := val != "" && !slices.Contains(f.Values, val)

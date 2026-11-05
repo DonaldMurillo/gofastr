@@ -22,6 +22,12 @@ family (hint/error or repeater items), while explicit IDs reserve that
 family unchanged. Sibling controls with the same field name therefore
 keep their own labels and descriptions when rendered with a page scope.
 
+Radio and checkbox groups claim their group, description and indexed
+leaf IDs as one scoped family. Leaf identity is the option index, never
+the value's lossy slug. Standalone radio, checkbox and switch configs
+carry `Ctx` too; a Switch allocates its control ID once and reuses it for
+its message, even when another switch has the same submitted name.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching

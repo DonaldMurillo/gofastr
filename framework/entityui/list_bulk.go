@@ -136,7 +136,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 // selectCell is one row's checkbox in the select column, a control of
 // the bulk bar's form named by the row's title.
 func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]any, i int) render.HTML {
-	return ui.Checkbox(ui.ToggleConfig{
+	return ui.Checkbox(ui.ToggleConfig{Ctx: ctx,
 		Name:        "ids",
 		ID:          lb.form + "-sel-" + strconv.Itoa(i),
 		Value:       s.m.rowID(row),

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"maps"
 
@@ -28,6 +29,8 @@ import (
 
 // ToggleConfig configures a Checkbox/Radio/Switch.
 type ToggleConfig struct {
+	// Ctx carries the render ID scope for the control and its descriptions.
+	Ctx context.Context
 	// Name is the form-field name. Required.
 	Name string
 
@@ -43,9 +46,8 @@ type ToggleConfig struct {
 	LabelHidden bool
 
 	// ID is the input element's id. When empty, defaults to Name
-	// (Checkbox/Switch, one per name) or Name-slug(Value) (Radio, so
-	// each input in a group gets a distinct id and no two labels
-	// point at the same control).
+	// (Checkbox/Switch) or Name-slug(Value) (Radio), claimed within Ctx's
+	// ID scope so repeated names and punctuation-equivalent values stay apart.
 	ID string
 
 	// Value is the form-submit value (for checkboxes / radios sharing
@@ -114,14 +116,14 @@ func Switch(cfg ToggleConfig) render.HTML {
 	// errored choice uses. The message sits OUTSIDE the label, so it
 	// is not part of the control's name — the input's described-by
 	// must point at it or it is decoration.
-	id := choiceID(cfg.ID, "checkbox", cfg.Name, cfg.Value)
+	id := choiceID(cfg.Ctx, cfg.ID, "checkbox", cfg.Name, cfg.Value)
 	// A caller's Class reaches the root the same way Checkbox and
 	// Radio carry it; both render paths below go through this map.
 	classes := withRootClass(switchClasses, cfg.Class)
 	if cfg.Error == "" && cfg.Help == "" {
-		return toggleStyle.WrapHTML(headless.Switch(switchProps(cfg), classes))
+		return toggleStyle.WrapHTML(headless.Switch(switchProps(cfg, id), classes))
 	}
-	p := switchProps(cfg)
+	p := switchProps(cfg, id)
 	if cfg.Error != "" {
 		p.Extra["aria-invalid"] = "true"
 		p.Extra["aria-describedby"] = id + "-error"
@@ -134,8 +136,7 @@ func Switch(cfg ToggleConfig) render.HTML {
 }
 
 // switchProps maps the shared config onto headless.Switch.
-func switchProps(cfg ToggleConfig) headless.SwitchProps {
-	id := choiceID(cfg.ID, "checkbox", cfg.Name, cfg.Value)
+func switchProps(cfg ToggleConfig, id string) headless.SwitchProps {
 	extra := html.Attrs{}
 	maps.Copy(extra, html.SafeExtraAttrs(cfg.ExtraAttrs))
 	// The label's for= relationship no longer exists as a pair (the
@@ -154,14 +155,11 @@ func switchProps(cfg ToggleConfig) headless.SwitchProps {
 
 // choiceID derives the input id: the caller's when given, else the
 // name (checkbox/switch) or the name and the value's slug (radio).
-func choiceID(callerID, inputType, name, value string) string {
-	if callerID != "" {
-		return callerID
-	}
+func choiceID(ctx context.Context, callerID, inputType, name, value string) string {
 	if inputType == "radio" && value != "" {
-		return name + "-" + slug(value)
+		name += "-" + slug(value)
 	}
-	return name
+	return scopedControlID(ctx, callerID, name, "-hint", "-error")
 }
 
 func renderToggle(inputType string, cfg ToggleConfig) render.HTML {
@@ -171,7 +169,7 @@ func renderToggle(inputType string, cfg ToggleConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: " + inputType + " requires Label")
 	}
-	id := choiceID(cfg.ID, inputType, cfg.Name, cfg.Value)
+	id := choiceID(cfg.Ctx, cfg.ID, inputType, cfg.Name, cfg.Value)
 	hint := cfg.Help
 	if cfg.Error != "" {
 		hint = ""
@@ -262,6 +260,8 @@ type RadioGroupOption struct {
 
 // RadioGroupConfig configures a group of radio buttons.
 type RadioGroupConfig struct {
+	// Ctx carries the render ID scope for the group and its leaf IDs.
+	Ctx context.Context
 	// Name is the shared form-field name for all radios (required).
 	Name string
 	// Legend is the group label rendered as <legend> (required).
@@ -291,6 +291,7 @@ type RadioGroupConfig struct {
 func RadioGroup(cfg RadioGroupConfig) render.HTML {
 	return renderToggleGroup(toggleGroupSpec{
 		kind:     "RadioGroup",
+		ctx:      cfg.Ctx,
 		leafType: "radio",
 		name:     cfg.Name,
 		legend:   cfg.Legend,
@@ -314,6 +315,8 @@ type CheckboxGroupOption struct {
 
 // CheckboxGroupConfig configures a group of checkboxes.
 type CheckboxGroupConfig struct {
+	// Ctx carries the render ID scope for the group and its leaf IDs.
+	Ctx context.Context
 	// Name is the shared form-field name for all checkboxes (required).
 	Name string
 	// Legend is the group label rendered as <legend> (required).
@@ -340,6 +343,7 @@ type CheckboxGroupConfig struct {
 func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 	return renderToggleGroup(toggleGroupSpec{
 		kind:     "CheckboxGroup",
+		ctx:      cfg.Ctx,
 		leafType: "checkbox",
 		name:     cfg.Name,
 		legend:   cfg.Legend,
@@ -383,6 +387,7 @@ func normalizeCheckboxOptions(in []CheckboxGroupOption) []toggleGroupOption {
 // toggleGroupSpec is the shared body of the two group components: the
 // common config fields plus the leaf input type that differs.
 type toggleGroupSpec struct {
+	ctx      context.Context
 	kind     string // component name used in panic messages
 	leafType string // "radio" or "checkbox"
 	name     string
@@ -410,10 +415,11 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 		panic("ui: " + spec.kind + " requires Legend")
 	}
 
-	id := spec.id
-	if id == "" {
-		id = spec.name + "-group"
+	family := []string{"-hint", "-error"}
+	for index := range spec.options {
+		family = append(family, fmt.Sprintf("-%d", index))
 	}
+	id := scopedControlID(spec.ctx, spec.id, spec.name+"-group", family...)
 
 	// extra arrives pre-sanitized (each group function routes
 	// cfg.ExtraAttrs through html.SafeExtraAttrs; the contract test
@@ -425,11 +431,8 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 	}
 
 	items := make([]render.HTML, 0, len(spec.options)+1)
-	for i, opt := range spec.options {
-		optID := id + "-" + slug(opt.value)
-		if opt.value == "" {
-			optID = fmt.Sprintf("%s-%d", id, i)
-		}
+	for index, opt := range spec.options {
+		optID := fmt.Sprintf("%s-%d", id, index)
 		// Group sees each leaf as slot content; it is built here from
 		// Options' strings, so it is marked here.
 		leaf := headless.Own(headless.Choice(headless.ChoiceProps{
