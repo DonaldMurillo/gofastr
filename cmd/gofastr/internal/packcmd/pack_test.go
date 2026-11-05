@@ -802,6 +802,7 @@ func TestPack_ReadApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
+	a.App.Description = "Meridian is the revenue console for modern SaaS: customers, subscriptions, invoices, and live MRR in one calm place."
 	dir := meridianWithEnv(t, a)
 	app, err := packReadApp(dir)
 	if err != nil {
@@ -824,14 +825,14 @@ func TestPack_ReadScreens(t *testing.T) {
 }
 
 // TestPack_MeridianRoundTrip is the acceptance gate: packing the generated
-// Meridian app reconstructs a App spec equal to the one parsed from the
-// authored gofastr.yml. As features are added, this catches generator/pack
-// divergence.
+// Meridian app reconstructs its authored spec plus the description customized
+// in main.go. As features are added, this catches generator/pack divergence.
 func TestPack_MeridianRoundTrip(t *testing.T) {
 	a, err := appspec.DecodeAppSpecFile(clitest.MeridianYML())
 	if err != nil {
 		t.Fatalf("parse meridian.yml: %v", err)
 	}
+	a.App.Description = "Meridian is the revenue console for modern SaaS: customers, subscriptions, invoices, and live MRR in one calm place."
 	dir := meridianWithEnv(t, a)
 	b, err := packAppSpec(dir)
 	if err != nil {
