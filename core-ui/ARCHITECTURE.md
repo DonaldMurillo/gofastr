@@ -1399,7 +1399,9 @@ CRUD refusal `fields` and `field_reasons` use the response wire keys,
 including explicit `WireName` overrides. To place those errors on forms
 whose controls use database-column names, formerrors first tries the
 exact key, then its camelCase-to-snake_case spelling. Explicit wire-name
-overrides should be used as control names when they differ from both.
+overrides should be used as control names when they differ from both;
+entityui does this automatically for all generated controls and conditional
+dependencies, while keeping schema lookups and control IDs column-based.
 
 ### Host transport (`__gofastr_transport`)
 

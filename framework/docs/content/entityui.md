@@ -35,6 +35,14 @@ panics there, and so does a view with no `Where`, since
 Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
 
+Generated form controls use a field's explicit `WireName` as their submitted
+name, or its database column name when no override is set. This keeps CRUD's
+wire-keyed validation and constraint refusals attached to the right control.
+Conditional fields follow the same input names; schema names, IDs, display
+configuration, and relation-picker field parameters remain column-based.
+Multipart forms accept the same aliases, including file and checkbox inputs,
+and refuse distinct aliases for one column before saving any uploaded file.
+
 ## Mounting app-owned screens
 
 The builders draw components; your app registers their screen routes.

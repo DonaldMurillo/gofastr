@@ -200,7 +200,10 @@ the entity.
 
 A `Blob` (a `File` is one) as the value of an Image or File field sends
 that create, update or patch as multipart/form-data, every part named
-by its column; `client.d.ts` types those fields `string | Blob`. A
+by its column; `client.d.ts` types those fields `string | Blob`. CRUD also
+accepts response wire keys, including explicit `WireName` overrides, for
+multipart values and file parts. Distinct names resolving to one column are
+refused before uploads are saved. A
 multipart body cannot carry `null`, so clear a field in a separate JSON
 patch. A file over 32 MiB, or a body over 64 MiB, throws before
 anything is sent. A batch goes as JSON, so `batchCreate` and

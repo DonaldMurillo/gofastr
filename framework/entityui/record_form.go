@@ -544,7 +544,7 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 	h := fb.control(ctx, f, label)
 	if sw := fb.m.hint(f.Name).ShowWhen; sw != "" && h != "" {
 		if cond, err := parseShowWhen(fb.m, sw); err == nil {
-			cfg := ui.ConditionalFieldConfig{WhenName: cond.field, Children: []render.HTML{h}}
+			cfg := ui.ConditionalFieldConfig{WhenName: fb.m.inputName(cond.field), Children: []render.HTML{h}}
 			if len(cond.values) == 1 {
 				cfg.WhenValue = cond.values[0]
 			} else {
@@ -627,13 +627,13 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 	switch f.Type {
 	case schema.Enum:
 		return ui.Select(ui.SelectConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Help: help,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Help: help,
 			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options:     enumOptions(ctx, fb.m, f, ""),
 		})
 	case schema.Bool:
 		return ui.Select(ui.SelectConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Help: help,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Help: help,
 			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options: []ui.SelectOption{
 				{Value: "true", Text: i18nui.EntityYes.Text(ctx)},
@@ -669,7 +669,7 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 		if f.Type == schema.Text || f.Type == schema.JSON {
 			input = ui.TextArea(ui.TextAreaConfig{
 				Ctx:  ctx,
-				Name: f.Name, Label: label, ID: id, Rows: 4, Help: help, Placeholder: ph,
+				Name: fb.m.inputName(f.Name), Label: label, ID: id, Rows: 4, Help: help, Placeholder: ph,
 				Required: true, ExtraAttrs: owner,
 			})
 		} else {
@@ -677,7 +677,7 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 				Label: label, For: id, Help: help, Required: true,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{
-						Field: c, Type: inputType(f), Name: f.Name, Placeholder: ph,
+						Field: c, Type: inputType(f), Name: fb.m.inputName(f.Name), Placeholder: ph,
 						ExtraAttrs: owner,
 					})
 				},
@@ -705,19 +705,19 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	switch f.Type {
 	case schema.String:
 		return ui.TextField(ui.TextFieldConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Placeholder: ph,
 			Help: help, Required: required, LabelHidden: fb.compact,
 			ExtraAttrs: patternAttr(f.Pattern),
 		})
 	case schema.Text:
 		return ui.TextArea(ui.TextAreaConfig{
 			Ctx:  ctx,
-			Name: f.Name, Label: label, ID: id, Value: val, Rows: 4, Placeholder: ph,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Rows: 4, Placeholder: ph,
 			Help: help, Required: required,
 		})
 	case schema.JSON:
 		return ui.TextArea(ui.TextAreaConfig{
-			Name: f.Name, Label: label, ID: id, Value: val, Rows: 6, Placeholder: ph,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Rows: 6, Placeholder: ph,
 			Help: help, Required: required, Monospace: true, JSON: true, Ctx: ctx,
 		})
 	case schema.Int:
@@ -727,12 +727,12 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		if fb.compact || !required {
 			step := 1.0
 			return ui.NumberField(ui.NumberFieldConfig{Ctx: ctx,
-				Name: f.Name, Label: label, ID: id, Value: val, LabelHidden: fb.compact,
+				Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, LabelHidden: fb.compact,
 				Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 			})
 		}
 		return ui.NumberInput(ui.NumberInputConfig{
-			Name: f.Name, Label: label, ID: id, Value: intInputValue(val), Ctx: ctx,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: intInputValue(val), Ctx: ctx,
 			Help: help, Required: required, Min: intBound(f.Min), Max: intBound(f.Max),
 		})
 	case schema.Float, schema.Decimal:
@@ -743,7 +743,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			step = 1e-9
 		}
 		return ui.NumberField(ui.NumberFieldConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph, LabelHidden: fb.compact,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Placeholder: ph, LabelHidden: fb.compact,
 			Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 		})
 	case schema.Bool:
@@ -754,7 +754,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			// which keeps the column NULL on update; yes or no sets it,
 			// and the switch returns on the next edit.
 			return ui.Select(ui.SelectConfig{Ctx: ctx,
-				Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
+				Name: fb.m.inputName(f.Name), Label: label, ID: id, Help: help, LabelHidden: fb.compact,
 				Options: []ui.SelectOption{
 					{Value: "", Text: i18nui.EntityNotSet.Text(ctx), Selected: true},
 					{Value: "true", Text: i18nui.EntityYes.Text(ctx)},
@@ -767,14 +767,14 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		// runtime's serializer folds exactly this pair into one
 		// scalar, so false round-trips.
 		return render.Join(
-			html.Input(html.InputConfig{Type: "hidden", Name: f.Name, Value: "false"}),
-			ui.Switch(ui.ToggleConfig{Ctx: ctx, Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
+			html.Input(html.InputConfig{Type: "hidden", Name: fb.m.inputName(f.Name), Value: "false"}),
+			ui.Switch(ui.ToggleConfig{Ctx: ctx, Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
 		)
 	case schema.Enum:
 		stale := val != "" && !slices.Contains(f.Values, val)
 		if len(f.Values) <= 4 && required && !fb.compact && !stale {
 			return ui.SegmentedControl(ui.SegmentedControlConfig{
-				Name: f.Name, ID: id, Label: label,
+				Name: fb.m.inputName(f.Name), ID: id, Label: label,
 				Options:  enumSegments(ctx, fb.m, f),
 				Selected: val,
 			})
@@ -797,18 +797,18 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			}}, opts...)
 		}
 		return ui.Select(ui.SelectConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Help: help, LabelHidden: fb.compact,
 			Placeholder: ph, Options: opts, Required: required,
 		})
 	case schema.Date:
 		return ui.DateField(ui.DateFieldConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Value: dateInputValue(val),
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: dateInputValue(val),
 			Help: help, Required: required, LabelHidden: fb.compact,
 		})
 	case schema.Timestamp:
 		v := timestampInputValue(val)
 		return ui.DateTimeField(ui.DateTimeFieldConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Value: v, Step: timestampStep(v),
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: v, Step: timestampStep(v),
 			Help: help, Required: required,
 		})
 	case schema.Relation:
@@ -820,7 +820,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		// Without storage the stored URL stays editable; a preview sits
 		// above it.
 		field := ui.TextField(ui.TextFieldConfig{Ctx: ctx,
-			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Placeholder: ph,
 			Help: help, Required: required,
 		})
 		if t := fb.b.ui.fileValue(f, label, val, ui.ThumbnailLG); t != "" {
@@ -830,7 +830,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	case schema.UUID:
 		if fb.create {
 			return ui.TextField(ui.TextFieldConfig{Ctx: ctx,
-				Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph, Help: help,
+				Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Placeholder: ph, Help: help,
 			})
 		}
 		// A stored UUID is the server's: read-only with a copy affordance.
@@ -839,7 +839,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		return ui.FormField(ui.FormFieldConfig{
 			Label: label, For: id, Help: help,
 			Input: func(c headless.FieldControl) render.HTML {
-				return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: f.Name, Value: val, Placeholder: ph})
+				return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: fb.m.inputName(f.Name), Value: val, Placeholder: ph})
 			},
 		})
 	}
@@ -892,7 +892,7 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	kctx := i18n.WithTranslator(asCaller(ctx), fb.m.tr)
 	return contain(kctx, fb.m.name, "input "+f.Name, func() (render.HTML, error) {
 		return kind.Input(InputContext{
-			Ctx: kctx, Entity: fb.m.name, Field: f, Name: f.Name, Value: val, Placeholder: ph,
+			Ctx: kctx, Entity: fb.m.name, Field: f, Name: fb.m.inputName(f.Name), Value: val, Placeholder: ph,
 			Label: label, Help: help, Control: headless.FieldControl{ID: id, Required: f.Required},
 		}), nil
 	})

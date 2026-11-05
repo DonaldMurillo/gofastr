@@ -65,7 +65,7 @@ func (fb *formBuilder) relationPicker(ctx context.Context, f schema.Field, label
 		}
 	}
 	return ui.Picker(ui.PickerConfig{
-		Name: f.Name, ID: id, Label: label, Help: help,
+		Name: fb.m.inputName(f.Name), ID: id, Label: label, Help: help,
 		Required:    f.Required && !fb.masked[f.Name],
 		Value:       cur,
 		ValueLabel:  valueLabel,

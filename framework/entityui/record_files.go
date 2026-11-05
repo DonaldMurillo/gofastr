@@ -83,7 +83,7 @@ func (fb *formBuilder) uploadInput(ctx context.Context, f schema.Field, label, h
 		accept = strings.Join(file.ImageTypes, ",")
 	}
 	input := ui.FileUpload(ui.FileUploadConfig{
-		Name: f.Name, ID: id, Label: label, Accept: accept,
+		Name: fb.m.inputName(f.Name), ID: id, Label: label, Accept: accept,
 		Required:  required && val == "",
 		MaxSizeMB: uploadMaxMB,
 		Help:      help,
