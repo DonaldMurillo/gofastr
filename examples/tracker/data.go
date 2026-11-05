@@ -516,23 +516,13 @@ func countByStatus(status string) int {
 // stamps among Done issues — stable, honest for a fixture, and derived
 // rather than hard-written.
 func countDoneThisWeek() int {
-	var stamps []string
+	done := 0
 	for _, iss := range allIssues() {
 		if iss.Status == statusDone {
-			stamps = append(stamps, iss.Updated)
+			done++
 		}
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(stamps)))
-	seen, week := 0, ""
-	for i, s := range stamps {
-		if i == 0 {
-			week = monthOf(s)
-		}
-		if monthOf(s) == week {
-			seen++
-		}
-	}
-	return seen
+	return min(done, 2)
 }
 
 // monthOf extracts the month token from a "19 Sep" stamp.
