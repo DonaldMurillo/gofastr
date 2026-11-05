@@ -702,7 +702,9 @@ first paint's head, and on insertion after a client navigation.
 
 Rules the code enforces, each failing loudly instead of silently:
 
-- **Mount validation** (`NewLayout` panics): duplicate outlet name
+- **Mount validation** (`NewLayout` panics): layout, outlet and area names
+  outside ASCII letters, digits, `-` and `_` (empty names included);
+  duplicate area or outlet name
   in one layout; a handle bound to two layouts; `FallbackNotFound`
   beside a `Default`; an invalid view-transition name; both the static
   `Transition` and the per-request `Transitions` set. A mistyped outlet
