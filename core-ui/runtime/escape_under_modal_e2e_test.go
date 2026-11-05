@@ -121,6 +121,16 @@ func TestEscapeClosesPopoverAboveModal(t *testing.T) {
 		chromedp.Poll(`window.__gofastr._modalStack.length === 1`, nil, chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Evaluate(`window.__gofastr.openWidget('pop')`, nil, chromedp.EvalAsValue),
 		chromedp.Poll(`!!document.querySelector('[data-cui-widget="pop"]')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`(() => {
+			window.imeEscapeKeptWidgets = true;
+			for (const composition of [{isComposing: true}, {isComposing: false, keyCode: 229}]) {
+				const event = new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true, ...composition});
+				document.querySelector('[data-cui-widget="pop"] button')?.dispatchEvent(event);
+				window.imeEscapeKeptWidgets &&= !event.defaultPrevented && Object.keys(window.__gofastr._widgets).sort().join(',') === 'dlg,pop';
+			}
+			if (!window.imeEscapeKeptWidgets) throw new Error('IME Escape dismissed a widget');
+		})()`, nil),
+		chromedp.Poll(`window.imeEscapeKeptWidgets === true`, nil),
 		chromedp.Evaluate(esc, nil),
 		chromedp.Sleep(200*time.Millisecond),
 		chromedp.Evaluate(open, &first),

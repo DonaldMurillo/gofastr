@@ -459,7 +459,11 @@ The parts the navigation members draw beyond the shared vocabulary:
   A second Escape clears a nonempty query and notifies input listeners
   without reopening the list or retaining an active option.
   IME composition owns its Escape key, including Safari's keyCode 229
-  event after `isComposing` becomes false; the popup remains open.
+  event after `isComposing` becomes false; both the popup and any
+  enclosing disclosure, widget or intercepted drawer remain open,
+  even when the listbox is already closed. Escape consumers ignore
+  either composition indicator without clearing text or preventing
+  the input method's default action.
   Pointer picks consume only unmodified primary clicks. Modified and
   non-primary clicks are left alone. An enabled option with a safe `Href`
   renders `<li role="none"><a role="option" href="…" tabindex="-1">…</a></li>`:

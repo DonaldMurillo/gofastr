@@ -588,7 +588,7 @@
   };
 
   document.addEventListener('keydown', (e) => {
-    if (!layers.length || e.key !== 'Escape') return;
+    if (!layers.length || e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
     // Surfaces inside the layer that own Escape themselves consume it:
     // a modal widget, an open dropdown, an overlay-mode pane host.
     if (modalOwnsKeys() || document.querySelector('[data-cui-dropdown-open],[data-hui-pane-mode="overlay"]')) return;

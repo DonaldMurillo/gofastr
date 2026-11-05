@@ -1634,7 +1634,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestHistoryRefocusesFreshPane pin post-refresh focus handoff.
 		// 3759 measured with both sets combined. Pinned at the measured
 		// size plus 2 clearance.
-		"intercept": 3761,
+		// 3778 measured: TestComboboxIMEKeepsSurfaces pins the IME
+		// Escape guard on an intercepted drawer, including keyCode 229.
+		"intercept": 3780,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
