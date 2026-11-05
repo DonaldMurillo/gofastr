@@ -6,8 +6,9 @@ follow-up query per relation per nesting level, never one per parent
 row.
 
 Repeated mentions of one relation merge their attached rows before read hooks
-run. Each relation's `AfterList` chain (and `AfterGet` for to-one relations)
-runs once over those rows, including when mentions have different filters.
+run. Each relation's `AfterList` chain runs once over the combined rows,
+including when mentions have different filters. For to-one relations, the
+`AfterGet` chain runs once per distinct attached row.
 
 ## Quickstart
 
