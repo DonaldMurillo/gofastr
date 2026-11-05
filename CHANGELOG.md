@@ -712,6 +712,12 @@ few lines, and link the PR or the docs page for the rest.
   whose key is not a declared field is refused before any child is
   written. Before, the child was written and reported attached with no
   link stored.
+- **`UpsertOne` refuses nested writes.** A body carrying a non-null
+  value for a cascade-write relation returns a `ValidationError`
+  (`validation.cascade_upsert_unsupported`) naming each relation, before
+  hooks run or a row is written. Before, upsert saved the parent and
+  dropped the children without an error. Send nested writes through
+  `CreateOne` or `UpdateOne`.
 - **Typed reads survive self-embedding structs.** An entity struct that
   embeds a pointer to itself, or two that embed each other, no longer
   overflows the stack on every typed read.
