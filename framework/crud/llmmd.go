@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -293,7 +294,8 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 				b.WriteString(",\n")
 			}
 			first = false
-			fmt.Fprintf(&b, "  \"%s\": \"<value>\"", wireKey(f.Name))
+			key, _ := json.Marshal(wireKey(f.Name))
+			fmt.Fprintf(&b, "  %s: \"<value>\"", key)
 		}
 		b.WriteString("\n}\n```\n")
 		b.WriteString("**Response:** `201` with `{\"data\": { ... }}`.\n")

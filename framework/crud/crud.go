@@ -420,6 +420,28 @@ func (ch *CrudHandler) convertKey(col string) string {
 	if wk, ok := ch.snapshot().wireKeyOf[col]; ok {
 		return wk
 	}
+	if relationName, childPath, nested := strings.Cut(col, "."); nested && ch.Entity != nil {
+		for _, relation := range ch.Entity.Config.Relations {
+			if relation.Name != relationName {
+				continue
+			}
+			target, err := entity.ResolveTarget(ch.Registry, ch.Entity, relation.Entity)
+			if err != nil || target == nil {
+				break
+			}
+			child := NewCrudHandler(target, ch.DB).WithJSONCase(ch.JSONCase)
+			child.Registry = ch.Registry
+			prefix := ch.convertKey(relationName) + "."
+			if relation.Type == entity.RelHasMany || relation.Type == entity.RelManyToMany {
+				if index, rest, indexed := strings.Cut(childPath, "."); indexed {
+					if _, err := strconv.ParseUint(index, 10, 64); err == nil {
+						return prefix + index + "." + child.convertKey(rest)
+					}
+				}
+			}
+			return prefix + child.convertKey(childPath)
+		}
+	}
 	return ch.convertKeyRaw(col)
 }
 
