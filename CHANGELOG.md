@@ -672,6 +672,41 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The SDK reference omits writes for read-only mounts.** Pass the new
+  `sdkdocs.Config.ReadOnlyMounted` (`App.EntityReadOnlyMounted`) and an
+  `App.View` page lists only its reads and event feed, with no create,
+  update, delete, batch or state-move rows. The quickstart and list
+  notes no longer assume a `created_at` sort column.
+- **`uinodev1` caps props arrays.** `Limits.MaxPropItems` (default 128)
+  bounds data-table rows, columns and cells and detail-list and
+  key-value items. A tree over the cap is refused whole; before, a table
+  could carry any number of empty rows.
+- **Widget catalogs match pages with escaped paths.** The catalog
+  decodes the runtime's `?page=` value once, so a widget scoped to
+  `/café` shows there, and a malformed escape answers 400.
+- **Signal bindings refuse prototype keys.** `BindHTML`, `BindText`,
+  `BindAttr` and `AnimateOnSignal` now panic on `__proto__`,
+  `constructor` or `prototype`, as the signal mutation helpers already
+  did.
+- **`OptimisticUpdate` buttons no longer submit their form.** They
+  render `type="button"`.
+- **Section menu counts use the page locale.** The filtered `shown/total`
+  ratio and the total format both numbers through the runtime's
+  number formatter, and the number-fill lint now catches a count ratio
+  written with ASCII digits.
+- **`gofastr init` checks agent onboarding paths before it writes.** A
+  hand-written agent detail file or an unreadable host skill stops init
+  before any scaffold file or secret is replaced.
+- **Singular names keep their final e.** houses, causes, blouses,
+  movies and ties singularize to house, cause, blouse, movie and tie.
+- **`gofastr desktop --version` accepts semver prerelease and build
+  suffixes.** The Windows file version comes from the numeric core
+  (`1.2.3-rc.1` gives 1.2.3.0) and ProductVersion keeps the full text.
+- **Example and doc fixes.** Ecommerce order totals round to the
+  columns' four-place scale on SQLite. `CreateOne` docs say rows come
+  back keyed by wire key, the factory docs drop a `Suite` that does not
+  exist, and the routegroup examples mount entities through
+  `App.GroupEntity`.
 - **View event streams work.** `App.View` handlers now carry the app's
   event bus, so a view's stream route serves events instead of always
   answering 503. Writes to the underlying tables do not publish view
