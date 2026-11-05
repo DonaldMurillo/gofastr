@@ -60,17 +60,18 @@
 
   // live swaps in the server's render of the page for q. The answer is
   // a navigation answer, so it is read the way the router reads one: a
-  // session rollover lands on the stream meta before anything else (the
-  // cookie already moved), and a policy redirect goes to the router.
+  // only the current answer may roll the session forward and invalidate
+  // cached identities; a policy redirect then goes to the router.
   async function live(sec, q, n) {
     const url = location.pathname + (q ? '?q=' + encodeURIComponent(q) : '');
     const r = await hostFetch(url, {
       credentials: 'same-origin',
       headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': NS._markup || '2', 'X-Gofastr-From': location.pathname },
     });
+    if (!current(sec, n)) return;
     const rs = r.headers.get('X-Gofastr-Session'), meta = rs && document.querySelector('meta[name="gofastr-sse"]');
     if (meta) meta.setAttribute('content', meta.getAttribute('content').replace(/([?&]session=)[^&]*/, function (_, p) { return p + rs; }));
-    if (!current(sec, n)) return;
+    if (rs && NS.invalidate) NS.invalidate('*');
     const to = r.headers.get('X-Gofastr-Location');
     if (to) return NS.navigate(to, { replace: true });
     if (!r.ok) throw new Error('sitesearch-page: ' + r.status);

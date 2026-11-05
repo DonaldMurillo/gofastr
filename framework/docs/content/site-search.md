@@ -212,6 +212,9 @@ renders) updates the page in place as the reader types:
   way the client router fetches a partial, and swaps in the status line,
   the list and the pager. The input is never replaced, so focus and caret
   stay put. Pager links are ordinary links the router follows.
+  Only the current query's response may update the stream session; a
+  session rollover also clears the router's page caches so pages from a
+  previous identity cannot replay. Late responses are ignored.
 - In a static export there is no server to render the page, so the module
   ranks with `sitesearch-static` and draws the same markup itself. A query
   in the address (`/search?q=table`) runs on load. Instead of page links it
