@@ -382,7 +382,9 @@ Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
 type carries `USING col::INTEGER` (or the declared integer type), so
 numeric text converts and anything else fails the migration; a text
 default is dropped before the retype and the declared default set
-after it, since Postgres cannot cast the old one; other
+after it, since Postgres cannot cast the old one. When a generated rollback
+uses that conversion, it restores the original default recorded in the schema
+snapshot, including on a column renamed in the same migration. Other
 changes may still need a data-specific `USING` clause, so review and
 hand-tighten. A `String` whose `Max` changed is a type change on
 Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE

@@ -526,6 +526,10 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	// see the post-rename/post-add/post-drop column set).
 	var sqliteRetypes []retypeCol
 	defaultOwned := map[string]bool{}
+	var previousConstraints map[string]colConstraint
+	if env != nil {
+		previousConstraints, _ = recordedConstraints(lookupStringCase(env.tableDDL, ent.GetTable()))
+	}
 	for _, f := range ent.GetFields() {
 		if f.RawType != "" {
 			continue // operator-supplied raw type (domains, arrays, custom types), not reliably diffable against the live DB type, which reports the underlying type
@@ -556,10 +560,14 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if isTextType(liveType) && isIntegerType(declaredType) {
 			defaultOwned[nameLow] = true // the USING form sets the declared default
 		}
+		source := nameLow
+		if old, renamed := renameOldByNew[nameLow]; renamed {
+			source = old
+		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
 			SQL:         alterColumnTypeSQL(qtable, qcol, liveType, declaredType, ColumnDefaultClause(f, dialect)),
-			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, ""),
+			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, previousConstraints[source].dflt),
 			Destructive: true,
 		})
 	}
