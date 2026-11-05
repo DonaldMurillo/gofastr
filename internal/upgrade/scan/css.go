@@ -329,6 +329,9 @@ func (s *selectorRun) add(t ownstyle.Token) {
 	}
 	s.space = false
 	s.starts = append(s.starts, selectorTok{off: s.text.Len(), line: t.Line, col: t.Col})
+	if t.Type == ownstyle.TokenIdent {
+		t.Text = cssUnescape(t.Text)
+	}
 	s.text.WriteString(t.Text)
 }
 
