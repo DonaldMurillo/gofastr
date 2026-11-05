@@ -374,6 +374,11 @@ The core capabilities:
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
 
+Native window focus, title writes and frame writes refuse a window that closed
+before the operation reached the UI thread. On Windows, a destroyed window's
+nonzero native handle is not evidence that the window is still open. `Title()`
+retains its cached fallback when the native window is no longer available.
+
 The macOS, Linux and Windows shells check a dialog's input the same way
 (`desktop.CheckFileDialog`) and answer `invalid_input` instead of
 opening a dialog it was not asked for: a filter extension (`png` or
