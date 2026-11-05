@@ -35,7 +35,7 @@ func (e *engine) configMatchers() {
 	}
 	sort.Strings(names[1:])
 	for _, name := range names {
-		data, err := e.appRoot.ReadFile(name)
+		data, err := e.readFile(name)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) || name != "gofastr.yml" {
 				e.noteUnscanned(name, "unreadable: "+err.Error())

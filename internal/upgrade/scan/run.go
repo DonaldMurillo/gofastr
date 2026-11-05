@@ -465,7 +465,7 @@ func (e *engine) walkAppSkip(visit func(rel string, read func() ([]byte, bool)),
 		}
 		rel := path.Clean(p)
 		visit(rel, func() ([]byte, bool) {
-			b, err := e.appRoot.ReadFile(rel)
+			b, err := e.readFile(rel)
 			if err != nil {
 				e.noteUnscanned(rel, "unreadable: "+err.Error())
 			}
