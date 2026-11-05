@@ -448,7 +448,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   combobox stays open; `Inline` (`data-hui-combobox-inline`) marks a
   listbox that is the surface's own content, the command palette's
   result list, whose Escape goes on to close the dialog in one press.
-  `ComboboxRows` renders an island answer's rows. With script, Enter
+  `ComboboxRows` renders an island answer's rows and refuses duplicate
+  option IDs, including collisions between explicit and derived IDs.
+  With script, Enter
   commits only a highlighted option; with no active option, a closed
   list, or no results it does nothing and never submits the no-script
   GET form. The GET fallback remains available without JavaScript.

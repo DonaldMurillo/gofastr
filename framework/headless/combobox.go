@@ -347,15 +347,18 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 func ComboboxRows(listboxID string, opts []ComboboxOption, s Classes) render.HTML {
 	b := Parts{}.Box(s)
 	rows := make([]render.HTML, 0, len(opts))
+	ids := make([]string, 0, len(opts))
 	for i, o := range opts {
 		if o.ID == "" {
 			o.ID = listboxID + "-opt-" + strconv.Itoa(i)
 		}
 		checkFragmentID("Combobox option", "ID", o.ID)
+		ids = append(ids, o.ID)
 		// Each row is a root of the answer: its parts are the
 		// component's own.
 		rows = append(rows, comboboxOptionEl(b, o, true, true))
 	}
+	checkNoDuplicateIDs("ComboboxRows", ids)
 	return render.Join(rows...)
 }
 
