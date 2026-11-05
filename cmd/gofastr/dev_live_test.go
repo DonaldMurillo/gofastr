@@ -431,14 +431,10 @@ func TestLivereloadSameBuildIDDoesNotReload(t *testing.T) {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		// The page monkey-patches location.reload AND instruments the
-		// EventSource to record how many 'ready' events it received.
 		fmt.Fprint(w, `<!DOCTYPE html>
 <html><head>
 <script>
-window.__reloadCalled = false;
 window.__readyCount = 0;
-location.reload = function() { window.__reloadCalled = true; };
 (function() {
   var orig = window.EventSource;
   window.EventSource = function(url, opts) {
@@ -461,6 +457,7 @@ location.reload = function() { window.__reloadCalled = true; };
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitReady("h1", chromedp.ByQuery),
+		chromedp.Evaluate(`window.__sameBuildDocument = true`, nil),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -479,14 +476,8 @@ location.reload = function() { window.__reloadCalled = true; };
 		t.Fatalf("first ready event: %v", err)
 	}
 
-	var reloadCalled bool
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`window.__reloadCalled`, &reloadCalled),
-	); err != nil {
-		t.Fatalf("check initial: %v", err)
-	}
-	if reloadCalled {
-		t.Fatal("location.reload() called on initial SSE connect")
+	if err := pollLiveReload(ctx, 0); err != nil {
+		t.Fatalf("initial SSE connect: %v", err)
 	}
 
 	// Force the SSE connection to drop. The EventSource will reconnect.
@@ -509,7 +500,6 @@ location.reload = function() { window.__reloadCalled = true; };
 		t.Fatalf("reconnect ready event: %v", err)
 	}
 
-	// Now poll for reloadCalled over a window to catch delayed reloads.
 	if err := pollLiveReload(ctx, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}
