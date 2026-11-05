@@ -53,8 +53,8 @@ var ieNouns = []string{
 
 // ieNounPlural reports whether s ends in the plural of an ieNouns word that
 // starts a word of s: at the start, after _, - or a space, or as a
-// capitalised camelCase part. The boundary keeps parties, copies and
-// allies on the -y rule.
+// camelCase part (a capital after a lowercase letter). The boundary keeps
+// parties, copies and allies, and PARTies, on the -y rule.
 func ieNounPlural(s string) bool {
 	return endsInWord(s, ieNouns, "s")
 }
@@ -79,7 +79,9 @@ func endsInWord(s string, words []string, suffix string) bool {
 		if prev := s[start-1]; prev == '_' || prev == '-' || prev == ' ' {
 			return true
 		}
-		if first := s[start]; first >= 'A' && first <= 'Z' {
+		// A camelCase part: a capital after a lowercase letter. Inside an
+		// uppercase run (PARTies, COPIES) a capital starts no word.
+		if prev, first := s[start-1], s[start]; first >= 'A' && first <= 'Z' && prev >= 'a' && prev <= 'z' {
 			return true
 		}
 	}

@@ -11,6 +11,9 @@ func TestSingularIeNouns(t *testing.T) {
 		// -y stems whose tail spells an -ie noun stay -y stems.
 		"parties": "party", "copies": "copy", "allies": "ally",
 		"families": "family", "puppies": "puppy", "lies": "lie",
+		// An uppercase run is one word: its interior capital starts nothing.
+		"PARTies": "PARTy", "COPies": "COPy", "ALLies": "ALLy",
+		"PARTIES": "PARTIES", "COPIES": "COPIES", "COOKIES": "COOKIE",
 	} {
 		if got := Singular(plural); got != singular {
 			t.Errorf("Singular(%q) = %q, want %q", plural, got, singular)
