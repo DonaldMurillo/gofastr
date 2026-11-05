@@ -86,7 +86,8 @@
     widget.anchorTrigger = trigger;
 
     const place = () => {
-      if (NS._widgets[name] !== widget || widget.anchorTrigger !== trigger) return false;
+      if (!Object.prototype.hasOwnProperty.call(NS._widgets, name)
+        || NS._widgets[name] !== widget || widget.anchorTrigger !== trigger) return false;
       const gap = 10; // gap >= arrow size so the pointer fits cleanly
       const margin = 8;
       const tr = trigger.getBoundingClientRect();
