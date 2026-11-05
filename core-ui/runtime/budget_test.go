@@ -1558,7 +1558,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// Pinned at the measured size plus 2 clearance.
 		// 3603 measured: TestPaneCloseDismissesOwnedModals pins layer
 		// ownership, nested modals and delayed chrome cancellation.
-		"widgets": 3605,
+		// 3656 measured: TestPaneCloseDismissesOwnedModals pins pending
+		// chrome and deep-link cancellation across a layer content refresh.
+		"widgets": 3658,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1634,7 +1636,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestHistoryRefocusesFreshPane pin post-refresh focus handoff.
 		// 3759 measured with both sets combined. Pinned at the measured
 		// size plus 2 clearance.
-		"intercept": 3761,
+		// 3777 measured: TestPaneCloseDismissesOwnedModals pins the
+		// content generation advanced by every pane swap.
+		"intercept": 3779,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

@@ -48,3 +48,51 @@ func TestCSSInvalidClassAttrsStaySilent(t *testing.T) {
 		}
 	}
 }
+
+func TestCSSClassStringContinuations(t *testing.T) {
+	for _, ending := range []struct {
+		name, text string
+	}{
+		{"LF", "\n"}, {"CR", "\r"}, {"CRLF", "\r\n"}, {"FF", "\f"},
+	} {
+		for _, operator := range []string{"=", "~="} {
+			for _, quote := range []string{`"`, `'`} {
+				t.Run(ending.name+operator+quote, func(t *testing.T) {
+					value := "ui-\\" + ending.text + "ca\\" + ending.text + "rd"
+					want := 1
+					if operator == "=" {
+						value += " ui\\" + ending.text + `\2d button`
+						want++
+					}
+					css := "[class" + operator + quote + value + quote + "] {}"
+					note := cssNote([]string{"ui-card", "ui-button"}, nil)
+					result := mustRun(t, cssWorkspace(t, map[string]string{"app.css": css}), note)
+					if hits := result.Hits[note]; len(hits) != want {
+						t.Fatalf("continued class hits = %+v, want %d", hits, want)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCSSClassStringEscapesStayLiteral(t *testing.T) {
+	for _, css := range []string{
+		`[class~="ui-\ncard"] {}`,
+		`[class~="ui-\a card"] {}`,
+		"[class~=\"ui-\ncard\"] {}",
+	} {
+		note := cssNote([]string{"ui-card"}, nil)
+		result := mustRun(t, cssWorkspace(t, map[string]string{"app.css": css}), note)
+		if hits := result.Hits[note]; len(hits) != 0 {
+			t.Errorf("non-continuation %q matched: %+v", css, hits)
+		}
+	}
+
+	css := `[class~="ui-\\` + "\\\n" + `card"] {}`
+	note := cssNote([]string{`ui-\card`}, nil)
+	result := mustRun(t, cssWorkspace(t, map[string]string{"app.css": css}), note)
+	if hits := result.Hits[note]; len(hits) != 1 {
+		t.Fatalf("literal backslash with continuation hits = %+v, want one", hits)
+	}
+}

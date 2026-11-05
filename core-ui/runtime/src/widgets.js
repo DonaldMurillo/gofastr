@@ -79,6 +79,7 @@
   // "constructor" must not resolve to an Object.prototype member.
   const own = n => Object.prototype.hasOwnProperty.call(NS._widgets, n) ? NS._widgets[n] : null;
   const stamp = (name, e, layer) => { const r = own(name); if (r) { r.ep = e; r.layer = layer; } };
+  const layerCurrent = (layer, generation) => !layer || layer.isConnected && layer._cuiGen === generation;
 
   NS._closeInterceptWidgets = (layer) => {
     for (const name of [...NS._modalStack].reverse()) if (own(name)?.layer === layer) NS.closeWidget(name);
@@ -101,6 +102,7 @@
     const o = opts || {};
     const origin = o.btn || document.activeElement;
     const layer = origin?.closest('[data-cui-intercept-as]') || Object.values(NS._widgets).find((w) => w.root?.contains(origin))?.layer;
+    const generation = layer?._cuiGen;
     // #321: the open trigger may carry context (data-cui-ctx). It is
     // opaque to the runtime: forwarded on the chrome fetch and keyed in
     // the client cache, never parsed. The chrome render authorises it
@@ -117,11 +119,11 @@
     const m = here();
     pend.set(name, m);
     await NS._mountByName(name, ctx, layer);
-    if (layer && !layer.isConnected) return;
+    if (!layerCurrent(layer, generation)) return;
     if (!left(epoch) && ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue)) {
       if (!NS._deepLinkOpen) await NS.loadModule('widgetlinks');
       // The module load is a second wait the reader can navigate during.
-      if (!left(epoch)) NS._deepLinkOpen(cfg, o);
+      if (!left(epoch) && layerCurrent(layer, generation)) NS._deepLinkOpen(cfg, o);
     }
     // A later open of the same name owns the entry. One left behind by a
     // throw is harmless: the next navigation or URL change voids it.
@@ -130,6 +132,7 @@
 
   NS._mountByName = async function (name, ctx, layer) {
     if (layer && !layer.isConnected) return;
+    const generation = layer?._cuiGen;
     const entry = catalogEntry(name);
     if (!entry) return;
     const m = own(name);
@@ -232,7 +235,7 @@
     // it on. The cached branch awaits a promise too, so both are
     // covered.
     try { html = await NS._chromeCache[key]; } catch (_) {}
-    if (html && !left(epoch) && entry.tok === tok && (!layer || layer.isConnected)) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch, layer); }
+    if (html && !left(epoch) && entry.tok === tok && layerCurrent(layer, generation)) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch, layer); }
   };
 
   NS.closeWidget = function (name) {

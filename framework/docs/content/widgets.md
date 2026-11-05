@@ -428,6 +428,12 @@ fetched chrome is dropped (the next open re-fetches it, served from
 the per-navigation chrome cache), and that close → reopen cycle fires
 `fui:widget-close` followed by `fui:widget-open`.
 
+Modals opened inside an intercepted pane belong to that pane, including
+modals opened from another owned modal. Closing the pane or refreshing its
+content closes those modals and their backdrops while leaving unrelated
+widgets alone. Chrome still loading for the old pane content cannot open
+later or apply its deep-link parameters to the refreshed pane.
+
 **Opens during a navigation.** An open belongs to the navigation it
 was issued under. Open a widget, then follow a link before its chrome
 arrives, and the late chrome mounts nothing on the new page. Follow a
