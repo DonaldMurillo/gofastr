@@ -11,7 +11,7 @@ cd examples/api-tour && gofastr dev   # or: go run .
 # banner prints the address to open
 ```
 
-The first run creates `./api-tour.db` (SQLite) and seeds two users + two
+Boot creates and migrates `./api-tour.db` (SQLite) before seeding two users + two
 posts + two comments + one profile. Re-runs are idempotent.
 
 ## Things to try
@@ -93,8 +93,11 @@ curl -X POST http://localhost:8080/users \
   -F 'avatar=@/path/to/photo.png'
 ```
 
-Files land under `./api-tour-uploads/`. Set `WithFileStorage` to swap
-this for any `upload.Storage` impl (S3 etc).
+Each process creates a private `0700` directory under the system temp
+directory, with a name beginning `gofastr-api-tour-`; uploads land there,
+not in the working directory. This demo does not remove that directory
+on shutdown. Set `WithFileStorage` to use a persistent directory or any
+other `upload.Storage` implementation (S3 etc).
 
 ### Foreign-key constraints
 

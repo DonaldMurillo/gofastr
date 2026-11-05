@@ -2191,7 +2191,8 @@ dimension in it is a token.
 
 A docs page releases its TOC column when the slot is an empty
 `data-cui-outlet` cell: the page's sheet observes the cell with
-`:has(> :empty)`, so navigation can clear or refill it without
+`:empty` and `:has(> :only-child:empty)`, so an empty sibling never hides
+other rail content and navigation can clear or refill it without
 rebuilding the surrounding layout. Documentation navigation uses
 `SidebarConfig.Compact`, including in the mobile drawer and no-script
 fallback. It retains normal link and group semantics.

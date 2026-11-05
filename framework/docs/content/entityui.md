@@ -269,9 +269,10 @@ keeps the UI unchanged; without a callback the default stays
 - **Stats and charts**: `appUI.StatValue` (agg `count` or empty, or
   `sum` of an int, float or decimal field; `where` in the query DSL),
   `GroupBars`, `GroupSlices` and `LineChart` (rows per value of a field,
-  in value order, an enum's in its declared order). The database computes
-  each over every match (`crud.SumAll`, `GroupCountAll`), so a sum is
-  whole and rounded once, from the database's total. Any other agg
+  in value order, an enum's in its declared order). Aggregates cover
+  every match (`crud.SumAll`, `GroupCountAll`), so a sum is whole and
+  rounded once. Decimal sums use exact database arithmetic on Postgres
+  and exact addition of stored decimal values on SQLite. Any other agg
   prints "—". On an entity with `AfterList` hooks the stat totals the
   masked rows instead, and past 100,000 rows prints "—" rather than part
   of them; a field with more than 100 values draws no chart. Each logs

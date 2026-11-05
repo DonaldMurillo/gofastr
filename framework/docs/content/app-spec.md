@@ -1311,6 +1311,12 @@ other battery/auth role gate (see
 [access control](access-control.md#wiring-it-decidermiddleware)), and a
 scoped API token is refused.
 
+The real-estate example gates its agents, tours and inquiries screens with
+`auth: true` under `access:` so anonymous visitors reach sign-in rather than a
+page of refused entity reads. The entities retain their staff permissions:
+signing in does not by itself authorize reading those records. Its public
+properties catalog remains available without signing in.
+
 ### Seed data
 
 When the app spec declares `seed:`, generation emits `seedData()`

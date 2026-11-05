@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -596,7 +597,11 @@ func recentEvents(limit int) []FeedEvent {
 			})
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].On > out[j].On })
+	sort.SliceStable(out, func(i, j int) bool {
+		left, _ := time.Parse("2006 02 Jan", "2000 "+out[i].On)
+		right, _ := time.Parse("2006 02 Jan", "2000 "+out[j].On)
+		return left.After(right)
+	})
 	if len(out) > limit {
 		out = out[:limit]
 	}

@@ -17,6 +17,8 @@
 // has to be tested for explicitly rather than assumed. A mutation that does
 // not change the file, or does not reach disk, is a hard error rather than any
 // verdict at all.
+// A -file or -line filter selecting no guards is also an error, naming both
+// filters rather than reporting a green run that tested no mutant.
 //
 // It writes into real source files, so it holds a per-package lock (concurrent
 // runs otherwise read each other's mutants as their baseline and can restore
@@ -30,8 +32,8 @@
 //
 // Run on itself, this package reports survivors in main()'s own flag parsing,
 // filtering, and output formatting. That is accurate and deliberate: those
-// branches are exercised by using the tool, and covering them would mean
-// spawning the binary from a test for no real gain. The logic that can
+// branches are exercised by using the tool; a subprocess regression pins
+// filter selection against a real package. The logic that can
 // lie, namely the verdict classification, the write-and-verify step,
 // restore, and the mutation core in guardmut, is tested, and guardmut is
 // mutation-clean. A clean run of `make mutate PKG=./cmd/mutate/guardmut/`
@@ -186,6 +188,10 @@ func run() int {
 	}
 
 	fmt.Printf("\n%d caught, %d survived, %d broken\n", caught, survived, broken)
+	if (*fileFlag != "" || *lineFlag != 0) && caught+survived+broken == 0 {
+		fmt.Fprintf(os.Stderr, "no guards matched -file=%q -line=%d\n", *fileFlag, *lineFlag)
+		return 1
+	}
 	if survived > 0 || broken > 0 {
 		fmt.Println("\nA SURVIVED guard is one no test distinguishes. Either add the case that\n" +
 			"separates it from the guards around it, or delete the guard as redundant.")
