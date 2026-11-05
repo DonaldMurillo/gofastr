@@ -934,7 +934,10 @@ module only when some entry has one, and the UI host injects
 
 Intercepted HTML never enters the screen cache. The cache is keyed by
 path and holds canonical page renders, so storing an overlay variant
-would poison a later direct visit. Closing routes through
+would poison a later direct visit. An intercepted response carrying
+`X-Gofastr-Session` refreshes the SSE meta token and invalidates every
+cached canonical screen, just like ordinary navigation: an earlier
+identity's pages must not replay after the session changes. Closing routes through
 `history.back()`, so Back, Escape, the backdrop, and any
 `data-cui-intercept-close` button are one code path and the page
 underneath is never refetched.
