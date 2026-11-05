@@ -263,6 +263,14 @@ few lines, and link the PR or the docs page for the rest.
   concurrent insert, so the call now fails before any hook or SQL. Use
   `CreateOne` or `UpdateOne` for those entities. See
   `hooks-and-transactions.md`.
+- **BREAKING: CRUD field errors are keyed by the wire key.** Validation,
+  state and batch refusals keyed `fields` and `field_reasons` by column
+  name while the body used the wire key (camelCase by default, or a
+  field's `WireName`). Every refusal now uses the wire key, the same
+  key the client sent. The runtime and entity forms match a wire key to
+  its control, multipart inputs resolve aliases before the duplicate-key
+  check, and `llm.md`, the SDK docs and generated READMEs match. A
+  client that read `fields["author_name"]` reads `fields["authorName"]`.
 - **Docs and comments must name identifiers that exist; the runtime
   contract sync reads every attribute family (2026-11-03).**
   - `TestDocsNameRealIdentifiers`, `TestRepoDocsNameRealIdentifiers`
@@ -719,6 +727,69 @@ few lines, and link the PR or the docs page for the rest.
   detached from the window.
 - **The ecommerce example prices order lines from the catalog.** The
   client sent the unit price, and the order total trusted it.
+- **Navigation recovers from a failed fetch or transition.** A failed
+  record-panel fetch opens the record page instead of leaving the list
+  on screen. A failed list navigation cancels its pending panel, so a
+  later visit does not reopen it. A view transition whose apply step
+  rejects reaches the navigation catch, which rolls the URL back and
+  clears loading marks. A cache replay keeps the incoming page's
+  transition pick, and a static envelope navigation carries the page's
+  `lang` and `dir`, loading the direction module on the way into an RTL
+  locale.
+- **Pane history and replays stay consistent.** URL writes inside an
+  intercepted pane count toward the walk back, so closing nested panes
+  lands on the right base entry. A leave guard's discard dialog cancels
+  pending pane navigations. A kept outlet snapshot drops its in-flight
+  RPC marks before replay. A cached deferred region with no part coming
+  stays out of the loading state, and a deferred-parts module that fails
+  to load no longer leaves an unhandled rejection.
+- **Field ids stay unique on repeated controls.** Same-named native
+  controls and repeaters get scoped ids with matching label and ARIA
+  targets. Choices whose values slug the same, repeated toggles, and
+  segmented-control labels each point at their own input. A repeater
+  derives its add and remove submit names from `Name`, so it works
+  without JavaScript, and removing a row moves focus to a usable
+  control or the Add button.
+- **App-spec nodes render what they declare.** A presence boolean set
+  to false (`disabled`, `checked`) no longer renders the attribute. A
+  link keeps both its text and its children. A prop that differs from a
+  component-owned attribute only by case cannot override it. An
+  incomplete node renders safely, and validation refuses a block missing
+  its required props or link content.
+- **MCP tools match their HTTP routes.** List tools advertise the
+  entity's effective page cap. Write schemas leave out the owner and
+  tenant columns the server sets. `ToolAdapter` keeps a handler's typed
+  client refusal, and a parameter refusal names the JSON type, not the
+  Go type.
+- **CRUD reads and registration.** A relation included twice merges its
+  nested paths and runs its read hooks once. Registration refuses an
+  `Enum` field with no `Values`. Entity forms no longer cut rune-counted
+  strings with the browser's UTF-16 `maxlength`.
+- **Auth.** OAuth records success only after the session is minted, and
+  a second-factor refusal on that path audits as a login failure. The
+  BFF origin guard accepts API tokens with a configured prefix.
+- **Streams and realtime.** A WebSocket upgrade bounds its handshake
+  write, so a peer that never reads cannot hold the hijacked
+  connection. With pong checking off, keepalive ticks at the idle
+  timeout instead of every 10ms. An RTC peer evicted by the socket cap
+  no longer announces a leave while a remote replica still seats it.
+- **Desktop.** `gofastr desktop feed` merges a release's platforms into
+  an existing manifest of the same version and re-signs it. It refuses
+  a different version, or an existing manifest with none. `keygen`
+  and `feed` refuse a flag with no value. macOS builds start from a
+  clean bundle, and window styles use the same primary-screen origin as
+  saved frames. A tray on a window that hides on close always has a Show
+  item. On Windows the tray checks its registration, re-adds the icon
+  after Explorer restarts, and never hides a window with no icon to
+  bring it back. A failed first build or launch removes its temporary
+  binary, and types staging is cleaned on every exit.
+- **Tooling and static output.** `gofastr dev` sees changes under a
+  symlinked project root and in linked source files. Static locale
+  alternates and `x-default` include the deployment base path. Webhook
+  metrics count dead letters that ran out of retry budget. Data export
+  names the table, row and column of a non-finite float. `Bind`'s docs
+  describe the error an invalid destination returns, and the registry
+  LLM index no longer promises a cursor `total`.
 - **A handler's 404 or 503 survives `Metrics` and `Tracing` when it
   streams an empty or failing reader.** Their `ReadFrom` wrote a 200
   before copying, so the handler's later status never reached the
