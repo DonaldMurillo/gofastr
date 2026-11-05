@@ -463,6 +463,7 @@ func (q *TypedQuery[T]) Exists(ctx context.Context) (bool, error) {
 // marshal a partial struct with framework.MarshalEntity and pass the
 // resulting map; the map itself is not modified. A body that sets no
 // writable field returns an error rather than restamping updated_at alone.
+// Replaced stored objects are released after commit, except keys still referenced.
 func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (int, error) {
 	if err := q.requireTenantCtx(ctx); err != nil {
 		return 0, err
@@ -567,6 +568,9 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	q.handler.ApplyTenantScopeUpdate(ub, req)
 	q.handler.ApplyOwnerScopeUpdate(ub, req)
 
+	if q.handler.Storage != nil && setsMediaColumn(q.handler.mediaFields(), body) {
+		return q.handler.updateReturningObjects(ctx, ub)
+	}
 	sqlStr, args := ub.Build()
 	res, err := q.exec(ctx).ExecContext(ctx, sqlStr, args...)
 	if err != nil {

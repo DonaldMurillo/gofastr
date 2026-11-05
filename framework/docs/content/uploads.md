@@ -172,8 +172,8 @@ when the row lets them go:
 
 - a hard delete (`DELETE /{entity}/{id}`, batch delete, `DeleteOne`,
   `TypedQuery.DeleteAll`) or a purge of a soft-deleted row deletes them all;
-- an update or upsert that replaces or clears a file deletes the old key and
-  its renditions.
+- an update or upsert, including `TypedQuery.UpdateAll`, that replaces or
+  clears a file deletes the old key and its unreferenced renditions.
 
 The delete runs after the write's transaction commits; a rollback keeps the
 objects. A failed delete is logged, not returned, since the row change has
@@ -188,7 +188,9 @@ already committed. The objects stay when:
 
 A key that host code copied into a different entity's table is not checked:
 deleting the first row deletes the object the second still names.
-`TypedQuery.UpdateAll` does not delete what it replaces.
+`TypedQuery.UpdateAll` captures objects under the same tenant, owner,
+soft-delete, and query predicates as its update, inside the write transaction.
+It preserves objects and renditions still named by the updated rows.
 
 ## Field-name casing
 
