@@ -78,7 +78,7 @@ func TestAppSpecYAMLControlBlocksBuild(t *testing.T) {
 	src := inlinePhrases(clitest.ReadFile(t, dir, "screen_about.go"))
 	for _, want := range []string{
 		`ui.Form(ui.FormConfig{Action: "/contact", SubmitLabel: "Send", Ctx: ctx}`,
-		`ui.TextField(ui.TextFieldConfig{Name: "email", Label: "Email", Required: true})`,
+		`ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "email", Label: "Email", Required: true})`,
 		`[]ui.SelectOption{{Value: "Sales", Text: "Sales"}, {Value: "Support", Text: "Support"}}`,
 		`{Value: "free", Label: "Free", Checked: true}`,
 		`html.OrderedList(`,
