@@ -269,7 +269,7 @@ the host's real locale configuration from its request context.
 The docs site mounts the sidebar drawer on both the Sidebar and
 SidebarDrawerTrigger showcase pages, including their mobile trigger previews.
 
-The Form, FormRepeater and Repeater gallery previews submit to the docs site's
+The Form, FormRepeater, Repeater and ConditionalField gallery previews submit to the docs site's
 no-op POST endpoint. They demonstrate native form submission, not sign-in or
 persistent row mutations; use example values rather than real credentials.
 

@@ -675,6 +675,21 @@ few lines, and link the PR or the docs page for the rest.
 - **Prefetched navigation preserves the live CSRF token.** Following a link
   prefetched before a session token rotation no longer restores the older
   token; navigation listeners still receive `cached: false`.
+- **The admin Failed jobs figure uses localized numbers.** Dashboard
+  and polled counts now use the request locale's digits and grouping,
+  matching the Jobs page and other figures.
+- **App spec packing keeps metadata and controls canonical.** Generated
+  descriptions are no longer recovered as authored values. Base URL
+  trailing slashes and case-insensitive button values normalize during
+  parsing, and buttons/navigation links no longer gain generated defaults.
+  See `app-spec.md`.
+- **The ConditionalField gallery preview submits successfully.** Its
+  form now uses the docs site's no-op POST endpoint instead of posting
+  to a GET-only component screen.
+- **OpenAPI CLI nullable unions generate scalar flags.** A query, path,
+  header or body property with one non-null scalar `oneOf`/`anyOf`
+  branch now maps like `type: [T, "null"]`. Multi-type body unions keep
+  `--json`; parameter errors name the unsupported union. See `app-cli.md`.
 - **The entity screens read related data through the same gates as the
   API.** Related lists, their count badges and read-only relation
   fields checked record access but skipped CRUD exposure and token
@@ -9461,4 +9476,3 @@ registers, and a layout overlay under `gofastr dev`.
   mounted on a router built by hand got a 404 and never reloaded.
   `UIHost.Mount` now registers the dev script routes on the router it
   mounts on.
-

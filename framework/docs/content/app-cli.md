@@ -285,9 +285,13 @@ no entities package, no framework dependency. `custom.go` and the
 Supported subset, by design: local `#/components/...` `$ref`s (`allOf`
 of objects shallow-merges, and an `allOf` whose members name one scalar
 type reads as that scalar, the way FastAPI wraps an enum parameter that
-has a default; `oneOf`/`anyOf` bodies and body properties fall back to
-`--json`, including union keywords alongside `$ref` and through `allOf`
-wrappers), JSON or YAML documents of OpenAPI 3.x (a Swagger 2.0 document fails:
+has a default; a `oneOf`/`anyOf` with exactly one non-null scalar branch
+maps parameters and body properties to that scalar's flag, just like
+`type: [string, "null"]`). A real multi-type union falls back to `--json`
+for bodies and body properties, including union keywords alongside `$ref`
+and through `allOf` wrappers. A parameter cannot use `--json`: a multi-type
+parameter union fails generation with an error naming the parameter and
+`oneOf`/`anyOf`. JSON or YAML documents of OpenAPI 3.x (a Swagger 2.0 document fails:
 convert it first). YAML reads through `core/yaml`, the app spec's
 subset (see [app-spec](app-spec.md), "YAML subset"): block scalars
 (`description: |`), flow mappings (`schema: {}`) and anchors fail with a

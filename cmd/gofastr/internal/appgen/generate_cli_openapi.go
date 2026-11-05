@@ -240,8 +240,8 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			return nil, fmt.Errorf("$ref %q does not resolve to an object", ref)
 		}
 		active[ref] = true
+		defer delete(active, ref)
 		resolved, err := oaResolveIn(root, target, active)
-		delete(active, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -319,6 +319,19 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 	if len(unions) > 0 {
 		node = maps.Clone(node)
 		maps.Copy(node, unions)
+		for union, raw := range unions {
+			if branches, ok := raw.([]any); ok {
+				resolved := slices.Clone(branches)
+				for index, branch := range branches {
+					if member, ok := branch.(map[string]any); ok {
+						if value, err := oaResolveIn(root, member, active); err == nil {
+							resolved[index] = value
+						}
+					}
+				}
+				node[union] = resolved
+			}
+		}
 	}
 	return node, nil
 }
@@ -358,13 +371,47 @@ func oaParamJoined(pm map[string]any, name, in string, repeated bool) (bool, err
 // oaGoType maps a scalar schema type to the CLI's flag Go type.
 // ok=false means the type has no flag representation. An OpenAPI 3.1
 // type list maps through its one non-null entry, [T, "null"] as T: an
-// unset flag already sends nothing. A list naming two value types has
-// no flag.
+// unset flag already sends nothing. Nullable oneOf/anyOf scalar branches
+// map the same way. A list or union naming two value types has no flag.
 func oaGoType(schema map[string]any) (goType string, repeated, ok bool) {
+	if _, unresolved := schema["$ref"]; unresolved {
+		return "", false, false
+	}
+	var unionType string
 	for _, union := range []string{"oneOf", "anyOf"} {
-		if _, present := schema[union]; present {
+		raw, present := schema[union]
+		if !present {
+			continue
+		}
+		branches, valid := raw.([]any)
+		if !valid {
 			return "", false, false
 		}
+		var nonNull map[string]any
+		for _, branch := range branches {
+			member, valid := branch.(map[string]any)
+			if !valid {
+				return "", false, false
+			}
+			if member["type"] == "null" {
+				continue
+			}
+			if nonNull != nil {
+				return "", false, false
+			}
+			nonNull = member
+		}
+		if nonNull == nil {
+			return "", false, false
+		}
+		valueType, valueRepeated, valid := oaGoType(nonNull)
+		if !valid || valueRepeated || unionType != "" && unionType != valueType {
+			return "", false, false
+		}
+		unionType = valueType
+	}
+	if unionType != "" {
+		return unionType, false, true
 	}
 	t, _ := schema["type"].(string)
 	if list, isList := schema["type"].([]any); isList {
@@ -893,6 +940,11 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		}
 		goType, repeated, ok := oaGoType(orEmpty(schema))
 		if !ok {
+			for _, union := range []string{"oneOf", "anyOf"} {
+				if _, present := schema[union]; present {
+					return op, fmt.Errorf("parameter %q has an unsupported %s union; only one non-null scalar branch maps to a flag", name, union)
+				}
+			}
 			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of strings map to flags", name)
 		}
 		if repeated {

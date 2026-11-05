@@ -685,7 +685,7 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	app := AppSpecApp{
 		Name:        stringValue(m["name"]),
 		Description: stringValue(m["description"]),
-		BaseURL:     stringValue(m["base_url"]),
+		BaseURL:     strings.TrimRight(stringValue(m["base_url"]), "/"),
 		Module:      stringValue(m["module"]),
 		StaticDir:   stringValue(m["static_dir"]),
 		OutputDir:   stringValue(m["output_dir"]),
@@ -2363,7 +2363,7 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 			Mode:      stringValue(m["mode"]),
 			Create:    boolValue(m["create"]),
 			Bulk:      boolValue(m["bulk"]),
-			Props:     mapValue(m["props"]),
+			Props:     normalizeControlProps(kind, mapValue(m["props"])),
 			Children:  children,
 			Actions:   actions,
 			Island:    stringValue(m["island"]),

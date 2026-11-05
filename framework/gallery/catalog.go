@@ -738,7 +738,7 @@ var Catalog = []Entry{
 		})
 	}},
 	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — one value or any of a list; visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
-		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "?"},
+		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "/__site/toggle/noop"},
 			ui.RadioGroup(ui.RadioGroupConfig{
 				Legend: "Plan",
 				Name:   "plan",

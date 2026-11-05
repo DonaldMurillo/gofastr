@@ -742,6 +742,11 @@ reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
 also preserves the control catalog: custom forms and their text, number,
 toggle, select and radio controls; action buttons; static table columns
 and cells; ordered/unordered item lists; and labeled navigation links.
+Control properties round-trip in canonical form, not their original
+spelling: action-button variants and types are case-insensitive and
+lowercased while parsing. Default `variant: primary`, `type: button`,
+and navigation-link `gap: md` values are omitted both when parsing and
+packing, so a control gains no authored properties from generated defaults.
 The result
 prints to stdout, or to a file with `-o`:
 
@@ -811,6 +816,14 @@ Pack also reads `public_openapi`, the UI host's application description,
 and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
 override is not substituted for that authored fallback; the default
 `http://localhost:8080` fallback is omitted from the packed spec.
+Trailing `/` characters in `app.base_url` are removed while parsing:
+the value is a base prefix for absolute sitemap URLs, so
+`https://slash.example/` and `https://slash.example` have the same
+canonical form, as do base prefixes ending in a path. Pack retains that
+canonical form. Descriptions equal to the generator's name/entity-derived
+default are omitted rather than treated as authored metadata; custom
+descriptions are retained. The generator and pack share this derivation
+through `appgen.AppSpecSiteDescription`.
 Admin paths and roles equal to the defaults (`/admin` and `admin`) are
 also omitted; customized admin values are retained.
 

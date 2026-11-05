@@ -30,6 +30,9 @@ func TestQueueCapabilityDocsMatchBackends(t *testing.T) {
 					t.Errorf("%s documentation omits implementing backend %s", typeSpec.Name.Name, backend)
 				}
 			}
+			if typeSpec.Name.Name == "Browsable" && !strings.Contains(group.Doc.Text(), "MemoryQueue and RedisQueue list dead-letter jobs only") {
+				t.Error("Browsable must scope dead-letter-only inspection to MemoryQueue and RedisQueue")
+			}
 		}
 	}
 }

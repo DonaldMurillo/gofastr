@@ -11,7 +11,7 @@ import (
 
 func TestGalleryFormPostsSucceed(t *testing.T) {
 	base := startE2EServer(t)
-	for _, slug := range []string{"form", "formrepeater", "repeater"} {
+	for _, slug := range []string{"form", "formrepeater", "repeater", "conditionalfield"} {
 		t.Run(slug, func(t *testing.T) {
 			ctx := newE2EBrowserCtx(t)
 			var posts sync.Map
@@ -29,7 +29,7 @@ func TestGalleryFormPostsSucceed(t *testing.T) {
 				}
 			})
 			if err := chromedp.Run(ctx, network.Enable(), chromedp.Navigate(base+"/components/"+slug), pageReady(),
-				chromedp.Evaluate(`(()=>{const form=document.querySelector('main input[name="email"]')?.form || document.querySelector('main .fui-repeater__add')?.form;
+				chromedp.Evaluate(`(()=>{const form=document.querySelector('main #demo-conditional') || document.querySelector('main input[name="email"]')?.form || document.querySelector('main .fui-repeater__add')?.form;
 if(!form){const alternate=document.querySelector('main .fui-form-repeater__add')?.form;if(!alternate)throw Error('demo form missing');return alternate.querySelector('.fui-form-repeater__add').click()}
 form.querySelectorAll('input[type="email"]').forEach(input=>input.value='demo@example.test');
 form.querySelectorAll('input[type="password"]').forEach(input=>input.value='example-password');
