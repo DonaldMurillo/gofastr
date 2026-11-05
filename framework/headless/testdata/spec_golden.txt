@@ -396,15 +396,15 @@ a disabled checkbox stays in the tab-free, unsubmitting state the platform gives
 
 === NotificationBell / unread ===
 the anchor's accessible name says the count in words while the badge shows the number, and the href is the notifications page — the no-script page goes there
-<a aria-label="3 unread notifications" data-hui-notification-bell="" data-hui-notification-count-fmt="{{n}} unread notifications" href="/notifications"><span aria-hidden="true" data-cui-internal="">🔔<span data-hui-notification-count="3"><span>3</span></span></span></a>
+<a aria-label="Notifications: 3 unread notifications" data-hui-notification-bell="" data-hui-notification-count-fmt="{{n}} unread notifications" data-hui-notification-label="Notifications" href="/notifications"><span aria-hidden="true" data-cui-internal="">🔔<span data-hui-notification-count="3"><span>3</span></span></span></a>
 
 === NotificationBell / a widget trigger ===
 Opens names the widget the same anchor opens with script: one element is the no-script link and the trigger, through the kernel's own data-cui-open spelling typed from a prop
-<a aria-label="1 unread notifications" data-cui-open="bell-panel" data-cui-popover-anchor="bottom" data-hui-notification-bell="" data-hui-notification-count-fmt="{{n}} unread notifications" href="/notifications"><span aria-hidden="true" data-cui-internal="">🔔<span data-hui-notification-count="1"><span>1</span></span></span></a>
+<a aria-label="Notifications: 1 unread notifications" data-cui-open="bell-panel" data-cui-popover-anchor="bottom" data-hui-notification-bell="" data-hui-notification-count-fmt="{{n}} unread notifications" data-hui-notification-label="Notifications" href="/notifications"><span aria-hidden="true" data-cui-internal="">🔔<span data-hui-notification-count="1"><span>1</span></span></span></a>
 
 === NotificationBell / nothing unread, the count live ===
 zero renders no badge (no news is no news) and the signal-bound count raises it the moment news arrives, without a re-render
-<a aria-label="0 unread notifications" data-hui-notification-bell="" data-hui-notification-count-fmt="{{n}} unread notifications" href="/notifications"><span aria-hidden="true" data-cui-internal="">🔔<span data-cui-signal="unread" data-cui-signal-mode="text" data-hui-notification-count="0"><span>0</span></span></span></a>
+<a aria-label="Notifications: 0 unread notifications" data-hui-notification-bell="" data-hui-notification-count-fmt="{{n}} unread notifications" data-hui-notification-label="Notifications" href="/notifications"><span aria-hidden="true" data-cui-internal="">🔔<span data-cui-signal="unread" data-cui-signal-mode="text" data-hui-notification-count="0"><span>0</span></span></span></a>
 
 === NumberInput / unbounded, with help ===
 a real, named number input works with no script at all, and the rule it obeys rides its description — the buttons are enhancement only

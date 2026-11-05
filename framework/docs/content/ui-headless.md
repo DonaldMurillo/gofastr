@@ -684,7 +684,10 @@ families:
 - **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
-  the anchor's `aria-label` from it).
+  the anchor's `aria-label` from it). The required `Label` remains the
+  name's prefix on the server and after every update, followed by the
+  localized count sentence. `data-hui-notification-label` carries that
+  label separately so a literal `{{n}}` in it is never substituted.
 - **headless-selection-copy** (`[data-hui-selection-copy]`): a
   selection's Copy control fetches its same-origin URL with one `_id`
   per checked row and writes the CSV answer to the clipboard, then
