@@ -372,8 +372,13 @@ func widenDates(v any, t reflect.Type) any {
 func widenStructDates(m map[string]any, t reflect.Type) map[string]any {
 	out := m
 	copied := false
+	seen := make(map[reflect.Type]bool)
 	var walk func(t reflect.Type)
 	walk = func(t reflect.Type) {
+		if seen[t] {
+			return
+		}
+		seen[t] = true
 		for i := range t.NumField() {
 			f := t.Field(i)
 			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")

@@ -719,7 +719,9 @@ it rounds to the float `1`. A `bool` field takes a number the same way,
 only when its text is exactly 0 or 1: `1.0` and `10e-1` pass,
 `1.0000000000000001` and `1e-400` are refused. A `date` field reads back as `YYYY-MM-DD` on
 every read path and in hooks; a typed read into a `time.Time` field
-still decodes it as midnight UTC. An in-process write (`CreateOne`,
+still decodes it as midnight UTC, including promoted fields in embedded
+structs with self-referential or mutually recursive pointer types.
+An in-process write (`CreateOne`,
 `UpdateOne`, `UpsertOne`, batch, the typed repository) also takes a
 `date` as a Go `time.Time` or RFC 3339 text at exact midnight, and
 stores it as `YYYY-MM-DD`, so a row read back and saved again keeps its
