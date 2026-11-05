@@ -1155,7 +1155,11 @@ refuses it.
 
 Screen markdown renders context-aware components with the same locale
 context as the page, including pattern-level fallback docs. Localized
-content and localized links therefore describe the same language.
+content and localized links therefore describe the same language. A
+request carrying a translator or locale renders its screen markdown
+even when its URL has no prefix, including the default locale and
+header- or cookie-negotiated locales. Only requests with no translator,
+locale or locale prefix reuse the background-context pattern document.
 
 Three kernel helpers, exported on `__gofastr` for modules, carry the
 rules:
