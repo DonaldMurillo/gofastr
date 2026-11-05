@@ -17,19 +17,23 @@ func TestPackRefusesFlagAsOutput(t *testing.T) {
 	}
 	t.Chdir(t.TempDir())
 	for _, flag := range []string{"-o", "--out"} {
-		exitCode := 0
-		previous := cli.OsExit
-		cli.OsExit = func(code int) { exitCode = code }
-		output := clitest.CaptureStdout(t, func() { RunPack([]string{dir, flag, "--help"}) })
-		cli.OsExit = previous
-		if exitCode != 1 {
-			t.Errorf("%s --help exited %d, want refusal", flag, exitCode)
-		}
-		if data, err := os.ReadFile("--help"); !os.IsNotExist(err) {
-			t.Errorf("flag became an output file containing secret=%t: %v", strings.Contains(string(data), "never-write-this-secret"), err)
-		}
-		if strings.Contains(output, "never-write-this-secret") {
-			t.Error("secret reached stdout")
+		for _, value := range []struct{ name, argument string }{{"flag", "--help"}, {"empty", ""}} {
+			t.Run(flag+"/"+value.name, func(t *testing.T) {
+				exitCode := 0
+				previous := cli.OsExit
+				t.Cleanup(func() { cli.OsExit = previous })
+				cli.OsExit = func(code int) { exitCode = code }
+				output := clitest.CaptureStdout(t, func() { RunPack([]string{dir, flag, value.argument}) })
+				if exitCode != 1 {
+					t.Errorf("%s %q exited %d, want refusal", flag, value.argument, exitCode)
+				}
+				if data, err := os.ReadFile("--help"); !os.IsNotExist(err) {
+					t.Errorf("flag became an output file containing secret=%t: %v", strings.Contains(string(data), "never-write-this-secret"), err)
+				}
+				if strings.Contains(output, "never-write-this-secret") {
+					t.Error("secret reached stdout")
+				}
+			})
 		}
 	}
 }
