@@ -403,11 +403,10 @@ func TestSupersededLoadingTimerSleeps(t *testing.T) {
 	// The loser's timer fires at ~500ms, well after the supersede;
 	// probe BEFORE releasing its response — once the loser stands down,
 	// its own settle would clean up whatever its timer showed.
-	var skeleton string
-	_ = chromedp.Run(ctx,
-		chromedp.Sleep(800*time.Millisecond),
-		chromedp.Evaluate(`String(document.getElementById('skeleton') !== null)`, &skeleton),
-	)
+	skeleton, err := loadingProbe(ctx, 800*time.Millisecond, "skeleton")
+	if err != nil {
+		t.Fatal(err)
+	}
 	r.release("/x3")
 	if skeleton == "true" {
 		t.Error("the superseded navigation's After timer parked its skeleton over the winner — the timer's epoch guard let a dead navigation show loading content")
@@ -453,11 +452,10 @@ func TestSupersededPartDoesNotShowLoading(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.releaseParts()
-	var skeleton string
-	_ = chromedp.Run(ctx,
-		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Evaluate(`String(document.getElementById('sk-part') !== null)`, &skeleton),
-	)
+	skeleton, err := loadingProbe(ctx, 400*time.Millisecond, "sk-part")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if skeleton == "true" {
 		t.Error("the superseded navigation's part showed its claimed loading content over the winner — the claimed-entry show's epoch guard let a dead part park a skeleton")
 	}

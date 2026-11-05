@@ -82,7 +82,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **signaltoggle**: `framework/ui.SignalToggle`, `role="switch"` button bound to a boolean signal
 - **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups; a toggle button whose accessible name is `IdleLabel` in both states (`aria-pressed` carries the state, only the visible label flips), so keep the idle label's words in `CommittedLabel`
 - **passwordinput**: `framework/ui.PasswordInput`, password field with a reveal button rendered through `headless.Password` — a toggle button: its name ("Show password") and word ("Show") never change, `aria-pressed` says whether the password shows and the kit paints the pressed state; the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
-- **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
+- **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button; the clear button tracks the value after input and native form reset, including a server-prefilled value
 - **searchresults**: `framework/ui.SearchResults`, a full search results page (GET form, match count, results with section links, pagination) that works without script
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons
 - **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs; the radios are in reading order (1 to Max in the DOM), so arrows move the way the stars read, and the checked and hover fill is `:has()` in the kit sheet

@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,22 +60,36 @@ func (s *consoleErrSink) addEntry(source, text, url string) {
 }
 
 func (s *consoleErrSink) listen(ctx context.Context) {
-	chromedp.ListenTarget(ctx, func(ev any) {
-		switch e := ev.(type) {
-		case *runtime.EventConsoleAPICalled:
-			if e.Type == "error" {
-				s.add("console.error")
+	chromedp.ListenTarget(ctx, s.record)
+}
+
+func (sink *consoleErrSink) record(event any) {
+	switch details := event.(type) {
+	case *runtime.EventConsoleAPICalled:
+		if details.Type == "error" {
+			sink.add("console.error")
+		} else if details.Type == runtime.APITypeWarning {
+			var words []string
+			for _, argument := range details.Args {
+				var text string
+				if argument != nil && json.Unmarshal(argument.Value, &text) == nil {
+					words = append(words, text)
+				}
 			}
-		case *runtime.EventExceptionThrown:
-			if e.ExceptionDetails != nil {
-				s.add("exception: " + e.ExceptionDetails.Text)
-			}
-		case *cdplog.EventEntryAdded:
-			if e.Entry != nil && e.Entry.Level == cdplog.LevelError {
-				s.addEntry(string(e.Entry.Source), e.Entry.Text, e.Entry.URL)
+			if message := strings.Join(words, " "); strings.HasPrefix(message, "[gofastr]") {
+				sink.add("console.warn: " + message)
 			}
 		}
-	})
+	case *runtime.EventExceptionThrown:
+		if details.ExceptionDetails != nil {
+			sink.add("exception: " + details.ExceptionDetails.Text)
+		}
+	case *cdplog.EventEntryAdded:
+		if details.Entry != nil && (details.Entry.Level == cdplog.LevelError ||
+			details.Entry.Level == cdplog.LevelWarning && strings.HasPrefix(details.Entry.Text, "[gofastr]")) {
+			sink.addEntry(string(details.Entry.Source), details.Entry.Text, details.Entry.URL)
+		}
+	}
 }
 
 func (s *consoleErrSink) errors() []string {

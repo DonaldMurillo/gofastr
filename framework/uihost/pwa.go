@@ -181,6 +181,7 @@ var pwaSensitivePaths = []string{
 	// replaced was too); a credentialed response must never enter the
 	// shared shell cache.
 	"/__gofastr/widget",
+	"/core-ui/widget",
 	"/api",
 	"/auth",
 }

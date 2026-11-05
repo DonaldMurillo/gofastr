@@ -325,6 +325,10 @@ guides.Screen(app.NewScreen("/docs/guides/deploy", &DeployScreen{}), nil)
 application.Router.ScreenGroup(docs)
 ```
 
+Subgroup prefixes are relative to their parent, including prefixes with a
+leading slash. Repeated or trailing slashes are normalized, and an empty
+subgroup prefix reuses the parent's prefix.
+
 `/docs/guides/deploy` renders inside three layers: the app default
 (outermost, owns the single `<main>`), the docs layer, the guides
 layer. Rules that shape the chain:
@@ -537,6 +541,10 @@ A deferred loader must be a read: the part request starts before the
 page answer says whether the page redirects. When the two disagree
 (session expired, a guard redirected), the part answers 409 and the
 runtime reloads the URL as a whole document, once.
+Parts also send the live runtime's `X-Gofastr-Markup` generation. A
+browser fetch with a stale or missing generation gets the same bodyless
+409 reset before any fill renders, even if the page came from cache.
+Requests without Fetch Metadata keep the ordinary part response.
 
 A part request that fails in transport (a proxy's 502, 503 or 429, a
 dropped connection) is sent once more after a short pause. When the
