@@ -451,6 +451,8 @@ screens:
     route: /agents
     title: Our Agents
     description: Meet our real estate agents
+    access:
+      auth: true
     body:
       - type: heading
         level: 1
@@ -466,6 +468,8 @@ screens:
     route: /tours
     title: Property Tours
     description: Scheduled property tours
+    access:
+      auth: true
     body:
       - type: heading
         level: 1
@@ -481,6 +485,8 @@ screens:
     route: /inquiries
     title: Inquiries
     description: Property inquiries and leads
+    access:
+      auth: true
     body:
       - type: heading
         level: 1
