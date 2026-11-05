@@ -3883,7 +3883,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			// leaves, so unticked writes false rather than the declared
 			// default. The box starts as that default. Required stays off
 			// the checkbox: it would make unticked unsubmittable.
-			expr = fmt.Sprintf("render.Join(html.Input(html.InputConfig{Type: \"hidden\", Name: %q, Value: \"false\"}), ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %s, ID: %q, Value: \"true\", Checked: %t}))",
+			expr = fmt.Sprintf("render.Join(html.Input(html.InputConfig{Type: \"hidden\", Name: %q, Value: \"false\"}), ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Value: \"true\", Checked: %t}))",
 				field.Name, field.Name, label, fieldID, fmt.Sprint(field.Default) == "true")
 		case "int", "integer", "float", "decimal":
 			// The step admits what the column holds, as entityui's form

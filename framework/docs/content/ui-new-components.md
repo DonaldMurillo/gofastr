@@ -126,6 +126,8 @@ claim the same scoped ID families. Group leaf IDs use the option index,
 not the value's slug, so `C`, `C++`, and `C#` remain distinct. Submit
 values are unchanged. Explicit group IDs reserve both descriptions and
 all indexed leaf IDs; standalone radio IDs disambiguate within `Ctx`.
+Generated entity-form checkboxes forward the same render context, including
+when an explicit control ID is supplied.
 
 - **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
 - **inline edit**: `framework/ui.InlineEdit`, a value edited where it is shown (a table cell): the value is the trigger of a dismissable `<details>` editor laid over it: the caller's `Control` (give it a hidden label, `LabelHidden`, since the cell names it) and Save on one line of a `ui.Form`. Saving sends it to `Action` over the runtime's form RPC (`PUT`, or `PATCH` with `Method`), toasts Saved and navigates to `Return`, so the server redraws the page with the stored value; Escape or a press outside closes it unsaved. `Label` is the trigger's accessible name. The value tints on hover and shows a focus ring.
