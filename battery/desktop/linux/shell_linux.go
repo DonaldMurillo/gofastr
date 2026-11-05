@@ -528,9 +528,6 @@ func readBoundedString(p uintptr, limit int) (string, bool) {
 func errStopped() error {
 	return &desktop.Error{Code: desktop.CodeCancelled, Message: "Linux desktop shell is not running"}
 }
-func errClosed() error {
-	return &desktop.Error{Code: desktop.CodeNotFound, Message: "window is closed"}
-}
 func (w *linuxWindow) withMain(fn func()) error {
 	var err error
 	if w.closed.Load() {
@@ -578,7 +575,7 @@ func (w *linuxWindow) Focus() error {
 	return w.withMain(func() { call(gtk.Sym.GtkWindowPresent, w.handle) })
 }
 func (w *linuxWindow) Close() error {
-	return w.withMain(func() { call(gtk.Sym.GtkWindowClose, w.handle) })
+	return closeNativeWindow(w.closed.Load, w.shell.Main, func() { call(gtk.Sym.GtkWindowClose, w.handle) })
 }
 func (w *linuxWindow) SetSidebarWidth(points int) error {
 	if points < 0 || points > desktop.MaxSidebarWidth {

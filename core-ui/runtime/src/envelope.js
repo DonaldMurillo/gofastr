@@ -949,7 +949,10 @@
         document.title = t;
         announceRoute(t);
         const fm = sseMeta(pdoc), lm = sseMeta();
-        if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
+        if (fm && lm) {
+          if (new URL(fm.content, location.href).searchParams.get('session') !== new URL(lm.content, location.href).searchParams.get('session')) NS.invalidate('*');
+          lm.setAttribute('content', fm.getAttribute('content'));
+        }
         const nm = pdoc.querySelector('main');
         await swapCommit(myEpoch, prevPath, dest, () => {
           // The whole-shell swap: cross-chain replaces the outermost

@@ -70,10 +70,6 @@ mounting: local actions, lifecycle listeners and dismissal remain wired.
 An open native modal dialog owns Escape and Tab above an intercepted
 pane. The intercept keyboard handlers stand down until the dialog closes,
 then resume the pane's own dismissal and focus containment.
-Widget modals belong to the intercept layer their opener occupied, including
-modals opened from another owned modal. Removing or replacing that layer
-closes its modals and backdrops, not unrelated widgets. Chrome still loading
-for a removed layer cannot mount after the layer is gone.
 When return or Back refetches a pane, focus is restored after replacement:
 prefer the opener's replacement by ID (or the current control on a same-pane
 refresh), otherwise focus the first control in the refreshed pane.
@@ -491,7 +487,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-fui-dropzone-preview` | On a `<input type="file">` inside a `framework/ui.FileDropzone`: opt the input into image-preview rendering. After each `change`, the `filedropzone` module (framework/ui's own) FileReader-reads each selected image and renders `<img>` tags into the sibling `[data-fui-dropzone-preview-for="<input-id>"]` container; the drop itself, the chosen-names list and the pick announcement are the headless module's `data-hui-drop` hooks. |
 | `data-fui-dropzone-preview-for="<input-id>"` | On the previews strip element: links it to the input it should display previews for. |
 | `data-hui-back-to-top-visible` | Runtime-written BackToTop visibility marker (`headless-navigation` owns it; no component renders it). CSS uses it to reveal the control once the threshold is crossed. |
-| `data-hui-back-to-top-threshold="<px>"` / `data-hui-back-to-top-target="<id>"` / `data-hui-back-to-top-smooth` | BackToTop tuning: the scroll threshold before the control becomes visible, the target ELEMENT ID to scroll to (never a selector — the module resolves it with `getElementById`; empty scrolls the document root), and the smooth-scroll opt-in (ignored under reduced motion). |
+| `data-hui-back-to-top-threshold="<px>"` / `data-hui-back-to-top-target="<id>"` / `data-hui-back-to-top-smooth` | BackToTop tuning: the scroll threshold before the control becomes visible, the target ELEMENT ID to scroll to (never a selector — the module resolves it with `getElementById`; empty scrolls the document root), and the smooth-scroll opt-in (ignored under reduced motion). The styled BackToTop config accepts the element id with an optional leading `#`; it does not accept CSS selectors. |
 | `data-hui-back-to-top` | On a `framework/ui.BackToTop` anchor: marks the real same-origin link (its href is the no-script jump). The `headless-navigation` module adds the threshold, the in-page scroll and the focus return. |
 | `data-hui-toc` / `data-hui-toc-target="<selector>"` | On a `framework/ui.TableOfContents` nav (headless.TableOfContents anatomy): the server renders the entry list from explicit `Items`, and `headless-toc` (a registered behaviour of `framework/headless`, loaded on the `data-hui-toc` marker) marks the active entry — `aria-current="true"` plus a class, never a style — through the IntersectionObserver `headless-rail` owns (`Requires("headless-rail")`, one observer shared with AnchoredRail). The retired runtime-filled toc contract is gone with the `toc` module. |
 | `data-hui-rail` / `data-hui-rail-observe="<selector>"` / `data-hui-rail-target="<selector>"` | On a `framework/ui.AnchoredRail` aside (headless.Rail anatomy): `headless-rail` (a registered behaviour of `framework/headless`) watches the observed region and sets `aria-current="true"` + `.is-active` on the link whose target section holds the top of the view. The entries are real fragment links, so the rail works with no script. The retired scrollspy wrapper contract is gone with the `scrollspy` module. |
@@ -993,6 +989,14 @@ these moves discard its edits, and only then: opening a related record
 over a changed one discards nothing and does not ask; a declined Back
 is repaired with a re-push that restores the URL and history.length.
 
+Widget modals belong to the intercept layer their opener occupied, including
+modals opened from another owned modal. Removing a layer or replacing its
+content closes its modals and backdrops, not unrelated widgets. Each content
+swap advances the layer's generation; an open captures that generation before
+loading chrome and checks it again before mounting or applying deep-link
+parameters, including after the deep-link module loads. Connectedness alone
+does not make an opener current: a refresh keeps the layer element in place.
+
 URL-only writes through the shared `_pushURL` helper (pagination and
 deep-linked widgets included) belong to the top intercept pane's history
 span. Replace rewrites its current entry; push extends the span. Closing
@@ -1303,6 +1307,10 @@ navigation apply (cached replays included, through the per-module
 scanner hook), when a deferred part lands (`gofastr:fill`), and on DOM
 insertion; a reopen re-reads the meta, so the session parameter is the
 current one (the navigator's `X-Gofastr-Session` rollover rewrites it).
+Both navigators clear page caches when a full document's stream metadata
+names a different session, before replacing the live metadata, just as
+they do for a partial's session header. Other stream URL changes with the
+same session do not invalidate pages.
 
 The module mirrors its transport state onto ONE live object, mutated
 in place so every reference (the NetworkRetryBanner, app code) sees

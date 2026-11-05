@@ -85,6 +85,9 @@ Everything else streams at the default level. A handler that panics
 after the response started cannot get a `500`: the connection is cut,
 so the client sees a truncated response. The encoding is gzip only:
 the standard library has no Brotli.
+Identity responses preserve the underlying writer's direct file-copy
+path after any required content sniffing. Compressed responses still
+use the same streaming or held-body encoding rules for file copies.
 
 A compressed page that reflects attacker input next to a secret leaks
 the secret through response sizes (BREACH), whether the app or a proxy
@@ -164,6 +167,8 @@ TLS-terminating proxy that sets `X-Forwarded-Proto: https` (the app
 sees plain HTTP there). Plain-HTTP local dev never receives it. Set
 `HSTSMaxAge: -1` to disable, a positive value to change the age, or
 `HSTSIncludeSub` / `HSTSPreload` to extend it.
+`Secure: true` forces HSTS even on plain HTTP. Its default, false, keeps
+TLS and proxy auto-detection; it is not an off switch.
 
 The CSP default works with the built-in UI runtime because its CSS and
 scripts are served from `/__gofastr/*`, with one exception the host

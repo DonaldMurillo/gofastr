@@ -41,6 +41,10 @@ var ErrUnsupported = &Error{Code: CodeUnsupported, Message: "operation is not su
 // the request context ended before the operation did).
 var ErrCancelled = &Error{Code: CodeCancelled, Message: "operation was cancelled"}
 
+// ErrWindowClosed is returned when a native operation targets a closed window.
+// Close is idempotent and returns nil when the window has already closed.
+var ErrWindowClosed = &Error{Code: CodeNotFound, Message: "window is closed"}
+
 // Decision is the user's answer to a PermissionRequest.
 type Decision int
 
@@ -297,8 +301,8 @@ type WindowConfig struct {
 	// default (centered).
 	Frame *Frame
 	// OnWindowFrame is called by the shell (on a goroutine) whenever
-	// the user moves or resizes a window, unthrottled: the host
-	// debounces. It never fires for windows created after Run.
+	// the user moves or resizes the main or a secondary window,
+	// unthrottled: the host debounces.
 	OnWindowFrame func(id string, f Frame)
 	// SidebarWidth is the main window's initial sidebar zone in screen
 	// points (0 means no zone); the battery fills it from
@@ -363,7 +367,7 @@ type Window interface {
 	// area under MaterialSidebar) to points; 0 removes the zone. The
 	// page's setChrome capability is the usual caller.
 	SetSidebarWidth(points int) error
-	// Close closes the window.
+	// Close closes the window. Closing an already-closed window returns nil.
 	Close() error
 }
 

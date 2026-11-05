@@ -65,15 +65,19 @@
   // cached identities; a policy redirect then goes to the router.
   async function live(sec, q, n) {
     const url = location.pathname + (q ? '?q=' + encodeURIComponent(q) : '');
+    const headers = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-From': location.pathname };
+    if (NS._markup) headers['X-Gofastr-Markup'] = NS._markup;
     const r = await hostFetch(url, {
       credentials: 'same-origin',
-      headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': NS._markup || '2', 'X-Gofastr-From': location.pathname },
+      headers,
     });
     if (!current(sec, n)) return;
     const rs = r.headers.get('X-Gofastr-Session'), meta = rs && document.querySelector('meta[name="gofastr-sse"]');
     if (meta) meta.setAttribute('content', meta.getAttribute('content').replace(/([?&]session=)[^&]*/, function (_, p) { return p + rs; }));
     if (rs && NS.invalidate) NS.invalidate('*');
-    const to = r.headers.get('X-Gofastr-Location');
+    const followed = NS._followed(r, url);
+    if (followed === null) return;
+    const to = r.headers.get('X-Gofastr-Location') || followed;
     if (to) return NS.navigate(to, { replace: true });
     if (!r.ok) throw new Error('sitesearch-page: ' + r.status);
     const doc = new DOMParser().parseFromString(await r.text(), 'text/html');

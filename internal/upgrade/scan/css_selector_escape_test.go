@@ -36,3 +36,52 @@ section[data-new] > .retired {}
 		t.Fatalf("escaped tag/attribute hits = %+v, want line 1", hits)
 	}
 }
+
+func TestCSSSelectorKeepsTokenIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name, selector, css string
+	}{
+		{"child", `.fui-pos-center > .fui-slot`, `.fui-pos-center\>.fui-slot {}`},
+		{"adjacent", `.old + .slot`, `.old\+.slot {}`},
+		{"sibling", `.old ~ .slot`, `.old\7e.slot {}`},
+		{"list", `.old,.slot`, `.old\,.slot {}`},
+		{"class", `.old.slot`, `.old\.slot {}`},
+		{"literal-class", `.old\.slot`, `.old.slot {}`},
+		{"partition", `.old\..slot`, `.old.\.slot {}`},
+		{"id", `#panel.old`, `#panel\.old {}`},
+		{"function", `:is(.old)`, `:is\(.old) {}`},
+		{"descendant", `.old\> .slot`, `.old\>.slot {}`},
+		{"unicode-suffix", `.old`, `.oldé {}`},
+		{"escaped-suffix", `.old`, `.old\> {}`},
+		{"literal-suffix", `.old\>`, `.old\>suffix {}`},
+		{"numeric-token", `[role=\31]`, `[role=1] {}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			note := selectorNote(test.selector)
+			result := mustRun(t, cssWorkspace(t, map[string]string{"app.css": test.css}), note)
+			if hits := result.Hits[note]; len(hits) != 0 {
+				t.Fatalf("literal identifier became selector syntax: %+v", hits)
+			}
+		})
+	}
+}
+
+func TestCSSSelectorEscapedNamesMatch(t *testing.T) {
+	for _, test := range []struct {
+		selector, css string
+	}{
+		{`.old\> .slot`, `.old\3e  .slot {}`},
+		{`.old\.slot`, `.old\2e slot {}`},
+		{`#panel.old`, `#p\61 nel.old {}`},
+		{`:is(.old)`, `:i\73(.old) {}`},
+		{`.\31 23`, `.\00003123 {}`},
+	} {
+		t.Run(test.selector, func(t *testing.T) {
+			note := selectorNote(test.selector)
+			result := mustRun(t, cssWorkspace(t, map[string]string{"app.css": test.css}), note)
+			if hits := result.Hits[note]; len(hits) != 1 || hits[0].Line != 1 || hits[0].Col != 1 {
+				t.Fatalf("equivalent escaped selector hits = %+v, want line 1", hits)
+			}
+		})
+	}
+}

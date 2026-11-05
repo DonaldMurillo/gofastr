@@ -258,31 +258,24 @@ func (w *winWindow) Snapshot(ctx context.Context) ([]byte, error) {
 
 func (w *winWindow) Title() string {
 	title := w.cachedTitle()
-	_ = w.shell.Main(func() {
-		if w.hwnd != 0 {
-			title = win32.GetWindowText(w.hwnd)
-		}
+	_ = w.withHandle(func(hwnd uintptr) error {
+		title = win32.GetWindowText(hwnd)
 		if title != "" {
 			w.setCachedTitle(title)
 		}
+		return nil
 	})
 	return title
 }
 
 func (w *winWindow) SetTitle(title string) error {
-	var nativeErr error
-	mainErr := w.shell.Main(func() {
-		if w.hwnd != 0 {
-			nativeErr = win32.SetWindowText(w.hwnd, title)
+	return w.withHandle(func(hwnd uintptr) error {
+		if err := win32.SetWindowText(hwnd, title); err != nil {
+			return err
 		}
-		if nativeErr == nil {
-			w.setCachedTitle(title)
-		}
+		w.setCachedTitle(title)
+		return nil
 	})
-	if mainErr != nil {
-		return mainErr
-	}
-	return nativeErr
 }
 
 func (w *winWindow) cachedTitle() string {
@@ -299,17 +292,29 @@ func (w *winWindow) setCachedTitle(title string) {
 }
 
 func (w *winWindow) Focus() error {
-	return w.shell.Main(func() {
-		if w.hwnd != 0 {
-			if win32.IsIconic(w.hwnd) {
-				win32.ShowWindowCmd(w.hwnd, win32.SW_RESTORE)
-			} else {
-				win32.ShowWindow(w.hwnd)
-			}
-			win32.BringWindowToTop(w.hwnd)
-			win32.SetForegroundWindow(w.hwnd)
+	return w.withHandle(func(hwnd uintptr) error {
+		if win32.IsIconic(hwnd) {
+			win32.ShowWindowCmd(hwnd, win32.SW_RESTORE)
+		} else {
+			win32.ShowWindow(hwnd)
 		}
+		win32.BringWindowToTop(hwnd)
+		win32.SetForegroundWindow(hwnd)
+		return nil
 	})
+}
+
+func (w *winWindow) withHandle(apply func(uintptr) error) error {
+	if w.closed.Load() {
+		return errWindowClosed()
+	}
+	var nativeErr error
+	if err := w.shell.Main(func() {
+		nativeErr = withWindowHandle(w.hwnd, w.closed.Load(), apply)
+	}); err != nil {
+		return err
+	}
+	return nativeErr
 }
 
 func (w *winWindow) Native() uintptr { return w.webview }
@@ -344,29 +349,25 @@ func (w *winWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
 	}
-	var nativeErr error
 	applied := f
-	err := w.shell.Main(func() {
+	err := w.withHandle(func(hwnd uintptr) error {
 		screenDPI := win32.SystemDPI()
-		sizeDPI := windowDPI(w.hwnd)
-		nativeErr = win32.MoveWindow(w.hwnd,
+		sizeDPI := windowDPI(hwnd)
+		if err := win32.MoveWindow(hwnd,
 			int(pointsToPixels(f.X, screenDPI)), int(pointsToPixels(f.Y, screenDPI)),
-			int(pointsToPixels(f.Width, sizeDPI)), int(pointsToPixels(f.Height, sizeDPI)), true)
-		if nativeErr != nil {
-			return
+			int(pointsToPixels(f.Width, sizeDPI)), int(pointsToPixels(f.Height, sizeDPI)), true); err != nil {
+			return err
 		}
-		if !win32.IsIconic(w.hwnd) && !win32.IsZoomed(w.hwnd) {
-			left, top, right, bottom, ok := win32.GetWindowRect(w.hwnd)
+		if !win32.IsIconic(hwnd) && !win32.IsZoomed(hwnd) {
+			left, top, right, bottom, ok := win32.GetWindowRect(hwnd)
 			if ok {
-				applied = frameFromWindowRect(w.hwnd, left, top, right, bottom)
+				applied = frameFromWindowRect(hwnd, left, top, right, bottom)
 			}
 		}
 		w.frame = applied
+		return nil
 	})
 	if err == nil {
-		if nativeErr != nil {
-			return nativeErr
-		}
 		if w.shell.onFrame != nil {
 			onFrame, id := w.shell.onFrame, w.id
 			deliverOnGoroutine(func() { onFrame(id, applied) })
@@ -398,8 +399,4 @@ func closeWindowOnUIThread(hwnd uintptr, closed bool, send func(uintptr, uint32,
 	if hwnd != 0 && !closed {
 		send(hwnd, wmClose, 0, 0)
 	}
-}
-
-func errWindowClosed() error {
-	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "window is not open"}
 }

@@ -58,7 +58,12 @@ Retired HTML attributes in Go string values and attribute maps match
 ASCII-case-insensitively, including names ending in `-` that identify
 an attribute family. Unicode lookalikes remain distinct.
 Retired CSS selectors match escaped identifier spellings too, including
-hexadecimal escapes, while reporting the original source position.
+hexadecimal escapes, while reporting the original source position. Escaped
+punctuation stays part of its identifier, never a combinator, class boundary
+or pseudo-class function; longer names remain distinct.
+Retired classes also match `[class=…]` and `[class~=…]` selectors. Quoted
+values follow CSS string escapes: an escaped LF, CR, CRLF or form feed
+continues the value without adding whitespace before class-token matching.
 A module without a `go` directive is checked as Go 1.16, the Go tool's
 default, rather than bypassing minimum-version notes. An invalid
 `go.mod` either prevents scan startup or appears as **Unscanned** when

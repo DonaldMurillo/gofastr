@@ -668,7 +668,9 @@ const (
 	// core navigator threads a separate CSRF replay guard without changing
 	// the navigate event's cached flag. This is core's own swap path and
 	// cannot demand-load. Retain two bytes of clearance.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21
+	// TestFullNavSessionClearsCache measures 16021 (+42): full-document
+	// session rollover must invalidate before copying the live stream meta.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1159,7 +1161,8 @@ const (
 	// TestPrefetchReplayKeepsRotatedCSRFToken's separate replay guard
 	// cannot carve out of core navigation.
 	// Retain two bytes of clearance and re-prove the padded cliff fixture.
-	coreCongestionWindowGZ = 18524
+	// TestFullNavSessionClearsCache measures 18570 at level 1 (+48).
+	coreCongestionWindowGZ = 18572
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1280,6 +1283,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"page direction travels with the page head": 7,
 		// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979; line 15981.
 		"prefetch replay preserves live CSRF without changing cached events": 21,
+		"full-document session changes invalidate cached identities":         42,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1492,7 +1496,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// (TestDeferredParamUsesServerAddress).
 		// 8161 measured plus 2 clearance after prefetch replay threads a
 		// separate CSRF guard (TestPrefetchReplayKeepsRotatedCSRFToken).
-		"envelope": 8163,
+		// TestFullNavSessionClearsCache measures 8199 (+38), plus 2 clearance.
+		"envelope": 8201,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1558,7 +1563,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// Pinned at the measured size plus 2 clearance.
 		// 3603 measured: TestPaneCloseDismissesOwnedModals pins layer
 		// ownership, nested modals and delayed chrome cancellation.
-		"widgets": 3605,
+		// 3656 measured: TestPaneCloseDismissesOwnedModals pins pending
+		// chrome and deep-link cancellation across a layer content refresh.
+		"widgets": 3658,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1634,7 +1641,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestHistoryRefocusesFreshPane pin post-refresh focus handoff.
 		// 3759 measured with both sets combined. Pinned at the measured
 		// size plus 2 clearance.
-		"intercept": 3761,
+		// 3777 measured: TestPaneCloseDismissesOwnedModals pins the
+		// content generation advanced by every pane swap.
+		"intercept": 3779,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
