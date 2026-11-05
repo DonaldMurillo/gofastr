@@ -10,14 +10,25 @@ import (
 
 func TestEntityFormUsesWireNames(t *testing.T) {
 	var fields []framework.FieldDeclaration
-	for _, kind := range []string{"string", "text", "enum", "relation", "bool", "int", "date", "datetime", "file", "email"} {
-		fields = append(fields, framework.FieldDeclaration{Name: kind + "_line_1", Type: kind, To: "postal_addresses", Values: []string{"home", "work"}})
+	for _, field := range []struct{ name, kind string }{
+		{"street_line_1", "string"},
+		{"delivery_notes", "text"},
+		{"address_category", "enum"},
+		{"billing_contact", "relation"},
+		{"is_primary", "bool"},
+		{"floor_number", "int"},
+		{"move_in_date", "date"},
+		{"last_verified_at", "datetime"},
+		{"proof_of_address", "file"},
+		{"contact_email", "email"},
+	} {
+		fields = append(fields, framework.FieldDeclaration{Name: field.name, Type: field.kind, To: "postal_addresses", Values: []string{"home", "work"}})
 	}
 	expression := appSpecEntityFormExpr(appspec.AppSpec{}, appspec.AppSpecScreen{Name: "home"},
 		appspec.AppSpecBlock{Kind: "entity_form", Entity: "addresses"}, nil,
 		map[string]framework.EntityDeclaration{"addresses": {Name: "addresses", Fields: fields}}, "/api")
 	for _, field := range fields {
-		wire := field.Type + "Line1"
+		wire := appspec.WireKey(field.Name)
 		if !strings.Contains(expression, `Name: "`+wire+`"`) || strings.Contains(expression, `Name: "`+field.Name+`"`) {
 			t.Errorf("%s control must use wire key %q, not column %q:\n%s", field.Type, wire, field.Name, expression)
 		}

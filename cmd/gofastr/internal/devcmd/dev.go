@@ -812,11 +812,7 @@ func (w *Watch) Scan() map[string]time.Time {
 				}
 				info = target
 			}
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			result[filepath.Join(w.dir, rel)] = info.ModTime()
+			result[path] = info.ModTime()
 		}
 		return nil
 	})
