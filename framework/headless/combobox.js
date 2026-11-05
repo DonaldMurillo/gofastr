@@ -211,7 +211,7 @@
         if (opts.length === 0) return;
         e.preventDefault();
         if (!isOpen) { openListbox(input, lb); highlight(lb, opts[opts.length - 1]); return; }
-        highlight(lb, opts[(activeIdx - 1 + opts.length) % opts.length]);
+        highlight(lb, opts[activeIdx < 0 ? opts.length - 1 : (activeIdx - 1 + opts.length) % opts.length]);
         return;
       }
       case 'Home': {
