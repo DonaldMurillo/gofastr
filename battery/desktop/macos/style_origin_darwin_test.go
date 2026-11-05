@@ -40,10 +40,31 @@ func styleOriginCheck() int {
 	left, top, height := 1600, 100, 250
 	style := desktop.WindowStyle{X: &left, Y: &top}
 	want := frameToRect(desktop.Frame{X: left, Y: top, Height: height}, screens)
-	actualX, actualY, ok := styleFrameOrigin(style, height, screens)
-	if !ok || actualX != want.X || actualY != want.Y {
-		fmt.Printf("style origin (%v, %v, %v), want primary-screen (%v, %v); key-screen height %v\n", actualX, actualY, ok, want.X, want.Y, keyHeight)
+	actualX, actualY, calls, reads := 0.0, 0.0, 0, 0
+	window := objc.ID(123)
+	apply := func(current desktop.WindowStyle) {
+		applyWindowStyle(window, 0, current, height, windowStylePlacement{screens: func() []screenInfo {
+			reads++
+			return screens
+		}, setOrigin: func(target objc.ID, originX, originY float64) {
+			if target != window {
+				panic("style origin targeted a different window")
+			}
+			actualX, actualY = originX, originY
+			calls++
+		}})
+	}
+	apply(style)
+	if calls != 1 || reads != 1 || actualX != want.X || actualY != want.Y {
+		fmt.Printf("style caller origin (%v, %v), setter calls %d, screen reads %d; want primary-screen (%v, %v); key-screen height %v\n", actualX, actualY, calls, reads, want.X, want.Y, keyHeight)
 		return 1
+	}
+	for _, incomplete := range []desktop.WindowStyle{{}, {X: &left}, {Y: &top}} {
+		apply(incomplete)
+		if calls != 1 {
+			fmt.Println("style caller set an incomplete origin")
+			return 1
+		}
 	}
 	return 0
 }

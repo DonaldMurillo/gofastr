@@ -124,8 +124,15 @@ func frameOrigin(style desktop.WindowStyle, height int, screenHeight float64) (x
 	return float64(*style.X), screenHeight - float64(*style.Y) - float64(height), true
 }
 
-func styleFrameOrigin(style desktop.WindowStyle, height int, screens []screenInfo) (x, y float64, ok bool) {
-	return frameOrigin(style, height, screenFlipBase(screens))
+type windowStylePlacement struct {
+	screens   func() []screenInfo
+	setOrigin func(objc.ID, float64, float64)
+}
+
+func nativeStylePlacement() windowStylePlacement {
+	return windowStylePlacement{screens: readScreens, setOrigin: func(window objc.ID, left, top float64) {
+		objc.SendF(window, objc.Sel("setFrameOrigin:"), nil, []float64{left, top})
+	}}
 }
 
 // applyWindowStyle runs every post-creation style setter. Call on the
@@ -137,7 +144,7 @@ func styleFrameOrigin(style desktop.WindowStyle, height int, screens []screenInf
 // re-verified against the SDK on this machine), so the value itself is
 // right; setting it after setToolbar: keeps it safe against an AppKit
 // release that lets attaching a toolbar reset the visibility.
-func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height int) {
+func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height int, placement windowStylePlacement) {
 	if style.Chrome == desktop.ChromeHiddenTitle || style.Chrome == desktop.ChromeUnified {
 		objc.Send(win, objc.Sel("setTitlebarAppearsTransparent:"), 1)
 	}
@@ -170,9 +177,8 @@ func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height in
 	if style.AllSpaces {
 		objc.Send(win, objc.Sel("setCollectionBehavior:"), behaviorCanJoinAllSpaces)
 	}
-	if x, y, ok := styleFrameOrigin(style, height, readScreens()); ok {
-		// setFrameOrigin: takes an NSPoint, two doubles.
-		objc.SendF(win, objc.Sel("setFrameOrigin:"), nil, []float64{x, y})
+	if x, y, ok := frameOrigin(style, height, screenFlipBase(placement.screens())); ok {
+		placement.setOrigin(win, x, y)
 	}
 }
 
@@ -569,7 +575,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	objc.Send(window, objc.Sel("setContentView:"), uintptr(webView))
 	objc.Send(window, objc.Sel("setDelegate:"), uintptr(bridge))
 	objc.Send(webView, objc.Sel("setNavigationDelegate:"), uintptr(bridge))
-	applyWindowStyle(window, webView, cfg.Style, cfg.Height)
+	applyWindowStyle(window, webView, cfg.Style, cfg.Height, nativeStylePlacement())
 	// The material goes in before the window fronts, so the first
 	// paint already has the effect under it.
 	mainChrome := applyWindowMaterial(window, webView, cfg.Style, cfg.SidebarWidth, s.reduceTransparency.Load(), s.logger)
@@ -1338,7 +1344,7 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		objc.Send(window, objc.Sel("setContentView:"), uintptr(webView))
 		objc.Send(window, objc.Sel("setDelegate:"), uintptr(bridge))
 		objc.Send(webView, objc.Sel("setNavigationDelegate:"), uintptr(bridge))
-		applyWindowStyle(window, webView, spec.Style, height)
+		applyWindowStyle(window, webView, spec.Style, height, nativeStylePlacement())
 		// The material before the window fronts, like the main window.
 		chrome := applyWindowMaterial(window, webView, spec.Style, spec.SidebarWidth, s.reduceTransparency.Load(), s.logger)
 		// A remembered (or explicit) frame wins over the style origin;
