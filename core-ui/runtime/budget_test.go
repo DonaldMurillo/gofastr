@@ -1647,7 +1647,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// on a region the winning apply did not replace (2026-10-27 bug
 		// bash R2, TestSupersededNavKeepsPark,
 		// TestSweepRestoresUnfilledRegion).
-		"loading": 1384,
+		// 1386 measured: TestLoadingExitSurvivesSupersede keeps exit caps
+		// independent of the entry's pending-show timer, plus 2 clearance.
+		"loading": 1388,
 		// parts 1997 measured after the session-reset retry
 		// (2026-09-27, spike/layout-showcase): a `session` 409 waits
 		// for the page commit (whose Set-Cookie stores the re-minted
