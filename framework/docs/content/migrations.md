@@ -382,7 +382,9 @@ Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
 type carries `USING col::INTEGER` (or the declared integer type), so
 numeric text converts and anything else fails the migration; a text
 default is dropped before the retype and the declared default set
-after it, since Postgres cannot cast the old one; other
+after it, since Postgres cannot cast the old one. When a generated rollback
+uses that conversion, it restores the original default recorded in the schema
+snapshot, including on a column renamed in the same migration. Other
 changes may still need a data-specific `USING` clause, so review and
 hand-tighten. A `String` whose `Max` changed is a type change on
 Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
@@ -429,9 +431,12 @@ foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
 Rows are carried over, not regenerated. A column added in the same change
 is added first and copied like the rest, with the value its `ADD COLUMN`
 default gave each row, so a key moved onto new columns keeps the table's
-rows (and fails, keeping them, when those rows repeat the new key). A required-but-undefaulted column added in the same
-change still fails loud on a populated table until you backfill it, and a
-migration holding a rebuild ships no `Down` (the pre-migration constraints
+rows (and fails, keeping them, when those rows repeat the new key). A required
+column added without a default stays nullable through a rebuild in the same
+change, just as it does for a standalone `ADD COLUMN`. Backfill existing rows
+before tightening that constraint in a later migration. Existing required
+columns and new required columns with defaults keep their `NOT NULL` constraint.
+A migration holding a rebuild ships no `Down` (the pre-migration constraints
 are not recoverable, and the other changes' inverses alone would roll back to
 a table matching neither schema), so a SQLite retype is forward-only. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
@@ -543,7 +548,9 @@ derived (table `a_b` on `c` and table `a` on `b_c` are both
 and `migrate generate` refuse the pair and name both tables, as they do
 one table declaring two different indexes under one name. Names are
 compared folded and cut at 63 bytes, the way Postgres stores them, on
-both dialects. Give one of the indexes its own `Name`.
+both dialects. Field-level `Unique` names participate in the same check,
+including collisions with explicitly named indexes. Give a declared index
+its own `Name`, or rename a table or field when two field-level names collide.
 
 A `Unique` field's `<table>_<column>_key` is the name Postgres gives
 the inline constraint `CREATE TABLE` writes. Past 63 bytes it is

@@ -56,6 +56,18 @@ func checkIndexNames(ordered []*entity.Entity, all map[string]*entity.Entity) er
 			continue
 		}
 		table := ent.GetTable()
+		for _, field := range ent.GetFields() {
+			if !field.Unique {
+				continue
+			}
+			name, err := uniqueIndexName(ent, field.Name)
+			if err != nil {
+				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
+			}
+			if err := claim(table, name, entity.Index{Columns: []string{field.Name}, Unique: true}); err != nil {
+				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
+			}
+		}
 		for _, idx := range entityIndices(ent) {
 			name := idx.Name
 			if name == "" {

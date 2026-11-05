@@ -206,9 +206,9 @@ func (e *engine) loadConfigurations(loads []loadOutcome) {
 			e.noteUnscanned(rel, "unreadable: "+err.Error())
 			return
 		}
-		cfg, ok := solveFileConfig(src, filepath.Base(f))
-		if !ok {
-			e.noteUnscanned(rel, "no satisfiable build configuration")
+		cfg, err := solveFileConfig(src, filepath.Base(f))
+		if err != nil {
+			e.noteUnscanned(rel, err.Error())
 			return
 		}
 		if slices.Contains(cfg.tags, "ignore") {
@@ -449,8 +449,8 @@ const maxConstraintTags = 8
 
 // solveFileConfig finds one build configuration under which the file
 // compiles: its //go:build expression AND its filename's implied
-// GOOS/GOARCH. ok is false when no combination satisfies both.
-func solveFileConfig(src []byte, name string) (buildConfig, bool) {
+// GOOS/GOARCH. An error distinguishes an exhausted search from its tag limit.
+func solveFileConfig(src []byte, name string) (buildConfig, error) {
 	fos, farch := fileOSArch(name)
 	expr, hasExpr := fileBuildConstraint(src)
 	if importsC(src) {
@@ -462,7 +462,7 @@ func solveFileConfig(src []byte, name string) (buildConfig, bool) {
 		if fos == "" && farch == "" {
 			// Unconstrained: the main load compiled it, so an
 			// IgnoredFiles entry can only be stale.
-			return buildConfig{goos: runtime.GOOS, goarch: runtime.GOARCH}, true
+			return buildConfig{goos: runtime.GOOS, goarch: runtime.GOARCH}, nil
 		}
 		return solveBuildConstraint(nil, fos, farch)
 	}
@@ -475,7 +475,7 @@ func solveFileConfig(src []byte, name string) (buildConfig, bool) {
 // platform tags, then every pairable one; cgo stays off unless nothing
 // else satisfies. At most one OS and one arch are ever true, and every
 // (goos, goarch) offered is a pair from osArches.
-func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig, bool) {
+func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig, error) {
 	var osTags, archTags, free []string
 	seen := stringSet()
 	add := func(tag string) {
@@ -517,7 +517,7 @@ func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig,
 	sort.Strings(archTags)
 	sort.Strings(free)
 	if len(free) > maxConstraintTags {
-		return buildConfig{}, false
+		return buildConfig{}, fmt.Errorf("constraint names more than %d tags", maxConstraintTags)
 	}
 	candidates := func(host string, named, known []string) []string {
 		out := append([]string{host}, named...)
@@ -580,13 +580,13 @@ func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig,
 								tags = append(tags, tag)
 							}
 						}
-						return buildConfig{goos: goos, goarch: goarch, tags: tags, cgo: cgo}, true
+						return buildConfig{goos: goos, goarch: goarch, tags: tags, cgo: cgo}, nil
 					}
 				}
 			}
 		}
 	}
-	return buildConfig{}, false
+	return buildConfig{}, fmt.Errorf("no satisfiable build configuration")
 }
 
 // andTag ANDs one tag into expr; a nil expr becomes the tag alone.

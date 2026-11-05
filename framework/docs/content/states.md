@@ -246,8 +246,12 @@ including on bodyless POSTs; apps do not need middleware to add it.
 
 When the entity sets `mcp: true`, each non-system move is one MCP tool,
 `<entity>_<key>`, taking the record's `id` and posting to the move's
-route. The update permission gates it like update. System moves get no
-tool.
+route. The update permission gates it like update, and a move's own
+`Permission` also gates its listing and invocation. A role-level caller missing
+either permission does not see the tool; a Wildcard alone does not satisfy the
+move's named permission. Record-aware and route-group policies remain on the
+redispatched route, where the record and group middleware are available.
+System moves get no tool.
 
 ## Who may move
 

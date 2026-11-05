@@ -56,7 +56,7 @@ func TestMCPToolGateBranches(t *testing.T) {
 		{"an elevated context still deletes", WithElevation(context.Background(), "notes"), opDelete, true, false},
 	}
 	for _, tc := range cases {
-		err := ch.mcpToolGate(tc.op, tc.item)(tc.ctx)
+		err := ch.mcpToolGate(tc.op, tc.item, "")(tc.ctx)
 		if tc.deny != (err != nil) {
 			t.Errorf("SECURITY: [authz] %s: gate err = %v, want deny=%v", tc.name, err, tc.deny)
 		}
@@ -69,7 +69,7 @@ func TestMCPToolGateBranches(t *testing.T) {
 	// install another policy: the same refused caller is left to the route.
 	grouped := NewCrudHandler(ent, nil)
 	grouped.MCPRouteScoped = true
-	if err := grouped.mcpToolGate(opCreate, false)(as("viewer")); err != nil {
+	if err := grouped.mcpToolGate(opCreate, false, "notes:move")(as("viewer")); err != nil {
 		t.Errorf("SECURITY: [authz] a route-scoped entity was judged on the /mcp policy: %v", err)
 	}
 }

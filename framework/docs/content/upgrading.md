@@ -49,6 +49,11 @@ these entries before treating a report with no matches as a clean scan.
 A missing optional `gofastr.yml` is not an unreadable-file warning.
 Stylesheet, text and settings reads are capped at 8 MiB per file;
 larger files appear as **Unscanned** instead of being read in full.
+A Go constraint naming more than eight distinct free build tags appears as
+**Unscanned** with `constraint names more than 8 tags`: the bounded search
+did not decide whether that file can build. This is different from
+`no satisfiable build configuration`, which means no supported platform and
+tag assignment satisfies the constraint. Review tag-limit files separately.
 Retired HTML attributes in Go string values and attribute maps match
 ASCII-case-insensitively, including names ending in `-` that identify
 an attribute family. Unicode lookalikes remain distinct.
