@@ -371,6 +371,10 @@ registers for the lower layer to clone (`registry.RegisterTemplate`,
 `preset.ToastTemplate`), or a module the kit ships itself
 (`framework/ui/searchinput.js`, `filedropzone.js`, `lightbox.js`).
 
+SearchInput's kit-owned scanner keeps its clear button in step with the
+input value on input and after a native form reset. The reset update runs
+on the next animation frame, after the browser restores default values.
+
 The `data-fui-*` keys that remain are the framework's own modules'
 and hosts': `data-fui-lightbox*` and `data-fui-zoomed` (the kit's
 lightbox module), `data-fui-dropzone-preview*` (its dropzone module),

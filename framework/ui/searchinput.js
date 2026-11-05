@@ -41,6 +41,7 @@
     };
 
     input.addEventListener('input', updateClearVisibility);
+    if (input.form) input.form.addEventListener('reset', () => requestAnimationFrame(updateClearVisibility));
     clearBtn.addEventListener('click', function () {
       clear();
       input.focus();
