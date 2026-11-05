@@ -218,6 +218,9 @@ renders) updates the page in place as the reader types:
   Live requests advertise only the markup generation the loaded kernel
   supports. An older kernel without that value sends no generation,
   leaving the server's version-skew guard in charge.
+  Policy redirects follow the router's response contract: same-document
+  destinations navigate in place, while document destinations leave the
+  current document. Redirected pages are never parsed as search results.
 - In a static export there is no server to render the page, so the module
   ranks with `sitesearch-static` and draws the same markup itself. A query
   in the address (`/search?q=table`) runs on load. Instead of page links it

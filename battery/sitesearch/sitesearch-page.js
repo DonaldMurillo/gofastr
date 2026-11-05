@@ -75,7 +75,9 @@
     const rs = r.headers.get('X-Gofastr-Session'), meta = rs && document.querySelector('meta[name="gofastr-sse"]');
     if (meta) meta.setAttribute('content', meta.getAttribute('content').replace(/([?&]session=)[^&]*/, function (_, p) { return p + rs; }));
     if (rs && NS.invalidate) NS.invalidate('*');
-    const to = r.headers.get('X-Gofastr-Location');
+    const followed = NS._followed(r, url);
+    if (followed === null) return;
+    const to = r.headers.get('X-Gofastr-Location') || followed;
     if (to) return NS.navigate(to, { replace: true });
     if (!r.ok) throw new Error('sitesearch-page: ' + r.status);
     const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
