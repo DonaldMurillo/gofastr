@@ -1,13 +1,5 @@
 # GoFastr UI architecture
 
-Component action registries return actions in event-name order, keeping
-generated action scripts byte-stable across renders and replicas.
-
-`component.Widget.RenderCtx` forwards the request context to its child and
-prefers `RenderCtx` over `Render`. Context-free widget and composition
-helpers use the same dispatch with a background context, including for
-components embedding `component.ContextOnly`.
-
 After a repeater row removal, focus recovery tries remaining row controls
 in order and verifies that each focus attempt succeeded. Invisible controls
 must not strand focus on the document body; Add is the final fallback.
@@ -2750,6 +2742,14 @@ that navigated away.
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path
 escapes return 400 rather than selecting a different widget set.
+
+`component.Widget.RenderCtx` forwards the request context to its child and
+prefers `RenderCtx` over `Render`. Context-free widget and composition
+helpers use the same dispatch with a background context, including for
+components embedding `component.ContextOnly`.
+
+Component action registries return actions in event-name order, keeping
+generated action scripts byte-stable across renders and replicas.
 
 The `core-ui/widget` registry continues to drive widgets (their
 position chrome, slot composition, RPC endpoints). Widgets that
