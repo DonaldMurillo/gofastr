@@ -782,8 +782,9 @@ few lines, and link the PR or the docs page for the rest.
   BFF origin guard accepts API tokens with a configured prefix.
 - **Streams and realtime.** A WebSocket upgrade bounds its handshake
   write, so a peer that never reads cannot hold the hijacked
-  connection. With pong checking off, keepalive ticks at the idle
-  timeout instead of every 10ms. An RTC peer evicted by the socket cap
+  connection. With pong checking off, keepalive ticks at one quarter of
+  `ReadIdleTimeout` (10ms minimum) instead of unconditionally every 10ms.
+  An RTC peer evicted by the socket cap
   no longer announces a leave while a remote replica still seats it.
 - **Desktop.** `gofastr desktop feed` merges a release's platforms into
   an existing manifest of the same version and re-signs it. It refuses
