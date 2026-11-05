@@ -802,6 +802,74 @@ few lines, and link the PR or the docs page for the rest.
   names the table, row and column of a non-finite float. `Bind`'s docs
   describe the error an invalid destination returns, and the registry
   LLM index no longer promises a cursor `total`.
+- **Navigation keeps the CSRF token current.** Client-side navigation
+  takes the CSRF meta token from each response, so a long-lived tab can
+  still post after the signing key rotates. A response with no token
+  keeps the live one, and a cached back or forward replay never brings
+  an older token back. Envelope routes honour typed segment constraints
+  and decode each segment the way core navigation does, so the layout
+  key and deferred part address for `/projects/a%2Fb` match the
+  server's. A widget script that failed to download during boot retries
+  on the next navigation. A widget whose foreign `statePath` is refused
+  keeps its close button and actions. Native modal dialogs own Escape
+  and Tab above an intercept pane, and a browser that rejects `:modal`
+  keeps the pane's keyboard handling.
+- **Realtime.** An RTC peer with an offer outstanding at reconnect is
+  rebuilt instead of wedging renegotiation. Remote-assist sharing
+  renegotiates when the support socket reconnects. A slow entity event
+  stream keeps the newest buffered events.
+- **Entity events and exports.** Create, batch-create and upsert
+  inserts route hidden-owner events and outbox entries by the persisted
+  owner, including one a trusted create hook assigned. A soft delete
+  committed inside an ambient transaction publishes its event; a
+  rolled-back delete or purge stays quiet. User data exports include
+  durable schedules and their payloads, and queue job exports keep
+  occurrence, update, error and claim state. Cursor lists use the
+  entity list default and page-size cap.
+- **Admin.** A command-palette create entry needs the same scoped read
+  and create permissions as its destination screen. Jobs status counts
+  use the active locale's digits.
+- **Email, logs and relays.** A credentialed SMTP sender refuses a
+  relay that does not advertise AUTH instead of sending without it; a
+  sender with no credentials is unchanged. Access logs and trusted
+  client-IP selection read every `X-Forwarded-For` header line. A HEAD
+  relay response passes with a content type the relay refuses for a GET
+  body.
+- **Discovery and OpenAPI.** Agent-ready bundles keep the granular
+  discovery fields they leave unset: card endpoints, versions and llms
+  sections. A2A cards keep each skill's input and output MIME modes.
+  `llms.txt` links an MCP manifest only when its route is mounted.
+  OpenAPI types a `:id` custom-endpoint input as a path parameter and
+  treats a lowercase method like its uppercase spelling. Generated CLIs
+  leave union-valued body properties on `--json`, including unions
+  beside a reference or inside a composition.
+- **App spec, generate and pack.** App-spec validation refuses a screen
+  the auth battery's `/me` route would shadow, and a list that names an
+  `id` column a natural or composite-key entity does not have.
+  Generated CRUD tests skip constrained required and key fields instead
+  of sending values the app rejects. `generate --watch` reruns when an
+  owned style or token input is created, edited or removed. `gofastr
+  pack` keeps control-catalog screen blocks and the public OpenAPI
+  exposure, description and base URL, and stops adding the implicit
+  admin path and role defaults. `-o` and `--out` refuse an empty value
+  or another flag instead of printing a spec that holds recovered
+  secrets. YAML accepts an indentless block sequence under a mapping
+  key.
+- **Styles and desktop.** `@container` refuses custom media, which
+  never matches there, and still accepts nested and boolean `style()`
+  queries. Date-range announcements keep Gregorian dates and the page
+  language. A macOS material sidebar that starts collapsed creates its
+  material zone when it opens.
+- **Gallery and docs.** The Tag gallery dismisses, with a no-script
+  fallback. FilterChipBar, sign-in and repeater previews post to a
+  working endpoint instead of answering 405. The standalone drawer
+  trigger opens its drawer, LanguageMenu has no dead locale links,
+  OptimizedImage shows a real image, and the image API links point at
+  `framework/ui`. The SMTP agent recipe compiles. The queue capability
+  table lists in-memory and Redis inspection and dead-job replay.
+  Access-log guidance keeps the default middleware, cron errors go to
+  `slog.Default` when `OnError` is unset, and owner scoping with no
+  owner extractor answers 401.
 - **A handler's 404 or 503 survives `Metrics` and `Tracing` when it
   streams an empty or failing reader.** Their `ReadFrom` wrote a 200
   before copying, so the handler's later status never reached the
