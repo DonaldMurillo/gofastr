@@ -168,7 +168,7 @@
   // palette's results) is the dialog's own content, so its Escape
   // goes on to close the dialog.
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape' || e.isComposing) return;
+    if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
     const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
     if (!input || input.hasAttribute('data-hui-combobox-inline') || input.getAttribute('aria-expanded') !== 'true') return;
     const lbId = input.getAttribute('aria-controls');
