@@ -707,8 +707,25 @@ few lines, and link the PR or the docs page for the rest.
 - **Runtime fixes.** A hidden autogrow textarea keeps its height and
   fits when revealed. The visible-route preload observer releases links
   a navigation removed. A search input's clear button follows a form
-  reset. A full-document navigation that re-mints the SSE session drops
-  cached screens, so Back cannot replay the previous identity's pages.
+  reset. A full-document navigation, or an intercepted overlay, that
+  re-mints the SSE session drops cached screens, so Back cannot replay
+  the previous identity's pages. A superseded navigation's loading exit
+  still finishes within its cap, so its cleanup and `aria-busy` reset
+  run. BackToTop recomputes its threshold after a soft navigation. A
+  wizard submit that never answered no longer moves focus on a later
+  page.
+- **Toasts and the notification bell.** A server-rendered default or
+  polite `Toast` row carries a live status role, while the stack around
+  it stays non-live; the runtime's toast and sortable-list regions drop
+  the redundant `aria-live`. Dismissing or evicting a toast returns focus
+  to where it came from, unless focus has moved elsewhere since.
+  `NotificationBell` keeps its label in the accessible name when the
+  unread count updates.
+- **`desktoptest` behaves more like a shell.** Reopening a closed window
+  id creates a fresh window, focus and close-to-tray actions fire the
+  focus and blur callbacks, and a native boot that exits before the
+  page is ready, or never becomes ready, fails the test instead of
+  passing it.
 - **Compression keeps `ReadFrom`.** An uncompressed response through
   the compression middleware reaches the underlying writer's
   `ReadFrom`, so file copies keep sendfile.
