@@ -891,6 +891,12 @@ these moves discard its edits, and only then: opening a related record
 over a changed one discards nothing and does not ask; a declined Back
 is repaired with a re-push that restores the URL and history.length.
 
+URL-only writes through the shared `_pushURL` helper (pagination and
+deep-linked widgets included) belong to the top intercept pane's history
+span. Replace rewrites its current entry; push extends the span. Closing
+consumes the whole span without changing the router's underlying path.
+A refused history write changes neither the pane's URL nor its span.
+
 **More than one origin.** `Intercept.AlsoFrom` names more patterns the
 overlay opens over, beside `From`: a create screen opens over its list
 and over each related record whose Related tab adds to it. The manifest
