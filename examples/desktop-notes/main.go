@@ -201,7 +201,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 // Markdown file of every note the local identity owns, one native
 // event the page turns into a toast. The dialog returns the only path
 // this process may write (the fs allow-list posture); the write is
-// 0600.
+// 0600. Notes are read in bounded pages until the owner's list is exhausted.
 func exportAll(ctx context.Context, app *framework.App, d *desktop.Battery) error {
 	if d == nil {
 		return nil
@@ -216,20 +216,27 @@ func exportAll(ctx context.Context, app *framework.App, d *desktop.Battery) erro
 	if path == "" {
 		return nil
 	}
-	rows, err := app.MustCrudHandler("notes").ListAll(localUserCtx(ctx, d), crud.ListOptions{
-		Limit: 1000,
-		Sorts: []filter.ParsedSort{{Field: "updated_at", Desc: true}},
-	})
-	if err != nil {
-		return fmt.Errorf("load notes: %w", err)
-	}
 	var b strings.Builder
-	for _, row := range rows {
-		title, _ := row["title"].(string)
-		body, _ := row["body"].(string)
-		b.WriteString("# " + title + "\n\n")
-		if body != "" {
-			b.WriteString(body + "\n\n")
+	const pageSize = 1000
+	ownerCtx := localUserCtx(ctx, d)
+	for offset := 0; ; offset += pageSize {
+		rows, err := app.MustCrudHandler("notes").ListAll(ownerCtx, crud.ListOptions{
+			Limit: pageSize, Offset: offset,
+			Sorts: []filter.ParsedSort{{Field: "updated_at", Desc: true}},
+		})
+		if err != nil {
+			return fmt.Errorf("load notes: %w", err)
+		}
+		for _, row := range rows {
+			title, _ := row["title"].(string)
+			body, _ := row["body"].(string)
+			b.WriteString("# " + title + "\n\n")
+			if body != "" {
+				b.WriteString(body + "\n\n")
+			}
+		}
+		if len(rows) < pageSize {
+			break
 		}
 	}
 	if err := fileperm.WriteOwnerOnly(path, []byte(b.String())); err != nil {
