@@ -3996,8 +3996,11 @@ func (ds *UIHost) Mount(r *router.Router) {
 				// empty catalog rather than the whole one.
 				path = "\x00none"
 			}
+			// The catalog unescapes ?page= once, as the runtime sends it
+			// (encodeURIComponent of an escaped pathname); a surface path is
+			// a decoded route, so escape it to the same shape.
 			q := req.URL.Query()
-			q.Set("page", path)
+			q.Set("page", (&url.URL{Path: path}).EscapedPath())
 			scoped := req.Clone(req.Context())
 			scoped.URL.RawQuery = q.Encode()
 			widget.ServeWidgetList(w, scoped)
