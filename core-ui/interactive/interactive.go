@@ -601,6 +601,7 @@ func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
 		}
 	}
 	attrs := map[string]string{
+		"type":                     "button",
 		"data-state":               "idle",
 		"data-hui-action":          "",
 		"data-hui-action-endpoint": action.path,

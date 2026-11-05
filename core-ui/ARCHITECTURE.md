@@ -94,6 +94,8 @@ unhighlighted, empty or closed list never submits its no-script GET form.
 
 `interactive.OptimisticUpdate` refuses Action options its headless action
 contract cannot carry, including confirmation, bodies, toasts and effects.
+Its native button uses `type="button"`, so an enclosing form never submits
+before hydration or in a static export.
 
 `ui.SelectConfig.Selected` preserves stored values absent from its options;
 a nonempty value takes precedence over option-level selection flags.
