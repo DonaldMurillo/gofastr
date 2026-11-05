@@ -361,7 +361,11 @@ It then updates the snapshot. The typical loop:
 What it generates: `CREATE TABLE` (new entity), `ADD COLUMN` (new
 field), `DROP COLUMN` (removed field, whose `Down` re-adds the column but
 does not restore row data), and `DROP TABLE`
-(removed entity). The forward DDL is built by the same code path as
+(removed entity). Generation refuses a table drop when the recorded schema
+contains foreign keys from tables that remain. Remove those foreign keys in
+a separate migration before dropping the referenced table; otherwise SQLite
+can delete referencing rows and Postgres refuses the drop. Tables removed
+together retain dependency-ordered drops. The forward DDL is built by the same code path as
 auto-migrate, so a generated migration matches what auto-migrate would
 have applied. A new **required** field with **no default** is added
 *nullable*: a `NOT NULL` `ADD COLUMN` with nothing to fill existing

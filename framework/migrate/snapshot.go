@@ -424,6 +424,15 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 	dropped = sortDroppedTables(dialect, dropped, prev.TableDDL)
 	for _, table := range dropped {
+		var kept []string
+		for _, referrer := range slices.Sorted(maps.Keys(recordedReferencesOnto(dialect, prev.TableDDL, table))) {
+			if declaredTables[tableKey(dialect, referrer)] {
+				kept = append(kept, referrer)
+			}
+		}
+		if len(kept) > 0 {
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot drop table while kept tables %s reference it; remove their foreign keys in a separate migration first", table, strings.Join(kept, ", "))
+		}
 		qtable, qerr := query.SafeIdent(table)
 		if qerr != nil {
 			return "", "", SchemaSnapshot{}, fmt.Errorf("generate: invalid table name %q: %w", table, qerr)
