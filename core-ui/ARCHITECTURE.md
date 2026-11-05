@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+Component action registries return actions in event-name order, keeping
+generated action scripts byte-stable across renders and replicas.
+
 After a repeater row removal, focus recovery tries remaining row controls
 in order and verifies that each focus attempt succeeded. Invisible controls
 must not strand focus on the document body; Add is the final fallback.

@@ -1,6 +1,10 @@
 package component
 
-import "sync"
+import (
+	"cmp"
+	"slices"
+	"sync"
+)
 
 // ActionDef defines a single event handler within a component.
 type ActionDef struct {
@@ -64,12 +68,13 @@ func (r *ActionRegistry) Get(eventName string) (ActionDef, bool) {
 	return def, ok
 }
 
-// All returns all registered actions.
+// All returns all registered actions ordered by event name.
 func (r *ActionRegistry) All() []ActionDef {
 	out := make([]ActionDef, 0, len(r.actions))
 	for _, def := range r.actions {
 		out = append(out, def)
 	}
+	slices.SortFunc(out, func(left, right ActionDef) int { return cmp.Compare(left.Event, right.Event) })
 	return out
 }
 
