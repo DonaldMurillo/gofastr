@@ -299,6 +299,10 @@ type App struct {
 	// pendingEndpoints holds EntityEndpoints calls until entity registration
 	// registers the entity they name.
 	pendingEndpoints map[string][]entity.Endpoint
+	// claimedEndpoints names the queues an entity registration merged.
+	// The queue stays in place, so the same entity registered into
+	// another version group gets the same endpoints.
+	claimedEndpoints map[string]bool
 	// crudMounts records where each entity's write routes mounted: the
 	// router that carries them (a group's sub-router, with its
 	// middleware) and the path on it. EntityUI mounts the bulk and export
@@ -1761,7 +1765,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		}
 	}
 
-	delete(a.pendingEndpoints, name)
+	a.claimQueuedEndpoints(name)
 	return a
 }
 
@@ -2242,15 +2246,43 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
+// checkQueuedEndpointsClaimed refuses to start while EntityEndpoints
+// holds endpoints for a name no entity registration claimed.
+func (a *App) checkQueuedEndpointsClaimed() error {
+	var unclaimed []string
+	for _, name := range slices.Sorted(maps.Keys(a.pendingEndpoints)) {
+		if !a.claimedEndpoints[name] {
+			unclaimed = append(unclaimed, name)
+		}
+	}
+	if len(unclaimed) > 0 {
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity, TryEntity, or GroupEntity call registered", strings.Join(unclaimed, ", "))
+	}
+	return nil
+}
+
+// claimQueuedEndpoints records that a committed registration merged
+// name's queue.
+func (a *App) claimQueuedEndpoints(name string) {
+	if len(a.pendingEndpoints[name]) == 0 {
+		return
+	}
+	if a.claimedEndpoints == nil {
+		a.claimedEndpoints = map[string]bool{}
+	}
+	a.claimedEndpoints[name] = true
+}
+
 // EntityEndpoints queues endpoints for the entity that a later App.Entity,
-// TryEntity, or GroupEntity call registers under name. That call merges them into its
-// config's Endpoints, so they pass the same route and MCP checks as
+// TryEntity, or GroupEntity call registers under name. Every such call
+// merges them into its config's Endpoints (an entity registered into a
+// v1 and a v2 group gets them in both), so they pass the same route and MCP checks as
 // endpoints written in the config. It is how a generated
 // entities/endpoints.gen.go attaches endpoints to entity files it does not
 // own. Calling it for an entity already registered panics, and Start fails
 // while endpoints are still queued for a name nothing registered.
 func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
-	if _, err := a.Registry.Get(name); err == nil {
+	if _, err := a.Registry.Get(name); err == nil || a.claimedEndpoints[name] {
 		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity, TryEntity, or GroupEntity", name))
 	}
 	if a.pendingEndpoints == nil {
@@ -2371,7 +2403,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 			return fmt.Errorf("failed to register endpoints for entity %q: %w", name, err)
 		}
 	}
-	delete(a.pendingEndpoints, name)
+	a.claimQueuedEndpoints(name)
 
 	return nil
 }
@@ -3697,8 +3729,8 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// No-op in every other process.
 	a.enableSemanticCoverageFromEnv()
 
-	if len(a.pendingEndpoints) > 0 {
-		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity, TryEntity, or GroupEntity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	if err := a.checkQueuedEndpointsClaimed(); err != nil {
+		return err
 	}
 	if err := a.checkRequestWriteTimeouts(); err != nil {
 		return err

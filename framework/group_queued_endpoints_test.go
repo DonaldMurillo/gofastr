@@ -26,8 +26,8 @@ func TestGroupClaimsQueuedEndpoints(t *testing.T) {
 			t.Errorf("%s status = %d, want 204", action, recorder.Code)
 		}
 	}
-	if len(app.pendingEndpoints) != 0 || len(config.Endpoints) != 1 {
-		t.Fatal("group must consume its queue without modifying the caller's config")
+	if err := app.checkQueuedEndpointsClaimed(); err != nil || len(config.Endpoints) != 1 {
+		t.Fatalf("group must claim its queue without modifying the caller's config: %v", err)
 	}
 }
 
@@ -44,11 +44,32 @@ func TestGroupRefusalKeepsEndpointQueue(t *testing.T) {
 		}()
 		app.GroupEntity(group, "licenses", entity.EntityConfig{Endpoints: []entity.Endpoint{endpoint}})
 	}()
-	if len(app.pendingEndpoints["licenses"]) != 1 || len(app.Registry.All()) != 0 {
+	if len(app.pendingEndpoints["licenses"]) != 1 || len(app.Registry.All()) != 0 || app.checkQueuedEndpointsClaimed() == nil {
 		t.Fatal("failed grouped registration consumed the queue or registered the entity")
 	}
 	app.GroupEntity(group, "licenses", entity.EntityConfig{})
-	if len(app.pendingEndpoints) != 0 {
-		t.Fatal("successful retry did not consume queued endpoints")
+	if err := app.checkQueuedEndpointsClaimed(); err != nil {
+		t.Fatalf("successful retry did not claim queued endpoints: %v", err)
+	}
+}
+
+// One entity registered into two version groups gets the queued endpoints
+// in both: the queue belongs to the name, not to its first registration.
+func TestEveryGroupGetsQueuedEndpoints(t *testing.T) {
+	app := NewApp()
+	queued := entity.Endpoint{Method: "POST", Path: "{id}/revoke", Public: true, Handler: http.HandlerFunc(noContent)}
+	app.EntityEndpoints("licenses", queued)
+	config := entity.EntityConfig{Fields: []schema.Field{{Name: "name", Type: schema.String}}}
+	app.GroupEntity(app.Group("/v1"), "licenses", config)
+	app.GroupEntity(app.Group("/v2"), "licenses", config)
+	for _, prefix := range []string{"/v1", "/v2"} {
+		recorder := httptest.NewRecorder()
+		app.Router().ServeHTTP(recorder, httptest.NewRequest("POST", prefix+"/licenses/abc/revoke", nil))
+		if recorder.Code != http.StatusNoContent {
+			t.Errorf("%s revoke status = %d, want 204", prefix, recorder.Code)
+		}
+	}
+	if err := app.checkQueuedEndpointsClaimed(); err != nil {
+		t.Fatalf("claimed queue reported as unregistered: %v", err)
 	}
 }

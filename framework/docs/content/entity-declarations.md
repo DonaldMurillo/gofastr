@@ -2483,11 +2483,12 @@ See [plugins](plugins.md) → MCP tool gating.
 ### Endpoints from another file
 
 `App.EntityEndpoints` queues endpoints for an entity that a later
-`App.Entity`, `TryEntity`, or `GroupEntity` call registers. The first successful
-registration consumes the queue; a refused registration leaves it available for
-retry. That call merges them into the
-config's `Endpoints`, so they pass the same route and MCP checks as
-endpoints written in the config. The generated
+`App.Entity`, `TryEntity`, or `GroupEntity` call registers. Every successful
+registration under that name merges them into its config's `Endpoints`, so an
+entity registered into a v1 and a v2 group gets them in both. They pass the
+same route and MCP checks as endpoints written in the config. A refused
+registration does not count, and `Start` fails while a queue has no
+successful registration. The generated
 `entities/endpoints.gen.go` uses it to attach the
 [settings endpoints](endpoints.md) to entity files it does not own:
 
