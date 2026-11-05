@@ -2121,6 +2121,10 @@ func NewApp(opts ...AppOption) *App {
 		a.Logger().Warn("framework: WithIdempotency keeps its keys in this process's memory, but WithFanout runs the app on several replicas: " +
 			"a retry that reaches another replica runs the handler again; set IdempotencyConfig.Store to a shared store (middleware.NewSQLIdempotencyStore)")
 	}
+	if a.fanout != nil && a.DB == nil {
+		a.Logger().Warn("framework: module toggles remain local with WithFanout but no WithDB: " +
+			"refresh messages re-read each replica's in-memory store; use WithDB against a shared database to propagate toggles")
+	}
 	if a.noDefaults && a.translator != nil {
 		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware: " +
 			"the i18n middleware lives in the default chain; mount it explicitly via " +
