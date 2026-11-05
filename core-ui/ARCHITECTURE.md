@@ -2154,6 +2154,8 @@ spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
 
 ComponentSheet preserves keyframe step selectors inside every enclosing
 media or container query; only ordinary component selectors are scoped.
+StyleSheet keeps an open rule active across Keyframes calls, so subsequent
+properties, pseudo selectors, children and query blocks stay on that rule.
 
 Every component-owned stylesheet is registered, served and versioned
 by the host, loaded lazily per-component, dedup'd globally, and
