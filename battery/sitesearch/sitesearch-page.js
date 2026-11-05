@@ -65,9 +65,11 @@
   // cached identities; a policy redirect then goes to the router.
   async function live(sec, q, n) {
     const url = location.pathname + (q ? '?q=' + encodeURIComponent(q) : '');
+    const headers = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-From': location.pathname };
+    if (NS._markup) headers['X-Gofastr-Markup'] = NS._markup;
     const r = await hostFetch(url, {
       credentials: 'same-origin',
-      headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': NS._markup || '2', 'X-Gofastr-From': location.pathname },
+      headers,
     });
     if (!current(sec, n)) return;
     const rs = r.headers.get('X-Gofastr-Session'), meta = rs && document.querySelector('meta[name="gofastr-sse"]');

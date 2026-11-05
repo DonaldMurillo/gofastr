@@ -215,6 +215,9 @@ renders) updates the page in place as the reader types:
   Only the current query's response may update the stream session; a
   session rollover also clears the router's page caches so pages from a
   previous identity cannot replay. Late responses are ignored.
+  Live requests advertise only the markup generation the loaded kernel
+  supports. An older kernel without that value sends no generation,
+  leaving the server's version-skew guard in charge.
 - In a static export there is no server to render the page, so the module
   ranks with `sitesearch-static` and draws the same markup itself. A query
   in the address (`/search?q=table`) runs on load. Instead of page links it
