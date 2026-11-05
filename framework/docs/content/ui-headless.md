@@ -448,10 +448,21 @@ The parts the navigation members draw beyond the shared vocabulary:
   combobox stays open; `Inline` (`data-hui-combobox-inline`) marks a
   listbox that is the surface's own content, the command palette's
   result list, whose Escape goes on to close the dialog in one press.
-  `ComboboxRows` renders an island answer's rows. With script, Enter
+  `ComboboxRows` renders an island answer's rows and refuses duplicate
+  option IDs, including collisions between explicit and derived IDs.
+  With script, Enter
   commits only a highlighted option; with no active option, a closed
   list, or no results it does nothing and never submits the no-script
   GET form. The GET fallback remains available without JavaScript.
+  ArrowUp in an open list with no active option selects the last
+  enabled, visible option, just as it does when opening a closed list.
+  A second Escape clears a nonempty query and notifies input listeners
+  without reopening the list or retaining an active option.
+  IME composition owns its Escape key, including Safari's keyCode 229
+  event after `isComposing` becomes false; the popup remains open.
+  Pointer picks consume only unmodified primary clicks. Modified and
+  non-primary clicks are left alone, retaining native link behavior
+  when the option contains an anchor rather than forcing a same-tab pick.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),
   `datepicker-calendar` (the island region), `datepicker-month` (one

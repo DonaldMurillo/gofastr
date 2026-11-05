@@ -72,6 +72,10 @@ add result rows below the commands that match. A query still loading
 after 150 ms shows a disabled "Loading…" row, and one that matches
 nothing shows "No matches" (both localized: `ui.combobox.loading`,
 `ui.combobox.noResults`).
+Queries without a searchable term (at least two letters or digits) clear
+search results and the active option. With no visible palette commands,
+the list closes and clears its announcement instead of saying no matches
+for a search that did not run. Matching commands remain available.
 
 ## What gets indexed
 

@@ -168,7 +168,7 @@
   // palette's results) is the dialog's own content, so its Escape
   // goes on to close the dialog.
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape' || e.isComposing) return;
+    if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
     const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
     if (!input || input.hasAttribute('data-hui-combobox-inline') || input.getAttribute('aria-expanded') !== 'true') return;
     const lbId = input.getAttribute('aria-controls');
@@ -211,7 +211,7 @@
         if (opts.length === 0) return;
         e.preventDefault();
         if (!isOpen) { openListbox(input, lb); highlight(lb, opts[opts.length - 1]); return; }
-        highlight(lb, opts[(activeIdx - 1 + opts.length) % opts.length]);
+        highlight(lb, opts[activeIdx < 0 ? opts.length - 1 : (activeIdx - 1 + opts.length) % opts.length]);
         return;
       }
       case 'Home': {
@@ -238,6 +238,7 @@
           e.preventDefault();
           input.value = '';
           input.dispatchEvent(new Event('input', { bubbles: true }));
+          closeListbox(input, lb);
         }
         return;
       }
@@ -250,6 +251,7 @@
 
   // Click-to-pick, delegated so island-swapped options are covered.
   document.addEventListener('click', function (e) {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const opt = e.target && e.target.closest && e.target.closest('[role="option"]');
     if (!opt || opt.getAttribute('aria-disabled') === 'true') return;
     const lb = opt.closest('[data-hui-combobox-listbox]');
