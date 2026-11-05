@@ -258,6 +258,10 @@ final task, unless `configuration.returnImmediately` is set, in which
 case the `SUBMITTED`/`WORKING` snapshot comes back at once and the work
 continues in the background.
 
+`Working` is idempotent once the task is working: repeated calls do not
+publish another status event, rewrite the stored task, or advance its
+version or update timestamp. Use artifacts for progress that changes.
+
 A handler pauses its task with `RequireInput` / `RequireAuth`
 (`TASK_STATE_INPUT_REQUIRED` / `TASK_STATE_AUTH_REQUIRED`). The next
 `SendMessage` addressed to the task (its `messageId` carrying
