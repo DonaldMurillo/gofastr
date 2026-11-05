@@ -100,6 +100,9 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		}
 
 		routineName, dialect, dsuffix := splitDialectSuffix(base)
+		if strings.HasSuffix(routineName, downPart) {
+			return nil, fmt.Errorf("migrate.RoutinesFS: %q: .down must follow the dialect suffix, immediately before .sql", name)
+		}
 		if dsuffix != "" && dialect == "" {
 			// Unknown dialect suffix: reject loud rather than silently
 			// treating "foo.mysql.sql" as a name called "foo.mysql".
