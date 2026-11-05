@@ -219,7 +219,12 @@ platform where an untrusted module runs**: the bwrap backend passes every
 probe on a host with bubblewrap, util-linux `prlimit` and unprivileged user
 namespaces. Some probe properties are **structurally unreachable on a
 stock host** elsewhere: distinct-uid and resource caps on macOS,
-network-egress denial on Windows. So: **an untrusted module is unrunnable
+network-egress denial on Windows. The built-in macOS profile also permits
+reads across the user's temporary directories and `/etc`, so its probes
+report P2 (host secrets in temporary directories) and
+P5 (host files such as `/etc/passwd`) as breaches, not passes. It is not
+a filesystem confidentiality boundary for those locations.
+So: **an untrusted module is unrunnable
 on stock macOS/Windows until the operator installs a conforming backend.**
 Fail-closed refusal is the correct, honest enforcement, not a gap to paper
 over.
