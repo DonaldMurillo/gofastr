@@ -672,6 +672,38 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Every version group mounts its queued `EntityEndpoints`.**
+  `GroupEntity` now serves endpoints queued under the entity's name, so
+  v1 and v2 of one entity both get them. A refused registration keeps
+  the queue, and boot still reports a queue no registration claimed.
+- **`InitPlugins` can retry after any failure.** An MCP tool
+  registration error no longer marks initialization done with the
+  tools missing.
+- **Data exports carry their primary keys.** `datexport.Register` adds
+  key columns an exporter left out, so an app can import its own
+  archive again.
+- **OAuth protected-resource metadata refuses bad URLs at startup.** A
+  resource or authorization-server URL that is not https or carries
+  userinfo or a fragment (or, for an issuer, a query) now fails `Start`
+  instead of serving malformed metadata.
+- **Module toggles warn when they stay on one replica.** `WithFanout`
+  without `WithDB` logs that toggles are not shared.
+- **Process-module digests match in either hex case.** An upper-case
+  pin no longer fails the integrity check, triggers a reinstall or
+  resets migration approval.
+- **Generated migrations refuse to drop a table that kept tables still
+  reference.** SQLite cascaded the drop and Postgres refused the apply.
+  Detach the foreign keys in an earlier migration.
+- **Migration snapshots record pivot primary keys,** so taking over a
+  join entity migrates its key.
+- **SQLite owner foreign-key repair keeps indexes and triggers** whose
+  table name differs in case from the entity's.
+- **`TypedQuery.UpdateAll` releases replaced stored files** after
+  commit. Shared keys and kept renditions stay.
+- **Docs corrections.** Shutdown drains run one after another in
+  registration order under one timeout. Postgres VARCHAR width changes
+  are detected by migrations. Health probes always pass through root
+  middleware, whatever the registration order.
 - **Prefetched navigation preserves the live CSRF token.** Following a link
   prefetched before a session token rotation no longer restores the older
   token; navigation listeners still receive `cached: false`.
