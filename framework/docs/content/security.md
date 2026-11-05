@@ -85,6 +85,9 @@ Everything else streams at the default level. A handler that panics
 after the response started cannot get a `500`: the connection is cut,
 so the client sees a truncated response. The encoding is gzip only:
 the standard library has no Brotli.
+Identity responses preserve the underlying writer's direct file-copy
+path after any required content sniffing. Compressed responses still
+use the same streaming or held-body encoding rules for file copies.
 
 A compressed page that reflects attacker input next to a secret leaks
 the secret through response sizes (BREACH), whether the app or a proxy
