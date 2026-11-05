@@ -656,7 +656,6 @@ func (s *symbolSource) indexAt(ref, dir string) (*pkgSymbols, error) {
 			!strings.HasSuffix(base, ".go") || strings.HasSuffix(base, "_test.go") {
 			continue
 		}
-		found = true
 		src, err := gitOut(s.repo, "show", ref+":"+path.Join(dir, base))
 		if err != nil {
 			return nil, fmt.Errorf("git show %s:%s: %w", ref, dir+"/"+base, err)
@@ -665,6 +664,10 @@ func (s *symbolSource) indexAt(ref, dir string) (*pkgSymbols, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse %s at %s: %w", dir+"/"+base, ref, err)
 		}
+		if file.Name.Name == "main" {
+			continue
+		}
+		found = true
 		ix.addFile(file)
 	}
 	if !found {
