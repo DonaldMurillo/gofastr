@@ -672,6 +672,54 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Screen routing refusals.** `uihost.Mount` normalizes intercept
+  origin patterns and refuses, at boot, an origin no registered screen
+  matches; a custom host calls `Router.ValidateIntercepts` after
+  registering its screens. `NewLayout` refuses an invalid layout or
+  area name, and a duplicate area, before it writes view-transition
+  CSS. A screen group refuses an absolute screen path outside its
+  prefix (`/docs-old` beside `/docs` included), and `SubGroup` no
+  longer leaves `//` in the joined prefix.
+- **A localized screen's `llm.md` body follows the request locale.**
+  Its links were localized and its body was not.
+- **DI refuses replacing a provider while its singleton builds.**
+  Before, the finished build overwrote the newer registration.
+- **Entity declarations refuse a scalar field and a relation with the
+  same name**, before a cascade write or include reads the wrong one.
+- **entityui trash restore and purge honor `BeforeGet`.** A row the
+  read hook hides can no longer be restored or purged from the trash.
+- **Relation pickers report read failures.** A failing store or hook
+  returns a structured error to a search and shows the unavailable
+  slot on the form, instead of an empty list.
+- **Routine migrations.** `RoutinesFS` loads from the root of an
+  embedded or disk filesystem. A rollback file tagged with a dialect
+  other than its Up file's, or a rollback suffix outside the last name
+  segment, is refused; before, the rollback body ran as an Up routine.
+  The docs now say a plain routine name cannot contain a dot.
+- **Deferred parts check the markup generation.** The runtime sends
+  its kernel's markup generation on deferred fills, cached navigations
+  included, and the server refuses a fill from an older runtime. Site
+  search sends the header only when the live kernel has one, and
+  follows redirects and document responses.
+- **PWA caches skip widget state.** The precache and the service
+  worker no longer store `/core-ui/widget` responses, which carry
+  per-user state.
+- **Runtime fixes.** A hidden autogrow textarea keeps its height and
+  fits when revealed. The visible-route preload observer releases links
+  a navigation removed. A search input's clear button follows a form
+  reset. A full-document navigation that re-mints the SSE session drops
+  cached screens, so Back cannot replay the previous identity's pages.
+- **Compression keeps `ReadFrom`.** An uncompressed response through
+  the compression middleware reaches the underlying writer's
+  `ReadFrom`, so file copies keep sendfile.
+- **Closed desktop windows.** Every shell answers a call on a closed
+  window with the shared `not_found` error, Linux `Window.Close` is
+  idempotent, and Windows refuses focus, title and frame calls on a
+  destroyed handle instead of acting on one the OS may have reused.
+- **Docs corrections.** `SecurityHeadersConfig.Secure` and HSTS
+  auto-detection; BackToTop's `ScrollTarget`, an element id with an
+  optional `#` rather than a selector; and `OnWindowFrame`, which
+  covers secondary windows.
 - **Combobox keyboard and pointer fixes.** ArrowUp with no active
   option starts at the last option. Clearing the query keeps the list
   closed. Escape during IME composition, Safari's keyCode 229 included,
