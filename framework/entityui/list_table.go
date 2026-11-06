@@ -398,6 +398,14 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		return val
 	}
 	switch f.Type {
+	case schema.Bool:
+		if val == "" {
+			return ""
+		}
+		if truthy(val) {
+			return i18nui.EntityYes.Text(ctx)
+		}
+		return i18nui.EntityNo.Text(ctx)
 	case schema.Enum:
 		if val == "" {
 			return ""

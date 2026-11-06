@@ -375,6 +375,8 @@ an embedded list offer none.
 
 An unset optional boolean draws the muted empty mark in table cells and
 bulk previews, not a No badge. Stored false and true draw No and Yes.
+Boolean link labels and card titles, subtitles and metadata use the same
+localized Yes/No words; unset values contribute no text.
 
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
