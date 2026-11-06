@@ -253,6 +253,20 @@ extractor as its own and keeps its local identity
 
 ## How the window authenticates
 
+The native bootstrap and generated typed bridge are top-frame-only in
+every main and secondary window. Same-origin and foreign iframes receive
+no `window.__gofastr_desktop` marker or typed bridge. macOS also refuses
+child-frame native script messages; Windows listens only to WebView2's
+top-level `WebMessageReceived` event, not frame message events. WebView2
+runs document-created scripts in child frames too, so the shared bootstrap
+checks `window === window.top` before publishing its marker. Linux installs
+its bootstrap with WebKitGTK's `TOP_FRAME` scope.
+
+This is an injection contract, not isolation from trusted same-origin
+JavaScript: a same-origin child can still access its parent's objects and
+authenticated HTTP endpoints. Do not embed untrusted content on the app's
+own origin.
+
 Any local process can find the loopback port, so the page must present
 a credential nothing else has:
 
