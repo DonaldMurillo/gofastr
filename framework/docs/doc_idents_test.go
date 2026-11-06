@@ -544,7 +544,9 @@ func TestRepoDocsNameRealIdentifiers(t *testing.T) {
 
 // repoDocSkipDir leaves out the embedded corpus (the test above owns it),
 // the changelog archive (history names what each release removed),
-// generated and vendored trees, and the experimental and kiln trees.
+// generated and vendored trees, the experimental and kiln trees, and
+// Claude Code's local worktrees and per-machine project state, which are
+// gitignored and never reach a checkout.
 func repoDocSkipDir(rel, name string) bool {
 	if rel == "." {
 		return false
@@ -556,7 +558,7 @@ func repoDocSkipDir(rel, name string) bool {
 		return true
 	}
 	switch rel {
-	case "framework/docs/content", "changelog", "kiln", "framework/experimental", ".claude/worktrees":
+	case "framework/docs/content", "changelog", "kiln", "framework/experimental", ".claude/worktrees", ".claude/projects":
 		return true
 	}
 	return false
