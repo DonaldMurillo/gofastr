@@ -368,6 +368,12 @@
     get currentPath() { return currentPath; },
     /** Split modules cannot close over the IIFE-local route state. */
     _setCurrentPath(path) { currentPath = path; },
+    // The navigator's departure seam (a taken link, navigate()): o
+    // names the move ({to, anchor} or {to, replace}) and go performs
+    // it. Until a guard registers there is nothing to ask, so go runs
+    // at once; src/navguard.js replaces this with the guarded engine
+    // (NS.guardNavigation).
+    _navAsk(o, go) { go(); },
 
     // --- State helpers (compiled Go code uses these) ---
 

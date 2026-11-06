@@ -682,7 +682,8 @@ also served at `/.well-known/oauth-protected-resource/mcp`, the URL RFC 9728
 no userinfo, and no fragment. A query is allowed but discouraged. Each
 `AuthorizationServers` entry must be an absolute HTTPS issuer URL with a
 hostname and no userinfo, query, or fragment; an issuer path is allowed.
-`Start` and `Serve` reject invalid metadata configuration before booting.
+`Start`, `Serve` and `Run` reject invalid metadata configuration before
+booting, under any host.
 
 The framework serves the document; emitting the companion
 `WWW-Authenticate: … resource_metadata=…` header on 401s (RFC 9728 §5) is left

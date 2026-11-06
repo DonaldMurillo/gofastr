@@ -67,12 +67,6 @@
   // The entry a declined move's history.go is heading back to: its
   // popstate is the repair arriving, not a move of its own.
   let repair = null;
-  // The anchor of the click core is handling. Recorded on window in the
-  // capture phase, so it is set before core's document listener runs;
-  // document.activeElement is no substitute (Safari never focuses a
-  // clicked link).
-  let clicked = null;
-  window.addEventListener('click', (e) => { clicked = e.target.closest?.('a') || null; }, true);
 
   // Match a resolved path against the manifest's route patterns. Static
   // segments must match exactly; ':param' and '{param}' match one
@@ -105,9 +99,13 @@
   // router see no path change and never refetch the list underneath.
   // The entry is tagged {s: stack, k: layer, i: index in the layer}, so
   // popstate resolves the entry it landed on exactly (one URL can recur
-  // in a pane's history) and knows how far the move went.
+  // in a pane's history) and knows how far the move went. It carries
+  // core's entry tag as well (_entryTag: an id and its place in
+  // history), so a move off the stack has a known distance too. A
+  // replace keeps the entry's id and what other modules put on it (the
+  // leave guard's numbering).
   function rawPush(t, replace, url = t.url, cur = t.cur) {
-    history[replace ? 'replaceState' : 'pushState']({ cui: { s: stackId, k: t.key, i: cur } }, '', url);
+    history[replace ? 'replaceState' : 'pushState']({ ...replace && history.state, ...NS._entryTag(+!replace), cui: { s: stackId, k: t.key, i: cur } }, '', url);
     t.cur = cur; t.url = location.pathname + location.search + location.hash;
   }
 
@@ -118,7 +116,8 @@
     const page = pagePush;
     pagePush = false;
     if (!t || page) return pushURL(url, opts);
-    try { rawPush(t, opts.replace, url, t.cur + !opts.replace); } catch (_) {}
+    // 1, as core's choke point answers: the browser refused the write.
+    try { rawPush(t, opts.replace, url, t.cur + !opts.replace); } catch (_) { return 1; }
   };
 
   // A fresh render of a layer, wearing the presentation the server
@@ -177,14 +176,18 @@
     try { el?.focus?.({ preventScroll: true }); } catch (_) { el.focus(); }
   }
 
-  // The leave guard hook (headless-leaveguard, loaded when a
-  // data-hui-leave-guard form is on the page). scope is the element (or
-  // elements) whose content the move would discard; retry makes the
-  // move again, for a guard that declines now and asks in the kit's
-  // dialog after. A declined history move's retry goes the same
-  // distance again: the dialog answers after the undo has landed.
-  function guardOK(scope, retry) {
-    return NS._leaveGuard?.ok(scope, retry) ?? true;
+  // The guard hooks: the navigation guards (src/navguard.js, once a
+  // script registers one) and then the leave guard (headless-leaveguard,
+  // loaded when a data-hui-leave-guard form is on the page). scope is
+  // the element (or elements) whose content the move would discard; o
+  // describes the move to the navigation guards ({to, delta, pop,
+  // at}); retry makes the move again, for a guard that declines
+  // now and answers later (an asynchronous guard, the kit's dialog). A
+  // declined history move's retry goes the same distance again, after
+  // the undo has landed. null = declined, and the navigation guards
+  // undid the history move themselves.
+  function guardOK(scope, retry, o) {
+    return (!NS._navGate || NS._navGate({ scope, ...o }, retry)) && (NS._leaveGuard?.ok(scope, retry) ?? true);
   }
 
   // fetchOverlay asks the server for the overlay variant of path,
@@ -282,7 +285,7 @@
   function closeTopDirect(t = top()) {
     if (!t || !layers.includes(t)) return;
     epoch++;
-    if (!guardOK(t.el, () => closeTopDirect(t))) return;
+    if (!guardOK(t.el, () => closeTopDirect(t), { to: layers[layers.indexOf(t) - 1]?.url ?? underPath, delta: -t.cur - 1 })) return;
     layers.splice(layers.indexOf(t), 1);
     drop(t);
     settleAfterDrop(t.restoreFocus);
@@ -319,15 +322,22 @@
   // Hand a navigation back to the normal SPA path. loadPage is private
   // to core, so reach it the way the browser does: move the URL, then
   // fire popstate, core's handler sees a path change and loads it. That
-  // avoids exporting anything new from a bundle with no room.
-  function fallbackNav(path, hash) {
-    // Deliberately NOT NS._pushURL: the choke point syncs currentPath,
-    // and the popstate handler below loads only when the URL DIFFERS
-    // from currentPath, a synced write would make the synthetic event
-    // a no-op. The raw push leaves currentPath stale on purpose; the
-    // handler stamps the entry's id itself when it finds none.
-    history.pushState(null, '', path + (hash || ''));
-    window.dispatchEvent(new PopStateEvent('popstate'));
+  // avoids exporting anything new from a bundle with no room. It is a
+  // departure of its own (a declined overlay replaces the page it was
+  // to open over), so it asks the navigation guards first; held is the
+  // approval of the link that started it, when that link already asked
+  // about leaving the page.
+  function fallbackNav(path, hash, held) {
+    const u = path + (hash || '');
+    NS._navAsk({ to: u, held }, () => {
+      // Deliberately NOT NS._pushURL: the choke point syncs
+      // currentPath, and the popstate handler below loads only when the
+      // URL DIFFERS from currentPath, a synced write would make the
+      // synthetic event a no-op. The raw push leaves currentPath stale
+      // on purpose and carries core's entry tag; the handler adopts it.
+      history.pushState(NS._entryTag(1), '', u);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
   }
 
   // What a link to path, clicked at anchor, does here: null when the
@@ -377,12 +387,10 @@
   // one is, because _interceptPopstate guards those itself.
   NS._interceptOpen = () => layers.length > 0;
 
-  // Called by core's link handler before it pushes state. Returning true
-  // claims the navigation. The recorded click tells a link inside the
-  // top pane from one on the page under the stack.
-  NS._intercept = function (path, hash) {
-    const anchor = clicked;
-    clicked = null;
+  // Called by core's link handler before it pushes state, with the
+  // link clicked: it tells a link inside the top pane from one on the
+  // page under the stack. Returning true claims the navigation.
+  NS._intercept = function (path, hash, anchor) {
     if (claimPanel(anchor, path, hash)) return true;
     const d = decide(path, anchor);
     if (!d) { pagePush = true; return false; }
@@ -397,9 +405,12 @@
       // pane's earlier URL loaded as a page. Once the move lands on the
       // page under the stack, the page is pushed over it the way
       // fallbackNav hands a navigation to the router.
+      // The link asked about leaving the page already; the hand-back
+      // carries that approval.
       const n = top().p0 + top().cur;
+      const held = NS._navHold?.();
       closeAllNow();
-      repair = { then: () => fallbackNav(path, hash) };
+      repair = { then: () => fallbackNav(path, hash, held) };
       history.go(-n);
       return true;
     }
@@ -437,7 +448,9 @@
     const o = routeFor(pathOf(path));
     if (!target?.intercept || !o || !fromOK(target, o) || !NS._originOK?.(rec)) return false;
     panel = { rec, under: path };
-    history.replaceState(null, '', path + (hash || ''));
+    // The list takes this entry's place in history as an entry of its
+    // own: core's popstate handler gives it a new id.
+    history.replaceState({ __fup: history.state?.__fup }, '', path + (hash || ''));
     window.dispatchEvent(new PopStateEvent('popstate'));
     return true;
   }
@@ -460,7 +473,7 @@
     while (i >= 0 && pathOf(layers[i].url) !== p) i--;
     if (i < 0 && pathOf(underPath) !== p) return false;
     const e = ++epoch;
-    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node))) return true;
+    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node), { to: path })) return true;
     let focus = null;
     while (layers.length > i + 1) {
       const shut = layers.pop();
@@ -519,7 +532,8 @@
       const scope = layers.slice(i + 1).map((l) => l.el);
       const refetch = j !== lay.cur;
       if (refetch) scope.push(lay.el);
-      if (!guardOK(scope, () => history.go(lay.p0 + j - t.p0 - t.cur))) { undo(lay.p0 + j); return true; }
+      const d = lay.p0 + j - t.p0 - t.cur;
+      if (!guardOK(scope, () => history.go(d), { to: location.href, delta: d, pop: 1 })) { undo(lay.p0 + j); return true; }
       // Focus returns to the control that opened the LOWEST closed
       // layer: it lives in layer i, the one left showing.
       let focus = null;
@@ -549,14 +563,16 @@
     // discards every layer's content, and a page further afield replaces
     // the page under the stack too, so the guard has its say here as
     // well (null scope = the whole document). Declined, go back to the
-    // stack (an entry outside it has no known distance, so the top's
-    // entry is pushed again instead); accepted, drop the stack and let
-    // the router load the destination.
+    // stack (an entry outside it has no distance the stack knows, so
+    // the leave guard alone has the top's entry pushed again; the
+    // navigation guards undo the move themselves: null); accepted, drop
+    // the stack and let the router load the destination.
     const base = tag.s === stackId && !tag.k;
     const dest = location.href;
-    if (!guardOK(base ? layers.map((l) => l.el) : null, () => (base ? history.go(-t.p0 - t.cur) : NS.navigate(dest)))) {
+    const ok = guardOK(base ? layers.map((l) => l.el) : null, () => (base ? history.go(-t.p0 - t.cur) : NS.navigate(dest)), base ? { to: dest, delta: -t.p0 - t.cur, pop: 1 } : { to: dest, at: 1 });
+    if (!ok) {
       if (base) undo(0);
-      else rawPush(t);
+      else if (ok === false) rawPush(t);
       return true;
     }
     // Back on the page under the stack, focus returns to the control

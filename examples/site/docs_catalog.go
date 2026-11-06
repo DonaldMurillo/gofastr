@@ -133,6 +133,7 @@ var docIntents = []docIntent{
 			{"site-search", "Site search", "Full-text search over every rendered page: live from the server, or from index files in a static export."},
 			{"pwa", "PWA", "uihost.WithPWA: installable manifest, versioned offline shell, and a safe service worker."},
 			{"desktop", "Desktop host", "Experimental: run the app in the OS WebView from a CGO_ENABLED=0 binary, with a typed JS bridge to native capabilities (macOS today)."},
+			{"application-hosts", "Application hosts", "App.Run with a Host: the one lifecycle engine behind Start and Serve, ServicesHost for an App with no transport, ServicesReady, and the rules a native host follows."},
 			{"local-apps", "Local apps", "framework/localapp: the data directory a one-person app keeps on its own device (SQLite DB, session secret, owner identity), shared by the desktop, service and mobile hosts."},
 			{"service", "OS service host", "Experimental: install the app binary as a per-user launchd, systemd or Task Scheduler service and sign the browser in to its loopback UI."},
 			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},

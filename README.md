@@ -302,6 +302,15 @@ Experimental desktop apps use the OS WebView with `CGO_ENABLED=0`. On Linux,
 commands manage a per-user installation without changing saved default handlers
 or removing app data. See the [desktop reference](framework/docs/content/desktop.md).
 
+GoFastr serves the web, and `Start` stays the way to run an app. A
+presentation that is not a web page, such as native screens or a terminal UI
+from a separate library, can run the same App with
+`app.Run(ctx, framework.ServicesHost())`. That runs the boot phases `Start`
+runs (migrations, seeds, plugins, `OnStart` hooks) and opens no listener;
+the presentation calls the App's services in-process, under the same owner
+scoping. GoFastr renders none of that UI. See
+[Application hosts](framework/docs/content/application-hosts.md).
+
 ## The design bets
 
 - **Two layers.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Use the framework for the common path; drop to core and write plain `net/http` when it's in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)

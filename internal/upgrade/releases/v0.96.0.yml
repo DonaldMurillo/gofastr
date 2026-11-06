@@ -1471,3 +1471,14 @@ notes:
       uses:
         - gofastr/framework/ui.SortableList
         - gofastr/framework/headless.SortableList
+  - change: "BREAKING - Shutdown called while the App boots cancels the lifecycle context, waits for the running phase (a migration, a seed, an OnStart hook) to return, starts no later phase, then tears down; a boot callback that calls Shutdown synchronously waits until its context's deadline, and with context.Background() never returns"
+    breaking: true
+    hits: review
+    guidance: "Shutdown used to stop batteries and run OnStop hooks under the running phase. A Shutdown from a signal handler, a test or another goroutine changes nothing. One called from inside a seed, an OnStart hook or a BootValidator waits for a teardown that cannot start until that callback returns: return an error from the callback to abort boot, or call Shutdown on another goroutine. A Shutdown whose context ends first returns the context's error, and the teardown still runs once the phase returns, on a five-second budget."
+    find:
+      uses:
+        - gofastr/framework.App.Shutdown
+  - change: "BREAKING - an App runs once: a second Start, Serve or Run on one App returns framework.ErrAlreadyStarted, and one that begins after Shutdown returns nil and starts nothing"
+    breaking: true
+    guidance: "Nothing refused a second start before. Build a new App to run again, over the same database or data directory if the data should survive; a test that restarts an App builds one per run."
+    nodetect: "whether one App value is started twice is a runtime flow; the Start, Serve or Run call that does it has no spelling of its own"

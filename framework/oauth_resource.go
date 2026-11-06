@@ -64,7 +64,8 @@ type OAuthProtectedResourceConfig struct {
 // WithOAuthProtectedResource serves /.well-known/oauth-protected-resource
 // (RFC 9728) from cfg. Use it when the app exposes OAuth-token-protected
 // resources so clients can discover how to obtain and present tokens.
-// Start and Serve reject invalid resource and authorization-server URLs.
+// Start, Serve and Run reject invalid resource and authorization-server URLs
+// before boot, under any host.
 func WithOAuthProtectedResource(cfg OAuthProtectedResourceConfig) AppOption {
 	return func(a *App) {
 		a.oauthResource = &cfg

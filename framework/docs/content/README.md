@@ -112,6 +112,11 @@ results, the harness contract) are exempt. The exemption list lives in
   `WithA2A`: deterministic named skills, derived entity skills and their
   data-part contract, the task lifecycle, streaming, push notifications,
   and the boundary between task state and the queue.
+- [Application hosts](application-hosts.md): `App.Run(ctx, host)`,
+  the one lifecycle engine behind `Start` and `Serve`;
+  `ServicesHost` for an App that opens no listener; `ServicesReady`
+  versus `OnReady`; and the stop, cancel and rollback rules a native
+  host follows.
 - [Desktop host (experimental)](desktop.md): `battery/desktop`: run
   the app in the OS WebView from a CGO_ENABLED=0 binary: boot-token
   loopback handshake, typed JS bridge with permission-gated

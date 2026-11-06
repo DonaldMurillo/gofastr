@@ -366,7 +366,7 @@ Out-of-contract (NOT part of the layering rules below):
 
 The root package `framework/` itself contains:
 
-- **App spine**: `app.go`, `plugin.go`, `battery.go`, `module.go`, `registry.go`, `typed_hooks.go`, `role.go`, `setup.go`
+- **App spine**: `app.go`, `host.go`, `host_http.go`, `plugin.go`, `battery.go`, `module.go`, `registry.go`, `typed_hooks.go`, `role.go`, `setup.go`
 - **App-method-tied helpers**: `audit.go` (App.WithAuditLog),
   `tx.go` (App.InTx), `flags.go` (App feature-flag store),
   `health.go` (App health/readiness probes), `i18n.go` (App.WithI18n / T),
@@ -488,6 +488,8 @@ either require an API redesign or create an unbreakable import cycle.
 | File | Why it stays |
 |---|---|
 | `app.go` | Defines `App` itself plus all `(a *App)` configuration methods. The package whose name is on the import path is by definition where App lives. |
+| `host.go` | `Host`, `Session`, `ServicesHost`, `ServicesReady` and `App.Run`: the one lifecycle engine (`(*App).run`) behind `Start`, `Serve` and `Run`. The engine owns admission, the boot order, rollback through `Shutdown` and the hand-off when `Shutdown` lands mid-boot (the teardown runs on that `Shutdown`'s context, and only a phase error shaped like the stop's own cancellation, `stopShaped`, counts as graceful). The deferred start, which the interactive setup swap runs after boot, joins the same hand-off (see "Every phase that starts work joins the stop hand-off" below). A host owns only its transport and running lifetime. The engine reads and writes App state on every phase, so it lives with App. |
+| `host_http.go` | `httpHost`, the built-in host `Start` and `Serve` hand the booted App to: server construction and timeouts, TLS, the bind, the signal handler, the local run record, the banner, `OnReady`, and `Stop`'s drain. It adopts no server once a `Shutdown` has begun. |
 | `plugin.go` | `Plugin` interface + `PluginManager` consumed by `App.RegisterPlugin`. Both Plugin and Battery use a single `Init(*App)` integration point; the router late-binds middleware so anything Init does wraps existing routes. |
 | `battery.go` | `Battery` interface + `BatteryManager` consumed by `App.RegisterBattery`. Same single-Init shape as plugin, plus dependency-resolved init order and an optional `BatteryLifecycle` for OnStart/OnStop. |
 | `module.go` | `Module` interface + `ModuleManager` consumed by `App.RegisterModule`. Module embeds Battery and adds a manifest; the manager holds enable/disable state and the attribution maps (route→module, tool→module) that the dispatch gates read on every request. Bound to App the same way battery.go is. |
@@ -498,12 +500,12 @@ either require an API redesign or create an unbreakable import cycle.
 | `tx.go` | `(a *App) InTx(...)` is the public entry. The lower-level context helpers already moved to `framework/db`; this file is just App's wrapper. |
 | `testharness.go` | `TestApp.App *App` field is used by tests. Sixteen test files use `TestApp` / `TestHarness` unqualified inside `package framework`. Extracting requires either an interface refactor or qualifying every test. |
 | `processmodule*.go` | Process-isolated third-party modules (#37). The supervisor, store, runner, sandbox, broker, and proxy are bound to `*App` (spawn under the app's lifecycle drainer, re-dispatch reverse calls through the app router, enforce the app's `RolePolicy`). `RegisterProcessModule` is the single `(a *App)` entry. See the process-module section below. |
-| `role.go` | `Role` (all / serve / worker) + `WithRole` + `resolveRole`. The role decides at boot which responsibilities the binary assumes; `App.Start` consults it to skip worker-scoped consumers (cron, queues, the outbox relay) or the HTTP surface, so it is read directly by the spine. An unknown role fails loudly in `NewApp`. |
-| `setup.go` | `SetupRunner` interface + `WithSetup` first-run setup. framework defines the interface rather than importing `battery/setup` to avoid a layering cycle; `App.Start` owns the lifecycle (incomplete → wizard or headless run → atomic swap to the real handler). |
+| `role.go` | `Role` (all / serve / worker) + `WithRole` + `resolveRole`. The role decides at boot which responsibilities the binary assumes; the lifecycle engine (`host.go`) consults it to skip worker-scoped consumers (cron, queues, the outbox relay) or the HTTP surface, so it is read directly by the spine. An unknown role fails loudly in `NewApp`. |
+| `setup.go` | `SetupRunner` interface + `WithSetup` first-run setup. framework defines the interface rather than importing `battery/setup` to avoid a layering cycle; the lifecycle engine owns the lifecycle (incomplete → wizard or headless run → atomic swap to the real handler). Only the HTTP host can serve the wizard; every other host refuses an interactive setup. |
 | `export_data.go`, `erase_data.go` | `(a *App) ExportData` / `ImportData` / `EraseUserData`: data portability and right-to-be-forgotten. Both walk the App's entity registry plus the `core/datexport` registry, and all raw table access funnels through the SafeIdent-guarded path here, so they need the App's DB handle and migrate dialect. |
 | `wellknown.go`, `agent_extras.go`, `authmd.go`, `oauth_resource.go` | The agent-readiness discovery endpoints (`/.well-known/api-catalog`, the MCP server card, Web Bot Auth JWKS, UCP/ACP docs, `/auth.md`, RFC 9728 protected-resource metadata). Each auto-serves when its precondition holds: entities registered, WithMCP mounted, or a host opt-in config, all of which is App state. |
 | `mcp_manifest.go` | `/.well-known/mcp.json` (is-agentic mcp-server check): one document carrying both the flat endpoint/transport shape and the nested `mcpServers` map. Mounted with the server card under the same `WithMCP` gate; reuses wellknown.go's base/Vary/JSON helpers, so it needs nothing but App state. |
-| `api_miss.go` | RFC 9457 `application/problem+json` for `/api/*`-prefixed misses: wraps the router's NotFound fall-through (`router.WrapNotFound`, installed from `App.Start` after every mount) so an unmatched API path never lands on the UI host's HTML 404. The guarded prefix resolves from `AppConfig.APIPrefix` (default `/api`), which is App state. |
+| `api_miss.go` | RFC 9457 `application/problem+json` for `/api/*`-prefixed misses: wraps the router's NotFound fall-through (`router.WrapNotFound`, installed by the lifecycle engine's route finalization after every mount) so an unmatched API path never lands on the UI host's HTML 404. The guarded prefix resolves from `AppConfig.APIPrefix` (default `/api`), which is App state. |
 | `mcp_contracts.go` (+ `mcp_contracts_dev.go`) | Contract-catalog MCP tools (`contracts_list` / `_explain` / `_capabilities`) registered alongside `WithMCPIntrospection`; the dev file adds the verify/fix tools that read the source tree and exist only in the dev loop. Registration hangs off the App's `/mcp` server. |
 | `mcp_control.go` | `WithMCPControl`: the mutating tool set (`app_module_enable` / `app_module_disable`), deliberately separate from read-only introspection, plus `WithMCPGate` for caller gating. Outside the dev loop the tools require an authenticated caller and refuse embed-grant credentials; dev-implied tools are ungated but loopback-bound. Same App-bound registration shape as introspection. |
 | `semanticcoverage.go` | `RecordSemanticCoverage(t, app)` wires the app's router serve hook and the access/hook/event observers into the `semcov` recorder; `TestHarness` calls it automatically, and `GOFASTR_SEMANTIC_COVERAGE=1` enables it in a serving process. Needs `app.router`, so it stays with App. |
@@ -666,6 +668,35 @@ where one exists, as in the capability registry's dead-grant warning), or
 an error where the caller can act on one. Silent no-ops, best-effort
 fallbacks that hide their fallback, and errors swallowed into defaults
 all fail review. When in doubt, scream.
+
+### Every phase that starts work joins the stop hand-off
+
+A lifecycle phase that starts batteries, hooks or loops coordinates
+with `Shutdown` under `serverMu`, wherever and whenever it runs. Boot
+does it through `booting`. The deferred start that interactive setup
+postpones (`startDeferred`) runs after boot ended, from the setup
+swap, and the PR #673 review (2026-11) found it racing the teardown.
+An HTTP drain that timed out on the wizard's request, or a
+`SetupRunner` calling swap from its own goroutine, let `StopAll` run
+while `Batteries.StartAll` was still starting batteries. A swap after
+`Shutdown` started batteries that nothing would stop.
+
+The fix made it a phase like boot. It checks for a stop and marks
+itself running (`deferredStarting`) in one critical section. A
+`Shutdown` that finds it running cancels the lifecycle context and
+hands the teardown over, and whichever phase ends last runs it
+(`takeHandoffLocked`). Two details carry over to any new phase. The
+handed-off teardown runs on its own goroutine, because the phase may
+be inside a request the HTTP drain waits for. And the phase ends on
+every path, a panic's included: a phase left marked running takes
+every later `Shutdown`'s teardown and never runs it.
+
+Inside a phase, check for a stop before each step that starts
+something, not only between hooks. The check after
+`Batteries.StartAll` is the only thing in front of the process-module
+loops, and a test that asserts only on `OnStart` hooks passes with it
+deleted (`TestStopDuringBatteryStartSkipsProcessModuleLoops` asserts
+on the loops).
 
 ### Pre-rename to avoid package shadowing
 

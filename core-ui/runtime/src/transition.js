@@ -54,7 +54,12 @@
   let _pending = null;
   let _rec = null;
   let _lastId = (history.state && history.state.__fui) || 0;
-  let _pushed = false;
+  // The id of the entry the last write through _pushURL left the
+  // browser on (null: none since the last take). Only a navigation
+  // that takes on that entry is click-shaped: a URL-only write
+  // (replaceURL, an RPC's push-state, a deep link) followed by Back or
+  // Forward must not make that traversal an undecided forward.
+  let _pushed = null;
   // The vocabulary that gates an answer's pick is the INCOMING page's:
   // its payload root carries data-cui-vt-kinds, and <html> still holds
   // the outgoing page's copy until the commit's update callback runs
@@ -123,7 +128,7 @@
       const id = (history.state && history.state.__fui) || 0;
       let types, decided = false;
       if (_pending) { types = _pending.types; decided = true; _pending = null; }
-      else if (_pushed) { types = ['forward']; }
+      else if (_pushed === id) { types = ['forward']; }
       else {
         // A recorded pick was gated by its own page's vocabulary when it
         // was recorded; the document here is the page being left, so it
@@ -132,7 +137,7 @@
         _navPick = types[0] === 'back' ? _entryVT : ((history.state && history.state.vt) || '');
         _recordVT();
       }
-      _pushed = false;
+      _pushed = null;
       _lastId = id;
       _rec = { epoch, types, decided };
     },
@@ -225,7 +230,8 @@
   //
   // The entry-point signals this module once received as core seam
   // calls, self-attached where the signal is public: a _pushURL wrap
-  // marks the next navigation as click-shaped (an undecided forward),
+  // marks a navigation that takes on the entry it wrote as click-shaped
+  // (an undecided forward),
   // a refresh() wrap records the reload direction, and the
   // gofastr:navigate event (both navigators dispatch it) carries the
   // swapped payload for the keyed-transition vocabulary. The direction
@@ -233,8 +239,9 @@
   // take reads off history.state names the move — no popstate seam.
   const _origPush = NS._pushURL;
   NS._pushURL = function (...a) {
-    _pushed = true;
-    return _origPush.apply(this, a);
+    const v = _origPush.apply(this, a);
+    _pushed = history.state?.__fui;
+    return v;
   };
   const _origRefresh = NS.refresh;
   NS.refresh = function (...a) {

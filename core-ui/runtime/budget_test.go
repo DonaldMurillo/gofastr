@@ -686,7 +686,24 @@ const (
 	// with the role-only live regions (+3). TestBarePrimaryLoading: loading templates
 	// opt into the demand-loaded envelope scheduler (+11). Merged with layers 6
 	// and 7: 16378 measured + 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2
+	// The navigation guards' seams add 62: a taken link and navigate()
+	// perform their move through the kernel's _navAsk, which runs it at
+	// once until src/navguard.js answers for registered guards, and
+	// popstate asks the module's _navPop first. The move must wait inside
+	// core's own handlers, so only the seams stay; the guard engine is the
+	// navguard module's. The history entry tags add 94: every entry core
+	// writes carries {__fup: [numbering, position]} beside its {__fui} id,
+	// a replace keeps its entry's id, place and state, and boot and
+	// popstate adopt an untagged entry, so the navguard module can undo a
+	// Back or Forward by its exact distance where the browser has no
+	// Navigation API. A position must be written with the entry, before any
+	// module could load, so the tags stay in core. __gofastr.replaceURL
+	// adds 50: a synchronous public call through the same choke point, with
+	// the origin, base and document checks, and the choke point telling it
+	// when the browser refused the write. Those three were measured on the
+	// pre-layer-6 core; merged onto layers 6-8 they compress 16 bytes
+	// better than apart: 16568 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1188,7 +1205,15 @@ const (
 	// The role-token check measures 18890 at level 1, plus 2.
 	// The static-action guards and the bare-primary loading handoff, merged with
 	// layers 6 and 7: 18945 measured + 2.
-	coreCongestionWindowGZ = 18947
+	// The navigation guards' seams (a taken link and navigate() moving
+	// through the kernel's _navAsk, popstate asking _navPop first), the
+	// history entry tags (_entryTag, _adopt) and replaceURL, merged onto
+	// layers 6-8: 19160 measured at level 1 (+215). The move has to wait
+	// inside core's own handlers, a position is known only when the entry
+	// is written, before any module could load, and replaceURL answers
+	// synchronously, so none carves; the guard engine is the navguard
+	// module. Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 19162
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1333,6 +1358,23 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"bare-primary loading handoff (TestBarePrimaryLoading)":     11,
 		// Merged with layers 6 and 7: 16378 measured.
 		"layer 8 and layers 6-7 compress together": -2,
+		// Measured 15916 → 15978 before layers 6-8:
+		// TestNavGuardCheckpointBeforeLeaving,
+		// TestNavGuardNoGuardCompatibility. The departure waits inside
+		// core's click handler and navigate(); the engine is a module.
+		"navigation guard seams (_navAsk, _navPop)": 62,
+		// Measured 15978 → 16072 before layers 6-8:
+		// TestNavGuardHistoryDeniedBackKeepsForward,
+		// TestNavGuardHistoryReload, TestNavGuardHistoryReplaceAndBranch,
+		// TestNavGuardHistoryRepeatedURLs, and the "tags without a
+		// position" case of TestNavGuardHistoryMutationsAreCaught.
+		"history entry tags (_entryTag, _adopt)": 94,
+		// Measured 16072 → 16122 before layers 6-8:
+		// TestNavGuardHistoryReplaceURL,
+		// TestNavGuardHistoryReplaceURLInLayer.
+		"__gofastr.replaceURL": 50,
+		// Merged onto layers 6-8: 16378 → 16568 measured (+190).
+		"navigation guards and layers 6-8 compress together": -16,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1702,7 +1744,21 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3896 with session rollover and error-response rollover; 3897 with the
 		// DOM-order trap recovery. Both together measure 3998 + 2.
 		// TestOverlayRollsSessionAndCache pins the name-only SSE meta; measured 4006 + 2.
-		"intercept": 4008,
+		// 4095 measured (+89) after the stack's departures ask the
+		// navigation guards and its raw entries carry core's entry tags.
+		// Each guard hook names its move to _navGate, a declined overlay's
+		// hand-back to the router asks as a departure of its own, core
+		// passes the clicked link (an asynchronous allow outlives the
+		// click), and a Back or Forward off the stack to a page further
+		// afield hands the guards its re-push and lets them undo it by key
+		// (TestNavGuardOverlayDepartures and its afield case). With the
+		// tags (_entryTag) a move off the stack has a known distance without
+		// the Navigation API, a replace keeps the entry's id and the state
+		// other code put on it, and a write the browser refuses is reported
+		// to replaceURL as core's is (TestNavGuardHistoryStack,
+		// TestNavGuardHistoryReplaceURLInLayer and its mutation case). The
+		// writes are the stack's own. Pinned at the measured size plus 2.
+		"intercept": 4097,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
@@ -1767,7 +1823,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// promise a skipped transition rejects, which surfaced as an
 		// unhandled rejection on every rage click (2026-11-02 bug bash,
 		// TestSkippedTransitionRaisesNoUnhandledRejection).
-		"transition": 1448,
+		// 1456 measured (1454 + 2) after the click-shaped pick is bound
+		// to the entry the last _pushURL write left: a URL-only write
+		// (replaceURL) followed by Back animated the Back as an
+		// undecided forward (TestNavGuardHistoryReplaceURL).
+		"transition": 1456,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's
