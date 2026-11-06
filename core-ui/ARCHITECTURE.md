@@ -593,7 +593,13 @@ below). The build fails on an unassigned attribute, so the map cannot
 drift ahead of the source.
 
 **Component-action attributes** (the compiled `data-action` family, distinct
-from the `data-cui-*` runtime primitives above): `data-action="<name>"` on an
+from the `data-cui-*` runtime primitives above) use registries collected by
+`component.ExtractActions`. If `Actions()` panics during extraction, it logs
+the component type, scrubbed panic and stack through `slog` and returns a
+fresh empty registry, discarding any partial actions. The extraction context
+is restored so subsequent components can still compile normally.
+
+`data-action="<name>"` on an
 element inside a `[data-component]` binds the named compiled action to that
 element's click (and `data-action-<event>` / `data-action-type` to
 input/change/submit). `data-action-mount="<name>"` fires the named action
