@@ -2450,7 +2450,7 @@ func printGeneratedFilesJSON(files []GeneratedFile) {
 		if i == len(files)-1 {
 			comma = ""
 		}
-		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
+		cli.Printf("  {\"path\":%s,\"size\":%d}%s\n", jsonString(file.Name), len(file.Content), comma)
 	}
 	fmt.Println(`]}`)
 }
@@ -2468,7 +2468,7 @@ func printAdditiveFilesJSON(written []GeneratedFile, skipped, updated []string) 
 		if i == len(written)-1 {
 			comma = ""
 		}
-		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Name, len(file.Content), comma)
+		cli.Printf("  {\"path\":%s,\"size\":%d}%s\n", jsonString(file.Name), len(file.Content), comma)
 	}
 	fmt.Print("]")
 	printJSONNames("skipped_existing", skipped)
@@ -2479,16 +2479,16 @@ func printAdditiveFilesJSON(written []GeneratedFile, skipped, updated []string) 
 // printJSONNames continues a JSON object with key holding names.
 func printJSONNames(key string, names []string) {
 	if len(names) == 0 {
-		cli.Printf(",%q:[]", key)
+		cli.Printf(",%s:[]", jsonString(key))
 		return
 	}
-	cli.Printf(",%q:[\n", key)
+	cli.Printf(",%s:[\n", jsonString(key))
 	for i, name := range names {
 		comma := ","
 		if i == len(names)-1 {
 			comma = ""
 		}
-		cli.Printf("  %q%s\n", name, comma)
+		cli.Printf("  %s%s\n", jsonString(name), comma)
 	}
 	fmt.Print("]")
 }
@@ -2505,9 +2505,17 @@ func printCodegenFilesJSON(files []codegen.GeneratedFile) {
 		if i == len(files)-1 {
 			comma = ""
 		}
-		cli.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.Path, len(file.Content), comma)
+		cli.Printf("  {\"path\":%s,\"size\":%d}%s\n", jsonString(file.Path), len(file.Content), comma)
 	}
 	fmt.Println(`]}`)
+}
+
+// jsonString quotes s as a JSON string. Go's %q is not JSON: it spells a
+// control byte \x1b or \a, which no JSON parser reads, and a caller's
+// --out directory or file name can carry one.
+func jsonString(s string) string {
+	quoted, _ := json.Marshal(s)
+	return string(quoted)
 }
 
 func printGeneratedErrorsJSON(errs ...error) {
@@ -2517,11 +2525,8 @@ func printGeneratedErrorsJSON(errs ...error) {
 		if i == len(errs)-1 {
 			comma = ""
 		}
-		// json.Marshal, not %q: Go's quoting spells a control byte \x1b
-		// or \a, which no JSON parser reads, and an error can carry one
-		// from a spec it refused.
-		msg, _ := json.Marshal(err.Error())
-		cli.Printf("  {\"message\":%s}%s\n", msg, comma)
+		// An error can carry a control byte from a spec it refused.
+		cli.Printf("  {\"message\":%s}%s\n", jsonString(err.Error()), comma)
 	}
 	fmt.Println(`]}`)
 }

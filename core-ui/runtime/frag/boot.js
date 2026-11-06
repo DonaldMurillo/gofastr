@@ -702,9 +702,11 @@
     document.querySelectorAll('[data-cui-signal]').forEach((node) => {
       const mode = node.getAttribute('data-cui-signal-mode') || 'text';
       if (mode !== 'text') return;
+      // role is a token list (padding, fallbacks): any alert or status
+      // token already carries live semantics, so polite would downgrade it.
       const role = node.getAttribute('role');
       if (!role) node.setAttribute('role', 'status');
-      if (role && role !== 'alert' && role !== 'status' && !node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
+      if (role && !/(^|\s)(alert|status)(\s|$)/i.test(role) && !node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
       if (!node.getAttribute('aria-atomic')) node.setAttribute('aria-atomic', 'true');
     });
   };

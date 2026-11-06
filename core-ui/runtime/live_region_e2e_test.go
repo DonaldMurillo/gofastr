@@ -86,6 +86,10 @@ func TestSignalRolesAvoidDuplicateLive(test *testing.T) {
 		<span id="status" role="status" data-cui-signal="status">0</span>
 		<span id="alert" role="alert" data-cui-signal="alert">0</span>
 		<span id="group" role="group" data-cui-signal="group">0</span>
+		<span id="padded" role=" alert " data-cui-signal="padded">0</span>
+		<span id="tokens" role="alert group" data-cui-signal="tokens">0</span>
+		<span id="fallback" role="unsupported alert" data-cui-signal="fallback">0</span>
+		<span id="dialog" role="alertdialog" data-cui-signal="dialog">0</span>
 		<span id="off" role="group" aria-live="off" data-cui-signal="off">0</span>
 		<span id="override" role="status" aria-live="off" data-cui-signal="override">0</span>
 		<span id="attr" data-cui-signal="attr" data-cui-signal-mode="attr" data-cui-signal-attr="title">0</span>
@@ -120,8 +124,8 @@ func TestSignalRolesAvoidDuplicateLive(test *testing.T) {
 		); err != nil {
 			test.Fatal(err)
 		}
-		if len(nodes) != 8 {
-			test.Fatalf("%s: got %d signal nodes, want 8", path, len(nodes))
+		if len(nodes) != 12 {
+			test.Fatalf("%s: got %d signal nodes, want 12", path, len(nodes))
 		}
 		for _, node := range nodes {
 			wantRole, wantLive := "status", ""
@@ -130,6 +134,14 @@ func TestSignalRolesAvoidDuplicateLive(test *testing.T) {
 				wantRole = "alert"
 			case "group":
 				wantRole, wantLive = "group", "polite"
+			case "padded":
+				wantRole = " alert "
+			case "tokens":
+				wantRole = "alert group"
+			case "fallback":
+				wantRole = "unsupported alert"
+			case "dialog":
+				wantRole, wantLive = "alertdialog", "polite"
 			case "off":
 				wantRole, wantLive = "group", "off"
 			case "override":

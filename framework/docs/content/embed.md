@@ -61,8 +61,9 @@ reportsRoutes := fwApp.Group("/reports")
 reportsRoutes.Use(embeds.RequireScope("reports:read"))
 ```
 
-A surface must use a static screen route. `embed.New` refuses routes containing
-`:` or `{` (for example, `/reports/:id` or `/teams/{team}`) at boot, naming the
+A surface must use a static screen route. `embed.New` refuses a route with a
+parameter segment, a `:name` or a whole `{name}` segment (for example,
+`/reports/:id` or `/teams/{team}`), at boot, naming the
 surface and route in its error. Register a dedicated static embed screen and
 resolve viewer-specific data inside its loader instead of passing a route pattern.
 

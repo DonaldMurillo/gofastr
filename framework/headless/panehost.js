@@ -241,7 +241,7 @@
 
   // The pane's tabbables, over the kernel's shared focus selector.
   function tabbables(pane) {
-    return Array.from(pane.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).filter(el => el.tabIndex >= 0);
+    return Array.from(pane.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).filter(NS._isTabStop);
   }
   function focusIn(pane, last) {
     const items = tabbables(pane);

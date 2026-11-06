@@ -63,3 +63,22 @@ func TestBackToTopRemovalLowersThreshold(t *testing.T) {
 		})
 	}
 }
+
+func TestBackToTopReattachedLinkRearms(t *testing.T) {
+	ctx := behaviorPage(t, startBehaviorServer(t, `<a id="low" href="#" data-hui-back-to-top data-hui-back-to-top-threshold="100">Low</a><a id="high" href="#" data-hui-back-to-top data-hui-back-to-top-threshold="800">High</a>`))
+	if !pollTrue(ctx, `document.getElementById('cui-backtotop-sentinel')?.style.height === '800px'`) {
+		t.Fatal("initial threshold was not armed")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.detachedTop = document.getElementById('high'); window.detachedTop.remove()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('cui-backtotop-sentinel').style.height === '100px'`) {
+		t.Fatal("removing the 800px link did not lower the threshold")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('main').append(window.detachedTop)`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('cui-backtotop-sentinel').style.height === '800px'`) {
+		t.Fatalf("reattached 800px link is ignored: sentinel = %s", evalString(t, ctx, `document.getElementById('cui-backtotop-sentinel').style.height`))
+	}
+}
