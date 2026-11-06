@@ -387,6 +387,14 @@ site.Register("/products/{id}", &ProductScreen{}, nil,
     app.InterceptFrom("/products", app.ScreenDrawer))   // or ScreenSheet
 ```
 
+Both `InterceptFrom` and the `Screen.Intercept` field accept brace or colon
+parameters in `From` and `AlsoFrom`, including typed parameters and catch-alls.
+All registration paths, including screen groups, normalize those origins.
+An empty or relative origin, or a presentation other than `ScreenDrawer` or
+`ScreenSheet`, panics at registration. At mount, every origin must name a
+registered screen pattern; a missing origin panics rather than silently
+falling back to a full page.
+
 `/products/42` stays an ordinary page. A hard load, a refresh, an external
 link, or a soft navigation from anywhere else renders it in full; the deep
 link remains the canonical render, and SSR-first is untouched. Only a

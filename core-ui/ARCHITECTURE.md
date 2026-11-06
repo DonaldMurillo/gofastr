@@ -913,8 +913,12 @@ normalizes repeated and trailing slashes before relative screens are registered.
 
 ### Intercepting routes (`app.InterceptFrom`)
 
-Origin patterns normalize brace parameters to the router's colon form,
-including typed parameters and catch-alls. At mount the UI host validates
+Every screen registration normalizes intercept `From` and `AlsoFrom`
+brace parameters to the router's colon form, including typed parameters
+and catch-alls. This applies both to `InterceptFrom` and to a screen's
+`Intercept` field, including grouped screens and custom screen options.
+Non-absolute origins and non-overlay presentations panic at registration.
+At mount the UI host validates
 every origin against the registered screen patterns; a misspelling panics
 with the target and missing origin instead of silently disabling the overlay.
 
@@ -1152,7 +1156,11 @@ refuses it.
 
 Screen markdown renders context-aware components with the same locale
 context as the page, including pattern-level fallback docs. Localized
-content and localized links therefore describe the same language.
+content and localized links therefore describe the same language. A
+request carrying a translator or locale renders its screen markdown
+even when its URL has no prefix, including the default locale and
+header- or cookie-negotiated locales. Only requests with no translator,
+locale or locale prefix reuse the background-context pattern document.
 
 Three kernel helpers, exported on `__gofastr` for modules, carry the
 rules:

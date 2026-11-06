@@ -349,8 +349,13 @@ fills, or a status set with `app.SetStatus` or `ScreenStatusCode`. The
 static exporter writes no llm.md for such a page. Any other failure
 degrades to the pattern-level doc rather than erroring.
 
-Under a locale prefix, context-aware page content and its links both use
-the request's locale, including when rendering the pattern-level fallback.
+Context-aware page content uses the request's translator and locale,
+including the unprefixed default locale, header- or cookie-negotiated
+locales, and pattern-level fallback docs. Links receive a locale prefix
+only when that locale's URLs have one. The standalone
+`app.ScreenLLMMDHandler` also renders per request when a translator or
+locale is attached; without either or a locale prefix, it reuses its
+background-context document.
 
 Every markdown surface evaluates the screen's policy chain with the live
 request: a non-Allow decision, or a region guard (an outlet's, an area's,

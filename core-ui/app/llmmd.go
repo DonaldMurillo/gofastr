@@ -563,8 +563,7 @@ func ScreenLLMMDHandler(a *App, screen *Screen) http.Handler {
 		body := md
 		if a.PatternPolicy(ctx, screen).Kind != DecisionAllow {
 			body = withheld
-		} else if i18n.PathPrefix(ctx) != "" {
-			// The /es/ doc links the Spanish pages: render it per request.
+		} else if i18n.PathPrefix(ctx) != "" || i18n.TranslatorFrom(ctx) != nil || i18n.FromContext(ctx).Tag != "" {
 			body = ScreenLLMMD(ctx, screen)
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")

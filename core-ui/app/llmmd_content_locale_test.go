@@ -40,3 +40,47 @@ func TestScreenDocContentUsesLocale(t *testing.T) {
 		})
 	}
 }
+
+func TestScreenDocUnprefixedLocale(t *testing.T) {
+	phrase := i18n.Define("app_test.doc_unprefixed_plans", "Plans")
+	catalog := i18n.NewMapCatalog()
+	catalog.Set("fr", phrase.Key(), i18n.Message{Text: "Forfaits"})
+	catalog.Set("de", phrase.Key(), i18n.Message{Text: "Tarife"})
+	translator := i18n.NewTranslator(catalog, "fr")
+	base := context.Background()
+	translated := i18n.WithTranslator(base, translator)
+	french := i18n.WithContext(translated, i18n.Locale{Tag: "fr"})
+	defaultLocale := i18n.WithPathLocale(french, i18n.PathLocales{Default: "fr", Prefixed: []string{"de"}}, "fr")
+	screen := NewScreen("/pricing", NewContextComponent(func(ctx context.Context) render.HTML {
+		return render.Text(phrase.Text(ctx)+" ["+i18n.FromContext(ctx).Tag+"]") + `<a href="/about">about</a>`
+	}))
+	application := NewApp("docs")
+	application.RegisterScreen(screen, nil)
+	handler := ScreenLLMMDHandler(application, screen)
+	for _, test := range []struct {
+		name, content string
+		ctx           context.Context
+	}{
+		{"unprefixed default", "Forfaits [fr]", defaultLocale},
+		{"translator only", "Forfaits []", translated},
+		{"locale only", "Plans [de]", i18n.WithContext(base, i18n.Locale{Tag: "de"})},
+		{"negotiated locale", "Tarife [de]", i18n.WithContext(translated, i18n.Locale{Tag: "de"})},
+		{"no locale", "Plans []", base},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if prefix := i18n.PathPrefix(test.ctx); prefix != "" {
+				t.Fatalf("test needs an unprefixed locale, got %q", prefix)
+			}
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest("GET", "/pricing/llm.md", nil).WithContext(test.ctx)
+			handler.ServeHTTP(recorder, request)
+			body := recorder.Body.String()
+			if !strings.Contains(body, test.content) || !strings.Contains(body, "(/about)") {
+				t.Fatalf("unprefixed doc lacks %q or /about link:\n%s", test.content, body)
+			}
+			if want := ScreenLLMMD(test.ctx, screen); body != want {
+				t.Fatalf("handler differs from request-context render:\ngot:\n%s\nwant:\n%s", body, want)
+			}
+		})
+	}
+}

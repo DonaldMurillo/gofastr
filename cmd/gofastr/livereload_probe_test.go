@@ -22,7 +22,7 @@ func pollLiveReload(ctx context.Context, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
 		var reloaded bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__reloadCalled`, &reloaded)); err != nil {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__sameBuildDocument !== true`, &reloaded)); err != nil {
 			return err
 		}
 		if reloaded {
@@ -37,11 +37,14 @@ func pollLiveReload(ctx context.Context, timeout time.Duration) error {
 
 func TestLivereloadProbesFailClosed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(writer, `<!doctype html><script>window.__readyCount = 0; window.__reloadCalled = false;</script>`)
+		fmt.Fprint(writer, `<!doctype html><script>window.__readyCount = 0;</script>`)
 	}))
 	t.Cleanup(server.Close)
 	ctx := chromedptest.Context(t)
-	if err := chromedp.Run(ctx, chromedp.Navigate(server.URL)); err != nil {
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(server.URL),
+		chromedp.Evaluate(`window.__sameBuildDocument = true`, nil),
+	); err != nil {
 		t.Fatal(err)
 	}
 	if err := waitLiveReady(ctx, 2, 100*time.Millisecond); err == nil {
@@ -55,7 +58,7 @@ func TestLivereloadProbesFailClosed(t *testing.T) {
 	if err := pollLiveReload(ctx, 0); err != nil {
 		t.Fatalf("successful no-reload read failed: %v", err)
 	}
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__readyCount = 3; window.__reloadCalled = true`, nil)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__readyCount = 3; delete window.__sameBuildDocument`, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if err := waitLiveReady(ctx, 3, time.Second); err != nil {
@@ -63,5 +66,14 @@ func TestLivereloadProbesFailClosed(t *testing.T) {
 	}
 	if err := pollLiveReload(ctx, 0); err == nil {
 		t.Error("observed reload was accepted")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__sameBuildDocument = true`, nil),
+		chromedp.Reload(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := pollLiveReload(ctx, 0); err == nil {
+		t.Error("replacement document was accepted as the original page")
 	}
 }
