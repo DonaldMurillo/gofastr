@@ -280,6 +280,9 @@ func canonicalNumber(n json.Number) (any, error) {
 // AssertHeader asserts a response header value. Chainable.
 func (tr *TestResponse) AssertHeader(t testing.TB, key, expected string) *TestResponse {
 	t.Helper()
+	if tr.err != nil {
+		t.Fatalf("request creation error: %v", tr.err)
+	}
 	actual := tr.recorder.Header().Get(key)
 	if actual != expected {
 		t.Fatalf("expected header %s=%q, got %q", key, expected, actual)
@@ -290,6 +293,9 @@ func (tr *TestResponse) AssertHeader(t testing.TB, key, expected string) *TestRe
 // AssertBodyContains asserts the body contains the given substring.
 func (tr *TestResponse) AssertBodyContains(t testing.TB, substr string) *TestResponse {
 	t.Helper()
+	if tr.err != nil {
+		t.Fatalf("request creation error: %v", tr.err)
+	}
 	if !bytes.Contains(tr.recorder.Body.Bytes(), []byte(substr)) {
 		t.Fatalf("expected body to contain %q, got: %s", substr, tr.recorder.Body.String())
 	}
@@ -306,6 +312,9 @@ func (tr *TestResponse) Body() string {
 
 // JSON decodes the response body into v.
 func (tr *TestResponse) JSON(v any) error {
+	if tr.err != nil {
+		return tr.err
+	}
 	return json.Unmarshal(tr.recorder.Body.Bytes(), v)
 }
 
