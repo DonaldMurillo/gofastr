@@ -442,7 +442,9 @@ target directory, calls `fsync`, and renames it over the destination. Each
 click re-checks the destination and refuses to replace a **hand-edited** file
 unless the editor started with `--force`. A file this session already wrote is
 its own to rewrite, so iterating on a palette is one Write per change rather
-than one Write per process. If the directory already contains a Go file,
+than one Write per process. A failed disk write preserves that permission
+and the previous file; repair the disk or file permissions, then retry
+without restarting the editor. If the directory already contains a Go file,
 the generated file uses that package name; otherwise it uses the sanitized
 directory name. The editor regenerates the file whole, so confirm before
 replacing hand-edited values.

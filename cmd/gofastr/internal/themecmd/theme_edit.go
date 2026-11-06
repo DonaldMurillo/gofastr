@@ -405,16 +405,14 @@ func (s *ThemeEditServer) writeBack() error {
 	if err != nil {
 		return err
 	}
-	// Remember what we wrote, so this session can rewrite its own file without
-	// --force on the next click.
-	s.mu.Lock()
-	s.wroteDigest = sha256.Sum256(src)
-	s.mu.Unlock()
 	// Through a temporary file renamed over the old one, so a crash
 	// mid-write leaves the previous theme, never a truncated one.
 	if err := projectfs.WriteFile(rootDir, rel, src, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", outPath, err)
 	}
+	s.mu.Lock()
+	s.wroteDigest = sha256.Sum256(src)
+	s.mu.Unlock()
 	return nil
 }
 
