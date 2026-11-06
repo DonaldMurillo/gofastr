@@ -557,10 +557,11 @@ Available helpers for write operations:
 
 `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` mutations flow into the pending
 INSERT/UPDATE body. `OnAfterCreate[T]`/`OnAfterUpdate[T]` mutations cannot
-change the stored row (Create/Update has already committed it) but DO redact
+change the stored row (the INSERT/UPDATE has already run) but DO redact
 the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
-path. See "Redaction implication" below for the surfaces this covers.
+path. They run inside the write transaction, before commit; an error rolls
+the write back. See "Redaction implication" below for the surfaces this covers.
 
 `T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
 models use) or snake_case (`json:"is_admin"`): the payload is offered
@@ -710,6 +711,7 @@ does).
   clearing a field there redacts it from what the caller reads; this is the
   supported way to mask a create/update response, and it behaves identically
   for typed hooks (`OnAfterCreate[T]`/`OnAfterUpdate[T]`) and untyped ones.
-  Create/Update have already committed the row, though, so the mutation cannot
-  change what is stored; if you need to alter the stored value, do it in a
+  The INSERT/UPDATE has already run, so mutating the payload cannot change
+  what is stored. The hook still runs inside the transaction, before commit;
+  an error rolls the write back. To alter the stored value, use a
   `BeforeCreate`/`BeforeUpdate` hook before the INSERT/UPDATE runs.
