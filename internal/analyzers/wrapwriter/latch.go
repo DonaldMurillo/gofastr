@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
@@ -176,10 +177,22 @@ func declared(mset *types.MethodSet, methods methodIndex, name string) *ast.Func
 	return methods[fn]
 }
 
-// recoverReadFields: the fields read inside a deferred function literal
-// that calls recover(), anywhere in the package's non-test files.
+// recoverReadFields: the fields read inside a deferred recover — a
+// function literal, or a same-package function or method that calls
+// recover() itself (recover works when called directly by the deferred
+// function) — anywhere in the package's non-test files.
 func recoverReadFields(pass *analysis.Pass) map[*types.Var]bool {
 	out := map[*types.Var]bool{}
+	decls := map[*types.Func]*ast.FuncDecl{}
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				if fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func); ok {
+					decls[fn] = fd
+				}
+			}
+		}
+	}
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
 			continue
@@ -189,11 +202,21 @@ func recoverReadFields(pass *analysis.Pass) map[*types.Var]bool {
 			if !ok {
 				return true
 			}
-			lit, ok := ast.Unparen(ds.Call.Fun).(*ast.FuncLit)
-			if !ok || !callsRecover(pass, lit.Body) {
+			var body *ast.BlockStmt
+			switch fun := ast.Unparen(ds.Call.Fun).(type) {
+			case *ast.FuncLit:
+				body = fun.Body
+			default:
+				if fn, ok := astx.CalleeFunc(pass, fun); ok {
+					if fd := decls[fn.Origin()]; fd != nil {
+						body = fd.Body
+					}
+				}
+			}
+			if body == nil || !callsRecover(pass, body) {
 				return true
 			}
-			ast.Inspect(lit.Body, func(n ast.Node) bool {
+			ast.Inspect(body, func(n ast.Node) bool {
 				if s, ok := n.(*ast.SelectorExpr); ok {
 					if v, ok := pass.TypesInfo.Uses[s.Sel].(*types.Var); ok && v.IsField() {
 						out[v] = true

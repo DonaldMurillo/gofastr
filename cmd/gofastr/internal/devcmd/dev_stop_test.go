@@ -130,12 +130,7 @@ func TestWatcherSkipsHiddenAndOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var got []string
-	for p := range ScanModTimes(root) {
-		rel, _ := filepath.Rel(root, p)
-		got = append(got, filepath.ToSlash(rel))
-	}
-	slices.Sort(got)
+	got := watched(root, &Watch{dir: root})
 	want := []string{"internal/app/app.go", "main.go"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("watched %v, want %v", got, want)

@@ -52,16 +52,35 @@
 // math.MaxInt64 { return }`, which leaves exactly the wrapping values
 // on the continuing path.
 //
+// The 2026-11-03 round tightened what a bound IS, three ways:
+//
+//   - width-aware: a bound must fit the TARGET. math.MaxInt64 and
+//     bound-sized 64-bit literals no longer guard an int32 conversion —
+//     every value between MaxInt32 and MaxInt64 still wraps — while
+//     MaxInt32 (and smaller literals) guard every target;
+//   - rebind-aware: a guard goes stale when the subject is reassigned
+//     after it — `u = box.(uint64)` between `if u > math.MaxInt64` and
+//     `int64(u)` replaces the value the guard spoke for. A rebind
+//     BEFORE the guard keeps it credited;
+//   - shape E accepts either operand order: 1+limit is limit+1.
+//
+// Shapes D–F and the whole-package scan also reach package-level
+// function literals (`var read = func(...) {...}`), which no FuncDecl
+// carries.
+//
 // Silent postures, deliberately:
 //   - uint8/uint16 sources: they fit every signed target this rule
 //     names, and uint32 → int64/int fits too (width compared, not
 //     family);
 //   - constants: the compiler rejects out-of-range constant conversions;
-//   - any dominating comparison against math.MaxInt/MaxInt32/MaxInt64
-//     (shape A) or math.MinInt/MinInt64 (shape B), or a bound-sized
-//     integer literal, including one on a value-keeping widening of the
-//     subject (`uint64(u) > math.MaxInt64`, the spelling a 32-bit
-//     build compiles); a sign-changing conversion is no such widening;
+//   - any dominating comparison against a bound that FITS THE TARGET —
+//     math.MaxInt32 always, math.MaxInt/MaxInt64 and 64-bit-sized
+//     literals only for 64-bit targets — for shape A,
+//     math.MinInt/MinInt64 (shape B), or a bound-sized integer literal
+//     within the target's width, including one on a value-keeping
+//     widening of the subject (`uint64(u) > math.MaxInt64`, the
+//     spelling a 32-bit build compiles); a sign-changing conversion is
+//     no such widening;
 //   - negation in functions that are not abs-shaped, and float
 //     negation (no wrap);
 //   - _test.go files.
@@ -102,24 +121,20 @@ func run(pass *analysis.Pass) (any, error) {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
 		}
-		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			checkOverflowArms(pass, fn, idx)
-			parents := dominance.Parents(fn.Body)
-			abs := isAbsFunc(fn)
-			anyVars := unboundedSources(pass, fn.Body)
-			boundLocals := floatBoundLocals(pass, fn.Body)
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
+		for _, fi := range funcInfos(pass, f) {
+			checkOverflowArms(pass, fi, idx)
+			parents := dominance.Parents(fi.body)
+			abs := isAbsFunc(fi)
+			anyVars := unboundedSources(pass, fi.body)
+			boundLocals := floatBoundLocals(pass, fi.body)
+			ast.Inspect(fi.body, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.CallExpr:
-					checkUnsignedConv(pass, x, parents, fn.Body, anyVars)
-					checkFloatBoundConv(pass, x, parents, fn.Body, boundLocals)
+					checkUnsignedConv(pass, x, parents, fi.body, anyVars)
+					checkFloatBoundConv(pass, x, parents, fi.body, boundLocals)
 				case *ast.UnaryExpr:
 					if abs && x.Op == token.SUB {
-						checkAbsNeg(pass, x, parents, fn.Body, anyVars)
+						checkAbsNeg(pass, x, parents, fi.body, anyVars)
 					}
 				}
 				return true
@@ -127,6 +142,50 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 	return nil, nil
+}
+
+// funcInfo is one function to check: a declaration, or a package-level
+// function literal (var f = func(...) {...}), which no FuncDecl
+// carries. obj is nil for a literal, and name is its variable's name.
+type funcInfo struct {
+	name string
+	ft   *ast.FuncType
+	recv *ast.FieldList
+	body *ast.BlockStmt
+	obj  *types.Func
+	doc  *ast.CommentGroup
+}
+
+func funcInfos(pass *analysis.Pass, f *ast.File) []*funcInfo {
+	var out []*funcInfo
+	for _, d := range f.Decls {
+		switch decl := d.(type) {
+		case *ast.FuncDecl:
+			if decl.Body == nil {
+				continue
+			}
+			obj, _ := pass.TypesInfo.Defs[decl.Name].(*types.Func)
+			out = append(out, &funcInfo{name: decl.Name.Name, ft: decl.Type, recv: decl.Recv, body: decl.Body, obj: obj, doc: decl.Doc})
+		case *ast.GenDecl:
+			for _, spec := range decl.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i >= len(vs.Values) {
+						break
+					}
+					lit, ok := ast.Unparen(vs.Values[i]).(*ast.FuncLit)
+					if !ok || lit.Body == nil {
+						continue
+					}
+					out = append(out, &funcInfo{name: name.Name, ft: lit.Type, body: lit.Body, doc: vs.Doc})
+				}
+			}
+		}
+	}
+	return out
 }
 
 // checkUnsignedConv reports int/int32/int64(x) where x is an unsigned
@@ -177,7 +236,7 @@ func checkUnsignedConv(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.
 	if width < 32 || tgtWidth > width {
 		return // uint8/uint16 fit; so does uint32 → int64
 	}
-	if dominatingBound(pass, call, parents, body, subjectOf(pass, arg), boundMax) {
+	if dominatingBound(pass, call, parents, body, subjectOf(pass, arg), boundMax, targetMax(target)) {
 		return
 	}
 	pass.Reportf(call.Pos(),
@@ -224,7 +283,7 @@ func checkFloatBoundConv(pass *analysis.Pass, call *ast.CallExpr, parents map[as
 	if subj.str == "" {
 		return
 	}
-	if dominatingBound(pass, call, parents, body, subj, boundFloatMax) {
+	if dominatingBound(pass, call, parents, body, subj, boundFloatMax, targetMax(target)) {
 		return
 	}
 	pass.Reportf(call.Pos(),
@@ -311,7 +370,7 @@ func checkAbsNeg(pass *analysis.Pass, un *ast.UnaryExpr, parents map[ast.Node]as
 	if subj.str == "" || subj.obj == nil || !anyVars[subj.obj] {
 		return // narrowed 2026-09-02 to unbounded sources; see unboundedSources
 	}
-	if dominatingBound(pass, un, parents, body, subj, boundMin) {
+	if dominatingBound(pass, un, parents, body, subj, boundMin, math.MaxInt64) {
 		return
 	}
 	pass.Reportf(un.Pos(),
@@ -399,56 +458,94 @@ const (
 )
 
 // fitsInt reports whether e is a numeric constant no larger than
-// math.MaxInt64, so `x <= e` keeps a float x inside the int range.
-func fitsInt(pass *analysis.Pass, e ast.Expr) bool {
+// tgtMax, so `x <= e` keeps a float x inside the target's range.
+func fitsInt(pass *analysis.Pass, e ast.Expr, tgtMax int64) bool {
 	tv, ok := pass.TypesInfo.Types[e]
 	if !ok || tv.Value == nil {
 		return false
 	}
-	f, _ := constant.Float64Val(constant.ToFloat(tv.Value))
-	return f <= math.MaxInt64 && !math.IsInf(f, 0) && !math.IsNaN(f)
+	f, ok := constant.Float64Val(constant.ToFloat(tv.Value))
+	return ok && f <= float64(tgtMax) && !math.IsInf(f, 0) && !math.IsNaN(f)
 }
 
 // dominatingBound reports whether node is dominated by a comparison of
-// the subject against a bound (review 6 made the guard branch-aware):
+// the subject against a bound no larger than tgtMax (review 6 made the
+// guard branch-aware; the 2026-11-03 round made it width-aware and
+// rebind-aware):
 //
 //   - a diverging guard: an earlier if whose condition, when FALSE,
-//
-// leaves the subject inside the family's safe range —
-// `if u > math.MaxInt64 { return }`, `if v == math.MinInt64 {
-// return }` — and whose then-branch never completes normally
-// (return, panic, continue, os.Exit): only in-range values
-// continue past it;
+//     leaves the subject inside the family's safe range — `if u >
+//     math.MaxInt64 { return }`, `if v == math.MinInt64 { return }` —
+//     and whose then-branch never completes normally (return, panic,
+//     continue, os.Exit): only in-range values continue past it;
 //   - an enclosing condition: an if whose then-branch holds the node
+//     and whose condition, held TRUE there, establishes the safe
+//     range — `if u <= math.MaxInt64 { return int64(u), true }`.
 //
-// and whose condition, held TRUE there, establishes the safe
-// range — `if u <= math.MaxInt64 { return int64(u), true }`.
-//
-// Polarity is the whole point: `if u <= math.MaxInt64 { return }`
-// leaves exactly the out-of-range values on the continuing path, a
-// branch that merely flags (or returns on the in-range values) leaves
-// the wrapping values behind, and a comparison inside a nested
-// conditional body of an earlier statement (a flag-gated check) or a
-// sibling case arm guards nothing — that is exactly how the uint arm
-// shipped without the check its uint64 sibling had.
-func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]ast.Node, body *ast.BlockStmt, subj subject, family string) bool {
+// A bound wider than the target proves nothing (MaxInt64 does not
+// bound an int32 conversion), and neither does a guard the subject has
+// been reassigned after: u = box.(uint64) between the guard and the
+// conversion replaces the value the guard spoke for. Polarity is the
+// whole point: `if u <= math.MaxInt64 { return }` leaves exactly the
+// out-of-range values on the continuing path, a branch that merely
+// flags (or returns on the in-range values) leaves the wrapping values
+// behind, and a comparison inside a nested conditional body of an
+// earlier statement (a flag-gated check) or a sibling case arm guards
+// nothing — that is exactly how the uint arm shipped without the
+// check its uint64 sibling had.
+func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]ast.Node, body *ast.BlockStmt, subj subject, family string, tgtMax int64) bool {
+	// A guard is stale when the subject is reassigned after it and
+	// before the node.
+	lastAssign := token.NoPos
 	for _, stmts := range dominance.Prefix(node, parents, body) {
 		for _, st := range stmts {
+			if p := subjectRebindPos(pass, st, subj); p > lastAssign {
+				lastAssign = p
+			}
+		}
+	}
+	for _, stmts := range dominance.Prefix(node, parents, body) {
+		for _, st := range stmts {
+			if st.Pos() <= lastAssign {
+				continue
+			}
 			iff := dominance.IfStmtOf(st)
 			if iff == nil || !dominance.Diverges(iff.Body) {
 				continue
 			}
-			if condBounds(pass, iff.Cond, subj, family, false) {
+			if condBounds(pass, iff.Cond, subj, family, tgtMax, false) {
 				return true
 			}
 		}
 	}
 	for _, cond := range dominance.EnclosingIfConds(node, parents, body) {
-		if condBounds(pass, cond, subj, family, true) {
+		if cond.Pos() < lastAssign {
+			continue // the rebind inside the branch replaced the value
+		}
+		if condBounds(pass, cond, subj, family, tgtMax, true) {
 			return true
 		}
 	}
 	return false
+}
+
+// subjectRebindPos returns the position of a top-level assignment to
+// the subject in st, NoPos when st assigns nothing of it.
+func subjectRebindPos(pass *analysis.Pass, st ast.Stmt, subj subject) token.Pos {
+	as, ok := st.(*ast.AssignStmt)
+	if !ok {
+		return token.NoPos
+	}
+	for _, l := range as.Lhs {
+		id, ok := l.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		if subj.obj != nil && pass.TypesInfo.ObjectOf(id) == subj.obj {
+			return as.Pos()
+		}
+	}
+	return token.NoPos
 }
 
 // condBounds walks a condition's operator tree and reports whether it
@@ -461,37 +558,38 @@ func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]as
 // strict false still converts the out-of-range u). For || held, which
 // operand is unknown, so every operand must prove it; failed, ¬(A ∨ B)
 // is ¬A ∧ ¬B — both failed, so any one operand's failure proves it.
-func condBounds(pass *analysis.Pass, cond ast.Expr, subj subject, family string, holds bool) bool {
+func condBounds(pass *analysis.Pass, cond ast.Expr, subj subject, family string, tgtMax int64, holds bool) bool {
 	switch x := cond.(type) {
 	case *ast.ParenExpr:
-		return condBounds(pass, x.X, subj, family, holds)
+		return condBounds(pass, x.X, subj, family, tgtMax, holds)
 	case *ast.UnaryExpr:
 		if x.Op == token.NOT {
-			return condBounds(pass, x.X, subj, family, !holds)
+			return condBounds(pass, x.X, subj, family, tgtMax, !holds)
 		}
 	case *ast.BinaryExpr:
 		switch x.Op {
 		case token.LAND:
 			if holds {
-				return condBounds(pass, x.X, subj, family, true) || condBounds(pass, x.Y, subj, family, true)
+				return condBounds(pass, x.X, subj, family, tgtMax, true) || condBounds(pass, x.Y, subj, family, tgtMax, true)
 			}
-			return condBounds(pass, x.X, subj, family, false) && condBounds(pass, x.Y, subj, family, false)
+			return condBounds(pass, x.X, subj, family, tgtMax, false) && condBounds(pass, x.Y, subj, family, tgtMax, false)
 		case token.LOR:
 			if holds {
-				return condBounds(pass, x.X, subj, family, true) && condBounds(pass, x.Y, subj, family, true)
+				return condBounds(pass, x.X, subj, family, tgtMax, true) && condBounds(pass, x.Y, subj, family, tgtMax, true)
 			}
-			return condBounds(pass, x.X, subj, family, false) || condBounds(pass, x.Y, subj, family, false)
+			return condBounds(pass, x.X, subj, family, tgtMax, false) || condBounds(pass, x.Y, subj, family, tgtMax, false)
 		}
-		return comparisonBounds(pass, x, subj, family, holds)
+		return comparisonBounds(pass, x, subj, family, tgtMax, holds)
 	}
 	return false
 }
 
 // comparisonBounds reports whether `subj op bound` proves the subject
 // inside the family's safe range on the given truth value. The bound
-// operand is a math constant of the family or a bound-sized literal,
-// exactly as before.
-func comparisonBounds(pass *analysis.Pass, bin *ast.BinaryExpr, subj subject, family string, holds bool) bool {
+// operand is a math constant of the family or a bound-sized literal no
+// larger than tgtMax — a bound wider than the target still lets every
+// value between the target's max and the bound wrap.
+func comparisonBounds(pass *analysis.Pass, bin *ast.BinaryExpr, subj subject, family string, tgtMax int64, holds bool) bool {
 	if !isComparison(bin.Op) {
 		return false
 	}
@@ -506,13 +604,14 @@ func comparisonBounds(pass *analysis.Pass, bin *ast.BinaryExpr, subj subject, fa
 		return false
 	}
 	if family == boundFloatMax {
-		// Shape C: any constant upper bound that fits an int proves the
-		// conversion (a VARCHAR cap of 65535 is as good as MaxInt32).
-		if !isMathBound(pass, other, boundMax) && !fitsInt(pass, other) {
+		// Shape C: any constant upper bound that fits the target
+		// proves the conversion (a VARCHAR cap of 65535 is as good as
+		// MaxInt32).
+		if !isMathBound(pass, other, boundMax, tgtMax) && !fitsInt(pass, other, tgtMax) {
 			return false
 		}
 		family = boundMax
-	} else if !isMathBound(pass, other, family) && !isBoundLiteral(pass, other, family) {
+	} else if !isMathBound(pass, other, family, tgtMax) && !isBoundLiteral(pass, other, family, tgtMax) {
 		return false
 	}
 	op := bin.Op
@@ -565,7 +664,7 @@ func boundSide(pass *analysis.Pass, op token.Token, bound ast.Expr, family strin
 // the math.MinInt/MinInt64 constants (on the 64-bit platforms this
 // repo targets), or that value spelled as a literal.
 func isExactMinBound(pass *analysis.Pass, e ast.Expr) bool {
-	if isMathBound(pass, e, boundMin) {
+	if isMathBound(pass, e, boundMin, math.MaxInt64) {
 		return true
 	}
 	tv, ok := pass.TypesInfo.Types[e]
@@ -576,7 +675,7 @@ func isExactMinBound(pass *analysis.Pass, e ast.Expr) bool {
 	return ok && i == math.MinInt64
 }
 
-func isMathBound(pass *analysis.Pass, e ast.Expr, family string) bool {
+func isMathBound(pass *analysis.Pass, e ast.Expr, family string, tgtMax int64) bool {
 	sel, ok := e.(*ast.SelectorExpr)
 	if !ok {
 		return false
@@ -591,8 +690,10 @@ func isMathBound(pass *analysis.Pass, e ast.Expr, family string) bool {
 	}
 	if family == boundMax {
 		switch sel.Sel.Name {
-		case "MaxInt", "MaxInt32", "MaxInt64":
-			return true
+		case "MaxInt32":
+			return true // ≤ every target this rule names
+		case "MaxInt", "MaxInt64":
+			return tgtMax >= math.MaxInt64 // a 64-bit bound does not bound a 32-bit target
 		}
 		return false
 	}
@@ -603,9 +704,10 @@ func isMathBound(pass *analysis.Pass, e ast.Expr, family string) bool {
 	return false
 }
 
-// isBoundLiteral accepts any integer literal of bound size: at least
-// MaxInt32 for upper bounds, at most MinInt32 for lower ones.
-func isBoundLiteral(pass *analysis.Pass, e ast.Expr, family string) bool {
+// isBoundLiteral accepts an integer literal of bound size and no
+// larger than the target's max: at least MaxInt32 and at most tgtMax
+// for upper bounds, at most MinInt32 for lower ones.
+func isBoundLiteral(pass *analysis.Pass, e ast.Expr, family string, tgtMax int64) bool {
 	tv, ok := pass.TypesInfo.Types[e]
 	if !ok || tv.Value == nil {
 		return false
@@ -622,18 +724,28 @@ func isBoundLiteral(pass *analysis.Pass, e ast.Expr, family string) bool {
 		return false
 	}
 	if family == boundMax {
-		return i >= 1<<31
+		return i >= 1<<31 && i <= tgtMax
 	}
 	return i <= -(1 << 31)
 }
 
-// isAbsFunc reports whether the function's name or doc says abs.
-func isAbsFunc(fn *ast.FuncDecl) bool {
-	name := strings.ToLower(fn.Name.Name)
+// targetMax is the largest value a bound may name for a conversion
+// into target (int is 64-bit on every platform this repo ships).
+func targetMax(target *types.Basic) int64 {
+	if target.Kind() == types.Int32 {
+		return math.MaxInt32
+	}
+	return math.MaxInt64
+}
+
+// isAbsFunc reports whether the function's name or doc says abs. For a
+// package-level literal the name is the variable's.
+func isAbsFunc(fn *funcInfo) bool {
+	name := strings.ToLower(fn.name)
 	if strings.Contains(name, "abs") {
 		return true
 	}
-	return fn.Doc != nil && strings.Contains(strings.ToLower(fn.Doc.Text()), "abs")
+	return fn.doc != nil && strings.Contains(strings.ToLower(fn.doc.Text()), "abs")
 }
 
 func srcWidth(b *types.Basic) int64 {

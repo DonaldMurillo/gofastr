@@ -20,6 +20,8 @@ import (
 
 // FormRepeaterConfig configures a dynamic repeating field group.
 type FormRepeaterConfig struct {
+	// ID is caller-owned; otherwise Name derives an ID within Ctx's scope.
+	ID string
 	// Name is the repeater group name (used as prefix for field
 	// indexing). Required.
 	Name string
@@ -118,7 +120,7 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 		AddName:    cfg.Name + "_add",
 		AddValue:   "1",
 		RemoveName: cfg.Name + "_remove",
-		ID:         cfg.Name,
+		ID:         scopedControlID(cfg.Ctx, cfg.ID, cfg.Name, "-items"),
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-live"),
 		Parts:      parts,
 		Strings:    StringsFor(ctx),

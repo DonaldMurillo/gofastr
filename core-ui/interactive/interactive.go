@@ -567,6 +567,8 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 // OptimisticUpdate renders a button that flips to its "success" visual
 // state immediately on click, fires an RPC in the background, and
 // reverts to idle if the RPC fails (non-2xx or network error).
+// It accepts only an RPC endpoint and method: confirmation, body, toast,
+// and success-effect options panic rather than being silently dropped.
 //
 // The headless action contract (data-hui-action*, bound through the
 // kernel's action primitive) owns the lifecycle:
@@ -593,6 +595,11 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 //	</button>
 
 func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
+	for _, key := range slices.Sorted(maps.Keys(action.attrs())) {
+		if key != "data-cui-rpc" && key != "data-cui-rpc-method" {
+			panic(fmt.Sprintf("interactive: OptimisticUpdate cannot carry %s; use OnClick for configured RPC actions", key))
+		}
+	}
 	attrs := map[string]string{
 		"data-state":               "idle",
 		"data-hui-action":          "",

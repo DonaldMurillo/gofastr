@@ -31,7 +31,14 @@
 // parseMultipartBody refused whichever duplicate form key came first).
 // The fix is the same: range slices.Sorted(maps.Keys(m)).
 //
-// The arm reads only maps shaped like decoded wire input: values of the
+// The arm reads maps shaped like decoded wire input, and map literals.
+// Round 8 added the literal (R8-RTS-01): core/settings' DecodeEndpoints
+// and Unmounted checked required fields by ranging
+// map[string]*string{"name": &e.Name, ...}, so an entry missing two
+// fields named a different one per `gofastr generate`. A literal is a
+// fixed key set its author wrote in order; range a slice of the keys.
+//
+// The wire shapes are: values of the
 // empty interface (a JSON object), []string (url.Values, http.Header, a
 // multipart form's Value), json.RawMessage, or []*multipart.FileHeader.
 // Measured over ./... on 2026-11-02, every map shape found 48 sites,
@@ -478,7 +485,7 @@ func implementsWriter(t types.Type) bool {
 func checkReturned(pass *analysis.Pass, f *ast.File, bound map[types.Object]ast.Expr, guarded []guardRange) {
 	ast.Inspect(f, func(n ast.Node) bool {
 		rng, ok := n.(*ast.RangeStmt)
-		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) {
+		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) && !mapLiteral(rng.X, bound, pass, f, rng.Pos()) {
 			return true
 		}
 		for _, g := range guarded {
@@ -638,6 +645,95 @@ func wireShaped(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 		}
 	}
 	return false
+}
+
+// mapLiteral reports whether the ranged map is a multi-entry composite
+// literal, or a local bound to one: a fixed key set the author wrote in an
+// order, which the range then randomizes (core/settings' required-field
+// loops).
+func mapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass, file *ast.File, at token.Pos) bool {
+	literal := resolveMapLiteral(x, bound, pass)
+	if literal == nil || len(literal.Elts) == 0 {
+		return false
+	}
+	if len(literal.Elts) > 1 {
+		return true
+	}
+	entry, ok := literal.Elts[0].(*ast.KeyValueExpr)
+	if !ok {
+		return true
+	}
+	key := pass.TypesInfo.Types[entry.Key].Value
+	changed := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil || changed || node.Pos() >= at {
+			return false
+		}
+		if node.End() <= literal.Pos() {
+			return false
+		}
+		switch operation := node.(type) {
+		case *ast.AssignStmt:
+			for _, left := range operation.Lhs {
+				indexed, ok := ast.Unparen(left).(*ast.IndexExpr)
+				if !ok || resolveMapLiteral(indexed.X, bound, pass) != literal {
+					continue
+				}
+				assignedKey := pass.TypesInfo.Types[indexed.Index].Value
+				if key == nil || assignedKey == nil || key.ExactString() != assignedKey.ExactString() {
+					changed = true
+				}
+			}
+		case *ast.CallExpr:
+			if identifier, ok := ast.Unparen(operation.Fun).(*ast.Ident); ok {
+				if _, builtin := pass.TypesInfo.ObjectOf(identifier).(*types.Builtin); builtin {
+					switch identifier.Name {
+					case "len", "delete", "clear":
+						return true
+					}
+				}
+			}
+			for _, argument := range operation.Args {
+				if resolveMapLiteral(argument, bound, pass) == literal {
+					changed = true
+				}
+			}
+		}
+		return !changed
+	})
+	return changed
+}
+
+func resolveMapLiteral(x ast.Expr, bound map[types.Object]ast.Expr, pass *analysis.Pass) *ast.CompositeLit {
+	x = ast.Unparen(x)
+	seen := map[types.Object]bool{}
+	for {
+		identifier, ok := x.(*ast.Ident)
+		if !ok {
+			break
+		}
+		object := pass.TypesInfo.ObjectOf(identifier)
+		if seen[object] {
+			return nil
+		}
+		seen[object] = true
+		src, found := bound[object]
+		if !found {
+			return nil
+		}
+		x = ast.Unparen(src)
+	}
+	// An empty literal filled at run time is a built map, the typed
+	// configuration shape this arm leaves alone; only written keys are a
+	// fixed set.
+	lit, ok := x.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	if _, isMap := pass.TypesInfo.TypeOf(lit).Underlying().(*types.Map); isMap {
+		return lit
+	}
+	return nil
 }
 
 func wireValue(t types.Type) bool {

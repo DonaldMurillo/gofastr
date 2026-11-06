@@ -1120,6 +1120,13 @@ receive credentialed CORS headers only for an exact allowed origin. Bearer JWTs
 are rejected on that API surface; `gfsk_` API tokens remain available for
 explicit non-browser automation.
 
+For branded API credentials set `BFFPostureConfig.TokenPrefix` to the same
+prefix as `TokensPlugin.WithPrefix` and `TokenMiddleware(WithTokenPrefix(...))`.
+The default is `gfsk_`. A prefix must be 2–16 ASCII characters including the
+trailing `_`, start with a lowercase letter, and contain only lowercase
+letters/digits before the `_`; invalid prefixes panic at configuration time.
+Other bearer credentials remain refused by the BFF guard.
+
 `AllowedOrigins` requires exact `http://` or `https://` origins and rejects
 wildcards. The protected prefix comes from `framework.AppConfig.APIPrefix`
 (default `/api`), so `WithAPIPrefix` and `WithBFFPosture` may appear in either
@@ -2361,7 +2368,16 @@ path.
   enrolled user has a `PendingTwoFactor` session until they complete
   `/auth/2fa/challenge`. Don't read user PII from a session that's
   still pending.
-- **Storing TOTP secrets cleartext.** The `User.TwoFactorSecret`
-  column is plaintext base32 at the framework layer; operators are
-  responsible for column-level or disk-level encryption. A DB leak
-  with cleartext TOTP secrets is a full second-factor bypass.
+- **Losing or leaking the 2FA encryption key.** `NewEntityTwoFAStore`
+  refuses an empty `EntityTwoFAStoreConfig.EncryptionKey` and seals
+  every TOTP secret it writes with AES-GCM under it. Rows written as
+  plaintext before the key existed still verify until they are
+  rewritten only when they use **unpadded uppercase base32**.
+  Lowercase-base32 seeds and other legacy encodings fail closed.
+  For an offline migration, decode each seed using its original
+  encoding, encode the same bytes as unpadded uppercase base32,
+  then rewrite it through the configured store so it is sealed.
+  If the original encoding is unknown, require re-enrollment rather
+  than guessing. Keep the key in a secret manager, not beside the
+  database: a DB leak plus the key is a full second-factor bypass.
+  Rotate through `PreviousEncryptionKeys`.

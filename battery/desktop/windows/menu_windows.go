@@ -133,7 +133,8 @@ func (s *winShell) invokeMenuAction(a menuAction) {
 		s.Quit()
 	case desktop.RoleSettings:
 		if s.onSettings != nil {
-			go s.onSettings(s.text())
+			onSettings, text := s.onSettings, s.text()
+			deliverOnGoroutine(func() { onSettings(text) })
 		}
 	case desktop.RoleShow:
 		s.mu.RLock()
@@ -147,7 +148,8 @@ func (s *winShell) invokeMenuAction(a menuAction) {
 		win32.MessageBox(s.hwnd, body, title, 0)
 	default:
 		if a.id != "" && s.onMenu != nil {
-			go s.onMenu(a.id)
+			onMenu, id := s.onMenu, a.id
+			deliverOnGoroutine(func() { onMenu(id) })
 		}
 	}
 }
@@ -299,7 +301,8 @@ func (s *winShell) PostDeepLink(rawURL string) error {
 	if s.onDeepLink == nil {
 		return &desktop.Error{Code: desktop.CodeUnsupported, Message: "the app has no deep link handler"}
 	}
-	go s.onDeepLink(rawURL)
+	onDeepLink := s.onDeepLink
+	deliverOnGoroutine(func() { onDeepLink(rawURL) })
 	return nil
 }
 

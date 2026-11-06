@@ -8,7 +8,10 @@
 package redirect308
 
 import (
+	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 func resolve(app *app, path string) (string, bool) {
@@ -115,4 +118,134 @@ func isSafePartialRedirect(p string) bool {
 
 func hasPrefix(s, pre string) bool {
 	return len(s) >= len(pre) && s[:len(pre)] == pre
+}
+
+// reassignAfterVerdict: the validator vetted the ORIGINAL value; the
+// reassignment replaces it with bytes nobody vetted. Until 2026-11-03
+// a guard covered the variable for the rest of the function, so the
+// re-read slipped through. Fires.
+func reassignAfterVerdict(w http.ResponseWriter, r *http.Request) {
+	target := "/fixed"
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	target = r.URL.Path
+	http.Redirect(w, r, target, http.StatusSeeOther) // want `controlbytes: request-derived value reaches http.Redirect Location unscrubbed`
+}
+
+// reVettedAfterReassign re-vets after the reassignment: quiet.
+func reVettedAfterReassign(w http.ResponseWriter, r *http.Request) {
+	target := "/fixed"
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	target = r.URL.Path
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// reassignAfterSink reassigns only after the vetted value was used:
+// the sink ran on the vetted bytes. Quiet.
+func reassignAfterSink(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Path
+	if !isSafePartialRedirect(target) {
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+	target = "/fixed"
+	_ = target
+}
+
+// conditionalRebind replaces the value only on the invalid branch —
+// and with literal bytes; on the other the vetted value reaches the
+// sink. A rebind inside a branch does not end the vetting. Quiet
+// (core/middleware requestid's spelling).
+func conditionalRebind(w http.ResponseWriter, r *http.Request) {
+	id := r.Header.Get("X-Request-Id")
+	if !isSafePartialRedirect(id) {
+		id = "/fresh"
+	}
+	w.Header().Set("X-Request-Id", id)
+}
+
+// conditionalRawRebind replaces the vetted value on one branch with
+// fresh request bytes: on that path the sink sees bytes nobody vetted.
+func conditionalRawRebind(w http.ResponseWriter, r *http.Request) {
+	id := r.Header.Get("X-Request-Id")
+	if !isSafePartialRedirect(id) {
+		return
+	}
+	if r.URL.Query().Has("alt") {
+		id = r.Header.Get("X-Alt-Id")
+	}
+	w.Header().Set("X-Request-Id", id) // want `request-derived`
+}
+
+func conditionalAliasedRebind(r *http.Request, replace bool) {
+	id := r.Header.Get("X-Request-ID")
+	unchecked := r.Header.Get("X-Other-ID")
+	if !validRequestID(id) {
+		return
+	}
+	if replace {
+		id = unchecked
+	}
+	slog.Info("request", "id", id) // want `request-derived`
+}
+
+func conditionalAliasedChainRebind(w http.ResponseWriter, r *http.Request, replace bool) {
+	id := r.Header.Get("X-Request-ID")
+	unchecked := r.Header.Get("X-Other-ID")
+	alias := unchecked
+	if !validRequestID(id) {
+		return
+	}
+	if replace {
+		id = alias
+	}
+	w.Header().Set("X-Request-ID", id) // want `request-derived`
+}
+
+func conditionalScrubbedAlias(w http.ResponseWriter, r *http.Request, replace bool) {
+	id := r.Header.Get("X-Request-ID")
+	checked := strconv.Quote(r.Header.Get("X-Other-ID"))
+	if !validRequestID(id) {
+		return
+	}
+	if replace {
+		id = checked
+	}
+	w.Header().Set("X-Request-ID", id)
+}
+
+func validRequestID(value string) bool {
+	return !strings.ContainsAny(value, "\r\n\x00\x1b")
+}
+
+// conditionalSelfRebind: a branch that rebinds the vetted value from
+// itself keeps the bytes the guard vetted.
+func conditionalSelfRebind(w http.ResponseWriter, r *http.Request, lower bool) {
+	id := r.Header.Get("X-Request-ID")
+	if !validRequestID(id) {
+		return
+	}
+	if lower {
+		id = strings.ToLower(id)
+	}
+	w.Header().Set("X-Request-ID", id)
+}
+
+// conditionalSelfPlusRaw: mixing the vetted value with fresh request
+// bytes is fresh request bytes.
+func conditionalSelfPlusRaw(w http.ResponseWriter, r *http.Request, join bool) {
+	id := r.Header.Get("X-Request-ID")
+	if !validRequestID(id) {
+		return
+	}
+	if join {
+		id = id + r.Header.Get("X-Suffix")
+	}
+	w.Header().Set("X-Request-ID", id) // want `request-derived`
 }

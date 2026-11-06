@@ -35,6 +35,75 @@ func (d *depot) locate(slug string) (string, error) {
 	return filepath.Join(d.vaultDir, slug), nil
 }
 
+// locateAuditsOther resolves ANOTHER slug's chain: the returned path's
+// own chain was never resolved, and the 2026-11 tie fix stopped a
+// body-level EvalSymlinks from shielding it.
+func (d *depot) locateAuditsOther(slug, other string) (string, error) {
+	if err := rejectBadSlug(slug); err != nil {
+		return "", err
+	}
+	if _, err := filepath.EvalSymlinks(filepath.Join(d.vaultDir, other)); err != nil {
+		return "", err
+	}
+	return filepath.Join(d.vaultDir, slug), nil
+}
+
+// putViaAuditingHelper writes through it: must fire.
+func (d *depot) putViaAuditingHelper(slug, other string, payload []byte) error {
+	dst, err := d.locateAuditsOther(slug, other)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, payload, 0o600) // want `write under a root with lexical containment only`
+}
+
+// refuseLeafSymlink is a verified local guard: Lstat consulted with
+// ModeSymlink.
+func refuseLeafSymlink(p string) error {
+	fi, err := os.Lstat(p)
+	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return errors.New("symlink leaf")
+	}
+	return nil
+}
+
+// locateGuardsOther guards ANOTHER slug's leaf only.
+func (d *depot) locateGuardsOther(slug, other string) (string, error) {
+	if err := refuseLeafSymlink(filepath.Join(d.vaultDir, other)); err != nil {
+		return "", err
+	}
+	return filepath.Join(d.vaultDir, slug), nil
+}
+
+// putViaGuardOther writes through the guarded-on-the-wrong-path
+// helper: must fire.
+func (d *depot) putViaGuardOther(slug, other string, payload []byte) error {
+	dst, err := d.locateGuardsOther(slug, other)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, payload, 0o600) // want `write under a root with lexical containment only`
+}
+
+// locateInlineResolved resolves the very join it returns, written
+// inline rather than through a local: the tie is on the path, not the
+// spelling. Quiet.
+func (d *depot) locateInlineResolved(slug string) (string, error) {
+	if _, err := filepath.EvalSymlinks(filepath.Join(d.vaultDir, slug)); err != nil {
+		return "", err
+	}
+	return filepath.Join(d.vaultDir, slug), nil
+}
+
+// putViaInlineResolved writes through it: quiet.
+func (d *depot) putViaInlineResolved(slug string, payload []byte) error {
+	dst, err := d.locateInlineResolved(slug)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, payload, 0o600)
+}
+
 // put is the Save shape: MkdirAll on the Dir of the helper-returned
 // path, then an atomic rename into place. Both are writes under the
 // root, and neither is a sink the Join used to reach directly.
@@ -47,7 +116,7 @@ func (d *depot) put(slug string, payload []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil { // want `write under a root with lexical containment only`
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".staging-*")
+	tmp, err := os.CreateTemp(dir, ".staging-*") // want `write under a root with lexical containment only`
 	if err != nil {
 		return err
 	}

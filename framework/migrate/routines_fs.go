@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"io/fs"
 	"sort"
 	"strings"
@@ -109,6 +110,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		if err != nil {
 			return nil, fmt.Errorf("migrate.RoutinesFS: read %q: %w", name, err)
 		}
+		body = bom.TrimBytes(body)
 		trimmed := strings.TrimSpace(string(body))
 
 		if isDown {

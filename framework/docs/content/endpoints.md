@@ -96,6 +96,10 @@ of `handler.Bind`, which also binds a `time.Time` or any other
 `encoding.TextUnmarshaler` from a query, path or header value (see
 [core packages](core-packages.md) → handler).
 
+The MCP twin refuses non-scalar path/query arguments using JSON type names
+(array, object, or null), never Go implementation types. These details use
+the same translatable JSON phrases as HTTP decoding errors.
+
 An empty query value (`?q=`) is the same as no value: the field stays at
 its zero value and a pointer field stays nil. Before this release `?q=`
 bound `""` into a string field, and `?page=` failed an int field with a

@@ -114,9 +114,9 @@ type Report struct {
 	// Fixed lists the diagnostics --fix resolved, so a JSON consumer
 	// driving verify → fix → verify can see what changed.
 	Fixed []FixedDiagnostic `json:"fixed,omitempty"`
-	// Unparsed counts files the parser rejected. Those files produced no
-	// findings from any analyzer, so without this a mid-edit tree reads as
-	// clean for exactly the files nobody could read.
+	// Unparsed counts files reading or parsing rejected. Those files
+	// produced no findings from any analyzer, so without this a mid-edit
+	// tree reads as clean for exactly the files nobody could read.
 	Unparsed int `json:"unparsed,omitempty"`
 	// OutsideChange counts findings dropped by --changed because they sit
 	// in files this change did not touch. Reported so a narrowed run
@@ -195,7 +195,7 @@ func (r *Report) noteSuppressed(ruleID, file string) {
 }
 
 func (r *Report) Passed() bool {
-	if len(r.Errors) > 0 {
+	if len(r.Errors) > 0 || r.Unparsed > 0 {
 		return false
 	}
 	// A failed vet stage is the same case: the analyzers ran against code

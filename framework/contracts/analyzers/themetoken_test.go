@@ -58,6 +58,16 @@ func TestVarWithFallbackIsClean(t *testing.T) {
 	assertNot(t, ds, contracts.RuleUnknownThemeToken, "a fallback degrades instead of dropping the declaration")
 }
 
+// Runtime-owned prefixes are exempt like the ui knobs: the kernel and
+// headless layers write their --cui-*/--hui-* properties at runtime
+// (theming.md lists all four prefixes as outside the theme).
+func TestRuntimeOwnedPrefixReferenceIsClean(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"app.css": ".panel { translate: var(--hui-panel-shift); }\n.drawer { translate: var(--cui-drawer-shift); }\n",
+	})
+	assertNot(t, ds, contracts.RuleUnknownThemeToken, "the runtime owns --cui-* and --hui-* properties, theming.md exempts them beside --ui-*")
+}
+
 func TestLocallyDeclaredPropertyIsClean(t *testing.T) {
 	ds := fixture(t, map[string]string{
 		"app.css": ":root { --brand: #fff; }\n.header { color: var(--brand); }\n",

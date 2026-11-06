@@ -19,7 +19,7 @@ func TestLLMMDStatesSectionListsMoves(t *testing.T) {
 	for _, want := range []string{
 		"`status` starts at one of: `draft`, `open`.",
 		"| `issue` | `POST /invoices/{id}/transitions/issue` | `draft` → `open` | — |",
-		"| `pay` | `POST /invoices/{id}/transitions/pay` | `open` → `paid` | `paid_on` |",
+		"| `pay` | `POST /invoices/{id}/transitions/pay` | `open` → `paid` | `paidOn` |",
 		"| `void` | `POST /invoices/{id}/transitions/void` | `draft`, `open` → `void` | — |",
 		"`status` and every stamp change only through these moves",
 	} {

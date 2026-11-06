@@ -255,6 +255,8 @@ func (ch *windowChrome) setReduced(win, webView objc.ID, on bool) {
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("windowBackgroundColor")))
 		setWebViewBackground(webView, true)
 	case ch.resolved == desktop.MaterialGlass && !on:
+		objc.Send(ch.glassView, objc.Sel("setContentView:"), 0)
+		objc.Send(ch.glassView, objc.Sel("setContentView:"), uintptr(webView))
 		objc.Send(win, objc.Sel("setContentView:"), uintptr(ch.glassView))
 		objc.Send(win, objc.Sel("setOpaque:"), 0)
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("clearColor")))
@@ -419,7 +421,7 @@ func (s *darwinShell) appearanceChanged(on bool) {
 		w.applyReduced(on)
 	}
 	if cb != nil {
-		go cb(desktop.Appearance{ReduceTransparency: on})
+		deliverOnGoroutine(func() { cb(desktop.Appearance{ReduceTransparency: on}) })
 	}
 }
 
@@ -487,10 +489,10 @@ func (s *darwinShell) reportWindowActivity(w *darwinWindow, focus bool) {
 	s.mu.Unlock()
 	id := w.ID()
 	if focus && focusCB != nil {
-		go focusCB(id)
+		deliverOnGoroutine(func() { focusCB(id) })
 	}
 	if !focus && blurCB != nil {
-		go blurCB(id)
+		deliverOnGoroutine(func() { blurCB(id) })
 	}
 }
 

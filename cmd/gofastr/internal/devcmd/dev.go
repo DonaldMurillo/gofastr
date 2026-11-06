@@ -763,8 +763,8 @@ func (w *Watch) Refresh() {
 // saves would otherwise restart this server) at any depth, and build
 // output (dist, gen, tmp) at the root alone. A directory the build
 // target's package graph runs through is always walked.
-func (w *Watch) skipDir(path, name string) bool {
-	rel, err := filepath.Rel(w.dir, path)
+func (w *Watch) skipDir(root, path, name string) bool {
+	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
@@ -789,18 +789,29 @@ func (w *Watch) skipDir(path, name string) bool {
 // require a rebuild.
 func (w *Watch) Scan() map[string]time.Time {
 	result := make(map[string]time.Time)
-	filepath.Walk(w.dir, func(path string, info os.FileInfo, err error) error {
+	root := w.dir
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		// The root itself is walked whatever its name (".", a dot-dir
 		// the developer pointed --dir at).
-		if info.IsDir() && path != w.dir && w.skipDir(path, info.Name()) {
+		if info.IsDir() && path != root && w.skipDir(root, path, info.Name()) {
 			return filepath.SkipDir
 		}
 		ext := filepath.Ext(path)
 		switch ext {
 		case ".go", ".js", ".css", ".html", ".md":
+			if info.Mode()&os.ModeSymlink != 0 {
+				target, err := os.Stat(path)
+				if err != nil || target.IsDir() {
+					return nil
+				}
+				info = target
+			}
 			result[path] = info.ModTime()
 		}
 		return nil

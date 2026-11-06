@@ -109,6 +109,26 @@ func logNote(n Note) {
 	slog.String("path", scrubCtl(n.Path))
 }
 
+// FailReport is filled only through the method-receiver spelling: the
+// recover() value rendered by the error interface's own Error method.
+type FailReport struct {
+	Error string
+}
+
+// emitFailThroughMethod: orig followed call arguments but not the
+// method receiver, so this literal did not mark Error carrying.
+func emitFailThroughMethod(report func(FailReport)) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			report(FailReport{Error: rec.(error).Error()})
+		}
+	}()
+}
+
+func logFail(f FailReport) {
+	_ = slog.String("err", f.Error) // want `controlbytes: request-derived value reaches slog.String/slog.Any unscrubbed`
+}
+
 type slogReporter struct {
 	log *slog.Logger
 }

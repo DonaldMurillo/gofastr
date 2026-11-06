@@ -15,15 +15,21 @@
 // inheritance (B62). The fix is to tighten only a directory this call
 // created, and refuse (or warn on) an existing one that is too open.
 //
-// Shape: in one function, os.MkdirAll(X, ...) and then a tightening of
-// the same X, where X is caller-named: a parameter, filepath.Dir of
-// one, or a local bound to either. A tightening is os.Chmod(X, m) with
-// a constant owner-only m, or fileperm.Restrict(X, true). One report
-// per function and directory, on the first tightening.
+// Shape: in one function, a creating call for X — os.MkdirAll(X, ...),
+// or os.Mkdir(X, ...) whose EEXIST is tolerated (an os.IsExist /
+// errors.Is(err, fs.ErrExist) test on its error before the tighten;
+// the battery/desktop/linux profile walk spelling, 2026-11) — and
+// then a tightening of the same X, where X is caller-named: a
+// parameter, filepath.Dir of one, or a local bound to either. A
+// tightening is os.Chmod(X, m) with a constant owner-only m, or
+// fileperm.Restrict(X, true). One report per function and directory,
+// on the first tightening.
 //
 // Silent postures, deliberately:
-//   - an os.Stat or os.Lstat of X before the MkdirAll: the existence
-//     check the fix spelling needs to know whether it created X;
+//   - a CONSULTED os.Stat or os.Lstat of X before the creating call —
+//     its result bound to a read variable or compared in a controlling
+//     expression; a bare call or an all-blank discard proved nothing
+//     (2026-11);
 //   - a directory this code names itself: joined under a receiver
 //     field, an environment value, os.UserConfigDir or a temp root
 //     (the isolation runtime's .gofastr/isolation/<id>, the desktop
@@ -35,20 +41,19 @@
 //     directories from the key under a configured root, which a
 //     parameter test cannot follow (B62's storage and upload sites);
 //   - _test.go files.
-//
-// A helper whose callers pass only directories the package namespaces
-// itself (battery/service ensurePrivateDir) is the shape on purpose and
-// carries the allow marker with that reason.
 package tightenshared
 
 import (
 	"go/ast"
 	"go/constant"
+	"go/token"
 	"go/types"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -75,6 +80,7 @@ func run(pass *analysis.Pass) (any, error) {
 func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 	params := pathflow.ParamObjects(pass, fn)
 	bound := pathflow.Bindings(pass, fn.Body)
+	parents := dominance.Parents(fn.Body)
 	key := func(e ast.Expr) string {
 		return types.ExprString(pathflow.Resolve(pass, e, bound, 0))
 	}
@@ -86,7 +92,8 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 		return true
 	})
 	made := map[string]*ast.CallExpr{} // first MkdirAll per directory
-	statted := map[string]bool{}       // Stat/Lstat seen before that MkdirAll
+	mkdirs := map[string]mkdirArm{}    // first Mkdir per directory, awaiting its ErrExist verdict
+	statted := map[string]bool{}       // consulted Stat/Lstat before the creating call
 	reported := map[string]bool{}
 	for _, c := range calls {
 		if len(c.Args) == 0 {
@@ -95,15 +102,32 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 		k := key(c.Args[0])
 		switch q := pathflow.QualifiedFunc(pass, c.Fun); {
 		case q == "os.Stat" || q == "os.Lstat":
-			if made[k] == nil {
+			// The existence check counts only when its result is
+			// CONSULTED: a bare call or an all-blank discard (2026-11,
+			// AZ12-03) proved nothing about the directory.
+			if made[k] == nil && mkdirs[k] == (mkdirArm{}) && resultConsulted(c, parents) {
 				statted[k] = true
 			}
 		case q == "os.MkdirAll":
 			if made[k] == nil {
 				made[k] = c
 			}
+		case q == "os.Mkdir":
+			if _, seen := mkdirs[k]; !seen && made[k] == nil {
+				mkdirs[k] = mkdirArm{call: c, errObj: errVarOf(pass, c, parents)}
+			}
 		case isTighten(pass, c, q):
-			if made[k] == nil || statted[k] || reported[k] || !callerNamed(pass, c.Args[0], bound, params, 0) {
+			// A tolerated-EEXIST Mkdir arms the same way MkdirAll
+			// does (2026-11, AZ12-04): the EEXIST path continues past
+			// an existing directory, so the tightening still reaches
+			// one this call did not create.
+			armed := made[k] != nil
+			if !armed {
+				if m, ok := mkdirs[k]; ok && errExistTolerated(pass, m, c.Pos(), fn.Body) {
+					armed = true
+				}
+			}
+			if !armed || statted[k] || reported[k] || !callerNamed(pass, c.Args[0], bound, params, 0) {
 				continue
 			}
 			reported[k] = true
@@ -112,6 +136,119 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 				shortName(q), types.ExprString(c.Args[0]))
 		}
 	}
+}
+
+// mkdirArm is an os.Mkdir call and the error variable its result was
+// bound to, for the tolerated-EEXIST test.
+type mkdirArm struct {
+	call   *ast.CallExpr
+	errObj types.Object
+}
+
+// resultConsulted reports whether a call's results reach a name the
+// function reads: an assignment with a non-blank left side (the
+// compiler forces a later read), or a controlling expression of an
+// if/for/switch, where the result is compared directly. A bare call
+// statement or an all-blank discard consults nothing.
+func resultConsulted(call *ast.CallExpr, parents map[ast.Node]ast.Node) bool {
+	switch p := parents[call].(type) {
+	case *ast.AssignStmt:
+		if len(p.Rhs) == 1 && p.Rhs[0] == call {
+			for _, lhs := range p.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+					return true
+				}
+			}
+		}
+		return false
+	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt:
+		return true
+	}
+	return false
+}
+
+// errVarOf returns the variable a single-result call's error was
+// assigned to, or nil.
+func errVarOf(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.Node]ast.Node) types.Object {
+	assign, ok := parents[call].(*ast.AssignStmt)
+	if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 || assign.Rhs[0] != call {
+		return nil
+	}
+	id, ok := assign.Lhs[0].(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	obj := pass.TypesInfo.ObjectOf(id)
+	if _, isNil := obj.(*types.Nil); obj == nil || isNil {
+		return nil
+	}
+	return obj
+}
+
+// errExistTolerated reports whether an os.IsExist(err) or
+// errors.Is(err, fs.ErrExist) on the Mkdir's error variable runs
+// between the Mkdir and pos: the walk-then-create spelling, where an
+// EEXIST from another process is a concurrent win and anything else
+// refuses (battery/desktop/linux profile walk).
+func errExistTolerated(pass *analysis.Pass, m mkdirArm, pos token.Pos, body *ast.BlockStmt) bool {
+	if m.errObj == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok || call.Pos() <= m.call.Pos() || call.Pos() >= pos || len(call.Args) == 0 {
+			return true
+		}
+		q := pathflow.QualifiedFunc(pass, call.Fun)
+		if q != "os.IsExist" && q != "errors.Is" {
+			return true
+		}
+		if q == "errors.Is" && !mentionsErrExist(call) {
+			return true
+		}
+		if mentionsObject(pass, call.Args[0], m.errObj) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// mentionsErrExist reports whether the errors.Is call's second
+// argument names an ErrExist sentinel.
+func mentionsErrExist(call *ast.CallExpr) bool {
+	if len(call.Args) < 2 {
+		return false
+	}
+	found := false
+	ast.Inspect(call.Args[1], func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "ErrExist" {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// mentionsObject reports whether e mentions the variable obj.
+func mentionsObject(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		id, ok := n.(*ast.Ident)
+		if !ok || found {
+			return !found
+		}
+		if pass.TypesInfo.ObjectOf(id) == obj {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // isTighten: os.Chmod with a constant owner-only mode, or

@@ -57,6 +57,9 @@ func TestExpiredClaimPastBudgetIsDead(t *testing.T) {
 
 		clock = clock.Add(lease + time.Second) // the lease expires
 		mgr.tick(ctx)
+		if deliveries, failures := mgr.deliveriesTotal.Load(), mgr.failuresTotal.Load(); deliveries != 1 || failures != 1 {
+			t.Fatalf("exhausted budget metrics = (%d, %d); want one delivery and one failure", deliveries, failures)
+		}
 
 		if n := posts.Load(); n != 0 {
 			t.Fatalf("recovery tick sent %d request(s) for a delivery whose only attempt the "+

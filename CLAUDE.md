@@ -200,7 +200,9 @@ expose them to agents connected to a live app.**
   site and stays quiet on the fix:
   `controlbytes` (request-derived strings pass a scrub before
   slog/otel/header/stdio sinks — name the helper scrub/sanitize/… or
-  byte-index the value), `callbackunderlock` (never invoke func-typed
+  byte-index the value; a conditional rebind from request bytes, directly
+  or through local aliases, ends the old value's validation),
+  `callbackunderlock` (never invoke func-typed
   fields or map callbacks between Lock and Unlock — snapshot under the
   lock, call outside), `recovercallback` (registry callbacks on
   goroutine/read-loop paths need a recover guard), `compositekey`
@@ -211,7 +213,8 @@ expose them to agents connected to a live app.**
   transforms but does not validate), `asciifold` (never key a registry
   lookup on `strings.ToLower`/`ToUpper`, nor compare two folds with
   `==` — Unicode folding maps homoglyphs onto ASCII, ſ → S, K → k;
-  fold with `internal/asciicase.Lower` or refuse non-ASCII first),
+  fold with `internal/asciicase.Lower` or refuse non-ASCII first; then-branch
+  credit requires a whole-string helper or callback proof, not one indexed byte),
   `laxcoerce` (a
   failed type assertion on a `map[string]any` entry is not absence —
   split presence from type, or return an error), `rootwrite` (writes
@@ -234,7 +237,9 @@ expose them to agents connected to a live app.**
   credential or an input read; use subtle.ConstantTimeCompare or
   hmac.Equal), `timestampid` (an id/token/session/key minted from
   time.Now() formatted into a string, rand-failure fallbacks included;
-  mint from crypto/rand), and `discardeddecode` (`_ = json.Unmarshal`,
+  mint from crypto/rand, retaining at least 16 random bytes: hex slices
+  count half their character span, base64 three quarters rounded down,
+  unknown computed encodings none), and `discardeddecode` (`_ = json.Unmarshal`,
   `_ = Decode`, `_ = ParseForm`: the zero value marches on as data).
   The same round widened `unboundedbody` (ParseForm/FormValue with no
   MaxBytesReader on the request), `controlbytes` (SMTP envelope and
@@ -256,7 +261,8 @@ expose them to agents connected to a live app.**
   stayed silent behind sanitizeKey) stripped the sanitizer shield from
   `rootwrite` too: in EITHER twin only resolution postures gate —
   EvalSymlinks on the chain or its Dir, symlink-named guards, an
-  O_NOFOLLOW flag, or an Lstat+ModeSymlink leaf check — and a
+  O_NOFOLLOW flag, or an Lstat+ModeSymlink leaf check (including a
+  var-declared first result) — and a
   sanitized join is never one (the upload probes escaped through
   exactly one). `os.Root` is the fix spelling of first resort on
   Go 1.27: os.OpenRoot plus root.Open/ReadFile/Stat/Create/OpenFile/
@@ -420,8 +426,8 @@ expose them to agents connected to a live app.**
   compile-marked snippets in framework/docs, and the emitted-code
   gate runs the repo vettool over the --from-openapi CLI render and
   the app spec e2e_test.go template. The `//gofastr:allow` marker
-  and the check-csp ignore directive are anchored comment-initial
-  now: prose that merely mentions either no longer silences anything.
+  and the check-csp ignore directive are anchored at the start of real
+  comments: prose or string literals mentioning either silence nothing.
   The 2026-10 i18n round added `rawtext`: framework code under
   core/, framework/, battery/ and core-ui/, and the Meridian
   flagship (examples/meridian), sends every user-facing
@@ -571,8 +577,9 @@ expose them to agents connected to a live app.**
   text bound into a SQL value position with no storable-text check —
   Postgres answers invalid UTF-8 or NUL with 22021, a 500; refuse first
   with `utf8.ValidString && no NUL`, credited by body; flows through
-  helpers and same-package interface implementations by fact, not yet
-  through struct fields); `controlbytes` grew a Location arm (a scrub
+  helpers, same-package interface implementations and struct fields by
+  fact — a field filled with request text anywhere is request text at
+  every read, so check before storing); `controlbytes` grew a Location arm (a scrub
   that exempts tab clears nothing at a redirect) and a guard-then-strip
   arm (test the stripped value, not the raw one); `sanitizefix` (a
   one-pass multi-character removal in a scrub/strip/sanitize function:
@@ -636,6 +643,22 @@ expose them to agents connected to a live app.**
   where a new surface adds its case. Tried and dropped as unsharp: a catalog-name 63-byte-cut rule,
   keyguard's Escape/defaultPrevented arm (Escape ownership is a design
   decision), and silentskip's file-walk arm.
+  The 2026-11-03 round-8 analyzer pass added doc gates beside the
+  rules. `framework/docs` holds three identifier gates
+  (`TestDocsNameRealIdentifiers` over the embedded corpus,
+  `TestRepoDocsNameRealIdentifiers` over repo `.md` files,
+  `TestGoCommentsNameRealIdentifiers` over Go comments): each `pkg.Name`
+  or `Type.Member` it reads must resolve in the repo or stdlib index, a
+  sentence saying the name is gone stays quiet, and a deliberate
+  non-identifier goes in `identAllowed` with its reason. The runtime
+  contract sync (`doc_sync_test.go`) reads every `data-*` family in both
+  directions with whole-token matching, and
+  `TestAttrRowsSpellDoubleBraceFills` refuses `{x}`/`%s` fill tokens.
+  `mapwriter`'s return arm fires on a non-empty map literal too. Every
+  reader of a hand-written text file strips a leading byte order mark
+  through `internal/bom` (core/dotenv, core/markdown and core/yaml inline
+  the trim so `gofastr unmount` can copy them); a new reader joins
+  `TestReadersIgnoreBOM`.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

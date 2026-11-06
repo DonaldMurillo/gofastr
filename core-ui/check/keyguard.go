@@ -26,7 +26,10 @@ import (
 //     moved backwards under native radio arrows, not a listener; that
 //     shape is the contracts rule GOFASTR1826 (flexreverse). The fix spelling
 //     reads `getComputedStyle(el).direction === 'rtl'` in the listener
-//     (or a same-file helper it calls) and swaps the two.
+//     (or a same-file helper it calls) and swaps the two. The Enter or
+//     arrow test itself may sit in a same-file helper the listener
+//     calls (one hop) — widgethelpers' isEnter, a delta(e) that maps
+//     the sides — and counts at the call.
 //
 // Silent on:
 //   - a listener that never reads isComposing (arm ime): nothing in it
@@ -67,7 +70,7 @@ func LintKeyGuard(roots ...string) (*Result, error) {
 					res.add(f.Path, line, "[keyguard-ime] this keydown listener handles Enter and reads isComposing but not keyCode 229 — Safari ends a composition with a keydown whose isComposing is already false and whose keyCode is 229, so the Enter that confirms a CJK conversion acts as a real Enter; return on `e.isComposing || e.keyCode === 229`")
 				}
 			}
-			if pos := directionalArrow(f, h); pos >= 0 && !reDirectionRead.MatchString(code) {
+			if pos := directionalArrow(f, heads, h); pos >= 0 && !reDirectionRead.MatchString(code) {
 				if line := f.lineOf(pos); !allowed[line] {
 					res.add(f.Path, line, "[keyguard-rtl] this keydown listener sends ArrowLeft and ArrowRight different ways and never reads the page's direction — on <html dir=\"rtl\"> the arrows move against the screen; read `getComputedStyle(el).direction === 'rtl'` and swap them")
 				}
@@ -229,16 +232,38 @@ func enterBranch(f jsSource, heads []funcHead, h keyHandler) int {
 }
 
 // directionalArrow returns the offset of the listener's first
-// ArrowLeft/ArrowRight test that picks a side, or -1.
-func directionalArrow(f jsSource, h keyHandler) int {
-	body := f.Code[h.start:h.end]
-	best := -1
+// ArrowLeft/ArrowRight test that picks a side, or -1. A test in a
+// helper the listener calls counts at the call, exactly like the IME
+// arm's Enter test (widgethelpers' isEnter): `delta(e)` can map the
+// sides while no listener text mentions an arrow.
+func directionalArrow(f jsSource, heads []funcHead, h keyHandler) int {
+	if pos := directionalArrowBody(f, h.start, h.end); pos >= 0 {
+		return pos
+	}
+	for _, m := range reCallName.FindAllStringSubmatchIndex(f.Blank[h.start:h.end], -1) {
+		name := f.Blank[h.start+m[2] : h.start+m[3]]
+		if k := skipSpaceBack(f.Blank, h.start+m[2]-1); k >= 0 && f.Blank[k] == '.' {
+			continue
+		}
+		for _, hd := range heads {
+			if hd.name == name && (hd.end <= h.start || hd.start >= h.end) && directionalArrowBody(f, hd.start, hd.end) >= 0 {
+				return h.start + m[0]
+			}
+		}
+	}
+	return -1
+}
+
+// directionalArrowBody is directionalArrow over one span: the offset of
+// the first ArrowLeft/ArrowRight test in [start, end) that picks a side,
+// or -1.
+func directionalArrowBody(f jsSource, start, end int) int {
+	body := f.Code[start:end]
 	for _, m := range reArrowCase.FindAllStringSubmatchIndex(body, -1) {
 		if caseRunHasBoth(body, m[0], m[1]) {
 			continue
 		}
-		best = minPos(best, h.start+m[0])
-		break
+		return start + m[0]
 	}
 	for _, m := range reArrowCmp.FindAllStringSubmatchIndex(body, -1) {
 		side := ""
@@ -247,21 +272,13 @@ func directionalArrow(f jsSource, h keyHandler) int {
 		} else {
 			side = body[m[8]:m[9]]
 		}
-		lo, hi := conditionWindow(f.Blank, h.start+m[0], h.start+m[1])
+		lo, hi := conditionWindow(f.Blank, start+m[0], start+m[1])
 		if strings.Contains(f.Code[lo:hi], "Arrow"+opposite(side)) {
 			continue
 		}
-		best = minPos(best, h.start+m[0])
-		break
+		return start + m[0]
 	}
-	return best
-}
-
-func minPos(a, b int) int {
-	if a < 0 || b < a {
-		return b
-	}
-	return a
+	return -1
 }
 
 func opposite(side string) string {

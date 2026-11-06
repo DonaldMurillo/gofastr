@@ -22,8 +22,9 @@
 // exempt: whitespace around raw JSON is not part of the value.
 // An identity value is:
 //   - an identifier or field selector whose name is id or ids, ends in
-//     ID, IDs, Id or Ids (userID, s.OwnerID, recordIds), or names a
-//     tenant or actor (tenant, tenantKey, actor);
+//     ID, IDs, Id or Ids (userID, s.OwnerID, recordIds), or is the
+//     tenant/actor token alone or joined to ID/Key tokens (tenant,
+//     tenantKey, tenant_id, actorID);
 //   - a request or form read with a literal key of that shape:
 //     url.Values Get, Request FormValue / PostFormValue, Query().Get
 //     ("user_id", "tenantID", "id").
@@ -35,7 +36,9 @@
 //     (strings.TrimSpace(string(b)) drops a trailing newline on
 //     purpose), and values people type, such as names, emails and
 //     search queries, where trimming is the point;
-//   - names that merely contain "id" (valid, idle, paid);
+//   - names that merely contain "id" (valid, idle, paid), or tenant or
+//     actor inside a longer word (tenantName, contractorEmail, a
+//     tenant_label form field);
 //   - a request read whose key is not a literal: the rule cannot tell
 //     what it names;
 //   - _test.go files.
@@ -69,10 +72,13 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // identityName matches a Go identifier that names an identity value.
-var identityName = regexp.MustCompile(`^(?:[iI][dD][sS]?|.*[a-z0-9_](?:ID|IDs|Id|Ids)|(?i:tenant|actor).*|.*(?i:tenant|actor))$`)
+var identityName = regexp.MustCompile(`^(?:[iI][dD][sS]?|.*[a-z0-9_](?:ID|IDs|Id|Ids)|(?i:tenant|actor)(?:[_]?(?i:key|id|ids))?)$`)
 
-// identityKey matches a literal request or form key naming one.
-var identityKey = regexp.MustCompile(`^(?:(?i:id|ids)|.*(?:_id|_ids|ID|IDs|Id|Ids)|(?i:.*tenant.*|.*actor.*))$`)
+// identityKey matches a literal request or form key naming one. The
+// tenant/actor token is anchored the same way as identityName's: a
+// whole token, alone or joined to ID/Key tokens, never a substring of
+// a longer word (tenant_label is a label people type).
+var identityKey = regexp.MustCompile(`^(?:(?i:id|ids)|.*(?:_id|_ids|ID|IDs|Id|Ids)|(?i:tenant|actor)(?:[_-]?(?i:key|id|ids))?)$`)
 
 // requestReads are the accessor methods whose literal argument names
 // the value read.

@@ -342,7 +342,7 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKUndocumented)
 			return
 		}
-		data, err := fs.ReadFile(s.cfg.Artifacts, file)
+		data, err := fs.ReadFile(s.cfg.Artifacts, file) //gofastr:allow(rootread) the fs is host configuration and file is one of the fixed sdk artifact names bound at route registration; the request cannot type it
 		if err != nil {
 			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKArtifactMissing)
 			return

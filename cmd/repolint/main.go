@@ -254,9 +254,9 @@ func lintBytes(rel string, body []byte) []finding {
 		// Action.Attrs()), never a raw "data-cui-rpc" attribute literal.
 		// Scoped narrowly because examples/site legitimately renders raw
 		// data-cui-* attrs in doc copy shown to visitors, and the
-		// pattern data-cui-rpc" matches only the bare rpc attribute
+		// pattern matches the bare rpc name and emitted attribute assignments
 		// (not -method/-body/-close/-reset/-navigate/-signal).
-		if isUntypedFUIWiringScope(rel) && strings.Contains(line, `data-cui-rpc"`) {
+		if isUntypedFUIWiringScope(rel) && rawRPCAttribute.MatchString(line) {
 			out = append(out, finding{
 				File:    rel,
 				Line:    i + 1,
@@ -546,6 +546,8 @@ func isBuildScript(rel string) bool {
 	}
 	return strings.HasPrefix(rel, "scripts/") && strings.HasSuffix(rel, ".sh")
 }
+
+var rawRPCAttribute = regexp.MustCompile("\\bdata-cui-rpc(?:[\"'`]|\\s*=)")
 
 // isUntypedFUIWiringScope reports whether rel is a non-test Go file under
 // the app generator or a battery, the code that EMITS island wiring

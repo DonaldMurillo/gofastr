@@ -56,7 +56,7 @@ func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML 
 	rows, box := filterRowsOf(s)
 	return render.Join(
 		filterRowsField(ctx, s, queryable, rows),
-		ui.TextField(ui.TextFieldConfig{
+		ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 			Name:        s.p.filter,
 			ID:          "eui-" + listIDSafe(s.key, m.name) + "-filter",
 			Label:       i18nui.EntityQueryBoxField.Text(ctx),

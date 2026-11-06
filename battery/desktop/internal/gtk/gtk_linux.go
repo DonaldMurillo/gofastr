@@ -203,6 +203,9 @@ type Symbols struct {
 	GtkWindowBeginMoveDrag          uintptr // gtk_window_begin_move_drag
 	GdkScreenGetRGBAVisual          uintptr // gdk_screen_get_rgba_visual
 	GdkScreenIsComposited           uintptr // gdk_screen_is_composited
+	GdkScreenGetNMonitors           uintptr // gdk_screen_get_n_monitors
+	GdkScreenGetPrimaryMonitor      uintptr // gdk_screen_get_primary_monitor
+	GdkScreenGetMonitorWorkarea     uintptr // gdk_screen_get_monitor_workarea
 	GdkEventGetEventType            uintptr // gdk_event_get_event_type
 	GdkEventGetButton               uintptr // gdk_event_get_button
 	GdkEventGetRootCoords           uintptr // gdk_event_get_root_coords
@@ -379,6 +382,9 @@ func table() []symbol {
 		{&Sym.GtkWindowBeginMoveDrag, libGtk, "gtk_window_begin_move_drag"},
 		{&Sym.GdkScreenGetRGBAVisual, libGdk, "gdk_screen_get_rgba_visual"},
 		{&Sym.GdkScreenIsComposited, libGdk, "gdk_screen_is_composited"},
+		{&Sym.GdkScreenGetNMonitors, libGdk, "gdk_screen_get_n_monitors"},
+		{&Sym.GdkScreenGetPrimaryMonitor, libGdk, "gdk_screen_get_primary_monitor"},
+		{&Sym.GdkScreenGetMonitorWorkarea, libGdk, "gdk_screen_get_monitor_workarea"},
 		{&Sym.GdkEventGetEventType, libGdk, "gdk_event_get_event_type"},
 		{&Sym.GdkEventGetButton, libGdk, "gdk_event_get_button"},
 		{&Sym.GdkEventGetRootCoords, libGdk, "gdk_event_get_root_coords"},

@@ -53,7 +53,7 @@ time, and nothing stops them naming a path no screen registers — a
 generated app shipped exactly that (footer links to `/terms` and
 `/privacy`, neither registered) until the check existed. Strict mode
 renders every layout's chrome — the default layout plus each screen's
-own — with a background context, the same computation `Layout.Wrap`
+own — with a background context, the same computation `Layout.WrapCtx`
 performs on every request, and resolves each internal `href` against
 the app's full served surface.
 

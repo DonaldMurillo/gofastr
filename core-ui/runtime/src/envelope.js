@@ -17,6 +17,7 @@
   'use strict';
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
+  const H = NS._navHooks;
 
   // X-Gofastr-Swap, decoded: uihost percent-encodes a layer key holding
   // non-ASCII or %, since fetch reads header bytes as Latin-1. A key an
@@ -96,21 +97,21 @@
       n.removeAttribute('aria-busy');
     }
     c.querySelectorAll('template[data-cui-page-head]').forEach(node => node.remove());
-    return NS._docCarrier(document) + c.innerHTML;
+    return c.innerHTML;
   }
 
-  const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts, vt) => {
-    if (screenCache.has(path)) screenCache.delete(path);
+  const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts) => {
+    screenCache.delete(path);
     if (screenCache.size >= MAX_CACHE_SIZE) {
       screenCache.delete(screenCache.keys().next().value);
     }
     screenCache.set(path, {
       html, title, layer: layer || '',
-      fills: (fills && fills.length) ? fills : null,
+      fills: fills?.length ? fills : null,
       seed: seed || null,
       partAddrs: partAddrs || null,
       parts: parts || new Map(),
-      vt: vt || '',
+      vt: H.transition?.pick() || '',
     });
   };
   const getCachedScreen = (path) => {
@@ -147,7 +148,7 @@
     }
     for (const [k, v] of changed) G.setSignal(k, v);
     if (!part) _pageSeedP = n ? { p: own } : null;
-    else if (n) _pageSeedP = { p: Object.assign({}, _pageSeedP && _pageSeedP.p, own) };
+    else if (n) _pageSeedP = { p: Object.assign({}, _pageSeedP?.p, own) };
     const glob = data.g || {};
     for (const k in glob) {
       if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
@@ -203,7 +204,7 @@
   const swapAtSlot = (slot, html) => {
     slot.innerHTML = html;
     mergeSeedFromDOM(slot);
-    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(slot);
+    NS.scanAndLoadCSS?.(slot);
     _focusSwapTarget(slot);
     return slot;
   };
@@ -217,9 +218,9 @@
     mergeSeedFromDOM(el);
     // The parent: the new shell root itself carries its layout's
     // data-cui-scope, and the scan reads descendants only.
-    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el.parentNode);
+    NS.scanAndLoadCSS?.(el.parentNode);
     const m = el.matches('main, [role="main"]') ? el : (el.querySelector('[role="main"]') || el.querySelector('main'));
-    if (m && m.focus) _focusSwapTarget(m);
+    if (m?.focus) _focusSwapTarget(m);
     return el;
   };
   const _settleScroll = (fn) => NS._settleScroll(fn);
@@ -252,7 +253,7 @@
   // (the transition module wraps it when the document declares one).
   // markup: the incoming page, whose vocabulary gates the pick.
   const swapCommit = (epoch, from, to, apply, pickSrc, markup) => {
-    const T = NS._navHooks.transition;
+    const T = H.transition;
     if (T) return T.commit(epoch, from, to, apply, pickSrc, markup);
     if (NS._navLive(epoch)) apply();
   };
@@ -270,7 +271,7 @@
   // no _cssReady and commits without the sheet wait.
   const cssWait = async (epoch, src, fills, parts, load) => {
     await Promise.all([src, ...(fills || []).map((f) => f.html), ...(parts || [])]
-      .map((h) => NS._cssReady && NS._cssReady(h)));
+      .map((h) => NS._cssReady?.(h)));
     if (load && NS._navLive(epoch)) await load.wait();
     return NS._navLive(epoch);
   };
@@ -327,7 +328,7 @@
   const applyFillTargets = (resolved) => {
     for (const [t, f] of resolved) {
       t.innerHTML = f.html;
-      if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(t);
+      NS.scanAndLoadCSS?.(t);
     }
   };
 
@@ -356,10 +357,9 @@
   const captureLiveFills = (slot, d) => {
     const fills = [];
     for (const el of (d || document).querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
-      if (slot && slot.contains(el)) continue;
+      if (slot?.contains(el)) continue;
       const addr = el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area');
-      if (!addr) continue;
-      fills.push({ addr, html: el.innerHTML });
+      if (addr) fills.push({ addr, html: d ? el.innerHTML : captureHTML(el) });
     }
     return fills;
   };
@@ -629,7 +629,7 @@
   };
   const routeParams = (path) => {
     const m = routeInfo(path);
-    return m && m.params;
+    return m?.params;
   };
   const substTmpl = (tmpl, params) => (params && tmpl.includes('{'))
   ? tmpl.replace(/\{(\w+)\}/g, (m, n) => (Object.prototype.hasOwnProperty.call(params, n) ? params[n] : m))
@@ -706,7 +706,7 @@
     return nav(path, o);
   };
   const nav = async (path, o) => {
-    const { bypassCache = false, forceFull = false, from = null, restore = null, ring } = o || {};
+    const { bypassCache = false, forceFull = false, from, restore, ring } = o || {};
     // Core's modality record for THIS navigation, bound at entry
     // before the first await: the swap tail focuses with it.
     _navRing = ring;
@@ -717,7 +717,6 @@
     if (_pend.get(path) === NS._navEpoch) return;
     const myEpoch = bumpEpoch();
     _pend.set(path, myEpoch);
-    const H = NS._navHooks;
     const P = H.parts;
     // The destination's deferred outlets (manifest `deferred`): one
     // part request per address beside the page fetch; begin also
@@ -801,7 +800,7 @@
             const prevEntry = getCachedScreen(prevPath);
             const lsnap = captureEnvelopeSnapshot(busySlot);
             const ps0 = P && P.leaveSnap(prevEntry);
-            cacheScreen(prevPath, captureHTML(busySlot), document.title, keys[busyDepth - 1],
+            cacheScreen(prevPath, NS._docCarrier(document) + captureHTML(busySlot), document.title, keys[busyDepth - 1],
               lsnap.fills, seedOf(prevEntry) || lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
           }
           // The loading module starts loading at evaluation; the first
@@ -852,7 +851,7 @@
               : []);
             parts.pending = true;
           }
-          swapCommit(myEpoch, prevPath, path, () => {
+          await swapCommit(myEpoch, prevPath, path, () => {
             applyEnvelope(slot, cached.html, resolved, cx.seed);
             _applied(slot, resolved);
             if (load) load.sweep();
@@ -869,7 +868,7 @@
           if (!(await cssWait(myEpoch, cached.html, null, null, load))) return;
           document.title = cached.title;
           announceRoute(cached.title);
-          swapCommit(myEpoch, prevPath, path, () => {
+          await swapCommit(myEpoch, prevPath, path, () => {
             _applied(slot);
             const root = swapAtSlot(slot, cached.html);
             // A leave capture with no fills lands here; its seed is
@@ -910,7 +909,7 @@
               P.launch(parts, parts.addrs);
               parts.pending = true;
             }
-            swapCommit(myEpoch, prevPath, path, () => {
+            await swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, body, pf.title, pf.layer,
                 (pfFills && pfResolved) ? pfFills : null, pfSeed || null,
                 parts ? parts.addrs : null, parts ? parts.parts : null);
@@ -953,7 +952,7 @@
         const fm = sseMeta(pdoc), lm = sseMeta();
         if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
         const nm = pdoc.querySelector('main');
-        swapCommit(myEpoch, prevPath, dest, () => {
+        await swapCommit(myEpoch, prevPath, dest, () => {
           // The whole-shell swap: cross-chain replaces the outermost
           // shell, falling back to whole-main for a layout-less origin.
           const sourceRoot = shellEl(pdoc) || nm;
@@ -1063,7 +1062,7 @@
         document.title = envTitle;
         announceRoute(envTitle);
         if (parts) parts.pending = true;
-        swapCommit(myEpoch, prevPath, path, () => {
+        await swapCommit(myEpoch, prevPath, path, () => {
           applyEnvelope(envSlot, snap.primary.html, resolved, snap.seed);
           _applied(envSlot, resolved);
           if (load) load.sweep();
@@ -1097,7 +1096,7 @@
           document.title = docEnv.title;
           announceRoute(docEnv.title);
           if (parts) parts.pending = true;
-          swapCommit(myEpoch, prevPath, path, () => {
+          await swapCommit(myEpoch, prevPath, path, () => {
             applyEnvelope(docEnv.slot, docEnv.html, docResolved, docEnv.seed);
             _applied(docEnv.slot, docResolved);
             if (load) load.sweep();
@@ -1138,16 +1137,17 @@
       document.title = title;
       announceRoute(title);
       if (parts) parts.pending = true;
-      swapCommit(myEpoch, prevPath, path, () => {
+      await swapCommit(myEpoch, prevPath, path, () => {
         const root = swapAtSlot(slot, body);
         _applied(slot);
         if (load) load.sweep();
-        if (P) P.land(parts, notOk);
+        P?.land(parts, notOk);
         if (!notOk) cacheScreen(path, body, title, swapKey);
         _done(path, prevPath, false, root, ps, notOk);
       }, resp, body);
     } catch (err) {
       if (!NS._navLive(myEpoch)) return;
+      NS._cancelPanel?.();
       // Hard rule 4, no location.href fallback. Surface a toast and
       // stay on the current page; the URL has already been pushState'd
       // by the click handler so revert it, to the page the DOM still
@@ -1167,7 +1167,8 @@
       if (load) load.finish();
       // A navigation that neither committed nor has a commit pending
       // discards its parts: the buffer dies and the regions restore.
-      if (P) P.finish(parts);
+      if (parts) parts.pending = false;
+      P?.finish(parts);
       // A newer navigation that marked the same region owns its mark.
       for (const el of marks) if (el._cuiBusy === myEpoch) el.removeAttribute('aria-busy');
       if (NS._navLive(myEpoch)) {
@@ -1271,7 +1272,7 @@
   };
 
 
-  NS._navHooks.envelope = {
+  H.envelope = {
     // The navigator seam (frag/nav.js loadPage delegates here).
     nav,
     // The parser/targeter the parts module shares (deferred outlets
@@ -1327,7 +1328,7 @@
     const m = document.querySelector('[role="main"]') ?? document.querySelector('main');
     if (m && _liveDomPath) {
       const snap = captureEnvelopeSnapshot(m);
-      cacheScreen(_liveDomPath, captureHTML(m), document.title,
+      cacheScreen(_liveDomPath, NS._docCarrier(document) + captureHTML(m), document.title,
         m.getAttribute('data-cui-layout-slot') || '', snap.fills, pageSeedIsland() || snap.seed);
     }
     recordScroll(_liveDomPath);

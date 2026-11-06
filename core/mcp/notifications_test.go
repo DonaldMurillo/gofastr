@@ -19,6 +19,42 @@ import (
 
 type revocableUser struct{}
 
+func TestSSEGlobalSubscriberBound(t *testing.T) {
+	for _, perCallerCap := range []int{0, -1} {
+		t.Run(fmt.Sprint(perCallerCap), func(t *testing.T) {
+			server := NewServer()
+			server.SetSSESeatCap(perCallerCap)
+			var first *sseSubscriber
+			for index := range 1024 {
+				subscriber, ok := server.addSSESubscriber(context.Background(), fmt.Sprintf("2001:db8::%x", index))
+				if !ok {
+					t.Fatalf("subscriber %d rejected before global limit", index)
+				}
+				if first == nil {
+					first = subscriber
+				}
+			}
+			request := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+			request.Header.Set("Accept", "text/event-stream")
+			request.RemoteAddr = "[2001:db8:1::1]:1234"
+			request = request.WithContext(context.Background())
+			recorder := httptest.NewRecorder()
+			if _, ok := server.addSSESubscriber(context.Background(), "one-more-host"); ok {
+				t.Error("distinct caller exceeded the global subscriber bound")
+				return
+			}
+			server.ServeSSE("/mcp").ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusTooManyRequests {
+				t.Fatalf("wire status=%d, want 429", recorder.Code)
+			}
+			server.removeSSESubscriber(first)
+			if _, ok := server.addSSESubscriber(context.Background(), "replacement-host"); !ok {
+				t.Fatal("released global capacity was not reusable")
+			}
+		})
+	}
+}
+
 func (revocableUser) GetID() string { return "u1" }
 
 // A stream whose session is revoked stops at its next delivery: the
@@ -868,4 +904,65 @@ func TestGatedRegistrationWithholdsListChanged(t *testing.T) {
 		t.Errorf("allowed stream got %q (uri %q), want payload-free prompts list_changed", method, uri)
 	}
 	expectNoSSE(t, anonEvents, "prompts list_changed for a caller the prompt gate refuses")
+}
+
+func TestSSEStreamLimitIsConfigurable(t *testing.T) {
+	server := NewServer()
+	server.SetSSEStreamLimit(2)
+	for index := range 2 {
+		if _, ok := server.addSSESubscriber(context.Background(), fmt.Sprintf("host-%d", index)); !ok {
+			t.Fatalf("stream %d refused under a limit of 2", index)
+		}
+	}
+	if _, ok := server.addSSESubscriber(context.Background(), "host-2"); ok {
+		t.Fatal("a third caller was seated under a limit of 2")
+	}
+
+	lifted := NewServer()
+	lifted.SetSSEStreamLimit(-1)
+	for index := range 1025 {
+		if _, ok := lifted.addSSESubscriber(context.Background(), fmt.Sprintf("host-%d", index)); !ok {
+			t.Fatalf("stream %d refused with the limit lifted", index)
+		}
+	}
+}
+
+func TestLoweredSSELimitDoesNotEvictRefusedReplacement(t *testing.T) {
+	server := NewServer()
+	server.SetSSESeatCap(1)
+	server.SetSSESeatOverflow(SeatOverflowEvictOldest)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handler := server.ServeSSE("/sse")
+	original := startStream(t, handler, ctx)
+	waitForSubscribers(t, server, 1)
+	other, ok := server.addSSESubscriber(ctx, "other-caller")
+	if !ok {
+		t.Fatal("second caller refused")
+	}
+	defer server.removeSSESubscriber(other)
+	server.SetSSEStreamLimit(1)
+	replacement := startStream(t, handler, ctx)
+	select {
+	case <-replacement.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("replacement was not refused")
+	}
+	if replacement.rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("replacement status=%d, want 429", replacement.rec.Code)
+	}
+	if count := sseRegistryCount(server); count != 2 {
+		t.Errorf("refused replacement changed occupancy to %d, want 2", count)
+	}
+	select {
+	case <-original.done:
+		t.Error("refused replacement evicted the original stream")
+	default:
+	}
+	cancel()
+	select {
+	case <-original.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("original stream did not stop")
+	}
 }

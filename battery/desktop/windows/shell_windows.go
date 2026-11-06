@@ -109,7 +109,6 @@ type winShell struct {
 	started         bool
 	running         bool
 	quitBeforeRun   atomic.Bool
-	closeHides      bool
 	// textCtx carries the locale the shell's own words speak (menus,
 	// accelerator names, the About box), resolved once in Run.
 	textCtx    context.Context
@@ -210,7 +209,6 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.started = true
 	s.running = true
 	s.title = cfg.Title
-	s.closeHides = cfg.Tray != nil && cfg.Tray.CloseHidesWindow
 	s.ready = ready
 	s.onMenu = cfg.OnMenu
 	s.onSettings = cfg.OnSettings
@@ -516,6 +514,12 @@ func (s *winShell) cancelModal(id uintptr) {
 }
 
 func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
+	if value, ok := activeShells.Load(hwnd); ok {
+		shell := value.(*winShell)
+		if shell.onTrayBroadcast(msg, hwnd == shell.hwnd) {
+			return 0
+		}
+	}
 	if msg == wmRunOnMain {
 		if x, ok := activeShells.Load(hwnd); ok {
 			x.(*winShell).dispatch(wparam)
@@ -648,10 +652,12 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			w := x.(*winWindow)
 			if byte(wparam) == waInactive {
 				if w.shell.onBlur != nil {
-					go w.shell.onBlur(w.id)
+					onBlur, id := w.shell.onBlur, w.id
+					deliverOnGoroutine(func() { onBlur(id) })
 				}
 			} else if w.shell.onFocus != nil {
-				go w.shell.onFocus(w.id)
+				onFocus, id := w.shell.onFocus, w.id
+				deliverOnGoroutine(func() { onFocus(id) })
 			}
 		}
 	}
@@ -666,8 +672,9 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			w := x.(*winWindow)
 			w.shell.mu.RLock()
 			runErr := w.shell.runErr
+			tray := w.shell.tray
 			w.shell.mu.RUnlock()
-			if w.id == desktop.MainWindowID && w.shell.closeHides && runErr == nil {
+			if tray != nil && tray.presence.hideOnClose(w.id == desktop.MainWindowID, runErr) {
 				showWindow(hwnd, 0)
 				return 0
 			}
@@ -699,7 +706,8 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 					w.controller = 0
 				}
 				if cb != nil {
-					go cb(w.id)
+					id := w.id
+					deliverOnGoroutine(func() { cb(id) })
 				}
 			}
 			if isMain {
@@ -870,17 +878,21 @@ func (s *winShell) createNativeWindow(id, title string, width, height int, style
 	const useDefault int32 = -2147483648
 	screenDPI := win32.SystemDPI()
 	x, y := useDefault, useDefault
-	if frame != nil {
-		x, y = pointsToPixels(frame.X, screenDPI), pointsToPixels(frame.Y, screenDPI)
-		width, height = frame.Width, frame.Height
-	} else if style.X != nil && style.Y != nil {
-		x, y = pointsToPixels(*style.X, screenDPI), pointsToPixels(*style.Y, screenDPI)
-	}
+	hadFrame := frame != nil
 	if width <= 0 {
 		width = 1024
 	}
 	if height <= 0 {
 		height = 768
+	}
+	if frame != nil {
+		frame = win32.RestoreMonitorFrame(frame, win32.MonitorWorkAreas(), screenDPI, width, height)
+	}
+	if frame != nil {
+		x, y = pointsToPixels(frame.X, screenDPI), pointsToPixels(frame.Y, screenDPI)
+		width, height = frame.Width, frame.Height
+	} else if !hadFrame && style.X != nil && style.Y != nil {
+		x, y = pointsToPixels(*style.X, screenDPI), pointsToPixels(*style.Y, screenDPI)
 	}
 	widthPixels, heightPixels := pointsToPixels(width, screenDPI), pointsToPixels(height, screenDPI)
 	exStyle := uint32(0)
@@ -1205,7 +1217,8 @@ func (w *winWindow) reportFrame() {
 	f := frameFromWindowRect(w.hwnd, l, t, r, b)
 	w.frame = f
 	if w.shell.onFrame != nil {
-		go w.shell.onFrame(w.id, f)
+		onFrame, id := w.shell.onFrame, w.id
+		deliverOnGoroutine(func() { onFrame(id, f) })
 	}
 }
 

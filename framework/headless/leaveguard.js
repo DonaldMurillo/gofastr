@@ -185,7 +185,21 @@
       if (d.anchor && d.anchor.isConnected) d.anchor.click();
       else if (typeof NS.navigate === 'function' && d.path) NS.navigate(d.path);
     };
-    if (!ask(scope, again)) e.preventDefault();
+    if (!ask(scope, again)) {
+      const epoch = NS._navEpoch;
+      ++NS._navEpoch;
+      const base = NS._navBase;
+      if (base != null) {
+        NS._pushURL(base, { replace: true });
+        NS._setCurrentPath(base);
+        NS._navBase = null;
+        NS.doc.removeHtmlAttr('aria-busy');
+        for (const el of document.querySelectorAll('[aria-busy]')) {
+          if (el._cuiBusy === epoch) el.removeAttribute('aria-busy');
+        }
+      }
+      e.preventDefault();
+    }
   });
 
   // Back and Forward. Back cannot be cancelled, and a popstate listener

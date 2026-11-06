@@ -126,6 +126,10 @@ package with `Key.From`) reads `app.QueryFromContext` or
 
 ## Outlets and fills
 
+Back-cache snapshots of live outlets and areas remove transient RPC
+loading, disabled and busy marks, just like primary content. An RPC that
+settles after navigation cannot leave its replayed control disabled.
+
 **Use an outlet when** a region of the shell belongs to the route, not
 the shell — the page's own action buttons, a per-page context panel,
 the docs article's table of contents. One URL can fill several outlets;
@@ -516,6 +520,9 @@ ships its loading content in place; the fill arrives as its own request
 (one per deferred outlet, visible in DevTools with its own body and
 timing) and lands when ready. First loads and static export ignore
 deferral and render the fill inline — nothing depends on JavaScript.
+If the envelope runtime chunk cannot load at boot, that inline content
+remains usable; the parts handoff consumes the failed load rather than
+raising an unhandled promise rejection.
 A deferred loader must be a read: the part request starts before the
 page answer says whether the page redirects. When the two disagree
 (session expired, a guard redirected), the part answers 409 and the
@@ -583,6 +590,18 @@ content is presentational: no `Load`, no DI, no params. A slow screen
 outlet's (or a deferred part).
 
 ## Transitions
+
+Cached navigations retain the page answer's keyed transition, including on
+pages with outlets; revisiting a cached page uses the same transition pick
+as its fetched answer. Picks are recorded even when reduced motion is
+enabled or the browser cannot animate view transitions, so a later cache
+replay still has the destination's pick if animation becomes available.
+
+If a navigation's DOM update throws inside a view transition, the runtime
+uses the normal navigation failure path: it shows a failure toast, restores
+the prior URL, and clears loading state. Earlier DOM updates may already
+have applied; URL restoration does not roll them back. Skipping an animation
+alone remains silent; it does not report a failed navigation.
 
 **Use a transition when** a swap should read as motion — the
 master-detail slide, a crossfade that avoids a flash of identical

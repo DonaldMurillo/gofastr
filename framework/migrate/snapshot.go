@@ -196,6 +196,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		if err := checkIndexNames(ordered, all); err != nil {
 			return "", "", SchemaSnapshot{}, err
 		}
+		if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+			return "", "", SchemaSnapshot{}, err
+		}
 	}
 	prev = respellTables(prev, declaredTableNames(all), dialect)
 
@@ -713,7 +716,11 @@ func RenderMigrationFile(version uint64, name, up, down string) string {
 // — same refusal as the SQL bodies, never a silent rewrite, because
 // rewriting a migration's Name changes its identity.
 func RenderMigrationFileChecked(version uint64, name, up, down string) (string, error) {
-	for label, sql := range map[string]string{"up": up, "down": down, "name": name} {
+	for _, entry := range []struct {
+		key string
+		val string
+	}{{"up", up}, {"down", down}, {"name", name}} {
+		label, sql := entry.key, entry.val
 		if containsDirectiveLine(sql) {
 			return "", fmt.Errorf("%w (in the %s section); a column DEFAULT or other literal spans a line starting with \"-- +migrate\"", ErrDirectiveInSQL, label)
 		}

@@ -252,7 +252,9 @@ func (w *walker) readsRequest(body ast.Node) bool {
 
 // walkFiles finds layout builds in LayoutFunc-typed positions — the
 // build argument of app.NewLayout, an explicitly app.LayoutFunc
-// typed variable, assignment, or conversion — and walks each body.
+// typed variable, assignment, or conversion — and walks each body,
+// a NAMED build's declaration included (resolveFn; 2026-11, AZ16-04:
+// the three typed arms used to accept literals only).
 func (w *walker) walkFiles() {
 	for _, f := range w.pass.Files {
 		if pathflow.IsTestFile(w.pass, f) {
@@ -267,9 +269,10 @@ func (w *walker) walkFiles() {
 				}
 				if w.isLayoutFuncConversion(n) {
 					for _, a := range n.Args {
-						if fl, ok := a.(*ast.FuncLit); ok {
-							w.walkBuild(fl, false)
-						}
+						// A NAMED build resolves like the literal:
+						// app.LayoutFunc(namedBuild) walks the named
+						// body (2026-11, AZ16-04).
+						w.walkBuild(w.resolveFn(a), false)
 					}
 				}
 			case *ast.GenDecl:
@@ -282,9 +285,7 @@ func (w *walker) walkFiles() {
 						continue
 					}
 					for _, v := range vs.Values {
-						if fl, ok := v.(*ast.FuncLit); ok {
-							w.walkBuild(fl, false)
-						}
+						w.walkBuild(w.resolveFn(v), false)
 					}
 				}
 			case *ast.AssignStmt:
@@ -292,11 +293,10 @@ func (w *walker) walkFiles() {
 					if i >= len(n.Lhs) {
 						break
 					}
-					fl, ok := rhs.(*ast.FuncLit)
-					if !ok || !w.isLayoutFuncType(w.typeOf(n.Lhs[i])) {
+					if !w.isLayoutFuncType(w.typeOf(n.Lhs[i])) {
 						continue
 					}
-					w.walkBuild(fl, false)
+					w.walkBuild(w.resolveFn(rhs), false)
 				}
 			}
 			return true

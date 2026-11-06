@@ -153,8 +153,8 @@ current token; on mismatch it returns **409 Conflict** in the error
 envelope every route answers with. The runtime then reconciles instead of rolling back.
 
 `sortablelist` is the canonical implementation. Each commit POST carries
-`version=<token>` (from `Config.Version`); a 409 response triggers
-`ConflictRPC` (from `Config.ConflictRPC`), which returns fresh
+`version=<token>` (from `SortableListConfig.Version`); a 409 response triggers
+`ConflictRPC` (from `SortableListConfig.ConflictRPC`), which returns fresh
 server-rendered `<li>` HTML that replaces the destination column. The
 409 body is read under hard safety bounds: `Content-Type: application/json`,
 at most ~4 KB, must parse as the error envelope `{"error": "…"}`, and the

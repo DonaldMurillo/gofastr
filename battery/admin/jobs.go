@@ -33,8 +33,8 @@ const bulkJobType = "entityui.bulk"
 
 // bulkJobMaxAttempts is how many times the queue hands one queued bulk
 // job to the handler before it dead-letters. A run resumes where it left
-// off (settled rows never re-run), so a handful of retries covers a busy
-// lease, a lost lease after a crash, and a transient database failure.
+// off (settled rows never re-run). Lease contention is rescheduled with
+// a fresh budget; these attempts cover transient execution failures.
 const bulkJobMaxAttempts = 5
 
 // bulkResumeGrace is how old an unenqueued bulk job must be before the
@@ -174,8 +174,8 @@ type bulkJobPayload struct {
 
 // run is the queue handler for one queued bulk job. The payload decodes
 // strictly: anything else is an error, never a zero-value id. A busy or
-// lost lease is returned for the queue to retry; every other error runs
-// the queue's own retry and dead-letter path.
+// lost lease schedules a fresh delivery after a full bulk lease; every
+// other error runs the queue's own retry and dead-letter path.
 func (j *BulkJobs) run(ctx context.Context, job queue.Job) error {
 	u := j.bound()
 	if u == nil {
@@ -193,7 +193,16 @@ func (j *BulkJobs) run(ctx context.Context, job queue.Job) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, entityui.ErrBulkJobBusy), errors.Is(err, entityui.ErrBulkLeaseLost):
-		return err
+		if err := j.q.Enqueue(ctx, queue.Job{
+			Type:        bulkJobType,
+			Payload:     job.Payload,
+			MaxAttempts: bulkJobMaxAttempts,
+			ScheduledAt: time.Now().Add(entityui.BulkJobLease),
+			UserID:      job.UserID,
+		}); err != nil {
+			return fmt.Errorf("admin: reschedule bulk job %s: %w", p.ID, err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("admin: bulk job %s: %w", p.ID, err)
 	}

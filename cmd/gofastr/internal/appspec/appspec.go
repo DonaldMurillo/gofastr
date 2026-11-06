@@ -1171,10 +1171,15 @@ func mergeEntityScopeDeclaration(
 		}
 		grouped.MultiTenant = flat
 	}
-	for key, target := range map[string]*string{
-		"tenant_field": &grouped.TenantField, "owner_field": &grouped.OwnerField,
-		"cross_owner_read": &grouped.CrossOwnerRead,
+	for _, entry := range []struct {
+		key string
+		val *string
+	}{
+		{"tenant_field", &grouped.TenantField},
+		{"owner_field", &grouped.OwnerField},
+		{"cross_owner_read", &grouped.CrossOwnerRead},
 	} {
+		key, target := entry.key, entry.val
 		if node := root[key]; node != nil {
 			// requireScalarString: owner_field/tenant_field as a list or
 			// map must be an error, not "" — an empty owner field
@@ -1619,10 +1624,14 @@ func decodeIndices(node *coreyaml.Node) ([]framework.Index, error) {
 		if err := rejectUnknownKeys(m, map[string]bool{"name": true, "columns": true, "unique": true}, fmt.Sprintf("indices[%d]", i)); err != nil {
 			return nil, err
 		}
+		unique, err := protectiveBool(m, "unique", fmt.Sprintf("indices[%d]", i))
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, framework.Index{
 			Name:    stringValue(m["name"]),
 			Columns: stringListValue(m["columns"]),
-			Unique:  boolValue(m["unique"]),
+			Unique:  unique,
 		})
 	}
 	return out, nil
@@ -1650,6 +1659,14 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		// to clients, to every API response, and to the filter surface
 		// respectively. See protectiveBool.
 		fieldCtx := fmt.Sprintf("fields[%d]", i)
+		required, err := protectiveBool(m, "required", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
+		unique, err := protectiveBool(m, "unique", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
 		readOnly, err := protectiveBool(m, "read_only", fieldCtx)
 		if err != nil {
 			return nil, err
@@ -1665,8 +1682,8 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		field := framework.FieldDeclaration{
 			Name:         stringValue(m["name"]),
 			Type:         stringValue(m["type"]),
-			Required:     boolValue(m["required"]),
-			Unique:       boolValue(m["unique"]),
+			Required:     required,
+			Unique:       unique,
 			Default:      scalarValue(m["default"]),
 			AutoGenerate: stringValue(m["auto_generate"]),
 			ReadOnly:     readOnly,
@@ -1728,6 +1745,10 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			}
 		}
 		cascadeWrite := boolValue(m["cascade_write"])
+		hidden, err := protectiveBool(m, "hidden", fmt.Sprintf("relations[%d]", i))
+		if err != nil {
+			return nil, err
+		}
 		// foreign_key is one column, or a list of one column per key
 		// column of a composite key it references.
 		var foreignKey []string
@@ -1749,7 +1770,7 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
 			OnDelete:         onDelete,
 			CascadeWrite:     cascadeWrite,
-			Hidden:           boolValue(m["hidden"]),
+			Hidden:           hidden,
 		})
 	}
 	return out, nil
@@ -3363,6 +3384,23 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 	if block.Bulk && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
 		return fmt.Errorf("app spec: screen %q bulk applies only to an entity_list block, not %q", screenName, kind)
 	}
+	requiredProp := ""
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "label":
+		if len(block.Children) == 0 {
+			requiredProp = "for"
+		}
+	case "fieldset":
+		requiredProp = "legend"
+	case "image", "img":
+		requiredProp = "src"
+	}
+	if requiredProp != "" {
+		value, _ := block.Props[requiredProp].(string)
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("app spec: screen %q %s block %s is required", screenName, kind, requiredProp)
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", "text", "p", "paragraph", "section", "div", "article", "main", "header", "footer", "nav", "aside", "span", "strong", "em", "code", "pre", "small", "blockquote", "button", "input", "label", "form", "select", "option", "textarea", "fieldset", "image", "img", "list", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "raw":
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
@@ -3374,6 +3412,15 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			return fmt.Errorf("app spec: screen %q heading level must be 1-6", screenName)
 		}
 	case "link", "a":
+		text := block.Text
+		if text == "" {
+			text, _ = block.Props["text"].(string)
+		}
+		label, _ := block.Props["aria-label"].(string)
+		labelledBy, _ := block.Props["aria-labelledby"].(string)
+		if AppSpecBlockUsesNodeRenderer(block) && strings.TrimSpace(text) == "" && len(block.Children) == 0 && strings.TrimSpace(label) == "" && strings.TrimSpace(labelledBy) == "" {
+			return fmt.Errorf("app spec: screen %q link block text or children are required unless aria-label or aria-labelledby supplies an accessible name", screenName)
+		}
 		href := block.Href
 		if href == "" {
 			href, _ = block.Props["href"].(string)
@@ -4670,7 +4717,7 @@ func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, err
 	}
 	v, err := strictBoolValue(node)
 	if err != nil {
-		return false, fmt.Errorf("%s.%s %w: this flag gates access or exposure, so it is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
+		return false, fmt.Errorf("%s.%s %w: this flag is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
 	}
 	return v, nil
 }

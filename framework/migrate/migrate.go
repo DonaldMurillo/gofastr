@@ -275,6 +275,9 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+	if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+		return err
+	}
 	// Partition routines into "applies on this dialect" vs "skipped". The
 	// skip set is logged in ONE line per boot so a misconfigured dialect tag
 	// (e.g. a Postgres stored proc left in the plan against a SQLite dev DB)
@@ -1616,6 +1619,18 @@ func migratePivotTables(ctx context.Context, exec execQueryer, ordered []*entity
 		spec, err := buildPivotSpec(ent, rel, all, dialect)
 		if err != nil {
 			return err
+		}
+		cols, err := readLiveColumnsQ(ctx, exec, rel.Through, dialect)
+		if err != nil {
+			return fmt.Errorf("read pivot table %s: %w", rel.Through, err)
+		}
+		if len(cols) > 0 {
+			if err := checkPivotColumns(spec, cols, dialect); err != nil {
+				return err
+			}
+			if err := checkLivePivotConstraints(ctx, exec, spec, all, dialect); err != nil {
+				return err
+			}
 		}
 		if _, err := exec.ExecContext(ctx, spec.DDL); err != nil {
 			return fmt.Errorf("create pivot table %s: %w", rel.Through, err)

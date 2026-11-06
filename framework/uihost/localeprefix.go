@@ -44,12 +44,23 @@ func (ds *UIHost) siteBase() string {
 // localeAlternates returns the page's hreflang alternates: one per
 // locale and x-default, the unprefixed page. Nil without path locales
 // or a BaseURL, since hreflang URLs must be absolute.
-func (ds *UIHost) localeAlternates(pagePath string) []HreflangLink {
+func (ds *UIHost) localeAlternates(ctx context.Context, pagePath string) []HreflangLink {
 	base := ds.siteBase()
 	if ds.pathLocales == nil || base == "" {
 		return nil
 	}
+	basePath, _ := ctx.Value(staticBasePathKey{}).(string)
+	base = joinBaseURL(base, basePath)
 	return localeLinks(*ds.pathLocales, base, pagePath)
+}
+
+type staticBasePathKey struct{}
+
+// WithStaticBasePath supplies a static export's mount path for generated
+// hreflang URLs. The static builder sets it for each render; callers rendering
+// static pages directly may pass it to RenderStaticPage or RenderStaticPageResult.
+func WithStaticBasePath(ctx context.Context, basePath string) context.Context {
+	return context.WithValue(ctx, staticBasePathKey{}, basePath)
 }
 
 // localeLinks takes the page path in routing form (app.RoutePath, a
@@ -70,7 +81,7 @@ func localeLinks(set i18n.PathLocales, base, pagePath string) []HreflangLink {
 // markdown both read it; the markdown kept the English canonical.
 func (ds *UIHost) localizeSEO(ctx context.Context, pagePath string, s SEO) SEO {
 	if len(s.Hreflangs) == 0 {
-		s.Hreflangs = ds.localeAlternates(pagePath)
+		s.Hreflangs = ds.localeAlternates(ctx, pagePath)
 	}
 	s.Canonical = ds.localizeURL(ctx, s.Canonical)
 	if s.OG != nil && s.OG.URL != "" {

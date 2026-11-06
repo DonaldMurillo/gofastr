@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`mcp.Server.SetSSEStreamLimit(n)`** bounds the SSE notification
+  streams a server holds across every caller (default 1024; a connect
+  past it gets `429`). The per-caller seat cap never bounded the total:
+  an anonymous caller is keyed by peer host, so a client with many IPv6
+  addresses got a cap for each one. `n < 0` lifts the limit. See
+  `mcp.md`.
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
   `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
   with signtool, timestamped through `--timestamp-url`, and `--zip`
@@ -250,6 +256,115 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: `CrudHandler.UpsertOne` refuses an entity with
+  `BeforeUpdate` hooks.** It returned the stored row after running only
+  `BeforeCreate`, so a conflict update skipped the update validators
+  and field stamps. Choosing the hook from a pre-read races a
+  concurrent insert, so the call now fails before any hook or SQL. Use
+  `CreateOne` or `UpdateOne` for those entities. See
+  `hooks-and-transactions.md`.
+- **BREAKING: `headless.Repeater` names its add and remove buttons.**
+  With `AddName` and `RemoveName` empty the buttons were unnamed, so a
+  page without JavaScript submitted the form with no operation and the
+  server could not tell add from remove. They now default to
+  `Name+"_add"` (value `"1"`) and `Name+"_remove"` (the row index), the
+  names `ui.FormRepeater` already used. A handler that reads every form
+  field sees the two new keys; set explicit names to choose others.
+- **BREAKING: CRUD field errors are keyed by the wire key.** Validation,
+  state and batch refusals keyed `fields` and `field_reasons` by column
+  name while the body used the wire key (camelCase by default, or a
+  field's `WireName`). Every refusal now uses the wire key, the same
+  key the client sent. Entity and app-spec forms name each control by
+  its wire key, and the runtime marks only the control whose name is that
+  exact key, so a custom form names its controls by wire key too. Ids and
+  relation lookups keep the column name. Multipart inputs resolve aliases
+  before the duplicate-key check, and `llm.md`, the SDK docs and
+  generated READMEs match. A client that read `fields["author_name"]`
+  reads `fields["authorName"]`.
+- **Docs and comments must name identifiers that exist; the runtime
+  contract sync reads every attribute family (2026-11-03).**
+  - `TestDocsNameRealIdentifiers`, `TestRepoDocsNameRealIdentifiers`
+    and `TestGoCommentsNameRealIdentifiers` in `framework/docs` fail
+    when a docs page, a repo `.md` file or a Go comment names a
+    `pkg.Name` or `Type.Member` the code does not declare. The first
+    run found about 60 stale names, fixed here (`Screen.Load` is
+    `ScreenLoader.Load`, `i18nui.KeyAgo` is `i18nui.AgoNow`). A
+    sentence saying a name is gone or renamed stays quiet.
+  - The `core-ui/ARCHITECTURE.md` / `runtime-contract.md` sync gate
+    reads every `data-*` family, not only `data-cui-*`, matches whole
+    tokens (`data-cui-compute` passed on `data-cui-computed`) and
+    checks both directions. The two tables had drifted by 52 rows and
+    are synced. `TestAttrRowsSpellDoubleBraceFills` refuses a `{x}` or
+    `%s` fill token in an attribute row: the modules replace `{{x}}`.
+  - `mapwriter`'s return arm also fires on a range over a non-empty
+    map literal that returns an error built from the entry it reached:
+    which entry failed first changed from run to run. Ten tree sites
+    now range a slice of pairs.
+  - 97 documented false negatives fixed across 51 vet analyzers:
+    `rootwrite`, `rootread` (which crashed on a `filepath.Join()` with
+    no arguments), `fixedtmp`, `tightenshared`,
+    `worldreadable`, `layoutfunc`; `textbind`, `controlbytes`,
+    `errleak`, `recoverlog`, `unboundedbody`, `reqparamlimit`,
+    `authpresence`, `fanoutreq`, `listheader`, `sanitizefix`;
+    `intwrap`, `divlimit`, `negdur`, `optzero`, `nonfinite`, `keytrim`,
+    `nullarray`, `settlectx`, `silentskip`, `statusrange`,
+    `discardeddecode` (which also crashed on one input),
+    `discardederr`; `recovercallback`, `callbackunderlock`,
+    `deferreset`, `doublewrite`, `growmap`, `iounderlock`,
+    `nowaitdelay`, `poisonedconn`, `recoverwrite`, `unseated`,
+    `wrapwriter`; `secretcompare`, `laxenvelope`, `laxcoerce`,
+    `asciifold`, `compositekey`, `credfetch`, `emitident`, `nostore`,
+    `rawtext`, `resolvedial`, `timestampid`, `unboundedresp`. Each
+    analyzer's doc comment names the spelling it now reads.
+  - `textbind` follows request text through struct fields: a field
+    some literal or assignment fills with request text (directly, or
+    through a constructor's parameter) is request text wherever it is
+    read, in its own package and, through a fact, in every importer;
+    a field another package declares is request text in the package
+    that fills it. Check the value before you store it; a check on the
+    read, or one after a helper already bound the value, is not
+    credited. Its first tree run found the saved-view store below.
+  - An allow marker can list several analyzers separated by spaces or
+    tabs, `//gofastr:allow(rootwrite rootread) why`. `gofastr verify`
+    already read that list; `go vet -vettool` read commas only, so the
+    marker silenced nothing there. It also reads a marker inside a
+    multi-line block comment, as `gofastr verify` does, and
+    `TestEveryAnalyzerIsWiredOrExplained` finds an analyzer built by a
+    constructor, not only one declared as a literal.
+  - 22 false negatives fixed in the browser-runtime JS lints in
+    `core-ui/check` (`keyguard` and the `runtimeshapes` family): string
+    prose and regex literals no longer read as code, wrapped and
+    parenthesised builds are followed, a negated gate earns no credit,
+    and a lone backtick no longer crashes the template walk. The widened
+    lints found one site, `popover.js`'s event-detail registry read.
+  - 15 false negatives fixed in the `gofastr verify` contracts rules:
+    GOFASTR1105, 1401, 1408, 1417, 1802, 1804, 1806, 1812, 1814, 1815,
+    1816 and 1824, and the `check-csp` style lane's allow marker.
+  - The other static tools no longer pass a tree they never read.
+    `gofastr verify` follows a symlinked root, fails on a root it cannot
+    read, counts an unreadable or dangling source file as not checked,
+    and refuses a tree with no source files. An exempt glob that starts
+    with `/` matches from the root, `--changed` against a ref includes
+    untracked files, a git path with spaces or quotes keeps its name, a
+    NaN coverage minimum is refused, and a repo vettool that fails to
+    build prints the compiler's output. `check-embed` checks every
+    package pattern it is given, fails on one that matches nothing, and
+    blocks on an action it cannot read: options built in a variable, or
+    a child built inside `Render()` that has no value at boot.
+    `check-csp` honours its ignore directive only in a real comment,
+    skips build output, and scans the same files for `./` as for `.`.
+    `gofastr audit lint` reports a `.go` file that does not parse, keeps
+    line numbers through CRLF comments, checks a bare, deferred or `go`
+    `Exec`, and flags every `t.Skip` with no annotation. `gofastr audit
+    deps` follows symlinked package directories, and the a11y and
+    sandbox audits scan a root named `build` or `dist`. repolint catches
+    an emitted `data-cui-rpc` attribute and a raw-string key,
+    `nullarray` wants proof a field was set before
+    `x.F = append(x.F, …)`, and the response-mount lint follows
+    `.then(this.render)` to a method, a field arrow or a static. These
+    walks now share one directory walker. It follows a symlinked
+    directory once, walks real paths before their aliases, skips a
+    dangling link, and keeps going past a directory it cannot read.
 - **`gofastr init .` refuses a symlinked `.env` or settings file, even
   one inside the project.** The two files it writes a generated secret
   into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
@@ -557,6 +672,196 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The entity screens read related data through the same gates as the
+  API.** Related lists, their count badges and read-only relation
+  fields checked record access but skipped CRUD exposure and token
+  scopes; they now use the related-read gate the editable pickers use.
+  A related list the caller may not read is left out of the Related
+  tab, and the tab is hidden when every list is refused. Bulk actions
+  run each row's write with read hooks on, for request and queued runs.
+- **An admin bulk job survives losing its worker lease.** Queue retries
+  could spend the whole retry budget before the bulk lease expired;
+  a contended delivery now waits one full lease, and resume adopts a
+  stale enqueued snapshot.
+- **An upsert that updates on conflict fires the update hooks and
+  audits as an update.** It fired `AfterCreate` every time, including
+  for a conflict that changed nothing, which now fires no after hook or
+  event.
+- **Replacing an image clears the old image's derived columns.**
+  Variants, hashes and placeholders the new upload did not produce kept
+  the previous image's values, so cleanup never released the old
+  renditions. A concurrent source change refuses the write without
+  clearing the winner's derivatives; an otherwise authorized upsert
+  reports 409 Conflict. Source guards handle `NULL` without requiring
+  SQLite 3.39 syntax.
+- **Migrations refuse a generated pivot table whose columns drifted.**
+  An existing pivot was skipped while the snapshot claimed its new
+  columns existed. `GeneratePlan`, `DiffSchema` and `AutoMigrate` now
+  compare the link columns and key types, and refuse two relations
+  that share a `Through` table but disagree on them. `DiffSchema` still
+  supports Postgres primary-key changes that detach and re-add the
+  pivot's foreign keys.
+- **`gofastr migrate generate` stops on an entity that fails to
+  register.** It left the entity out of the plan, which could emit
+  `DROP TABLE` for it.
+- **App specs refuse a `required`, `unique` or `hidden` flag that is
+  not a boolean.** `required: "yes"` read as false and dropped the
+  validation and the database constraint. A relation's `hidden` flag
+  also survives generation and `gofastr pack`.
+- **DSN redaction removes every password.** A URL query `password=`,
+  libpq `sslpassword`, a `password = x` pair with spaces, and a
+  malformed URL whose `/`, `?` or `#` cut the userinfo short all
+  reached generated source and logs. A URL whose userinfo is
+  ambiguous is masked down to its scheme.
+- **A process module's wildcard revoke takes effect at once.** Revoking
+  used exact matching while granting used scope matching, so a
+  wildcard revoke left live grants in place. A revoke that would only
+  partly apply is refused without changing state.
+- **JPEG decode budgets hold across stray bytes between markers.** The
+  cost estimator stopped where the decoder skips ahead, so a crafted
+  file slipped past the memory cap in `framework/image` and
+  `framework/file`.
+- **`ui.Select` keeps a stored value absent from the options list.** Set
+  `SelectConfig.Selected`; a nonempty value wins over the options'
+  flags.
+- **`interactive.OptimisticUpdate` panics on an action option it would
+  drop** (a confirm, body, toast or success effect), instead of
+  rendering a destructive action without its confirmation.
+- **Enter in a combobox with no highlighted result stays in the page**
+  instead of submitting the no-script form. **Enter on a tree branch
+  follows its link**; Space still toggles it.
+- **The seven standalone form helpers work outside a widget.**
+  `data-cui-fill-input`, `tick-elapsed`, `persist-storage`,
+  `charcount-source`, `clear-on-esc`, `submit-on-enter` and
+  `disable-when-invalid` loaded only when a widget mounted, so on a
+  plain page they did nothing. Invalid-form disabling includes image
+  submitters and follows input, change and reset for externally
+  associated fields and submitters too.
+- **A desktop window remembered on an unplugged monitor opens centered
+  on a visible one** (Windows and Linux). On Windows the check runs in
+  physical pixels per monitor, so mixed-DPI setups place it right.
+  On macOS, toggling Reduce Transparency no longer leaves the web view
+  detached from the window.
+- **The ecommerce example prices order lines from the catalog.** The
+  client sent the unit price, and the order total trusted it.
+- **Navigation recovers from a failed fetch or transition.** A failed
+  record-panel fetch opens the record page instead of leaving the list
+  on screen. A failed list navigation cancels its pending panel, so a
+  later visit does not reopen it. A view transition whose apply step
+  rejects reaches the navigation catch, which rolls the URL back and
+  clears loading marks. A cache replay keeps the incoming page's
+  transition pick, and a static envelope navigation carries the page's
+  `lang` and `dir`, loading the direction module on the way into an RTL
+  locale.
+- **Pane history and replays stay consistent.** URL writes inside an
+  intercepted pane count toward the walk back, so closing nested panes
+  lands on the right base entry. Each write records the URL the browser
+  resolved, so after a query-only, fragment-only or absolute write the
+  pane's next query link stays in the pane. A leave guard's discard
+  dialog cancels pending pane navigations. A kept outlet snapshot drops
+  its in-flight RPC marks before replay. A cached deferred region with
+  no part coming stays out of the loading state, and a deferred-parts
+  module that fails to load no longer leaves an unhandled rejection.
+- **Field ids stay unique on repeated controls.** Same-named native
+  controls and repeaters get scoped ids with matching label and ARIA
+  targets. Choices whose values slug the same, repeated toggles, and
+  segmented-control labels each point at their own input. Removing a
+  repeater row moves focus to a usable control or the Add button.
+- **App-spec nodes render what they declare.** A presence boolean set
+  to false (`disabled`, `checked`) no longer renders the attribute. A
+  link keeps both its text and its children. A prop that differs from a
+  component-owned attribute only by case cannot override it. An
+  incomplete node renders safely, and validation refuses a block missing
+  its required props or link content.
+- **MCP tools match their HTTP routes.** List tools advertise the
+  entity's effective page cap. Write schemas leave out the owner and
+  tenant columns the server sets. `ToolAdapter` keeps a handler's typed
+  client refusal, and a parameter refusal names the JSON type, not the
+  Go type.
+- **CRUD reads and registration.** A relation included twice merges its
+  nested paths and runs its read hooks once. Registration refuses an
+  `Enum` field with no `Values`. Entity forms no longer cut rune-counted
+  strings with the browser's UTF-16 `maxlength`.
+- **Auth.** OAuth records success only after the session is minted, and
+  a second-factor refusal on that path audits as a login failure. The
+  BFF origin guard accepts API tokens with a configured prefix.
+- **Streams and realtime.** A WebSocket upgrade bounds its handshake
+  write, so a peer that never reads cannot hold the hijacked
+  connection. With pong checking off, keepalive ticks at one quarter of
+  `ReadIdleTimeout` (10ms minimum) instead of unconditionally every 10ms.
+  An RTC peer evicted by the socket cap
+  no longer announces a leave while a remote replica still seats it.
+- **Desktop.** `gofastr desktop feed` merges a release's platforms into
+  an existing manifest of the same version and re-signs it. It refuses
+  a different version, or an existing manifest with none. `keygen`
+  and `feed` refuse a flag with no value. macOS builds start from a
+  clean bundle, and window styles use the same primary-screen origin as
+  saved frames. A tray on a window that hides on close always has a Show
+  item. On Windows the tray checks its registration, re-adds the icon
+  after Explorer restarts, and never hides a window with no icon to
+  bring it back. A failed first build or launch removes its temporary
+  binary, and types staging is cleaned on every exit.
+- **Tooling and static output.** `gofastr dev` sees changes under a
+  symlinked project root and in linked source files. Static locale
+  alternates and `x-default` include the deployment base path. Webhook
+  metrics count dead letters that ran out of retry budget. Data export
+  names the table, row and column of a non-finite float. `Bind`'s docs
+  describe the error an invalid destination returns, and the registry
+  LLM index no longer promises a cursor `total`.
+- **A handler's 404 or 503 survives `Metrics` and `Tracing` when it
+  streams an empty or failing reader.** Their `ReadFrom` wrote a 200
+  before copying, so the handler's later status never reached the
+  client. They now record the 200 only once bytes are copied.
+- **A rate-limit key that starts with `sha256:` no longer shares a
+  bucket with a hashed key.** The limiter hashes an unstorable key to
+  `sha256:<hex>` and passed any other key through, so a caller could
+  send that spelling and spend another caller's budget. Keys with the
+  prefix are hashed too, so after the upgrade such a key starts a fresh
+  budget, and a block it held under the old spelling no longer applies.
+- **`pluginhost.NewAssetServer` keeps disk-backed assets inside their
+  directory.** An `os.DirFS` follows a symlink at an asset's path, so
+  a link pointing outside the plugin's directory was served at the
+  asset route. Disk filesystems are now read through `os.Root`.
+- **An A2A artifact with no parts encodes `"parts": []`, not `null`.**
+  Recording an artifact without parts, or appending to one stored
+  without them, kept a nil slice, so a client that requires the array
+  read `null`. The widened `nullarray` analyzer found it.
+- **A leading UTF-8 byte order mark no longer breaks a hand-written
+  text file.** Windows editors save one. It made line 1 of a `.env`
+  file an invalid key, hid a migration's first `-- +migrate`
+  directive, reached the database inside a routine `.sql` body, broke
+  a markdown frontmatter fence, and kept a line-anchored upgrade text
+  pattern off line 1. Every reader strips it, and
+  `TestReadersIgnoreBOM` holds them to one result.
+- **Saving or deleting a saved view with unstorable text answers 400
+  and 404, not 500.** A name or filter holding a NUL byte or invalid
+  UTF-8 reached the admin store's INSERT, and Postgres refused the
+  bind; the delete's `?id=` did the same. The entityui handler now
+  refuses that text before any store sees it.
+- **Settings endpoint and unmounted-settings validation name the first
+  missing field in declaration order.** A config with two unset
+  required fields named either one at random.
+- **A rate-limit key a SQL store cannot hold no longer reads as an
+  outage.** `ratelimit.Limiter` digests a key that is not valid UTF-8
+  or holds a NUL, as it already did a key past 256 bytes. An
+  `X-Api-Key` with a byte past 0x7F made Postgres refuse the bind, and
+  the limiter failed closed: a 429 for that client and a store-outage
+  warning in the log.
+- **A panicking host callback no longer ends a desktop app.** The
+  macOS shell's menu, settings, window-close, focus, blur, frame and
+  appearance callbacks, the Linux shell's menu and settings callbacks,
+  and `appstate` watchers each run behind a recover that logs the
+  panic and drops that one event.
+- **Panic values are scrubbed before they are logged** in the cron
+  scheduler and the webhook battery's delivery loop
+  (`textsafe.Recovered` strips control bytes and truncates).
+- **`middleware.Logging` keeps the sendfile path.** Its writer had no
+  `ReadFrom`, so every file served behind it was copied through a
+  buffer.
+- **A kiln graduation with a bad PWA `start_url` and `scope` names
+  `start_url` every time**, and `gofastr generate cli --from-openapi`
+  refuses a `$ref` that is not a string instead of treating the schema
+  as inline.
 - **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
   (entity mode); regenerate the CLI to pick these up. Details in
   [app-cli.md](framework/docs/content/app-cli.md):

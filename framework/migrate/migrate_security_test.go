@@ -27,7 +27,7 @@ import (
 // raw. A named string type, a fmt.Stringer, or, the reachable one, a
 // []any / map[string]any decoded from JSON took that arm.
 //
-// Reachability: entity.Declaration's Default is `any` and kiln's
+// Reachability: entity.EntityDeclaration's Default is `any` and kiln's
 // add_entity op accepts a field default straight from an HTTP JSON
 // payload, so a JSON array or object arrives as []any and closes the
 // literal. A verified payload created and COMMITTED an extra column.

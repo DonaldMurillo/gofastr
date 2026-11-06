@@ -156,3 +156,47 @@ var (
 type finiteError struct{}
 
 func (*finiteError) Error() string { return "non-finite" }
+
+// charsetCallGate: the charset conjunct is a bare call in the parse's
+// own condition, with no companion result riding along — the gate
+// alone must keep it quiet.
+func charsetCallGate(raw string) float64 {
+	if f, err := strconv.ParseFloat(raw, 64); err == nil && strings.ContainsAny(raw, ".eE") {
+		return f
+	}
+	return 0
+}
+
+// regexpCallGate: the same, spelled as the enclosing regexp test.
+func regexpCallGate(s string) float64 {
+	if decimalRe.MatchString(s) {
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return f
+		}
+	}
+	return 0
+}
+
+// elementStore: the parse lands straight in a map element, the doc's
+// own store sink, with no variable to gate.
+func elementStore(env map[string]string, out map[string]float64) error {
+	var err error
+	out["rate"], err = strconv.ParseFloat(env["RATE"], 64) // want `strconv.ParseFloat result stored with no math.IsNaN/math.IsInf gate`
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// elementStoreGated: validate the local before publishing the value.
+func elementStoreGated(env map[string]string, out map[string]float64) error {
+	value, err := strconv.ParseFloat(env["RATE"], 64)
+	if err != nil {
+		return err
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return errNonFinite
+	}
+	out["rate"] = value
+	return nil
+}

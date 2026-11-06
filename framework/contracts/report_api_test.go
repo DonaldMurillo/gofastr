@@ -546,7 +546,7 @@ func TestUnparsedFilesAreCountedAndReported(t *testing.T) {
 func TestReportSurfacesUnparsedCount(t *testing.T) {
 	r := &Report{FailOn: SeverityWarn, Unparsed: 2}
 	text := FormatText(r, TextOptions{})
-	if !strings.Contains(text, "could not be parsed") {
+	if !strings.Contains(text, "could not be read or parsed") {
 		t.Errorf("the text footer hides unparsed files:\n%s", text)
 	}
 	blob, err := FormatJSON(r)
@@ -563,6 +563,19 @@ func TestReportSurfacesUnparsedCount(t *testing.T) {
 	}
 	if strings.Contains(string(clean), "unparsed") {
 		t.Errorf("a clean run emitted an unparsed field:\n%s", clean)
+	}
+}
+
+func TestTextFooterCannotForgeLines(t *testing.T) {
+	report := &Report{FailOn: SeverityWarn, Relaxations: []string{"exempt path real\nforged relaxation\rnext"}, Errors: []string{"broken: error\nforged error\rnext"}}
+	text := FormatText(report, TextOptions{})
+	if strings.Contains(text, "\nforged") || strings.Contains(text, "\rnext") {
+		t.Fatalf("footer text injected another physical line: %q", text)
+	}
+	for _, escaped := range []string{`real\nforged relaxation\rnext`, `error\nforged error\rnext`} {
+		if !strings.Contains(text, escaped) {
+			t.Errorf("footer does not preserve escaped evidence %q: %q", escaped, text)
+		}
 	}
 }
 

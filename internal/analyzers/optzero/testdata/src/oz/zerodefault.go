@@ -3,6 +3,7 @@ package oz
 import (
 	"context"
 	"database/sql"
+	"log"
 	"time"
 )
 
@@ -130,4 +131,27 @@ func runUnchecked(ctx context.Context, inv invocation) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	_ = ctx
+}
+
+// Fires: the sign check sits AFTER the sink and only logs — the
+// reaching path to the sink still carries the negative.
+func pageLogged(db *sql.DB, limit int) {
+	if limit == 0 { // want `limit == 0 takes the default but a negative limit passes through to a SQL LIMIT`
+		limit = 50
+	}
+	_, _ = db.Query("SELECT id FROM jobs ORDER BY id LIMIT ?", limit)
+	if limit < 0 {
+		log.Printf("negative limit")
+	}
+}
+
+// Quiet: the sign check precedes the sink, even after the default.
+func pageCheckedLate(db *sql.DB, limit int) {
+	if limit == 0 {
+		limit = 50
+	}
+	if limit < 0 {
+		return
+	}
+	_, _ = db.Query("SELECT id FROM jobs ORDER BY id LIMIT ?", limit)
 }

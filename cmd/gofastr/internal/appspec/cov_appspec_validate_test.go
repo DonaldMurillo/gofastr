@@ -129,7 +129,7 @@ func TestValidateAppSpecBlockErrors(t *testing.T) {
 		})
 	}
 	// Happy: link with href via Props, heading default level, entity_list valid.
-	if err := validateAppSpecBlock("s", ents, AppSpecBlock{Type: "link", Props: map[string]any{"href": "/x"}}); err != nil {
+	if err := validateAppSpecBlock("s", ents, AppSpecBlock{Type: "link", Text: "Open", Props: map[string]any{"href": "/x"}}); err != nil {
 		t.Fatalf("link via props: %v", err)
 	}
 	if err := validateAppSpecBlock("s", ents, AppSpecBlock{Type: "heading"}); err != nil {

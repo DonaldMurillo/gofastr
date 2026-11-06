@@ -6,6 +6,7 @@
 package c
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -43,6 +44,22 @@ func (c *CraneClient) mint() error {
 		return err
 	}
 	_ = body
+	return nil
+}
+
+// mintCtx is mint's context spelling: NewRequestWithContext's URL is
+// the third argument, and the token endpoint there is the only
+// credential signal — a bare client that follows redirects re-sends
+// it wherever a redirect names.
+var craneCtxHTTP = &http.Client{Timeout: 4e9} // want `no CheckRedirect on a credential-bearing fetch`
+
+func (c *CraneClient) mintCtx(ctx context.Context) error {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL, nil)
+	resp, err := craneCtxHTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
 	return nil
 }
 

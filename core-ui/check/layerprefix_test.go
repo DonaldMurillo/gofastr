@@ -7,6 +7,21 @@ import (
 	"testing"
 )
 
+func TestLayerPrefixAfterQuotedDivision(t *testing.T) {
+	result, err := LintLayerPrefixJS("testdata/review-division.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Violations) != 5 {
+		t.Fatalf("got %d violations, want 5: %v", len(result.Violations), result)
+	}
+	for index, violation := range result.Violations {
+		if violation.Line != index+1 {
+			t.Errorf("finding %d is on line %d, want %d", index, violation.Line, index+1)
+		}
+	}
+}
+
 // Reduced from the v0.86 kernel sources the rule exists for: the toast
 // builder (frag/kernel.js → headless/feedback.js), the form-errors
 // module and the copy module each named a kit class.
@@ -132,5 +147,26 @@ func TestLintLayerPrefix_RepoIsClean(t *testing.T) {
 	}
 	if gores.HasErrors() {
 		t.Errorf("kernel or headless Go names the kit's vocabulary:\n%s", gores.Error())
+	}
+}
+
+// TestLayerPrefixSkipsRegexQuotes: a quote inside a regex literal
+// (/['"]/) opened a bogus string literal in jsStringLiterals, shifting
+// every later literal on the scan so the kit class after it was never
+// seen (R8-CK-02). A regex literal is not a string.
+func TestLayerPrefixSkipsRegexQuotes(t *testing.T) {
+	dir := writeRuntimeFixture(t, "regexquote.js", `(function () {
+  'use strict';
+  const v = btn.getAttribute('data-cui-x');
+  if (/['"]/.test(v)) item.className = 'fui-toast-stack';
+  const tpl = 'plain';
+})();
+`)
+	res, err := LintLayerPrefixJS(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 || res.Violations[0].Line != 4 {
+		t.Fatalf("expected 1 finding on line 4 (the fui- class), got:\n%s", res.Error())
 	}
 }

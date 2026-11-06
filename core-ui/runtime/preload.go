@@ -23,6 +23,13 @@ type demandLoadMarker struct {
 var demandLoadMarkers = []demandLoadMarker{
 	{"data-cui-rpc", "rpc"},
 	{"data-kiln-tool", "rpc"},
+	{"data-cui-fill-input", "widgethelpers"},
+	{"data-cui-tick-elapsed", "widgethelpers"},
+	{"data-cui-persist-storage", "widgethelpers"},
+	{"data-cui-charcount-source", "widgethelpers"},
+	{"data-cui-clear-on-esc", "widgethelpers"},
+	{"data-cui-submit-on-enter", "widgethelpers"},
+	{"data-cui-disable-when-invalid", "widgethelpers"},
 	{"data-cui-computed", "computed"},
 	{"data-cui-compute", "compute"},
 	{"data-cui-popover-anchor", "popover"},

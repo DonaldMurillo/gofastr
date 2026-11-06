@@ -81,7 +81,13 @@ default**: `Exposure.CRUD` is a `*bool`, and nil means generate. Omitting the
 block is not "declare no surface"; it is "take the default surface".
 
 `/posts/llm.md` describes the routes the entity's mount serves, not the
-declaration's full shape. `App.View` entities and any registration built
+declaration's full shape. Field references, write bodies, batch keys and
+state stamps use the mount's JSON wire keys (camelCase by default, or a
+field's explicit `WireName`). Standalone `crud.EntityLLMMD` /
+`crud.LLMMDHandler` callers can set `LLMMDOptions.JSONCase`; the
+scope-aware `LLMMDHandlerFor` takes the handler's configured case.
+Filter and sort examples continue to name database columns.
+`App.View` entities and any registration built
 with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
 batch and Create/Update-column sections — those routes answer 404/405 —
 and the `limit` row reports the same cap the List route clamps `?limit`
@@ -411,7 +417,7 @@ Each entry under `fields:` accepts:
 | `unique` | bool | Unique constraint on the column. |
 | `default` | scalar | Value written when the field is omitted on create. Checked against the field's own rules when the entity is registered; see "Defaults are validated at registration" below. |
 | `max` / `min` | number | Length (strings) or value (numbers) bounds. |
-| `values` | list | Allowed values for `type: enum`. |
+| `values` | list | Allowed values for `type: enum`; must be non-empty, including on optional enum fields. Empty enums are refused at registration. |
 | `pattern` | string | Regex the value must match (validated on write). |
 | `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `BIGSERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |

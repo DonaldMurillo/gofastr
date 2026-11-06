@@ -226,7 +226,11 @@ Attributes injected: `data-cui-rpc-trigger="input"`,
 
 ### Optimistic Update (immediate visual + background RPC)
 
-`interactive.OptimisticUpdate(action, idle, success)` renders a button
+`interactive.OptimisticUpdate(action, idle, success)` accepts only the
+Action's RPC endpoint and method. An Action carrying confirmation, a body,
+toasts, or success effects panics at render time rather than discarding
+those options. Use `interactive.OnClick` for an Action needing that wiring.
+It renders a button
 that immediately flips to its success visual on click, then fires the
 RPC in the background. On failure the button shakes and reverts.
 
@@ -459,6 +463,13 @@ that know the canonical URL ahead of time (e.g. pagination).
 
 The server-supplied `X-Gofastr-Push-State` response header takes precedence
 when both are present.
+
+Inside an intercepted pane, the write belongs to that pane's history span;
+closing the pane returns to the page underneath. Query-only (`?p=2`),
+fragment-only (`#details`) and same-origin absolute URLs resolve against
+the current browser URL. Subsequent query links stay inside the pane when
+the write keeps the pane's route; a same-origin absolute URL naming an
+unrelated route does not provide that guarantee.
 
 ```go
 interactive.OnClick(page2Btn,

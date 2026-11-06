@@ -37,7 +37,10 @@
 //   - _test.go files.
 //
 // Every function body is examined, including divisions inside
-// package-level function literals (the handler-table spelling).
+// package-level function literals (the handler-table spelling) and
+// inside closures that capture an enclosing function's limit-named
+// parameter — a captured limit is as caller-supplied as a passed one,
+// and guards inside the closure itself protect its eventual invocation.
 package divlimit
 
 import (
@@ -45,6 +48,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"maps"
 	"regexp"
 	"strings"
 
@@ -71,24 +75,46 @@ func run(pass *analysis.Pass) (any, error) {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
 		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch fn := n.(type) {
+		for _, d := range f.Decls {
+			switch decl := d.(type) {
 			case *ast.FuncDecl:
-				if fn.Body != nil {
-					checkFunc(pass, fn.Type, fn.Body)
+				if decl.Body != nil {
+					checkTree(pass, decl.Type, decl.Body, nil, decl.Body, dominance.Parents(decl.Body), nil)
 				}
-			case *ast.FuncLit:
-				checkFunc(pass, fn.Type, fn.Body)
+			case *ast.GenDecl:
+				// Package-level literals: var f = func(...) {...}.
+				for _, spec := range decl.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, value := range vs.Values {
+						ast.Inspect(value, func(node ast.Node) bool {
+							if literal, ok := node.(*ast.FuncLit); ok && literal.Body != nil {
+								checkTree(pass, literal.Type, literal.Body, nil, literal.Body, dominance.Parents(literal.Body), nil)
+								return false
+							}
+							return true
+						})
+					}
+				}
 			}
-			return true
-		})
+		}
 	}
 	return nil, nil
 }
 
-func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
-	bound := pathflow.Bindings(pass, body)
+// checkTree checks one function's own divisions, then its literals',
+// seeding each literal with the parameters of the functions that
+// enclose it: a closure dividing by an enclosing limit-named parameter
+// divides by a caller-supplied value all the same (limit == 0 panics
+// inside f()). Outer guards count only for nonescaping synchronous
+// calls whose captured divisor is never reassigned or addressed.
+func checkTree(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt, outer map[types.Object]bool, root *ast.BlockStmt, rootParents map[ast.Node]ast.Node, captured map[types.Object]bool) {
 	params := map[types.Object]bool{}
+	if outer != nil {
+		maps.Copy(params, outer)
+	}
 	if fnType.Params != nil {
 		for _, f := range fnType.Params.List {
 			for _, name := range f.Names {
@@ -98,12 +124,26 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 			}
 		}
 	}
-	parents := dominance.Parents(body)
+	checkFunc(pass, body, params, root, rootParents, captured)
+	ast.Inspect(body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.FuncLit); ok && lit.Body != nil {
+			guards := closureGuards(pass, lit, body, rootParents, params)
+			checkTree(pass, lit.Type, lit.Body, params, lit.Body, dominance.Parents(lit.Body), guards)
+			return false
+		}
+		return true
+	})
+}
 
+// checkFunc reports unguarded divisions in one function's own body.
+// The parameter set (its own, seeded from the enclosing functions) is
+// what the caller hands to nested literals; the guard walk reads the
+// root body's parents.
+func checkFunc(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]bool, root *ast.BlockStmt, rootParents map[ast.Node]ast.Node, captured map[types.Object]bool) {
+	bound := pathflow.Bindings(pass, body)
 	ast.Inspect(body, func(n ast.Node) bool {
 		if _, isLit := n.(*ast.FuncLit); isLit {
-			// Closures are judged by their own checkFunc call from
-			// run; descending here reports their divisions twice.
+			// Closures are judged by their own checkTree call.
 			return false
 		}
 		bin, ok := n.(*ast.BinaryExpr)
@@ -117,7 +157,10 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 		if divisor == nil || !isInteger(pass, bin.X) || !isInteger(pass, bin.Y) {
 			return true
 		}
-		if guardedBefore(pass, body, parents, divisor, bin) {
+		if guardedBefore(pass, root, rootParents, divisor, bin) {
+			return true
+		}
+		if identifier, ok := divisor.(*ast.Ident); ok && captured[pass.TypesInfo.ObjectOf(identifier)] {
 			return true
 		}
 		pass.Reportf(bin.Pos(),
@@ -147,7 +190,7 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 // values on the continuing path, and a comparison in an unrelated
 // earlier branch of the walk (a flag-gated check) executes only when
 // that branch is taken and dominates nothing.
-func guardedBefore(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.Node]ast.Node, divisor ast.Expr, div *ast.BinaryExpr) bool {
+func guardedBefore(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.Node]ast.Node, divisor ast.Expr, div ast.Node) bool {
 	for _, stmts := range dominance.Prefix(div, parents, body) {
 		for _, st := range stmts {
 			iff := dominance.IfStmtOf(st)
@@ -165,6 +208,108 @@ func guardedBefore(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.Nod
 		}
 	}
 	return false
+}
+
+func closureGuards(pass *analysis.Pass, literal *ast.FuncLit, body *ast.BlockStmt, parents map[ast.Node]ast.Node, params map[types.Object]bool) map[types.Object]bool {
+	var calls []*ast.CallExpr
+	var expression ast.Expr = literal
+	for {
+		parent, ok := parents[expression].(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parent
+	}
+	var binding types.Object
+	switch parent := parents[expression].(type) {
+	case *ast.CallExpr:
+		if parent.Fun == expression {
+			calls = append(calls, parent)
+		}
+	case *ast.AssignStmt:
+		if len(parent.Lhs) == 1 && len(parent.Rhs) == 1 {
+			if identifier, ok := parent.Lhs[0].(*ast.Ident); ok {
+				binding = pass.TypesInfo.ObjectOf(identifier)
+			}
+		}
+	case *ast.ValueSpec:
+		if len(parent.Names) == 1 && len(parent.Values) == 1 {
+			binding = pass.TypesInfo.ObjectOf(parent.Names[0])
+		}
+	}
+	escaped := false
+	if binding != nil {
+		ast.Inspect(body, func(node ast.Node) bool {
+			identifier, ok := node.(*ast.Ident)
+			if !ok || pass.TypesInfo.Uses[identifier] != binding {
+				return true
+			}
+			var reference ast.Expr = identifier
+			for {
+				parent, ok := parents[reference].(*ast.ParenExpr)
+				if !ok {
+					break
+				}
+				reference = parent
+			}
+			if call, ok := parents[reference].(*ast.CallExpr); ok && call.Fun == reference {
+				calls = append(calls, call)
+			} else {
+				escaped = true
+			}
+			return true
+		})
+	}
+	if escaped || len(calls) == 0 {
+		return nil
+	}
+	for _, call := range calls {
+		for parent := parents[call]; parent != nil && parent != body; parent = parents[parent] {
+			switch parent.(type) {
+			case *ast.GoStmt, *ast.DeferStmt, *ast.FuncLit:
+				return nil
+			}
+		}
+	}
+	guards := map[types.Object]bool{}
+	ast.Inspect(literal.Body, func(node ast.Node) bool {
+		identifier, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		object := pass.TypesInfo.ObjectOf(identifier)
+		if !params[object] || !limitName.MatchString(object.Name()) || !isInteger(pass, identifier) {
+			return true
+		}
+		safe := true
+		for _, call := range calls {
+			safe = safe && guardedBefore(pass, body, parents, identifier, call)
+		}
+		ast.Inspect(body, func(node ast.Node) bool {
+			var targets []ast.Expr
+			switch statement := node.(type) {
+			case *ast.AssignStmt:
+				targets = statement.Lhs
+			case *ast.IncDecStmt:
+				targets = []ast.Expr{statement.X}
+			case *ast.RangeStmt:
+				targets = []ast.Expr{statement.Key, statement.Value}
+			case *ast.UnaryExpr:
+				if statement.Op == token.AND {
+					targets = []ast.Expr{statement.X}
+				}
+			}
+			for _, target := range targets {
+				if isDivisorExpr(pass, ast.Unparen(target), identifier) {
+					safe = false
+				}
+			}
+			return safe
+		})
+		guards[object] = safe
+		return true
+	})
+	return guards
 }
 
 // condProvesNonzero walks a condition's operator tree and reports
@@ -263,7 +408,7 @@ func nonzeroSide(op token.Token, c int64) (whenTrue, whenFalse bool) {
 // isZeroOrOne's value, split out for nonzeroSide.
 func constValue(pass *analysis.Pass, e ast.Expr) int64 {
 	tv, ok := pass.TypesInfo.Types[e]
-	if !ok || tv.Value == nil {
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.Int {
 		return -1
 	}
 	i, ok := constant.Int64Val(tv.Value)

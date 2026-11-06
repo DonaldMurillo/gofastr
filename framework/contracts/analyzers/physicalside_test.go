@@ -1,6 +1,7 @@
 package analyzers_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -37,6 +38,40 @@ func TestPhysicalSidesAreReported(t *testing.T) {
 		if !strings.Contains(found[0].Message, tc.want) {
 			t.Errorf("%s: message does not name %s: %q", tc.css, tc.want, found[0].Message)
 		}
+	}
+}
+
+// A :dir() override and an ordinary rule can share one line of kit
+// CSS; the override's exemption ends at its own closing brace, and the
+// rule after it is judged on its own bytes.
+func TestPhysicalSideAfterDirBlockOnSameLine(t *testing.T) {
+	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `:dir(rtl) .chev { transform: scaleX(-1) } .menu { border-right: 1px solid var(--color-border); }`\n")
+	found := countRule(t, ds, contracts.RulePhysicalSide)
+	if len(found) != 1 || !strings.Contains(found[0].Message, "border-inline-end") {
+		t.Fatalf("the .menu rule after the :dir() block is its own declaration; got %v", found)
+	}
+}
+
+func TestSameLineBackgroundMirrorIsQuiet(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/physicalside.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := designFixture(t, "framework/ui/x.go", string(source))
+	if found := countRule(t, diagnostics, contracts.RulePhysicalSide); len(found) != 0 {
+		t.Errorf("mirrored background reported: %v", found)
+	}
+}
+
+func TestLTRBackgroundOverrideDoesNotMirrorRTL(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/physicalside-ltr.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := designFixture(t, "framework/ui/x.go", string(source))
+	findings := countRule(t, diagnostics, contracts.RulePhysicalSide)
+	if len(findings) != 1 || findings[0].Line != 3 {
+		t.Fatalf("want the unmirrored background at line 3: %+v", findings)
 	}
 }
 

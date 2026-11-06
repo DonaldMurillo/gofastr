@@ -2208,6 +2208,9 @@ func renderRelationLiteral(rel framework.Relation) string {
 	if rel.CascadeWrite {
 		parts = append(parts, "CascadeWrite: true")
 	}
+	if rel.Hidden {
+		parts = append(parts, "Hidden: true")
+	}
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 

@@ -66,6 +66,20 @@ func TestOpenAPIUnknownParamLocationFails(t *testing.T) {
 	}
 }
 
+// A $ref present but not a string was silently treated as "no $ref":
+// the CLI generated from the ref-holding node as if it were the
+// resolved schema. The document is malformed; say so.
+func TestOpenAPINonStringRefFails(t *testing.T) {
+	for _, ref := range []string{"5", "null", `["#/x"]`} {
+		doc := mustDecodeDoc(t, `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":"a","parameters":[
+		  {"name":"v","in":"query","schema":{"$ref":`+ref+`}}]}}}}`)
+		_, err := BuildOpenAPICLISpec(doc, CliOptions{Binary: "x"}, "c")
+		if err == nil || !strings.Contains(err.Error(), "$ref: want a string") {
+			t.Errorf("$ref %s: err = %v, want the wrong-typed $ref refusal", ref, err)
+		}
+	}
+}
+
 // A Swagger 2.0 document reads differently (host and basePath for the
 // server, body and formData parameters, a type on the parameter itself),
 // and generating from it as OpenAPI 3 dropped its base path, its body

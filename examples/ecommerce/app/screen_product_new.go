@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=9d88f8f3f52fbd36
+//gofastr:generated generator=app kind=scaffold version=dev sum=518e95c0113be2ac
 
 package main
 
@@ -51,7 +51,7 @@ func (s *ProductNewScreen) RenderCtx(ctx context.Context) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "price", Step: "0.0001"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "stock", "Stock"), For: "field-stock", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "stock", Step: "1"})
-		}}), ui.Select(ui.SelectConfig{Name: "status", Label: i18nui.FieldLabel(ctx, nil, "products", "status", "Status"), ID: "field-status", Placeholder: i18nui.EntitySelect.Text(ctx), Options: []ui.SelectOption{{Value: "draft", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "draft")}, {Value: "active", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "active")}, {Value: "archived", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "archived")}}, Required: false}), render.Join(html.Input(html.InputConfig{Type: "hidden", Name: "featured", Value: "false"}), ui.Checkbox(ui.ToggleConfig{Name: "featured", Label: i18nui.FieldLabel(ctx, nil, "products", "featured", "Featured"), ID: "field-featured", Value: "true", Checked: false})))),
+		}}), ui.Select(ui.SelectConfig{Ctx: ctx, Name: "status", Label: i18nui.FieldLabel(ctx, nil, "products", "status", "Status"), ID: "field-status", Placeholder: i18nui.EntitySelect.Text(ctx), Options: []ui.SelectOption{{Value: "draft", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "draft")}, {Value: "active", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "active")}, {Value: "archived", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "archived")}}, Required: false}), render.Join(html.Input(html.InputConfig{Type: "hidden", Name: "featured", Value: "false"}), ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: "featured", Label: i18nui.FieldLabel(ctx, nil, "products", "featured", "Featured"), ID: "field-featured", Value: "true", Checked: false})))),
 	)
 }
 

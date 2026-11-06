@@ -40,3 +40,46 @@ func TestArtifactAppendEventCarriesDelta(t *testing.T) {
 		t.Fatalf("stored artifact = %+v, want the merged two parts", got.Artifacts)
 	}
 }
+
+func TestArtifactEmptyAppendUsesRequiredArrays(t *testing.T) {
+	harness := newHarness(t, nil)
+	harness.setHandler(func(_ context.Context, task TaskContext) error {
+		if err := task.Artifact(Artifact{ArtifactID: "empty"}, false); err != nil {
+			return err
+		}
+		if err := task.Artifact(Artifact{ArtifactID: "empty"}, true); err != nil {
+			return err
+		}
+		return task.Complete()
+	})
+	stream := harness.openStream("alice", MethodSendStreamingMessage, streamSendParams(""))
+	_, snapshot := stream.nextResult(2 * time.Second)
+	for index := 0; index < 2; index++ {
+		_, event := stream.nextResult(2 * time.Second)
+		if event.ArtifactUpdate == nil || event.ArtifactUpdate.Artifact.Parts == nil {
+			t.Errorf("artifact event %d must encode parts as [], got %+v", index, event.ArtifactUpdate)
+		}
+	}
+	stored := harness.waitTask("alice", snapshot.Task.ID, TaskStateCompleted, 2*time.Second)
+	if len(stored.Artifacts) != 1 || stored.Artifacts[0].Parts == nil {
+		t.Fatalf("stored artifact must encode parts as [], got %+v", stored.Artifacts)
+	}
+}
+
+func TestArtifactAppendNormalizesLegacyNilParts(t *testing.T) {
+	harness := newHarness(t, nil)
+	harness.setHandler(func(_ context.Context, task TaskContext) error {
+		run := task.(*taskRun)
+		run.mu.Lock()
+		run.rec.Task.Artifacts = []Artifact{{ArtifactID: "legacy"}}
+		run.mu.Unlock()
+		if err := task.Artifact(Artifact{ArtifactID: "legacy", Parts: []Part{}}, true); err != nil {
+			return err
+		}
+		return task.Complete()
+	})
+	task := harness.send("alice")
+	if len(task.Artifacts) != 1 || task.Artifacts[0].Parts == nil {
+		t.Fatalf("legacy nil parts survived an empty append: %+v", task.Artifacts)
+	}
+}

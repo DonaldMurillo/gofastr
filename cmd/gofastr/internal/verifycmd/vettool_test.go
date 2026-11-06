@@ -147,6 +147,9 @@ func TestBrokenRepoVettoolFails(t *testing.T) {
 	if ok || !strings.Contains(out, "./cmd/vettool does not build") {
 		t.Fatalf("a framework tree with a broken vettool passed verify (ok=%v):\n%s", ok, out)
 	}
+	if !strings.Contains(out, "function main is undeclared") {
+		t.Fatalf("repo vettool build diagnostic was discarded:\n%s", out)
+	}
 }
 
 // An agent reading --json must learn the analyzers did not run, not

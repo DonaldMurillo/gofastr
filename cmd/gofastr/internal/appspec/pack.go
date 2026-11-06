@@ -671,6 +671,7 @@ func packReadRelations(e ast.Expr) ([]framework.Relation, error) {
 			ForeignKeyTarget: AstString(rv["ForeignKeyTarget"]),
 			OnDelete:         onDelete,
 			CascadeWrite:     AstBool(rv["CascadeWrite"]),
+			Hidden:           AstBool(rv["Hidden"]),
 		})
 	}
 	return out, nil

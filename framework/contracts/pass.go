@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/buildoutput"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 
 	"golang.org/x/mod/modfile"
 )
@@ -75,16 +76,17 @@ type Pass struct {
 	fset    *token.FileSet
 	sources map[string][]byte
 	asts    map[string]*ast.File
-	// unparsed records files the parser rejected, so the report can say
+	// unparsed records files reading or parsing rejected, so the report can say
 	// what it could not read instead of implying those files were clean.
 	unparsed map[string]string
 	memo     map[string]any
 }
 
 // NewPass discovers every source file under root and returns a pass ready
-// for analyzers. Discovery is eager (one walk) but reading and parsing are
-// lazy, so an analyzer that only cares about .yml files pays nothing for
-// the Go tree.
+// for analyzers. Discovery and source reading are eager (one walk), while
+// AST parsing is lazy. Unreadable roots fail discovery; unreadable files
+// are recorded by [Pass.Unparsed]. Empty and incomplete passes remain
+// inspectable, but [Run] refuses to analyze them.
 func NewPass(root string, cfg *Config) (*Pass, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -97,6 +99,10 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("root %q is not a directory", root)
 	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root %q: %w", root, err)
+	}
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
@@ -107,6 +113,7 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 		fset:       token.NewFileSet(),
 		sources:    map[string][]byte{},
 		asts:       map[string]*ast.File{},
+		unparsed:   map[string]string{},
 		memo:       map[string]any{},
 	}
 	if err := p.discover(); err != nil {
@@ -116,12 +123,23 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 }
 
 func (p *Pass) discover() error {
-	err := filepath.WalkDir(p.Root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(p.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// An unreadable subtree is not a reason to abandon the whole
-			// analysis. Skip it and keep going.
+			if path == p.Root {
+				return fmt.Errorf("read root %q: %w", p.Root, err)
+			}
+			// Keep readable siblings inspectable, but record skipped subtrees
+			// so Run cannot certify an incomplete source tree.
 			if d != nil && d.IsDir() {
+				if rel, relErr := filepath.Rel(p.Root, path); relErr == nil {
+					p.unparsed[filepath.ToSlash(rel)] = err.Error()
+				}
 				return fs.SkipDir
+			}
+			if strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".css") || IsScriptPath(path) {
+				if rel, relErr := filepath.Rel(p.Root, path); relErr == nil {
+					p.unparsed[filepath.ToSlash(rel)] = err.Error()
+				}
 			}
 			return nil
 		}
@@ -159,6 +177,7 @@ func (p *Pass) discover() error {
 		rel = filepath.ToSlash(rel)
 		body, readErr := os.ReadFile(path)
 		if readErr != nil {
+			p.unparsed[rel] = readErr.Error()
 			return nil
 		}
 		p.sources[rel] = body
@@ -353,10 +372,9 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 	return f, true
 }
 
-// Unparsed returns the files whose source could not be parsed, keyed by
-// path, with the parser's message. A tree mid-edit is the normal case for
-// the dev loop, so this is reported rather than fatal, but it is
-// reported.
+// Unparsed returns the files whose source could not be read or parsed,
+// keyed by path, with the read or parser error. NewPass remains inspectable;
+// Run refuses unreadable discovery and marks later parse failures incomplete.
 func (p *Pass) Unparsed() map[string]string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -365,6 +383,19 @@ func (p *Pass) Unparsed() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func (p *Pass) discoveryError() error {
+	unparsed := p.Unparsed()
+	if len(unparsed) == 0 {
+		return nil
+	}
+	failures := make([]string, 0, len(unparsed))
+	for path, reason := range unparsed {
+		failures = append(failures, fmt.Sprintf("%q: %q", path, reason))
+	}
+	sort.Strings(failures)
+	return fmt.Errorf("contracts: source inspection incomplete: %s", strings.Join(failures, "; "))
 }
 
 // Position resolves an AST position into the pass's line/column space.

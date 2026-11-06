@@ -378,7 +378,7 @@ func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*In
 	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(nodes) == 0 || len(rows) == 0 {
 		return nil
 	}
-	for _, node := range nodes {
+	for _, node := range mergeHookRelations(nodes) {
 		if node == nil || node.Target == nil {
 			continue
 		}
@@ -458,6 +458,25 @@ func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*In
 		}
 	}
 	return nil
+}
+
+func mergeHookRelations(nodes []*IncludeNode) []*IncludeNode {
+	var merged []*IncludeNode
+	byName := make(map[string]*IncludeNode)
+	for _, node := range nodes {
+		if node == nil || node.Target == nil {
+			continue
+		}
+		if prior := byName[node.Relation.Name]; prior != nil {
+			prior.Children = append(prior.Children, node.Children...)
+			continue
+		}
+		copyNode := *node
+		copyNode.Children = append([]*IncludeNode(nil), node.Children...)
+		byName[node.Relation.Name] = &copyNode
+		merged = append(merged, &copyNode)
+	}
+	return merged
 }
 
 // attachedRows collects the related rows attached under key across rows: a

@@ -128,6 +128,50 @@ func Recovery(next http.Handler) http.Handler {
 	})
 }
 
+// The 39de7827 spelling with a deferred METHOD guard: recoverSend calls
+// recover() itself (recover works when called directly by the deferred
+// function) and reads started, so the early latch is covered — quiet.
+type methodGuardWriter struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (w *methodGuardWriter) WriteHeader(code int) {
+	if code < 100 || code >= 200 {
+		w.started = true // want `wrapwriter: methodGuardWriter\.WriteHeader sets started before the forwarded WriteHeader returns`
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *methodGuardWriter) Write(b []byte) (int, error) { // want `wrapwriter: methodGuardWriter forwards Write to the writer it wraps but declares no ReadFrom`
+	w.started = true
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *methodGuardWriter) Flush() {
+	w.started = true
+	http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *methodGuardWriter) recoverSend() {
+	if v := recover(); v != nil {
+		if w.started {
+			panic(http.ErrAbortHandler)
+		}
+		http.Error(w, "internal", http.StatusInternalServerError)
+	}
+}
+
+func (w *methodGuardWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func MethodGuardRecovery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &methodGuardWriter{ResponseWriter: w}
+		defer rw.recoverSend()
+		next.ServeHTTP(rw, r)
+	})
+}
+
 // ---- quiet: the fix spellings ----------------------------------------
 
 // The fixed recoveryWriter: latch after the forward returns, Flush and

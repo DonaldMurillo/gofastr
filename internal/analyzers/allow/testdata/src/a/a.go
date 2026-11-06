@@ -72,3 +72,47 @@ func bareBlock(b []byte) {
 	/* gofastr:allow(discardeddecode) */
 	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
 }
+
+// 2026-11: the contracts pipeline splits its rule lists on commas,
+// spaces and tabs (suppress.go); the vettool read commas only, so a
+// space-separated list silenced nothing here until the parsers were
+// aligned.
+func spaceSeparated(b []byte) {
+	var x v
+	//gofastr:allow(discardeddecode mapwriter) best-effort render of bytes already validated by the caller
+	_ = json.Unmarshal(b, &x)
+}
+
+func mixedSeparators(b []byte) {
+	var x v
+	//gofastr:allow(mapwriter, discardeddecode	keytrim) best-effort render of bytes already validated by the caller
+	_ = json.Unmarshal(b, &x)
+}
+
+// A list naming other rules only still reports.
+func spaceSeparatedOthers(b []byte) {
+	var x v
+	//gofastr:allow(mapwriter keytrim) best-effort render of bytes already validated by the caller
+	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
+}
+
+// A block marker whose reason sits on its own line inside the comment
+// — the contracts parser reads the whole comment token; the vettool's
+// line-anchored capture used to stop at the newline before the reason
+// and match nothing at all.
+func multilineBlock(b []byte) {
+	var x v
+	/*
+		gofastr:allow(discardeddecode) best-effort render of validated bytes
+	*/
+	_ = json.Unmarshal(b, &x)
+}
+
+// The one-line block form still carries its reason after the code.
+func multilineBlockBare(b []byte) {
+	var x v
+	/*
+		gofastr:allow(discardeddecode)
+	*/
+	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
+}

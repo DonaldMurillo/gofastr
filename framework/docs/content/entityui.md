@@ -35,6 +35,17 @@ panics there, and so does a view with no `Where`, since
 Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
 
+Generated form controls use the mounted CRUD handler's response wire key as
+their submitted name: an explicit `WireName`, or the column in the handler's
+configured JSON casing (camelCase by default). For example, `address_line_1`
+is named `addressLine1` under the default casing, not `address_line_1` or
+`address_line1`. This keeps CRUD's wire-keyed validation and constraint
+refusals attached to the right control without trying to reverse the casing.
+Conditional fields follow the same input names; schema names, IDs, display
+configuration, and relation-picker field parameters remain column-based.
+Multipart forms accept the same aliases, including file and checkbox inputs,
+and refuse distinct aliases for one column before saving any uploaded file.
+
 ## Mounting app-owned screens
 
 The builders draw components; your app registers their screen routes.
@@ -192,7 +203,10 @@ keeps the UI unchanged; without a callback the default stays
   heads its actions with Copy link (out of the menu) and Open in panel:
   a link to the list at `Base` marked `data-cui-intercept-panel`, which
   loads the list in the page's place and opens the record over it as a
-  drawer, so Back from the drawer lands on the list. Turn it on only
+  drawer, so Back from the drawer lands on the list. A failed drawer
+  fetch opens the record as its own page instead. A failed list navigation
+  cancels the pending drawer; a later ordinary list visit never reopens
+  that old request. Turn it on only
   where the record's route opens as a drawer over `Base`
   (`app.InterceptFrom`); elsewhere the link is a plain move to the list. Delete asks first, and on an entity
   with `Scope.SoftDelete` the confirm says the record can be restored.
@@ -293,8 +307,9 @@ meaning and every screen honours them first.
 
 A form input carries the field's own validators, so the browser refuses a
 bad value before the round trip: `Required` sets `required`; a string's
-`Min` and `Max` set `minlength` and `maxlength` (a fractional minimum
-rounds up) and a number's set `min` and `max`; `Pattern` sets
+`Min` and `Max` remain server-side rune-count checks, not native
+`minlength` / `maxlength` attributes (which count UTF-16 units and can
+truncate valid emoji text). A number's bounds set `min` and `max`; `Pattern` sets
 `pattern`, wrapped as `[\s\S]*(?:<pattern>)[\s\S]*` because the
 server's check is an unanchored match and the browser anchors the
 attribute. A pattern using Go-only syntax (inline flags such as `(?i)`)
@@ -587,17 +602,29 @@ JSON API applies live in the builders themselves:
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes
   that entity's own gate first. A label, facet or picker also needs what
-  `?include=` needs (`CanReadRelatedScoped`): the related entity's CRUD
+  `?include=` needs (`CanReadRelatedScoped`), as do Related lists and
+  their count badges: the related entity's CRUD
   routes on (`Exposure.CRUD` not false), and a scope-restricted request
   (an API token or embed grant) holding `<table>:read`. So a posts
   screen shows no author names when the users entity has CRUD off, as
   `auth.UserEntityConfig()` declares. A related row a resource-aware
   Decider refuses by id is left out of labels, facets and the picker.
+  A refused Related list is omitted without an error callout; when every
+  related section is refused, the Related tab is omitted too. Unresolvable
+  entities, relations, or metadata still render the failed-slot callout.
+- Locked and key-column relation fields use the same related-read gate
+  as editable pickers, including CRUD exposure and token scopes.
 - A relation the caller may not read renders muted (an em dash), never
   the related record's name and never the raw foreign key. A refused
   relation facet draws no options, so the facet is absent. A refused
-  related list draws its notice, never its rows. A refused stat prints
+  related list is omitted without an access notice. A refused stat prints
   the em dash: an aggregate never announces an entity it cannot read.
+
+Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
+target, including queued runs; a row hidden only from single-record reads
+cannot be changed through a bulk selection.
+App-action callbacks receive the same read-hook-enabled context, including
+when they write through their action context's CRUD handler.
 
 A builder never draws a write the API would refuse the caller. New,
 Duplicate and the create screen need the entity's create access
@@ -758,7 +785,9 @@ _ = list.RenderCtx(ctx)
   delete form post to `POST <write base>/_views` and
   `POST <write base>/_views/_delete?id=<id>`, served by
   `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
-  and columns against the entity's fields before storing anything;
+  and columns against the entity's fields before storing anything,
+  and answers 400 to a name or filter holding a NUL byte or invalid
+  UTF-8 (404 to such a delete id), text no store can bind;
   owner and tenant come only from the caller's context, which the
   store enforces. A list with a saved view open draws no Export link
   and offers no "every match" bulk scope: the saved narrowing is not
@@ -861,14 +890,16 @@ and so does an entity with no REST write routes.
   summary row counts every outcome the store holds (`BulkStore.Tally`),
   so a resumed run reports the whole job, and a queued run writes that
   row once, when it finishes.
-- **Queued runs are leased.** `RunBulkJob` claims the job for five
-  minutes before each chunk, and every outcome and the finish write are
+- **Queued runs are leased.** `RunBulkJob` claims the job for `BulkJobLease` (five
+  minutes) before each chunk, and every outcome and the finish write are
   fenced on that claim: a second worker handed the same job runs nothing
   while the lease is live (`ErrBulkJobBusy` asks its queue to retry), and
   a worker whose lease lapsed cannot write (`ErrBulkLeaseLost`). A worker
   that dies holding the lease blocks the job until it expires. A run
   can resume at the exact expiry timestamp; a released lease does not
-  require another wall-clock tick before a retry.
+  require another wall-clock tick before a retry. Queue runners delay busy
+  and lost-lease deliveries by at least `BulkJobLease`, without consuming
+  execution attempts just for contention (`admin.NewBulkJobs` does this).
   Delivery is at least once, so an app `Actions` callback reads
   `ActionContext.Run`, the job id, to make its own side effects
   idempotent.
@@ -879,7 +910,11 @@ and so does an entity with no REST write routes.
   the runner (the process died in between, or `Enqueue` failed) is
   handed over again at `App.Start` once it is a minute old
   (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
-  instead. Finished jobs older than `entityui.BulkRetention` (30 days)
+  instead. Resume also adopts already-enqueued jobs whose non-null bulk
+  lease expired before the grace cutoff, preserving settled outcomes.
+  An enqueued job with no lease, a live lease, or a recently expired lease
+  is not adopted. Custom `BulkStore.Unenqueued` implementations must honor
+  this recovery rule too. Finished jobs older than `entityui.BulkRetention` (30 days)
   are deleted then too (`UI.PruneBulkJobs`). An app that runs for weeks
   schedules both, with cron or its queue.
 - **Export** is `GET <api>/<entity>/_export.csv` with the list's

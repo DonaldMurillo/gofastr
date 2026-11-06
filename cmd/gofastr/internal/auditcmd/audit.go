@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // AuditFinding is one call site of a tracked init-time registration
@@ -45,9 +46,9 @@ var trackedKinds = []struct {
 	{"github.com/DonaldMurillo/gofastr/core/render", "render", "RegisterFunc", "render.RegisterFunc"},
 }
 
-// auditDeps walks every .go file under root (skipping vendor, .git, and
-// hidden dirs) and returns one AuditFinding per call to a tracked
-// init-time registration API.
+// auditDeps walks non-test .go files under root, skipping vendor,
+// node_modules, dist, bin, build, tmp, and hidden/underscore descendants.
+// It returns one AuditFinding per tracked init-time registration call.
 //
 // The root must contain a go.mod so package import paths can be
 // computed; modules without go.mod fall back to relative paths.
@@ -55,15 +56,11 @@ func auditDeps(root string) ([]AuditFinding, error) {
 	modulePath := contracts.ReadModulePath(root)
 	var findings []AuditFinding
 
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			name := d.Name()
-			if name == "vendor" || name == "node_modules" || name == ".git" || strings.HasPrefix(name, ".") && path != root {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

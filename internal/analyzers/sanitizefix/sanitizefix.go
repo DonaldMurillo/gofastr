@@ -118,7 +118,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 // recombines reports whether call is a removal whose match can be more
 // than one character.
-func recombines(pass *analysis.Pass, call *ast.CallExpr, patterns map[types.Object]string) bool {
+func recombines(pass *analysis.Pass, call *ast.CallExpr, patterns *regexpBindings) bool {
 	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok {
 		return false
@@ -201,30 +201,102 @@ func constString(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	return constant.StringVal(tv.Value), true
 }
 
-// regexpVars maps package-level variables initialised with
-// regexp.MustCompile(const) / regexp.Compile to their pattern.
-func regexpVars(pass *analysis.Pass) map[types.Object]string {
-	out := map[types.Object]string{}
+// regexpVars maps every variable initialised with regexp.MustCompile
+// (const) / regexp.Compile — package-level and function-local alike —
+// to its pattern, so a removal through a locally compiled regexp is
+// judged by its pattern, not assumed multi-character.
+type regexpBindings struct {
+	initial map[types.Object]string
+	writes  map[types.Object][]ast.Node
+	parents map[ast.Node]ast.Node
+}
+
+func regexpVars(pass *analysis.Pass) *regexpBindings {
+	out := &regexpBindings{initial: map[types.Object]string{}, writes: map[types.Object][]ast.Node{}, parents: map[ast.Node]ast.Node{}}
+	bind := func(id *ast.Ident, rhs ast.Expr) {
+		obj := pass.TypesInfo.Defs[id]
+		if obj == nil || !isRegexp(obj.Type()) {
+			return
+		}
+		if pat, ok := compiledPattern(pass, rhs); ok {
+			out.initial[obj] = pat
+		}
+	}
 	for _, f := range pass.Files {
-		for _, d := range f.Decls {
-			gd, ok := d.(*ast.GenDecl)
-			if !ok || gd.Tok != token.VAR {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				vs := spec.(*ast.ValueSpec)
-				for i, name := range vs.Names {
-					if i >= len(vs.Values) {
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.GenDecl: // package-level and local var specs
+				if x.Tok != token.VAR {
+					return true
+				}
+				for _, spec := range x.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
 						continue
 					}
-					if pat, ok := compiledPattern(pass, vs.Values[i]); ok {
-						out[pass.TypesInfo.Defs[name]] = pat
+					for i, name := range vs.Names {
+						if i < len(vs.Values) {
+							bind(name, vs.Values[i])
+						}
+					}
+				}
+			case *ast.AssignStmt: // re := regexp.MustCompile(...)
+				for i, l := range x.Lhs {
+					id, ok := l.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					var rhs ast.Expr
+					if len(x.Rhs) == len(x.Lhs) {
+						rhs = x.Rhs[i]
+					} else if len(x.Rhs) == 1 {
+						rhs = x.Rhs[0]
+					}
+					if rhs != nil {
+						bind(id, rhs)
 					}
 				}
 			}
+			return true
+		})
+	}
+	for _, file := range pass.Files {
+		for node, parent := range dominance.Parents(file) {
+			out.parents[node] = parent
 		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			var targets []ast.Expr
+			switch assignment := node.(type) {
+			case *ast.AssignStmt:
+				targets = assignment.Lhs
+			case *ast.RangeStmt:
+				if assignment.Tok == token.ASSIGN {
+					targets = []ast.Expr{assignment.Key, assignment.Value}
+				}
+			}
+			for _, left := range targets {
+				if identifier, ok := ast.Unparen(left).(*ast.Ident); ok && pass.TypesInfo.Defs[identifier] == nil {
+					object := pass.TypesInfo.ObjectOf(identifier)
+					out.writes[object] = append(out.writes[object], node)
+				}
+			}
+			return true
+		})
 	}
 	return out
+}
+
+// isRegexp: *regexp.Regexp (or a regexp.Regexp value).
+func isRegexp(t types.Type) bool {
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj != nil && obj.Name() == "Regexp" && obj.Pkg() != nil && obj.Pkg().Path() == "regexp"
 }
 
 func compiledPattern(pass *analysis.Pass, e ast.Expr) (string, bool) {
@@ -243,12 +315,26 @@ func compiledPattern(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	return constString(pass, call.Args[0])
 }
 
-func patternOf(pass *analysis.Pass, x ast.Expr, patterns map[types.Object]string) (string, bool) {
+func patternOf(pass *analysis.Pass, x ast.Expr, patterns *regexpBindings) (string, bool) {
 	if pat, ok := compiledPattern(pass, x); ok {
 		return pat, true
 	}
 	if id, ok := ast.Unparen(x).(*ast.Ident); ok {
-		pat, ok := patterns[pass.TypesInfo.Uses[id]]
+		object := pass.TypesInfo.Uses[id]
+		for _, write := range patterns.writes[object] {
+			if write.Pos() < x.Pos() || object.Parent() == pass.Pkg.Scope() {
+				return "", false
+			}
+			for parent := patterns.parents[x]; parent != nil; parent = patterns.parents[parent] {
+				switch parent.(type) {
+				case *ast.ForStmt, *ast.RangeStmt, *ast.FuncLit:
+					if write.Pos() >= parent.Pos() && write.End() <= parent.End() {
+						return "", false
+					}
+				}
+			}
+		}
+		pat, ok := patterns.initial[object]
 		return pat, ok
 	}
 	return "", false

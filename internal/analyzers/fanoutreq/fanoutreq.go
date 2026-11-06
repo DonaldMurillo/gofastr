@@ -162,8 +162,11 @@ func requestSized(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Ex
 		if recvIs(fn, "net/http", "Request") && (fn.Name() == "Cookies" || fn.Name() == "CookiesNamed") {
 			return types.ExprString(x)
 		}
-		if recvIs(fn, "net/http", "Header") && fn.Name() == "Values" && fromRequest(pass, x.Fun.(*ast.SelectorExpr).X) {
-			return types.ExprString(x)
+		if recvIs(fn, "net/http", "Header") && fn.Name() == "Values" {
+			sel, ok := ast.Unparen(x.Fun).(*ast.SelectorExpr)
+			if ok && fromRequest(pass, sel.X) {
+				return types.ExprString(x)
+			}
 		}
 	case *ast.IndexExpr:
 		t := pass.TypesInfo.TypeOf(x.X)

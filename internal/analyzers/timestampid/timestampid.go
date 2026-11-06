@@ -26,11 +26,14 @@
 // (multi-value included), a `var token = …` declaration, and a keyed
 // struct-literal field (Session{ID: …}) — and so does every format:
 // fmt.Sprint/Sprintln beside Sprintf, and the clock rendered as text
-// with time.Now().Format / .String / .AppendFormat. Until the
-// 2026-11-02 guard bash only a single-value assignment and the Unix*
-// readings counted, and a make([]byte, 16) rand buffer was never sized
-// (the builtin is an identifier, not a pkg.Func selector), so the
-// 16-byte silence below held for arrays only.
+// with time.Now().Format / .String / .AppendFormat, through method
+// chains (Now().Add(x).UnixNano(), Now().UTC().Format(…)) and through
+// a local on either side of the + (ts := FormatInt(Now()…);
+// sessionID := "s-" + ts). Until the 2026-11-02 guard bash only a
+// single-value assignment and the Unix* readings counted, and a
+// make([]byte, 16) rand buffer was never sized (the builtin is an
+// identifier, not a pkg.Func selector), so the 16-byte silence below
+// held for arrays only.
 //
 // Silent postures, deliberately:
 //   - timestamps that are values, not identifiers: names like now,
@@ -40,7 +43,13 @@
 //   - ids whose same expression also includes >=16 bytes of crypto/rand
 //     (the rand.Read buffer feeding the format, the ULID/harness-ids
 //     posture): the entropy is real. Fewer bytes (an 8-byte
-//     collision-defeater) do not silence anything;
+//     collision-defeater) do not silence anything, and a SLICE of a
+//     big buffer counts only its own span — hex of b[:2] is 2 bytes
+//     (2026-11-03 round: the slice bounds were never read, so a
+//     b[:2] of a 32-byte buffer silenced the mint). A slice of the
+//     encoded text counts the random bytes it keeps: half a hex span,
+//     three quarters of a base64 span rounded down, and nothing for a
+//     computed encoding it does not recognize;
 //   - a clock passed as a parameter (now time.Time): the injectable
 //     clock of ulid.NewAt and the test seams; only time.Now() itself
 //     is wall-clock here;
@@ -102,6 +111,9 @@ func run(pass *analysis.Pass) (any, error) {
 func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 	bound := bindings(pass, fn.Body)
 	bigRand := bigRandBuffers(pass, fn.Body, bound)
+	// A local whose assignment already reported: the return of that
+	// same local is the same mint, not a second one.
+	reported := map[types.Object]bool{}
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		switch st := n.(type) {
 		case *ast.AssignStmt:
@@ -115,6 +127,9 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 				}
 				if minted(pass, st.Rhs[i], bound, bigRand, 0) {
 					report(pass, st.Pos(), name)
+					if id, ok := lhs.(*ast.Ident); ok {
+						reported[pass.TypesInfo.ObjectOf(id)] = true
+					}
 				}
 			}
 		case *ast.ValueSpec:
@@ -129,6 +144,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 				}
 				if minted(pass, st.Values[i], bound, bigRand, 0) {
 					report(pass, st.Pos(), id.Name)
+					reported[pass.TypesInfo.ObjectOf(id)] = true
 				}
 			}
 		case *ast.KeyValueExpr:
@@ -149,6 +165,9 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 				return true
 			}
 			for _, r := range st.Results {
+				if id, ok := r.(*ast.Ident); ok && reported[pass.TypesInfo.ObjectOf(id)] {
+					continue
+				}
 				if minted(pass, r, bound, bigRand, 0) {
 					report(pass, st.Pos(), fn.Name.Name)
 				}
@@ -225,7 +244,7 @@ var credentialKeyWords = map[string]bool{
 // wall-clock value: a fmt.Sprintf / strconv format call or a +
 // concatenation mentioning time.Now().Unix*() (directly or through a
 // local), and no >=16-byte crypto/rand buffer in the same assembly.
-func minted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, bigRand map[types.Object]bool, depth int) bool {
+func minted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, bigRand map[types.Object]int, depth int) bool {
 	if depth > maxDepth {
 		return false
 	}
@@ -254,6 +273,13 @@ func minted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, bi
 			return false
 		}
 		return mentionsWallClock(pass, v.X, bound, depth) || minted(pass, v.Y, bound, bigRand, depth+1)
+	case *ast.Ident:
+		// The clock mint built in a local — on either side of a +
+		// or bound bare — is the same mint: `ts := FormatInt(Now()…);
+		// sessionID := "s-" + ts`.
+		if b, ok := bound[pass.TypesInfo.ObjectOf(v)]; ok && b != nil {
+			return minted(pass, b, bound, bigRand, depth+1)
+		}
 	}
 	return false
 }
@@ -315,12 +341,19 @@ func isBuiltin(pass *analysis.Pass, fun ast.Expr, name string) bool {
 // as a formatted UnixNano.
 var clockText = map[string]bool{"Format": true, "String": true, "AppendFormat": true}
 
-// isNow reports whether e is time.Now() itself or a local whose
-// binding is time.Now(). A clock passed as a parameter is the
+// isNow reports whether e is time.Now() itself, a chain of
+// time-returning methods on it (time.Now().Add(x).UTC()), or a local
+// whose binding is one of those. A clock passed as a parameter is the
 // injectable-clock posture and is not wall-clock here.
 func isNow(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, depth int) bool {
-	if call, ok := e.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "time.Now" {
-		return true
+	if call, ok := e.(*ast.CallExpr); ok {
+		if pathflow.QualifiedFunc(pass, call.Fun) == "time.Now" {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && clockPreserving[sel.Sel.Name] {
+			return isNow(pass, sel.X, bound, depth+1)
+		}
+		return false
 	}
 	if id, ok := e.(*ast.Ident); ok && depth < maxDepth {
 		if b, ok := bound[pass.TypesInfo.ObjectOf(id)]; ok && b != nil {
@@ -330,9 +363,20 @@ func isNow(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, dep
 	return false
 }
 
+// clockPreserving are the time.Time methods that return a time.Time:
+// chaining them on time.Now() is still one wall-clock reading.
+var clockPreserving = map[string]bool{
+	"Add": true, "AddDate": true, "UTC": true, "Local": true,
+	"In": true, "Truncate": true, "Round": true,
+}
+
 // mentionsBigRand reports whether e's assembly (through locals) reads
-// from a buffer holding >=16 bytes of crypto/rand.
-func mentionsBigRand(pass *analysis.Pass, e ast.Expr, bigRand map[types.Object]bool, depth int) bool {
+// >=16 bytes of a crypto/rand buffer. A SLICE counts only its own
+// span, one level down or two: hex.EncodeToString(b[:2]) beside the
+// clock is 2 bytes of entropy and silences nothing, and neither does
+// hex.EncodeToString(b)[:4] — the slice of the encoded string — while
+// b[:16] is the full requirement. An index (b[0]) is one byte.
+func mentionsBigRand(pass *analysis.Pass, e ast.Expr, bigRand map[types.Object]int, depth int) bool {
 	if len(bigRand) == 0 || depth > maxDepth {
 		return false
 	}
@@ -341,34 +385,138 @@ func mentionsBigRand(pass *analysis.Pass, e ast.Expr, bigRand map[types.Object]b
 		if found {
 			return false
 		}
-		var obj types.Object
 		switch v := n.(type) {
 		case *ast.Ident:
-			obj = pass.TypesInfo.ObjectOf(v)
+			if bigRand[pass.TypesInfo.ObjectOf(v)] >= 16 {
+				found = true
+			}
 		case *ast.SliceExpr:
 			if id, ok := v.X.(*ast.Ident); ok {
-				obj = pass.TypesInfo.ObjectOf(id)
+				size := bigRand[pass.TypesInfo.ObjectOf(id)]
+				if size != 0 {
+					// This read touches only the sliced span; judge it
+					// here and do not also credit the base ident
+					// below it.
+					if sliceSpan(pass, v, size) >= 16 {
+						found = true
+					}
+					return false
+				}
+				return true
 			}
-		case *ast.IndexExpr:
-			if id, ok := v.X.(*ast.Ident); ok {
-				obj = pass.TypesInfo.ObjectOf(id)
+			// A slice of a COMPUTED encoding — hex.EncodeToString(b)
+			// [:4] — carries only the sliced span, never the whole
+			// buffer inside it. Convert characters to source bytes for
+			// recognized encodings; unknown computed bases earn nothing.
+			if span, ok := constSliceSpan(pass, v); ok && encodedRandomBytes(pass, v.X, span) >= 16 && mentionsBigRand(pass, v.X, bigRand, depth+1) {
+				found = true
 			}
-		}
-		if obj != nil && bigRand[obj] {
-			found = true
 			return false
+		case *ast.IndexExpr:
+			// One byte of the buffer, whatever the buffer's size.
+			return true
 		}
 		return !found
 	})
 	return found
 }
 
+func encodedRandomBytes(pass *analysis.Pass, expression ast.Expr, span int) int {
+	call, ok := ast.Unparen(expression).(*ast.CallExpr)
+	if !ok || span <= 0 {
+		return 0
+	}
+	switch pathflow.QualifiedFunc(pass, call.Fun) {
+	case "encoding/hex.EncodeToString":
+		if len(call.Args) == 1 {
+			return span / 2
+		}
+	case "fmt.Sprintf":
+		if len(call.Args) == 2 {
+			if format, ok := astx.StringConstant(pass, call.Args[0]); ok && (format == "%x" || format == "%X") {
+				return span / 2
+			}
+		}
+	}
+	selector, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "EncodeToString" || len(call.Args) != 1 {
+		return 0
+	}
+	selection := pass.TypesInfo.Selections[selector]
+	if selection != nil && selection.Obj().Pkg() != nil && selection.Obj().Pkg().Path() == "encoding/base64" {
+		return span/4*3 + span%4*3/4
+	}
+	return 0
+}
+
+// sliceSpan returns the byte span a slice of a size-byte buffer
+// touches: high-minus-low for constant bounds, size-minus-low when the
+// high bound is the buffer's end. A non-constant bound is unreadable
+// and returns 0: the silence this feeds must be earned, not assumed.
+func sliceSpan(pass *analysis.Pass, se *ast.SliceExpr, size int) int {
+	low := int64(0)
+	if se.Low != nil {
+		tv, ok := pass.TypesInfo.Types[se.Low]
+		if !ok || tv.Value == nil {
+			return 0
+		}
+		l, ok := constant.Int64Val(tv.Value)
+		if !ok {
+			return 0
+		}
+		low = l
+	}
+	if se.High == nil {
+		return size - int(low)
+	}
+	tv, ok := pass.TypesInfo.Types[se.High]
+	if !ok || tv.Value == nil {
+		return 0
+	}
+	h, ok := constant.Int64Val(tv.Value)
+	if !ok {
+		return 0
+	}
+	return int(h - low)
+}
+
+// constSliceSpan is sliceSpan with no base size to fall back on: both
+// bounds constant, high minus low. A nil or non-constant high has no
+// readable size and returns false: the silence this feeds must be
+// earned, not assumed.
+func constSliceSpan(pass *analysis.Pass, se *ast.SliceExpr) (int, bool) {
+	var low int64
+	if se.Low != nil {
+		tv, ok := pass.TypesInfo.Types[se.Low]
+		if !ok || tv.Value == nil {
+			return 0, false
+		}
+		l, ok := constant.Int64Val(tv.Value)
+		if !ok {
+			return 0, false
+		}
+		low = l
+	}
+	if se.High == nil {
+		return 0, false
+	}
+	tv, ok := pass.TypesInfo.Types[se.High]
+	if !ok || tv.Value == nil {
+		return 0, false
+	}
+	h, ok := constant.Int64Val(tv.Value)
+	if !ok {
+		return 0, false
+	}
+	return int(h - low), true
+}
+
 // bigRandBuffers collects the buffers this function fills from
 // crypto/rand with >=16 bytes: the entropy that makes an id
 // unguessable. Smaller buffers (the 8-byte collision defeaters) do
 // not collect.
-func bigRandBuffers(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr) map[types.Object]bool {
-	var big map[types.Object]bool
+func bigRandBuffers(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr) map[types.Object]int {
+	var big map[types.Object]int
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -392,11 +540,11 @@ func bigRandBuffers(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Ob
 		if obj == nil {
 			return true
 		}
-		if bufSize(pass, obj, bound) >= 16 {
+		if n := bufSize(pass, obj, bound); n >= 16 {
 			if big == nil {
-				big = map[types.Object]bool{}
+				big = map[types.Object]int{}
 			}
-			big[obj] = true
+			big[obj] = n
 		}
 		return true
 	})

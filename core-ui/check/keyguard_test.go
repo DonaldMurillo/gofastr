@@ -137,6 +137,48 @@ func TestLintKeyGuard_RTL(t *testing.T) {
 	assertLines(t, res, []int{4, 10, 16, 19, 44})
 }
 
+// keyGuardRTLHelperFixture: the arrow test mapped inside a same-file
+// helper the listener calls. The IME arm already follows helpers for
+// its Enter test (widgethelpers' isEnter); the arrow arm must too, or
+// `delta(e)` maps the sides and no listener text mentions an arrow.
+const keyGuardRTLHelperFixture = `(() => {
+  function delta(e) {
+    if (e.key === 'ArrowLeft') return -1;
+    if (e.key === 'ArrowRight') return 1;
+    return 0;
+  }
+  document.addEventListener('keydown', (e) => {
+    const dx = delta(e);
+    if (dx) move(dx);
+  });
+  function deltaDir(e, el) {
+    const d = getComputedStyle(el).direction === 'rtl' ? -1 : 1;
+    return e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0;
+  }
+  document.addEventListener('keydown', (e) => {
+    const dx = deltaDir(e, list);
+    if (dx) move(dx);
+  });
+  function both(e) { return e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? 1 : 0; }
+  document.addEventListener('keydown', (e) => {
+    const dx = both(e);
+    if (dx) move(dx);
+  });
+})();
+`
+
+func TestLintKeyGuard_RTLArrowInHelper(t *testing.T) {
+	dir := writeRuntimeFixture(t, "rtlhelper.js", keyGuardRTLHelperFixture)
+	res, err := LintKeyGuard(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the first listener: delta maps the sides and nothing reads
+	// the direction. deltaDir reads it inside the helper; both tests the
+	// two arrows together.
+	assertLines(t, res, []int{8})
+}
+
 // TestLintKeyGuard_Repo holds the shipped JavaScript to both arms.
 //
 //gofastr:test-reads core-ui/runtime/

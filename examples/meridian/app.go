@@ -241,11 +241,11 @@ func quickAddCustomerModal() widget.Definition {
 		heading := html.Heading(html.HeadingConfig{Level: 2, ID: "customer-quick-add-title"}, render.Text(quickAddTitle.Text(ctx)))
 		form := ui.Form(ui.FormConfig{Ctx: ctx, Action: "/api/customers", Method: "POST", SubmitLabel: quickAddSubmit.Text(ctx), ExtraAttrs: interactive.Post("/api/customers").
 			OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.Navigate("/app/customers")).Attrs()},
-			ui.TextField(ui.TextFieldConfig{Name: "name", Label: quickAddName.Text(ctx), ID: "qa-name", Required: true}),
+			ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "name", Label: quickAddName.Text(ctx), ID: "qa-name", Required: true}),
 			ui.FormField(ui.FormFieldConfig{Label: quickAddEmail.Text(ctx), For: "qa-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
 				return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
 			}}),
-			ui.TextField(ui.TextFieldConfig{Name: "company", Label: quickAddCompany.Text(ctx), ID: "qa-company"}),
+			ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "company", Label: quickAddCompany.Text(ctx), ID: "qa-company"}),
 		)
 		return render.Join(heading, form)
 	})

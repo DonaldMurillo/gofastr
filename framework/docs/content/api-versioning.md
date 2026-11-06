@@ -160,7 +160,7 @@ DDL, so it catches every attribute that changes the physical column:
 
 | Compared (must match) | Ignored (free to differ) |
 | --- | --- |
-| the rendered SQL type: `Type`, `RawType`, **and `String.Max`** (which selects `VARCHAR(n)`) | `Hidden` (wire visibility) |
+| the rendered SQL type: `Type`, `RawType`, **and `Max` on a `schema.String` field** (which selects `VARCHAR(n)`) | `Hidden` (wire visibility) |
 | `Unique` | `WireName` (JSON key override) |
 | `Required` (NOT NULL) | `ReadOnly` (request-body acceptance) |
 | `AutoGenerate` (DEFAULT strategy) | `Min` / `Pattern` / `Values` (validation) |
@@ -171,7 +171,7 @@ Wire-only and validation-only differences are never conflicts. They
 are the whole point of versioning. `apiversions.ApplyToEntityConfig`
 relies on exactly this: `Exclude` sets `Hidden=true` and `Rename` sets
 `WireName`, both of which the conflict check deliberately ignores
-because neither changes the physical column. (`String.Max` is the one
+because neither changes the physical column. (A string field's `Max` is the one
 validation knob that DOES reach the DDL, via `VARCHAR(n)`, so it is
 compared; `Min`, `Pattern`, and `Values` do not.)
 

@@ -169,8 +169,157 @@ func listGiven(given []Content) toolsListResult {
 
 // Appending onto the field itself, and a sink inside a non-empty guard.
 func extend(r *toolsCallResult, more []Content, msg *promptsGetResult, parts []PromptMessage) {
-	r.Content = append(r.Content, more...)
+	r.Content = append(r.Content, more...) // want `Content is a required JSON array`
 	if len(parts) > 0 {
 		msg.Messages = parts
 	}
+}
+
+func appendUninitializedField(more []Content) toolsCallResult {
+	var result toolsCallResult
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+	return result
+}
+
+func appendInitializedField(more []Content) toolsCallResult {
+	result := toolsCallResult{Content: []Content{}}
+	result.Content = append(result.Content, more...)
+	return result
+}
+
+func appendConditionallyInitializedField(more []Content, initialize bool) toolsCallResult {
+	var result toolsCallResult
+	if initialize {
+		result.Content = []Content{}
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+	return result
+}
+
+func appendResetField(more []Content) toolsCallResult {
+	result := toolsCallResult{Content: []Content{}}
+	result = toolsCallResult{}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+	return result
+}
+
+func appendNilNormalizedField(result *toolsCallResult, more []Content) {
+	if result.Content == nil {
+		result.Content = []Content{}
+	}
+	result.Content = append(result.Content, more...)
+}
+
+func appendInitializedFieldInCase(kind int, more []Content) {
+	switch kind {
+	case 1:
+		result := toolsCallResult{Content: []Content{}}
+		result.Content = append(result.Content, more...)
+	case 2:
+		var result toolsCallResult
+		if nil == result.Content {
+			result.Content = []Content{}
+		}
+		result.Content = append(result.Content, more...)
+	}
+}
+
+func appendInitializedFieldInComm(ready <-chan bool, more []Content) {
+	select {
+	case <-ready:
+		result := toolsCallResult{Content: []Content{}}
+		result.Content = append(result.Content, more...)
+	default:
+		var result toolsCallResult
+		if result.Content == nil {
+			result.Content = []Content{}
+		}
+		result.Content = append(result.Content, more...)
+	}
+}
+
+func appendConditionallyNormalizedField(result *toolsCallResult, more []Content, normalize bool) {
+	if normalize {
+		if result.Content == nil {
+			result.Content = []Content{}
+		}
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
+func appendInvalidatedNormalizedField(result *toolsCallResult, more []Content) {
+	if result.Content == nil {
+		result.Content = []Content{}
+	}
+	result.Content = nil                             // want `Content is a required JSON array`
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
+func appendInvalidatingNormalizationBody(result *toolsCallResult, more []Content) {
+	if result.Content == nil {
+		result.Content = []Content{}
+		result.Content = nil // want `Content is a required JSON array`
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
+func appendNonNilFieldGuard(result *toolsCallResult, more []Content) {
+	if result.Content != nil {
+		result.Content = []Content{}
+	}
+	result.Content = append(result.Content, more...) // want `Content is a required JSON array`
+}
+
+// rebindThenLog: the rebind is not the guard's last statement — the log
+// after it changes nothing about the nil path.
+func rebindThenLog(h func() ([]PromptMessage, error), logf func(string, ...any)) (promptsGetResult, error) {
+	msgs, err := h()
+	if err != nil {
+		return promptsGetResult{}, err
+	}
+	if msgs == nil {
+		msgs = []PromptMessage{}
+		logf("empty prompt")
+	}
+	return promptsGetResult{Messages: msgs}, nil
+}
+
+// guardThenRebind: a guard is stale once the variable is reassigned
+// after it — maybeNil can hand back nil again.
+func maybeNil() []PromptMessage { return nil }
+
+func guardThenRebind(h func() ([]PromptMessage, error)) (promptsGetResult, error) {
+	msgs, err := h()
+	if err != nil {
+		return promptsGetResult{}, err
+	}
+	if msgs == nil {
+		msgs = []PromptMessage{}
+	}
+	msgs = maybeNil()
+	return promptsGetResult{Messages: msgs}, nil // want `Messages is a required JSON array`
+}
+
+// errorFlagged is bdb716482's own spelling: the literal omits Content
+// entirely, and "content": null goes out.
+func errorFlagged(isErr bool) toolsCallResult {
+	return toolsCallResult{IsError: isErr} // want `Content is a required JSON array, and this literal leaves it nil`
+}
+
+// errorFlaggedFilled: the omitted-field literal whose field is filled
+// on the same object right after — judged where it is filled.
+func errorFlaggedFilled(v []Content) toolsCallResult {
+	r := toolsCallResult{IsError: true}
+	r.Content = contentArray(v)
+	return r
+}
+
+// A package-level literal and a package-level function literal have no
+// FuncDecl; their stores are checked all the same.
+var startup = toolsCallResult{Content: maybeNilContent()} // want `Content is a required JSON array`
+
+func maybeNilContent() []Content { return nil }
+
+var makeResult = func(flag bool) toolsCallResult {
+	return toolsCallResult{IsError: flag} // want `Content is a required JSON array, and this literal leaves it nil`
 }

@@ -35,10 +35,9 @@
   // write/read promotes the path to most-recently-used; oldest entry
   // is always keys().next() when we exceed the cap.
   const cacheScreen = (path, html, title, layer) => {
-    if (screenCache.has(path)) screenCache.delete(path);
+    screenCache.delete(path);
     if (screenCache.size >= MAX_CACHE_SIZE) {
-      const oldest = screenCache.keys().next().value;
-      screenCache.delete(oldest);
+      screenCache.delete(screenCache.keys().next().value);
     }
     // vt is the transition pick this entry landed with, read off the
     // hook at write time (the commit settles the pick before the apply
@@ -210,8 +209,10 @@
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
     carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')).map(node => node.outerHTML).join(''));
-    const lang = source.documentElement.getAttribute('lang');
-    if (lang) carrier.setAttribute('data-cui-lang', lang);
+    for (const attr of ['lang', 'dir']) {
+      const value = source.documentElement[attr];
+      if (value) carrier.setAttribute('data-cui-' + attr, value);
+    }
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
     // The live document's head block is the first page's: after a soft
@@ -601,13 +602,14 @@
     }
     return _plainLoadPage(path, opts);
   };
-  const _plainLoadPage = async (path, { bypassCache = false, forceFull = false, from = null, restore = null } = {}) => {
+  const _plainLoadPage = async (path, { bypassCache = false, forceFull = false, from, restore } = {}) => {
+    const G = window.__gofastr;
     // Single gate for every branch below: the SPA navigator's target
     // comes from an href / a data-cui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
     // credentials and swapped into the DOM. A javascript: or data: URL
     // resolves to a null origin, so this subsumes the scheme check too.
-    if (!window.__gofastr._originOK(path)) return;
+    if (!G._originOK(path)) return;
     // Document-boundary backstop: the click hijack, navigate(), and
     // popstate gate this BEFORE any history write; this arm covers the
     // X-Gofastr-Location redirect leg and any future caller.
@@ -617,15 +619,15 @@
     // a stale epoch, and returning here left B live, committing under
     // the URL /a. A replay (cache or prefetch) drops its entry, so a
     // forced fetch never joins the copy the force exists to replace.
-    if (_pendingNav.get(path) === window.__gofastr._navEpoch) return;
-    const myEpoch = ++window.__gofastr._navEpoch;
+    if (_pendingNav.get(path) === G._navEpoch) return;
+    const myEpoch = ++G._navEpoch;
     _pendingNav.set(path, myEpoch);
     // The transition module's direction seam (its twin sits in the
     // module navigator's entry): binds the recorded direction and
     // pick-edge rule to THIS navigation's epoch before any await.
-    window.__gofastr._navHooks.transition?.take(myEpoch);
+    G._navHooks.transition?.take(myEpoch);
     const prevPath = from || currentPath;
-    if (window.__gofastr._navBase === null) window.__gofastr._navBase = prevPath;
+    if (G._navBase === null) G._navBase = prevPath;
     currentPath = path;
     // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
@@ -676,8 +678,8 @@
       // partial, swap it in when its layer is live, exactly like the
       // screen cache but single-use and TTL-bounded. Post-mutation navs
       // (bypassCache) skip it: it was fetched before the mutation.
-      if (!cached && !bypassCache && !forceFull && window.__gofastr._takePrefetched) {
-        const pf = window.__gofastr._takePrefetched(path);
+      if (!cached && !bypassCache && !forceFull && G._takePrefetched) {
+        const pf = G._takePrefetched(path);
         if (pf) {
           // A layout-less entry swaps into <main> only when the live DOM
           // is layout-less too, as for the screen cache above.
@@ -706,7 +708,7 @@
       if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         const fr = await _fetch(path);
       if (!_navLive(myEpoch)) return;
-        window.__gofastr._inval(fr);
+        G._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (!_navLive(myEpoch)) return;
         // The path keeps the search string: the cache key and the URL
@@ -765,13 +767,13 @@
       if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));
       // A session change is an identity change: one identity's pages
       // must never replay for another.
-      if (rs) window.__gofastr.invalidate('*');
+      if (rs) G.invalidate('*');
       const notOk = !resp.ok;
 
       // Evict server-named stale screens BEFORE chasing a redirect, so
       // a "mutated + redirected" response drops entries first and the
       // redirect target is then fetched/cached fresh.
-      window.__gofastr._inval(resp);
+      G._inval(resp);
 
       // X-Gofastr-Location signals "server policy redirected this
       // partial, go nav to the new URL instead of trying to swap
@@ -814,7 +816,7 @@
       // stays as it came.
       try { swapKey = decodeURIComponent(swapKey); } catch (_) {}
       if (partial) {
-        title = window.__gofastr._title(resp);
+        title = G._title(resp);
         body = html;
       } else {
         const pdoc = new DOMParser().parseFromString(html, 'text/html');
@@ -838,6 +840,7 @@
       }, resp, body, title);
     } catch (err) {
       if (!_navLive(myEpoch)) return;
+      G._cancelPanel?.();
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it, to the page the
@@ -847,7 +850,7 @@
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
         ? say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
         : say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
-      const base = window.__gofastr._navBase;
+      const base = G._navBase;
       _pushPub(base || location.pathname, { replace: true });
       currentPath = base;
     } finally {
@@ -858,7 +861,7 @@
       // in-flight one.
       if (_navLive(myEpoch)) {
         doc.removeHtmlAttr('aria-busy');
-        window.__gofastr._navBase = null;
+        G._navBase = null;
       }
     }
   };

@@ -110,6 +110,23 @@ func relSet(t *testing.T, root string, files []string) map[string]bool {
 	return out
 }
 
+func TestRegisteredBehaviorSourcesNormalizesRoot(t *testing.T) {
+	root, write := scratchTree(t)
+	write("a.go", registeringGo)
+	write("beh.js", "export const behavior = {};\n")
+	write("asset.js", "export const asset = {};\n")
+	write(".app/a.go", registeringGo)
+	write(".app/beh.js", "export const behavior = {};\n")
+	write(".app/asset.js", "export const asset = {};\n")
+	t.Chdir(root)
+	for _, spelling := range []string{".", "./", ".app/"} {
+		files, err := RegisteredBehaviorSources(spelling)
+		if err != nil || len(files) != 1 || filepath.Base(files[0]) != "beh.js" {
+			t.Errorf("root=%q files=%v err=%v", spelling, files, err)
+		}
+	}
+}
+
 // TestRegisteredBehaviorSources_FollowsTheRegisteredVariable pins that
 // only what a registration passes is a module: the same file embeds an
 // asset it never registers, and the asset stays out.

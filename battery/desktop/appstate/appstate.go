@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
@@ -325,7 +326,9 @@ func (s *Store) persist(entries map[string]json.RawMessage) error {
 
 // notify hands one change to every watcher on its own goroutine. The
 // callbacks are snapshotted under the lock and invoked after it, so a
-// watcher can call back into the store.
+// watcher can call back into the store. Each launch carries a recover:
+// a panicking watcher drops that one notification instead of the
+// process (the desktop shell's deliverDeepLink spelling).
 func (s *Store) notify(key string) {
 	s.mu.Lock()
 	fns := make([]func(string), 0, len(s.watchers))
@@ -334,6 +337,18 @@ func (s *Store) notify(key string) {
 	}
 	s.mu.Unlock()
 	for _, fn := range fns {
-		go fn(key)
+		deliver(s.logger, fn, key)
 	}
+}
+
+// deliver runs one watcher on its own goroutine with a recover.
+func deliver(logger *slog.Logger, fn func(string), key string) {
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				logger.Error("appstate: watcher panicked", "key", key, "panic", textsafe.Recovered(v))
+			}
+		}()
+		fn(key)
+	}()
 }

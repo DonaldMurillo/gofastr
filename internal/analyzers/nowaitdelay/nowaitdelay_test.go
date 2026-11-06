@@ -9,5 +9,5 @@ import (
 )
 
 func TestNoWaitDelay(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), nowaitdelay.Analyzer, "a")
+	analysistest.Run(t, analysistest.TestData(), nowaitdelay.Analyzer, "a", "bounded")
 }

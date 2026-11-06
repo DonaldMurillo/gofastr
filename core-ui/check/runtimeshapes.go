@@ -60,7 +60,10 @@ import (
 // Call-shaped tokens are matched on Blank and their argument text is
 // recovered from Code by offset (the views are position-aligned), so
 // code-shaped text inside a string literal is never reported as a call
-// (review 5's documentation-string fixture).
+// (review 5's documentation-string fixture). The safe-identifier
+// tracker's assignment events carry the same guard (review 8): the
+// patterns match on Code and a match whose identifier is blanked on
+// Blank is prose in a string literal, not an assignment.
 type jsSource struct {
 	Path  string
 	Src   string
@@ -627,13 +630,18 @@ var (
 	// reSafeAssign matches identifier assignments with their RHS up to
 	// the statement end. The (>?) capture rejects arrow parameters
 	// (k => …); an RHS beginning '=' is a misread == / === and is
-	// dropped in code.
+	// dropped in code. Matched on Code (the RHS literal must stay
+	// visible) with the identifier cross-checked against Blank, so
+	// assignment-shaped prose in a string literal ('Rebuilt sel =
+	// "fallback"; retry') records nothing (review 8).
 	reSafeAssign = regexp.MustCompile(`\b(\w+)\s*=(>?)\s*([^;\n]*)`)
 	// reSafeCompound marks compound appends (sel += v): a reassignment
 	// from a non-literal.
 	reSafeCompound = regexp.MustCompile(`\b(\w+)\s*(?:\+|-|\*|/|%|&&|\|\||\?\?|\*\*)=`)
-	// for (const X of ['a', 'b']) — every element a string literal.
-	reSafeForOf = regexp.MustCompile(`for\s*\(\s*(?:const|let|var)\s+(\w+)\s+of\s*\[((?:\s*(?:'[^']*'|"[^"]*")\s*,?)*)\]\s*\)`)
+	// reSafeForOfHead matches the head of a for…of loop over an array
+	// literal on the BLANK view (the elements are blanked there, so
+	// they are verified from Code by offset in safeIdentEvents).
+	reSafeForOfHead = regexp.MustCompile(`for\s*\(\s*(?:const|let|var)\s+(\w+)\s+of\s*\[`)
 	// reEscapeCall matches an escape call at the start of an operand:
 	// CSS.escape(, window.CSS.escape(, this.CSS.escape(, cssEscape(.
 	reEscapeCall = regexp.MustCompile(`^(?:(?:\w+\.)*CSS\.escape|cssEscape)\s*\(`)
@@ -679,6 +687,14 @@ func safeIdentEvents(code, blank string) []safeEvent {
 		if m[2] > 0 && code[m[2]-1] == '.' {
 			continue // obj.id = … assigns the member, not a binding named id
 		}
+		// Matched on Code (the RHS literal must stay visible — on Blank
+		// the \s* after '=' swallows a blanked literal whole), with the
+		// identifier cross-checked against Blank: assignment-shaped
+		// prose inside a string literal is blanked there and records
+		// nothing (review 8).
+		if blank[m[2]:m[3]] != name {
+			continue // 'Rebuilt sel = "fallback"' is prose, not an assignment
+		}
 		rhs := strings.TrimSpace(code[m[6]:m[7]])
 		if strings.HasPrefix(rhs, "=") { // == / === read through the '='
 			continue
@@ -689,46 +705,95 @@ func safeIdentEvents(code, blank string) []safeEvent {
 		if m[2] > 0 && code[m[2]-1] == '.' {
 			continue // obj.id += … compounds the member, not a binding named id
 		}
-		if name := code[m[2]:m[3]]; !jsKeywords[name] {
-			record(name, m[0], false, false, "")
+		name := code[m[2]:m[3]]
+		if jsKeywords[name] || blank[m[2]:m[3]] != name {
+			continue // keyword, or prose inside a string literal
 		}
+		record(name, m[0], false, false, "")
 	}
-	for _, m := range reSafeForOf.FindAllStringSubmatchIndex(code, -1) {
-		record(code[m[2]:m[3]], m[0], true, false, "")
+	for _, m := range reSafeForOfHead.FindAllStringSubmatchIndex(blank, -1) {
+		open := m[1] - 1 // the '[' of the iterable
+		close := matchDelimForward(blank, open)
+		if close < 0 {
+			continue
+		}
+		// The array's elements are read from Code by offset: every one
+		// must be a string literal for the loop variable to provably
+		// hold a literal (boot.js's eventType). A non-literal element
+		// — or prose shaped like a for-of header inside a string, which
+		// the blank view never matches — records nothing.
+		if !isLiteralStringArray(code[open+1 : close]) {
+			continue
+		}
+		record(blank[m[2]:m[3]], m[0], true, false, "")
 	}
 	for _, span := range scopes {
 		for _, name := range paramNames(blank, span[0]) {
 			record(name, span[0], false, false, "")
 		}
 	}
+	// Expression-bodied arrows (`(x) => expr`, `x => expr`) open no '{'
+	// scope, so the scopes loop never binds their parameters; a use of
+	// the name inside the expression then resolves to the enclosing
+	// scope's event and launders it (a file-scope literal through a
+	// same-named parameter). Record them over the arrow's own body span,
+	// from the '=>' to the enclosing boundary.
+	for _, loc := range reArrowTok.FindAllStringIndex(blank, -1) {
+		b := skipSpace(blank, loc[1])
+		if b >= len(blank) || blank[b] == '{' {
+			continue // block body: bound above through paramNames
+		}
+		end := exprArrowBodyEnd(blank, b)
+		for _, name := range arrowParams(blank, loc[0]+1) {
+			events = append(events, safeEvent{
+				name: name, scopeStart: loc[0], scopeEnd: end, pos: loc[0],
+			})
+		}
+	}
 	return events
+}
+
+// reArrowTok matches the arrow token on the blank view.
+var reArrowTok = regexp.MustCompile(`=>`)
+
+// exprArrowBodyEnd returns the end of the expression-bodied arrow
+// expression starting at from: the closer that dips below the arrow's
+// own depth, or the first ';', ',' or newline at it.
+func exprArrowBodyEnd(blank string, from int) int {
+	depth := 0
+	for i := from; i < len(blank); i++ {
+		switch blank[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			if depth == 0 {
+				return i
+			}
+			depth--
+		case ';', '\n', ',':
+			if depth <= 0 {
+				return i
+			}
+		}
+	}
+	return len(blank)
 }
 
 // paramNames extracts the parameter names of the function whose body
 // '{' sits at bodyOpen in view: the single identifier of a one-param
-// arrow (`x => {`) or, when a ')' precedes the '{', the comma-separated
-// parts of the parenthesized list — plain identifiers, rest params,
-// defaults, and destructuring bindings ({a, b: c} binds a and c). The
-// blank view carries the same offsets as the code view, so the offsets
-// recorded for these names line up with assignment events.
+// arrow (`x => {`) or, when a ')' precedes the '{' or the '=>' — a
+// parenthesised arrow `(x) => {` included — the comma-separated parts
+// of the parenthesized list: plain identifiers, rest params, defaults,
+// and destructuring bindings ({a, b: c} binds a and c). The blank view
+// carries the same offsets as the code view, so the offsets recorded
+// for these names line up with assignment events.
 func paramNames(view string, bodyOpen int) []string {
 	j := skipSpaceBack(view, bodyOpen-1)
 	if j < 0 {
 		return nil
 	}
-	if view[j] == '>' && j >= 1 && view[j-1] == '=' { // x => {
-		k := skipSpaceBack(view, j-2)
-		if k < 0 {
-			return nil
-		}
-		end := k + 1
-		for k >= 0 && isJSIdentChar(view[k]) {
-			k--
-		}
-		if name := view[k+1 : end]; name != "" && !jsKeywords[name] {
-			return []string{name}
-		}
-		return nil
+	if view[j] == '>' && j >= 1 && view[j-1] == '=' { // x => { or (…) => {
+		return arrowParams(view, j)
 	}
 	if view[j] != ')' {
 		return nil // every other function form's header ends in a parameter list
@@ -739,6 +804,36 @@ func paramNames(view string, bodyOpen int) []string {
 	}
 	var out []string
 	for _, part := range splitTopLevel(view[p+1:j], ',') {
+		out = append(out, bindingNames(part)...)
+	}
+	return out
+}
+
+// arrowParams extracts the parameter names of the arrow whose '>' sits
+// at gt in view: the single identifier of `x =>`, or the parts of the
+// parenthesized `(…)` list — plain identifiers, rest params, defaults,
+// and destructuring bindings.
+func arrowParams(view string, gt int) []string {
+	k := skipSpaceBack(view, gt-2)
+	if k < 0 {
+		return nil
+	}
+	if view[k] != ')' { // the single-identifier parameter
+		end := k + 1
+		for k >= 0 && isJSIdentChar(view[k]) {
+			k--
+		}
+		if name := view[k+1 : end]; name != "" && !jsKeywords[name] {
+			return []string{name}
+		}
+		return nil
+	}
+	p := matchDelimBack(view, k) // the parenthesized list of (…) =>
+	if p < 0 {
+		return nil
+	}
+	var out []string
+	for _, part := range splitTopLevel(view[p+1:k], ',') {
 		out = append(out, bindingNames(part)...)
 	}
 	return out
@@ -893,6 +988,18 @@ func rhsSafeForm(rhs string) bool {
 	return isEscapeCall(rhs)
 }
 
+// isLiteralStringArray reports whether the comma-separated text holds
+// only string-literal elements (['a', "b"]): the for-of form whose
+// loop variable provably holds a literal.
+func isLiteralStringArray(text string) bool {
+	for _, p := range splitTopLevel(text, ',') {
+		if !isJSStringLiteral(strings.TrimSpace(p)) {
+			return false
+		}
+	}
+	return true
+}
+
 // latestEvent returns the event that decides name's provenance at pos:
 // among the events before pos whose scope CONTAINS pos, the one from
 // the innermost scope wins, and within it the latest position wins. A
@@ -935,41 +1042,119 @@ func numericAt(events []safeEvent, name string, pos int) bool {
 
 // selectorUnsafeOperand inspects one selector argument and reports an
 // unescaped interpolated value, if the argument is a composite selector
-// expression (concatenation or template interpolation) carrying one.
+// expression carrying one: a top-level '+' concatenation, a template
+// interpolation, a parenthesised build, or a .join()/ .concat() call —
+// ['#head-', v].join(”), ('.a' + v) and `.a`.concat(v) build a
+// selector exactly like '+' does (review 8). A bare variable argument
+// is lint 5's shape and stays quiet here.
 func selectorUnsafeOperand(arg string, safe, numeric func(string) bool) (string, bool) {
-	ops := splitTopLevel(arg, '+')
-	hasTemplate := false
-	for _, op := range ops {
-		t := strings.TrimSpace(op)
-		if !strings.HasPrefix(t, "`") {
-			continue
-		}
-		hasTemplate = true
-		tpl := t[:templateEnd(t, 0)+1]
-		for j := 0; j+1 < len(tpl); j++ {
-			if tpl[j] == '$' && tpl[j+1] == '{' {
-				body, close := templateExprEnd(tpl, j+2)
-				b := strings.TrimSpace(body)
-				if !selectorOperandSafe(b, safe, numeric) {
-					return b, true
-				}
-				j = close
-			}
-		}
-	}
-	if len(ops) < 2 && !hasTemplate {
+	ops, build := selectorBuildOperands(arg, 0)
+	if !build {
 		return "", false // bare value or literal: no interpolation to judge
 	}
 	for _, op := range ops {
 		t := strings.TrimSpace(op)
-		if strings.HasPrefix(t, "`") {
-			continue // template operands handled above
+		if t == "" {
+			continue
 		}
 		if !selectorOperandSafe(t, safe, numeric) {
 			return t, true
 		}
 	}
 	return "", false
+}
+
+// selectorBuildOperands flattens one selector argument into the
+// operands that build it and reports whether the argument is a build
+// at all. A template decomposes into its literal chunks (quoted, so
+// they read as literals downstream) and interpolation bodies, which
+// stay WHOLE operands — the numeric-provenance rule judges `index +
+// 1` as one expression. A parenthesised sub-expression recurses into
+// its contents; a .join()/ .concat() tail call contributes its
+// receiver's elements and its arguments; a top-level '+' recurses into
+// each part. depth caps the recursion.
+func selectorBuildOperands(arg string, depth int) (ops []string, build bool) {
+	t := strings.TrimSpace(arg)
+	if depth > 4 || t == "" {
+		return []string{t}, false
+	}
+	if t[0] == '(' && matchDelimForward(t, 0) == len(t)-1 {
+		return selectorBuildOperands(t[1:len(t)-1], depth+1)
+	}
+	if joined, ok := callBuildOperands(t, depth); ok {
+		return joined, true
+	}
+	if strings.HasPrefix(t, "`") {
+		tpl := t[:min(templateEnd(t, 0)+1, len(t))]
+		parts := templateOperands(tpl)
+		for _, p := range parts {
+			if !isJSStringLiteral(p) {
+				build = true // an interpolation body is in the selector
+			}
+			ops = append(ops, p)
+		}
+		return ops, build
+	}
+	parts := splitTopLevel(t, '+')
+	if len(parts) < 2 {
+		return []string{t}, false
+	}
+	for _, p := range parts {
+		sub, _ := selectorBuildOperands(p, depth+1)
+		ops = append(ops, sub...)
+	}
+	return ops, true
+}
+
+// reJoinCall and reConcatCall match the two array-spelling builds, as
+// static run-once patterns like every other call matcher here.
+var (
+	reJoinCall   = regexp.MustCompile(`\.\s*join\s*\(`)
+	reConcatCall = regexp.MustCompile(`\.\s*concat\s*\(`)
+)
+
+// callBuildOperands splits a `.join('…')` or `.concat(…)` tail call
+// into its building operands: the join receiver's array elements (a
+// receiver named by an identifier contributes itself, provenance
+// invisible), or the concat receiver's own operands plus the call's
+// arguments. ok is false when t carries no such tail call.
+func callBuildOperands(t string, depth int) (ops []string, ok bool) {
+	for _, shape := range []struct {
+		name string
+		re   *regexp.Regexp
+	}{{"join", reJoinCall}, {"concat", reConcatCall}} {
+		for _, loc := range shape.re.FindAllStringIndex(t, -1) {
+			close := matchDelimForward(t, loc[1]-1)
+			if close != len(t)-1 {
+				continue // not the tail call
+			}
+			recv := strings.TrimSpace(t[:loc[0]])
+			args := t[loc[1]:close]
+			if recv == "" {
+				continue
+			}
+			if shape.name == "join" && strings.HasPrefix(recv, "[") {
+				if rb := matchDelimForward(recv, 0); rb == len(recv)-1 {
+					// [.lit, v].join(sep): the elements build the
+					// selector; the separator is a literal they join
+					// around.
+					ops = append(ops, splitTopLevel(recv[1:rb], ',')...)
+					ops = append(ops, splitTopLevel(args, ',')...)
+					return ops, true
+				}
+			}
+			if shape.name == "join" {
+				// parts.join(''): the receiver names the array.
+				return append(ops, recv, args), true
+			}
+			// concat: the receiver's own operands plus the arguments.
+			sub, _ := selectorBuildOperands(recv, depth+1)
+			ops = append(ops, sub...)
+			ops = append(ops, splitTopLevel(args, ',')...)
+			return ops, true
+		}
+	}
+	return nil, false
 }
 
 // selectorOperandSafe reports whether one concatenation operand or
@@ -1075,19 +1260,24 @@ func isNumericDotToken(tok string) bool {
 //   - writes and write-throughs (REG[x] = …, REG[x].member = …,
 //     compound assignments) and delete REG[x];
 //   - literal, numeric, and string-template indices (no dynamic key);
-//   - composite keys: an index expression that visibly concatenates,
-//     or an index identifier whose assignments in the file all
-//     concatenate (widgets.js's chrome-cache key name+'\0'+ctx) — a
-//     composite string can never equal a bare prototype property name;
+//   - composite keys: an index expression that visibly concatenates
+//     around a non-empty literal separator, or an index identifier
+//     whose assignments in the file all do (widgets.js's chrome-cache
+//     key name+'\0'+ctx) — only such a composite string can never
+//     equal a bare prototype property name; `name + ”` equals the
+//     bare value and `a + b` from two caller values can still be
+//     "constructor" (review 8);
 //   - indices bound by an enclosing for…in, matched by exact
 //     brace-matched loop span (however long the body): enumeration
 //     keys of an in-code registry (boot.js's module-scanner loop), not
 //     attribute input;
-//   - member-chain indices other than attribute reads: cfg.name and
-//     marker.name are catalog/marker-table-borne config values, out of
-//     scope exactly as the probe's surface list scopes them. A
-//     `.dataset.` member chain (el.dataset.name, el.dataset['name'])
-//     or a getAttribute( call IS attribute-borne and is checked
+//   - member-chain indices other than attribute or event reads:
+//     cfg.name and marker.name are catalog/marker-table-borne config
+//     values, out of scope exactly as the probe's surface list scopes
+//     them. A `.dataset.` member chain (el.dataset.name,
+//     el.dataset['name']), a getAttribute( call, or a `.detail` member
+//     read ((e.detail || {}).name — a CustomEvent's detail is
+//     page-script data, review 8) IS caller-borne and is checked
 //     (review 5);
 //   - guarded reads. The guard is the own-property idiom
 //     (Object.prototype.hasOwnProperty.call(REG, … / Object.hasOwn(REG,
@@ -1101,10 +1291,13 @@ func isNumericDotToken(tok string) bool {
 //     assigned exactly once in the enclosing function from that guard
 //     idiom and branched on (the compute-once spelling that avoids
 //     calling hasOwnProperty twice). A guard on a DIFFERENT registry
-//     does not count, and neither does `name in REG`: `in` walks the
-//     prototype chain, so with name == "constructor" it passes and the
-//     read still returns the inherited member — the operator is the
-//     bug, not a guard, and it is not recognized (review 5);
+//     does not count, and neither does one under a DIFFERENT KEY of
+//     the same registry (own(REG, first) guards nothing about
+//     REG[second] — review 8), and neither does `name in REG`: `in`
+//     walks the prototype chain, so with name == "constructor" it
+//     passes and the read still returns the inherited member — the
+//     operator is the bug, not a guard, and it is not recognized
+//     (review 5);
 //   - registries created with Object.create(null) (never collected:
 //     only {} initializers are).
 //
@@ -1142,7 +1335,7 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 	}
 	guards := newGuardMatcher(helpers)
 	for _, f := range files {
-		composite := compositeIndexIdents(f.Blank)
+		composite := compositeIndexIdents(f.Blank, f.Code)
 		spans := forInSpans(f.Blank)
 		reads := bracketReads(f.Blank)
 		lines := strings.Split(f.Blank, "\n")
@@ -1185,7 +1378,7 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 				if registryAccessIsDelete(f.Blank, start) {
 					continue
 				}
-				if registryGuardNearby(f, lines, name, start, guards) {
+				if registryGuardNearby(f, lines, name, idx, start, guards) {
 					continue
 				}
 				res.add(f.Path, f.lineOf(start),
@@ -1226,14 +1419,17 @@ var (
 
 // reAttrIndex matches an attribute-borne index expression: a .dataset
 // member chain (dot or bracket spelling — the bracket's string literal
-// is blank in this view, so only the shape is matched) or a
-// getAttribute( call.
-var reAttrIndex = regexp.MustCompile(`\.\s*dataset\s*(?:\.|\[)|getAttribute\s*\(`)
+// is blank in this view, so only the shape is matched), a getAttribute(
+// call, or a .detail member read. A CustomEvent's detail is
+// page-script data — any script can dispatch a name through it — so it
+// is checked like an attribute (popover.js's fui:widget-close index).
+var reAttrIndex = regexp.MustCompile(`\.\s*dataset\s*(?:\.|\[)|getAttribute\s*\(|\.\s*detail\b`)
 
 // attrBorneIndex reports whether a non-identifier bracket index is
-// itself attribute-borne (review 5's REGISTRY[el.dataset.name]): such
-// an index is checked exactly like an identifier index; every other
-// member chain (cfg.name) stays the declared silence.
+// itself caller-borne (review 5's REGISTRY[el.dataset.name], and
+// REGISTRY[(e.detail || {}).name]): such an index is checked exactly
+// like an identifier index; every other member chain (cfg.name) stays
+// the declared silence.
 func attrBorneIndex(idx string) bool {
 	return reAttrIndex.MatchString(idx)
 }
@@ -1274,21 +1470,30 @@ var jsKeywords = map[string]bool{
 }
 
 // compositeIndexIdents returns identifiers whose every assignment in
-// the file concatenates (RHS contains '+'): a value like
-// name+'\0'+ctx can never equal a bare prototype property name.
-func compositeIndexIdents(blank string) map[string]bool {
+// the file concatenates around a NON-EMPTY LITERAL SEPARATOR: a value
+// like name+'\0'+ctx can never equal a bare prototype property name,
+// but `name + ”` equals name exactly and `a + b` from two caller
+// values can still be "constructor" (review 8). Assignments are matched
+// on the Code view (the separator literal must stay visible) and a
+// match whose identifier is blanked on the Blank view is prose inside
+// a string literal, not an assignment.
+func compositeIndexIdents(blank, code string) map[string]bool {
 	assignments := map[string][]string{}
-	for _, m := range reIdentAssign.FindAllStringSubmatch(blank, -1) {
-		if jsKeywords[m[1]] {
+	for _, m := range reIdentAssign.FindAllStringSubmatchIndex(code, -1) {
+		name := code[m[2]:m[3]]
+		if jsKeywords[name] {
 			continue
 		}
-		assignments[m[1]] = append(assignments[m[1]], m[2])
+		if blank[m[2]:m[3]] != name {
+			continue // assignment-shaped prose in a string literal
+		}
+		assignments[name] = append(assignments[name], code[m[4]:m[5]])
 	}
 	composite := map[string]bool{}
 	for name, rhss := range assignments {
 		ok := len(rhss) > 0
 		for _, rhs := range rhss {
-			if !strings.Contains(rhs, "+") {
+			if !compositeRHSSeparated(rhs) {
 				ok = false
 				break
 			}
@@ -1298,6 +1503,33 @@ func compositeIndexIdents(blank string) map[string]bool {
 		}
 	}
 	return composite
+}
+
+// compositeRHSSeparated reports whether a concatenation RHS carries a
+// non-empty string-literal chunk among its top-level operands (a
+// template operand counts through its literal chunks): the separator
+// is what makes the joined value unable to equal a bare prototype
+// property name.
+func compositeRHSSeparated(rhs string) bool {
+	parts := splitTopLevel(rhs, '+')
+	if len(parts) < 2 {
+		return false
+	}
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if isJSStringLiteral(t) && len(t) > 2 {
+			return true
+		}
+		if strings.HasPrefix(t, "`") {
+			tpl := t[:min(templateEnd(t, 0)+1, len(t))]
+			for _, op := range templateOperands(tpl) {
+				if isJSStringLiteral(op) && len(op) > 2 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // isCompositeIndex reports whether the index identifier provably holds
@@ -1441,29 +1673,36 @@ func ownHelpers(blank string) []string {
 // patterns, compiled once per lint run, whose captured receiver is then
 // compared against the registry name — no per-name regex compilation,
 // so a corpus of R registry names per file costs zero extra compiles.
+// The captured KEY argument is compared against the read's index
+// expression too (review 8): own(REG, first) does not guard REG[second].
 // The `in` operator is deliberately absent (review 5): it walks the
 // prototype chain, so `name in REG` passes for name == "constructor"
 // and the read still returns the inherited member — the operator is
 // the bug this lint exists for, not a guard against it.
 type guardMatcher struct {
-	call   *regexp.Regexp // hasOwnProperty.call(RECV, / Object.hasOwn(RECV,
-	init   *regexp.Regexp // BOOL = <call idiom>(RECV,
+	call   *regexp.Regexp // hasOwnProperty.call(RECV, KEY / Object.hasOwn(RECV, KEY
+	init   *regexp.Regexp // BOOL = <call idiom>(RECV, KEY
 	helper []*regexp.Regexp
 }
 
 // receiverPattern matches a receiver: dotted parts, optional spaces.
 const receiverPattern = `(?:\w+\s*\.\s*)*\w+`
 
+// keyPattern captures a guard's key argument: anything up to the
+// argument's closing boundary (an identifier, a member chain, or a
+// small expression like (e.detail || {}).name).
+const keyPattern = `[^,)]+`
+
 func newGuardMatcher(helpers []string) *guardMatcher {
 	g := &guardMatcher{
-		call: regexp.MustCompile(`(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn)\s*\(\s*(` + receiverPattern + `)\s*,`),
+		call: regexp.MustCompile(`(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn)\s*\(\s*(` + receiverPattern + `)\s*,\s*(` + keyPattern + `)`),
 	}
 	callee := `(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn`
 	for _, h := range helpers {
 		callee += `|` + h
-		g.helper = append(g.helper, regexp.MustCompile(h+`\s*\(\s*(`+receiverPattern+`)\s*,`))
+		g.helper = append(g.helper, regexp.MustCompile(h+`\s*\(\s*(`+receiverPattern+`)\s*,\s*(`+keyPattern+`)`))
 	}
-	g.init = regexp.MustCompile(`(\w+)\s*=\s*(?:\w+\s*\.\s*)*` + callee + `)\s*\(\s*(` + receiverPattern + `)\s*,`)
+	g.init = regexp.MustCompile(`(\w+)\s*=\s*(?:\w+\s*\.\s*)*` + callee + `)\s*\(\s*(` + receiverPattern + `)\s*,\s*(` + keyPattern + `)`)
 	return g
 }
 
@@ -1483,21 +1722,42 @@ func receiverIs(recv, name string) bool {
 }
 
 // guarded reports whether text carries the own-property guard for the
-// registry name: the call idiom or a module-local own() helper.
-func (g *guardMatcher) guarded(text, name string) bool {
+// registry name AND the key the read indexes: the call idiom or a
+// module-local own() helper, whose key argument names the same
+// expression the read does (guardKeyIs). A guard on the same registry
+// under a different key guards nothing (review 8).
+func (g *guardMatcher) guarded(text, name, idx string) bool {
 	for _, m := range g.call.FindAllStringSubmatch(text, -1) {
-		if receiverIs(m[1], name) {
+		if receiverIs(m[1], name) && guardKeyIs(m[2], idx) {
 			return true
 		}
 	}
 	for _, re := range g.helper {
 		for _, m := range re.FindAllStringSubmatch(text, -1) {
-			if receiverIs(m[1], name) {
+			if receiverIs(m[1], name) && guardKeyIs(m[2], idx) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// guardKeyIs reports whether the key argument of a guard call names the
+// same expression the read indexes — whitespace-normalized text
+// equality, the spelling every audited site uses. "" never matches.
+func guardKeyIs(key, idx string) bool {
+	norm := func(s string) string {
+		var b strings.Builder
+		for _, r := range s {
+			if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+				continue
+			}
+			b.WriteRune(r)
+		}
+		return b.String()
+	}
+	k := norm(key)
+	return k != "" && k == norm(idx)
 }
 
 // reIfLine requires an if-condition on a line before a guard boolean
@@ -1520,11 +1780,14 @@ var reIfLine = regexp.MustCompile(`\bif\s*\(`)
 //     from a guard on a DIFFERENT registry is not a guard for this
 //     one, and a boolean from another function never applies.
 //
+// Every form must name the SAME KEY the read indexes (review 8): a
+// guard computed for one key does not guard a read of another.
+//
 // lines is the file's line index, computed once per file by the caller:
 // this runs per candidate read, and splitting the whole Blank view
 // here cost O(bytes·reads).
-func registryGuardNearby(f jsSource, lines []string, name string, pos int, g *guardMatcher) bool {
-	if cond := enclosingCondition(f.Blank, pos); g.guarded(cond, name) || g.guardBooleanIn(f.Blank, pos, cond, name) {
+func registryGuardNearby(f jsSource, lines []string, name, idx string, pos int, g *guardMatcher) bool {
+	if cond := enclosingCondition(f.Blank, pos); g.guarded(cond, name, idx) || g.guardBooleanIn(f.Blank, pos, cond, name, idx) {
 		return true
 	}
 	line := f.lineOf(pos)
@@ -1532,7 +1795,7 @@ func registryGuardNearby(f jsSource, lines []string, name string, pos int, g *gu
 		if n < 1 || n > len(lines) {
 			return false
 		}
-		return g.guarded(lines[n-1], name)
+		return g.guarded(lines[n-1], name, idx)
 	}
 	if check(line) {
 		return true
@@ -1545,7 +1808,7 @@ func registryGuardNearby(f jsSource, lines []string, name string, pos int, g *gu
 			// The previous non-blank line's if condition referencing a
 			// compute-once guard boolean (`if (!known) return null;`
 			// above the read).
-			return reIfLine.MatchString(lines[n-1]) && g.guardBooleanIn(f.Blank, pos, lines[n-1], name)
+			return reIfLine.MatchString(lines[n-1]) && g.guardBooleanIn(f.Blank, pos, lines[n-1], name, idx)
 		}
 	}
 	return false
@@ -1553,8 +1816,9 @@ func registryGuardNearby(f jsSource, lines []string, name string, pos int, g *gu
 
 // guardBooleanIn reports whether cond (a condition text or a line)
 // references a boolean that was assigned exactly once, inside the
-// function enclosing pos, from the guard idiom on THIS registry name.
-func (g *guardMatcher) guardBooleanIn(blank string, pos int, cond, name string) bool {
+// function enclosing pos, from the guard idiom on THIS registry name
+// AND key (review 8).
+func (g *guardMatcher) guardBooleanIn(blank string, pos int, cond, name, idx string) bool {
 	if cond == "" {
 		return false
 	}
@@ -1567,7 +1831,7 @@ func (g *guardMatcher) guardBooleanIn(blank string, pos int, cond, name string) 
 		}
 	}
 	for _, m := range g.init.FindAllStringSubmatch(region, -1) {
-		if jsKeywords[m[1]] || counts[m[1]] != 1 || !receiverIs(m[2], name) {
+		if jsKeywords[m[1]] || counts[m[1]] != 1 || !receiverIs(m[2], name) || !guardKeyIs(m[3], idx) {
 			continue
 		}
 		if containsWord(cond, m[1]) {
@@ -1701,34 +1965,41 @@ func skipSpaceBack(s string, i int) int {
 // The audited fix (e936f791) gated sortablelist's conflict-recovery
 // refresh with `if (!r.ok) throw`.
 //
-// A mount is: an innerHTML/outerHTML assignment — simple or compound
-// (`=`, `+=`, every compound operator; review 5's innerHTML +=), an
-// insertAdjacentHTML( call, a helper named exactly `mount`, a helper
-// whose name starts with `mount` followed by an upper-case letter
-// (mountWidget), or one of the runtime's own swap helpers, grepped
-// from core-ui/runtime/src and frag: swapPane (panehost.js),
-// swapAtSlot, swapShell (nav.js). An explicit list, because
-// "any identifier containing mount or swap" reported string transforms
-// like swapCase( (review 5) — a name is not a markup sink.
+// A mount is: an innerHTML/outerHTML/srcdoc assignment — simple or
+// compound (`=`, `+=`, every compound operator; review 5's innerHTML
+// +=), an insertAdjacentHTML( call, a markup-parser handoff
+// (DOMParser().parseFromString(, document.write(ln)( — response text
+// in front of the HTML parser mounts like innerHTML), a helper named
+// exactly `mount`, a helper whose name starts with `mount` followed by
+// an upper-case letter (mountWidget), or one of the runtime's own swap
+// helpers, grepped from core-ui/runtime/src and frag: swapPane
+// (panehost.js), swapAtSlot, swapShell (nav.js). An explicit list,
+// because "any identifier containing mount or swap" reported string
+// transforms like swapCase( (review 5) — a name is not a markup sink.
 //
 // Silent on:
-//   - chains gated on the response (review 6 split the forms): a
-//
-// whole-token .ok read used as a condition — negated (!r.ok),
-// compared, inside an if/while condition, or feeding a ternary /
-// && / || — or a .status COMPARISON that admits only a 2xx
-// response: === 2xx, an upper bound under 400 (< 300, <= 299),
-// or >= 200 conjoined with such an upper bound. Bare .status
-// truthiness passes for 404 and 500 and is not a gate, and
-// neither is < 400 (every redirect) nor a bare >= 200;
+//   - chains gated on the response WHERE THE GATE DOMINATES the body
+//     read or the mount (review 8): a whole-token .ok read, or a
+//     COMPARISON that admits only a 2xx response (=== 2xx, an upper
+//     bound under 400 (< 300, <= 299), or >= 200 conjoined with such
+//     an upper bound — bare .status truthiness passes for 404 and 500
+//     and is not a gate, and neither is < 400 (every redirect) nor a
+//     bare >= 200), in the condition of an if/while whose branch
+//     carries the read/mount or rejects execution (if (!r.ok) throw —
+//     only the gated path continues), in a ternary's arms, or in the
+//     right operand of a &&/|| the gate feeds. A display-only read —
+//     badge.textContent = r.ok ? '✓' : '✗' before an ungated
+//     r.text() — controls nothing and is not a gate;
 //   - await/multi-statement flows (const r = await fetch(…); …) — the
 //     chain ends at the statement boundary and the mount lives in
 //     later statements; those sites are pinned individually by the
 //     probe's surface list instead;
 //   - chains that never read the body or never mount. A continuation
 //     passed by bare reference (.then(bind)) contributes the named
-//     function's same-file body to the mount and gate scans; a name
-//     not declared in the file stays silent as today.
+//     function's same-file body to the mount and gate scans — braced
+//     and expression-bodied arrows both resolve (review 8). A
+//     this.method reference resolves in its enclosing class; other
+//     unresolved names contribute no body.
 func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -1749,10 +2020,10 @@ func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 			if !reBodyRead.MatchString(span) {
 				continue
 			}
-			// A bare-reference continuation puts the mount in the
+			// A named continuation puts the mount in the
 			// named function's body, one declaration away: include it
 			// in the mount and gate scans.
-			scan := span + namedThenBodies(f.Blank, span)
+			scan := span + namedThenBodies(f.Blank, span, loc[0])
 			if responseGateIn(scan) {
 				continue
 			}
@@ -1770,14 +2041,19 @@ var (
 	reFetchCall = regexp.MustCompile(`\bfetch\s*\(`)
 	reBodyRead  = regexp.MustCompile(`\.(?:text|json)\s*\(\s*\)`)
 	// reHTMLMount matches a DOM-markup mount: any assignment operator
-	// (simple or compound) to innerHTML/outerHTML, insertAdjacentHTML(,
-	// a helper named exactly `mount`, a helper whose name starts with
-	// `mount` + an upper-case letter, or one of the runtime's own swap
-	// helpers (swapPane in panehost.js; swapAtSlot, swapShell in
-	// nav.js). An explicit list — `swapCase(` and friends are string
-	// transforms, not markup sinks (review 5).
-	reHTMLMount = regexp.MustCompile(`(?:innerHTML|outerHTML)\s*(?:\?\?=|\*\*=|>>>=|<<=|>>=|&&=|\|\|=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|=[^=])` +
+	// (simple or compound) to innerHTML/outerHTML or an iframe srcdoc,
+	// insertAdjacentHTML(, a helper named exactly `mount`, a helper
+	// whose name starts with `mount` + an upper-case letter, one of the
+	// runtime's own swap helpers (swapPane in panehost.js; swapAtSlot,
+	// swapShell in nav.js), or a markup-parser handoff —
+	// DOMParser().parseFromString( and document.write(ln)( — which put
+	// response text in front of the HTML parser exactly like innerHTML.
+	// An explicit list — `swapCase(` and friends are string transforms,
+	// not markup sinks (review 5).
+	reHTMLMount = regexp.MustCompile(`(?:innerHTML|outerHTML|srcdoc)\s*(?:\?\?=|\*\*=|>>>=|<<=|>>=|&&=|\|\|=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|=[^=])` +
 		`|insertAdjacentHTML\s*\(` +
+		`|new\s+DOMParser\s*\(\s*\)\s*\.\s*parseFromString\s*\(` +
+		`|document\s*\.\s*write(?:ln)?\s*\(` +
 		`|\bmount\s*\(` +
 		`|\bmount[A-Z]\w*\s*\(` +
 		`|\bswapPane\s*\(` +
@@ -1785,32 +2061,102 @@ var (
 		`|\bswapShell\s*\(`)
 )
 
-var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(\w+)\s*\)`)
+var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(this\s*\.\s*)?(\w+)\s*\)`)
+var reClassBody = regexp.MustCompile(`\bclass\b[^{};]*\{`)
+var reClassCallable = regexp.MustCompile(`^(?:(static)\s+)?(?:async\s+)?(\w+)\s*(?:\([^)]*\)\s*\{|=\s*(?:async\s+)?(?:function(?:\s+\w+)?\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>|\w+\s*=>))`)
 
 // namedThenBodies appends the bodies of same-file functions passed to
 // .then( by bare reference inside the chain span: the fetched text is
 // handed to them by name, so their bodies are part of the chain's
 // mount and gate surface. Function declarations and const-arrow forms
-// both resolve; an unresolved name (imported, or not a function)
-// contributes nothing.
-func namedThenBodies(blank, span string) string {
+// both resolve — braced bodies by brace matching, expression-bodied
+// arrows (`const render = t => el.innerHTML = t`) to their statement
+// end (review 8). A this.method reference resolves only against the
+// innermost enclosing class, never a same-named method in another class.
+func namedThenBodies(blank, span string, position int) string {
 	var b strings.Builder
 	for _, m := range reThenIdent.FindAllStringSubmatch(span, -1) {
-		name := regexp.QuoteMeta(m[1])
-		decl := regexp.MustCompile(`(?:function\s+` + name + `\s*\([^)]*\)\s*\{` +
-			`|(?:const|let|var)\s+` + name + `\s*=\s*(?:async\s+)?(?:function\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>\s*\{))`)
-		loc := decl.FindStringIndex(blank)
-		if loc == nil {
+		name := regexp.QuoteMeta(m[2])
+		if m[1] != "" {
+			b.WriteString(classThenBody(blank, name, position))
 			continue
 		}
-		open := loc[1] - 1 // the '{' the declaration form ends on
-		end := matchDelimForward(blank, open)
-		if end < 0 {
+		braced := regexp.MustCompile(`(?:function\s+` + name + `\s*\([^)]*\)\s*\{` +
+			`|(?:const|let|var)\s+` + name + `\s*=\s*(?:async\s+)?(?:function\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>\s*\{|\w+\s*=>\s*\{))`)
+		if loc := braced.FindStringIndex(blank); loc != nil {
+			open := loc[1] - 1 // the '{' the declaration form ends on
+			if end := matchDelimForward(blank, open); end >= 0 {
+				b.WriteString(blank[open : end+1])
+			}
 			continue
 		}
-		b.WriteString(blank[open : end+1])
+		// Expression-bodied arrow: `const render = t => el.innerHTML = t`
+		// (single or parenthesised parameters). The body runs from the
+		// '=>' to the statement end.
+		expr := regexp.MustCompile(`(?:const|let|var)\s+` + name + `\s*=\s*(?:async\s+)?(?:\([^)]*\)|\w+)\s*=>`)
+		if loc := expr.FindStringIndex(blank); loc != nil {
+			from := skipSpace(blank, loc[1])
+			if end := statementEnd(blank, from); end > from {
+				b.WriteString(blank[from:end])
+			}
+		}
 	}
 	return b.String()
+}
+
+func classThenBody(blank, name string, position int) string {
+	classOpen, classClose := -1, -1
+	for _, location := range reClassBody.FindAllStringIndex(blank, -1) {
+		open := location[1] - 1
+		if open >= position {
+			break
+		}
+		if close := matchDelimForward(blank, open); close > position {
+			classOpen, classClose = open, close
+		}
+	}
+	if classOpen < 0 {
+		return ""
+	}
+	targetBodies := map[bool]string{}
+	var callerStatic, callerKnown bool
+	for cursor := classOpen + 1; cursor < classClose; cursor++ {
+		if location := reClassCallable.FindStringSubmatchIndex(blank[cursor:classClose]); location != nil && (cursor == classOpen+1 || !isJSIdentChar(blank[cursor-1])) {
+			open := cursor + location[1] - 1
+			if blank[open] != '{' {
+				open = skipSpace(blank, open+1)
+			}
+			if open >= classClose {
+				break
+			}
+			end := classClose
+			if blank[open] == '{' {
+				if close := matchDelimForward(blank, open); close >= 0 {
+					end = close + 1
+				}
+			} else {
+				end = min(statementEnd(blank, open), classClose)
+			}
+			static := location[2] >= 0
+			if open <= position && position < end {
+				callerStatic, callerKnown = static, true
+			}
+			if blank[cursor+location[4]:cursor+location[5]] == name {
+				targetBodies[static] = blank[open:end]
+			}
+			cursor = end - 1
+			continue
+		}
+		if strings.ContainsRune("({[", rune(blank[cursor])) {
+			if close := matchDelimForward(blank, cursor); close >= 0 {
+				cursor = close
+			}
+		}
+	}
+	if callerKnown {
+		return targetBodies[callerStatic]
+	}
+	return ""
 }
 
 // reResponseToken matches a .ok / .status member read as a whole token:
@@ -1821,41 +2167,179 @@ var reResponseToken = regexp.MustCompile(`\.\s*(?:ok|status)\b`)
 // .status gates can be judged by different rules (review 6).
 var reStatusToken = regexp.MustCompile(`\.\s*status\b`)
 
-// responseGateIn reports whether the chain text actually gates on the
-// response. A whole-token .ok read used as a condition counts as
-// before — negated (!r.ok), compared, inside an if/while condition (if
-// (resp.ok)), or feeding a ternary / && / ||. A .status read counts
-// only as a comparison that admits ONLY a successful response (review
-// 6): equality to a 2xx literal (r.status === 200), an upper bound
-// under the client errors (r.status < 300, r.status <= 299), or a
-// lower bound of 200 conjoined with such an upper bound (r.status >=
-// 200 && r.status < 300). Bare .status truthiness (if (r.status)) is
-// true for 404 and 500 and is not a gate; r.status < 400 still admits
-// every redirect, and a bare r.status >= 200 admits the whole error
-// half of the range. Displaying the value (r.statusText, r.okButton)
-// or passing it to a function is not a gate.
+// responseGateIn reports whether the chain text gates the body read or
+// the mount on the response. A gate counts only where it DOMINATES one
+// of them (review 8's model, the one lint 4's gates use): a judged
+// .ok/.status read in the condition of an if/while whose branch
+// carries the read or the mount, or rejects execution (return / throw
+// / continue — the family's `if (!r.ok) throw` spelling, where only
+// the gated path continues); a ternary whose arms carry one; or the
+// right operand of a &&/|| the gate feeds. A .ok read that only paints
+// a badge (badge.textContent = r.ok ? '✓' : '✗') controls nothing
+// downstream and is not a gate.
+//
+// .status is judged as before (review 6): only a comparison that
+// admits a 2xx response alone — equality to a 2xx literal (either
+// polarity), an upper bound under the client errors (< 300, <= 299),
+// or a >= 200 lower bound conjoined with such an upper bound. Bare
+// .status truthiness passes for 404 and 500, < 400 admits every
+// redirect, and a bare >= 200 admits the whole error half.
 func responseGateIn(span string) bool {
-	for _, m := range reResponseToken.FindAllStringIndex(span, -1) {
-		if reStatusToken.MatchString(span[m[0]:m[1]]) {
-			// A .status token (the match is ".status", not ".ok").
-			if statusCompAdmitsOnly2xx(span, m[0], m[1]) {
-				return true
-			}
+	return ifGatesResponse(span) || shortCircuitGatesResponse(span)
+}
+
+// reIfWhileOpen matches an if/while condition opener.
+var reIfWhileOpen = regexp.MustCompile(`\b(?:if|while)\s*\(`)
+
+// ifGatesResponse reports whether an if/while condition in span holds
+// a judged gate whose branch carries the body read or the mount, or
+// rejects execution so only the gated path continues.
+func ifGatesResponse(span string) bool {
+	for _, loc := range reIfWhileOpen.FindAllStringIndex(span, -1) {
+		open := loc[1] - 1
+		close := matchDelimForward(span, open)
+		if close < 0 {
 			continue
 		}
-		// A .ok token: any condition use counts.
-		if i := skipSpace(span, m[1]); i < len(span) && gateOpRight(span, i) {
-			return true
+		if !textHasGate(span[open+1 : close]) {
+			continue
 		}
-		j := memberExprStart(span, m[0])
-		if k := skipSpaceBack(span, j-1); k >= 0 && gateOpLeft(span, k) {
-			return true
+		b := skipSpace(span, close+1)
+		if b >= len(span) {
+			continue
 		}
-		if insideIfCondition(span, m[0]) {
+		tEnd := b
+		if span[b] == '{' {
+			if e := matchDelimForward(span, b); e >= 0 {
+				tEnd = e
+			}
+		} else if e := statementEnd(span, b); e < len(span) {
+			tEnd = e
+		}
+		branch := span[b:min(tEnd+1, len(span))]
+		if reBodyRead.MatchString(branch) || reHTMLMount.MatchString(branch) || branchRejects(branch) {
 			return true
 		}
 	}
 	return false
+}
+
+// shortCircuitGatesResponse reports whether a ternary or a &&/|| in
+// span holds a judged gate on its deciding side and the body read or
+// the mount on the other: `r.ok ? r.text() : reject()`,
+// `r.ok && r.text()`.
+func shortCircuitGatesResponse(span string) bool {
+	for i := 0; i < len(span); i++ {
+		switch span[i] {
+		case '\'', '"', '`':
+			i = skipQuoted(span, i)
+		case '?':
+			if optionalOrCoalesce(span, i) {
+				continue
+			}
+			if textHasGate(span[condStart(span, i):i]) {
+				arms := span[i+1 : operandEnd(span, i+1)]
+				if reBodyRead.MatchString(arms) || reHTMLMount.MatchString(arms) {
+					return true
+				}
+			}
+		case '&', '|':
+			if i+1 >= len(span) || span[i+1] != span[i] {
+				continue // not && / ||
+			}
+			if textHasGate(span[condStart(span, i):i]) {
+				right := span[i+2 : operandEnd(span, i+2)]
+				if reBodyRead.MatchString(right) || reHTMLMount.MatchString(right) {
+					return true
+				}
+			}
+			i++ // past the operator's second byte
+		}
+	}
+	return false
+}
+
+// textHasGate reports whether text carries a judged gate token: a
+// whole-token .ok read, or a .status read compared so only a 2xx
+// response satisfies it (statusCompAdmitsOnly2xx).
+func textHasGate(text string) bool {
+	for _, m := range reResponseToken.FindAllStringIndex(text, -1) {
+		if reStatusToken.MatchString(text[m[0]:m[1]]) {
+			if statusCompAdmitsOnly2xx(text, m[0], m[1]) {
+				return true
+			}
+			continue
+		}
+		return true // a whole-token .ok read in condition position
+	}
+	return false
+}
+
+// optionalOrCoalesce reports whether the '?' at i is part of ?. or ??
+// rather than a ternary.
+func optionalOrCoalesce(s string, i int) bool {
+	if i+1 < len(s) && (s[i+1] == '.' || s[i+1] == '?') {
+		return true
+	}
+	return i > 0 && s[i-1] == '?'
+}
+
+// condStart returns the offset where the condition ending at i (a
+// ternary '?' or a &&/|| operator) begins: the previous statement,
+// sequence, assignment, or bracket boundary at the same nesting depth
+// (an arrow's '=>' included — `r => r.ok ? …`), or 0.
+func condStart(span string, i int) int {
+	depth := 0
+	for j := i - 1; j >= 0; j-- {
+		switch span[j] {
+		case ')', ']', '}':
+			depth++
+		case '(', '[', '{':
+			if depth == 0 {
+				return j + 1
+			}
+			depth--
+		case ',', ';', ':', '?', '&', '|':
+			if depth == 0 {
+				return j + 1
+			}
+		case '=':
+			// the '=>' of an arrow parameter list ends the condition
+			if depth == 0 {
+				return j + 1
+			}
+		}
+	}
+	return 0
+}
+
+// operandEnd returns the offset where the expression starting at from
+// ends: the first ',', ';', ':', ternary '?', or closing delimiter at
+// the expression's own nesting depth, or len(span).
+func operandEnd(span string, from int) int {
+	depth := 0
+	for i := from; i < len(span); i++ {
+		switch span[i] {
+		case '\'', '"', '`':
+			i = skipQuoted(span, i)
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			if depth == 0 {
+				return i
+			}
+			depth--
+		case ',', ';', ':':
+			if depth == 0 {
+				return i
+			}
+		case '?':
+			if depth == 0 && !optionalOrCoalesce(span, i) {
+				return i
+			}
+		}
+	}
+	return len(span)
 }
 
 // reCmpOpAt matches a comparison operator at the start of s.
@@ -1967,39 +2451,6 @@ func mirrorCmp(op string) string {
 	return op
 }
 
-// gateOpRight reports whether a comparison, ternary, or logical
-// operator starts at i.
-func gateOpRight(s string, i int) bool {
-	for _, op := range []string{"===", "!==", "==", "!=", "<=", ">=", "&&", "||", "?", "<", ">"} {
-		if !strings.HasPrefix(s[i:], op) {
-			continue
-		}
-		// The '>' of an arrow (=>) is not a comparison.
-		if op == ">" && i > 0 && s[i-1] == '=' {
-			return false
-		}
-		return true
-	}
-	return false
-}
-
-// gateOpLeft reports whether the operator ending at k (immediately
-// left of the member expression) is a negation or a comparison.
-func gateOpLeft(s string, k int) bool {
-	switch s[k] {
-	case '!':
-		return true
-	case '=':
-		return k >= 1 && strings.IndexByte("=!<>", s[k-1]) >= 0
-	case '&', '|':
-		return k >= 1 && (s[k-1] == s[k])
-	case '<', '>':
-		return !(s[k] == '>' && k >= 1 && s[k-1] == '=') // not the '>' of =>
-	default:
-		return false
-	}
-}
-
 // memberExprStart returns the index where the member expression
 // containing the '.' at dot begins.
 func memberExprStart(s string, dot int) int {
@@ -2008,29 +2459,6 @@ func memberExprStart(s string, dot int) int {
 		j--
 	}
 	return j + 1
-}
-
-// insideIfCondition reports whether pos sits inside the parenthesized
-// condition of an if/while.
-func insideIfCondition(s string, pos int) bool {
-	depth := 0
-	for i := pos - 1; i >= 0; i-- {
-		switch s[i] {
-		case ')', ']', '}':
-			depth++
-		case '(', '[', '{':
-			if depth > 0 {
-				depth--
-				continue
-			}
-			if s[i] != '(' {
-				return false // left the condition region via a block
-			}
-			w := wordBefore(s, i)
-			return w == "if" || w == "while"
-		}
-	}
-	return false
 }
 
 // chainEnd extends a fetch call's closing paren through its .then(…)
@@ -2093,11 +2521,17 @@ func concatPathPairs(expr string) [][2]string {
 
 // templateOperands splits one template literal into its alternating
 // literal chunks (quoted, so they read as string literals downstream)
-// and interpolation bodies.
+// and interpolation bodies. A truncated template (a lone backtick at
+// the end of malformed input) has no inner span and yields nothing
+// (review 8): templateEnd returns len-1, which for a one-byte tpl is 0
+// and used to slice tpl[1:0] and panic.
 func templateOperands(tpl string) []string {
 	end := templateEnd(tpl, 0)
 	if end >= len(tpl) {
 		end = len(tpl) - 1
+	}
+	if end < 1 {
+		return nil // a lone backtick: no inner span to split
 	}
 	inner := tpl[1:end] // between the backticks
 	var ops []string
@@ -2194,7 +2628,7 @@ func LintAttributePathSegments(roots ...string) (*Result, error) {
 				if v == "" {
 					continue
 				}
-				if attrPathGated(f.Code, v, regexConsts, site.start) {
+				if attrPathGated(f.Code, f.Blank, v, regexConsts, site.start) {
 					continue
 				}
 				res.add(f.Path, f.lineOf(site.start),
@@ -2305,7 +2739,11 @@ func topLevelComma(code string, from, to int) int {
 
 // statementEnd returns the offset of the ';' (or newline) at bracket
 // depth zero starting the statement at from, skipping string and
-// template-literal contents.
+// template-literal contents. A newline only ends the statement when the
+// line before it closes its expression: Prettier wraps long builds
+// after a binary operator, a comma, a member dot, or an opening
+// delimiter, and the operand past the wrap is still part of the
+// statement (closedExprTail).
 func statementEnd(code string, from int) int {
 	depth := 0
 	for i := from; i < len(code); i++ {
@@ -2316,13 +2754,40 @@ func statementEnd(code string, from int) int {
 			depth--
 		case '\'', '"', '`':
 			i = skipQuoted(code, i)
-		case ';', '\n':
+		case ';':
 			if depth == 0 {
+				return i
+			}
+		case '\n':
+			if depth == 0 && closedExprTail(code, i) {
 				return i
 			}
 		}
 	}
 	return len(code)
+}
+
+// closedExprTail reports whether the line ending at nl ends a complete
+// expression: its last non-space byte is not a binary operator, comma,
+// member dot, ternary mark, assignment, or opening delimiter. A postfix
+// ++/-- is a closed tail; an infix + or - is not.
+func closedExprTail(code string, nl int) bool {
+	for i := nl - 1; i >= 0; i-- {
+		switch code[i] {
+		case ' ', '\t', '\r':
+			continue
+		case '\n':
+			return true // a blank line continues nothing
+		}
+		if code[i] == '+' || code[i] == '-' {
+			if i > 0 && code[i-1] == code[i] {
+				return true // ++ / -- postfix
+			}
+			return false
+		}
+		return !strings.ContainsRune("*/%,.?:&|^=<>([{!", rune(code[i]))
+	}
+	return true
 }
 
 // pathLiteralEndsInSlash reports whether lit is a string literal whose
@@ -2375,15 +2840,18 @@ var reNumericCoerce = regexp.MustCompile(`^(?:Number|parseInt|parseFloat)\s*\(`)
 
 // attributeBorneValue returns the value text when val is an
 // attribute-borne identifier or contains an attribute read directly;
-// "" when the value is neither — or is sanitized: wrapped in
+// "" when the value is neither — or is sanitized: wrapped WHOLE in
 // encodeURIComponent(…), or numerically coerced (Number/parseInt/
 // parseFloat of the read yields a number or NaN, never a traversal
-// segment — review 5).
+// segment — review 5). The encode must be the whole operand, the twin
+// of lint 1's CSS.escape rule: a ternary arm that skips it
+// (small ? encodeURIComponent(a) : el.dataset.b) still carries the raw
+// value when the condition goes the other way (review 8).
 func attributeBorneValue(val string, attrVars map[string]bool) string {
-	if strings.Contains(val, "encodeURIComponent(") {
-		return ""
-	}
 	v := strings.TrimSpace(val)
+	if isEncodedCall(v) {
+		return "" // encodeURIComponent(…) as the WHOLE operand
+	}
 	if reNumericCoerce.MatchString(v) {
 		return ""
 	}
@@ -2416,17 +2884,20 @@ var reIfOpen = regexp.MustCompile(`\bif\s*\(`)
 // value v DOMINATES the URL construction at pos (review 6): the gate
 // sits in the condition of an if whose branch CONTAINS the
 // construction — the check necessarily ran and passed on the path that
-// builds the URL — or in an earlier if of a block enclosing the
-// construction whose failure branch REJECTS execution (return /
-// throw), so only validated values continue. A matching check in an
-// unrelated earlier branch constrains nothing (that branch can be
+// builds the URL, so a NEGATED gate does not count there (the branch
+// then runs when the check failed; review 8) — or in an earlier if of
+// a block enclosing the construction whose failure branch REJECTS
+// execution (return / throw), so only validated values continue (a
+// negated gate is that arm's canonical spelling). A matching check in
+// an unrelated earlier branch constrains nothing (that branch can be
 // skipped), a gate that only sets a flag constrains nothing, and a
 // gate after pos cannot un-send the request (review 5). For an inline
 // attribute read (not a bare variable) any regex .test( counts: there
 // is no variable to match.
-func attrPathGated(code, v string, regexConsts map[string]string, pos int) bool {
+func attrPathGated(code, blank, v string, regexConsts map[string]string, pos int) bool {
 	start, _ := enclosingFunction(code, pos)
 	body := code[start:]
+	blankBody := blank[start:]
 	pos0 := pos - start
 	ident := `\w+`
 	if isJSIdent(v) {
@@ -2439,19 +2910,37 @@ func attrPathGated(code, v string, regexConsts map[string]string, pos int) bool 
 	reTest := regexp.MustCompile(`(?:(/[^/\n]+/[a-z]*)|(\w+))\s*\.\s*test\s*\(\s*` + ident + `\b`)
 	reAllow := regexp.MustCompile(`\w+\s*\[\s*` + ident + `\s*\]`)
 	reHas := regexp.MustCompile(`\w+\s*\.\s*has\s*\(\s*` + ident + `\b`)
-	gateIn := func(cond string) bool {
-		for _, m := range reTest.FindAllStringSubmatch(cond, -1) {
-			if m[1] != "" {
-				if regexGateAnchored(m[1]) {
+	// gateIn reports whether cond carries a gate on v; positiveOnly
+	// refuses a gate under a negation (gateNegated).
+	gateIn := func(cond string, positiveOnly bool) bool {
+		for _, m := range reTest.FindAllStringSubmatchIndex(cond, -1) {
+			if positiveOnly && gateNegated(cond, m[0], m[1]) {
+				continue
+			}
+			inline := ""
+			if m[2] >= 0 { // the inline literal group participated
+				inline = cond[m[2]:m[3]]
+			}
+			if inline != "" {
+				if regexGateAnchored(inline) {
 					return true
 				}
 				continue
 			}
-			if lit, ok := regexConsts[m[2]]; ok && regexGateAnchored(lit) {
-				return true
+			if m[4] >= 0 { // the constant-name group participated
+				if lit, ok := regexConsts[cond[m[4]:m[5]]]; ok && regexGateAnchored(lit) {
+					return true
+				}
 			}
 		}
-		return reAllow.MatchString(cond) || reHas.MatchString(cond)
+		for _, re := range []*regexp.Regexp{reAllow, reHas} {
+			for _, m := range re.FindAllStringIndex(cond, -1) {
+				if !positiveOnly || !gateNegated(cond, m[0], m[1]) {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
 		if loc[0] >= pos0 {
@@ -2462,9 +2951,7 @@ func attrPathGated(code, v string, regexConsts map[string]string, pos int) bool 
 		if close < 0 || close >= pos0 {
 			continue
 		}
-		if !gateIn(body[open+1 : close]) {
-			continue
-		}
+		cond := body[open+1 : close]
 		b := skipSpace(body, close+1)
 		if b >= len(body) {
 			continue
@@ -2477,12 +2964,43 @@ func attrPathGated(code, v string, regexConsts map[string]string, pos int) bool 
 		} else if e := statementEnd(body, b); e < len(body) {
 			tEnd = e
 		}
-		if b <= pos0 && pos0 <= tEnd {
-			return true // the branch that builds the URL ran the gate
+		if b <= pos0 && pos0 <= tEnd && gateIn(cond, true) {
+			return true // the branch that builds the URL ran the gate and it held
 		}
-		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(body, tEnd+1, pos0) {
+		if tEnd < pos0 && gateIn(cond, false) && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
 			return true // the gate's failures left; only validated values continue
 		}
+	}
+	return false
+}
+
+// gateNegated reports whether the gate match s[start:end] sits under a
+// negation: a '!' immediately before it, or a comparison against the
+// opposite boolean literal after it (=== false, !== true). The
+// containment arm refuses negated gates — that branch runs when the
+// check FAILED — while the reject arm keeps them (`if (!RE.test(v))
+// return` is its canonical spelling, review 8).
+func gateNegated(s string, start, end int) bool {
+	if k := skipSpaceBack(s, start-1); k >= 0 && s[k] == '!' {
+		return true
+	}
+	rest := s[end:]
+	i := skipSpace(rest, 0)
+	if i < len(rest) && rest[i] == ')' {
+		i = skipSpace(rest, i+1) // past the call's own closing paren
+	}
+	for _, op := range []string{"===", "!==", "==", "!="} {
+		if !strings.HasPrefix(rest[i:], op) {
+			continue
+		}
+		j := skipSpace(rest, i+len(op))
+		switch {
+		case strings.HasPrefix(rest[j:], "false"):
+			return op == "===" || op == "=="
+		case strings.HasPrefix(rest[j:], "true"):
+			return op == "!==" || op == "!="
+		}
+		break
 	}
 	return false
 }
@@ -2520,9 +3038,14 @@ func branchRejects(branch string) bool {
 
 // ifStillOpenAt reports whether the if ending just before from still
 // dominates pos: no '}' closes the if's enclosing block between them.
-// One brace walk over the code view, skipping string and template
-// contents; a depth dip below zero means the if's own block chain
-// closed before the site (the if lives in a branch the site left).
+// One brace walk over the BLANK view (the caller slices it at the same
+// start the code view gave it; the two views' offsets are identical),
+// skipping string and template contents — the code view carries regex
+// bodies verbatim, so an odd brace inside a pattern (/^\{/) would skew
+// the depth and credit a reject gate inside a nested callback whose
+// return only ends that callback. A depth dip below zero means the if's
+// own block chain closed before the site (the if lives in a branch the
+// site left).
 func ifStillOpenAt(body string, from, pos int) bool {
 	depth := 0
 	for i := from; i < pos; i++ {
@@ -2561,14 +3084,16 @@ const regexSafeClassChars = "abcdefghijklmnopqrstuvwxyz" +
 // regexGateAnchored reports whether a regex literal (with its slashes,
 // optionally flagged) accepts a bounded name shape only: anchored at
 // both ends (^…$) and built exclusively from name-safe characters and
-// classes, with flags drawn from i, g, u, y alone. An explicit
-// allowlist, so a separator-producing escape disqualifies the gate
-// wherever it sits in the body — review 5's /./ accepts "../admin",
-// review 6's /^[A-Za-z0-9_\x2f-]+$/ accepts "foo/bar" even though no
-// "/" appears in the literal — and the m flag is rejected with it:
-// multiline makes ^ and $ match at line boundaries, so
-// /^[A-Za-z0-9_-]+$/m accepts "ok\n../admin" (an attribute value can
-// carry the newline) and bounds nothing.
+// classes, with flags drawn from i, g, u, y alone, and NO top-level
+// alternation: /^a|b$/ means (^a)|(b$) and accepts "a/../../admin"
+// even though both ends look anchored — the '|' must sit inside a
+// group (review 8). An explicit allowlist, so a separator-producing
+// escape disqualifies the gate wherever it sits in the body — review
+// 5's /./ accepts "../admin", review 6's /^[A-Za-z0-9_\x2f-]+$/ accepts
+// "foo/bar" even though no "/" appears in the literal — and the m flag
+// is rejected with it: multiline makes ^ and $ match at line
+// boundaries, so /^[A-Za-z0-9_-]+$/m accepts "ok\n../admin" (an
+// attribute value can carry the newline) and bounds nothing.
 func regexGateAnchored(lit string) bool {
 	if len(lit) < 3 || lit[0] != '/' {
 		return false
@@ -2586,12 +3111,32 @@ func regexGateAnchored(lit string) bool {
 	if !strings.HasPrefix(body, "^") || !strings.HasSuffix(body, "$") {
 		return false
 	}
+	inClass := false
+	groupDepth := 0
 	for _, r := range body[1 : len(body)-1] {
 		if r < 0x20 || r == 0x7f {
 			return false // control characters
 		}
 		if !strings.ContainsRune(regexSafeClassChars, r) {
 			return false
+		}
+		switch r {
+		case '[':
+			inClass = true
+		case ']':
+			inClass = false
+		case '(':
+			if !inClass {
+				groupDepth++
+			}
+		case ')':
+			if !inClass {
+				groupDepth--
+			}
+		case '|':
+			if !inClass && groupDepth == 0 {
+				return false // a top-level alternation splits the anchors
+			}
 		}
 	}
 	return true
@@ -3017,7 +3562,7 @@ func LintModuleURLShape(roots ...string) (*Result, error) {
 			if !compositeBuild(expr) {
 				continue
 			}
-			bad, ok := moduleURLUnsafeOperand(expr, events, f.Code, buildPos)
+			bad, ok := moduleURLUnsafeOperand(expr, events, f.Code, f.Blank, buildPos)
 			if !ok {
 				continue
 			}
@@ -3093,7 +3638,7 @@ func compositeBuild(expr string) bool {
 
 // moduleURLUnsafeOperand inspects one module-URL build and reports the
 // first operand the shape gate is missing for.
-func moduleURLUnsafeOperand(expr string, events []safeEvent, code string, buildPos int) (string, bool) {
+func moduleURLUnsafeOperand(expr string, events []safeEvent, code, blank string, buildPos int) (string, bool) {
 	for _, op := range concatOperands(expr) {
 		t := strings.TrimSpace(op)
 		if t == "" {
@@ -3109,7 +3654,7 @@ func moduleURLUnsafeOperand(expr string, events []safeEvent, code string, buildP
 			if safeAt(events, t, buildPos) {
 				continue
 			}
-			if regexTestDominates(code, t, buildPos) {
+			if regexTestDominates(code, blank, t, buildPos) {
 				continue
 			}
 			return t, true
@@ -3143,19 +3688,22 @@ func concatOperands(expr string) []string {
 // regexTestDominates reports whether a regex .test( on identifier v
 // DOMINATES the module-URL build at pos, under the same two shapes
 // lint 4's gate uses: the gate sits in the condition of an if whose
-// branch CONTAINS the build, or in an earlier if of a block enclosing
-// the build whose failure branch REJECTS execution (return / throw /
-// continue), loadModule's `if (!/^[\w-]+$/.test(name)) return
-// reject(…)` spelling. ANY receiver counts — an inline regex literal
+// branch CONTAINS the build — a NEGATED gate does not count there, the
+// branch then runs when the shape test failed (review 8) — or in an
+// earlier if of a block enclosing the build whose failure branch
+// REJECTS execution (return / throw / continue), loadModule's `if
+// (!/^[\w-]+$/.test(name)) return reject(…)` spelling, where a negated
+// gate is the point. ANY receiver counts — an inline regex literal
 // (the char before .test is '/'), or a named constant — because this
 // lint asks only for the gate's PRESENCE (parity with loadModule),
 // not its bounding power; that simplicity is the documented limit.
-func regexTestDominates(code, v string, pos int) bool {
+func regexTestDominates(code, blank, v string, pos int) bool {
 	if !isJSIdent(v) {
 		return false
 	}
 	start, _ := enclosingFunction(code, pos)
 	body := code[start:]
+	blankBody := blank[start:]
 	pos0 := pos - start
 	reGate := regexp.MustCompile(`[/\w]\s*\.\s*test\s*\(\s*` + regexp.QuoteMeta(v) + `\s*\)`)
 	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
@@ -3167,7 +3715,16 @@ func regexTestDominates(code, v string, pos int) bool {
 		if close < 0 || close >= pos0 {
 			continue
 		}
-		if !reGate.MatchString(body[open+1 : close]) {
+		cond := body[open+1 : close]
+		gated := func(positiveOnly bool) bool {
+			for _, m := range reGate.FindAllStringIndex(cond, -1) {
+				if !positiveOnly || !gateNegated(cond, m[0], m[1]) {
+					return true
+				}
+			}
+			return false
+		}
+		if !gated(false) {
 			continue
 		}
 		b := skipSpace(body, close+1)
@@ -3182,10 +3739,10 @@ func regexTestDominates(code, v string, pos int) bool {
 		} else if e := statementEnd(body, b); e < len(body) {
 			tEnd = e
 		}
-		if b <= pos0 && pos0 <= tEnd {
-			return true // the branch that builds the URL ran the gate
+		if b <= pos0 && pos0 <= tEnd && gated(true) {
+			return true // the branch that builds the URL ran the gate and it held
 		}
-		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(body, tEnd+1, pos0) {
+		if tEnd < pos0 && gated(false) && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
 			return true // the gate's failures left; only shape-valid ids continue
 		}
 	}
@@ -3195,7 +3752,8 @@ func regexTestDominates(code, v string, pos int) bool {
 // ── lint 8: attribute value used raw as a storage key ─────────────────
 
 // LintStorageKeyRaw fires when a Web-storage key — the first argument of
-// a localStorage/sessionStorage setItem/getItem/removeItem call, or the
+// a localStorage/sessionStorage setItem/getItem/removeItem call, the
+// bracket spelling of a storage access (localStorage[key]), or the
 // name side of a document.cookie write — is built from a data-cui-*
 // attribute value without BOTH the namespace prefix and the component
 // encoding.
@@ -3268,11 +3826,19 @@ func LintStorageKeyRaw(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// reStorageCall matches the Web-storage key sinks on the blank view.
+// reStorageCall matches the Web-storage key sinks on the blank view:
+// the setItem/getItem/removeItem method calls, and the bracket
+// spelling of a storage access (localStorage[key]), which names the
+// same key.
 var reStorageCall = regexp.MustCompile(`\b(?:localStorage|sessionStorage)\s*\.\s*(?:setItem|getItem|removeItem)\s*\(`)
 
+// reStorageBracket matches the bracket spelling of a Web-storage
+// access: localStorage[key] / sessionStorage?.[key].
+var reStorageBracket = regexp.MustCompile(`\b(?:localStorage|sessionStorage)\s*(?:\?\.)?\s*\[`)
+
 // storageKeySite is one keyed sink: the first argument of a storage
-// call (kind "localStorage.setItem" & kin) or the assigned expression
+// call (kind "localStorage.setItem" & kin), the key of a bracket
+// storage access (kind "localStorage[]"), or the assigned expression
 // of a document.cookie write (kind "document.cookie").
 type storageKeySite struct {
 	kind string
@@ -3303,6 +3869,22 @@ func storageKeySites(blank, code string) []storageKeySite {
 		kind := strings.NewReplacer(" ", "", "\t", "").Replace(blank[loc[0] : loc[1]-1])
 		out = append(out, storageKeySite{kind: kind, expr: key, pos: open + 1})
 	}
+	for _, loc := range reStorageBracket.FindAllStringIndex(blank, -1) {
+		if loc[0] > 0 && isJSIdentChar(blank[loc[0]-1]) {
+			continue // myLocalStorage[: an alias, out of the shape
+		}
+		open := strings.LastIndexByte(blank[loc[0]:loc[1]], '[') + loc[0]
+		close := matchDelimForward(blank, open)
+		if close < 0 {
+			continue
+		}
+		key := strings.TrimSpace(code[open+1 : close])
+		if key == "" {
+			continue
+		}
+		kind := strings.NewReplacer(" ", "", "\t", "").Replace(blank[loc[0]:open]) + "[]"
+		out = append(out, storageKeySite{kind: kind, expr: key, pos: open + 1})
+	}
 	for _, s := range rhsAssignments(reCookieWrite, blank, code) {
 		out = append(out, storageKeySite{kind: "document.cookie", expr: s.rhs, pos: s.pos})
 	}
@@ -3316,32 +3898,37 @@ var reFuiAttrKey = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-[cfh]ui-|\.\
 
 // storageKeyUnsafe inspects one key expression and reports the
 // attribute-borne value that reaches it raw (unnamed false), or the one
-// that is component-encoded with no literal prefix beside it (unnamed
-// true). Operands split like lint 7's builds: top-level '+' operands,
-// with templates decomposed into their literal chunks and interpolation
-// bodies.
+// that is component-encoded with no literal prefix before it (unnamed
+// true — a trailing literal suffix does not name the namespace: the
+// attribute value heads the key, and encoding leaves dots, so markup
+// still writes "prefix.literal…prefs"). Operands split like lint 7's
+// builds: top-level '+' operands, with templates decomposed into their
+// literal chunks and interpolation bodies.
 func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string, unnamed bool) {
 	unwrapped, wrapped := "", ""
-	hasLiteral := false
+	wrappedNamed := false // a literal (or provably-literal) operand BEFORE the first encoded one
+	named := false
 	for _, op := range concatOperands(expr) {
 		t := strings.TrimSpace(op)
 		if t == "" {
 			continue
 		}
 		if isJSStringLiteral(t) || isJSNumericLiteral(t) {
-			hasLiteral = true
+			named = true
 			continue
 		}
 		if isEncodedCall(t) {
 			if arg := encodedCallArg(t); attrFuiAt(events, arg, pos) || reFuiAttrKey.MatchString(arg) {
-				wrapped = arg
+				if wrapped == "" { // the head of the key decides
+					wrapped, wrappedNamed = arg, named
+				}
 			}
 			continue
 		}
 		if isJSIdent(t) && !jsKeywords[t] {
 			switch {
 			case safeAt(events, t, pos):
-				hasLiteral = true // banner.js's STORAGE_PREFIX: provably literal
+				named = true // banner.js's STORAGE_PREFIX: provably literal
 			case attrFuiAt(events, t, pos):
 				unwrapped = t
 			}
@@ -3355,7 +3942,7 @@ func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string,
 	if unwrapped != "" {
 		return unwrapped, false
 	}
-	if wrapped != "" && !hasLiteral {
+	if wrapped != "" && !wrappedNamed {
 		return wrapped, true
 	}
 	return "", false
@@ -3387,21 +3974,25 @@ func encodedCallArg(op string) string {
 
 // ── shared: data-fui provenance past one assignment ────────────────────
 
-// forOfSpan is one for…of loop: the bound identifier, the exact byte
-// span of its body, and the iterable expression's offsets (read from
-// the CODE view by the caller, so attribute-name literals inside it
-// stay visible).
+// forOfSpan is one for…of loop: the bound names (a plain identifier or
+// the bindings of a destructured head), the exact byte span of its
+// body, and the iterable expression's offsets (read from the CODE view
+// by the caller, so attribute-name literals inside it stay visible).
 type forOfSpan struct {
-	idx                string
+	names              []string
 	start, end         int // the loop body: brace-matched, or the single statement
 	iterStart, iterEnd int
 }
 
-var reForOfHeader = regexp.MustCompile(`for\s*\(\s*(?:const|let|var)?\s*(\w+)\s+of\s`)
+// reForOfHeader captures the loop's binding: a plain identifier, an
+// array pattern ([k, v]), or an object pattern ({k, rename: r}).
+var reForOfHeader = regexp.MustCompile(`for\s*\(\s*(?:const|let|var)?\s*(\w+|\[[^\]\n]*\]|\{[^}\n]*\})\s+of\s`)
 
 // forOfSpans collects the for…of loops of one file the way forInSpans
 // collects for…in: the body span is exact, however long the loop, so a
-// binding never outlives its loop.
+// binding never outlives its loop. A destructured head binds through
+// forOfBindingNames, so `const [k, v] of …` derives both names from
+// the iterable.
 func forOfSpans(blank string) []forOfSpan {
 	var out []forOfSpan
 	for _, m := range reForOfHeader.FindAllStringSubmatchIndex(blank, -1) {
@@ -3421,7 +4012,7 @@ func forOfSpans(blank string) []forOfSpan {
 			}
 		}
 		out = append(out, forOfSpan{
-			idx:       blank[m[2]:m[3]],
+			names:     forOfBindingNames(blank[m[2]:m[3]]),
 			start:     i,
 			end:       end,
 			iterStart: m[1],
@@ -3429,6 +4020,22 @@ func forOfSpans(blank string) []forOfSpan {
 		})
 	}
 	return out
+}
+
+// forOfBindingNames extracts the names a for…of head binds: the plain
+// identifier, or — through bindingNames — the members of an array or
+// object destructuring pattern.
+func forOfBindingNames(pattern string) []string {
+	if isJSIdent(pattern) {
+		if !jsKeywords[pattern] {
+			return []string{pattern}
+		}
+		return nil
+	}
+	if strings.HasPrefix(pattern, "[") || strings.HasPrefix(pattern, "{") {
+		return bindingNames(pattern)
+	}
+	return nil
 }
 
 // funcHead is one named same-file function: callee name, parameter
@@ -3478,6 +4085,12 @@ func funcHeadName(blank string, bodyOpen int) string {
 		k := skipSpaceBack(blank, j-2)
 		if k >= 0 && isJSIdentChar(blank[k]) {
 			return wordBefore(blank, k+1)
+		}
+		if k >= 0 && blank[k] == ')' { // const NAME = (…) => {
+			p := matchDelimBack(blank, k)
+			if e := skipSpaceBack(blank, p-1); e >= 0 && blank[e] == '=' && !cmpEquals(blank, e) {
+				return wordBefore(blank, e)
+			}
 		}
 		return ""
 	}
@@ -3593,7 +4206,7 @@ func (c *provCtx) fuiWitness(v string, pos, depth int) string {
 		return v
 	}
 	for _, o := range c.forOfs {
-		if o.idx != v || pos < o.start || pos > o.end {
+		if !slices.Contains(o.names, v) || pos < o.start || pos > o.end {
 			continue
 		}
 		if w := c.culprit(c.f.Code[o.iterStart:o.iterEnd], o.iterStart, depth+1); w != "" {
@@ -3845,7 +4458,7 @@ func LintProtoKeyWrite(roots ...string) (*Result, error) {
 			if mapStore(f.Blank, site.base) {
 				continue
 			}
-			if reservedGuardDominates(f.Code, site.key, site.pos) {
+			if reservedGuardDominates(f.Code, f.Blank, site.key, site.pos) {
 				continue
 			}
 			res.add(f.Path, f.lineOf(site.pos),
@@ -3854,9 +4467,6 @@ func LintProtoKeyWrite(roots ...string) (*Result, error) {
 	}
 	return res, nil
 }
-
-// reBracketAccess matches one bracket access on the blank view.
-var reBracketAccess = regexp.MustCompile(`\[\s*([^\]\n]+?)\s*\]`)
 
 // bracketWrite is one X[key] <op>= rhs site.
 type bracketWrite struct {
@@ -3868,27 +4478,79 @@ type bracketWrite struct {
 
 // bracketWriteSites finds the bracket writes of the file: reads,
 // comparisons, and deletes drop out (the registryAccessIsWrite shape).
+// Each '[' is delimiter-matched to its ']', so a nested key
+// (X[keys[i]]) yields its whole key text and the write operator is
+// searched after the true close; a '[' with no receiver before it is a
+// destructuring pattern or an array literal, not a property write, and
+// drops out.
 func bracketWriteSites(blank, code string) []bracketWrite {
 	var out []bracketWrite
-	for _, m := range reBracketAccess.FindAllStringIndex(blank, -1) {
-		close := m[1] - 1
+	for open := range len(blank) {
+		if blank[open] != '[' {
+			continue
+		}
+		close := matchDelimForward(blank, open)
+		if close < 0 {
+			continue
+		}
 		opStart, opLen, ok := bracketWriteOp(blank, close)
 		if !ok {
 			continue
 		}
-		j := m[0] - 1
-		for j >= 0 && (isJSIdentChar(blank[j]) || blank[j] == '.') {
-			j--
+		baseStart := bracketReceiverStart(blank, open)
+		if baseStart < 0 {
+			continue
 		}
 		end := statementEnd(code, opStart)
 		out = append(out, bracketWrite{
-			base: blank[j+1 : m[0]],
-			key:  strings.TrimSpace(code[m[0]+1 : close]),
+			base: blank[baseStart:open],
+			key:  strings.TrimSpace(code[open+1 : close]),
 			rhs:  strings.TrimSpace(code[opStart+opLen : end]),
-			pos:  m[0],
+			pos:  open,
 		})
 	}
 	return out
+}
+
+// bracketReceiverStart returns the offset where the receiver expression
+// of the bracket access opening at open begins — an identifier, a
+// member chain (optional-chained included), a chained bracket access,
+// or a call result — or -1 when no receiver precedes the '[' (a
+// destructuring pattern or an array literal, not a property write).
+func bracketReceiverStart(blank string, open int) int {
+	j := open - 1
+	for j >= 0 {
+		if blank[j] == ' ' || blank[j] == '\t' || blank[j] == '?' {
+			j--
+			continue
+		}
+		if isJSIdentChar(blank[j]) || blank[j] == '.' {
+			j--
+			continue
+		}
+		if blank[j] == ']' || blank[j] == ')' {
+			m := matchDelimBack(blank, j)
+			if m < 0 {
+				break
+			}
+			j = m - 1
+			continue
+		}
+		break
+	}
+	if j+1 >= open {
+		return -1
+	}
+	for j+1 < open && (blank[j+1] == ' ' || blank[j+1] == '\t') {
+		j++ // the receiver's leading indent is not part of it
+	}
+	if !isJSIdentChar(blank[j+1]) {
+		return -1
+	}
+	if w := strings.TrimSpace(blank[j+1 : open]); jsKeywords[w] {
+		return -1 // `const [` / `let [`: a destructuring declaration
+	}
+	return j + 1
 }
 
 // bracketWriteOp finds the assignment operator after the bracket
@@ -3922,14 +4584,30 @@ func bracketWriteOp(blank string, close int) (start, length int, ok bool) {
 }
 
 // compositeKey reports whether the key expression visibly concatenates
-// or interpolates: a top-level '+' build with more than one operand,
-// or a template literal. A composite string can never equal a bare
-// prototype property name.
+// or interpolates into something that can never equal a bare prototype
+// property name: a template literal with literal text or more than one
+// interpolation, or a top-level '+' build whose operands are not one
+// expression joined to an empty string. `${name}` and `x + ”` equal
+// the bare value exactly, so they are NOT composite.
 func compositeKey(key string) bool {
-	if strings.HasPrefix(strings.TrimSpace(key), "`") {
-		return true
+	t := strings.TrimSpace(key)
+	if strings.HasPrefix(t, "`") {
+		ops := templateOperands(t[:min(templateEnd(t, 0)+1, len(t))])
+		return len(ops) != 1 || isJSStringLiteral(ops[0])
 	}
-	return len(splitTopLevel(key, '+')) > 1
+	parts := splitTopLevel(key, '+')
+	if len(parts) <= 1 {
+		return false
+	}
+	// `x + ''` and `'' + x`: the empty literal contributes nothing.
+	if len(parts) == 2 {
+		for _, p := range parts {
+			if strings.TrimSpace(p) == "''" || strings.TrimSpace(p) == `""` {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // reStringYield matches a call whose result is provably a string:
@@ -3958,14 +4636,18 @@ func rhsPrimitive(rhs string) bool {
 	return close >= 0 && strings.TrimSpace(t[close+1:]) == ""
 }
 
-// mapStore reports whether the write's receiver (or its last dotted
-// segment) is declared as a Map in the file.
+// mapStore reports whether the write's FULL receiver is declared as a
+// Map in the file: `const slotMap = new Map(` credits slotMap[k], and
+// `NS.timerMap = new Map(` credits NS.timerMap[k]. The receiver's last
+// dotted segment alone is deliberately NOT matched — another holder's
+// same-named member is a different object — and an empty receiver
+// matches nothing.
 func mapStore(blank, base string) bool {
-	last := base
-	if i := strings.LastIndexByte(base, '.'); i >= 0 {
-		last = base[i+1:]
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return false
 	}
-	pat := `\b(?:` + regexp.QuoteMeta(base) + `|` + regexp.QuoteMeta(last) + `)\s*=\s*new\s+Map\s*\(`
+	pat := `\b` + regexp.QuoteMeta(base) + `\s*=\s*new\s+Map\s*\(`
 	return regexp.MustCompile(pat).MatchString(blank)
 }
 
@@ -3977,9 +4659,10 @@ func mapStore(blank, base string) bool {
 // (return/throw/continue). Like attrPathGated, the scan region is the
 // enclosing function; a guard after the write cannot retroactively
 // protect it.
-func reservedGuardDominates(code, key string, pos int) bool {
+func reservedGuardDominates(code, blank, key string, pos int) bool {
 	start, _ := enclosingFunction(code, pos)
 	body := code[start:]
+	blankBody := blank[start:]
 	pos0 := pos - start
 	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
 		if loc[0] >= pos0 {
@@ -4008,7 +4691,7 @@ func reservedGuardDominates(code, key string, pos int) bool {
 		if b <= pos0 && pos0 <= tEnd {
 			return true // the branch that writes ran the guard
 		}
-		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(body, tEnd+1, pos0) {
+		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
 			return true // the guard's failures left; only safe keys continue
 		}
 	}

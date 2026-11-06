@@ -10,5 +10,5 @@ import (
 )
 
 func TestTextBind(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), allow.Guard(textbind.Analyzer), "filter", "a")
+	analysistest.Run(t, analysistest.TestData(), allow.Guard(textbind.Analyzer), "filter", "a", "fields", "fielduse", "helperbind", "grow")
 }

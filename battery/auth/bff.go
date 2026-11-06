@@ -16,13 +16,14 @@ import (
 type BFFPostureConfig struct {
 	AllowedOrigins []string
 	CSRFOptions    []CSRFOption
+	TokenPrefix    string
 }
 
 // WithBFFPosture configures cookie-only browser authentication in one option:
 // JSON login responses omit JWTs, session identity is hydrated globally, CSRF
 // protects cookie-authenticated mutations, and requests carrying an Origin to
-// the API prefix must match the exact allowlist. API tokens with the gfsk_
-// prefix remain available for non-browser automation; bearer JWTs are rejected
+// the API prefix must match the exact allowlist. API tokens with TokenPrefix
+// (default gfsk_) remain available for automation; bearer JWTs are rejected
 // on the BFF API surface. When no WithAPIPrefix is configured, entity CRUD
 // mounts at the bare root, so the guard covers the entire app, list the
 // app's own origin in AllowedOrigins in that case, or set an API prefix.
@@ -33,6 +34,12 @@ type BFFPostureConfig struct {
 func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption {
 	if mgr == nil {
 		panic("auth: WithBFFPosture requires AuthManager")
+	}
+	if cfg.TokenPrefix == "" {
+		cfg.TokenPrefix = TokenPrefix
+	}
+	if !tokenPrefixPattern.MatchString(cfg.TokenPrefix) {
+		panic("auth: WithBFFPosture: invalid TokenPrefix " + cfg.TokenPrefix)
 	}
 	origins := validateBFFOrigins(cfg.AllowedOrigins)
 	csrfOpts := append([]CSRFOption(nil), cfg.CSRFOptions...)
@@ -61,7 +68,7 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 				// in either option order. There is one API prefix, owned by
 				// framework.AppConfig, rather than a duplicated security knob.
 				return normalizeBFFPrefix(app.Config.APIPrefix)
-			}, origins),
+			}, origins, cfg.TokenPrefix),
 			CSRF(csrfOpts...),
 			SessionMiddleware(mgr),
 		)
@@ -104,7 +111,7 @@ func normalizeBFFPrefix(prefix string) string {
 	return "/" + strings.Trim(prefix, "/")
 }
 
-func bffOriginGuard(prefix func() string, allowed map[string]struct{}) func(http.Handler) http.Handler {
+func bffOriginGuard(prefix func() string, allowed map[string]struct{}, tokenPrefix string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiPrefix := prefix()
@@ -125,7 +132,7 @@ func bffOriginGuard(prefix func() string, allowed map[string]struct{}) func(http
 				w.Header().Add("Vary", "Origin")
 			}
 			if token, ok := bffBearerCredential(r.Header.Get("Authorization")); ok &&
-				!strings.HasPrefix(token, TokenPrefix) {
+				!strings.HasPrefix(token, tokenPrefix) {
 				i18n.HTTPError(w, r, http.StatusUnauthorized, reasonBearerDisabled)
 				return
 			}

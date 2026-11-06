@@ -31,6 +31,12 @@ const maxResourceURIBytes = 2048
 // (expireResourceSubsIfIdleLocked) frees room.
 const maxResourceSubscriptions = 1024
 
+// defaultSSEStreamLimit bounds every caller's notification streams
+// together. The per-caller seat cap cannot: anonymous callers are keyed
+// by peer host, and one client can hold many IPv6 addresses.
+// SetSSEStreamLimit changes it.
+const defaultSSEStreamLimit = 1024
+
 // maxResourceSubscriptionPairs caps how many (caller, uri) subscriptions
 // the per-caller record (Server.resourceSubsBy) retains, across every
 // caller. The record exists so an unsubscribe releases only its own
@@ -85,8 +91,9 @@ type sseSubscriber struct {
 // addSSESubscriber applies the seat policy and, when the stream may
 // register, records it for notification delivery. Called from
 // sseGetHandler after the origin/Host and server-gate checks. ok=false
-// means the caller's seat table is full and the policy is Refuse: the
-// handler must answer 429 and hold nothing. Under EvictOldest the
+// means the global registry is full, or the caller's seat table is full
+// and the policy is Refuse: the handler must answer 429 and hold nothing.
+// Under EvictOldest the
 // caller's oldest stream is deregistered and closed here so the new
 // stream fits.
 func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sseSubscriber, ok bool) {
@@ -97,6 +104,13 @@ func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sse
 	}
 	if s.sseSeatOrder == nil {
 		s.sseSeatOrder = make(map[string][]*sseSubscriber)
+	}
+	if limit := s.streamLimitLocked(); limit >= 0 && len(s.sseSubs) >= limit {
+		max := s.seatCapLocked()
+		canReplace := max > 0 && len(s.sseSeatOrder[seatKey]) >= max && s.sseSeatOverflow == SeatOverflowEvictOldest
+		if len(s.sseSubs) > limit || !canReplace {
+			return nil, false
+		}
 	}
 	if max := s.seatCapLocked(); max > 0 && len(s.sseSeatOrder[seatKey]) >= max {
 		if s.sseSeatOverflow != SeatOverflowEvictOldest || len(s.sseSeatOrder[seatKey]) == 0 {

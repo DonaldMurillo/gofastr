@@ -244,11 +244,13 @@ func runRecheck(pass *analysis.Pass) (any, error) {
 			}
 		}
 		// The identity is re-checked; every connect-time decision the
-		// stream's own families make must be re-run on a loop path too.
+		// stream's own machinery makes must be re-run on a loop path
+		// too — in EVERY flood family, including a helper the opener
+		// calls that neither opens a stream nor holds a delivery loop
+		// (2026-11-03: the scan used to skip those, so a tenant or
+		// authz decision buried one callee away was never judged).
+		// reaches already credits re-runs through helpers.
 		for r := range reach {
-			if !a.opens(r) && !holdsLoop(delivery, r) {
-				continue
-			}
 			for _, body := range r.bodies {
 				ast.Inspect(body, func(n ast.Node) bool {
 					call, ok := n.(*ast.CallExpr)
@@ -329,15 +331,28 @@ func (a *arms) tickRecheck(l *parkLoop) bool {
 	return false
 }
 
-// loopSelect: the select statement a park loop's body parks on, written
-// directly in the body.
+// loopSelect: the select statement a park loop's body parks on —
+// written directly in the body or nested in it (an `if live { select
+// … }` guard), found by the same descent forLoopParks uses, in
+// source order, without crossing a closure boundary. Until 2026-11-03
+// only the top of the body was read, so a loop parked on a nested
+// select was neither reported nor credited.
 func loopSelect(l *parkLoop) *ast.SelectStmt {
-	for _, st := range l.body.List {
-		if sel, ok := st.(*ast.SelectStmt); ok {
-			return sel
+	var found *ast.SelectStmt
+	ast.Inspect(l.body, func(n ast.Node) bool {
+		if found != nil {
+			return false
 		}
-	}
-	return nil
+		switch e := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.SelectStmt:
+			found = e
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // timeCase: a select case receiving from a channel of time.Time (a

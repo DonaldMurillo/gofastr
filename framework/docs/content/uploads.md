@@ -275,6 +275,19 @@ The metadata lands in **sibling columns**, named for the image field:
 | `<field>_placeholder`  | `schema.String` | LQIP `data:` URL (only if `Placeholder` set) |
 | `<field>_variants`     | `schema.JSON`   | `[{storage_ref, mime, width, height}, …]`, ascending by width |
 
+Changing or clearing an existing image through an update or an upsert conflict
+clears omitted derived siblings to SQL `NULL` in the same write. This includes
+read-only or hidden derived columns and works without a configured storage
+backend. Explicit writable replacement metadata is kept; an unchanged image
+keeps its metadata. A multipart pipeline that produces only some artifacts
+therefore cannot retain the previous image's other artifacts. Stored renditions
+that the new row no longer references are released after commit.
+
+Image updates compare the source read for that decision in the write's SQL
+predicate, including SQL `NULL`. If another writer changes the source before
+the update or upsert conflict, the stale write is refused without changing
+the current image or its metadata. Reload the row before retrying.
+
 **Columns you do not declare are skipped.** Nothing errors, nothing is
 lost; you adopt a column by adding it to the entity. So an entity with a
 `cover` image field opts into the hash alone by declaring:

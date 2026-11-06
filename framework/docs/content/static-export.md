@@ -27,6 +27,17 @@ through the SSG-aware render path, and dumps all `/__gofastr` assets with
 **query-free filenames**. `basePath` is the URL subpath for a project-site
 deploy (`"/gofastr"`); pass `""` for an apex deploy.
 
+Generated locale alternates and `x-default` include that mount path, just
+like sitemap URLs. A sitemap `BaseURL` already ending in the mount path
+does not duplicate it. Explicit screen-provided alternates remain unchanged.
+For direct `UIHost.RenderStaticPage` / `RenderStaticPageResult` calls, pass
+`uihost.WithStaticBasePath(ctx, "/gofastr")` to supply the same mount path.
+
+Static client navigations preserve the incoming page's language and
+direction markers, including when only a layout slot swaps. Entering an
+RTL locale loads the direction behavior on demand and updates `<html dir>`;
+returning to a cached LTR page restores its direction without a full reload.
+
 ```go
 fwApp, _ := framework.NewApp(opts...)
 // "" = apex; "/gofastr" for a https://<user>.github.io/gofastr/ deploy.

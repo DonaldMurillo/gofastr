@@ -208,3 +208,15 @@ func TestSetEndpointsRefusesOneRouteTwice(t *testing.T) {
 		t.Fatalf("err = %v, want the route refusal", err)
 	}
 }
+
+// An entry missing several required fields names the first in the
+// documented order, every time: the checks once ranged a map literal and
+// reported whichever field the iteration reached first (R8-RTS-01).
+func TestEndpointNamesFirstMissingField(t *testing.T) {
+	for range 32 {
+		_, err := parseEndpoints(t, "endpoints:\n  - entity: orders\n    method: POST\n    handler: h.go#H\n")
+		if err == nil || !strings.Contains(err.Error(), "name is required") {
+			t.Fatalf("err = %v, want the name field named first", err)
+		}
+	}
+}

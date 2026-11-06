@@ -19,13 +19,16 @@
 //
 // Two arms, both off in _test.go files:
 //
-//   - SETTER: an exported With*/Set* function or method that stores one
+//   - SETTER: an exported With*/Set* function, method, or package-level
+//     function literal (var WithX = func(...)) that stores one
 //     of its numeric parameters (time.Duration or any integer kind,
 //     through conversions) into a struct field — `o.f = d`, or
-//     `o.f.Store(int64(d))` on a sync/atomic field — when the function
-//     never compares the parameter and never passes it to a call other
-//     than a conversion or that Store. Gated to fields that (1) get a
-//     nonzero default somewhere in the package (a composite-literal
+//     `o.f.Store(int64(d))` on a sync/atomic field — when no ordered
+//     comparison of the parameter GATES the store (the store sits in
+//     the comparison's branch, or the branch refuses before it) and
+//     the function never passes it to a call other than a conversion
+//     or that Store. Gated to fields that (1) get a nonzero default
+//     somewhere in the package (a composite-literal
 //     key, a plain assignment or a Store of a nonzero constant or a
 //     default-named value outside the setter), and (2) are never
 //     compared to 0 or 1 anywhere in the package, directly, through
@@ -35,17 +38,22 @@
 //     value is read, and the setter's pass-through is fine.
 //
 //   - ZERO DEFAULT: `if x == 0 { x = <default> }` on a signed numeric
-//     local, parameter or field, in a function that never makes an
-//     ordered comparison of x (`<`, `<=`, `>`, `>=`) or clamps it with
-//     max/min, when x then reaches a sink a negative breaks: make(), a
-//     time.NewTicker / NewTimer / Tick / AfterFunc, context.WithTimeout,
-//     a time.Time.Add (a lease or expiry), or a call whose constant SQL
-//     argument holds LIMIT. Reported at the if.
+//     local, parameter or field, in a function that makes no ordered
+//     comparison of x (`<`, `<=`, `>`, `>=`) and clamps it with no
+//     max/min BEFORE the sink, when x then reaches a sink a negative
+//     breaks: make(), a time.NewTicker / NewTimer / Tick / AfterFunc,
+//     context.WithTimeout, a time.Time.Add (a lease or expiry), or a
+//     call whose constant SQL argument holds LIMIT. Reported at the
+//     if — a check after the sink guards nothing on the path that
+//     reached it.
 //
 // Silent postures, deliberately:
-//   - any comparison of the setter parameter (`if d > 0 { ... }`, the
-//     fix spelling; `if n <= 0 { panic(...) }`, the refusal) and any
-//     non-conversion call taking it (a validator, max(d, floor));
+//   - an ordered comparison of the setter parameter where it GATES the
+//     store (`if d > 0 { o.f = d }`, the fix spelling; `if n <= 0 {
+//     panic(...) }`, the refusal) and any non-conversion call taking
+//     it (a validator, max(d, floor)); an `==` comparison never gates
+//     (it refuses zero alone; a negative still replaces the default),
+//     and neither does one that only logs;
 //   - fields with no nonzero default in the package (zero IS the
 //     default; storing it changes nothing) and fields compared to 0/1
 //     at a use site (see above);
@@ -112,9 +120,39 @@ func run(pass *analysis.Pass) (any, error) {
 				continue
 			}
 			if setters[fn] {
-				checkSetter(pass, fn, defaults, handled)
+				checkSetter(pass, fn.Name.Name, fn.Type, fn.Body, defaults, handled)
 			}
 			checkZeroDefault(pass, fn.Body)
+		}
+	}
+	// Package-level function literals (var WithX = func(...)): the
+	// same two arms, with the variable's name standing in for the
+	// declaration's.
+	for _, f := range files {
+		for _, d := range f.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i >= len(vs.Values) {
+						break
+					}
+					lit, ok := ast.Unparen(vs.Values[i]).(*ast.FuncLit)
+					if !ok || lit.Body == nil {
+						continue
+					}
+					if isSetterName(name.Name) {
+						checkSetter(pass, name.Name, lit.Type, lit.Body, defaults, handled)
+					}
+					checkZeroDefault(pass, lit.Body)
+				}
+			}
 		}
 	}
 	return nil, nil
@@ -372,12 +410,16 @@ func isComparison(op token.Token) bool {
 }
 
 // checkSetter reports a numeric parameter stored unchecked into a
-// defaulted, use-site-unchecked field.
-func checkSetter(pass *analysis.Pass, fn *ast.FuncDecl, defaults, handled map[*types.Var]bool) {
+// defaulted, use-site-unchecked field. A comparison of the parameter
+// quiets a store only when it GATES it: the store sits inside the
+// comparison's branch, or the branch refuses (return, panic) before
+// it. A comparison that merely logs (`if d == 0 { logf(...) }` beside
+// the store) gates nothing.
+func checkSetter(pass *analysis.Pass, name string, ftype *ast.FuncType, body *ast.BlockStmt, defaults, handled map[*types.Var]bool) {
 	params := map[types.Object]bool{}
-	for _, fld := range fn.Type.Params.List {
-		for _, name := range fld.Names {
-			if obj := pass.TypesInfo.ObjectOf(name); obj != nil && isNumeric(obj.Type()) {
+	for _, fld := range ftype.Params.List {
+		for _, n := range fld.Names {
+			if obj := pass.TypesInfo.ObjectOf(n); obj != nil && isNumeric(obj.Type()) {
 				params[obj] = true
 			}
 		}
@@ -395,26 +437,70 @@ func checkSetter(pass *analysis.Pass, fn *ast.FuncDecl, defaults, handled map[*t
 		}
 		return nil
 	}
-	// The parameter is checked when the function compares it, or hands
-	// it to a call that is neither a conversion nor the atomic Store.
-	checked := map[types.Object]bool{}
+	// Comparisons of the parameters, and the ifs holding them: a
+	// comparison credits a STORE only when it gates that store — the
+	// store sits inside its branch, or the branch refuses (return,
+	// goto, panic) before it. Only ordered comparisons (<, <=, >, >=)
+	// credit: a diverging `== 0` refuses zero alone and a negative
+	// still replaces the default. A comparison that merely logs
+	// gates nothing.
+	var ifs []*ast.IfStmt
+	type cmpRef struct {
+		pos token.Pos
+		p   types.Object
+	}
+	var cmps []cmpRef
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.IfStmt:
+			ifs = append(ifs, x)
+		case *ast.BinaryExpr:
+			switch x.Op {
+			case token.LSS, token.LEQ, token.GTR, token.GEQ:
+			default:
+				return true
+			}
+			for _, side := range []ast.Expr{x.X, x.Y} {
+				if p := isParam(side); p != nil {
+					cmps = append(cmps, cmpRef{side.Pos(), p})
+				}
+			}
+		}
+		return true
+	})
+	gates := func(cmpPos, storePos token.Pos) bool {
+		for _, iff := range ifs {
+			if cmpPos < iff.Cond.Pos() || cmpPos > iff.Cond.End() {
+				continue
+			}
+			if storePos >= iff.Body.Pos() && storePos < iff.Body.End() {
+				return true
+			}
+			if setterBranchDiverges(iff.Body) {
+				return true
+			}
+		}
+		return false
+	}
+	paramChecked := func(p types.Object, storePos token.Pos) bool {
+		for _, c := range cmps {
+			if c.p == p && gates(c.pos, storePos) {
+				return true
+			}
+		}
+		return false
+	}
+	// A call that is neither a conversion nor the atomic Store takes
+	// the parameter: a validator, max(d, floor).
+	callChecked := map[types.Object]bool{}
 	type store struct {
 		at    ast.Node
 		field *types.Var
 		param types.Object
 	}
 	var stores []store
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
+	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
-		case *ast.BinaryExpr:
-			if isComparison(x.Op) {
-				if p := isParam(x.X); p != nil {
-					checked[p] = true
-				}
-				if p := isParam(x.Y); p != nil {
-					checked[p] = true
-				}
-			}
 		case *ast.CallExpr:
 			if tv, ok := pass.TypesInfo.Types[x.Fun]; ok && tv.IsType() {
 				return true // a conversion
@@ -427,7 +513,7 @@ func checkSetter(pass *analysis.Pass, fn *ast.FuncDecl, defaults, handled map[*t
 			}
 			for _, a := range x.Args {
 				if p := isParam(a); p != nil {
-					checked[p] = true
+					callChecked[p] = true
 				}
 			}
 		case *ast.AssignStmt:
@@ -447,13 +533,33 @@ func checkSetter(pass *analysis.Pass, fn *ast.FuncDecl, defaults, handled map[*t
 		return true
 	})
 	for _, s := range stores {
-		if checked[s.param] || !defaults[s.field] || handled[s.field] {
+		if callChecked[s.param] || paramChecked(s.param, s.at.Pos()) || !defaults[s.field] || handled[s.field] {
 			continue
 		}
 		pass.Reportf(s.at.Pos(),
 			"%s stores %s into %s with no check: 0 or a negative replaces the field's nonzero default and nothing downstream re-checks it; keep the default on a non-positive value (if %s > 0 { ... }) or refuse it",
-			fn.Name.Name, s.param.Name(), s.field.Name(), s.param.Name())
+			name, s.param.Name(), s.field.Name(), s.param.Name())
 	}
+}
+
+// setterBranchDiverges: every top-level path through the block leaves
+// the function (return, goto, or a panic call).
+func setterBranchDiverges(b *ast.BlockStmt) bool {
+	for _, st := range b.List {
+		switch x := st.(type) {
+		case *ast.ReturnStmt:
+			return true
+		case *ast.BranchStmt:
+			return x.Tok == token.GOTO
+		case *ast.ExprStmt:
+			if call, ok := x.X.(*ast.CallExpr); ok {
+				if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && id.Name == "panic" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // checkZeroDefault reports `if x == 0 { x = <default> }` on a signed
@@ -486,17 +592,20 @@ func checkZeroDefault(pass *analysis.Pass, body *ast.BlockStmt) {
 		if !assignsDefault(pass, iff.Body, key) {
 			return true
 		}
-		if signChecked(pass, body, key) {
+		// The sink comes first: only a sign check BEFORE it guards the
+		// path that reaches it — a log-only check after the sink
+		// guards nothing.
+		sink, sinkPos := firstSink(pass, body, key, iff.End())
+		if sink == "" {
+			return true
+		}
+		if signChecked(pass, body, key, sinkPos) {
 			return true
 		}
 		// `timeout := inv.Timeout` then `if timeout == 0`: a sign check
 		// on the source the local copied is a sign check on the local
 		// (evals codex.go refuses inv.Timeout < 0 before the copy).
-		if src := copiedFrom(pass, body, subj); src != "" && signChecked(pass, body, src) {
-			return true
-		}
-		sink := firstSink(pass, body, key, iff.End())
-		if sink == "" {
+		if src := copiedFrom(pass, body, subj); src != "" && signChecked(pass, body, src, sinkPos) {
 			return true
 		}
 		pass.Reportf(iff.Pos(),
@@ -574,12 +683,13 @@ func assignsDefault(pass *analysis.Pass, body *ast.BlockStmt, key string) bool {
 	return false
 }
 
-// signChecked: the function makes an ordered comparison of the subject,
-// or clamps it with max/min.
-func signChecked(pass *analysis.Pass, body *ast.BlockStmt, key string) bool {
+// signChecked: the function makes an ordered comparison of the subject
+// before pos (a check after the sink guards nothing on the path that
+// reached it), or clamps it with max/min before pos.
+func signChecked(pass *analysis.Pass, body *ast.BlockStmt, key string, before token.Pos) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
-		if found {
+		if n == nil || found || n.Pos() >= before {
 			return false
 		}
 		switch x := n.(type) {
@@ -606,9 +716,11 @@ func signChecked(pass *analysis.Pass, body *ast.BlockStmt, key string) bool {
 
 // firstSink names the first sink after pos that takes the subject: an
 // argument of make, a timer constructor, context.WithTimeout, a
-// time.Time.Add, or a call whose constant SQL holds LIMIT.
-func firstSink(pass *analysis.Pass, body *ast.BlockStmt, key string, after token.Pos) string {
+// time.Time.Add, or a call whose constant SQL holds LIMIT. It returns
+// the sink's name and position (signChecked's bound).
+func firstSink(pass *analysis.Pass, body *ast.BlockStmt, key string, after token.Pos) (string, token.Pos) {
 	sink := ""
+	pos := token.NoPos
 	ast.Inspect(body, func(n ast.Node) bool {
 		if sink != "" {
 			return false
@@ -628,10 +740,11 @@ func firstSink(pass *analysis.Pass, body *ast.BlockStmt, key string, after token
 		}
 		if name := sinkName(pass, call); name != "" {
 			sink = name
+			pos = call.Pos()
 		}
 		return true
 	})
-	return sink
+	return sink, pos
 }
 
 var limitRe = regexp.MustCompile(`(?i)\bLIMIT\b`)

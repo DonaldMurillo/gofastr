@@ -99,6 +99,9 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	if err := checkIndexNames(ordered, all); err != nil {
 		return nil, err
 	}
+	if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+		return nil, err
+	}
 
 	var out []SchemaChange
 	tables := make([]string, 0, len(ordered))
@@ -151,6 +154,25 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		out = append(out, changes...)
 	}
 	out = append(out, env.deferred...)
+	for ent, relation := range generatedPivots(ordered, all) {
+		if len(lookupTableCols(liveByTable, relation.Through)) == 0 {
+			continue
+		}
+		spec, err := buildPivotSpec(ent, relation, all, dialect)
+		if err != nil {
+			return nil, err
+		}
+		// A planned Postgres key change detaches and re-adds this pivot's
+		// foreign key, so the live one still names the old key columns.
+		for index, foreignKey := range spec.fks {
+			if liveCols, rewritten := env.keyChanged[strings.ToLower(foreignKey.refTable)]; rewritten {
+				spec.fks[index].refCols = liveCols
+			}
+		}
+		if err := checkLivePivotConstraints(ctx, db, spec, all, dialect); err != nil {
+			return nil, err
+		}
+	}
 
 	pivotChanges, err := diffPivotTables(ordered, all, dialect, liveByTable)
 	if err != nil {
@@ -165,12 +187,15 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect, existingTables map[string]map[string]string) ([]SchemaChange, error) {
 	var out []SchemaChange
 	for ent, rel := range generatedPivots(ordered, all) {
-		if cols := lookupTableCols(existingTables, rel.Through); len(cols) > 0 {
-			continue
-		}
 		spec, err := buildPivotSpec(ent, rel, all, dialect)
 		if err != nil {
 			return nil, err
+		}
+		if cols := lookupTableCols(existingTables, rel.Through); len(cols) > 0 {
+			if err := checkPivotColumns(spec, cols, dialect); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		out = append(out, SchemaChange{
 			Summary: fmt.Sprintf("%s: create pivot table", rel.Through),
@@ -184,6 +209,16 @@ func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, di
 		})
 	}
 	return out, nil
+}
+
+func checkPivotColumns(spec pivotSpec, live map[string]string, dialect Dialect) error {
+	for _, column := range slices.Sorted(maps.Keys(spec.Cols)) {
+		actual := lookupStringCase(live, column)
+		if actual == "" || !typesEquivalent(spec.Cols[column], actual, dialect) {
+			return fmt.Errorf("pivot table %q column %q: declared %s, stored %q; migrate the pivot explicitly before changing its relation", spec.Safe, column, spec.Cols[column], actual)
+		}
+	}
+	return nil
 }
 
 // ApplyOptions tunes ApplySchemaDiffWithOptions.

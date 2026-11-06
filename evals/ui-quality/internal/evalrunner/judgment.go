@@ -13,12 +13,20 @@ func validateJudgment(j Judgment, wantCandidateID string) error {
 	if j.CandidateID != wantCandidateID {
 		return fmt.Errorf("echoed candidate %q, want %q", j.CandidateID, wantCandidateID)
 	}
-	for name, value := range map[string]float64{
-		"hierarchy": j.Dimensions.Hierarchy, "composition": j.Dimensions.Composition,
-		"typography": j.Dimensions.Typography, "product_specificity": j.Dimensions.ProductSpecificity,
-		"density": j.Dimensions.Density, "component_polish": j.Dimensions.ComponentPolish,
-		"responsive_intent": j.Dimensions.ResponsiveIntent, "theme_coherence": j.Dimensions.ThemeCoherence,
+	for _, entry := range []struct {
+		key string
+		val float64
+	}{
+		{"hierarchy", j.Dimensions.Hierarchy},
+		{"composition", j.Dimensions.Composition},
+		{"typography", j.Dimensions.Typography},
+		{"product_specificity", j.Dimensions.ProductSpecificity},
+		{"density", j.Dimensions.Density},
+		{"component_polish", j.Dimensions.ComponentPolish},
+		{"responsive_intent", j.Dimensions.ResponsiveIntent},
+		{"theme_coherence", j.Dimensions.ThemeCoherence},
 	} {
+		name, value := entry.key, entry.val
 		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10 {
 			return fmt.Errorf("dimension %s is outside 0..10: %v", name, value)
 		}

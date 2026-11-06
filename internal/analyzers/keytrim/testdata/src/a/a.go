@@ -94,3 +94,24 @@ func otherGet(r registry) string {
 func dynamicKey(vals url.Values, key string) string {
 	return strings.TrimSpace(vals.Get(key))
 }
+
+// tenantTokens: tenant and actor count as identity names only as a
+// whole token joined to ID/Key tokens (tenant, tenantKey, tenant_id,
+// actorID) — a tenantName, a contractorEmail and a tenant_label form
+// field are values people type, not keys.
+func tenantTokens(tenant, tenantKey, actor, tenantName, contractorEmail string, vals url.Values) (string, string, string, string, string, string) {
+	a := strings.TrimSpace(tenant)    // want `keytrim: strings\.TrimSpace rewrites the identity value tenant`
+	b := strings.TrimSpace(tenantKey) // want `keytrim: strings\.TrimSpace rewrites the identity value tenantKey`
+	c := strings.TrimSpace(actor)     // want `keytrim: strings\.TrimSpace rewrites the identity value actor`
+	return a, b, c,
+		strings.TrimSpace(tenantName),
+		strings.TrimSpace(contractorEmail),
+		strings.TrimSpace(vals.Get("tenant_label"))
+}
+
+// tenantKeyForms: the request-key spellings of the same tokens.
+func tenantKeyForms(vals url.Values) (string, string, string) {
+	return strings.TrimSpace(vals.Get("tenant")), // want `keytrim: strings\.TrimSpace rewrites the identity value vals\.Get\("tenant"\)`
+		strings.TrimSpace(vals.Get("tenant_key")), // want `keytrim: strings\.TrimSpace rewrites the identity value vals\.Get\("tenant_key"\)`
+		strings.TrimSpace(vals.Get("actorID")) // want `keytrim: strings\.TrimSpace rewrites the identity value vals\.Get\("actorID"\)`
+}

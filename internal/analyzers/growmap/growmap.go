@@ -22,16 +22,18 @@
 //
 // Silent, each for a reason:
 //   - the package compares len(X.f) anywhere (with <, <=, >, >=, == or
-//     !=): a cap exists, the fix posture;
-//   - the package deletes from (or clears or reassigns) f in a
-//     time-driven function: one that starts a ticker or timer, or reads
-//     the clock or compares times (time.Now/Since/Until, Before/After/
-//     Sub) — a sweep or a TTL check. A function's name is no evidence:
-//     the pre-fix core/mcp had expireResourceSubsIfIdleLocked, which
-//     cleared the record only when the last SSE stream closed, and
-//     subscribe needs no stream. A delete driven by the caller
-//     (unsubscribe, logout) does not count either: the attacker never
-//     sends it;
+//     !=) against a non-zero bound: a cap exists, the fix posture. A
+//     comparison with the constant 0 is an emptiness probe, not a cap;
+//   - the package deletes from, clears or reassigns f under a
+//     time-comparison guard (`if now.Sub(v) > ttl { delete(m, k) }`)
+//     or in a case or range receiving from a time.Time channel (a
+//     ticker's or timer's C) — a sweep or a TTL check. A function's
+//     name is no evidence: the pre-fix core/mcp had
+//     expireResourceSubsIfIdleLocked, which cleared the record only
+//     when the last SSE stream closed, and subscribe needs no stream.
+//     A delete driven by the caller (unsubscribe, logout), or one in a
+//     body that merely stamps the clock, does not count either: the
+//     attacker never sends it;
 //   - the writing function defers a release of the same field (directly,
 //     or through a package function that names it: core/stream's
 //     `defer b.spliceSeatLocked(sub)`): the entry lives as long as the
@@ -80,7 +82,7 @@ func run(pass *analysis.Pass) (any, error) {
 				switch be.Op {
 				case token.LSS, token.LEQ, token.GTR, token.GEQ, token.EQL, token.NEQ:
 					for _, side := range []ast.Expr{be.X, be.Y} {
-						if fv := lenOfField(pass, side); fv != nil {
+						if fv := lenOfField(pass, side); fv != nil && !lenVsZero(be) {
 							lenChecked[fv] = true
 						}
 					}
@@ -128,6 +130,18 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 	return nil, nil
+}
+
+// lenVsZero: a len(X.f) comparison against the constant 0 is an
+// emptiness probe (== 0, != 0, > 0), not a cap — the fix posture the
+// d3cfff016 check spells `len(s.m) >= max`.
+func lenVsZero(be *ast.BinaryExpr) bool {
+	for _, side := range []ast.Expr{be.X, be.Y} {
+		if lit, ok := ast.Unparen(side).(*ast.BasicLit); ok && lit.Kind == token.INT && lit.Value == "0" {
+			return true
+		}
+	}
+	return false
 }
 
 // fieldsNamed returns the struct fields body selects.
@@ -423,9 +437,15 @@ func timeDriven(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	return found
 }
 
-// markSweeps records the map fields a time-driven body deletes from,
-// clears or replaces.
+// markSweeps records the map fields a TIME-driven delete clears: a
+// delete, clear or reassign under a time-comparison guard (the TTL
+// check, `if now.Sub(v) > ttl { delete(m, k) }`) or inside a case or
+// range receiving from a time.Time channel (the ticker sweep). A
+// delete in a body that merely touches the clock — the caller-driven
+// unsubscribe that stamps time.Now() — is not a sweep: the attacker
+// never sends it.
 func markSweeps(pass *analysis.Pass, body *ast.BlockStmt, swept map[*types.Var]bool) {
+	parent := parentsOf(body)
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
@@ -437,13 +457,13 @@ func markSweeps(pass *analysis.Pass, body *ast.BlockStmt, swept map[*types.Var]b
 			if !ok || (b.Name() != "delete" && b.Name() != "clear") {
 				return true
 			}
-			if fv := fieldOf(pass, x.Args[0]); fv != nil {
+			if fv := fieldOf(pass, x.Args[0]); fv != nil && timeDrivenAt(pass, parent, x) {
 				swept[fv] = true
 			}
 		case *ast.AssignStmt:
 			for _, l := range x.Lhs {
 				if fv := fieldOf(pass, l); fv != nil {
-					if _, ok := fv.Type().Underlying().(*types.Map); ok {
+					if _, ok := fv.Type().Underlying().(*types.Map); ok && timeDrivenAt(pass, parent, x) {
 						swept[fv] = true
 					}
 				}
@@ -451,4 +471,146 @@ func markSweeps(pass *analysis.Pass, body *ast.BlockStmt, swept map[*types.Var]b
 		}
 		return true
 	})
+}
+
+// parentsOf maps every node in body to its parent.
+func parentsOf(body *ast.BlockStmt) map[ast.Node]ast.Node {
+	out := map[ast.Node]ast.Node{}
+	var stack []ast.Node
+	var v ast.Visitor
+	v = visitorFunc(func(n ast.Node) ast.Visitor {
+		if n == nil {
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+			return nil
+		}
+		if len(stack) > 0 {
+			out[n] = stack[len(stack)-1]
+		}
+		stack = append(stack, n)
+		return v
+	})
+	ast.Walk(v, body)
+	return out
+}
+
+type visitorFunc func(ast.Node) ast.Visitor
+
+func (f visitorFunc) Visit(n ast.Node) ast.Visitor { return f(n) }
+
+// timeDrivenAt: walking node's ancestors up to the body root reaches a
+// guard or driver that ties the delete to the clock.
+func timeDrivenAt(pass *analysis.Pass, parent map[ast.Node]ast.Node, node ast.Node) bool {
+	for n := parent[node]; n != nil; n = parent[n] {
+		switch a := n.(type) {
+		case *ast.IfStmt:
+			if timeCompares(pass, a.Cond) {
+				return true
+			}
+		case *ast.CommClause:
+			if timeChannelCase(pass, a.Comm) {
+				return true
+			}
+		case *ast.RangeStmt:
+			if isTimeChan(pass.TypesInfo.TypeOf(a.X)) {
+				return true
+			}
+		case *ast.ForStmt:
+			// The ticker loop that empties its maps AFTER the
+			// select's tick case, not inside it: the delete's own
+			// guard may read no clock verb at all.
+			if receivesTimeChan(pass, a.Body) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// timeCompares: cond mentions a time comparison verb (Since, Until, or
+// a time.Time's Before/After/Sub), a clock read (Now, the Unix*
+// stamps), or time.Time's Compare — the TTL spellings the guard can
+// spell with int64 seconds as well as time.Time.
+func timeCompares(pass *analysis.Pass, cond ast.Expr) bool {
+	found := false
+	ast.Inspect(cond, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
+		if !ok || fn.Pkg() == nil || fn.Pkg().Path() != "time" {
+			return true
+		}
+		switch fn.Name() {
+		case "Since", "Until", "Before", "After", "Sub",
+			"Now", "Unix", "UnixMicro", "UnixMilli", "UnixNano", "Compare":
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// timeChannelCase: a select case receiving from a time.Time channel —
+// a Ticker's or Timer's C.
+func timeChannelCase(pass *analysis.Pass, comm ast.Stmt) bool {
+	var chans []ast.Expr
+	switch c := comm.(type) {
+	case *ast.AssignStmt:
+		for _, r := range c.Rhs {
+			if u, ok := r.(*ast.UnaryExpr); ok && u.Op == token.ARROW {
+				chans = append(chans, u.X)
+			}
+		}
+	case *ast.ExprStmt:
+		if u, ok := c.X.(*ast.UnaryExpr); ok && u.Op == token.ARROW {
+			chans = append(chans, u.X)
+		}
+	}
+	for _, ch := range chans {
+		if isTimeChan(pass.TypesInfo.TypeOf(ch)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isTimeChan: t is a channel of time.Time.
+func isTimeChan(t types.Type) bool {
+	ch, ok := t.Underlying().(*types.Chan)
+	if !ok {
+		return false
+	}
+	n, ok := ch.Elem().(*types.Named)
+	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "time" && n.Obj().Name() == "Time"
+}
+
+// receivesTimeChan: body's subtree holds a receive from a time.Time
+// channel — a select case on a Ticker's or Timer's C, or a bare
+// receive — so the code around it runs on the clock's schedule.
+func receivesTimeChan(pass *analysis.Pass, body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		var comm ast.Stmt
+		switch x := n.(type) {
+		case *ast.CommClause:
+			comm = x.Comm
+		case *ast.AssignStmt, *ast.ExprStmt:
+			comm = x.(ast.Stmt)
+		}
+		if comm != nil && timeChannelCase(pass, comm) {
+			found = true
+		}
+		return !found
+	})
+	return found
 }

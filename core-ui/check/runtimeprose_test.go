@@ -163,3 +163,22 @@ func TestLintRuntimeProseRepoIsClean(t *testing.T) {
 		t.Errorf("runtime JS writes reader-facing English outside say():\n%s", res.Error())
 	}
 }
+
+// TestRuntimeProseSkipsRegexQuotes: a quote inside a regex literal
+// (/['"]/) shifted jsStringLiterals' scan, so the toast prose after it
+// was never seen (R8-CK-02, the twin of the layer-prefix case).
+func TestRuntimeProseSkipsRegexQuotes(t *testing.T) {
+	dir := writeRuntimeFixture(t, "regexquote.js", `(function () {
+  'use strict';
+  const v = btn.getAttribute('data-cui-x');
+  NS.toast(/['"]/.test(v) ? 'Save failed' : 'ok');
+})();
+`)
+	res, err := LintRuntimeProse(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 || res.Violations[0].Line != 4 {
+		t.Fatalf("expected 1 finding on line 4 (the toast prose), got:\n%s", res.Error())
+	}
+}

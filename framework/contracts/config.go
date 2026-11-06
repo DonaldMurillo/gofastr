@@ -3,6 +3,7 @@ package contracts
 import (
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -347,7 +348,7 @@ func (c *Config) applyCoverageKey(path, key string, node *coreyaml.Node) error {
 		if err != nil {
 			return err
 		}
-		if v < 0 || v > 100 {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 100 {
 			return fmt.Errorf("%s:%d: coverage minimum %v is not a percentage", path, node.Line, v)
 		}
 		c.Coverage.Minimum, c.Coverage.MinimumSet = v, true

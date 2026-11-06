@@ -5,7 +5,10 @@
 // into its go.sum.
 package names
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Analyzers is every repo analyzer the vettool registers, by the name a
 // marker uses: //gofastr:allow(<name>) <why>. internal/analyzers/suite's
@@ -105,4 +108,17 @@ var Lints = []string{
 // lint that honours the marker.
 func Known(name string) bool {
 	return slices.Contains(Analyzers, name) || slices.Contains(Lints, name)
+}
+
+// SplitRuleList splits a marker's rule list on commas, spaces and
+// tabs — the one grammar both suppression pipelines read. Until
+// 2026-11 the vettool split on commas only, so a marker written
+// `//gofastr:allow(rootwrite rootread) why` — the form
+// framework/contracts/suppress.go documents — silenced nothing in a
+// `go vet -vettool` run while the same list worked under `gofastr
+// verify`. framework/contracts/suppress.go calls this too.
+func SplitRuleList(list string) []string {
+	return strings.FieldsFunc(list, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t'
+	})
 }

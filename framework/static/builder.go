@@ -127,6 +127,7 @@ type Result struct {
 // Build renders every reachable route to HTML and copies runtime/actions/static
 // assets into b.OutDir. Returns a Result that lists what was produced.
 func (b *Builder) Build(ctx context.Context) (Result, error) {
+	ctx = uihost.WithStaticBasePath(ctx, b.BasePath)
 	if b.Host == nil {
 		return Result{}, fmt.Errorf("static: Host is required")
 	}
@@ -1536,7 +1537,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 		if generated[rel] || strings.HasPrefix(rel, pwaDir+"/") {
 			return true
 		}
-		fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(rel)))
+		fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(rel))) //gofastr:allow(rootread) rel is enumerated from hashExportTree's own WalkDir of OutDir — nothing caller-controlled — and following a leaf alias is the point: os.SameFile detects generated-file links
 		return err == nil && slices.ContainsFunc(genFiles, func(g fs.FileInfo) bool { return os.SameFile(fi, g) })
 	})
 	if err != nil {

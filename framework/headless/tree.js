@@ -6,8 +6,8 @@
 //   - the roving tabindex: one treeitem carries tabindex=0 and every
 //     other carries -1; arrows, Home and End move it,
 //   - expand/collapse: ArrowRight opens, ArrowLeft closes (swapped in
-//     a right-to-left tree), Enter and
-//     Space toggle — every keyboard path drives the same toggle
+//     a right-to-left tree), Space toggles and Enter follows the row's
+//     link or toggles a branch without one. Every toggle drives the same
 //     button a click drives, so any lazy-load wiring on the toggle
 //     (the kernel's rpc primitive) fires either way,
 //   - type-ahead over the visible rows,
@@ -179,6 +179,11 @@
       case 'Enter':
       case ' ': {
         e.preventDefault();
+        const rowLink = item.querySelector(':scope > div > a[href], :scope > a[href]');
+        if (e.key === 'Enter' && rowLink) {
+          rowLink.click();
+          return;
+        }
         if (!isLeaf) {
           const toggle = toggleOf();
           if (toggle) toggle.click();

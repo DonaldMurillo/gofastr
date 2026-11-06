@@ -212,6 +212,9 @@ and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
   table (treat as pending) instead of marking it applied.
 - `--from=<yml>` (`generate`/`repair`): the app spec holding the entity
   declarations; `repair` needs it to know each table's owner column.
+  `generate` validates every entity before diffing or writing files. An
+  invalid field default or other registration error exits 1, names the
+  entity, and leaves migrations and the committed snapshot unchanged.
 - `--apply` (`repair` only): rebuild the reported tables instead of only
   reporting them. The rebuild keeps every row, column, default, index, and
   other constraint.
@@ -562,7 +565,10 @@ compares the declared key with the live one (or the snapshot's
   another table's foreign key depends on, so when entities or generated
   `many_to_many` pivots declare foreign keys onto the table, the change
   first drops the foreign keys those tables hold onto the old key and
-  re-adds each declared one after `ADD PRIMARY KEY`. A key whose columns
+  re-adds each declared one after `ADD PRIMARY KEY`. `DiffSchema` validates
+  a generated pivot against the live key before that planned rewrite;
+  its primary key, cascading delete actions and unaffected references
+  must still match. A key whose columns
   the child table gains only in its own changes (a column renamed or added
   in the same change) is re-added after every table's changes. A foreign
   key onto a separately unique column of the table does not depend on the
@@ -1208,6 +1214,21 @@ place the first time a non-default group is applied. Never edit the
 table by hand. Use `migrate force` to reconcile state instead.
 
 ## Auto-migrate path
+
+Generated `many_to_many` pivot tables are checked on boot and during live
+or snapshot diffs. Changing a pivot's link-column names or endpoint key
+types is refused with the pivot and column named; generation does not
+advance the snapshot past that refusal. Write and apply an explicit
+migration that preserves the existing links before adopting the changed
+relation. An entity-owned join table follows its entity's normal diff.
+Live diffing and boot also verify the composite primary key and both
+cascading foreign keys; an existing pivot missing those constraints must
+be migrated explicitly. Snapshot generation has no live constraints to inspect.
+Every declaration sharing a generated Through table must agree on its link
+columns, endpoint SQL types, referenced tables and referenced keys, including reciprocal declarations. Snapshot
+generation, live diffing, and boot migration refuse inconsistent declarations
+before generating or applying schema changes, even on an empty database.
+Only table creation and DDL emission are deduplicated, never validation.
 
 ```go
 app := framework.NewApp(framework.WithDB(db))

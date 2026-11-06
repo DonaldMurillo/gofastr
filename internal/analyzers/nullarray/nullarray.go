@@ -18,7 +18,14 @@
 // drops an empty slice, which is no more an array than null.
 //
 // It fires where a marked field is set (a keyed or positional composite
-// literal element, or `x.F = v`) from a value not proven non-nil. Proven
+// literal element, or `x.F = v`), and where a composite literal of the
+// struct OMITS a required field (toolsCallResult{IsError: true} →
+// "content": null, bdb716482's own spelling) — the omission is quiet
+// only when the zero value rides beside a non-nil error return
+// (return T{}, err) or the same object's field is filled later in the
+// body. Package-level literals and package-level function literals
+// (var x = T{F: v}, var h = func() {...}) have no FuncDecl and are
+// checked all the same. Proven
 // non-nil, each silent:
 //   - a composite literal (`[]Content{}`, `[]Content{v}`), make(...);
 //   - append with at least one element argument;
@@ -26,11 +33,15 @@
 //   - a local every assignment of which is proven (declared with one,
 //     never `var x []T` bare), or one guarded before the sink by
 //     `if x == nil { x = <proven> }` or `if x == nil { return … }` (also
-//     spelled len(x) == 0), where the guard dominates the sink (it sits
-//     directly in a block that encloses the sink, not under some other
-//     condition), or one read inside `if len(x) > 0` / `if x != nil`;
-//   - X.F = append(X.F, …): the field's earlier value was checked where
-//     it was set;
+//     spelled len(x) == 0) — the rebind anywhere in the guard body, a
+//     log line after it changes nothing — where the guard dominates the
+//     sink (it sits directly in a block that encloses the sink, not
+//     under some other condition) and no later assignment to the
+//     variable sits between the guard and the sink (msgs = maybeNil()
+//     after the rebind leaves the value nil again), or one read inside
+//     `if len(x) > 0` / `if x != nil`;
+//   - X.F = append(X.F, …) when that field has a dominating non-nil
+//     initialization, with no later possibly-nil write;
 //   - a call to a function whose every return is proven (contentArray:
 //     its `return c` sits behind `if c == nil { return []Content{} }`),
 //     exported as a fact so a helper in another package counts; or one
@@ -136,6 +147,65 @@ func run(pass *analysis.Pass) (any, error) {
 			checkBody(pass, fd.Body)
 		}
 	}
+	// Package-level spellings have no FuncDecl: var x = T{F: v}, and
+	// var h = func(...) {...} whose body stores into required fields.
+	for _, f := range files {
+		for _, d := range f.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, v := range vs.Values {
+					ast.Inspect(v, func(n ast.Node) bool {
+						if lit, ok := n.(*ast.FuncLit); ok && lit.Body != nil {
+							checkBody(pass, lit.Body)
+							return false
+						}
+						return true
+					})
+				}
+			}
+		}
+	}
+	// A package-level composite literal has no guards or assignments
+	// around it; an empty block is that scope.
+	empty := &ast.BlockStmt{}
+	emptyReport := func(field types.Object, val ast.Expr) {
+		if proven(pass, empty, val, val.Pos(), 0) {
+			return
+		}
+		pass.Reportf(val.Pos(), "%s is a required JSON array, and this value may be nil, which encodes as null; a validating client rejects it. Guard it (if x == nil { x = []T{} }) or route it through a helper that never returns nil", field.Name())
+	}
+	for _, f := range files {
+		for _, d := range f.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, v := range vs.Values {
+					ast.Inspect(v, func(n ast.Node) bool {
+						if _, ok := n.(*ast.FuncLit); ok {
+							return false
+						}
+						if cl, ok := n.(*ast.CompositeLit); ok {
+							checkLit(pass, empty, cl, map[ast.Node]ast.Node{}, emptyReport)
+						}
+						return true
+					})
+				}
+			}
+		}
+	}
 	return nil, nil
 }
 
@@ -200,35 +270,25 @@ func checkBody(pass *analysis.Pass, body *ast.BlockStmt) {
 		}
 		pass.Reportf(val.Pos(), "%s is a required JSON array, and this value may be nil, which encodes as null; a validating client rejects it. Guard it (if x == nil { x = []T{} }) or route it through a helper that never returns nil", field.Name())
 	}
+	parents := map[ast.Node]ast.Node{}
+	var stack []ast.Node
+	ast.Inspect(body, func(n ast.Node) bool {
+		if n == nil {
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+			return true
+		}
+		if len(stack) > 0 {
+			parents[n] = stack[len(stack)-1]
+		}
+		stack = append(stack, n)
+		return true
+	})
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CompositeLit:
-			t := pass.TypesInfo.TypeOf(x)
-			if t == nil {
-				return true
-			}
-			if p, ok := t.Underlying().(*types.Pointer); ok {
-				t = p.Elem()
-			}
-			st, ok := t.Underlying().(*types.Struct)
-			if !ok {
-				return true
-			}
-			for i, el := range x.Elts {
-				if kv, ok := el.(*ast.KeyValueExpr); ok {
-					id, ok := kv.Key.(*ast.Ident)
-					if !ok {
-						continue
-					}
-					if obj := pass.TypesInfo.ObjectOf(id); obj != nil && isRequired(pass, obj) {
-						report(obj, kv.Value)
-					}
-					continue
-				}
-				if i < st.NumFields() && isRequired(pass, st.Field(i)) {
-					report(st.Field(i), el)
-				}
-			}
+			checkLit(pass, body, x, parents, report)
 		case *ast.AssignStmt:
 			if len(x.Lhs) != len(x.Rhs) {
 				return true
@@ -245,6 +305,138 @@ func checkBody(pass *analysis.Pass, body *ast.BlockStmt) {
 		}
 		return true
 	})
+}
+
+// checkLit judges one composite literal: the elements it sets, and the
+// required fields it leaves out (the omitted-field spelling of
+// bdb716482: toolsCallResult{IsError: true} answered "content": null).
+func checkLit(pass *analysis.Pass, body *ast.BlockStmt, x *ast.CompositeLit, parents map[ast.Node]ast.Node, report func(types.Object, ast.Expr)) {
+	t := pass.TypesInfo.TypeOf(x)
+	if t == nil {
+		return
+	}
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	st, ok := t.Underlying().(*types.Struct)
+	if !ok {
+		return
+	}
+	set := map[types.Object]bool{}
+	for i, el := range x.Elts {
+		if kv, ok := el.(*ast.KeyValueExpr); ok {
+			id, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				set[obj] = true
+				if isRequired(pass, obj) {
+					report(obj, kv.Value)
+				}
+			}
+			continue
+		}
+		if i < st.NumFields() {
+			f := st.Field(i)
+			set[f] = true
+			if isRequired(pass, f) {
+				report(f, el)
+			}
+		}
+	}
+	for i := range st.NumFields() {
+		f := st.Field(i)
+		if !isRequired(pass, f) || set[f] {
+			continue
+		}
+		// The omitted field: quiet when the zero value rides with a
+		// non-nil error (return T{}, err — the caller never reads it),
+		// or when the same object's field is filled later in this body
+		// (judged where it is filled).
+		if returnedWithErr(pass, x, parents) || laterFilled(pass, body, x, f, parents) {
+			continue
+		}
+		pass.Reportf(x.Pos(), "%s is a required JSON array, and this literal leaves it nil, which encodes as null; a validating client rejects it. Set it here, guard it, or route it through a helper that never returns nil", f.Name())
+	}
+}
+
+// returnedWithErr: lit is a return result riding beside a non-nil
+// error (return T{...}, err): the zero value never reaches a
+// marshaller.
+func returnedWithErr(pass *analysis.Pass, lit *ast.CompositeLit, parents map[ast.Node]ast.Node) bool {
+	p := parents[lit]
+	if u, ok := p.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		p = parents[u]
+	}
+	rs, ok := p.(*ast.ReturnStmt)
+	if !ok {
+		return false
+	}
+	errType := types.Universe.Lookup("error").Type()
+	for _, r := range rs.Results {
+		if r == lit || isNilLit(r) {
+			continue
+		}
+		if t := pass.TypesInfo.TypeOf(r); t != nil && types.Identical(t, errType) {
+			return true
+		}
+	}
+	return false
+}
+
+func isNilLit(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "nil"
+}
+
+// laterFilled: lit initializes a local whose same field is assigned
+// later in body (r := T{IsError: true}; r.Content = v) — the fill is
+// judged where it stands.
+func laterFilled(pass *analysis.Pass, body *ast.BlockStmt, lit *ast.CompositeLit, f *types.Var, parents map[ast.Node]ast.Node) bool {
+	p := parents[lit]
+	if u, ok := p.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		p = parents[u]
+	}
+	as, ok := p.(*ast.AssignStmt)
+	if !ok || len(as.Lhs) != len(as.Rhs) {
+		return false
+	}
+	var target types.Object
+	for i, r := range as.Rhs {
+		if r == lit && i < len(as.Lhs) {
+			if id, ok := as.Lhs[i].(*ast.Ident); ok {
+				target = pass.TypesInfo.ObjectOf(id)
+			}
+		}
+	}
+	if target == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		st, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, l := range st.Lhs {
+			sel, ok := l.(*ast.SelectorExpr)
+			if !ok {
+				continue
+			}
+			if id, ok := sel.X.(*ast.Ident); ok &&
+				pass.TypesInfo.Uses[id] == target &&
+				pass.TypesInfo.ObjectOf(sel.Sel) == f {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // proven reports whether e, evaluated at pos inside body, is never a nil
@@ -282,13 +474,6 @@ func proven(pass *analysis.Pass, body *ast.BlockStmt, e ast.Expr, pos token.Pos,
 					if len(x.Args) >= 2 && !x.Ellipsis.IsValid() {
 						return true
 					}
-					// X.F = append(X.F, more...): the field's earlier
-					// value was itself checked where it was set.
-					if sel, ok := ast.Unparen(x.Args[0]).(*ast.SelectorExpr); ok {
-						if obj := pass.TypesInfo.ObjectOf(sel.Sel); obj != nil && isRequired(pass, obj) {
-							return true
-						}
-					}
 					if len(x.Args) >= 3 {
 						return true
 					}
@@ -320,6 +505,8 @@ func proven(pass *analysis.Pass, body *ast.BlockStmt, e ast.Expr, pos token.Pos,
 			}
 		}
 		return false
+	case *ast.SelectorExpr:
+		return fieldInitialized(pass, body, x, pos, depth)
 	case *ast.Ident:
 		obj, ok := pass.TypesInfo.Uses[x].(*types.Var)
 		if !ok || obj.IsField() || obj.Parent() == pass.Pkg.Scope() {
@@ -331,6 +518,140 @@ func proven(pass *analysis.Pass, body *ast.BlockStmt, e ast.Expr, pos token.Pos,
 		return allAssignsProven(pass, body, obj, pos, depth)
 	}
 	return false
+}
+
+func fieldInitialized(pass *analysis.Pass, body *ast.BlockStmt, field *ast.SelectorExpr, pos token.Pos, depth int) bool {
+	receiver, ok := ast.Unparen(field.X).(*ast.Ident)
+	if !ok {
+		return false
+	}
+	object := pass.TypesInfo.ObjectOf(receiver)
+	dominating := map[ast.Node]bool{}
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node != nil && node.Pos() <= pos && pos < node.End() {
+			var statements []ast.Stmt
+			switch block := node.(type) {
+			case *ast.BlockStmt:
+				statements = block.List
+			case *ast.CaseClause:
+				statements = block.Body
+			case *ast.CommClause:
+				statements = block.Body
+			}
+			for _, statement := range statements {
+				dominating[statement] = true
+				if declaration, ok := statement.(*ast.DeclStmt); ok {
+					if general, ok := declaration.Decl.(*ast.GenDecl); ok {
+						for _, specification := range general.Specs {
+							dominating[specification] = true
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+	sameField := func(expression ast.Expr) bool {
+		selected, ok := ast.Unparen(expression).(*ast.SelectorExpr)
+		if !ok || pass.TypesInfo.ObjectOf(selected.Sel) != pass.TypesInfo.ObjectOf(field.Sel) {
+			return false
+		}
+		base, ok := ast.Unparen(selected.X).(*ast.Ident)
+		return ok && pass.TypesInfo.ObjectOf(base) == object
+	}
+	initialized := false
+	apply := func(node ast.Node, value ast.Expr, whole bool) {
+		if whole {
+			value = initializedField(pass, value, field.Sel.Name)
+		}
+		safe := value != nil && proven(pass, body, value, node.Pos(), depth+1)
+		if !safe {
+			initialized = false
+		} else if dominating[node] {
+			initialized = true
+		}
+	}
+	ast.Inspect(body, func(node ast.Node) bool {
+		if node == nil || node.Pos() >= pos {
+			return false
+		}
+		switch statement := node.(type) {
+		case *ast.IfStmt:
+			if dominating[statement] && statement.End() <= pos && statement.Else == nil {
+				if condition, ok := ast.Unparen(statement.Cond).(*ast.BinaryExpr); ok && condition.Op == token.EQL {
+					for _, operands := range [][2]ast.Expr{{condition.X, condition.Y}, {condition.Y, condition.X}} {
+						if value := pass.TypesInfo.Types[operands[1]]; value.IsNil() && sameField(operands[0]) &&
+							fieldInitialized(pass, statement.Body, field, statement.Body.End()-1, depth+1) {
+							initialized = true
+							return false
+						}
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for index, name := range statement.Names {
+				if pass.TypesInfo.ObjectOf(name) == object {
+					var value ast.Expr
+					if index < len(statement.Values) {
+						value = statement.Values[index]
+					}
+					apply(statement, value, true)
+				}
+			}
+		case *ast.AssignStmt:
+			for index, target := range statement.Lhs {
+				whole := false
+				switch target := target.(type) {
+				case *ast.Ident:
+					if pass.TypesInfo.ObjectOf(target) != object {
+						continue
+					}
+					whole = true
+				case *ast.SelectorExpr:
+					if !sameField(target) {
+						continue
+					}
+				default:
+					continue
+				}
+				var value ast.Expr
+				if len(statement.Lhs) == len(statement.Rhs) {
+					value = statement.Rhs[index]
+				}
+				apply(statement, value, whole)
+			}
+		}
+		return true
+	})
+	return initialized
+}
+
+func initializedField(pass *analysis.Pass, expression ast.Expr, name string) ast.Expr {
+	if expression == nil {
+		return nil
+	}
+	expression = ast.Unparen(expression)
+	if pointer, ok := expression.(*ast.UnaryExpr); ok && pointer.Op == token.AND {
+		expression = ast.Unparen(pointer.X)
+	}
+	literal, ok := expression.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	structure, ok := pass.TypesInfo.TypeOf(literal).Underlying().(*types.Struct)
+	if !ok {
+		return nil
+	}
+	for index, element := range literal.Elts {
+		if keyed, ok := element.(*ast.KeyValueExpr); ok {
+			if key, ok := keyed.Key.(*ast.Ident); ok && key.Name == name {
+				return keyed.Value
+			}
+		} else if index < structure.NumFields() && structure.Field(index).Name() == name {
+			return element
+		}
+	}
+	return nil
 }
 
 // guarded reports whether an `if x == nil` (or len(x) == 0) before pos
@@ -362,21 +683,42 @@ func guarded(pass *analysis.Pass, body *ast.BlockStmt, obj *types.Var, pos token
 		}
 		return true
 	})
+	// A guard's credit is stale when the variable is assigned again
+	// after it and before the sink (msgs = maybeNil() after the
+	// rebind); the guard's own clamp, inside it, does not count.
+	lastAssign := token.NoPos
+	ast.Inspect(body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || as.End() > pos {
+			return true
+		}
+		for _, l := range as.Lhs {
+			if id, ok := l.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == obj && as.Pos() > lastAssign {
+				lastAssign = as.Pos()
+			}
+		}
+		return true
+	})
 	found := false
 	for _, ifs := range guards {
-		if found || !nilTest(pass, ifs.Cond, obj) || len(ifs.Body.List) == 0 {
+		if found || !nilTest(pass, ifs.Cond, obj) || len(ifs.Body.List) == 0 || ifs.End() <= lastAssign {
 			continue
 		}
-		switch last := ifs.Body.List[len(ifs.Body.List)-1].(type) {
-		case *ast.ReturnStmt:
-			found = true
-		case *ast.BranchStmt:
-			found = true
-		case *ast.AssignStmt:
-			for i, l := range last.Lhs {
-				if id, ok := l.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == obj && i < len(last.Rhs) &&
-					proven(pass, body, last.Rhs[i], last.Pos(), depth+1) {
-					found = true
+		// Any statement of the guard body counts: a rebind to a proven
+		// value (with a log line after it) or a return/continue/break
+		// that leaves the function with the nil path handled.
+		for _, st := range ifs.Body.List {
+			switch a := st.(type) {
+			case *ast.ReturnStmt:
+				found = true
+			case *ast.BranchStmt:
+				found = true
+			case *ast.AssignStmt:
+				for i, l := range a.Lhs {
+					if id, ok := l.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == obj && i < len(a.Rhs) &&
+						proven(pass, body, a.Rhs[i], a.Pos(), depth+1) {
+						found = true
+					}
 				}
 			}
 		}

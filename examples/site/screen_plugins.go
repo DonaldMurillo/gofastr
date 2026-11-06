@@ -123,7 +123,11 @@ func validatePluginRegistry(reg *pluginRegistry) error {
 			return fmt.Errorf("plugins.json: duplicate row %q", p.Name)
 		}
 		seen[p.Name] = true
-		for k, v := range map[string]string{"name": p.Name, "modulePath": p.ModulePath, "version": p.Version, "description": p.Description, "frameworkCompat": p.FrameworkCompat, "routePrefix": p.RoutePrefix} {
+		for _, entry := range []struct {
+			key string
+			val string
+		}{{"name", p.Name}, {"modulePath", p.ModulePath}, {"version", p.Version}, {"description", p.Description}, {"frameworkCompat", p.FrameworkCompat}, {"routePrefix", p.RoutePrefix}} {
+			k, v := entry.key, entry.val
 			if v == "" {
 				return fmt.Errorf("plugins.json: row %q has an empty %s", p.Name, k)
 			}

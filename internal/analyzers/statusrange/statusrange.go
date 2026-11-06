@@ -20,11 +20,17 @@
 // http.Error(w, msg, c), or a call to a status sink (below) at its sink
 // argument, where c is not known good. Known good is:
 //   - a constant (http.StatusOK and friends);
-//   - range-checked: an ordered comparison (<, <=, >, >=) of the same
-//     variable or field path (herr.Code, code) against a constant, or a
-//     call to a checker on it (a bool function that compares its int
-//     parameter against a constant: kiln's validStatus), in an if or
-//     case condition before the call in the same function;
+//   - range-checked on the REACHING PATH, in the 2026-11-03 polarity
+//     model: a check counts only when it proves c inside 100-999 — a
+//     diverging guard whose condition, when FALSE, leaves it in range
+//     (`if !validStatus(c) { return }`), a clamp whose false side is in
+//     range and whose body reassigns an in-range constant, or the
+//     condition of an enclosing if/for/case arm that HELD (`if c >= 400
+//     && c <= 599 { WriteHeader(c) }`). A log-only comparison, an
+//     equality with a value outside the range (`c != 0`), or a
+//     one-sided bound proves nothing. A checker call (a bool function
+//     whose TRUE result proves the window: kiln's validStatus) counts
+//     when held;
 //   - a safe result: a call to a function whose result at that index is
 //     known good at every return (statusFor(err) switching over
 //     constants, a clamp helper), directly or through a local bound by
@@ -38,7 +44,10 @@
 // it is not reported, and every caller's argument is checked instead,
 // so the report lands where the unchecked value enters. Exported as a
 // fact, so a sink in one package is checked at its callers in another
-// (i18n.HTTPError was one until it clamped). The same holds for a
+// (i18n.HTTPError was one until it clamped). A status call in a CLOSURE
+// capturing the parameter counts too (`defer func() {
+// w.WriteHeader(code) }()`): the sink is the enclosing function's, and
+// the call inside the closure is not reported. The same holds for a
 // function literal bound to a local (core/handler respond's
 // `begin := func(code int) {...}`), checked at its calls in the
 // enclosing body. A method named WriteHeader forwarding its own
@@ -49,15 +58,17 @@
 // package can write (unexported, or on an unexported type), and that is
 // read as a status argument without a range check at the read. Its
 // reads are quiet and its stores are checked instead, like a sink's
-// callers: x.F = v and T{F: v} must store a known-good value, the
-// WriteHeader method's own parameter (a buffering wrapper recording
-// what it will replay: Compress, Timeout, the cache recorder), or a
-// sink parameter of the storing function (crud's phraseRefusal(code)
-// and entityui's refuse(status): their callers are checked). A keyed
-// literal that leaves a status field out stores its zero and is
-// reported, unless the field is a recorded one: a wrapper replays it
-// only after WriteHeader set it. A field an importer can write
-// (exported, on an exported type: handler.Error.Code,
+// callers: x.F = v, T{F: v} (keyed or positional — element i sets field
+// i), stores at package level (`var boot = refusal{code: parse(s)}`),
+// and literals inside package-level function literals must store a
+// known-good value: the WriteHeader method's own parameter (a buffering
+// wrapper recording what it will replay: Compress, Timeout, the cache
+// recorder), or a sink parameter of the storing function (crud's
+// phraseRefusal(code) and entityui's refuse(status): their callers are
+// checked). A keyed literal that leaves a status field out stores its
+// zero and is reported, unless the field is a recorded one: a wrapper
+// replays it only after WriteHeader set it. A field an importer can
+// write (exported, on an exported type: handler.Error.Code,
 // IdempotentResponse.Status) is never a status field: the package cannot
 // see all of its stores, so its read is checked where it is written out,
 // like any other value. That is what fires on 8708ddd5.
@@ -76,6 +87,7 @@ package statusrange
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"maps"
@@ -84,6 +96,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/rwcall"
 )
@@ -173,9 +186,7 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		c.bindLiterals(f)
-		for _, fn := range astx.AllFuncs(f) {
-			c.scan(fn)
-		}
+		c.scanTree(f)
 	}
 	for _, s := range c.stores {
 		if !c.statusField[s.field] || c.storeOK(s) {
@@ -239,8 +250,10 @@ func intParams(pass *analysis.Pass, ft *ast.FuncType) map[types.Object]int {
 	return out
 }
 
-// computeCheckers: a bool-returning function whose body compares an
-// int parameter against a constant with an ordered operator.
+// computeCheckers: a bool-returning function whose TRUE result proves
+// an int parameter inside 100-999 — every return expression must
+// establish the window (a comparison tree, or a literal true backed by
+// a diverging guard before it).
 func (c *checker) computeCheckers() {
 	for fn, fd := range c.decls {
 		sig := fn.Type().(*types.Signature)
@@ -251,12 +264,44 @@ func (c *checker) computeCheckers() {
 			continue
 		}
 		for obj, i := range intParams(c.pass, fd.Type) {
-			if comparesAgainstConst(c.pass, fd.Body, keyOfObj(obj), token.NoPos) {
+			if c.provesWindow(fd.Body, keyOfObj(obj)) {
 				c.checks[fn] = append(c.checks[fn], i)
 			}
 		}
 		slices.Sort(c.checks[fn])
 	}
+}
+
+// provesWindow: every return statement's value proves the key inside
+// 100-999 when true.
+func (c *checker) provesWindow(body *ast.BlockStmt, key string) bool {
+	ok := true
+	ast.Inspect(body, func(n ast.Node) bool {
+		ret, isRet := n.(*ast.ReturnStmt)
+		if !isRet || !ok || len(ret.Results) != 1 {
+			return !isRet
+		}
+		v := ast.Unparen(ret.Results[0])
+		if id, isIdent := v.(*ast.Ident); isIdent && c.pass.TypesInfo.ObjectOf(id) != nil {
+			tv, hasVal := c.pass.TypesInfo.Types[v]
+			if hasVal && tv.Value != nil && tv.Value.Kind() == constant.Bool && !constant.BoolVal(tv.Value) {
+				return false // a literal false says nothing
+			}
+			// literal true: the diverging guard before the return did
+			// the proving
+			found := false
+			c.scanBlock(body.List, key, ret.Pos(), &found)
+			if !found {
+				ok = false
+			}
+			return false
+		}
+		if !c.condSides(v, key, true).both() {
+			ok = false
+		}
+		return false
+	})
+	return ok
 }
 
 // store is one write of an int field: x.F = v, or T{F: v}.
@@ -269,61 +314,94 @@ type store struct {
 }
 
 // collectStores records every int-field store in the package's
-// non-test function declarations (literals inside them included). A
-// field filled through its address (a row Scan) is what the package
-// stored: neutral, neither a store nor a read.
+// non-test code: function declarations (literals inside them included)
+// and package-level variable values (a direct composite literal, or a
+// function literal's body). A field filled through its address (a row
+// Scan) is what the package stored: neutral, neither a store nor a
+// read.
 func (c *checker) collectStores() {
+	collect := func(root ast.Node, fd *ast.FuncDecl) {
+		ast.Inspect(root, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.AssignStmt:
+				for i, lhs := range n.Lhs {
+					if v := fieldOf(c.pass, lhs); v != nil && isInt(v.Type()) {
+						var rhs ast.Expr
+						if len(n.Lhs) == len(n.Rhs) && (n.Tok == token.ASSIGN || n.Tok == token.DEFINE) {
+							rhs = n.Rhs[i]
+						}
+						c.stores = append(c.stores, store{field: v, rhs: rhs, at: lhs, fd: fd})
+					}
+				}
+			case *ast.CompositeLit:
+				st, ok := astx.Deref(c.pass.TypesInfo.TypeOf(n)).Underlying().(*types.Struct)
+				if !ok {
+					return true
+				}
+				keyed := map[*types.Var]bool{}
+				positional := false
+				for _, elt := range n.Elts {
+					if _, ok := elt.(*ast.KeyValueExpr); !ok {
+						positional = true
+					}
+				}
+				if positional {
+					// element i sets field i
+					for i, elt := range n.Elts {
+						if i < st.NumFields() {
+							if v := st.Field(i); isInt(v.Type()) {
+								c.stores = append(c.stores, store{field: v, rhs: elt, at: elt, fd: fd})
+							}
+						}
+					}
+					return true
+				}
+				for _, elt := range n.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					id, ok := kv.Key.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					if v, ok := c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && v.IsField() && isInt(v.Type()) {
+						keyed[v] = true
+						c.stores = append(c.stores, store{field: v, rhs: kv.Value, at: kv.Value, fd: fd})
+					}
+				}
+				// A keyed literal that leaves an int field out stores its
+				// zero, which WriteHeader panics on.
+				for i := range st.NumFields() {
+					if v := st.Field(i); isInt(v.Type()) && !keyed[v] {
+						c.stores = append(c.stores, store{field: v, rhs: nil, at: n, fd: fd, zero: true})
+					}
+				}
+			}
+			return true
+		})
+	}
 	for _, f := range c.pass.Files {
 		if pathflow.IsTestFile(c.pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
-			fd, ok := d.(*ast.FuncDecl)
-			if !ok || fd.Body == nil {
-				continue
-			}
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				switch n := n.(type) {
-				case *ast.AssignStmt:
-					for i, lhs := range n.Lhs {
-						if v := fieldOf(c.pass, lhs); v != nil && isInt(v.Type()) {
-							var rhs ast.Expr
-							if len(n.Lhs) == len(n.Rhs) && (n.Tok == token.ASSIGN || n.Tok == token.DEFINE) {
-								rhs = n.Rhs[i]
-							}
-							c.stores = append(c.stores, store{field: v, rhs: rhs, at: lhs, fd: fd})
-						}
-					}
-				case *ast.CompositeLit:
-					st, ok := astx.Deref(c.pass.TypesInfo.TypeOf(n)).Underlying().(*types.Struct)
+			switch decl := d.(type) {
+			case *ast.FuncDecl:
+				if decl.Body != nil {
+					collect(decl.Body, decl)
+				}
+			case *ast.GenDecl:
+				for _, spec := range decl.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
 					if !ok {
-						return true
+						continue
 					}
-					keyed := map[*types.Var]bool{}
-					for _, elt := range n.Elts {
-						kv, ok := elt.(*ast.KeyValueExpr)
-						if !ok {
-							return true // positional: every field is set
-						}
-						id, ok := kv.Key.(*ast.Ident)
-						if !ok {
-							continue
-						}
-						if v, ok := c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && v.IsField() && isInt(v.Type()) {
-							keyed[v] = true
-							c.stores = append(c.stores, store{field: v, rhs: kv.Value, at: kv.Value, fd: fd})
-						}
-					}
-					// A keyed literal that leaves an int field out stores its
-					// zero, which WriteHeader panics on.
-					for i := range st.NumFields() {
-						if v := st.Field(i); isInt(v.Type()) && !keyed[v] {
-							c.stores = append(c.stores, store{field: v, rhs: nil, at: n, fd: fd, zero: true})
-						}
+					for _, v := range vs.Values {
+						collect(v, nil)
 					}
 				}
-				return true
-			})
+			}
 		}
 	}
 }
@@ -404,6 +482,10 @@ func (c *checker) storeOK(s store) bool {
 	if s.rhs == nil {
 		return false
 	}
+	if s.fd == nil {
+		// a package-level store: only the value itself can vouch
+		return c.knownGood(s.rhs, nil, nil, s.at.Pos())
+	}
 	if c.passThrough(s.fd, s.rhs) || c.knownGood(s.rhs, s.fd.Body, s.fd, s.at.Pos()) {
 		return true
 	}
@@ -467,7 +549,7 @@ func (c *checker) computeSinks() bool {
 		if len(params) == 0 {
 			continue
 		}
-		c.eachStatusCall(fd.Body, func(call *ast.CallExpr, arg ast.Expr) {
+		c.eachStatusCallDeep(fd.Body, func(call *ast.CallExpr, arg ast.Expr) {
 			id, ok := ast.Unparen(arg).(*ast.Ident)
 			if !ok {
 				return
@@ -488,6 +570,9 @@ func (c *checker) computeSinks() bool {
 		id, ok := ast.Unparen(s.rhs).(*ast.Ident)
 		if !ok {
 			continue
+		}
+		if s.fd == nil {
+			continue // a package-level store: no function to sink
 		}
 		fn, ok := c.pass.TypesInfo.Defs[s.fd.Name].(*types.Func)
 		if !ok {
@@ -511,6 +596,22 @@ func (c *checker) eachStatusCall(body *ast.BlockStmt, fn func(*ast.CallExpr, ast
 		if _, ok := n.(*ast.FuncLit); ok {
 			return false
 		}
+		if call, ok := n.(*ast.CallExpr); ok {
+			for _, arg := range c.statusArgs(call) {
+				fn(call, arg)
+			}
+		}
+		return true
+	})
+}
+
+// eachStatusCallDeep calls fn for each status-taking call anywhere in
+// body, closures included: a deferred closure that captures the
+// enclosing function's parameter still sinks that parameter (the
+// parameter's object is the same through the capture; a closure's own
+// parameters are different objects and never match).
+func (c *checker) eachStatusCallDeep(body *ast.BlockStmt, fn func(*ast.CallExpr, ast.Expr)) {
+	ast.Inspect(body, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
 			for _, arg := range c.statusArgs(call) {
 				fn(call, arg)
@@ -558,7 +659,7 @@ func (c *checker) statusArgs(call *ast.CallExpr) []ast.Expr {
 // parameter.
 func (c *checker) passThrough(fn ast.Node, arg ast.Expr) bool {
 	fd, ok := fn.(*ast.FuncDecl)
-	if !ok || fd.Recv == nil || fd.Name.Name != "WriteHeader" {
+	if !ok || fd == nil || fd.Recv == nil || fd.Name.Name != "WriteHeader" {
 		return false
 	}
 	id, ok := ast.Unparen(arg).(*ast.Ident)
@@ -569,43 +670,84 @@ func (c *checker) passThrough(fn ast.Node, arg ast.Expr) bool {
 	return isParam
 }
 
-// scan reports unchecked status arguments in one function body. Local
-// func literals bound to a variable whose int parameter reaches a status
-// call become sinks checked at their calls in this body.
-func (c *checker) scan(fn ast.Node) {
-	body := astx.BodyOf(fn)
-	if body == nil {
-		return
-	}
-	var fnObj *types.Func
-	if fd, ok := fn.(*ast.FuncDecl); ok {
-		fnObj, _ = c.pass.TypesInfo.Defs[fd.Name].(*types.Func)
-	}
-	params := map[types.Object]int{}
-	switch f := fn.(type) {
-	case *ast.FuncDecl:
-		params = intParams(c.pass, f.Type)
-	case *ast.FuncLit:
-		params = intParams(c.pass, f.Type)
-	}
-	c.eachStatusCall(body, func(call *ast.CallExpr, arg ast.Expr) {
-		if c.passThrough(fn, arg) || c.knownGood(arg, body, fn, call.Pos()) {
+// scanTree reports unchecked status arguments through a file's
+// functions, closures included: a literal that captures an enclosing
+// function's sink parameter is that function's sink, checked at its
+// callers, and the call inside the closure is not reported.
+func (c *checker) scanTree(f *ast.File) {
+	var walk func(fn ast.Node, outer map[types.Object]bool)
+	walk = func(fn ast.Node, outer map[types.Object]bool) {
+		body := astx.BodyOf(fn)
+		if body == nil {
 			return
 		}
-		if id, ok := ast.Unparen(arg).(*ast.Ident); ok {
-			if idx, isParam := params[c.pass.TypesInfo.Uses[id]]; isParam {
-				if fnObj != nil && slices.Contains(c.sinks[fnObj], idx) {
-					return // a sink: its callers are checked
-				}
-				if lit, ok := fn.(*ast.FuncLit); ok && slices.Contains(c.litOf[lit], idx) {
-					return // checked at the literal's calls
+		params := map[types.Object]int{}
+		switch f := fn.(type) {
+		case *ast.FuncDecl:
+			params = intParams(c.pass, f.Type)
+		case *ast.FuncLit:
+			params = intParams(c.pass, f.Type)
+		}
+		// This function's own sink parameters: an exported fact for a
+		// declaration, the bound-literal record for a literal.
+		var sinkIdx []int
+		if fd, ok := fn.(*ast.FuncDecl); ok {
+			if fnObj, ok := c.pass.TypesInfo.Defs[fd.Name].(*types.Func); ok {
+				sinkIdx = c.sinks[fnObj]
+			}
+		} else if lit, ok := fn.(*ast.FuncLit); ok {
+			sinkIdx = c.litOf[lit]
+		}
+		inner := map[types.Object]bool{}
+		for o := range outer {
+			inner[o] = true
+		}
+		for _, idx := range sinkIdx {
+			for obj, i := range params {
+				if i == idx {
+					inner[obj] = true
 				}
 			}
 		}
-		c.pass.Reportf(arg.Pos(),
-			"statusrange: a status that is neither constant nor range-checked reaches %s; net/http panics on a code outside 100-999 and a 2xx sends an error as success (clamp it first: if c < 400 || c > 599 { c = http.StatusInternalServerError })",
-			c.label(call))
-	})
+		c.eachStatusCall(body, func(call *ast.CallExpr, arg ast.Expr) {
+			if c.passThrough(fn, arg) || c.knownGood(arg, body, fn, call.Pos()) {
+				return
+			}
+			if id, ok := ast.Unparen(arg).(*ast.Ident); ok {
+				if inner[c.pass.TypesInfo.Uses[id]] {
+					return // a sink parameter: its callers are checked
+				}
+			}
+			c.pass.Reportf(arg.Pos(),
+				"statusrange: a status that is neither constant nor range-checked reaches %s; net/http panics on a code outside 100-999 and a 2xx sends an error as success (clamp it first: if c < 400 || c > 599 { c = http.StatusInternalServerError })",
+				c.label(call))
+		})
+		ast.Inspect(body, func(n ast.Node) bool {
+			if lit, ok := n.(*ast.FuncLit); ok {
+				walk(lit, inner)
+				return false
+			}
+			return true
+		})
+	}
+	for _, d := range f.Decls {
+		switch decl := d.(type) {
+		case *ast.FuncDecl:
+			walk(decl, map[types.Object]bool{})
+		case *ast.GenDecl:
+			for _, spec := range decl.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, v := range vs.Values {
+					if lit, ok := ast.Unparen(v).(*ast.FuncLit); ok {
+						walk(lit, map[types.Object]bool{})
+					}
+				}
+			}
+		}
+	}
 }
 
 // bindLiterals finds func literals bound to a local
@@ -725,7 +867,15 @@ func (c *checker) knownGoodDepth(e ast.Expr, body *ast.BlockStmt, fn ast.Node, p
 			continue
 		}
 		if !c.knownGoodDepth(a.rhs, body, fn, a.rhs.Pos(), depth+1) {
-			return false
+			// The writeBlock spelling: the store's own block clamps
+			// the value on every path out of it (status =
+			// res.Decision.Status; if status < 400 || status > 599 {
+			// status = http.StatusInternalServerError }). The clamp
+			// runs after this store wherever the store's value
+			// survives to pos.
+			if a.block == nil || !c.rangeChecked(id, a.block, pos) {
+				return false
+			}
 		}
 	}
 	return true
@@ -769,15 +919,45 @@ func isParam(pass *analysis.Pass, fn ast.Node, v *types.Var) bool {
 }
 
 // assignment is one store into a local: a single value (rhs), or result
-// index of a multi-value call; ok false when it cannot be read.
+// index of a multi-value call; ok false when it cannot be read. block
+// is the innermost block holding the store (nil when body is nil).
 type assignment struct {
 	rhs   ast.Expr
 	call  *ast.CallExpr
 	index int
 	ok    bool
+	block *ast.BlockStmt
 }
 
 func (c *checker) assignments(body *ast.BlockStmt, v *types.Var) []assignment {
+	if body == nil {
+		return nil // a package-level store: no function body
+	}
+	// Every block in the body, to find the tightest one holding each
+	// store without a parent map. A case clause's body is not a
+	// BlockStmt node, so it gets a synthesized one (the per-assignment
+	// clamp check walks it).
+	var blocks []*ast.BlockStmt
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch b := n.(type) {
+		case *ast.BlockStmt:
+			blocks = append(blocks, b)
+		case *ast.CaseClause:
+			if len(b.Body) > 0 {
+				blocks = append(blocks, &ast.BlockStmt{List: b.Body, Lbrace: b.Pos(), Rbrace: b.End()})
+			}
+		}
+		return true
+	})
+	enclosing := func(n ast.Node) *ast.BlockStmt {
+		var best *ast.BlockStmt
+		for _, b := range blocks {
+			if b.Pos() <= n.Pos() && n.End() <= b.End() && (best == nil || b.Pos() > best.Pos()) {
+				best = b
+			}
+		}
+		return best
+	}
 	var out []assignment
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -791,10 +971,10 @@ func (c *checker) assignments(body *ast.BlockStmt, v *types.Var) []assignment {
 				case n.Tok != token.ASSIGN && n.Tok != token.DEFINE:
 					out = append(out, assignment{})
 				case len(n.Lhs) == len(n.Rhs):
-					out = append(out, assignment{rhs: n.Rhs[i], ok: true})
+					out = append(out, assignment{rhs: n.Rhs[i], ok: true, block: enclosing(n)})
 				case len(n.Rhs) == 1:
 					call, ok := ast.Unparen(n.Rhs[0]).(*ast.CallExpr)
-					out = append(out, assignment{call: call, index: i, ok: ok})
+					out = append(out, assignment{call: call, index: i, ok: ok, block: enclosing(n)})
 				default:
 					out = append(out, assignment{})
 				}
@@ -806,7 +986,7 @@ func (c *checker) assignments(body *ast.BlockStmt, v *types.Var) []assignment {
 				}
 				switch {
 				case len(n.Values) == len(n.Names):
-					out = append(out, assignment{rhs: n.Values[i], ok: true})
+					out = append(out, assignment{rhs: n.Values[i], ok: true, block: enclosing(n)})
 				case len(n.Values) == 0:
 					out = append(out, assignment{rhs: &ast.BasicLit{Kind: token.INT, Value: "0", ValuePos: id.Pos()}, ok: true})
 				default:
@@ -829,77 +1009,264 @@ func (c *checker) assignments(body *ast.BlockStmt, v *types.Var) []assignment {
 	return out
 }
 
-// rangeChecked: before pos in body, an if/case condition compares e's
-// path against a constant with an ordered operator, or passes it to a
-// checker.
+// rangeChecked: on the path through body to pos, a check proves the
+// path key inside 100-999 — a diverging guard whose condition, when
+// FALSE, leaves it in range (`if !validStatus(c) { return }`), a clamp
+// guard whose false side is in range and whose body reassigns an
+// in-range constant (`if c < 400 || c > 599 { c = 500 }`), or the
+// condition of an enclosing if/for/case arm that HELD (`if c >= 400 &&
+// c <= 599 { WriteHeader(c) }`). A log-only comparison, an equality
+// with a value outside the range, or a one-sided bound proves nothing.
 func (c *checker) rangeChecked(e ast.Expr, body *ast.BlockStmt, pos token.Pos) bool {
+	if body == nil {
+		return false // a package-level store: no path to check
+	}
 	key := pathKey(c.pass, e)
 	if key == "" {
 		return false
 	}
 	found := false
-	check := func(cond ast.Expr) {
-		if comparesAgainstConst(c.pass, cond, key, token.NoPos) {
-			found = true
+	c.scanBlock(body.List, key, pos, &found)
+	return found
+}
+
+// scanBlock walks one block's statements toward pos: guards entirely
+// before it are checked (they ran first), then the statement holding
+// it is descended into. A guard nested inside an earlier sibling
+// statement is not on the reaching path and never counts.
+func (c *checker) scanBlock(stmts []ast.Stmt, key string, pos token.Pos, found *bool) {
+	for _, st := range stmts {
+		if *found || st.Pos() > pos {
 			return
 		}
-		ast.Inspect(cond, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || found {
-				return !found
-			}
-			f, ok := astx.CalleeFunc(c.pass, ast.Unparen(call.Fun))
-			if !ok {
-				return true
-			}
-			for _, i := range c.facts(f).Checker {
-				if i < len(call.Args) && pathKey(c.pass, call.Args[i]) == key {
-					found = true
+		if st.End() <= pos {
+			if iff, ok := st.(*ast.IfStmt); ok {
+				if c.condSides(iff.Cond, key, false).both() && (dominance.Diverges(iff.Body) || c.clampAssigns(iff.Body, key)) {
+					*found = true
+					return
 				}
 			}
-			return true
-		})
-	}
-	ast.Inspect(body, func(n ast.Node) bool {
-		if found || n == nil || n.Pos() >= pos {
-			return false
+			continue
 		}
-		switch n := n.(type) {
-		case *ast.IfStmt:
-			check(n.Cond)
-		case *ast.CaseClause:
-			for _, x := range n.List {
-				check(x)
+		c.scanHolder(st, key, pos, found)
+		return
+	}
+}
+
+// scanHolder descends into the statement holding pos.
+func (c *checker) scanHolder(st ast.Stmt, key string, pos token.Pos, found *bool) {
+	switch s := st.(type) {
+	case *ast.IfStmt:
+		if s.Body != nil && pos > s.Body.Pos() && pos < s.Body.End() {
+			if c.condSides(s.Cond, key, true).both() {
+				*found = true
+				return
+			}
+			c.scanBlock(s.Body.List, key, pos, found)
+			return
+		}
+		if s.Else != nil && pos > s.Else.Pos() && pos < s.Else.End() {
+			if c.condSides(s.Cond, key, false).both() {
+				*found = true
+				return
+			}
+			c.scanHolder(s.Else, key, pos, found)
+		}
+	case *ast.ForStmt:
+		if s.Cond != nil && c.condSides(s.Cond, key, true).both() {
+			*found = true
+			return
+		}
+		if s.Body != nil {
+			c.scanBlock(s.Body.List, key, pos, found)
+		}
+	case *ast.RangeStmt:
+		if s.Body != nil {
+			c.scanBlock(s.Body.List, key, pos, found)
+		}
+	case *ast.SwitchStmt:
+		if s.Body != nil {
+			c.scanHolder(s.Body, key, pos, found)
+		}
+	case *ast.TypeSwitchStmt:
+		if s.Body != nil {
+			c.scanHolder(s.Body, key, pos, found)
+		}
+	case *ast.SelectStmt:
+		if s.Body != nil {
+			c.scanHolder(s.Body, key, pos, found)
+		}
+	case *ast.CaseClause:
+		// The matched expression is unknown when several are listed:
+		// every one must prove the range when true.
+		ok := len(s.List) > 0
+		for _, x := range s.List {
+			if !c.condSides(x, key, true).both() {
+				ok = false
+				break
 			}
 		}
-		return true
+		if ok {
+			*found = true
+			return
+		}
+		c.scanBlock(s.Body, key, pos, found)
+	case *ast.BlockStmt:
+		c.scanBlock(s.List, key, pos, found)
+	default:
+		// A literal or block nested in the statement (a deferred
+		// closure, a call argument) still holds pos.
+		ast.Inspect(st, func(n ast.Node) bool {
+			if n == nil || *found {
+				return true
+			}
+			switch inner := n.(type) {
+			case *ast.FuncLit:
+				if inner.Body != nil && pos > inner.Body.Pos() && pos < inner.Body.End() {
+					c.scanBlock(inner.Body.List, key, pos, found)
+				}
+				return false
+			case *ast.BlockStmt:
+				if pos > inner.Pos() && pos < inner.End() {
+					c.scanBlock(inner.List, key, pos, found)
+				}
+				return false
+			}
+			return pos >= n.Pos() && pos <= n.End()
+		})
+	}
+}
+
+// clampAssigns: the guard body reassigns the path key an in-range
+// constant.
+func (c *checker) clampAssigns(body *ast.BlockStmt, key string) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if as, ok := n.(*ast.AssignStmt); ok {
+			for i, l := range as.Lhs {
+				if i < len(as.Rhs) && pathKey(c.pass, l) == key {
+					tv, ok := c.pass.TypesInfo.Types[ast.Unparen(as.Rhs[i])]
+					if ok && tv.Value != nil {
+						if cv, ok := constant.Int64Val(constant.ToInt(tv.Value)); ok && cv >= 100 && cv <= 999 {
+							found = true
+						}
+					}
+				}
+			}
+		}
+		return !found
 	})
 	return found
 }
 
-// comparesAgainstConst: n holds an ordered comparison of the path key
-// against a constant (anywhere, when before is NoPos).
-func comparesAgainstConst(pass *analysis.Pass, n ast.Node, key string, _ token.Pos) bool {
-	found := false
-	ast.Inspect(n, func(n ast.Node) bool {
-		be, ok := n.(*ast.BinaryExpr)
-		if !ok || found {
-			return !found
+// sides: which bounds of the 100-999 window a truth value of a
+// condition establishes for the path key.
+type sides struct{ lower, upper bool }
+
+func (s sides) both() bool { return s.lower && s.upper }
+
+// condSides walks a condition's operator tree and reports which bounds
+// of 100-999 its given truth value proves for key. Checker calls count
+// as both bounds when held.
+func (c *checker) condSides(cond ast.Expr, key string, holds bool) sides {
+	switch x := ast.Unparen(cond).(type) {
+	case *ast.UnaryExpr:
+		if x.Op == token.NOT {
+			return c.condSides(x.X, key, !holds)
 		}
-		switch be.Op {
-		case token.LSS, token.LEQ, token.GTR, token.GEQ:
-		default:
-			return true
+	case *ast.BinaryExpr:
+		switch x.Op {
+		case token.LAND:
+			if holds {
+				a, b := c.condSides(x.X, key, true), c.condSides(x.Y, key, true)
+				return sides{a.lower || b.lower, a.upper || b.upper}
+			}
+			// ¬(A∧B) is ¬A ∨ ¬B: which operand failed is unknown, so
+			// one operand's failure must prove the whole window.
+			a, b := c.condSides(x.X, key, false), c.condSides(x.Y, key, false)
+			switch {
+			case a.both():
+				return a
+			case b.both():
+				return b
+			}
+			return sides{}
+		case token.LOR:
+			if holds {
+				// which operand held is unknown: one must prove the
+				// whole window alone.
+				a, b := c.condSides(x.X, key, true), c.condSides(x.Y, key, true)
+				switch {
+				case a.both():
+					return a
+				case b.both():
+					return b
+				}
+				return sides{}
+			}
+			// ¬(A∨B) is ¬A ∧ ¬B: both failed; the bounds combine.
+			a, b := c.condSides(x.X, key, false), c.condSides(x.Y, key, false)
+			return sides{a.lower || b.lower, a.upper || b.upper}
 		}
-		for _, pair := range [][2]ast.Expr{{be.X, be.Y}, {be.Y, be.X}} {
-			tv, ok := pass.TypesInfo.Types[pair[1]]
-			if ok && tv.Value != nil && pathKey(pass, pair[0]) == key {
-				found = true
+		return c.comparisonSides(x, key, holds)
+	case *ast.CallExpr:
+		if f, ok := astx.CalleeFunc(c.pass, ast.Unparen(x.Fun)); ok {
+			for _, i := range c.facts(f).Checker {
+				if i < len(x.Args) && pathKey(c.pass, x.Args[i]) == key && holds {
+					return sides{true, true}
+				}
 			}
 		}
-		return true
-	})
-	return found
+	}
+	return sides{}
+}
+
+// comparisonSides: `key op C` (either operand order) against a
+// constant, and which window bounds each truth value establishes.
+func (c *checker) comparisonSides(be *ast.BinaryExpr, key string, holds bool) sides {
+	var other ast.Expr
+	subjectOnLeft := pathKey(c.pass, be.X) == key
+	switch {
+	case subjectOnLeft:
+		other = be.Y
+	case pathKey(c.pass, be.Y) == key:
+		other = be.X
+	default:
+		return sides{}
+	}
+	tv, ok := c.pass.TypesInfo.Types[other]
+	if !ok || tv.Value == nil {
+		return sides{} // not a constant bound
+	}
+	cv, ok := constant.Int64Val(constant.ToInt(tv.Value))
+	if !ok {
+		return sides{}
+	}
+	var tLower, tUpper, fLower, fUpper bool
+	switch be.Op {
+	case token.GTR: // key > C ⇔ C < key
+		tLower, fUpper = cv >= 99, cv <= 999
+	case token.GEQ: // key >= C ⇔ C <= key
+		tLower, fUpper = cv >= 100, cv <= 1000
+	case token.LSS: // key < C ⇔ C > key
+		tUpper, fLower = cv <= 1000, cv >= 99
+	case token.LEQ: // key <= C ⇔ C >= key
+		tUpper, fLower = cv <= 999, cv >= 100
+	case token.EQL, token.NEQ:
+		inRange := cv >= 100 && cv <= 999
+		if be.Op == token.EQL {
+			tLower, tUpper = inRange, inRange
+		} else {
+			fLower, fUpper = inRange, inRange
+		}
+	}
+	if !subjectOnLeft {
+		tLower, tUpper, fLower, fUpper = tUpper, tLower, fUpper, fLower
+	}
+	if holds {
+		return sides{tLower, tUpper}
+	}
+	return sides{fLower, fUpper}
 }
 
 func keyOfObj(obj types.Object) string { return fmt.Sprintf("%d", obj.Pos()) }

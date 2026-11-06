@@ -488,3 +488,38 @@ func WriteThemeBack(outPath string) error {
 	}
 	return os.Rename(tmp.Name(), outPath)
 }
+
+// ---------- read AFTER the write: no exemption (AZ16-02) ----------
+
+// verifyAfterWrite reduces the 2026-11 shape: a verifying read-back
+// after a 0644 write used to silence the write, though the file may
+// not have existed at create time — mode 0644 applied then.
+func VerifyAfterWrite(statePath string, data []byte) error {
+	if err := os.WriteFile(statePath, data, 0o644); err != nil { // want `file created with mode 0o644 under statePath`
+		return err
+	}
+	got, err := os.ReadFile(statePath)
+	if err != nil {
+		return err
+	}
+	_ = got
+	return nil
+}
+
+// WriteThenCheckRestore is the caller-hop twin: the caller reads the
+// path only AFTER handing it to the writer helper.
+func WriteThenCheckRestore(path string) error {
+	if err := writeTarget0644(path, []byte("x")); err != nil {
+		return err
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	_ = got
+	return nil
+}
+
+func writeTarget0644(p string, b []byte) error {
+	return os.WriteFile(p, b, 0o644) // want `file created with mode 0o644 under p`
+}

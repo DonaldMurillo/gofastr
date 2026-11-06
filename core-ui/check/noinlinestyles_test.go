@@ -17,6 +17,24 @@ func writeStyleFixture(t *testing.T, body string) string {
 	return dir
 }
 
+func TestInlineStyleAllowMarkerSkipsBlankLines(t *testing.T) {
+	source, err := os.ReadFile("testdata/review-inline-style.go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fixture.go"), source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Violations) != 1 || result.Violations[0].Line != 8 {
+		t.Fatalf("want only the unmarked line 8, got %v", result.Violations)
+	}
+}
+
 func TestLintNoInlineStyles_FlagsRawAttributeInString(t *testing.T) {
 	dir := writeStyleFixture(t, `
 var x = "<div style=\"color:red\">hi</div>"
@@ -41,6 +59,43 @@ func TestLintNoInlineStyles_FlagsBackticksLiteral(t *testing.T) {
 	}
 	if !res.HasErrors() {
 		t.Fatal("expected violation for backtick literal style attribute")
+	}
+}
+
+// A deliberate, marked inline style: gofastr verify waives
+// GOFASTR1804 on the marker, so the build gate must honour the same
+// marker rather than forcing a whole-file ignore-file exemption.
+func TestLintNoInlineStyles_HonorsAllowMarker(t *testing.T) {
+	dir := writeStyleFixture(t, `
+func f() string {
+	//gofastr:allow(GOFASTR1804) the email preview mirrors per-message inline styles, see #212
+	return "<div style=\"display: none\">x</div>"
+}
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Fatalf("marked inline style still reported: %s", res.Error())
+	}
+}
+
+// The marker is rule-scoped: it waives the style rule, not whatever
+// else the line carries.
+func TestLintNoInlineStyles_AllowMarkerOtherRule(t *testing.T) {
+	dir := writeStyleFixture(t, `
+func f() string {
+	//gofastr:allow(GOFASTR9999) a different rule's marker
+	return "<div style=\"display: none\">x</div>"
+}
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HasErrors() {
+		t.Fatal("a marker naming another rule must not waive the style finding")
 	}
 }
 

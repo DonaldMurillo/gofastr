@@ -39,6 +39,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
@@ -203,8 +204,15 @@ const maxKeyLen = 256
 // Digesting rather than rejecting keeps the identity one-to-one, so a
 // long-but-legitimate key still gets its own budget instead of being
 // denied or sharing a bucket with every other long key.
+//
+// A key a SQL store cannot hold is digested the same way, at any length.
+// The keys are client-chosen (an X-Api-Key header, a signed agent URL),
+// and Go's header and URL parsers pass bytes past 0x7F through, so a
+// key can be invalid UTF-8 or carry a NUL. Postgres answers that bind
+// with 22021, which AllowContext reads as a store outage: a 429 for that
+// client and an outage warning for the operator.
 func foldKey(key string) string {
-	if len(key) <= maxKeyLen {
+	if len(key) <= maxKeyLen && utf8.ValidString(key) && !strings.ContainsRune(key, 0) && !strings.HasPrefix(key, "sha256:") {
 		return key
 	}
 	sum := sha256.Sum256([]byte(key))

@@ -1,5 +1,25 @@
 # App specs
 
+HTML block props use HTML boolean semantics: `false` omits presence attributes
+such as `disabled`, `checked`, `required`, and `multiple`; `true` emits them.
+ARIA and data booleans remain string values.
+
+A link block renders its `text` before its child blocks; declaring text does
+not discard child markup.
+
+Prop names for renderer-owned attributes are case-sensitive. Case-variant
+extras such as `ID` or `Class` cannot override the canonical `id` or `class`.
+
+Generation rejects image blocks without `src`, fieldsets without `legend`,
+text-only labels without `for`, and node-rendered links without text,
+children, or a nonblank `aria-label` or `aria-labelledby` prop. A plain
+`{type: link, href: /docs}` block uses its href as the label; adding `kind`,
+props, actions, an island, or a widget selects the node renderer and requires
+content or one of those accessible-name props. The low-level node renderer
+degrades incomplete nodes instead of panicking:
+an image is omitted, an empty-legend fieldset stays a fieldset, a label may
+remain unassociated, and a link without `href` becomes text content.
+
 A `gofastr.yml` app spec is an optional way to scaffold a GoFastr app:
 declare your entities, screens, nav, seed data, and endpoint/middleware
 stubs in one file, then generate owned Go from it. The app spec is not
@@ -164,6 +184,11 @@ is required. Supported syntax:
 
 Plain (unquoted) scalars resolve by the YAML 1.2 core schema, so a file
 reads the same here as in any other YAML tool:
+
+Constraint flags (`fields[].required`, `fields[].unique`, and
+`indices[].unique`) accept only booleans or the quoted strings `"true"`
+and `"false"`. Values such as `yes`, `on`, `1`, null, or a list are errors,
+not silently disabled constraints. Omitted flags still default to false.
 
 - `true`, `True`, `TRUE` and the three `false` spellings are booleans;
   `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
@@ -872,6 +897,10 @@ partial and keeps the shell).
   select stays empty; a number input steps by 1 for `int`, 0.0001 for
   `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
+  Submitted control names use the default camelCase API wire keys
+  (`address_line_1` becomes `addressLine1`) so field refusals land on the
+  matching input. Control IDs, label lookups and relationship targets keep
+  their declaration names.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs
@@ -1378,6 +1407,19 @@ generated app commits no credentials:
   the emitted `dbURL` constant and the `getEnv` fallback)
 - `ADMIN_SEED_PASSWORD` → the bootstrap admin's password (no env var →
   no admin is seeded)
+
+DSN redaction removes userinfo passwords, URL query `password` and
+`sslpassword` parameters (including percent-encoded parameter names), and
+libpq `password`/`sslpassword` pairs. Non-secret host/database settings are
+retained; an unreadable URL query is removed entirely rather than leaked.
+An at sign after a raw `/`, `?`, or `#` authority delimiter can indicate
+accidentally unescaped userinfo, even when a numeric password prefix parses
+as a port. Such DSNs are treated as secret-bearing and redaction keeps only
+the scheme prefix. Passwordless URLs with an at-sign-free query, such as
+`?sslmode=disable`, remain unchanged.
+Libpq assignments may have whitespace around `=` and single-quoted or
+backslash-escaped values. Detection and redaction parse those assignments
+together, so a spaced or quoted credential cannot become a source fallback.
 
 When the app spec holds any of these values, the generator also emits a
 `.env` carrying them (so the app runs without extra setup). The

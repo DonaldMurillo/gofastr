@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"slices"
 	"strings"
 
@@ -30,12 +31,17 @@ type SelectOption struct {
 
 // SelectConfig configures a Select.
 type SelectConfig struct {
+	// Ctx carries the render ID scope for this control and its descriptions.
+	Ctx context.Context
 	// Name is the form-field name (required).
 	Name string
 	// Label is the accessible label (required).
 	Label string
 	// Options is the list of <option> elements (required, at least one).
 	Options []SelectOption
+	// Selected keeps the stored value, including a value no option lists.
+	// A nonempty value overrides the options' Selected flags.
+	Selected string
 	// Placeholder adds a disabled, selected-first option with empty value
 	// that acts as a placeholder hint (e.g. "Choose a country…").
 	Placeholder string
@@ -73,18 +79,15 @@ func Select(cfg SelectConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Select requires Label")
 	}
-	id := cfg.ID
-	if id == "" {
-		id = cfg.Name
-	}
+	id := scopedControlID(cfg.Ctx, cfg.ID, cfg.Name, "-hint", "-error")
 	// The last Selected option wins, which is the browser's own rule
 	// when more than one carries the attribute.
 	// With nothing flagged and no placeholder the first option is the
 	// browser's default; naming it keeps a later empty-value option
 	// from matching the empty selection.
-	selected, flagged := "", false
+	selected, flagged := cfg.Selected, cfg.Selected != ""
 	for _, opt := range cfg.Options {
-		if opt.Selected {
+		if cfg.Selected == "" && opt.Selected {
 			selected, flagged = opt.Value, true
 		}
 	}

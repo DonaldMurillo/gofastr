@@ -6,13 +6,17 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -103,7 +107,9 @@ var rePlatformKey = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // end in .app and its Contents/Info.plist must declare version as its
 // CFBundleShortVersionString. A windows-* archive's directory must hold
 // exactly <dir>.exe and WebView2Loader.dll, and the executable's
-// ProductVersion must be version.
+// ProductVersion must be version. An existing manifest in outDir must
+// have the same version; its other platforms and channels are retained
+// and the merged manifest is signed again.
 func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
 	if _, err := ParseVersion(version); err != nil {
 		return fmt.Errorf("version %q: %w", version, err)
@@ -161,27 +167,53 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 		}
 	}
 	sum := sha256.Sum256(data)
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(filepath.Join(outDir, ".manifest.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("feed output lock: %w", err)
+	}
+	defer lock.Close()
+	if err := fileperm.RestrictOpenFile(lock); err != nil {
+		return fmt.Errorf("feed output lock permissions: %w", err)
+	}
+	if err := filelock.Lock(lock); err != nil {
+		return fmt.Errorf("feed output lock: %w", err)
+	}
 	feed := Feed{
 		Version: version,
 		Notes:   notes,
-		Platforms: map[string]PlatformEntry{
-			platform: {
-				URL:    archiveURL,
-				SHA256: hex.EncodeToString(sum[:]),
-				Size:   int64(len(data)),
-			},
-		},
+	}
+	if existing, err := os.ReadFile(filepath.Join(outDir, "manifest.json")); err == nil {
+		feed = Feed{}
+		if err := json.Unmarshal(existing, &feed); err != nil {
+			return fmt.Errorf("existing manifest: %w", err)
+		}
+		if feed.Version != version {
+			return fmt.Errorf("existing manifest version %q differs from --version %q; use a new output directory", feed.Version, version)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("existing manifest: %w", err)
+	}
+	for _, name := range slices.Sorted(maps.Keys(feed.Channels)) {
+		if _, err := ParseVersion(feed.Channels[name].Version); err != nil {
+			return fmt.Errorf("existing manifest: channel %q version: %w", name, err)
+		}
+	}
+	feed.Notes = notes
+	if feed.Platforms == nil {
+		feed.Platforms = make(map[string]PlatformEntry)
+	}
+	feed.Platforms[platform] = PlatformEntry{
+		URL:    archiveURL,
+		SHA256: hex.EncodeToString(sum[:]),
+		Size:   int64(len(data)),
 	}
 	manifest, sigFile, err := SignFeed(feed, priv)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(outDir, 0o700); err != nil {
-		return err
-	}
-	// The .sig verifies over the exact manifest bytes, so both files
-	// are written atomically-enough for a release step: manifest first,
-	// signature second, neither truncated by a later step.
 	if err := fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json"), manifest); err != nil {
 		return err
 	}

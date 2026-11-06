@@ -68,7 +68,10 @@ func TestScanModTimesWatchesInternalForCmdLayout(t *testing.T) {
 	if len(prev) == 0 {
 		t.Fatal("expected watched files at project root")
 	}
-	internal := filepath.Join(dir, "internal", "greet", "greet.go")
+	internal, err := filepath.EvalSymlinks(filepath.Join(dir, "internal", "greet", "greet.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, tracked := prev[internal]; !tracked {
 		t.Fatalf("internal/ must be watched from the project root; tracked %d files, missing %s", len(prev), internal)
 	}

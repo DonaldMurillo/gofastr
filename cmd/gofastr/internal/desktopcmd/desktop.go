@@ -199,6 +199,9 @@ func runDesktopRun(args []string) {
 			return
 		default:
 		}
+		if dir := devcmd.DevServerBinDir(); dir != "" {
+			_ = os.RemoveAll(dir)
+		}
 		cli.OsExit(1)
 		return
 	}
@@ -520,7 +523,22 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		return
 	}
 
+	archWarn, err := macDesktopArch(os.Getenv("GOARCH"), runtime.GOARCH)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	if archWarn != "" {
+		cli.Warn("%s", archWarn)
+	}
+
 	appDir := filepath.Join(f.out, name+".app")
+	if err := os.RemoveAll(appDir); err != nil {
+		cli.Fail("Remove previous bundle %s: %v", appDir, err)
+		cli.OsExit(1)
+		return
+	}
 	contents := filepath.Join(appDir, "Contents")
 	macOS := filepath.Join(contents, "MacOS")
 	resources := filepath.Join(contents, "Resources")
@@ -531,16 +549,6 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 			cli.OsExit(1)
 			return
 		}
-	}
-
-	archWarn, err := macDesktopArch(os.Getenv("GOARCH"), runtime.GOARCH)
-	if err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return
-	}
-	if archWarn != "" {
-		cli.Warn("%s", archWarn)
 	}
 
 	exe := filepath.Join(macOS, name)
@@ -811,11 +819,16 @@ func runDesktopTypes(args []string) {
 		return
 	}
 
+	if err := writeDesktopTypes(f); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+	}
+}
+
+func writeDesktopTypes(f desktopTypesFlags) error {
 	dir, err := os.MkdirTemp("", "gofastr-desktop-types-*")
 	if err != nil {
-		cli.Fail("Temp dir: %v", err)
-		cli.OsExit(1)
-		return
+		return fmt.Errorf("temp dir: %w", err)
 	}
 	defer os.RemoveAll(dir)
 	bin := filepath.Join(dir, "app")
@@ -829,9 +842,7 @@ func runDesktopTypes(args []string) {
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 	if err := buildCmd.Run(); err != nil {
-		cli.Fail("Build failed: %v", err)
-		cli.OsExit(1)
-		return
+		return fmt.Errorf("Build failed: %w", err)
 	}
 
 	// One headless run of the real app: battery/desktop's Run freezes
@@ -844,27 +855,22 @@ func runDesktopTypes(args []string) {
 	run.Stdout = &stdout
 	run.Stderr = os.Stderr
 	if err := run.Run(); err != nil {
-		cli.Fail("App run failed: %v", err)
-		cli.OsExit(1)
-		return
+		return fmt.Errorf("App run failed: %w", err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
 	dec.UseNumber()
 	var manifest desktop.Manifest
 	if err := dec.Decode(&manifest); err != nil {
-		cli.Fail("Manifest output is not JSON: %v", err)
-		cli.OsExit(1)
-		return
+		return fmt.Errorf("Manifest output is not JSON: %w", err)
 	}
 
 	dts := desktop.DTS(manifest)
 	//gofastr:allow(worldreadable) generated source the developer commits (a .d.ts), same posture as generate sdk output
 	if err := os.WriteFile(f.out, []byte(dts), 0o644); err != nil {
-		cli.Fail("Write %s: %v", f.out, err)
-		cli.OsExit(1)
-		return
+		return fmt.Errorf("Write %s: %w", f.out, err)
 	}
 	cli.Success("Wrote %s (%d capabilities)", f.out, len(manifest.Capabilities))
+	return nil
 }
 
 // macDesktopArch checks the macOS bundle's architecture. The shell

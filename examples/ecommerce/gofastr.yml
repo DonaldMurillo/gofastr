@@ -310,10 +310,14 @@ entities:
       - name: unit_price
         type: decimal
         required: true
+        read_only: true
+        default: 0
         min: 0
       - name: total_price
         type: decimal
         required: true
+        read_only: true
+        default: 0
         min: 0
     relations:
       - type: belongs_to

@@ -1,6 +1,7 @@
 package gates
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // BuildSandboxGateTo is buildSandboxGate writing to the given streams,
@@ -43,19 +45,14 @@ type SandboxFinding struct {
 // the two gates agree on which files are in scope.
 func auditSandbox(root string) ([]SandboxFinding, error) {
 	var all []SandboxFinding
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if path != filepath.Clean(root) && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		if d.IsDir() {
-			name := d.Name()
-			switch name {
-			case "vendor", ".git", "node_modules", "dist", "bin", "build", "tmp":
-				return fs.SkipDir
-			}
-			if strings.HasPrefix(name, ".") && name != "." {
-				return fs.SkipDir
-			}
 			return nil
 		}
 		// The sandbox governs .ui.go files only; a plain .go file is free
@@ -65,6 +62,9 @@ func auditSandbox(root string) ([]SandboxFinding, error) {
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		if contracts.IsGeneratedSource(body) {

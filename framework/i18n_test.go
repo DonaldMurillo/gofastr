@@ -83,7 +83,8 @@ func TestApp_WithI18nPanicsWithWithoutDefaultMiddleware(t *testing.T) {
 
 // TestApp_I18nBridgeWiresTranslatorIntoCtx proves the DefaultMiddleware
 // bridge: an App built with WithI18n stashes the translator on the
-// request ctx so framework/ui components resolve via i18nui.T(r.Context())
+// request ctx so framework/ui components resolve their i18nui phrases
+// through r.Context()
 // using the caller's locale. Without the bridge the component renders
 // English regardless of catalog.
 func TestApp_I18nBridgeWiresTranslatorIntoCtx(t *testing.T) {

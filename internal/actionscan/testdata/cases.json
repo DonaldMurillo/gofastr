@@ -27,5 +27,20 @@
   {"js": "myG.serverAction('save')", "want": false, "why": "a different identifier that merely ends in G"},
   {"js": "G.serverActionFor('save')", "want": false, "why": "a different member"},
   {"js": "G.serverAction", "want": false, "why": "a reference, not a call"},
-  {"js": "G.toast('ok')", "want": false, "why": "no server action at all"}
+  {"js": "G.toast('ok')", "want": false, "why": "no server action at all"},
+  {"js": "G?.serverAction('save')", "want": true, "why": "optional member access still invokes the action"},
+  {"js": "G . serverAction('save')", "want": true, "why": "whitespace inside the member chain is legal"},
+  {"js": "G /* owner */ ?. /* action */ serverAction?.('save')", "want": true, "why": "comments and optional invocation do not hide a call"},
+  {"js": "G . serverActionFor('save')", "want": false, "why": "a longer member remains a different method"},
+  {"js": "'G?.serverAction(\"save\")'", "want": false, "why": "optional-member text in a string is not code"},
+  {"js": "(G).serverAction('save')", "want": true, "why": "a parenthesized receiver still calls the server action"},
+  {"js": "(( /* receiver */ G ) /* close */ )?.serverAction?.('save')", "want": true, "why": "nested parenthesized receivers and comments are legal"},
+  {"js": "(other).serverAction('save')", "want": false, "why": "a different parenthesized receiver"},
+  {"js": "(G + other).serverAction('save')", "want": false, "why": "an expression is not the G receiver"},
+  {"js": "'(G).serverAction(\"save\")'", "want": false, "why": "parenthesized receiver text is not code"},
+  {"js": "(G).serverAction", "want": false, "why": "a parenthesized receiver reference is not a call"},
+  {"js": "if (ok) (G).serverAction('save')", "want": true, "why": "a receiver after a condition is not governed by regex disambiguation"},
+  {"js": "while (ok) ((G))?.serverAction?.('save')", "want": true, "why": "a loop body may begin with a parenthesized receiver"},
+  {"js": "if (ok) '(G).serverAction(\"save\")'", "want": false, "why": "a quoted loop or condition body is still text"},
+  {"js": "factory(G).serverAction('save')", "want": false, "why": "a function argument is not a parenthesized receiver"}
 ]

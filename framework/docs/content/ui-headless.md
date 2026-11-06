@@ -1,5 +1,16 @@
 # Headless components
 
+Repeater submit controls default to `Name+"_add"` with value `"1"` and
+`Name+"_remove"` with the zero-based row index. Explicit `AddName`,
+`AddValue`, and `RemoveName` override these no-script operation markers.
+
+After an Island swap removes a repeater row, focus returns to the next row's
+first enabled input, select, textarea, or button that can receive focus, or to
+the preceding row when the last row was removed. Hidden, inert, and unrendered
+controls are skipped. Recovery checks that a control actually received focus
+before stopping; CSS transparency (`opacity: 0`) does not itself prevent focus.
+When no row control can receive focus, focus returns to Add.
+
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
 attributes and the hooks a runtime binds to, and nothing else: no
@@ -153,8 +164,8 @@ The primitive prefixes the sort when `SortBy` names a column, from
 three `Strings` fields: `TableSortedBy` ("Sorted by {column},
 {direction}", the column named by its `Header` or its `Key`),
 `SortAscending` ("ascending") and `SortDescending` ("descending"),
-bridged by `ui.StringsFor` to `i18nui.KeyTableSortedBy`,
-`KeyTableDirAscending` and `KeyTableDirDescending`. The result lands in
+bridged by `ui.StringsFor` to `i18nui.TableSortedBy`,
+`TableDirAscending` and `TableDirDescending`. The result lands in
 `data-hui-table-announcement` on the root, and the behaviour module
 copies it into the table's status after the swap; a table with no sort
 and no `Summary` renders no announcement at all.
@@ -398,7 +409,9 @@ when it arrives (`data-hui-counter-value`, bound by
 the first + on a counter showing 4 would show 1. `Seeded: true` leaves
 the seed to the page (`ui.Counter` sets it; its `store.Slice` seeds
 the signal). A `Tree` row's link is out of the tab order: the
-tree is one tab stop and Enter on the row follows the link.
+tree is one tab stop and Enter on the row follows the link, including a
+branch with its own `Href`. Space toggles a branch; Enter also toggles
+a branch without a link. Arrow-key expansion and lazy loading are unchanged.
 
 The parts the navigation members draw beyond the shared vocabulary:
 
@@ -426,7 +439,10 @@ The parts the navigation members draw beyond the shared vocabulary:
   combobox stays open; `Inline` (`data-hui-combobox-inline`) marks a
   listbox that is the surface's own content, the command palette's
   result list, whose Escape goes on to close the dialog in one press.
-  `ComboboxRows` renders an island answer's rows.
+  `ComboboxRows` renders an island answer's rows. With script, Enter
+  commits only a highlighted option; with no active option, a closed
+  list, or no results it does nothing and never submits the no-script
+  GET form. The GET fallback remains available without JavaScript.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),
   `datepicker-calendar` (the island region), `datepicker-month` (one

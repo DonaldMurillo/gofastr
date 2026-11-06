@@ -289,7 +289,11 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 		if maxCoeff <= 0 {
 			maxCoeff = DefaultMaxProgressiveJPEGBytes
 		}
-		if n, ok := jpegcost.ProgressiveCoeffBytes(data); ok && n > maxCoeff {
+		n, ok := jpegcost.ProgressiveCoeffBytes(data)
+		if !ok {
+			return nil, fmt.Errorf("%w: cannot estimate JPEG coefficient memory", ErrDecompressionBomb)
+		}
+		if n > maxCoeff {
 			return nil, fmt.Errorf("%w: progressive JPEG needs %d bytes of coefficients (max %d)", ErrDecompressionBomb, n, maxCoeff)
 		}
 	}

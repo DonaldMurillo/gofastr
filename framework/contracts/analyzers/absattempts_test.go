@@ -1,6 +1,7 @@
 package analyzers_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -76,9 +77,59 @@ func (q *DBQueue) claim(db *sql.DB, table string, now, token string) error {
 		WHERE id = (SELECT id FROM %s WHERE status='pending' LIMIT 1)` + "`" + `, table, now, token, table)
 	return err
 }
+
 `,
 	})
 	assertNot(t, ds, contracts.RuleAbsoluteAttempts, "attempts = attempts + 1 is the relative form the rule demands")
+}
+
+func TestCounterSQLLikeTextIsNotFormatVerb(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/counter-like.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := fixture(t, map[string]string{
+		"queue.go": string(source),
+	})
+	assertNot(t, diagnostics, contracts.RuleAbsoluteAttempts, "LIKE %active% is SQL text, not a fmt verb")
+}
+
+// A format held in a constant or local is still a format: Sprintf's
+// first argument names it instead of spelling the literal inline.
+func TestNamedSprintfFormatCountsVerbs(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"named.go": `package dispatch
+
+import "database/sql"
+import "fmt"
+
+const bounceSQL = "UPDATE dispatch SET retries = %d WHERE run_id = 1"
+
+func noteBounce(db *sql.DB, count int) error {
+	_, err := db.Exec(fmt.Sprintf(bounceSQL, count+1))
+	return err
+}
+
+const (
+	firstSQL = "UPDATE dispatch SET failures = %d WHERE run_id = 2"
+	repeatedSQL
+)
+
+func noteRepeat(db *sql.DB, count int) error {
+	_, err := db.Exec(fmt.Sprintf(repeatedSQL, count))
+	return err
+}
+
+func noteCrawl(db *sql.DB, count int) error {
+	query := "UPDATE pages SET tries = %d WHERE page_id = 1"
+	_, err := db.Exec(fmt.Sprintf(query, count))
+	return err
+}
+`,
+	})
+	if got := len(countRule(t, ds, contracts.RuleAbsoluteAttempts)); got != 3 {
+		t.Fatalf("want 3 findings for named formats, got %v", countRule(t, ds, contracts.RuleAbsoluteAttempts))
+	}
 }
 
 // Two positives with no counterpart in this repo: a retry counter on a
@@ -89,9 +140,10 @@ func TestAbsoluteAttemptsFiresOnUnrelatedSites(t *testing.T) {
 		"dispatch.go": `package dispatch
 
 import "database/sql"
+import "fmt"
 
 func noteBounce(db *sql.DB, runID string, count int) error {
-	_, err := db.Exec("UPDATE dispatch SET retries = %d WHERE run_id = %s", count+1, runID)
+	_, err := db.Exec(fmt.Sprintf("UPDATE dispatch SET retries = %d WHERE run_id = %s", count+1, runID))
 	return err
 }
 `,
@@ -199,4 +251,55 @@ func q() []string {
 	})
 	assertNot(t, ds, contracts.RuleAbsoluteAttempts,
 		"a counter expression that reads its own column is relative, and max_attempts is not the counter")
+}
+
+// A Sprintf verb with an argument index or a width is the same host
+// snapshot: this repo's own SQL spells table and limit slots %[2]s and
+// %[6]d (entityui), so the counter spelled the same way counts.
+func TestAbsoluteAttemptsIndexedVerbIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"settle.go": `package outbox
+
+import "fmt"
+
+func q(table string, n, id int) string {
+	return fmt.Sprintf("UPDATE %[1]s SET status=%[3]v, attempts=%[2]d WHERE id=%[4]d", table, n, "dead", id)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleAbsoluteAttempts)
+	ds = fixture(t, map[string]string{
+		"settle.go": `package outbox
+
+import "fmt"
+
+func q(attempts int) string {
+	return fmt.Sprintf("UPDATE jobs SET attempts=%02d WHERE id=1", attempts)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleAbsoluteAttempts)
+}
+
+// A marker above a call whose multi-line SQL literal holds the finding:
+// the comment cannot sit inside the raw string, so the waiver has to
+// cover the whole literal that follows it. Without that, the 1408
+// finding stays AND the marker is reported stale (GOFASTR0002).
+func TestAbsoluteAttemptsMarkerCoversLiteral(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"settle.go": `package outbox
+
+import "database/sql"
+
+func markDead(db *sql.DB, table string, n int, rowID string) error {
+	//gofastr:allow(GOFASTR1408) the settle path owns the row exclusively; the count is per-runner by design
+	_, err := db.Exec(` + "`" + `UPDATE %s
+		SET status='dead', attempts=$1, claimed_until=NULL
+		WHERE row_id=$2` + "`" + `, table, n, rowID)
+	return err
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleAbsoluteAttempts, "the marker above the call waives the finding inside its literal")
+	assertNot(t, ds, contracts.RuleSuppressionStale, "the marker matched the finding inside the literal, so it is not stale")
 }
